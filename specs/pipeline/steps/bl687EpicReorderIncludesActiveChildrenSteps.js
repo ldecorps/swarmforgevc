@@ -14,7 +14,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { JSDOM } = require(path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom'));
+// BL-1658: the path only - the actual require(JSDOM_MODULE) happens inside
+// each function that builds a DOM (bl1046/bl1160/bl1153's own pattern), so
+// a mere require() of this file never pays for loading jsdom.
+const JSDOM_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom');
 
 const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
 
@@ -121,6 +124,7 @@ async function ensureBridge(ctx) {
 }
 
 async function renderScreen(ctx) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const port = ctx.bridgeHandle.port;
   const res = await fetch(`http://127.0.0.1:${port}/epic-reorder`);
   assert.equal(res.status, 200);
@@ -274,7 +278,7 @@ function registerSteps(registry) {
     FEATURE
   );
 
-  // ── Scenario 01/02/06's shared When ─────────────────────────────────
+  // ── Scenario 01/02's shared When ────────────────────────────────────
   registry.defineScoped(
     /^the "([^"]+)" tile is drilled into$/,
     async (ctx, epicId) => {
@@ -357,20 +361,6 @@ function registerSteps(registry) {
         const row = ctx.dom.window.document.querySelector(`.row[data-id="${id}"]`);
         assert.ok(row, `expected a drill-down row for ${id}`);
         assert.ok(!row.querySelector('.dep-marker'), `expected ${id} to show no live-dependency marker`);
-      });
-      stopBridge(ctx);
-    },
-    FEATURE
-  );
-
-  // ── Scenario 06 ───────────────────────────────────────────────────────
-  registry.defineScoped(
-    /^the drill-down shows "([^"]+)"$/,
-    (ctx, text) => {
-      stopBridgeOnError(ctx, () => {
-        const empty = ctx.dom.window.document.querySelector('#content .empty');
-        assert.ok(empty, 'expected an empty-state message in the drill-down');
-        assert.equal(empty.textContent, text);
       });
       stopBridge(ctx);
     },

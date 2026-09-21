@@ -28,7 +28,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { JSDOM } = require(path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom'));
+// BL-1658: the path only - the actual require(JSDOM_MODULE) happens inside
+// each function that builds a DOM (bl1046/bl1160/bl1153's own pattern), so
+// a mere require() of this file never pays for loading jsdom.
+const JSDOM_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom');
 
 const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
 
@@ -112,6 +115,7 @@ async function waitFor(predicate, timeoutMs = 3000) {
 // bridge (never a stub) - the acceptance layer's whole point is exercising
 // the real network round-trip, not a mocked one.
 async function renderScreen(ctx) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const port = ctx.bridgeHandle.port;
   const res = await fetch(`http://127.0.0.1:${port}/epic-reorder`);
   assert.equal(res.status, 200);

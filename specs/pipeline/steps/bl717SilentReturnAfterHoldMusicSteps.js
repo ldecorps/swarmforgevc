@@ -19,9 +19,20 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { runGradle, readJUnitResults } = require('./lib/androidGradle');
-const { createMockCursorBridgeAgentSession } = require('../../../extension/out/bridge/cursorBridgeAgentSession');
-const { processLetsTalkTurn } = require('../../../extension/out/bridge/letsTalkRoutes');
-const { LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT } = require('../../../extension/out/bridge/letsTalkCore');
+// BL-1658: paths only - required once, on first use, and cached, so a mere
+// require() of this file never pays for cursorBridgeAgentSession's own
+// heavy production graph (@cursor/sdk etc.).
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require('../../../extension/out/bridge/cursorBridgeAgentSession'),
+      ...require('../../../extension/out/bridge/letsTalkRoutes'),
+      ...require('../../../extension/out/bridge/letsTalkCore'),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE_NAME = 'Bubble always speaks after hold music stops';
 const TEST_REPORT_DIR = 'testDebugUnitTest';
@@ -220,9 +231,9 @@ function registerSteps(registry) {
     async (ctx) => {
       const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'sfvc-bl717-acc-'));
       fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
-      const session = createMockCursorBridgeAgentSession(root);
+      const session = lib().createMockCursorBridgeAgentSession(root);
       session.promptAgent = async () => ({ replyText: '', agentId: 'agent-1' });
-      ctx.turnResult = await processLetsTalkTurn(
+      ctx.turnResult = await lib().processLetsTalkTurn(
         { audioBase64: Buffer.from('audio-chunk').toString('base64') },
         {
           agentSession: session,
@@ -253,7 +264,7 @@ function registerSteps(registry) {
     /^the companion receives either speakable fallback text or an explicit failure$/,
     (ctx) => {
       const result = ctx.turnResult;
-      const gotFallback = result.success === true && result.replyText === LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT;
+      const gotFallback = result.success === true && result.replyText === lib().LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT;
       const gotExplicitFailure = result.success === false && typeof result.reason === 'string' && result.reason.length > 0;
       if (!gotFallback && !gotExplicitFailure) {
         throw new Error(`expected fallback text or an explicit failure, got: ${JSON.stringify(result)}`);

@@ -15,16 +15,21 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
-const { createMockCursorBridgeAgentSession } = require('../../../extension/out/bridge/cursorBridgeAgentSession');
-const {
-  LETS_TALK_HANDS_FREE_SILENCE_MS,
-  LETS_TALK_HANDS_FREE_MAX_LISTEN_MS,
-  parseHandsFreeEnabled,
-  shouldScheduleHandsFreeListen,
-  shouldEndHandsFreeRecording,
-  shouldCancelHandsFreeRecordingNoSpeech,
-} = require('../../../extension/out/bridge/letsTalkCore');
+// BL-1658: paths only - bridgeServer.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require('../../../extension/out/bridge/bridgeServer'),
+      ...require('../../../extension/out/bridge/cursorBridgeAgentSession'),
+      ...require('../../../extension/out/bridge/letsTalkCore'),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE = "Let's Talk hands-free listening";
 const TOKEN = 'lets-talk-token';
@@ -49,7 +54,7 @@ function buildLetsTalkMocks(ctx) {
     return ctx.letsTalkMocks;
   }
   ctx.letsTalkMocks = {
-    agentSession: createMockCursorBridgeAgentSession(ctx.root),
+    agentSession: lib().createMockCursorBridgeAgentSession(ctx.root),
     transcribeAudio: async () => {
       ctx.sttCalls += 1;
       return { kind: 'ok', transcript: ctx.nextTranscript ?? 'hello' };
@@ -64,7 +69,7 @@ function buildLetsTalkMocks(ctx) {
 }
 
 async function withBridge(ctx, fn) {
-  const handle = await startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {
+  const handle = await lib().startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {
     letsTalk: buildLetsTalkMocks(ctx),
   });
   try {
@@ -124,7 +129,7 @@ function registerSteps(registry) {
     // yet in localStorage, getItem returns null, and the ticket's own
     // storage-format parser (LETS_TALK_HANDS_FREE_STORAGE_KEY, shared by
     // client and server) must resolve that to off.
-    assert.equal(parseHandsFreeEnabled(null), false);
+    assert.equal(lib().parseHandsFreeEnabled(null), false);
     assert.match(ctx.html, /localStorage\.getItem\(HANDS_FREE_STORAGE_KEY\) === '1'/);
   }, FEATURE);
 
@@ -133,7 +138,7 @@ function registerSteps(registry) {
     // Toggling on while idle and not recording is exactly the input shape
     // the pure scheduling decision is built to say "yes, listen" for -
     // the same decision the served onchange handler below calls into.
-    ctx.scheduleDecision = shouldScheduleHandsFreeListen({
+    ctx.scheduleDecision = lib().shouldScheduleHandsFreeListen({
       handsFreeEnabled: true,
       phase: 'ready',
       recording: false,
@@ -168,7 +173,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^I have started a hands-free capture$/, (ctx) => {
     ctx.recordStartedAt = 0;
     assert.equal(
-      shouldScheduleHandsFreeListen({ handsFreeEnabled: true, phase: 'ready', recording: false }),
+      lib().shouldScheduleHandsFreeListen({ handsFreeEnabled: true, phase: 'ready', recording: false }),
       true
     );
   }, FEATURE);
@@ -177,14 +182,14 @@ function registerSteps(registry) {
     // The pure end-of-recording decision: speech was heard, then silence
     // reached the threshold - this is what the client's silence monitor
     // uses to call stopRecording, which in turn submits the turn.
-    ctx.endDecision = shouldEndHandsFreeRecording({
+    ctx.endDecision = lib().shouldEndHandsFreeRecording({
       handsFreeEnabled: true,
       recording: true,
       speechDetected: true,
-      silenceMs: LETS_TALK_HANDS_FREE_SILENCE_MS,
-      recordingMs: LETS_TALK_HANDS_FREE_SILENCE_MS + 500,
+      silenceMs: lib().LETS_TALK_HANDS_FREE_SILENCE_MS,
+      recordingMs: lib().LETS_TALK_HANDS_FREE_SILENCE_MS + 500,
       minRecordingMs: 400,
-      silenceThresholdMs: LETS_TALK_HANDS_FREE_SILENCE_MS,
+      silenceThresholdMs: lib().LETS_TALK_HANDS_FREE_SILENCE_MS,
     });
     assert.equal(ctx.endDecision, true);
     ctx.nextTranscript = 'what is the status';
@@ -260,16 +265,16 @@ function registerSteps(registry) {
     // With hands-free off, none of the auto-listen decisions apply -
     // BL-696's tap-to-toggle model is exactly what fires.
     assert.equal(
-      shouldScheduleHandsFreeListen({ handsFreeEnabled: false, phase: 'ready', recording: false }),
+      lib().shouldScheduleHandsFreeListen({ handsFreeEnabled: false, phase: 'ready', recording: false }),
       false
     );
     assert.equal(
-      shouldCancelHandsFreeRecordingNoSpeech({
+      lib().shouldCancelHandsFreeRecordingNoSpeech({
         handsFreeEnabled: false,
         recording: true,
         speechDetected: false,
-        recordingMs: LETS_TALK_HANDS_FREE_MAX_LISTEN_MS,
-        maxListenMs: LETS_TALK_HANDS_FREE_MAX_LISTEN_MS,
+        recordingMs: lib().LETS_TALK_HANDS_FREE_MAX_LISTEN_MS,
+        maxListenMs: lib().LETS_TALK_HANDS_FREE_MAX_LISTEN_MS,
       }),
       false
     );

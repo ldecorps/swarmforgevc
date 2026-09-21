@@ -7,7 +7,10 @@
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { JSDOM } = require(path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom'));
+// BL-1658: the path only - the actual require(JSDOM_MODULE) happens inside
+// each function that builds a DOM (bl1046/bl1160/bl1153's own pattern), so
+// a mere require() of this file never pays for loading jsdom.
+const JSDOM_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom');
 const {
   PANE_FONT_DEFAULT_PX,
   PANE_FONT_MAX_PX,
@@ -51,6 +54,7 @@ function panesOf(count) {
 }
 
 async function driveScreen({ paneCount, taps, expand }) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const html = getResidentSpyUiHtml();
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',

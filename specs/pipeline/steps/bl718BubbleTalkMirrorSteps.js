@@ -9,12 +9,22 @@ const path = require('node:path');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
-const {
-  mirrorLetsTalkTurnToBubble,
-} = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
-const { splitTelegramChunks } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramCursorBridgeCore'));
-const { processLetsTalkTurn } = require(path.join(EXT_DIR, 'out', 'bridge', 'letsTalkRoutes'));
-const { createMockCursorBridgeAgentSession } = require(path.join(EXT_DIR, 'out', 'bridge', 'cursorBridgeAgentSession'));
+// BL-1658: paths only - bridgeServer.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer')),
+      ...require(path.join(EXT_DIR, 'out', 'tools', 'telegramCursorBridgeCore')),
+      ...require(path.join(EXT_DIR, 'out', 'bridge', 'letsTalkRoutes')),
+      ...require(path.join(EXT_DIR, 'out', 'bridge', 'cursorBridgeAgentSession')),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE = 'Bubble talk mirror chunks long replies and fails loudly';
 const BUBBLE_TOPIC_ID = 91;
@@ -74,7 +84,7 @@ function mirrorDeps(ctx) {
   return {
     splitChunks: (text) => {
       ctx.splitCalls.push(text);
-      return splitTelegramChunks(text);
+      return lib().splitTelegramChunks(text);
     },
     sendMessage: ctx.sendMessageImpl || (async (_t, _c, text, _r, _p, topicId) => {
       ctx.sent.push({ text, topicId });
@@ -92,7 +102,7 @@ async function runMirror(ctx, transcript, replyText) {
   ctx.lastTranscript = transcript;
   ctx.lastReply = replyText;
   await withTelegramEnv(async () => {
-    await mirrorLetsTalkTurnToBubble(ctx.root, transcript, replyText, mirrorDeps(ctx));
+    await lib().mirrorLetsTalkTurnToBubble(ctx.root, transcript, replyText, mirrorDeps(ctx));
   });
 }
 
@@ -125,7 +135,7 @@ function registerSteps(registry) {
   });
 
   scoped(registry, /^the bridge mirrors successful Let's Talk turns into that topic$/, () => {
-    if (typeof mirrorLetsTalkTurnToBubble !== 'function') {
+    if (typeof lib().mirrorLetsTalkTurnToBubble !== 'function') {
       throw new Error('expected mirrorLetsTalkTurnToBubble from compiled bridgeServer');
     }
   });
@@ -222,15 +232,15 @@ function registerSteps(registry) {
 
   scoped(registry, /^the human's Let's Talk turn otherwise succeeded$/, async (ctx) => {
     ensureCtx(ctx);
-    const session = createMockCursorBridgeAgentSession(ctx.root);
+    const session = lib().createMockCursorBridgeAgentSession(ctx.root);
     session.promptAgent = async () => ({ replyText: 'spoken answer', agentId: 'agent-1' });
-    ctx.turnResult = await processLetsTalkTurn(
+    ctx.turnResult = await lib().processLetsTalkTurn(
       { text: 'question' },
       {
         agentSession: session,
         clientTts: true,
         onTurnSuccess: async (turn) => {
-          await mirrorLetsTalkTurnToBubble(ctx.root, turn.transcript, turn.replyText, mirrorDeps(ctx));
+          await lib().mirrorLetsTalkTurnToBubble(ctx.root, turn.transcript, turn.replyText, mirrorDeps(ctx));
         },
       }
     );

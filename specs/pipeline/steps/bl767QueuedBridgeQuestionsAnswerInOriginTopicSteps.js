@@ -19,12 +19,20 @@ const path = require('node:path');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out');
 
-const { createMockCursorBridgeAgentSession } = require(path.join(EXT_OUT, 'bridge', 'cursorBridgeAgentSession'));
-const {
-  runCursorBridgePollOnce,
-  writeJsonFile,
-  loadJsonFile,
-} = require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeLive'));
+// BL-1658: paths only - telegramCursorBridgeLive.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require(path.join(EXT_OUT, 'bridge', 'cursorBridgeAgentSession')),
+      ...require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeLive')),
+    };
+  }
+  return _lib;
+}
 const telegramClient = require(path.join(EXT_OUT, 'notify', 'telegramClient'));
 
 const FEATURE_NAME = 'Queued bridge questions answer in the topic they were asked in';
@@ -71,8 +79,8 @@ function baseDeps(ctx) {
 }
 
 async function runCycle(ctx, overrides) {
-  const state = loadJsonFile(ctx.statePath);
-  const next = await runCursorBridgePollOnce(
+  const state = lib().loadJsonFile(ctx.statePath);
+  const next = await lib().runCursorBridgePollOnce(
     { ...baseDeps(ctx), post: async (_t, _c, topicId, text) => ctx.posts.push({ topicId, text }), ...overrides },
     state,
     overrides.busy ?? false,
@@ -123,10 +131,10 @@ function registerSteps(registry) {
     (ctx) => {
       ctx.opDir = tmpOpDir();
       ctx.statePath = path.join(ctx.opDir, 'cursor-bridge-state.json');
-      ctx.session = createMockCursorBridgeAgentSession(path.dirname(path.dirname(ctx.opDir)));
+      ctx.session = lib().createMockCursorBridgeAgentSession(path.dirname(path.dirname(ctx.opDir)));
       ctx.posts = [];
       ctx.busy = false;
-      writeJsonFile(ctx.statePath, {
+      lib().writeJsonFile(ctx.statePath, {
         updateOffset: 0,
         cursorTopicId: CURSOR_TOPIC_ID,
         bubbleTopicId: BUBBLE_TOPIC_ID,
@@ -173,8 +181,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a queued question was recorded without an origin topic$/,
     (ctx) => {
-      const state = loadJsonFile(ctx.statePath);
-      writeJsonFile(ctx.statePath, {
+      const state = lib().loadJsonFile(ctx.statePath);
+      lib().writeJsonFile(ctx.statePath, {
         ...state,
         // Deliberately no originTopicId - the exact shape of a state file
         // written before this ticket.
@@ -230,7 +238,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the busy cue in the Bubble topic reports (\d+) waiting$/,
     (ctx, countText) => {
-      const state = loadJsonFile(ctx.statePath);
+      const state = lib().loadJsonFile(ctx.statePath);
       const cue = state.queuedWorkLivenessStatus?.[String(BUBBLE_TOPIC_ID)];
       assert.ok(cue, `expected a queued-work cue recorded for the Bubble topic; state=${JSON.stringify(state)}`);
       assert.match(

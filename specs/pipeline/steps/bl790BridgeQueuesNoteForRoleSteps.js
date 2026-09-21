@@ -10,12 +10,21 @@ const { execFileSync } = require('node:child_process');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
-const { createMockCursorBridgeAgentSession } = require(path.join(EXT_DIR, 'out', 'bridge', 'cursorBridgeAgentSession'));
-const {
-  AGENT_NOTE_USER_MESSAGE_MAX_LEN,
-  isOperatorAttributedAgentNote,
-} = require(path.join(EXT_DIR, 'out', 'bridge', 'agentNotesCore'));
+// BL-1658: paths only - bridgeServer.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer')),
+      ...require(path.join(EXT_DIR, 'out', 'bridge', 'cursorBridgeAgentSession')),
+      ...require(path.join(EXT_DIR, 'out', 'bridge', 'agentNotesCore')),
+    };
+  }
+  return _lib;
+}
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'The bridge queues a short note into a chosen role\'s mailbox';
@@ -59,7 +68,7 @@ function seedGitRepo(targetPath) {
 }
 
 function bridgeOptions(targetPath) {
-  return { letsTalk: { agentSession: createMockCursorBridgeAgentSession(targetPath) } };
+  return { letsTalk: { agentSession: lib().createMockCursorBridgeAgentSession(targetPath) } };
 }
 
 function inboxNewDir(targetPath) {
@@ -97,7 +106,7 @@ function countTmpAgentNoteDrafts(targetPath) {
 function resolveExampleMessage(label) {
   switch (label) {
     case 'a message longer than the stated limit':
-      return 'x'.repeat(AGENT_NOTE_USER_MESSAGE_MAX_LEN + 1);
+      return 'x'.repeat(lib().AGENT_NOTE_USER_MESSAGE_MAX_LEN + 1);
     case 'a message containing a line break':
       return 'hello\nworld';
     case 'an empty message':
@@ -137,7 +146,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^the caller sends a short note to a declared role$/, async (ctx) => {
-    ctx.bridge = await startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, bridgeOptions(ctx.targetPath));
+    ctx.bridge = await lib().startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, bridgeOptions(ctx.targetPath));
     ctx.response = await postAgentNote(ctx.bridge.port, ctx.authHeaders, {
       role: ctx.declaredRole,
       message: SHORT_NOTE,
@@ -147,7 +156,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^the caller sends (.*) to a declared role$/, async (ctx, messageLabel) => {
-    ctx.bridge = await startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, bridgeOptions(ctx.targetPath));
+    ctx.bridge = await lib().startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, bridgeOptions(ctx.targetPath));
     ctx.sentMessage = resolveExampleMessage(messageLabel);
     ctx.response = await postAgentNote(ctx.bridge.port, ctx.authHeaders, {
       role: ctx.declaredRole,
@@ -158,7 +167,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^the caller sends a short note to a role the swarm does not declare$/, async (ctx) => {
-    ctx.bridge = await startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, bridgeOptions(ctx.targetPath));
+    ctx.bridge = await lib().startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, bridgeOptions(ctx.targetPath));
     ctx.response = await postAgentNote(ctx.bridge.port, ctx.authHeaders, {
       role: 'ghost-role',
       message: SHORT_NOTE,
@@ -191,7 +200,7 @@ function registerSteps(registry) {
     const parcels = listNoteParcels(ctx.targetPath);
     const latest = parcels[parcels.length - 1];
     const messageLine = latest.split('\n').find((line) => line.startsWith('message: '));
-    if (!messageLine || !isOperatorAttributedAgentNote(messageLine.slice('message: '.length))) {
+    if (!messageLine || !lib().isOperatorAttributedAgentNote(messageLine.slice('message: '.length))) {
       throw new Error(`expected Bubble attribution prefix on queued message:\n${latest}`);
     }
   });

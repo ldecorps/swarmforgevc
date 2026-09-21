@@ -20,11 +20,23 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { mkProcessTmpDir } = require('../../../extension/test/helpers/tmpDir');
-const { runPollCycle } = require('../../../extension/out/tools/telegramFrontDeskBotCore');
-const { appendCursorBridgeInboundUpdate, drainCursorBridgeInboundUpdates } = require('../../../extension/out/tools/cursorBridgeInboundQueue');
-const { runCursorBridgePollOnce } = require('../../../extension/out/tools/telegramCursorBridgeLive');
-const { runLocalSeatTurn } = require('../../../extension/out/tools/localQwenSeatLive');
-const { createMockCursorBridgeAgentSession } = require('../../../extension/out/bridge/cursorBridgeAgentSession');
+// BL-1658: paths only - telegramCursorBridgeLive.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require('../../../extension/out/tools/telegramFrontDeskBotCore'),
+      ...require('../../../extension/out/tools/cursorBridgeInboundQueue'),
+      ...require('../../../extension/out/tools/telegramCursorBridgeLive'),
+      ...require('../../../extension/out/tools/localQwenSeatLive'),
+      ...require('../../../extension/out/bridge/cursorBridgeAgentSession'),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE = "BL-1384 The local seat's topic reaches the bridge through the front desk";
 
@@ -70,7 +82,7 @@ function mkUpdate(topicId, text, updateId) {
 }
 
 async function routeThroughFrontDesk(state, update) {
-  await runPollCycle(
+  await lib().runPollCycle(
     { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE },
     PRINCIPAL_ID,
     {
@@ -85,7 +97,7 @@ async function routeThroughFrontDesk(state, update) {
       qwenLocalSeatTopicId: async () => state.qwenLocalSeatTopicId,
       forwardCursorBridgeUpdate: async (u) => {
         state.forwarded.push(u);
-        appendCursorBridgeInboundUpdate(state.opDir, u);
+        lib().appendCursorBridgeInboundUpdate(state.opDir, u);
         return true;
       },
     },
@@ -118,7 +130,7 @@ function registerSteps(registry) {
   scoped(/^a message "([^"]*)" in topic (\d+) is waiting in the bridge inbound queue$/, (ctx, text, topicId) => {
     const state = ensureCtx(ctx);
     state.updateId += 1;
-    appendCursorBridgeInboundUpdate(state.opDir, mkUpdate(Number(topicId), text, state.updateId));
+    lib().appendCursorBridgeInboundUpdate(state.opDir, mkUpdate(Number(topicId), text, state.updateId));
   });
 
   scoped(/^the local endpoint answers "([^"]*)"$/, (ctx, reply) => {
@@ -127,14 +139,14 @@ function registerSteps(registry) {
 
   scoped(/^the update is appended to the bridge inbound queue$/, (ctx) => {
     const state = ensureCtx(ctx);
-    const drained = drainCursorBridgeInboundUpdates(state.opDir);
+    const drained = lib().drainCursorBridgeInboundUpdates(state.opDir);
     assert.equal(drained.length, 1, `expected exactly one queued update: ${JSON.stringify(drained)}`);
     assert.equal(drained[0].update_id, state.updateId);
   });
 
   scoped(/^the update is not appended to the bridge inbound queue$/, (ctx) => {
     const state = ensureCtx(ctx);
-    const drained = drainCursorBridgeInboundUpdates(state.opDir);
+    const drained = lib().drainCursorBridgeInboundUpdates(state.opDir);
     assert.deepEqual(drained, [], `no update should have been queued: ${JSON.stringify(drained)}`);
   });
 
@@ -153,7 +165,7 @@ function registerSteps(registry) {
     const statePath = path.join(state.opDir, 'cursor-bridge-state.json');
     const topicMapPath = path.join(state.opDir, 'cursor-bridge-topic-map.json');
     state.posts = [];
-    await runCursorBridgePollOnce(
+    await lib().runCursorBridgePollOnce(
       {
         repoRoot: state.root,
         botToken: 'fixture-token',
@@ -162,14 +174,14 @@ function registerSteps(registry) {
         opDir: state.opDir,
         statePath,
         topicMapPath,
-        agentSession: createMockCursorBridgeAgentSession(state.root),
+        agentSession: lib().createMockCursorBridgeAgentSession(state.root),
         useInboundQueue: true,
         qwenLocalTopicId: state.qwenLocalSeatTopicId,
         // Wraps the REAL runLocalSeatTurn (BL-1235's own decision/turn logic)
         // with only the local model's HTTP call faked - proves the seam
         // between the forwarded update and the seat actually answering.
         runLocalSeatTurnFn: (input) =>
-          runLocalSeatTurn({
+          lib().runLocalSeatTurn({
             ...input,
             readEndpoint: async () => ({
               probe: { endpointStatus: 'healthy', endpointUrl: 'http://fixture.invalid' },

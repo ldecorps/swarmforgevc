@@ -10,7 +10,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { afterEach } = require('node:test');
-const { JSDOM } = require(path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom'));
+// BL-1658: the path only - the actual require(JSDOM_MODULE) happens inside
+// each function that builds a DOM (bl1046/bl1160/bl1153's own pattern), so
+// a mere require() of this file never pays for loading jsdom.
+const JSDOM_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom');
 
 const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
 const { DOCS_TREE_SCHEMA_VERSION, NO_EPIC_KEY, computeDocsTree } = require('../../../extension/out/docs/docsTree');
@@ -88,6 +91,7 @@ function extractInlineScript(html) {
 }
 
 async function renderSpecTreeScreen(ctx) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const port = ctx.bridgeHandle.port;
   const res = await fetch(`http://127.0.0.1:${port}/spec-tree`);
   assert.equal(res.status, 200);
@@ -183,6 +187,7 @@ function fakePwaDocsTree() {
 }
 
 function renderPwa(docsTree) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const html = fs.readFileSync(path.join(PWA_DIR, 'index.html'), 'utf8');
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.github.io/dashboard/', pretendToBeVisual: true });
   dom.window.fetch = (url) => {

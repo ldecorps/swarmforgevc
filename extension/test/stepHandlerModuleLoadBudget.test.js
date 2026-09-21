@@ -50,36 +50,24 @@ function confirmAloneMs(file) {
 
 // BL-1630 out-of-scope allowlist (2026-09-20 ruling: each entry names a
 // reason AND the owning ticket - a reason with no ticket id is no longer
-// an accepted entry). NOT one of this ticket's twelve named handlers -
-// discovered only because fixing bl1153/bl1412 (this parcel) unmasked
-// it: multiple OTHER handlers (bl592SpecTreeOnLiveConsoleWithEpicTierSteps.js
-// itself, and - once bl592 is fixed - bl609ResidentSpyFontSizeControlSteps.js,
-// bl674EpicDrilldownUiSteps.js, bl686EpicDrilldownSlugMatchSteps.js,
-// bl687EpicReorderIncludesActiveChildrenSteps.js,
-// bl775BubbleLiveScreenShellSteps.js and bl929LiveScreenPackLayoutSteps.js)
-// ALSO require jsdom eagerly at module scope; a sequential require census
-// only ever charges the ALPHABETICALLY FIRST one still doing this (require
-// caches jsdom for everyone after it), so fixing bl592 alone would simply
-// shift this same budget failure to bl609 next, not clear it - BL-1658 is
-// the owning ticket for the full seven-handler sweep. Remove bl592's entry
-// only when BL-1658 lands (fixing one at a time forever re-arms this guard
-// on the next name).
+// an accepted entry).
 //
-// bl1050CursorRunFailureLogSteps.js is NOT allowlisted (2026-09-20
-// ruling: "timing variance" is not an accepted reason) - it was a
-// sequential-census artifact (fork contention inflating its reading past
-// 200ms in the full unit-lane run; a genuinely heavy, BL-968-compliant
-// production-code require, 137-180ms when confirmed alone). The
-// confirmAlone re-measurement below (BL-1633's confirm-a-pole-alone rule)
-// clears it without an allowlist entry - see
-// "every allowlist entry still exists" below for what would happen if it
-// stopped clearing.
-const ALLOWLIST = new Map([
-  [
-    'bl592SpecTreeOnLiveConsoleWithEpicTierSteps.js',
-    { ticket: 'BL-1658', reason: 'pre-existing eager jsdom require at module load - see the comment above' },
-  ],
-]);
+// BL-1658 (landed): bl592SpecTreeOnLiveConsoleWithEpicTierSteps.js and the
+// six handlers a sequential require census unmasked behind it
+// (bl609ResidentSpyFontSizeControlSteps.js, bl674EpicDrilldownUiSteps.js,
+// bl686EpicDrilldownSlugMatchSteps.js,
+// bl687EpicReorderIncludesActiveChildrenSteps.js,
+// bl775BubbleLiveScreenShellSteps.js, bl929LiveScreenPackLayoutSteps.js)
+// now require jsdom inside the function that builds a DOM, the same
+// pattern bl1046/bl1160/bl1153/bl1412 already used - no entry needed.
+//
+// bl1050CursorRunFailureLogSteps.js also now loads its cursor-bridge
+// session graph (cursorBridgeAgentSession.js/cursorBridgeRunLog.js) lazily,
+// inside the function/step that needs it (BL-1658, 2026-09-21 amendment) -
+// it was never allowlisted (2026-09-20 ruling: "timing variance" is not an
+// accepted reason); it no longer needs the confirm-alone re-measurement to
+// clear it either.
+const ALLOWLIST = new Map([]);
 
 const OWNING_TICKET_PATTERN = /^BL-\d+$/;
 
@@ -135,10 +123,16 @@ test('confirm-a-pole-alone (BL-1633) non-vacuity: a handler still over budget wh
 
 test('confirm-a-pole-alone (BL-1633): an allowlisted handler still over budget when confirmed alone is exempted, never re-measured a third time', () => {
   let calls = 0;
-  const rows = [{ file: 'bl592SpecTreeOnLiveConsoleWithEpicTierSteps.js', ms: PER_HANDLER_BUDGET_MS + 500, listedDir: false, spawnedProcess: false, registeredTestRunner: false, error: null }];
+  // A synthetic allowlist, never the real (now empty, BL-1658) module-level
+  // ALLOWLIST - this test proves the exemption MECHANISM, decoupled from
+  // whichever real files are allowlisted at any given time.
+  const syntheticAllowlist = new Map([
+    ['allowlistedHeavySteps.js', { ticket: 'BL-0000', reason: 'synthetic fixture for this test only' }],
+  ]);
+  const rows = [{ file: 'allowlistedHeavySteps.js', ms: PER_HANDLER_BUDGET_MS + 500, listedDir: false, spawnedProcess: false, registeredTestRunner: false, error: null }];
   const violations = checkHandlerBudgets(rows, {
     budgetMs: PER_HANDLER_BUDGET_MS,
-    allowlist: ALLOWLIST,
+    allowlist: syntheticAllowlist,
     confirmAlone: () => {
       calls += 1;
       return PER_HANDLER_BUDGET_MS + 300;

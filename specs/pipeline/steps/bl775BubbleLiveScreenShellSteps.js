@@ -16,7 +16,10 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
-const { JSDOM } = require(path.join(EXT_DIR, 'node_modules', 'jsdom'));
+// BL-1658: the path only - the actual require(JSDOM_MODULE) happens inside
+// each function that builds a DOM (bl1046/bl1160/bl1153's own pattern), so
+// a mere require() of this file never pays for loading jsdom.
+const JSDOM_MODULE = path.join(EXT_DIR, 'node_modules', 'jsdom');
 const { installInProcessTmux } = require(path.join(EXT_DIR, 'test', 'helpers', 'fakeTmux'));
 const {
   captureMonoRouterLiveScreen,
@@ -110,6 +113,7 @@ function flush() {
 // a jsdom window left open keeps the page's real setInterval polls alive
 // and hangs the acceptance runner's own process.
 async function renderBubbleLive(snapshot) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const html = getBubbleLiveUiHtml();
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',

@@ -14,14 +14,20 @@ const path = require('node:path');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out');
 
-const {
-  runCursorBridgePollOnce,
-  writeJsonFile,
-  loadJsonFile,
-  ensureCursorTopic,
-  TOPIC_MAP_FILE_NAME,
-} = require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeLive'));
-const { createMockCursorBridgeAgentSession } = require(path.join(EXT_OUT, 'bridge', 'cursorBridgeAgentSession'));
+// BL-1658: paths only - telegramCursorBridgeLive.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeLive')),
+      ...require(path.join(EXT_OUT, 'bridge', 'cursorBridgeAgentSession')),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE = '/queue reposts the Host queue selection poll';
 const HOST_TOPIC_ID = 777;
@@ -44,8 +50,8 @@ function ensureState(ctx) {
     const root = mkRoot();
     const opDir = path.join(root, '.swarmforge', 'operator');
     const statePath = path.join(opDir, 'cursor-bridge-state.json');
-    const topicMapPath = path.join(opDir, TOPIC_MAP_FILE_NAME);
-    writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: HOST_TOPIC_ID });
+    const topicMapPath = path.join(opDir, lib().TOPIC_MAP_FILE_NAME);
+    lib().writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: HOST_TOPIC_ID });
     ctx.bl894 = {
       root,
       opDir,
@@ -59,7 +65,7 @@ function ensureState(ctx) {
         opDir,
         statePath,
         topicMapPath,
-        agentSession: createMockCursorBridgeAgentSession(root),
+        agentSession: lib().createMockCursorBridgeAgentSession(root),
         telegramPostFn: async () => ({ ok: true, status: 200, json: {} }),
       },
       pendingPrompts: [],
@@ -101,7 +107,7 @@ async function withMockedSendPoll(st, fn) {
 }
 
 function refreshFromDisk(st) {
-  const disk = loadJsonFile(st.statePath);
+  const disk = lib().loadJsonFile(st.statePath);
   st.pendingPrompts = disk.pendingPrompts ?? [];
   st.pendingPromptPoll = disk.pendingPromptPoll;
   st.cursorTopicId = disk.cursorTopicId;
@@ -123,7 +129,7 @@ async function runCycle(ctx, updates) {
   const st = ensureState(ctx);
   const initialState = currentState(st);
   const result = await withMockedSendPoll(st, () =>
-    runCursorBridgePollOnce(
+    lib().runCursorBridgePollOnce(
       {
         ...st.deps,
         post: async (_t, _c, _topic, text) => {
@@ -190,7 +196,7 @@ function registerSteps(registry) {
       itemIds: st.pendingPrompts.map((item) => item.id),
       clearAllOptionIndex: st.pendingPrompts.length,
     };
-    writeJsonFile(st.statePath, { ...currentState(st) });
+    lib().writeJsonFile(st.statePath, { ...currentState(st) });
   }, FEATURE);
 
   // ── When/Given: the human sends /queue from the Host topic ──────────
@@ -311,7 +317,7 @@ function registerSteps(registry) {
     st.cursorTopicId = HOST_TOPIC_ID;
     st.bubbleTopicId = SIDEBAR_TOPIC_ID;
     st.pendingPrompts = [mkItem(st, 'a queued question')];
-    writeJsonFile(st.statePath, currentState(st));
+    lib().writeJsonFile(st.statePath, currentState(st));
   }, FEATURE);
 
   registry.defineScoped(/^the bridge has no topic recorded as its Host topic$/, (ctx) => {
@@ -319,7 +325,7 @@ function registerSteps(registry) {
     st.cursorTopicId = undefined;
     st.bubbleTopicId = SIDEBAR_TOPIC_ID;
     st.pendingPrompts = [mkItem(st, 'a queued question')];
-    writeJsonFile(st.statePath, currentState(st));
+    lib().writeJsonFile(st.statePath, currentState(st));
   }, FEATURE);
 
   registry.defineScoped(/^the human sends "\/queue" from topic "sidebar"$/, async (ctx) => {
@@ -334,7 +340,7 @@ function registerSteps(registry) {
   // already bound (ensureCursorTopic's own early return).
   registry.defineScoped(/^a later auto-present posts a selection poll$/, async (ctx) => {
     const st = ensureState(ctx);
-    const bound = await ensureCursorTopic(
+    const bound = await lib().ensureCursorTopic(
       st.deps.botToken,
       st.deps.chatId,
       st.topicMapPath,
@@ -342,7 +348,7 @@ function registerSteps(registry) {
       async () => ({ success: true, messageThreadId: HOST_TOPIC_ID })
     );
     st.cursorTopicId = bound.cursorTopicId;
-    writeJsonFile(st.statePath, { ...currentState(st), cursorTopicId: st.cursorTopicId });
+    lib().writeJsonFile(st.statePath, { ...currentState(st), cursorTopicId: st.cursorTopicId });
     await runCycle(ctx, []);
   }, FEATURE);
 

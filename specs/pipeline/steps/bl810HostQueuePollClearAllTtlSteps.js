@@ -16,13 +16,23 @@ const path = require('node:path');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out');
 
-const { runCursorBridgePollOnce, writeJsonFile, loadJsonFile } = require(
-  path.join(EXT_OUT, 'tools', 'telegramCursorBridgeLive')
-);
-const { parseCursorBridgeState } = require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeCore'));
-const { createMockCursorBridgeAgentSession } = require(path.join(EXT_OUT, 'bridge', 'cursorBridgeAgentSession'));
-const { pollAndForward } = require(path.join(EXT_OUT, 'tools', 'telegramFrontDeskBotCore'));
-const { appendCursorBridgeInboundUpdate } = require(path.join(EXT_OUT, 'tools', 'cursorBridgeInboundQueue'));
+// BL-1658: paths only - telegramCursorBridgeLive.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeLive')),
+      ...require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeCore')),
+      ...require(path.join(EXT_OUT, 'bridge', 'cursorBridgeAgentSession')),
+      ...require(path.join(EXT_OUT, 'tools', 'telegramFrontDeskBotCore')),
+      ...require(path.join(EXT_OUT, 'tools', 'cursorBridgeInboundQueue')),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE = 'the Host question queue is drained by poll, clear-all, or expiry';
 const HOST_TOPIC_ID = 777;
@@ -44,7 +54,7 @@ function ensureState(ctx) {
     // Baseline on disk carries no queue fields, mirroring mkPollDeps in the
     // unit suite - runCursorBridgePollOnce's diskHasQueue guard then leaves
     // the in-memory state (below) authoritative for every scenario here.
-    writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: HOST_TOPIC_ID });
+    lib().writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: HOST_TOPIC_ID });
     ctx.bl810 = {
       root,
       opDir,
@@ -57,7 +67,7 @@ function ensureState(ctx) {
         opDir,
         statePath,
         topicMapPath: path.join(opDir, 'cursor-bridge-topic-map.json'),
-        agentSession: createMockCursorBridgeAgentSession(root),
+        agentSession: lib().createMockCursorBridgeAgentSession(root),
         telegramPostFn: async () => ({ ok: true, status: 200, json: {} }),
       },
       pendingPrompts: [],
@@ -97,7 +107,7 @@ async function withMockedSendPoll(st, fn) {
 }
 
 function refreshFromDisk(st) {
-  const disk = parseCursorBridgeState(loadJsonFile(st.statePath));
+  const disk = lib().parseCursorBridgeState(lib().loadJsonFile(st.statePath));
   st.pendingPrompts = disk.pendingPrompts ?? [];
   st.pendingPromptPoll = disk.pendingPromptPoll;
 }
@@ -111,7 +121,7 @@ async function runPollCycle(ctx, updates) {
     pendingPromptPoll: st.pendingPromptPoll,
   };
   const result = await withMockedSendPoll(st, () =>
-    runCursorBridgePollOnce(
+    lib().runCursorBridgePollOnce(
       {
         ...st.deps,
         post: async (_t, _c, _topic, text) => {
@@ -160,7 +170,7 @@ function frontDeskAdapters(st, update) {
       throw new Error('postOperatorContext (SUP/Operator route) must never be called for a bridge poll_answer');
     },
     forwardCursorBridgeUpdate: async (u) => {
-      appendCursorBridgeInboundUpdate(st.opDir, u);
+      lib().appendCursorBridgeInboundUpdate(st.opDir, u);
       return true;
     },
     getUpdates: async () => ({ success: true, updates: [update] }),
@@ -388,7 +398,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^the human's vote is delivered by the front desk poll_answer fan-out$/, async (ctx) => {
     const st = ensureState(ctx);
     const update = pollAnswerUpdate(st, 0);
-    const pollResult = await pollAndForward(0, PRINCIPAL_ID, frontDeskAdapters(st, update));
+    const pollResult = await lib().pollAndForward(0, PRINCIPAL_ID, frontDeskAdapters(st, update));
     // Never a delivery FAILURE - the bridge exclusion always forwards a
     // poll_answer (see attemptCursorBridgePollAnswerForward), and front
     // desk's own choice-poll registry legitimately doesn't know this poll id
@@ -400,7 +410,7 @@ function registerSteps(registry) {
       pendingPrompts: st.pendingPrompts,
       pendingPromptPoll: st.pendingPromptPoll,
     };
-    const result = await runCursorBridgePollOnce(
+    const result = await lib().runCursorBridgePollOnce(
       {
         ...st.deps,
         useInboundQueue: true,

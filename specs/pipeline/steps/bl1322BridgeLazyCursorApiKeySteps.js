@@ -18,8 +18,20 @@ const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
-const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
-const { createLiveCursorBridgeAgentSession } = require(path.join(EXT_DIR, 'out', 'bridge', 'cursorBridgeAgentSession'));
+// BL-1658: paths only - bridgeServer.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer')),
+      ...require(path.join(EXT_DIR, 'out', 'bridge', 'cursorBridgeAgentSession')),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE = 'bridge startup does not require CURSOR_API_KEY until a Cursor prompt is actually sent';
 const TOKEN = 'bl1322-lazy-api-key-token';
@@ -59,7 +71,7 @@ afterEach(() => {
 });
 
 async function startRealBridge(ctx) {
-  ctx.bridge = await startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
+  ctx.bridge = await lib().startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
   restoreFns.push(() => ctx.bridge.stop());
 }
 
@@ -118,7 +130,7 @@ function registerSteps(registry) {
   // ── Scenario 03: reading the stored agent id ────────────────────────────
   scoped(/^the stored Cursor agent id is read$/, (ctx) => {
     try {
-      const session = createLiveCursorBridgeAgentSession(ctx.targetPath);
+      const session = lib().createLiveCursorBridgeAgentSession(ctx.targetPath);
       ctx.readAgentIdResult = session.readAgentId();
       ctx.readAgentIdError = null;
     } catch (err) {

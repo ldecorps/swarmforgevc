@@ -26,8 +26,12 @@ const path = require('node:path');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SUPERVISOR = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'cursor_bridge_supervisor.bb');
-const SESSION = require(path.join(REPO_ROOT, 'extension', 'out', 'bridge', 'cursorBridgeAgentSession'));
-const RUN_LOG = require(path.join(REPO_ROOT, 'extension', 'out', 'bridge', 'cursorBridgeRunLog'));
+// BL-1658: the paths only - the actual require() happens inside each
+// function that needs the module (the seven jsdom handlers' own pattern),
+// so a mere require() of this file never pays for cursorBridgeAgentSession's
+// own heavy production graph (@cursor/sdk, telegramCursorBridgeCore, etc.).
+const SESSION_MODULE = path.join(REPO_ROOT, 'extension', 'out', 'bridge', 'cursorBridgeAgentSession');
+const RUN_LOG_MODULE = path.join(REPO_ROOT, 'extension', 'out', 'bridge', 'cursorBridgeRunLog');
 
 const RUN_ID = 'run-bl1050';
 const AT = '2026-08-22T23:00:00.000Z';
@@ -73,6 +77,7 @@ function stubAgent(status, id, reason) {
 // the fixture root. The log's text is read back and kept on ctx, so every Then
 // asserts against what actually landed on disk.
 async function runAgainstRealLog(ctx, { status, reason, prompt = 'ping', progressSink }) {
+  const SESSION = require(SESSION_MODULE);
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bl1050-cursor-bridge-')));
   try {
     const logFile = path.join(root, 'cursor-bridge.log');
@@ -116,6 +121,7 @@ function telegramSink(ctx) {
 }
 
 function failureLines(ctx) {
+  const RUN_LOG = require(RUN_LOG_MODULE);
   return ctx.logText
     .split('\n')
     .filter((line) => line.includes(RUN_LOG.CURSOR_RUN_FAILURE_MARKER));
@@ -124,6 +130,7 @@ function failureLines(ctx) {
 function registerSteps(registry) {
   // ── Background ──────────────────────────────────────────────────────────
   registry.define(/^a Cursor Remote bridge running under its supervisor$/, (ctx) => {
+    const SESSION = require(SESSION_MODULE);
     ctx.bridgeEnv = {};
     ctx.topicMessages = [];
     assert.equal(
@@ -263,6 +270,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^no log line text reaches the Cursor Remote topic$/, (ctx) => {
+    const RUN_LOG = require(RUN_LOG_MODULE);
     assert.ok(!ctx.thrown.message.includes(RUN_LOG.CURSOR_RUN_FAILURE_MARKER));
     for (const line of ctx.topicMessages) {
       assert.ok(!line.includes(RUN_LOG.CURSOR_RUN_FAILURE_MARKER), `a log line reached the topic: ${line}`);

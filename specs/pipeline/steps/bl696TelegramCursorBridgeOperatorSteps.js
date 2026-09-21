@@ -9,10 +9,22 @@ const { after, afterEach } = require('node:test');
 
 const { summarizeSdkProgressLine } = require('../../../extension/out/bridge/cursorBridgeProgress');
 const { endActiveRun } = require('../../../extension/out/bridge/cursorBridgeRunTracker');
-const { createMockCursorBridgeAgentSession } = require('../../../extension/out/bridge/cursorBridgeAgentSession');
-const { decideInboundAction, gateBusy } = require('../../../extension/out/tools/telegramCursorBridgeCore');
-const { handleInboundDecision, postChunks } = require('../../../extension/out/tools/telegramCursorBridgeLive');
 const { isActiveRunInFlight, beginActiveRun } = require('../../../extension/out/bridge/cursorBridgeRunTracker');
+// BL-1658: paths only - telegramCursorBridgeLive.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require('../../../extension/out/bridge/cursorBridgeAgentSession'),
+      ...require('../../../extension/out/tools/telegramCursorBridgeCore'),
+      ...require('../../../extension/out/tools/telegramCursorBridgeLive'),
+    };
+  }
+  return _lib;
+}
 const expediteModule = require('../../../extension/out/tools/telegramCursorBridgeExpedite');
 const redeployModule = require('../../../extension/out/tools/telegramCursorBridgeRedeploy');
 
@@ -65,7 +77,7 @@ function mkCtx(ctx) {
   ctx.root = root;
   ctx.posts = ctx.posts ?? [];
   ctx.replyTargets = ctx.replyTargets ?? [];
-  ctx.session = ctx.session ?? createMockCursorBridgeAgentSession(root);
+  ctx.session = ctx.session ?? lib().createMockCursorBridgeAgentSession(root);
   if (!ctx.releasePrompt) {
     ctx.session.promptAgent = (prompt) =>
       new Promise((resolve) => {
@@ -92,9 +104,9 @@ function mkCtx(ctx) {
 }
 
 async function sendCommand(ctx, text) {
-  const rawDecision = decideInboundAction(inbound(text), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID);
-  ctx.lastDecision = gateBusy(rawDecision, ctx.busy || isActiveRunInFlight());
-  ctx.lastBusy = await handleInboundDecision(ctx.lastDecision, mkCtx(ctx), ctx.replyToMessageId, async () => {});
+  const rawDecision = lib().decideInboundAction(inbound(text), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID);
+  ctx.lastDecision = lib().gateBusy(rawDecision, ctx.busy || isActiveRunInFlight());
+  ctx.lastBusy = await lib().handleInboundDecision(ctx.lastDecision, mkCtx(ctx), ctx.replyToMessageId, async () => {});
 }
 
 const GRID_REPLY = [
@@ -125,7 +137,7 @@ function recordingSendMessage(ctx) {
 
 async function postReply(ctx, markdown) {
   ctx.sent = [];
-  await postChunks('tok', CHAT_ID, CURSOR_TOPIC_ID, markdown, undefined, recordingSendMessage(ctx));
+  await lib().postChunks('tok', CHAT_ID, CURSOR_TOPIC_ID, markdown, undefined, recordingSendMessage(ctx));
 }
 
 function sentText(ctx) {
@@ -285,7 +297,7 @@ function registerSteps(registry) {
     ctx.replyToMessageId = 99;
     ctx.busy = false;
     beginActiveRun('long task');
-    const busy = await handleInboundDecision(
+    const busy = await lib().handleInboundDecision(
       { action: 'prompt', text: 'long task' },
       mkCtx(ctx),
       ctx.replyToMessageId,
@@ -324,7 +336,7 @@ function registerSteps(registry) {
     ctx.posts = [];
     ctx.replyTargets = [];
     ctx.busy = false;
-    await handleInboundDecision(
+    await lib().handleInboundDecision(
       { action: 'prompt', text: 'remember ZETA' },
       mkCtx(ctx),
       ctx.replyToMessageId,
@@ -385,7 +397,7 @@ function registerSteps(registry) {
       media.downloadTelegramPhotoAsSdkImage = originalDownload;
     };
     ctx.posts = [];
-    await handleInboundDecision(
+    await lib().handleInboundDecision(
       { action: 'prompt', text: caption, photoFileIds: ['photo-1'] },
       mkCtx(ctx),
       ctx.replyToMessageId,

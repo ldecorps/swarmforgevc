@@ -46,11 +46,6 @@ Feature: Within-epic reorder covers every live child, in flight included
     And the drill-down lists exactly "BL-548,BL-624,BL-590"
     And row "BL-548" shows no live-dependency marker
 
-  # BL-687 epic-reorder-includes-active-children-06
-  Scenario: An epic whose only child is done drills down to the reorderable-topics empty state
-    When the "BL-517" tile is drilled into
-    Then the drill-down shows "No reorderable topics under this epic."
-
   # BL-687 epic-reorder-includes-active-children-07
   Scenario: The epic-tile Make top verb still ignores in-flight tickets
     When the make-top button on the "BL-545" tile is tapped

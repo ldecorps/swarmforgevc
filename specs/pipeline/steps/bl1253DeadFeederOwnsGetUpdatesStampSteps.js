@@ -41,22 +41,22 @@ const HOTFIX_SOURCES = [
 const FEATURE =
   'Stamp-off review of Cursor hotfix 2ec06b6ef1 - a dead front-desk feeder must not leave the bridge in queue mode';
 
-const {
-  runCursorBridgePollOnce,
-} = require(path.join(OUT, 'tools', 'telegramCursorBridgeLive'));
-const {
-  isFrontDeskInboundFeederLive,
-  shouldUseCursorBridgeInboundQueue,
-} = require(path.join(OUT, 'tools', 'telegramCursorBridgeCore'));
-const {
-  frontDeskPollHeartbeatPath,
-  readFrontDeskPollHeartbeatMs,
-  cursorBridgeInboundQueuePath,
-  appendCursorBridgeInboundUpdate,
-} = require(path.join(OUT, 'tools', 'cursorBridgeInboundQueue'));
-const {
-  createMockCursorBridgeAgentSession,
-} = require(path.join(OUT, 'bridge', 'cursorBridgeAgentSession'));
+// BL-1658: paths only - telegramCursorBridgeLive.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require(path.join(OUT, 'tools', 'telegramCursorBridgeLive')),
+      ...require(path.join(OUT, 'tools', 'telegramCursorBridgeCore')),
+      ...require(path.join(OUT, 'tools', 'cursorBridgeInboundQueue')),
+      ...require(path.join(OUT, 'bridge', 'cursorBridgeAgentSession')),
+    };
+  }
+  return _lib;
+}
 
 const STALE_MS = 3_600_000;
 
@@ -73,16 +73,16 @@ function git(...args) {
  * scenarios below run it through the real poll.
  */
 function resolveUseInboundQueue(opDir) {
-  return shouldUseCursorBridgeInboundQueue(process.env, {
-    feederLive: isFrontDeskInboundFeederLive({
-      lastHeartbeatMs: readFrontDeskPollHeartbeatMs(opDir),
+  return lib().shouldUseCursorBridgeInboundQueue(process.env, {
+    feederLive: lib().isFrontDeskInboundFeederLive({
+      lastHeartbeatMs: lib().readFrontDeskPollHeartbeatMs(opDir),
       nowMs: Date.now(),
     }),
   });
 }
 
 function writeHeartbeat(opDir, state) {
-  const file = frontDeskPollHeartbeatPath(opDir);
+  const file = lib().frontDeskPollHeartbeatPath(opDir);
   if (state === 'absent') {
     fs.rmSync(file, { force: true });
     return;
@@ -112,7 +112,7 @@ function makeFixture(ctx) {
     opDir,
     statePath,
     topicMapPath: path.join(opDir, 'cursor-bridge-topic-map.json'),
-    agentSession: createMockCursorBridgeAgentSession(root),
+    agentSession: lib().createMockCursorBridgeAgentSession(root),
     post: async () => {},
     inboundQueueIdleMs: 1,
     getUpdates: async () => {
@@ -130,12 +130,12 @@ async function poll(ctx) {
   // A queued update the bridge can only consume in queue mode. Its presence
   // afterwards is the observable: queue mode drains the file, getUpdates mode
   // leaves it untouched.
-  appendCursorBridgeInboundUpdate(st.opDir, { update_id: 1000 + st.polls });
+  lib().appendCursorBridgeInboundUpdate(st.opDir, { update_id: 1000 + st.polls });
   const before = st.getUpdatesCalls;
   st.polls += 1;
-  await runCursorBridgePollOnce(st.deps, { updateOffset: 0, cursorTopicId: 55 }, false, 0);
+  await lib().runCursorBridgePollOnce(st.deps, { updateOffset: 0, cursorTopicId: 55 }, false, 0);
   st.lastPolledTelegram = st.getUpdatesCalls > before;
-  st.lastDrainedQueue = !fs.existsSync(cursorBridgeInboundQueuePath(st.opDir));
+  st.lastDrainedQueue = !fs.existsSync(lib().cursorBridgeInboundQueuePath(st.opDir));
 }
 
 function assertOwnedGetUpdates(st) {

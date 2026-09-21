@@ -8,10 +8,22 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
-const { createMockCursorBridgeAgentSession } = require('../../../extension/out/bridge/cursorBridgeAgentSession');
-const { replyTextForSpeechSynthesis } = require('../../../extension/out/bridge/letsTalkCore');
-const { decideInboundAction } = require('../../../extension/out/tools/telegramCursorBridgeCore');
+// BL-1658: paths only - bridgeServer.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require('../../../extension/out/bridge/bridgeServer'),
+      ...require('../../../extension/out/bridge/cursorBridgeAgentSession'),
+      ...require('../../../extension/out/bridge/letsTalkCore'),
+      ...require('../../../extension/out/tools/telegramCursorBridgeCore'),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE = "Let's Talk — discrete audio turns with the Cursor agent on the Console Mini App";
 const TOKEN = 'lets-talk-token';
@@ -38,7 +50,7 @@ function buildLetsTalkMocks(ctx) {
   if (ctx.letsTalkMocks) {
     return ctx.letsTalkMocks;
   }
-  const agentSession = createMockCursorBridgeAgentSession(ctx.root);
+  const agentSession = lib().createMockCursorBridgeAgentSession(ctx.root);
   ctx.letsTalkMocks = {
     agentSession,
     transcribeAudio: async (_bytes, _mimeType) => {
@@ -62,7 +74,7 @@ function buildLetsTalkMocks(ctx) {
 }
 
 async function withBridge(ctx, fn) {
-  const handle = await startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {
+  const handle = await lib().startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {
     letsTalk: buildLetsTalkMocks(ctx),
   });
   try {
@@ -191,7 +203,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^I hear the synthesized reply audio for that transcript$/, (ctx) => {
     assert.ok(ctx.turnResult.replyAudioBase64);
     assert.equal(ctx.ttsCalls >= 1, true);
-    assert.equal(ctx.lastTtsText, replyTextForSpeechSynthesis(ctx.turnResult.replyText));
+    assert.equal(ctx.lastTtsText, lib().replyTextForSpeechSynthesis(ctx.turnResult.replyText));
   }, FEATURE);
 
   registry.defineScoped(/^conversation state returns to "ready"$/, (ctx) => {
@@ -294,7 +306,7 @@ function registerSteps(registry) {
   }, FEATURE);
 
   registry.defineScoped(/^the principal sends a text prompt on the Cursor Remote Telegram topic$/, async (ctx) => {
-    const decision = decideInboundAction(
+    const decision = lib().decideInboundAction(
       { fromId: PRINCIPAL_ID, chatId: CHAT_ID, topicId: CURSOR_TOPIC_ID, text: 'what was the code word' },
       PRINCIPAL_ID,
       CHAT_ID,

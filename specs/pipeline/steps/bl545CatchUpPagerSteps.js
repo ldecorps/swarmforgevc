@@ -9,15 +9,21 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
-const { createMockCursorBridgeAgentSession } = require('../../../extension/out/bridge/cursorBridgeAgentSession');
-const {
-  catchUpReadStatePath,
-  markMessageRead,
-  messageReadKey,
-  readCatchUpReadState,
-  writeCatchUpReadState,
-} = require('../../../extension/out/bridge/catchUpReadState');
+// BL-1658: paths only - bridgeServer.js itself eagerly requires
+// cursorBridgeAgentSession, so a mere require() of this file must not pay
+// for the whole heavy production graph (@cursor/sdk etc.) through that
+// transitive edge. Required once, on first use, and cached.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require('../../../extension/out/bridge/bridgeServer'),
+      ...require('../../../extension/out/bridge/cursorBridgeAgentSession'),
+      ...require('../../../extension/out/bridge/catchUpReadState'),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE = 'Telegram catch-up pager on the SwarmForge console Mini App';
 const TOKEN = 'catch-up-pager-token';
@@ -47,9 +53,9 @@ function seedUnreadMessages(root) {
 }
 
 async function withBridge(ctx, fn) {
-  const handle = await startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {
+  const handle = await lib().startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {
     nowMs: NOW,
-    letsTalk: { agentSession: createMockCursorBridgeAgentSession(ctx.root) },
+    letsTalk: { agentSession: lib().createMockCursorBridgeAgentSession(ctx.root) },
   });
   try {
     return await fn(handle);
@@ -113,7 +119,7 @@ function registerSteps(registry) {
 
   scoped(/^every outbound topic message is already marked read$/, (ctx) => {
     seedUnreadMessages(ctx.root);
-    writeCatchUpReadState(ctx.root, {
+    lib().writeCatchUpReadState(ctx.root, {
       readKeys: ['BL-501:0', 'BL-501:1', 'BL-502:0'],
     });
   });
@@ -162,7 +168,7 @@ function registerSteps(registry) {
 
   scoped(/^I tap "Mark as read"$/, async (ctx) => {
     const item = currentItem(ctx);
-    ctx.markedKey = messageReadKey(item.topicId, item.seq);
+    ctx.markedKey = lib().messageReadKey(item.topicId, item.seq);
     await withBridge(ctx, async (handle) => {
       const res = await fetch(`http://127.0.0.1:${handle.port}/catch-up/mark-read`, {
         method: 'POST',
@@ -176,7 +182,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^that message is recorded as read on the host$/, (ctx) => {
-    const state = readCatchUpReadState(ctx.root);
+    const state = lib().readCatchUpReadState(ctx.root);
     assert.ok(state.readKeys.includes(ctx.markedKey));
   });
 
@@ -194,8 +200,8 @@ function registerSteps(registry) {
 
   scoped(/^that message is not recorded as read on the host$/, (ctx) => {
     const item = ctx.queue[ctx.viewIndex + 1];
-    const key = messageReadKey(item.topicId, item.seq);
-    const state = readCatchUpReadState(ctx.root);
+    const key = lib().messageReadKey(item.topicId, item.seq);
+    const state = lib().readCatchUpReadState(ctx.root);
     assert.equal(state.readKeys.includes(key), false);
   });
 
@@ -204,7 +210,7 @@ function registerSteps(registry) {
       await fetchCatchUp(ctx);
     }
     const item = currentItem(ctx);
-    markMessageRead(ctx.root, item.topicId, item.seq);
+    lib().markMessageRead(ctx.root, item.topicId, item.seq);
     ctx.viewIndex -= 1;
     await fetchCatchUp(ctx);
   });

@@ -22,7 +22,10 @@ const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 // ancestry (specs/pipeline/steps/ sits outside extension/) - same reason
 // installInProcessTmux/the compiled bridge modules below are all required
 // by explicit EXT_DIR path rather than bare specifier.
-const { JSDOM } = require(path.join(EXT_DIR, 'node_modules', 'jsdom'));
+// BL-1658: the path only - the actual require(JSDOM_MODULE) happens inside
+// each function that builds a DOM (bl1046/bl1160/bl1153's own pattern), so
+// a mere require() of this file never pays for loading jsdom.
+const JSDOM_MODULE = path.join(EXT_DIR, 'node_modules', 'jsdom');
 const { installInProcessTmux } = require(path.join(EXT_DIR, 'test', 'helpers', 'fakeTmux'));
 const {
   captureMonoRouterLiveScreen,
@@ -114,6 +117,7 @@ function flush() {
 // documents as clearing its own timers) before returning - callers never
 // hold a live dom/window past this call.
 async function renderLiveScreen(snapshot) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const html = getResidentSpyUiHtml();
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',
@@ -139,6 +143,7 @@ async function renderLiveScreen(snapshot) {
 // synchronously, and requestBrowserFullscreen is fully guarded for jsdom's
 // missing requestFullscreen.
 async function renderLiveScreenExpanded(snapshot, paneId) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const html = getResidentSpyUiHtml();
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',

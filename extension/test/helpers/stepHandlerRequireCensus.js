@@ -76,6 +76,11 @@ for (const file of targets) {
   let listedDir = false;
   let spawnedProcess = false;
   let requiredNodeTest = false;
+  // BL-1658: every require() REQUEST STRING this handler's own load makes,
+  // transitively - a handler that requires jsdom (or the cursor-bridge
+  // session module) lazily inside a function never triggers this at
+  // module-load census time, since that function is never called here.
+  const requestedModules = [];
   fs.readdirSync = function (...args) { listedDir = true; return orig.readdirSync.apply(fs, args); };
   cp.spawnSync = function (...args) { spawnedProcess = true; return orig.spawnSync.apply(cp, args); };
   cp.spawn = function (...args) { spawnedProcess = true; return orig.spawn.apply(cp, args); };
@@ -89,6 +94,7 @@ for (const file of targets) {
   // this handler's own require graph.
   NodeModule._load = function (request, ...rest) {
     if (request === 'node:test' || request === 'test') requiredNodeTest = true;
+    requestedModules.push(request);
     return orig.moduleLoad.call(this, request, ...rest);
   };
   const t0 = process.hrtime.bigint();
@@ -105,7 +111,7 @@ for (const file of targets) {
   cp.execFileSync = orig.execFileSync;
   cp.execSync = orig.execSync;
   NodeModule._load = orig.moduleLoad;
-  rows.push({ file: path.basename(file), ms, listedDir, spawnedProcess, registeredTestRunner: requiredNodeTest, error });
+  rows.push({ file: path.basename(file), ms, listedDir, spawnedProcess, registeredTestRunner: requiredNodeTest, requestedModules, error });
 }
 process.stdout.write('===CENSUS_JSON_START===' + JSON.stringify(rows) + '===CENSUS_JSON_END===');
 `;

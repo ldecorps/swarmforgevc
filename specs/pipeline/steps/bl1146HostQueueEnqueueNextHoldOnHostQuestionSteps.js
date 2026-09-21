@@ -8,19 +8,24 @@ const path = require('node:path');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out');
 
-const {
-  runCursorBridgePollOnce,
-  writeJsonFile,
-  loadJsonFile,
-  applyIdleQueueTransition,
-} = require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeLive'));
-const {
-  parseCursorBridgeState,
-  decideIdleQueueTransition,
-  clearEnqueueNextIfStale,
-  hostReplyTextIsQuestion,
-} = require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeCore'));
-const { createMockCursorBridgeAgentSession } = require(path.join(EXT_OUT, 'bridge', 'cursorBridgeAgentSession'));
+// BL-1658: paths only - telegramCursorBridgeLive.js itself eagerly requires
+// cursorBridgeAgentSession (its own production `withPromptProgress` use),
+// so this file must lazy-load ALL THREE, not just its own direct
+// createMockCursorBridgeAgentSession call, or a mere require() of this
+// file still pays for the whole heavy production graph (@cursor/sdk etc.)
+// through that one transitive edge. Required once, on first use, and
+// cached - the same shape the seven jsdom handlers and bl1050 already use.
+let _lib = null;
+function lib() {
+  if (!_lib) {
+    _lib = {
+      ...require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeLive')),
+      ...require(path.join(EXT_OUT, 'tools', 'telegramCursorBridgeCore')),
+      ...require(path.join(EXT_OUT, 'bridge', 'cursorBridgeAgentSession')),
+    };
+  }
+  return _lib;
+}
 
 const FEATURE = 'Host queue enqueue-next pin with hold on host question';
 const HOST_TOPIC_ID = 777;
@@ -38,7 +43,7 @@ function ensureState(ctx) {
     const root = mkRoot();
     const opDir = path.join(root, '.swarmforge', 'operator');
     const statePath = path.join(opDir, 'cursor-bridge-state.json');
-    writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: HOST_TOPIC_ID });
+    lib().writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: HOST_TOPIC_ID });
     ctx.bl1146 = {
       root,
       opDir,
@@ -51,7 +56,7 @@ function ensureState(ctx) {
         opDir,
         statePath,
         topicMapPath: path.join(opDir, 'cursor-bridge-topic-map.json'),
-        agentSession: createMockCursorBridgeAgentSession(root),
+        agentSession: lib().createMockCursorBridgeAgentSession(root),
         telegramPostFn: async () => ({ ok: true, status: 200, json: {} }),
       },
       pendingPrompts: [],
@@ -95,7 +100,7 @@ async function withMockedSendPoll(st, fn) {
 }
 
 function refreshFromDisk(st) {
-  const disk = parseCursorBridgeState(loadJsonFile(st.statePath));
+  const disk = lib().parseCursorBridgeState(lib().loadJsonFile(st.statePath));
   st.pendingPrompts = disk.pendingPrompts ?? [];
   st.pendingPromptPoll = disk.pendingPromptPoll;
   st.enqueueNextPromptId = disk.enqueueNextPromptId;
@@ -111,7 +116,7 @@ async function runPollCycle(ctx, updates) {
     enqueueNextPromptId: st.enqueueNextPromptId,
   };
   const result = await withMockedSendPoll(st, () =>
-    runCursorBridgePollOnce(
+    lib().runCursorBridgePollOnce(
       {
         ...st.deps,
         post: async (_t, _c, _topic, text) => {
@@ -141,8 +146,8 @@ function pollAnswerUpdate(st, optionIndex) {
 }
 
 function makeHandlerCtx(st) {
-  const holder = { state: parseCursorBridgeState(loadJsonFile(st.statePath)) };
-  const persistState = () => writeJsonFile(st.statePath, holder.state);
+  const holder = { state: lib().parseCursorBridgeState(lib().loadJsonFile(st.statePath)) };
+  const persistState = () => lib().writeJsonFile(st.statePath, holder.state);
   return {
     holder,
     handlerCtx: {
@@ -177,8 +182,8 @@ function registerSteps(registry) {
     }
     st.q1 = st.pendingPrompts[0];
     st.q2 = st.pendingPrompts[1];
-    writeJsonFile(st.statePath, {
-      ...parseCursorBridgeState(loadJsonFile(st.statePath)),
+    lib().writeJsonFile(st.statePath, {
+      ...lib().parseCursorBridgeState(lib().loadJsonFile(st.statePath)),
       pendingPrompts: st.pendingPrompts,
       pendingPromptPoll: undefined,
     });
@@ -197,8 +202,8 @@ function registerSteps(registry) {
       clearAllOptionIndex: st.pendingPrompts.length,
       mode: 'enqueue-next',
     };
-    writeJsonFile(st.statePath, {
-      ...parseCursorBridgeState(loadJsonFile(st.statePath)),
+    lib().writeJsonFile(st.statePath, {
+      ...lib().parseCursorBridgeState(lib().loadJsonFile(st.statePath)),
       pendingPrompts: st.pendingPrompts,
       pendingPromptPoll: st.pendingPromptPoll,
     });
@@ -234,8 +239,8 @@ function registerSteps(registry) {
   scoped(/^enqueueNextPromptId points at question 1$/, (ctx) => {
     const st = ensureState(ctx);
     st.enqueueNextPromptId = st.q1.id;
-    writeJsonFile(st.statePath, {
-      ...parseCursorBridgeState(loadJsonFile(st.statePath)),
+    lib().writeJsonFile(st.statePath, {
+      ...lib().parseCursorBridgeState(lib().loadJsonFile(st.statePath)),
       pendingPrompts: st.pendingPrompts,
       enqueueNextPromptId: st.enqueueNextPromptId,
     });
@@ -244,9 +249,9 @@ function registerSteps(registry) {
   scoped(/^enqueueNextPromptId is unset$/, (ctx) => {
     const st = ensureState(ctx);
     st.enqueueNextPromptId = undefined;
-    const disk = parseCursorBridgeState(loadJsonFile(st.statePath));
+    const disk = lib().parseCursorBridgeState(lib().loadJsonFile(st.statePath));
     delete disk.enqueueNextPromptId;
-    writeJsonFile(st.statePath, { ...disk, pendingPrompts: st.pendingPrompts });
+    lib().writeJsonFile(st.statePath, { ...disk, pendingPrompts: st.pendingPrompts });
   });
 
   scoped(/^the bridge becomes idle$/, (ctx) => {
@@ -267,15 +272,15 @@ function registerSteps(registry) {
     const pinAutoStart =
       st.enqueueNextPromptId &&
       st.hostFinishingReply &&
-      !hostReplyTextIsQuestion(st.hostFinishingReply);
+      !lib().hostReplyTextIsQuestion(st.hostFinishingReply);
     const { holder, handlerCtx } = makeHandlerCtx(st);
     holder.state.pendingPrompts = st.pendingPrompts;
     holder.state.enqueueNextPromptId = st.enqueueNextPromptId;
     holder.state.pendingPromptPoll = undefined;
     holder.busy = st.busy;
-    writeJsonFile(st.statePath, holder.state);
+    lib().writeJsonFile(st.statePath, holder.state);
     if (pinAutoStart) {
-      const transition = decideIdleQueueTransition({
+      const transition = lib().decideIdleQueueTransition({
         pendingPrompts: holder.state.pendingPrompts ?? [],
         enqueueNextPromptId: holder.state.enqueueNextPromptId,
         hostFinishingReplyIsQuestion: false,
@@ -287,15 +292,15 @@ function registerSteps(registry) {
         pendingPrompts: (holder.state.pendingPrompts ?? []).filter((p) => p.id !== transition.itemId),
       };
       holder.busy = true;
-      writeJsonFile(st.statePath, holder.state);
+      lib().writeJsonFile(st.statePath, holder.state);
       st.busy = holder.busy;
       st.pollsDuringTransition = [];
     } else {
       await withMockedSendPoll(st, async () => {
-        await applyIdleQueueTransition(st.deps, holder, st.hostFinishingReply, handlerCtx);
+        await lib().applyIdleQueueTransition(st.deps, holder, st.hostFinishingReply, handlerCtx);
       });
       st.pollsDuringTransition = st.sentPolls.slice(pollsBefore);
-      writeJsonFile(st.statePath, holder.state);
+      lib().writeJsonFile(st.statePath, holder.state);
       st.busy = holder.busy;
     }
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
@@ -355,8 +360,8 @@ function registerSteps(registry) {
       clearAllOptionIndex: st.pendingPrompts.length,
       mode: 'choose-next',
     };
-    writeJsonFile(st.statePath, {
-      ...parseCursorBridgeState(loadJsonFile(st.statePath)),
+    lib().writeJsonFile(st.statePath, {
+      ...lib().parseCursorBridgeState(lib().loadJsonFile(st.statePath)),
       pendingPrompts: st.pendingPrompts,
       pendingPromptPoll: st.pendingPromptPoll,
       enqueueNextPromptId: st.enqueueNextPromptId,
@@ -373,7 +378,7 @@ function registerSteps(registry) {
     st.enqueueNextPromptId = 'stale-id';
     st.pendingPrompts = [mkItem(st, 'remaining question')];
     st.pendingPromptPoll = undefined;
-    writeJsonFile(st.statePath, {
+    lib().writeJsonFile(st.statePath, {
       updateOffset: 0,
       cursorTopicId: HOST_TOPIC_ID,
       pendingPrompts: st.pendingPrompts,
@@ -400,14 +405,14 @@ function registerSteps(registry) {
       { id: 'b', text: 'b', createdAtMs: 2 },
     ];
     assert.deepEqual(
-      decideIdleQueueTransition({
+      lib().decideIdleQueueTransition({
         pendingPrompts: pending,
         enqueueNextPromptId: 'a',
         hostFinishingReplyIsQuestion: true,
       }),
       { kind: 'hold-pin' }
     );
-    const cleared = clearEnqueueNextIfStale({
+    const cleared = lib().clearEnqueueNextIfStale({
       updateOffset: 0,
       enqueueNextPromptId: 'missing',
       pendingPrompts: pending,
