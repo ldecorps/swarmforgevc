@@ -1,0 +1,220 @@
+id: BL-1671
+title: "check_merge_deletion.sh diffs the WORKING TREE against each parent (git diff --name-status -M HEAD, no --cached) while its own header says it reads the index-held merge result, so a tracked non-YAML path deleted on disk but never staged reads as a deletion the merge makes: on 2026-09-21 the daemon's master-main reconcile was refused twice on the shared checkout (08:43Z a specifier's unstaged rm; 08:47Z swarmforge/runtime/handoff-draft.txt, a TRACKED draft that swarm_handoff.bb deletes after every master-resident send), tripped the main-sync deadlock latch, suppressed wakes and dropped-parcel nudges and paged the human - the guard judges the index, and an unstaged deletion is neither a finding nor touched by the merge"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in delivery machinery - a diverged main cannot join
+# while any seat leaves an unstaged deletion of a tracked non-YAML path on
+# the shared checkout, and one such deletion is made by every note or
+# git_handoff a master-resident seat sends (swarm_handoff.bb deletes the
+# tracked draft after queueing); while the latch it trips is active, wakes
+# and dropped-parcel nudges are suppressed and the human is paged. Not
+# critical: `git checkout -- <path>` restores the tree and the daemon
+# rejoins on its next tick (it did at 08:52:54Z).
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+# BL-1242 (the guard), BL-1341 (its second direction), BL-1662 (its
+# attribution walk) and BL-1653 (the reconcile's index-not-clean and
+# abort-no-merge-head outcomes) are in backlog/done. No open ticket
+# changes check_merge_deletion.sh (four paused tickets mention it in
+# notes only).
+mutation_cost: low
+# low: shell only (no mutation/CRAP/DRY wired, BL-472): two flags in the
+# guard and its header comment, one case in test_merge_deletion_guard.sh,
+# one feature and handler over an mkdtemp git fixture (seconds).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1671-the-merge-deletion-guard-reads-the-index-not-the-working-tree.feature
+
+# Handler pin only (BL-233, BL-1371). The guard's consumer - the commit-msg
+# hook - already reaches it, so an anchor there matches before and after
+# the fix and gates nothing (BL-1235); pinning `--cached` inside the guard
+# would be the parcel's own diff and would falsely block a coder who
+# reaches the same read another way (e.g. `git diff-index --cached`).
+# Scenario 01 runs the real guard under the real hook chain, which is the
+# gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1671MergeDeletionGuardReadsTheIndexSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the guard's finding
+  set is computed from the index against each parent, never from the
+  working tree - BL-1242's, BL-1341's and BL-1662's scenarios are
+  unchanged and stay green, and a path the merge RESULT drops is refused
+  exactly as today unless the message names its ticket. FIRM: nothing
+  under swarmforge/runtime/ is untracked or deleted by this parcel (see
+  "Not in scope" for why), the draft path Article 2.2 names is unchanged,
+  and no guard is bypassed.
+
+invariants:
+  - "During a merge commit the guard's deletion set is the index against each parent, never the working tree: an unstaged working-tree change can neither add nor remove a finding, and the merge leaves it exactly as it found it."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/check_merge_deletion.sh` `collect_deletions` (line
+  ~106) runs `git diff --name-status -M "$against"` for HEAD and again for
+  MERGE_HEAD. Without `--cached` that diff compares the WORKING TREE to
+  the commit, so a tracked path deleted on disk but never staged reports
+  `D`. The guard's own header says the opposite of what it does: "Reads
+  the about-to-be-committed tree via `git diff --name-status HEAD` (HEAD
+  is still the pre-merge tip at this point; the index already holds the
+  merged result)". A merge commit records the index; the working tree is
+  no part of it. Probe, 2026-09-21: in a scratch repository with a
+  committed `a.txt` and `rm a.txt`, `git diff --name-status HEAD` prints
+  `D a.txt`; `git diff --cached --name-status HEAD` prints nothing.
+
+  On the shared master checkout it bit twice in one hour
+  (`.swarmforge/daemon/handoffd.log.20260921T085442Z`):
+
+  - 08:43:02Z `master-main-reconcile merge-failed Error: merge deletes
+    'specs/features/BL-1521-negotiation-telegram-first-run-survivors-to-zero.feature'
+    (BL-1519, introduced at a17bc78d43 on this branch and the incoming
+    branch), not named in the commit message` - the specifier had `rm`'d
+    the file five minutes earlier, unstaged, mid-sweep (restored 08:44Z).
+  - 08:47:44Z the same for `swarmforge/runtime/handoff-draft.txt`
+    `(BL-1278, introduced at 8c658a7048 ...)` - the coordinator's 08:22Z
+    send had consumed the draft: `swarm_handoff.bb` line ~1294
+    `(fs/delete draft)` after queueing. That path is TRACKED (first
+    committed 979b4f30df 2026-07-08 "chore: create handoff draft for
+    cleaner on BL-154 stall check", re-committed eight times since, last
+    ae3dd7304c 2026-09-09) and `.gitignore` names nothing under
+    `swarmforge/runtime/`, so every master-resident send leaves
+    ` D swarmforge/runtime/handoff-draft.txt` in `git status` until
+    someone restores it, and every diverged reconcile after a send was
+    refused (restored 08:48Z).
+  - 08:49:15Z `main-sync-deadlock-tripped` reason
+    `merge-abort-no-merge-head` (alerted: email and Telegram);
+    `dropped-parcel-suppressed main-sync-deadlock` from 08:50:55Z;
+    08:52:54Z `reconciled` once both paths were back, 08:53:08Z
+    `main-sync-deadlock-cleared behind=0`. The daemon's own recovery
+    (BL-1653 item 3) worked; the hour was the guard's.
+
+  Both hits share one cause: the guard judged the working tree. The
+  daemon's reconcile merges with `git merge --no-edit origin/main`, whose
+  message can name no ticket, so on that path the exemption is
+  unreachable and any false finding is a hard stop.
+
+  ## What is wanted
+
+  1. `collect_deletions` diffs the index: `git diff --cached
+     --name-status -M "$against"` for both parents, and the header
+     comment says what the read is. An unstaged working-tree deletion
+     during a merge produces no finding and survives the merge untouched
+     (scenario 01 row 1, scenario 02); a path the merge result drops is
+     still refused unless the message names its ticket (row 2 - BL-1242's
+     contract, unchanged).
+  2. `swarmforge/scripts/test/test_merge_deletion_guard.sh` gains a case
+     that prints `PASS: unstaged-worktree-deletion-is-not-a-finding`
+     (scenario 03 pins that line, BL-1445): a tracked path `rm`'d and not
+     staged, a `--no-ff` merge with a message naming no ticket, exit 0,
+     no `Error: merge deletes` line, the path still deleted-unstaged
+     afterwards and present in the merge commit's tree.
+  3. Documenter: one line in
+     `docs/reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md`'s
+     guard list - the merge-deletion guard judges the index, so a
+     working-tree leftover on the shared checkout is never a finding. No
+     registered diagram depicts the guard chain.
+
+  ## How (direction, not mandate)
+
+  - Two-token change in the guard plus its comment; keep `-M` (BL-1403's
+    rename detection), BL-1341's second direction and BL-1662's
+    attribution walk untouched.
+  - The fixture is `test_merge_deletion_guard.sh`'s own (mkdtemp root,
+    `git init`, proven by `rev-parse --git-common-dir` before any mutating
+    git command, BL-1390; the hook chain copied in); the new case sits
+    beside the "unrelated prose" refusal case and reuses its branches.
+  - The acceptance handler drives the same fixture shape through the REAL
+    guard under the REAL commit-msg hook (`git merge --no-ff -m`), never a
+    re-implementation; validate the outline column against explicit
+    KNOWN_VALUES. Handler `bl1671MergeDeletionGuardReadsTheIndexSteps.js`
+    lands in the SAME commit as the feature (BL-233).
+
+  ## Not in scope
+
+  - Untracking `swarmforge/runtime/handoff-draft.txt` (or the other
+    tracked artefacts under `swarmforge/runtime/`: seven `expedite-*.log`,
+    `specifier-update-20260722.md`). Once the guard reads the index, the
+    draft's unstaged deletion after a send is harmless to it; untracking
+    would itself be a COMMITTED deletion that the daemon's `--no-edit`
+    reconcile merge can never name, so it would recreate this ticket's
+    stall on the first diverged join after it lands. That hygiene waits
+    for a commit landed while main is not diverged, or for the reconcile
+    to compose its merge message from the incoming subjects - a watch
+    item, not yet a live fault.
+  - The daemon's reconcile itself (BL-891, BL-1653): its outcomes were
+    correct; `merge-abort-no-merge-head` after a hook-refused merge is one
+    tick, not a loop (08:50:27Z abort, 08:52:54Z reconciled).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root. Fixture root per BL-1390:
+  `git init` under mkdtemp, prove it with `git rev-parse --git-common-dir`
+  before anything else; install the hook chain into the fixture.
+  1. `bash swarmforge/scripts/test/test_merge_deletion_guard.sh` - ALL
+     PASS with `unstaged-worktree-deletion-is-not-a-finding` among its
+     PASS lines; `grep -n test_merge_deletion_guard
+     swarmforge/scripts/test/suite-manifest.tsv` still prints the standing
+     row.
+  2. In the fixture: two branches sharing `keep.txt` committed under
+     "BL-0001: add keep"; `rm keep.txt` (no `git rm`); `git merge --no-ff
+     -m "unrelated prose" other` - exit 0, no `Error: merge deletes` on
+     stderr, `git status --short` still shows ` D keep.txt`, `git ls-tree
+     HEAD keep.txt` non-empty. Then `git checkout -- keep.txt`, commit a
+     deletion of `keep.txt` on `other`, merge it with the same message -
+     refused naming `keep.txt` and BL-0001; merge again with BL-0001 in
+     the message - commits.
+  3. `specs/pipeline/scripts/run_acceptance.sh` on this ticket's feature:
+     4/4 (01 x2, 02, 03), once.
+  4. Live, read-only, after land: on the shared checkout with main
+     diverged (`main_sync_status_cli.bb` ahead>0, behind>0) and
+     ` D swarmforge/runtime/handoff-draft.txt` present after a send, the
+     daemon's next `master-main-reconcile` tick logs `reconciled`, not
+     `merge-failed`.
+  5. Break-then-restore: drop `--cached` from one `collect_deletions`
+     call; scenario 01 row 1 fails on a finding for keep.txt; restore.
+
+source: |
+  Specifier-found 2026-09-21 while landing the morning consolidation sweep
+  (evidence backlog/evidence/consolidation-sweep-paused-20260921.md,
+  section "Why no deletion"): the daemon log lines quoted above,
+  `git log -- swarmforge/runtime/handoff-draft.txt` (9 commits),
+  `swarm_handoff.bb` ~1294 `(fs/delete draft)`, the scratch-repository
+  probe of `git diff` with and without `--cached`, and the guard's own
+  header (lines 21-25) stating the intended read.
+
+notes: |
+  Minted 2026-09-21 by the specifier after the sweep landed (304a373c06),
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Interim for every seat until this lands: never leave a tracked
+  non-YAML path deleted on the shared checkout without committing the
+  removal in the same minute (retire a file as a modification instead -
+  the sweep's scenario-less tombstones are that shape); after any send
+  from the specifier or coordinator draft path while main is diverged,
+  `git checkout -- swarmforge/runtime/handoff-draft.txt`. A reconcile
+  refusal reading `merge deletes '<path>' ... not named in the commit
+  message` on a path nobody committed a deletion of is this ticket's
+  shape: restore the path from HEAD and the daemon rejoins on its next
+  tick.
+
+  The specifier's 08:54Z note to the coordinator ("main reconcile loops
+  merge-abort/no MERGE_HEAD ... step 0") was premature - the daemon had
+  already rejoined at 08:52:54Z; no daemon defect, recorded here so the
+  same reading is not repeated.
+
+  INVEST: Independent (guard and test exist; nothing unbuilt), Negotiable
+  (the read is the requirement, the flag is direction), Valuable (a
+  diverged main joins whatever an idle seat left on disk), Estimable (two
+  flags, one test case, one handler - one sitting), Small (three
+  scenarios, one invariant), Testable (the real guard under the real hook
+  in a fixture, seconds).
