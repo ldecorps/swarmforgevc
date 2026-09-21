@@ -1,0 +1,178 @@
+id: BL-1681
+title: "BL-696's two acceptance features each carry one scenario a same-minute successor left red for eight weeks: lets-talk-06 asserts the served /lets-talk page script contains setPhase('error') while BL-696's own post-ship UX (c0f7d4b57a, 2026-07-29 16:15) replaced the error phase with an inline error, degraded health and setPhase('ready'); tg-op-04 asserts the bare /redeploy decision is {action: 'redeploy'} while BL-702 (f9b38f53d1, same minute) gates it behind a soft operator confirm (prompt-operator-confirm, tier soft); first sighted by the coder inside BL-1658 (note 000047, 14:09Z); both retire (never reworded) and the transient-STT recoverability contract moves to this ticket's own feature as a server-half scenario"
+milestone: M8
+type: defect
+severity: high
+# high: two tests failing on main are broken safety signals (standing-red
+# register, 2026-09-05); they block BL-1658's QA approval today and every
+# parcel that touches either handler. Not critical: both assert behaviour
+# the successors deliberately replaced; nothing in production is wrong.
+status: todo
+epic: swarmforge-console
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-696, BL-702 and BL-766 are in backlog/done. BL-1658 (active) edits
+# the same two handlers' require lines: promote this AFTER BL-1658 lands
+# (orthogonality, workflow.prompt), never beside it.
+mutation_cost: low
+# low: two scenario retirements, three unused step definitions removed,
+# one new feature and handler. The gherkin mutation gate re-runs this
+# feature per mutant: scenario 02 spawns each BL-696 feature once (about
+# 25 s each, registry load) - about 50 s per mutant, inside the 300 s
+# BL-1358 ceiling (BL-1541).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1681-bl696s-two-successor-left-scenarios-retire.feature
+
+# BL-1276 task-scope declaration: the two BL-696 features and their
+# handlers are edited to RETIRE, not to change any remaining contract; the
+# pointer above is this ticket's own feature, not a claim over BL-696's.
+retires:
+  - specs/features/BL-696-miniapp-lets-talk-cursor-audio.feature
+  - specs/features/BL-696-telegram-cursor-bridge-operator-commands.feature
+  - specs/pipeline/steps/bl696LetsTalkSteps.js
+  - specs/pipeline/steps/bl696TelegramCursorBridgeOperatorSteps.js
+
+# Handler pin only (BL-233, BL-1371). The retirements are the parcel's own
+# diff (BL-1235); scenario 02 runs both real BL-696 features in a child
+# process, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1681Bl696SuccessorLeftRedsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored and two scenarios are retired, so this
+  would ordinarily need a tap; it is minted approved under the 2026-09-17
+  operator hotfix (severity defect, no choice posed, no ruling_options).
+  FIRM: retire, never reword - lets-talk-06 and tg-op-04 are removed
+  whole, their step definitions go only when no remaining scenario uses
+  the pattern (grep every .feature first), and every remaining BL-696
+  scenario still resolves. FIRM: no production change - the page's
+  inline-error UX (c0f7d4b57a) and the soft-confirm /redeploy (BL-702)
+  are the living contract. FIRM: the recoverability half of lets-talk-06
+  survives as scenario 01 here, asserted over the turn route's own
+  response, never over page script text.
+
+invariants: []
+
+description: |
+  ## What
+  Two scenarios in BL-696's landed features assert behaviour that the
+  2026-07-29 16:15 batch land replaced the same minute they were written:
+
+  1. `specs/features/BL-696-miniapp-lets-talk-cursor-audio.feature`
+     scenario 06 "a transient speech-to-text failure is recoverable and
+     does not wedge the session": step "the page shows conversation state
+     'error' only while retrying" asserts `/setPhase\('error'\)/` against
+     the served `/lets-talk` page. BL-696's own post-ship UX (c0f7d4b57a)
+     removed that call from `extension/src/bridge/letsTalkUiHtml.ts`: a
+     failed turn now calls `showError(...)`, `setBridgeHealthState('degraded',
+     'agent: error')` and `setPhase('ready')`. The step's other assertion
+     (`ctx.phaseTrace` = `['error','thinking',...]`) is pushed by the
+     handler's own client-retry loop (`submitTurnWithClientRetry`), not
+     read from the page - the regex was the only real check of the
+     surface. Red: `The input did not match the regular expression
+     /setPhase\('error'\)/`. 7/8 pass.
+  2. `specs/features/BL-696-telegram-cursor-bridge-operator-commands.feature`
+     scenario tg-op-04 "/redeploy compiles and restarts the supervised
+     bridge": step "the bridge decision is to redeploy" asserts
+     `{ action: 'redeploy' }`. BL-702 (done) gates bare `/redeploy` behind
+     a soft operator confirm: `decideInboundAction` returns
+     `{ action: 'prompt-operator-confirm', tier: 'soft', verb: '/redeploy' }`
+     (`telegramCursorBridgeCore.ts` line ~454 comment names BL-702; the
+     help text says "/redeploy - soft confirm, then compile and restart").
+     19/20 pass.
+
+  Both handlers predate that land (c98e1c8d84 07-28, 4c5c4bb2a2 07-29);
+  the reds sat unrun for eight weeks until BL-1658 touched both handlers'
+  require lines and the coder ran the features (note 000047).
+
+  ## Why
+  BL-1006: a superseded scenario is retired, never reworded - the
+  successor's scenarios are the coverage (BL-702/BL-710/BL-1204 for the
+  confirm-gated /redeploy; the page's inline-error UX has no scenario of
+  its own and needs none: lets-talk-07 "structurally bad audio surfaces a
+  recoverable error" still covers the surfaced error). The one half of
+  lets-talk-06 still true and still valuable - the turn route reports a
+  transient STT failure as recoverable and the retried turn completes -
+  is a server contract (`letsTalkCore.ts` `sttRetryFailure`: `recoverable:
+  true, state: 'error'`) and is restated here over the route, with no
+  page literal to go stale. Adjudication:
+  backlog/evidence/unowned-red-bl696-two-successor-left-reds-adjudication-specifier-20260921.md.
+
+  ## How (direction, not mandate)
+  - Delete scenario 06 (and its `# BL-696 lets-talk-06` comment) from the
+    lets-talk feature and scenario tg-op-04 (and `# BL-696 tg-op-04`)
+    from the operator-commands feature. Re-tense any `Feature:` narrative
+    sentence that now states a false present (the operator-commands
+    narrative lists /redeploy among immediate skills).
+  - `grep -rn` every `.feature` for the three step patterns before
+    removing their definitions from the two handlers: "the bridge
+    decision is to redeploy", "the bridge posts a redeploy started
+    confirmation", "the page shows conversation state \"error\" only while
+    retrying". Remove `submitTurnWithClientRetry` only if nothing else
+    uses it.
+  - Scenario 01 here drives the turn route through the same
+    `startBridge` fixture `bl696LetsTalkSteps.js` uses (STT failing
+    transiently once then succeeding) and asserts the first response's
+    `recoverable`/`state` and the resubmission's success - the server
+    half, no page text.
+  - Scenario 02 spawns `node specs/pipeline/cli.js <feature>` for each
+    BL-696 feature and reads the TAP: all ok, the retired names absent,
+    the scenario counts pinned (7 and 19).
+
+  ## Scope
+  - The two BL-696 features and their two handlers (retirement only;
+    `retires:` above). BL-1658 edits the same handlers' require lines -
+    promote after it lands and merge, do not fork.
+  - `specs/features/BL-1681-bl696s-two-successor-left-scenarios-retire.feature`
+    and `specs/pipeline/steps/bl1681Bl696SuccessorLeftRedsSteps.js`
+    (same parcel, BL-233, registered in `specs/pipeline/steps/index.js`).
+  - The two register rows for the BL-696 features leave in this parcel's
+    land (BL-1631); the parcel never edits the register.
+  - Documenter: the Let's Talk how-to and the Cursor Remote commands
+    reference - any sentence stating an `error` conversation state or an
+    immediate /redeploy is re-tensed; no diagram trigger.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each.
+  1. `node specs/pipeline/cli.js specs/features/BL-696-miniapp-lets-talk-cursor-audio.feature`:
+     7/7 ok, no scenario named "a transient speech-to-text failure ...".
+  2. `node specs/pipeline/cli.js specs/features/BL-696-telegram-cursor-bridge-operator-commands.feature`:
+     19/19 ok, no scenario named "/redeploy compiles and restarts ...".
+  3. `node specs/pipeline/cli.js specs/features/BL-1681-bl696s-two-successor-left-scenarios-retire.feature`:
+     all ok.
+  4. `grep -rn "decision is to redeploy\|redeploy started confirmation\|only while retrying" specs/features/ specs/pipeline/steps/`
+     prints nothing.
+  5. `git diff --stat origin/main -- extension/src` is empty (no
+     production change).
+  6. Register: the land retires both BL-696 rows; the register report
+     after landing shows no unowned row and no BL-1681 row.
+
+notes: |
+  Minted 2026-09-21 by the specifier adjudicating the coder's unowned-red
+  note 000047 (from inside BL-1658). AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Register rows added in the mint commit (acceptance lane, one per
+  feature file, owner BL-1681, first_seen 2026-09-21 = first sighting).
+  The holder (coder, BL-1658) was noted the same pass: "BL-696 x2 reds
+  owned by BL-1681 - resume BL-1658".
+
+  Successor evidence: `git log -S"setPhase('error')" -- extension/src/bridge`
+  -> c0f7d4b57a (diff line 828 removes the call); `grep -n redeploy
+  extension/src/tools/telegramCursorBridgeCore.ts` -> line ~454 "BL-702:
+  /redeploy is gated via operator soft confirm". Both landed 2026-07-29
+  16:15:15; the handlers' last edits are 07-28/07-29 16:15:14.
+
+  Not folded into BL-1658 (which already retires BL-687 sc06 inside the
+  same handler family): BL-1658 has been amended four times today and
+  bounced once on the specifier's own timing; a fifth in-flight scope
+  change would cost more than a small owner promoted right after it.
+
+  Ceremony hypothesis (recorded, not minted): four reds in landed
+  features surfaced in one parcel today because no lane runs a landed
+  feature until a parcel touches its handler.
