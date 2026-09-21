@@ -1141,6 +1141,27 @@
            {:role "architect"   :newest-created-at "2026-09-21T06:30:00Z" :actionable? true :best-priority 10 :oldest-actionable-waited-ms 1000}]
           300000))
 
+;; ── 2026-09-21: a marker naming the coordinator never seats the resident ──
+;; The launcher honoured a stale mono-router-active-role=coordinator marker
+;; (left by the chase mis-rotation above) and booted the resident AS the
+;; coordinator on the main checkout: two coordinators, no coder. roles.tsv
+;; lists the coordinator, so the known-roles check alone let it through.
+(let [out (mono-router-lib/resolve-boot-role
+           {:home-role "coder" :recorded-role "coordinator"
+            :known-roles ["coder" "coordinator" "QA" "architect"] :rotation-mode "router"})]
+  (assert= "boot: coordinator marker falls back to home" "coder" (:role out))
+  (assert-true "boot: coordinator marker is a loud fallback" (true? (:fallback? out)))
+  (assert= "boot: coordinator marker names its reason" :coordinator-never-resident (:reason out)))
+(assert= "boot: a real dormant role in the marker still boots as that role"
+         "QA"
+         (:role (mono-router-lib/resolve-boot-role
+                 {:home-role "coder" :recorded-role "QA"
+                  :known-roles ["coder" "coordinator" "QA"] :rotation-mode "router"})))
+(assert= "ensure: resident-launch-role never restores the coordinator script on the resident"
+         "coder" (mono-router-lib/resident-launch-role "coder" "coordinator"))
+(assert= "ensure: resident-launch-role still restores a real rotated role"
+         "architect" (mono-router-lib/resident-launch-role "coder" "architect"))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
