@@ -6,7 +6,8 @@ severity: medium
 # medium (chore, not a defect): no live fault and no broken safety signal -
 # the gate ran and its row is discharged. A real, contained test gap on the
 # onboarding negotiation's Telegram relay text and intent routing.
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1520
 epic: first-run-mutation-debt
 priority: 30
 direction: swarm-proposed
@@ -117,6 +118,17 @@ source: |
   backlog/evidence/BL-1519-first-run-survivor-census-20260910.md.
 
 notes: |
+  RETIRED 2026-09-21 by the specifier on the human's morning consolidation
+  sweep over paused/pending tickets (Consolidation Authority, BL-680;
+  Article 5.3): absorbed into BL-1520 - same root cause or fix shape, one
+  outcome. Every FIRM line, constraint and quoted source sentence of
+  this ticket survives verbatim or in substance in BL-1520; its two scenarios are rows 2-3 of BL-1520 outline 01 and scenario 03.
+  This ticket's feature file is left in place as a scenario-less tombstone
+  (its contract now lives in
+  BL-1520's). Human approval on this ticket stands as history; the absorber
+  was separately approved and nothing unapproved was added. Evidence:
+  backlog/evidence/consolidation-sweep-paused-20260921.md.
+
   Minted 2026-09-10 by the specifier while adjudicating the hardender's
   rule proposal. INVEST: Independent (no unbuilt sibling), Negotiable
   (test shapes are direction), Valuable (two files' gates go to a full

@@ -7,7 +7,7 @@ epic: lean-aware-coordinator
 priority: 10
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-819, BL-820, BL-1365, BL-1528, BL-1551, BL-1590]
+decomposes_into: [BL-819, BL-820, BL-1365, BL-1528, BL-1551]
 source: |
   Raw intake `backlog/INTAKE-lean-aware-coordinator.md` (human via Cursor
   2026-08-05 ~09:55 CEST, amended ~09:58 for the shift-closing ceremony),
@@ -146,4 +146,11 @@ notes: |
   verb. If the human would rather have the lean pass sooner on a cadence that
   exists today (e.g. the daily briefing sweep, which does run), that is a
   one-line change to BL-820's trigger and worth asking before promoting it.
+
+  Consolidation 2026-09-21 (specifier, human's morning sweep): BL-1590 (a
+  chase that rotates the resident is not a stall) absorbed into BL-1551 (a
+  skipped respawn is not a respawn) - same adapter, same caller, same
+  composer, one rung apart; BL-1590 retired as superseded-by-BL-1551 and
+  decomposes_into re-pointed.
+
 mutation_cost: high

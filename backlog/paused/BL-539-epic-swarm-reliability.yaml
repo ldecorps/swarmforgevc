@@ -26,6 +26,15 @@ notes: |
   reality — auto-heal preferred over babysitter restarts. Originated in the BL-512
   recurring failure-mode audit and the 2026-07-19 Perplexity/OpenAI key incident.
 
+  Consolidation 2026-09-21 (specifier, human's morning sweep), in this epic's
+  orbit: BL-1591 (stamp of a27d082c2d, the ceremony's consult_spawn_cli.bb)
+  absorbed into BL-1549 (stamp of 5bdf93beed, the daemon's consult session)
+  - one mechanism, two spawners, one teardown; BL-889 (harness missing
+  fixture root, epic code-quality-gates) absorbed into BL-1517 (project-root
+  argument check) - same defect class, one shared lib. Neither BL-1549 nor
+  BL-1517 was listed in decomposes_into (the list stops at BL-1110); left
+  as found.
+
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"
 mutation_cost: high
