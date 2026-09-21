@@ -494,6 +494,33 @@ else
   fail "direct mode (13i): expected refusal naming docs/index.md (content differs from main), got rc=$rc: $out"
 fi
 
+# ── 13j (BL-1666 hardening): an out-of-lane path DELETED at the tip, and
+#        also absent on the landed main, has NO BLOB on EITHER side - the
+#        content-equality exemption's two `-n` guards both matter here:
+#        without them "" == "" reads as a content match and wrongly
+#        exempts a deletion that carries no provenance at all. Both
+#        branches independently remove the same shared path so tip_blob
+#        AND main_blob are genuinely empty, not merely equal-and-present.
+mk_repo direct-content-deleted-both-sides
+write_commit "$repo" main docs/scratch.md
+g "$repo" checkout -q "$DOC_BRANCH"
+g "$repo" merge -q --ff-only main
+mkdir -p "$repo/docs/briefings"
+echo "today's briefing" > "$repo/docs/briefings/2099-03-05.md"
+g "$repo" add docs/briefings/2099-03-05.md
+g "$repo" rm -q docs/scratch.md
+g "$repo" commit -q -m "briefing plus deleting docs/scratch.md"
+tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q main
+g "$repo" rm -q docs/scratch.md
+g "$repo" commit -q -m "main also removes docs/scratch.md"
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+if [[ $rc -eq 1 ]] && grep -q 'docs/scratch.md' <<<"$out"; then
+  pass "direct mode (13j): a path deleted at the tip with no blob on either side is refused, never exempted by empty-string equality"
+else
+  fail "direct mode (13j): expected refusal naming docs/scratch.md (no blob on either side), got rc=$rc: $out"
+fi
+
 # ── 14. --branch resolves via .swarmforge/roles.tsv when not given
 #        explicitly ───────────────────────────────────────────────────
 mk_repo roles-tsv-resolution
