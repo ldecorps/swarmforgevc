@@ -495,7 +495,61 @@ else
   echo "SKIP: 14 requires the compiled quality module - run npm run compile from extension/" >&2
 fi
 
-rm -f /tmp/bl1640-11.out /tmp/bl1640-12.out /tmp/bl1640-13.out /tmp/bl1640-14.out
+# ── 15 (BL-1640 bounce D1): the ceremony's deadlines read the FIXTURE's own
+#       swarmforge.conf regardless of the caller's CWD - QA's own repro
+#       shape: the CLI is invoked with CWD *not equal* to --target, exactly
+#       what ./finish-shift <path> (and finish_shift_run_closing_ceremony's
+#       own bare, no-cd call) does in production. Before the fix, a CWD
+#       different from the fixture root made night-closing-ceremony-run.ts
+#       fall back to a DIFFERENT (or absent) conf file, silently reading the
+#       hardcoded 25/10-minute defaults instead of the fixture's configured
+#       1/1-minute budgets. ──────────────────────────────────────────────
+if [[ -f "$REAL_CLI" ]]; then
+  ROOT15="$(mktemp -d)"
+  register_tmp_dir "$ROOT15"
+  make_bl1640_root "$ROOT15"
+  # QA's own repro shape: CWD is a REAL repo checkout that is merely not the
+  # fixture (this worktree's own root, never $ROOT15 itself) - not an
+  # arbitrary non-repo directory, which would fail project-root resolution
+  # for an unrelated reason.
+  #
+  # The drain/hard deadlines this case asserts are written once, on the
+  # ceremony's FIRST tick, and never change afterward - so a background
+  # sender depositing .sent.json a beat later (same trick as case 11) lets
+  # finish_shift_run_closing_ceremony reach phase done in well under a
+  # second instead of spinning real wall-clock minutes to the overrun
+  # ceiling with nothing left to mark it done. First found live: without
+  # this, the case took ~2-3 real minutes (drain+briefing+grace) to pass.
+  today15="$(date +%Y-%m-%d)"
+  ( sleep 0.3; mkdir -p "$ROOT15/docs/briefings"; printf '["%s.md"]' "$today15" > "$ROOT15/docs/briefings/.sent.json" ) &
+  BG_SENDER15=$!
+  (
+    cd "$REPO_ROOT_BL1640" || exit 1
+    source "$SRC/finish_shift_lib.sh"
+    FINISH_SHIFT_CEREMONY_CLI="$REAL_CLI" FINISH_SHIFT_CEREMONY_TICK_SECONDS=0 \
+      finish_shift_run_closing_ceremony "$ROOT15"
+  ) > /tmp/bl1640-15.out 2>&1
+  STATUS15=$?
+  wait "$BG_SENDER15" 2>/dev/null || true
+  read -r started15 drain15 hard15 <<<"$(node -e '
+    const fs = require("fs");
+    try {
+      const s = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      process.stdout.write(`${s.startedAtMs} ${s.drainDeadlineMs} ${s.hardDeadlineMs}`);
+    } catch { process.stdout.write("0 0 0"); }
+  ' "$ROOT15/.swarmforge/daemon/closing-ceremony-state.json" 2>/dev/null)"
+  drain_delta15=$(( drain15 - started15 ))
+  hard_delta15=$(( hard15 - started15 ))
+  if [[ "$STATUS15" -eq 0 && "$drain_delta15" -eq 60000 && "$hard_delta15" -eq 120000 ]]; then
+    pass "15: the ceremony's deadlines read the fixture's own configured budgets (drain=+60000ms, hard=+120000ms) even when the caller's CWD differs from --target"
+  else
+    fail "15: expected drain=+60000ms hard=+120000ms from the fixture's 1/1-minute budgets, got drain=+${drain_delta15}ms hard=+${hard_delta15}ms (status=$STATUS15): $(cat /tmp/bl1640-15.out)"
+  fi
+else
+  echo "SKIP: 15 requires the compiled ceremony CLI ($REAL_CLI) - run npm run compile from extension/" >&2
+fi
+
+rm -f /tmp/bl1640-11.out /tmp/bl1640-12.out /tmp/bl1640-13.out /tmp/bl1640-14.out /tmp/bl1640-15.out
 
 kill "$TN_PID" 2>/dev/null || true
 

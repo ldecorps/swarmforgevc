@@ -150,7 +150,7 @@ finish_shift_run_closing_ceremony() {
   local out phase hard_deadline_ms now_ms decision
 
   while :; do
-    if ! out="$(node "$cli" --target "$root" --sleep-path finish-shift 2>&1)"; then
+    if ! out="$(node "$cli" --target "$root" --conf "$root/swarmforge/swarmforge.conf" --sleep-path finish-shift 2>&1)"; then
       echo "finish-shift: closing ceremony exited non-zero - continuing bedtime" >&2
       echo "$out" >&2
       return 0
