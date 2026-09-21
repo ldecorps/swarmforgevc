@@ -1318,8 +1318,17 @@
   ([target-role] (rotate-resident-to! target-role nil))
   ([target-role reason]
   (try
-    (if-not (rotation-router-pack?)
+    (cond
+      ;; BL-614, enforced at the one place every rotation passes through:
+      ;; the coordinator is auto-provisioned on its own pane and is never
+      ;; a resident identity. 2026-09-21: a chase redirect rotated the
+      ;; resident onto it (two coordinators, no coder); the selector fix
+      ;; (2415797c26) stops that caller, this refuses every caller.
+      (= "coordinator" (str target-role))
+      {:ok false :reason "coordinator-never-rotation-target"}
+      (not (rotation-router-pack?))
       {:ok false :reason "not-a-rotation-router"}
+      :else
     (let [socket (tmux-socket)
           session (or (mono-router-resident-session) (pane-id socket))
           script (launch-script-path target-role)

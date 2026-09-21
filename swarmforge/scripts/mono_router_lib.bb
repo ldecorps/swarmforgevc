@@ -298,7 +298,10 @@
    home — otherwise ensure mid-pipeline wipes cleaner/architect/… back to coder."
   [home-role active-role]
   (let [active (some-> active-role str str/trim not-empty)]
-    (or active home-role)))
+    ;; The coordinator is never the resident (BL-614): a marker naming it
+    ;; is stale state from a mis-rotation, and honouring it seats a SECOND
+    ;; coordinator on the main checkout with no coder (2026-09-21).
+    (if (= active "coordinator") home-role (or active home-role))))
 
 ;; ── BL-648: relaunch boots the resident AS the recorded active role ────────
 ;; Distinct from resident-launch-role above (which `./swarm ensure` uses to
@@ -328,6 +331,14 @@
 
       (nil? recorded)
       {:role home-role :fallback? false :reason :blank :recorded recorded}
+
+      ;; roles.tsv lists the coordinator, so it passes the known-roles check
+      ;; below - but it is never a valid resident identity (BL-614). A
+      ;; marker naming it is stale state from a mis-rotation (2026-09-21:
+      ;; the launcher honoured one and booted a second coordinator on the
+      ;; main checkout, leaving no coder seat). Fall back to home, loudly.
+      (= recorded "coordinator")
+      {:role home-role :fallback? true :reason :coordinator-never-resident :recorded recorded}
 
       (contains? (set known-roles) recorded)
       {:role recorded :fallback? false :reason nil :recorded recorded}
