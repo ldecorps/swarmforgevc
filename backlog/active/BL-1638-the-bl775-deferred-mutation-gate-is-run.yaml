@@ -203,3 +203,5 @@ notes: |
   milliseconds).
   IR-DRY after the merge: scenarios 03/04 mirror 01/02 for the second row
   by design (two ledger rows, one discharge shape); reviewed and kept.
+
+assigned_to: coder

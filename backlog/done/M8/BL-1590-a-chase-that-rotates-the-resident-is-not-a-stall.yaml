@@ -10,7 +10,8 @@ severity: medium
 # loop, and its top hypothesis and five of six quality-dial rows this
 # shift rest on this row; the only reader it has dismissed it on
 # 2026-09-13, 09-14, 09-15 and 09-16 (evidence files named below).
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1551
 epic: lean-aware-coordinator
 priority: 12
 direction: swarm-reported
@@ -152,6 +153,17 @@ description: |
   - Rewriting ledger rows or ceremony packets already on disk.
 
 notes: |
+  RETIRED 2026-09-21 by the specifier on the human's morning consolidation
+  sweep over paused/pending tickets (Consolidation Authority, BL-680;
+  Article 5.3): absorbed into BL-1551 - same root cause or fix shape, one
+  outcome. Every FIRM line, constraint and quoted source sentence of
+  this ticket survives verbatim or in substance in BL-1551; its three scenarios are BL-1551 scenarios 04, 05 and 06.
+  This ticket's feature file is left in place as a scenario-less tombstone
+  (its contract now lives in
+  BL-1551's). Human approval on this ticket stands as history; the absorber
+  was separately approved and nothing unapproved was added. Evidence:
+  backlog/evidence/consolidation-sweep-paused-20260921.md.
+
   Minted 2026-09-16 by the specifier as the BL-820 outcome for the
   2026-09-16 ceremony pass (`process_ticket`, this id). Epic BL-818's
   decomposes_into gains this id in the same commit. Sibling by shape:

@@ -3678,6 +3678,106 @@ RESOLVED BY THIS TICKET
             (assert-true "BL-1650 (mixed stray): the sibling stays unlanded, never falsely reported LANDED over excluded content"
                          (contains? (:unlanded plan) "BL-9002"))))))))
 
+;; ── BL-1670 ground (a): a stray whose own post-image is a strict content
+;; subset of origin/main's (be826a2060's shape) is reported superseded, and
+;; the replay - and the sibling's own promotion to LANDED - complete rather
+;; than escalating.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))
+        partial (str/join "\n" (map #(str "line " %) (range 1 10)))
+        grown (str partial "\n" (str/join "\n" (map #(str "extra " %) (range 1 32))) "\n")]
+    (sh! root "git" "checkout" "-q" "-b" "role" seed)
+    (commit! root "backlog/evidence/BL-9002-partial.md" (str partial "\n")
+             "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "checkout" "-q" "-b" "main-line" seed)
+        (commit! root "backlog/evidence/BL-9002-partial.md" grown
+                 "BL-9002: a later commit grows the evidence file on main")
+        (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+        (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+        (sh! root "git" "checkout" "-q" "role")
+        (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+          (assert= "BL-1670 ground (a): a content-subset stray conflict still replays through, never escalates"
+                   :replay (:action plan))
+          (assert-true "BL-1670 ground (a): the stray is recorded superseded, not landed as a fresh commit"
+                       (true? (:superseded? (first (:stray-landed plan)))))
+          (assert= "BL-1670 ground (a): the reason names the content-subset ground"
+                   "content-subset-of-origin-main" (:reason (first (:stray-landed plan))))
+          (assert= "BL-1670 ground (a): the stray's own sha is recorded"
+                   stray (:sha (first (:stray-landed plan))))
+          (assert-true "BL-1670 ground (a): the sibling is reported LANDED_SIBLING, never entangled"
+                       (contains? (:landed plan) "BL-9002"))
+          (assert-false "BL-1670 ground (a): the sibling never stays unlanded"
+                        (contains? (:unlanded plan) "BL-9002"))
+          (sh! root "git" "branch" "-q" "-D" (:branch plan)))))))
+
+;; ── BL-1670 ground (b): a stray whose conflicting line was LAST WRITTEN,
+;; on origin/main, by a landed commit of the stray's OWN sibling ticket
+;; (5dbfd9b6a6/8fad11b0dc's shape) is likewise reported superseded.
+(with-fixture [root]
+  (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2\n" "seed doc content")
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role" seed)
+    (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (old wording)\n"
+             "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "checkout" "-q" "-b" "main-line" seed)
+        (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (rebuilt wording, fixes a bug)\n"
+                 "BL-9002: rebuild the guide's step 2 wording")
+        (let [rewrite (:out (sh! root "git" "rev-parse" "HEAD"))]
+          (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+          (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+          (sh! root "git" "checkout" "-q" "role")
+          (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+            (assert= "BL-1670 ground (b): a rewritten-by-owner stray conflict still replays through, never escalates"
+                     :replay (:action plan))
+            (assert-true "BL-1670 ground (b): the stray is recorded superseded, not landed as a fresh commit"
+                         (true? (:superseded? (first (:stray-landed plan)))))
+            (assert= "BL-1670 ground (b): the reason names the rewriting commit's own short sha"
+                     (subs rewrite 0 10) (:reason (first (:stray-landed plan))))
+            (assert-true "BL-1670 ground (b): the sibling is reported LANDED_SIBLING, never entangled"
+                         (contains? (:landed plan) "BL-9002"))
+            (sh! root "git" "branch" "-q" "-D" (:branch plan))))))))
+
+;; ── BL-1670 negative control: a conflict whose HEAD-side line was last
+;; written by an UNRELATED ticket (never the stray's own sibling) fails
+;; BOTH grounds and still escalates - proves stray-superseded-verdict is
+;; not simply "always supersede a conflict".
+(with-fixture [root]
+  (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2\n" "seed doc content")
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role" seed)
+    (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (old wording)\n"
+             "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "checkout" "-q" "-b" "main-line" seed)
+        (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (rebuilt wording by someone else)\n"
+                 "BL-9999: unrelated ticket rebuilds the guide's step 2 wording")
+        (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+        (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+        (sh! root "git" "checkout" "-q" "role")
+        (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+          (assert= "BL-1670 negative control: an unrelated ticket's rewrite still escalates, never superseded"
+                   :escalate (:action plan))
+          (assert-includes "BL-1670 negative control: the reason names the cherry-pick failure"
+                           (:reason plan) "could not cherry-pick stray evidence commit")
+          (assert-includes "BL-1670 negative control: the reason names the stray's own sha"
+                           (:reason plan) stray)
+          (assert-true "BL-1670 negative control: the sibling stays unlanded, never silently dropped"
+                       (contains? (:unlanded plan) "BL-9002")))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
