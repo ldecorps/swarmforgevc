@@ -184,8 +184,53 @@
   (let [{:keys [exit out]} (git! root "diff" "--name-only" base side)]
     (when (zero? exit) (vec (non-blank (str/split-lines out))))))
 
+;; BL-1683: `-M` (git's own default similarity threshold), `--name-status`
+;; so a rename row carries BOTH paths - old first, new second - rather than
+;; the new name alone (`--name-only` in a `-M` diff prints only the new
+;; name, which is why the plain `changed-paths` above is blind to renames
+;; at all: the promotion's OLD path, backlog/paused/<id>-*.yaml, never
+;; appears in its output, so `diff-u0` below ran the rest of this gate
+;; against a path the forwarded side simply does not have - reading it as
+;; every line dropped, whether or not the rename kept them). Each entry:
+;; {:status "R100" (etc.) :old-path :new-path} for a rename, {:status "A"|
+;; "M"|"D"|... :old-path p :new-path p} otherwise (:new-path is always
+;; the path git names, :old-path is what it names for a non-rename row
+;; too - same value, so a caller keying on :old-path alone still finds
+;; every changed path exactly as `changed-paths` above does).
+(defn- changed-paths-status [root base side]
+  (let [{:keys [exit out]} (git! root "diff" "-M" "--name-status" base side)]
+    (when (zero? exit)
+      (vec (keep (fn [line]
+                   (let [fields (str/split line #"\t")]
+                     (when (>= (count fields) 2)
+                       (if (and (str/starts-with? (first fields) "R") (>= (count fields) 3))
+                         {:status (first fields) :old-path (nth fields 1) :new-path (nth fields 2)}
+                         {:status (first fields) :old-path (nth fields 1) :new-path (nth fields 1)}))))
+                 (non-blank (str/split-lines out)))))))
+
+;; {old-path new-path} for every RENAME row only - a caller resolves a
+;; path through this map (falling back to the path itself) to find where
+;; that side's content actually lives in a tree that postdates `side`.
+(defn- rename-map [entries]
+  (into {} (keep (fn [{:keys [old-path new-path]}]
+                   (when (not= old-path new-path) [old-path new-path])))
+        entries))
+
 (defn- diff-u0 [root from to path]
   (let [{:keys [exit out]} (git! root "diff" "-U0" from to "--" path)]
+    (when (zero? exit) out)))
+
+;; BL-1683: diffs one side's OWN content at `side-path` (base/old numbering,
+;; unaffected by any rename - a side's own hunks are always relative to
+;; where IT made them) against `merge-path` as `merge-commit` itself holds
+;; it - the NEW path when either side renamed it, the same path otherwise.
+;; Two colon-refs (`<commit>:<path>`), never a `-- <path>` filter: that
+;; syntax requires ONE path shared by both sides of the diff, which a
+;; rename by definition does not have.
+(defn- diff-u0-refs [root from-commit from-path to-commit to-path]
+  (let [{:keys [exit out]} (git! root "diff" "-U0"
+                                  (str from-commit ":" from-path)
+                                  (str to-commit ":" to-path))]
     (when (zero? exit) out)))
 
 (defn- ancestor? [root ancestor descendant]
@@ -204,8 +249,8 @@
     (ancestor? root received p2) {:received p2 :sender p1}
     :else {:received p1 :sender p2}))
 
-(defn- plus-minus [root from to path]
-  (let [hunks (parse-hunks (diff-u0 root from to path))]
+(defn- plus-minus [root from-commit from-path to-commit to-path]
+  (let [hunks (parse-hunks (diff-u0-refs root from-commit from-path to-commit to-path))]
     {:plus (mapcat :added hunks) :minus (mapcat :removed hunks)}))
 
 (defn- revert-excuses?
@@ -227,12 +272,22 @@
                 (non-blank (str/split-lines out)))))))
 
 (defn- findings-for-side
-  [{:keys [root forwarded base side-commit side-hunks other-hunks side-name path merge-commit]}]
-  (let [own-uncontested (uncontested-hunks side-hunks other-hunks)
-        {:keys [plus minus]} (plus-minus root side-commit merge-commit path)
+  "BL-1683: `merge-path` is where `merge-commit` itself holds this path's
+   content - the NEW path when either side renamed it since `base`, the
+   same `path` otherwise. `path` (base/old numbering) still decides the
+   side's OWN uncontested hunks and the revert-excuse read (both are
+   about what THIS side did, always relative to base, never affected by
+   a rename); only the comparison against merge-commit's own tree follows
+   the rename. A real drop at a renamed path is reported AT THE NEW path
+   (`:path merge-path`), never the vanished old one, so the message names
+   somewhere the reader can actually look."
+  [{:keys [root forwarded base side-commit side-hunks other-hunks side-name path merge-path merge-commit]}]
+  (let [merge-path (or merge-path path)
+        own-uncontested (uncontested-hunks side-hunks other-hunks)
+        {:keys [plus minus]} (plus-minus root side-commit path merge-commit merge-path)
         lost (lines-lost {:own-uncontested-hunks own-uncontested :diff-plus plus :diff-minus minus})]
     (when (and (seq lost) (not (revert-excuses? root forwarded base side-commit path)))
-      [{:merge merge-commit :path path :side side-name :lines (count lost)}])))
+      [{:merge merge-commit :path merge-path :side side-name :lines (count lost)}])))
 
 (defn- findings-for-merge
   "Every dropped-hunk finding for one merge commit - impure (git reads) but
@@ -248,21 +303,44 @@
         (if-not base
           []
           (let [{:keys [received sender]} (side-label root p1 p2 received)
-                paths (distinct (concat (changed-paths root base p1) (changed-paths root base p2)))]
+                received-entries (changed-paths-status root base received)
+                sender-entries (changed-paths-status root base sender)
+                received-renames (rename-map received-entries)
+                sender-renames (rename-map sender-entries)
+                ;; BL-1683: a path renamed by EITHER side resolves to its
+                ;; new name in merge-commit's own tree - sender checked
+                ;; first only because the incident's own shape (a
+                ;; promotion merged in via the sender's own sync) is the
+                ;; common case; a real double-rename of the same old path
+                ;; by both sides is outside this gate's two-sided shape
+                ;; either way.
+                renames (merge received-renames sender-renames)
+                paths (distinct (concat (map :old-path received-entries) (map :old-path sender-entries)))]
             (vec
              (mapcat
               (fn [path]
-                (let [received-hunks (parse-hunks (diff-u0 root base received path))
-                      sender-hunks (parse-hunks (diff-u0 root base sender path))]
+                ;; BL-1683: a side's OWN hunks (used both as its
+                ;; uncontested content AND as the OTHER side's contest
+                ;; check) are read at THAT SIDE's own new path when IT
+                ;; renamed `path` - never the naive base->side diff at
+                ;; the now-vanished old path, which reads as "every line
+                ;; deleted" and would spuriously CONTEST the other side's
+                ;; genuine edit at the same base position (the rename's
+                ;; own diff artifact, not a real content edit).
+                (let [received-path (get received-renames path path)
+                      sender-path (get sender-renames path path)
+                      received-hunks (parse-hunks (diff-u0-refs root base path received received-path))
+                      sender-hunks (parse-hunks (diff-u0-refs root base path sender sender-path))
+                      merge-path (get renames path path)]
                   (concat
                    (findings-for-side {:root root :forwarded forwarded :base base
                                         :side-commit received :side-hunks received-hunks
                                         :other-hunks sender-hunks :side-name "received"
-                                        :path path :merge-commit merge-commit})
+                                        :path path :merge-path merge-path :merge-commit merge-commit})
                    (findings-for-side {:root root :forwarded forwarded :base base
                                         :side-commit sender :side-hunks sender-hunks
                                         :other-hunks received-hunks :side-name "sender"
-                                        :path path :merge-commit merge-commit}))))
+                                        :path path :merge-path merge-path :merge-commit merge-commit}))))
               paths))))))))
 
 ;; BL-1610 invariant 2: a finding whose path's blob at forwarded equals its

@@ -43,6 +43,19 @@ authored. Only QA's hand diff against both parents caught it.
   blob there, so nothing dropped can ride it (BL-1610 invariant 2; still
   blocks when the offending merge itself is the commit being forwarded).
 - A `note` handoff — only `git_handoff` sends are checked.
+- **A rename that keeps every uncontested hunk (BL-1683, 2026-09-21).**
+  The guard reads a path's changed status with `git diff -M --name-status`
+  (not the plain `--name-only` it used before), so a rename row carries
+  both the old and new path; when the received side's path was renamed on
+  the forwarded side, the guard judges content at the NEW path, not
+  absence at the old one. This is what a daily `Promote BL-N: paused ->
+  active` backlog commit is — a `git mv` plus one line — and before this
+  fix it refused every forward from a branch that had not yet synced past
+  such a promotion, reading the whole moved file as dropped (14 promotions
+  on 2026-09-21 alone; the incident:
+  `backlog/evidence/merge-drop-guard-rename-blind-false-positive-bl1680-20260921.md`).
+  A rename that DOES lose an uncontested hunk at the new path is still
+  refused, naming the new path.
 
 ## If you hit this refusal
 
