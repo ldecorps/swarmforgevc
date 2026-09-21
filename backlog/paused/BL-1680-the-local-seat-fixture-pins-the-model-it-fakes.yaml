@@ -1,0 +1,141 @@
+id: BL-1680
+title: "BL-1384's acceptance handler fakes the local endpoint's catalogue as ['qwen3:14b'] but lets the REAL runLocalSeatTurn resolve the model id from the live process.env (resolveLocalSeatModelId(process.env, deps.modelId) with no modelId passed and SWARMFORGE_LOCAL_SEAT_MODEL never scrubbed), so scenario 02 'the bridge draining the queue answers in the local seat topic' is red on every session whose pack exports SWARMFORGE_LOCAL_SEAT_MODEL=qwen2.5-coder:latest - all of them today: 'Local seat cannot answer: the endpoint is up but does not hold \"qwen2.5-coder:latest\" (it holds: qwen3:14b)'; first sighted by the coder from inside BL-1658 (note 000045, 14:07Z); the handler pins the model id it fakes and BL-1384's feature is green whatever the host exports"
+milestone: M8
+type: defect
+severity: high
+# high: a test failing on main is a broken safety signal (standing-red
+# register, 2026-09-05); it blocks BL-1658's QA approval today and every
+# future parcel that touches the handler, and it reads as a live seat
+# fault to anyone who runs the feature. Not critical: the seat itself is
+# unaffected - the handler, not production, reads the host env.
+status: todo
+epic: local-llm-swarm
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1235 (the seat and its resolver) and BL-1384 (the handler) are in
+# backlog/done. BL-1658 (active) moves this handler's require inside the
+# step and touches no turn logic: orthogonal, the coder confirmed the red
+# reproduces on the original file.
+mutation_cost: low
+# low: one acceptance handler gains a modelId (or scrubs one env seam),
+# one new feature and handler; the gherkin mutation gate re-runs this
+# feature's generated test per mutant - scenario 01 spawns BL-1384's
+# feature twice (about 25 s each, registry load), well inside the 300 s
+# BL-1358 ceiling (BL-1541).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1680-the-local-seat-fixture-pins-the-model-it-fakes.feature
+
+# Handler pin only (BL-233, BL-1371). The fix is the parcel's own diff in
+# bl1384LocalSeatTopicForwardedSteps.js, so an anchor on it gates nothing
+# (BL-1235); scenario 01 runs BL-1384's real feature in a child process
+# with the env var set, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1680LocalSeatFixturePinsItsModelSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: production code does
+  not change - resolveLocalSeatModelId, runLocalSeatTurn and the seat's
+  env contract stay exactly as BL-1235 shipped them; BL-1384's feature
+  text does not change (its scenarios never promised host independence,
+  the handler did). FIRM: the handler must be green with the env var
+  unset, set to the default, and set to a model its fixture does not
+  hold - whether it passes modelId beside its faked catalogue or scrubs
+  the env seam for the turn is the coder's direction, not a ruling.
+
+invariants:
+  - "No acceptance handler or unit test reaches resolveLocalSeatModelId with the live process.env: every caller of the real runLocalSeatTurn pins modelId or the SWARMFORGE_LOCAL_SEAT_MODEL seam (census 2026-09-21, six files: bl1235LocalQwenSeatSteps.js pins; bl1384LocalSeatTopicForwardedSteps.js leaks; bl1235LocalQwenSeat.test.js and bl1235LocalQwenSeatLive.test.js pin; bl1296BubbleSeatLive.test.js and telegramCursorBridgeLive.test.js stub the turn function entirely)."
+
+description: |
+  ## What
+  `specs/pipeline/steps/bl1384LocalSeatTopicForwardedSteps.js` (line ~176)
+  wraps the REAL `runLocalSeatTurn` and fakes only the endpoint:
+  `readEndpoint` returns `catalogue: ['qwen3:14b']`, the module's
+  `DEFAULT_LOCAL_SEAT_MODEL_ID`. The turn then asks for the model
+  `resolveLocalSeatModelId(process.env, deps.modelId)` returns
+  (`extension/src/tools/localQwenSeatLive.ts` line ~206;
+  `localQwenSeat.ts` lines 44-56: configured, else the env var
+  `SWARMFORGE_LOCAL_SEAT_MODEL`, else the default). The handler passes no
+  `modelId` and never scrubs the env var, so on any session that exports
+  the var to another model the seat refuses:
+  `Local seat cannot answer: the endpoint is up but does not hold
+  "qwen2.5-coder:latest" (it holds: qwen3:14b). Endpoint
+  http://fixture.invalid. No other seat has been asked.` - scenario 02
+  red, 3/4 green. Every live session on this host exports
+  `SWARMFORGE_LOCAL_SEAT_MODEL=qwen2.5-coder:latest` (read from the
+  coder, coder@2, QA and specifier sessions' /proc environ; exported by
+  no tracked file - the launcher's environment).
+
+  ## Why
+  A test that reads the host's environment through a seam it left open
+  is red or green by pack, not by code (engineering.prompt: redirect
+  through env seams; BL-1445's fail-open census shape - nobody ran a
+  landed feature until BL-1658 touched its handler). It is a standing red
+  on main (register row, this mint) that blocks BL-1658's QA approval and
+  every future parcel touching the handler, and it reads as a seat fault
+  to whoever runs it. Adjudication:
+  backlog/evidence/unowned-red-bl1384-sc02-live-env-model-id-adjudication-specifier-20260921.md.
+
+  ## How (direction, not mandate)
+  - In the handler's `runLocalSeatTurnFn` wrapper pass
+    `modelId: DEFAULT_LOCAL_SEAT_MODEL_ID` (import it from
+    `extension/out/tools/localQwenSeat`) beside the faked catalogue so
+    the two can never drift - or hand the turn a scrubbed env through the
+    resolver's own `env` parameter if the wrapper exposes one. Never
+    `delete process.env.SWARMFORGE_LOCAL_SEAT_MODEL` globally in a
+    handler that runs beside others (Vitest/node:test isolation).
+  - Scenario 01 runs BL-1384's feature in a child process
+    (`node specs/pipeline/cli.js <feature>`) with the env var unset and
+    set to `qwen2.5-coder:latest`; both must be all-ok. Scenario 02 drives
+    the fixture turn directly and asserts the completion was requested for
+    the catalogue's own model.
+
+  ## Scope
+  - `specs/pipeline/steps/bl1384LocalSeatTopicForwardedSteps.js` (the fix;
+    BL-1658's parcel edits this file's require line - merge, do not fork).
+  - `specs/features/BL-1680-the-local-seat-fixture-pins-the-model-it-fakes.feature`
+    and `specs/pipeline/steps/bl1680LocalSeatFixturePinsItsModelSteps.js`
+    (same parcel, BL-233, registered in `specs/pipeline/steps/index.js`).
+  - The register row for BL-1384's feature leaves in this parcel's land
+    (BL-1631); the parcel never edits the register (coder.prompt
+    2026-09-20). Documenter: the BL-1235/BL-1384 how-to notes that the
+    handler pins its model; no diagram trigger.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each.
+  1. `echo $SWARMFORGE_LOCAL_SEAT_MODEL` (expect qwen2.5-coder:latest on
+     this host), then `node specs/pipeline/cli.js specs/features/BL-1384-the-local-seat-topic-reaches-the-bridge-through-the-front-desk.feature`:
+     4/4 ok, scenario 02 posts "Hello from qwen".
+  2. `node specs/pipeline/cli.js specs/features/BL-1680-the-local-seat-fixture-pins-the-model-it-fakes.feature`:
+     all ok.
+  3. `grep -c 'modelId' specs/pipeline/steps/bl1384LocalSeatTopicForwardedSteps.js`
+     is at least 1 (or the scrubbed-env form is present), and the seat's
+     production files are untouched: `git diff --stat origin/main -- extension/src/tools/localQwenSeat.ts extension/src/tools/localQwenSeatLive.ts` is empty.
+  4. Standing-red register: the land retires the BL-1384 row; the register
+     report after landing shows no unowned row and no BL-1680 row.
+
+notes: |
+  Minted 2026-09-21 by the specifier adjudicating the coder's unowned-red
+  note 000045 (from inside BL-1658). AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Register row added in the mint commit:
+  `acceptance <BL-1384 feature> BL-1680 2026-09-21` (first_seen = first
+  sighting, the coder's 14:07Z). The holder (coder, BL-1658) was noted
+  the same pass: "BL-1384 sc02 red owned by BL-1680 - resume BL-1658".
+
+  Reproduced from the master checkout with one run; census of the six
+  callers in the invariant. The env var reached the live sessions with the
+  operator's pack work (first pack export: not in a tracked pack file); BL-1384 closed
+  2026-09-05 green because no session exported the var then.
+
+  Observed alongside, surfaced not touched: the shared master checkout
+  carries an uncommitted edit to extension/src/tools/localQwenSeatLive.ts
+  and extension/test/bl1235LocalQwenSeatLive.test.js (14:43 local, a
+  briefing-file system prompt). Not this red's cause; coordinator noted.
