@@ -88,10 +88,18 @@ approval_context: >
   one handler: the fifteen handlers `grep -ln cursorBridgeAgentSession
   specs/pipeline/steps/*Steps.js` names whose require is at module scope
   (bl1050, bl1146, bl1253, bl1322, bl1384, bl545, bl696 x2, bl697, bl717,
-  bl718, bl767, bl790, bl810, bl894; bl1116, bl720, bl915, bl941 already
-  require it inside a step). All fifteen move in THIS parcel, scenario 03
+  bl718, bl767, bl790, bl810, bl894; bl1116, bl1207, bl720, bl915, bl941
+  already require it inside a step - twenty in all). All fifteen move in
+  THIS parcel, scenario 03
   pins the set by name and the grep count; the register row for the guard
   file (owner BL-1658) stays one row. No choice is posed; the approval
+  stands.
+  AMENDED (4) 2026-09-21 on the coder's spec-gap note 000044: the census
+  is TWENTY, not nineteen - bl1207AbandonedLockLivenessSteps.js (already
+  lazy, MODULE_PATH) carries a NUL byte in a fixture string, so the
+  specifier's shell grep (ugrep) skipped it as binary; GNU grep and
+  `git grep -l` count twenty. Scenario 03's pinned count is twenty; the
+  fifteen and the fix are unchanged. No choice is posed; the approval
   stands.
 
 invariants:
@@ -164,6 +172,22 @@ description: |
     `censusOneHandler('bl1050CursorRunFailureLogSteps.js')` reads under
     20 ms.
 
+  ## Amendment 2026-09-21 (4) - the census is twenty; a NUL byte hid bl1207 from the mint's grep
+
+  Coder spec-gap note 000044 (14:04Z): scenario 03's "exactly nineteen"
+  is wrong on the real tree - twenty handlers name the module. The one
+  the mint missed is `bl1207AbandonedLockLivenessSteps.js`, already lazy
+  (`MODULE_PATH` const, `require(MODULE_PATH)` inside a function, its own
+  f61cbabf76 of 2026-08-28). Why: the file's fixture table holds a NUL
+  byte ('a NUL byte then nine nines'), so the specifier's shell `grep` -
+  ugrep, a shell function here - classed it binary and dropped it from
+  `-l`; GNU grep, ugrep `-a` and `git grep -l` all count twenty (`git
+  grep -Il` counts nineteen, the same skip). The fifteen eager members,
+  the fix and the register row are unchanged; scenario 03's pinned count
+  becomes twenty and its census command is `git grep -l
+  cursorBridgeAgentSession -- 'specs/pipeline/steps/*Steps.js'`. The
+  coder's in-parcel adjustment of the step's expected count is confirmed.
+
   ## Amendment 2026-09-21 (3) - the cursor-bridge population is the census of fifteen
 
   The coder made bl1050 lazy and the guard named
@@ -173,8 +197,10 @@ description: |
   census charges a shared graph to the alphabetically first eager
   requirer, so fixing one handler at a time re-arms the guard fourteen
   more times - this ticket's own jsdom finding. Census, 2026-09-21
-  (`grep -ln cursorBridgeAgentSession specs/pipeline/steps/*Steps.js`,
-  then whether the require sits at column 0 or inside a function):
+  (`git grep -l cursorBridgeAgentSession -- 'specs/pipeline/steps/*Steps.js'`
+  - never a shell grep that skips NUL-bearing files as binary, see
+  amendment (4) - then whether the require sits at column 0 or inside a
+  function):
   EAGER - bl1050CursorRunFailureLogSteps, bl1146HostQueueEnqueueNextHoldOnHostQuestionSteps,
   bl1253DeadFeederOwnsGetUpdatesStampSteps, bl1322BridgeLazyCursorApiKeySteps,
   bl1384LocalSeatTopicForwardedSteps, bl545CatchUpPagerSteps, bl696LetsTalkSteps,
@@ -182,7 +208,8 @@ description: |
   bl717SilentReturnAfterHoldMusicSteps, bl718BubbleTalkMirrorSteps,
   bl767QueuedBridgeQuestionsAnswerInOriginTopicSteps, bl790BridgeQueuesNoteForRoleSteps,
   bl810HostQueuePollClearAllTtlSteps, bl894QueueRepostsSelectionPollSteps
-  (15); lazy already - bl1116, bl720, bl915, bl941 (4). Several of the
+  (15); lazy already - bl1116, bl1207, bl720, bl915, bl941 (5; twenty in
+  all). Several of the
   fifteen also require `bridgeServer` at module scope (bl696, bl697,
   bl718, bl790, bl1322): move that too where it is the heavy one - the
   guard's verdict, not the module name, is the contract.
@@ -191,7 +218,7 @@ description: |
     `bridgeServer`/`letsTalk*` graph beside it) inside the step that uses
     it; its own feature still resolves.
   - Scenario 03 pins the fifteen by name and pins the grep count at
-    fifteen (BL-1445); scenario 02 reads "none of the twenty-two".
+    twenty (BL-1445); scenario 02 reads "none of the twenty-two".
   - QA e2e addition: `cd extension && npm test` once; for each of the
     fifteen, `censusOneHandler` under 20 ms; and the fifteen features
     green through the runner once each (about 20 s of registry load per
@@ -309,6 +336,13 @@ notes: |
   still names RETIRED behaviour") adjudicated confirm_promote: a ticket
   whose deliverable retires BL-687 scenario 06 necessarily names it
   (BL-1271 shape); record at .swarmforge/deprecator/adjudications/BL-1658.json.
+
+  Amended (4) 2026-09-21 on the coder's spec-gap note 000044 (census
+  twenty, not nineteen): bl1207 holds a NUL byte in a fixture string and
+  the mint's ugrep skipped it as binary. Scenario 03's count is twenty;
+  the coder's in-parcel adjustment is confirmed; the holder (coder@2)
+  noted. Evidence:
+  backlog/evidence/BL-1658-spec-gap-census-twenty-adjudication-specifier-20260921.md.
 
 assigned_to: coder
 bounce_count: 1

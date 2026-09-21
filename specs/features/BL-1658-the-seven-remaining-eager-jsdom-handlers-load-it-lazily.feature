@@ -40,12 +40,14 @@ Feature: BL-1658 The seven remaining eager jsdom handlers, and the one eager cur
   # BL-1658 the-cursor-bridge-population-is-the-census-03
   # Census pin (BL-1445): the fifteen are named, not derived, and the grep count is pinned; a
   # sequential census charges the shared graph to the alphabetically first eager requirer, so
-  # fixing them one at a time re-arms the guard on the next name.
+  # fixing them one at a time re-arms the guard on the next name. The census command is
+  # git grep -l cursorBridgeAgentSession -- 'specs/pipeline/steps/*Steps.js' (twenty): a shell grep
+  # that skips NUL-bearing files as binary drops bl1207 and reads nineteen (amendment 4).
   Scenario Outline: every eager cursor-bridge requirer loads that graph inside its step, and the census is complete
     When <handler> is required alone in a fresh child process with the loader intercept
     Then extension/out/bridge/cursorBridgeAgentSession is not loaded by that require
     And the cost is under the per-handler budget
-    And the census grep over specs/pipeline/steps for cursorBridgeAgentSession names exactly nineteen handlers of which fifteen were eager at mint
+    And the census grep over specs/pipeline/steps for cursorBridgeAgentSession names exactly twenty handlers of which fifteen were eager at mint
 
     Examples:
       | handler                                             |
