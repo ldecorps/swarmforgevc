@@ -55,6 +55,15 @@ export type LiveObservation = {
    * real ceremony.
    */
   workedAShift?: boolean;
+  /**
+   * BL-1640: was this advance triggered by a sleep (finish-shift, a bedtime
+   * cron, night-stop) rather than the daemon's own periodic sweep? A
+   * same-night `done` state only reopens into a new ceremony on a sleep
+   * trigger with a worked shift since - the daemon's own sweep must never
+   * reopen a night it already closed (its overnight window is untouched).
+   * Optional, defaulting to false: every pre-BL-1640 caller is the daemon.
+   */
+  fromSleep?: boolean;
 };
 
 export type LiveAdvance = { state: LiveState; actions: LiveAction[] };
@@ -240,6 +249,18 @@ function advanceFrozen(state: LiveState, obs: LiveObservation): LiveAdvance {
   return enterBriefing({ ...state, hadInFlight: state.hadInFlight || obs.inFlightCount > 0 }, obs);
 }
 
+// BL-1640: a second sleep the same day after a shift of work is a NEW
+// ceremony, not the old one re-read - the human directive was "each time
+// the swarm ... goes to sleep", not "once per calendar day". Extracted so
+// `advanceNightClosingCeremony`'s own complexity does not carry this
+// branch's decision points (differential complexity gate, workflow.prompt).
+function advanceSameDayDone(prev: LiveState, obs: LiveObservation): LiveAdvance {
+  if (obs.fromSleep && obs.workedAShift !== false) {
+    return startFrozen(obs);
+  }
+  return { state: prev, actions: [] };
+}
+
 /**
  * Advance one sweep. Idempotent for a finished night; starts only when due.
  */
@@ -249,7 +270,7 @@ export function advanceNightClosingCeremony(
 ): LiveAdvance {
   const sameNight = prev !== null && prev.nightKey === obs.nightKey;
   if (sameNight && prev.phase === 'done') {
-    return { state: prev, actions: [] };
+    return advanceSameDayDone(prev, obs);
   }
 
   if (!sameNight || prev === null || prev.phase === 'idle') {
@@ -270,4 +291,37 @@ export function advanceNightClosingCeremony(
 
 export function briefingInstruction(dayKey: string): string {
   return `produce the morning briefing for ${dayKey}`;
+}
+
+// BL-1640: bedtime never hangs. `hardDeadlineMs` already folds in the drain
+// and briefing budgets (see night-closing-ceremony-run.ts); this fixed grace
+// is the extra margin a sleep's polling loop gets past that deadline before
+// it gives up and stops the stack anyway. Not conf-configurable (constraint:
+// no new conf key) - a fixed safety margin on top of two budgets that
+// already are.
+export const SLEEP_CEILING_GRACE_MS = 60_000;
+
+export type SleepLoopDecision = 'wait' | 'done' | 'overran';
+
+/**
+ * The one decision a sleep's polling loop needs each tick: keep waiting for
+ * the ceremony to reach `done`, or stop - either because it got there, or
+ * because the ceiling (hardDeadlineMs + grace) has passed and the loop must
+ * give up rather than hang bedtime forever. `phase` is `undefined` when the
+ * loop's very first read fails (e.g. no state file yet); that reads as "not
+ * done" so the ceiling still binds instead of waiting forever on a read
+ * failure.
+ */
+export function sleepLoopDecision(
+  phase: LivePhase | undefined,
+  nowMs: number,
+  hardDeadlineMs: number
+): SleepLoopDecision {
+  if (phase === 'done') {
+    return 'done';
+  }
+  if (nowMs >= hardDeadlineMs + SLEEP_CEILING_GRACE_MS) {
+    return 'overran';
+  }
+  return 'wait';
 }
