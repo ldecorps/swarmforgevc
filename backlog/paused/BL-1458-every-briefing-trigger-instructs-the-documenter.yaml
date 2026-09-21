@@ -24,7 +24,7 @@ acceptance: specs/features/BL-1458-every-briefing-trigger-instructs-the-document
 required_wiring:
   - 'specs/pipeline/steps/bl1458BriefingTriggerInstructsDocumenterSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   RE-PENDED 2026-09-19 by the specifier: scenario 06 was added to the
   feature file (the fallback instructs the documenter ONCE per day however
