@@ -53,3 +53,30 @@ reintroduce it invisibly.
 The sighting is fixed with its mechanism named, not retired - the
 counts above are the closing bounded-search evidence the ticket's
 qa_e2e_procedure item (4) asks for.
+
+## Declared-invariant property tests (BL-654, coder first authorship)
+
+BL-1666 declares two invariants. Coverage added in this parcel:
+
+1. Pipe-safety ("no decision depends on a pipe whose consumer can exit
+   before its producer has finished writing"): STATED REASON, no
+   fast-check property test - encoding it would require a real git
+   repository whose output exceeds the ~64 KiB pipe buffer (thousands of
+   commits or hundreds of paths) on every draw, which blows the property
+   lane's few-seconds budget at any useful numRuns. Encoded instead as
+   two deterministic shell integration tests
+   (`test_check_documenter_briefing_tip.sh` cases 13f/13g) whose fixtures
+   assert their own size against the 64 KiB bound before trusting a pass.
+   Comment recorded at the top of
+   `bl1459DocumenterBriefingTipGuardInvariants.property.test.js`.
+2. Content-equality-over-ancestry exemption: a new fast-check property
+   test ("property (BL-1666 invariant): an out-of-lane path is exempt iff
+   its tip blob equals the landed main blob, regardless of commit
+   ancestry") generates a blob-equal/blob-differs spread over a tip
+   commit whose out-of-lane path is written by a commit that shares no
+   lineage with main's own write - the hand-built land-step replay shape
+   - and asserts the guard's OK/refusal tracks blob equality, not
+   ancestry. A paired non-vacuity test removes the content-equality block
+   from a scratch copy of the guard and proves the property then fails
+   (a blob-equal, non-ancestor path is wrongly refused), then discards
+   the scratch copy. Both pass; full file re-run: 9/9 passed.
