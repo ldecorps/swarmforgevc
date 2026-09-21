@@ -311,3 +311,6 @@ notes: |
   (BL-1271 shape); record at .swarmforge/deprecator/adjudications/BL-1658.json.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-21, by: cleaner, blamed: coder, class: behavior, commit: eae448e6c9, evidence: backlog/evidence/BL-1658-bounce-20260921.md }

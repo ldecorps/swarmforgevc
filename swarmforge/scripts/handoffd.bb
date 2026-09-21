@@ -2324,7 +2324,15 @@
       draft)))
 
 (defn swarm-handoff-script []
-  (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_handoff.bb")))
+  ;; BL-1458: script-dir (a plain string, captured ONCE from *file* while
+  ;; THIS file was itself loading) rather than re-reading *file* here -
+  ;; *file* is only reliably handoffd.bb's own path for the dynamic extent
+  ;; of loading/running this file as ONE unit; a caller that loads this
+  ;; file via its own load-file (e.g. a test harness) and then invokes a
+  ;; function like this one afterward sees *file* revert to the caller's
+  ;; own context, resolving this to a bare relative "swarm_handoff.bb" and
+  ;; failing "File does not exist". script-dir has no such fragility.
+  (str (fs/path script-dir "swarm_handoff.bb")))
 
 ;; Shells to swarm_handoff.bb (SWARMFORGE_ROLE=coordinator) rather than
 ;; hand-writing an inbox file, per the ticket's "must go through the normal
@@ -5149,6 +5157,60 @@
     (catch Exception e
       (log! "closing-ceremony-run-error" (.getMessage e)))))
 
+;; BL-1458: the fallback trigger's own durable once-per-day marker.
+;; generate-briefing-if-due!'s gate is docs/briefings/<day-key>.md FILE
+;; PRESENCE - the right gate for "should the trigger act at all", but it
+;; stays true (not yet generated) every sweep tick (~2 min) until the
+;; documenter actually lands the file, so an unconditional :notify! call
+;; would flood the documenter's mailbox with one note per tick. This
+;; marker is the SEPARATE "have we already asked" signal the fallback's
+;; own note delivery needs - the ceremony path never needs one, since
+;; night-closing-ceremony-run! is itself only driven once per ceremony by
+;; its own state machine.
+(defn- briefing-instructed-marker-path [day-key]
+  (fs/path state-dir "briefing" (str "instructed-" day-key)))
+
+(defn- briefing-already-instructed? [day-key]
+  (fs/exists? (briefing-instructed-marker-path day-key)))
+
+(defn- mark-briefing-instructed! [day-key]
+  (let [p (briefing-instructed-marker-path day-key)]
+    (fs/create-dirs (fs/parent p))
+    (spit (str p) "")))
+
+;; BL-1458: delivers the fallback's instruction as a mailbox NOTE to the
+;; documenter - never a pane injection into the coordinator (the human's
+;; ruling A: the documenter is the briefing's one author). Same outbound
+;; route nudge-coordinator-parked!/auto-route! already use: a scratch
+;; draft file shelled through swarm_handoff.bb with SWARMFORGE_ROLE
+;; "coordinator" (this daemon acts as the master-resident coordinator
+;; seat for every note it originates, same as those sweeps). A `note` is
+;; a single-call send (no BL-1529 git_handoff self-audit challenge).
+;; Marked instructed ONLY on a successful send, so a delivery error is
+;; retried on the next tick rather than silently dropped for the day.
+;;
+;; Distinct log tags from generate-briefing-if-due!'s own
+;; "briefing-generation-nudge-sent" (unchanged, pure-lib "the trigger
+;; fired" signal - asserted by briefing_generation_schedule_test_runner.bb):
+;; that tag logs on EVERY due tick regardless of the marker below, so it
+;; means "the trigger decided to act", not "a note went out this tick" -
+;; the two are no longer the same fact once a marker can skip the send.
+(defn- instruct-documenter-briefing! [day-key instruction-text]
+  (if (briefing-already-instructed? day-key)
+    (log! "briefing-generation-note-skip-already-instructed" day-key)
+    (let [draft (write-scratch-draft!
+                 ["type: note"
+                  "to: documenter"
+                  "priority: 00"
+                  (str "message: " instruction-text)])
+          env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+          result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)]
+                                              {:dir (str project-root) :env env})]
+      (if (zero? (:exit result))
+        (do (mark-briefing-instructed! day-key)
+            (log! "briefing-generation-note-queued" day-key))
+        (log! "briefing-generation-note-error" day-key (str (:err result)))))))
+
 (defn briefing-generation-sweep! [roles socket]
   (let [gate (night-closing-ceremony-gate)
         ceremony-mode? (= "ceremony" (str (:mode gate)))]
@@ -5162,17 +5224,11 @@
     ;; Fixed morning trigger only when the gate says so (or gate failed open
     ;; to today's behaviour — nil gate keeps legacy fire).
     (when (or (nil? gate) (true? (:consultFixedMorningTrigger gate)))
-      (let [[hour minute] (configured-morning-time)]
+      (let [[hour minute] (configured-morning-time)
+            day-key (briefing-generation-schedule-lib/utc-day-key (System/currentTimeMillis))]
         (briefing-generation-schedule-lib/generate-briefing-if-due!
          (System/currentTimeMillis) hour minute (str briefings-dir) (swarm-hibernated?)
-         {:notify! (fn [instruction-text]
-                     (if (tmux-inject-disabled?)
-                       (log! "briefing-generation-skip-mailbox-only")
-                       (when-let [coordinator (get roles "coordinator")]
-                         (agent-runtime-inject/notify-agent!
-                          socket (:session coordinator) (or (:agent coordinator) "claude")
-                          :log-fn (fn [tag sess detail] (log! tag sess detail))
-                          :text instruction-text))))
+         {:notify! (fn [instruction-text] (instruct-documenter-briefing! day-key instruction-text))
           :compose-headless! compose-and-write-banked-briefing!
           :emit-sidecar! emit-cost-health-sidecar!
           :log! (fn [& parts] (apply log! parts))})))))

@@ -3,16 +3,15 @@
 ;; briefing_email_lib.bb (BL-214), which only handles the SEND of an
 ;; already-committed docs/briefings/<date>.md - this lib decides WHEN that
 ;; file should first come into existence and drives the nudge that asks the
-;; coordinator to compose+commit it, headless (no VS Code host required).
+;; documenter to compose+commit it, headless (no VS Code host required).
 ;;
-;; REUSE (per the ticket): keeps BL-099's briefing CONTENT (the coordinator
-;; still composes it, as agentic work - see
-;; extension/src/extension.ts's startOrRestartDailyBriefing) and BL-214's
-;; SEND path (briefing_email_lib.bb, untouched) exactly as they are; this
-;; adds only the scheduled GENERATION trigger. The literal instruction text
-;; below is copied verbatim from that same extension.ts function, so the
-;; coordinator sees an identical nudge regardless of which trigger (the VS
-;; Code host's own timer, or this headless daemon schedule) fired it.
+;; BL-1458: the documenter is the briefing's one author (human ruling A,
+;; 2026-09-07). This trigger's :notify! delivers a mailbox NOTE to the
+;; documenter, never a pane injection into the coordinator - the same
+;; route night-closing-ceremony-run.ts's sendHandoffNote takes for its own
+;; instructBriefing call. The instruction literal is byte-identical to
+;; nightClosingCeremonyLive.ts's briefingInstruction(dayKey) (BL-897
+;; mirror test). BL-214's SEND path (briefing_email_lib.bb) is untouched.
 ;;
 ;; IDEMPOTENT (per the ticket's own wording, "gate on the day's existing
 ;; briefing"): docs/briefings/<date>.md FILE PRESENCE is the whole
@@ -73,18 +72,16 @@
        (not (briefing-already-generated? briefings-dir (utc-day-key now-ms)))))
 
 (defn briefing-due-instruction
-  "BL-099's own nudge prose (extension.ts's startOrRestartDailyBriefing) -
-   the static wording is reused verbatim; the target date is interpolated
-   here as the real day-key, whereas extension.ts's own instruction still
-   sends the literal placeholder text \"<date>\" (unverified/untested on
-   that side - grep-confirmed no test locks in that string). The two
-   trigger paths are therefore NOT byte-identical when the target date
-   differs from the placeholder text itself; both are expected to land the
-   coordinator on the same file in practice (an LLM reader resolves either
-   form to \"today\"), but a future change to either side's wording should
-   not assume the other stays in lockstep without re-checking this comment."
+  "BL-1458: the SAME literal as the night closing ceremony's own
+   `briefingInstruction(dayKey)` (nightClosingCeremonyLive.ts) - one
+   instruction, one author (the documenter), across both triggers and
+   both languages (BL-897 mirror test asserts byte-identity). Was
+   BL-099's coordinator-compose wording (\"Daily briefing due: compose
+   today's briefing per your role...\"); retired by BL-1458, which moved
+   this trigger's delivery from a coordinator pane injection to a
+   documenter mailbox note carrying this exact text."
   [day-key]
-  (str "Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/" day-key ".md."))
+  (str "produce the morning briefing for " day-key))
 
 (defn generate-briefing-if-due!
   "The whole trigger decision + action, adapter-injected (mirrors
@@ -98,13 +95,13 @@
    BL-272: :emit-sidecar! runs the BL-213 cost & health sidecar emitter
    BEST-EFFORT before :notify!/:compose-headless! - mirrors extension.ts's
    onBriefingDue host path, which emits+commits the sidecar inside a
-   try/catch before nudging the coordinator. A throwing :emit-sidecar!
-   must never suppress the nudge, so it is wrapped here, not left to each
-   adapter implementation to remember.
+   try/catch before nudging the documenter (BL-1458). A throwing
+   :emit-sidecar! must never suppress the nudge, so it is wrapped here,
+   not left to each adapter implementation to remember.
 
    BL-308: the 6-arg form takes an explicit hibernated? flag. When due AND
    hibernated?, :compose-headless! (day-key) is called INSTEAD OF :notify!
-   - there is no coordinator to nudge while banked, so the headless
+   - there is no documenter to nudge while banked, so the headless
    composer writes the briefing itself. The 5-arg form (every pre-BL-308
    caller/test) is unchanged: it defaults hibernated? to false, so its
    behavior stays byte-identical to before this ticket."

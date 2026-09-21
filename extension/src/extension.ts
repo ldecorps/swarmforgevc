@@ -481,11 +481,15 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
   }
 }
 
-// BL-099: daily briefing - once-a-day nudge into the coordinator's pane
-// (the coordinator's own role prompt composes and commits the briefing
-// content, per the ticket's role-prompt-owned scope). BL-214: emailing each
-// committed briefing is now the headless daemon's job, not this host's -
-// see briefing_email_lib.bb.
+// BL-099: daily briefing sidecar timer. Composing the briefing's content is
+// the documenter role prompt's job (human ruling A, 2026-09-07, BL-658) -
+// this host asks nobody to compose; the once-a-day callback below only
+// emits+commits the cost/health sidecar. BL-1458 retired this path's own
+// compose nudge (it duplicated the night closing ceremony's instruction to
+// the documenter and the headless daemon's own fallback trigger, composing
+// the briefing twice some mornings). BL-214: emailing each committed
+// briefing is now the headless daemon's job, not this host's - see
+// briefing_email_lib.bb.
 function startOrRestartDailyBriefing(targetPath: string, context: vscode.ExtensionContext): void {
   if (stopBriefingScheduler) {
     stopBriefingScheduler();
@@ -497,8 +501,6 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
     return;
   }
 
-  const socketPath = readTmuxSocket(targetPath);
-
   stopBriefingScheduler = startBriefingScheduler(
     {
       briefingHourUtc: BRIEFING_HOUR_UTC,
@@ -507,10 +509,12 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
     {
       getNowMs: () => Date.now(),
       onBriefingDue: (): void => {
-        // BL-213: emit + commit the deterministic cost/health sidecar before
-        // the nudge below - it's a best-effort addition to the briefing
-        // flow, so a failure here must never block the nudge that actually
-        // gets the human-authored briefing written.
+        // BL-213: emit + commit the deterministic cost/health sidecar.
+        // BL-1458: this host asks no role to compose the briefing - the
+        // documenter is its one author (the night closing ceremony's own
+        // instruction, or the headless daemon's fallback trigger, both of
+        // which now send the documenter a mailbox note). Best-effort: a
+        // failure here must never surface as a host-level error.
         try {
           const rolesTsvPath = path.join(swarmforgeDir, 'roles.tsv');
           const roles = fs.existsSync(rolesTsvPath) ? parseRolesTsv(fs.readFileSync(rolesTsvPath, 'utf8')) : [];
@@ -520,25 +524,6 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
         } catch {
           // best-effort - see comment above
         }
-
-        if (!socketPath) return;
-        const roleEntry = readSwarmRoles(targetPath).find((r) => r.role === 'coordinator');
-        if (!roleEntry) return;
-        const target = paneTarget(roleEntry.session, roleEntry.displayName, getPaneBaseIndex(socketPath));
-        sendInstructionVerified(
-          {
-            capturePane: () => {
-              const captured = capturePane(socketPath, target);
-              return captured.exitCode === 0 ? captured.stdout : '';
-            },
-            sendLiteral: (text: string) => sendKeys(socketPath, target, text, true).exitCode === 0,
-            sendEnter: () => {
-              sendKeys(socketPath, target, 'Enter');
-            },
-            wait: sleepSync,
-          },
-          'Daily briefing due: compose today\'s briefing per your role and commit it to docs/briefings/<date>.md.'
-        );
       },
     },
     BRIEFING_SCHEDULE_CHECK_INTERVAL_MS,

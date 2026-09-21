@@ -106,12 +106,12 @@
             (ms "2026-07-10T07:00:00Z") 7 0 dir)))
 
 ;; ── briefing-due-instruction (pure) ──────────────────────────────────────
-;; Reuses BL-099's own literal wording
-;; (extension/src/extension.ts's startOrRestartDailyBriefing) verbatim, so
-;; the coordinator sees the identical nudge from either trigger.
+;; BL-1458: byte-identical to nightClosingCeremonyLive.ts's
+;; briefingInstruction(dayKey) - one instruction, one author (the
+;; documenter), across both triggers and both languages.
 
-(assert= "the instruction names the exact target file, matching BL-099's own wording"
-         "Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/2026-07-10.md."
+(assert= "the instruction matches the ceremony's own literal (BL-1458 mirror rule)"
+         "produce the morning briefing for 2026-07-10"
          (briefing-generation-schedule-lib/briefing-due-instruction "2026-07-10"))
 
 ;; ── generate-briefing-if-due! (adapter-injected, mirrors briefing_email_lib.bb's send-unsent-briefings! shape) ──
@@ -127,7 +127,7 @@
                :log! (fn [& parts] (swap! logs conj (vec parts)))})]
   (assert= "morning-trigger-01: due -> fires and returns true" true fired?)
   (assert= "morning-trigger-01: the notify adapter is called exactly once with the built instruction"
-           ["Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/2026-07-10.md."]
+           ["produce the morning briefing for 2026-07-10"]
            @notified)
   (assert= "morning-trigger-01: a nudge-sent event is logged"
            true
@@ -179,7 +179,7 @@
                :log! (fn [& _] nil)})]
   (assert= "BL-272 headless-cost-health-sidecar-02: a throwing emit-sidecar adapter still fires the trigger" true fired?)
   (assert= "BL-272 headless-cost-health-sidecar-02: the notify adapter is still called exactly once despite the emit failure"
-           ["Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/2026-07-10.md."]
+           ["produce the morning briefing for 2026-07-10"]
            @notified))
 
 ;; ── BL-308: hibernated? branch calls :compose-headless! instead of :notify! ──
@@ -217,7 +217,7 @@
                :log! (fn [& _] nil)})]
   (assert= "full-forge-unaffected-03: not hibernated -> fires and returns true" true fired?)
   (assert= "full-forge-unaffected-03: the coordinator-nudge adapter fires, unchanged"
-           ["Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/2026-07-10.md."]
+           ["produce the morning briefing for 2026-07-10"]
            @notified)
   (assert= "full-forge-unaffected-03: the headless composer is never called when not hibernated"
            [] @composed))

@@ -197,3 +197,6 @@ notes: |
   assertion over scenario 01's step by design; reviewed and kept.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-21, by: QA, blamed: hardender, class: unit, commit: f5b2076ef6, evidence: backlog/evidence/BL-1458-bounce-20260921.md }

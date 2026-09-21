@@ -214,6 +214,13 @@ notes: |
   three states); reviewed and kept.
 
 assigned_to: coder
+
+# Landed 2026-09-21 as a tip-pure land_step_cli.bb replay off origin/main
+# (7fcd2cfb23, source commit ba03e5decc on swarmforge-QA), per the BL-1241
+# land-step remedy: the received commit (581c5b3efb, then the corrected
+# 0cf9aeb416) carried BL-1640's and BL-1458's own unlanded content as
+# ancestors. abandoned_commits names the cited/reviewed source.
+abandoned_commits: [0cf9aeb416]
 bounce_count: 2
 bounce_history:
   - { at: 2026-09-21, by: architect, blamed: coder, class: behavior, commit: bf75516785, evidence: backlog/evidence/BL-1641-bounce-20260921.md }

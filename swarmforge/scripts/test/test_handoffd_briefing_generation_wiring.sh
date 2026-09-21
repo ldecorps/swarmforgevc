@@ -9,6 +9,12 @@
 # sweep against a real fixture, with a fake tmux so no real pane is ever
 # touched.
 #
+# BL-1458: the fallback now instructs the DOCUMENTER via a real mailbox
+# note (swarm_handoff.bb, SWARMFORGE_ROLE=coordinator), never a pane
+# injection into the coordinator - human ruling A, 2026-09-07. This test
+# adds a documenter row to the fixture roles.tsv and asserts the queued
+# note itself, and that no pane injection ever carries the briefing text.
+#
 # swarmforge.conf's briefing_morning_time_utc is a SHARED, operator-level
 # setting (same file handoffd_supervisor.bb's own BL-144 alarm and BL-214's
 # briefing-email sweep already read, regardless of which project-root
@@ -57,7 +63,12 @@ SOCK="$ROOT/fake.sock"
 touch "$SOCK"
 mkdir -p "$ROOT/.swarmforge" "$ROOT/.swarmforge/handoffs/inbox/new" "$ROOT/docs/briefings"
 echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
-printf 'coordinator\tcoordinator\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
+{
+  printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT"
+  printf 'documenter\tdocumenter\t%s\tswarmforge-documenter\tDocumenter\tclaude\ttask\n' "$ROOT"
+} > "$ROOT/.swarmforge/roles.tsv"
+git -C "$ROOT" init -q
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
 # Deliberately no docs/briefings/<today>.md fixture file - the trigger has
 # something to fire on.
 
@@ -76,24 +87,34 @@ env -u RESEND_API_KEY PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" &
 DAEMON_PID=$!
 
 for _ in $(seq 1 40); do
-  [[ -f "$LOG_FILE" ]] && grep -q "briefing-generation-nudge-sent" "$LOG_FILE" 2>/dev/null && break
+  [[ -f "$LOG_FILE" ]] && grep -q "briefing-generation-note-queued" "$LOG_FILE" 2>/dev/null && break
   sleep 0.25
 done
 mkdir -p "$ROOT/.swarmforge/daemon"
 touch "$ROOT/.swarmforge/daemon/stop"
 wait "$DAEMON_PID" 2>/dev/null || true
 
-# ── 01: the real daemon fired the morning trigger and logged it ──────────
-grep -q "briefing-generation-nudge-sent" "$LOG_FILE" || fail "01: expected the daemon's own briefing-generation sweep to fire and log a nudge; got: $(cat "$LOG_FILE" 2>/dev/null)"
+# ── 01: the real daemon fired the morning trigger and queued the note ────
+grep -q "briefing-generation-note-queued" "$LOG_FILE" || fail "01: expected the daemon's own briefing-generation sweep to fire and queue a note; got: $(cat "$LOG_FILE" 2>/dev/null)"
 pass "01: the consolidated daemon itself ran the briefing-generation sweep and fired"
 
-# ── 02: the nudge actually went out via tmux, targeting the coordinator's own session ─
-grep -q "swarmforge-coordinator" "$CALL_LOG" || fail "02: expected the nudge to target the coordinator's own tmux session"
-grep -q "Daily briefing due" "$CALL_LOG" || fail "02: expected the daily-briefing nudge literal to be sent"
-pass "02: the nudge reached the coordinator's pane via tmux with the expected instruction text"
+# ── 02 (BL-1458): the instruction landed as a real mailbox note addressed
+#       to the documenter, in the documenter's own inbox - never a pane
+#       injection carrying the retired coordinator wording ────────────────
+NOTE_FILE="$(grep -rl "produce the morning briefing" "$ROOT/.swarmforge/handoffs" 2>/dev/null | head -1)"
+[[ -n "$NOTE_FILE" ]] || fail "02: expected a queued handoff file naming the briefing instruction under .swarmforge/handoffs"
+grep -q "^to: documenter$" "$NOTE_FILE" || fail "02: expected the queued note addressed to: documenter, got: $(cat "$NOTE_FILE")"
+grep -q "^type: note$" "$NOTE_FILE" || fail "02: expected type: note, got: $(cat "$NOTE_FILE")"
+pass "02: the instruction reached the documenter as a real mailbox note, addressed correctly"
 
-# ── 03: the sweep itself never threw ──────────────────────────────────────
-grep -q "briefing-generation-sweep-error" "$LOG_FILE" && fail "03: the briefing-generation sweep threw an exception; got: $(cat "$LOG_FILE")"
-pass "03: the briefing-generation sweep ran without throwing"
+# ── 03: no tmux call ever carried the retired coordinator wording ────────
+if [[ -f "$CALL_LOG" ]]; then
+  grep -q "Daily briefing due" "$CALL_LOG" && fail "03: expected the retired coordinator wording never to reach tmux, got: $(cat "$CALL_LOG")"
+fi
+pass "03: the retired coordinator-compose wording never reaches a tmux pane"
+
+# ── 04: the sweep itself never threw ──────────────────────────────────────
+grep -q "briefing-generation-sweep-error" "$LOG_FILE" && fail "04: the briefing-generation sweep threw an exception; got: $(cat "$LOG_FILE")"
+pass "04: the briefing-generation sweep ran without throwing"
 
 echo "ALL PASS"

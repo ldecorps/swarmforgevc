@@ -217,3 +217,12 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-21, by: QA, blamed: coder, class: behavior, commit: 3bd5c3b896, evidence: backlog/evidence/BL-1640-bounce-20260921.md }
+
+# Landed 2026-09-21 as a hand-built tip-pure commit off origin/main
+# (1918571013), per the specifier's BL-1640 LAND_ESCALATE adjudication
+# (backlog/evidence/BL-1640-land-escalate-adjudication-specifier-20260921.md):
+# BL-1640's own TS/feature/handler content had already reached origin/main
+# at 12:42 via an earlier whole-branch-tip QA land of an unrelated ticket
+# (BL-1678). abandoned_commits names the hardener's own bystander hunk on
+# BL-1458's test runner file, excluded from this land as BL-1458's to carry.
+abandoned_commits: [48476322ab]

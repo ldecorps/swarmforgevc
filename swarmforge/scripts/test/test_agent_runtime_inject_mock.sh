@@ -46,11 +46,11 @@ pass "mock agent inject uses facade steps through tmux"
 : > "$CALL_LOG"
 PATH="$FAKE_BIN:$PATH" bb -e "
 (load-file \"$INJECT\")
-(agent-runtime-inject/notify-agent! \"$SOCK\" \"$SESSION\" \"mock\" :text \"Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/2026-07-10.md.\")
+(agent-runtime-inject/notify-agent! \"$SOCK\" \"$SESSION\" \"mock\" :text \"An arbitrary override literal for this test only.\")
 "
 
 grep -q -- '-l MOCK_WAKE' "$CALL_LOG" && fail "expected the :text override to replace the default mock wake literal, not send it too"
-grep -q -- "Daily briefing due" "$CALL_LOG" || fail "expected the :text override literal to be sent via tmux send-keys"
+grep -q -- "An arbitrary override literal" "$CALL_LOG" || fail "expected the :text override literal to be sent via tmux send-keys"
 
 pass ":text override replaces the default wake message through the same tmux machinery"
 echo "ALL PASS"
