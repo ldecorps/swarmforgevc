@@ -162,15 +162,27 @@
               ;; itself, ahead of the parcel's own tip-pure commit - never
               ;; landed silently (Article 1.9's own posture, same as the
               ;; ENTANGLED_SIBLING/LANDED_SIBLING lines below).
-              (doseq [{:keys [sha landed-sha paths already-applied?]} (:stray-landed plan)]
-                ;; BL-1650 D1: an already-applied stray (content identical
-                ;; to the target tree under a different sha - git's own
-                ;; "now empty" cherry-pick) never lands a NEW commit, so
-                ;; it is never printed as LANDED - a distinct, equally
-                ;; auditable tag names the sha it never needed to move.
-                (if already-applied?
+              (doseq [{:keys [sha landed-sha paths already-applied? superseded? reason]} (:stray-landed plan)]
+                (cond
+                  ;; BL-1670: a real conflict main's own later text already
+                  ;; supersedes never lands a NEW commit either - named with
+                  ;; the ground it was decided on (a fixed tag for ground
+                  ;; (a), the rewriting commit's own short sha(s) for
+                  ;; ground (b)), never silently folded into an ordinary
+                  ;; LANDED line (Article 1.9's own posture).
+                  superseded?
+                  (println (str "LAND_STRAY_SUPERSEDED " sha " " (str/join "," (sort paths)) " " reason))
+
+                  ;; BL-1650 D1: an already-applied stray (content identical
+                  ;; to the target tree under a different sha - git's own
+                  ;; "now empty" cherry-pick) never lands a NEW commit, so
+                  ;; it is never printed as LANDED - a distinct, equally
+                  ;; auditable tag names the sha it never needed to move.
+                  already-applied?
                   (println (str "LAND_STRAY_EVIDENCE_ALREADY_LANDED " sha " already at " landed-sha " "
                                 (str/join "," (sort paths))))
+
+                  :else
                   (println (str "LAND_STRAY_EVIDENCE_LANDED " sha " -> " landed-sha " "
                                 (str/join "," (sort paths))))))
               ;; BL-1604: names every other open ticket's registry row the
