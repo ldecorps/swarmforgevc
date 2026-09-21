@@ -1,0 +1,128 @@
+id: BL-1675
+title: "extension/src/tools/night-closing-ceremony-gate.ts's first-ever Stryker run (BL-1640's hardener, 2026-09-21, scoped include set) left 68 first-run mutants owned by nobody - 24 survived and 44 never covered across parseArgs 0/29, inCeremonyWindow 15/9, readBudgets 8/0, main 0/6, evaluateGate 1/0 - the ceremony gate CLI whose window arithmetic and argument parsing the existing test reaches only through the gate's happy answer; the run is repeated over the full unit suite and every survivor is killed by a behaviour test or recorded as an accepted equivalent with its code-level proof"
+milestone: M8
+type: chore
+severity: medium
+# medium: hardening debt, not a red and not a safety signal; the runs
+# completed and BL-1640 proceeds with the debt owned here (rule of
+# 2026-09-10: a reason per survivor names an owner).
+status: todo
+epic: first-run-mutation-debt
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-1640 (active, hardender at mint) exposes drainBudgetMinutes and briefingBudgetMinutes on the gate result: promote only after it lands; BL-1641 does not touch this file.
+# BL-1519 is the epic tracker; this slice is added to its decomposes_into
+# in the mint commit.
+mutation_cost: medium
+# medium: TypeScript under Stryker, CRAP and DRY; the deliverable IS the
+# mutation run over one 96-line file (90 mutants, minutes scoped) plus
+# unit cases over fixtures the existing test file already builds. One
+# sitting by BL-1519's ~60-per-sitting arithmetic (see the census groups).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1675-night-closing-ceremony-gate-first-run-survivors-to-zero.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1675NightClosingCeremonyGateSurvivorsToZeroSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the module and its consumers
+# already exist, so any pattern on them matches before and after.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: no production behaviour
+  changes - every contract BL-658's, BL-1393's, BL-1640's and BL-1641's
+  features pin stays green; only tests are added, and a refactor for CRAP
+  keeps the same outputs. FIRM: "accepted equivalent" needs the
+  code-level reason in the evidence (BL-1520's rule), never "first-run
+  debt" - this ticket IS the owner that reason names. FIRM: main stays a thin wrapper over the exported helpers (engineering.prompt), called in-process with stubbed argv - never process.chdir.
+
+invariants:
+  - "Every mutant Stryker reports for the file at the parcel commit is either killed by a test in the unit suite or recorded in the evidence as an accepted equivalent with the code-level reason; none is silent."
+
+description: |
+  ## What is wrong
+
+  `extension/src/tools/night-closing-ceremony-gate.ts` (96 lines) was never mutation-tested before BL-1640's hardener
+  ran a scoped Stryker pass on 2026-09-21 (evidence
+  `backlog/evidence/BL-1640-hardener-first-run-survivor-census-20260921.md`
+  and the per-mutant list beside it, hardender branch 76bf756a69): 90
+  mutants, 24 survived, 44 never covered against the three-file include
+  set. None sit in BL-1640's own changed lines. Per-declaration census
+  (`backlog/evidence/BL-1640-first-run-survivor-census-by-declaration-20260921.md`,
+  survived / no-coverage): parseArgs 0/29;inCeremonyWindow 15/9;readBudgets 8/0;main 0/6;evaluateGate 1/0.
+
+  parseArgs's 29 never-covered mutants are the CLI's argument parsing exercised only through the real process; inCeremonyWindow's 24 are the window boundaries (start, stop, wrap past midnight) the one existing case never crosses; readBudgets's 8 are the conf defaults.
+
+  ## What is wanted
+
+  - The run is repeated over the FULL unit suite first (the hardener's
+    include set was three files; a no-coverage mutant here means no test
+    in THAT set reached it); the evidence records the include set, the
+    summary block, load and duration, and either zero survived and zero
+    no-coverage or one accepted-equivalent record per remaining survivor
+    with the code-level reason (BL-234).
+  - Behaviour tests kill the rest, grouped by the census's declarations:
+    inCeremonyWindow at, before and after each boundary and across midnight; readBudgets with present, absent and malformed conf keys; parseArgs and main in-process with stubbed argv and a captured stdout for every flag and error path.
+  - The evidence lists, per declaration in the census, the test file and
+    case that now rejects its mutants (scenario 02).
+  - Any function `npm run crap` flags in the file under 6 (coverage
+    first; a small refactor only where coverage cannot reach).
+  - Evidence path: `backlog/evidence/BL-1675-night-closing-ceremony-gate-mutation.md`.
+
+  ## How (direction, not mandate)
+
+  - `--mutate out/tools/night-closing-ceremony-gate.js`, `perTest`, sibling links per the Verification
+    rules; the hardener's scoped config shape
+    (`vitest.bl1640.stryker.config.mjs`, uncommitted) widened to the full
+    suite; the parcel's own scoped config is not committed. Check
+    `mutation_cooldown_gate.bb` first and record its decision.
+  - Drive time through the functions' own now-ms arguments and the
+    fixtures `test/nightClosingCeremonyGate.test.js` already builds; never a wall clock, never
+    `process.chdir()`.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  Tests only unless a seam is missing, in which case the smallest
+  extraction that exposes the behaviour to an in-process test; never a
+  hand-edited manifest. The step handler lands with the feature (BL-233).
+  Promote only after BL-1640 has landed - the census is re-derived at the parcel's
+  start because those parcels change this file.
+
+out_of_scope: |
+  - The other two ceremony files (nightClosingCeremonyLive.ts: BL-1674; night-closing-ceremony-run.ts: BL-1676 and the BL-1519 remaining slice).
+  - Any change to what the ceremony decides.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1675-night-closing-ceremony-gate-first-run-survivors-to-zero.feature` ONCE on
+  the parcel commit: 2 scenarios ok. (2) `cd extension && npx vitest run
+  test/nightClosingCeremonyGate.test.js` once: green with the new cases. (3) `npm run crap` once: no
+  function in the file above 6. (4) The parcel's evidence names the
+  Stryker totals over the full unit suite with at least 85 mutants and
+  survived 0, no-coverage 0, or each remainder with its reason. Never
+  "run it N times".
+
+source: |
+  Hardender note to the specifier, priority 00, 2026-09-21T10:38:06Z
+  (inbound 00_20260921T103806Z_001446_from_hardender), verbatim:
+  "unowned-survivors BL-1640 3 files 119/364 mutants, see evidence".
+  Hardener evidence, verbatim: "119+364=483, well over the ~50
+  in-pass-chase threshold (BL-1441/BL-1519 rule) and none of it is this
+  parcel's own changed lines, so this is handed over rather than chased
+  here." Parents: BL-658, BL-1393, BL-1640, BL-1519 (the epic and its
+  per-function sizing), the hardender rule_proposal of 2026-09-10.
+
+notes: |
+  Minted 2026-09-21 by the specifier while completing the hardender's
+  unowned-survivors note, the same pass (rule of 2026-09-10: the owner is
+  minted before the note is completed), alongside BL-1674 and BL-1676. Not
+  auto-approved: chore, medium. Added to BL-1519's decomposes_into in the
+  mint commit. IR-DRY at mint: the two scenarios share "When the evidence
+  is read" by design, as BL-1520's, BL-1669's and BL-1672's do. INVEST:
+  Independent (no unbuilt sibling; the promotion order above is
+  orthogonality, not dependency), Negotiable (test shapes are direction),
+  Valuable (one file's gate goes to a full account), Estimable (68 mutants, five groups, one sitting),
+  Small (two scenarios, one invariant), Testable (the parcel's own
+  evidence; the 85 pin is BL-1445's discipline).
