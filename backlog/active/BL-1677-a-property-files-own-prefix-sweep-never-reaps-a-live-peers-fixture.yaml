@@ -1,5 +1,5 @@
 id: BL-1677
-title: "Three property files (bl1354, bl1389, bl1380) still sweep every os.tmpdir() entry sharing their prefix before each invariant - a concurrent run of the same file (QA's lane beside coder2's, 2026-09-21) rm -rf's a live peer's fixture mid-classify, and BL-1623's blind-sweep finder misses them because they alias os.tmpdir() into a variable (the guard reports [] on the live tree); bl1354SharedPathLandedSiblingInvariants read every landed sibling as unlanded with no warning, the exact report a partial object loss produces (emulated) - the three sweeps go through sweepStaleTmpDirs over pid-named roots and the finder matches the aliased form"
+title: "Four property files (bl1354, bl1389, bl1380, bl1239) still sweep every os.tmpdir() entry sharing their prefix before each invariant - a concurrent run of the same file (QA's lane beside coder2's, 2026-09-21) rm -rf's a live peer's fixture mid-classify, and BL-1623's blind-sweep finder misses them because they alias os.tmpdir() into a variable (the guard reports [] on the live tree); bl1354SharedPathLandedSiblingInvariants read every landed sibling as unlanded with no warning, the exact report a partial object loss produces (emulated) - the three sweeps go through sweepStaleTmpDirs over pid-named roots and the finder matches the aliased form"
 milestone: M8
 type: defect
 severity: high
@@ -9,18 +9,18 @@ severity: high
 # review (1 of 1267) with a coder2 vitest lane alive. Production is
 # unaffected: land_step_lib's verdict on the partial loss reads
 # unlanded, never landed (invariant 1's safe direction). Same class as
-# BL-1623 (three files it did not reach) and BL-1632.
+# BL-1623 (four files it did not reach) and BL-1632.
 status: todo
 epic: code-quality-gates
 priority: 8
 direction: swarm-reported
 depends_on: []
 # BL-1623 (the owner-aware sweep helper, the finder and its guard, seven
-# migrated files), BL-1354, BL-1389 and BL-1380 (the three property files)
-# are in backlog/done. No open ticket touches the three files, the finder
+# migrated files), BL-1354, BL-1389, BL-1380 and BL-1239 (the four property
+# files) are in backlog/done. No open ticket touches the four files, the finder
 # or the guard.
 mutation_cost: low
-# low: three test files swap a local sweep for the helper's (the property
+# low: four test files swap a local sweep for the helper's (the property
 # lane is its own tag, never under mutation/CRAP/DRY - engineering.prompt),
 # one regex in a test helper, one census list in a test, one feature and
 # handler over a mkdtemp fixture, evidence, one register row.
@@ -31,7 +31,7 @@ acceptance: specs/features/BL-1677-a-property-files-own-prefix-sweep-never-reaps
 
 # The finder's consumer (blindTmpDirSweepGuard.test.js) already calls
 # findBlindTmpDirSweeps, so an anchor there matches before and after (BL-1235);
-# the three files' call into sweepStaleTmpDirs is the parcel's own diff.
+# the four files' call into sweepStaleTmpDirs is the parcel's own diff.
 # Handler pin only; scenario 01 runs the real helper and scenario 02 the
 # real finder, which is the gate.
 required_wiring:
@@ -41,15 +41,25 @@ human_approval: approved
 approval_context: >
   A new feature file is authored here, so it would ordinarily need a tap;
   it is minted approved under the 2026-09-17 operator hotfix (severity
-  defect, no choice posed, no ruling_options). FIRM: the three files keep
+  defect, no choice posed, no ruling_options). FIRM: the four files keep
   every assertion and every draw exactly as today - only how they name
   and sweep their fixture roots changes (pid-named roots, the helper's
   owner-aware sweep, BL-1623's own shape). FIRM: the finder keeps its
   literal match and gains the aliased form; BL-1623's guard census grows
-  by exactly the three files and its scenarios stay green. FIRM: no
+  by exactly the four files and its scenarios stay green. FIRM: no
   change to land_step_lib.bb - the partial-loss reading (unlanded, no
   warning) is invariant 1's safe direction and is recorded here as an
   observation, not scope.
+  AMENDED 2026-09-21 by the specifier on the coder's spec-gap note 000042
+  (sent from the parcel): bl1239SuiteManifestAccountsForEveryTestFile.property.test.js
+  carries the identical aliased sweep (`const tmp = os.tmpdir()`, line
+  42, `sweepStaleFixtures`) - the fourth file, found by scenario 02's own
+  "reports nothing under extension/test" once the finder learned the
+  aliased form (the BL-1445 pin working). Census re-run at amendment
+  over extension/test: exactly four aliased files (bl1239, bl1354,
+  bl1380, bl1389), five literal (helper, finder, guard and the two
+  BL-1636 census readers, all out of scope). Same shape, same FIRM
+  lines, no choice posed; the approval stands.
 
 invariants:
   - "No test file's own fixture sweep ever removes a temp root a live process created: a root is reaped only when the pid its name records is dead or is the sweeping process itself."
@@ -76,14 +86,17 @@ description: |
   the host, a guard re-run, a solo re-run beside a lane), one run's sweep
   rm -rf's the other's live fixture. `bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js`
   (line ~182) and `bl1380ExpediteNeverAnswersUnshownQuestion.property.test.js`
-  (line ~113) carry the identical function. BL-1623 (done) built the
+  (line ~113) carry the identical function, and so does
+  `bl1239SuiteManifestAccountsForEveryTestFile.property.test.js` (line 41,
+  `sweepStaleFixtures`, alias `tmp`; the coder's spec-gap note 000042,
+  2026-09-21). BL-1623 (done) built the
   owner-aware `sweepStaleTmpDirs({prefix})` in `test/helpers/tmpDir.js`
   (reaps a root only when the pid its name records is dead or is this
   process) and migrated seven files, guarded by
   `test/helpers/blindTmpDirSweepFinder.js` whose `BLIND_CALL_PATTERN` is
-  the literal `readdirSync(os.tmpdir())` - these three alias
-  `os.tmpdir()` into `parent`, so `findBlindTmpDirSweeps(test/)` returns
-  `[]` on the live tree today and the guard is green over three live
+  the literal `readdirSync(os.tmpdir())` - these four alias
+  `os.tmpdir()` into a variable (`parent`, `tmp`), so `findBlindTmpDirSweeps(test/)` returns
+  `[]` on the live tree today and the guard is green over four live
   blind sweeps (BL-1445's fail-open census shape).
 
   Why the report reads that way (emulated on main, script in the
@@ -99,7 +112,7 @@ description: |
 
   ## What is wanted
 
-  1. The three files build their roots with a pid-bearing name
+  1. The four files build their roots with a pid-bearing name
      (`mkTmpDir(\`${FIXTURE_PREFIX}${process.pid}-\`)`, the shape
      `sweepStaleTmpDirs` documents) and replace their own `sweepFixtures`
      with `sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX })`; every draw and
@@ -110,11 +123,11 @@ description: |
      `<ident>` was bound from `os.tmpdir()` in the same file (scenario
      02: a fixture file with the aliased form is reported; the live
      `extension/test` reports none).
-  3. `blindTmpDirSweepGuard.test.js`'s `MIGRATED_FILES` gains the three
-     files (scenario 03 pins the count at ten, BL-1445).
+  3. `blindTmpDirSweepGuard.test.js`'s `MIGRATED_FILES` gains the four
+     files (scenario 03 pins the count at eleven, BL-1445).
   4. The register row for the bl1354 file leaves in this parcel's land
      (BL-1631). Documenter: the BL-1623 how-to names the aliased form and
-     the three files; no diagram trigger.
+     the four files; no diagram trigger.
 
   ## How (direction, not mandate)
 
@@ -137,10 +150,11 @@ description: |
 
 qa_e2e_procedure: |
   On the parcel commit, from `extension/`; fixture roots per BL-1390.
-  1. `grep -n 'readdirSync(parent)' test/bl1354SharedPathLandedSiblingInvariants.property.test.js
+  1. `grep -n -E 'readdirSync\((parent|tmp)\)' test/bl1354SharedPathLandedSiblingInvariants.property.test.js
      test/bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js
-     test/bl1380ExpediteNeverAnswersUnshownQuestion.property.test.js`
-     prints nothing; each file calls `sweepStaleTmpDirs`.
+     test/bl1380ExpediteNeverAnswersUnshownQuestion.property.test.js
+     test/bl1239SuiteManifestAccountsForEveryTestFile.property.test.js`
+     prints nothing; each of the four calls `sweepStaleTmpDirs`.
   2. `npx vitest run test/blindTmpDirSweepGuard.test.js` once: green,
      MIGRATED_FILES ten.
   3. `node -e "const {findBlindTmpDirSweeps}=require('./test/helpers/blindTmpDirSweepFinder'); console.log(findBlindTmpDirSweeps(require('path').join(process.cwd(),'test')))"`
@@ -175,10 +189,18 @@ notes: |
   `property extension/test/bl1354SharedPathLandedSiblingInvariants.property.test.js
   BL-1677 2026-09-21` added in the mint commit. QA was noted the owner.
 
-  Interim for every role until this lands: a red in any of the three
+  Interim for every role until this lands: a red in any of the four
   files that reads as content missing from a fixture (all siblings
   unlanded with no warning; a "not found" under the fixture root) while
   another lane is alive on the host is this owned red - one run, record
-  the line, never a bounce for a parcel that touches none of the three.
+  the line, never a bounce for a parcel that touches none of the four.
+
+  Amended 2026-09-21 by the specifier on the coder's spec-gap note 000042
+  ("bl1239 has the SAME aliased blind sweep (4th file, not 3)"): bl1239
+  joins the population (title, scope, e2e, scenario 01/03 text, census
+  eleven); the mint-time census of three was the specifier's miss - the
+  mint counted the land-step fixture family, not every aliased sweep.
+  Holder (coder) noted to merge main and re-read. Evidence:
+  backlog/evidence/BL-1677-spec-gap-fourth-aliased-sweep-adjudication-specifier-20260921.md.
 
 assigned_to: coder
