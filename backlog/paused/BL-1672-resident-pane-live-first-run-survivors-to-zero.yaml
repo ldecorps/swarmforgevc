@@ -1,0 +1,199 @@
+id: BL-1672
+title: "residentPaneLive.ts's first-ever Stryker run (BL-1638 discharging BL-775's deferred gate, 2026-09-21) left 76 first-run mutants owned by nobody - 67 survived and 9 never covered across twelve declarations (captureResidentPaneLive 18, captureLiveScreenPanes 10, captureMonoRouterLiveScreenUncached 10, tryCaptureRolePane 10, withHeader 9, monoRouterActiveRoleForPane 6, the rest 13), every one a real assertion gap by the coder's inspection; the run is repeated over the full unit suite and every survivor is killed by a behaviour test pinning the exact pane id, label, role comparison or failure path, or recorded as an accepted equivalent with its code-level proof"
+milestone: M8
+type: chore
+severity: medium
+# medium: hardening debt, not a red and not a safety signal; the gate ran
+# to completion and the parcel that exposed it (BL-1638) discharges
+# BL-775's ledger row with the debt owned here (rule of 2026-09-10: a
+# reason per survivor names an owner).
+status: todo
+epic: first-run-mutation-debt
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-522 (the file) and BL-775 (the parcel whose gate was deferred) are
+# in backlog/done; BL-1638 (active, at the coder at mint) touches its own
+# evidence, the ledger, the register and bubblePipelinePage's test only -
+# never residentPaneLive.ts or its tests - so the two are orthogonal.
+# BL-1519 is the epic tracker; this slice is added to its decomposes_into
+# in the mint commit.
+mutation_cost: medium
+# medium: TypeScript under Stryker, CRAP and DRY; the whole deliverable
+# IS the mutation run over one 416-line file (224 mutants, 49 s scoped
+# per the coder's evidence) plus unit cases over the fake tmux client
+# the existing 677-line residentPaneLive.test.js already uses. One
+# sitting: twelve declarations, 76 mutants (BL-1519's ~60-per-sitting
+# arithmetic; the largest group, captureResidentPaneLive, is 18).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1672-resident-pane-live-first-run-survivors-to-zero.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1672ResidentPaneLiveSurvivorsToZeroSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the module and its consumers
+# (bridgeServer.ts's /resident-pane and live-screen routes) already exist,
+# so any pattern on them matches before and after the work.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off: that all
+  76 are chased in one sitting. BL-1519's ruling (chase the untested
+  logic only, grandfather the rest) was a budget call over three large
+  files holding about 1,530 mutants - 25 slices; this file is one sitting
+  by that ruling's own 60-per-sitting arithmetic, has never had a
+  baseline, and the coder found none of its survivors equivalent by
+  inspection (exact role-name comparisons, exact find predicates, exact
+  label strings that existing tests assert only loosely). FIRM: no
+  production behaviour changes - every contract BL-522's, BL-775's and
+  BL-1243's features pin stays green; only tests are added, and a
+  refactor for CRAP keeps the same outputs. FIRM: "accepted equivalent"
+  needs the code-level reason in the evidence (BL-1520's rule), never
+  "first-run debt" - this ticket IS the owner that reason names.
+
+invariants:
+  - "Every mutant Stryker reports for the file at the parcel commit is either killed by a test in the unit suite or recorded in the evidence as an accepted equivalent with the code-level reason; none is silent."
+
+description: |
+  ## What is wrong
+
+  `extension/src/bridge/residentPaneLive.ts` (416 lines, BL-522's
+  Resident Spy / live-screen capture and the mono-router layout
+  decisions) was never mutation-tested: BL-775's hardener deferred the
+  gate on 2026-09-18 when the perTest dry run timed out twice under load
+  11.5-25.2. BL-1638 ran it on 2026-09-21 on a quiet host (load 2.05,
+  49 s, 139 tests; evidence `backlog/evidence/BL-1638-BL-775-mutation.md`
+  on the coder branch): `out/bridge/residentPaneLive.js` 148 killed, 67
+  survived, 9 never covered, 224 instrumented, score 66.07%
+  (`bubbleLiveUiHtml.js`, the row's other file, 7/7 killed). The coder,
+  correctly, did not chase 76 mutants inside a discharge parcel and did
+  not discharge BL-775's row without an owner to name; this is that
+  owner.
+
+  Census by enclosing declaration (exact, from the run's stdout; script
+  and per-mutant list in
+  `backlog/evidence/BL-1672-first-run-survivor-census-20260921.md`;
+  survived / no-coverage):
+
+  | declaration | surv | no-cov |
+  |---|---|---|
+  | captureResidentPaneLive | 13 | 5 |
+  | tryCaptureRolePane | 9 | 1 |
+  | captureLiveScreenPanes | 10 | 0 |
+  | captureMonoRouterLiveScreenUncached | 10 | 0 |
+  | withHeader | 9 | 0 |
+  | monoRouterActiveRoleForPane | 6 | 0 |
+  | orderLiveScreenRoles | 2 | 1 |
+  | captureCoordinatorPaneLive | 2 | 1 |
+  | derivePaneActivitySignal | 3 | 0 |
+  | paneCaptureFailedReason | 1 | 1 |
+  | decideMonoRouterLayout | 1 | 0 |
+  | liveScreenPaneLabel | 1 | 0 |
+
+  Representative survivors (coder's evidence): `id === 'resident' ||
+  roleEntry.role === 'coder'` with `===` flipped to `!==`;
+  `panes.find((entry) => entry.id === 'resident')` with the predicate
+  replaced by `true`; `withHeader(unavailablePane(), 'Coordinator')` with
+  the label emptied. Existing tests assert that "a pane is present", not
+  which pane, selected how, labelled what.
+
+  ## What is wanted
+
+  - The run is repeated over the FULL unit suite (BL-1638's scoped
+    include set was four test files, so a survivor there may already be
+    killed by a test outside it); the evidence records the include set,
+    the summary block, load and duration, and either zero survived and
+    zero no-coverage or one accepted-equivalent record per remaining
+    survivor with the code-level reason and the consumer grep (BL-234).
+  - Behaviour tests kill the rest, through the exported functions over
+    the fake tmux client the existing tests use: the exact pane ids,
+    labels and role comparisons `captureLiveScreenPanes`,
+    `captureMonoRouterLiveScreenUncached`, `monoRouterActiveRoleForPane`,
+    `liveScreenPaneLabel` and `withHeader` choose between; the
+    failure and empty-capture paths of `captureResidentPaneLive`,
+    `captureCoordinatorPaneLive`, `tryCaptureRolePane` and
+    `paneCaptureFailedReason` (the nine never-covered mutants live
+    there and in `orderLiveScreenRoles`); the signal boundaries of
+    `derivePaneActivitySignal` and `decideMonoRouterLayout`. Exported
+    constants through the call that consumes them, never by pinning
+    the literal.
+  - The evidence lists, per declaration in the census, the test file
+    and case that now rejects its mutants (scenario 02).
+  - Any function `npm run crap` flags in the file under 6 (coverage
+    first; a small refactor only where coverage cannot reach).
+  - Evidence path: `backlog/evidence/BL-1672-residentPaneLive-mutation.md`.
+
+  ## How (direction, not mandate)
+
+  - `--mutate out/bridge/residentPaneLive.js`, `perTest`, sibling links
+    per the Verification rules; the run recipe is BL-1638's scoped
+    config (`extension/stryker.bl775.config.json` and
+    `vitest.bl775.stryker.config.mjs` on the coder branch, commit
+    1836f592d0) widened to the full suite; the parcel's own scoped config
+    is not committed (the hardener's rule). Check
+    `mutation_cooldown_gate.bb` first and record its decision.
+  - Group by the census's declarations and write one fixture-driven test
+    per group; `residentPaneLive.test.js` (677 lines) and
+    `bl1243PaneActivitySignal.test.js` are the homes. The property test
+    (`residentPaneLive.property.test.js`, BL-1243's invariants) stays in
+    the property lane; a survivor that a property expresses better than
+    an example is the exception, not the rule.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  Tests only unless a seam is missing, in which case the smallest
+  extraction that exposes the behaviour to an in-process test; never
+  `process.chdir()` under mutation; never a hand-edited manifest; fakes
+  for tmux, never the live socket. The step handler lands with the
+  feature (BL-233).
+
+out_of_scope: |
+  - `bubbleLiveUiHtml.js` (7/7 killed) and BL-775's ledger row: BL-1638
+    discharges the row naming this ticket as the survivors' owner, and
+    the standing-red register row for `residentPaneLive.js` leaves with
+    that discharge (BL-1631).
+  - Any change to what the capture functions or the layout decisions
+    return.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1672-resident-pane-live-first-run-survivors-to-zero.feature`
+  ONCE on the parcel commit: 2 scenarios ok. (2) `cd extension && npx
+  vitest run test/residentPaneLive.test.js test/bl1243PaneActivitySignal.test.js`
+  once: green with the new cases. (3) `npm run crap` once: no function in
+  residentPaneLive.ts above 6. (4) The parcel's evidence names the
+  Stryker totals over the full unit suite with at least 220 mutants and
+  survived 0, no-coverage 0, or each remainder with its reason and grep.
+  (5) `bb swarmforge/scripts/standing_red_register_cli.bb .` names no
+  hardening row for residentPaneLive.js once BL-1638's discharge has
+  landed. Never "run it N times".
+
+source: |
+  Coder note to the specifier and the coordinator, priority 00,
+  2026-09-21T09:23:38Z (inbound 00_20260921T092338Z_002084_from_coder),
+  verbatim: "BL-1638: BL-831 discharged; residentPaneLive.js debt (67)
+  needs an owner". Coder evidence
+  `backlog/evidence/BL-1638-BL-775-mutation.md` (coder branch
+  1836f592d0), verbatim: "67 survivors + 9 no-coverage, spread across
+  essentially every function in the file, well past the 2026-09-10
+  hardener rule's ~50 in-pass-chase-by-default threshold" and "None of
+  these are equivalent mutants by inspection - each represents a real
+  assertion gap". Census: `backlog/evidence/BL-1672-first-run-survivor-census-20260921.md`.
+  Parents: BL-522, BL-775, BL-1638, BL-1519 (the epic and its
+  per-function sizing), the hardender rule_proposal of 2026-09-10,
+  BL-1669 (the previous owner of this shape).
+
+notes: |
+  Minted 2026-09-21 by the specifier while completing the coder's
+  unowned-survivors note, the same pass (rule of 2026-09-10: the owner is
+  minted before the note is completed). Not auto-approved: chore,
+  medium. Added to BL-1519's decomposes_into in the mint commit. The
+  coder (holder of BL-1638) is noted the id so BL-775's row is
+  discharged with "first-run debt, owned by BL-1672" per survivor. IR-DRY
+  at mint: the two scenarios share "When the evidence is read" by design,
+  as BL-1520's and BL-1669's do. INVEST: Independent (no unbuilt
+  sibling), Negotiable (test shapes are direction), Valuable (one file's
+  gate goes from 66% to a full account), Estimable (76 mutants, twelve
+  groups, one sitting), Small (two scenarios, one invariant), Testable
+  (the parcel's own evidence; the 220 pin is BL-1445's discipline).
