@@ -37,6 +37,14 @@ function lib() {
   }
   return _lib;
 }
+// BL-1680: the SAME id the faked catalogue below claims to hold, imported
+// rather than retyped, so the two can never drift apart. Without this,
+// runLocalSeatTurn resolves its model from the live process.env
+// (SWARMFORGE_LOCAL_SEAT_MODEL), so this fixture was red on any host
+// exporting that var to a model the fixture's catalogue does not hold.
+// A lightweight, leaf module (no cursor-bridge dependency) - required
+// directly at module scope, outside lib(), same as before BL-1658.
+const { DEFAULT_LOCAL_SEAT_MODEL_ID } = require('../../../extension/out/tools/localQwenSeat');
 
 const FEATURE = "BL-1384 The local seat's topic reaches the bridge through the front desk";
 
@@ -183,9 +191,12 @@ function registerSteps(registry) {
         runLocalSeatTurnFn: (input) =>
           lib().runLocalSeatTurn({
             ...input,
+            // BL-1680: pinned beside the faked catalogue below - never
+            // left to resolve from the live process.env.
+            modelId: DEFAULT_LOCAL_SEAT_MODEL_ID,
             readEndpoint: async () => ({
               probe: { endpointStatus: 'healthy', endpointUrl: 'http://fixture.invalid' },
-              catalogue: ['qwen3:14b'],
+              catalogue: [DEFAULT_LOCAL_SEAT_MODEL_ID],
             }),
             complete: async () => state.localReply ?? '',
           }),

@@ -91,6 +91,20 @@ lands on is still checked against the endpoint's own catalogue at seat
 time, so a wrong or unpulled tag is a visible refusal naming what the
 endpoint actually holds, never a silent fallback to something else.
 
+**An acceptance fixture that fakes the catalogue must pin `modelId` too
+(BL-1680, 2026-09-21).** `resolveLocalSeatModelId`'s explicit-`configured`
+argument always wins over `SWARMFORGE_LOCAL_SEAT_MODEL`; a step handler
+that fakes the endpoint's catalogue as `[<some-model>]` but calls the real
+`runLocalSeatTurn` with no `modelId` still lets the resolver fall through
+to the LIVE host's env var — so the fixture is red on any host whose pack
+exports a different model (every session exports
+`SWARMFORGE_LOCAL_SEAT_MODEL=qwen2.5-coder:latest` today) even though
+nothing about the seat itself is broken. `bl1384LocalSeatTopicForwardedSteps.js`'s
+fixture now passes `modelId: DEFAULT_LOCAL_SEAT_MODEL_ID` beside a
+catalogue of exactly that same constant, so the two can never drift
+apart. Any new fixture that drives the real turn function needs the same
+pin — a faked catalogue alone is not enough.
+
 ## The turn is slow, and the seat says so up front
 
 Measured on the host that first ran this (no dedicated GPU, CPU-only
