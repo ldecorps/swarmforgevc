@@ -2,12 +2,14 @@
 # Install the recruiter cron line into the live user crontab, root-scoped,
 # the same way the freshness / shift-schedule / descent-review crons are
 # installed (marker-based, idempotent, removed with the other swarmforge
-# lines on stop). Weeknights 22:00 local (human, 2026-09-21: the pass costs
-# zero paid tokens, so run several per night): the swarm is down from the
-# 17:00 bedtime to the 09:00 day-shift start, so the CPU-only battery never
-# competes with a running pack, and recruiter_nightly.sh skips itself if a
-# swarm is live anyway. Weekdays only - the weekend night shift (night-start
-# 01:00 Sat/Sun) owns those nights.
+# lines on stop). Weeknights 18:00 local (human, 2026-09-21: moved from
+# 22:00 into the evening cooldown window itself, 17:00-01:00 -
+# cooldown_window_enabled was off, so the 22:00 slot had no guaranteed idle
+# swarm and the recruiter was silently self-skipping most nights; with
+# cooldown back on, 18:00 gives it the full evening - the CPU-only battery
+# never competes with a running pack, and recruiter_nightly.sh still skips
+# itself if a swarm is live anyway, belt and suspenders). Weekdays only -
+# the weekend night shift (night-start 01:00 Sat/Sun) owns those nights.
 #
 # The job is an OFFER, never a staffing action: it pulls, registers,
 # benchmarks and asks the Model Steward to certify (and lets the Steward
@@ -22,7 +24,7 @@ ROOT="$(cd "$ROOT" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JOB="$SCRIPT_DIR/recruiter_nightly.sh"
 MARKER="# swarmforge-recruiter-weekly $ROOT"
-SCHEDULE="${SWARMFORGE_RECRUITER_SCHEDULE:-0 22 * * 1-5}"
+SCHEDULE="${SWARMFORGE_RECRUITER_SCHEDULE:-0 18 * * 1-5}"
 LOG="$ROOT/.swarmforge/recruiter/recruiter-nightly.cron.log"
 
 if ! command -v crontab >/dev/null 2>&1; then
@@ -39,8 +41,14 @@ done
 mkdir -p "$(dirname "$LOG")"
 existing="$(crontab -l 2>/dev/null || true)"
 filtered="$(printf '%s\n' "$existing" | grep -vF "$MARKER" || true)"
-# PATH pinned like the freshness line: cron's default PATH has neither bb nor ollama.
-line="$SCHEDULE PATH=$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin bash $JOB $ROOT >>$LOG 2>&1 $MARKER"
+# PATH pinned like the freshness line: cron's default PATH has neither bb
+# nor ollama. /mnt/d/dev/ollama/bin is this host's own ollama install
+# location (WSL2, on the Windows D: mount, not a standard PATH dir) -
+# recruiter_weekly.sh hard-requires `command -v ollama` at runtime
+# (2026-09-21: found missing here, same class of cron-PATH gap as
+# daa34e6778's bb/claude/tmux fix - without it every run silently finished
+# "skipped: ollama not on PATH" regardless of schedule).
+line="$SCHEDULE PATH=$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:/mnt/d/dev/ollama/bin bash $JOB $ROOT >>$LOG 2>&1 $MARKER"
 
 printf '%s\n%s\n' "$filtered" "$line" | grep -v '^$' | crontab -
 echo "install_recruiter_cron.sh: scheduled nightly recruiter (weeknights) for $ROOT ($SCHEDULE)"

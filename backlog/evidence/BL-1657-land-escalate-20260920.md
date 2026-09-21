@@ -101,3 +101,12 @@ unrelated stray commit, not BL-1630. BL-1630 remains approved (`backlog/evidence
 and unlanded pending the same fix. Five tickets now queue behind this one stray commit.
 
 By QA.
+
+## Sixth instance — BL-1668's land, same class (QA, 2026-09-20)
+
+`land_step_cli.bb BL-1668 0083fe47f5 .` hit the same stray `be826a2060` cherry-pick failure, with
+`ENTANGLED_SIBLING BL-1630,BL-1657,BL-1661,BL-1663,BL-1664,BL-1667`. No new information. BL-1668
+remains approved (`backlog/evidence/BL-1668-QA-20260920.md`) and unlanded pending the same fix. Six
+tickets now queue behind this one stray commit.
+
+By QA.
