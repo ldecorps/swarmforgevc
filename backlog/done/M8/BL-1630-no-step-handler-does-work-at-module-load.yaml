@@ -214,3 +214,8 @@ bounce_count: 2
 bounce_history:
   - { at: 2026-09-20, by: cleaner, blamed: coder, class: acceptance, commit: c52846fd16, evidence: backlog/evidence/BL-1630-bounce-20260920.md }
   - { at: 2026-09-20, by: cleaner, blamed: coder, class: acceptance, commit: dc8236f01f, evidence: backlog/evidence/BL-1630-bounce-20260920.md }
+abandoned_commits: [f83f672320]
+# f83f672320 was the QA-approved commit (pass, NONE); land_step_cli.bb hit
+# LAND_ESCALATE on the empty-diff closed-owner stray be826a2060 (condition g,
+# backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md).
+# Landed instead as a hand-built tip-pure commit (own paths only).

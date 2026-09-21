@@ -119,4 +119,27 @@ LINES5="$(wc -l < "$ROOT5"/.swarmforge/land-approvals/*.jsonl | tr -d ' ')"
 [[ "$LINES5" -eq 1 ]] || fail "05: expected exactly one line after two identical calls, got $LINES5"
 pass "05: running the CLI twice with the same arguments writes exactly one line"
 
+# ── 06 (BL-1668): an undeterminable verdict (the predicate itself cannot
+#    read a required store) still writes the line first, then exits 2 -
+#    the only case of the ticket's two named exit codes (1 "not approved",
+#    2 "undeterminable") with no existing coverage in this file ───────────
+ROOT6="$(make_root)"
+git -C "$ROOT6" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "approved parcel work"
+SOURCE6_SHA="$(git -C "$ROOT6" rev-parse HEAD)"
+git -C "$ROOT6" branch swarmforge-QA
+git -C "$ROOT6" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "hand-built replay"
+REPLAY6_SHA="$(git -C "$ROOT6" rev-parse HEAD)"
+mkdir -p "$ROOT6/.swarmforge"
+touch "$ROOT6/.swarmforge/bounces"
+
+set +e
+OUT6="$(bb "$CLI" "$ROOT6" "$REPLAY6_SHA" "$SOURCE6_SHA" BL-9012 2>&1)"
+ST6=$?
+set -e
+[[ "$ST6" -eq 2 ]] || fail "06: expected exit 2 for an undeterminable verdict (the line is still written first), got $ST6: $OUT6"
+echo "$OUT6" | grep -q "LAND_APPROVAL_RECORDED" || fail "06: expected the write to still succeed before the verdict is judged, got: $OUT6"
+echo "$OUT6" | grep -q "VERDICT ${REPLAY6_SHA:0:10} undeterminable" || fail "06: expected the printed verdict to say undeterminable, got: $OUT6"
+echo "$OUT6" | grep -qi "name the reviewed commit on swarmforge-QA" || fail "06: expected the remedy on stderr, got: $OUT6"
+pass "06: an undeterminable verdict (an obstructed store) still writes the line, then exits 2 distinctly from 'not approved'"
+
 echo "ALL PASS"
