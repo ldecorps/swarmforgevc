@@ -1,0 +1,165 @@
+id: BL-1679
+title: "the land step drops its land-replay/<ticket>-<sha> scratch branch on every failure path but returns it on success for QA to check out and push from, and no mechanism deletes it afterwards (149 refs on this repository from lands up to 2026-09-20, 105 of them already on origin/main; today's BL-1641 refs were removed by QA's hand), while pre_qa_gate_gather_lib's role-branches reads each pipeline role's CURRENT worktree HEAD instead of the roster branch - so for the minute QA's checkout sits on the scratch branch every other seat's pre-QA ancestry gate reads it as swarmforge-QA and the replay commit as a stranded ticket commit (hardener self-check 2026-09-21 13:46-13:47 local: PRE_QA_GATE_FAIL ancestry BL-1641 cf7d8c460f stranded on land-replay/BL-1641-9097b85058); a land's scratch artifacts are never a parcel lineage - the gate reads the roster branch and warns on a drifted checkout, and a landed replay's ref is swept once its tip is on origin/main"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The false FAIL lasts only while QA's HEAD
+# sits on a scratch or landing branch and names only the ticket being
+# landed, so the exposure is a concurrent second chain of that same ticket
+# (BL-1641's third pass was at the hardener in exactly that minute); the
+# leaked refs are clutter, not a fault, but they grow by every land
+# (~10/day) and every `--all` walk, `branch --contains` and gate gather
+# pays them. Not low: it cost a hardener note, an evidence file and a
+# specifier round trip on 2026-09-21, and under the BL-1678 interim (QA's
+# HEAD on a landing branch for minutes per land) it recurs at every land.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+# BL-1241 (the replay), BL-1298 (replay from the caller's worktree),
+# BL-1375, BL-1604, BL-1650 (land step, all done) and BL-531/BL-972/BL-1269
+# (the ancestry gate, done). BL-1678 (active) changes what the land
+# PUSHES, not the scratch branch or the gate's branch discovery - no
+# shared hunk; if BL-1678 lands first this ticket merges over it.
+mutation_cost: low
+# low: Babashka only (no mutation/CRAP/DRY wired, BL-472): one branch
+# lookup in the gather lib, one sweep function in the land-step lib plus
+# its call at plan time, cases in the two existing bb runners, one
+# feature and handler over mkdtemp git fixtures (seconds).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1679-a-lands-scratch-branch-is-never-read-as-a-parcel-lineage.feature
+
+# Handler pin only (BL-233, BL-1371). Both consumers pre-exist -
+# pre_qa_gate.sh reaches role-branches and land_step_cli.bb reaches the
+# replay - so an anchor on either matches before and after the fix and
+# gates nothing (BL-1235); pinning the sweep's name would be the parcel's
+# own diff. Scenarios 01 and 03 run the real gate and the real land step
+# over fixtures, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1679LandScratchBranchNeverReadAsLineageSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. Everything below
+  is FIRM and no choice is posed: the pre-QA ancestry gate takes each
+  pipeline role's branch from the roster row (roles.tsv column 4, the
+  swarmforge-<role> name BL-1195's drift guard already pins the worktree
+  to) and only WARNS when the checkout differs; the land step sweeps
+  refs/heads/land-replay/* whose tip is already an ancestor of origin/main
+  at every plan and never deletes one that is not (it reports those with
+  their age - a refused or superseded replay carries content someone may
+  still want, and a live land's own branch is exactly such a ref). Hand-
+  built landing branches (bl1640-landing-tmp) are outside the sweep: the
+  gate change covers them, and nothing deletes what a seat built by hand.
+
+invariants:
+  - "No ref under land-replay/ and no branch other than the roster's own swarmforge-<role> is ever read as that role's parcel lineage by the pre-QA ancestry gate, whatever the role's worktree has checked out."
+  - "The replay-ref sweep deletes a land-replay/* ref only when its tip is an ancestor of origin/main; any other ref is reported, never deleted."
+
+description: |
+  ## What
+  Two symptoms, one cause: a land's scratch artifacts leak into the ref
+  space that other gates read as parcel lineage.
+
+  1. `swarmforge/scripts/land_step_lib.bb` creates
+     `land-replay/<ticket>-<short sha>` in a scratch worktree, deletes the
+     WORKTREE on every path (`cleanup!`) and the BRANCH on every failure
+     path (`drop-branch!`), but on success returns `:branch` for QA to
+     check out, verify and push from - and no mechanism deletes it
+     afterwards (QA removed today's three BL-1641 refs by hand; the 149
+     below are every land up to 2026-09-20).
+     Census 2026-09-21 (`git for-each-ref refs/heads/land-replay/`):
+     149 refs, 2026-08-29..2026-09-20, 105 with tips already on
+     origin/main, 44 not (refused or superseded replays - the shape BL-1641's
+     cf7d8c460f and ecbd87edde had today, each overtaken by a push to
+     main between build and push, before QA removed them).
+  2. `swarmforge/scripts/pre_qa_gate_gather_lib.bb`'s `role-branches`
+     maps each non-master roster row to `branch-of-worktree` - the branch
+     CURRENTLY checked out at the role's worktree - not to the roster's
+     branch column. QA's landing recipe checks the scratch branch out in
+     QA's own worktree (HEAD reflog 2026-09-21: `land-replay/BL-1641-9097b85058`
+     13:46:49-13:47:54 local, `bl1640-landing-tmp` 13:49:40-13:57:21,
+     `land-replay/BL-1641-bfcc742d8d` 13:58:44-13:59:38). For those
+     minutes every gate run anywhere reads that branch as "swarmforge-QA",
+     and a replay commit is by construction subject-named, off every
+     parcel lineage and touching the parcel's paths - the stranded shape.
+     The hardener's BL-1641 self-check hit the first window:
+     `PRE_QA_GATE_FAIL ancestry BL-1641 cf7d8c460f stranded on
+     land-replay/BL-1641-9097b85058` (hardender branch 87a985f0a4); the
+     same command from the master checkout twenty minutes later named no
+     land-replay ref at all.
+
+  ## Why
+  A scratch branch is a land's private working state, never a place a
+  parcel could have dropped work. Reading it as a role branch makes the
+  ticket being landed read as stranded to any concurrent sender of that
+  ticket (BL-1641's third pass was at the hardener in that minute), and
+  under the BL-1678 interim QA's HEAD sits on a landing branch for minutes
+  per land, so the window now opens at every land. The leaked refs cost
+  every `--all` walk and `branch --contains` in the swarm and grow by
+  roughly ten a day. Adjudication:
+  backlog/evidence/BL-1641-stranded-land-replay-adjudication-specifier-20260921.md.
+
+  ## How (direction, not mandate)
+  - Gather lib: `role-branches` resolves each row to its roster branch
+    (the `swarmforge-<role>` name in roles.tsv column 4, the same value
+    BL-1195's drift guard pins the worktree to); when `branch-of-worktree`
+    differs, add ONE warning naming the role, the checkout branch and the
+    roster branch read instead. A roster branch that does not exist is a
+    warning too (fail-open, as today's unreadable-worktree row is).
+  - Land-step lib: a `sweep-landed-replay-refs!` (name is the coder's) run
+    by `land_step_cli.bb` before the plan is printed: for each
+    `refs/heads/land-replay/*`, delete it when `merge-base --is-ancestor
+    <tip> origin/main` holds, else report it with its age. Its output is
+    part of the CLI's normal output, never a refusal. `drop-branch!`
+    stays as it is on the failure paths.
+  - Do not sweep hand-built branches (`*-landing-tmp` and the like): the
+    gate change is what covers them.
+
+  ## Scope
+  - `swarmforge/scripts/pre_qa_gate_gather_lib.bb` (`role-branches`), its
+    runners under `swarmforge/scripts/test/pre_qa_gate_*`.
+  - `swarmforge/scripts/land_step_lib.bb`, `land_step_cli.bb`,
+    `swarmforge/scripts/test/land_step_lib_test_runner.bb`.
+  - `specs/features/BL-1679-a-lands-scratch-branch-is-never-read-as-a-parcel-lineage.feature`
+    and its handler (same parcel, BL-233).
+  - `docs/` page that documents the land step's outputs gains the sweep's
+    report lines (documenter).
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/pre_qa_gate_lib_test_runner.bb` and
+     `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: green,
+     ONE run each.
+  2. `node specs/pipeline/cli.js specs/features/BL-1679-a-lands-scratch-branch-is-never-read-as-a-parcel-lineage.feature`:
+     every scenario ok, one run.
+  3. Live repo, before: `git for-each-ref refs/heads/land-replay/ | wc -l`
+     (149 at mint) and the unmerged count from
+     `for r in $(git for-each-ref --format='%(refname:short)' refs/heads/land-replay/); do git merge-base --is-ancestor $r origin/main || echo $r; done | wc -l`
+     (44 at mint). Run the land step's plan for the parcel
+     itself as the landing recipe already does; after: only unmerged refs
+     remain and each appears once in the sweep's report with its age.
+  4. From the master checkout, with QA's worktree on swarmforge-QA:
+     `bash swarmforge/scripts/pre_qa_gate.sh BL-1679 <parcel tip>` prints
+     no `role-branch:` warning. Do NOT move another role's checkout to
+     provoke the warning - scenario 01's fixture is the proof.
+
+notes: |
+  Minted 2026-09-21 by the specifier adjudicating the hardener's BL-1641
+  note 001456 ("pre_qa_gate: cf7d8c460f stranded on land-replay branch").
+  BL-1641 itself landed (7fcd2cfb23, the third replay) and closed
+  (bb39dd8bcc) while the note waited; nothing about that ticket changes.
+
+  Census at mint, exact commands (BL-1445): total
+  `git for-each-ref refs/heads/land-replay/ | wc -l` = 149; merged
+  `for r in $(git for-each-ref --format='%(refname:short)' refs/heads/land-replay/); do git merge-base --is-ancestor $r origin/main && echo $r; done | wc -l`
+  = 105; oldest `git for-each-ref --sort=committerdate --format='%(committerdate:short)' refs/heads/land-replay/ | head -1`
+  = 2026-08-29. The scratch WORKTREES do not leak (`land-replay-worktrees/`
+  is empty) - only the refs.
+
+  Scenario 01 is the BL-1515 roster-shape check for this guard: the
+  fixture builds a real roles.tsv row with the worktree checked out
+  elsewhere; the master-resident rows contribute nothing to role-branches
+  today and must still contribute nothing.
