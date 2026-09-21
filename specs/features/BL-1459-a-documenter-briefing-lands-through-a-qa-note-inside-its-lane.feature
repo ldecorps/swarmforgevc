@@ -71,3 +71,21 @@ Feature: BL-1459 A documenter briefing lands on main through a QA note, inside i
     Given a documenter commit on the documenter branch's first-parent line that changes paths outside docs/briefings/ and no briefing file
     When QA merges that commit as a parcel forward
     Then the hook exits 0 without judging it
+
+  # BL-1459 an-out-of-lane-path-the-landed-main-already-carries-is-exempt-by-content-09
+  # BL-1666 amendment, 2026-09-21: a hand-built tip-pure land-step replay
+  # (condition (g)) lands content through a commit built off origin/main,
+  # never an ancestor of the pipeline commit that first authored it -
+  # ancestry alone wrongly refused byte-identical content.
+  Scenario: an out-of-lane path whose content the landed main already carries is exempt whatever its commit ancestry
+    Given a documenter commit that changes the day's briefing file and docs/index.md
+    And the landed main carries that same docs/index.md content through a commit that is not an ancestor of the documenter commit
+    When the guard judges that commit as a tip
+    Then it prints DOCUMENTER_BRIEFING_TIP_OK
+
+  # BL-1459 an-out-of-lane-path-whose-content-differs-from-the-landed-main-is-refused-10
+  Scenario: an out-of-lane path whose content differs from the landed main is refused even when an older version of it was landed
+    Given a documenter commit that changes the day's briefing file and docs/index.md
+    And the landed main carries a different docs/index.md content
+    When the guard judges that commit as a tip
+    Then it refuses naming docs/index.md
