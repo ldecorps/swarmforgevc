@@ -4,7 +4,8 @@ Two versioned git hooks refuse, at commit time, a commit or `--no-ff` merge
 that would put pipeline code (`extension/src/`, `extension/test/`,
 `specs/pipeline/steps/`) onto `main` from any role but QA.
 
-**Last Updated:** 2026-08-31
+**Last Updated:** 2026-09-21 (BL-1671: `commit-msg`'s `check_merge_deletion.sh`
+noted as index-reading, not working-tree-reading)
 
 ## Background
 
@@ -43,6 +44,13 @@ guard in the chain is collected rather than aborting the rest (see
   the BL-590 post-mortem called out. It runs two of the five:
   `check_pipeline_code_on_main.sh` and `check_feature_handler_registration.sh`
   — not the whole chain (see below for why).
+- **`commit-msg`** — a third hook, out of this ticket's scope but sharing
+  the same `core.hooksPath` install and running on both a plain commit
+  and a merge once `pre-commit` has passed. Its own guard chain includes
+  `check_merge_deletion.sh` (BL-1242) — which judges the INDEX against
+  each parent (`git diff --cached`), not the working tree, so an unstaged
+  working-tree deletion on the shared checkout is never one of its
+  findings (BL-1671).
 
 This section (through "QA-exclusive paths") describes `check_pipeline_code_on_main.sh`
 itself, the guard both hooks share and the one this ticket is named for.
