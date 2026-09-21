@@ -46,15 +46,15 @@ Feature: The closing ceremony ends the shift with the briefing, and the briefing
     And the recorded closing sequence is "freeze-promotion, parcel-parked, rotate-documenter, briefing-committed, send-confirmed, swarm-stopped"
     And the swarm is stopped no later than "06:00"
 
-  # BL-658 closing-ceremony-04
-  Scenario: A briefing that never lands is surfaced loudly and the hard deadline stops the swarm anyway
-    Given no parcel is in flight when the ceremony begins
-    And the documenter never commits the briefing
-    When the closing ceremony runs
-    Then the swarm is stopped at the hard deadline "06:00"
-    And the missing briefing is surfaced loudly as "closing-briefing-missing"
-    And no briefing send is recorded for that night
-    And the recorded closing sequence is "freeze-promotion, rotate-documenter, briefing-missing, swarm-stopped"
+  # BL-1641 retired closing-ceremony-04 ("a briefing that never lands ... the
+  # recorded closing sequence is freeze-promotion, rotate-documenter,
+  # briefing-missing, swarm-stopped"): once the live ceremony's briefing
+  # deadline can force a landed or composed briefing, that exact sequence is
+  # no longer the only honest ending at the deadline - retired rather than
+  # reworded (BL-1006). The nothing-producible case this scenario asserted
+  # is now the live contract's own claim: see BL-1641's
+  # "nothing-producible-still-ends-the-night-loudly" scenario, which asserts
+  # it against the real ceremony this spec-level fixture model does not run.
 
   # BL-658 closing-ceremony-05
   Scenario Outline: Moving the closure schedule moves the ceremony, with no second clock to edit

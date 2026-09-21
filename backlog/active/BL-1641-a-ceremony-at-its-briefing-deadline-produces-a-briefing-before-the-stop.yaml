@@ -214,3 +214,7 @@ notes: |
   three states); reviewed and kept.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-21, by: architect, blamed: coder, class: behavior, commit: bf75516785, evidence: backlog/evidence/BL-1641-bounce-20260921.md }
+  - { at: 2026-09-21, by: QA, blamed: coder, class: behavior, commit: 581c5b3efb, evidence: backlog/evidence/BL-1641-qa-bounce-20260921.md }

@@ -6,6 +6,7 @@ const {
   briefingInstruction,
   sleepLoopDecision,
   SLEEP_CEILING_GRACE_MS,
+  withForcedBriefingStep,
 } = require('../out/quality/nightClosingCeremonyLive');
 
 function obs(over = {}) {
@@ -101,6 +102,61 @@ test('hard deadline without send surfaces missing briefing', () => {
   assert.equal(missing.state.phase, 'done');
   assert.ok(missing.state.loudSurfaces.includes('closing-briefing-missing'));
   assert.ok(missing.actions.some((a) => a.kind === 'night-stop'));
+});
+
+// ── BL-1641: the deadline gives the executor a chance to ensure a briefing ──
+
+test('BL-1641: the hard deadline emits ensure-briefing before surface and night-stop', () => {
+  const started = tick(null, { inFlightCount: 0 });
+  const briefing = tick(started.state, { nowMs: started.state.startedAtMs + 1, inFlightCount: 0 });
+  const missing = tick(briefing.state, {
+    nowMs: briefing.state.hardDeadlineMs + 1,
+    inFlightCount: 0,
+    briefingAlreadySent: false,
+  });
+  const kinds = missing.actions.map((a) => a.kind);
+  assert.ok(kinds.includes('ensure-briefing'), `no ensure-briefing action: ${kinds.join(', ')}`);
+  const ensureAt = kinds.indexOf('ensure-briefing');
+  assert.ok(ensureAt < kinds.indexOf('surface'), 'ensure-briefing must precede surface');
+  assert.ok(ensureAt < kinds.indexOf('night-stop'), 'ensure-briefing must precede night-stop');
+  const dayKeyAction = missing.actions.find((a) => a.kind === 'ensure-briefing');
+  assert.equal(dayKeyAction.dayKey, '2026-08-26');
+});
+
+test('BL-1641: an already-sent briefing never emits ensure-briefing (nothing to ensure)', () => {
+  const started = tick(null, { inFlightCount: 0 });
+  const briefing = tick(started.state, { nowMs: started.state.startedAtMs + 1, inFlightCount: 0 });
+  const sent = tick(briefing.state, {
+    nowMs: briefing.state.hardDeadlineMs - 1,
+    inFlightCount: 0,
+    briefingAlreadySent: true,
+  });
+  assert.ok(!sent.actions.some((a) => a.kind === 'ensure-briefing'));
+});
+
+// ── BL-1641: withForcedBriefingStep folds the executor's outcome in ──────
+
+test('withForcedBriefingStep: inserts the forced step right before swarm-stopped', () => {
+  const state = { ...doneState(), sequence: ['freeze-promotion', 'briefing-missing', 'swarm-stopped'] };
+  const next = withForcedBriefingStep(state, 'briefing-landed-from-documenter');
+  assert.deepEqual(next.sequence, [
+    'freeze-promotion',
+    'briefing-missing',
+    'briefing-landed-from-documenter',
+    'swarm-stopped',
+  ]);
+});
+
+test('withForcedBriefingStep: a null forced step leaves the sequence untouched (same reference)', () => {
+  const state = { ...doneState(), sequence: ['freeze-promotion', 'briefing-missing', 'swarm-stopped'] };
+  const next = withForcedBriefingStep(state, null);
+  assert.equal(next, state);
+});
+
+test('withForcedBriefingStep: appends when swarm-stopped is absent, never throws', () => {
+  const state = { ...doneState(), sequence: ['freeze-promotion'] };
+  const next = withForcedBriefingStep(state, 'briefing-composed-headless');
+  assert.deepEqual(next.sequence, ['freeze-promotion', 'briefing-composed-headless']);
 });
 
 test('not due does not start', () => {

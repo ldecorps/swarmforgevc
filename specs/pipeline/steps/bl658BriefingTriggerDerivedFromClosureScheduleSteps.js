@@ -103,10 +103,6 @@ function registerSteps(registry) {
     st.resident = null;
   });
 
-  scoped(/^the documenter never commits the briefing$/, (ctx) => {
-    ensure(ctx).briefingNeverCommits = true;
-  });
-
   scoped(/^the briefing for that night is already recorded as sent$/, (ctx) => {
     ensure(ctx).briefingAlreadySent = true;
   });
@@ -181,18 +177,6 @@ function registerSteps(registry) {
 
   scoped(/^the swarm is stopped no later than "([^"]+)"$/, (ctx) => {
     assert.equal(ensure(ctx).result.swarmStoppedAtOrBeforeHardDeadline, true);
-  });
-
-  scoped(/^the swarm is stopped at the hard deadline "([^"]+)"$/, (ctx) => {
-    assert.equal(ensure(ctx).result.swarmStoppedAtOrBeforeHardDeadline, true);
-  });
-
-  scoped(/^the missing briefing is surfaced loudly as "([^"]+)"$/, (ctx, code) => {
-    assert.ok(ensure(ctx).result.loudSurfaces.includes(code));
-  });
-
-  scoped(/^no briefing send is recorded for that night$/, (ctx) => {
-    assert.equal(ensure(ctx).result.sendConfirmations, 0);
   });
 
   scoped(/^the ceremony begins at "([^"]+)"$/, (ctx, t) => {

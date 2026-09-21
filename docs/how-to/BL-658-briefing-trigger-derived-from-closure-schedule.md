@@ -52,7 +52,22 @@ stop time moves the ceremony — no second clock to edit.
 4. **Happy path** — if drain ended at documenter, chain into briefing; else
    rotate resident to documenter with explicit briefing instruction.
 5. **Briefing** — written, committed, send confirmed via sent-state (not
-   “file exists”). Already-sent nights are not double-sent.
+   “file exists”). Already-sent nights are not double-sent. **At the hard
+   deadline, a missing briefing is forced, never left absent (BL-1641,
+   2026-09-21):** `closing-briefing-missing` still surfaces loud, but
+   before `night-stop` the ceremony tries, in order — (a) land the
+   documenter branch's own newest commit touching that day's
+   `docs/briefings/<day>.md`, but only when that commit's WHOLE diff is
+   that one path (a pure add); the landed sha is recorded as
+   `briefing-landed-from-documenter` in the sequence; (b) otherwise
+   compose the banked headless briefing (BL-308) through
+   `compose_banked_briefing_cli.bb` and commit it, recorded as
+   `briefing-composed-headless`; (c) if neither is possible, the night
+   ends exactly as before — `briefing-missing, swarm-stopped`. A
+   `docs/briefings/<day>.md` main already has is never touched by any of
+   this, whatever its `.sent.json` state (2026-09-18: a 120-line briefing
+   sat committed on the documenter branch, unlanded, when bedtime killed
+   the stack at its deadline — this closes that gap).
 6. **Full stop** — night-stop / hard deadline (e.g. 06:00) remains the
    unconditional backstop if the ceremony hangs.
 
@@ -149,7 +164,11 @@ Before the fixed morning generation sweep:
    `night-closing-ceremony-run.js` and **do not** consult the independent
    morning trigger.
 3. When schedule is `absent` / `ambiguous`, keep today's
-   `briefing_morning_time_utc` path (byte-identical for 24/7 packs).
+   `briefing_morning_time_utc` path (byte-identical for 24/7 packs). That
+   fallback path sends the documenter the exact same instruction the
+   ceremony itself sends — `produce the morning briefing for <date>`, a
+   mailbox note, never a pane injection (BL-1458, human ruling A
+   2026-09-07: the documenter is the briefing's one author).
 
 Pure decision logic: `extension/src/quality/nightClosingCeremony.ts` (+ live
 advance / gate / run CLIs under `extension/src/tools/`).
@@ -246,7 +265,9 @@ against every later merge of that branch, documenter or not.
 - Host crontab generation from conf may land as a sibling slice; conf remains
   authoritative.
 - Forbidden outcome remains silence: missing briefing /
-  drain-deadline surfaces must be loud.
+  drain-deadline surfaces must be loud — and, since BL-1641, a missing
+  briefing at the hard deadline is also forced (landed or composed) rather
+  than merely surfaced, per step 5 above.
 
 ## Acceptance
 

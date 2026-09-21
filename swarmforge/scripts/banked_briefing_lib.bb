@@ -50,19 +50,27 @@
      :backlog-counts      {:active n :paused n :done n}
      :git-activity-lines  vector of already-formatted strings (may be empty)
      :daemon-health-lines vector of already-formatted strings (may be empty)
+     :label               optional subject-line label, defaulting to
+                           parked-briefing-label (BL-1641: the closing
+                           ceremony's own deadline-forced composition uses
+                           a distinct label - \"Closing ceremony - headless
+                           briefing\" - so a reader can tell which caller
+                           produced the file; BL-308's own hibernated label
+                           is unchanged when this key is omitted)
    First line is the subject line (matching briefing_email_lib.bb's
    build-briefing-subject, which reads the first non-blank line as the
-   headline) and explicitly carries parked-briefing-label so a reader (and
-   the acceptance suite) can tell this was authored by the headless
-   composer, not the coordinator."
+   headline) and explicitly carries the label so a reader (and the
+   acceptance suite) can tell this was authored by the headless composer,
+   not the coordinator."
   [{:keys [day-key profile-name hibernated-at-ms backlog-counts
-           git-activity-lines daemon-health-lines]}]
-  (let [{:keys [active paused done]} backlog-counts]
+           git-activity-lines daemon-health-lines label]}]
+  (let [{:keys [active paused done]} backlog-counts
+        label (or label parked-briefing-label)]
     (str
      (str/join
       "\n"
       (concat
-       [(str parked-briefing-label " for " day-key)
+       [(str label " for " day-key)
         ""
         "## Recent git activity"]
        (lines-or-fallback git-activity-lines "No recent git activity.")

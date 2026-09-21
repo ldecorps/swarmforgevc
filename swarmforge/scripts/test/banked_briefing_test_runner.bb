@@ -69,6 +69,31 @@
   (assert-includes "includes a daemon health section" "## Daemon health" content)
   (assert-includes "includes the given daemon health line" "chases=1" content))
 
+;; ── BL-1641: an explicit :label overrides the default, byte-for-byte ────
+
+(let [content (banked-briefing-lib/compose-banked-briefing
+               {:day-key "2026-09-21"
+                :profile-name "concierge-banked"
+                :hibernated-at-ms nil
+                :backlog-counts {:active 0 :paused 0 :done 0}
+                :git-activity-lines []
+                :daemon-health-lines []
+                :label "Closing ceremony - headless briefing"})]
+  (assert= "an explicit label replaces the default subject line entirely"
+           "Closing ceremony - headless briefing for 2026-09-21"
+           (first (clojure.string/split-lines content))))
+
+(let [content (banked-briefing-lib/compose-banked-briefing
+               {:day-key "2026-09-21"
+                :profile-name "concierge-banked"
+                :hibernated-at-ms nil
+                :backlog-counts {:active 0 :paused 0 :done 0}
+                :git-activity-lines []
+                :daemon-health-lines []})]
+  (assert= "omitting :label keeps BL-308's own hibernated label unchanged"
+           "Swarm parked - lightweight briefing for 2026-09-21"
+           (first (clojure.string/split-lines content))))
+
 ;; Empty git-activity/daemon-health degrade to a clear fallback line, never
 ;; a blank/missing section (the section heading must still be present so
 ;; the acceptance's per-section check always finds it).

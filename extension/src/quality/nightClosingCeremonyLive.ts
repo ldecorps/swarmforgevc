@@ -33,6 +33,11 @@ export type LiveAction =
   // "a silent ceremony is a failed ceremony" (BL-820 carried) - but sends no
   // briefing and delivers no packet.
   | { kind: 'record-empty-outcome'; shiftKey: string }
+  // BL-1641: at the briefing hard deadline with nothing sent, give the
+  // executor a chance to land the documenter's own commit for the day or,
+  // failing that, compose the banked headless briefing - never touching a
+  // briefing main already has. Emitted before 'surface'/'night-stop' below.
+  | { kind: 'ensure-briefing'; dayKey: string }
   | { kind: 'night-stop' };
 
 export type LiveObservation = {
@@ -220,6 +225,14 @@ function advanceBriefing(state: LiveState, obs: LiveObservation): LiveAdvance {
   if (obs.nowMs >= state.hardDeadlineMs) {
     pushUnique(sequence, 'briefing-missing');
     loudSurfaces.push('closing-briefing-missing');
+    // BL-1641: before the surface and the stop, give the deps a chance to
+    // land the documenter's own commit for today (byte-identical) or, when
+    // nothing exists to land, compose the banked headless briefing - never
+    // touching a briefing main already has. The pure machine only DECIDES
+    // that this chance is due; which (if either) actually happened is
+    // unknown until the executor runs it, so no forced-step name is added
+    // to `sequence` here (see withForcedBriefingStep in the run CLI).
+    actions.push({ kind: 'ensure-briefing', dayKey: obs.dayKey });
     actions.push({ kind: 'surface', code: 'closing-briefing-missing' });
     pushUnique(sequence, 'swarm-stopped');
     actions.push({ kind: 'night-stop' });
@@ -312,6 +325,26 @@ export type SleepLoopDecision = 'wait' | 'done' | 'overran';
  * done" so the ceiling still binds instead of waiting forever on a read
  * failure.
  */
+// BL-1641: the pure machine decides an 'ensure-briefing' chance is due but
+// cannot know its outcome; the executor runs it and folds the resulting
+// forced-step name back into the written state's sequence, right before
+// 'swarm-stopped' (matching the acceptance's "before swarm-stopped"
+// wording), the same post-action fold shape BL-1528's loud-code folding
+// already established for this file.
+export function withForcedBriefingStep(state: LiveState, forcedStep: string | null): LiveState {
+  if (!forcedStep) {
+    return state;
+  }
+  const sequence = [...state.sequence];
+  const stopIndex = sequence.lastIndexOf('swarm-stopped');
+  if (stopIndex === -1) {
+    sequence.push(forcedStep);
+  } else {
+    sequence.splice(stopIndex, 0, forcedStep);
+  }
+  return { ...state, sequence };
+}
+
 export function sleepLoopDecision(
   phase: LivePhase | undefined,
   nowMs: number,

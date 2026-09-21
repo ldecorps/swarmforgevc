@@ -1,7 +1,12 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { runNightClosingCeremony } = require('../out/tools/night-closing-ceremony-run');
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { runNightClosingCeremony, mainHasBriefing } = require('../out/tools/night-closing-ceremony-run');
+const { mkTmpDir } = require('./helpers/tmpDir');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function makeDeps(over = {}) {
   const state = { current: null };
@@ -43,6 +48,12 @@ function makeDeps(over = {}) {
         return [];
       },
       workedAShift: () => true,
+      // BL-1641: real deps land the documenter's own commit or compose the
+      // banked headless briefing at the deadline; defaults here mean
+      // "neither producible", so existing tests that never override these
+      // (and never reach the deadline) are unaffected.
+      landDocumenterBriefing: () => null,
+      composeHeadlessBriefing: () => false,
       ...over,
     },
     state,
@@ -242,6 +253,65 @@ test('BL-1640: the daemon sweep never reopens a done night, even after a worked 
   assert.equal(second.advanced, false);
 });
 
+// ── BL-1641: at the deadline, ensure-briefing lands or composes ──────────
+
+test('BL-1641: at the hard deadline, ensure-briefing lands the documenter commit and folds the step before swarm-stopped', () => {
+  const { deps, actions } = makeDeps({
+    landDocumenterBriefing: (_t, dayKey) => {
+      actions.push(['land', dayKey]);
+      return 'abcabcabcabc';
+    },
+    composeHeadlessBriefing: () => {
+      throw new Error('must not run when landing succeeded');
+    },
+  });
+  const t0 = Date.now();
+  runNightClosingCeremony('/tmp/bl1641a', '/tmp/conf', t0, deps, false, 'finish-shift');
+  runNightClosingCeremony('/tmp/bl1641a', '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
+  const result = runNightClosingCeremony('/tmp/bl1641a', '/tmp/conf', t0 + 40 * 60_000, deps, false, 'finish-shift');
+  assert.ok(actions.some((a) => a[0] === 'land'), `landDocumenterBriefing was not called: ${JSON.stringify(actions)}`);
+  assert.ok(
+    result.state.sequence.includes('briefing-landed-from-documenter'),
+    `sequence missing forced step: ${result.state.sequence.join(' -> ')}`,
+  );
+  const idx = result.state.sequence.indexOf('briefing-landed-from-documenter');
+  assert.ok(idx < result.state.sequence.indexOf('swarm-stopped'), 'the forced step must precede swarm-stopped');
+});
+
+test('BL-1641: when landing fails, ensure-briefing falls back to composing the headless briefing', () => {
+  const { deps, actions } = makeDeps({
+    landDocumenterBriefing: () => {
+      actions.push(['land', null]);
+      return null;
+    },
+    composeHeadlessBriefing: (_t, dayKey) => {
+      actions.push(['compose', dayKey]);
+      return true;
+    },
+  });
+  const t0 = Date.now();
+  runNightClosingCeremony('/tmp/bl1641b', '/tmp/conf', t0, deps, false, 'finish-shift');
+  runNightClosingCeremony('/tmp/bl1641b', '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
+  const result = runNightClosingCeremony('/tmp/bl1641b', '/tmp/conf', t0 + 40 * 60_000, deps, false, 'finish-shift');
+  assert.ok(actions.some((a) => a[0] === 'land'));
+  assert.ok(actions.some((a) => a[0] === 'compose'));
+  assert.ok(result.state.sequence.includes('briefing-composed-headless'));
+});
+
+test('BL-1641: when neither lands nor composes, the sequence still ends briefing-missing, swarm-stopped with no forced step', () => {
+  const { deps } = makeDeps({
+    landDocumenterBriefing: () => null,
+    composeHeadlessBriefing: () => false,
+  });
+  const t0 = Date.now();
+  runNightClosingCeremony('/tmp/bl1641c', '/tmp/conf', t0, deps, false, 'finish-shift');
+  runNightClosingCeremony('/tmp/bl1641c', '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
+  const result = runNightClosingCeremony('/tmp/bl1641c', '/tmp/conf', t0 + 40 * 60_000, deps, false, 'finish-shift');
+  assert.deepEqual(result.state.sequence.slice(-2), ['briefing-missing', 'swarm-stopped']);
+  assert.ok(!result.state.sequence.includes('briefing-landed-from-documenter'));
+  assert.ok(!result.state.sequence.includes('briefing-composed-headless'));
+});
+
 test('BL-1528: a loud code from recordEmptyOutcome is surfaced the same way', () => {
   const { deps, actions } = makeDeps({
     workedAShift: () => false,
@@ -257,4 +327,73 @@ test('BL-1528: a loud code from recordEmptyOutcome is surfaced the same way', ()
     `expected the code to be surfaced: ${JSON.stringify(actions)}`
   );
   assert.ok(result.state.loudSurfaces.includes('closing-lean-packet-undeliverable 2026-09-13'));
+});
+
+// ── BL-1641 architect bounce D1: mainHasBriefing fails CLOSED on a git
+//    read error that is NOT "the path is genuinely absent from main" -
+//    e.g. `main` itself does not resolve (no such ref). Before the fix,
+//    every git-level failure (including this one) was swallowed into
+//    "absent" (return false), which is exactly "safe to write" - the
+//    opposite of the function's own documented contract. Drives the REAL
+//    exported mainHasBriefing directly against a real git fixture, so the
+//    guard's own true/false decision is observed directly rather than
+//    inferred through a multi-step write pipeline that degrades quietly
+//    for unrelated reasons (no documenter branch, no commit_integrity_cli.bb)
+//    regardless of this guard's answer.
+//
+// BL-1039: the fixture comes from the shared seeded template
+// (copySeededRepoInto), never a raw `git init` - the template's own
+// default branch is "main" with one commit, so it already IS the
+// genuine-absence/genuine-presence shape; the no-main-ref cases rename
+// that branch away (an ordinary git operation on the copy, not a second
+// repository creation).
+
+function gitFixture() {
+  const root = mkTmpDir('bl1641-mainhasbriefing-');
+  copySeededRepoInto(root);
+  return root;
+}
+
+test('BL-1641 invariant 1a: mainHasBriefing reads TRUE (fail closed) when the main ref itself does not resolve - a real git error, not path absence', () => {
+  const root = gitFixture();
+  // Rename "main" away so no such ref exists - git cat-file -e fails with
+  // "invalid object name 'main'", never "path ... does not exist in 'main'".
+  execFileSync('git', ['branch', '-m', 'main', 'trunk'], { cwd: root });
+  let threwPathAbsent = false;
+  try {
+    execFileSync('git', ['cat-file', '-e', 'main:docs/briefings/2026-09-08.md'], { cwd: root, stdio: 'pipe' });
+  } catch (err) {
+    threwPathAbsent = /does not exist in/.test(String(err.stderr));
+  }
+  assert.equal(threwPathAbsent, false, 'fixture bug: expected an "invalid object name" error, not a path-absent one');
+
+  assert.equal(mainHasBriefing(root, '2026-09-08'), true, 'expected fail-closed (true, "main might already have it") on a non-path-absent git error');
+});
+
+test('BL-1641 invariant 1a: mainHasBriefing reads TRUE (fail closed) against a directory that is not a git repository at all', () => {
+  const root = mkTmpDir('bl1641-mainhasbriefing-norepo-');
+  assert.equal(mainHasBriefing(root, '2026-09-08'), true, 'expected fail-closed (true) when "not a git repository" is the underlying error');
+});
+
+test('BL-1641 invariant 1a: mainHasBriefing reads FALSE only for the genuine "path does not exist in main" shape (the ref itself resolves fine)', () => {
+  const root = gitFixture();
+  let threwPathAbsent = false;
+  try {
+    execFileSync('git', ['cat-file', '-e', 'main:docs/briefings/2026-09-08.md'], { cwd: root, stdio: 'pipe' });
+  } catch (err) {
+    threwPathAbsent = /does not exist in/.test(String(err.stderr));
+  }
+  assert.equal(threwPathAbsent, true, 'fixture bug: expected the genuine path-absent error shape');
+
+  assert.equal(mainHasBriefing(root, '2026-09-08'), false, 'expected false (absent) only for the genuine path-not-present-in-main shape');
+});
+
+test('BL-1641 invariant 1a: mainHasBriefing reads TRUE when the path genuinely exists on main', () => {
+  const root = gitFixture();
+  fs.mkdirSync(path.join(root, 'docs', 'briefings'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs', 'briefings', '2026-09-08.md'), '# briefing\n');
+  execFileSync('git', ['add', '-A'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'add briefing'], { cwd: root });
+
+  assert.equal(mainHasBriefing(root, '2026-09-08'), true, 'expected true when the briefing genuinely exists on main');
 });

@@ -16,6 +16,7 @@ import { evaluateGate } from './night-closing-ceremony-gate';
 import {
   advanceNightClosingCeremony,
   briefingInstruction,
+  withForcedBriefingStep,
   type LiveAction,
   type LiveState,
 } from '../quality/nightClosingCeremonyLive';
@@ -57,6 +58,21 @@ export type RunDeps = {
    * shift-start stamp is newer than the newest recorded ceremony outcome.
    */
   workedAShift: (target: string) => boolean;
+  /**
+   * BL-1641: at the briefing hard deadline, land the documenter branch's
+   * own commit for the day's briefing when one exists (byte-identical,
+   * touching only that one path) and main does not already have the file.
+   * Returns the LANDING commit's sha, or null when nothing was landed
+   * (main already has the file, no qualifying documenter commit exists,
+   * or the tool/branch is unavailable).
+   */
+  landDocumenterBriefing: (target: string, dayKey: string) => string | null;
+  /**
+   * BL-1641: when nothing was landed, compose the banked headless briefing
+   * for the day and commit it (never touching a file main already has).
+   * Returns whether a commit was made.
+   */
+  composeHeadlessBriefing: (target: string, dayKey: string) => boolean;
 };
 
 function statePath(target: string): string {
@@ -221,6 +237,21 @@ function withRuntimeLoudCodes(state: LiveState, runtimeLoudCodes: string[]): Liv
   return runtimeLoudCodes.length > 0 ? { ...state, loudSurfaces: [...state.loudSurfaces, ...runtimeLoudCodes] } : state;
 }
 
+// BL-1641: land the documenter's own commit for the day when one exists;
+// otherwise compose the banked headless briefing. Neither outcome is known
+// to the pure machine ahead of time, so this returns the forced-step name
+// (or null) for the caller to fold into the written state's sequence via
+// withForcedBriefingStep - split out for the same differential-complexity
+// reason as withRuntimeLoudCodes above.
+function applyEnsureBriefing(target: string, dayKey: string, deps: RunDeps): string | null {
+  const landedSha = deps.landDocumenterBriefing(target, dayKey);
+  if (landedSha) {
+    return 'briefing-landed-from-documenter';
+  }
+  const composed = deps.composeHeadlessBriefing(target, dayKey);
+  return composed ? 'briefing-composed-headless' : null;
+}
+
 // BL-1528: returns the loud codes a 'lean-packet'/'record-empty-outcome'
 // action's own send outcome produced - [] for every other kind.
 function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: boolean): string[] {
@@ -310,7 +341,178 @@ export function buildRealDeps(): RunDeps {
       return closingCeremonyLoudCodes(result);
     },
     workedAShift: (target) => shiftWorkedSinceLastCeremony(target),
+    landDocumenterBriefing,
+    composeHeadlessBriefing,
   };
+}
+
+// ── BL-1641: land the documenter's own briefing, or compose the banked one ──
+
+const DOCUMENTER_BRANCH_TSV_COLUMN = 3;
+
+function briefingRelPath(dayKey: string): string {
+  return path.join('docs', 'briefings', `${dayKey}.md`);
+}
+
+// `git cat-file -e main:<path>` exits non-zero (128) both when the path is
+// genuinely absent from an otherwise-readable `main` AND on every other
+// git-level failure (missing/corrupt `main` ref, "not a git repository",
+// a transient I/O error) - the exit code alone cannot tell these apart
+// (BL-1641 architect bounce D1, empirically confirmed: both a missing path
+// and a missing repository exit 128). Only git's own stderr wording
+// distinguishes "the ref resolved fine but this path is not in it" from
+// every other failure shape.
+const GIT_PATH_ABSENT_FROM_MAIN_PATTERN = /fatal: path ['"].*['"] does not exist in ['"]main['"]/;
+
+// Absent on main: the check must fail closed on any git error (including
+// "not a repository") - a broken read must never read as "safe to write".
+// Only the SPECIFIC "path does not exist in main" stderr shape - a genuine
+// absence with `main` itself resolved fine - reads as false (absent);
+// every other failure (a missing/corrupt ref, no repository, anything
+// unrecognised) reads as true (main might already have it, so no write
+// happens).
+// Exported separately from buildRealDeps (same precedent as
+// spawnConsultDocumenter above) so a test can drive the fail-open/
+// fail-closed distinction directly against a real git fixture, without
+// needing a full commit_integrity_cli.bb-writing pipeline just to observe
+// this guard's own decision.
+export function mainHasBriefing(target: string, dayKey: string): boolean {
+  try {
+    execFileSync('git', ['cat-file', '-e', `main:${briefingRelPath(dayKey)}`], {
+      cwd: target,
+      stdio: 'pipe',
+    });
+    return true;
+  } catch (err) {
+    const stderr = err && typeof err === 'object' && 'stderr' in err ? String((err as { stderr: unknown }).stderr) : '';
+    return !GIT_PATH_ABSENT_FROM_MAIN_PATTERN.test(stderr);
+  }
+}
+
+// BL-1641: "the documenter worktree's branch name comes from roles.tsv, not
+// a literal" - roles.tsv's own column order (role, worktree-name, wt-path,
+// branch, display-name, ...), same file swarmState.ts's parseRolesTsv reads
+// (that parser does not expose the branch column, so it is read directly
+// here rather than growing a shared type for this one caller's narrow need).
+function documenterBranchName(target: string): string | null {
+  try {
+    const rolesTsv = fs.readFileSync(path.join(target, '.swarmforge', 'roles.tsv'), 'utf8');
+    for (const line of rolesTsv.split('\n')) {
+      const cols = line.split('\t');
+      if (cols[0] === 'documenter' && cols[DOCUMENTER_BRANCH_TSV_COLUMN]) {
+        return cols[DOCUMENTER_BRANCH_TSV_COLUMN];
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function gitOutput(target: string, args: string[]): string | null {
+  try {
+    return execFileSync('git', args, { cwd: target, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+  } catch {
+    return null;
+  }
+}
+
+// BL-1641 invariant 1 (second half - "a forced briefing commit touches
+// exactly that one absent path and nothing else"): pure, property-tested in
+// isolation from the git shelling that produces `touchedPaths`.
+export function documenterCommitIsPureAdd(touchedPaths: string[], relPath: string): boolean {
+  return touchedPaths.length === 1 && touchedPaths[0] === relPath;
+}
+
+export function landDocumenterBriefing(target: string, dayKey: string): string | null {
+  // Invariant 1 (first half): never touch a briefing main already has. This
+  // early return is the whole guard - no git write below it is reachable
+  // once main already has the file, which is what makes the guarantee true
+  // by construction rather than by one more condition to keep in sync.
+  if (mainHasBriefing(target, dayKey)) {
+    return null;
+  }
+  const branch = documenterBranchName(target);
+  if (!branch) {
+    return null;
+  }
+  const relPath = briefingRelPath(dayKey);
+  const sha = gitOutput(target, ['log', branch, '-1', '--format=%H', '--', relPath]);
+  const trimmedSha = sha ? sha.trim() : '';
+  if (!trimmedSha) {
+    return null;
+  }
+  const touched = gitOutput(target, ['diff-tree', '--no-commit-id', '--name-only', '-r', trimmedSha]);
+  const touchedPaths = (touched ?? '').split('\n').map((line) => line.trim()).filter(Boolean);
+  // "adds only <path>": the commit's WHOLE diff is that one path, nothing else.
+  if (!documenterCommitIsPureAdd(touchedPaths, relPath)) {
+    return null;
+  }
+  const blob = gitOutput(target, ['show', `${trimmedSha}:${relPath}`]);
+  if (blob === null) {
+    return null;
+  }
+  const absPath = path.join(target, relPath);
+  fs.mkdirSync(path.dirname(absPath), { recursive: true });
+  fs.writeFileSync(absPath, blob);
+  const commitCli = path.join(target, 'swarmforge', 'scripts', 'commit_integrity_cli.bb');
+  if (!fs.existsSync(commitCli)) {
+    // Fixture roots may lack the tool - degrade quietly, same posture as
+    // sendHandoffNote's own missing-script branch.
+    return null;
+  }
+  try {
+    execFileSync(
+      'bb',
+      [
+        commitCli,
+        target,
+        '--message',
+        `Closing ceremony: land documenter briefing ${dayKey} (from ${trimmedSha.slice(0, 10)})`,
+        '--path',
+        relPath,
+      ],
+      { cwd: target, stdio: 'pipe' }
+    );
+    return trimmedSha;
+  } catch {
+    return null;
+  }
+}
+
+export function composeHeadlessBriefing(target: string, dayKey: string): boolean {
+  // Invariant 1 again: the same guard as landing - a compose call reached
+  // after a landing failure must still never overwrite a file main has.
+  if (mainHasBriefing(target, dayKey)) {
+    return false;
+  }
+  const composeCli = path.join(target, 'swarmforge', 'scripts', 'compose_banked_briefing_cli.bb');
+  if (!fs.existsSync(composeCli)) {
+    return false;
+  }
+  try {
+    execFileSync(
+      'bb',
+      [composeCli, target, dayKey, '--label', 'Closing ceremony - headless briefing'],
+      { cwd: target, stdio: 'pipe' }
+    );
+  } catch {
+    return false;
+  }
+  const commitCli = path.join(target, 'swarmforge', 'scripts', 'commit_integrity_cli.bb');
+  if (!fs.existsSync(commitCli)) {
+    return false;
+  }
+  try {
+    execFileSync(
+      'bb',
+      [commitCli, target, '--message', `Closing ceremony: compose headless briefing ${dayKey}`, '--path', briefingRelPath(dayKey)],
+      { cwd: target, stdio: 'pipe' }
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -506,13 +708,22 @@ export function runNightClosingCeremony(
 
   const { state, actions } = advanceNightClosingCeremony(prev, obs);
   const runtimeLoudCodes: string[] = [];
+  let forcedBriefingStep: string | null = null;
   for (const action of actions) {
+    if (action.kind === 'ensure-briefing') {
+      if (!dryRun) {
+        forcedBriefingStep = applyEnsureBriefing(target, action.dayKey, deps);
+      }
+      continue;
+    }
     runtimeLoudCodes.push(...applyAction(target, action, deps, dryRun));
   }
   // BL-1528: a send's own outcome (unlike a 'surface' action) is unknown
   // until applyAction runs it, so these codes join loudSurfaces here rather
-  // than inside advanceNightClosingCeremony's pure decision.
-  const finalState = withRuntimeLoudCodes(state, runtimeLoudCodes);
+  // than inside advanceNightClosingCeremony's pure decision. BL-1641: same
+  // reasoning for which (if either) briefing path an ensure-briefing action
+  // actually took.
+  const finalState = withForcedBriefingStep(withRuntimeLoudCodes(state, runtimeLoudCodes), forcedBriefingStep);
   if (!dryRun) {
     deps.writeState(target, finalState);
   }

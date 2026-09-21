@@ -49,7 +49,8 @@ bl1097_router_dispatch_trail_test_runner.bb	standing
 bl1138_rematch_bookkeeping_test_runner.bb	standing		
 bl1141_refuse_rematch_test_runner.bb	standing		
 bl1313_handoff_files_with_batches_test_runner.bb	standing		
-bl1359_merge_charged_test_runner.bb	standing		
+bl1359_merge_charged_test_runner.bb	standing
+bl1458_instruct_documenter_briefing_test_runner.bb	standing
 bl1479_parked_active_sweep_test_runner.bb	standing
 bl1494_post_qa_sweep_wake_field_test_runner.bb	standing
 bl1637_seat_filing_lib_test_runner.bb	standing
@@ -554,3 +555,5 @@ test_commit_integrity_1497_lock_reap.sh	standing
 test_standing_shell_tests_never_diff_main.sh	standing
 test_check_closed_ticket_subject.sh	standing
 test_bl1640_sleep_runs_ceremony_to_done.sh	standing
+test_compose_banked_briefing_cli.sh	standing
+test_bl1641_ceremony_deadline_produces_a_briefing.sh	standing
