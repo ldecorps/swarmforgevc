@@ -199,6 +199,21 @@ live swarm sessions on 2026-08-22
 ([[darkcount-loop-wipes-tmux-sessions]]-class incident, now also recorded in
 the manifest's `excluded` rows for the specific live-tmux tests).
 
+### The runner fails a test that pollutes the checkout it runs from (BL-1516)
+
+A fixture that mutates the checkout it runs from instead of its own
+mkdtemp — a fixture root that resolves outside its own mkdtemp, a probe
+placeholder that resolves a relative name against `cwd` — leaves a
+top-level entry behind that nothing used to notice, because every such
+entry is gitignored (`.swarmforge/` matches at any depth) and `git
+status` never shows them. `run_bb_suite.sh` now takes an `ls -A` census
+of the checkout's own top level (`git rev-parse --show-toplevel`) once
+before the loop and again after every test. A test whose run adds a NEW
+entry prints `ROOT_POLLUTION_DETECTED test=<file> entry=<entry>` and the
+whole run's exit is non-zero — even when the test itself passed — and
+the census baseline advances past that entry so a LATER test is never
+blamed for an earlier one's leak. A clean run prints no such line.
+
 ## Acceptance
 
 `specs/features/BL-973-copy-lists-closure-derived-and-suite-completeness.feature` —

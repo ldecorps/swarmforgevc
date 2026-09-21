@@ -64,6 +64,26 @@ if [[ "$mode" == "--list" ]]; then
   exit 0
 fi
 
+# BL-1516: a fixture that mutates the checkout it runs from instead of its
+# own mkdtemp leaves a top-level entry behind - each of the three shapes
+# this ticket fixes elsewhere (a fixture root that resolved outside its own
+# mkdtemp, a probe placeholder resolving against cwd) had exactly this
+# symptom, and nothing here ever noticed because every one of those entries
+# is gitignored (`.swarmforge/` matches at any depth) - `git status` never
+# shows them. A derived population (BL-1445's own discipline), pinned per
+# run: `ls -A` of the checkout's own top level, taken once before the loop
+# and re-taken after every test. A test that adds a NEW entry fails the
+# suite with ROOT_POLLUTION_DETECTED, attributed to that test, even when
+# the test itself passed - and the census baseline advances past it so a
+# LATER test is never blamed for an earlier one's leak.
+TOPLEVEL="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"
+census() {
+  [[ -n "$TOPLEVEL" ]] || return 1
+  ls -A "$TOPLEVEL"
+}
+baseline_census="$(census || true)"
+pollution=0
+
 pass=0
 fail=0
 failed=()
@@ -82,6 +102,18 @@ for file in ${standing[@]+"${standing[@]}"}; do
     fail=$((fail + 1))
     failed+=("$file")
   fi
+  if [[ -n "$TOPLEVEL" ]]; then
+    after_census="$(census || true)"
+    new_entries="$(comm -13 <(printf '%s\n' "$baseline_census") <(printf '%s\n' "$after_census"))"
+    if [[ -n "$new_entries" ]]; then
+      while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        echo "ROOT_POLLUTION_DETECTED test=$file entry=$entry"
+        pollution=$((pollution + 1))
+      done <<<"$new_entries"
+    fi
+    baseline_census="$after_census"
+  fi
 done
 
 echo
@@ -89,5 +121,10 @@ echo "bb suite: $pass passed, $fail failed, of ${#standing[@]} standing"
 if (( fail > 0 )); then
   echo "failed:"
   printf '  %s\n' ${failed[@]+"${failed[@]}"}
+fi
+if (( pollution > 0 )); then
+  echo "bb suite: $pollution root pollution entr$([[ $pollution -eq 1 ]] && echo y || echo ies) detected"
+fi
+if (( fail > 0 || pollution > 0 )); then
   exit 1
 fi

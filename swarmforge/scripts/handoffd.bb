@@ -124,13 +124,30 @@
 ;; unloadable scripts reached main. Under a probe (loaded, not executed) the
 ;; root falls back to an inert placeholder and the file is read to the end;
 ;; invoked directly with no root, the usage exit is exactly as before.
+;;
+;; BL-1516: the placeholder used to be the bare RELATIVE string
+;; "bl1395-load-probe-no-root", so every path this file derives from
+;; project-root (state-dir, briefings-dir, lifecycle-snapshot-path, ...)
+;; resolved against the PROCESS'S CWD - a harness that merely probes
+;; (load-file, never invoking a writer) never touched it, but one that
+;; drives a real writer under the probe (the BL-1494 field runner) left
+;; `bl1395-load-probe-no-root/.swarmforge/...` at the top level of
+;; whatever the caller's cwd happened to be, the coder worktree included
+;; (2026-09-10 09:42:57). Now an ABSOLUTE path under the JVM's own temp
+;; directory - inert (nothing reads it back), but never resolvable
+;; against a live checkout regardless of cwd. A harness that drives a
+;; real writer under a probe still owes it an explicit root of its own
+;; (`binding [*command-line-args* [<mkdtemp-root>]]` around the
+;; `load-file` - the BL-1494 runner does this now), since this
+;; placeholder is deliberately never a directory anything should read
+;; results back from.
 (def ^:private invoked-directly?
   (= *file* (System/getProperty "babashka.file")))
 
 (def project-root
   (or (first *command-line-args*)
       (when invoked-directly? (usage))
-      "bl1395-load-probe-no-root"))
+      (str (fs/path (System/getProperty "java.io.tmpdir") "bl1395-load-probe-no-root"))))
 
 ;; BL-812: handoffd's process cwd is not guaranteed to be project-root (seen
 ;; live: launcher home dir) - without this, every handoff-lib target-root
