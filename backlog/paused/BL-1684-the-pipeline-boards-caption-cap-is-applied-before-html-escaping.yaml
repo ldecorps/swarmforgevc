@@ -1,0 +1,139 @@
+id: BL-1684
+title: "the pipeline board's caption cap is applied before HTML escaping - gridCaptionLine renders truncateCaptionDescription(deriveKebabSlug(title)) to 64 chars and the body is then escaped, so a 64-char '&' caption renders as 320 chars (&amp;) and '<' as 257 (&lt;), and a board of fifteen such rows composes to 4119-4396 chars with no link list to drop, which composePipelineBoardHtml returns over PIPELINE_BOARD_MESSAGE_MAX_LENGTH (4000) - the 2026-07-17 rejected-send outage path BL-956's invariant 1 closes; the bl956 property fails on about 1 draw in 30,000 (2 of 58,572; fast-check seed 10 within 1500 runs, deterministic), first sighted by QA in BL-1467's property lane (note 003071); the cap budgets the escaped length and the compose step never returns html over its limit"
+milestone: M8
+type: defect
+severity: high
+# high: a test failing on main (standing-red register, 2026-09-05: the
+# property fails on about 0.5% of full-lane runs and will keep bouncing
+# unrelated parcels) AND a live outage path - a real board of fifteen
+# tickets whose titles are mostly escapable characters would compose over
+# Telegram's limit and be rejected, the 2026-07-17 incident. Not critical:
+# real titles rarely reach that shape; nothing is down today.
+status: todo
+epic: pipeline-board
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-956 (the cap and this property), BL-979 (the pivot) and BL-1555 (the
+# reach floors) are in backlog/done. No open ticket touches
+# extension/src/concierge/pipelineBoard.ts's caption or compose path.
+mutation_cost: medium
+# medium: extension TS under Stryker - pipelineBoard.ts is large, so the
+# hardener scopes the mutate to the caption/compose functions this parcel
+# changes; the fix itself is two functions and the property gains a
+# pinned seed. Unit + property + one feature over the compiled module.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1684-the-pipeline-boards-caption-cap-is-applied-before-html-escaping.feature
+
+# Handler pin only (BL-233, BL-1371). The concierge poster already reaches
+# composePipelineBoardHtml, so an anchor there matches before and after the
+# fix and gates nothing (BL-1235); the cap change is the parcel's own diff.
+# Scenario 01 composes the exact counterexample board through the compiled
+# module, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1684CaptionCapBudgetsTheEscapedLengthSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the message limit is
+  a hard invariant - composePipelineBoardHtml never returns html longer
+  than its maxLength, links or none. FIRM: every cap stays visible (BL-956
+  invariant 3) - a caption trimmed for escaping still ends in the ellipsis
+  and a further body trim, if one is ever needed, is announced. FIRM: the
+  bl956 property keeps its arbitraries and gains the pinned seed as a
+  deterministic example; its reach floors (BL-1555) are unchanged.
+
+invariants:
+  - "composePipelineBoardHtml never returns html longer than its maxLength for any board, with or without a link list: every cap on the board (caption description, parked list, collapsed epics) is budgeted on the rendered, escaped length, never on the raw text."
+
+description: |
+  ## What
+  `extension/src/concierge/pipelineBoard.ts`: `gridCaptionLine` (line ~957)
+  renders `truncateCaptionDescription(deriveKebabSlug(title))` - the
+  64-char `PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX` cap on the RAW slug -
+  and the body is HTML-escaped afterwards, so `&` (5x, `&amp;`) and `<`
+  (4x, `&lt;`) expand past the cap: a 64-char ampersand caption renders
+  at 320 chars. `composePipelineBoardHtml` (lines ~1552-1574) fits the
+  message to `PIPELINE_BOARD_MESSAGE_MAX_LENGTH` (4000) by dropping LINK
+  entries only; with no links it returns the full html whatever its
+  length. A board of fifteen active rows whose titles are mostly
+  escapable characters, plus a few parked entries, composes to 4119-4396
+  chars.
+
+  BL-956's own property (`extension/test/bl956PipelineBoardCaptionCapInvariants.property.test.js`,
+  invariant 1) draws exactly that shape and fails on about one board in
+  thirty thousand: 2 of 58,572 draws in the specifier's hunt, fast-check
+  seed 10 within its first 1500 runs, every time. At 150 draws per run
+  the lane sees it about once in two hundred runs - QA's sighting in
+  BL-1467's lane (note 003071), "clean standalone". The file's header
+  comment (line 291) claims the margin below 4096 absorbs entity
+  expansion; it does not for a whole board. Adjudication, hunt script
+  and the seed-10 counterexample:
+  backlog/evidence/unowned-red-bl956-caption-cap-adjudication-specifier-20260921.md.
+
+  ## Why
+  This is the 2026-07-17 rejected-send outage path BL-956 was minted to
+  close: a board Telegram refuses is a board nobody sees. And a property
+  that fails on 0.5% of lane runs is a standing red that bounces
+  unrelated parcels until an owner lands.
+
+  ## How (direction, not mandate)
+  - Budget the caption cap on the escaped length: escape the slug, then
+    cap at 64 rendered chars on an entity boundary (never cut `&am…`), or
+    shorten the raw slug until `escapeHtml(slug).length <= 64`, keeping
+    the ellipsis. The same for the parked and epic list entries if they
+    render titles.
+  - Give `composePipelineBoardHtml` a last line of defence: after the link
+    list is exhausted and the html is still over `maxLength`, trim the
+    body (shorter caption descriptions, then the parked list) and announce
+    it with the existing overflow line shape - never return over the
+    limit, never silently.
+  - Pin the seed: the property's invariant 1 gains a deterministic
+    example (`fc.assert(..., { seed: 10, numRuns: 1500 })` or the recorded
+    board as a plain unit test) so the fix is checked every run, not one
+    run in two hundred.
+
+  ## Scope
+  - `extension/src/concierge/pipelineBoard.ts` (caption cap, compose
+    fallback, the line-291 comment).
+  - `extension/test/bl956PipelineBoardCaptionCapInvariants.property.test.js`
+    (pinned seed / example; arbitraries unchanged).
+  - `specs/features/BL-1684-the-pipeline-boards-caption-cap-is-applied-before-html-escaping.feature`
+    and `specs/pipeline/steps/bl1684CaptionCapBudgetsTheEscapedLengthSteps.js`
+    (same parcel, BL-233, registered in `specs/pipeline/steps/index.js`).
+  - The register row for the bl956 property file leaves in this parcel's
+    land (BL-1631); the parcel never edits the register. Documenter: the
+    pipeline-board reference's caption-cap sentence says "rendered
+    length"; no diagram trigger.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`, ONE run each.
+  1. `npx vitest run --config vitest.properties.config.mjs test/bl956PipelineBoardCaptionCapInvariants.property.test.js`:
+     3/3 pass, and the pinned seed-10 example is among what ran.
+  2. `node specs/pipeline/cli.js specs/features/BL-1684-the-pipeline-boards-caption-cap-is-applied-before-html-escaping.feature`
+     (from the repo root): all ok.
+  3. `npx vitest run test/pipelineBoard*.test.js`: green (the existing
+     caption and compose tests still hold).
+  4. Register: the land retires the bl956 row; the report after landing
+     shows no unowned row and no BL-1684 row.
+
+notes: |
+  Minted 2026-09-21 by the specifier adjudicating QA's unowned-red note
+  003071 (sighted in BL-1467's property lane). AUTO-APPROVED under the
+  2026-09-17 operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Register row added in the mint commit (lane property, owner BL-1684,
+  first_seen 2026-09-21 = first sighting). The holder (QA, BL-1467) was
+  noted the same pass: "bl956 red owned by BL-1684 - resume BL-1467".
+
+  Census (BL-1445): 40 seeds x 1500 runs of the test's own arbitraries =
+  58,572 draws, 2 over the limit, longest 4396 chars; seed 10 fails
+  deterministically within 1500 runs (evidence carries the script and the
+  counterexample). The third "flake" of the day with a real mechanism
+  (BL-1660/BL-1661/BL-1656 were 09-20's): a property red with no recorded
+  counterexample is hunted with more seeds before it is called a flake.
