@@ -1,0 +1,244 @@
+diff --git a/extension/src/tools/localQwenSeatLive.ts b/extension/src/tools/localQwenSeatLive.ts
+index 2d89760491..b218413856 100644
+--- a/extension/src/tools/localQwenSeatLive.ts
++++ b/extension/src/tools/localQwenSeatLive.ts
+@@ -34,6 +34,28 @@ export function localSeatTopicMapPath(targetPath: string): string {
+   return path.join(targetPath, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
+ }
+ 
++/** The project-briefing text sent as this seat's system prompt on every turn. */
++export function localSeatBriefingPath(targetPath: string): string {
++  return path.join(targetPath, 'docs', 'reference', 'local-model-briefing.md');
++}
++
++/**
++ * The seat's system prompt, or undefined when no briefing file is present.
++ *
++ * Undefined is a working state, not an error, matching `readQwenLocalTopicId`
++ * below: a missing briefing means the seat falls back to answering with no
++ * project context, the same as before this existed, rather than refusing the
++ * turn over a doc file.
++ */
++export function readLocalSeatSystemPrompt(targetPath: string): string | undefined {
++  try {
++    const text = fs.readFileSync(localSeatBriefingPath(targetPath), 'utf8').trim();
++    return text || undefined;
++  } catch {
++    return undefined;
++  }
++}
++
+ /**
+  * The seat's live topic id, or undefined when the operator has not bound one.
+  * Undefined is a working state, not an error: the seat then owns no topic, and
+@@ -98,17 +120,27 @@ export async function readLocalEndpoint(
+   }
+ }
+ 
+-/** One completion from the local model. Throws with the endpoint's own words. */
++/**
++ * One completion from the local model. Throws with the endpoint's own words.
++ *
++ * `system` is ollama's own per-call system-prompt field, kept separate from
++ * `prompt` rather than concatenated onto it: the inbound Telegram text stays
++ * exactly what the operator typed, so a caller inspecting the prompt (or a
++ * test asserting on it) never has to account for a briefing prefix. Omitted
++ * when undefined - `JSON.stringify` drops an undefined-valued key - so a
++ * caller with no briefing sends exactly the request this seat always sent.
++ */
+ export async function completeWithLocalModel(
+   modelId: string,
+   prompt: string,
+   endpointUrl: string = DEFAULT_NAMED_MODEL_ENDPOINT_URL,
+-  fetchFn: FetchLike = globalThis.fetch as unknown as FetchLike
++  fetchFn: FetchLike = globalThis.fetch as unknown as FetchLike,
++  system?: string
+ ): Promise<string> {
+   const res = await fetchFn(`${endpointUrl}/api/generate`, {
+     method: 'POST',
+     headers: { 'content-type': 'application/json' },
+-    body: JSON.stringify({ model: modelId, prompt, stream: false }),
++    body: JSON.stringify({ model: modelId, prompt, system, stream: false }),
+   });
+   const raw = await res.text();
+   if (!res.ok) {
+@@ -125,7 +157,7 @@ export interface LocalSeatTurnDeps {
+   text: string;
+   post: (topicId: number, message: string) => Promise<void>;
+   readEndpoint?: () => Promise<LocalEndpointReading>;
+-  complete?: (modelId: string, prompt: string, endpointUrl: string) => Promise<string>;
++  complete?: (modelId: string, prompt: string, endpointUrl: string, system?: string) => Promise<string>;
+   modelId?: string;
+ }
+ 
+@@ -157,8 +189,8 @@ function resolveReadEndpoint(deps: LocalSeatTurnDeps): () => Promise<LocalEndpoi
+ /** deps.complete, or the real completion call when the caller injects nothing. */
+ function resolveComplete(
+   deps: LocalSeatTurnDeps
+-): (modelId: string, prompt: string, endpointUrl: string) => Promise<string> {
+-  return deps.complete ?? ((m, p, url) => completeWithLocalModel(m, p, url));
++): (modelId: string, prompt: string, endpointUrl: string, system?: string) => Promise<string> {
++  return deps.complete ?? ((m, p, url, system) => completeWithLocalModel(m, p, url, undefined, system));
+ }
+ 
+ export async function runLocalSeatTurn(deps: LocalSeatTurnDeps): Promise<LocalSeatTurnOutcome> {
+@@ -192,11 +224,12 @@ export async function runLocalSeatTurn(deps: LocalSeatTurnDeps): Promise<LocalSe
+ 
+   await post(formatLocalSeatAcknowledgement(turn.modelId));
+   const complete = resolveComplete(deps);
++  const systemPrompt = readLocalSeatSystemPrompt(deps.targetPath);
+   try {
+     // Trimmed here, not only in the default completion call: a reply of pure
+     // whitespace posted into the topic is indistinguishable from a broken
+     // seat, and the seat is the one that knows it got nothing.
+-    const reply = String(await complete(turn.modelId, deps.text, turn.endpointUrl)).trim();
++    const reply = String(await complete(turn.modelId, deps.text, turn.endpointUrl, systemPrompt)).trim();
+     await post(reply || '(the local model returned an empty reply)');
+   } catch (err) {
+     await post(
+diff --git a/extension/test/bl1235LocalQwenSeatLive.test.js b/extension/test/bl1235LocalQwenSeatLive.test.js
+index 64ec1942e9..5777bf4693 100644
+--- a/extension/test/bl1235LocalQwenSeatLive.test.js
++++ b/extension/test/bl1235LocalQwenSeatLive.test.js
+@@ -14,6 +14,7 @@ const path = require('node:path');
+ const { mkTmpDir } = require('./helpers/tmpDir');
+ const {
+   readQwenLocalTopicId,
++  readLocalSeatSystemPrompt,
+   readLocalEndpoint,
+   completeWithLocalModel,
+   runLocalSeatTurn,
+@@ -72,6 +73,28 @@ describe('BL-1235 the seat resolves its topic from the shared map', () => {
+   });
+ });
+ 
++describe('the seat reads its project briefing from docs/reference', () => {
++  it('returns the briefing text when the file is present', () => {
++    const root = mkTmpDir('bl1235-briefing-');
++    try {
++      fs.mkdirSync(path.join(root, 'docs', 'reference'), { recursive: true });
++      fs.writeFileSync(path.join(root, 'docs', 'reference', 'local-model-briefing.md'), 'You are the local seat.\n');
++      assert.equal(readLocalSeatSystemPrompt(root), 'You are the local seat.');
++    } finally {
++      fs.rmSync(root, { recursive: true, force: true });
++    }
++  });
++
++  it('returns undefined rather than throwing when no briefing exists', () => {
++    const root = mkTmpDir('bl1235-briefing-');
++    try {
++      assert.equal(readLocalSeatSystemPrompt(root), undefined);
++    } finally {
++      fs.rmSync(root, { recursive: true, force: true });
++    }
++  });
++});
++
+ describe('BL-1235 one live turn', () => {
+   it('acknowledges FIRST, then posts the completion', async () => {
+     const { outcome, posted } = await turn();
+@@ -94,6 +117,31 @@ describe('BL-1235 one live turn', () => {
+     assert.equal(sawPrompt, 'what is 2 + 2?');
+   });
+ 
++  it('passes the project briefing as the system prompt when one is on disk', async () => {
++    const root = mkTmpDir('bl1235-briefing-');
++    try {
++      fs.mkdirSync(path.join(root, 'docs', 'reference'), { recursive: true });
++      fs.writeFileSync(path.join(root, 'docs', 'reference', 'local-model-briefing.md'), 'Project briefing text.');
++      let sawSystem;
++      await turn({
++        targetPath: root,
++        complete: async (_m, _p, _url, system) => {
++          sawSystem = system;
++          return 'ok';
++        },
++      });
++      assert.equal(sawSystem, 'Project briefing text.');
++    } finally {
++      fs.rmSync(root, { recursive: true, force: true });
++    }
++  });
++
++  it('completes with no system prompt when no briefing file is present', async () => {
++    let sawSystem = 'not called';
++    await turn({ complete: async (_m, _p, _url, system) => { sawSystem = system; return 'ok'; } });
++    assert.equal(sawSystem, undefined);
++  });
++
+   it('says so rather than posting an empty reply', async () => {
+     const { posted } = await turn({ complete: async () => '   ' });
+     assert.match(posted[1].message, /empty reply/);
+@@ -204,6 +252,21 @@ describe('BL-1235 the completion call', () => {
+     assert.equal(reply, 'hi');
+   });
+ 
++  it('includes the system field only when a briefing is given', async () => {
++    let sawBody;
++    await completeWithLocalModel('qwen3:14b', 'hello', ENDPOINT, async (_url, init) => {
++      sawBody = JSON.parse(init.body);
++      return { ok: true, status: 200, text: async () => JSON.stringify({ response: 'hi' }) };
++    }, 'You are the local seat.');
++
++    assert.deepEqual(sawBody, {
++      model: 'qwen3:14b',
++      prompt: 'hello',
++      system: 'You are the local seat.',
++      stream: false,
++    });
++  });
++
+   it('throws with the endpoint own words on a bad status', async () => {
+     await assert.rejects(
+       () =>
+diff --git a/docs/reference/local-model-briefing.md b/docs/reference/local-model-briefing.md
+new file mode 100644
+index 0000000000..22c2972f9f
+--- /dev/null
++++ b/docs/reference/local-model-briefing.md
+@@ -0,0 +1,45 @@
++# Local model briefing (QWEN_LOCAL host seat)
++
++This text is sent as the system prompt for every turn in the local qwen
++Telegram seat (BL-1235). It exists so the seat can talk about this project
++instead of answering as a generic assistant with no idea what SwarmForge is.
++
++You are a local assistant answering questions about the SwarmForge VC
++project, running entirely on the operator's own machine via ollama. You are
++a side channel for questions and discussion only — you do not write code,
++run commands, or commit anything, and you are not part of the coding
++pipeline (that is a separate set of agent seats: specifier, coder, cleaner,
++architect, hardener, documenter, QA).
++
++## What SwarmForge VC is
++
++A VS Code extension that is a visual front-end for SwarmForge, a tmux-based
++multi-agent coding swarm. It launches a swarm against a target repo, shows
++every agent working in live terminal tiles, tracks pipeline stage, and opens
++a pull request at the end. The project dogfoods itself: the swarm building
++this repo is the same swarm the extension lets others run.
++
++## Repo layout
++
++- `extension/` — the VS Code extension host + webview UI (TypeScript)
++- `swarmforge/` — the tmux/babashka pipeline machinery: scripts, role
++  prompts, constitution articles
++- `android/` — Bubble, the native phone companion app (Kotlin)
++- `pwa/` — a static, git-SHA-reproducible backlog dashboard
++- `specs/` — Gherkin features + acceptance pipeline step handlers
++- `backlog/` — ticket queues: root intake, paused/active/done/hold
++- `docs/` — how-to, explanation, reference, diagrams
++
++## The pipeline
++
++Tickets move through **specifier → coder → cleaner → architect → hardener
++→ documenter → QA**, with quality gates (coverage, mutation testing, CRAP,
++DRY) enforced at each stage before a ticket can land on `main`.
++
++## Answering questions
++
++Be honest about the limits of what you know: you have no live view of the
++current backlog, git history, or running swarm state, and you have not read
++this repository's files unless the operator pastes them to you. Do not
++invent specifics about tickets, commits, or current status — say plainly
++when a question needs the operator to check the live repo instead.

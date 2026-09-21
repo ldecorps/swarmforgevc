@@ -1,0 +1,135 @@
+id: BL-1682
+title: "the local qwen seat sends the project briefing (docs/reference/local-model-briefing.md under the target) as ollama's own per-call system field on every turn, so it answers about SwarmForge instead of as a generic assistant; a missing or empty briefing sends exactly the request the seat always sent (no system key) and the inbound Telegram text stays the prompt untouched; operator-drafted on the shared master checkout 2026-09-21 (captured verbatim as a patch in evidence), human ruling 'Mint a ticket for it'"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 6
+direction: human-requested
+source: "role_ask answer 2026-09-21, backlog/answers-archive/ANSWER-BL-1682-mint-a-ticket-for-the-local-seat-briefing.md"
+depends_on: []
+# BL-1235 (the seat, runLocalSeatTurn, completeWithLocalModel) is in
+# backlog/done. BL-1680 (paused) edits the BL-1384 acceptance handler
+# only; no shared hunk with this parcel's src/test/docs paths.
+mutation_cost: low
+# low: one reader function and one optional parameter threaded through
+# completeWithLocalModel and the turn (extension TS, under Stryker), five
+# unit tests already in the patch, one feature and handler over a fake
+# completion seam. No live ollama call anywhere in the gates.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1682-the-local-seat-sends-the-project-briefing-as-its-system-prompt.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer call - runLocalSeatTurn
+# reading readLocalSeatSystemPrompt(deps.targetPath) and passing `system`
+# to complete - is the parcel's own diff, so an anchor on it gates nothing
+# (BL-1235); scenario 01 drives the real turn through a fake completion
+# seam and reads the system field, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1682LocalSeatBriefingSystemPromptSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  The human already ruled on this work in the specifier's question
+  channel on 2026-09-21: asked what the swarm should do with the
+  uncommitted local-seat briefing work on the master checkout (leave it /
+  mint a ticket / discard), the answer was "Mint a ticket for it". This
+  tap only confirms the new feature file. FIRM: the operator's draft
+  (patch in evidence) is the starting point - the coder applies it in its
+  own worktree and the chain reviews it like any parcel; the briefing
+  TEXT is the operator's content, reviewed for accuracy by the documenter,
+  never rewritten by the coder. FIRM: with no briefing file, or an empty
+  one, the ollama request is byte-identical to today's (no `system` key);
+  the inbound Telegram text is the `prompt`, never prefixed. No choice is
+  posed; no ruling_options.
+
+invariants:
+  - "A local-seat turn's ollama request differs from today's request only by the presence of the `system` field, and that field is present only when a non-empty docs/reference/local-model-briefing.md exists under the target path."
+
+description: |
+  ## What
+  The local qwen seat (BL-1235, `extension/src/tools/localQwenSeatLive.ts`)
+  answers Telegram questions through ollama's `/api/generate` with the
+  inbound text as `prompt` and no system prompt, so it answers as a
+  generic assistant with no idea what SwarmForge is. This ticket gives it
+  a project briefing: `docs/reference/local-model-briefing.md` under the
+  target path, read once per turn and sent as ollama's own per-call
+  `system` field, kept separate from `prompt` so the operator's text is
+  never prefixed.
+
+  The operator drafted this on the shared master checkout on 2026-09-21
+  (14:42-15:19 local, uncommitted): `readLocalSeatSystemPrompt(targetPath)`
+  (returns the trimmed file text or undefined - a missing briefing is a
+  working state, matching `readQwenLocalTopicId`), `completeWithLocalModel`
+  gaining an optional `system` parameter that `JSON.stringify` drops when
+  undefined, `runLocalSeatTurn` threading it through the `complete` seam,
+  five unit tests in `extension/test/bl1235LocalQwenSeatLive.test.js`,
+  and the 45-line briefing itself. Captured verbatim:
+  `backlog/evidence/BL-1682-operator-draft-local-seat-briefing-20260921.patch`
+  (`git apply` it in the coder worktree as the starting point).
+
+  ## Why
+  Human ruling 2026-09-21 in the specifier's question channel: "Mint a
+  ticket for it". The seat is the operator's side channel for questions
+  about this project; without context it is useless for that. The draft
+  is real feature code that no worktree or ticket claimed, and the shared
+  checkout is not a place code lands from (Article 1.2/4.2) - the chain
+  reviews it as a parcel.
+
+  ## How (direction, not mandate)
+  - Apply the patch in the coder worktree; keep the seam shape (a fifth
+    positional `system` argument on `complete`) unless the cleaner prefers
+    an options object - the unit tests in the patch assert the observable
+    body, not the signature.
+  - The feature's handler drives `runLocalSeatTurn` with a fake `complete`
+    (and a fake `readEndpoint` holding the seat's model - pin `modelId`,
+    BL-1680) against a mkdtemp target: briefing present -> `system` equals
+    the file text and `prompt` is exactly the inbound text; absent or
+    whitespace-only -> the completion call carries no system value.
+  - `docs/reference/local-model-briefing.md` lands with the parcel as the
+    operator wrote it; the documenter checks its facts against
+    `local-engineering.prompt` and the roles list and adds a short
+    "briefing file" section to the local-seat how-to (BL-1235's page).
+
+  ## Scope
+  - `extension/src/tools/localQwenSeatLive.ts`,
+    `extension/test/bl1235LocalQwenSeatLive.test.js` (from the patch).
+  - `docs/reference/local-model-briefing.md` (new, from the patch);
+    the local-seat how-to (documenter).
+  - `specs/features/BL-1682-the-local-seat-sends-the-project-briefing-as-its-system-prompt.feature`
+    and `specs/pipeline/steps/bl1682LocalSeatBriefingSystemPromptSteps.js`
+    (same parcel, BL-233, registered in `specs/pipeline/steps/index.js`).
+  - Nothing else: no change to the resolver, the endpoint probe, the
+    topic map or the front desk.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each.
+  1. `cd extension && npx vitest run test/bl1235LocalQwenSeatLive.test.js`:
+     green, including the five briefing tests from the patch.
+  2. `node specs/pipeline/cli.js specs/features/BL-1682-the-local-seat-sends-the-project-briefing-as-its-system-prompt.feature`:
+     all ok.
+  3. `git show <parcel>:docs/reference/local-model-briefing.md | head -3`
+     prints the operator's heading; the how-to names the file.
+  4. Live (optional, operator): with the briefing on disk, one message in
+     the local seat topic answers about SwarmForge rather than generically.
+
+notes: |
+  Minted 2026-09-21 by the specifier on the human's ruling in the
+  specifier question channel - verbatim: "Mint a ticket for it" - after
+  the coordinator's freshness reply "no worktree/ticket claims it; real
+  feature code, not garbage; ask human" (note 010522). Answer archived at
+  backlog/answers-archive/ANSWER-BL-1682-mint-a-ticket-for-the-local-seat-briefing.md.
+
+  The draft still sits UNCOMMITTED on the shared master checkout (two
+  tracked files modified, the briefing untracked, out/ compiled 15:19).
+  The swarm never touches it (workflow.prompt: surfaced, not swept). The
+  operator is asked to restore those three paths on master BEFORE this
+  parcel lands: a modified tracked file on the shared checkout makes the
+  daemon's reconcile merge refuse the landing ("local changes would be
+  overwritten"), the BL-1671 family of holds. The patch in evidence is the
+  complete copy; nothing is lost by restoring.
+
+  INVEST at mint: one observable outcome (the seat answers with project
+  context), one sitting (the code exists), testable through the fake
+  completion seam; the patch's own five tests are the unit half.
