@@ -7,7 +7,7 @@ epic: first-run-mutation-debt
 priority: 40
 direction: swarm-proposed
 depends_on: []
-decomposes_into: [BL-1520, BL-1523, BL-1577, BL-1669]
+decomposes_into: [BL-1520, BL-1523, BL-1577, BL-1669, BL-1672]
 remaining_slices:
   - "extension/src/tools/telegram-front-desk-bot.ts - 285 survived, 654 no-coverage (against a 17-file include set), 1945 mutants, score 51.72%. The no-coverage mass sits in the extension-host adapter builders (buildPollAdapters 156, buildConciergeTickAdapters 125, applyHotfixStampAnswer 84, connectAndRelayReplies 37, main 15): the CLI main() is not the thin wrapper engineering.prompt requires. Slicing waits on the human ruling below."
   - "extension/src/tools/telegramFrontDeskBotCore.ts - 288 survived, 91 no-coverage, 2048 mutants, score 81.49% (BL-955's row; BL-620's row read 262/78 against a different include set). 89 of them are module-level constant and pattern tables, then answerIfAlreadyDecided 21, recordRulingDecisionAndClose 16, CONTROL_DECISION_EFFECTS 16, dispatchRuleCallback 12 no-coverage. Slicing waits on the human ruling below."
