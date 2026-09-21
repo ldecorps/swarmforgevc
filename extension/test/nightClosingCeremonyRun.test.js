@@ -157,6 +157,91 @@ test('BL-1528: a lean-packet send with no loud codes leaves loudSurfaces untouch
   assert.deepEqual(result.state.loudSurfaces, []);
 });
 
+// ── BL-1640: a sleep's deadlines are relative to the sleep itself ────────
+
+test('BL-1640: a sleep anchors drainDeadlineMs/hardDeadlineMs to now plus the conf budgets', () => {
+  const { deps } = makeDeps({
+    evaluate: () => ({
+      mode: 'ceremony',
+      scheduleState: 'ok',
+      surfaced: 'nothing',
+      consultFixedMorningTrigger: false,
+      ceremonyDue: false,
+      ceremonyBeginLocal: '05:25',
+      closureStopLocal: '08:45',
+      drainBudgetMinutes: 2,
+      briefingBudgetMinutes: 1,
+    }),
+  });
+  const nowMs = Date.UTC(2026, 8, 21, 16, 0, 0);
+  const result = runNightClosingCeremony('/tmp/bl1640', '/tmp/conf', nowMs, deps, false, 'finish-shift');
+  assert.equal(result.state.drainDeadlineMs, nowMs + 2 * 60_000);
+  assert.equal(result.state.hardDeadlineMs, nowMs + 3 * 60_000);
+});
+
+test('BL-1640: the daemon path keeps its own hardcoded drain budget, ignoring the conf budgets exposed for sleeps', () => {
+  const { deps } = makeDeps({
+    evaluate: () => ({
+      mode: 'ceremony',
+      scheduleState: 'ok',
+      surfaced: 'nothing',
+      consultFixedMorningTrigger: false,
+      ceremonyDue: true,
+      ceremonyBeginLocal: '05:25',
+      closureStopLocal: '08:45',
+      drainBudgetMinutes: 2,
+      briefingBudgetMinutes: 1,
+    }),
+  });
+  const nowMs = Date.now();
+  const result = runNightClosingCeremony('/tmp/bl1640b', '/tmp/conf', nowMs, deps);
+  assert.equal(result.state.drainDeadlineMs, nowMs + 25 * 60_000);
+});
+
+test('BL-1640: a second sleep after a worked shift the same day starts a new ceremony over a done state', () => {
+  // Day 1: no shift of work - one tick, a quiet 'done' with no briefing sent
+  // (isolates the restart mechanism from the unrelated "already briefed
+  // today" short-circuit, which itself also correctly reopens as 'done').
+  const { deps, state } = makeDeps({ workedAShift: () => false });
+  const nowMs = Date.now();
+  const first = runNightClosingCeremony('/tmp/bl1640c', '/tmp/conf', nowMs, deps, false, 'finish-shift');
+  assert.equal(first.state.phase, 'done');
+
+  // Day 1 (same nightKey), a shift now happened: a second sleep must reopen.
+  deps.workedAShift = () => true;
+  const second = runNightClosingCeremony('/tmp/bl1640c', '/tmp/conf', nowMs + 5000, deps, false, 'finish-shift');
+  assert.equal(second.state.phase, 'frozen', 'a second sleep with a worked shift reopens the ceremony');
+  assert.deepEqual(second.state.sequence, ['freeze-promotion']);
+  assert.equal(second.state.startedAtMs, nowMs + 5000);
+  assert.equal(state.current.phase, 'frozen');
+});
+
+test('BL-1640: a second sleep with no shift since stays quiet over a done state', () => {
+  const { deps, state } = makeDeps();
+  const nowMs = Date.now();
+  deps.briefingSent = () => true;
+  runNightClosingCeremony('/tmp/bl1640d', '/tmp/conf', nowMs, deps, false, 'finish-shift');
+  assert.equal(state.current.phase, 'done');
+
+  deps.workedAShift = () => false;
+  const second = runNightClosingCeremony('/tmp/bl1640d', '/tmp/conf', nowMs + 5000, deps, false, 'finish-shift');
+  assert.equal(second.state.phase, 'done');
+  assert.equal(second.advanced, false);
+});
+
+test('BL-1640: the daemon sweep never reopens a done night, even after a worked shift', () => {
+  const { deps, state } = makeDeps();
+  const nowMs = Date.now();
+  deps.briefingSent = () => true;
+  runNightClosingCeremony('/tmp/bl1640e', '/tmp/conf', nowMs, deps, false, 'finish-shift');
+  assert.equal(state.current.phase, 'done');
+
+  // No sleepPath now: this is the daemon's own sweep.
+  const second = runNightClosingCeremony('/tmp/bl1640e', '/tmp/conf', nowMs + 5000, deps);
+  assert.equal(second.state.phase, 'done', 'the daemon must never reopen a night it already closed');
+  assert.equal(second.advanced, false);
+});
+
 test('BL-1528: a loud code from recordEmptyOutcome is surfaced the same way', () => {
   const { deps, actions } = makeDeps({
     workedAShift: () => false,
