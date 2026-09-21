@@ -1,0 +1,156 @@
+id: BL-1685
+title: "fourteen step handlers outside BL-1658's fifteen require extension/out/bridge/bridgeServer at module scope (bl1412, bl538, bl572, bl591, bl592, bl665, bl672, bl673, bl674, bl686, bl687, bl766, bl905, gh23), and bridgeServer is the whole bridge graph - 286 modules, 664-782 ms alone at load 15-19 - so stepHandlerModuleLoadBudget names bl1412SpecTreeTextFilterSteps.js over the 400 ms budget today (414-768 ms, coder note 000050) and will charge it the full graph every run once BL-1658's fifteen go lazy; each of the fourteen requires bridgeServer inside the step that starts a bridge, and the census of eager requirers is pinned"
+milestone: M8
+type: defect
+severity: high
+# high: a test failing on main (standing-red register, 2026-09-05): the
+# module-load budget guard is over budget on this file on five of six
+# readings today and becomes certainly red the moment BL-1658 lands, when
+# bl1412 is the first eager requirer of the bridge graph in the guard's
+# sequential census. It re-classes the guard file's row, which BL-1658's
+# land would otherwise retire while the file is still red. Not critical:
+# a unit-suite guard, nothing in production.
+status: todo
+epic: unit-suite-speed
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1630 (no work at module load) and BL-1412 are in backlog/done.
+# BL-1658 (active, at QA) moves the fifteen cursor-bridge requirers and,
+# per its amendment (3), their bridgeServer requires (bl545, bl696, bl697);
+# four of this ticket's fourteen (bl592, bl674, bl686, bl687) are also in
+# BL-1658's jsdom eight - promote this AFTER BL-1658 lands and merge, never
+# beside it (orthogonality). Any of bl545/bl696/bl697 still eager when this
+# parcel starts joins the population.
+mutation_cost: low
+# low: fourteen handlers move one require inside the step that uses it
+# (specs/pipeline/steps, no extension src change, no Stryker); one feature
+# and handler over a fresh-child-process require with the loader intercept
+# BL-1658's handler already has (seconds each).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1685-every-eager-bridgeserver-requirer-loads-the-bridge-graph-inside-its-step.feature
+
+# Handler pin only (BL-233, BL-1371). The guard (stepHandlerModuleLoadBudget)
+# already censuses every handler, so an anchor on it matches before and
+# after (BL-1235); the fourteen require moves are the parcel's own diff.
+# Scenario 01 requires each handler alone in a fresh child, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1685BridgeServerRequirersLoadLazilySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the population is
+  the CENSUS - all fourteen move in one parcel, because the guard's
+  sequential census charges the shared graph to the alphabetically first
+  eager requirer and fixing one re-arms it on the next (BL-1658's own
+  bl1050 -> bl1146 lesson). FIRM: every handler's feature still resolves
+  and each still starts the same real bridge inside its steps - only
+  WHERE bridgeServer is required changes. FIRM: no allowlist entry is
+  added for any of the fourteen.
+
+invariants:
+  - "No step handler under specs/pipeline/steps requires extension/out/bridge/bridgeServer at module scope: the bridge graph (286 modules) loads only inside a step that starts a bridge, so requiring any handler alone in a fresh process never loads it."
+
+description: |
+  ## What
+  `stepHandlerModuleLoadBudget.test.js` (400 ms per handler, best-of-three
+  confirm-alone) names `bl1412SpecTreeTextFilterSteps.js` over budget on
+  five of six readings today (414-768 ms; 290-300 ms once at load 13).
+  Its only heavy line is line 18,
+  `const { startBridge } = require('../../../extension/out/bridge/bridgeServer')`
+  at module scope (its jsdom is already lazy, BL-1630). `bridgeServer` IS
+  the bridge graph: requiring it alone loads 286 modules (bridge 70,
+  metrics 33, swarm 18 under extension/out, plus @connectrpc 52,
+  @bufbuild 49, @cursor 11) in 664-782 ms at load 15-19; the handler
+  alone, 287 modules in 823-1089 ms.
+
+  The guard's census is sequential and charges a shared graph to the
+  alphabetically first eager requirer. Today bl1412 sits behind
+  BL-1658's eager bl1050/bl1146/bl1253/bl1322/bl1384 and pays only the
+  remainder - "borderline". When BL-1658 lands and those go lazy, bl1412
+  is the first eager requirer of the bridge graph and pays all of it,
+  every run; fixing bl1412 alone then re-arms the guard on bl538, and so
+  on through fourteen files. Census (BL-1445), byte-safe:
+  `git grep -l 'bridge/bridgeServer' -- 'specs/pipeline/steps/*Steps.js'`
+  names 32 handlers; `/usr/bin/grep -c '^const .*require(.*bridge/bridgeServer' <file>`
+  is 1 for 17 of them. Three of the 17 are BL-1658's (bl545, bl696,
+  bl697). The fourteen here, in census order: bl1412SpecTreeTextFilterSteps,
+  bl538ConsolePausedTicketPagerSteps, bl572EpicReorderConsoleSteps,
+  bl591EpicEtaSteps, bl592SpecTreeOnLiveConsoleWithEpicTierSteps,
+  bl665ContextTelemetryProducerWiringSteps, bl672EpicMakeTopPrioritySteps,
+  bl673TopicMakeTopPrioritySteps, bl674EpicDrilldownUiSteps,
+  bl686EpicDrilldownSlugMatchSteps, bl687EpicReorderIncludesActiveChildrenSteps,
+  bl766MiniAppLetsTalkRetiredSteps, bl905HideChildlessEpicsReorderSteps,
+  gh23ContextBudgetDashboardSteps. Adjudication:
+  backlog/evidence/unowned-red-bl1412-bridge-graph-eager-requirers-adjudication-specifier-20260921.md.
+
+  ## Why
+  A standing red on the guard file bounces every unrelated parcel that
+  runs the unit suite, and the register throttles intake while it stands
+  (BL-1429). The guard exists so that requiring a handler costs nothing
+  until its steps run (BL-1630); fourteen handlers still pay the whole
+  bridge for a require they use only inside a step.
+
+  ## How (direction, not mandate)
+  - In each of the fourteen, move the `bridgeServer` require inside the
+    step (or a small `getStartBridge()` helper called from the step) that
+    starts the bridge - the exact shape BL-1658 used for the fifteen and
+    BL-1630 for the twelve. Nothing else in the handler changes.
+  - The feature's handler reuses BL-1658's fresh-child-process require
+    with the loader intercept (`bl1658SevenJsdomHandlersLoadLazilySteps.js`),
+    parameterised on the module path `extension/out/bridge/bridgeServer`.
+  - Scenario 02 pins the census: the byte-safe grep names 32 handlers,
+    and after the parcel the column-0 require count over them is 0 (the
+    three BL-1658 files included - if any is still eager when this parcel
+    starts, it joins the fourteen; say so in the coder evidence).
+
+  ## Scope
+  - The fourteen handlers under `specs/pipeline/steps/` named above
+    (require placement only).
+  - `specs/features/BL-1685-every-eager-bridgeserver-requirer-loads-the-bridge-graph-inside-its-step.feature`
+    and `specs/pipeline/steps/bl1685BridgeServerRequirersLoadLazilySteps.js`
+    (same parcel, BL-233, registered in `specs/pipeline/steps/index.js`).
+  - The register row for `extension/test/stepHandlerModuleLoadBudget.test.js`
+    (re-pointed to this ticket in the mint commit) leaves in this parcel's
+    land (BL-1631); the parcel never edits the register. No allowlist
+    entry. Documenter: the BL-1630 how-to's list of lazy-require handlers
+    gains the fourteen; no diagram trigger.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each.
+  1. `cd extension && npx vitest run test/stepHandlerModuleLoadBudget.test.js`:
+     green, no handler named over budget, allowlist unchanged by this parcel.
+  2. `node specs/pipeline/cli.js specs/features/BL-1685-every-eager-bridgeserver-requirer-loads-the-bridge-graph-inside-its-step.feature`
+     (repo root): all ok.
+  3. `for f in $(git grep -l 'bridge/bridgeServer' -- 'specs/pipeline/steps/*Steps.js'); do /usr/bin/grep -c '^const .*require(.*bridge/bridgeServer' $f; done | grep -vc '^0$'`
+     prints 0 (byte-safe grep: this shell's `grep` is ugrep and skips
+     NUL-bearing files, BL-1658 amendment 4).
+  4. The fourteen features each run green through the runner once
+     (about 20 s of registry load per feature - minutes, once).
+  5. Register: the land retires the stepHandlerModuleLoadBudget row; the
+     report after landing shows no unowned row and no BL-1685 row.
+
+notes: |
+  Minted 2026-09-21 by the specifier adjudicating the coder's unowned-red
+  note 000050 (from inside BL-1681). AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Register: the row for extension/test/stepHandlerModuleLoadBudget.test.js
+  was owned by BL-1658 (bl1050/bl1146, the cursor-bridge fifteen); it is
+  re-pointed to BL-1685 in the mint commit because the register is one
+  row per (lane, file) and the file stays red after BL-1658 lands. QA
+  (holding BL-1658 at 1d70418d08) and the coder were noted the same pass.
+
+  Measurements at mint (master checkout, load 13-19): handler alone 823 /
+  1089 / 868 ms over 287 modules; bridgeServer alone 724 / 782 / 664 ms
+  over 286 modules. The coder's six readings: 414, 628, 624, 768, 501,
+  432 ms (five over budget) and 290-300 ms once.
+
+  Promote after BL-1658 lands: bl592, bl674, bl686, bl687 are edited by
+  both (BL-1658 moves their jsdom require; this parcel their bridgeServer
+  require) - merge, do not fork.
