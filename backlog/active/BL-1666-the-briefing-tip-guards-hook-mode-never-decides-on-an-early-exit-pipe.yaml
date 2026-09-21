@@ -43,9 +43,25 @@ approval_context: >
   a mechanism and fixed, or retired in the evidence as not reproducible
   after a BOUNDED search (three runs of the file, a loop over the
   property's own draws) - never by loosening the assertion.
+  AMENDED 2026-09-21 by the specifier on QA's note 003047 (evidence
+  e4aafc21a8): the same guard's out-of-lane exemption judges commit
+  ANCESTRY, so content the landed main already carries through a
+  hand-built replay (condition (g), six lands on 2026-09-21) is refused as
+  unprovenanced - the 2026-09-20 briefing cannot land. Folded here rather
+  than minted apart: same 327-line guard, same test file, one sitting,
+  and two parcels on one file cannot run concurrently anyway. Two
+  scenarios are added to BL-1459's feature INSIDE this parcel (BL-1662's
+  shape; text under "Amendment" below), so a feature file IS changed by
+  this parcel now; no choice is posed and the severity is unchanged, so
+  the approval stands under the same hotfix carve-out. FIRM: a path
+  outside the lane is exempt when its blob at the tip EQUALS the landed
+  main's blob at that path, whatever the commit ancestry; a path whose
+  blob differs from, or is absent on, the landed main stays refused - an
+  older version once landed is not provenance for a newer one.
 
 invariants:
   - "No decision in check_documenter_briefing_tip.sh depends on a pipe whose consumer can exit before its producer has finished writing; every exemption is computed from a fully read input."
+  - "For every path outside the lane, a tip whose blob at that path equals the landed main's blob at that path is exempt whatever its commit ancestry; a path whose blob differs from, or is absent on, the landed main is refused."
 
 description: |
   ## What is wrong
@@ -108,16 +124,102 @@ description: |
     process to kill; same for the diff. Mirror BL-1660's shell case for
     the large-output shape.
 
+  ## Amendment 2026-09-21 - the out-of-lane exemption judges content, not ancestry
+
+  QA note to the specifier, priority 00, 2026-09-21T09:04:06Z (inbound
+  00_20260921T090406Z_003047_from_QA), verbatim: "briefing lane guard
+  exempts by ancestry not content, ev e4aafc21a8". QA's evidence
+  (`backlog/evidence/documenter-briefing-lane-guard-false-positive-hand-built-provenance-20260921.md`,
+  on the QA branch), verbatim: "`judge_tip_paths()` ... exempts it when
+  `git merge-base --is-ancestor "$anchor" "$landed_main"`. This is a
+  COMMIT-ANCESTRY check, not a content-equality check."
+
+  ### What is wrong
+
+  `judge_tip_paths` (~line 147) exempts an out-of-lane path only when the
+  last commit on the TIP's lineage that touched it (`git log -1 ... "$tip"
+  -- "$path"`) is an ancestor of the landed main. Six tickets landed on
+  2026-09-21 through the condition-(g) hand-build recipe (BL-1657,
+  BL-1661, BL-1667, BL-1664, BL-1630, BL-1668): their content sits on
+  origin/main in FRESH commits built off origin/main, never the pipeline
+  commits the documenter branch carries, so the ancestry test fails on
+  content that is byte-identical. Landing the 2026-09-20 briefing
+  `f6ab94c8d4` (its own diff: `docs/briefings/2026-09-20.md` alone) was
+  refused. Census from the master checkout on 2026-09-21 09:1xZ, the
+  guard's own direct mode (`bash swarmforge/scripts/check_documenter_briefing_tip.sh
+  --tip f6ab94c8d4`, LANDING = local main): 92 offending paths; comparing
+  `git rev-parse f6ab94c8d4:<path>` with `git rev-parse origin/main:<path>`
+  for each: 80 identical, 5 differ (`backlog/done/BL-1656-*.yaml`,
+  `backlog/evidence/BL-1657-land-escalate-20260920.md`,
+  `backlog/standing-reds.tsv`, two `docs/how-to/*.md`), 7 absent on main
+  (two `backlog/active/BL-16{30,57}-*.yaml` since moved to done/, four
+  evidence files, one `.feature.draft`). The 80 are this defect; the 12
+  are inherited pipeline residue the documenter branch never synced
+  away - true out-of-lane content (five would auto-merge silently into
+  main's newer files), correctly refused, and the documenter's duty (its
+  prompt now says to merge origin/main before composing).
+
+  ### What is wanted (added scope)
+
+  - `judge_tip_paths` exempts a path when the tip's blob equals the
+    landed main's blob at that path (`git rev-parse -q --verify
+    "$tip:$path"` vs `"$landed_main:$path"`), checked FIRST; the ancestry
+    test stays as the second exemption for a path the tip removed or a
+    tree entry with no blob. A path whose blob differs from, or is
+    absent on, the landed main is refused exactly as today.
+  - `test_check_documenter_briefing_tip.sh` gains a case: the out-of-lane
+    content is landed on the fixture's main by a commit built off main
+    (not the documenter's commit), the guard prints OK; and a case where
+    main carries a DIFFERENT version, still refused.
+  - Two scenarios join BL-1459's feature in this parcel, their steps in
+    the existing handler in the SAME commit (BL-233), text below.
+  - The evidence re-runs the census above on the parcel's day (the
+    offender count after the fix must be the residue only).
+
+  ### Scenario text for BL-1459's feature (added by this parcel)
+
+  ```
+  # BL-1459 an-out-of-lane-path-the-landed-main-already-carries-is-exempt-by-content-09
+  Scenario: an out-of-lane path whose content the landed main already carries is exempt whatever its commit ancestry
+    Given a documenter commit that changes the day's briefing file and docs/index.md
+    And the landed main carries that same docs/index.md content through a commit that is not an ancestor of the documenter commit
+    When the guard judges that commit as a tip
+    Then it prints DOCUMENTER_BRIEFING_TIP_OK
+
+  # BL-1459 an-out-of-lane-path-whose-content-differs-from-the-landed-main-is-refused-10
+  Scenario: an out-of-lane path whose content differs from the landed main is refused even when an older version of it was landed
+    Given a documenter commit that changes the day's briefing file and docs/index.md
+    And the landed main carries a different docs/index.md content
+    When the guard judges that commit as a tip
+    Then it refuses naming docs/index.md
+  ```
+
+  ### Interim (specifier adjudication, same pass)
+
+  `backlog/evidence/BL-1666-briefing-lane-guard-exempts-by-ancestry-not-content-adjudication-specifier-20260921.md`:
+  QA lands `docs/briefings/2026-09-20.md` (from f6ab94c8d4) and then
+  `docs/briefings/2026-09-21.md` (from 8c67e0eefc) as hand-built
+  docs-only commits off origin/main, byte-identical, subject `Land
+  documenter briefing <sha> (hand-built, specifier ruling 2026-09-21)`;
+  the `--tip` OK of QA.prompt step 2 is waived for those two commits
+  only. Until this lands the documenter merges origin/main into its
+  branch before composing (documenter.prompt).
+
 constraints: >
   The guard's decisions and messages are unchanged for every input the
-  BL-1459 feature and the guard's shell test already pin. No change to
-  BL-1459's feature or handler. Fixture roots stay mkdtemp git init
+  BL-1459 feature and the guard's shell test already pin, except the
+  content-equality exemption the 2026-09-21 amendment adds. BL-1459's
+  feature gains exactly the two scenarios above, in this parcel, with
+  their steps in the existing handler. Fixture roots stay mkdtemp git init
   repositories registered for reaping.
 
 out_of_scope: |
   - The 31 production scripts with the same shape (BL-1660's census)
     and the 125 shell tests (BL-1665).
   - The art-director guard's own pipes: BL-1657 reworks that guard.
+  - The 12 residue paths on the documenter tip (content main superseded
+    or moved): not provenance, not this guard's to exempt; the
+    documenter's sync duty (prompt, 2026-09-21) removes them.
 
 qa_e2e_procedure: >
   (1) `bash swarmforge/scripts/test/test_check_documenter_briefing_tip.sh`
@@ -128,6 +230,13 @@ qa_e2e_procedure: >
   names no line whose grep reads from a process pipe. (4) The parcel's
   evidence names the sighting's mechanism or its retirement with the
   bounded counts. Never "run it N times" beyond the bounded search above.
+  (5) Amendment: BL-1459's feature green through the runner once with
+  scenarios 09 and 10; in a fixture per BL-1390, land an out-of-lane
+  file's content on main by a commit built off main, then `--tip` a
+  documenter commit carrying the briefing and that same file: OK; change
+  main's copy of the file: refused naming it. (6) On the live checkout,
+  read-only: `--tip` on the newest documenter briefing commit after the
+  documenter has merged origin/main prints OK (or names only residue).
 
 source: |
   QA note to the specifier, priority 50, 2026-09-20T03:39:39Z (inbound
@@ -150,5 +259,14 @@ notes: |
   QA was noted the same pass that the red is owned, with the reminder
   that the human capped repeated runs at three (2026-09-17); seventeen
   is the shape the human called "a thing in itself".
+
+  Amended 2026-09-21 by the specifier (QA note 003047, evidence
+  e4aafc21a8): content-equality exemption, one invariant, two scenarios
+  for BL-1459's feature (in-parcel), the census, the interim. At the time
+  of the amendment the parcel had not been dequeued (coder mailbox
+  empty, 15 min after promotion); the coder was noted to merge main and
+  re-read before building (BL-317/BL-325). Evidence (landed first, in
+  3e0762b307, whose subject names this amendment):
+  backlog/evidence/BL-1666-briefing-lane-guard-exempts-by-ancestry-not-content-adjudication-specifier-20260921.md.
 
 assigned_to: coder

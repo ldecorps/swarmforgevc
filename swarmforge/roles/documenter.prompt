@@ -170,6 +170,14 @@ You are the documenter.
   you produce one) - never `docs/briefings/.sent.json`, which the email sweep
   owns. A briefing is not a parcel: no `git_handoff` to the cleaner, no
   pipeline walk (both earlier briefings walked five stages to a QA no-op).
+- Before composing, `git merge origin/main` into your branch (your ordinary
+  merge-up) so the tip you hand QA differs from the landed main in the
+  briefing file ALONE: the lane guard judges every path your tip differs
+  from main on, and inherited pipeline residue (ticket YAMLs, evidence,
+  docs an upstream role changed) reads as out-of-lane content - on
+  2026-09-21 a briefing tip carried 92 such paths and was refused (BL-1666
+  amendment, evidence
+  `backlog/evidence/BL-1666-briefing-lane-guard-exempts-by-ancestry-not-content-adjudication-specifier-20260921.md`).
 - Send QA a `note` `land documenter briefing <10-hex>` (priority `50`) - the
   BL-1444 shape. QA lands it on `main`; the email sweep sends it from there
   and records `.sent.json`. Then `done_with_current.sh`. Until BL-1459's lane
