@@ -297,4 +297,17 @@ notes: |
   (holder) noted to merge main and re-read. Evidence:
   backlog/evidence/unowned-red-bl1146-cursor-session-cascade-adjudication-specifier-20260921.md.
 
+  Timing record (2026-09-21 13:1x, specifier): amendment (3) landed at
+  13:52 local while the parcel 5e5e262df8 (documenter -> QA, 13:39) was
+  already in QA's inbox, built against the eight-handler contract. QA
+  merging main will find scenario 03 with no handler (the runner throws,
+  BL-233) and bounce to the coder for the fifteen - that bounce is the
+  specifier's amendment timing, not the coder's workmanship
+  (record-bounce-correction when it is recorded, BL-990). The parcel's
+  role-branch copies already merged 367fc09ef6 cleanly, so the BL-1385
+  stamp conflict did not arise. Freshness hold 010462 (13:02Z, "text
+  still names RETIRED behaviour") adjudicated confirm_promote: a ticket
+  whose deliverable retires BL-687 scenario 06 necessarily names it
+  (BL-1271 shape); record at .swarmforge/deprecator/adjudications/BL-1658.json.
+
 assigned_to: coder
