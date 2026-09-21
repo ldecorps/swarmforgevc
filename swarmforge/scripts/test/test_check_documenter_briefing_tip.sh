@@ -382,6 +382,145 @@ else
   fail "hook mode (09): expected refusal naming docs/briefings/.sent.json, got rc=$rc: $out"
 fi
 
+# ── 13f (BL-1666): the first-parent-membership check's producer
+#        (`git rev-list --first-parent`) writes an output far larger than
+#        a pipe's buffer (~64 KiB), with INCOMING - the branch tip, so the
+#        newest/first line rev-list prints - matching immediately. Before
+#        the fix, `grep -qx` piped straight from the producer would exit
+#        the instant it read line 1, SIGPIPE-killing rev-list while 2000
+#        more lines remained unwritten; `if !` then read the pipeline's
+#        141 exit as "not on the line" and exited 0 WITHOUT JUDGING - a
+#        real briefing land would pass unjudged. The commit ALSO carries
+#        an out-of-lane path, so a silent skip (exit 0) and a real,
+#        correct judgment (exit 1, naming the path) are distinguishable -
+#        exit 0 here would mean the bug survived. ────────────────────────
+mk_repo hook-large-first-parent-list
+tree="$(g "$repo" write-tree)"
+parent="$(g "$repo" rev-parse "$DOC_BRANCH")"
+for _ in $(seq 1 2000); do
+  parent="$(g "$repo" commit-tree "$tree" -p "$parent" -m "padding ancestor")"
+done
+g "$repo" update-ref "refs/heads/$DOC_BRANCH" "$parent"
+write_commit "$repo" "$DOC_BRANCH" docs/briefings/2099-03-01.md extension/src/large-list-out-of-lane.ts
+large_list_tip="$(g "$repo" rev-parse HEAD)"
+line_count="$(g "$repo" rev-list --first-parent "main..$DOC_BRANCH" | wc -l)"
+g "$repo" checkout -q -b landing main
+gq "$repo" merge -q --no-ff --no-commit "$large_list_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if (( line_count * 41 < 65536 )); then
+  fail "13f: fixture's first-parent list ($line_count lines) does not exceed a 64 KiB pipe buffer - strengthen the fixture"
+elif [[ $rc -eq 1 ]] && grep -q 'extension/src/large-list-out-of-lane.ts' <<<"$out"; then
+  pass "hook mode (13f): a first-parent list far larger than the pipe buffer is still judged correctly, naming the out-of-lane path"
+else
+  fail "hook mode (13f): expected refusal naming extension/src/large-list-out-of-lane.ts despite a $line_count-line first-parent list, got rc=$rc: $out"
+fi
+
+# ── 13g (BL-1666): the content-trigger check's producer (`git diff
+#        --name-only`) also writes an output far larger than the pipe
+#        buffer, with a docs/briefings/ path sorting first among many
+#        filler paths. Before the fix, the same SIGPIPE/141 shape would
+#        read as "no briefing path in this commit" and skip the whole
+#        lane check - the filler paths themselves are out-of-lane, so a
+#        silent skip (exit 0) and real judgment (exit 1, naming a filler
+#        path) are distinguishable. ─────────────────────────────────────
+mk_repo hook-large-diff-list
+g "$repo" checkout -q "$DOC_BRANCH"
+mkdir -p "$repo/docs/briefings" "$repo/zzz-filler"
+echo "content" > "$repo/docs/briefings/2099-03-02.md"
+g "$repo" add docs/briefings/2099-03-02.md
+padded_name_prefix="$(printf 'a%.0s' $(seq 1 200))"
+for i in $(seq 1 400); do
+  fname="$repo/zzz-filler/${padded_name_prefix}${i}.txt"
+  echo "content" > "$fname"
+  g "$repo" add "zzz-filler/${padded_name_prefix}${i}.txt"
+done
+g "$repo" commit -q -m "large diff: briefing plus 400 filler paths"
+large_diff_tip="$(g "$repo" rev-parse HEAD)"
+diff_byte_count="$(g "$repo" diff --name-only main "$large_diff_tip" | wc -c)"
+g "$repo" checkout -q -b landing2 main
+gq "$repo" merge -q --no-ff --no-commit "$large_diff_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if (( diff_byte_count < 65536 )); then
+  fail "13g: fixture's diff --name-only output ($diff_byte_count bytes) does not exceed a 64 KiB pipe buffer - strengthen the fixture"
+elif [[ $rc -eq 1 ]] && grep -q "zzz-filler/${padded_name_prefix}1.txt" <<<"$out"; then
+  pass "hook mode (13g): a diff --name-only output far larger than the pipe buffer still trips the content trigger and is judged, naming a filler path"
+else
+  fail "hook mode (13g): expected refusal naming a zzz-filler path despite a $diff_byte_count-byte diff, got rc=$rc: $out"
+fi
+
+# ── 13h (BL-1666 amendment): an out-of-lane path whose content the landed
+#        main already carries, through a commit built OFF main (never an
+#        ancestor of the documenter's own commit - the hand-built
+#        tip-pure land-step replay shape, condition (g)), is exempt by
+#        CONTENT, not ancestry ────────────────────────────────────────────
+mk_repo direct-content-exempt
+write_commit "$repo" main docs/index.md   # main's own commit, unrelated to the documenter branch
+g "$repo" checkout -q "$DOC_BRANCH"
+mkdir -p "$repo/docs/briefings"
+echo "today's briefing" > "$repo/docs/briefings/2099-03-03.md"
+g "$repo" add docs/briefings/2099-03-03.md
+echo "content" > "$repo/docs/index.md"   # byte-identical to main's own write_commit content
+g "$repo" add docs/index.md
+g "$repo" commit -q -m "briefing plus docs/index.md at main's own content"
+tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q main
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+if [[ $rc -eq 0 ]] && grep -q 'DOCUMENTER_BRIEFING_TIP_OK' <<<"$out"; then
+  pass "direct mode (13h): an out-of-lane path whose content the landed main already carries is exempt whatever its commit ancestry"
+else
+  fail "direct mode (13h): expected DOCUMENTER_BRIEFING_TIP_OK (content-equality exemption), got rc=$rc: $out"
+fi
+
+# ── 13i (BL-1666 amendment): an out-of-lane path whose content DIFFERS
+#        from the landed main is refused, even though an OLDER version of
+#        it was once landed (content equality, not "was ever landed") ───
+mk_repo direct-content-differs
+write_commit "$repo" main docs/index.md   # main's own commit, content "content"
+g "$repo" checkout -q "$DOC_BRANCH"
+mkdir -p "$repo/docs/briefings"
+echo "today's briefing" > "$repo/docs/briefings/2099-03-04.md"
+g "$repo" add docs/briefings/2099-03-04.md
+echo "a completely different docs/index.md" > "$repo/docs/index.md"
+g "$repo" add docs/index.md
+g "$repo" commit -q -m "briefing plus a docs/index.md that differs from main's"
+tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q main
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+if [[ $rc -eq 1 ]] && grep -q 'docs/index.md' <<<"$out"; then
+  pass "direct mode (13i): an out-of-lane path whose content differs from the landed main is refused even when an older version was landed"
+else
+  fail "direct mode (13i): expected refusal naming docs/index.md (content differs from main), got rc=$rc: $out"
+fi
+
+# ── 13j (BL-1666 hardening): an out-of-lane path DELETED at the tip, and
+#        also absent on the landed main, has NO BLOB on EITHER side - the
+#        content-equality exemption's two `-n` guards both matter here:
+#        without them "" == "" reads as a content match and wrongly
+#        exempts a deletion that carries no provenance at all. Both
+#        branches independently remove the same shared path so tip_blob
+#        AND main_blob are genuinely empty, not merely equal-and-present.
+mk_repo direct-content-deleted-both-sides
+write_commit "$repo" main docs/scratch.md
+g "$repo" checkout -q "$DOC_BRANCH"
+g "$repo" merge -q --ff-only main
+mkdir -p "$repo/docs/briefings"
+echo "today's briefing" > "$repo/docs/briefings/2099-03-05.md"
+g "$repo" add docs/briefings/2099-03-05.md
+g "$repo" rm -q docs/scratch.md
+g "$repo" commit -q -m "briefing plus deleting docs/scratch.md"
+tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q main
+g "$repo" rm -q docs/scratch.md
+g "$repo" commit -q -m "main also removes docs/scratch.md"
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+if [[ $rc -eq 1 ]] && grep -q 'docs/scratch.md' <<<"$out"; then
+  pass "direct mode (13j): a path deleted at the tip with no blob on either side is refused, never exempted by empty-string equality"
+else
+  fail "direct mode (13j): expected refusal naming docs/scratch.md (no blob on either side), got rc=$rc: $out"
+fi
+
 # ── 14. --branch resolves via .swarmforge/roles.tsv when not given
 #        explicitly ───────────────────────────────────────────────────
 mk_repo roles-tsv-resolution
