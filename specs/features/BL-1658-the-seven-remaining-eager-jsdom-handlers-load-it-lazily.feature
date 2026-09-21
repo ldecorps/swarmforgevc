@@ -30,8 +30,37 @@ Feature: BL-1658 The seven remaining eager jsdom handlers, and the one eager cur
       | bl775BubbleLiveScreenShellSteps.js             |
       | bl929LiveScreenPackLayoutSteps.js              |
       | bl1050CursorRunFailureLogSteps.js              |
+      | bl1146HostQueueEnqueueNextHoldOnHostQuestionSteps.js |
 
   # BL-1658 the-allowlist-carries-no-jsdom-entry-02
-  Scenario: the module-load budget guard over the real tree names none of the eight with an empty allowlist
+  Scenario: the module-load budget guard over the real tree names none of the twenty-two with an empty allowlist
     When the module-load budget guard runs the require census over every step handler with an empty allowlist
-    Then it names none of the eight as a violation
+    Then it names none of the twenty-two as a violation
+
+  # BL-1658 the-cursor-bridge-population-is-the-census-03
+  # Census pin (BL-1445): the fifteen are named, not derived, and the grep count is pinned; a
+  # sequential census charges the shared graph to the alphabetically first eager requirer, so
+  # fixing them one at a time re-arms the guard on the next name.
+  Scenario Outline: every eager cursor-bridge requirer loads that graph inside its step, and the census is complete
+    When <handler> is required alone in a fresh child process with the loader intercept
+    Then extension/out/bridge/cursorBridgeAgentSession is not loaded by that require
+    And the cost is under the per-handler budget
+    And the census grep over specs/pipeline/steps for cursorBridgeAgentSession names exactly nineteen handlers of which fifteen were eager at mint
+
+    Examples:
+      | handler                                             |
+      | bl1050CursorRunFailureLogSteps.js                   |
+      | bl1146HostQueueEnqueueNextHoldOnHostQuestionSteps.js |
+      | bl1253DeadFeederOwnsGetUpdatesStampSteps.js         |
+      | bl1322BridgeLazyCursorApiKeySteps.js                |
+      | bl1384LocalSeatTopicForwardedSteps.js               |
+      | bl545CatchUpPagerSteps.js                           |
+      | bl696LetsTalkSteps.js                               |
+      | bl696TelegramCursorBridgeOperatorSteps.js           |
+      | bl697LetsTalkHandsFreeSteps.js                      |
+      | bl717SilentReturnAfterHoldMusicSteps.js             |
+      | bl718BubbleTalkMirrorSteps.js                       |
+      | bl767QueuedBridgeQuestionsAnswerInOriginTopicSteps.js |
+      | bl790BridgeQueuesNoteForRoleSteps.js                |
+      | bl810HostQueuePollClearAllTtlSteps.js               |
+      | bl894QueueRepostsSelectionPollSteps.js              |

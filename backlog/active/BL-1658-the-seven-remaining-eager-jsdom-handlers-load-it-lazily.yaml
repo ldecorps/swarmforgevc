@@ -1,5 +1,5 @@
 id: BL-1658
-title: "Seven step handlers still require jsdom at module load (bl592, bl609, bl674, bl686, bl687, bl775, bl929), and bl1050 requires the cursor-bridge session graph the same way (174-204 ms alone at load 3.4, over the 400 ms budget under the full unit suite even confirmed alone - a unit red on main since BL-1630 landed, first sighted 2026-09-21, owned here); and a sequential require census charges jsdom's whole load to whichever is alphabetically first, so fixing one only unmasks the next: all seven require jsdom inside the step that builds a DOM, in one sweep, and the module-load guard's bl592 allowlist entry goes"
+title: "Seven step handlers still require jsdom at module load (bl592, bl609, bl674, bl686, bl687, bl775, bl929), and bl1050 plus fourteen other handlers (fifteen eager cursor-bridge session requirers, census pinned 2026-09-21; bl1146 read next the moment bl1050 went lazy) require the cursor-bridge session graph the same way (174-204 ms alone at load 3.4, over the 400 ms budget under the full unit suite even confirmed alone - a unit red on main since BL-1630 landed, first sighted 2026-09-21, owned here); and a sequential require census charges jsdom's whole load to whichever is alphabetically first, so fixing one only unmasks the next: all seven require jsdom inside the step that builds a DOM, in one sweep, and the module-load guard's bl592 allowlist entry goes"
 milestone: M8
 type: defect
 severity: high
@@ -78,7 +78,21 @@ approval_context: >
   only if no feature file references it after the retirement; the
   feature's mutation-stamp header is the parcel's to refresh. No choice
   is posed; the approval stands.
-
+  AMENDED (3) 2026-09-21 by the specifier on the coder's unowned-red note
+  000039 ("unowned-red bl1146 cursor-session eager require
+  (stepHandlerModuleLoadBudget)"), sent from inside this parcel: with
+  bl1050 lazy, the sequential census charged the cursor-bridge graph to
+  the next eager requirer, bl1146 (243 / 204 / 199 ms alone at load 5.4
+  on the master checkout) - the jsdom cascade this ticket already
+  describes. The cursor-bridge population is therefore the CENSUS, not
+  one handler: the fifteen handlers `grep -ln cursorBridgeAgentSession
+  specs/pipeline/steps/*Steps.js` names whose require is at module scope
+  (bl1050, bl1146, bl1253, bl1322, bl1384, bl545, bl696 x2, bl697, bl717,
+  bl718, bl767, bl790, bl810, bl894; bl1116, bl720, bl915, bl941 already
+  require it inside a step). All fifteen move in THIS parcel, scenario 03
+  pins the set by name and the grep count; the register row for the guard
+  file (owner BL-1658) stays one row. No choice is posed; the approval
+  stands.
 
 invariants:
   - "No step handler named in this ticket loads jsdom or the cursor-bridge session graph at module scope: each such require happens inside the step that needs it, so a fresh-child require of the handler alone stays under the guard's budget under any host load."
@@ -149,6 +163,39 @@ description: |
     violation; and `node -e` over `test/helpers/stepHandlerRequireCensus`
     `censusOneHandler('bl1050CursorRunFailureLogSteps.js')` reads under
     20 ms.
+
+  ## Amendment 2026-09-21 (3) - the cursor-bridge population is the census of fifteen
+
+  The coder made bl1050 lazy and the guard named
+  `bl1146HostQueueEnqueueNextHoldOnHostQuestionSteps.js` next (its
+  `createMockCursorBridgeAgentSession` require at module scope pulls the
+  same graph: 243 / 204 / 199 ms alone, load 5.4). A sequential require
+  census charges a shared graph to the alphabetically first eager
+  requirer, so fixing one handler at a time re-arms the guard fourteen
+  more times - this ticket's own jsdom finding. Census, 2026-09-21
+  (`grep -ln cursorBridgeAgentSession specs/pipeline/steps/*Steps.js`,
+  then whether the require sits at column 0 or inside a function):
+  EAGER - bl1050CursorRunFailureLogSteps, bl1146HostQueueEnqueueNextHoldOnHostQuestionSteps,
+  bl1253DeadFeederOwnsGetUpdatesStampSteps, bl1322BridgeLazyCursorApiKeySteps,
+  bl1384LocalSeatTopicForwardedSteps, bl545CatchUpPagerSteps, bl696LetsTalkSteps,
+  bl696TelegramCursorBridgeOperatorSteps, bl697LetsTalkHandsFreeSteps,
+  bl717SilentReturnAfterHoldMusicSteps, bl718BubbleTalkMirrorSteps,
+  bl767QueuedBridgeQuestionsAnswerInOriginTopicSteps, bl790BridgeQueuesNoteForRoleSteps,
+  bl810HostQueuePollClearAllTtlSteps, bl894QueueRepostsSelectionPollSteps
+  (15); lazy already - bl1116, bl720, bl915, bl941 (4). Several of the
+  fifteen also require `bridgeServer` at module scope (bl696, bl697,
+  bl718, bl790, bl1322): move that too where it is the heavy one - the
+  guard's verdict, not the module name, is the contract.
+
+  - Every eager member requires the cursor-bridge session graph (and any
+    `bridgeServer`/`letsTalk*` graph beside it) inside the step that uses
+    it; its own feature still resolves.
+  - Scenario 03 pins the fifteen by name and pins the grep count at
+    fifteen (BL-1445); scenario 02 reads "none of the twenty-two".
+  - QA e2e addition: `cd extension && npm test` once; for each of the
+    fifteen, `censusOneHandler` under 20 ms; and the fifteen features
+    green through the runner once each (about 20 s of registry load per
+    feature - a few minutes, once).
 
   ## Amendment 2026-09-21 (2) - retire BL-687 scenario 06, superseded by BL-905
 
@@ -243,5 +290,11 @@ notes: |
   2026-08-16), `retires:` declared, register row added, the coder noted.
   Evidence:
   backlog/evidence/unowned-red-bl687-sc06-superseded-by-bl905-adjudication-specifier-20260921.md.
+
+  Amended (3) 2026-09-21 by the specifier on the coder's unowned-red
+  note 000039 from inside this parcel: the cursor-bridge population is
+  the census of fifteen eager requirers, all in this parcel; the coder
+  (holder) noted to merge main and re-read. Evidence:
+  backlog/evidence/unowned-red-bl1146-cursor-session-cascade-adjudication-specifier-20260921.md.
 
 assigned_to: coder
