@@ -23,22 +23,38 @@ const TEST_DIR = __dirname;
 // The census this ticket's own description names - kept here as the
 // pin scenario 03 (BL-1445) checks against, not derived, so a file quietly
 // dropped from the migration is itself visible as a census-count mismatch.
+//
+// BL-1677 (2026-09-21) added the four files whose blind sweep aliased
+// os.tmpdir() into a local variable before calling readdirSync on it -
+// invisible to this guard's original literal-only pattern until the
+// finder gained the aliased-form check. bl1239 was not in BL-1677's
+// original three-file scope; it shares the identical shape (found by the
+// same generalized detection) and is folded in here rather than minting a
+// separate ticket for it (spec-gap note to the specifier, 2026-09-21).
 const MIGRATED_FILES = [
   'bl1030RefusalCostsNothing.property.test.js',
+  'bl1239SuiteManifestAccountsForEveryTestFile.property.test.js',
   'bl1300SingleEnforceableBudget.property.test.js',
   'bl1309LandDecideEntanglementInvariants.property.test.js',
   'bl1343ReplayNeverDropsOwnPathInvariants.property.test.js',
+  'bl1354SharedPathLandedSiblingInvariants.property.test.js',
   'bl1356StampOffInvariants.property.test.js',
   'bl1358MutantTimeCeilingInvariants.property.test.js',
   'bl1359MergeChargedInvariants.property.test.js',
+  'bl1380ExpediteNeverAnswersUnshownQuestion.property.test.js',
+  'bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js',
 ];
 
 describe('BL-1623 blind temp-dir sweep guard', () => {
-  it('names exactly the fixture file that lists the temp dir directly, never the one that uses the helper', () => {
+  it('names exactly the fixture files that list the temp dir directly (literal or aliased), never the one that uses the helper', () => {
     const dir = mkSharedTmpDir('bl1623-guard-fixture-');
     fs.writeFileSync(
       path.join(dir, 'blindOne.property.test.js'),
       "for (const e of fs.readdirSync(os.tmpdir())) { /* blind */ }\n"
+    );
+    fs.writeFileSync(
+      path.join(dir, 'blindAliased.property.test.js'),
+      "const parent = os.tmpdir();\nfor (const e of fs.readdirSync(parent)) { /* blind */ }\n"
     );
     fs.writeFileSync(
       path.join(dir, 'cleanOne.property.test.js'),
@@ -46,10 +62,10 @@ describe('BL-1623 blind temp-dir sweep guard', () => {
     );
     fs.writeFileSync(path.join(dir, 'notAPropertyFile.test.js'), "fs.readdirSync(os.tmpdir())\n");
 
-    assert.deepEqual(findBlindTmpDirSweeps(dir), ['blindOne.property.test.js']);
+    assert.deepEqual(findBlindTmpDirSweeps(dir), ['blindAliased.property.test.js', 'blindOne.property.test.js']);
   });
 
-  it('the real tree names none, and the migrated census is exactly seven files', () => {
+  it('the real tree names none, and the migrated census is exactly eleven files', () => {
     const offenders = findBlindTmpDirSweeps(TEST_DIR);
     assert.deepEqual(offenders, [], `blind temp-dir sweep(s) found: ${offenders.join(', ')}`);
 

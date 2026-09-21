@@ -30,10 +30,9 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
@@ -69,7 +68,7 @@ const privatePath = (id) => `notes/${id}.md`;
  * origin/main already carries `landedIds`' own lines as a tip-pure replay.
  */
 function buildFixture(siblingCount, landedIds) {
-  const root = mkTmpDir(FIXTURE_PREFIX);
+  const root = mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`);
   git(root, 'init', '-q', '-b', 'main', '.');
   git(root, 'config', 'user.email', 't@t');
   git(root, 'config', 'user.name', 't');
@@ -123,14 +122,12 @@ function landedSubset(mix, ids) {
 }
 
 // A killed run traps no `finally`, so the previous run's fixtures are swept by
-// prefix BEFORE this one starts as well (BL-971).
+// prefix BEFORE this one starts as well (BL-971). BL-1677: scoped by owner
+// pid through the shared helper - a blind prefix sweep destroys a live
+// peer's roots the instant two instances of this file are ever alive at
+// once (BL-1385/BL-1390's shape).
 function sweepFixtures() {
-  const parent = os.tmpdir();
-  for (const entry of fs.readdirSync(parent)) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(parent, entry), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
 test('BL-1354/BL-654 invariant 2: a sibling is judged on its own attributed content only', () => {

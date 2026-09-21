@@ -38,10 +38,9 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
@@ -108,7 +107,7 @@ function putOnMain(root, entries) {
  * invariant 2's positive side, where the sibling really has landed everything.
  */
 function buildFixture({ exclusiveCount, approval, siblingLanded }) {
-  const root = mkTmpDir(FIXTURE_PREFIX);
+  const root = mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`);
   git(root, 'init', '-q', '-b', 'main', '.');
   git(root, 'config', 'user.email', 't@t');
   git(root, 'config', 'user.name', 't');
@@ -177,15 +176,14 @@ function landPlan(root, commit) {
 }
 
 // A killed run traps no `finally`, so the previous run's fixtures are swept by
-// prefix BEFORE this one starts as well (BL-971). Safe here for the reason it
-// is not safe in a production guard (BL-1385): these roots are this test's own.
+// prefix BEFORE this one starts as well (BL-971). BL-1677: scoped by owner
+// pid through the shared helper - a blind prefix sweep destroys a live
+// peer's roots the instant two instances of this file are ever alive at
+// once (BL-1385/BL-1390's shape; QA hit exactly this concurrently with a
+// coder2 lane on 2026-09-21, which is what this ticket exists to fix - the
+// "safe here" premise above was wrong).
 function sweepFixtures() {
-  const parent = os.tmpdir();
-  for (const entry of fs.readdirSync(parent)) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(parent, entry), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
 test("BL-1389/BL-654 invariant 1: a path an unlanded sibling owns alone never rides, whatever its approval reads", () => {

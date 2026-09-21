@@ -33,10 +33,9 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const fc = require('fast-check');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { startBridge } = require('../out/bridge/bridgeServer');
 const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
@@ -64,7 +63,7 @@ function controlAuthHeaders() {
 // fails CLOSED without them and every promotion would refuse for a reason this
 // ticket is not about.
 function buildTarget() {
-  const root = mkTmpDir(FIXTURE_PREFIX);
+  const root = mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`);
   copySeededRepoInto(root);
   copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), [
     'commit_integrity_cli.bb',
@@ -108,15 +107,12 @@ async function expedite(target) {
 }
 
 // A killed run traps no `finally`, so the previous run's fixtures are swept by
-// prefix BEFORE this one starts as well (BL-971). Safe here for the reason it
-// is not safe in a production guard (BL-1385): these roots are this test's own.
+// prefix BEFORE this one starts as well (BL-971). BL-1677: scoped by owner
+// pid through the shared helper - a blind prefix sweep destroys a live
+// peer's roots the instant two instances of this file are ever alive at
+// once (BL-1385/BL-1390's shape).
 function sweepFixtures() {
-  const parent = os.tmpdir();
-  for (const entry of fs.readdirSync(parent)) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(parent, entry), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
 function pausedPath(target) {

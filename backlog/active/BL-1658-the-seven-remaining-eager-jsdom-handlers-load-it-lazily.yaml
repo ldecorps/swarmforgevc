@@ -345,6 +345,7 @@ notes: |
   backlog/evidence/BL-1658-spec-gap-census-twenty-adjudication-specifier-20260921.md.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-09-21, by: cleaner, blamed: coder, class: behavior, commit: eae448e6c9, evidence: backlog/evidence/BL-1658-bounce-20260921.md }
+  - { at: 2026-09-21, by: QA, blamed: coder, class: acceptance, commit: 44fcc0c009, evidence: backlog/evidence/BL-1658-qa-bounce-20260921.md }

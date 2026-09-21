@@ -25,11 +25,10 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const fc = require('fast-check');
 const { spawnSync } = require('node:child_process');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -38,13 +37,11 @@ const INVENTORY_CLI = path.join(TEST_DIR, 'suite_inventory_cli.bb');
 const FIXTURE_PREFIX = 'bl1239-prop-';
 
 // BL-971: a killed run traps nothing, so sweep by prefix BEFORE the run too.
+// BL-1677: scoped by owner pid through the shared helper - a blind prefix
+// sweep destroys a live peer's roots the instant two instances of this file
+// are ever alive at once on the host (BL-1385/BL-1390's shape).
 function sweepStaleFixtures() {
-  const tmp = os.tmpdir();
-  for (const name of fs.readdirSync(tmp)) {
-    if (name.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(tmp, name), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 sweepStaleFixtures();
 
@@ -91,7 +88,7 @@ function buildCase(files, breakage) {
 }
 
 function runInventory(present, manifest) {
-  const dir = fs.realpathSync(mkTmpDir(FIXTURE_PREFIX));
+  const dir = fs.realpathSync(mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`));
   try {
     for (const f of present) fs.writeFileSync(path.join(dir, f), '');
     fs.writeFileSync(path.join(dir, 'suite-manifest.tsv'), manifest);
