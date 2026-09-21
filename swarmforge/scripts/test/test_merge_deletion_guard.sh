@@ -465,4 +465,48 @@ grep -qF "$DELETE_UNNAMED_TIP_SHORT" <<<"$OUT16" && fail "16: diagnostic commit 
 pass "16: neither side naming a ticket still refuses, correctly as (unattributed), naming HEAD's own commit"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 
+# ── 17 (BL-1671): a tracked path deleted on disk but NEVER staged during a
+#        merge is not a finding - the guard reads the INDEX (git diff
+#        --cached), not the working tree. A path both branches share is
+#        `rm`'d (no `git rm`) after the merge starts; the merge RESULT
+#        (the index, and then the merge commit's tree) still has it. ──────
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" reset -q --hard "$MAIN_TIP"
+echo "kept" > "$ROOT/keep17.txt"
+git -C "$ROOT" add keep17.txt
+git -C "$ROOT" commit -q -m "BL-9017: seed a shared kept file"
+KEEP_BASE="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+git -C "$ROOT" checkout -q -b other17 "$KEEP_BASE"
+echo "other work" > "$ROOT/other17.txt"
+git -C "$ROOT" add other17.txt
+git -C "$ROOT" commit -q -m "other17: unrelated"
+OTHER17_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" reset -q --hard "$KEEP_BASE"
+set +e
+git -C "$ROOT" merge --no-ff --no-commit "$OTHER17_TIP" >/dev/null 2>&1
+set -e
+rm -f "$ROOT/keep17.txt"
+[[ -n "$(cd "$ROOT" && git status --short -- keep17.txt)" ]] \
+  || fail "17: fixture bug - expected keep17.txt to show as an unstaged deletion in git status"
+git -C "$ROOT" cat-file -e :keep17.txt \
+  || fail "17: fixture bug - expected keep17.txt to remain in the index despite the unstaged working-tree deletion"
+echo "merge, no ticket named" > "$MSG"
+set +e
+OUT17="$(run_guard "$MSG" 2>&1)"
+STATUS17=$?
+set -e
+[[ "$STATUS17" -eq 0 ]] || fail "17: expected exit 0 - an unstaged working-tree deletion is not a finding, got status $STATUS17: $OUT17"
+grep -q "Error: merge deletes" <<<"$OUT17" && fail "17: must not report the unstaged deletion as a merge-caused finding, got: $OUT17"
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "merge, no ticket named" \
+  || fail "17: expected the merge commit to complete"
+[[ -n "$(cd "$ROOT" && git status --short -- keep17.txt)" ]] \
+  || fail "17: expected keep17.txt to still show as an unstaged deletion after the merge commit"
+git -C "$ROOT" ls-tree HEAD -- keep17.txt | grep -q keep17.txt \
+  || fail "17: expected keep17.txt to remain in the merge commit's tree"
+pass "unstaged-worktree-deletion-is-not-a-finding"
+git -C "$ROOT" checkout -q -- keep17.txt
+git -C "$ROOT" checkout -q feature
+git -C "$ROOT" reset -q --hard "$FEATURE_TIP"
+
 echo "ALL PASS"

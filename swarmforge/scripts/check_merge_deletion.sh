@@ -18,9 +18,14 @@
 # Usage: check_merge_deletion.sh [commit-message-file]
 #   Only fires when a merge is actually in progress (MERGE_HEAD exists) -
 #   an ordinary commit is untouched. Reads the about-to-be-committed tree
-#   via `git diff --name-status HEAD` (HEAD is still the pre-merge tip at
-#   this point; the index already holds the merged result), so a deletion
-#   here is exactly a path HEAD had that the merge result does not.
+#   via `git diff --cached --name-status HEAD` (HEAD is still the
+#   pre-merge tip at this point; the index already holds the merged
+#   result, which `--cached` reads directly), so a deletion here is
+#   exactly a path HEAD had that the MERGE RESULT does not - an unstaged
+#   working-tree deletion left by an unrelated process is neither a
+#   finding nor touched by the merge (BL-1671: without `--cached` this
+#   diffed the working tree instead, so a tracked path deleted on disk
+#   but never staged read as a deletion the merge makes).
 #
 # BL-1341 adds the SECOND direction, against MERGE_HEAD. The diff above is
 # structurally blind to a path that exists only on the INCOMING branch: HEAD
@@ -103,7 +108,7 @@ collect_deletions() {
     fi
     side_of["$path"]="$side"
     deleted_paths+=("$path")
-  done < <(git diff --name-status -M "$against")
+  done < <(git diff --cached --name-status -M "$against")
 }
 
 collect_deletions HEAD "this branch"
