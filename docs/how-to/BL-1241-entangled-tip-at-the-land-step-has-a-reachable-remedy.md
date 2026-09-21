@@ -22,8 +22,19 @@ public with zero behavior change).
 land_step_cli.bb <task-name> <commit> [repo-root]
 ```
 
-- **`LAND_CLEAN <commit>`** (exit 0) — no entangled sibling. QA lands the
-  cited commit unchanged.
+- **`LAND_CLEAN <commit>`** (exit 0) — no entangled sibling. `<commit>` is
+  a FRESH, single-parent commit `land-plan` builds off `origin/main`
+  (BL-1678, 2026-09-21) — never the cited commit verbatim, whatever the
+  cited commit's own parent shape: `LAND_CLEAN` shares the same
+  `own-paths` + `replay!` build `LAND_REPLAY` always used, so `main`'s
+  first-parent line gains this tip-pure commit, never a two-parent "Merge
+  ... into QA." of the branch tip QA happened to hold at push time. Before
+  BL-1678, `LAND_CLEAN` trusted the cited commit as-is; a decision computed
+  for one commit could be stale by the time a later, separate push actually
+  ran (2026-09-21: BL-1666's `LAND_CLEAN` push shipped BL-1640's
+  already-bounced content because QA's branch had grown between the
+  decision and the `git push origin HEAD:main`, now retired — see
+  [BL-1144](BL-1144-frequent-qa-push-races-on-main-land.md)).
 - **`LAND_REPLAY <branch> <new-commit>`** plus one `ENTANGLED_SIBLING
   <ticket-id>` line per sibling still unlanded, and one `LANDED_SIBLING
   <ticket-id>` line per sibling whose own content is already byte-identical

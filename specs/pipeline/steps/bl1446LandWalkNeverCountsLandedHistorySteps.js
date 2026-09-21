@@ -58,6 +58,11 @@ function registerSteps(registry) {
 
   scoped(/^the wide walk forced to origin\/main gives the same verdict$/, (ctx) => {
     const originMain = git(ctx.root, 'rev-parse', 'refs/remotes/origin/main');
+    // BL-1678: land-plan now builds a real replay branch for :land too,
+    // keyed off (task-ticket-id, commit) alone - drop the first call's
+    // branch before asking again for the same commit, or the second
+    // build collides on the name the first one already claimed.
+    if (ctx.plan.branch) git(ctx.root, 'branch', '-q', '-D', ctx.plan.branch);
     const wide = landPlan(ctx.root, ctx.tip, 'BL-9001', originMain);
     assert.equal(wide.action, ctx.plan.action,
       `expected the wide walk to agree (${ctx.plan.action}), got: ${JSON.stringify(wide)}`);
@@ -123,6 +128,10 @@ function registerSteps(registry) {
   scoped(/^the land step plans the parcel's tip with the bounded walk and again with the walk forced to origin\/main$/, (ctx) => {
     const originMain = git(ctx.root, 'rev-parse', 'refs/remotes/origin/main');
     ctx.bounded = landPlan(ctx.root, ctx.tip, 'BL-9001');
+    // BL-1678: see the identical note above - :land now also builds a
+    // real replay branch, so a repeat call for the same commit must drop
+    // it first.
+    if (ctx.bounded.branch) git(ctx.root, 'branch', '-q', '-D', ctx.bounded.branch);
     ctx.wide = landPlan(ctx.root, ctx.tip, 'BL-9001', originMain);
   });
 

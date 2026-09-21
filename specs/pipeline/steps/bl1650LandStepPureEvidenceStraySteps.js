@@ -195,7 +195,13 @@ function registerSteps(registry) {
     /^a sibling ticket closed on origin\/main with abandoned_commits naming its own commit$/,
     (ctx) => {
       git(ctx.root, 'checkout', '-q', '-b', 'sibling-line');
-      commitFile(ctx.root, 'sibling.txt', 'abandoned content\n', `${SIBLING}: sibling's commit, later abandoned`);
+      // BL-1678: :land now actually consults own-paths/replay! (never
+      // just trusts the cited commit), so this path must be one the
+      // land step can decide on its own - backlog/evidence/ (BL-1650's
+      // own pure-evidence-stray carve-out) - or it correctly hits
+      // BL-1546's closed-owner refusal instead, a different guard this
+      // scenario is not testing.
+      commitFile(ctx.root, 'backlog/evidence/BL-9651-sib-evidence.md', 'abandoned content\n', `${SIBLING}: sibling's commit, later abandoned`);
       ctx.siblingCommit = head(ctx.root);
       git(ctx.root, 'checkout', '-q', 'main');
       writeDoneTicket(ctx.root, SIBLING, `abandoned_commits: [${ctx.siblingCommit.slice(0, 10)}]\n`);

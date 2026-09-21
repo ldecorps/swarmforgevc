@@ -54,9 +54,29 @@ Manual step-by-step invocation remains available for cases outside `--land`
 swarmforge/scripts/land_main_publish.sh <root> --acquire-lock
 # rematch tip-pure onto origin/main if decide-only says :rematch-then-push
 swarmforge/scripts/land_main_publish.sh <root> --decide-only
-git push origin HEAD:main   # never force-push; tip must contain origin/main
+swarmforge/scripts/land_main_publish.sh <root> --push <commit>
 swarmforge/scripts/land_main_publish.sh <root> --release-lock
 ```
+
+**`git push origin HEAD:main` is retired (BL-1678, 2026-09-21).** A plain
+push of the QA branch tip ships everything ever merged into it, not just
+what `--decide-only` was asked about — `main`'s first-parent chain IS the
+`swarmforge-QA` branch (375 "Merge ... into QA." commits since 2026-08-22),
+so a `LAND_CLEAN` decision computed for one commit could be stale by the
+time a later, unrelated `HEAD:main` push actually ran, carrying a bounced
+or unapproved forward on paths the landing ticket never touched (2026-09-21:
+BL-1666's `LAND_CLEAN` push shipped BL-1640's already-bounced content
+because the tip had grown between the decision and the push). `--push
+<commit>` is the one remaining push path: it runs `land_step_cli.bb
+verify-push <commit>` first — refusing a commit with more than one parent,
+or whose diff against `origin/main` touches any path attributed to a
+ticket that is neither the commit's own nor already landed — and only then
+pushes. A land through `--land <task> <approved-commit>` never needs this
+directly: `land_step_cli.bb`'s `LAND_CLEAN`/`LAND_REPLAY` verdict now
+always builds a fresh, single-parent, tip-pure commit off `origin/main`
+(the same build `LAND_REPLAY` always did; `LAND_CLEAN` used to trust the
+cited commit verbatim), so `main`'s first-parent line gains only landing
+commits, never a QA merge.
 
 Policy: `master_main_reconcile_lib.bb` (`publish-time-purity-action`,
 `land-close-publisher-admission`, `contention-publish-next`). Tip purity

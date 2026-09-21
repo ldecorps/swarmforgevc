@@ -2486,15 +2486,83 @@
               #{}
               own))))
 
+;; ── BL-1678 item 3: the publish step's own backstop ───────────────────────
+;;
+;; land-plan/land_step_cli.bb already build a genuinely tip-pure commit for
+;; every verdict now (the fix one door up in this same file) - a caller that
+;; only ever publishes what THIS land step handed it never needs this check
+;; to refuse anything. It exists for the caller that does not: 2026-09-21's
+;; incident was QA pushing its OWN branch tip (`git push origin HEAD:main`),
+;; never routed through land_step_cli.bb at all, after an earlier, now-stale
+;; LAND_CLEAN check on a narrower commit. This is the independent check
+;; land_main_publish.sh runs on whatever sha it is about to push, whoever
+;; built it and however it got there - defense in depth, not a second
+;; decision-maker QA is meant to consult instead of land-plan.
+(defn verify-push-safe
+  "{:safe? true} when `commit` is fit to push to origin/main as-is:
+   exactly one parent, its own subject names a ticket, and every path its
+   diff against `origin-main` touches is attributed either to that same
+   ticket or to a ticket already closed on origin/main (`closed-on-main?`
+   - the same landed/unlanded distinction BL-1546's refusal and land-plan
+   itself already use).
+
+   {:safe? false :reason \"...\"} otherwise, naming: a merge commit (more
+   than one parent - invariant 2, 'a land never pushes a merge commit as
+   main'); a commit whose own subject names no ticket (nothing to call
+   its own paths against); or the first (sorted) offending path and the
+   unapproved ticket id it is attributed to (invariant 1). Fail-closed
+   throughout: an unreadable parent list, an unresolved origin-main, or an
+   unreadable attribution walk all refuse rather than pass a check that
+   could not actually run."
+  [{:keys [root commit origin-main]}]
+  (let [origin-main (or origin-main (origin-main-sha root))]
+    (if-not origin-main
+      {:safe? false :reason "land-step: origin/main could not be resolved"}
+      (let [parents-res (git! root "rev-list" "--parents" "-n1" commit)]
+        (if-not (zero? (:exit parents-res))
+          {:safe? false :reason (str "land-step: could not read " commit "'s parents")}
+          (let [tokens (remove str/blank? (str/split (str/trim (:out parents-res)) #"\s+"))
+                parent-count (dec (count tokens))]
+            (cond
+              (> parent-count 1)
+              {:safe? false :reason "a merge commit is never pushed as main"}
+
+              :else
+              (let [task-ticket-id (commit-ticket-id root commit)]
+                (if-not task-ticket-id
+                  {:safe? false
+                   :reason (str commit " names no ticket in its own subject - refusing to push it as a land")}
+                  (let [attribution (delivered-attribution root origin-main commit)]
+                    (if (nil? attribution)
+                      {:safe? false
+                       :reason (str "land-step: could not read " commit "'s attribution against origin/main")}
+                      (let [offenders (sort
+                                       (for [[path {:keys [owners]}] attribution
+                                             :when (seq owners)
+                                             owner owners
+                                             :when (and (not= owner task-ticket-id)
+                                                        (not (true? (closed-on-main? root origin-main owner))))]
+                                         [path owner]))]
+                        (if (seq offenders)
+                          (let [[path owner] (first offenders)]
+                            {:safe? false
+                             :reason (str path " attributed to the unapproved " owner)})
+                          {:safe? true})))))))))))))
+
 (defn land-plan
-  "The land step's own decision: {:action :land} when no entanglement is
-   present (or the check could not tell - see below); {:action :replay
+  "The land step's own decision: {:action :land :own-paths [...] :commit sha
+   :branch name} when no entanglement is present; {:action :replay
    :entangled #{...} :own-paths [...] :commit sha :branch name} when a
-   tip-pure rebuild is the remedy - the commit is ALREADY BUILT (BL-1447:
-   land-plan calls replay! itself and verifies the result before ever
-   returning :replay, so the caller must publish `:commit`/`:branch`
-   directly and never call replay! again, which would collide on the same
-   branch name); {:action :escalate :reason \"...\"} when even the
+   tip-pure rebuild is the remedy - EITHER WAY the commit is ALREADY BUILT
+   (BL-1447: land-plan calls replay! itself and verifies the result before
+   ever returning :land or :replay, so the caller must publish
+   `:commit`/`:branch` directly and never call replay! again, which would
+   collide on the same branch name; BL-1678: :land used to mean 'publish
+   the cited commit unchanged' - it now means exactly what :replay always
+   meant, own-paths built fresh off origin-main, only ever excluding
+   nothing because :unlanded was empty. A caller that read `:commit` only
+   on :replay and re-used the caller's own cited commit on :land publishes
+   the wrong sha now); {:action :escalate :reason \"...\"} when even the
    detection itself could not be completed, the replay failed to build, or
    the built replay is missing any path the parcel's own commits changed
    (`replay-incomplete: <path> ...`, BL-1447 invariant 1) - a check that
@@ -2619,9 +2687,22 @@
           stray-paths (into #{} (mapcat :paths) stray-commits)]
       (cond
         warning {:action :escalate :reason warning}
-        (empty? entangled) {:action :land}
         :else
-        (let [{:keys [paths warning passengers excluded content-clear]}
+        ;; BL-1678: a clean tip (no entangled sibling found) used to
+        ;; return bare {:action :land} here - the caller then published
+        ;; `commit` exactly as cited, whatever else had ridden onto the
+        ;; branch it came from since the citation was made (invariant 2's
+        ;; TOCTOU gap: a re-merge after the LAND_CLEAN check, never
+        ;; re-checked, reached origin/main verbatim on 2026-09-21). A
+        ;; clean tip now builds the SAME tip-pure own-paths/replay! commit
+        ;; the entangled branch always built - :unlanded is empty, so
+        ;; nothing is excluded and the build reproduces the delivered diff
+        ;; exactly, but it is a FRESH single-parent commit off origin-main,
+        ;; never the cited commit itself, so a merge commit (or anything
+        ;; else not this ticket's own paths) can never be what gets
+        ;; published just because it happened to be the tip asked about.
+        (let [clean? (empty? entangled)
+              {:keys [paths warning passengers excluded content-clear]}
               (own-paths root commit task-ticket-id unlanded nil nil
                          {:attribution (when attribution @attribution)
                           :stray-paths stray-paths
@@ -2706,7 +2787,8 @@
                               all-stray-landed-ids (into stray-landed-ids already-landed-stray-ids)
                               unlanded (into #{} (remove all-stray-landed-ids) unlanded)
                               landed (into (or landed #{}) all-stray-landed-ids)]
-                          {:action :replay :entangled entangled :landed landed :unlanded unlanded
+                          {:action (if clean? :land :replay)
+                           :entangled entangled :landed landed :unlanded unlanded
                            :landed-paths (or landed-paths {})
                            :excluded (or excluded [])
                            :content-clear (or content-clear [])

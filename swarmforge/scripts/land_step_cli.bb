@@ -47,6 +47,18 @@
 ;;   author - a `note` (priority 00) to the specifier naming the
 ;;   conflicting paths, and stop.
 ;;
+;; BL-1678: land_step_cli.bb verify-push <commit> <repo-root>
+;;   The publish step's own backstop (land_step_lib.bb's verify-push-safe) -
+;;   never a second decision-maker in place of land-plan, an independent
+;;   check of whatever sha land_main_publish.sh is about to push, however
+;;   it was built and whoever built it. Exit 0, prints "LAND_PUBLISH_OK
+;;   <commit>": exactly one parent, and every path <commit> changes against
+;;   origin/main is attributed to <commit>'s own ticket or to a ticket
+;;   already closed on origin/main. Exit 1, prints "LAND_PUBLISH_REFUSED
+;;   <reason>": a merge commit, a commit whose subject names no ticket, or
+;;   the first offending path and the unapproved ticket it is attributed
+;;   to (BL-1678 invariant 1/2).
+;;
 ;; BL-1438: land_step_cli.bb repoint <repo-root>
 ;;   Thin wrapper over land_step_lib.bb's post-land-repoint! (BL-1432
 ;;   option 1) - the QA-branch re-point, built and tested with no live
@@ -68,7 +80,27 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "land_step_lib.bb")))
 
-(def usage-text "Usage: land_step_cli.bb <task-name> <commit> [repo-root]\n   or: land_step_cli.bb repoint <repo-root>")
+(def usage-text "Usage: land_step_cli.bb <task-name> <commit> [repo-root]\n   or: land_step_cli.bb repoint <repo-root>\n   or: land_step_cli.bb verify-push <commit> [repo-root]")
+
+(defn- verify-push-verb [commit repo-root-arg]
+  (when (str/blank? commit)
+    (binding [*out* *err*] (println usage-text))
+    (System/exit 2))
+  (let [project-root (or repo-root-arg
+                          (let [res (process/sh ["git" "rev-parse" "--show-toplevel"])]
+                            (when (zero? (:exit res)) (str/trim (:out res)))))]
+    (when-not project-root
+      (binding [*out* *err*] (println "Cannot resolve repo root; pass it explicitly."))
+      (System/exit 2))
+    (let [canonical (let [res (process/sh ["git" "-C" (str project-root) "rev-parse" commit])]
+                       (when (zero? (:exit res)) (str/trim (:out res))))]
+      (when-not canonical
+        (binding [*out* *err*] (println (str "Cannot resolve commit: " commit)))
+        (System/exit 2))
+      (let [{:keys [safe? reason]} (land-step-lib/verify-push-safe {:root project-root :commit canonical})]
+        (if safe?
+          (do (println (str "LAND_PUBLISH_OK " canonical)) (System/exit 0))
+          (do (println (str "LAND_PUBLISH_REFUSED " reason)) (System/exit 1)))))))
 
 (defn- repoint-verb [repo-root-arg]
   (when (str/blank? repo-root-arg)
@@ -103,6 +135,80 @@
   (let [res (process/sh ["git" "-C" (str project-root) "rev-parse" commit]) ]
     (when (zero? (:exit res)) (str/trim (:out res)))))
 
+;; BL-1678: :land and :replay now share this exact same body - land-plan
+;; builds a real tip-pure commit for BOTH, so a clean tip owes the caller
+;; every line a replay always did (stray evidence, restored/retired
+;; register rows, the sibling report) rather than the silent single-line
+;; LAND_CLEAN this used to print instead of ever reaching any of it. Only
+;; the header line differs; print-plan-body! is that whole shared tail.
+(defn- print-plan-body! [project-root task-name task-ticket-id canonical plan]
+  ;; BL-1334: record WHICH approved source this build stands in for,
+  ;; before announcing it - see the docstring this comment replaced for
+  ;; the full rationale, unchanged by BL-1678 beyond now also covering
+  ;; :land (a clean tip is landed under a NEW sha too, never `canonical`
+  ;; itself, so it needs exactly the same record a replay always got).
+  (let [rec (land-step-lib/record-land-approval!
+             {:root project-root :commit (:commit plan)
+              :source canonical :task-ticket-id task-ticket-id})]
+    (when-not (:ok? rec)
+      (binding [*out* *err*]
+        (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))
+  ;; BL-1650 items 1-2: names every closed-owner pure-evidence stray this
+  ;; land step cherry-picked onto the build branch itself, ahead of the
+  ;; parcel's own tip-pure commit - never landed silently (Article 1.9's
+  ;; own posture, same as the ENTANGLED_SIBLING/LANDED_SIBLING lines below).
+  (doseq [{:keys [sha landed-sha paths already-applied? superseded? reason]} (:stray-landed plan)]
+    (cond
+      ;; BL-1670: a real conflict main's own later text already
+      ;; supersedes never lands a NEW commit either - named with
+      ;; the ground it was decided on (a fixed tag for ground
+      ;; (a), the rewriting commit's own short sha(s) for
+      ;; ground (b)), never silently folded into an ordinary
+      ;; LANDED line (Article 1.9's own posture).
+      superseded?
+      (println (str "LAND_STRAY_SUPERSEDED " sha " " (str/join "," (sort paths)) " " reason))
+
+      ;; BL-1650 D1: an already-applied stray (content identical
+      ;; to the target tree under a different sha - git's own
+      ;; "now empty" cherry-pick) never lands a NEW commit, so
+      ;; it is never printed as LANDED - a distinct, equally
+      ;; auditable tag names the sha it never needed to move.
+      already-applied?
+      (println (str "LAND_STRAY_EVIDENCE_ALREADY_LANDED " sha " already at " landed-sha " "
+                    (str/join "," (sort paths))))
+
+      :else
+      (println (str "LAND_STRAY_EVIDENCE_LANDED " sha " -> " landed-sha " "
+                    (str/join "," (sort paths))))))
+  ;; BL-1604: names every other open ticket's registry row the
+  ;; build restored - a land can no longer silently un-own a
+  ;; standing red.
+  (doseq [{:keys [registry file owner]} (:restored-registry-rows plan)]
+    (println (str land-step-lib/register-row-restored-prefix " " registry " " file " " owner)))
+  ;; BL-1631: names every row this land retired because its own
+  ;; owner column was the landing ticket - the register no
+  ;; longer trips the unowned-row throttle within minutes.
+  (doseq [{:keys [registry file owner]} (:retired-registry-rows plan)]
+    (println (str land-step-lib/register-row-retired-prefix " " registry " " file " " owner)))
+  (print-entangled-siblings! plan)
+  ;; BL-1389 invariant 3. The verdict a human would otherwise
+  ;; have to re-derive by diffing the built tip - which path
+  ;; decided each landed sibling, and which paths were left out
+  ;; and to whom they were credited. On 2026-09-04 this report
+  ;; printed 17 landed names and 27 entangled ones and not one
+  ;; path, and an unlanded sibling's handler and source rode
+  ;; into the replay unseen.
+  (doseq [id (sort (:landed plan))]
+    (let [deciding (get (:landed-paths plan) id)]
+      (println (str "LANDED_SIBLING " id (when deciding (str " " deciding))))))
+  (doseq [{:keys [path owners]} (sort-by :path (:excluded plan))
+          owner (sort owners)]
+    (println (str "EXCLUDED_SIBLING_PATH " path " " owner)))
+  (doseq [id (sort (:passengers plan))] (println (str "PASSENGER_SIBLING " id)))
+  (doseq [{:keys [path sibling verdict]} (sort-by (juxt :path :sibling) (:content-clear plan))]
+    (println (str "CONTENT_CLEAR_SIBLING_PATH " path " " sibling " "
+                  (if (= :vacuous verdict) "reverted" "landed")))))
+
 (defn- main-land [args]
   (let [[task-name commit repo-root-arg] args]
     (when (or (str/blank? task-name) (str/blank? commit))
@@ -130,89 +236,25 @@
                                               :task-ticket-id task-ticket-id
                                               :origin-main origin-main})]
           (case (:action plan)
+            ;; BL-1678: land-plan builds the SAME tip-pure own-paths/replay!
+            ;; commit for :land as it always did for :replay - :commit is
+            ;; that build's own sha, never `canonical` (the commit QA cited,
+            ;; which may since have grown a merge or two QA never re-checked
+            ;; - the TOCTOU gap a bare "print canonical back" left open).
             :land
-            (do (println (str "LAND_CLEAN " canonical)) (System/exit 0))
+            (do
+              (println (str "LAND_CLEAN " (:commit plan)))
+              (print-plan-body! project-root task-name task-ticket-id canonical plan)
+              (System/exit 0))
 
-            :replay
             ;; BL-1447: land-plan already built AND verified the tip-pure
             ;; commit before returning :replay - :commit/:branch are that
             ;; already-built result, never a second replay! call (which
             ;; would collide on the branch name land-plan already claimed).
+            :replay
             (do
-              ;; BL-1334: record WHICH approved source this replay stands
-              ;; in for, before announcing it. The replay is a new commit
-              ;; that no ref makes approved, so without this record every
-              ;; ancestry-based gate reads QA's own landed work as
-              ;; unapproved until an unrelated later merge closes the
-              ;; window - and the override becomes the habit.
-              ;;
-              ;; A failure here is REPORTED, never fatal: the land itself
-              ;; is sound, and an unrecorded land degrades to exactly the
-              ;; pre-BL-1334 behaviour (the sanctioned --override), never
-              ;; to a wrong approval.
-              (let [rec (land-step-lib/record-land-approval!
-                         {:root project-root :commit (:commit plan)
-                          :source canonical :task-ticket-id task-ticket-id})]
-                (when-not (:ok? rec)
-                  (binding [*out* *err*]
-                    (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))
               (println (str "LAND_REPLAY " (:branch plan) " " (:commit plan)))
-              ;; BL-1650 items 1-2: names every closed-owner pure-evidence
-              ;; stray this land step cherry-picked onto the replay branch
-              ;; itself, ahead of the parcel's own tip-pure commit - never
-              ;; landed silently (Article 1.9's own posture, same as the
-              ;; ENTANGLED_SIBLING/LANDED_SIBLING lines below).
-              (doseq [{:keys [sha landed-sha paths already-applied? superseded? reason]} (:stray-landed plan)]
-                (cond
-                  ;; BL-1670: a real conflict main's own later text already
-                  ;; supersedes never lands a NEW commit either - named with
-                  ;; the ground it was decided on (a fixed tag for ground
-                  ;; (a), the rewriting commit's own short sha(s) for
-                  ;; ground (b)), never silently folded into an ordinary
-                  ;; LANDED line (Article 1.9's own posture).
-                  superseded?
-                  (println (str "LAND_STRAY_SUPERSEDED " sha " " (str/join "," (sort paths)) " " reason))
-
-                  ;; BL-1650 D1: an already-applied stray (content identical
-                  ;; to the target tree under a different sha - git's own
-                  ;; "now empty" cherry-pick) never lands a NEW commit, so
-                  ;; it is never printed as LANDED - a distinct, equally
-                  ;; auditable tag names the sha it never needed to move.
-                  already-applied?
-                  (println (str "LAND_STRAY_EVIDENCE_ALREADY_LANDED " sha " already at " landed-sha " "
-                                (str/join "," (sort paths))))
-
-                  :else
-                  (println (str "LAND_STRAY_EVIDENCE_LANDED " sha " -> " landed-sha " "
-                                (str/join "," (sort paths))))))
-              ;; BL-1604: names every other open ticket's registry row the
-              ;; replay restored - a land can no longer silently un-own a
-              ;; standing red.
-              (doseq [{:keys [registry file owner]} (:restored-registry-rows plan)]
-                (println (str land-step-lib/register-row-restored-prefix " " registry " " file " " owner)))
-              ;; BL-1631: names every row this land retired because its own
-              ;; owner column was the landing ticket - the register no
-              ;; longer trips the unowned-row throttle within minutes.
-              (doseq [{:keys [registry file owner]} (:retired-registry-rows plan)]
-                (println (str land-step-lib/register-row-retired-prefix " " registry " " file " " owner)))
-              (print-entangled-siblings! plan)
-              ;; BL-1389 invariant 3. The verdict a human would otherwise
-              ;; have to re-derive by diffing the replayed tip: which path
-              ;; decided each landed sibling, and which paths were left out
-              ;; and to whom they were credited. On 2026-09-04 this report
-              ;; printed 17 landed names and 27 entangled ones and not one
-              ;; path, and an unlanded sibling's handler and source rode
-              ;; into the replay unseen.
-              (doseq [id (sort (:landed plan))]
-                (let [deciding (get (:landed-paths plan) id)]
-                  (println (str "LANDED_SIBLING " id (when deciding (str " " deciding))))))
-              (doseq [{:keys [path owners]} (sort-by :path (:excluded plan))
-                      owner (sort owners)]
-                (println (str "EXCLUDED_SIBLING_PATH " path " " owner)))
-              (doseq [id (sort (:passengers plan))] (println (str "PASSENGER_SIBLING " id)))
-              (doseq [{:keys [path sibling verdict]} (sort-by (juxt :path :sibling) (:content-clear plan))]
-                (println (str "CONTENT_CLEAR_SIBLING_PATH " path " " sibling " "
-                              (if (= :vacuous verdict) "reverted" "landed"))))
+              (print-plan-body! project-root task-name task-ticket-id canonical plan)
               (System/exit 0))
 
             :escalate
@@ -235,8 +277,9 @@
               (System/exit 1))))))))
 
 (defn -main [& args]
-  (if (= "repoint" (first args))
-    (repoint-verb (second args))
-    (main-land args)))
+  (cond
+    (= "repoint" (first args)) (repoint-verb (second args))
+    (= "verify-push" (first args)) (verify-push-verb (second args) (nth args 2 nil))
+    :else (main-land args)))
 
 (apply -main *command-line-args*)

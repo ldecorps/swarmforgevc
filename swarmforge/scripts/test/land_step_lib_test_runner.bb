@@ -242,7 +242,7 @@
   (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work only")
   (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
         plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
-    (assert= "land-plan: no entanglement -> :land" {:action :land} plan)))
+    (assert= "land-plan: no entanglement -> :land" :land (:action plan))))
 
 (with-fixture [root]
   (mark-origin-main-here! root)
@@ -2083,8 +2083,14 @@ RESOLVED BY THIS TICKET
           (assert= "land-plan with :origin-main c0 (the real tip): decides :replay"
                    :replay (:action plan-c0))
           (sh! root "git" "branch" "-q" "-D" (:branch plan-c0)))
-        (assert= "land-plan with :origin-main c1 (present, deliberately NOT the real tip): decides :land, proving the passed value - not a fresh resolve - drove the walk"
-                 :land (:action (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001" :origin-main c1})))
+        (let [plan-c1 (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001" :origin-main c1})]
+          (assert= "land-plan with :origin-main c1 (present, deliberately NOT the real tip): decides :land, proving the passed value - not a fresh resolve - drove the walk"
+                   :land (:action plan-c1))
+          ;; BL-1678: :land now builds the same deterministic replay
+          ;; branch :replay always did (keyed on task-ticket-id+commit
+          ;; alone, blind to :origin-main) - drop it before the next call
+          ;; below claims the identical name for the same (task, c2) pair.
+          (sh! root "git" "branch" "-q" "-D" (:branch plan-c1)))
         ;; land-plan: :origin-main key ABSENT resolves once itself (the
         ;; pre-existing, unchanged contract for a direct/test caller).
         (let [plan-noarg (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001"})]
@@ -2193,7 +2199,7 @@ RESOLVED BY THIS TICKET
   (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work only")
   (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
         plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
-    (assert= "land-plan: no :base given - unchanged fallback behavior" {:action :land} plan)))
+    (assert= "land-plan: no :base given - unchanged fallback behavior" :land (:action plan))))
 
 ;; ── BL-1446: landed history pulled in by a post-hop sync is never
 ;;    entangled, and a replay carries every hop's work ─────────────────────
@@ -2230,11 +2236,17 @@ RESOLVED BY THIS TICKET
     (sh! root "git" "merge" "-q" "--no-ff" "-m" "Merge origin/main into QA." "origin/main")
     (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
           bounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+          ;; BL-1678: :land now builds a real replay branch too (same
+          ;; deterministic name land-plan would reuse for `wide`, since it
+          ;; keys off (task-ticket-id, commit) alone) - drop it first, the
+          ;; same discipline this file already uses between two replay
+          ;; calls on the same cited commit.
+          _ (sh! root "git" "branch" "-q" "-D" (:branch bounded))
           wide (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001" :base sibling-commit})]
       (assert= "BL-1446 scenario 01: a sibling already on origin/main, pulled in by a sync, is never entangled (bounded)"
-               {:action :land} bounded)
+               :land (:action bounded))
       (assert= "BL-1446 scenario 01: the wide walk (forced to origin/main) agrees"
-               {:action :land} wide))))
+               :land (:action wide)))))
 
 ;; BL-1446 a-replay-carries-every-hops-work-02
 (with-fixture [root]
@@ -2274,6 +2286,9 @@ RESOLVED BY THIS TICKET
       (let [commit @tip
             origin-main (:out (sh! root "git" "rev-parse" "origin/main"))
             bounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+            ;; BL-1678: :land now also builds the deterministic replay
+            ;; branch - drop bounded's before wide claims the same name.
+            _ (when (:branch bounded) (sh! root "git" "branch" "-q" "-D" (:branch bounded)))
             wide (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001" :base origin-main})]
         (assert= (str "BL-1446 scenario 03 (" syncs " syncs): bounded and wide verdicts agree")
                  (:action wide) (:action bounded))
@@ -2338,7 +2353,7 @@ RESOLVED BY THIS TICKET
       (sh! root "git" "update-ref" "refs/remotes/origin/main" sibling-commit)
       (let [plan (land-step-lib/land-plan {:root root :commit documenter-tip :task-ticket-id "BL-9001"})]
         (assert= (str "BL-1461 (" (name position) ", landed): never entangled")
-                 {:action :land} plan)))))
+                 :land (:action plan))))))
 
 ;; ── BL-1432: post-land-repoint! ───────────────────────────────────────────
 
@@ -3385,8 +3400,15 @@ RESOLVED BY THIS TICKET
   ;; became an ancestor of BL-9001's own branch later, via an ordinary
   ;; merge. Realistic shape: the abandonment record predates, and is
   ;; unrelated to, this later branch's own merge history.
+  ;;
+  ;; BL-1678: :land now actually consults own-paths/replay! (never just
+  ;; trusts the cited commit), so this path must be one this land step CAN
+  ;; decide - backlog/evidence/ (BL-1650's own pure-evidence-stray
+  ;; carve-out), never a path outside it, which would correctly hit
+  ;; BL-1546's closed-owner refusal instead (a DIFFERENT, deliberate
+  ;; guard this fixture is not testing).
   (sh! root "git" "checkout" "-q" "-b" "sibling-line")
-  (commit! root "sibling.txt" "abandoned content\n" "BL-9002: sibling's commit, later abandoned")
+  (commit! root "backlog/evidence/BL-9002-sib-evidence.md" "abandoned content\n" "BL-9002: sibling's commit, later abandoned")
   (let [sib (:out (sh! root "git" "rev-parse" "HEAD"))]
     (sh! root "git" "checkout" "-q" "main")
     (commit! root "backlog/done/BL-9002-x.yaml"
@@ -3400,7 +3422,7 @@ RESOLVED BY THIS TICKET
       (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
             plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
         (assert= "BL-1650 item 0: a sibling whose only candidate commit its own ticket abandoned is not entangled at all"
-                 {:action :land} plan)))))
+                 :land (:action plan))))))
 
 ;; ── BL-1650 items 1-2: pure-evidence-or-docs-paths? ──────────────────────
 
@@ -3844,6 +3866,42 @@ RESOLVED BY THIS TICKET
         (assert= "BL-1670 ground (b) fold: a two-path conflict where only one blamed commit is an ancestor of origin/main must not be reported superseded"
                  nil verdict)
         (sh! root "git" "cherry-pick" "--abort")))))
+
+;; ── BL-1678 hardening: verify-push-safe's parent-count check, isolated ──
+;; from its own two sibling guards (the ticket-tagged-subject check, the
+;; path-attribution check). Every existing fixture that builds a "merge
+;; commit" scenario (this ticket's own property test's two shapes, the
+;; shell test's fixtures) tags the merge's subject with a non-ticket
+;; sentence ("Merge lines into main.") - so EVERY one of those merge
+;; commits is ALSO refused by the separate "names no ticket" guard,
+;; masking whether the parent-count check itself does anything. Hand-
+;; mutated `(> parent-count 1)` to `(> parent-count 2)` and confirmed:
+;; against every existing fixture shape, ALL PASS (the bb runner, the
+;; shell test, and the property test's own "merge-2-parents" shape all
+;; still refused, via the OTHER guards) - the parent-count check itself
+;; was never exercised. Against a fixture whose 2-parent merge carries a
+;; ticket-tagged subject naming the LANDING ticket and touches only paths
+;; already attributed to that same ticket (so both sibling guards pass
+;; clean), the mutant wrongly returned {:safe? true} - confirmed, then
+;; restored and re-confirmed {:safe? false, :reason "a merge commit..."}.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "-b" "other-parent")
+  (commit! root "BL-9001-other.txt" "other\n" "BL-9001: another own commit")
+  (let [other-parent (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "main")
+    (commit! root "BL-9001-own.txt" "own\n" "BL-9001: own work")
+    (sh! root "git" "merge" "-q" "--no-ff" "-m" "BL-9001: merge own branches" other-parent)
+    (let [candidate (:out (sh! root "git" "rev-parse" "HEAD"))
+          parents (str/split (:out (sh! root "git" "rev-list" "--parents" "-n1" candidate)) #"\s+")]
+      (assert= "BL-1678 verify-push-safe isolation fixture: the candidate genuinely has two parents"
+               3 (count parents))
+      (let [verdict (land-step-lib/verify-push-safe
+                     {:root root :commit candidate :origin-main "refs/remotes/origin/main"})]
+        (assert-false "BL-1678: a two-parent merge tagged with the landing ticket's own subject, touching only its own paths, is never :safe? (isolated from the sibling ticket-tag and path-attribution guards)"
+                      (:safe? verdict))
+        (assert-true "BL-1678: the refusal names the merge-commit reason, not a different guard's reason"
+                     (boolean (re-find #"merge commit" (str (:reason verdict)))))))))
 
 (if (seq @failures)
   (do

@@ -4,6 +4,13 @@
 # Usage:
 #   land_main_publish.sh <project-root> [--decide-only|--acquire-lock|--release-lock]
 #   land_main_publish.sh <project-root> --land <task-name> <approved-commit> [<issue-ref>]
+#   land_main_publish.sh <project-root> --push <commit>
+#
+# BL-1678: --push is the standalone entry point for a commit that did not
+# come from this script's own --land mode - land_push_ff_only's own
+# verify-push-safe guard (exactly one parent, every changed path attributed
+# to that commit's own ticket or one already closed on origin/main) is the
+# only gate; refuses rather than pushes a merge commit or a foreign path.
 #
 # Default --decide-only: fetch origin/main SHA, compare tip ancestry, print
 # EDN decision from master_main_reconcile_lib (no push). Callers that push
@@ -116,11 +123,30 @@ land_acquire_with_deadline() {
   done
 }
 
+# BL-1678 item 3: the publish step's own backstop, run on EVERY push this
+# script makes, whatever built the sha and however it got here - defense
+# in depth, not a second decision-maker in place of land-plan (which
+# already builds a safe sha in the ordinary --land path; this exists for
+# the caller that bypasses it, exactly 2026-09-21's incident shape). Exit
+# 9 is this function's own sentinel, distinct from a git push rejection
+# (which callers rematch-and-retry once) - a refusal here is never
+# retried, since rematching a merge commit or a foreign path fixes neither.
+land_verify_push_safe() {
+  local sha="$1"
+  bb "$SCRIPT_DIR/land_step_cli.bb" verify-push "$sha" "$ROOT" 2>&1
+}
+
 # Never --force, and never a retry loop around a rejected push: at most ONE
 # rematch onto the current origin tip, then wait on the lock. A wrapper that
 # retried a rejected push is one bad branch away from reaching for --force.
 land_push_ff_only() {
   local sha="$1"
+  local verify_out verify_rc=0
+  verify_out="$(land_verify_push_safe "$sha")" || verify_rc=$?
+  printf '%s\n' "$verify_out"
+  if (( verify_rc != 0 )); then
+    return 9
+  fi
   git -C "$ROOT" push origin "$sha:refs/heads/main" 2>&1
 }
 
@@ -166,6 +192,15 @@ run_land() {
   local push_out push_rc=0
   push_out="$(land_push_ff_only "$land_sha")" || push_rc=$?
   printf '%s\n' "$push_out"
+
+  # BL-1678 item 3: a REFUSAL (land_push_ff_only's own sentinel, exit 9) is
+  # never rematched - rebasing onto origin's current tip fixes neither "this
+  # is a merge commit" nor "this path belongs to an unapproved ticket", so
+  # retrying would just refuse again having burned the lock wait for nothing.
+  if (( push_rc == 9 )); then
+    echo "LAND_STOPPED: the publish step refused to push $land_sha; main is untouched and nothing was pushed." >&2
+    return 6
+  fi
 
   if (( push_rc != 0 )); then
     # 4. Exactly ONE rematch onto the CURRENT origin tip, then push once more.
@@ -219,8 +254,39 @@ run_land() {
   return 0
 }
 
+# BL-1678 item 3, scenario 03: "the publish step is asked to push <commit>
+# as main" - the standalone entry point for a commit that did NOT come from
+# this script's own --land mode (the shape 2026-09-21 needed: QA's own
+# branch tip, a raw commit nobody asked land_step_cli.bb about). Same lock
+# discipline as run_land, but no land-plan call first - land_push_ff_only's
+# own verify-push-safe guard is the ONLY gate, since there is no task name
+# here to ask land-plan for a verdict about.
+run_push() {
+  local commit="$1"
+  if [[ -z "$commit" ]]; then
+    echo "usage: land_main_publish.sh <project-root> --push <commit>" >&2
+    return 2
+  fi
+  trap land_release_trap EXIT INT TERM
+  land_acquire_with_deadline || return 4
+  local push_out push_rc=0
+  push_out="$(land_push_ff_only "$commit")" || push_rc=$?
+  printf '%s\n' "$push_out"
+  if (( push_rc == 9 )); then
+    echo "LAND_STOPPED: the publish step refused to push $commit; main is untouched and nothing was pushed." >&2
+    return 6
+  fi
+  if (( push_rc != 0 )); then
+    echo "LAND_STOPPED: the push was rejected; main is untouched. Re-run once origin is caught up." >&2
+    return 5
+  fi
+  echo "LAND_PUBLISHED $commit"
+  return 0
+}
+
 case "$MODE" in
   --land) run_land "$LAND_TASK" "$LAND_COMMIT" "$LAND_ISSUE"; exit $? ;;
+  --push) run_push "$LAND_TASK"; exit $? ;;
   --acquire-lock) acquire_lock; exit $? ;;
   --release-lock) release_lock; exit 0 ;;
   --decide-only) ;;
