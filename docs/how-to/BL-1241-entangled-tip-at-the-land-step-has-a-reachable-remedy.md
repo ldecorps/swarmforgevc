@@ -98,6 +98,33 @@ land_step_cli.bb <task-name> <commit> [repo-root]
   fires only for the shape a plain cherry-pick attempt cannot already
   resolve on its own.
 
+  **A stray whose cherry-pick genuinely CONFLICTS can still be superseded
+  rather than fatal (BL-1670, 2026-09-20/21).** The three shapes above all
+  cover an empty-patch cherry-pick; a real conflict used to `--abort` and
+  `LAND_ESCALATE` unconditionally, which stalled every later parcel on six
+  role branches carrying BL-1459's bounced first-round doc commit
+  (BL-1657, BL-1661, BL-1667, BL-1664 all queued behind it on 2026-09-20).
+  Before the abort, `stray-superseded-verdict` checks two provable
+  grounds, either sufficient: **(a) content-subset** — the stray's own
+  post-image at its paths, diffed from `origin/main`, adds no line (a
+  strict subset of what main already carries, e.g. an evidence-log append
+  main's own later, larger append already contains in full); or **(b)
+  rewritten-by-owner** — every `HEAD`-side conflicting line traces
+  (`git blame`) to a commit on `origin/main` whose own subject names
+  exactly the stray's owner ticket (its own later rebuild superseded it).
+  Either ground found, the loop aborts only THAT cherry-pick, prints
+  `LAND_STRAY_SUPERSEDED <sha> <paths> <reason>` (reason is the fixed tag
+  `content-subset-of-origin-main` for (a), or the comma-joined short shas
+  of the superseding commits for (b)), and continues the walk — the
+  sibling still reports `LANDED_SIBLING`, nothing is abandoned, and every
+  later verdict computes as if the stray had landed cleanly. A conflict
+  whose `HEAD`-side lines trace to any OTHER ticket, to an untagged
+  commit, to one not yet on `origin/main`, or a diff that would drop a
+  line `origin/main` lacks, fails both grounds and `--abort`s +
+  `LAND_ESCALATE`s by name exactly as before — this narrows nothing wider
+  than these two provable shapes, and a code-path stray (outside
+  `backlog/evidence/`/`docs/`) never reaches this check at all.
+
   A `LANDED_SIBLING` line does not change what action `land-plan` returns —
   the sibling's original commit remains an ancestor, and its content may
   differ from the replay, so the action stays `:land` — only the report.
