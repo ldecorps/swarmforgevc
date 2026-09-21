@@ -51,6 +51,14 @@ run_loop() {  # run_loop <root> [extra env "NAME=value" ...]
          finish_shift_run_closing_ceremony "$root" 2>&1 )
 }
 
+# BL-1640 constraint: "ticks are seam-driven, never slept" - every multi-tick
+# scenario below drives the ceremony's own simulated clock (--now) directly,
+# one real (non-sleeping) CLI call per tick, rather than waiting on the real
+# wall clock for a 2/3-minute budget to elapse.
+tick_at() {  # tick_at <root> <now_ms>
+  ( cd "$1" && node "$CLI" --target "$1" --conf "$1/swarmforge/swarmforge.conf" --now "$2" --sleep-path finish-shift 2>&1 )
+}
+
 state_field() {  # state_field <root> <field>
   node -e '
     const fs = require("fs");
@@ -69,36 +77,38 @@ sent_today() {  # sent_today <root>
 }
 
 # ── 01: a sleep with in-flight work reaches done before any stop runs ────
+# The in-flight parcel is never removed - it simply parks (still a valid
+# reading of the Given, which never says it drains) - and the ceremony
+# reaches done via the hard deadline once the simulated clock passes it,
+# never via any real wait.
 make_root sc01
 touch "$root/.swarmforge/handoffs/inbox/in_process/x.handoff"
-( sleep 0.2; rm -f "$root/.swarmforge/handoffs/inbox/in_process/x.handoff" ) &
-BG01=$!
-( sleep 0.4; sent_today "$root" ) &
-BG01b=$!
-out01="$(run_loop "$root")"
-rc01=$?
-wait "$BG01" "$BG01b" 2>/dev/null || true
+t0_01="$(node -e 'process.stdout.write(String(Date.UTC(2026,8,21,16,0,0)))')"
+tick_at "$root" "$t0_01" >/dev/null
+tick_at "$root" "$((t0_01 + 2*60000 + 1000))" >/dev/null   # past drainDeadlineMs: parks, lean-packet + instructs
+out01="$(tick_at "$root" "$((t0_01 + 3*60000 + 1000))")"   # past hardDeadlineMs: briefing-missing -> done
 phase01="$(state_field "$root" phase)"
-if [[ "$rc01" -eq 0 && "$phase01" == "done" ]]; then
+if [[ "$phase01" == "done" ]]; then
   pass "the ceremony state reads done before the babysitterd stop runs"
 else
-  fail "expected phase done (rc=$rc01, phase=$phase01): $out01"
+  fail "expected phase done, got $phase01: $out01"
 fi
 seq01="$(state_field "$root" sequence)"
 notes01=""
 [[ -f "$root/.swarmforge/daemon/closing-ceremony-notes.log" ]] && notes01="$(cat "$root/.swarmforge/daemon/closing-ceremony-notes.log")"
-if grep -q 'lean-packet' <<<"$seq01,$out01" && grep -qi 'morning briefing' <<<"$notes01,$out01"; then
+if grep -q 'lean-packet' <<<"$seq01" && grep -qi 'morning briefing' <<<"$notes01"; then
   pass "the recorded sequence contains lean-packet and the documenter is instructed to produce the morning briefing"
 else
-  fail "expected lean-packet + a documenter briefing instruction: seq=$seq01 notes=$notes01 out=$out01"
+  fail "expected lean-packet + a documenter briefing instruction: seq=$seq01 notes=$notes01"
 fi
 
 # ── 02: a briefing sent between ticks ends with send-confirmed, not missing ──
 make_root sc02
-( sleep 0.2; sent_today "$root" ) &
-BG02=$!
-out02="$(run_loop "$root")"
-wait "$BG02" 2>/dev/null || true
+t0_02="$(node -e 'process.stdout.write(String(Date.UTC(2026,8,21,16,0,0)))')"
+tick_at "$root" "$t0_02" >/dev/null                                   # freeze
+tick_at "$root" "$((t0_02 + 2*60000 + 1000))" >/dev/null              # no in-flight: drains straight to briefing, instructs
+sent_today "$root"                                                    # the documenter's own act, between ticks - no sleep
+out02="$(tick_at "$root" "$((t0_02 + 2*60000 + 30000))")"             # still inside the briefing budget: sees it sent
 phase02="$(state_field "$root" phase)"
 if [[ "$phase02" == "done" ]] && ! grep -q 'closing-briefing-missing' <<<"$out02"; then
   pass "the recorded sequence ends with briefing-committed, send-confirmed, swarm-stopped"
@@ -126,36 +136,34 @@ else
 fi
 
 # ── 04: a second sleep after a worked shift is a new ceremony ────────────
+# Constructs "a ceremony state for today that already reads done" directly
+# (the Given's own words) rather than driving a full first ceremony through
+# its own real side effects - deterministic, and it leaves no ceremony
+# record behind to confound workedAShift for the second sleep.
 make_root sc04
-sent_today "$root"
-out04a="$(run_loop "$root")"
-phase04a="$(state_field "$root" phase)"
+t0_04="$(node -e 'process.stdout.write(String(Date.UTC(2026,8,21,16,0,0)))')"
+tick_at "$root" "$t0_04" >/dev/null   # establishes today's correct nightKey
+node -e '
+  const fs = require("fs");
+  const p = process.argv[1];
+  const s = JSON.parse(fs.readFileSync(p, "utf8"));
+  s.phase = "done";
+  fs.writeFileSync(p, JSON.stringify(s, null, 2) + "\n");
+' "$root/.swarmforge/daemon/closing-ceremony-state.json"
 started04a="$(state_field "$root" startedAtMs)"
-if [[ "$phase04a" != "done" ]]; then
-  fail "sc04 setup: expected the first sleep to already read done, got $phase04a: $out04a"
-fi
-rm -f "$root/docs/briefings/.sent.json"
-# The first sleep's own lean pass just recorded an outcome - "worked a shift
-# SINCE the last ceremony" is otherwise now false. A real new shift bumps
-# shift-started's mtime (a fresh swarmforge.sh launch); simulate that here.
-sleep 0.05
-touch "$root/.swarmforge/shift-started"
-before04b_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
-( sleep 0.3; sent_today "$root" ) &
-BG04=$!
-out04b="$(run_loop "$root")"
-wait "$BG04" 2>/dev/null || true
+t1_04="$((t0_04 + 3600000))"  # one hour later, same calendar day
+out04b="$(tick_at "$root" "$t1_04")"
 seq04b="$(state_field "$root" sequence)"
 started04b="$(state_field "$root" startedAtMs)"
-if grep -q 'freeze-promotion' <<<"$seq04b"; then
+if [[ "$seq04b" == "freeze-promotion" ]]; then
   pass "a second sleep on the same day after a shift of work starts a new ceremony over freeze-promotion"
 else
-  fail "expected the sequence to begin again with freeze-promotion: $seq04b"
+  fail "expected the sequence to begin again with freeze-promotion: $seq04b ($out04b)"
 fi
-if [[ -n "$started04b" && "$started04b" -ge "$before04b_ms" && "$started04b" != "$started04a" ]]; then
+if [[ "$started04b" == "$t1_04" && "$started04b" != "$started04a" ]]; then
   pass "the state's startedAtMs is the new sleep's time"
 else
-  fail "expected startedAtMs ($started04b) to be the NEW sleep's time (>= $before04b_ms, != first sleep's $started04a)"
+  fail "expected startedAtMs ($started04b) to equal the new sleep's time ($t1_04), and differ from the first sleep's ($started04a)"
 fi
 
 # ── 05: a second sleep with no shift since stays a no-op ─────────────────
