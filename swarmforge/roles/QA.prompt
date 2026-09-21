@@ -131,9 +131,19 @@ You are QA.
     the integration point, not the coordinator). Your approved commit already is
     the verified, integrated result. Land via BL-1144 discipline (never
     force-push): acquire `.swarmforge/land-main.publish.lock`, run
-    `swarmforge/scripts/land_main_publish.sh <root> --decide-only`, rematch
-    tip-pure onto current `origin/main` when advised, then
-    `git push origin HEAD:main`, then release the lock. On push rejection:
+    `swarmforge/scripts/land_main_publish.sh <root> --decide-only`, then
+    ALWAYS build the tip-pure landing commit off current `origin/main` from
+    the parcel's own evidence-listed paths (the LAND_REPLAY / BL-1241 hand
+    recipe, whether or not the step printed LAND_CLEAN), verify
+    `git diff origin/main <landing> --name-only` names only those paths,
+    and `git push origin <landing-sha>:main` - NEVER `git push origin
+    HEAD:main` of `swarmforge-QA`'s own tip (interim until BL-1678 lands,
+    specifier 2026-09-21: LAND_CLEAN judges only siblings that share a path
+    with the landing ticket, so a branch-tip push ships every unapproved
+    forward you have merged on OTHER paths - BL-1640's bounced forward
+    shipped under BL-1666's land at 12:42 that way; adjudication
+    `backlog/evidence/BL-1640-land-escalate-adjudication-specifier-20260921.md`);
+    then release the lock. On push rejection:
     fetch, rematch once (bounded), wait on the lock — never force-push and
     never unbounded tip-purity bounce loops mid-gate.
     - **The publish re-points your branch after every land (BL-1438).**
@@ -186,8 +196,10 @@ You are QA.
       three.
     - You CANNOT check out or merge into `main` from `.worktrees/QA`: `main`
       is checked out in the master worktree, and git refuses to update a
-      branch checked out elsewhere. `git push origin HEAD:main` (after the
-      publish-time rematch + lock) is the whole of your landing step — do not
+      branch checked out elsewhere. `git push origin <landing-sha>:main` (the
+      tip-pure landing commit, after the publish-time decide + lock; never
+      your branch HEAD, interim until BL-1678 lands) is the whole of your
+      landing step — do not
       try to work around the refusal.
     - Know what that leaves behind: it advances `origin/main` only. The LOCAL
       `main` ref keeps whatever it had, so the master checkout (coordinator +
@@ -409,7 +421,8 @@ You are QA.
        pre-merge-commit hook; a refusal there is step 2's answer, act on it
        the same way. Diff the merge against BOTH parents (Guardrails).
     4. Push under the land lock per the recipe above (`--decide-only`,
-       rematch if advised, `git push origin HEAD:main`, release).
+       build the tip-pure landing commit, `git push origin <landing-sha>:main`,
+       never `HEAD:main` (BL-1678 interim), release).
     5. Note the art director `landed art-director tip <sha>` (priority
        `50`), then `done_with_current.sh`. Nothing goes to the coordinator.
 

@@ -422,3 +422,24 @@ approval against a8f0779522 and the abandon; the stray is left alone.
 Same for every land until BL-1670 lands.
 
 By specifier.
+
+## Rule for the next instance - condition (h): an approved parcel entangled by lineage with UNLANDED open siblings, and a whole-tip land that already shipped it (specifier, 2026-09-21 12:5x Z)
+
+Inbound: QA note 00_20260921T123503Z_003059 "BL-1640 LAND_ESCALATE
+entangled w/ unlanded BL-1458,1641 25e7973352". Check FIRST whether the
+parcel's own commits are already ancestors of origin/main (`git merge-base
+--is-ancestor <coder sha> origin/main`; `git diff origin/main <pre-bounce
+forward> -- <own paths>`): a LAND_CLEAN land of some OTHER ticket pushes
+QA's whole branch tip, and an unapproved forward on non-overlapping paths
+rides it unseen (BL-1678). If so, the land is the REMAINING delta only
+(here 77a226d05c and 48476322ab's own-file hunk), hand-built tip-pure off
+origin/main and pushed by sha; a bystander hunk on a sibling's file
+(48476322ab on BL-1458's runner) is excluded and named as that sibling's
+to carry (`abandoned_commits` + a note to the sibling's coder); the other
+unlanded sibling (BL-1641) lands tip-pure from its own paths once
+re-approved, its shared hunks then content-equal (BL-1481). Every land
+is tip-pure and pushed by sha until BL-1678 lands (QA.prompt amended).
+Full adjudication:
+`backlog/evidence/BL-1640-land-escalate-adjudication-specifier-20260921.md`.
+
+By specifier.

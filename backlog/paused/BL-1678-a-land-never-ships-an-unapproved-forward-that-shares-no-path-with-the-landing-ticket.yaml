@@ -1,0 +1,189 @@
+id: BL-1678
+title: "A LAND_CLEAN land pushes QA's whole branch tip as main, and the land step's sibling check covers only siblings that share a path with the landing ticket - so every forward QA has merged and not yet approved on OTHER paths ships unreviewed: BL-1640's bounced forward (its D1 defect included) reached origin/main at 12:42 under BL-1666's land on 2026-09-21, and origin/main's first-parent line is 375 'Merge ... into QA.' commits since 2026-08-22 (12 today); the land step judges every unlanded forward on the tip, the publish step lands a tip-pure commit of the landing ticket's own paths in every case, and a push whose new tip is a merge commit is refused"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in delivery machinery - Article 1.8/4.2 says only a
+# QA-approved commit lands, and the mechanism lands every merged forward
+# whose paths the landing ticket does not touch; on 2026-09-21 a bounced
+# parcel's defective content sat on main from 12:42 (BL-1640, the
+# deadline loop never passing --conf) with no ticket owning that. The
+# BL-1309 header of the publish step names this hazard and the detector
+# it consults answers only the shared-path question. Not critical: the
+# interim (QA.prompt: always a tip-pure landing commit, pushed by sha)
+# closes it by hand at once.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1241 (the replay), BL-1309 (--decide-only asks what the tip carries),
+# BL-1375 (passenger siblings), BL-1481 (bounced siblings block in
+# content), BL-1631 (the land retires register rows), BL-1650/BL-1670 (the
+# land step's stray handling) are in backlog/done. BL-1467 (paused)
+# touches post-land-repoint! only; no open ticket touches land_step_cli.bb's
+# plan or land_main_publish.sh's push.
+mutation_cost: medium
+# medium: Babashka (no mutation/CRAP/DRY wired, BL-472) in land_step_lib.bb
+# and land_step_cli.bb plus one bash publish step and its shell test; the
+# bb runners land_step_lib_test_runner.bb and the fake-origin fixtures the
+# BL-1241/BL-1375 features already build; one feature and handler.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1678-a-land-never-ships-an-unapproved-forward-that-shares-no-path-with-the-landing-ticket.feature
+
+# The consumer (QA's land recipe -> land_main_publish.sh -> land_step_cli.bb)
+# exists before the fix, so an anchor there matches before and after
+# (BL-1235). Handler pin only; scenarios 01 and 02 drive the real CLI and
+# the real publish decision over a fixture origin, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1678LandNeverShipsUnapprovedForwardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: a land publishes a
+  tip-pure commit built off origin/main from the landing ticket's own
+  attributed paths in EVERY case, LAND_CLEAN included - QA's branch tip is
+  never pushed as main again, so origin/main's first-parent line gains
+  landing commits, never "Merge ... into QA." merges. FIRM: the land
+  step's sibling candidates are every ticket with a commit on the tip
+  since origin/main, whether or not it shares a path with the landing
+  ticket; an unapproved one is printed and never rides (its paths are
+  simply absent from the tip-pure commit), an approved one rides as a
+  PASSENGER exactly as BL-1375 prints today. FIRM: the publish step
+  refuses to push a commit with two parents or whose diff against
+  origin/main names a path attributed to a ticket that is neither the
+  landing one nor landed. FIRM: no change to what counts as landed
+  (BL-1272/BL-1354/BL-1389 verdicts) or to the replay's content rules.
+
+invariants:
+  - "No commit reaches origin/main through a land unless every path it changes against origin/main is attributed to the landing ticket or to a ticket already landed; an unapproved forward merged into QA's branch never rides, whichever paths it touches."
+  - "origin/main's first-parent line advances only by tip-pure landing commits and by writers on main itself; a land never pushes a merge commit as main."
+
+description: |
+  ## What is wrong
+
+  Two facts combine. (1) QA lands by `git push origin HEAD:main` from
+  `swarmforge-QA` after `land_main_publish.sh --decide-only` (QA.prompt's
+  recipe, now amended), so main's first-parent line IS the QA branch:
+  `git log origin/main --first-parent | grep -c 'into QA\.'` = 375 since
+  2026-08-22, 12 on 2026-09-21; a push therefore carries every forward QA
+  has merged into its branch - approved or not. (2) `land_step_cli.bb`
+  (the step `--decide-only` consults, BL-1309) finds sibling candidates by
+  SHARED PATH with the landing ticket: an unapproved sibling among them
+  "never rides - it escalates" (its header), an approved one is a
+  PASSENGER (BL-1375); a forward on paths the landing ticket never touches
+  is no candidate, the step prints LAND_CLEAN, and the push ships it.
+
+  2026-09-21: QA merged BL-1640's documenter forward at 11:42
+  (`8f10bdc242`), bounced BL-1640 at 12:15 (D1: the sleep ceremony's
+  deadline loop never passes `--conf`), and landed BL-1666 at 12:42 by
+  pushing `bbeb70f408 Merge main 99a055be0d into QA.` as main. BL-1666
+  (`check_documenter_briefing_tip.sh` and its tests) shares no path with
+  BL-1640; QA's BL-1666 evidence records no ENTANGLED/PASSENGER line;
+  BL-1640's `1a46af4fd1`, `24919d6d69`, `76bf756a69`, `a0f5711e48` are
+  ancestors of origin/main and `git diff origin/main fd6f1eb3ed` is empty
+  on all nine BL-1640 TypeScript, test, handler and feature paths - the
+  bounced content, defect included, has been on main since. QA later
+  approved BL-1640 (13:31) and its own land then escalated as entangled
+  with BL-1458 and BL-1641 (adjudication
+  `backlog/evidence/BL-1640-land-escalate-adjudication-specifier-20260921.md`),
+  which is how the specifier found the earlier ride. The same shape:
+  BL-1308's land pushed the held BL-1300 on 2026-08-31 (the publish step's
+  own header) and the 2026-09-17 whole-branch push of BL-1605 landed
+  BL-1604 unreviewed.
+
+  ## What is wanted
+
+  1. `land_step_cli.bb`'s plan considers every ticket with a non-merge
+     commit on the tip since origin/main (the ancestry walk it already
+     makes), not only those sharing a path with the landing ticket: an
+     unapproved or bounced one is printed (`ENTANGLED_SIBLING` /
+     `UNAPPROVED_FORWARD <id>`) and its paths are excluded from the
+     tip-pure commit; an approved one is a PASSENGER as today (scenario
+     01).
+  2. `land_main_publish.sh --land <task> <approved-commit>` (and QA's
+     recipe) builds and pushes the tip-pure landing commit in EVERY case -
+     LAND_CLEAN means "the landing ticket's own paths, nothing else", not
+     "push HEAD" (scenario 02: after a land of a clean tip that also
+     carries an unapproved forward on other paths, origin/main gains a
+     single-parent commit touching only the landing ticket's paths and the
+     forward's paths are absent).
+  3. The publish step refuses to push a commit with two parents, or one
+     whose `git diff origin/main..<commit> --name-only` names a path
+     attributed to a ticket that is neither the landing one nor landed,
+     printing the offending id and path (scenario 03).
+  4. `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+     and the BL-1144 landing how-to say the land is always tip-pure and
+     main's first parent never gains a QA merge (documenter). The QA.prompt
+     interim (specifier, landed with this mint) is the same rule by hand.
+
+  ## How (direction, not mandate)
+
+  - The candidate set already exists as `ancestry-commits` (BL-1650 item
+    0's full walk); drop the shared-path filter from candidate SELECTION
+    and keep it for the co-ownership VERDICT. Reuse
+    `is_qa_ancestor.sh`/the land-approvals store for "approved" as the
+    passenger logic does.
+  - The publish step's push becomes `git push origin <landing-sha>:main`
+    of the replay's commit whatever the plan said; the two-parent and
+    foreign-path refusals are one bash check before the push, tested in
+    `test_land_main_publish.sh` over a fixture origin (BL-1390 roots).
+  - Fixtures: the BL-1241/BL-1375 feature handlers already build a
+    fixture origin with a landing ticket and siblings; add the
+    non-overlapping unapproved sibling row.
+
+  ## Not in scope
+
+  - The empty-revert blind spot in `attributing-commits` (BL-1472 skips a
+    revert-subject commit; an EMPTY revert - BL-1576's remedy - is
+    invisible): observed on 70c0123691, harmless there; a separate ticket
+    if it ever attributes wrongly.
+  - Rewriting main's history: the 375 merges stay; only future lands
+    change shape.
+  - The reconcile daemon (BL-891) and the merge-deletion guard (BL-1671).
+
+qa_e2e_procedure: |
+  Fixture roots per BL-1390: a fixture origin with main, a QA branch that
+  merged two forwards (ticket A approved, ticket B unapproved, disjoint
+  paths), never the live checkout.
+  1. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` and
+     `bash swarmforge/scripts/test/test_land_main_publish.sh` once: green
+     with the new cases.
+  2. `bb swarmforge/scripts/land_step_cli.bb <A-task> <A-commit> <fixture>`
+     prints the unapproved B by id and a LAND_REPLAY (never LAND_CLEAN);
+     the replay commit's `git diff main --name-only` names only A's paths.
+  3. `land_main_publish.sh <fixture> --land <A-task> <A-commit>`: the
+     fixture origin's main gains one single-parent commit, B's paths are
+     absent from it; then a hand `git push origin HEAD:main` of the QA
+     branch tip through the publish step is REFUSED naming B.
+  4. `specs/pipeline/scripts/run_acceptance.sh` on this ticket's feature:
+     3/3, once.
+  5. Live, after land: the next QA land's commit on origin/main has one
+     parent and `git log origin/main --first-parent -1 --format=%s` is the
+     landing subject, not "Merge ... into QA.".
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-21T12:35:03Z (inbound
+  00_20260921T123503Z_003059_from_QA), verbatim: "BL-1640 LAND_ESCALATE
+  entangled w/ unlanded BL-1458,1641 25e7973352". Found by the specifier
+  while adjudicating it: `git merge-base --is-ancestor 1a46af4fd1
+  origin/main` YES; `git diff origin/main fd6f1eb3ed -- <BL-1640 paths>`
+  empty; `git reflog show origin/main` pushes at 12:42 (bbeb70f408) and
+  12:54 (610b9121ee), both "Merge main ... into QA."; the 375/12 counts
+  above; land_step_cli.bb's header and land_main_publish.sh's BL-1309
+  header. Parents: BL-1241, BL-1309, BL-1375, BL-1481, BL-1605 (the
+  2026-09-17 whole-branch push), BL-1308/BL-1300 (2026-08-31).
+
+notes: |
+  Minted 2026-09-21 by the specifier while adjudicating QA's BL-1640
+  land escalation, the same pass. AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. QA.prompt's
+  three push sites amended in the mint commit (always a tip-pure landing
+  commit pushed by sha; `HEAD:main` retired) - the interim that holds
+  until this lands. Expedite candidate: every land until then depends on
+  QA following the interim by hand.
