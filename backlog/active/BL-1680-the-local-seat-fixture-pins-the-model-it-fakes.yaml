@@ -139,3 +139,5 @@ notes: |
   carries an uncommitted edit to extension/src/tools/localQwenSeatLive.ts
   and extension/test/bl1235LocalQwenSeatLive.test.js (14:43 local, a
   briefing-file system prompt). Not this red's cause; coordinator noted.
+
+assigned_to: coder
