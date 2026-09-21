@@ -162,3 +162,9 @@ notes: |
   outline over them. Condition (g) remains the interim.
 
 assigned_to: coder
+abandoned_commits: [3c3afd1f7d]
+# 3c3afd1f7d was the QA-approved commit (pass, NONE); land_step_cli.bb
+# LAND_REPLAY built the tip-pure commit e6753ebf37 (own paths only) which
+# landed instead. Verified live: the fix correctly reports
+# LAND_STRAY_SUPERSEDED for the original real-world stray (5dbfd9b6a6,
+# superseded by 8fad11b0dc) with no LAND_ESCALATE.
