@@ -1,0 +1,148 @@
+id: BL-1683
+title: "merge_drop_guard_lib.bb (BL-1576/BL-1610) computes dropped hunks by path identity - changed-paths is git diff --name-only and blob-sha reads <commit>:<path>, no rename detection - so a backlog promotion (git mv paused -> active plus one assigned_to line) on the forwarded side reads as every line of the file dropped when the received side still holds the paused copy: 2026-09-21 the documenter's BL-1467 forward was refused 'merge 6374919639 dropped 128 lines ... in backlog/paused/BL-1680-...yaml' although every line survives at backlog/active/; fourteen promotions landed that day and each is this rename; the guard maps renames and judges content at the new path, excusing a rename that keeps every uncontested hunk and still refusing one that drops any"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in the delivery machinery - any role forwarding a
+# parcel received from a branch that has not synced past a promotion is
+# refused, and promotions land many times a day (14 on 2026-09-21). The
+# interim (an empty revert commit carrying git's own "This reverts commit
+# <sha>." line) unblocks one send by hand; it does not stop the next.
+# Not critical: the swarm is not down and no content is lost.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+# BL-1576 (the gate), BL-1610 (its scan bound) and BL-1462 are in
+# backlog/done. No open ticket touches merge_drop_guard_lib.bb (BL-1678,
+# active, changes the land step's push, not this guard).
+mutation_cost: low
+# low: Babashka only (no mutation/CRAP/DRY wired, BL-472): one rename map
+# in changed-paths/findings-for-side, cases in merge_drop_guard_lib_test_runner.bb
+# and the bl1576 property runner, one feature and handler over mkdtemp
+# git fixtures (seconds).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1683-the-merge-drop-guard-reads-a-promotions-rename-as-a-dropped-file.feature
+
+# Handler pin only (BL-233, BL-1371). The guard's consumer (swarm_handoff.bb)
+# already calls findings-for-git-handoff, so an anchor there matches before
+# and after (BL-1235); the rename map is the parcel's own diff. Scenarios
+# 01 and 02 run the real guard over a fixture repository, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1683MergeDropGuardMapsRenamesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the guard keeps
+  failing closed on a REAL drop - a rename that also loses an uncontested
+  hunk of the received side is refused exactly as today, naming the NEW
+  path; only a rename whose new-path blob carries every uncontested hunk
+  is excused. FIRM: the BL-1576 revert-excuse and the BL-1610 blob-identity
+  excuse are unchanged. FIRM: no special case for backlog/ paths - the
+  rename map is general (git diff -M), the promotion is merely today's
+  daily instance.
+
+invariants:
+  - "A path renamed on the forwarded side is judged by its content at the new path: the guard reports a drop for it only when a line the received side added uncontested is absent from the new-path blob, never because the old path is gone."
+
+description: |
+  ## What
+  `swarmforge/scripts/merge_drop_guard_lib.bb` (BL-1576's send-time gate,
+  bounded by BL-1610) decides "the merge dropped the received side's
+  uncontested hunks" per PATH: `changed-paths` = `git diff --name-only
+  base side`, `diff-u0`/`blob-sha` read the same path on each side. A
+  rename is invisible to it. The daily instance is a backlog promotion:
+  `Promote BL-N: paused -> active` is `git mv backlog/paused/BL-N-*.yaml
+  backlog/active/` plus one `assigned_to:` line. When the forwarding
+  branch has merged main past that promotion and the received branch has
+  not, the received side still holds `backlog/paused/BL-N-*.yaml`, the
+  forwarded side holds it at `backlog/active/`, and the guard reads every
+  line of the file as dropped:
+
+      Cannot send git_handoff for BL-1467: merge 6374919639 dropped 128
+      lines of the received side's uncontested hunks in
+      backlog/paused/BL-1680-the-local-seat-fixture-pins-the-model-it-fakes.yaml
+
+  (documenter, 2026-09-21 15:35 local; `diff` of the two copies is the one
+  `assigned_to: coder` line the promotion added). Fourteen promotions
+  landed on main that day. Adjudication:
+  backlog/evidence/BL-1683-merge-drop-guard-rename-blind-adjudication-specifier-20260921.md;
+  documenter evidence (documenter branch c819aab271):
+  backlog/evidence/merge-drop-guard-rename-blind-false-positive-bl1680-20260921.md.
+
+  ## Why
+  The guard exists to catch a merge that silently reverts landed work
+  (BL-571/BL-958/BL-954); a promotion moves a file and loses nothing. A
+  guard that refuses the ordinary case trains every role to reach for
+  the excuse commit by reflex, and the excuse is an EMPTY revert whose
+  message names a commit nothing reverted - a lie in the history, once
+  per promotion per lagging branch. The fix is to judge content, not the
+  path string.
+
+  ## How (direction, not mandate)
+  - `changed-paths` (or a sibling) runs `git diff -M --name-status base
+    side` and returns, per entry, the old path and the new path (`R<score>`
+    rows carry both; `A`/`M`/`D` rows one). Build the rename map for the
+    forwarded side of the flagged merge.
+  - In `findings-for-side`, when the received-side path is renamed on the
+    forwarded side, compute `lines-lost` against the NEW path's blob
+    (`diff-u0 <received-tip> <forwarded> -- <old> <new>` or diff the two
+    blobs directly) - a hunk present at the new path is not lost.
+  - Keep `excused-by-blob-identity?` and `revert-excuses?` as they are;
+    add the rename case to `refusal-message` so a real drop at a renamed
+    path names the new path.
+  - Fixtures: `merge_drop_guard_lib_test_runner.bb` gains (a) rename
+    without loss -> no finding, (b) rename with a lost uncontested hunk ->
+    finding at the new path; the bl1576 property runner's generator gains
+    a rename move.
+
+  ## Scope
+  - `swarmforge/scripts/merge_drop_guard_lib.bb`,
+    `swarmforge/scripts/test/merge_drop_guard_lib_test_runner.bb`,
+    `swarmforge/scripts/test/bl1576_merge_drop_guard_property_runner.bb`.
+  - `specs/features/BL-1683-the-merge-drop-guard-reads-a-promotions-rename-as-a-dropped-file.feature`
+    and `specs/pipeline/steps/bl1683MergeDropGuardMapsRenamesSteps.js`
+    (same parcel, BL-233, registered in `specs/pipeline/steps/index.js`).
+  - Documenter: the BL-1576 how-to's "why was my send refused" section
+    gains the rename case and drops the empty-revert interim once landed;
+    no diagram trigger (handoff-flow.mmd shows the gate, not its rule).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each.
+  1. `bb swarmforge/scripts/test/merge_drop_guard_lib_test_runner.bb` and
+     `bb swarmforge/scripts/test/bl1576_merge_drop_guard_property_runner.bb`:
+     green.
+  2. `node specs/pipeline/cli.js specs/features/BL-1683-the-merge-drop-guard-reads-a-promotions-rename-as-a-dropped-file.feature`:
+     all ok.
+  3. Live shape: `bb swarmforge/scripts/merge_drop_guard_lib.bb . 540f0c2bed 095989b7bf`
+     (the documenter's BL-1467 tip BEFORE its excuse commit, received
+     from hardender 540f0c2bed) prints no blocking finding - at mint it
+     printed the 128-line finding for backlog/paused/BL-1680-...yaml.
+  4. BL-1576's own scenarios still refuse a real drop: the runner in
+     step 1 covers it; do not weaken any existing case.
+
+notes: |
+  Minted 2026-09-21 by the specifier adjudicating the documenter's note
+  001432 (BL-1467 forward refused). AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Expedite lane
+  by severity (Article 3.2.4).
+
+  Interim until this lands (verified 2026-09-21 on a detached scratch copy
+  of the documenter's tip, e422892902, re-run through the guard: clean):
+  for each sha in `git log --format=%H $(git merge-base <merge>^1 <merge>^2)..<received tip> -- <old path>`,
+  `git revert --no-commit <full sha>` (it conflicts on the rename),
+  `git reset -q HEAD -- . && git checkout -q -- . && git clean -fdq`,
+  then `git commit --allow-empty -F "$(git rev-parse --git-dir)/MERGE_MSG"`
+  - git's own message carries the literal `This reverts commit <full sha>.`
+  line the guard greps for. A hand-written subject without that line is
+  NOT excused (the documenter's cf53cdf6b0 was still refused).
+
+  Census (BL-1445): `git log --since='2026-09-21 00:00' --format=%s
+  origin/main | grep -c '^Promote'` = 14 on the day of the mint; each is
+  a `git mv` paused -> active plus one line.
