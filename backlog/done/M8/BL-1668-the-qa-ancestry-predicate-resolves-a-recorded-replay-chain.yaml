@@ -159,3 +159,10 @@ notes: |
   sync tip, not against the replay - so the single hop resolves.
 
 assigned_to: coder
+abandoned_commits: [0083fe47f5]
+# 0083fe47f5 was the QA-approved commit (pass, NONE); land_step_cli.bb hit
+# LAND_ESCALATE on the empty-diff closed-owner stray be826a2060 (condition g,
+# backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md).
+# Landed instead as a hand-built tip-pure commit (own paths only). Ironic
+# given the ticket's own subject (this fixes is_qa_ancestor.sh's replay-chain
+# resolution) but the fix isn't live on main yet at land time.

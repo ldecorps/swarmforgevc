@@ -35,7 +35,11 @@ required_wiring:
   - 'extension/src/tools/night-closing-ceremony-run.ts::compose_banked_briefing_cli.bb::the run CLI executor is the pre-existing consumer of ceremony actions and shells the composer through this bb entry, which the parcel creates'
   - 'specs/pipeline/steps/bl1641CeremonyDeadlineProducesABriefingSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A (recommended) - land the documenter branch's own briefing commit for the
+  day when one exists, otherwise compose the banked headless briefing.
+  Ruled by the human directly, 2026-09-21.
 approval_context: >
   A new feature file is authored here and a genuine choice is posed, so
   this is a ruling ask even though the defect is high severity. FIRM: a
@@ -208,3 +212,5 @@ notes: |
   The handler entry is the BL-233 same-parcel pin. IR-DRY at mint:
   scenarios 01, 02 and 04 share the deadline Given by design (one decision,
   three states); reviewed and kept.
+
+assigned_to: coder

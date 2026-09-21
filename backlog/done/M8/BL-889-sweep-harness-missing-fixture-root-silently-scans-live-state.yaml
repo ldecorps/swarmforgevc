@@ -3,7 +3,8 @@ title: "DEFECT — a test harness invoked without its fixture-root argument sile
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1517
 epic: code-quality-gates
 priority: 100
 direction: normal
@@ -44,6 +45,17 @@ source: |
   standing in for.
 
 notes: |
+  RETIRED 2026-09-21 by the specifier on the human's morning consolidation
+  sweep over paused/pending tickets (Consolidation Authority, BL-680;
+  Article 5.3): absorbed into BL-1517 - same root cause or fix shape, one
+  outcome. Every FIRM line, constraint and quoted source sentence of
+  this ticket survives verbatim or in substance in BL-1517; its three draft scenarios are BL-1517 scenarios 04, 05 and 06 (converted from .feature.draft).
+  This ticket's feature file is left in place as a scenario-less tombstone
+  (its contract now lives in
+  BL-1517's). Human approval on this ticket stands as history; the absorber
+  was separately approved and nothing unapproved was added. Evidence:
+  backlog/evidence/consolidation-sweep-paused-20260921.md.
+
   Specifier probe, 2026-08-14 — the report is accurate and the hazard is
   wider than the one file it was found in:
 
