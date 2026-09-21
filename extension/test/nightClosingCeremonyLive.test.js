@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const {
   advanceNightClosingCeremony,
   briefingInstruction,
+  sleepLoopDecision,
+  SLEEP_CEILING_GRACE_MS,
 } = require('../out/quality/nightClosingCeremonyLive');
 
 function obs(over = {}) {
@@ -165,4 +167,66 @@ test('BL-1393: a shift of work is the default, so the ordinary night is unchange
   const { state } = tick(null);
   assert.equal(state.phase, 'frozen');
   assert.deepEqual(state.sequence, ['freeze-promotion']);
+});
+
+// ── BL-1640: a second sleep after a worked shift reopens a done night ────
+
+function doneState(over = {}) {
+  return {
+    nightKey: '2026-08-26',
+    phase: 'done',
+    sequence: ['freeze-promotion', 'lean-packet', 'briefing-already-sent'],
+    startedAtMs: 500_000,
+    drainDeadlineMs: 500_000,
+    hardDeadlineMs: 900_000,
+    rotationRequested: false,
+    loudSurfaces: [],
+    parked: false,
+    briefingInstructed: false,
+    hadInFlight: false,
+    ...over,
+  };
+}
+
+test('BL-1640: a sleep after a worked shift reopens a same-night done state as a new ceremony', () => {
+  const done = doneState();
+  const { state, actions } = tick(done, { fromSleep: true, workedAShift: true, inFlightCount: 0 });
+  assert.equal(state.phase, 'frozen');
+  assert.deepEqual(state.sequence, ['freeze-promotion']);
+  assert.equal(state.startedAtMs, 1_000_000, 'the new ceremony starts at the new sleep time');
+  assert.ok(actions.some((a) => a.kind === 'freeze'));
+});
+
+test('BL-1640: a sleep with no shift since stays quiet over a same-night done state', () => {
+  const done = doneState();
+  const { state, actions } = tick(done, { fromSleep: true, workedAShift: false });
+  assert.equal(state, done, 'the state must be the SAME unchanged object, not a rebuilt copy');
+  assert.deepEqual(actions, []);
+});
+
+test('BL-1640: the daemon sweep never reopens a same-night done state, even after a worked shift', () => {
+  const done = doneState();
+  // fromSleep omitted: every pre-BL-1640 (daemon) caller.
+  const { state, actions } = tick(done, { workedAShift: true });
+  assert.equal(state, done);
+  assert.deepEqual(actions, []);
+});
+
+// ── BL-1640: bedtime never hangs - the sleep loop's own stop/wait decision ──
+
+test('sleepLoopDecision: done always stops, regardless of the clock', () => {
+  assert.equal(sleepLoopDecision('done', 0, 100), 'done');
+  assert.equal(sleepLoopDecision('done', 1_000_000, 100), 'done');
+});
+
+test('sleepLoopDecision: waits while not done and the ceiling has not passed', () => {
+  assert.equal(sleepLoopDecision('frozen', 100, 1_000), 'wait');
+  assert.equal(sleepLoopDecision('briefing', 1_000 + SLEEP_CEILING_GRACE_MS - 1, 1_000), 'wait');
+  assert.equal(sleepLoopDecision(undefined, 0, 1_000), 'wait');
+});
+
+test('sleepLoopDecision: overran once the ceiling (hardDeadline + grace) passes with no done', () => {
+  assert.equal(sleepLoopDecision('frozen', 1_000 + SLEEP_CEILING_GRACE_MS, 1_000), 'overran');
+  assert.equal(sleepLoopDecision('briefing', 1_000 + SLEEP_CEILING_GRACE_MS + 1, 1_000), 'overran');
+  assert.equal(sleepLoopDecision(undefined, 1_000 + SLEEP_CEILING_GRACE_MS, 1_000), 'overran');
 });

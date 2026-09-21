@@ -553,3 +553,4 @@ respawn_bootstrap_test_runner.bb	standing
 test_commit_integrity_1497_lock_reap.sh	standing		
 test_standing_shell_tests_never_diff_main.sh	standing
 test_check_closed_ticket_subject.sh	standing
+test_bl1640_sleep_runs_ceremony_to_done.sh	standing
