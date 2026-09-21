@@ -255,7 +255,8 @@
   (spit (str good) (git-handoff-content "goodcommit1"))
   (spit (str bad) (git-handoff-content "badcommit00"))
   (let [resolve-fn? (fn [commit] (= commit "goodcommit1"))
-        dequeued (handoff-lib/resolve-dequeueable-candidates [good bad] [] [] resolve-fn?)]
+        dequeued (handoff-lib/resolve-dequeueable-candidates
+                  [good bad] [] [] resolve-fn? handoff-lib/default-ambulance-held? (constantly false))]
     (assert= "resolve-dequeueable-candidates dequeues only the resolvable candidate"
              [good] dequeued)
     (assert-true "the bad candidate is quarantined as *.handoff.dead"
@@ -363,7 +364,8 @@
       held?-fn (fn [content] (str/includes? content "task: BL-660"))]
   (spit (str for-654) (git-handoff-content "aaaaaaaaaa" "BL-654"))
   (spit (str for-660) (git-handoff-content "bbbbbbbbbb" "BL-660"))
-  (let [dequeued (handoff-lib/resolve-dequeueable-candidates [for-654 for-660] [] [] (constantly true) held?-fn)]
+  (let [dequeued (handoff-lib/resolve-dequeueable-candidates
+                  [for-654 for-660] [] [] (constantly true) held?-fn (constantly false))]
     (assert= "ambulance-hold-04: resolve-dequeueable-candidates end-to-end excludes only the held candidate"
              [for-654] dequeued)))
 

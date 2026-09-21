@@ -84,7 +84,7 @@
                       batch)
           before-contents (into {} (map (fn [{:keys [file content]}] [file content]) files))
           dequeued (set (handoff-lib/resolve-dequeueable-candidates (mapv :file files) [] []
-                                                                     (constantly true) held?-fn))
+                                                                     (constantly true) held?-fn (constantly false)))
           expected-dequeued (set (map :file (filter #(= ambulance-ticket (:task %)) files)))
           held-files (map :file (filter #(not= ambulance-ticket (:task %)) files))
           problems (concat
