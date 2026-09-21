@@ -195,3 +195,5 @@ notes: |
   shape (the sleep-path ceremony), not this trigger.
   IR-DRY on the amendment: scenario 06's "exactly one note ..." is a count
   assertion over scenario 01's step by design; reviewed and kept.
+
+assigned_to: coder
