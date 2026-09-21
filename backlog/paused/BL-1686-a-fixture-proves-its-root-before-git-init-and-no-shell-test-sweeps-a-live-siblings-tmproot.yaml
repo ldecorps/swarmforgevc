@@ -1,0 +1,162 @@
+id: BL-1686
+title: "test_bl1378_expedite_close_guard.sh's mk_fixture calls prove_root one line AFTER git -C \"$root\" init -q -b main (BL-1516's own patch cd638f1c6f; unlanded_commit and both bl1374 fixtures get the order right), and the file's startup sweep is the blind BL-971 idiom rm -rf \"${TMPDIR:-/tmp}/${PREFIX}\".* that a second concurrent run of the same file uses to delete the first run's live TMPROOT - under set -uo pipefail mktemp then fails silently, root is '' and git -C '' init runs in the process CWD, the live worktree (architect, 2026-09-21, twice in a row; harmless only because git ignores a re-init of an existing repository); the proof runs before the first mutating command, the five shell tests carrying the blind sweep reap only dead owners' roots, and a regression case pins the order"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal - the guard BL-1516 shipped to keep a
+# fixture off the live checkout runs after the mutation it guards, and
+# the blind sweep that arms it fires whenever two seats run the same
+# shell test at once (the architect saw it twice in a row today); the
+# file is a red under ordinary swarm concurrency (register row). Not
+# critical: git ignores a re-init of an existing repository, so no
+# checkout was damaged; an empty CWD would not be so lucky.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+# BL-1516 (the proof), BL-1378 (the file's own subject), BL-1390 (the
+# incident) and BL-1647 (zombie-aware liveness) are in backlog/done;
+# BL-1677 (active/paused) migrates the PROPERTY-lane blind sweeps and
+# touches no shell test. No open ticket edits these five files.
+mutation_cost: low
+# low: shell only (no mutation/CRAP/DRY wired, BL-472): one line moved in
+# one fixture, five startup sweeps rewritten to a pid-scoped idiom (or a
+# small helper in lib/tmp_cleanup.sh), one regression section, one
+# feature and handler over mkdtemp fixtures (seconds).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1686-a-fixture-proves-its-root-before-git-init-and-no-shell-test-sweeps-a-live-siblings-tmproot.feature
+
+# Handler pin only (BL-233, BL-1371). BL-1516 anchored
+# `test_bl1378_expedite_close_guard.sh::--git-common-dir` and the anchor
+# matched with the call one line too late - a substring cannot see order
+# (BL-1235's fail-open shape), so no wiring entry here pretends to.
+# Scenario 01 runs the real mk_fixture with its TMPROOT removed, which is
+# the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1686FixtureProofBeforeInitSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: in every fixture
+  helper of the two prove_root files the proof precedes the first
+  mutating git command. FIRM: a shell test's startup sweep never removes
+  a root whose recorded owner process is alive (zombie-aware liveness as
+  BL-1647 ruled, never bare kill -0); the sweep's SHAPE - a pid in the
+  root name, or a helper in lib/tmp_cleanup.sh - is the coder's
+  direction. FIRM: the regression case fails on today's file and passes
+  on the fixed one; BL-1516's scenarios are untouched.
+
+invariants:
+  - "No shell test under swarmforge/scripts/test runs a mutating git command against a root it has not proven under its own TMPROOT, and no test's startup sweep removes a temp root whose owner process is alive."
+
+description: |
+  ## What
+  1. `swarmforge/scripts/test/test_bl1378_expedite_close_guard.sh`,
+     `mk_fixture` (lines 68-75): `git -C "$root" init -q -b main` on line
+     74, `prove_root "$root"` on line 75. BL-1516 (landed today,
+     e78fa06d41 / 12a7c94605) added the proof one line too late; the same
+     file's `unlanded_commit` (line 92) and both fixtures of
+     `test_bl1374_sync_merge_passengers.sh` (lines 69-70, 91-92) prove
+     first.
+  2. Line 22 of the same file - and the same line in four siblings - is
+     the blind BL-971 startup sweep
+     `rm -rf "${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true`. A second
+     concurrent invocation of the file (another seat verifying the same
+     parcel, the everyday multi-seat case) deletes the first run's live
+     `TMPROOT`. Under `set -uo pipefail` (no `-e`) the next
+     `mktemp -d "$TMPROOT/fix.XXXXXX"` fails silently, `root` is the empty
+     string, and `git -C "" init -q -b main` runs in the process CWD - the
+     seat's live worktree (`git -C ""` is the current directory, BL-1390).
+     The architect reproduced it twice in a row on 2026-09-21:
+     `mktemp: failed to create directory ... No such file or directory`,
+     `warning: re-init: ignored --initial-branch=main`, then prove_root's
+     `refusing to mutate ''` - AFTER the init. Only git's tolerance of a
+     re-init on an existing repository kept the checkout intact.
+
+  Census (BL-1445): five shell tests carry the blind sweep
+  (`grep -ln 'rm -rf "${TMPDIR:-/tmp}/${PREFIX}"' swarmforge/scripts/test/*.sh`):
+  bl1363_close_ticket_property_runner.sh (a `*` glob),
+  test_bl1376_expedite_branch_handover.sh, test_bl1378_expedite_close_guard.sh,
+  test_suite_baseline_cli.sh, test_bl1374_sync_merge_passengers.sh - all
+  `set -uo pipefail`, none registering with `lib/tmp_cleanup.sh`'s
+  `register_tmp_dir` (108 other shell tests do). Adjudication:
+  backlog/evidence/defect-bl1378-mk_fixture-prove_root-ordering-adjudication-specifier-20260921.md;
+  architect evidence (architect branch 4c9a3451e7):
+  backlog/evidence/defect-bl1378-mk_fixture-prove_root-ordering-architect-20260921.md.
+
+  ## Why
+  engineering.prompt Guardrails: a test fixture never mutates the live
+  repository - roots are proven by `rev-parse --git-common-dir` BEFORE
+  any mutating git command. A proof after the command is decoration, and
+  a sweep that reaps a sibling's live root is what makes the proof
+  necessary in the first place (BL-1677 fixed this shape in the property
+  lane; the shell lane was never migrated). BL-1516's own scenario drove
+  `prove_root` in isolation and its wiring anchor was a substring, so
+  nothing gated the ORDER - this ticket's regression case does.
+
+  ## How (direction, not mandate)
+  - Move `prove_root "$root"` above the `git init` in `mk_fixture`
+    (bl1378); audit the four sibling files for any other
+    mutate-then-prove sequence.
+  - Replace each blind sweep with a pid-scoped one: name the root
+    `${PREFIX}.$$.XXXXXX` and at startup remove only roots whose pid
+    segment names a dead process, using the zombie-aware liveness BL-1647
+    ruled (a `/proc/<pid>` state check, never bare `kill -0`). A small
+    `sweep_stale_prefix_roots <prefix>` in `lib/tmp_cleanup.sh` used by
+    all five is the natural shape.
+  - Regression section in bl1378 (and its handler): create TMPROOT, remove
+    it, call `mk_fixture` from an empty scratch CWD, assert the refusal
+    text and that the scratch CWD holds no `.git`.
+
+  ## Scope
+  - The five shell tests above; `swarmforge/scripts/test/lib/tmp_cleanup.sh`
+    if a helper is added; `swarmforge/scripts/test/suite-manifest.tsv` if
+    a new section changes a duration row.
+  - `specs/features/BL-1686-a-fixture-proves-its-root-before-git-init-and-no-shell-test-sweeps-a-live-siblings-tmproot.feature`
+    and `specs/pipeline/steps/bl1686FixtureProofBeforeInitSteps.js` (same
+    parcel, BL-233, registered in `specs/pipeline/steps/index.js`).
+  - The register row for the bl1378 file leaves in this parcel's land
+    (BL-1631); the parcel never edits the register. Documenter: the
+    BL-1516 how-to gains "proof before the first mutating command" and
+    the shell sweep idiom; no diagram trigger.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each.
+  1. `bash swarmforge/scripts/test/test_bl1378_expedite_close_guard.sh`
+     and `bash swarmforge/scripts/test/test_bl1374_sync_merge_passengers.sh`:
+     green, including the new regression section.
+  2. `node specs/pipeline/cli.js specs/features/BL-1686-a-fixture-proves-its-root-before-git-init-and-no-shell-test-sweeps-a-live-siblings-tmproot.feature`:
+     all ok.
+  3. `grep -ln 'rm -rf "${TMPDIR:-/tmp}/${PREFIX}"' swarmforge/scripts/test/*.sh`
+     prints nothing (five files at mint).
+  4. Two runs of the bl1378 file started within a second of each other,
+     from two shells, both green - the one concurrency case this ticket
+     exists for; this is the only step that runs a test more than once.
+  5. Register: the land retires the bl1378 row; the report after landing
+     shows no unowned row and no BL-1686 row.
+
+notes: |
+  Minted 2026-09-21 by the specifier adjudicating the architect's note
+  002480 (found during a post-land merge-up verification, not in a
+  parcel). AUTO-APPROVED under the 2026-09-17 operator hotfix (severity
+  defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Expedite lane
+  by severity (Article 3.2.4).
+
+  Register row added in the mint commit (lane shell,
+  swarmforge/scripts/test/test_bl1378_expedite_close_guard.sh, owner
+  BL-1686, first_seen 2026-09-21). Not a bounce: BL-1516 landed before
+  the finding; its own review (architect evidence
+  backlog/evidence/BL-1516-architect-20260921.md) passed the ordering,
+  which is why the regression case here pins ORDER rather than the guard
+  function BL-1516's scenario already covers.
+
+  Lesson recorded for mint-time gates: a `required_wiring` anchor on a
+  guard call proves presence, never placement; when the placement IS the
+  contract, the scenario must drive the call site under the failure that
+  makes placement matter.
