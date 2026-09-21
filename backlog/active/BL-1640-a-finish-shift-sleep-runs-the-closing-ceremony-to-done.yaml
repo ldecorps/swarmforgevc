@@ -214,3 +214,6 @@ notes: |
   feature's Background does.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-21, by: QA, blamed: coder, class: behavior, commit: 3bd5c3b896, evidence: backlog/evidence/BL-1640-bounce-20260921.md }
