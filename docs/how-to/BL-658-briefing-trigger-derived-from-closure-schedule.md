@@ -191,17 +191,47 @@ A judged briefing commit's own changed paths must be exactly one day's
 `docs/briefings/<date>.md` and, optionally, the same date's `.json`
 sidecar — never `docs/briefings/.sent.json` (the email sweep's own
 sent-state) and never a second `docs/briefings/<date>.md` for a date the
-landed main already carries. A path whose last touching commit is already
-reachable from the landed main is exempt (BL-1096 provenance, same as the
-art-director guard). `check_documenter_briefing_tip.sh --tip <sha>` prints
-`DOCUMENTER_BRIEFING_TIP_OK` or `DOCUMENTER_BRIEFING_TIP_REFUSED <reason>`
-for direct use outside a merge. The documenter branch is read from
-`.swarmforge/roles.tsv` (pack-dependent — `swarmforge-documenter` here,
-`primary/documenter` on the nested pack), never hard-coded — the same
-roster-resolution shape `check_art_director_tip.sh` gained afterward
-(BL-1657, `docs/how-to/BL-1418-the-art-director-seat-is-addressable.md`),
-once its own hard-coded `primary/art-director` literal was found to
-refuse every live tip on this host since 2026-09-06.
+landed main already carries. `check_documenter_briefing_tip.sh --tip
+<sha>` prints `DOCUMENTER_BRIEFING_TIP_OK` or
+`DOCUMENTER_BRIEFING_TIP_REFUSED <reason>` for direct use outside a
+merge. The documenter branch is read from `.swarmforge/roles.tsv`
+(pack-dependent — `swarmforge-documenter` here, `primary/documenter` on
+the nested pack), never hard-coded — the same roster-resolution shape
+`check_art_director_tip.sh` gained afterward (BL-1657,
+`docs/how-to/BL-1418-the-art-director-seat-is-addressable.md`), once its
+own hard-coded `primary/art-director` literal was found to refuse every
+live tip on this host since 2026-09-06.
+
+**An out-of-lane path is exempt by content first, ancestry second
+(BL-1666, 2026-09-21).** `judge_tip_paths` checks, in order: (1) the
+tip's blob at that path equals the landed main's blob at that path
+(`git rev-parse -q --verify <tip>:<path>` vs `<landed-main>:<path>`) —
+exempt whatever the commit ancestry, since a hand-built replay
+(condition (g) in the `BL-1537` land-escalate log) lands byte-identical
+content in a fresh commit built off `origin/main`, never a commit the
+documenter branch's own history contains; (2) failing that, the path's
+last-touching commit on the tip's lineage is already reachable from the
+landed main (BL-1096 provenance, same as the art-director guard) — the
+fallback for a path the tip removed, or a tree entry with no blob to
+compare. A path whose blob differs from, or is absent on, the landed
+main is refused either way; an *older* version of a path once landed is
+never provenance for a newer one. Before this, ancestry-only exemption
+refused every hand-built land whose content main already carried
+(`docs/briefings/2026-09-20.md` on 2026-09-21, among others) — 80 of 92
+offending paths on that census were this defect, not real out-of-lane
+content.
+
+**Hook mode reads its whole input before deciding (BL-1666,
+2026-09-21).** Both exemption checks used to pipe a git command straight
+into `grep -q` under `set -euo pipefail`: `grep -q` exits at its first
+match while the producer may still be writing a long first-parent list
+or a multi-path diff, the producer dies of `SIGPIPE`, and `pipefail`
+turns that into "not on the line" / "no briefing path" — the same
+early-exit-under-load race BL-1660 found in a library script. A briefing
+tip carrying out-of-lane content could land through the chain unjudged
+under load. Both checks now capture their producer's full output into a
+variable first and grep that (`<<<`), so there is no pipe for the
+producer to die on.
 
 A bounced parcel that changes a hook in this shared chain must be
 reverted off the bouncing branch in the bounce step itself (not just
