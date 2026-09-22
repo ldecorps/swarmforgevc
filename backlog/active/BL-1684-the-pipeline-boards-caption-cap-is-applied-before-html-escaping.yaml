@@ -10,6 +10,7 @@ severity: high
 # Telegram's limit and be rejected, the 2026-07-17 incident. Not critical:
 # real titles rarely reach that shape; nothing is down today.
 status: todo
+abandoned_commits: [6dd37b0a28]
 epic: pipeline-board
 priority: 8
 direction: swarm-reported

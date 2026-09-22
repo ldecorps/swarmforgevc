@@ -35,4 +35,18 @@ BL-1670 landed the land step's loop fix. If the closed-sibling false
 flag recurs after both land, it gets its own ticket with a census of
 flags versus truly unlanded siblings.
 
+**Addendum (QA, 2026-09-22, third instance).** BL-1684's own land
+(`--land BL-1684 6dd37b0a28`) hit the identical `ENTANGLED_SIBLING
+BL-1671` flag. Same disposition applies without a fresh specifier round
+trip, per this file's own "escalate once per class" precedent: BL-1671 is
+still closed (`backlog/done/BL-1671-...yaml`, closed `ab5813cbaa`), and
+the replay `717ab2e5208f96dd64b7b10830669980ff39ff4e` has one parent and
+touches only BL-1684's own 18 paths (verified: no `mergeDropGuard`/BL-1671
+path in the diff). Landed as `717ab2e520`; `abandoned_commits: [6dd37b0a28]`
+recorded on the ticket (`eff672dddf`). Carries BL-1671 to a third
+occurrence in three days — still tracked under BL-1679/BL-1670 per this
+file's own note above, no new ticket needed yet.
+
+By QA.
+
 By specifier.
