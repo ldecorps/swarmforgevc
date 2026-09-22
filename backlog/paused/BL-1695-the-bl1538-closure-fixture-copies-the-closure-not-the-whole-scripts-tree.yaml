@@ -1,0 +1,198 @@
+id: BL-1695
+title: "extension/test/bl1538Bl1028RunnerFixtureClosureInvariants.property.test.js invariant 2 went red in QA's one property-lane run for BL-1688 (2026-09-22 12:08 local, load 8-11, counterexample slice_size_envelope_gate_lib.bb, assertion text not recorded) while it is green alone in 0.9 s and was green in the same lane 90 minutes earlier: each of its eight closure-member iterations copies the ENTIRE swarmforge/scripts tree (496 files, 16 MB) into a scratch root and spawns bb twice - about 130 MB of copying and sixteen bb starts per run, the fixture-spawning shape BL-1579 owned - and none of its three assertions records the cause it failed on; the fixture copies only the closure plus the runner, every assertion in the file names the member and the reason, and the red is reproduced once under lane load with its text before the mechanism is called anything"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it withheld nothing (QA filed the note and passed
+# BL-1688 on its own diff, per the 2026-09-20 one-run rule) but it is a
+# property file the full lane runs on every parcel, and a red whose
+# assertion text nobody captured will recur as a fresh note each time.
+status: todo
+epic: code-quality-gates
+priority: 6
+direction: swarm-reported
+depends_on: []
+# BL-1538 (the file), BL-1586 (its reach floors by construction), BL-1579
+# (the lane-load shape, landed with contentionBudget-derived budgets) and
+# BL-1677 (prefix sweeps never reap a live peer) are in backlog/done.
+# BL-1619 (paused) measures the property lane; this ticket does not wait
+# for it.
+mutation_cost: low
+# low: one property test file's fixture and assertion messages; no
+# production code, no Stryker target; the file runs in about a second.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1695-the-bl1538-closure-fixture-copies-the-closure-not-the-whole-scripts-tree.feature
+
+# Handler pin only (BL-233, BL-1371). The property file is the parcel's own
+# diff (BL-1235: any anchor on it matches by construction); scenario 01
+# drives its real fixture helper and scenario 02 reads its assertions.
+required_wiring:
+  - 'specs/pipeline/steps/bl1695ClosureFixtureCopiesOnlyTheClosureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: no reach floor,
+  budget, timeout or tolerance in the file is lowered, seeded or retried
+  (BL-1583's rule); both invariants keep their meaning - invariant 1
+  still proves the copy set is derived from the closure, invariant 2
+  still drops each closure member from the REAL copy and proves the
+  guard's own comparison names it. FIRM: the reproduction is ONE run
+  under comparable load with the assertion text captured (the 2026-09-17
+  rule caps repeats at three; BL-1579's "at least 5 times" predates it),
+  and a mechanism is named only from that text and the code, never from
+  the counterexample alone.
+
+invariants:
+  - "Every assertion in the file names the closure member under test and the cause it failed on (the subprocess stderr on a spawn failure, the observed copy set on a presence failure, the guard's own list on a comparison failure), so a lane red is diagnosable from its one line without a re-run."
+
+description: |
+  ## What is wrong
+  QA's property-lane run for BL-1688 (2026-09-22 12:08 local, QA
+  evidence `backlog/evidence/unowned-red-bl1538-fixture-closure-invariant2-QA-20260922.md`,
+  QA branch f3702182ca):
+
+      invariant 2 ("the guard reads what the fixture actually copies, never
+      what its source claims") fails after 1 property test, counterexample
+      ["slice_size_envelope_gate_lib.bb"], seed -793069138. Invariant 1 in
+      the same file passed.
+
+  The specifier ran the file alone on main twice within the hour: 2/2
+  pass, 863 ms. QA's own full-lane run for BL-1673 at 10:38 local was
+  444/444 green with this file in it. The red is load-shaped, not
+  input-shaped: invariant 2's property is `fc.constant(member)` per
+  closure member, so the seed decides nothing and the counterexample is
+  just the member the loop reached when the environment gave way.
+
+  What the file does per iteration (`copyScriptsTree`, lines ~78-90;
+  `derivedCopySet`, ~68-75): it copies EVERY file directly under
+  `swarmforge/scripts` (496 files, 16 MB) into a fresh `mkSharedTmpDir`
+  root, copies the runner under `test/`, patches the runner's source to
+  drop one member, then spawns `bb <runner> --copy-into <dest>` (which
+  itself recomputes the closure with `bb_load_closure_lib` and copies the
+  eight-member closure). The closure of `promotion_gates_cli.bb` has 8
+  members, so one run of invariant 2 is about 130 MB of file copying and
+  eight bb starts on top of `closureOf`'s own; invariant 1 adds six more
+  tree copies and spawns. Alone that is under a second; inside a
+  414-file property lane at load average 8-11 (the box on 2026-09-22
+  12:11: 7.78, 10.65, 9.08) it is exactly the fixture-spawning shape
+  BL-1579 found timing out and BL-1579's remedy (a load-relative budget
+  through `contentionBudget`) does not cover an assertion failure.
+
+  The three assertions the iteration can fail on say nothing about WHY:
+  `--copy-into failed: <stderr>` (a bb start failing under load - the
+  likeliest, and the only one that carries a reason), `<member> was
+  expected to be dropped from the real copy but is present` (no copy set
+  shown), `the guard's own comparison did not name <member>: <list>`. QA
+  recorded the fast-check summary line only, so which of the three fired
+  is unknown, and it will stay unknown on the next sighting unless the
+  messages carry it.
+
+  ## Why
+  A property red in the full lane withholds attention on every parcel it
+  lands beside (Article 4.2's note, a specifier round trip, a register
+  row), and a red with no captured cause recurs as a new note each time.
+  The 2026-09-20 rule that a red in an untouched file is a note, not a
+  re-run, is right - it makes the file's own diagnosability the thing
+  that matters.
+
+  ## What is wanted
+  1. Reproduce ONCE under comparable load - the full property lane
+     started alongside (or a Stryker run), load average above 6 - with
+     the file's full failure output captured verbatim into the evidence:
+     the assertion that fired and its message. If it does not fire in
+     that one run, say so and proceed on the code alone (the fixture
+     cost below stands on its own).
+  2. The fixture copies only what the runner reaches: the closure (from
+     `closureOf`) plus the runner file, into a scratch tree shaped as the
+     runner expects (`<root>/<member>.bb`, `<root>/test/<runner>`), not
+     the 496-file directory; invariant 1's added edges are written on top
+     of that copy as today.
+  3. Every assertion in the file names the member and the cause
+     (invariant above): the spawn assertion keeps stderr AND names the
+     member; the presence assertion prints the observed copy set; the
+     comparison assertion already prints the guard's list.
+  4. Floors, draw budgets (`runsPerCell`, `assertReachFloor`, BL-1586)
+     and both invariants' meaning unchanged.
+
+  ## How (direction, not mandate)
+  - `copyScriptsTree(dest)` takes the closure list it already has
+    (`closureOf(SCRIPTS, ENTRY)` is computed at describe time) and copies
+    those names plus `RUNNER_REL`; keep the `test/` sub-dir so the
+    runner's parent-of-parent derivation still lands on the scratch root.
+    If `bb_load_closure_lib` needs the entry's siblings to resolve
+    `load-file` lines, the closure IS that set by definition.
+  - One `bb` start per iteration is inherent (the runner's `--copy-into`
+    is the behaviour under test); `closureOf` runs once per describe.
+  - Reproduction: `cd extension && npm run test:properties` in one shell
+    and, when the load is up, `npx vitest run --config
+    vitest.properties.config.mjs test/bl1538Bl1028RunnerFixtureClosureInvariants.property.test.js`
+    in another, output to a file under `tmp/`; quote the failing
+    assertion in the evidence.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+  ## Scope
+  - `extension/test/bl1538Bl1028RunnerFixtureClosureInvariants.property.test.js`.
+  - `specs/features/BL-1695-the-bl1538-closure-fixture-copies-the-closure-not-the-whole-scripts-tree.feature`
+    and `specs/pipeline/steps/bl1695ClosureFixtureCopiesOnlyTheClosureSteps.js`
+    (same parcel, BL-233; discovered from its own file, BL-1371).
+  - Out of scope: the runner `bl1028_promotion_refusal_property_runner.bb`
+    and `bb_load_closure_lib.bb` (BL-1538's production side is fine: the
+    file passes alone); the lane's timeouts (BL-1579, BL-1619); the
+    shared tmp helper (BL-1677 covered the peer sweep).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`, ONE run each (2026-09-17 rule).
+  1. `npx vitest run --config vitest.properties.config.mjs test/bl1538Bl1028RunnerFixtureClosureInvariants.property.test.js`:
+     2/2 pass, and `ls` of a scratch root captured by the parcel's
+     evidence shows the closure (8 on 2026-09-22) plus `test/` - not 496
+     entries.
+  2. `node specs/pipeline/cli.js specs/features/BL-1695-the-bl1538-closure-fixture-copies-the-closure-not-the-whole-scripts-tree.feature`:
+     all ok.
+  3. The parcel's evidence quotes the reproduction attempt's outcome
+     verbatim (the assertion line, or the statement that one run under
+     load stayed green with the load figures).
+  4. `git diff main...HEAD --name-only` names only the property file, the
+     feature, the handler and evidence.
+  5. After landing: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `"unowned":[]` and no row names this file (REGISTER_ROW_RETIRED,
+     BL-1631).
+
+source: |
+  QA note 003100, 2026-09-22T11:08Z, to specifier and coordinator:
+  "unowned-red bl1538 invariant2, see ev f3702182ca";
+  backlog/evidence/unowned-red-bl1538-fixture-closure-invariant2-QA-20260922.md
+  (QA branch).
+
+notes: |
+  Minted 2026-09-22 by the specifier adjudicating QA's unowned-red note
+  003100 the same pass (standing-red amendment 2026-09-05); the register
+  row (lane property) is added in the mint commit. AUTO-APPROVED under
+  the 2026-09-17 operator hotfix (severity defect, no ruling_options) -
+  see auto-approve-high-severity-defects-amendment-20260917.md. Expedite
+  lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1688 (QA had already passed BL-1688 on its own diff).
+
+  Census at mint (BL-1445): `bb swarmforge/scripts/bb_load_closure_cli.bb
+  swarmforge/scripts promotion_gates_cli.bb | wc -l` = 8; `ls
+  swarmforge/scripts | wc -l` = 496; `du -sh swarmforge/scripts` = 16M;
+  the file alone: Duration 863 ms, 2/2, twice; the sampled-reach-floor
+  census CLI reads the file `constructed` (BL-1586). No lane log survived
+  with the assertion text: QA's evidence has the fast-check summary only.
+
+  The 2026-09-20 rule stands: a red in an untouched file is a note, not a
+  confirm-the-flake loop; this ticket is where the one deliberate
+  reproduction under load happens, with its text kept.
+
+  INVEST: Independent, Negotiable (how the scratch tree is shaped is
+  direction), Valuable (a lane red that recurs becomes diagnosable and
+  cheap), Estimable (one helper, three messages, one bounded
+  reproduction, one sitting), Small (two scenarios, one invariant),
+  Testable (the file's own helper over a scratch root; a static read of
+  its assertions).
+
+assigned_to: coder
