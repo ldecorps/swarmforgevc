@@ -1,7 +1,8 @@
 id: BL-542
 title: "EPIC — Model routing / ModelFactory: assign agent models to roles; do not promote directly; tracks children"
 milestone: M8
-status: todo
+status: done
+closed_as: superseded-by-BL-1329
 type: epic
 epic: swarm-intelligence-layer
 priority: 35
@@ -22,6 +23,8 @@ notes: |
   hard-coding model lines as the only routing surface. ModelFactory consumes Model
   Steward (BL-547) certification and role matrix; PromptEngine (BL-546) supplies
   model-aware prompts for assigned models.
+
+  CLOSED 2026-09-22 by the specifier consolidation sweep: its one child (BL-525 family) is done and BL-1329 is the umbrella that tracks the swarm-intelligence-layer slices (BL-548, BL-712 remain there); this sub-tracker adds nothing an open ticket reads.
 
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"

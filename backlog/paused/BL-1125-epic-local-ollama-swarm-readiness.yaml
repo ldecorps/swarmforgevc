@@ -6,7 +6,7 @@ type: epic
 epic: local-llm-swarm
 priority: 12
 depends_on: []
-decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143]
+decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143, BL-1682]
 remaining_slices: []
 
 source: |
@@ -19,6 +19,7 @@ source: |
   backlog/INTAKE-prioritize-local-ollama-remaining-20260825.md.
 
 notes: |
+  - [2026-09-22] specifier consolidation sweep: BL-1682 (paused, epic local-llm-swarm, minted 2026-09-21) added to decomposes_into; the tracker stays open for it.
   - [2026-08-25T19:14Z] specifier: re-link decomposes_into after rematch drops.
   UMBRELLA / tracking item (type: epic), NOT directly promotable — coordinator
   promotes CHILD slices. Children carry epic: local-llm-swarm.

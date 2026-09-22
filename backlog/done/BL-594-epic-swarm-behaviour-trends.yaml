@@ -1,7 +1,8 @@
 id: BL-594
 title: "EPIC — Swarm behaviour trends: eight new telemetry series (human-loop, rotation, self-heal, false-alarm, intake balance, decision latency, compaction, handoff latency); do not promote directly; tracks children"
 milestone: M8
-status: todo
+status: done
+closed_as: satisfied-by-implementation
 type: epic
 epic: swarm-behaviour-trends
 priority: 2
@@ -105,4 +106,7 @@ notes: |
   BL-591 (per-epic ETA) and BL-593 (mutation-run duration) are sibling
   observability work, not children here. BL-599's intake/drain rate and any
   per-run cost feed BL-591's estimate; note the overlap, do not duplicate.
+
+  CLOSED 2026-09-22 by the specifier consolidation sweep: all 13 children in backlog/done/, remaining_slices empty, no open ticket carries epic swarm-behaviour-trends.
+
 mutation_cost: low
