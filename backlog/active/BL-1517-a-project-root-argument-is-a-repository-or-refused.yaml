@@ -239,3 +239,5 @@ notes: |
     full stage list (BL-889 had skipped the architect; the enumerating
     check and the shared lib are design). Evidence:
     backlog/evidence/consolidation-sweep-paused-20260921.md.
+
+assigned_to: coder
