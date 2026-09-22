@@ -1,0 +1,148 @@
+id: BL-1689
+title: "kill_pipeline_swarm.sh signals only the supervisor named in handoffd-supervisor.pid (line 215) and its stray-daemon reaper (lines 230-235) excludes handoffd_supervisor on purpose (grep -v handoffd_supervisor), and start_handoff_daemon.sh's idempotence stops pid-file owners only (stop_pid_file, lines 88-89), so a supervisor that lost its pid file survives every kill and every restart: at 2026-09-21T16:35:34Z, after the ceremony's kill_all_swarm, the postmortem lists pid files missing and two bb processes matching handoffd alive, and handoffd-supervisor.log then carries two interleaved heartbeat series (~1.5 s apart, ~15 s period) through 17:19:36Z - two BL-1492 ladders on one root, each start erasing the other's ledger (BL-1688); the pipeline kill and the start owner reap every supervisor process whose command line names their root, tracked or not, never a sibling root's"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and live - two ladders on one root doubled BL-1688's storm
+# and, with BL-1688 landed, an untracked supervisor still idles on skip
+# and fights the tracked one at the next launch (each start stops only
+# the pid-file owner, so two daemons can be left behind - BL-1492's own
+# "never two daemons" promise). Contained: no data loss, no parcel
+# affected; the swarm was down on purpose when it showed.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+# BL-1688 (paused, minted alongside) bounds the storm this multiplies;
+# neither gates the other. BL-403 (supervisor kills a superseded child)
+# and BL-888 (root-scoped copilot kill) are in backlog/done and set the
+# root-scoping shape.
+mutation_cost: low
+# low: bash only (no mutation tooling wired, BL-472): one reaper function
+# shared by the kill and the start owner, driven over fake processes
+# (`exec -a` sleepers) under a mkdtemp root; seconds.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1689-the-pipeline-kill-and-the-start-owner-reap-every-supervisor-for-their-root.feature
+
+# Handler pin only (BL-233, BL-1371). Both consumers exist today
+# (kill_pipeline_swarm.sh step 4, start_handoff_daemon.sh's stop_pid_file
+# block); an anchor there matches before and after (BL-1235). The
+# scenarios run the real scripts over fake processes, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1689ReapEverySupervisorForRootSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here and the ticket is medium, so it
+  needs a tap. What is firm: root scoping - a process is reaped only when
+  its command line names THIS root (BL-888's shape for copilot agents;
+  `bl403_supervisor_kill_acceptance_runner.bb` covers the superseded-child
+  case), never a sibling root's or a fixture's; the reaper is one shared
+  function used by both the kill and the start owner, never two
+  implementations; the existing pid-file signal order (supervisor first,
+  then daemon) is unchanged and the reaper runs after it. No choice is
+  posed - the approve tap authorises the slice as written.
+
+invariants:
+  - "After kill_pipeline_swarm.sh returns, or after start_handoff_daemon.sh's stop step, no handoffd_supervisor.bb or handoffd.bb process whose command line names the root is alive, whether or not a pid file named it; a process naming any other root is untouched."
+
+description: |
+  ## What is wrong
+  `kill_pipeline_swarm.sh` step 3 signals the two pid-file owners
+  (`signal_pid_file handoffd-supervisor.pid`, `handoffd.pid`, lines
+  215-216) and step 4 reaps strays by command line - but only the daemon:
+
+      done < <(pgrep -fl "handoffd\.bb.*$ROOT" | grep -v handoffd_supervisor)
+
+  (lines 230-235). `start_handoff_daemon.sh`'s idempotence (BL-1492: "stops
+  any pid-file process first, so a restart never leaves two daemons
+  behind") is `stop_pid_file` on the same two pid files (lines 88-89). A
+  supervisor whose pid file is gone - cleared by a kill that did not reach
+  it, or overwritten by a later start - is invisible to both, and
+  `handoffd_supervisor.bb` has no self-check that it is the tracked one.
+
+  2026-09-21: the ceremony's `kill_all_swarm.sh` ran at 16:35:31-34Z;
+  `postmortem-20260921T163534Z.log` records `handoffd.pid (missing)`,
+  `handoffd-supervisor.pid (missing)` and a process table of two `bb`
+  processes matching handoffd (11607, 11651) still alive after the kill.
+  From 16:35:35Z `handoffd-supervisor.log` carries two interleaved
+  heartbeat series (`16:35:35.689` / `16:35:37.125`, `16:35:52.165` /
+  `16:35:53.397`, ...) each logging `restart-in-place dead` - two
+  BL-1492 ladders on one root - until the second kill at 17:17:29Z and
+  the last start at 17:19:36Z. Each start rewrote the shared status file
+  under the other, which is why BL-1688's ledger never reached two
+  entries (that ticket makes the ledger survive; this one removes the
+  second writer).
+
+  ## Why
+  One root, one supervisor: every budget, marker and pid file in
+  `.swarmforge/daemon/` assumes it. A second ladder doubles every restart,
+  every alarm and every failure report, and a kill that reports "clean
+  slate" while two supervisors keep ticking makes the next diagnosis a
+  lie (the kill audit said exactly that at 17:17:30Z).
+
+  ## How (direction, not mandate)
+  - One function (a small lib beside `freshness_stop_marker_lib.sh`, or
+    in `kill_pipeline_swarm.sh` and sourced by the start owner) that lists
+    every process whose command line matches `handoffd_supervisor\.bb.*<root>`
+    or `handoffd\.bb.*<root>` (the root as an absolute path; a sibling
+    root under the same parent must not match - anchor the path, BL-888)
+    and signals each, logging `reaped <kind> pid=<pid>` to the audit the
+    caller already writes.
+  - `kill_pipeline_swarm.sh` step 4 calls it instead of the daemon-only
+    pgrep; `start_handoff_daemon.sh` calls it after `stop_pid_file`, before
+    launching.
+  - Fixture: fake supervisors are `bash -c 'exec -a "bb <path>/handoffd_supervisor.bb <root>" sleep 300'`
+    sleepers (their argv is what pgrep sees); one for the fixture root,
+    one for a sibling root, one tracked by the pid file; killed in a
+    `finally` whether or not the scenario passes (BL-971).
+
+  ## Scope
+  - `swarmforge/scripts/kill_pipeline_swarm.sh`,
+    `swarmforge/scripts/start_handoff_daemon.sh`, the shared reaper
+    function, a runner under `swarmforge/scripts/test/`.
+  - `specs/features/BL-1689-the-pipeline-kill-and-the-start-owner-reap-every-supervisor-for-their-root.feature`
+    and `specs/pipeline/steps/bl1689ReapEverySupervisorForRootSteps.js`
+    (same parcel, BL-233; discovered from its own file, BL-1371).
+  - Documenter: the stop/kill how-to's "what the pipeline kill reaps"
+    list gains the supervisor; no diagram trigger.
+  - Out of scope: why two supervisors came to exist on 2026-09-21 before
+    16:35Z (the coder records what the parcel finds in its evidence; a
+    second mechanism is a sibling ticket, not this one); BL-1688's
+    signals and ledger.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each.
+  1. The parcel's runner under `swarmforge/scripts/test/` and
+     `bb swarmforge/scripts/test/bl403_supervisor_kill_acceptance_runner.bb`:
+     green.
+  2. `node specs/pipeline/cli.js specs/features/BL-1689-the-pipeline-kill-and-the-start-owner-reap-every-supervisor-for-their-root.feature`:
+     all ok.
+  3. Live shape, seconds: `pgrep -af 'handoffd_supervisor.bb /home/carillon/swarmforgevc$'`
+     lists exactly one process while the swarm runs; after the next
+     scheduled stop, zero. At mint (2026-09-22 09:0x) it listed one.
+
+notes: |
+  Minted 2026-09-22 by the specifier in the 2026-09-21 closing-ceremony
+  lean pass alongside BL-1688 (the storm) and BL-1690 (the cron
+  checker's shell); evidence
+  `backlog/evidence/closing-ceremony-lean-pass-2026-09-21.md`. Not
+  auto-approved: medium.
+
+  Census (BL-1445): `sed -n '/process table/,/pid files/p'
+  .swarmforge/daemon/postmortem-20260921T163534Z.log` = 2 bb pids;
+  `grep -c heartbeat` on `handoffd-supervisor.log` for
+  2026-09-21T16:35:35-17:19:37 = 668 (two per ~15 s over 44 min);
+  `grep -n 'grep -v handoffd_supervisor' swarmforge/scripts/kill_pipeline_swarm.sh`
+  = line 235.
+
+  INVEST: Independent (BL-1688 neither gates nor is gated), Negotiable
+  (where the reaper lives is the coder's call), Valuable (one root, one
+  supervisor after every kill and start), Estimable (one function, two
+  call sites, one sitting), Small (two scenarios, one invariant),
+  Testable (real scripts over exec -a sleepers).
+
+assigned_to: coder

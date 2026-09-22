@@ -1026,3 +1026,20 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   8 min for one step) after five roles had already run the lane; the human:
   "Its becoming a thing in itself." Sibling rule for the lanes themselves:
   BL-1618 (one verification command per role).
+
+## A scenario that asserts a wall-clock budget samples three times and keeps the fastest (BL-1658 D2, 2026-09-22)
+- The acceptance lane runs on the shared, continuously loaded swarm host,
+  so ONE timing sample lands on a sibling seat's scheduling spike often
+  enough to fail a correct build: BL-1658's scenario 01 read a single
+  fresh-child load time against a 400 ms budget and failed 4 of 8
+  handlers on two consecutive runs (666 ms, 557 ms) while scenario 02 in
+  the same file took the best of three and passed; the cleaner bounced
+  it and the coder's fix was the sampling the spec had left to chance.
+  When a scenario asserts a duration, write the step as the MINIMUM of
+  three in-process samples against a budget derived from a quiet-host
+  measurement with stated headroom, and record that measurement and the
+  host load in the ticket. The coder's step does the sampling - this is
+  not QA's "run it N times", which the 2026-09-17 rule above caps. Where
+  the mechanism is what the ticket changes (a require moved inside its
+  function, a census pinned), gate the mechanism and let the number be
+  the register's concern, not the scenario's.

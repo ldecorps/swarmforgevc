@@ -1,0 +1,238 @@
+id: BL-1688
+title: "start_handoff_daemon.sh (the one start owner, BL-690/BL-1492) erases every deliberate-stop signal on every invocation - freshness_clear_stopped handoffd (line 54), rm -f daemon/stop (line 91) and a rewrite of handoffd.status.json without its restart_history (lines 93-95) - whoever calls it: after the 2026-09-21 closing ceremony stopped the swarm at 16:35:28Z (kill_all_swarm cleared .swarmforge/tmux-socket at 16:35:34Z, marker written) the restart-in-place ladder invoked it 334 times in 44 minutes (16:35:35Z-17:19:36Z, caller=build_freshness_cli, two invocations per ~15 s), every attempt crashing handoffd's -main on the missing socket (java.io.FileNotFoundException, handoffd.bb:5439) and leaving a failure report, a rotated log and a restart alarm, while BL-1492's two-per-600 s budget never tripped because no report ever carried more than one restart_history entry; a heal-path start refuses while the marker stands, only a launch that names itself deliberate clears the signals, the budget's ledger survives every writer of the status file, and a missing tmux socket is a supervisor skip and a daemon refusal, never a dead verdict retried"
+milestone: M8
+type: defect
+severity: high
+# high: BL-1492's bounded restart is a safety signal and it did not bound -
+# 334 restarts, 325 failure reports, 334 rotated logs and 325 restart alarm
+# emails handed to the adapter in 44 minutes, ended only by a second
+# kill_all_swarm at 17:17:29Z. The same ceremony stop fires every night
+# before the overnight sleep; unbounded, one night is ~3,600 attempts. Not
+# critical: no parcel or data was lost and the swarm was deliberately down.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+# BL-1492 (the ladder), BL-785 (the marker), BL-690 (one start owner) and
+# BL-1652 are in backlog/done. BL-1689 (minted alongside: the pipeline kill
+# reaps every supervisor for its root) is the MULTIPLIER, not a
+# prerequisite - this ticket bounds the storm whether one supervisor or
+# two runs the ladder. BL-1551 (paused) is telemetry only.
+mutation_cost: low
+# low: bash + Babashka only (no mutation/CRAP/DRY wired, BL-472): a caller
+# gate and a history-preserving status write in start_handoff_daemon.sh, a
+# socket-absent skip in handoffd_supervisor.bb's check!, a refusal at
+# handoffd.bb's -main, cases in bl1492RestartInPlaceCli.bb's fixture, one
+# feature and handler over mkdtemp roots (seconds; the daemon is never
+# really started).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1688-a-deliberate-stop-holds-the-daemon-restart-ladder.feature
+
+# Handler pin only (BL-233, BL-1371). Every consumer of the mechanism
+# already exists (the supervisor's check!, swarm_ensure.bb, build_freshness_cli.bb
+# all reach start_handoff_daemon.sh today), so an anchor on any of them
+# matches before and after the fix and gates nothing (BL-1235). Scenarios
+# 01-04 run the real start owner and the real supervisor decision over a
+# fixture root, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1688DeliberateStopHoldsRestartLadderSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: a deliberate launch
+  (./swarm, SWARMFORGE_DAEMON_START_CALLER=swarmforge.sh) still clears the
+  marker, the stop file and a halted status - starting re-arms watching,
+  BL-785's reason stands unchanged. FIRM: BL-1492's budget (2 restarts per
+  600 s) and BL-144's halt are unchanged in number and shape; this ticket
+  makes the budget's ledger survive, it does not retune it. FIRM: no new
+  daemon, timer or cron entry; the hold is a file the stop already writes.
+  FIRM: kill_pipeline_swarm.sh keeps writing the marker and removing the
+  stop file exactly as today (BL-785); nothing here changes the kill.
+
+invariants:
+  - "While the handoffd.stopped marker stands, an invocation of the start owner by any caller other than a deliberate launch (SWARMFORGE_DAEMON_START_CALLER=swarmforge.sh) launches nothing and leaves the marker, the stop file and the status file byte-identical; the refusal is one audit line naming the marker."
+  - "A restart_history entry the supervisor appends survives until it ages out of the budget window: no writer of handoffd.status.json (the start owner's rewrite, check!'s healthy write, restart-daemon!, alarm-and-halt!) drops an entry another write appended, so the third dead verdict within one window after two failed starts is BL-144's halt, never a third start."
+
+description: |
+  ## What is wrong
+  Three signals say "this stop was deliberate": the freshness marker
+  `.swarmforge/daemon/freshness-stopped/handoffd.stopped` (BL-785, written
+  by `kill_pipeline_swarm.sh` line 221 and honoured by the cron checker at
+  `daemon_log_freshness_check.sh` line 355), the supervisor's stop file
+  `.swarmforge/daemon/stop` (touched by the halt path; `check!` skips while
+  it exists, `handoffd_supervisor.bb` line 756), and the status file's
+  `restart_history`, the ledger BL-1492's `decide-response` reads to bound
+  restarts to 2 per 600 s. `start_handoff_daemon.sh`, the one start owner
+  every restart path invokes (`restart-daemon!` in `daemon_alarm_lib.bb`
+  via `start-daemon-cmd`, `swarm_ensure.bb` line 116,
+  `build_freshness_cli.bb`'s `restart-handoffd-group!`), erases all three
+  on every invocation, whoever calls it:
+
+      freshness_clear_stopped "$WORKING_DIR" "handoffd"        # line 54
+      rm -f "$DAEMON_DIR/stop"                                # line 91
+      printf '{"state":"healthy","updated_at":"..."}' \
+        > "$DAEMON_DIR/handoffd.status.json"                  # lines 93-95
+
+  Line 54's comment gives BL-785's reason - "starting re-arms watching" -
+  which is right for a deliberate launch and wrong for the ladder: a heal
+  caller that clears the marker it was supposed to honour cannot be held
+  by it. `handoffd.bb`'s `-main` (line 5439; `poll-once!` line 713 the
+  same) then `slurp`s `.swarmforge/tmux-socket`, which the kill removed,
+  and dies with a stack trace before it can claim a pid, so the start
+  owner exits 1 (`FAILED handoffd did not claim pid file`), the ladder
+  reads "dead" and goes again.
+
+  2026-09-21, from `.swarmforge/daemon/` on this host: the closing
+  ceremony's sleep path (`night-closing-ceremony-run.ts` line 310 ->
+  `kill_all_swarm.sh` -> `kill_pipeline_swarm.sh`) stopped the swarm at
+  16:35:28Z (`closing-briefing-missing` in `closing-ceremony-loud.log`;
+  `supervisor stopped` in `handoffd-supervisor.log`; `kill-all-audit.log`
+  16:35:31-34Z "cleared tmux-socket and sessions.tsv";
+  `postmortem-20260921T163534Z.log`: "tmux socket file missing", "stop
+  file: absent", pid files missing, two `bb` processes matching handoffd
+  still alive). From 16:35:35Z to 17:19:36Z `daemon-start-audit.log`
+  records 334 `start_handoff_daemon invoked ... caller=build_freshness_cli`
+  lines (one `caller=unknown` at 16:36:01Z), two per ~15 s, every one
+  followed by `FAILED handoffd did not claim pid file`;
+  `handoffd-supervisor.log` records `restart-in-place dead` 334 times in
+  two interleaved heartbeat series (~1.5 s apart, ~15 s period - the
+  BL-1492 ladder ticking in two supervisor processes, see BL-1689);
+  `handoffd.log.20260921T163537Z` and every rotated log after it holds
+  the same `java.io.FileNotFoundException: .../.swarmforge/tmux-socket`
+  at `handoffd.bb:5439:26`; 325 `handoffd-failure-20260921T16*/17*.log`
+  reports were written, and `daemon_alarm_lib.bb`'s `restart-daemon!`
+  (line 438) handed one restart alarm email to the adapter per report.
+  The loop ended at 17:17:29Z with a second `kill_all_swarm` ("clean
+  slate") and the last failed start at 17:19:36Z.
+
+  Why the budget never tripped: `decide-response` counts every
+  `restart_history` entry inside the window, failed or succeeded (BL-1492
+  scenario 05 records a failed start as `"failed"`), and would have
+  halted on the third verdict. But of the 325 reports, 166 print
+  `restart_history: nil` and the rest exactly ONE entry; no report ever
+  carried two. The ledger lives in a file with four whole-file writers -
+  the start owner's rewrite above (no history), `check!` line 787
+  (`(write-status! (assoc status :state "healthy"))` with the status it
+  read at tick start), `restart-daemon!` line 439 and `alarm-and-halt!` -
+  and with the start owner rewriting it inside every ladder tick, an
+  entry appended by one write is gone before the next read. The budget's
+  own memory is erased by the thing it bounds.
+
+  ## Why
+  BL-1492 replaced BL-144's nine-agent halt with a bounded in-place
+  restart precisely so that a dead daemon costs a few restarts and one
+  alarm, not a night. This is the bound failing open: a deliberate stop
+  is the most common way the daemon goes "dead" (every scheduled bedtime
+  and every ceremony sleep path), and on that path the ladder ran
+  unbounded for 44 minutes, spending 668 files and 325 alarms on a swarm
+  that was down on purpose. Overnight, the same shape runs until the
+  09:00 relaunch.
+
+  ## How (direction, not mandate)
+  - `start_handoff_daemon.sh`: gate lines 54 and 91 on the caller. A
+    deliberate launch (`SWARMFORGE_DAEMON_START_CALLER=swarmforge.sh`,
+    already set at `swarmforge.sh` line 2426) clears the marker and the
+    stop file as today. Any other caller (`build_freshness_cli`,
+    `unknown`, the ladder) runs `freshness_is_stopped "$WORKING_DIR"
+    handoffd` first and, when it holds, audits one line
+    (`REFUSED handoffd.stopped marker present - deliberate stop; a
+    launch clears it`), touches nothing, exits non-zero. The status
+    rewrite (lines 93-95) preserves `restart_history` (read-merge-write,
+    or write only the fields it owns) - or the supervisor keeps its
+    ledger in a file the start owner never opens; the coder chooses, the
+    invariant is the same.
+  - `handoffd_supervisor.bb` `check!`: alongside the stop-file skip (line
+    756), skip with `"skip" "tmux-socket absent; no swarm to supervise"`
+    when `.swarmforge/tmux-socket` does not exist. A supervisor that
+    outlives a kill then idles instead of ticking the ladder.
+  - `handoffd.bb` `-main`: when the socket file is absent, log one
+    refusal line naming the path and exit non-zero without a stack trace
+    (`poll-once!` line 713 reads it again per poll; a socket that vanishes
+    mid-run is the same refusal on the next poll, not a crash).
+  - Fixtures: extend `specs/pipeline/steps/lib/bl1492RestartInPlaceCli.bb`
+    (the real `respond-to-verdict!` with a stubbed start owner) so the
+    stub can rewrite the status file the way the real start owner does,
+    proving the ledger survives; drive the real `start_handoff_daemon.sh`
+    against a mkdtemp root with the daemon command replaced by a
+    recorded fake (an env seam beside `SUPERVISOR_START_DAEMON_CMD`'s
+    shape), never a real `bb handoffd.bb`.
+
+  ## Scope
+  - `swarmforge/scripts/start_handoff_daemon.sh`,
+    `swarmforge/scripts/handoffd_supervisor.bb` (`check!`, and the status
+    write if the ledger moves), `swarmforge/scripts/handoffd.bb` (`-main`,
+    `poll-once!`), `specs/pipeline/steps/lib/bl1492RestartInPlaceCli.bb`,
+    a shell runner under `swarmforge/scripts/test/` for the start owner
+    over a fixture root (mkdtemp, removed in a `finally`, BL-971/BL-1390).
+  - `specs/features/BL-1688-a-deliberate-stop-holds-the-daemon-restart-ladder.feature`
+    and `specs/pipeline/steps/bl1688DeliberateStopHoldsRestartLadderSteps.js`
+    (same parcel, BL-233; discovered from its own file, BL-1371).
+  - Documenter: the BL-1492 / BL-785 how-to gains "why did my heal start
+    get refused" (the marker, and that `./swarm` clears it); no diagram
+    trigger (handoff-flow.mmd does not draw the supervisor ladder).
+  - Out of scope: reaping untracked supervisors (BL-1689), the cron
+    checker's shell (BL-1690), BL-1551's telemetry rows, any retune of
+    the budget numbers.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each.
+  1. The parcel's own runner(s) under `swarmforge/scripts/test/` named in
+     its evidence, and `bb swarmforge/scripts/test/bl403_supervisor_kill_acceptance_runner.bb`:
+     green.
+  2. `node specs/pipeline/cli.js specs/features/BL-1688-a-deliberate-stop-holds-the-daemon-restart-ladder.feature`:
+     all ok. `node specs/pipeline/cli.js specs/features/BL-1492-*.feature`
+     (BL-1492's own feature, one file): all ok, unchanged.
+  3. Live shape, seconds, no swarm started: on a mkdtemp copy of the
+     daemon directory layout (the feature's own fixture), write the marker
+     with `freshness_mark_stopped <root> handoffd`, run
+     `SWARMFORGE_DAEMON_START_CALLER=build_freshness_cli bash swarmforge/scripts/start_handoff_daemon.sh <root>`:
+     exit non-zero, `<root>/.swarmforge/daemon/daemon-start-audit.log`'s
+     last line names the marker, and the marker still exists. At mint the
+     same invocation cleared the marker and launched `bb handoffd.bb`.
+  4. `grep -c 'restart-in-place dead' .swarmforge/daemon/handoffd-supervisor.log`
+     over the next ceremony stop (the night after landing): at most
+     BL-1492's budget count (2) before a `skip` line naming the socket or
+     the marker - never a series.
+
+notes: |
+  Minted 2026-09-22 by the specifier in the 2026-09-21 closing-ceremony
+  lean pass (coordinator note 010685, "ceremony ended with NO outcome");
+  evidence `backlog/evidence/closing-ceremony-lean-pass-2026-09-21.md`.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Expedite lane
+  by severity (Article 3.2.4).
+
+  Census (BL-1445), exact commands on this host, 2026-09-22:
+  `ls .swarmforge/daemon/handoffd-failure-20260921T1[67]*.log | wc -l` = 325;
+  `ls .swarmforge/daemon/handoffd.log.20260921T1[67]* | wc -l` = 334;
+  `grep -c 'restart-in-place dead' .swarmforge/daemon/handoffd-supervisor.log`
+  restricted to 2026-09-21T16:35-17:20 = 334;
+  `grep -h '^restart_history' .swarmforge/daemon/handoffd-failure-20260921T1[67]*.log | sort | uniq -c`
+  = 166 x `nil`, the rest one-entry lists, none longer;
+  `grep -c 'caller=build_freshness_cli' .swarmforge/daemon/daemon-start-audit.log`
+  restricted to the same window = 333 (+1 `caller=unknown` at 16:36:01Z).
+  The cron checker (`*/2`, BL-675) is NOT the caller: it honours the
+  marker (line 355) and its own log has no start in that window.
+
+  The 09-19 sibling incident (memory, not ticketed then): the same
+  ceremony stop left babysitterd's marker unwritten and the `*/2` cron
+  resurrected babysitterd against the stopped swarm; this ticket is the
+  handoffd half, where the marker IS written and the start owner erases
+  it. The babysitterd half is `stop_ancillary_services.sh` line 112 versus
+  the `kill_all_swarm.sh` shim and stays an observation in the evidence
+  file until it recurs with a census.
+
+  INVEST: Independent (no unbuilt sibling; BL-1689 multiplies, does not
+  gate), Negotiable (where the ledger lives is the coder's call),
+  Valuable (a deliberate stop costs no restarts; a real death costs at
+  most two), Estimable (four small edits in shell/bb, one sitting),
+  Small (four scenarios, two invariants), Testable (real start owner and
+  real supervisor decision over a mkdtemp root, seconds).
+
+assigned_to: coder

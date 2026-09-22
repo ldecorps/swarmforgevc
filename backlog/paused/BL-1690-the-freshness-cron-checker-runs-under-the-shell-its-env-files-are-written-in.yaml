@@ -1,0 +1,139 @@
+id: BL-1690
+title: "install_freshness_cron.sh writes the BL-675 crontab line as `/bin/sh $CHECKER` (line 61) and daemon_log_freshness_check.sh is a #!/bin/sh script that sources .swarmforge/swarm.env, telegram.env and operator/telegram.env with POSIX `.` (lines 484-496) - but swarm.env is written in bash (`[[ ... ]] || unset X`, `if [[ -z ... ]]`) and the swarm's own launcher sources it under bash (swarmforge.sh line 186), so on Linux, where /bin/sh is dash, every 2-minute run prints `swarm.env: [[: not found` (9,708 of the 13,306 lines in freshness-check.cron.log since 2026-07-28) and evaluates the guards backwards (`[[ ... ]] || unset` always unsets); the checker sources the operator's env files under bash, and a `[[` in any of them is neither an error line nor a reversed guard"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and live on every Linux/WSL host - 73% of the cron log is
+# this one error, burying the lines a human reads when cron misbehaves
+# (the 2026-09-18 missing-briefing hunt read this log), and the sourced
+# guards evaluate wrongly for everything the cron path starts. Contained:
+# the wrongly-unset variables are ones whose default is unset today;
+# macOS is unaffected (/bin/sh is bash 3.2 there). Not high: no safety
+# signal is broken and nothing is lost.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-675 (the cron watchdog) and BL-789 (sourcing swarm.env here) are in
+# backlog/done. BL-1644 (paused) stamps the 09-18 cron PATH hotfix and
+# does not touch the shell.
+mutation_cost: low
+# low: shell only (no mutation tooling wired, BL-472): one shebang or one
+# interpreter in the composed cron line plus a fixture env file; seconds.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1690-the-freshness-cron-checker-runs-under-the-shell-its-env-files-are-written-in.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer is the installed
+# crontab line, which the parcel itself composes (BL-1235: the anchor
+# would be satisfied by construction). Scenario 01 runs the real checker
+# the way the installed line runs it, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1690FreshnessCheckerRunsUnderBashSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here and the ticket is medium, so it
+  needs a tap. What is firm: the checker keeps every check it does today
+  (BL-675, BL-785's marker, BL-789's swarm.env skip) - only the
+  interpreter changes, to bash 3.2-compatible bash (the macOS floor,
+  BL-801/BL-1627: no mapfile, no bash-4 builtins); the operator's env
+  files are not edited or reformatted by the parcel (they are
+  operator-owned, gitignored runtime state) and the swarm keeps accepting
+  bash syntax in them because swarmforge.sh already does. No choice is
+  posed - the approve tap authorises the slice as written.
+
+invariants: []
+
+description: |
+  ## What is wrong
+  `install_freshness_cron.sh` composes the BL-675 crontab line as
+  `PATH=... FRESHNESS_ROOT=<root> /bin/sh <checker> >>freshness-check.cron.log 2>&1`
+  (line 61; the marker comment via `swarmforge_cron_lib.sh`), and
+  `daemon_log_freshness_check.sh` is `#!/bin/sh` and sources the operator's
+  env files POSIX-style:
+
+      for env_file in "$ROOT/.swarmforge/telegram.env" \
+                      "$ROOT/.swarmforge/operator/telegram.env" \
+                      "$ROOT/.swarmforge/swarm.env"; do
+        if [ -f "$env_file" ]; then set -a; . "$env_file"; ...   # lines 488-496
+
+  `swarm.env` on this host is bash: `[[ "${SWARMFORGE_USE_QWEN:-}" == "1" ]]
+  || unset SWARMFORGE_USE_QWEN`, `if [[ -z "${QWEN_API_KEY:-}" && -n
+  "${BAILIAN_TOKEN_PLAN_API_KEY:-}" ]]; then export QWEN_API_KEY=...`.
+  The swarm's own launcher sources the same file with bash `source`
+  (`swarmforge.sh` line 186), so bash syntax in it is the accepted
+  contract. Under dash, `[[` is a command that does not exist: the
+  checker prints `.../daemon_log_freshness_check.sh: 52:
+  .../.swarmforge/swarm.env: [[: not found` (and lines 119, 124) on every
+  run, and the guards evaluate backwards - a failed `[[` makes `|| unset`
+  run unconditionally and an `if [[ ... ]]` block never run.
+
+  Census 2026-09-22: `grep -c '\[\[: not found' .swarmforge/daemon/freshness-check.cron.log`
+  = 9,708 of `wc -l` = 13,306 lines; the first occurrence is line 2,734,
+  and `git log -S'/bin/sh $CHECKER' -- swarmforge/scripts/install_freshness_cron.sh`
+  dates the interpreter to c354f68716 (2026-07-28, BL-675 itself).
+
+  ## Why
+  The cron log is what a human reads when the cron path misbehaves - the
+  2026-09-18 missing-briefing hunt went through it - and three of every
+  four lines are this error. And an env file the swarm accepts under bash
+  must mean the same thing when the cron path reads it: today a guard
+  meant to KEEP a variable unsets it.
+
+  ## How (direction, not mandate)
+  - Run the checker under bash: `#!/usr/bin/env bash` (or `/bin/bash`)
+    with the same `set -a; . "$env_file"` sourcing, keeping every command
+    bash-3.2-clean (the macOS floor); `install_freshness_cron.sh` composes
+    the line with `bash` (or `/bin/bash`) in place of `/bin/sh`, and
+    `uninstall_freshness_cron.sh`'s marker match is unaffected (it keys on
+    the comment).
+  - Alternatively source through `bash -c 'set -a; . "$1"; env -0' _ "$env_file"`
+    and import the result - more moving parts for the same outcome; the
+    coder chooses.
+  - Fixture: a mkdtemp root whose `.swarmforge/swarm.env` holds the two
+    bash shapes above with a sentinel variable; run the checker exactly as
+    the composed cron line would (same interpreter, `FRESHNESS_ROOT` set),
+    capture stderr, assert no `not found` and that a variable the guard
+    should keep is kept (observable through whatever the checker already
+    prints or writes with it - or a `--print-env` debug flag the parcel
+    adds, if nothing today exposes it).
+
+  ## Scope
+  - `swarmforge/scripts/daemon_log_freshness_check.sh`,
+    `swarmforge/scripts/install_freshness_cron.sh`, a runner under
+    `swarmforge/scripts/test/`.
+  - `specs/features/BL-1690-the-freshness-cron-checker-runs-under-the-shell-its-env-files-are-written-in.feature`
+    and `specs/pipeline/steps/bl1690FreshnessCheckerRunsUnderBashSteps.js`
+    (same parcel, BL-233; discovered from its own file, BL-1371).
+  - Documenter: the BL-675 how-to's crontab line example; the operator is
+    told once (release note line) to re-run `install_freshness_cron.sh`
+    after landing so the installed line changes - the parcel does not
+    edit the live crontab.
+  - Out of scope: the content of any operator env file; BL-1688/BL-1689.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each.
+  1. The parcel's runner under `swarmforge/scripts/test/`: green.
+  2. `node specs/pipeline/cli.js specs/features/BL-1690-the-freshness-cron-checker-runs-under-the-shell-its-env-files-are-written-in.feature`:
+     all ok.
+  3. Live shape, after the operator re-installs the cron line (their
+     step, not the parcel's): `tail -20 .swarmforge/daemon/freshness-check.cron.log`
+     over the next hour shows no `not found` line. At mint every run
+     printed three.
+
+notes: |
+  Minted 2026-09-22 by the specifier in the 2026-09-21 closing-ceremony
+  lean pass, found while reading the daemon directory for BL-1688;
+  evidence `backlog/evidence/closing-ceremony-lean-pass-2026-09-21.md`.
+  Not auto-approved: medium.
+
+  INVEST: Independent, Negotiable (interpreter versus re-import is the
+  coder's call), Valuable (a readable cron log and guards that mean what
+  they say), Estimable (one interpreter change, one sitting), Small (two
+  scenarios, no invariant), Testable (the real checker over a fixture env
+  file).
+
+assigned_to: coder
