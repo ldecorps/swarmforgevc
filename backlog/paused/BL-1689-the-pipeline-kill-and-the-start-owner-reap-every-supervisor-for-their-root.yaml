@@ -34,7 +34,7 @@ acceptance: specs/features/BL-1689-the-pipeline-kill-and-the-start-owner-reap-ev
 required_wiring:
   - 'specs/pipeline/steps/bl1689ReapEverySupervisorForRootSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here and the ticket is medium, so it
   needs a tap. What is firm: root scoping - a process is reaped only when

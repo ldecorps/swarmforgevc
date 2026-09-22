@@ -33,7 +33,7 @@ acceptance: specs/features/BL-1690-the-freshness-cron-checker-runs-under-the-she
 required_wiring:
   - 'specs/pipeline/steps/bl1690FreshnessCheckerRunsUnderBashSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here and the ticket is medium, so it
   needs a tap. What is firm: the checker keeps every check it does today

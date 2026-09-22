@@ -41,7 +41,7 @@ acceptance: specs/features/BL-1679-a-lands-scratch-branch-is-never-read-as-a-par
 required_wiring:
   - 'specs/pipeline/steps/bl1679LandScratchBranchNeverReadAsLineageSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. Everything below
   is FIRM and no choice is posed: the pre-QA ancestry gate takes each

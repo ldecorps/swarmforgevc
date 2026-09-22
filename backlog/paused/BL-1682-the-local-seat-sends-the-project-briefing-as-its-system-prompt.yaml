@@ -29,7 +29,7 @@ acceptance: specs/features/BL-1682-the-local-seat-sends-the-project-briefing-as-
 required_wiring:
   - 'specs/pipeline/steps/bl1682LocalSeatBriefingSystemPromptSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The human already ruled on this work in the specifier's question
   channel on 2026-09-21: asked what the swarm should do with the
