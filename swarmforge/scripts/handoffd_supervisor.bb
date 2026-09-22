@@ -753,8 +753,19 @@
 
 (defn check! []
   (daemon-log-freshness-pulse-lib/append-log-heartbeat! supervisor-log)
-  (if (fs/exists? stop-file)
+  (cond
+    (fs/exists? stop-file)
     (log! "skip" "stop file present; swarm shutting down")
+
+    ;; BL-1688: a supervisor that outlives a kill (tmux-socket removed,
+    ;; sessions torn down) has no swarm left to supervise - without this,
+    ;; every tick reads the daemon dead (it cannot start against a missing
+    ;; socket either, see handoffd.bb's own refusal) and ticks the restart
+    ;; ladder forever (334 times in 44 minutes on 2026-09-21).
+    (not (fs/exists? tmux-socket-file))
+    (log! "skip" (str "tmux-socket absent; no swarm to supervise: " tmux-socket-file))
+
+    :else
     (let [status (or (read-status) {})
           tracked (daemon-pid)
           verdict (evaluate-health {:alive? (pid-alive? tracked)

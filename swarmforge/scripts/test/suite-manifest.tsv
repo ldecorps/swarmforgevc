@@ -558,3 +558,4 @@ test_check_closed_ticket_subject.sh	standing
 test_bl1640_sleep_runs_ceremony_to_done.sh	standing
 test_compose_banked_briefing_cli.sh	standing
 test_bl1641_ceremony_deadline_produces_a_briefing.sh	standing
+test_bl1688_status_ledger_survives_start.sh	standing

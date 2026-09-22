@@ -707,8 +707,19 @@
 ;; "fresh at the moment of decision" - each poll IS a decision, ~1s apart),
 ;; never cached across polls.
 (defn poll-once! []
-  (if (outbound-wakes-suppressed?)
+  (cond
+    ;; BL-1688: the socket is re-read fresh every poll (unlike -main's own
+    ;; one-time startup read above) - a socket that vanishes mid-run (a
+    ;; kill racing the daemon's own loop) is the same clean refusal on the
+    ;; very next poll, never a crash. The daemon process itself keeps
+    ;; running; delivery simply skips until the socket reappears.
+    (not (fs/exists? socket-file))
+    (log! "poll-skip-no-socket" (str "tmux-socket absent: " socket-file))
+
+    (outbound-wakes-suppressed?)
     (log! "poll-skip-paused" "delivery frozen while a pause is active")
+
+    :else
     (let [roles (load-roles)
           socket (str/trim (slurp (str socket-file)))
           ambulance (ambulance-lib/read-ambulance-state (str project-root))
@@ -5435,7 +5446,20 @@
           (log! "role-context-clear-role-error" role-name (.getMessage e)))))))
 
 (defn -main []
-  (let [roles  (load-roles)
+  (if-not (fs/exists? socket-file)
+    ;; BL-1688: a missing tmux socket is a refusal, never a crash. Every
+    ;; -main path (including --poll-once/--sweep-once/etc, all of which
+    ;; read the socket up front too) reaches this same guard - a start
+    ;; owner racing a kill, or launched after one, gets one audited line
+    ;; instead of a bare FileNotFoundException stack trace (the shape
+    ;; that drove 334 restart attempts into a missing socket in 44
+    ;; minutes on 2026-09-21).
+    (do
+      (log! "refused" (str "tmux-socket absent: " socket-file))
+      (binding [*out* *err*]
+        (println (str "handoffd.bb: refusing to start; tmux-socket absent at " socket-file)))
+      (System/exit 1))
+    (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
     (self-heal-stale-stubs! roles)
     (log-rotation-actionability-ordering-warnings!)
@@ -5754,7 +5778,7 @@
                   (recur (inc cycle))))
               (finally
                 (delete-own-pid-file!)
-                (log! "stopped")))))))))
+                (log! "stopped"))))))))))
 
 
 ;; BL-1395: guarded, not bare. A bare `(-main)` means any `load-file` probe

@@ -28,6 +28,24 @@ past the window (default 600s) with no further death in that window —
 there is no separate healthy-uptime timer to track. Tune the budget with
 `SUPERVISOR_RESTART_BUDGET_COUNT` and `SUPERVISOR_RESTART_BUDGET_WINDOW_MS`.
 
+## Why did my heal start get refused? (BL-785 / BL-1688)
+
+A deliberate stop (a closing-ceremony sleep, `kill_pipeline_swarm.sh`)
+writes `.swarmforge/daemon/freshness-stopped/handoffd.stopped` (BL-785),
+touches the supervisor's `stop` file, and clears the tmux socket. While
+that marker stands, `start_handoff_daemon.sh` — the one start owner every
+restart-ladder tick and healing caller invokes — refuses to launch
+anything for any caller other than a deliberate launch
+(`SWARMFORGE_DAEMON_START_CALLER=swarmforge.sh`, the value `./swarm`
+sets): it audits one `REFUSED handoffd.stopped marker present` line and
+leaves the marker, the stop file and the status file untouched (BL-1688).
+The supervisor and the daemon itself also skip rather than crash while
+the tmux socket is absent, so a heal attempt against a deliberately
+stopped swarm produces a `skip` reading, never a restart-ladder churn.
+**Run `./swarm` (or otherwise launch with `SWARMFORGE_DAEMON_START_CALLER=swarmforge.sh`)
+to clear the marker and re-arm the daemon** — that is the only path that
+starts the daemon back up once it was stopped on purpose.
+
 The rest of this runbook (failure log contents, recovery steps) applies
 to both the restart and the halt outcome; where they differ is called out
 below.

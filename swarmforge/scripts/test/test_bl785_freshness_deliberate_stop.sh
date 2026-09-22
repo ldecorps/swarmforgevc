@@ -151,6 +151,12 @@ done
 exec true
 EOF
 chmod +x "$FAKE_BIN/bb"
+# BL-1688: a launch names itself deliberate (SWARMFORGE_DAEMON_START_CALLER=
+# swarmforge.sh, the same value swarmforge.sh's own real invocation sets) -
+# this scenario simulates that real ./swarm launch, so it must too, or the
+# start script now (correctly) refuses to clear a marker it cannot tell
+# apart from a heal-path caller's.
+SWARMFORGE_DAEMON_START_CALLER="swarmforge.sh" \
 HANDOFFD_BB="$ROOT/bin/fake-handoffd.bb" \
 HANDOFFD_SUPERVISOR_BB="$ROOT/bin/fake-supervisor.bb" \
 PID_WAIT_ATTEMPTS=30 \

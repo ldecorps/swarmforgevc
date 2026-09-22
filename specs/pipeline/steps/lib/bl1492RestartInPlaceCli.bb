@@ -11,9 +11,22 @@
 ;; conf-file/env plumbing.
 ;;
 ;; Input JSON: {verdict ("stalled"|"dead"), restartHistory: [{ageMs,
-;;              result}], startOwnerFails}
+;;              result}], startOwnerFails, ticks}
 ;; Output JSON: {startDaemonCount, haltCount, emailSubjects,
 ;;               restartHistoryAfter, state}
+;;
+;; BL-1688: `ticks` (default 1, backward compatible with every existing
+;; caller) repeats respond-to-verdict! that many times IN SEQUENCE,
+;; re-reading status from disk before each call - the same "fresh per
+;; tick" shape check! itself uses - so a multi-tick scenario (budget
+;; exhaustion, the third verdict halting) is driven through the real
+;; decision wiring rather than asserted once and extrapolated. The
+;; stubbed start-daemon! also performs its OWN read-merge-write status
+;; write before returning (state healthy, restart_history preserved) -
+;; the real start owner's own fix (this ticket), not a reimplementation -
+;; so this fixture proves the ledger the REAL subprocess boundary would
+;; touch still survives, never only the supervisor's own in-memory
+;; bookkeeping.
 
 (ns bl1492-restart-in-place-cli
   (:require [babashka.fs :as fs]
@@ -47,6 +60,7 @@
 (def verdict (keyword (or (:verdict input) "stalled")))
 (def restart-history-in (or (:restartHistory input) []))
 (def start-owner-fails? (boolean (:startOwnerFails input)))
+(def ticks (or (:ticks input) 1))
 
 (def now-ms (handoffd-supervisor/now-ms))
 
@@ -58,6 +72,8 @@
           {:at (- now-ms ageMs) :result (or result "succeeded") :reason (name verdict)})
         restart-history-in))
 
+(handoffd-supervisor/write-status! {:restart_history seeded-history})
+
 (def start-daemon-count (atom 0))
 (def halt-count (atom 0))
 (def email-subjects (atom []))
@@ -66,6 +82,16 @@
                 (fn [_]
                   (fn []
                     (swap! start-daemon-count inc)
+                    ;; BL-1688: the real start owner performs its own
+                    ;; read-merge-write status rewrite (state healthy,
+                    ;; restart_history preserved) before success/failure
+                    ;; is even known - the real fix this ticket makes,
+                    ;; not a reimplementation of restart-daemon!'s own
+                    ;; (later, in-memory-snapshot-based) final write.
+                    ;; Mirrored here so a multi-tick run proves the
+                    ;; ledger survives that interleaved write too.
+                    (let [current (or (handoffd-supervisor/read-status) {})]
+                      (handoffd-supervisor/write-status! (assoc current :state "healthy")))
                     {:success (not start-owner-fails?)})))
 
 (alter-var-root #'handoffd-supervisor/halt-swarm!
@@ -87,8 +113,14 @@
 ;; Drives the exact wiring handoffd_supervisor.bb's own check! uses on a
 ;; :dead/:stalled verdict - never a hand-rolled call into decide-response or
 ;; restart-daemon!/alarm-and-halt! directly, so a future rewire of
-;; respond-to-verdict!'s decision is caught here too.
-(handoffd-supervisor/respond-to-verdict! verdict {:restart_history seeded-history})
+;; respond-to-verdict!'s decision is caught here too. Status is re-read
+;; from disk before EACH tick (the same "fresh per tick" shape check!
+;; itself uses), never carried in-memory across ticks - a multi-tick run
+;; (ticks > 1) proves the ON-DISK ledger accumulates correctly call over
+;; call, not merely an in-memory value threaded by this harness.
+(dotimes [_ ticks]
+  (let [status (or (handoffd-supervisor/read-status) {})]
+    (handoffd-supervisor/respond-to-verdict! verdict status)))
 
 (def final-status (handoffd-supervisor/read-status))
 

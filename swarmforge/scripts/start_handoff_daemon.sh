@@ -48,6 +48,20 @@ if [[ "${SWARMFORGE_SKIP_DAEMON:-}" == "1" ]]; then
   exit 0
 fi
 
+# BL-1688: a deliberate launch (./swarm, CALLER=swarmforge.sh) still clears
+# every deliberate-stop signal below - starting re-arms watching (BL-785).
+# Any OTHER caller (the freshness cron checker's build_freshness_cli, the
+# supervisor's own restart ladder, or an unset/unknown caller) is a HEAL
+# path, not a launch, and must not resurrect a daemon stopped on purpose -
+# refuse while the marker stands, before touching anything at all (2026-09-21:
+# 334 such heal-path restarts in 44 minutes into a missing tmux socket, see
+# this ticket's own evidence).
+DAEMON_START_CALLER="${SWARMFORGE_DAEMON_START_CALLER:-unknown}"
+if [[ "$DAEMON_START_CALLER" != "swarmforge.sh" ]] && freshness_is_stopped "$WORKING_DIR" "handoffd"; then
+  audit "REFUSED handoffd.stopped marker present - deliberate stop; a launch clears it"
+  exit 1
+fi
+
 # BL-785: starting re-arms watching — a deliberate stop must not outlive the
 # next start, or the crontab line would be present while the daemon it
 # watches is silently unwatched.
@@ -90,9 +104,32 @@ stop_pid_file "$DAEMON_DIR/handoffd-supervisor.pid"
 stop_pid_file "$DAEMON_DIR/handoffd.pid"
 rm -f "$DAEMON_DIR/stop"
 
+# BL-1688: read-merge-write, never a blind overwrite - the prior shape
+# erased :restart_history on every invocation, so BL-1492's restart-budget
+# ledger could never accumulate past one entry (whichever caller started
+# the daemon LAST wiped out what the other had just written; 166 of 325
+# failure reports on 2026-09-21 read restart_history: nil, the rest never
+# more than one entry). Every OTHER field the status file carries survives
+# untouched; only state/updated_at are ours to set here.
 if [[ -f "$DAEMON_DIR/handoffd.status.json" ]]; then
-  printf '%s\n' "{\"state\":\"healthy\",\"updated_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
-    > "$DAEMON_DIR/handoffd.status.json"
+  python3 - "$DAEMON_DIR/handoffd.status.json" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" <<'PYEOF'
+import json
+import sys
+
+path, updated_at = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as f:
+        status = json.load(f)
+    if not isinstance(status, dict):
+        status = {}
+except Exception:
+    status = {}
+status["state"] = "healthy"
+status["updated_at"] = updated_at
+with open(path, "w") as f:
+    json.dump(status, f)
+    f.write("\n")
+PYEOF
 fi
 
 # BL-328: build identity (staleness detection) - a SEPARATE dedicated file,
