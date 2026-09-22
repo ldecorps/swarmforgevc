@@ -171,4 +171,24 @@ notes: |
   Nothing in the ticket's deliverable changes. Evidence:
   backlog/evidence/BL-1687-sequencing-adjudication-specifier-20260922.md.
 
+  UPDATE 2026-09-22 (hardener note 001476, evidence
+  backlog/evidence/BL-1687-entangled-in-bl1692-branch-hardener-20260922.md
+  on the hardender branch; its line "BL-1685 now in backlog/done/M8/" is
+  not so - BL-1685 is still active, at the documenter/QA end of its
+  chain on 2026-09-22 11:1x, so the depends_on still holds and this
+  ticket promotes only after BL-1685's close). The coder's branch
+  carries BL-1687's two commits (5d3416820c, af360d7c09 - the second fixes
+  scenario 02's own census pattern) BEFORE BL-1692's commit; cleaner and
+  architect reviewed that combined tip under BL-1692's name only, so
+  BL-1687 has no review evidence of its own yet and none is borrowed
+  (BL-506, Article 2.6). Path for the parcel: coordinator promotes and
+  routes to the coder; the coder merges main, re-runs the feature (the
+  hardener saw 17-18/18 at load, scenario 02 now has BL-1685's fourteen
+  lazy) and forwards a git_handoff under THIS task name citing a commit
+  that carries af360d7c09 - the branch tip is fine; BL-1692's disjoint
+  work riding in it is the sibling shape the land replays around
+  (BL-1241) - through cleaner, architect, hardender, documenter, QA, each
+  filing BL-1687 evidence. BL-1692's own parcel proceeds untouched; its
+  land replays only its own paths.
+
 assigned_to: coder
