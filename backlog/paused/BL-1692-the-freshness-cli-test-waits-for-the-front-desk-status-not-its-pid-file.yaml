@@ -1,0 +1,184 @@
+id: BL-1692
+title: "swarmforge/scripts/test/test_build_freshness_cli.sh case merged-code-reaches-daemons-02/03(compiled) waits only for front-desk-supervisor.pid (line 125) and reads `build_freshness_cli.bb report` at once (line 140), but front_desk_supervisor.bb writes its pid file about a second before its first write-status! stamps the children's build_sha (measured 0.3 s versus 1.2 s after launch on 2026-09-22), so the 'before' report reads running_sha null / stale false for bridge, bot and the supervisor and the case fails 'bridge should be reported stale before sync' - red on main since at least 2026-09-02 (BL-1334's coder pass), listed unowned in the BL-1505 evidence of 2026-09-10, reproduced by coder@2 and the specifier today; its sibling cases at lines 217 and 272 already wait on the status file's bridge pid and do not race; the case waits for the status file to carry build_sha for both children, through one readiness helper every launch site in the file uses"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment). It has been red for at least 20 days, aborts the
+# whole file under set -e (BL-1334's coder noted the file covers nothing
+# past it), and every shell-lane run since has reported it. Not
+# critical: a test readiness wait, no production behaviour is wrong.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+# BL-328 (the CLI and this test), BL-629, BL-1225 and BL-1334 are in
+# backlog/done. BL-1688 (active, coder@2) changes start_handoff_daemon.sh
+# and never this file; coder@2 isolated its own changes and reproduced
+# the red without them.
+mutation_cost: low
+# low: one shell test file (no mutation tooling wired for shell, BL-472);
+# one readiness predicate, reused at three launch sites; seconds to
+# verify.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1692-the-freshness-cli-test-waits-for-the-front-desk-status-not-its-pid-file.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer is the test file itself,
+# which the parcel edits, so any anchor on it matches by construction
+# (BL-1235); scenario 01 and 02 read the test source, which is the gate,
+# and the one green run is QA's e2e step (BL-1541: a 30 s launcher-driven
+# runner does not belong inside a per-mutant scenario).
+required_wiring:
+  - 'specs/pipeline/steps/bl1692FreshnessTestWaitsForStatusSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the fix is in the
+  TEST's readiness wait, not in front_desk_supervisor.bb - a pid file
+  written at start and a status file written on the first tick is the
+  supervisor's documented contract (it mirrors handoffd_supervisor.bb's,
+  and the CLI's `running_sha: null` for a group with a pid file and no
+  status yet is a legitimate transient, BL-328). FIRM: no case's
+  assertion, budget or wait ceiling is weakened; the wait predicate
+  becomes stricter (status with build_sha for both children), never
+  looser. FIRM: no `sleep N` in place of a predicate.
+
+invariants:
+  - "Every case in test_build_freshness_cli.sh that launches a front-desk group and then reads a report or status waits for front-desk-supervisor.status.json to carry a build_sha for bridge and bot before the first read; a pid file alone is never the readiness signal."
+
+description: |
+  ## What is wrong
+  `test_build_freshness_cli.sh` case merged-code-reaches-daemons-02/03
+  (compiled) launches a real front-desk group against a fixture root
+  (`launch_front_desk.sh`, fake node scripts, `extension/out/BUILD_SHA`
+  = OLD_SHA), waits for the supervisor's pid file:
+
+      wait_for 5 test -f "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" \
+        || fail "02 setup: front-desk group did not start"          # line 125
+
+  makes one fixture commit, and reads `bb build_freshness_cli.bb "$ROOT"
+  report` (line 140) as REPORT_BEFORE, asserting bridge is stale with
+  running_sha OLD_SHA. `front_desk_supervisor.bb` writes the pid file at
+  start and stamps each child's `build_sha` into
+  `front-desk-supervisor.status.json` from its first `write-status!`
+  (line 631, inside the tick after the children are spawned). Measured
+  on this host on 2026-09-22 with the test's own fixture shape, polling
+  the CLI every 0.6 s after `launch_front_desk.sh` returned: pid file
+  present and no status file at 0.3 s (report: bridge, bot and
+  front_desk_supervisor all `running_sha` null); status file with both
+  children's build_sha, and the report naming it, from 1.2 s on. The
+  case's git steps between the wait and the read take well under a
+  second, so the read lands inside the window and the Python check
+  fails on its first assertion:
+
+      AssertionError: bridge should be reported stale before sync (03-compiled)
+      FAIL: 02/03(compiled): expected the merge to reach the running process
+      after sync. before={"processes":[{"name":"bridge","running_sha":null,
+      "main_sha":"...","stale":false},...
+
+  The two sibling launch sites do not race: case 04/07 (line 217) and
+  case 08 (line 272) wait for the pid file and THEN, before reading
+  anything, `wait_for 10` on the status file's `bridge.pid` (lines 229,
+  279). Case 02/03 is the one site that reads straight after the pid
+  file.
+
+  History: BL-1334's coder pass recorded the identical failure on
+  2026-09-02 ("verified identical at the parent commit in a clean
+  detached worktree ... because that suite runs under set -e it ABORTS
+  at that failure, so it covers none of this parcel's approval wiring")
+  and the specifier's BL-1505 evidence of 2026-09-10 listed it among six
+  unreproduced, unregistered reds. Coder@2 reproduced it today inside
+  BL-1688 with every BL-1688 change stashed
+  (`backlog/evidence/unowned-red-test-build-freshness-cli-02-03-compiled-coder-20260922.md`,
+  coder@2 branch) and the specifier reproduced it on main and measured
+  the window above. The file is row 257 of
+  `swarmforge/scripts/test/suite-manifest.tsv` (lane `standing`).
+
+  ## Why
+  A standing red aborts the file under `set -e`, so the eight other
+  BL-328/BL-629/BL-335 cases after it have not run in the lane for
+  twenty days; and a race that fails on a fast host is a red the lane
+  reports every run while the swarm's actual merged-code-reaches-daemons
+  behaviour is fine. BL-1425's register rule: a red is owned or it
+  throttles intake.
+
+  ## How (direction, not mandate)
+  - One helper in the test, e.g. `wait_for_front_desk_ready <root>`:
+    `wait_for 10` on a python predicate that the status file exists and
+    carries a non-empty `build_sha` under both `bridge` and `bot` (the
+    shape of the existing line-229 predicate, extended from `pid` to
+    `build_sha`); call it at line 125, 217 and 272 in place of, or right
+    after, the pid-file wait. The pid-file wait may stay as the "did it
+    start at all" check with its own fail message.
+  - Keep every assertion, the 5 s / 10 s ceilings and the `sleep 1`
+    settle lines as they are; the fix adds a stricter readiness
+    predicate, it changes nothing the cases assert.
+  - Evidence: one green run of the whole file on the parcel commit, its
+    `ok` count, and the measured launch-to-status delay the coder sees.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+  ## Scope
+  - `swarmforge/scripts/test/test_build_freshness_cli.sh` only.
+  - `specs/features/BL-1692-the-freshness-cli-test-waits-for-the-front-desk-status-not-its-pid-file.feature`
+    and `specs/pipeline/steps/bl1692FreshnessTestWaitsForStatusSteps.js`
+    (same parcel, BL-233; discovered from its own file, BL-1371).
+  - Out of scope: front_desk_supervisor.bb, launch_front_desk.sh,
+    build_freshness_cli.bb/lib (no production change); the other five
+    reds the BL-1505 evidence listed (each needs its own reproduction
+    before an owner - the 2026-09-10 reasoning stands).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_build_freshness_cli.sh`: exit 0,
+     every case `ok`, no FAIL line - at mint it fails at 02/03 and aborts.
+  2. `node specs/pipeline/cli.js specs/features/BL-1692-the-freshness-cli-test-waits-for-the-front-desk-status-not-its-pid-file.feature`:
+     all ok.
+  3. `git diff main...HEAD --name-only` names only the test file, the
+     feature, the handler and evidence; `swarmforge/scripts/front_desk_supervisor.bb`,
+     `launch_front_desk.sh` and `build_freshness_*.bb` are unchanged.
+  4. After landing: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `"unowned":[]` and no row names test_build_freshness_cli.sh
+     (the land step's REGISTER_ROW_RETIRED line, BL-1631).
+
+source: |
+  Coder@2 note 000057, 2026-09-22T08:42Z, to specifier and coordinator:
+  "unowned-red test_build_freshness_cli.sh 02/03(compiled), pre-existing";
+  evidence on the coder@2 branch,
+  backlog/evidence/unowned-red-test-build-freshness-cli-02-03-compiled-coder-20260922.md.
+
+notes: |
+  Minted 2026-09-22 by the specifier adjudicating coder@2's unowned-red
+  note 000057 the same pass (standing-red amendment 2026-09-05); the
+  register row (lane shell) is added in the mint commit. AUTO-APPROVED
+  under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Expedite
+  lane by severity (Article 3.2.4). Holder note sent to the coder stage
+  naming BL-1688 (coder@2 continues BL-1688 unaffected; the red touches
+  no file BL-1688 changes).
+
+  Measurement at mint (BL-1445), the specifier's scratch fixture built
+  exactly as lines 110-124 of the test, `launch_front_desk.sh` then
+  `build_freshness_cli.bb report` every 0.6 s: t=0.3 s pid file present,
+  status file absent, report all null; t=1.2 s status file with both
+  children's build_sha and the report naming it; unchanged through
+  10.7 s. Population pin for scenario 02: `grep -n 'bash "$LAUNCH_FRONT_DESK"'
+  swarmforge/scripts/test/test_build_freshness_cli.sh` = 3 launch sites
+  (cases 02/03, 04/07, 08).
+
+  Not the 2026-09-10 blind-mint refusal reversed: that evidence declined
+  to own six reds nobody had reproduced; this one is reproduced twice
+  today and its mechanism measured, which is the bar it set.
+
+  INVEST: Independent, Negotiable (helper shape is direction), Valuable
+  (a 20-day red leaves and eight cases behind it run again), Estimable
+  (one predicate, three call sites, one sitting), Small (two scenarios,
+  one invariant), Testable (static reads of the test source in the lane;
+  the green run in QA's e2e).
+
+assigned_to: coder
