@@ -198,7 +198,7 @@ notes: |
   auto-approve-high-severity-defects-amendment-20260917.md. Expedite
   lane by severity (Article 3.2.4). Holder note sent to QA the same
   pass: "BL-1686: bl1402FrontDeskPhotoPassthroughInvariants owned by
-  BL-1691 (<mint sha>) - resume land" (BL-1686 had already landed; the
+  BL-1691 (487705bbe0) - resume land" (BL-1686 had already landed; the
   note is the wake, the row is the release).
 
   Census at mint (BL-1445), exact command:
