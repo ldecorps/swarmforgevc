@@ -28,7 +28,7 @@ You are the specifier.
 
   | Letter | Passes when | Fail → |
   |---|---|---|
-  | **I**ndependent | The slice can be implemented, gated, and closed without waiting on another *unbuilt* sibling. `depends_on` names already-landed tickets, never "and also do X in the same parcel". | Split; do not bundle. |
+  | **I**ndependent | The slice can be implemented, gated, and closed without waiting on another *unbuilt* sibling. `depends_on` names the tickets that must LAND first - landed or still in flight - and the promotion gate (BL-957) holds the ticket in paused until every entry is in `backlog/done/`; a sequencing written only as a comment or a `notes:` line is read by nothing (BL-1687 was promoted past "promote AFTER BL-1685 lands" on 2026-09-22 and the coder had to hold a finished parcel). Never "and also do X in the same parcel". | Split; do not bundle. |
   | **N**egotiable | `description:` says what/why. Implementation hints are direction, never a mandated design (`How (direction, not mandate)`). | Rewrite; drop the mandate. |
   | **V**aluable | One observable operator/user-visible outcome. Not a grab-bag of cleanups. | Split to the valuable core; park the rest. |
   | **E**stimable | A coder can tell from the spec whether this is one sitting. `mutation_cost` is honest (`low`/`medium`/`high`). If you cannot estimate, you cannot mint. | Ask, then split or spike. |

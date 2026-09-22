@@ -14,7 +14,13 @@ status: todo
 epic: unit-suite-speed
 priority: 8
 direction: swarm-reported
-depends_on: []
+depends_on: [BL-1685]
+# AMENDED 2026-09-22: BL-1685 was in flight at mint and the sequencing
+# below was written as a comment; the promotion gate (BL-957) reads the
+# field, not the comment, and BL-1687 was promoted at 09:03 local while
+# BL-1685 sat at the hardener. Declared now so the gate holds it if the
+# coordinator demotes it to paused, and so the coordinator has a
+# ticket-level blocker to name instead of re-dispatching.
 # BL-1630 and BL-1658 (done) moved the twelve jsdom and fifteen
 # cursor-bridge requirers; BL-1685 (active, at coder) moves fourteen
 # literal bridgeServer requirers. The seventeen here share no file with
@@ -149,5 +155,20 @@ notes: |
   alone; their rows pass trivially and BL-1685 is not amended for it.
 
   Promote after BL-1685 lands (scenario 02 needs BL-1685's twelve lazy).
+
+  AMENDED 2026-09-22 by the specifier on the coder's note 002106 ("BL-1687
+  done, blocked on BL-1685 landing"): the sequencing above was a comment and
+  the coordinator promoted BL-1687 at 09:03 local (868c096aef) with BL-1685
+  still at the hardener; the coder built it (swarmforge-coder 5d3416820c,
+  10:17 local - seventeen handlers, feature, handler, property test) and,
+  correctly, did not forward a parcel whose scenario 02 (the loader probe
+  over the WHOLE population) is red until BL-1685's fourteen are lazy;
+  it completed the Work note and holds the commit. `depends_on` now
+  names BL-1685. Coordinator: do not re-dispatch on the drop nudge -
+  demote to paused (the BL-957 gate re-holds it until BL-1685 is in
+  done/) and re-promote after BL-1685 lands; the coder then merges main
+  on 5d3416820c, re-runs the feature (scenario 02 green), and forwards.
+  Nothing in the ticket's deliverable changes. Evidence:
+  backlog/evidence/BL-1687-sequencing-adjudication-specifier-20260922.md.
 
 assigned_to: coder
