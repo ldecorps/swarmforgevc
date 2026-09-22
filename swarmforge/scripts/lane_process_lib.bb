@@ -34,13 +34,22 @@
 (defn lane-running?
   "True when a lane-process-pattern process is running scoped to worktree
    (cmdline names the path, or its cwd is under it) - read once per role
-   per sweep (one process-table scan), never per item."
+   per sweep (one process-table scan), never per item.
+
+   BL-1673: excludes the scanning process's own pid before classifying. A
+   probe that embeds the worktree path in its own -e form, or whose own
+   load-file path resolves under a Stryker sandbox's .stryker-tmp/ (so its
+   own cmdline matches lane-process-pattern), would otherwise count
+   itself as lane activity for the very worktree it is asking about -
+   the verdict must not turn on the observer (same family as BL-1632)."
   [worktree]
   (boolean
    (when worktree
      (when-let [processes (process-table-lib/list-processes!)]
-       (some (fn [{:keys [pid cmdline]}]
-               (and (re-find lane-process-pattern (or cmdline ""))
-                    (process-table-lib/project-scoped-process?
-                     cmdline (process-table-lib/cwd! pid) [(str worktree)])))
-             processes)))))
+       (let [self-pid (.pid (java.lang.ProcessHandle/current))]
+         (some (fn [{:keys [pid cmdline]}]
+                 (and (not= pid self-pid)
+                      (re-find lane-process-pattern (or cmdline ""))
+                      (process-table-lib/project-scoped-process?
+                       cmdline (process-table-lib/cwd! pid) [(str worktree)])))
+               processes))))))

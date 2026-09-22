@@ -51,6 +51,9 @@ was read as half-launched twice during an 80-minute land; the daemon's own
 chase sweep had respawned it seven times each round on a stale heartbeat
 while the pane was busy — the respawn guard this ticket adds is why the
 readings now say `busy=true`/`lane=true` and the sweep chases instead.)
+`lane_process_lib.bb`'s `lane-running?` excludes the scanning process's own
+pid before classifying, so the "has no lane running" reading here is never
+skewed by the probe checking it (BL-1673).
 
 Every check is a pure function over a snapshot struct — no tmux/fs/sleep in
 the test path. `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`

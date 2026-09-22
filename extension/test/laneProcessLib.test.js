@@ -52,3 +52,24 @@ test('lane-process-lib/lane-running? reads false when no lane process is running
     fs.rmSync(worktree, { recursive: true, force: true });
   }
 });
+
+// BL-1673: the scanning bb process's own argv can satisfy lane-running?'s
+// own two conditions - the `-e` form below names the worktree literally,
+// and a trailing arg simulates the .stryker-tmp/ load-file path a real
+// sandboxed probe carries - without lane-running? excluding its own pid,
+// this reads true for an otherwise-quiet worktree (probe B,
+// unowned-red-bl1652-role-lane-running-adjudication-specifier-20260921.md).
+test('the scan never counts its own process', () => {
+  const worktree = mkTmpDir('bl1652-lane-self-');
+  try {
+    const script = `(load-file "${LANE_LIB}")\n(println (lane-process-lib/lane-running? "${worktree}"))`;
+    const out = execFileSync('bb', ['-e', script, '--', '/x/.stryker-tmp/sandbox-abc'], { encoding: 'utf8' }).trim();
+    assert.equal(
+      out,
+      'false',
+      'expected the scanning process itself - argv naming the worktree and carrying a .stryker-tmp/ token - to never count as a lane process running for that worktree'
+    );
+  } finally {
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});

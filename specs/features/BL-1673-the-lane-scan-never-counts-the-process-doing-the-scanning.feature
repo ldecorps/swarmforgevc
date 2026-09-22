@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2e921c1e7a0a464851acea3495f4d1d974a1efd97db048c42db710e4d889c20d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-22T08:53:06.974094214Z","feature_name":"BL-1673 The lane scan never counts the process doing the scanning","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1673-the-lane-scan-never-counts-the-process-doing-the-scanning.feature","background_hash":"982355a2f3844d96cdd7de503ef3c531094842833b69d09953c04b7e55919106","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the scanning process's own argv never makes the worktree read as running","scenario_hash":"b7dabb4b250ab65987e1d072d129a082a3306d11c8996aac00da59a914d94f97","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-22T08:53:01.993379616Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1673 The lane scan never counts the process doing the scanning
 
   lane-running? (BL-1652) reads true for any process whose command line

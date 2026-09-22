@@ -23,9 +23,21 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const HANDOFFD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'handoffd.bb');
 
+// BL-1673: the form is written to a FILE rather than passed via `-e` - an
+// `-e` form is a literal bb process argv element, so a form naming a
+// fixture worktree (as several callers below do) put that path on the
+// probe's own command line, where lane-running?'s own scan could see it
+// (probe C, unowned-red-bl1652-role-lane-running-adjudication-specifier-
+// 20260921.md: the same form read from a file names no worktree on argv).
 function loadHandoffdAndRun(root, forms) {
   const script = `(load-file "${HANDOFFD}")\n${forms}`;
-  return execFileSync('bb', ['-e', script, '--', root], {
+  const scriptFile = path.join(mkTmpDir('bl1652-script-'), 'probe.bb');
+  fs.writeFileSync(scriptFile, script);
+  // No `--` here: unlike `-e`, a bb FILE invocation does not consume `--`
+  // as a separator - it survives into *command-line-args* itself
+  // (`("--" root)`), which shifted project-root to "--" and broke every
+  // heartbeat-file read (confirmed empirically against bb before fixing).
+  return execFileSync('bb', [scriptFile, root], {
     encoding: 'utf8',
     env: { ...process.env, SWARMFORGE_ALLOW_TMP_DAEMON: '1' },
   }).trim();
