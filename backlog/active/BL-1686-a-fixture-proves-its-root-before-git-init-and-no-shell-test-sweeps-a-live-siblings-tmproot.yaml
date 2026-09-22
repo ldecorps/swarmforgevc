@@ -11,6 +11,7 @@ severity: high
 # critical: git ignores a re-init of an existing repository, so no
 # checkout was damaged; an empty CWD would not be so lucky.
 status: todo
+abandoned_commits: [9b39dd482e]
 epic: swarm-reliability
 priority: 9
 direction: swarm-reported
