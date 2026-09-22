@@ -7,7 +7,15 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
-const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
+// BL-1685: the path only - bridgeServer.js is the whole bridge graph (286
+// modules: bridge/metrics/swarm under extension/out plus @connectrpc/
+// @bufbuild/@cursor), so a mere require() of this file never pays for it -
+// the actual require happens inside the step that starts a bridge (the
+// same pattern BL-1658 used for jsdom above and for the fifteen
+// cursor-bridge handlers).
+function getStartBridge() {
+  return require('../../../extension/out/bridge/bridgeServer').startBridge;
+}
 const { runContextTelemetryProducer } = require('../../../extension/out/metrics/contextTelemetryProducer');
 const { projectSlug } = require('../../../extension/out/metrics/transcriptUsage');
 const { listTelemetryAgents, summarizeTelemetryForAgent } = require('../../../extension/out/bridge/contextTelemetryGate');
@@ -135,7 +143,7 @@ async function fetchDashboard(ctx, agent) {
   process.env.CURSOR_API_KEY = prevKey || 'bl665-test-key';
   let handle;
   try {
-    handle = await startBridge(ctx.fixtureRoot, path.join(ctx.fixtureRoot, 'runs.jsonl'), TOKEN, {});
+    handle = await getStartBridge()(ctx.fixtureRoot, path.join(ctx.fixtureRoot, 'runs.jsonl'), TOKEN, {});
     const base = `http://127.0.0.1:${handle.port}`;
     const htmlRes = await fetch(`${base}/context-budget`);
     ctx.html = await htmlRes.text();

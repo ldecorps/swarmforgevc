@@ -14,7 +14,15 @@ const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const { readBacklogFolders } = require('../../../extension/out/panel/backlogReader');
-const { combineWithinEpicLiveItems } = require('../../../extension/out/bridge/bridgeServer');
+// BL-1685: the path only - bridgeServer.js is the whole bridge graph (286
+// modules: bridge/metrics/swarm under extension/out plus @connectrpc/
+// @bufbuild/@cursor), so a mere require() of this file never pays for it -
+// the actual require happens inside the step that composes tile state (the
+// same pattern BL-1658 used for jsdom above and for the fifteen
+// cursor-bridge handlers).
+function getCombineWithinEpicLiveItems() {
+  return require('../../../extension/out/bridge/bridgeServer').combineWithinEpicLiveItems;
+}
 const { computeEpicTopics } = require('../../../extension/out/bridge/epicTopicSlugMatch');
 const { estimateEpicEta } = require('../../../extension/out/metrics/epicEta');
 
@@ -87,7 +95,7 @@ function composeTileStates(ctx) {
   const folders = readBacklogFolders(ctx.root);
   const all = [...folders.paused, ...folders.hold, ...folders.active];
   const epics = all.filter((item) => item.type === 'epic');
-  const within = combineWithinEpicLiveItems({
+  const within = getCombineWithinEpicLiveItems()({
     paused: folders.paused,
     hold: folders.hold,
     active: folders.active,

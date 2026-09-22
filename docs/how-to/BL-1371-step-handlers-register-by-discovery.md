@@ -84,6 +84,17 @@ heavy module-load side effect is caught the same way discovery already
 catches an unresolvable require (above), not left for the next person to
 notice the suite got slower.
 
+The guard's census is sequential and charges a shared graph to whichever
+eager requirer sorts first, so fixing one requirer alone re-arms the
+guard on the next: `extension/out/bridge/bridgeServer` (the whole bridge
+graph, 286 modules) was still required eagerly at module scope by
+fourteen handlers — bl1412, bl538, bl572, bl591, bl592, bl665, bl672,
+bl673, bl674, bl686, bl687, bl766, bl905, gh23 (Steps.js) — each paying
+the full graph load rather than only the handler's own step. BL-1685
+moved all fourteen requires inside the step that starts a bridge, the
+same shape as BL-1630's twelve, so requiring any of them alone loads
+nothing beyond the handler itself.
+
 ## Why
 
 See `backlog/paused/BL-1371-a-step-handler-registers-without-a-shared-file.yaml`

@@ -33,7 +33,15 @@ const { execFileSync } = require('node:child_process');
 // a mere require() of this file never pays for loading jsdom.
 const JSDOM_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom');
 
-const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
+// BL-1685: the path only - bridgeServer.js is the whole bridge graph (286
+// modules: bridge/metrics/swarm under extension/out plus @connectrpc/
+// @bufbuild/@cursor), so a mere require() of this file never pays for it -
+// the actual require happens inside the step that starts a bridge (the
+// same pattern BL-1658 used for jsdom above and for the fifteen
+// cursor-bridge handlers).
+function getStartBridge() {
+  return require('../../../extension/out/bridge/bridgeServer').startBridge;
+}
 
 const FEATURE = 'Epic drill-down topic reprioritize UI';
 const TOKEN = 'bl674-drilldown-token';
@@ -196,7 +204,7 @@ function registerSteps(registry) {
       ctx.epicSlug = slug;
       writeTicket(ctx, epicId, 'epic', slug, 0);
       topicIdsCsv.split(',').forEach((id, i) => writeTicket(ctx, id, 'feature', slug, i + 1));
-      ctx.bridgeHandle = await startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {});
+      ctx.bridgeHandle = await getStartBridge()(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {});
     },
     FEATURE
   );

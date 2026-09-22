@@ -31,6 +31,15 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1685-every-eager-bridgeserver-requirer-loads-the-bridge-graph-inside-its-step.feature
+abandoned_commits: [8ad4344ffe, 51a2080108]
+# 8ad4344ffe was the coder's first landing of the fourteen-handler fix on
+# the coder/cleaner/architect branches; 51a2080108 reverts it exactly
+# (net zero diff, confirmed by diffstat). The lineage that actually
+# reached hardener/documenter is 1fc2974e5a ("BL-1685: fourteen more
+# eager bridgeServer requirers load the bridge graph inside their step"),
+# which independently lands the same fourteen-handler fix and is what the
+# QA gate verifies. Recorded here per the PRE_QA_GATE ancestry check
+# (documenter, 2026-09-22) rather than merging a self-cancelling pair.
 
 # Handler pin only (BL-233, BL-1371). The guard (stepHandlerModuleLoadBudget)
 # already censuses every handler, so an anchor on it matches before and

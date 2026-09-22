@@ -2,7 +2,7 @@
 
 // BL-1412: step handlers for "A text filter on the live Spec-tree console
 // narrows the milestones view to matching tickets". Drives the REAL
-// startBridge() (which serves filterSpecTree's real output over
+// getStartBridge()() (which serves filterSpecTree's real output over
 // /spec-tree-state?q=) and jsdom over the REAL getSpecTreeUiHtml() screen -
 // same bridge+jsdom shape as bl592SpecTreeOnLiveConsoleWithEpicTierSteps.js,
 // which this feature extends. A single, comprehensive fixture (Background)
@@ -15,7 +15,15 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
+// BL-1685: the path only - bridgeServer.js is the whole bridge graph (286
+// modules: bridge/metrics/swarm under extension/out plus @connectrpc/
+// @bufbuild/@cursor), so a mere require() of this file never pays for it -
+// the actual require happens inside the step that starts a bridge (the
+// same pattern BL-1658 used for jsdom above and for the fifteen
+// cursor-bridge handlers).
+function getStartBridge() {
+  return require('../../../extension/out/bridge/bridgeServer').startBridge;
+}
 
 // BL-1630: the path only - jsdom is actually require()'d inside
 // renderSpecTreeScreen (bl1046/bl1160's own lazy pattern), so a mere
@@ -137,7 +145,7 @@ async function ensureBridge(ctx) {
     buildFixture(ctx);
   }
   if (!ctx.bridgeHandle) {
-    ctx.bridgeHandle = await startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {});
+    ctx.bridgeHandle = await getStartBridge()(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {});
   }
 }
 

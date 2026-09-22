@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=15df9ad36c1e0c98003fd6f357a9e2170e5c3e36239ee07e6a7e411197a52d7f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-22T08:55:02.113691184Z","feature_name":"BL-1685 Every eager bridgeServer requirer loads the bridge graph inside its step","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1685-every-eager-bridgeserver-requirer-loads-the-bridge-graph-inside-its-step.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"requiring the handler alone never loads the bridge graph","scenario_hash":"1212cebae1a18a0920c2b441cd3a9b98bb93fe22350cb6a14165ee9c36033129","mutation_count":14,"result":{"Total":14,"Killed":14,"Survived":0,"Errors":0},"tested_at":"2026-09-22T08:55:02.113691184Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1685 Every eager bridgeServer requirer loads the bridge graph inside its step
   Fourteen step handlers require extension/out/bridge/bridgeServer at
   module scope, and that module is the whole bridge graph: 286 modules,

@@ -5,7 +5,15 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
+// BL-1685: the path only - bridgeServer.js is the whole bridge graph (286
+// modules: bridge/metrics/swarm under extension/out plus @connectrpc/
+// @bufbuild/@cursor), so a mere require() of this file never pays for it -
+// the actual require happens inside the step that starts a bridge (the
+// same pattern BL-1658 used for jsdom above and for the fifteen
+// cursor-bridge handlers).
+function getStartBridge() {
+  return require('../../../extension/out/bridge/bridgeServer').startBridge;
+}
 
 const FEATURE = 'paused-ticket pager on the SwarmForge Telegram Mini App console';
 const TOKEN = 'paused-pager-token';
@@ -29,7 +37,7 @@ function writeTicket(root, folder, id, title, priority) {
 }
 
 async function withBridge(ctx, fn) {
-  const handle = await startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {});
+  const handle = await getStartBridge()(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {});
   try {
     return await fn(handle);
   } finally {
