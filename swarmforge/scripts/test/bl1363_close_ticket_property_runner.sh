@@ -19,14 +19,16 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 PREFIX="bl1363-property-"
 
 status=0
 fail() { echo "FAIL: $*"; status=1; }
 reached_move=0; reached_refuse=0; reached_partial=0; cells=0
 
-rm -rf "${TMPDIR:-/tmp}/${PREFIX}"* 2>/dev/null || true
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}XXXXXX")" || exit 1
+# BL-971/BL-1686: sweep only a DEAD owner's root, never a live sibling run's.
+sweep_stale_prefix_roots "$PREFIX"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}$$.XXXXXX")" || exit 1
 trap 'rm -rf "$WORK"' EXIT
 
 in_fixture() {

@@ -16,11 +16,15 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLI="$SCRIPT_DIR/../commit_integrity_cli.bb"
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 
 PREFIX="bl1378-expedite-close"
-# BL-971: a killed run traps nothing, so sweep the prefix before this one too.
-rm -rf "${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.XXXXXX")"
+# BL-971/BL-1686: a killed run traps nothing, so sweep the prefix before
+# this one too - but only a DEAD owner's root (sweep_stale_prefix_roots),
+# never a live sibling run's still-in-use TMPROOT (the BL-1686 incident:
+# a blind glob here reaped a concurrent run's TMPROOT out from under it).
+sweep_stale_prefix_roots "$PREFIX"
+TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.$$.XXXXXX")"
 trap 'rm -rf "$TMPROOT"' EXIT
 
 fails=0
@@ -53,8 +57,18 @@ prove_root() {
   }
   local common
   common="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)" || {
-    echo "test_bl1378_expedite_close_guard: refusing to mutate '$root' - not a git repository" >&2
-    exit 1
+    # BL-1686: NOT a refusal - `mk_fixture` must call this BEFORE its own
+    # `git init` (the first mutating command, per this file's own
+    # standing rule), and a root that is not YET a git repository at all
+    # answers this git call identically to a root that never will be.
+    # The string check above already proved `$root` sits under $TMPROOT,
+    # which is the only thing there IS to prove about a path with no
+    # `.git` yet - nothing has pointed anywhere else, because nothing has
+    # pointed anywhere at all. A caller that expects an EXISTING repo
+    # (unlanded_commit, called only after mk_fixture's own `git init` has
+    # already run) gets a real git-common-dir answer here and the check
+    # below still applies to it in full.
+    return 0
   }
   case "$common" in
     /*) [[ "$common" == "$TMPROOT"/* ]] || {
@@ -71,8 +85,17 @@ mk_fixture() {
   # of the last one.
   local root
   root="$(mktemp -d "$TMPROOT/fix.XXXXXX")"
-  git -C "$root" init -q -b main
+  # BL-1686: proven BEFORE `git init` - the first mutating command in this
+  # function, not the second. The 2026-09-21 architect finding: a
+  # concurrent run's blind startup sweep (see below) can delete this
+  # file's own live $TMPROOT between its creation and this call, so
+  # `mktemp` above fails silently under `set -uo pipefail` (no `-e`) and
+  # `root` is the empty string - `git -C "" init` then runs in the
+  # process's OWN cwd, the live worktree (BL-1390's exact shape), and
+  # only ran here, one line AFTER that init, in this file's first pass at
+  # this fix (BL-1516, cd638f1c6f).
   prove_root "$root"
+  git -C "$root" init -q -b main
   git -C "$root" config user.email test@test
   git -C "$root" config user.name test
   git -C "$root" config commit.gpgsign false
@@ -302,6 +325,36 @@ fi
 git -C "$NESTED_OUTSIDE" worktree remove --force "$NESTED_WT" >/dev/null 2>&1
 git -C "$NESTED_OUTSIDE" branch -D bl1516-nested-branch >/dev/null 2>&1
 rm -rf "$NESTED_OUTSIDE" "$NESTED_WT"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 09: mk_fixture refuses (never mutates the caller's own cwd) when its own
+# TMPROOT has vanished by the time it runs - BL-1686 regression, pins the
+# ORDER of prove_root vs `git init`, not just prove_root's own behaviour
+# (already covered by 07/08). The exact shape a concurrent run's blind
+# startup sweep produces: this file's own $TMPROOT gone, `mktemp -d
+# "$TMPROOT/fix.XXXXXX"` failing silently under `set -uo pipefail` (no
+# `-e`), `root` the empty string. Run from an EMPTY scratch cwd (standing
+# in for a live worktree) so a `.git` appearing there IS the BL-1378
+# incident shape, caught rather than reproduced.
+# ═══════════════════════════════════════════════════════════════════════════
+echo "09: mk_fixture refuses when its own \$TMPROOT has vanished, never touching the caller's cwd"
+SCRATCH_CWD="$(mktemp -d "${TMPDIR:-/tmp}/bl1686-scratch-cwd.XXXXXX")"
+GONE_TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/bl1686-gone-tmproot.XXXXXX")"
+rm -rf "$GONE_TMPROOT"
+OUT09="$(cd "$SCRATCH_CWD" && bash -c "$(declare -f prove_root); $(declare -f mk_fixture); TMPROOT='$GONE_TMPROOT'; TICKET='$TICKET'; mk_fixture" 2>&1)"
+STATUS09=$?
+if [[ $STATUS09 -ne 0 ]]; then
+  pass "09: mk_fixture refuses when its own \$TMPROOT is gone"
+else
+  fail "09: mk_fixture proceeded with a gone \$TMPROOT: $OUT09"
+fi
+contains "09: and the refusal names the empty root" "$OUT09" "refusing to mutate"
+if [[ ! -e "$SCRATCH_CWD/.git" ]]; then
+  pass "09: the scratch cwd holds no .git - never mutated"
+else
+  fail "09: a .git appeared in the scratch cwd - the live-checkout incident shape reproduced"
+fi
+rm -rf "$SCRATCH_CWD" "$GONE_TMPROOT"
 
 if [[ $fails -gt 0 ]]; then
   echo "test_bl1378_expedite_close_guard: $fails FAILURE(S)"

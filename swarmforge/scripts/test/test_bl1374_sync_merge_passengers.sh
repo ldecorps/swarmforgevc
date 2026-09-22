@@ -21,11 +21,13 @@ unset GIT_DIR GIT_WORK_TREE
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 
 PREFIX="bl1374-sync-merge"
-# BL-971: a killed run traps nothing, so sweep the prefix before this one too.
-rm -rf "${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.XXXXXX")"
+# BL-971/BL-1686: a killed run traps nothing, so sweep the prefix before
+# this one too - but only a DEAD owner's root, never a live sibling run's.
+sweep_stale_prefix_roots "$PREFIX"
+TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.$$.XXXXXX")"
 trap 'rm -rf "$TMPROOT"' EXIT
 
 # BL-1545/BL-1390: proves `$1` is not already inside SOME OTHER git

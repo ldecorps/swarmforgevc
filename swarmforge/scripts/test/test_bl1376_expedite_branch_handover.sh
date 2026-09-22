@@ -18,11 +18,13 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLI="$SCRIPT_DIR/../expedite_cli.bb"
 FIXTURE="$SCRIPT_DIR/expedite_fixture.sh"
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 
-# BL-971: a killed run traps nothing, so sweep this prefix BEFORE the run too.
+# BL-971/BL-1686: a killed run traps nothing, so sweep this prefix BEFORE
+# the run too - but only a DEAD owner's root, never a live sibling run's.
 PREFIX="bl1376-expedite-handover"
-rm -rf "${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.XXXXXX")"
+sweep_stale_prefix_roots "$PREFIX"
+TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.$$.XXXXXX")"
 cleanup() { rm -rf "$TMPROOT"; }
 trap cleanup EXIT
 

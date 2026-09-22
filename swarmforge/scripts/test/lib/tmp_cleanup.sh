@@ -101,3 +101,44 @@ fi
 register_tmp_dir() {
   printf '%s\n' "$1" >> "$__SWARMFORGE_TMP_CLEANUP_REGISTRY"
 }
+
+# BL-1686: pid-scoped, zombie-aware replacement for the blind BL-971
+# startup sweep `rm -rf "${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true`.
+# That idiom removes EVERY root sharing the prefix, including one a
+# concurrently running sibling invocation of the same script is still
+# using (the everyday multi-seat case) - deleting a live TMPROOT out from
+# under a peer, which is what let `git init` run against a process's own
+# CWD in the BL-1686 incident (a `mktemp` under a just-deleted TMPROOT
+# fails silently under `set -uo pipefail`, no `-e`).
+#
+# Callers name their roots `<prefix><pid>.XXXXXX` (pid immediately after
+# the prefix, no separator required - each of this helper's five callers
+# already has its own convention for whether the prefix itself ends in a
+# separator). This sweep parses the leading digit run right after the
+# prefix as the OWNING pid and removes the root only when that pid is not
+# alive - `kill -0` ALONE reads a zombie (exited, not yet reaped) as
+# running, so liveness is `kill -0` AND NOT a zombie, checked via
+# `ps -o stat=` (BL-1647's own idiom, reused verbatim from
+# finish_shift_lib.sh's `_finish_shift_pid_is_zombie` - stock bash 3.2 has
+# no /proc). A root whose name carries no parseable pid segment (a stale
+# root from before this convention, or a foreign directory sharing the
+# prefix by coincidence) is left alone - this sweep only ever removes a
+# root it can positively attribute to a dead owner, never a blind
+# "anything with this prefix" glob.
+sweep_stale_prefix_roots() {
+  local prefix="$1" dir base rest pid stat
+  for dir in "${TMPDIR:-/tmp}/${prefix}"*; do
+    [[ -d "$dir" ]] || continue
+    base="$(basename "$dir")"
+    rest="${base#"$prefix"}"
+    rest="${rest#.}"
+    pid="${rest%%.*}"
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    if kill -0 "$pid" 2>/dev/null; then
+      stat="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+      stat="${stat#"${stat%%[![:space:]]*}"}"
+      [[ "$stat" == Z* ]] || continue
+    fi
+    rm -rf -- "$dir"
+  done
+}

@@ -15,11 +15,14 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLI="$SCRIPT_DIR/../suite_baseline.sh"
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 
 PREFIX="bl1377-suite-baseline"
-# BL-971: a killed run traps nothing, so sweep the prefix before this one too.
-rm -rf "${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.XXXXXX")"
+# BL-971/BL-1686: a killed run traps nothing, so sweep the prefix before
+# this one too - but only a DEAD owner's root (sweep_stale_prefix_roots),
+# never a live sibling run's still-in-use TMPROOT.
+sweep_stale_prefix_roots "$PREFIX"
+TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.$$.XXXXXX")"
 trap 'rm -rf "$TMPROOT"' EXIT
 
 fails=0

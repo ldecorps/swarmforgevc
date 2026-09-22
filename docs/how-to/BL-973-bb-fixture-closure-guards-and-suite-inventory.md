@@ -214,6 +214,36 @@ whole run's exit is non-zero — even when the test itself passed — and
 the census baseline advances past that entry so a LATER test is never
 blamed for an earlier one's leak. A clean run prints no such line.
 
+**A fixture proves its root BEFORE the first mutating git command, not
+after (BL-1686, 2026-09-21).** `test_bl1378_expedite_close_guard.sh`'s
+own `mk_fixture` originally called `prove_root` one line AFTER `git
+init` — proof that runs after the mutation it is meant to prevent proves
+nothing. `prove_root` now runs first: it checks the candidate root is a
+string under `$TMPROOT` before touching git at all, then (once the
+repository exists) that `git -C "$root" rev-parse --git-common-dir`
+resolves under `$TMPROOT` too — a root with no `.git` yet answers that
+second check identically to one that never will, so `prove_root` returns
+success rather than refusing, letting the caller's own `git init` be the
+first mutating command exactly as intended. The general idiom for any
+new shell fixture: prove the root is a string under your `$TMPROOT`
+first, then re-prove `git-common-dir` after the repository exists,
+never after a command that could already have mutated the wrong tree.
+
+**No shell test's startup sweep removes a live sibling's tmproot
+(BL-1686).** The blind BL-971 idiom, `rm -rf
+"${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true`, deletes every root
+sharing the prefix — including one a concurrently running sibling
+invocation of the SAME script is still using, the everyday multi-seat
+shape. `swarmforge/scripts/test/lib/tmp_cleanup.sh`'s
+`sweep_stale_prefix_roots <prefix>` replaces it: callers name their roots
+`<prefix><pid>.XXXXXX`, and the sweep parses the pid segment, removing a
+root only when that pid is not alive — `kill -0` alone reads a zombie
+(exited, not yet reaped) as running, so liveness is `kill -0` AND NOT a
+zombie via `ps -o stat=` (BL-1647's idiom). A root whose name carries no
+parseable pid segment is left alone. Five shell tests
+(`test_bl1378_expedite_close_guard.sh` among them) now call this instead
+of a blind glob-and-remove at startup.
+
 ## Acceptance
 
 `specs/features/BL-973-copy-lists-closure-derived-and-suite-completeness.feature` —
