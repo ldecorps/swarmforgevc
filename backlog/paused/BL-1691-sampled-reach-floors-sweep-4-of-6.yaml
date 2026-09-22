@@ -1,0 +1,221 @@
+id: BL-1691
+title: "Sampled reach floors, sweep 4 of 6: the 15 property files under extension/test whose smallest literal draw budget is 17 to 30 and that BL-1584's classifier reads sampled-low on 2026-09-22 (the census's S3 section minus bl1254MissingVerdictNeverBounces, which the classifier reads no-floor) reach every floor by construction; bl1402FrontDeskPhotoPassthroughInvariants is red on main since QA's BL-1686 property-lane run (invariant 2: 'generator never reached all four outcome kinds', already-saved drawn 0 of 25), and this sweep owns its standing-red register row"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting is high (2026-09-05 register
+# amendment) - bl1402FrontDeskPhotoPassthroughInvariants failed in QA's
+# full property-lane run for BL-1686 with nothing wrong in the code it
+# exercises, and the register row it needs throttles intake (BL-1429)
+# until this lands. The other fourteen files carry the same seed-miss
+# probability and are the epic's next slice by its own order.
+status: todo
+epic: sampled-reach-floors
+priority: 2
+direction: swarm-reported
+depends_on: []
+# BL-1584 (classifier + gate), BL-1585, BL-1586, BL-1587 (sweeps 1-3) and
+# BL-1589 are in backlog/done; the epic's remaining_slices said "mint
+# sweep 4 as one chore in the BL-1585 shape when BL-1585 lands" - it has.
+mutation_cost: low
+# low: test files and evidence only; the shared reachFloors helper exists
+# (BL-1062/BL-1555); no production code, no Stryker target.
+slice_size_envelope: medium
+# medium, not low: 15 one-loop restructures in one sitting, each the
+# BL-1580 shape, same envelope as BL-1585/BL-1586/BL-1587 (16, 16, 11).
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1691-sampled-reach-floors-sweep-4-of-6.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1691SampledReachFloorsSweep4Steps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): every swept file and the
+# helper already exist, so any pattern on them matches before and after.
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). The slice itself is the
+  human's 2026-09-15 ask (BL-1583's source: "one pass over the class,
+  apply the construction-not-sampling fix to each"), already approved on
+  the epic. FIRM, as on BL-1585: every reach floor a swept file asserts
+  today stays asserted at its value; the fix is to make each population
+  reached BY CONSTRUCTION - an outer loop over the cells with runsPerCell
+  draws each, the floor through assertReachFloor - never to lower a
+  floor, widen a tolerance, pin a seed or retry. FIRM: each file's draw
+  budget stays what it is; what changes is how it is spent. FIRM: a file
+  the classifier reads no-floor at mint (bl1254MissingVerdictNeverBounces)
+  is not in the pinned list and is not touched; if the coder finds it
+  does carry a floor the classifier misses, that is a BL-1584 classifier
+  finding for the evidence, never a silent sixteenth file.
+
+invariants:
+  - "No reach floor value, draw budget, timeout or tolerance in a swept file is lowered, raised, widened, seeded or retried; every floor asserted before the sweep is asserted after it at the same value."
+  - "Every swept file reaches each reach floor by construction: an outer iteration over the values the floor names, each cell drawing runsPerCell(budget, cells) times, the floor asserted through assertReachFloor; the census CLI reads every pinned file as constructed on the parcel commit."
+
+description: |
+  ## What is wrong
+
+  Epic BL-1583's shape, one more time and now red on main:
+  `extension/test/bl1402FrontDeskPhotoPassthroughInvariants.property.test.js`
+  invariant 2 draws `fc.constantFrom('saved', 'already-saved', 'failed',
+  'not-applicable')` 25 times and afterwards asserts every kind was seen
+  (lines 156-190). In QA's full property-lane run for BL-1686 (commit
+  e0f919ffee, 2026-09-22) the draw produced `{"saved":6,"already-saved":0,
+  "failed":7,"not-applicable":12}` and the file failed with nothing wrong
+  in `persistRoutedPhoto` or the routing core it exercises (QA's evidence:
+  `backlog/evidence/unowned-red-bl1402-frontdesk-photo-passthrough-QA-20260922.md`;
+  BL-1686 landed on its own merits). Invariant 1 in the same file has the
+  same shape over three failure kinds and 20 draws. The epic's census
+  (`backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md`,
+  section S3) put this file in sweep 4 of 6, the 17-30 draw bucket; the
+  epic's `remaining_slices` said to mint that sweep as one chore in the
+  BL-1585 shape once BL-1585 landed, and it has. The red brings it
+  forward as a defect.
+
+  ## What is wanted
+
+  Each of these 15 files (the census's section S3 read through BL-1584's
+  classifier on 2026-09-22 - `bb swarmforge/scripts/sampled_reach_floor_census_cli.bb .`
+  reads every one `sampled-low`; pinned here and in scenario 01's
+  Examples; the count is the BL-1445 census pin):
+
+  - `extension/test/bl1210IconMarkerStoreInvariants.property.test.js` (smallest literal budget 20)
+  - `extension/test/bl1243PaneActivityInvariants.property.test.js` (asserts through assertReachFloor already but still samples its draws; budget unresolved - migrate the draws to runsPerCell, keep the floors)
+  - `extension/test/bl1340SelfConvertingDraftInvariants.property.test.js` (24)
+  - `extension/test/bl1356StampOffInvariants.property.test.js` (unresolved constant - keep it as the budget handed to runsPerCell)
+  - `extension/test/bl1365RitualLedgerInvariants.property.test.js` (25)
+  - `extension/test/bl1383ProviderChatSeatInvariants.property.test.js` (25)
+  - `extension/test/bl1384LocalSeatTopicForwardedInvariants.property.test.js` (30)
+  - `extension/test/bl1398GuardFixtureDerivedSet.property.test.js` (25)
+  - `extension/test/bl1402FrontDeskPhotoPassthroughInvariants.property.test.js` (20; RED on main - the register row this ticket owns)
+  - `extension/test/bl1455RependedApprovalAskInvariants.property.test.js` (25)
+  - `extension/test/bl1471BounceRevertScopeInvariants.property.test.js` (20)
+  - `extension/test/bl1477ContextTelemetryTornTailInvariants.property.test.js` (20)
+  - `extension/test/bl1484HookFixturesDeriveTheirSet.property.test.js` (30)
+  - `extension/test/bl1539SelfRootingDerivationStability.property.test.js` (24)
+  - `extension/test/bl1565CoordinatorNeverReceivesGitHandoffInvariants.property.test.js` (20)
+
+  is brought to the BL-1580 shape: every reach floor in it is reached by
+  construction and asserted through the shared helper
+  (`extension/test/helpers/reachFloors.js`: `runsPerCell`,
+  `assertReachFloor`). The recipe, per file, is the census file's "The
+  fix, per file" section - three shapes, one outcome each - and the
+  slice's evidence file (backlog/evidence/BL-1691-<role>-<date>.md)
+  records which branch every file took, in a table: file, branch
+  (sampled / constructed by hand / not a floor), cells, budget, floors
+  kept:
+
+  1. sampled - a counter accumulated inside the property and asserted
+     after fc.assert: iterate the population as cells, one fc.assert per
+     cell with numRuns runsPerCell(<unchanged budget>, cells) and the
+     cell's value a constant inside; assert the floor through
+     assertReachFloor(coverage, values, floor, label). Budget, floor
+     value and per-draw body do not change.
+  2. constructed by hand - already an outer loop with a per-cell numRuns
+     constant, or (bl1243) already asserting through assertReachFloor
+     over a sampled draw: migrate the draw to runsPerCell cells; no
+     floor change.
+  3. not a floor after all - leave the file unchanged; quote the
+     assertion in the evidence so the epic's census is corrected, and
+     the architect confirms the exclusion. Do not add a runsPerCell call
+     to a file that draws nothing.
+
+  Every swept file is green alone under the properties config on the
+  ONE run QA makes per file (qa_e2e_procedure), and the
+  `backlog/standing-reds.tsv` row naming
+  bl1402FrontDeskPhotoPassthroughInvariants (owner BL-1691, added at
+  mint) leaves in the same land - the land step retires it (BL-1631);
+  the parcel never edits the register (coder.prompt, BL-1663).
+
+  ## How (direction, not mandate)
+
+  - Outer `for` over the cell values, one `fc.assert` per cell, exactly
+    as BL-1578's bl622, BL-1580's bl1295 and the sixteen files of
+    BL-1585 do; where a file has several floors over one draw, one outer
+    loop over the product of the axes or one loop per floor - the
+    coder's call, recorded in the evidence.
+  - Files with a numRuns constant the file computes keep the constant as
+    the budget handed to runsPerCell.
+  - Start with bl1402 (the red) and commit it first, so a bounce on any
+    later file never holds the register row hostage; then the rest in
+    the order above, per file or per few files.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  Test files and evidence only; extension/src, the helper
+  extension/test/helpers/reachFloors.js, and every property file outside
+  the pinned list are unchanged (BL-506: stage only these paths). No
+  floor lowered, no tolerance widened, no retry, no seed pinned, no draw
+  budget changed. Never bl1254MissingVerdictNeverBounces (classifier:
+  no-floor) or any file of sweeps 5 and 6. The step handler lands with
+  the feature (BL-233). The register is never edited by the parcel.
+
+out_of_scope: |
+  - Every property file not in the pinned list (the epic's other slices:
+    sweeps 5a/5b and 6, the per-fc.assert classifier refinement).
+  - The send-time gate and census CLI (BL-1584) - a classifier finding
+    goes in the evidence, not this parcel's diff.
+  - The property lane's timeouts (BL-1579) and fixture-spawn cost.
+
+qa_e2e_procedure: |
+  On the parcel commit, from extension/, ONE run each (2026-09-17 rule).
+  1. For each pinned file: `npx vitest run --config vitest.properties.config.mjs test/<file>`
+     -> green. Under the BL-1358 ceiling this is a QA step, never an
+     acceptance scenario (BL-1541).
+  2. `node specs/pipeline/cli.js specs/features/BL-1691-sampled-reach-floors-sweep-4-of-6.feature`:
+     all ok (scenario 02 runs the census CLI: every pinned file reads
+     `constructed`).
+  3. Floor audit: `git diff main...HEAD -- extension/test | grep -E '^[-+].*(numRuns|assertReachFloor|>= *[0-9]|> *0|runsPerCell)'`
+     read line by line against the evidence table: every removed floor
+     value reappears as an assertReachFloor floor of the same value;
+     every removed numRuns literal reappears as the budget handed to
+     runsPerCell; no numeric value went down.
+  4. Break-then-restore on bl1402: drop 'already-saved' from invariant
+     2's iterated cells; step 1's run on that file fails naming the reach
+     floor (`reach floor: ... drawn 0 <`); restore.
+  5. `git diff main...HEAD --name-only` names only pinned test files,
+     the feature, the handler and evidence; extension/src, the helper and
+     backlog/standing-reds.tsv are unchanged in the parcel.
+  6. After landing: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `"unowned":[]` and no row names bl1402FrontDeskPhotoPassthroughInvariants
+     (the land step's REGISTER_ROW_RETIRED line, BL-1631).
+
+source: |
+  QA note 003084, 2026-09-22T07:21Z: "BL-1686: unowned-red
+  bl1402FrontDeskPhotoPassthrough - see evidence file"
+  (backlog/evidence/unowned-red-bl1402-frontdesk-photo-passthrough-QA-20260922.md,
+  landed in 09a3556977). Epic BL-1583 remaining_slices, sweep 4 of 6.
+
+notes: |
+  Minted 2026-09-22 by the specifier adjudicating QA's unowned-red note
+  003084 the same pass (standing-red amendment 2026-09-05): the red's
+  file is sweep 4's population, so the sweep is minted as the owner
+  rather than a one-file ticket, with the register row added in the
+  mint commit and named in the epic. AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Expedite
+  lane by severity (Article 3.2.4). Holder note sent to QA the same
+  pass: "BL-1686: bl1402FrontDeskPhotoPassthroughInvariants owned by
+  BL-1691 (<mint sha>) - resume land" (BL-1686 had already landed; the
+  note is the wake, the row is the release).
+
+  Census at mint (BL-1445), exact command:
+  `bb swarmforge/scripts/sampled_reach_floor_census_cli.bb . | grep -E 'bl(1210|1243|1254|1340|1356|1365|1383|1384|1398|1402|1455|1471|1477|1484|1539|1565)[A-Za-z]'`
+  = 15 `sampled-low` (the pinned list), 1 `no-floor`
+  (bl1254MissingVerdictNeverBounces, 25 - the census's S3 row 3 read
+  before the classifier existed), 1 `constructed` outside the census
+  (bl1254LedgerCertificationNeedsAHuman). Epic BL-1583's
+  decomposes_into gains BL-1691 and its sweep-4 remaining_slices entry
+  leaves in the mint commit.
+
+  INVEST: Independent (helper exists; no sibling slice shares a file),
+  Negotiable (loop shape per file is direction), Valuable (a red on main
+  leaves and fourteen latent ones with it), Estimable (15 mechanical
+  restructures, one sitting at medium envelope, as sweeps 1-3 were),
+  Small (two scenarios, two invariants), Testable (static helper-use per
+  file plus the classifier's verdict in the lane; the green runs and the
+  floor audit in QA's e2e).
+
+assigned_to: coder

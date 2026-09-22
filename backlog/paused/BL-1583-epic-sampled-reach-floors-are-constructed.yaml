@@ -19,9 +19,8 @@ approval_context: >
   An epic tracker is never promoted; the field is here so the tracker
   reads the same as its slices.
 
-decomposes_into: [BL-1584, BL-1585, BL-1586, BL-1587]
+decomposes_into: [BL-1584, BL-1585, BL-1586, BL-1587, BL-1691]
 remaining_slices:
-  - "sweep 4 of 6: the 16 files with a smallest literal draw budget of 17 to 30 (backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md, section S3) - mint as one chore in the BL-1585 shape when BL-1585 lands"
   - "sweep 5a/5b of 6: the 33 files whose smallest literal budget is 31 to 99, or whose numRuns is a constant the file computes, or absent (section S4/S5) - split into two chores of about 16 by name at mint; the unresolved-constant files read their RUNS/DRAWS constant into runsPerCell unchanged; MINUS bl1030StopFlagTokenBoundary, owned by BL-1589 since 2026-09-16 (its census row read default100 but the file has no fast-check at all - own LCG, DRAWS = 60), so 32 files"
   - "sweep 6 of 6: the 16 files with a smallest literal budget of 100 or more (section S6) - lowest miss probability, last; mint only after BL-1584's classifier confirms each still reads sampled, since a 300-draw floor over a 50/50 arm is not a defect in practice and the human may prefer the epic closed without it (record that ruling on the epic, not as a silent skip)"
   - "per-fc.assert classification: bl1364TurnProfileSeriesInvariants and bl1429StandingRedThrottleFoldInvariants are constructed for one invariant each and still sample in their others; BL-1584 classifies per FILE, so they read constructed. A follow-up refines the classifier to per-fc.assert and sweeps what it re-flags"
@@ -120,4 +119,13 @@ notes: |
   bucket also holds files with NO fast-check (bl1030's two files use a
   hand-rolled LCG and a DRAWS constant); read each file's own loop
   before assuming an fc.assert to restructure.
+
+  Consolidation record 2026-09-22 (specifier): sweep 4 of 6 minted as
+  BL-1691 on QA's unowned-red note for bl1402FrontDeskPhotoPassthroughInvariants
+  (S3 file, red in the BL-1686 lane run) - type defect, severity high,
+  owning that register row. Population re-read through BL-1584's
+  classifier: 15 of the census's 16 S3 files read sampled-low;
+  bl1254MissingVerdictNeverBounces reads no-floor and is excluded
+  (census corrected here, not in the evidence file).
+
 mutation_cost: low
