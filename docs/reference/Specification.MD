@@ -9591,7 +9591,11 @@ which is what saved it when the master working tree was reverted to HEAD
 mid-ticket. This parcel re-lands it through the chain with the three
 things the raw hotfix left open closed. A caption is now always bounded:
 `PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX` (64) truncates with a visible
-ellipsis, and `deriveListEntryText` truncates too, because
+ellipsis — budgeted on the RENDERED, HTML-escaped length, not the raw
+text (BL-1684: an `&`/`<`/`>`-heavy raw slug capped at 64 raw characters
+still expanded 3-5x through `escapeHtml`, and a board of mostly-escapable
+titles composed past the whole-message send budget with no link list to
+drop against it) — and `deriveListEntryText` truncates too, because
 `deriveKebabSlug` caps WORDS not characters — a single-word 400-character
 title flowed straight into a below-grid list line and past the
 whole-message send budget, which `composePipelineBoardHtml` only trims

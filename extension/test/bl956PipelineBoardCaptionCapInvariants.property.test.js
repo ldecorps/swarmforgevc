@@ -89,6 +89,80 @@ test('BL-956 invariant 1: composePipelineBoardHtml stays within the message limi
   assert.ok(hugeTitleBoards >= 30, `only ${hugeTitleBoards} boards carried a >=1000-char title`);
 });
 
+// BL-1684: seed 10 draws the specifier's own recorded counterexample
+// within its first 1500 runs (2 of 58,572 draws in the specifier's own
+// hunt were over the limit, every time at this seed) - pinned so the fix
+// is checked every run, not the roughly one lane run in two hundred the
+// unpinned property above happened to hit it in (about 1 board in 30,000
+// over the send limit, pre-fix). A run budget this size costs
+// milliseconds against the real, compiled module; nothing here is worth
+// trimming down.
+test('BL-956 invariant 1 (BL-1684 regression): the specifier\'s own seed-10 counterexample stays within the message limit', () => {
+  fc.assert(
+    fc.property(boardArb, (shape) => {
+      const { data } = buildBoard(shape);
+      const { html } = composePipelineBoardHtml(data, 0, 'https://github.com/x/y');
+      assert.ok(
+        html.length <= PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
+        `composed ${html.length} chars > ${PIPELINE_BOARD_MESSAGE_MAX_LENGTH}`
+      );
+    }),
+    { seed: 10, numRuns: 1500 }
+  );
+});
+
+// BL-1684 hardener bounce (D1, 2026-09-21): the early-return in
+// composePipelineBoardHtml used to short-circuit on `!repoBaseUrl` or an
+// empty `data.links` REGARDLESS of `full.length` - bypassing the maxLength
+// check (and the last-resort fallback) entirely for two real production
+// shapes (no git remote resolved this tick; computePipelineBoard called
+// with no repoBaseUrl in extras, which is how `data.links` ends up empty).
+// This drives BOTH bypass shapes directly, crossed with a maxLength forced
+// well under the unbudgeted body, and asserts the bound holds regardless.
+const noLinksReasonArb = fc.constantFrom('no-repo-base-url', 'no-links-in-data');
+
+test('BL-1684 invariant 1 (D1 regression): the message limit holds even when there is no link list to drop', () => {
+  fc.assert(
+    fc.property(boardArb, noLinksReasonArb, (shape, reason) => {
+      const { data, activeIds } = buildBoard(shape);
+      // BL-1684 hardener pass: computePipelineBoard's own `links` field is
+      // ALWAYS [] in this fixture (extras.repoBaseUrl is never set - see
+      // computePipelineBoard's `extras.repoBaseUrl ? buildLinks(...) : []`),
+      // so 'no-repo-base-url' and 'no-links-in-data' used to coincide on
+      // every draw: both conditions of the `||` were always true together,
+      // and a mutant weakening it to `&&` survived invisibly (a fixture
+      // that cannot independently vary the two never differentiates them -
+      // this file's own "isolating test" rule, applied to itself). Give
+      // 'no-repo-base-url' its own non-empty links so the two reasons
+      // genuinely diverge: one exercises "links present, repoBaseUrl
+      // missing" (renderGridTapLinesHtml short-circuits on !repoBaseUrl
+      // regardless of linkedIds), the other "repoBaseUrl present, links
+      // empty" - the two real production shapes BL-1684 D1 names.
+      const noLinksData =
+        reason === 'no-links-in-data'
+          ? { ...data, links: [] }
+          : { ...data, links: activeIds.slice(0, 1).map((id) => ({ id, path: `${id}-x.yaml` })) };
+      const repoBaseUrl = reason === 'no-repo-base-url' ? undefined : 'https://github.com/x/y';
+      const full = composePipelineBoardHtml(noLinksData, 0, repoBaseUrl).html;
+      // Force the over-limit branch when the board is large enough to,
+      // proving the fallthrough fires on maxLength alone, not on the
+      // board's own real size. Never below FALLBACK_SAFETY_FLOOR (the
+      // fallback's own fixed text is ~92 chars) - a maxLength smaller than
+      // the fallback itself is not a shape any real caller sets, and
+      // isn't what D1 is about.
+      const FALLBACK_SAFETY_FLOOR = 150;
+      const tinyMax = Math.max(FALLBACK_SAFETY_FLOOR, Math.floor(full.length / 2));
+      const { html, omittedLinkCount } = composePipelineBoardHtml(noLinksData, 0, repoBaseUrl, tinyMax);
+      assert.ok(
+        html.length <= tinyMax,
+        `reason=${reason} activeIds=${activeIds.length}: composed ${html.length} chars > maxLength ${tinyMax} (full was ${full.length})`
+      );
+      assert.equal(omittedLinkCount, 0, `reason=${reason}: expected omittedLinkCount 0 with no links to drop, got ${omittedLinkCount}`);
+    }),
+    { numRuns: 60 }
+  );
+});
+
 // ── Invariant 2: a caption never renders as a bare id ─────────────────────
 
 test('BL-956 invariant 2: every caption line carries non-empty context after its ticket id', () => {

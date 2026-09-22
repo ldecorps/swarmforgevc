@@ -288,12 +288,19 @@ export const PIPELINE_BOARD_PAUSED_MAX = 3;
 const PAUSED_PRIORITY_FALLBACK = Number.MAX_SAFE_INTEGER;
 
 // BL-502: Telegram's own sendMessage text limit is 4096 chars; a small
-// safety margin below it absorbs the HTML entity expansion escapeHtml adds
-// (each &/</> becomes 4-5 chars) and any off-by-a-few in a future render
-// tweak, without eating meaningfully into the link budget. Every consumer
-// of the send limit (budgetPipelineBoardLinks below, its caller in
+// safety margin below it covers any off-by-a-few in a future render tweak,
+// without eating meaningfully into the link budget. Every consumer of the
+// send limit (budgetPipelineBoardLinks below, its caller in
 // pipelineBoardSync.ts) reads this ONE constant, never a hardcoded number
 // of its own.
+//
+// BL-1684: this margin is NOT what absorbs HTML entity expansion
+// (each &/</> escapeHtml adds becomes 4-6 chars) - it never could, against
+// an unbounded number of escapable rows. Every cap that renders a title
+// (PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX via truncateCaptionDescription)
+// budgets the ESCAPED length directly, and composePipelineBoardHtml itself
+// carries a last-resort fallback below - the actual two-layer defence
+// against the 2026-07-17 rejected-send outage.
 export const PIPELINE_BOARD_MESSAGE_MAX_LENGTH = 4000;
 
 // BL-585/BL-979: the matrix's own character-width budget. Under BL-585 this
@@ -947,11 +954,32 @@ export const HEALTH_DOT_GLYPHS: Record<TicketHealthDot, string> = {
   red: '🔴',
 };
 
+// BL-1684: caps on the RENDERED (escaped) length, never the raw one - a
+// '&'/'<'/'>'-heavy title expands 3-5x through escapeHtml (each becomes
+// &amp;/&lt;/&gt;), and the old raw-length cap let that expansion ride
+// straight past PIPELINE_BOARD_MESSAGE_MAX_LENGTH, since
+// composePipelineBoardHtml only budgets the LINK list, never the body
+// (the 2026-07-17 outage path). Binary search on the cut INDEX: escaped
+// length is monotonic non-decreasing in the number of raw chars kept
+// (each additional char adds zero or more escaped chars, never fewer),
+// so the largest prefix whose escaped length still fits is well-defined -
+// never cut mid-entity (a whole raw char is always kept or dropped).
 function truncateCaptionDescription(text: string): string {
-  if (text.length <= PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX) {
+  if (escapeHtml(text).length <= PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX) {
     return text;
   }
-  return `${text.slice(0, PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX - 1)}…`;
+  const budget = PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX - 1; // room for the ellipsis
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (escapeHtml(text.slice(0, mid)).length <= budget) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return `${text.slice(0, lo)}…`;
 }
 
 function gridCaptionLine(row: PipelineBoardRow, showSwarmBadge: boolean): string {
@@ -1549,6 +1577,37 @@ export interface PipelineBoardHtmlComposition {
 // message would exceed maxLength, anchors are dropped from the oldest
 // tickets first (most-recent-first order kept for those that remain) until
 // it fits — unlinked ids still render as plain numbers on the board.
+// BL-1684 hardener bounce (D1): even with no repoBaseUrl or no linkable
+// entries, `full` above the caller's maxLength must still fall through to
+// the withoutLinks/fallback logic below - never return unbudgeted. A
+// minimal, well-formed, VISIBLY marked fallback - never a truncated
+// mid-tag HTML string, which Telegram could also reject on
+// malformed-markup grounds on top of the length one.
+function pipelineBoardFallbackHtml(data: PipelineBoardData): string {
+  return `<pre>${escapeHtml(
+    `Pipeline board too large to render (${data.rows.length} active row${data.rows.length === 1 ? '' : 's'}) - see the board file directly.`
+  )}</pre>`;
+}
+
+// BL-1684 hardener pass: the two "every link is gone, try the body alone,
+// then the last-resort fallback" branches (no links to begin with; every
+// link dropped by the loop below) were duplicated inline in
+// composePipelineBoardHtml, which is also what pushed its own complexity
+// past the differential-complexity baseline (workflow.prompt's rule).
+// Isolated here so both call sites share one body/fallback decision.
+function composePipelineBoardWithoutLinks(
+  data: PipelineBoardData,
+  lastChangeMs: number,
+  maxLength: number,
+  omittedLinkCount: number
+): PipelineBoardHtmlComposition {
+  const withoutLinks = buildPipelineBoardHtml(data, lastChangeMs, undefined, new Set());
+  if (withoutLinks.length <= maxLength) {
+    return { html: withoutLinks, omittedLinkCount };
+  }
+  return { html: pipelineBoardFallbackHtml(data), omittedLinkCount };
+}
+
 export function composePipelineBoardHtml(
   data: PipelineBoardData,
   lastChangeMs: number,
@@ -1556,8 +1615,15 @@ export function composePipelineBoardHtml(
   maxLength: number = PIPELINE_BOARD_MESSAGE_MAX_LENGTH
 ): PipelineBoardHtmlComposition {
   const full = buildPipelineBoardHtml(data, lastChangeMs, repoBaseUrl, undefined);
-  if (full.length <= maxLength || !repoBaseUrl || (data.links ?? []).length === 0) {
+  if (full.length <= maxLength) {
     return { html: full, omittedLinkCount: 0 };
+  }
+  if (!repoBaseUrl || (data.links ?? []).length === 0) {
+    // No links to drop - nothing left to try but the withoutLinks/fallback
+    // path below, unconditionally on maxLength (BL-1684 D1: this used to
+    // short-circuit straight past the check whenever either condition
+    // held, regardless of `full.length`).
+    return composePipelineBoardWithoutLinks(data, lastChangeMs, maxLength, 0);
   }
   const sorted = [...(data.links ?? [])].sort(compareLinksMostRecentFirst);
   for (let keep = sorted.length - 1; keep >= 0; keep -= 1) {
@@ -1567,10 +1633,7 @@ export function composePipelineBoardHtml(
       return { html: candidate, omittedLinkCount: sorted.length - keep };
     }
   }
-  return {
-    html: buildPipelineBoardHtml(data, lastChangeMs, undefined, new Set()),
-    omittedLinkCount: sorted.length,
-  };
+  return composePipelineBoardWithoutLinks(data, lastChangeMs, maxLength, sorted.length);
 }
 
 // BL-465: the tappable link list below the grid, as its OWN plain-HTML

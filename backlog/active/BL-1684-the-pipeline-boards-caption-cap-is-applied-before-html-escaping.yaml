@@ -139,3 +139,6 @@ notes: |
   counterexample is hunted with more seeds before it is called a flake.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-21, by: hardender, blamed: coder, class: invariant-unencoded, commit: ab1a4cc6e0, evidence: backlog/evidence/BL-1684-hardener-bounce-20260921.md }

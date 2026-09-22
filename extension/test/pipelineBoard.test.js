@@ -1344,6 +1344,62 @@ test('BL-956: a caption longer than the description budget truncates with a visi
   assert.equal(caption.length, '1 '.length + PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX);
 });
 
+// BL-1684 hardener pass: composePipelineBoardHtml's `full.length <= maxLength`
+// early-return is an EQUALITY boundary the property lane's random draws
+// essentially never land on exactly (a `<=` -> `<` mutant survived a full
+// property run - the invariant "stays within the limit" still holds either
+// way, since the fallback path is also budgeted; only the EXACT-fit case
+// distinguishes them). Pin it directly: a board's own natural html length as
+// the caller's maxLength must return that html unchanged, never fall through
+// to the fallback/withoutLinks path when it already fits exactly.
+test('BL-1684: composePipelineBoardHtml returns the board unchanged when maxLength equals its exact length', () => {
+  // A link present is required to distinguish the boundary: with no links
+  // at all, the "early return" and "fall through and drop nothing" paths
+  // render byte-identical html, so a maxLength==full.length mutant that
+  // wrongly falls through would be invisible here too - the SAME vacuous-
+  // fixture trap the D1 property fix above closes, one level down.
+  const data = {
+    rows: [{ id: 'BL-1', column: 'coder', slug: 'x-x', title: 'a small board' }],
+    parked: [],
+    links: [{ id: 'BL-1', path: 'BL-1-x.yaml' }],
+  };
+  const { html: full } = composePipelineBoardHtml(data, 0, 'https://github.com/x/y');
+  const { html, omittedLinkCount } = composePipelineBoardHtml(data, 0, 'https://github.com/x/y', full.length);
+  assert.equal(html, full, 'expected the exact-fit board back unchanged, not a fallback that drops a link');
+  assert.equal(omittedLinkCount, 0);
+});
+
+// BL-1684 hardener pass: the D1 fallthrough (composePipelineBoardWithoutLinks
+// and its two sub-branches) was exercised only by the property lane, which
+// this file's own CRAP measurement never sees (property tests run in a
+// separate command, per this project's own separation rule) - so a real,
+// well-tested code path read as low-coverage/high-CRAP here. Deterministic
+// unit coverage of both sub-branches, not a replacement for the property
+// lane's random coverage.
+function fifteenEscapableRowsBoard() {
+  const activeIds = Array.from({ length: 15 }, (_, i) => `BL-${100 + i}`);
+  const ticketMeta = {};
+  activeIds.forEach((id, i) => {
+    ticketMeta[id] = { title: (i % 2 === 0 ? '&' : '<').repeat(200), filename: `${id}-x.yaml`, location: 'active' };
+  });
+  return computePipelineBoard({}, [], ticketMeta, { activeIds });
+}
+
+test('BL-1684: with no links to drop, a body that still fits without them renders without a fallback', () => {
+  const data = fifteenEscapableRowsBoard();
+  const { html, omittedLinkCount } = composePipelineBoardHtml(data, 0, 'https://github.com/x/y', 3000);
+  assert.ok(!html.includes('too large to render'), html);
+  assert.equal(omittedLinkCount, 0);
+});
+
+test('BL-1684: with no links to drop and the body itself still over budget, the last-resort fallback renders', () => {
+  const data = fifteenEscapableRowsBoard();
+  const { html, omittedLinkCount } = composePipelineBoardHtml(data, 0, 'https://github.com/x/y', 200);
+  assert.ok(html.includes('too large to render'), html);
+  assert.ok(html.length <= 200, `expected at most 200 chars, got ${html.length}`);
+  assert.equal(omittedLinkCount, 0);
+});
+
 test('BL-956/BL-979: same-epic captions stay grouped, and the change of epic is NAMED by a separator, not left to adjacency', () => {
   const text = renderPipelineBoardBody({
     rows: [
