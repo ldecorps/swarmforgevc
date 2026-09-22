@@ -112,3 +112,25 @@ BL-831's own content — only BL-1649's own paths, QA's own BL-1646
 needed — this file already covers the class.
 
 By QA.
+
+## Instance 3 (QA, 2026-09-22, BL-1685)
+
+Same class. `land_step_cli.bb BL-1685 1092fc69e6` returned `LAND_ESCALATE`
+naming `ENTANGLED_SIBLING BL-1671` and `ENTANGLED_SIBLING BL-1673`, both
+`backlog/done/` on origin/main (BL-1671 moved from `backlog/active/` to
+`backlog/done/`; BL-1673 moved to `backlog/done/M8/` — a path move, not a
+deletion, same shape as this file's original incident). Verified by hand:
+none of BL-1685's own commits (coder b2858caafc/2a1a890a06/1fc2974e5a,
+cleaner e291e07ed0, architect 6e518f7938, hardener
+8ad4344ffe/795512730a, documenter 1ecf7ef5a8/f5486e3232/74617e00ea, QA
+c7224ca54c/1092fc69e6) touch either sibling's backlog YAML or any other
+path of theirs. Hand-built the tip-pure replay (checked out BL-1685's own
+attributed paths from 1092fc69e6 onto origin/main) rather than
+re-escalating; confirmed `git diff --name-only origin/main <replay>`
+carried only BL-1685's own paths, then re-ran `land_step_cli.bb` on the
+hand-built commit, which answered `LAND_CLEAN 6263d1769c`. Landed
+`6263d1769c`, then `3b74351ac3` recording `abandoned_commits:
+[8ad4344ffe, 51a2080108, 1092fc69e6]` on BL-1685's own ticket. No
+specifier round trip needed — this file already covers the class.
+
+By QA.
