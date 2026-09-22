@@ -1,0 +1,198 @@
+id: BL-1693
+title: "specs/features/BL-538-console-paused-ticket-pager.feature is 5/8 on main with two causes and no owner: scenarios 07 and 08 (Approve) were added on 2026-07-22 by b5c1b97a12 ('Add Approve action to the paused-ticket pager Mini App', no ticket, POST /paused-pager/approve plus unit tests, no step handler) so 'Given a paused ticket with human_approval pending is shown on the pager' has never matched a handler; scenario 06's confirmed Expedite gets 409 instead of 200 because BL-1083 (2026-08-23) made the pager's promotion consult <target>/swarmforge/scripts/promotion_gates_cli.bb and bl538ConsolePausedTicketPagerSteps.js's mkdtemp fixture stages no such CLI and no approval, so the gate refuses 'could not be consulted ... refusing rather than promoting ungated'; the handler gains the Approve steps against the real route and stages the real gates CLI and a gate-passing ticket for Expedite, the way BL-1425's own handler does"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); three of eight scenarios of a landed, human-facing
+# feature have failed on main for two months (07/08) and one month (06)
+# in a feature no lane runs until its handler changes, found only by the
+# hardener spot-checking BL-1685's handler list. Not critical: the pager
+# itself works; the Approve route is unit-tested; the acceptance lane is
+# what is dark.
+status: todo
+epic: swarmforge-console
+priority: 6
+direction: swarm-reported
+depends_on: []
+# BL-538, BL-1083, BL-1380 and BL-1425 are in backlog/done. BL-1685
+# (active, hardender) moves the same handler file's bridgeServer require
+# inside its step and changes nothing else in it; this ticket edits the
+# same file AFTER BL-1685 lands (orthogonality at promotion, not a
+# dependency - the coder merges main first as always).
+mutation_cost: low
+# low: one step-handler file and its fixture; no production code, no
+# Stryker target; the feature runs in seconds against the real bridge.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# The contract this ticket satisfies is BL-538's own feature file, all
+# eight scenarios green (BL-1251's rule for a ticket whose deliverable is
+# another feature's handler: point at the file, this is not a claim of
+# ownership over BL-538's contract). No new feature file: the scenarios
+# already exist and are the gate.
+acceptance: specs/features/BL-538-console-paused-ticket-pager.feature
+
+# Handler pins (BL-233): both patterns are literals the parcel's own diff
+# must add to the existing handler file - a step text and the staged CLI's
+# name - so they prove the two halves are present, not wiring to a
+# consumer (BL-1235: the consumer here IS the feature runner, which
+# already reaches this file). The feature run is the real gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl538ConsolePausedTicketPagerSteps.js::human_approval pending is shown on the pager::the Approve scenarios 07/08 Given step is registered in the same parcel (BL-233)'
+  - 'specs/pipeline/steps/bl538ConsolePausedTicketPagerSteps.js::promotion_gates_cli.bb::scenario 06 fixture stages the real promotion gates CLI the pager consults (BL-1083), as bl1425QueueJumpPastCapSteps.js does'
+
+human_approval: approved
+approval_context: >
+  No new feature file is authored (BL-538's existing scenarios are the
+  contract), the ticket is a defect of severity high with no choice
+  posed and no ruling_options, so it is minted approved under the
+  2026-09-17 operator hotfix. FIRM: scenarios 06, 07 and 08 are not
+  reworded, weakened or retired - they describe behaviour that exists
+  (the Approve route since 2026-07-22, the gated Expedite since
+  BL-1083/BL-1425) and the fix is in the handler and its fixture only.
+  FIRM: the fixture stages the REAL promotion_gates_cli.bb and whatever
+  it sources, never a fabricated verdict (BL-1425's own handler comment,
+  line 6). FIRM: extension/src is unchanged; if the coder finds the
+  Approve route or the gated Expedite genuinely wrong, that is a bounce
+  with evidence, never a scenario edit.
+
+invariants:
+  - "Every step of the eight BL-538 scenarios resolves to a handler and passes against the real bridge routes over a fixture root that carries what those routes consult (the promotion gates CLI and its libraries, a ticket the gates allow); no scenario text changes."
+
+description: |
+  ## What is wrong
+  `node specs/pipeline/cli.js specs/features/BL-538-console-paused-ticket-pager.feature`
+  on main (2026-09-22, both the hardener and the specifier):
+
+      not ok 6 - confirmed Expedite sets priority 0, jumps the queue, and advances
+          409 !== 200
+      not ok 7 - Approve is shown only for paused tickets awaiting human approval
+          no step handler matched "Given a paused ticket with human_approval pending is shown on the pager"
+      not ok 8 - confirmed Approve records human_approval without promoting
+          no step handler matched "Given a paused ticket with human_approval pending is shown on the pager"
+      # pass 5
+      # fail 3
+
+  Two causes:
+
+  1. **07/08 - a handler that never existed.** b5c1b97a12 (2026-07-22,
+     "Add Approve action to the paused-ticket pager Mini App", co-authored
+     by Cursor, no ticket id) added `POST /paused-pager/approve` to
+     `extension/src/bridge/bridgeServer.ts`, the button to
+     `pausedPagerUiHtml.ts`, 101 lines of `extension/test/pausedPagerBridge.test.js`,
+     and 14 lines to the feature file - scenarios 07 and 08 - and no step
+     handler. `specs/pipeline/steps/bl538ConsolePausedTicketPagerSteps.js`
+     last changed on 2026-07-19 (e3b809177c). The acceptance runner has
+     thrown on those two scenarios on every run since, and no lane runs
+     a landed feature until its handler changes (the BL-1626/BL-1628
+     finding of 2026-09-17), so nobody ran it until the hardener
+     spot-checked BL-1685's handler list today
+     (`backlog/evidence/unowned-red-bl538-approve-scenarios-hardener-20260922.md`,
+     hardender branch).
+  2. **06 - a fixture the promotion gates cannot see.** BL-1083
+     (f36b77ddec, 2026-08-23) made `promoteToActive` consult
+     `<target>/swarmforge/scripts/promotion_gates_cli.bb`
+     (`extension/src/panel/backlogWriter.ts` `promotionGatesCliPath`,
+     `consultPromotionGates`: "the promotion gates could not be consulted
+     (<cli> is missing); refusing rather than promoting ungated") and the
+     pager's Expedite route answers a refusal with 409 (`bridgeServer.ts`
+     ~879, "the pager shows the gate's own words"). The bl538 handler's
+     `mkFixture` is a bare mkdtemp with `backlog/paused` and
+     `backlog/active`, and `writeTicket` writes `id`, `title`, `status`
+     and `priority` only - no `swarmforge/scripts/`, no
+     `human_approval`. BL-1425's handler (`bl1425QueueJumpPastCapSteps.js`,
+     lines ~177-180) stages the real scripts into its fixture for exactly
+     this consult; the bl538 fixture predates the gate and was never
+     brought along.
+
+  ## Why
+  The pager is a human-facing surface (Telegram Mini App) and its
+  acceptance file is the only executable record of what its Approve and
+  Expedite buttons do; three of its eight scenarios have been dark for
+  one to two months. BL-1425's register rule: a red is owned or it
+  throttles intake.
+
+  ## How (direction, not mandate)
+  - Handler: add the `Given a paused ticket with human_approval pending
+    is shown on the pager` step (writeTicket gains an optional
+    `human_approval` line; the step opens the pager on that ticket the
+    way the existing `Given a paused ticket is shown on the pager` does),
+    `Then I see an Approve control` / `And I do not see Approve on paused
+    tickets that are not pending approval` (read `canApprove` in the
+    pager payload or the rendered button, whichever scenarios 01-05
+    already read), `When I confirm Approve` (POST /paused-pager/approve
+    with the console token, as the Expedite confirm step does),
+    `Then that ticket's human_approval becomes approved`, `And the ticket
+    remains under backlog/paused/`, `And the pager refreshes to show the
+    updated YAML`.
+  - Fixture for 06: stage `swarmforge/scripts/promotion_gates_cli.bb` and
+    the libs it loads into the fixture root (copy the list
+    bl1425QueueJumpPastCapSteps.js stages, or the subset the CLI actually
+    sources - the coder measures which), and give the expedited ticket
+    what the gates allow (`human_approval: approved`, no `depends_on`);
+    then the confirm returns 200 and the existing assertions (priority
+    0, promoted, pager advances) run as written.
+  - Evidence: the 8/8 run and, per scenario 06, which gate the 409 named
+    at mint and why the staged fixture passes it.
+  - Documenter: `docs/how-to/BL-538-console-paused-ticket-pager.md`
+    already describes Approve (BL-1425's documenter updated Expedite);
+    verify, no diagram trigger.
+
+  ## Scope
+  - `specs/pipeline/steps/bl538ConsolePausedTicketPagerSteps.js` only
+    (after BL-1685's require move lands - merge main first).
+  - Out of scope: any `extension/src` change; any scenario text change;
+    the other BL-1685 handlers; a lane that runs landed features
+    (BL-1626/BL-1628 own that).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-538-console-paused-ticket-pager.feature`:
+     `# pass 8`, `# fail 0` - at mint 5/3.
+  2. `grep -c 'human_approval pending is shown on the pager' specs/pipeline/steps/bl538ConsolePausedTicketPagerSteps.js`
+     >= 1 and `grep -c 'promotion_gates_cli.bb'` on the same file >= 1
+     (the two required_wiring pins, read by hand).
+  3. `git diff main...HEAD --name-only` names only the handler file and
+     evidence; `extension/src` and the feature file are unchanged.
+  4. After landing: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `"unowned":[]` and no row names the BL-538 feature (the land
+     step's REGISTER_ROW_RETIRED line, BL-1631).
+
+source: |
+  Hardener note 001470, 2026-09-22T08:51Z: "BL-538 pager 3/8 red on main,
+  unowned - see hardener evidence";
+  backlog/evidence/unowned-red-bl538-approve-scenarios-hardener-20260922.md
+  (hardender branch).
+
+notes: |
+  Minted 2026-09-22 by the specifier adjudicating the hardener's
+  unowned-red note 001470 the same pass (standing-red amendment
+  2026-09-05); the register row (lane acceptance, one row per test file)
+  is added in the mint commit. AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Expedite
+  lane by severity (Article 3.2.4). Holder note sent to the hardender
+  naming BL-1685 (its batch continues unaffected; the reds predate it).
+
+  Census at mint (BL-1445): `git log --format='%h %ci %s' --
+  specs/features/BL-538-console-paused-ticket-pager.feature` = 2 commits
+  (39df1d8030 2026-07-19 the feature; b5c1b97a12 2026-07-22 +14 lines,
+  scenarios 07/08); handler last commit e3b809177c 2026-07-19;
+  `git log -S'could not be consulted' -- extension/src/panel/backlogWriter.ts`
+  = f36b77ddec 2026-08-23 (BL-1083). Run on main today: pass 5, fail 3.
+
+  Note for the record: b5c1b97a12 is the shape BL-233 forbids - a
+  feature file whose scenarios outrun the handlers - landed outside the
+  pipeline with production code and unit tests but no acceptance
+  handler. It is not this ticket's job to relitigate that commit; it is
+  the evidence for why landed features need a lane (BL-1626/BL-1628).
+
+  INVEST: Independent (BL-1685's touch of the same file is a merge, not
+  a dependency), Negotiable (which pager payload field the Approve
+  steps read is direction), Valuable (a human-facing feature's
+  acceptance is green again), Estimable (six steps and one fixture
+  staging, one sitting), Small (no new scenarios; one invariant),
+  Testable (the existing eight scenarios against the real bridge).
+
+assigned_to: coder
