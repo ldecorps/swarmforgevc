@@ -149,3 +149,5 @@ notes: |
   alone; their rows pass trivially and BL-1685 is not amended for it.
 
   Promote after BL-1685 lands (scenario 02 needs BL-1685's twelve lazy).
+
+assigned_to: coder
