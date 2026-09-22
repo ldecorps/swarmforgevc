@@ -159,4 +159,72 @@ pass "sync deliver skips tmux wake when resident pane is mid-turn"
 
 rm -rf "$ROOT2"
 
+# ── 03 (2026-09-22): the conventional handoff-draft.txt path is TRUNCATED,
+#    never deleted, so it never goes missing out from under a caller that
+#    still has it open (aider's repo-map, an /add'ed file) ─────────────────
+ROOT3="$(mktemp -d)"
+git -C "$ROOT3" init -q
+git -C "$ROOT3" config user.email "test@test"
+git -C "$ROOT3" config user.name "test"
+SOCK3="$ROOT3/fake.sock"
+touch "$SOCK3"
+mkdir -p "$ROOT3/.swarmforge"
+echo "$SOCK3" > "$ROOT3/.swarmforge/tmux-socket"
+MASTER_WT3="$ROOT3"
+CODER_WT3="$ROOT3/.worktrees/coder"
+mkdir -p "$MASTER_WT3/.swarmforge/handoffs/coordinator/"{outbox/tmp,sent} "$CODER_WT3/.swarmforge/handoffs/inbox/new" "$ROOT3/swarmforge/runtime"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$MASTER_WT3" > "$ROOT3/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT3" >> "$ROOT3/.swarmforge/roles.tsv"
+
+CALL_LOG3="$ROOT3/tmux-calls.log"
+BEFORE_STDOUT_FILE3="$ROOT3/before-stdout.txt"
+AFTER_STDOUT_FILE3="$ROOT3/after-stdout.txt"
+CAPTURE_COUNT_FILE3="$ROOT3/capture-count"
+export CALL_LOG="$CALL_LOG3" BEFORE_STDOUT_FILE="$BEFORE_STDOUT_FILE3" AFTER_STDOUT_FILE="$AFTER_STDOUT_FILE3" CAPTURE_COUNT_FILE="$CAPTURE_COUNT_FILE3"
+
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+echo "$*" >> "$CALL_LOG"
+for arg in "$@"; do
+  if [[ "$arg" == "capture-pane" ]]; then
+    count="$(cat "$CAPTURE_COUNT_FILE" 2>/dev/null || echo 0)"
+    echo $((count + 1)) > "$CAPTURE_COUNT_FILE"
+    if [[ "$count" == "0" ]]; then
+      cat "$BEFORE_STDOUT_FILE" 2>/dev/null
+    else
+      cat "$AFTER_STDOUT_FILE" 2>/dev/null
+    fi
+    exit 0
+  fi
+done
+exit 0
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+
+DRAFT3="$ROOT3/swarmforge/runtime/handoff-draft.txt"
+cat > "$DRAFT3" <<'EOF'
+type: note
+to: coder
+priority: 50
+message: conventional draft path truncate test
+EOF
+
+echo '❯ ' > "$BEFORE_STDOUT_FILE3"
+echo '❯ ' > "$AFTER_STDOUT_FILE3"
+
+(
+  cd "$ROOT3"
+  export SWARMFORGE_ROLE=coordinator
+  export SWARMFORGE_SKIP_DAEMON=1
+  PATH="$FAKE_BIN:$PATH" bb "$SWARM_HANDOFF" "$DRAFT3"
+) > "$ROOT3/out3.txt"
+
+grep -q "HANDOFF DELIVERED:" "$ROOT3/out3.txt" || fail "03: expected HANDOFF DELIVERED output"
+[[ -f "$DRAFT3" ]] || fail "03: the conventional draft path must still exist after send, not be deleted"
+[[ -s "$DRAFT3" ]] && fail "03: the conventional draft path must be empty after send, not still carry the old draft"
+
+pass "03 (2026-09-22): the conventional handoff-draft.txt path is truncated after send, never deleted"
+
+rm -rf "$ROOT3"
+
 echo "ALL PASS"

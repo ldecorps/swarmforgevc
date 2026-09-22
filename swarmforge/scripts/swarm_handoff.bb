@@ -1201,6 +1201,29 @@
 (defn deliver-all! [outbox-files sender]
   (mapv #(try-sync-deliver! % sender) outbox-files))
 
+;; 2026-09-22 (Claude Code, operator request): swarmforge/runtime/
+;; handoff-draft.txt is a git-TRACKED, well-known scratch path every role
+;; prompt (aider-bootstrap-text and the generic bootstrap alike, per
+;; prompt_engine_lib.bb's handoff-draft-rel-path) tells an agent to write
+;; a draft to, by name, over and over across the whole session - never a
+;; one-off temp file. A prior version of this function's post-send cleanup
+;; (fs/delete draft, unconditional) deleted this SAME conventional file
+;; every single send, leaving it tracked-but-missing in the working tree.
+;; Any tool that had it open as context (aider's repo-map, an `/add`ed
+;; file) then warns "has it been deleted from the file system but not
+;; from git?" on its very next read - observed live twice, hours apart,
+;; on the local qwen mono-router. A caller's OWN one-off scratch draft at
+;; some other path is still deleted outright, exactly as before; only the
+;; shared conventional path is preserved (truncated to empty) so it never
+;; goes missing out from under whatever still has it open.
+(defn conventional-draft-path [root]
+  (str (fs/path root "swarmforge" "runtime" "handoff-draft.txt")))
+
+(defn consume-draft! [draft root]
+  (if (= (str (fs/absolutize draft)) (conventional-draft-path root))
+    (spit (str draft) "")
+    (fs/delete draft)))
+
 (defn -main [& args]
   (when (not= 1 (count args))
     (usage)
@@ -1291,7 +1314,7 @@
             (let [sync-results (if (skip-sync-inject? headers)
                                  (vec (repeat (count outbox-files) :skipped))
                                  (deliver-all! outbox-files sender))]
-              (fs/delete draft)
+              (consume-draft! draft (project-root))
               (doseq [[outbox-file sync-result] (map vector outbox-files sync-results)]
                 (cond
                   (= sync-result :delivered)
