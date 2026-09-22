@@ -3,8 +3,13 @@
 Packet: `.swarmforge/lean/ceremony/2026-09-21.json` (delivered
 2026-09-21T17:25:28Z, `outcome: null`, `failedAt` at midnight), brought
 by the coordinator's note 010685 on 2026-09-22 07:11Z ("ended with NO
-outcome - FAILED"). Outcome recorded with
-`closing-ceremony-outcome.js --shift 2026-09-21 --outcome process_ticket --ref BL-1688`.
+outcome - FAILED"). Outcome: `process_ticket`, ref BL-1688. The recorder
+(`closing-ceremony-outcome.js --shift 2026-09-21 --outcome process_ticket
+--ref BL-1688`, run 2026-09-22 ~09:40Z) REFUSED: "ceremony run for shift
+2026-09-21 is already failed, refusing to overwrite" - a run silent past
+midnight is terminal by design (BL-820: the failure is the record of the
+silence), so the store keeps `outcome: null, failedAt: 2026-09-22T00:00Z`
+and this file plus the three tickets are the outcome's record.
 
 ## Packet, read
 
