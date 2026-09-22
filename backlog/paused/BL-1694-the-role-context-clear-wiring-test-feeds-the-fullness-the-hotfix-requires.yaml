@@ -1,0 +1,205 @@
+id: BL-1694
+title: "swarmforge/scripts/test/test_handoffd_role_context_clear_wiring.sh (BL-316, 2026-07-12) fails at setup on main - 'coder's initial clear never fired within 30s' - because its fake tmux (lines 110-115: log the argv, exit 0) answers `capture-pane` with nothing, and since hotfix 9237008e9f (2026-08-30, 'refuse /clear unless context fullness is known and >=75%') handoffd.bb's role-context-clear sweep reads that as fullness unknown and fail-closes (role-context-fullness-percent: 0 lines -> nil; 'no /clear if unknown'); BL-316's own feature is red with it (contextClearAllRolesSteps.js runs the shell test for scenarios 04 and 05); the fake answers capture-pane with a 400-line scrollback for the roles the cases clear, a new case and a scenario 07 prove a role whose pane reads unknown or below 75% is never cleared despite a fresh completion, and the hotfix's rule enters the durable contract it changed"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); the shell test is row 339 of the standing
+# manifest and has failed at setup since 2026-08-30 (listed unreproduced
+# in the BL-1505 evidence of 09-10, reproduced by coder@2 twice today and
+# by the specifier), and it takes BL-316's acceptance feature red with
+# it. Not critical: the production rule is the one the human ordered;
+# the test asserts the rule it replaced.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+# BL-316 and BL-309 are in backlog/done; hotfix 9237008e9f has no stamp
+# ticket and no hotfix-ledger row (grep of backlog/ for the sha is
+# empty) - surfaced in notes, not this ticket's deliverable. BL-1688
+# (active, coder@2) touches handoffd.bb's -main and never this sweep;
+# coder@2 reproduced the red with BL-1688 stashed.
+mutation_cost: low
+# low: one shell test's fake tmux and one added case, one feature scenario
+# and its handler step (contextClearAllRolesSteps.js, which already
+# drives the shell test); no production code; the daemon boots against a
+# fixture in seconds, the case waits are the file's existing ones.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# The contract is BL-316's own feature, amended by this parcel with
+# scenario 07 (the hotfix's rule at the per-role sweep); pointing at it is
+# BL-1251's rule for a ticket whose deliverable is another feature's
+# handler and fixture, not a claim of ownership. Scenario 07's handler
+# lands in the same parcel (BL-233).
+acceptance: specs/features/BL-316-context-clear-generalize-all-roles.feature
+
+# Two pins (BL-233), both literals the parcel's own diff must add and
+# both absent on main at mint (grep -c = 0 on 2026-09-22): the new
+# scenario's tag in the feature, and the fake tmux answering capture-pane
+# in the shell test. The feature run, which drives the real daemon, is
+# the gate (BL-1235: the consumer already reaches both files).
+required_wiring:
+  - 'specs/features/BL-316-context-clear-generalize-all-roles.feature::context-clear-all-roles-07::the hotfix rule (never clear a role whose fullness is unknown or below 75%) is a scenario of the feature it changed, handler in the same parcel (BL-233)'
+  - 'swarmforge/scripts/test/test_handoffd_role_context_clear_wiring.sh::capture-pane::the fake tmux answers the sweep fullness probe instead of exit 0 for every argv'
+
+human_approval: approved
+approval_context: >
+  A feature file is amended (one scenario added, none reworded or
+  removed) and the ticket is a defect of severity high with no choice
+  posed and no ruling_options, so it is minted approved under the
+  2026-09-17 operator hotfix. FIRM: the production rule from hotfix
+  9237008e9f is unchanged - 75%, fail-closed on unknown, the 400-line
+  scrollback proxy; this parcel changes the TEST's fake and adds the
+  rule to the contract, never the sweep. FIRM: scenarios 01-06 of BL-316
+  keep their text; scenario 07 is added, not substituted. FIRM: the fake
+  tmux's answer to capture-pane is per session (a long scrollback for
+  the roles the cases expect cleared, a short or empty one for the case
+  that must not clear), never a global override that makes fullness
+  unobservable.
+
+invariants:
+  - "Every case in test_handoffd_role_context_clear_wiring.sh that expects a clear feeds the sweep a pane capture of at least 400 lines for that role's session, and every case that expects no clear either holds a pending or in-process item or feeds fewer than 300 lines (below 75%) or an empty capture; the sweep's own log line names which (role-context-clear-fired, -skip-fullness, or the pending/in-process skip)."
+
+description: |
+  ## What is wrong
+  `bash swarmforge/scripts/test/test_handoffd_role_context_clear_wiring.sh`
+  on main (coder@2 twice, specifier once, 2026-09-22):
+
+      FAIL: setup: coder's initial clear never fired within 30s; log: ...started
+
+  The test boots the real `handoffd.bb` against a fixture root with a
+  fake `tmux` on PATH (lines 110-115: `echo "$*" >> CALL_LOG; exit 0`) and
+  waits 30 s (line 138) for `role-context-clear-fired coder`. Hotfix
+  9237008e9f (2026-08-30, "refuse /clear unless context fullness is known
+  and >=75%", the operator directive now in `workflow.prompt`: "Never
+  /clear unless context is at least 75% full; if the fraction is unknown,
+  do not clear") added `role-context-fullness-percent` to `handoffd.bb`
+  (~line 5326): it calls `capture-pane-lines` (`tmux -S <socket>
+  capture-pane -p -t <session> -S -400`, line 1013), counts the lines,
+  and returns nil for zero lines; `role-context-clear-sweep!` (~line
+  5421) then logs `role-context-clear-skip-fullness` or never fires. The
+  fake tmux prints nothing, so every role reads unknown and no clear ever
+  fires; the test's own scenarios never run.
+
+  The hotfix updated `closing_context_clear_harness.bb` (fullness
+  defaults to 80 "so legacy acceptance scenarios" pass - its line 10)
+  and `closing_context_clear_test_runner.bb`, and not this wiring test,
+  which drives the real daemon and the real probe. BL-316's acceptance
+  handler `specs/pipeline/steps/contextClearAllRolesSteps.js` runs this
+  shell test as a subprocess (`runRoleWiringTest`, 60 s timeout) for
+  scenarios 04 and 05, so `node specs/pipeline/cli.js
+  specs/features/BL-316-context-clear-generalize-all-roles.feature` is
+  red on main too (ok 1-3 via the harness, not ok 4 and 5). The shell
+  test is row 339 of `swarmforge/scripts/test/suite-manifest.tsv` (lane
+  standing); the specifier's BL-1505 evidence of 2026-09-10 listed it
+  among six unreproduced reds ("initial clear never fired in 30 s").
+
+  Both files assert BL-316's pre-hotfix behaviour - a fresh completion
+  on an idle role is cleared, full stop - and neither states the rule
+  that replaced it. That is the Article 3.6 shape: a test asserting
+  retired behaviour, and a durable contract missing the present one.
+
+  ## Why
+  The rule is the human's (2026-08-30): a /clear below 75% throws away
+  context for nothing. A test that cannot observe fullness cannot
+  distinguish "the sweep is broken" from "the sweep is obeying the
+  human", and BL-316's feature - the executable record of when a role IS
+  and IS NOT cleared - is silent on the one condition that now decides
+  it. BL-1425's register rule: a red is owned or it throttles intake.
+
+  ## How (direction, not mandate)
+  - Fake tmux: on `capture-pane ... -t <session> ...`, print a scrollback
+    whose length is per session - 400+ lines for coder and cleaner
+    (the roles cases 01 and 04 expect cleared), e.g. `seq 1 400` when the
+    target matches, so `role-context-fullness-percent` reads 100; keep
+    logging every argv to CALL_LOG and `exit 0` for everything else. The
+    existing assertions (one /clear to coder's session, /clear before the
+    startup re-read, cleaner cleared, architect and hardender never)
+    then run as written.
+  - New case 05 in the shell test: a fifth role (or the documenter row
+    the fixture already writes) with a fresh completion, idle, whose
+    session's capture prints 100 lines (25%) - and a sixth reading empty
+    - is never cleared; assert `role-context-clear-skip-fullness <role>
+    25.0%` is logged for the first and no `role-context-clear-fired` for
+    either.
+  - `specs/features/BL-316-context-clear-generalize-all-roles.feature`
+    gains `# BL-316 context-clear-all-roles-07` "a role whose pane
+    fullness is unknown or below 75% is never cleared, even with a fresh
+    completion" and `contextClearAllRolesSteps.js` its step (reads the
+    shell test's output for the skip line, as scenarios 04/05 read
+    theirs). Retire nothing; reword nothing.
+  - Evidence: one green shell run with its `ok` lines, one green feature
+    run (7/7), and the measured fullness the fake produces per role.
+  - Documenter: `docs/how-to/` page for context clearing (BL-309/BL-316)
+    states the 75% rule if it does not already; no diagram trigger.
+
+  ## Scope
+  - `swarmforge/scripts/test/test_handoffd_role_context_clear_wiring.sh`,
+    `specs/features/BL-316-context-clear-generalize-all-roles.feature`
+    (scenario 07 appended), `specs/pipeline/steps/contextClearAllRolesSteps.js`.
+  - Out of scope: `handoffd.bb`, `closing_context_clear_lib.bb`, the
+    threshold and the proxy (the human's rule as landed); the stamp
+    ticket the hotfix never got (a hotfix-sweep matter, noted below);
+    the other reds the BL-1505 evidence listed.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_handoffd_role_context_clear_wiring.sh`:
+     exit 0, every case `ok` including the new fullness case - at mint it
+     fails at setup after 30 s.
+  2. `node specs/pipeline/cli.js specs/features/BL-316-context-clear-generalize-all-roles.feature`:
+     `# pass 7`, `# fail 0` - at mint scenarios 04 and 05 are not ok.
+  3. `git diff main...HEAD --name-only` names only the three scope
+     files and evidence; `swarmforge/scripts/handoffd.bb` and
+     `closing_context_clear_lib.bb` are unchanged.
+  4. After landing: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `"unowned":[]` and no row names either file (the land
+     step's REGISTER_ROW_RETIRED lines, BL-1631).
+
+source: |
+  Coder@2 note 000058, 2026-09-22T09:02Z, to specifier and coordinator:
+  "unowned-red test_handoffd_role_context_clear_wiring.sh, pre-existing";
+  evidence on the coder@2 branch,
+  backlog/evidence/unowned-red-test-handoffd-role-context-clear-wiring-coder-20260922.md.
+
+notes: |
+  Minted 2026-09-22 by the specifier adjudicating coder@2's unowned-red
+  note 000058 the same pass (standing-red amendment 2026-09-05); two
+  register rows are added in the mint commit, one per test file (the
+  shell test, lane shell; BL-316's feature, lane acceptance), both
+  naming this ticket. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Expedite
+  lane by severity (Article 3.2.4). Holder note sent to the coder stage
+  naming BL-1688 (coder@2 continues unaffected).
+
+  Deprecator record (Article 3.6, adjudicated here rather than at a
+  promotion gate): the test and the contract assert behaviour hotfix
+  9237008e9f retired on 2026-08-30. Outcome AMEND: the fixture feeds the
+  fullness the present rule reads, and the rule becomes scenario 07 of
+  the feature it changed. Nothing is retired: scenarios 01-06 still
+  describe live behaviour once fullness is observable.
+
+  Surfaced, not this ticket's: hotfix 9237008e9f carries no
+  `swarm-stamp-*` ticket and no `backlog/hotfix-ledger.yaml` row (`grep
+  -rln 9237008e9f backlog/` is empty on 2026-09-22); the hotfix sweep
+  should stamp it (grep the sha first - memory: sweeps have minted
+  duplicate stamps). Noted to the coordinator.
+
+  Census at mint (BL-1445): `git log -S'role-context-clear-skip-fullness'
+  -- swarmforge/scripts/handoffd.bb` = 9237008e9f only; the shell test's
+  last commit is 41b4eb3975 (2026-08-11, BL-878), the feature's
+  8f2f5e3a30 (2026-07-12); `grep -c capture-pane` on the shell test = 0
+  and `grep -c context-clear-all-roles-07` on the feature = 0 today (the
+  two wiring pins).
+
+  INVEST: Independent (BL-1688 shares no file), Negotiable (how the fake
+  keys its answer per session is direction), Valuable (a standing red
+  leaves and the human's rule is in the contract), Estimable (one fake,
+  one case, one scenario and step, one sitting), Small (one invariant),
+  Testable (the real daemon over the fixture, seconds; the feature run
+  via its existing handler).
+
+assigned_to: coder
