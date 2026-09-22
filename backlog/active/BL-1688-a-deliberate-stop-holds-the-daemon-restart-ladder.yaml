@@ -30,6 +30,11 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1688-a-deliberate-stop-holds-the-daemon-restart-ladder.feature
+abandoned_commits: [b6c79d54b7]
+# b6c79d54b7 was the QA-approved swarmforge-QA tip; land_step_cli.bb
+# returned LAND_REPLAY naming ENTANGLED_SIBLING BL-1671 (already closed on
+# origin/main, not touched by any of BL-1688's own commits). Landed as a
+# tip-pure BL-1241 replay, 95360d8b00, instead.
 
 # Handler pin only (BL-233, BL-1371). Every consumer of the mechanism
 # already exists (the supervisor's check!, swarm_ensure.bb, build_freshness_cli.bb
