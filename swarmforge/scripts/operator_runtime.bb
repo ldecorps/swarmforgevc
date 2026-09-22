@@ -120,13 +120,26 @@
 ;; above; listed here so the watchdog's dependency is obvious.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "babysitterd_freshness_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "project_root_arg_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
     (println "Usage: operator_runtime.bb <project-root> [--tick-once|--poll-once]"))
   (System/exit 1))
 
-(def project-root (or (first *command-line-args*) (usage)))
+;; BL-1517: a flag in the root position (e.g. `operator_runtime.bb
+;; --tick-once` with no root) used to bind project-root to "--tick-once"
+;; itself and create-dirs under it - refused, exit 2, before anything else
+;; in this file runs. project-root stays bound to the RAW argument (never
+;; check's canonicalised :root) - the pre-existing behaviour on a valid
+;; root, uncanonicalised, is unchanged; the check only gates entry.
+(def project-root
+  (let [raw (first *command-line-args*)
+        check (project-root-arg-lib/check-root raw :strictness :repository)]
+    (if (:ok check)
+      raw
+      (project-root-arg-lib/refuse-and-exit!
+       "Usage: operator_runtime.bb <project-root> [--tick-once|--poll-once]" check))))
 (def tick-once? (some #{"--tick-once"} *command-line-args*))
 (def poll-once? (some #{"--poll-once"} *command-line-args*))
 

@@ -18,8 +18,18 @@
             [cheshire.core :as json]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "commit_integrity_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "project_root_arg_lib.bb")))
 
-(def project-root (first *command-line-args*))
+;; BL-1517: an absent fixture-root argument used to silently re-root this
+;; commit-with-integrity! drive at the process cwd (bb fs/path drops a
+;; nil first segment) - refused before any git add/commit against real
+;; state.
+(def project-root
+  (let [check (project-root-arg-lib/check-root (first *command-line-args*) :strictness :repository)]
+    (if (:ok check)
+      (first *command-line-args*)
+      (project-root-arg-lib/refuse-and-exit!
+       "Usage: commit_integrity_856_scenarios_cli.bb <project-root> --message <msg> --path <path> [...] --reason <reason>" check))))
 
 (defn parse-args [args]
   (loop [args args opts {:paths []}]

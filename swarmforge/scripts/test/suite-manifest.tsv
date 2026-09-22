@@ -160,8 +160,9 @@ pre_qa_gate_gather_lib_acceptance_contract_test_runner.bb	standing
 pre_qa_gate_gather_lib_acceptance_pointer_test_runner.bb	standing		
 pre_qa_gate_lib_test_runner.bb	standing		
 proc_fd_scan_lib_test_runner.bb	standing		
-process_table_lib_test_runner.bb	standing		
-promotion_gates_cli_test_runner.bb	standing		
+process_table_lib_test_runner.bb	standing
+project_root_arg_lib_test_runner.bb	standing
+promotion_gates_cli_test_runner.bb	standing
 promotion_gates_lib_test_runner.bb	standing		
 prompt_engine_test_runner.bb	standing		
 provider_auth_observe_lib_test_runner.bb	standing		

@@ -21,8 +21,19 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "task_commit_coherence_gate_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "project_root_arg_lib.bb")))
 
-(def project-root (first *command-line-args*))
+;; BL-1517/BL-889: an absent fixture-root argument used to silently
+;; re-root this sweep at the process cwd (bb fs/path drops a nil first
+;; segment) - a real live-worktree run then decided against live tickets
+;; and delivered real parcels into other roles' inboxes (2026-08-14).
+;; Refused before any mailbox read or handoff send.
+(def project-root
+  (let [check (project-root-arg-lib/check-root (first *command-line-args*) :strictness :repository)]
+    (if (:ok check)
+      (first *command-line-args*)
+      (project-root-arg-lib/refuse-and-exit!
+       "Usage: dispatch_gap_sweep_harness.bb <project-root>" check))))
 (def swarm-handoff-script (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "swarm_handoff.bb")))
 
 (defn load-roles []

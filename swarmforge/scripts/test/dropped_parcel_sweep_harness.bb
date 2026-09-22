@@ -17,8 +17,20 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "project_root_arg_lib.bb")))
 
-(def project-root (first *command-line-args*))
+;; BL-1517/BL-889: an absent fixture-root argument used to silently
+;; re-root this sweep at the process cwd (bb fs/path drops a nil first
+;; segment) - a real live-worktree run then decided against live tickets
+;; and delivered real parcels into other roles' inboxes (2026-08-14, two
+;; real notes into the live coordinator inbox for BL-871/BL-746). Refused
+;; before any mailbox read or handoff send.
+(def project-root
+  (let [check (project-root-arg-lib/check-root (first *command-line-args*) :strictness :repository)]
+    (if (:ok check)
+      (first *command-line-args*)
+      (project-root-arg-lib/refuse-and-exit!
+       "Usage: dropped_parcel_sweep_harness.bb <project-root> [stall-threshold-ms] [cooldown-ms]" check))))
 (def stall-threshold-ms
   (if-let [a (second *command-line-args*)]
     (parse-long a)

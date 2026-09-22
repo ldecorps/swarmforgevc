@@ -66,6 +66,7 @@
 ;; depending on. The gather half below is a fresh, minimal, expedite-only
 ;; git-show glue - only the DECISION predicate is shared.
 (load-file (str (fs/path scripts-dir "pre_qa_gate_lib.bb")))
+(load-file (str (fs/path scripts-dir "project_root_arg_lib.bb")))
 
 ;; ── args ──────────────────────────────────────────────────────────────────
 
@@ -1073,12 +1074,22 @@
   ;; BL-1379: the reversal's own entry point, checked before the ordinary
   ;; expedition argv parse so a sweep invocation never looks like a run.
   (when (= "unpark" (first argv))
-    (let [[_ root run-dir] argv]
-      (when (or (str/blank? (str root)) (str/blank? (str run-dir)))
+    ;; BL-1517: root is checked BEFORE the run-dir blank check, and named
+    ;; verbatim in the refusal. When root itself is entirely absent (a
+    ;; bare `unpark` with nothing after it), the only thing the caller
+    ;; actually typed is "unpark" (argv's own first element) - reported
+    ;; instead of a blank string, so the refusal names something real.
+    (let [[_ root run-dir] argv
+          reported (if (str/blank? (str root)) (first argv) root)
+          check (project-root-arg-lib/check-root reported :strictness :repository)]
+      (when-not (:ok check)
+        (project-root-arg-lib/refuse-and-exit!
+         "usage: expedite_cli.bb unpark <project-root> <run-dir>" check))
+      (when (str/blank? (str run-dir))
         (binding [*out* *err*]
           (println "usage: expedite_cli.bb unpark <project-root> <run-dir>"))
         (exit! 2))
-      (unpark-subcommand! (str (fs/canonicalize root)) (fs/path run-dir))))
+      (unpark-subcommand! (:root check) (fs/path run-dir))))
   (let [{:keys [project-root ticket] :as opts} (expedite-lib/parse-args argv)]
     (when (or (str/blank? (str project-root)) (str/blank? (str ticket))) (usage!))
     (let [root (str (fs/canonicalize project-root))

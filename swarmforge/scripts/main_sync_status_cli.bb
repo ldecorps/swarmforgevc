@@ -11,6 +11,7 @@
 
 (def script-dir (fs/parent (fs/canonicalize *file*)))
 (load-file (str (fs/path script-dir "master_main_reconcile_lib.bb")))
+(load-file (str (fs/path script-dir "project_root_arg_lib.bb")))
 
 (defn- sh-ok [dir & args]
   (let [{:keys [exit out err]} (apply process/sh {:dir (str dir) :continue true} args)]
@@ -29,7 +30,11 @@
        :fetch-ok? (zero? (:exit fetch))})))
 
 (defn -main [& args]
-  (let [root (fs/canonicalize (or (first args) "."))
+  (let [check (project-root-arg-lib/check-root (or (first args) ".") :strictness :repository)
+        _ (when-not (:ok check)
+            (project-root-arg-lib/refuse-and-exit!
+             "Usage: main_sync_status_cli.bb <project-root>" check))
+        root (:root check)
         daemon-dir (fs/path root ".swarmforge" "daemon")]
     (try
       (let [{:keys [ahead behind]} (rev-counts! root)
