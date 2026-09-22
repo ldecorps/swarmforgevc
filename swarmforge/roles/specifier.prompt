@@ -1043,3 +1043,24 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   the mechanism is what the ticket changes (a require moved inside its
   function, a census pinned), gate the mechanism and let the number be
   the register's concern, not the scenario's.
+
+## A `qa_e2e_procedure` never asks QA to START a mutation run (QA note 003092, BL-1673, 2026-09-22)
+- QA's prompt forbids starting any mutation run - `stryker`,
+  `run_gherkin_mutation.sh`, `mutation_cooldown_gate.bb`; mutation is the
+  hardener's exclusive gate, one stage before QA, and QA only REAPS
+  orphaned mutation processes. BL-1673's step 4 asked QA to run `npx
+  stryker run --mutate out/quality/nightClosingCeremonyLive.js --force`
+  "to see the dry run pass inside a real sandbox"; QA correctly refused,
+  substituted an in-process probe of the same mechanism, and approved.
+  When a ticket's point is behaviour INSIDE a mutation sandbox (a lib that
+  misreads the sandbox's argv, a wiring case red only under Stryker), the
+  hardener's pass is where that is proven: put the sandbox check in `##
+  What is wanted` as a line the hardener's evidence must carry ("the
+  evidence records the dry-run line of one `--mutate <file>` run and the
+  wiring case green inside it"), and write QA's step as READING that
+  committed evidence - the shape the first-run-survivor tickets (BL-1520,
+  BL-1672..BL-1676) already use. QA's own commands are unit, acceptance
+  and property runs and a probe it can run in-process; never a lane
+  another role owns. Swept 2026-09-22: BL-1673 was the only open ticket
+  with the error; its YAML was left alone because QA had already
+  approved it and the land was in flight.
