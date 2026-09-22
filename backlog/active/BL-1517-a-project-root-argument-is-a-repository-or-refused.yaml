@@ -23,6 +23,11 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1517-a-project-root-argument-is-a-repository-or-refused.feature
+abandoned_commits: [3d20d7e133]
+# 3d20d7e133 was the QA-approved swarmforge-QA tip; land_step_cli.bb
+# returned LAND_REPLAY naming ENTANGLED_SIBLING BL-1671 (already closed on
+# origin/main, not touched by any of BL-1517's own commits). Landed as a
+# tip-pure BL-1241 replay, 3252212a66, instead.
 
 required_wiring:
   - 'swarmforge/scripts/main_sync_status_cli.bb::project_root_arg_lib.bb::the CLI that wrote --help/ sources the check'
