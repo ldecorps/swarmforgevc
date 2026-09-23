@@ -29,6 +29,22 @@ The live seat's first request was logged as "Tokens: 7.7k sent". At the default
 4,096 Ollama serves on a CPU host (the IQ3_S seats ran at 4,096 until mid-day), turn 1
 is 177% of the window.
 
+### Live seats, first request, measured after the launcher change landed
+
+`--llm-history-file` captured each seat's first real request after the relaunch; token
+counts use the Qwen2.5 tokenizer (shared by qwen2.5-coder and the qwen2.5:0.5b sandbox
+model used to count them, with a 32k window so nothing is dropped while counting):
+
+| seat | first request | share of the 8,192 served |
+|---|---:|---:|
+| coder | 7,834 tokens | 96% |
+| coordinator | 20,381 tokens | **249%** |
+
+The coordinator's added files arrive as one ~18k-token message, which cannot fit; per
+section 2 it is dropped whole, every turn. **The coordinator seat has never seen its role
+prompt, PIPELINE.md or the constitution index in this pack**: it runs on aider's generic
+system prompt and the latest message.
+
 ## 2. Ollama drops messages silently: confirmed
 
 Controlled test on an ISOLATED Ollama instance (port 11435, scratch model store,
