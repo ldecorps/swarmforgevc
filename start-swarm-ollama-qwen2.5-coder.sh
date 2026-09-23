@@ -13,6 +13,11 @@ unset SWARMFORGE_USE_CEREBRAS SWARMFORGE_USE_PERPLEXITY SWARMFORGE_USE_QWEN || t
 export OPENAI_API_BASE="${OPENAI_API_BASE:-http://127.0.0.1:11434/v1}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:11434/v1}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-ollama}"
+# 2026-09-23: qwen2.5-coder now serves 32,768 tokens (packs/qwen2.5-coder-32k.
+# Modelfile). aider sizes its repo map at window/8 (capped 4096), so the map
+# would silently quadruple too; hold it at the 1024 it has always had so the
+# window is the only variable while its effect is observed.
+export AIDER_MAP_TOKENS="${AIDER_MAP_TOKENS:-1024}"
 
 if ! command -v ollama >/dev/null 2>&1; then
   echo "ERROR: ollama not on PATH (install Ollama for the local happy path)" >&2

@@ -1,0 +1,10 @@
+# qwen2.5-coder:latest serving its native 32k window.
+# Ollama's CPU default is 4096 and the only global override
+# (OLLAMA_CONTEXT_LENGTH) raises every model's window and KV cost, including
+# the 12 GB IQ3_S the local seat loads. A per-model PARAMETER applies to
+# OpenAI-compatible requests too (they cannot set num_ctx themselves).
+# Evidence: backlog/evidence/aider-seat-context-budget-20260923.md
+# Apply:    ollama create qwen2.5-coder:latest -f swarmforge/packs/qwen2.5-coder-32k.Modelfile
+# Undo:     ollama create qwen2.5-coder:latest -f <(printf 'FROM qwen2.5-coder:7b-instruct\n')
+FROM qwen2.5-coder:7b-instruct
+PARAMETER num_ctx 32768
