@@ -430,13 +430,19 @@
 
 (defn notify-in-process-resume!
   "Stuck nudge for work already sitting in in_process — chat order, never
-   another ready_for_next shell wake (that reprints the same TASK)."
+   another ready_for_next shell wake (that reprints the same TASK).
+   :fallback-command safe-idle-fallback-command (2026-09-23): the injected
+   text itself says 'Do NOT run ready_for_next.sh again' - the default
+   no-narration fallback would otherwise tell the agent to reply with
+   exactly that forbidden command, self-contradicting the message it is
+   attached to (observed live: an aider seat took the fallback literally)."
   [socket session agent]
   (let [session (handoff-lib/wake-session socket session)
         text (:text (first (agent-runtime-lib/in-process-resume-steps (or agent "claude"))))]
     (agent-runtime-inject/notify-agent! socket session (or agent "claude")
                                           :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                          :text text)
+                                          :text text
+                                          :fallback-command agent-runtime-lib/safe-idle-fallback-command)
     ;; BL-597 emit, restored by BL-1273. Observes the resume that the
     ;; notify above already performs and logs; it neither gates the nudge
     ;; nor changes this function's value.

@@ -91,9 +91,18 @@
 ;; produced a hallucinated rewrite of ready_for_next.sh (discarded only
 ;; because this seat runs --dry-run). Applied once here so every caller of
 ;; notify-agent! - not just the bootstrap path - gets it for free.
-(defn- text-for-agent [agent text]
+(defn- text-for-agent
+  "fallback-command is the literal command the no-narration suffix tells the
+   agent to reply with verbatim when it has nothing to do - defaults to
+   ready-script-rel-path (the correct idle action for a normal wake).
+   Callers injecting a message that itself PROHIBITS that exact command
+   (e.g. in-process-resume) must pass prompt-engine-lib/safe-idle-fallback-
+   command instead, or the appended fallback reinstates the prohibition the
+   caller's own text just stated."
+  [agent text & {:keys [fallback-command]}]
   (if (= :shell-run-script (:wake-style (agent-runtime-lib/capabilities agent)))
-    (str text prompt-engine-lib/aider-no-narration-suffix prompt-engine-lib/ready-script-rel-path "`")
+    (str text prompt-engine-lib/aider-no-narration-suffix
+         (or fallback-command prompt-engine-lib/ready-script-rel-path) "`")
     text))
 
 (defn notify-agent!
@@ -101,10 +110,14 @@
    wake). An optional :text overrides the agent's default wake message with
    caller-supplied literal instruction text (BL-258's briefing-due nudge is
    the first caller), reusing the exact same capture/submit/retry/confirm
-   machinery as the default wake - never a second, duplicated send path."
-  [socket session agent & {:keys [log-fn on-outcome script-rel-path text]}]
+   machinery as the default wake - never a second, duplicated send path.
+   :fallback-command (only meaningful alongside :text) overrides the no-
+   narration suffix's literal \"nothing to do\" fallback - see text-for-
+   agent's docstring; omitted, every existing caller keeps today's
+   ready-script-rel-path fallback byte-for-byte."
+  [socket session agent & {:keys [log-fn on-outcome script-rel-path text fallback-command]}]
   (let [steps (if text
-                [{:op :send-literal :text (text-for-agent agent text)} {:op :submit}]
+                [{:op :send-literal :text (text-for-agent agent text :fallback-command fallback-command)} {:op :submit}]
                 (agent-runtime-lib/wake-steps agent :script-rel-path script-rel-path))
         wake-text (:text (first (filter #(= :send-literal (:op %)) steps)))
         log! (or log-fn (fn [& _] nil))

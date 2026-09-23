@@ -37,6 +37,19 @@
 
 (def ready-script-rel-path "swarmforge/scripts/ready_for_next.sh")
 
+;; 2026-09-23: the no-narration suffix's "nothing to do" fallback is a
+;; LITERAL command the model is told to reply with verbatim - fine as
+;; ready-script-rel-path for a normal wake (that command IS the correct
+;; idle action there), but self-contradictory when appended to a message
+;; that itself just forbade running that exact command (agent_runtime_lib/
+;; in-process-resume-shell-message: "STOP ... Do NOT run ready_for_next.sh
+;; again" immediately followed by "... your entire reply must be exactly
+;; this one line: `! swarmforge/scripts/ready_for_next.sh`"). Observed live
+;; 2026-09-23: a coder/QA aider seat took the fallback literally and re-ran
+;; the forbidden script. A harmless shell no-op satisfies the same "must
+;; start with `!`" structural rule without reinstating the prohibition.
+(def safe-idle-fallback-command "true")
+
 ;; ── provider capability model (canonical home — BL-206) ────────────────────
 ;; PromptEngine owns which agent/model gets which prompt wording, so the
 ;; capability map that decides it lives here. Every orchestration decision

@@ -53,4 +53,32 @@ grep -q -- '-l MOCK_WAKE' "$CALL_LOG" && fail "expected the :text override to re
 grep -q -- "An arbitrary override literal" "$CALL_LOG" || fail "expected the :text override literal to be sent via tmux send-keys"
 
 pass ":text override replaces the default wake message through the same tmux machinery"
+
+# 2026-09-23: an aider (:shell-run-script) :text override still gets the
+# no-narration suffix appended, but its "nothing to do" fallback command
+# must be overridable via :fallback-command - the in-process-resume banner
+# forbids ready_for_next.sh in its own body, so its caller (handoffd's
+# notify-in-process-resume!) must NOT get the default fallback, which would
+# tell the agent to reply with exactly that forbidden command.
+: > "$CALL_LOG"
+PATH="$FAKE_BIN:$PATH" bb -e "
+(load-file \"$INJECT\")
+(agent-runtime-inject/notify-agent! \"$SOCK\" \"$SESSION\" \"aider\" :text \"STOP. Do NOT run ready_for_next.sh again.\")
+"
+grep -q -- 'reply must be exactly this one line: `! swarmforge/scripts/ready_for_next.sh`' "$CALL_LOG" \
+  || fail "expected the DEFAULT fallback (no :fallback-command given) to stay ready_for_next.sh, byte-for-byte, for backward compat"
+
+pass "aider :text override with no :fallback-command keeps today's ready_for_next.sh fallback"
+
+: > "$CALL_LOG"
+PATH="$FAKE_BIN:$PATH" bb -e "
+(load-file \"$INJECT\")
+(agent-runtime-inject/notify-agent! \"$SOCK\" \"$SESSION\" \"aider\" :text \"STOP. Do NOT run ready_for_next.sh again.\" :fallback-command \"true\")
+"
+grep -q -- 'reply must be exactly this one line: `! true`' "$CALL_LOG" \
+  || fail "expected :fallback-command \"true\" to replace the literal fallback command"
+grep -q -- 'ready_for_next.sh`' "$CALL_LOG" \
+  && fail "expected the forbidden ready_for_next.sh to be ABSENT from the fallback when overridden"
+
+pass "aider :text override with :fallback-command \"true\" never reinstates the forbidden command"
 echo "ALL PASS"

@@ -24,6 +24,8 @@
 
 (def ready-script-rel-path prompt-engine-lib/ready-script-rel-path)
 
+(def safe-idle-fallback-command prompt-engine-lib/safe-idle-fallback-command)
+
 (def default-wake-chat-message
   "You have new handoff mail. If idle, run ready_for_next.sh.")
 
