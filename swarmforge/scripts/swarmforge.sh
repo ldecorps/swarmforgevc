@@ -1886,7 +1886,17 @@ RESUMECHECK
       # --yes-always auto-confirms aider's "Open URL?" prompts (including
       # Perplexity/billing links parsed from API exceptions). Never open a
       # browser from headless swarm panes: noop BROWSER + --no-detect-urls.
-      launch_body=$'export BROWSER="${BROWSER:-/usr/bin/true}"\naider'"${extra_cli:+ $extra_cli}"' --yes-always --no-detect-urls'
+      #
+      # 2026-09-23: aider looks for .aider.model.settings.yml / .aider.model.
+      # metadata.json in its own git root - for a seat that is its WORKTREE,
+      # where these untracked repo-root files never exist - so only the
+      # coordinator (at the root) ever read them: one IQ3_S model ran "diff"
+      # format as coordinator and "whole" as QA, and the pack's required
+      # think:false never reached coder/QA. Both files are passed by absolute
+      # path (aider skips a missing one silently). --llm-history-file records
+      # every request per role so seat prompts can be measured and replayed.
+      local aider_history_dir="$STATE_DIR/aider-llm-history"
+      launch_body=$'export BROWSER="${BROWSER:-/usr/bin/true}"\n'"mkdir -p '$aider_history_dir'"$'\naider'"${extra_cli:+ $extra_cli}"" --yes-always --no-detect-urls --model-settings-file '$WORKING_DIR/.aider.model.settings.yml' --model-metadata-file '$WORKING_DIR/.aider.model.metadata.json' --llm-history-file '$aider_history_dir/${role}.log'"
       ;;
     vibe)
       # Mistral Vibe (pipx install mistral-vibe): a real CLI coding AGENT with

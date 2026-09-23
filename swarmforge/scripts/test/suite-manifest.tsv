@@ -210,6 +210,7 @@ task_scope_gate_lib_test_runner.bb	standing
 telegram_topic_lib_test_runner.bb	standing		
 test_agent_runtime_inject_mock.sh	standing		
 test_agent_runtime_lib.sh	standing		
+test_aider_seat_launch_config.sh	standing		
 test_alternate_runtime_launch.sh	standing		
 test_ambulance_cli.sh	standing		
 test_ancillary_provider_lib.sh	standing		
