@@ -552,6 +552,52 @@
                     :resident-session "swarmforge-coder"
                     :consult-already-active? true})))
 
+;; 2026-09-23: a single shared local inference slot (ollama `-np 1`, every
+;; seat pointed at the same :11434 backend) makes a consult spawn actively
+;; harmful rather than a cheap parallel win - consult-eligible? only ever
+;; fires from :departing-mid-parcel, which by should-rotate-resident?'s own
+;; :departing-working? precondition means the resident IS mid-turn right
+;; now, so the spawned session is GUARANTEED to contend for the one slot the
+;; resident already holds (observed live: coordinator + a QA consult spawn
+;; both stuck retrying litellm timeouts against ollama-ista-iq3s-mono-router
+;; at once). :single-inference-slot? true refuses the spawn outright on an
+;; otherwise-eligible call; absent/false reproduces every existing pack's
+;; behavior byte-for-byte (the assertions above never pass this key).
+(assert-true "consult: NOT eligible on a single-inference-slot pack, even on an otherwise-eligible mid-parcel refusal"
+             (not (mono-router-lib/consult-eligible?
+                   {:gate :departing-mid-parcel :target-role "specifier"
+                    :departing-role "QA" :target-session "swarmforge-specifier"
+                    :resident-session "swarmforge-coder"
+                    :consult-already-active? false
+                    :single-inference-slot? true})))
+(assert-true "consult: explicit false single-inference-slot? behaves exactly like absent"
+             (mono-router-lib/consult-eligible?
+                   {:gate :departing-mid-parcel :target-role "specifier"
+                    :departing-role "QA" :target-session "swarmforge-specifier"
+                    :resident-session "swarmforge-coder"
+                    :consult-already-active? false
+                    :single-inference-slot? false}))
+
+(assert= "single-inference-slot conf: `config single_inference_slot 1` is true"
+         true
+         (mono-router-lib/parse-single-inference-slot?
+          "config active_backlog_max_depth 1\nconfig rotation router\nconfig single_inference_slot 1\n"))
+(assert= "single-inference-slot conf: absent line defaults false"
+         false
+         (mono-router-lib/parse-single-inference-slot?
+          "config active_backlog_max_depth 1\nconfig rotation router\n"))
+(assert= "single-inference-slot conf: `0` is false"
+         false
+         (mono-router-lib/parse-single-inference-slot?
+          "config single_inference_slot 0\n"))
+(assert= "single-inference-slot conf: nil conf-text defaults false"
+         false
+         (mono-router-lib/parse-single-inference-slot? nil))
+(assert= "single-inference-slot conf: a commented line never matches"
+         false
+         (mono-router-lib/parse-single-inference-slot?
+          "# config single_inference_slot 1\n"))
+
 (assert-true "non-home role with mail stays put"
              (not (mono-router-lib/rotate-home?
                    {:rotation-router? true :role "cleaner" :home-role "coder"

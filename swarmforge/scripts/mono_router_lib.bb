@@ -654,15 +654,41 @@
 ;; fires on that exact refusal, never for :busy/:cooldown/:already-active -
 ;; those already resolve on their own without a second session.
 (defn consult-eligible?
+  "2026-09-23: :single-inference-slot? true refuses the spawn outright, even
+   when every other check above passes. This gate only ever fires from
+   :departing-mid-parcel, which should-rotate-resident?'s own
+   :departing-working? precondition guarantees means the resident is mid-turn
+   RIGHT NOW - so on a pack whose model backend serves one request at a time
+   (ollama `-np 1`, every seat pointed at the same local endpoint), the
+   spawned session is not a cheap parallel win, it is a second requester
+   guaranteed to contend for the slot the resident already holds. Absent or
+   false reproduces every existing (non-single-slot) pack's behavior
+   byte-for-byte."
   [{:keys [gate target-role departing-role target-session resident-session
-           consult-already-active?]}]
+           consult-already-active? single-inference-slot?]}]
   (boolean
    (and (= gate :departing-mid-parcel)
         target-role
         (not= (str target-role) (str departing-role))
         target-session
         (not= (str target-session) (str resident-session))
-        (not consult-already-active?))))
+        (not consult-already-active?)
+        (not single-inference-slot?))))
+
+(defn parse-single-inference-slot?
+  "Pure: `config single_inference_slot 1` (or any non-zero/non-blank value)
+   from conf text - true only when the line is present and its value is not
+   `0`. Absent, blank conf-text (including nil), and a commented-out line all
+   default to false, mirroring parse-rotation-after-forward/
+   parse-note-actionable-after-ms's degrade-to-default posture: a pack that
+   never opted in keeps today's consult-spawn behavior exactly."
+  [conf-text]
+  (boolean
+   (when-let [line (some (fn [l] (when (re-find #"^\s*config\s+single_inference_slot\b" l) l))
+                         (str/split-lines (or conf-text "")))]
+     (let [value (str/trim (subs line (+ (str/index-of line "single_inference_slot")
+                                          (count "single_inference_slot"))))]
+       (not (contains? #{"" "0"} value))))))
 
 ;; Hotfix 2026-08-31: seated-preferred yield (QA hold / specifier note deadlock).
 ;; BL-795 redirect recovers when preferred is NOT seated. When preferred IS

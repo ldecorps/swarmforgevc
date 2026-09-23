@@ -1741,6 +1741,16 @@
   (let [pane (try (capture-pane-text socket session) (catch Exception _ ""))]
     (chase-sweep-lib/actively-processing? pane)))
 
+(defn- single-inference-slot-pack? []
+  "2026-09-23: the effective config's single_inference_slot flag - resolved
+   via backlog-depth-lib/conf-file-path (whatever pack swarm-identity
+   recorded at launch), same resolution as auth-respawn-max-attempts/
+   note-actionable-after-ms above. Opt-in per pack (ollama-*-mono-router.conf
+   set it; every other pack leaves it unset and this stays false)."
+  (mono-router-lib/parse-single-inference-slot?
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
 (defn spawn-consult-session!
   "Fires from attempt-resident-rotate!'s :departing-mid-parcel branch only.
    No-op (returns nil) whenever consult-eligible? refuses, the role has no
@@ -1758,7 +1768,8 @@
                       :departing-role departing-role
                       :target-session target-session
                       :resident-session resident-session
-                      :consult-already-active? (consult-active? target-role)})]
+                      :consult-already-active? (consult-active? target-role)
+                      :single-inference-slot? (single-inference-slot-pack?)})]
       (when (and eligible? role-info
                  (not (handoff-lib/session-exists? socket target-session)))
         (let [launch-script (fs/path state-dir "launch" (str target-role ".sh"))
