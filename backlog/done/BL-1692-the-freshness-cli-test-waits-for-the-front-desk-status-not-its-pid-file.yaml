@@ -1,4 +1,13 @@
 id: BL-1692
+abandoned_commits: [15fc9a8dfe]
+# BL-1241: entangled tip - sibling tickets BL-1671 and BL-1687 (both still
+# active/todo) are ancestors of the cited/QA-approved commit 15fc9a8dfe.
+# land_step_cli.bb's :replay action built a tip-pure replay off current
+# origin/main (711c58d9a4), landed as 005db8a67a - own-paths content
+# verified byte-identical to 15fc9a8dfe for every BL-1692 file, and
+# test_build_freshness_cli.sh + the feature + the new property test
+# re-run clean at the replay commit. Land-approval mapping (BL-1334)
+# records 005db8a67a <- 15fc9a8dfe in the shared land-approvals store.
 title: "swarmforge/scripts/test/test_build_freshness_cli.sh case merged-code-reaches-daemons-02/03(compiled) waits only for front-desk-supervisor.pid (line 125) and reads `build_freshness_cli.bb report` at once (line 140), but front_desk_supervisor.bb writes its pid file about a second before its first write-status! stamps the children's build_sha (measured 0.3 s versus 1.2 s after launch on 2026-09-22), so the 'before' report reads running_sha null / stale false for bridge, bot and the supervisor and the case fails 'bridge should be reported stale before sync' - red on main since at least 2026-09-02 (BL-1334's coder pass), listed unowned in the BL-1505 evidence of 2026-09-10, reproduced by coder@2 and the specifier today; its sibling cases at lines 217 and 272 already wait on the status file's bridge pid and do not race; the case waits for the status file to carry build_sha for both children, through one readiness helper every launch site in the file uses"
 milestone: M8
 type: defect

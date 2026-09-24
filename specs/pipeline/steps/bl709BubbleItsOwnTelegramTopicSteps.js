@@ -9,12 +9,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const {
-  effectiveBubbleMirrorTopicId,
-  effectiveLetsTalkMirrorTopicId,
-  formatBubbleMirrorText,
-  mirrorLetsTalkTurnToBubble,
-} = require('../../../extension/out/bridge/bridgeServer');
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require('../../../extension/out/bridge/bridgeServer');
+  }
+  return _bridgeServer;
+}
 const {
   BUBBLE_SUBJECT_ID,
   BUBBLE_TOPIC_NAME,
@@ -167,7 +171,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^a Let's Talk turn completes$/, async (ctx) => {
     ctx.sent = [];
     await withTelegramEnv(async () => {
-      await mirrorLetsTalkTurnToBubble(ctx.root, 'hello from bubble', 'agent reply', {
+      await bridgeServer().mirrorLetsTalkTurnToBubble(ctx.root, 'hello from bubble', 'agent reply', {
         sendMessage: async (_t, _c, text, _r, _p, topicId) => {
           ctx.sent.push({ text, topicId });
           return { success: true, messageId: ctx.sent.length };
@@ -179,7 +183,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^both sides of the turn are posted into the Bubble topic$/, (ctx) => {
     assert.ok(ctx.sent.length >= 1);
     assert.ok(ctx.sent.every((s) => s.topicId === BUBBLE_TOPIC));
-    assert.equal(ctx.sent[0].text, formatBubbleMirrorText('hello from bubble', 'agent reply'));
+    assert.equal(ctx.sent[0].text, bridgeServer().formatBubbleMirrorText('hello from bubble', 'agent reply'));
   });
 
   registry.defineScoped(/^nothing is posted into the Cursor Remote topic$/, (ctx) => {
@@ -206,10 +210,10 @@ function registerSteps(registry) {
   });
 
   registry.defineScoped(/^the response is posted into the Bubble topic$/, async (ctx) => {
-    assert.equal(effectiveLetsTalkMirrorTopicId(ctx.topics), BUBBLE_TOPIC);
+    assert.equal(bridgeServer().effectiveLetsTalkMirrorTopicId(ctx.topics), BUBBLE_TOPIC);
     ctx.sent = [];
     await withTelegramEnv(async () => {
-      await mirrorLetsTalkTurnToBubble(ctx.root, 'follow-up in bubble', 'bubble answer', {
+      await bridgeServer().mirrorLetsTalkTurnToBubble(ctx.root, 'follow-up in bubble', 'bubble answer', {
         sendMessage: async (_t, _c, text, _r, _p, topicId) => {
           ctx.sent.push({ text, topicId });
           return { success: true, messageId: ctx.sent.length };
@@ -238,7 +242,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^its answer is posted into the Cursor Remote topic$/, (ctx) => {
     assert.ok(ctx.control.action === 'command' || ctx.control.action === 'prompt' || ctx.control.action === 'status');
     assert.equal(ctx.controlMirrorTopic, CURSOR_TOPIC);
-    assert.notEqual(effectiveLetsTalkMirrorTopicId(ctx.topics), CURSOR_TOPIC);
+    assert.notEqual(bridgeServer().effectiveLetsTalkMirrorTopicId(ctx.topics), CURSOR_TOPIC);
   });
 
   registry.defineScoped(/^nothing is posted into the Bubble topic$/, (ctx) => {
@@ -273,11 +277,11 @@ function registerSteps(registry) {
     writeState(ctx.root, { updateOffset: 0, cursorTopicId: CURSOR_TOPIC });
     writeMap(ctx.root, { [String(CURSOR_TOPIC)]: CURSOR_BRIDGE_SUBJECT_ID });
     ctx.topics = { cursorTopicId: CURSOR_TOPIC };
-    assert.equal(effectiveBubbleMirrorTopicId(ctx.topics), undefined);
+    assert.equal(bridgeServer().effectiveBubbleMirrorTopicId(ctx.topics), undefined);
   });
 
   registry.defineScoped(/^the turn is mirrored into the Cursor Remote topic as before$/, (ctx) => {
-    assert.equal(effectiveLetsTalkMirrorTopicId(ctx.topics), CURSOR_TOPIC);
+    assert.equal(bridgeServer().effectiveLetsTalkMirrorTopicId(ctx.topics), CURSOR_TOPIC);
     assert.ok(ctx.sent.length >= 1);
     assert.ok(ctx.sent.every((s) => s.topicId === CURSOR_TOPIC));
   });

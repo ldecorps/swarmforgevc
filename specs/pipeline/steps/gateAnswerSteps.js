@@ -9,7 +9,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
-const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 const { installFakeTmux } = require(path.join(EXT_DIR, 'test', 'helpers', 'fakeTmux'));
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
@@ -83,7 +92,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it submits an answer to that captured gate$/, async (ctx) => {
-    ctx.bridge = await startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
+    ctx.bridge = await bridgeServer().startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
     ctx.response = await postGateAnswer(ctx.bridge.port, ctx.authHeaders, { role: 'coder', answer: 'y' });
     ctx.responseBody = await ctx.response.json();
     ctx.bridge.stop();
@@ -107,7 +116,7 @@ function registerSteps(registry) {
 
   // ── scope-gates-only-02 ────────────────────────────────────────────────
   registry.define(/^it attempts an action other than answering a captured gate$/, async (ctx) => {
-    ctx.bridge = await startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
+    ctx.bridge = await bridgeServer().startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
     ctx.response = await postGateAnswer(ctx.bridge.port, ctx.authHeaders, { action: 'shell', command: 'rm -rf /' });
     ctx.bridge.stop();
   });
@@ -145,7 +154,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the remote client answers one of them$/, async (ctx) => {
-    ctx.bridge = await startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
+    ctx.bridge = await bridgeServer().startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
     ctx.response = await postGateAnswer(ctx.bridge.port, ctx.authHeaders, { role: 'coder', answer: 'y' });
     ctx.responseBody = await ctx.response.json();
     ctx.bridge.stop();

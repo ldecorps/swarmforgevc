@@ -14,7 +14,16 @@ const { execFileSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
-const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 const { relaySseReplies } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramFrontDeskBotCore'));
 
 const SUPPORT_THREAD_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'support_thread.bb');
@@ -41,7 +50,7 @@ function notify(root, threadId, changed, summary) {
 }
 
 async function withBridge(target, fn) {
-  const handle = await startBridge(target, path.join(target, 'runs.jsonl'), BRIDGE_TOKEN);
+  const handle = await bridgeServer().startBridge(target, path.join(target, 'runs.jsonl'), BRIDGE_TOKEN);
   try {
     return await fn(handle);
   } finally {

@@ -192,3 +192,6 @@ notes: |
   land replays only its own paths.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-24, by: architect, blamed: coder, class: behavior, commit: 96139653f8, evidence: backlog/evidence/BL-1687-bounce-20260924.md }

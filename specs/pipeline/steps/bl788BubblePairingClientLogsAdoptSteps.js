@@ -25,7 +25,16 @@ const os = require('node:os');
 const http = require('node:http');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
-const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 const { buildResidentSpyTunnelUrls } = require(path.join(EXT_DIR, 'out', 'concierge', 'residentSpyTunnelNotify'));
 
 const GRADLE_FILE = path.join(__dirname, '..', '..', '..', 'android', 'app', 'build.gradle.kts');
@@ -64,7 +73,7 @@ function shippedApplicationId() {
 }
 
 async function withBridge(target, fn) {
-  const handle = await startBridge(target, path.join(target, 'runs.jsonl'), TOKEN, {});
+  const handle = await bridgeServer().startBridge(target, path.join(target, 'runs.jsonl'), TOKEN, {});
   try {
     return await fn(handle);
   } finally {
