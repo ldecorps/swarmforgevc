@@ -27,7 +27,7 @@ required_wiring:
   - 'swarmforge/packs/full-forge.conf::on-demand::full-forge declares its art-director on-demand'
   - 'specs/pipeline/steps/bl1710ArtDirectorOnDemandSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your 2026-09-24 correction ("I meant Art Director") applied to the slice
   I first minted for the documenter; the documenter stays a standing seat
