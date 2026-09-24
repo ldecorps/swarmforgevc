@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-24T09:07:48.575271782Z","feature_name":"BL-1696 seat gives a local aider seat its whole command vocabulary","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1696-seat-gives-a-local-aider-seat-its-whole-command-vocabulary.feature","background_hash":"674a2d711f5300380288779d393cc58a4b60836f611016763b2bc426d5059f5b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a well-formed verb runs exactly its one script with fixed arguments","scenario_hash":"5c064b30f44f58f088db3d40e43797f2e3b4ba260c015a829dd6fe9980b4f77a","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-09-24T09:07:48.575271782Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1696 seat gives a local aider seat its whole command vocabulary
 
   A headless aider seat has no command channel: it never runs a model's

@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# BL-1696: `seat <verb> [args]` - the WHOLE command vocabulary of a local
+# aider seat. A headless aider seat has no other command channel (it never
+# runs a model's "!" line and auto-declines fenced shell blocks under
+# --yes-always), so every pipeline step it can perform is one of these
+# short, fixed-shape verbs. Each verb runs AT MOST the one script or git
+# subcommand it names, every argument reaches that script as its own argv
+# element (never through a shell), and a malformed argument or a verb
+# outside the running role's set is refused before anything runs (exit 2,
+# nothing executed, tree unchanged). A conflicting merge is aborted, never
+# left for a model to resolve (exit 3).
+#
+# Coordinator's other verbs (main-sync, ff-main, freshness, close, promote,
+# stage-sync) are deliberately NOT here - they wait on the local pack-shape
+# ruling (BL-1702); building them now would build surface no model may ever
+# type in this slice.
+#
+# Stock macOS /bin/bash 3.2 compatible: no bash-4-only array builtins.
+set -u
+
+root="$(git rev-parse --show-toplevel)" || { echo "seat: not inside a git checkout" >&2; exit 2; }
+common_dir="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+  || { echo "seat: cannot resolve the git common dir" >&2; exit 2; }
+project_root="$(dirname "$common_dir")"
+S="$root/swarmforge/scripts"
+role="${SWARMFORGE_ROLE:-}"
+roles_file="$project_root/.swarmforge/roles.tsv"
+
+VERBS_ALL="next done ask note handoff merge test"
+VERBS_COORDINATOR="next done ask note"
+
+role_verbs() {
+  case "$1" in
+    coder|cleaner|architect|hardender|documenter|QA) printf '%s' "$VERBS_ALL" ;;
+    coordinator) printf '%s' "$VERBS_COORDINATOR" ;;
+    *) printf '' ;;
+  esac
+}
+
+verb_allowed() {
+  local r="$1" v="$2" allowed x
+  allowed="$(role_verbs "$r")"
+  for x in $allowed; do
+    [[ "$x" == "$v" ]] && return 0
+  done
+  return 1
+}
+
+usage() {
+  echo "usage: $1" >&2
+  exit 2
+}
+
+refuse_unknown_verb() {
+  local allowed="${1:-}"
+  local shown="${role:-<unset>}"
+  echo "seat: unknown verb '${verb}'. Verbs for role '${shown}': ${allowed:-<none>}" >&2
+  exit 2
+}
+
+role_exists() {
+  local candidate="$1"
+  [[ -n "$candidate" && -f "$roles_file" ]] || return 1
+  awk -F'\t' -v r="$candidate" '$1==r{f=1} END{exit !f}' "$roles_file"
+}
+
+# Invariant 2: text arguments carrying a dollar sign, a backtick, a
+# backslash or a double quote are refused - never sanitized, never
+# escaped, never passed on. Every allowed text still reaches its script as
+# one argv element (this file never builds a shell command string out of
+# caller-supplied text).
+text_ok() {
+  local t="$1"
+  [[ -n "$t" ]] || return 1
+  case "$t" in
+    *'$'*) return 1 ;;
+    *'`'*) return 1 ;;
+    *'\'*) return 1 ;;
+    *'"'*) return 1 ;;
+  esac
+  return 0
+}
+
+# Article 2.2: a worktree role's draft is checkout-local; the two
+# master-resident roles (coordinator, specifier) share the runtime path.
+draft_path() {
+  case "$role" in
+    coordinator|specifier) printf '%s/swarmforge/runtime/handoff-draft.txt' "$project_root" ;;
+    *) printf '%s/tmp/handoff.txt' "$root" ;;
+  esac
+}
+
+verb="${1:-}"
+[[ $# -ge 1 ]] && shift
+
+case "$verb" in
+  next|done|ask|note|handoff|merge|test) : ;;
+  *) refuse_unknown_verb "$(role_verbs "$role")" ;;
+esac
+
+if ! verb_allowed "$role" "$verb"; then
+  case "$verb" in
+    next)    usage "seat next" ;;
+    done)    usage "seat done" ;;
+    ask)     usage 'seat ask "<one sentence>"' ;;
+    note)    usage 'seat note <role> <NN> "<text, at most 80 chars>"' ;;
+    handoff) usage "seat handoff <role> BL-<n>" ;;
+    merge)   usage "seat merge <from-role> <sha>" ;;
+    test)    usage "seat test" ;;
+  esac
+fi
+
+case "$verb" in
+  next)
+    [[ $# -eq 0 ]] || usage "seat next"
+    exec bash "$S/ready_for_next.sh"
+    ;;
+
+  done)
+    [[ $# -eq 0 ]] || usage "seat done"
+    exec bash "$S/done_with_current.sh"
+    ;;
+
+  ask)
+    [[ $# -eq 1 ]] || usage 'seat ask "<one sentence>"'
+    text_ok "$1" || usage 'seat ask "<one sentence>"'
+    exec bb "$S/role_ask.bb" "$project_root" --role "$role" --question "$1"
+    ;;
+
+  note)
+    [[ $# -eq 3 ]] || usage 'seat note <role> <NN> "<text, at most 80 chars>"'
+    to_role="$1"; priority="$2"; message="$3"
+    role_exists "$to_role" || usage 'seat note <role> <NN> "<text, at most 80 chars>"'
+    [[ "$priority" =~ ^[0-9][0-9]$ ]] || usage 'seat note <role> <NN> "<text, at most 80 chars>"'
+    text_ok "$message" || usage 'seat note <role> <NN> "<text, at most 80 chars>"'
+    [[ ${#message} -le 80 ]] || usage 'seat note <role> <NN> "<text, at most 80 chars>"'
+    draft="$(draft_path)"
+    mkdir -p "$(dirname "$draft")"
+    {
+      printf 'type: note\n'
+      printf 'to: %s\n' "$to_role"
+      printf 'priority: %s\n' "$priority"
+      printf 'message: %s\n' "$message"
+    } > "$draft"
+    exec bash "$S/swarm_handoff.sh" "$draft"
+    ;;
+
+  handoff)
+    [[ $# -eq 2 ]] || usage "seat handoff <role> BL-<n>"
+    to_role="$1"; ticket="$2"
+    role_exists "$to_role" || usage "seat handoff <role> BL-<n>"
+    [[ "$ticket" =~ ^BL-[0-9]+$ ]] || usage "seat handoff <role> BL-<n>"
+    sha="$(git -C "$root" rev-parse --short=10 HEAD 2>/dev/null)" || usage "seat handoff <role> BL-<n>"
+    draft="$(draft_path)"
+    mkdir -p "$(dirname "$draft")"
+    {
+      printf 'type: git_handoff\n'
+      printf 'to: %s\n' "$to_role"
+      printf 'priority: 50\n'
+      printf 'task: %s\n' "$ticket"
+      printf 'commit: %s\n' "$sha"
+    } > "$draft"
+    # Article 2.3 self-audit: a brand-new draft's first swarm_handoff.sh
+    # call answers AUDIT_REQUIRED / HANDOFF_NOT_QUEUED and queues nothing.
+    # A script sender has no agent to re-read and resubmit by hand, so this
+    # retries the SAME draft exactly once (handoff_lib.bb's
+    # queue-git-handoff! shape); a second AUDIT_REQUIRED is a failure, not
+    # a loop (BL-1529).
+    out1="$(bash "$S/swarm_handoff.sh" "$draft" 2>&1)"; rc=$?
+    printf '%s\n' "$out1"
+    if printf '%s' "$out1" | grep -q "AUDIT_REQUIRED"; then
+      out2="$(bash "$S/swarm_handoff.sh" "$draft" 2>&1)"; rc=$?
+      printf '%s\n' "$out2"
+      if printf '%s' "$out2" | grep -q "AUDIT_REQUIRED"; then
+        echo "seat: handoff audit challenge repeated on an identical draft - refusing to loop" >&2
+        exit 2
+      fi
+    fi
+    exit "$rc"
+    ;;
+
+  merge)
+    [[ $# -eq 2 ]] || usage "seat merge <from-role> <sha>"
+    from_role="$1"; sha="$2"
+    role_exists "$from_role" || usage "seat merge <from-role> <sha>"
+    [[ "$sha" =~ ^[0-9a-f]{7,40}$ ]] || usage "seat merge <from-role> <sha>"
+    git -C "$root" rev-parse --verify --quiet "${sha}^{commit}" >/dev/null 2>&1 \
+      || usage "seat merge <from-role> <sha>"
+    git -C "$root" merge --no-ff --no-edit "$sha" >/dev/null 2>&1
+    merge_rc=$?
+    if [[ $merge_rc -ne 0 ]]; then
+      conflicts="$(git -C "$root" diff --name-only --diff-filter=U)"
+      git -C "$root" merge --abort >/dev/null 2>&1
+      echo "seat: merge conflict, aborted. Conflicted path(s):" >&2
+      printf '%s\n' "$conflicts" >&2
+      exit 3
+    fi
+    exit 0
+    ;;
+
+  test)
+    [[ $# -eq 0 ]] || usage "seat test"
+    # BL-1696: the seat_test_command config line is operator-authored pack
+    # config, resolved from the effective conf the way
+    # backlog_depth_lib.bb resolves active_backlog_max_depth - it is not
+    # caller input, so running it is not a breach of invariant 2.
+    conf_path=""
+    if command -v bb >/dev/null 2>&1; then
+      conf_path="$(bb "$S/backlog_depth_conf_path_cli.bb" "$project_root" 2>/dev/null)"
+    fi
+    cmd=""
+    if [[ -n "$conf_path" && -f "$conf_path" ]]; then
+      cmd="$(grep '^config seat_test_command ' "$conf_path" 2>/dev/null | head -1 | sed -E 's/^config seat_test_command //')"
+    fi
+    if [[ -z "$cmd" ]]; then
+      echo "seat: no seat test command is configured" >&2
+      exit 2
+    fi
+    cd "$root" && exec bash -c "$cmd"
+    ;;
+esac
