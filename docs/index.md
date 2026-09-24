@@ -370,6 +370,7 @@ expects them, and are not migrated or rewritten here.
 - [Nested Git-Repository Guard (BL-1230)](reference/BL-1230-nested-git-repository-guard.md) — reports any git repository nested in the tracked tree that git itself didn't put there (a `backlog/.git` leak's redirect of `git rev-parse --show-toplevel`); exempt by construction (worktree gitfiles, `node_modules`), report-only, sibling of BL-1039's source-text scan.
 - [Fixture Agent-Binary Defeats PATH Shim (BL-1305)](reference/BL-1305-fixture-agent-binary-defeats-path-shim.md) — the fixture-owned `ZDOTDIR`/`.zshenv` isolation that stops a pane shell's own startup file from re-ordering PATH ahead of the fake `claude` stub, closing the path that let acceptance fixtures boot real, billable agents.
 - [`seat` — a local aider seat's whole command vocabulary (BL-1696)](reference/BL-1696-seat-command-vocabulary.md) — the seven verbs, per-role allow-lists, argument rules, draft paths, and exit codes for the one command channel a headless aider seat has.
+- [Local model briefing (BL-1682)](reference/local-model-briefing.md) — the project-context text sent as the local qwen seat's ollama `system` field on every turn, under the target's `docs/reference/`.
 - [Deprecated pages](deprecated/README.md) — the home for documentation whose described behaviour has been retired (Article 1.7/3.6); empty until the first retirement.
 
 ## Explanation

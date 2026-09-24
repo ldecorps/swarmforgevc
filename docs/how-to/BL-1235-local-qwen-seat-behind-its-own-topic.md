@@ -140,6 +140,28 @@ accident.
 5. Configure a model the endpoint does not hold, post again, and confirm
    the topic names it unavailable and no other seat answers in its place.
 
+## The briefing file — project context on every turn (BL-1682)
+
+`readLocalSeatSystemPrompt(targetPath)` reads
+[`docs/reference/local-model-briefing.md`](../reference/local-model-briefing.md)
+under the target path (`localSeatBriefingPath`) and `runLocalSeatTurn`
+passes its trimmed text as ollama's own per-call `system` field, kept
+strictly separate from `prompt` — the inbound Telegram text is never
+prefixed or rewritten by it. This is what lets the seat answer *about*
+SwarmForge rather than as a generic assistant with no idea what the
+project is.
+
+- **Missing or empty briefing** — `readLocalSeatSystemPrompt` returns
+  `undefined`, `system` is omitted from `completeWithLocalModel`'s
+  `JSON.stringify`'d body entirely, and the request is byte-identical to
+  the seat's pre-BL-1682 shape. A missing briefing is a working state, the
+  same posture `readQwenLocalTopicId` already takes for a missing topic
+  binding — never a refused turn.
+- **The briefing's own text** is the operator's content (drafted
+  2026-09-21, reviewed for factual accuracy by the documenter at parcel
+  time — never rewritten wholesale by the coder). Editing it going
+  forward is an ordinary docs change to that one file, not a code change.
+
 ## Out of scope
 
 Moving, wrapping, or replacing Cursor anywhere (explicitly refused by the
@@ -154,7 +176,9 @@ alone, nothing else.
 
 Acceptance: `specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature`,
 plus `specs/features/BL-1384-the-local-seat-topic-reaches-the-bridge-through-the-front-desk.feature`
-for the feeder-side reachability contract above.
+for the feeder-side reachability contract above, and
+`specs/features/BL-1682-the-local-seat-sends-the-project-briefing-as-its-system-prompt.feature`
+for the briefing-file contract.
 
 See also: [BL-1383: a direct-provider chat seat behind its own topic](BL-1383-provider-chat-seat-behind-its-own-topic.md)
 — a sibling mechanism, minted from the same intake, that answers inside

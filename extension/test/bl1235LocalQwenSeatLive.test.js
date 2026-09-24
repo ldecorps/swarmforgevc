@@ -14,6 +14,7 @@ const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   readQwenLocalTopicId,
+  readLocalSeatSystemPrompt,
   readLocalEndpoint,
   completeWithLocalModel,
   runLocalSeatTurn,
@@ -72,6 +73,28 @@ describe('BL-1235 the seat resolves its topic from the shared map', () => {
   });
 });
 
+describe('the seat reads its project briefing from docs/reference', () => {
+  it('returns the briefing text when the file is present', () => {
+    const root = mkTmpDir('bl1235-briefing-');
+    try {
+      fs.mkdirSync(path.join(root, 'docs', 'reference'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'docs', 'reference', 'local-model-briefing.md'), 'You are the local seat.\n');
+      assert.equal(readLocalSeatSystemPrompt(root), 'You are the local seat.');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('returns undefined rather than throwing when no briefing exists', () => {
+    const root = mkTmpDir('bl1235-briefing-');
+    try {
+      assert.equal(readLocalSeatSystemPrompt(root), undefined);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('BL-1235 one live turn', () => {
   it('acknowledges FIRST, then posts the completion', async () => {
     const { outcome, posted } = await turn();
@@ -92,6 +115,31 @@ describe('BL-1235 one live turn', () => {
     let sawPrompt;
     await turn({ complete: async (_m, prompt) => { sawPrompt = prompt; return 'ok'; } });
     assert.equal(sawPrompt, 'what is 2 + 2?');
+  });
+
+  it('passes the project briefing as the system prompt when one is on disk', async () => {
+    const root = mkTmpDir('bl1235-briefing-');
+    try {
+      fs.mkdirSync(path.join(root, 'docs', 'reference'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'docs', 'reference', 'local-model-briefing.md'), 'Project briefing text.');
+      let sawSystem;
+      await turn({
+        targetPath: root,
+        complete: async (_m, _p, _url, system) => {
+          sawSystem = system;
+          return 'ok';
+        },
+      });
+      assert.equal(sawSystem, 'Project briefing text.');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('completes with no system prompt when no briefing file is present', async () => {
+    let sawSystem = 'not called';
+    await turn({ complete: async (_m, _p, _url, system) => { sawSystem = system; return 'ok'; } });
+    assert.equal(sawSystem, undefined);
   });
 
   it('says so rather than posting an empty reply', async () => {
@@ -202,6 +250,21 @@ describe('BL-1235 the completion call', () => {
     assert.equal(sawUrl, `${ENDPOINT}/api/generate`);
     assert.deepEqual(sawBody, { model: 'qwen3:14b', prompt: 'hello', stream: false });
     assert.equal(reply, 'hi');
+  });
+
+  it('includes the system field only when a briefing is given', async () => {
+    let sawBody;
+    await completeWithLocalModel('qwen3:14b', 'hello', ENDPOINT, async (_url, init) => {
+      sawBody = JSON.parse(init.body);
+      return { ok: true, status: 200, text: async () => JSON.stringify({ response: 'hi' }) };
+    }, 'You are the local seat.');
+
+    assert.deepEqual(sawBody, {
+      model: 'qwen3:14b',
+      prompt: 'hello',
+      system: 'You are the local seat.',
+      stream: false,
+    });
   });
 
   it('throws with the endpoint own words on a bad status', async () => {

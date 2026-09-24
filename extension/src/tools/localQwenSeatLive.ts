@@ -34,6 +34,28 @@ export function localSeatTopicMapPath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
 }
 
+/** The project-briefing text sent as this seat's system prompt on every turn. */
+export function localSeatBriefingPath(targetPath: string): string {
+  return path.join(targetPath, 'docs', 'reference', 'local-model-briefing.md');
+}
+
+/**
+ * The seat's system prompt, or undefined when no briefing file is present.
+ *
+ * Undefined is a working state, not an error, matching `readQwenLocalTopicId`
+ * below: a missing briefing means the seat falls back to answering with no
+ * project context, the same as before this existed, rather than refusing the
+ * turn over a doc file.
+ */
+export function readLocalSeatSystemPrompt(targetPath: string): string | undefined {
+  try {
+    const text = fs.readFileSync(localSeatBriefingPath(targetPath), 'utf8').trim();
+    return text || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The seat's live topic id, or undefined when the operator has not bound one.
  * Undefined is a working state, not an error: the seat then owns no topic, and
@@ -98,17 +120,27 @@ export async function readLocalEndpoint(
   }
 }
 
-/** One completion from the local model. Throws with the endpoint's own words. */
+/**
+ * One completion from the local model. Throws with the endpoint's own words.
+ *
+ * `system` is ollama's own per-call system-prompt field, kept separate from
+ * `prompt` rather than concatenated onto it: the inbound Telegram text stays
+ * exactly what the operator typed, so a caller inspecting the prompt (or a
+ * test asserting on it) never has to account for a briefing prefix. Omitted
+ * when undefined - `JSON.stringify` drops an undefined-valued key - so a
+ * caller with no briefing sends exactly the request this seat always sent.
+ */
 export async function completeWithLocalModel(
   modelId: string,
   prompt: string,
   endpointUrl: string = DEFAULT_NAMED_MODEL_ENDPOINT_URL,
-  fetchFn: FetchLike = globalThis.fetch as unknown as FetchLike
+  fetchFn: FetchLike = globalThis.fetch as unknown as FetchLike,
+  system?: string
 ): Promise<string> {
   const res = await fetchFn(`${endpointUrl}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: modelId, prompt, stream: false }),
+    body: JSON.stringify({ model: modelId, prompt, system, stream: false }),
   });
   const raw = await res.text();
   if (!res.ok) {
@@ -125,7 +157,7 @@ export interface LocalSeatTurnDeps {
   text: string;
   post: (topicId: number, message: string) => Promise<void>;
   readEndpoint?: () => Promise<LocalEndpointReading>;
-  complete?: (modelId: string, prompt: string, endpointUrl: string) => Promise<string>;
+  complete?: (modelId: string, prompt: string, endpointUrl: string, system?: string) => Promise<string>;
   modelId?: string;
 }
 
@@ -157,8 +189,8 @@ function resolveReadEndpoint(deps: LocalSeatTurnDeps): () => Promise<LocalEndpoi
 /** deps.complete, or the real completion call when the caller injects nothing. */
 function resolveComplete(
   deps: LocalSeatTurnDeps
-): (modelId: string, prompt: string, endpointUrl: string) => Promise<string> {
-  return deps.complete ?? ((m, p, url) => completeWithLocalModel(m, p, url));
+): (modelId: string, prompt: string, endpointUrl: string, system?: string) => Promise<string> {
+  return deps.complete ?? ((m, p, url, system) => completeWithLocalModel(m, p, url, undefined, system));
 }
 
 export async function runLocalSeatTurn(deps: LocalSeatTurnDeps): Promise<LocalSeatTurnOutcome> {
@@ -192,11 +224,12 @@ export async function runLocalSeatTurn(deps: LocalSeatTurnDeps): Promise<LocalSe
 
   await post(formatLocalSeatAcknowledgement(turn.modelId));
   const complete = resolveComplete(deps);
+  const systemPrompt = readLocalSeatSystemPrompt(deps.targetPath);
   try {
     // Trimmed here, not only in the default completion call: a reply of pure
     // whitespace posted into the topic is indistinguishable from a broken
     // seat, and the seat is the one that knows it got nothing.
-    const reply = String(await complete(turn.modelId, deps.text, turn.endpointUrl)).trim();
+    const reply = String(await complete(turn.modelId, deps.text, turn.endpointUrl, systemPrompt)).trim();
     await post(reply || '(the local model returned an empty reply)');
   } catch (err) {
     await post(
