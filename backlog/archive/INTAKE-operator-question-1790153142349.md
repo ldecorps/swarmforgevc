@@ -1,12 +1,15 @@
 # Disposition (specifier, 2026-09-24)
 
-Drained after one role_ask; the human ruled A ("A - keep the docs pass as an
-on-demand job (recommended)"). Minted: epic tracker **BL-1709** (on-demand-roles)
-and slice **BL-1710** (the documenter runs on demand; pending review). The call
-contract is prompt prose in swarmforge/roles/documenter.prompt, landed in the mint
-commit. The human's sentence survives verbatim in both tickets' `source:`
-(Article 5.3). Also the second input of the 2026-09-23 specifier A/B; see
-backlog/evidence/specifier-ab-20260923-arm-claude-opus-5-5-20260924.md.
+Drained after one role_ask. The human answered A ("A - keep the docs pass as an
+on-demand job (recommended)") and then corrected the ask itself: "About the
+documentor as "not a seat": I probably messed up when I asked for that: I meant Art
+Director." Minted: epic tracker **BL-1709** (on-demand-roles) and slice **BL-1710**
+(the Art Director runs on demand; pending review), first minted for the documenter
+in 435d4ad7cd and retargeted the same morning before any promotion. The documenter
+stays a standing seat. The call contract is prompt prose in
+swarmforge/roles/art-director.prompt. Both human sentences survive verbatim in
+the tickets' `source:` (Article 5.3). Also the second input of the 2026-09-23
+specifier A/B; see backlog/evidence/specifier-ab-20260923-arm-claude-opus-5-5-20260924.md.
 
 ---
 

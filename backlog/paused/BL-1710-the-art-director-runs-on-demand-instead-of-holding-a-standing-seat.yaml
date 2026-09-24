@@ -1,0 +1,166 @@
+id: BL-1710
+title: "The Art Director runs on demand instead of holding a standing seat - a pack window declared on-demand keeps its roles.tsv row, worktree and mailbox so every note it sends and receives is unchanged, starts no session at launch, gets its own session started through the consult path when its mail arrives (QA's sign-off note, a review call from the documenter or any role) and torn down by the existing consult sweep when idle, raises no missing-session alarm while dormant, and full-forge declares its art-director on-demand"
+milestone: M8
+type: feature
+status: todo
+epic: on-demand-roles
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: Babashka (handoffd, launch registration, babysitter health) and
+# bash (launch path); no Stryker lane for either. The Gherkin handler runs
+# fake-tmux passes, seconds per run.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1710-the-art-director-runs-on-demand-instead-of-holding-a-standing-seat.feature
+
+# handoffd.bb is the pre-existing live consumer that must start an
+# on-demand role's session when its mail arrives; the helper name is fixed
+# at mint so the anchor is a literal that will exist (BL-874), absent on
+# main today. The full-forge anchor is the bare token, which appears
+# nowhere in that conf today, so the coder keeps the freedom to place it
+# before or after the receive mode.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::spawn-on-demand-session!::mail for an on-demand role starts its session (BL-1235 consumer anchor)'
+  - 'swarmforge/packs/full-forge.conf::on-demand::full-forge declares its art-director on-demand'
+  - 'specs/pipeline/steps/bl1710ArtDirectorOnDemandSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Your 2026-09-24 correction ("I meant Art Director") applied to the slice
+  I first minted for the documenter; the documenter stays a standing seat
+  exactly as before, and the documenter-prompt text I had added on the
+  wrong premise is removed. Please review the feature file. What goes is
+  the Art Director's standing session (its window, process, context and
+  idle tokens); its worktree and mailbox stay as files, because mail is
+  how it is called and the worktree is where it commits. This reverses
+  BL-1418's "standing pane" seat shape. FIRM - the Art Director stays
+  outside the chain (Article 1.10) and keeps its lane and its QA land
+  path (BL-1444); every note it sends or receives is unchanged; a dormant
+  on-demand role is never reported as a dead or stuck seat; standing
+  roles behave exactly as before. One consequence to confirm - once
+  on-demand, the Art Director does only work it is called for (QA sign-off
+  notes, review calls, briefs asked of it); it runs no unprompted review
+  passes of the artifact inventory.
+
+invariants:
+  - "An on-demand role's mail is handled exactly like a standing role's (same mailbox, same helpers, same notes); the only difference is that its session exists only while it has mail or a consult marker."
+  - "Every role whose window is not declared on-demand is launched, woken, chased and health-checked byte-identically to before this ticket."
+
+description: |
+  ## What is wanted
+  1. **Pack declaration.** A `window` line may carry the token
+     `on-demand` in the position list after the worktree (beside the
+     receive mode, e.g. `window art-director claude art-director
+     on-demand --model ...`). The launch writes the role's `roles.tsv` row
+     as today, marked on-demand, creates its worktree and mailbox as
+     today, and creates no tmux session for it.
+  2. **Start on mail.** When handoffd would wake a role whose row is
+     on-demand and whose session does not exist, it starts the role's own
+     `roles.tsv` session through the consult path (the one-atomic-command
+     session create of BL-1018 and the consult marker format
+     `.swarmforge/daemon/consult/<role>.json`, as `consult_spawn_cli.bb`
+     does), once, in a helper named `spawn-on-demand-session!` (the name
+     is fixed; the wiring anchor names it), then delivers the wake. A
+     second pass with the session already up starts nothing.
+  3. **Teardown.** The existing `consult-teardown-sweep!` ends the session
+     when it is idle with nothing actionable, exactly as it does for a
+     consult today; no new teardown code is expected.
+  4. **Quiet while dormant.** The chase sweep and babysitterd's health
+     pass treat a missing session for an on-demand role with an empty
+     inbox as normal, not missing/stuck/dead; with mail waiting, the
+     start-on-mail path owns it.
+  5. **full-forge** declares its art-director window `on-demand`.
+
+  ## Why
+  The human, 2026-09-23: "As for documentor: a bit like model steward or
+  recruiter, it does not need to be a seat, more a role. It can be called
+  by any agent who needs to publish something, typically like the
+  documentor." Corrected 2026-09-24: "About the documentor as "not a
+  seat": I probably messed up when I asked for that: I meant Art
+  Director." The Art Director reviews the look and feel of what the swarm
+  publishes for a human; the documenter is its typical caller. The
+  machinery exists already for other reasons: the consult spawn (hotfix
+  5bdf93beed, stamped by BL-1549) and `consult_spawn_cli.bb` (hotfix
+  2026-09-16). This slice makes "started by its mail" the Art Director's
+  normal life.
+
+  ## How (direction, not mandate)
+  - Reuse, do not fork, the consult spawn: the session create and marker
+    write should be the same code `consult_spawn_cli.bb` and
+    `spawn-consult-session!` use (they are deliberately separate today;
+    if sharing them is out of reach, call the CLI).
+  - The on-demand mark in `roles.tsv`: a new trailing column or a
+    separate list; whatever the readers already tolerate (the roster
+    parsers must not misread a new column - check `handoff_lib.bb` and
+    `pack_staffing_gate_lib.bb` readers).
+  - The mechanism is role-agnostic; only full-forge's art-director line
+    uses it in this slice. Mono-router packs are out of scope: their
+    dormant roles already work by rotation and consult.
+  - The call contract (any role, typically the documenter, sends a note
+    naming the artifact and where it renders; the Art Director answers
+    `LGTM` or a defect list, as it answers QA's sign-off) is prompt prose,
+    landed by the specifier in `swarmforge/roles/art-director.prompt`;
+    this slice builds no CLI for it.
+  - Tests (T1): fake tmux recording `new-session`/`kill-session`, a
+    `mkdtemp` project with a pack conf and mailboxes; drive the real
+    handoffd passes, the real chase sweep and babysitterd's real health
+    pass.
+  - Documenter: `architecture.mmd`'s change trigger (the tmux substrate
+    relationship) fires if it draws one session per role - mark on-demand
+    roles; the Art Director's reference/how-to page (if any) says it is
+    started by its mail.
+
+  ## Scope
+  - `swarmforge/scripts/swarmforge.sh` (launch: parse the token, register
+    the row, skip the session), `swarmforge/scripts/handoffd.bb` (start on
+    mail; quiet chase), babysitterd's health pass, `swarmforge/packs/full-forge.conf`.
+  - New: `specs/pipeline/steps/bl1710ArtDirectorOnDemandSteps.js` (BL-233).
+  - Docs and diagrams as above.
+  - Out of scope: the documenter (it stays a standing seat); mono-router
+    packs; giving the freed window to another role; a call CLI; any
+    change to Article 1.10, the Art Director's lane or its QA land path.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA does not
+  relaunch the live swarm.
+  1. `node specs/pipeline/cli.js specs/features/BL-1710-the-art-director-runs-on-demand-instead-of-holding-a-standing-seat.feature`:
+     all scenarios ok.
+  2. The handoffd chase/consult wiring tests and the babysitter tests in
+     `suite-manifest.tsv` are green, one run.
+  3. `grep -n 'on-demand' swarmforge/packs/full-forge.conf` shows exactly
+     the art-director window line; no other pack conf changed.
+  4. `git diff main...HEAD --name-only` names only the Scope files, tests,
+     docs, diagrams and evidence.
+  5. After landing, on the next live launch of full-forge (operator):
+     `tmux ls` shows no art-director session while its inbox is empty, and
+     the next QA sign-off note to the art-director starts one.
+
+source: |
+  backlog/INTAKE-operator-question-1790153142349.md (Operator,
+  2026-09-23T08:45:42Z). Human ask (2026-09-23, LOCAL_AGENT topic,
+  verbatim): "As for documentor: a bit like model steward or recruiter, it
+  does not need to be a seat, more a role. It can be called by any agent
+  who needs to publish something, typically like the documentor." Human
+  correction (Claude Code, 2026-09-24, verbatim): "About the documentor as
+  "not a seat": I probably messed up when I asked for that: I meant Art
+  Director."
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat), first for the
+  documenter on the human's role_ask answer "A - keep the docs pass as an
+  on-demand job (recommended)" (commit 435d4ad7cd), then retargeted the
+  same morning, before any promotion, on the human's correction above.
+  The role_ask answer is moot: it chose how the documenter's per-parcel
+  pass would survive, and the documenter is no longer being changed. The
+  documenter.prompt section added in 435d4ad7cd is removed in the
+  retarget commit; the Art Director's call contract is landed in
+  swarmforge/roles/art-director.prompt in the same commit (BL-798).
+
+  INVEST: Independent, Negotiable (the roster mark, sharing the consult
+  code are direction), Valuable (a standing seat stops costing an idle
+  session), Estimable (launch skip, one spawn helper, two quiet-when-
+  dormant checks, one pack line), Small (five scenarios, two invariants),
+  Testable (fake tmux over the real passes).

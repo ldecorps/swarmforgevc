@@ -99,6 +99,16 @@ first, then minted on the answer.**
   - It also corrected, in the ticket's `approval_context`, one inaccuracy
     in its own question: option A keeps the worktree and mailbox; only the
     standing session goes.
+- **Correction, same morning.** The human then wrote: "About the
+  documentor as "not a seat": I probably messed up when I asked for that:
+  I meant Art Director." The corpus intake itself named the wrong role.
+  - BL-1710 was retargeted to the Art Director before any promotion.
+  - The documenter-prompt section was removed, and the call contract went
+    into `art-director.prompt`.
+  - For the comparison: the arm's clarifying question was built on the
+    intake's wording and did not surface the misnaming. The human caught
+    it on reading the question. An arm that only mints, without asking,
+    would have shipped the misnamed ticket.
 
 ## Gates and refusals, as they happened
 
