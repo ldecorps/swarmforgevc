@@ -123,7 +123,7 @@ test('every new-pole offender is named, not just the first, and a lesser breach 
   assert.deepEqual(result.watchFiles.map((w) => w.file), ['test/watch1.test.js']);
 });
 
-// ── checkFileDurationBudget with confirmAlone (BL-1633) ───────────────────
+// ── checkFileDurationBudget with confirmAlone (BL-1633, retry BL-1721) ────
 
 // BL-1633 invariant: a would-be new-pole confirmed ALONE under budget is
 // contention (the fork pool, not the code), never refused.
@@ -133,7 +133,7 @@ test('a would-be new-pole confirmed alone UNDER budget is contention, not new-po
     7000,
     [],
     new Set(),
-    () => 4000
+    () => ({ ms: 4000 })
   );
   assert.equal(result.passed, true);
   assert.equal(result.verdict, 'contention');
@@ -144,34 +144,74 @@ test('a would-be new-pole confirmed alone UNDER budget is contention, not new-po
 });
 
 // The FIRM: a file over budget alone too is refused exactly as today -
-// confirmation is not a bypass.
+// confirmation is not a bypass. BL-1721: the offender now names the alone
+// duration too (never the bare in-suite number alone).
 test('a would-be new-pole confirmed alone OVER budget stays a new-pole, refused exactly as today', () => {
   const result = checkFileDurationBudget(
     [{ file: 'test/genuine.test.js', durationMs: 15000 }],
     7000,
     [],
     new Set(),
-    () => 9000
+    () => ({ ms: 9000 })
   );
   assert.equal(result.passed, false);
   assert.equal(result.verdict, 'new-pole');
   assert.deepEqual(result.contention, []);
-  assert.deepEqual(result.offenders, [{ file: 'test/genuine.test.js', durationMs: 15000, budgetMs: 7000 }]);
+  assert.deepEqual(result.offenders, [{ file: 'test/genuine.test.js', durationMs: 15000, budgetMs: 7000, aloneMs: 9000 }]);
 });
 
-// The FIRM: a confirmation that does not finish (or otherwise fails) counts
-// as over budget alone - never silently treated as contention.
-test('a confirmer returning null (timeout/failure) counts as over budget alone, still a new-pole', () => {
+// BL-1721: a confirmation that fails is retried exactly once. If the retry
+// SUCCEEDS under budget, the outcome is contention (both numbers named) -
+// never a refusal just because the FIRST attempt happened to fail.
+test('a confirmation that fails once, then succeeds UNDER budget on retry, is contention - not a new-pole', () => {
+  const calls = [];
+  const confirmAlone = (file) => {
+    calls.push(file);
+    return calls.length === 1 ? { failed: 'ECONNRESET' } : { ms: 4200 };
+  };
+  const result = checkFileDurationBudget(
+    [{ file: 'test/flaky.test.js', durationMs: 15000 }],
+    7000,
+    [],
+    new Set(),
+    confirmAlone
+  );
+  assert.deepEqual(calls, ['test/flaky.test.js', 'test/flaky.test.js']);
+  assert.equal(result.verdict, 'contention');
+  assert.deepEqual(result.offenders, []);
+  assert.deepEqual(result.contention, [
+    { file: 'test/flaky.test.js', durationMs: 15000, aloneMs: 4200, budgetMs: 7000, kind: 'contention' },
+  ]);
+});
+
+// The FIRM: a confirmation that fails BOTH the first attempt and its one
+// retry still counts as over budget alone - never silently treated as
+// contention - and the offender names EACH failure's own reason, in
+// attempt order, never the bare in-suite duration alone.
+test('a confirmation that fails twice (first attempt, then the retry) counts as over budget alone, still a new-pole, naming both failures', () => {
+  const calls = [];
+  const confirmAlone = (file) => {
+    calls.push(file);
+    return { failed: `attempt ${calls.length} timed out` };
+  };
   const result = checkFileDurationBudget(
     [{ file: 'test/timedout.test.js', durationMs: 15000 }],
     7000,
     [],
     new Set(),
-    () => null
+    confirmAlone
   );
+  assert.deepEqual(calls, ['test/timedout.test.js', 'test/timedout.test.js']);
   assert.equal(result.verdict, 'new-pole');
   assert.deepEqual(result.contention, []);
-  assert.deepEqual(result.offenders, [{ file: 'test/timedout.test.js', durationMs: 15000, budgetMs: 7000 }]);
+  assert.deepEqual(result.offenders, [
+    {
+      file: 'test/timedout.test.js',
+      durationMs: 15000,
+      budgetMs: 7000,
+      confirmFailures: ['attempt 1 timed out', 'attempt 2 timed out'],
+    },
+  ]);
 });
 
 // A duration exactly AT the budget from the confirmer is not itself under
@@ -183,7 +223,7 @@ test('a confirmed-alone duration exactly at the budget is still a new-pole, not 
     7000,
     [],
     new Set(),
-    () => 7000
+    () => ({ ms: 7000 })
   );
   assert.equal(result.verdict, 'new-pole');
   assert.deepEqual(result.contention, []);
@@ -196,11 +236,11 @@ test('no confirmAlone argument (the four-argument callers) leaves every candidat
   assert.deepEqual(result.contention, []);
 });
 
-test('each candidate is confirmed at most once per run, and each is judged independently', () => {
+test('each candidate that confirms successfully on its first attempt is called exactly once, and each is judged independently', () => {
   const calls = [];
   const confirmAlone = (file) => {
     calls.push(file);
-    return file === 'test/pooled.test.js' ? 4000 : 9000;
+    return file === 'test/pooled.test.js' ? { ms: 4000 } : { ms: 9000 };
   };
   const result = checkFileDurationBudget(
     [
@@ -226,7 +266,7 @@ test('confirmAlone is never called for a registered file (a row, even over budge
     OPEN,
     (file) => {
       calls.push(file);
-      return 4000;
+      return { ms: 4000 };
     }
   );
   assert.deepEqual(calls, []);
@@ -242,7 +282,7 @@ test('confirmAlone is never called for a file below the refusal line (watch-band
     new Set(),
     (file) => {
       calls.push(file);
-      return 4000;
+      return { ms: 4000 };
     }
   );
   assert.deepEqual(calls, []);
@@ -257,7 +297,7 @@ test('verdict priority: contention sorts between watch and stale-row (new-pole/u
   ];
   const register = [{ file: 'stale.test.js', ticket: 'BL-1', firstSeen: '2026-01-01', measuredMs: 9000, note: '' }];
 
-  const result = checkFileDurationBudget(durations, 7000, register, OPEN, () => 4000);
+  const result = checkFileDurationBudget(durations, 7000, register, OPEN, () => ({ ms: 4000 }));
 
   // watch present -> watch beats contention.
   assert.equal(result.verdict, 'watch');
@@ -270,7 +310,7 @@ test('verdict priority: contention beats stale-row when no new-pole/unowned-row/
   ];
   const register = [{ file: 'stale.test.js', ticket: 'BL-1', firstSeen: '2026-01-01', measuredMs: 9000, note: '' }];
 
-  const result = checkFileDurationBudget(durations, 7000, register, OPEN, () => 4000);
+  const result = checkFileDurationBudget(durations, 7000, register, OPEN, () => ({ ms: 4000 }));
 
   assert.equal(result.verdict, 'contention');
   assert.equal(result.staleRows.length, 1);
@@ -294,6 +334,33 @@ test('formatBudgetOffenders lists every offender on its own line', () => {
   assert.equal(lines.length, 2);
   assert.match(lines[0], /slow1/);
   assert.match(lines[1], /slow2/);
+});
+
+// BL-1721: never the bare in-suite duration alone - an offender confirmed
+// alone (but still over budget) names that alone duration too.
+test('formatBudgetOffenders names the confirmed-alone duration when the offender carries one', () => {
+  const text = formatBudgetOffenders([{ file: 'test/genuine.test.js', durationMs: 15000, budgetMs: 7000, aloneMs: 9000 }]);
+  assert.match(text, /test\/genuine\.test\.js/);
+  assert.match(text, /15\.0s/);
+  assert.match(text, /confirmed alone/);
+  assert.match(text, /9\.0s/);
+});
+
+// BL-1721: an offender whose confirmation failed both attempts names EACH
+// failure's own reason, never a bare duration that looks like a real
+// measurement.
+test('formatBudgetOffenders names both confirmation failures when the offender carries them', () => {
+  const text = formatBudgetOffenders([
+    {
+      file: 'test/timedout.test.js',
+      durationMs: 15000,
+      budgetMs: 7000,
+      confirmFailures: ['spawn error: ENOENT', 'confirmation killed by signal SIGTERM (likely the 21000ms timeout)'],
+    },
+  ]);
+  assert.match(text, /test\/timedout\.test\.js/);
+  assert.match(text, /spawn error: ENOENT/);
+  assert.match(text, /SIGTERM/);
 });
 
 // ── main() (thin CLI wrapper, in-process) — BL-378 no-single-file-bounds-the-suite-04 ──
@@ -851,7 +918,7 @@ test('runGuardAgainstReport forwards its 3rd argument as confirmAlone (BL-1633)'
   const root = mkTmp();
   const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 11000 }]);
 
-  const { result } = runGuardAgainstReport(reportPath, undefined, () => 4000);
+  const { result } = runGuardAgainstReport(reportPath, undefined, () => ({ ms: 4000 }));
 
   assert.equal(result.verdict, 'contention');
   assert.deepEqual(result.offenders, []);

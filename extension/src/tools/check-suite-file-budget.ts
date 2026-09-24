@@ -43,8 +43,20 @@ export interface FileDuration {
   durationMs: number;
 }
 
+// BL-1721: the confirmation's own outcome - never a bare number/null, so
+// a failure carries its reason (the spawn error, the timeout, a missing
+// report, or no entry for the file) all the way to the printed line.
+export type PoleConfirmation = { ms: number } | { failed: string };
+
 export interface BudgetOffender extends FileDuration {
   budgetMs: number;
+  // Set when the confirmation eventually succeeded but still measured at
+  // or over budget - "genuinely slow", not contention.
+  aloneMs?: number;
+  // Set when EVERY confirmation attempt (the first, and the one retry)
+  // failed - each attempt's own reason, in attempt order. FIRM: a
+  // confirmation that fails twice still counts as over budget.
+  confirmFailures?: string[];
 }
 
 // Vitest's own --reporter=json shape (Jest-compatible): testResults[] has
@@ -198,24 +210,43 @@ function computeVerdict(
 // six of eight runs over the line with zero code change). No confirmation
 // argument (the four-argument callers, BL-1598's and BL-1620's own) keeps
 // every candidate an offender exactly as before - confirmAlone is never
-// called and this degrades to a no-op pass-through. `null` (the
-// confirmer's own timeout/failure sentinel) counts as over budget alone
-// (the FIRM: a confirmation that does not finish in time is never treated
-// as evidence of contention). Extracted alongside classifyRegisterRows,
-// same CRAP-gate reason.
+// called and this degrades to a no-op pass-through.
+//
+// BL-1721: a confirmation that FAILS (spawn error, timeout, missing
+// report, no entry for the file - `{failed: reason}`) is retried exactly
+// once before it counts as over budget alone - the FIRM: a confirmation
+// that fails twice still refuses, never a silent pass; the retry is the
+// only change to the decision. Every offender line ends up naming what
+// the confirmation actually returned: `aloneMs` when it eventually
+// succeeded but still measured at/over budget, or `confirmFailures` (both
+// attempts' own reasons) when it never did - never the bare in-suite
+// duration alone. Extracted alongside classifyRegisterRows, same
+// CRAP-gate reason.
 function confirmOffendersAlone(
   candidates: FileDuration[],
   budgetMs: number,
-  confirmAlone: ((file: string) => number | null) | undefined
+  confirmAlone: ((file: string) => PoleConfirmation) | undefined
 ): { offenders: BudgetOffender[]; contention: ContentionVerdict[] } {
   const offenders: BudgetOffender[] = [];
   const contention: ContentionVerdict[] = [];
   for (const d of candidates) {
-    const aloneMs = confirmAlone ? confirmAlone(d.file) : null;
-    if (confirmAlone && aloneMs !== null && aloneMs < budgetMs) {
-      contention.push({ file: d.file, durationMs: d.durationMs, aloneMs, budgetMs, kind: 'contention' });
-    } else {
+    if (!confirmAlone) {
       offenders.push({ file: d.file, durationMs: d.durationMs, budgetMs });
+      continue;
+    }
+    let attempt = confirmAlone(d.file);
+    const failures: string[] = [];
+    if ('failed' in attempt) {
+      failures.push(attempt.failed);
+      attempt = confirmAlone(d.file);
+    }
+    if ('failed' in attempt) {
+      failures.push(attempt.failed);
+      offenders.push({ file: d.file, durationMs: d.durationMs, budgetMs, confirmFailures: failures });
+    } else if (attempt.ms < budgetMs) {
+      contention.push({ file: d.file, durationMs: d.durationMs, aloneMs: attempt.ms, budgetMs, kind: 'contention' });
+    } else {
+      offenders.push({ file: d.file, durationMs: d.durationMs, budgetMs, aloneMs: attempt.ms });
     }
   }
   return { offenders, contention };
@@ -265,7 +296,7 @@ export function checkFileDurationBudget(
   budgetMs: number,
   register: RegisterRow[] = [],
   openTickets: Set<string> = new Set(),
-  confirmAlone?: (file: string) => number | null
+  confirmAlone?: (file: string) => PoleConfirmation
 ): BudgetCheckResult {
   const durationByFile = new Map(durations.map((d) => [d.file, d.durationMs]));
   const rowByFile = new Map(register.map((r) => [r.file, r]));
@@ -289,10 +320,21 @@ export function checkFileDurationBudget(
 // Names the offender, its duration, AND the budget it broke (scenario 01)
 // - a report that says only "too slow" sends the next person back to
 // re-profile from scratch, exactly the work this ticket exists to
-// eliminate.
+// eliminate. BL-1721 FIRM: never the bare in-suite duration alone - each
+// line also names what the confirmation returned, an alone duration
+// (still over budget) or each attempt's own failure reason.
 export function formatBudgetOffenders(offenders: BudgetOffender[]): string {
   return offenders
-    .map((o) => `${o.file}: ${(o.durationMs / 1000).toFixed(1)}s exceeds the ${(o.budgetMs / 1000).toFixed(1)}s per-file budget`)
+    .map((o) => {
+      const base = `${o.file}: ${(o.durationMs / 1000).toFixed(1)}s exceeds the ${(o.budgetMs / 1000).toFixed(1)}s per-file budget`;
+      if (o.confirmFailures && o.confirmFailures.length > 0) {
+        return `${base} (confirmation failed: ${o.confirmFailures.join('; retry failed: ')})`;
+      }
+      if (o.aloneMs !== undefined) {
+        return `${base} (confirmed alone: ${(o.aloneMs / 1000).toFixed(1)}s, still over budget)`;
+      }
+      return base;
+    })
     .join('\n');
 }
 
@@ -304,7 +346,7 @@ export function formatBudgetOffenders(offenders: BudgetOffender[]): string {
 export function runGuardAgainstReport(
   reportPath: string,
   registerPath?: string,
-  confirmAlone?: (file: string) => number | null
+  confirmAlone?: (file: string) => PoleConfirmation
 ): { result: BudgetCheckResult; durations: FileDuration[] } {
   const report = JSON.parse(fs.readFileSync(reportPath, 'utf8')) as VitestJsonReport;
   const projectRoot = registerPath ? path.dirname(path.dirname(registerPath)) : undefined;

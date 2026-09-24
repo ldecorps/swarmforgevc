@@ -85,9 +85,15 @@ const REGISTER_PATH = path.join(ROOT_DIR, '..', 'backlog', 'suite-poles.tsv');
 // `main()`'d
 // as a side effect of require - see the require.main guard at the
 // bottom) so the acceptance handler can call the same real function `npm
-// test` does, never a re-statement of it. `null` is the timeout/failure
-// sentinel the FIRM treats as "over budget alone" - the confirmation is
-// evidence of contention only when it actually completes under budget.
+// test` does, never a re-statement of it.
+//
+// BL-1721: returns `{ms}` on a real measurement, or `{failed: reason}` -
+// never a bare null - so a caller (check-suite-file-budget.ts's
+// confirmOffendersAlone, which retries once on `failed` before it counts
+// as over budget) can report WHICH of the confirmation's own failure
+// modes actually happened: a spawn error, a timeout (the child killed by
+// signal after the 3x-budget wait), a missing report file, or a report
+// with no entry for this file.
 function confirmPoleAlone(file) {
   const vitestBin = path.join(ROOT_DIR, 'node_modules', '.bin', 'vitest');
   const absFile = path.isAbsolute(file) ? file : path.join(REPO_ROOT_DIR, file);
@@ -111,13 +117,23 @@ function confirmPoleAlone(file) {
       ['run', '--dir', dir, base, '--reporter=json', `--outputFile=${tmpReport}`],
       { cwd: ROOT_DIR, timeout: 3 * PER_FILE_DURATION_BUDGET_MS, stdio: 'ignore' }
     );
-    if (result.error || !fs.existsSync(tmpReport)) return null;
+    if (result.error) {
+      return { failed: `spawn error: ${result.error.message}` };
+    }
+    if (result.signal) {
+      return { failed: `confirmation killed by signal ${result.signal} (likely the ${3 * PER_FILE_DURATION_BUDGET_MS}ms timeout)` };
+    }
+    if (!fs.existsSync(tmpReport)) {
+      return { failed: 'no report file was written' };
+    }
     const report = JSON.parse(fs.readFileSync(tmpReport, 'utf8'));
     const entry = report.testResults.find((r) => path.resolve(r.name) === absFile);
-    if (!entry) return null;
-    return entry.endTime - entry.startTime;
-  } catch {
-    return null;
+    if (!entry) {
+      return { failed: `no entry for ${file} in the confirmation report` };
+    }
+    return { ms: entry.endTime - entry.startTime };
+  } catch (err) {
+    return { failed: `confirmation threw: ${err.message}` };
   } finally {
     fs.rmSync(path.dirname(tmpReport), { recursive: true, force: true });
   }

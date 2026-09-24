@@ -44,10 +44,24 @@ optional `confirmAlone` argument (`recordTestDuration.js` wires in
 config `npm test` itself uses); before refusing, every unregistered
 candidate at or above the 1.5× line is measured alone once. Under budget
 alone, it is reported as contention (both durations shown, the run
-passes); at or over budget alone — or the confirmer times out and returns
-`null`, which counts as over budget alone — it stays a `new-pole`, refused
-exactly as before. No confirmation runs for a registered or below-the-line
-file, and each candidate is confirmed at most once per run. This is why
+passes); at or over budget alone it stays a `new-pole`, refused exactly as
+before. No confirmation runs for a registered or below-the-line file.
+
+**Amended again (2026-09-24, BL-1721):** the confirmation no longer
+returns a bare number-or-`null`. `confirmPoleAlone` now returns `{ms}` on
+a real solo measurement, or `{failed: reason}` — naming the spawn error,
+the timeout, a missing report, or no entry for the file — never a
+silent `null` a caller cannot report on. A `failed` outcome is retried
+**once**; if the retry also fails, the file still refuses as a `new-pole`
+(BL-1633's fail-closed posture is unchanged — two failed attempts still
+count as over budget), but the offender line now names what actually
+happened rather than only the in-suite duration: `(confirmation failed:
+<first reason>; retry failed: <second reason>)`, or `(confirmed alone:
+<Ns>, still over budget)` for a real over-budget measurement. This closed
+the gap QA hit at load ~10 (2026-09-24): a per-file budget refusal for two
+files whose confirm-alone measurements on `main` the same hour were 16 ms
+and 4.2 s — the refusal printed only the in-suite number, so a slow
+confirmation and a failed one read identically. This is why
 `extension/test/telegramFrontDeskBotCli.test.js` — whose in-suite duration
 kept crossing the line non-deterministically (8.0–19.7 s in-suite vs.
 3.7–5.0 s solo, six of eight runs over) even after BL-1620's subprocess
