@@ -1,0 +1,110 @@
+id: BL-1726
+title: "BL-1705's landed ghost reaper (ca2a683e48) reaps ANY llama-server whose parent is not a live ollama serve, at any age - so a llama.cpp server the human starts by hand outside the swarm (parent: a shell) is killed at the next janitor sweep; a runner counts as ollama's own only when its executable is inside an ollama installation's lib directory AND its --model is an ollama model blob, and every other llama-server is never signalled"
+milestone: M8
+type: defect
+severity: high
+# high: a live safety fault - the swarm's janitor (run by operator_runtime
+# and onboarder_supervisor) can kill a process it does not own, outside
+# the swarm, the moment one exists; the human's GPU is due within days and
+# local-model experiments are the queue-jump priority. The specifier's own
+# BL-1705 spec asked for the over-broad rule ("reap, any age"); QA passed
+# the build against it and flagged it (note 003143). Not critical: no such
+# process runs now - the only llama-server is ollama serve's own child.
+status: todo
+epic: local-llm-swarm
+priority: 4
+direction: swarm-reported
+depends_on: []
+# BL-1705 (landed) wrote the rule; BL-1723 (paused, after BL-1705) edits
+# the same file's disposable-root regex - orthogonal functions, but the
+# coordinator should not run the two concurrently (same file).
+mutation_cost: low
+# low: one Babashka predicate (no mutation/CRAP/DRY wired, BL-472); the
+# feature is a pure classifier read, milliseconds per run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1726-the-ghost-reaper-touches-only-ollamas-own-llama-server.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer (the janitor sweep's
+# reapable-ollama-ghost? call) exists before the fix (BL-1235); the
+# feature drives the real predicate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1726GhostReaperOllamaOwnRunnerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: a llama-server is
+  ollama's worker only with BOTH marks - its executable path is inside an
+  ollama installation's lib directory (".../lib/ollama/llama-server") and
+  its --model argument names an ollama model blob (".../models/blobs/sha256-") -
+  the narrower of the possible rules, because the cost of a false reap is
+  killing a process the swarm does not own. FIRM: `ollama runner` stays
+  ollama's by name. FIRM: nothing else in BL-1705 changes (serve never
+  touched, the live-window exemption, the run-client rule).
+
+invariants:
+  - "The janitor never signals a llama-server unless its command line shows it is ollama's own worker: its executable inside an ollama lib directory and its --model an ollama model blob."
+
+description: |
+  ## What is wrong
+
+  QA note 003143 on BL-1705 ("reaps any non-ollama-parented
+  llama-server"), QA evidence `backlog/evidence/BL-1705-QA-20260924.md`:
+  "any llama-server whose parent isn't a live ollama serve is reaped at
+  any age. A hand-started llama.cpp server outside tmux would therefore be
+  killed. The ticket asks for exactly this rule." The specifier's BL-1705
+  spec said: "a model runner (command line `llama-server ...` or `ollama
+  runner ...`) whose parent is not a live `ollama serve` -> reap, any age".
+
+  Landed code (ca2a683e48, orphan_janitor_lib.bb):
+  `ollama-model-runner-cmdline?` matches `(?:^|/)llama-server\b` - any
+  path - and `reapable-ollama-ghost?` returns true for it whenever the
+  parent is not a live ollama serve. Checked on main:
+  `/home/u/llama.cpp/build/bin/llama-server -m /home/u/models/q.gguf` ->
+  true; `/usr/lib/ollama/llama-server --model /data/models/local.gguf` ->
+  true. The sweep runs inside operator_runtime.bb and onboarder_supervisor.bb.
+
+  Ollama's real worker on this host (2026-09-24, pid 16536, child of
+  `ollama serve` pid 1989):
+  `/mnt/d/dev/ollama/lib/ollama/llama-server --model
+  /home/carillon/.ollama/models/blobs/sha256-64b53b64... --port 40483
+  --host 127.0.0.1 --no-webui --offline ...` - both marks present.
+
+  ## What is wanted
+  - Scenario 01 (outline): an old runner-shaped process with no live
+    ollama serve parent is reaped only as ollama's own worker (both marks)
+    or an `ollama runner`; a llama.cpp build's server, a PATH-resolved
+    llama-server on an ollama blob, and an ollama-installed server on a
+    non-blob model are kept.
+  - A kept llama-server is still classified (seen, logged as not ollama's),
+    never silently unscanned.
+
+  ## Scope
+  - `swarmforge/scripts/orphan_janitor_lib.bb` (`ollama-model-runner-cmdline?`
+    or its use in `reapable-ollama-ghost?`) and its bb test.
+  - `specs/features/BL-1726-...feature` + the pinned handler.
+  - Docs: the janitor reference's ollama paragraph.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1726-the-ghost-reaper-touches-only-ollamas-own-llama-server.feature`:
+     all ok (5 of 5).
+  2. The BL-1705 feature and the orphan-janitor bb runner: green.
+  3. Live read, no signal sent: with the local ollama serve running a
+     model, call `reapable-ollama-ghost?` on its real llama-server child's
+     command line with `:parent-live-ollama-serve? false` - true (still
+     ollama's worker by its marks); on the same command line with the
+     executable path replaced by `/home/u/llama.cpp/build/bin/llama-server`
+     - false.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+notes: |
+  Minted 2026-09-24 by the specifier from QA note 003143. The over-broad
+  rule was the specifier's own BL-1705 spec; QA built nothing wrong.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Until it lands: do not start
+  a llama.cpp llama-server by hand on this host while the swarm runs.
