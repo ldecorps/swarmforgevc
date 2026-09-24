@@ -1,0 +1,137 @@
+id: BL-1712
+title: "extension/test/pricingTable.test.js and BL-1436's landed feature are red on main since the specifier seat moved to claude-opus-5-5 (db5d1313e4, 2026-09-24) with no PRICING_TABLE row - every turn of that seat costs nothing in the ledger and briefing; the table prices claude-opus-5-5 at the reference's input $4, output $20 and cache read $0.20 per million tokens with the source recorded, cache creation left unset, the display-name map names it, and both register rows leave in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it is holding BL-1694 at QA (Article 4.2) and the
+# ledger/briefing cost the busiest-effort seat at zero until it lands.
+status: todo
+epic: cost-intelligence
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one data row and one display-name entry; the Gherkin mutation gate
+# runs pure cost estimates and two file reads in well under a second.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers (estimateCostUsd,
+# checkPricingCoverage, the display-name lookup) already read the table
+# and the map; the parcel adds data, not a call site.
+required_wiring:
+  - 'specs/pipeline/steps/bl1712PricingTableOpus55Steps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here; it is minted approved under the
+  2026-09-17 operator hotfix (severity defect, no choice posed, no
+  ruling_options). FIRM - rates come from the project's Claude API
+  reference and are recorded beside the row with that source; a rate the
+  reference does not publish (cache creation for claude-opus-5-5) stays
+  unset, never derived from claude-opus-5 or any sibling (BL-1436
+  invariant 1); no rate of any other row changes.
+
+invariants:
+  - "Every PRICING_TABLE rate for claude-opus-5-5 is one the cited reference publishes; a category it does not publish is absent from the row, so its cost estimates as null, never as a sibling's rate or zero."
+
+description: |
+  ## What is wrong
+  QA, reviewing BL-1694 on 2026-09-24 (evidence
+  `backlog/evidence/BL-1694-unowned-red-pricing-table-claude-opus-5-5-QA-20260924.md`,
+  commit a404193f42), reproduced twice:
+
+      FAIL  test/pricingTable.test.js > BL-627: the current repo roster passes the pricing coverage check
+      AssertionError: PRICING_TABLE missing entries for swarm-referenced model(s): claude-opus-5-5
+
+  The specifier ran BL-1436's landed feature on main the same hour: `not
+  ok 1 - every model the swarm roster references has a pricing entry`
+  (5 pass, 1 fail). Cause: `swarmforge/packs/full-forge.conf` specifier
+  window moved to `--model claude-opus-5-5` in db5d1313e4 (human, "Change
+  the specifier to opus 5.5."), and `extension/src/metrics/pricingTable.ts`
+  has no row for it. The seat's settings file
+  (`.swarmforge/launch/specifier.claude-settings.json`) names the same
+  model. Until fixed, `estimateCostUsd` returns null for every turn of
+  that seat.
+
+  This is BL-1436's incident a second time: on 2026-09-04 the same seat
+  moved to claude-fable-5-1 and the same test went red for a day.
+
+  ## What is wanted
+  1. A `claude-opus-5-5` row in `PRICING_TABLE`: `inputPerMTok: 4`,
+     `outputPerMTok: 20`, `cacheReadPerMTok: 0.2`, no
+     `cacheCreatePerMTok`, with a comment citing the source the way the
+     `claude-fable-5-1` row does. Source at mint: the project's Claude API
+     reference (claude-api skill, models table cached 2026-06-24): "Claude
+     Opus 5.5 ... $4.00 ... $20.00", and "at a lower price ($4 / $20 per
+     MTok, cache reads $0.20)". That reference lists the model as
+     "launching"; re-read it at implementation, and if the published rates
+     differ, use the published ones and say so in evidence.
+  2. `extension/src/swarm/modelDisplayName.ts` maps `claude-opus-5-5` to
+     `Opus 5.5` (BL-1436 did the same for Fable 5.1).
+  3. The two register rows this mint adds leave in the same land
+     (REGISTER_ROW_RETIRED, BL-1631).
+  4. `PRICING_TABLE_VERSION` unchanged: adding a row changes no existing
+     rate (BL-1436 added a row without a bump).
+
+  ## How (direction, not mandate)
+  - Copy BL-1436's handler shape (`specs/pipeline/steps/`, the BL-1436
+    steps file) for scenarios 01-03; scenario 04 reads the map and
+    `backlog/standing-reds.tsv` from the parcel's tree.
+  - Documenter: wherever BL-1436 documented the table's rows (the cost
+    reference page), add the row; no diagram trigger.
+
+  ## Scope
+  - `extension/src/metrics/pricingTable.ts`,
+    `extension/src/swarm/modelDisplayName.ts`, `backlog/standing-reds.tsv`
+    (retire the two rows).
+  - New: `specs/pipeline/steps/bl1712PricingTableOpus55Steps.js` (BL-233).
+  - Docs as above; evidence.
+  - Out of scope: any other row's rates; a guard that stops a pack model
+    change from landing without a pricing row (see notes).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), from `extension/`.
+  1. `npx vitest run test/pricingTable.test.js`: all pass, including
+     "BL-627: the current repo roster passes the pricing coverage check".
+  2. `node specs/pipeline/cli.js specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feature`:
+     all ok; `node specs/pipeline/cli.js specs/features/BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature`:
+     all ok (6 of 6).
+  3. The evidence quotes the rates source it used and the date read.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  5. After landing: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `"unowned":[]` and no row names either file.
+  6. Resume BL-1694's land (held on this red, BL-1566).
+
+source: |
+  QA note 003106, 2026-09-24T07:07Z, to specifier and coordinator:
+  "unowned-red BL-1694 pricingTable claude-opus-5-5 a404193f42";
+  backlog/evidence/BL-1694-unowned-red-pricing-table-claude-opus-5-5-QA-20260924.md.
+  Cause commit db5d1313e4 (human via Claude Code, verbatim: "Change the
+  specifier to opus 5.5.").
+
+notes: |
+  Minted 2026-09-24 by the specifier adjudicating QA's unowned-red note
+  003106 the same pass (standing-red amendment 2026-09-05); two register
+  rows (unit pricingTable.test.js, acceptance BL-1436 feature) added in
+  the mint commit. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Expedite lane
+  by severity (Article 3.2.4). Holder note sent to QA naming BL-1694.
+
+  Recurrence, recorded not scoped: this is the second time a
+  human-directed pack model change (09-04 fable-5-1, 09-24 opus-5-5) left
+  the coverage test red on main, each time found later by an unrelated
+  parcel's gate. A pack-conf commit that runs checkPricingCoverage would
+  catch it at the edit; not minted here (the human is cutting ticket
+  count) - offered to the human instead.
+
+  INVEST: Independent, Negotiable (comment wording, handler shape),
+  Valuable (a live seat is costed again and two reds leave), Estimable
+  (two data lines), Small (four scenarios, one invariant), Testable (pure
+  estimates plus two reads).
+
