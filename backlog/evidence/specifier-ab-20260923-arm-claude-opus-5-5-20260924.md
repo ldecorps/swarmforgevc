@@ -81,8 +81,8 @@ pending` (a named ask, but not a jump request). Epic: `local-llm-swarm`
 - Asked back, not decided: automatic restart of a crashed server (not in
   the ask).
 
-**Intake 2 (documenter as a callable role): not minted; one clarifying
-question raised.**
+**Intake 2 (documenter as a callable role): one clarifying question
+first, then minted on the answer.**
 - The question went through `role_ask.bb` to the specifier topic at
   2026-09-24T06:38:57Z.
 - Options: A (keep the per-parcel docs pass as an on-demand job,
@@ -90,6 +90,15 @@ question raised.**
   CLI). Each option carried its pros and cons.
 - The intake's five "needs specifying" points follow from that answer, so
   minting before it would have been guessing.
+- **Update, same morning.** The human answered "A - keep the docs pass as
+  an on-demand job (recommended)". The seat then minted epic tracker
+  BL-1709 (`on-demand-roles`) and slice BL-1710 (the documenter runs on
+  demand; pending review), and landed the publish-call contract in
+  `swarmforge/roles/documenter.prompt`, all in `435d4ad7cd`.
+  - It settled the intake's five points in BL-1710's `notes:`.
+  - It also corrected, in the ticket's `approval_context`, one inaccuracy
+    in its own question: option A keeps the worktree and mailbox; only the
+    standing session goes.
 
 ## Gates and refusals, as they happened
 
@@ -110,8 +119,8 @@ question raised.**
 
 ## Against the intake's comparison axes
 
-1. **Mint or not.** Intake 1 minted (3 tickets). Intake 2 held behind one
-   question.
+1. **Mint or not.** Intake 1 minted (3 tickets). Intake 2 minted (an
+   epic tracker and one slice) after one question.
 2. **Ticket-shape validity.**
    - Acceptance: a Gherkin feature per ticket, linted, IR-DRY checked.
    - Standing-red register row: not applicable (not a red).
