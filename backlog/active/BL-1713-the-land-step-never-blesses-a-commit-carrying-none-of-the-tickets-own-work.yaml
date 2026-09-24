@@ -182,3 +182,5 @@ notes: |
   the outline to clear the rest. Interim QA.prompt rule (cite a full sha;
   the third argument is where the CLI resolves it) landed by the
   specifier in the mint commit.
+
+assigned_to: coder
