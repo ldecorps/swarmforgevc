@@ -523,7 +523,12 @@ You are the specifier.
   a correct parcel. Assert the row is present and names the ticket as
   owner, and check its absence in `qa_e2e_procedure` after the land.
   BL-1638 (adjudicated 2026-09-21) and BL-1712 (coder note 002111,
-  2026-09-24) each cost a coder round trip on this wording.
+  2026-09-24) each cost a coder round trip on this wording. A LANDED
+  feature can still carry it: BL-1436's scenario 04 asserts no row names
+  `pricingTable.test.js`, so every later owner of that row reads BL-1436's
+  feature one scenario short at its parcel commit. When you mint that
+  owner, grep `specs/features/` for "no register row names <file>" and
+  write the owner's `qa_e2e_procedure` to expect it (coder note 002114).
 
 ## A deferred-gate discharge ticket's "reason per survivor" names an OWNER (2026-09-10)
 - A ticket whose deliverable is running a deferred mutation gate (the

@@ -102,12 +102,17 @@ qa_e2e_procedure: |
      "BL-627: the current repo roster passes the pricing coverage check".
   2. `node specs/pipeline/cli.js specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feature`:
      all ok; `node specs/pipeline/cli.js specs/features/BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature`:
-     all ok (6 of 6).
+     5 of 6, with scenario 01 (roster covered) ok and scenario 04 the only
+     failure. Its last step asserts no register row names
+     pricingTable.test.js, and that row stays, owned by BL-1712, until
+     this land retires it (BL-1663) - expected, not a defect of this
+     parcel. 6 of 6 is checked after the land, in step 5.
   3. The evidence quotes the rates source it used and the date read.
   4. `git diff main...HEAD --name-only` names only the Scope files, the
      feature, the handler, docs and evidence.
   5. After landing: `bb swarmforge/scripts/standing_red_register_cli.bb .`
-     reports `"unowned":[]` and no row names either file.
+     reports `"unowned":[]` and no row names either file, and the BL-1436
+     feature on origin/main reads all ok (6 of 6).
   6. Resume BL-1694's land (held on this red, BL-1566).
 
 source: |
@@ -134,6 +139,13 @@ notes: |
   BL-1006 does not apply). The mint was the spec gap, not the coder's
   work; no bounce recorded (asked by note). Still AUTO-APPROVED - this
   aligns the contract to a governing rule and poses no choice.
+  Amended again 2026-09-24 ~08:55Z on the coder's note 002114 (priority
+  70, rework evidence): qa_e2e step 2 expected BL-1436's feature at 6 of 6
+  on the parcel commit, but BL-1436's landed scenario 04 asserts no
+  register row names pricingTable.test.js, so it reads 5 of 6 until the
+  land. Step 2 now expects 5 of 6 (scenario 04 the only failure); step 5
+  checks 6 of 6 after the land. QA-procedure bookkeeping only: nothing
+  the cleaner or later stages build changes.
 
   Recurrence, recorded not scoped: this is the second time a
   human-directed pack model change (09-04 fable-5-1, 09-24 opus-5-5) left
