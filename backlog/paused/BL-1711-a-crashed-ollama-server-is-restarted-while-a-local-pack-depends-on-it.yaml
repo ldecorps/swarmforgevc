@@ -25,7 +25,7 @@ required_wiring:
   - 'swarmforge/scripts/handoffd.bb::ollama_ancillary_lib.sh::the daemon loop restarts a crashed ollama server through BL-1703s lib'
   - 'specs/pipeline/steps/bl1711OllamaCrashRestartSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   You said yes on 2026-09-24 to restarting ollama after a crash; this is
   that ticket. Please review the feature file. FIRM - a crash means the
