@@ -1,0 +1,110 @@
+id: BL-1704
+title: "The full-stack stop and kill_all_swarm stop the ollama server the swarm started, with its model runner children, leave a server the swarm found running (named in the stop log), and clear a stale record - dead pid or a pid now owned by something else - without signalling anything"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: human-requested
+depends_on: [BL-1703]
+mutation_cost: low
+# low: bash stop steps on BL-1703's lib (no Stryker lane); the Gherkin
+# handler runs stand-in processes, seconds per run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1704-the-swarm-stop-paths-stop-the-ollama-server-the-swarm-started.feature
+
+# Both stop paths are pre-existing live consumers; each must source
+# BL-1703's lib (filename fixed at mint, BL-874). kill_all_swarm.sh is the
+# name the endless-loop hard stop and the ceremony sleep path invoke, and
+# it already carries the BL-611 babysitterd exception, so the ollama stop
+# sits beside that, not in kill_pipeline_swarm.sh.
+required_wiring:
+  - 'swarmforge/scripts/stop_ancillary_services.sh::ollama_ancillary_lib.sh::the full-stack stop stops a swarm-owned ollama server'
+  - 'swarmforge/scripts/kill_all_swarm.sh::ollama_ancillary_lib.sh::kill_all_swarm stops a swarm-owned ollama server'
+  - 'specs/pipeline/steps/bl1704OllamaStopPathsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Second of the three tickets from your 2026-09-23 ollama ask (BL-1703
+  starts and probes, this stops, BL-1705 reaps ghosts). Please review the
+  feature file. FIRM - only a server the swarm itself started is ever
+  stopped (an external one may be serving the Local Agent chat); a pid is
+  signalled only after it is confirmed to still be that ollama serve;
+  kill_all_swarm stays pipeline-only for every other ancillary.
+
+invariants:
+  - "A stop path signals an ollama process only when the ollama record names it swarm-owned and the pid's live command line is still ollama serve, or it is a runner child of that same server."
+
+description: |
+  ## What is wrong
+  Nothing stops ollama: `stop_ancillary_services.sh` (the full-stack
+  stop) and `kill_all_swarm.sh` are both ollama-blind (grep finds no
+  mention). A server and its 11 GB runner survive every swarm stop,
+  including the closing ceremony's sleep path.
+
+  ## What is wanted
+  Using BL-1703's record and lib:
+  1. Record `swarm-owned`, pid alive and still `ollama serve`: stop its
+     runner children and the server (TERM, bounded wait, then KILL),
+     remove the record.
+  2. Record `external`: signal nothing; the stop log names the server
+     (pid, endpoint) as left running.
+  3. Record `swarm-owned` but the pid is gone, or now belongs to a process
+     that is not `ollama serve`: signal nothing; remove the record; the
+     stop log says which.
+  4. No record: nothing, silently (a Claude-only pack).
+  Both `stop_ancillary_services.sh` and `kill_all_swarm.sh` do this.
+
+  ## How (direction, not mandate)
+  - Put the stop function in `ollama_ancillary_lib.sh` beside BL-1703's
+    start; each stop path sources the lib and calls it once.
+  - Runner children: the server's descendants whose command line is a
+    model runner (llama-server or `ollama runner`); never by a
+    host-wide pattern (BL-1385/BL-1390: pattern sweeps kill other
+    owners' processes).
+  - Tests: stand-in `ollama serve` and runner processes (a sleeping
+    script whose argv reads like the real ones) in a `mkdtemp` project;
+    never the real server.
+  - Documenter: the local-model how-to's "ollama is started by the swarm"
+    section gains the stop rules; no new diagram trigger beyond
+    BL-1703's.
+
+  ## Scope
+  - `swarmforge/scripts/ollama_ancillary_lib.sh` (BL-1703's),
+    `swarmforge/scripts/stop_ancillary_services.sh`,
+    `swarmforge/scripts/kill_all_swarm.sh`.
+  - New: `specs/pipeline/steps/bl1704OllamaStopPathsSteps.js` (BL-233).
+  - Docs.
+  - Out of scope: orphaned runners with no live server (BL-1705);
+    `kill_pipeline_swarm.sh` (pipeline-only by BL-637).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA does not stop
+  the real server.
+  1. `node specs/pipeline/cli.js specs/features/BL-1704-the-swarm-stop-paths-stop-the-ollama-server-the-swarm-started.feature`:
+     all scenarios ok.
+  2. The stop-path shell tests in `suite-manifest.tsv`
+     (`stop_ancillary_services`, `kill_all_swarm` / babysitterd census)
+     are green, one run.
+  3. Read the diff: the pid's command line is checked before any signal.
+  4. `git diff main...HEAD --name-only` names only the Scope files, docs
+     and evidence.
+
+source: |
+  backlog/INTAKE-operator-question-1790153120168.md (split 1:3 at mint;
+  this is the stop part). Human ask (2026-09-23, LOCAL_AGENT topic,
+  verbatim): "Add ollama as an ancillary process managed by the swarm
+  start/stop scripts, and make sure the daemon can clean up after it when
+  it crashes or leaves ghost processes." Operator's wanted line: "stopped
+  and reaped by the stop path and by kill_all_swarm".
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat); see BL-1703
+  for the A/B evidence pointer.
+
+  INVEST: Independent (BL-1703 by depends_on), Negotiable (stop function
+  shape, wait bounds are direction), Valuable (a swarm stop frees the
+  server and its runner memory), Estimable (one function, two call sites),
+  Small (three scenarios, one invariant), Testable (stand-in processes).

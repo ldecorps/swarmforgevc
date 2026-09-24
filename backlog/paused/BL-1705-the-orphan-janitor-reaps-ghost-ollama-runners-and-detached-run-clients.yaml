@@ -1,0 +1,118 @@
+id: BL-1705
+title: "The orphan janitor reaps ghost ollama processes - a model runner (llama-server or ollama runner) whose parent is no longer a live ollama serve, and a detached `ollama run` client older than a grace period - while never touching a runner a live server owns, however large, nor the server itself"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: one pure classifier in orphan_janitor_lib.bb and one sweep branch
+# (Babashka, no Stryker lane); the Gherkin handler classifies rows and
+# runs one stand-in sweep, seconds per run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1705-the-orphan-janitor-reaps-ghost-ollama-runners-and-detached-run-clients.feature
+
+# orphan_janitor_sweep_lib.bb is the pre-existing live consumer (run by
+# operator_runtime.bb and onboarder_supervisor.bb); it calls each class's
+# predicate as orphan-janitor-lib/reapable-<class>?. The predicate name
+# is fixed at mint so the anchor is a literal that will exist (BL-874);
+# absent on main today.
+required_wiring:
+  - 'swarmforge/scripts/orphan_janitor_sweep_lib.bb::orphan-janitor-lib/reapable-ollama-ghost?::the live janitor sweep applies the ollama ghost class'
+  - 'specs/pipeline/steps/bl1705OllamaGhostJanitorSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Third of the three tickets from your 2026-09-23 ollama ask (BL-1703
+  starts and probes, BL-1704 stops, this reaps ghosts). Please review the
+  feature file; the grace period for a detached run client is the one
+  number worth a look (proposed 30 minutes). FIRM - a runner a live
+  server still owns is never reaped, whatever its size (an 11.7 GB
+  CPU-resident 27B with a still-advancing expires_at is IN USE); the
+  server itself is left to the stop paths.
+
+invariants:
+  - "The janitor never signals an ollama serve process, nor a runner whose parent is a live ollama serve."
+
+description: |
+  ## What is wrong
+  On 2026-09-23 the Operator found a detached `ollama run
+  hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S` (pid 23398) and a
+  llama-server worker (pid 15871, ~11.6 GB RSS) alive outside all swarm
+  bookkeeping. No reaper names ollama: `orphan_agent_reaper` is scoped to
+  SwarmForge remote-control agents, `fixture_reaper` to test fixtures,
+  `orphan_janitor` to operator_runtime/node/vitest/caffeinate leftovers,
+  and `model_steward_evict.py` is a disk janitor for weights. Only
+  ollama's own keep-alive TTL unloads a worker, and only while its server
+  lives.
+
+  A size- or memory-based rule would be wrong: the same week a memory
+  escalation blamed orphaned test workers when the real load was the
+  CPU-resident 27B, correctly loaded and in use.
+
+  ## What is wanted
+  A new class in `orphan_janitor_lib.bb`, predicate
+  `reapable-ollama-ghost?` (name fixed; the wiring anchor names it),
+  applied by `orphan_janitor_sweep_lib.bb`:
+  - a model runner (command line `llama-server ...` or `ollama runner
+    ...`) whose parent is not a live `ollama serve` -> reap, any age;
+  - an `ollama run <model>` client whose parent is an init process (pid 1,
+    or WSL's `/init`) and whose age exceeds the grace period (default 30
+    minutes, overridable) -> reap;
+  - everything else ollama-shaped -> keep, including `ollama serve`
+    itself, a runner a live server owns, and a run client under a live
+    shell or younger than the grace period.
+  The sweep terminates a reapable process the way it terminates the other
+  classes and logs its pid and command line.
+
+  ## How (direction, not mandate)
+  - Keep the predicate pure over a process row (command line, ppid, the
+    parent's command line and liveness, age), like the existing
+    `reapable-*?` predicates; the sweep supplies the rows.
+  - Tests: classification rows as in the feature, plus one sweep over
+    stand-in processes in a `mkdtemp` project; never the real server.
+  - Documenter: the orphan janitor's reference gains the ollama class and
+    the grace-period override; no diagram trigger.
+
+  ## Scope
+  - `swarmforge/scripts/orphan_janitor_lib.bb`,
+    `swarmforge/scripts/orphan_janitor_sweep_lib.bb`.
+  - New: `specs/pipeline/steps/bl1705OllamaGhostJanitorSteps.js` (BL-233).
+  - Docs.
+  - Out of scope: stopping a live server (BL-1704); memory-pressure
+    alarms.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA signals no real
+  ollama process.
+  1. `node specs/pipeline/cli.js specs/features/BL-1705-the-orphan-janitor-reaps-ghost-ollama-runners-and-detached-run-clients.feature`:
+     all scenarios ok.
+  2. The orphan janitor tests in `suite-manifest.tsv` are green, one run.
+  3. Read the predicate: no branch keys on memory size or model name.
+  4. `git diff main...HEAD --name-only` names only the Scope files, docs
+     and evidence.
+
+source: |
+  backlog/INTAKE-operator-question-1790153120168.md (split 1:3 at mint;
+  this is the ghost-reaping part). Human ask (2026-09-23, LOCAL_AGENT
+  topic, verbatim): "Add ollama as an ancillary process managed by the
+  swarm start/stop scripts, and make sure the daemon can clean up after it
+  when it crashes or leaves ghost processes." Operator's wanted line:
+  "swept for orphaned llama-server / 'ollama run' children by the
+  janitor the same way orphan_janitor already sweeps other leaked
+  ancillaries."
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat); see BL-1703
+  for the A/B evidence pointer. Independent of BL-1703/BL-1704: ghosts
+  exist whoever started the server.
+
+  INVEST: Independent (no unbuilt dependency), Negotiable (grace default,
+  row shape are direction), Valuable (reclaims leaked runners and clients
+  without touching live ones), Estimable (one predicate, one sweep
+  branch), Small (two scenarios, one invariant), Testable (pure rows plus
+  one stand-in sweep).

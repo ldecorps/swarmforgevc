@@ -1,0 +1,136 @@
+id: BL-1703
+title: "A launch of any pack whose seats use the local model endpoint probes ollama first - an answering endpoint is used and recorded as external, a silent one is started by the swarm, waited for and recorded as swarm-owned, and one that never answers refuses the launch before any seat starts, naming the endpoint; packs with no local endpoint launch exactly as before"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: a sourced bash lib plus one call in the launch path (no Stryker lane
+# for bash); the Gherkin handler runs a stand-in ollama binary and
+# endpoint with a short wait, seconds per run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1703-a-pack-with-a-local-model-endpoint-starts-and-probes-ollama-before-it-launches.feature
+
+# swarmforge.sh is the pre-existing live consumer that every launch path
+# goes through, the swarm.env scheduled start included; the per-pack
+# start-swarm-ollama-*.sh wrappers are not (the scheduled start bypasses
+# them). Lib filename fixed at mint (BL-874); absent on main today.
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::ollama_ancillary_lib.sh::the launch path probes and, if needed, starts ollama for packs with a local endpoint'
+  - 'specs/pipeline/steps/bl1703OllamaLaunchProbeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Your 2026-09-23 LOCAL_AGENT ask to make ollama a swarm-managed ancillary
+  is split into three tickets - this one (start and probe at launch),
+  BL-1704 (the stop paths stop what the swarm started) and BL-1705 (the
+  janitor reaps ghost runners and detached run clients). Please review
+  this feature file. FIRM - a server the swarm did not start is never
+  stopped by the swarm (it may be serving the Local Agent chat); a dead
+  endpoint refuses the launch instead of passing it; Claude-only packs are
+  untouched. Not asked here (tell me if you want it) - restarting ollama
+  automatically when it crashes mid-shift; today's ask covers clean-up
+  after a crash, not resurrection.
+
+invariants:
+  - "No seat of a pack that uses the local model endpoint is started unless the endpoint answered the launch's probe."
+
+description: |
+  ## What is wrong
+  Operator grounding, checked live 2026-09-23 (intake below):
+  - `ollama serve` is hand-started (`OLLAMA_MODELS=/mnt/d/dev/ollama/models
+    /mnt/d/dev/ollama/bin/ollama serve`, parented by WSL `/init`); this
+    host has no systemd, so nothing restarts or supervises it.
+  - No launch gate probes the endpoint: `start-swarm-ollama-ista-iq3s.sh`
+    checks only that `ollama` and `aider` are on PATH, and the scheduled
+    start (swarm.env's default pack) does not even pass through those
+    wrappers. A dead server passes every gate, then every aider seat fails
+    at its first request.
+  - The only auto-start in the tree is the Local Agent's own
+    (`swarmforge/scripts/local_agent/launch_local_agent.sh`: probe,
+    `nohup ollama serve`, sleep 2), which the swarm packs never reach.
+
+  ## What is wanted
+  In `swarmforge.sh`'s launch path, before any seat starts, for a pack
+  whose seats use the local model endpoint:
+  1. Probe the endpoint (the one the pack's seats name; default
+     `DEFAULT_LOCAL_MODEL_ENDPOINT_URL`, `http://127.0.0.1:11434/v1`).
+  2. Answers -> record `external` and proceed.
+  3. Silent -> start `ollama serve` detached, with its binary path, models
+     directory and context length taken from swarm.env keys (today's hand
+     command is the default shape), log to `.swarmforge/`, and wait for
+     the probe up to a bounded wait. Answers -> record `swarm-owned` with
+     the server's pid and start time, proceed.
+  4. Never answers -> stop the server step 3 started, write no record,
+     refuse the launch naming the endpoint and the server log's path.
+  5. A pack with no seat on the local endpoint: no probe, no record,
+     launch unchanged byte for byte.
+
+  ## How (direction, not mandate)
+  - `swarmforge/scripts/ollama_ancillary_lib.sh` (filename fixed; the
+    wiring anchor names it), sourced by `swarmforge.sh`; BL-1704 sources
+    the same lib for the stop side. Stock macOS bash 3.2.
+  - The record: one small file under `.swarmforge/` (for example
+    `.swarmforge/ollama/serve.json`) with owner, pid, start time and
+    endpoint; BL-1704 reads it.
+  - "Uses the local endpoint": a window line or `coordinator_*` config
+    naming the local endpoint, or an agent whose capability says it talks
+    to the local server. Read the pack conf the launch path already
+    resolved; do not re-derive it.
+  - The wait is bounded and overridable by env so the tests run in
+    seconds; retries are bounded (engineering.prompt Guardrails).
+  - Tests: a stand-in `ollama` binary on PATH that starts (or does not
+    start) a tiny local HTTP responder on a free port, in a `mkdtemp`
+    project; never the real server, never port 11434.
+  - Documenter: the local-model how-to gains "ollama is started by the
+    swarm" with the swarm.env keys; `architecture.mmd`'s trigger (the tmux
+    substrate relationship and `.swarmforge/` state layout) fires for the
+    new record - add ollama as an ancillary the launch path owns.
+
+  ## Scope
+  - New: `swarmforge/scripts/ollama_ancillary_lib.sh`.
+  - `swarmforge/scripts/swarmforge.sh` (call the probe/start step).
+  - New: `specs/pipeline/steps/bl1703OllamaLaunchProbeSteps.js` (BL-233).
+  - Docs; `docs/diagrams/architecture.mmd`.
+  - Out of scope: stopping the server (BL-1704); reaping ghosts (BL-1705);
+    restarting a crashed server mid-shift (not asked; see
+    approval_context); the Local Agent's own auto-start.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA does not start
+  or stop the real ollama server.
+  1. `node specs/pipeline/cli.js specs/features/BL-1703-a-pack-with-a-local-model-endpoint-starts-and-probes-ollama-before-it-launches.feature`:
+     all scenarios ok.
+  2. Read the launch path diff: the probe runs before the first seat
+     window is created, and only for packs on the local endpoint.
+  3. Any existing launch-path shell tests in `suite-manifest.tsv` that
+     generate a Claude pack's launch are green, one run.
+  4. `git diff main...HEAD --name-only` names only the Scope files, docs,
+     the diagram and evidence.
+
+source: |
+  backlog/INTAKE-operator-question-1790153120168.md, filed by the Operator
+  2026-09-23T08:45:20Z. Human ask (2026-09-23, LOCAL_AGENT topic,
+  verbatim): "Add ollama as an ancillary process managed by the swarm
+  start/stop scripts, and make sure the daemon can clean up after it when
+  it crashes or leaves ghost processes." The intake was split 1:3 at mint:
+  this ticket is the start-and-probe part; BL-1704 the stop paths; BL-1705
+  the janitor.
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat) draining the
+  backlog root. This intake is also one of the two pinned inputs of the
+  human's 2026-09-23 specifier A/B test
+  (INTAKE-operator-question-1790155120661); see
+  backlog/evidence/specifier-ab-20260923-arm-claude-opus-5-5-20260924.md.
+
+  INVEST: Independent (no unbuilt dependency), Negotiable (record format,
+  env keys, detection rule are direction), Valuable (a dead endpoint stops
+  the launch instead of six silent seat failures), Estimable (one sourced
+  lib, one call site), Small (three scenarios, one invariant), Testable
+  (stand-in binary and endpoint).
