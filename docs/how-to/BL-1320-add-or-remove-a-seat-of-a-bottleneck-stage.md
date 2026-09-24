@@ -69,6 +69,39 @@ Delete the `window <stage>@<seat> …` line. Nothing else changes — the bare s
 stays exactly as it was, and the stage returns to one seat on the next launch.
 Remove the extra seat's line, never the bare one.
 
+## Drop a seat mid-shift, without restarting the swarm (BL-1720)
+
+The steps above change the pack **conf**, which is only re-read on the next
+`./swarm` (kill and relaunch). If you want a seat gone from the *running*
+swarm right now — no restart — killing its tmux session is not enough by
+itself: `babysitterd`'s repair sweep reads `.swarmforge/roles.tsv` (written
+once at launch, never the pack conf) and resurrects a killed session within
+minutes, and every worktree still carries its own launch-time copy of
+`roles.tsv`, so other roles keep addressing parcels — including reverse-hop
+copies — to the now-gone seat (2026-09-24: exactly this stranded three
+`BL-1703` copies in a dropped `coder@2`'s inbox, and each wake for it landed
+in another role's pane).
+
+Use `swarmforge/scripts/retire_seat.sh <project-root> <seat>` instead of
+killing the session by hand. One operation, in order:
+
+1. Refuses (usage message, exit 1, no file touched) with the wrong argument
+   count, or naming an unknown seat.
+2. Rewrites the master `roles.tsv`, then `sessions.tsv`, then **every**
+   worktree's own `roles.tsv` copy — including the retired seat's own — so
+   no roster copy the swarm reads lists it any more.
+3. Only then kills the seat's tmux session — after every roster copy has
+   already lost the row, so the babysitter's repair sweep never observes
+   "missing session, but the roster still lists it" mid-operation.
+4. Prints every parcel still sitting in the retired seat's own mailbox
+   (`inbox/new/` and `inbox/in_process/`) — it never moves or deletes them;
+   deciding what happens to a stranded parcel is yours.
+
+The seat's worktree, branch, and mailbox files are left in place — only its
+roster rows and its live session go. **Not built yet:** the inverse
+(re-adding a retired seat mid-shift, without a full relaunch) — until it
+exists, bringing a seat back is the normal next-launch path above.
+
 ## Which model tier to add
 
 The tier you add depends on WHAT the constraint is, not on how busy the stage
