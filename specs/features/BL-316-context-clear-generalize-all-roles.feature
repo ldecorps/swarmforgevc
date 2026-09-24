@@ -35,3 +35,9 @@ Feature: Every current-roster role's context is cleared at its own safe idle bou
     Given a clear was already issued for a role's most recent completion
     When the runtime evaluates the context-clear sweep again with no new completion
     Then no second clear is injected for that role
+
+  # BL-316 context-clear-all-roles-07
+  Scenario: a role whose pane fullness is unknown or below 75% is never cleared, even with a fresh completion
+    Given a current-roster role has a fresh completion and is idle but its pane fullness reads below the clear threshold
+    When the runtime evaluates the context-clear sweep
+    Then no clear is injected for that role and the skip is logged naming the measured fullness

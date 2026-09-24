@@ -45,6 +45,7 @@ CODER_WT="$ROOT/.worktrees/coder"
 CLEANER_WT="$ROOT/.worktrees/cleaner"
 ARCHITECT_WT="$ROOT/.worktrees/architect"
 HARDENER_WT="$ROOT/.worktrees/hardener"
+DOCUMENTER_WT="$ROOT/.worktrees/documenter"
 
 mkdir -p "$ROOT/.swarmforge" "$ROOT/.swarmforge/handoffs/inbox/new" "$ROOT/docs/briefings" \
   "$ROOT/backlog/active" "$ROOT/backlog/paused" "$ROOT/backlog/done" \
@@ -54,22 +55,25 @@ mkdir -p "$ROOT/.swarmforge" "$ROOT/.swarmforge/handoffs/inbox/new" "$ROOT/docs/
   "$CODER_WT/.swarmforge/handoffs/inbox/new" "$CODER_WT/.swarmforge/handoffs/inbox/in_process" "$CODER_WT/.swarmforge/handoffs/inbox/completed" \
   "$CLEANER_WT/.swarmforge/handoffs/inbox/new" "$CLEANER_WT/.swarmforge/handoffs/inbox/in_process" "$CLEANER_WT/.swarmforge/handoffs/inbox/completed" \
   "$ARCHITECT_WT/.swarmforge/handoffs/inbox/new" "$ARCHITECT_WT/.swarmforge/handoffs/inbox/in_process" "$ARCHITECT_WT/.swarmforge/handoffs/inbox/completed" \
-  "$HARDENER_WT/.swarmforge/handoffs/inbox/new" "$HARDENER_WT/.swarmforge/handoffs/inbox/in_process" "$HARDENER_WT/.swarmforge/handoffs/inbox/completed"
+  "$HARDENER_WT/.swarmforge/handoffs/inbox/new" "$HARDENER_WT/.swarmforge/handoffs/inbox/in_process" "$HARDENER_WT/.swarmforge/handoffs/inbox/completed" \
+  "$DOCUMENTER_WT/.swarmforge/handoffs/inbox/new" "$DOCUMENTER_WT/.swarmforge/handoffs/inbox/in_process" "$DOCUMENTER_WT/.swarmforge/handoffs/inbox/completed"
 echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
 
 # Roster: coordinator (master-resident, its OWN clear mechanism, unaffected
-# by this ticket) + coder/architect/hardener (task) + cleaner (batch).
-# "documenter"/"QA" are deliberately ABSENT from this roster entirely - the
-# context-clear-all-roles-05 scenario ("a role absent from the current
-# roster is never watched") needs no special-casing to verify: the sweep
-# only ever iterates roles.tsv's own rows, so an absent role is trivially
-# never touched (nothing to assert beyond "the sweep doesn't fail/mention it").
+# by this ticket) + coder/architect/hardener (task) + cleaner (batch) +
+# documenter (task, BL-1694's fullness-gate case). "QA" is deliberately
+# ABSENT from this roster entirely - the context-clear-all-roles-05
+# scenario ("a role absent from the current roster is never watched")
+# needs no special-casing to verify: the sweep only ever iterates
+# roles.tsv's own rows, so an absent role is trivially never touched
+# (nothing to assert beyond "the sweep doesn't fail/mention it").
 cat > "$ROOT/.swarmforge/roles.tsv" <<TSV
 coordinator	master	$ROOT	swarmforge-coordinator	Coordinator	claude	task
 coder	coder	$CODER_WT	swarmforge-coder	Coder	claude	task
 cleaner	cleaner	$CLEANER_WT	swarmforge-cleaner	Cleaner	claude	batch
 architect	architect	$ARCHITECT_WT	swarmforge-architect	Architect	claude	task
 hardener	hardener	$HARDENER_WT	swarmforge-hardener	Hardener	claude	task
+documenter	documenter	$DOCUMENTER_WT	swarmforge-documenter	Documenter	claude	task
 TSV
 
 # Neutralize the unrelated briefing-generation sweep (already-generated
@@ -104,12 +108,45 @@ write_handoff "$HARDENER_WT/.swarmforge/handoffs/inbox/in_process" "00_current.h
 # dedicated backlog/done/-based mechanism, unchanged from BL-309).
 write_handoff "$ROOT/.swarmforge/handoffs/coordinator/inbox/completed" "00_e.handoff"
 
+# ── context-clear-all-roles-07: documenter (idle, fresh completion, but
+#     pane fullness below the 2026-08-30 hotfix's 75% threshold) must
+#     never clear despite otherwise qualifying ───────────────────────────
+write_handoff "$DOCUMENTER_WT/.swarmforge/handoffs/inbox/completed" "00_f.handoff"
+
 FAKE_BIN="$ROOT/bin"
 mkdir -p "$FAKE_BIN"
 CALL_LOG="$ROOT/tmux-calls.log"
+# BL-1694: role-context-fullness-percent probes capture-pane -S -400 and
+# reads the printed line count as the fullness proxy (400 lines = 100%,
+# hotfix 2026-08-30's 75% threshold gate needs >= 300). Answering every
+# capture-pane call with nothing (as this fake did before) reads every
+# role's fullness as unknown, and the fail-closed rule then refuses every
+# clear - the exact shape that left this file red on main since the
+# hotfix landed. Per-session scrollback: coder/cleaner (the cases that
+# must clear) read 400 lines (100%); documenter (the new fullness-gate
+# case) reads 100 lines (25%, below threshold); every other session
+# (architect, hardener - already blocked by a pending/in-process item,
+# not by fullness) reads empty (unknown), the same "cannot tell" shape a
+# real pane with no scrollback would answer with.
 cat > "$FAKE_BIN/tmux" <<TMUX
 #!/usr/bin/env bash
 echo "\$*" >> "$CALL_LOG"
+for arg in "\$@"; do
+  if [[ "\$arg" == "capture-pane" ]]; then
+    session=""
+    prev=""
+    for a in "\$@"; do
+      if [[ "\$prev" == "-t" ]]; then session="\$a"; fi
+      prev="\$a"
+    done
+    case "\$session" in
+      swarmforge-coder|swarmforge-cleaner) seq 1 400 ;;
+      swarmforge-documenter) seq 1 100 ;;
+      *) : ;;
+    esac
+    exit 0
+  fi
+done
 exit 0
 TMUX
 chmod +x "$FAKE_BIN/tmux"
@@ -172,6 +209,21 @@ pass "context-clear-all-roles-03: no clear is injected for a role with a pending
 # ── 02: hardener (in-process task) was never cleared ──────────────────────
 grep -q "role-context-clear-fired hardener" "$LOG_FILE" && fail "02: hardener must NOT be cleared while holding an in-process task"
 pass "context-clear-all-roles-02: no clear is injected for a role holding an in-process task"
+
+# ── 07: documenter (idle, fresh completion, pane fullness below the
+#     hotfix's 75% threshold) was never cleared, and the skip is logged
+#     naming the measured fullness ───────────────────────────────────────
+grep -q "role-context-clear-fired documenter" "$LOG_FILE" && fail "07: documenter must NOT be cleared while its pane fullness reads below 75%"
+grep -q "role-context-clear-skip-fullness documenter 25.0%" "$LOG_FILE" \
+  || fail "07: expected a skip-fullness line naming documenter at 25.0%; got: $(cat "$LOG_FILE" 2>/dev/null)"
+# grep -c on a zero-match input exits 1 even though it prints "0" - piping
+# into a second grep under this file's own `set -o pipefail` would fail
+# the pipeline on the EXPECTED (zero) outcome, so the count is captured
+# into a variable instead.
+DOCUMENTER_CLEAR_COUNT="$(grep -c "send-keys -t swarmforge-documenter -l /clear" "$CALL_LOG" || true)"
+[[ "$DOCUMENTER_CLEAR_COUNT" == "0" ]] \
+  || fail "07: expected no /clear sent to documenter's session, got $DOCUMENTER_CLEAR_COUNT: $(cat "$CALL_LOG" 2>/dev/null)"
+pass "context-clear-all-roles-07: a role whose pane fullness is below 75% is never cleared, even with a fresh completion while idle"
 
 # ── coordinator is untouched by this new sweep (its own mechanism/marker
 #     is separate and unchanged) ─────────────────────────────────────────

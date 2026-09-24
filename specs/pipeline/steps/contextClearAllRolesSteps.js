@@ -91,14 +91,33 @@ function registerSteps(registry) {
 
   // ── context-clear-all-roles-05 ──────────────────────────────────────
   registry.define(/^a role is absent from the current roster$/, () => {
-    // Fixtured entirely inside the real shell test below (documenter/QA
-    // are never listed in that fixture's roles.tsv at all).
+    // Fixtured entirely inside the real shell test below (QA is never
+    // listed in that fixture's roles.tsv at all).
   });
 
   registry.define(/^that role is never cleared$/, (ctx) => {
     ctx.roleWiringOutput = ctx.roleWiringOutput || runRoleWiringTest();
     if (!/ALL PASS/.test(ctx.roleWiringOutput)) {
       throw new Error(`expected the real daemon wiring test to pass in full, got: ${ctx.roleWiringOutput}`);
+    }
+  });
+
+  // ── context-clear-all-roles-07 ──────────────────────────────────────
+  registry.define(
+    /^a current-roster role has a fresh completion and is idle but its pane fullness reads below the clear threshold$/,
+    () => {
+      // Fixtured entirely inside the real shell test below (documenter's
+      // capture-pane reads 100 of 400 lines, 25%, below the 2026-08-30
+      // hotfix's 75% threshold).
+    }
+  );
+
+  registry.define(/^no clear is injected for that role and the skip is logged naming the measured fullness$/, (ctx) => {
+    ctx.roleWiringOutput = ctx.roleWiringOutput || runRoleWiringTest();
+    if (
+      !/context-clear-all-roles-07: a role whose pane fullness is below 75% is never cleared/.test(ctx.roleWiringOutput)
+    ) {
+      throw new Error(`expected the real daemon to skip a low-fullness role's clear and log why, got: ${ctx.roleWiringOutput}`);
     }
   });
 

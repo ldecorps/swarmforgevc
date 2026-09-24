@@ -12489,7 +12489,24 @@ Agents are unreliable pollers — that's the whole problem. A single watchdog in
 
 ### Per-role idle context clearing
 
-**Last Updated:** August 29, 2026 (BL-1238: the agent-side NO_TASK idle-clear
+**Last Updated:** September 22, 2026 (BL-1694: a THIRD context-clear path
+exists beside the two below — `handoffd.bb`'s own `role-context-clear-sweep!`,
+which sends the daemon-side `/clear` to a role's tmux pane. It reads the
+identical rule: `role-context-fullness-percent` counts the pane's
+`capture-pane` scrollback (the same line-count proxy as the extension-host
+and agent-side paths) and the sweep fires `/clear` only when that reads
+75% or higher, logging `role-context-clear-fired <role>`; an unknown or
+below-threshold reading logs `role-context-clear-skip-fullness <role>
+<pct>%` and clears nothing — fail-closed, same as the other two paths
+(the human's 2026-08-30 directive, "never `/clear` unless context is at
+least 75% full; if the fraction is unknown, do not clear"). This parcel
+fixed the wiring test's fake `tmux`, which answered every `capture-pane`
+with nothing and so made every role read `:unknown` and skip — the sweep
+itself was already obeying the rule; only its test fixture had not caught
+up to it. Acceptance: `specs/features/BL-316-context-clear-generalize-all-roles.feature`
+scenario 07. No new extension command, setting, or UI change; no diagram
+edit — handoff-flow.mmd does not model the daemon's sweep loops this fine.)
+Previously August 29, 2026 (BL-1238: the agent-side NO_TASK idle-clear
 respawn — `ready_for_next_task.bb` for task-mode roles, `ready_for_next_batch.bb`'s
 own copy for batch-mode roles (cleaner, hardener) — now honours the SAME
 fullness threshold as the extension-host path below instead of respawning
