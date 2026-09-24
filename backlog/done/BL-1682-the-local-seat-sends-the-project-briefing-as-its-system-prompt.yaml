@@ -159,3 +159,6 @@ notes: |
   evidence copy) before the land, or the reconcile merge refuses.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-24, by: specifier, blamed: specifier, class: spec-gap, commit: f70e54d39d, evidence: backlog/evidence/BL-1682-bounce-20260924.md }
