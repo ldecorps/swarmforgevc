@@ -57,8 +57,10 @@ description: |
   ## What is wrong
 
   `bash swarmforge/scripts/test/test_bl1366_land_is_one_command.sh`, run
-  by the specifier on main at 9d6fa31f6d (2026-09-24, load 3.4): every
-  case passes except case 5's second half -
+  by the specifier on main at 9d6fa31f6d (2026-09-24, load 3.4): case
+  5's second half fails - (CORRECTED 2026-09-24: case 1 fails too, "origin/main
+  is <x>, expected <approved sha>"; the specifier read a truncated tail at
+  mint - see notes)
   `FAIL: the next land could not proceed: BL-9366-fixture-task: entangled
   tip - ... specifier adjudication needed.` /
   `land-step replay: could not create worktree
@@ -107,19 +109,31 @@ description: |
 
   ## Scope
   - `swarmforge/scripts/land_step_lib.bb` (`replay!` only).
+  - `swarmforge/scripts/test/test_bl1366_land_is_one_command.sh`: two
+    assertions BL-1678 made stale (added 2026-09-24, coder spec-gap note
+    002121). Case 1 asserts the land's published commit, not the cited
+    SHA: origin/main's new tip is the sha the land printed as
+    LAND_PUBLISHED, its one parent is the previous origin/main, and its
+    tree carries the approved commit's fixture paths byte-identical.
+    Case 5's second land lands a FRESH approved commit, not the same SHA
+    again - the case proves the killed land released the lock, and a
+    repeat land of an already-landed commit correctly has nothing to land.
   - `specs/features/BL-1716-...feature` + the pinned handler.
   - Docs: the land-step reference/how-to's replay section.
 
   ## Not in scope
-  - `land-plan` and `land_step_cli.bb` (BL-1713, landing first).
-  - The test file itself: it is right; the land step is wrong.
+  - `land-plan` and `land_step_cli.bb` (BL-1713, landed). A repeat land of
+    an already-landed ticket and commit escalating "nothing to commit" is
+    not a defect: there is nothing to land, and QA should hear so.
+  - Any other case of test_bl1366.
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1716-a-land-replay-recovers-the-scratch-a-killed-land-left-behind.feature`:
      all ok (3 of 3).
   2. `bash swarmforge/scripts/test/test_bl1366_land_is_one_command.sh`:
-     no FAIL line; "and a subsequent land succeeds" passes.
+     no FAIL line; case 1's published-commit checks and case 5's "and a
+     subsequent land succeeds" (a fresh commit) pass.
   3. The BL-1678, BL-1241 and BL-1713 features: all ok (the replay's
      other paths unchanged).
   4. `git diff main...HEAD --name-only` names only the Scope files, the
@@ -144,5 +158,20 @@ notes: |
   .git/land-replay-worktrees/BL-1687-e9dcd8b2e9 off origin/main"; the retry
   built LAND_REPLAY 35ef2dbcd2. So this is live on the real land path, not
   only in test_bl1366.
+
+  Amended 2026-09-24 ~13:40Z on the coder's spec-gap note 002121
+  (evidence backlog/evidence/BL-1716-spec-gap-shell-test-residual-20260924.md,
+  coder branch): with the replay! fix in, test_bl1366 still had two FAIL
+  lines, both from BL-1678's design (a land publishes a NEW tip-pure
+  commit, so the cited SHA never reaches origin/main verbatim) and never
+  updated when BL-1678 landed. The specifier re-ran the file on main and
+  confirmed case 1 failing, which the mint missed (a truncated tail).
+  Because this ticket owns the file's register row and its land retires
+  that row, the file must be green at this land: scope widened to the two
+  stale assertions (test-only). The repeat-land escalation stays as is.
+  The coder's finding that bash defers the trapped TERM until the
+  `$(bb ...)` child exits means case 5 never kills a replay mid-flight;
+  scenario 01 of this ticket's own feature is what covers the leftover
+  scratch. No bounce recorded (asked by note).
 
 assigned_to: coder
