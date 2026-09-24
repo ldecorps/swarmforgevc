@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-24T12:47:35.970076359Z","feature_name":"BL-1705 the orphan janitor reaps ghost ollama runners and detached run clients","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1705-the-orphan-janitor-reaps-ghost-ollama-runners-and-detached-run-clients.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1705 the orphan janitor reaps ghost ollama runners and detached run clients
 
   A model runner (llama-server) or an "ollama run" client can outlive

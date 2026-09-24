@@ -1,5 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 24, 2026 (BL-1705: the orphan janitor gains an
+`ollama-ghost` reap class — a leaked `llama-server`/`ollama runner`
+process and a detached `ollama run` client left behind once ollama moved
+under swarm management (BL-1703). Found live 2026-09-23: a detached
+`ollama run` client (pid 23398) and an ~11.6 GB `llama-server` worker
+alive outside every existing reaper (`orphan_agent_reaper` is scoped to
+SwarmForge remote-control agents, `fixture_reaper` to test fixtures,
+`orphan_janitor`'s prior classes to operator_runtime/vitest/caffeinate
+leftovers) — only ollama's own keep-alive TTL ever unloads a worker, and
+only while its server is still alive. New pure predicate
+`orphan_janitor_lib.bb::reapable-ollama-ghost?`, applied by
+`orphan_janitor_sweep_lib.bb`'s sweep tick same as every other class: a
+model runner (`llama-server ...` or `ollama runner ...`) is reaped at ANY
+age once its parent is no longer a live `ollama serve` — no grace period,
+since a runner with no live server is never legitimately in use; a
+detached `ollama run` client is reaped only once it is BOTH reparented to
+an init process (pid 1 / WSL's `/init`) AND older than a grace period
+(`SWARMFORGE_ORPHAN_JANITOR_OLLAMA_GRACE_MINUTES`, default 30 minutes — one
+order of magnitude finer than this file's other stale-threshold env vars,
+which are all in hours). `ollama serve` itself is always kept (stopping it
+is BL-1704's concern, not the janitor's); a runner a live server still
+owns is kept whatever its size — deliberately NOT a memory- or model-name
+based rule, since the same week a memory-pressure escalation blamed
+orphaned test workers when the real, correctly-loaded, in-use load was
+this exact class of CPU-resident 27B model. A process inside a live tmux
+window is never reaped, same exemption every other class already gets.
+Acceptance:
+`specs/features/BL-1705-the-orphan-janitor-reaps-ghost-ollama-runners-and-detached-run-clients.feature`.
+No new extension command, setting, or UI change; no diagram edit — this
+class extends an existing background daemon sweep with no UI surface,
+same as every prior orphan-janitor reap-class ticket (BL-849/BL-879/BL-885).)
+Prior entry —
+
 **Last Updated:** September 16, 2026 (BL-1602: the acceptance-lane sweep of
 the two-call self-audit protocol (BL-1529's own sweep swept script senders,
 BL-1530 the shell tests, BL-1541 the bb property runners — nobody swept the

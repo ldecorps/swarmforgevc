@@ -49,6 +49,15 @@
                   2.0)]
     (long (* hours 3600000))))
 
+;; BL-1705: a detached `ollama run` client's grace period, in MINUTES (not
+;; hours like the classes above) - the ticket's own proposed default is 30
+;; minutes, one order of magnitude finer than the other 2h defaults.
+(defn ollama-run-client-grace-threshold-ms []
+  (let [minutes (or (some-> (System/getenv "SWARMFORGE_ORPHAN_JANITOR_OLLAMA_GRACE_MINUTES")
+                            (Double/parseDouble))
+                    30.0)]
+    (long (* minutes 60000))))
+
 (defn audit-log-file [project-root]
   (str (fs/path project-root ".swarmforge" "daemon" "orphan-janitor-audit.log")))
 
@@ -70,7 +79,8 @@
                          (orphan-janitor-lib/hung-acceptance-cmdline? cmdline)
                          (orphan-janitor-lib/hung-vitest-cmdline? cmdline)
                          (orphan-janitor-lib/tmp-ancillary-cmdline? cmdline)
-                         (orphan-janitor-lib/caffeinate-dims-cmdline? cmdline))))
+                         (orphan-janitor-lib/caffeinate-dims-cmdline? cmdline)
+                         (orphan-janitor-lib/ollama-ghost-candidate-cmdline? cmdline))))
            (map :pid)
            vec))
     (catch Exception _ nil)))
@@ -116,6 +126,18 @@
   (try (some-> (java.lang.ProcessHandle/of (long pid)) (.orElse nil) (.destroyForcibly))
        (catch Exception _ nil)))
 
+;; True when pid's parent is CURRENTLY alive and its own cmdline is
+;; `ollama serve` - never the cmdline of a pid a stale reference happens
+;; to still point at (a dead/reused ppid never counts as ownership).
+(defn- parent-live-ollama-serve?! [pid]
+  (try
+    (boolean
+     (when-let [ph (.orElse (java.lang.ProcessHandle/of (long pid)) nil)]
+       (when-let [parent (.orElse (.parent ph) nil)]
+         (when (.isAlive parent)
+           (orphan-janitor-lib/ollama-serve-cmdline? (proc-cmdline! (.pid parent)))))))
+    (catch Exception _ false)))
+
 (defn- append-audit! [log-file line]
   (fs/create-dirs (fs/parent log-file))
   (spit (str log-file) (str line "\n") :append true))
@@ -135,6 +157,7 @@
    :live-window-pid-set! (fn [] (orphan-agent-reaper-sweep-lib/live-window-pid-set! project-root))
    :live-runtime-pid! (fn [] (live-runtime-pid! project-root))
    :live-caffeinate-pid! (fn [] (live-caffeinate-pid! project-root))
+   :parent-live-ollama-serve?! parent-live-ollama-serve?!
    :kill-pid! kill-pid!
    :audit! (fn [line] (append-audit! (audit-log-file project-root) line))
    :log! default-log!})
@@ -149,6 +172,8 @@
         live-runtime ((:live-runtime-pid! adapters))
         live-caffeinate ((or (:live-caffeinate-pid! adapters) (fn [] nil)))
         parent-orphaned?! (or (:parent-orphaned?! adapters) (fn [_] false))
+        parent-live-ollama-serve?! (or (:parent-live-ollama-serve?! adapters) (fn [_] false))
+        ollama-grace-ms (ollama-run-client-grace-threshold-ms)
         cwd! (or (:cwd! adapters) (fn [_] nil))
         reaped (atom 0)]
      (doseq [pid candidates]
@@ -237,6 +262,22 @@
                ((:audit! adapters)
                 (str (now-iso) " reaped-leaked-caffeinate pid=" pid
                      " age_ms=" age " reason=leaked-caffeinate"))
+               (swap! reaped inc)))
+
+           (orphan-janitor-lib/ollama-ghost-candidate-cmdline? cmd)
+           (let [parent-orphaned? (boolean (parent-orphaned?! pid))
+                 parent-live-ollama-serve? (boolean (parent-live-ollama-serve?! pid))]
+             (when (orphan-janitor-lib/reapable-ollama-ghost?
+                    {:in-live-window-set? in-window?
+                     :cmdline cmd
+                     :parent-orphaned? parent-orphaned?
+                     :parent-live-ollama-serve? parent-live-ollama-serve?
+                     :age-ms age
+                     :grace-ms ollama-grace-ms})
+               ((:kill-pid! adapters) pid)
+               ((:audit! adapters)
+                (str (now-iso) " reaped-ollama-ghost pid=" pid
+                     " cmd=" cmd " age_ms=" age))
                (swap! reaped inc))))))
      (log! (str "swept " (count candidates) " candidate(s), reaped " @reaped))))
 

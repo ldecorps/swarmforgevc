@@ -224,3 +224,57 @@
     is-live-caffeinate-pid? false
     (not stale?) false
     :else true))
+
+;; Ollama ghosts (BL-1705): no existing reaper names ollama at all. Three
+;; shapes, classified by cmdline alone:
+;;   - `ollama serve` (the server itself) - never this janitor's to touch,
+;;     left to the stop paths (BL-1704).
+;;   - a model runner (`llama-server ...` / `ollama runner ...`).
+;;   - an `ollama run <model>` client.
+;; `ollama runner` is deliberately NOT matched by the run-client regex:
+;; `\brun\b` requires a boundary right after "run", and "runner"'s next
+;; character is "n" - word/word, no boundary - so the two never collide.
+(defn ollama-serve-cmdline?
+  [cmdline]
+  (boolean (re-find #"(?:^|/)ollama\s+serve\b" (or cmdline ""))))
+
+(defn ollama-model-runner-cmdline?
+  [cmdline]
+  (let [c (or cmdline "")]
+    (boolean (or (re-find #"(?:^|/)llama-server\b" c)
+                 (re-find #"(?:^|/)ollama\s+runner\b" c)))))
+
+(defn ollama-run-client-cmdline?
+  [cmdline]
+  (boolean (re-find #"(?:^|/)ollama\s+run\b" (or cmdline ""))))
+
+(defn ollama-ghost-candidate-cmdline?
+  "Any ollama-shaped process worth classifying - including the server
+   itself, so it is provably seen and kept rather than silently unscanned."
+  [cmdline]
+  (boolean (or (ollama-serve-cmdline? cmdline)
+               (ollama-model-runner-cmdline? cmdline)
+               (ollama-run-client-cmdline? cmdline))))
+
+;; Pure: ollama ghost runners and detached run clients (BL-1705,
+;; invariant 1: "the janitor never signals an ollama serve process, nor a
+;; runner whose parent is a live ollama serve"). The server itself is
+;; always kept (left to the stop paths, BL-1704). A model runner is
+;; reaped, ANY age, once its parent is no longer a live `ollama serve` -
+;; no grace period, mirroring the ticket's "reap, any age" direction. A
+;; detached `ollama run` client is reaped only once BOTH it has been
+;; reparented to init (pid 1 / WSL's /init - the same signal
+;; process-table-lib/parent-orphaned? already computes for every other
+;; class) AND its age exceeds the grace period; a run client under any
+;; other still-live parent (e.g. an interactive shell) is kept regardless
+;; of age.
+(defn reapable-ollama-ghost?
+  [{:keys [in-live-window-set? cmdline parent-orphaned? parent-live-ollama-serve?
+           age-ms grace-ms]}]
+  (cond
+    in-live-window-set? false
+    (ollama-serve-cmdline? cmdline) false
+    (ollama-model-runner-cmdline? cmdline) (not parent-live-ollama-serve?)
+    (ollama-run-client-cmdline? cmdline) (and (boolean parent-orphaned?)
+                                               (>= (or age-ms 0) (or grace-ms 0)))
+    :else false))
