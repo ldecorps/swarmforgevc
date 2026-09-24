@@ -1,0 +1,18 @@
+{
+  "scenario": "S1a-stale-note",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "startup-timeout",
+  "wall_s": 120,
+  "executed": [],
+  "rejected": [],
+  "expected": [
+    "seat ask \".*BL-1687.*\"",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [],
+  "stub_calls": [],
+  "verify": null
+}

@@ -1,0 +1,35 @@
+6f459d7 fix: update expected greeting in test case
+
+ tests/test_bl9101_acceptance.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+6215809 refactor(greet.py, test_greet.py): update greeting message and test
+
+ src/greet.py        | 2 +-
+ tests/test_greet.py | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+9e00163 Promote BL-9101
+
+ backlog/active/BL-9101-greet.yaml | 11 +++++++++++
+ tests/test_bl9101_acceptance.py   |  8 ++++++++
+ 2 files changed, 19 insertions(+)
+97f4469 lab fixture
+
+ .gitignore                                      |  3 ++
+ backlog/active/BL-9001-bookkeeping-fixture.yaml |  3 ++
+ src/greet.py                                    |  2 ++
+ swarmforge/roles/aider/coder.prompt             |  3 ++
+ swarmforge/runtime/handoff-draft.txt            |  0
+ swarmforge/scripts/_lab_common.sh               |  4 +++
+ swarmforge/scripts/build_freshness_cli.bb       | 10 +++++++
+ swarmforge/scripts/close_ticket.sh              |  7 +++++
+ swarmforge/scripts/done_with_current.sh         |  7 +++++
+ swarmforge/scripts/main_sync_status_cli.bb      | 10 +++++++
+ swarmforge/scripts/merge_and_process            |  8 +++++
+ swarmforge/scripts/pipeline_stage_cli.bb        | 10 +++++++
+ swarmforge/scripts/promote_and_route_next.sh    |  4 +++
+ swarmforge/scripts/ready_for_next.sh            | 34 +++++++++++++++++++++
+ swarmforge/scripts/role_ask.bb                  | 10 +++++++
+ swarmforge/scripts/seat                         | 39 +++++++++++++++++++++++++
+ swarmforge/scripts/swarm_handoff.sh             |  8 +++++
+ tests/test_greet.py                             | 12 ++++++++
+ 18 files changed, 174 insertions(+)

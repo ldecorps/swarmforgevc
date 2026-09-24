@@ -1,0 +1,2313 @@
+TO LLM 2026-09-24T01:35:42
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:35:50
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+TO LLM 2026-09-24T01:35:57
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:36:01
+ASSISTANT ! seat done
+TO LLM 2026-09-24T01:36:07
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:36:10
+ASSISTANT ! seat next
+TO LLM 2026-09-24T01:36:16
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/10_c_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 10
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER open slot + paused work - promote+route
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: nothing yet. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:36:25
+ASSISTANT ! seat promote
+TO LLM 2026-09-24T01:36:31
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/10_c_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 10
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER open slot + paused work - promote+route
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: nothing yet. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat promote
+-------
+USER I ran this command:
+USER 
+USER seat promote
+USER 
+USER And got this output:
+USER 
+USER promote_and_route_next: promoted BL-9002 (priority 10) and routed a git_handoff to coder.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:36:35
+ASSISTANT ! seat stage-sync
+TO LLM 2026-09-24T01:36:41
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/10_c_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 10
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER open slot + paused work - promote+route
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: nothing yet. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat promote
+-------
+USER I ran this command:
+USER 
+USER seat promote
+USER 
+USER And got this output:
+USER 
+USER promote_and_route_next: promoted BL-9002 (priority 10) and routed a git_handoff to coder.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat stage-sync
+-------
+USER I ran this command:
+USER 
+USER seat stage-sync
+USER 
+USER And got this output:
+USER 
+USER pipeline_stage: synced (BL-9002 active)
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote, seat stage-sync. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:36:44
+ASSISTANT ! seat done
+TO LLM 2026-09-24T01:36:51
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/10_c_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 10
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER open slot + paused work - promote+route
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: nothing yet. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat promote
+-------
+USER I ran this command:
+USER 
+USER seat promote
+USER 
+USER And got this output:
+USER 
+USER promote_and_route_next: promoted BL-9002 (priority 10) and routed a git_handoff to coder.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat stage-sync
+-------
+USER I ran this command:
+USER 
+USER seat stage-sync
+USER 
+USER And got this output:
+USER 
+USER pipeline_stage: synced (BL-9002 active)
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote, seat stage-sync. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 10_c_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:36:53
+ASSISTANT ! seat next
+TO LLM 2026-09-24T01:37:00
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/10_c_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 10
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER open slot + paused work - promote+route
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: nothing yet. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat promote
+-------
+USER I ran this command:
+USER 
+USER seat promote
+USER 
+USER And got this output:
+USER 
+USER promote_and_route_next: promoted BL-9002 (priority 10) and routed a git_handoff to coder.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat stage-sync
+-------
+USER I ran this command:
+USER 
+USER seat stage-sync
+USER 
+USER And got this output:
+USER 
+USER pipeline_stage: synced (BL-9002 active)
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote, seat stage-sync. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 10_c_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:37:02
+ASSISTANT ! seat next
+TO LLM 2026-09-24T01:37:08
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/10_c_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 10
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER open slot + paused work - promote+route
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: nothing yet. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat promote
+-------
+USER I ran this command:
+USER 
+USER seat promote
+USER 
+USER And got this output:
+USER 
+USER promote_and_route_next: promoted BL-9002 (priority 10) and routed a git_handoff to coder.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat stage-sync
+-------
+USER I ran this command:
+USER 
+USER seat stage-sync
+USER 
+USER And got this output:
+USER 
+USER pipeline_stage: synced (BL-9002 active)
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote, seat stage-sync. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 10_c_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:37:11
+ASSISTANT ! seat next
+TO LLM 2026-09-24T01:37:17
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/10_c_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 10
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER open slot + paused work - promote+route
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: nothing yet. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat promote
+-------
+USER I ran this command:
+USER 
+USER seat promote
+USER 
+USER And got this output:
+USER 
+USER promote_and_route_next: promoted BL-9002 (priority 10) and routed a git_handoff to coder.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat stage-sync
+-------
+USER I ran this command:
+USER 
+USER seat stage-sync
+USER 
+USER And got this output:
+USER 
+USER pipeline_stage: synced (BL-9002 active)
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote, seat stage-sync. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 10_c_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:37:20
+ASSISTANT ! seat next
+TO LLM 2026-09-24T01:37:26
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/10_c_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 10
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER open slot + paused work - promote+route
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: nothing yet. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat promote
+-------
+USER I ran this command:
+USER 
+USER seat promote
+USER 
+USER And got this output:
+USER 
+USER promote_and_route_next: promoted BL-9002 (priority 10) and routed a git_handoff to coder.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat stage-sync
+-------
+USER I ran this command:
+USER 
+USER seat stage-sync
+USER 
+USER And got this output:
+USER 
+USER pipeline_stage: synced (BL-9002 active)
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote, seat stage-sync. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 10_c_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:37:29
+ASSISTANT ! seat next
+TO LLM 2026-09-24T01:37:35
+-------
+SYSTEM Act as an expert code analyst.
+SYSTEM Answer questions about the supplied code.
+SYSTEM Always reply to the user in the same language they are using.
+SYSTEM 
+SYSTEM If you need to describe code changes, do so *briefly*.
+SYSTEM 
+-------
+USER Here are some READ ONLY files, provided for your reference.
+USER Do not edit these files!
+USER 
+USER swarmforge/roles/aider/coordinator.prompt
+USER ```
+USER You are the SwarmForge coordinator on a local aider seat. You move tickets
+USER through the pipeline. You never write or judge code, tests, specs or docs,
+USER and you never edit a file.
+USER 
+USER HOW YOU ACT
+USER Reply with exactly ONE line: "! seat " followed by one verb from this card
+USER and its arguments. Nothing else: no explanation, no code fence, no file
+USER names. The swarm checks the line, runs it, shows you "I ran this command
+USER ... And got this output ...", then says CONTINUE. Anything that is not a
+USER seat verb from this card is never run.
+USER 
+USER THE PARCEL LOOP
+USER - "! seat next" prints NO_TASK (nothing to do) or a TASK with a PAYLOAD.
+USER   The TASK stays open until you complete it with "! seat done".
+USER - While a TASK is open, NEVER "! seat next". Do what the PAYLOAD asks,
+USER   using the rows below, then "! seat done".
+USER - After "! seat done", take the next parcel: "! seat next".
+USER 
+USER WHAT THE PAYLOAD ASKS (the first matching row wins)
+USER 1. "QA-approved <BL-id> landed <sha> - bookkeep to done". One verb per
+USER    reply, in this order:
+USER    a. ! seat main-sync
+USER       "action":"proceed" -> b.   "action":"ff-only" -> ! seat ff-main, then b.
+USER       Any other action -> row 5.
+USER    b. ! seat freshness sync
+USER    c. ! seat freshness report      (anything stale -> row 5)
+USER    d. ! seat close <BL-id>
+USER    e. ! seat promote
+USER    f. ! seat stage-sync
+USER    Then ! seat done
+USER 2. "open slot + paused work - promote+route": ! seat promote, then
+USER    ! seat stage-sync, then ! seat done
+USER 3. "<BL-id> no parcel in flight - possible drop":
+USER    ! seat ask "<BL-id> has no parcel in flight - who owns the next pass?"
+USER    then ! seat done
+USER 4. A role must be told something (route, hold, steer):
+USER    ! seat note <role> <NN> "<message, max 80 chars>"
+USER    NN: 00 blocking, 10-49 routing, 50 batch.
+USER 5. Anything else, a verb that refused or failed, or you are unsure:
+USER    ! seat ask "<one sentence>"   then ! seat done
+USER 
+USER NEVER
+USER - Edit or create a file, commit, push, or merge (seat ff-main is the only merge).
+USER - Promote by hand: seat promote applies every promotion rule and says why when
+USER   it refuses; a refusal means row 5, not a retry.
+USER - "! seat next" while a TASK is open.
+USER - Poll, loop, schedule a re-check, or invent work.
+USER ```
+-------
+ASSISTANT Ok, I will use these files as references.
+-------
+USER I am not sharing the full contents of any files with you yet.
+-------
+ASSISTANT Ok.
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/00_a_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 00
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER BL-1687 no parcel in flight - possible drop.
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+-------
+USER I ran this command:
+USER 
+USER seat ask "BL-1687 has no parcel in flight - who owns the next pass?"
+USER 
+USER And got this output:
+USER 
+USER role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: BL-1687 no parcel in flight - possible drop.). Card row 3 applies. Already run for it: seat ask "BL-1687 has no parcel in flight - who owns the next pass?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 00_a_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T013535-S3c-two-parcels/repo/.lab/in_process/10_c_note.handoff
+USER FROM: coordinator
+USER TYPE: note
+USER PRIORITY: 10
+USER PAYLOAD:
+USER Re-read your role and constitution.
+USER 
+USER open slot + paused work - promote+route
+USER 
+USER ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+USER 1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+USER    (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+USER 2) When done - or if there is nothing further you can do about it now - run:
+USER    swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+USER 3) Only then run ready_for_next.sh for the next parcel.
+USER USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: nothing yet. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat promote
+-------
+USER I ran this command:
+USER 
+USER seat promote
+USER 
+USER And got this output:
+USER 
+USER promote_and_route_next: promoted BL-9002 (priority 10) and routed a git_handoff to coder.
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat stage-sync
+-------
+USER I ran this command:
+USER 
+USER seat stage-sync
+USER 
+USER And got this output:
+USER 
+USER pipeline_stage: synced (BL-9002 active)
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote, seat stage-sync. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat done
+-------
+USER I ran this command:
+USER 
+USER seat done
+USER 
+USER And got this output:
+USER 
+USER done_with_current: completed 10_c_note.handoff
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+-------
+ASSISTANT ! seat next
+-------
+USER I ran this command:
+USER 
+USER seat next
+USER 
+USER And got this output:
+USER 
+USER NO_TASK
+USER 
+-------
+ASSISTANT Ok.
+-------
+USER CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+USER 
+LLM RESPONSE 2026-09-24T01:37:37
+ASSISTANT ! seat next

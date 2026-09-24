@@ -1,0 +1,60 @@
+
+Update git name with: git config user.name "Your Name"
+Update git email with: git config user.email "you@example.com"
+Aider v0.86.2
+Model: openai/qwen2.5-coder:latest with ask edit format
+Git repo: .git with 20 files
+Repo-map: disabled
+Added swarmforge/roles/aider/coordinator.prompt to the chat (read-only).
+
+swarmforge/roles/aider/coordinator.prompt (read only)                                                                                                                                                   
+ask>                                                                                                                                                                                                    
+
+
+^C again to exit
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

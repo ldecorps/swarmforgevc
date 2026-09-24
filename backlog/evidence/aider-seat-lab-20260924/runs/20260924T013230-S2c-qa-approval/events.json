@@ -1,0 +1,208 @@
+[
+  {
+    "kind": "aider-ready",
+    "t": 3.0
+  },
+  {
+    "cmd": "seat next",
+    "kind": "opening-run",
+    "t": 6.4
+  },
+  {
+    "text": "CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your ca",
+    "kind": "opening-chat",
+    "t": 16.8
+  },
+  {
+    "turn": 1,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 16.8
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 20.3
+  },
+  {
+    "turn": 2,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 28.7
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 32.1
+  },
+  {
+    "turn": 3,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 41.5
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 44.9
+  },
+  {
+    "turn": 4,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 54.3
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 57.7
+  },
+  {
+    "turn": 5,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 67.2
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 70.6
+  },
+  {
+    "turn": 6,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 81.0
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 84.4
+  },
+  {
+    "turn": 7,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 95.8
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 99.2
+  },
+  {
+    "turn": 8,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 110.7
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 114.1
+  },
+  {
+    "turn": 9,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 126.5
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 129.9
+  },
+  {
+    "turn": 10,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 143.3
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 146.8
+  },
+  {
+    "turn": 11,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 163.2
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 166.6
+  },
+  {
+    "turn": 12,
+    "n_responses": 1,
+    "text": "! seat ask \"What should I do with BL-9001?\"",
+    "bang": [
+      "seat ask \"What should I do with BL-9001?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 181.0
+  },
+  {
+    "cmd": "seat ask \"What should I do with BL-9001?\"",
+    "kind": "ran",
+    "t": 184.5
+  }
+]

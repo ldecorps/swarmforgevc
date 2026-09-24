@@ -1,0 +1,26 @@
+{
+  "scenario": "S1-stale-note",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "off-card",
+  "wall_s": 417,
+  "executed": [],
+  "rejected": [
+    "(no ! line)",
+    "(no ! line)"
+  ],
+  "expected": [
+    "bb swarmforge/scripts/role_ask\\.bb .*BL-1687.*",
+    "bash swarmforge/scripts/done_with_current\\.sh",
+    "bash swarmforge/scripts/ready_for_next\\.sh"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    203,
+    70,
+    131
+  ],
+  "stub_calls": [
+    "23:17:38\tready_for_next.sh "
+  ]
+}

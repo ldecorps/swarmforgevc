@@ -1,5 +1,9 @@
 # Intake: a compact coordinator card for local aider seats, and the command relay it needs
 
+> **2026-09-24 — superseded in part** by `backlog/INTAKE-local-aider-seats-20260924.md` (queue-jump).
+> The overnight lab answered this intake's questions: the relay becomes that intake's L2, the wiring L3, and
+> this card is superseded by its L4. Drain both together.
+
 Filed 2026-09-23 by Claude Code at the human's direction, on the operator seat.
 A RAW ask, not a spec: the specifier drains it like any backlog-root item and
 decides what becomes a ticket.

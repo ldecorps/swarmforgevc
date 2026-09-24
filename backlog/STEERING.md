@@ -49,6 +49,34 @@ Until the human declares one of those as the cycle direction, no Direction-lane
 gate is in force. That does **not** mean the human has said nothing about
 product surfaces — see the standing freeze below.
 
+## Standing human directive (2026-09-23 ~23:05 BST, via Claude Code) — local models are now the priority; the local-seat parcel driver (INTAKE-local-aider-seats-20260924) is queue-jump
+
+**Human, verbatim:** "When you are done with your experimentation, write the
+final proposal for the specifier to pick tomorrow morning. Make it super high
+priority btw, qjump it. The priority is now to introduce local models. I have
+a graphic card arriving in a couple of days, so the tocken generation should
+be boosted"
+
+**Effect (pull order, not a Direction-lane theme):**
+
+- The proposal is `backlog/INTAKE-local-aider-seats-20260924.md`.
+  Mint its slices as children of epic BL-1125 (`local-llm-swarm`) with
+  `direction: queue-jump`, `priority: 0`, `human_approval: approved` (the
+  human asked for it by name and asked for the queue jump; per the 2026-09-15
+  ruling an explicit jump request is the approval for a plain, no-choice gate).
+  A slice that turns out to pose a genuine choice still goes back to the
+  human with pros and cons.
+- Rank: tier 2 of the pull policy (queue-jump / human-requested), ahead of
+  `aligned` and `non-aligned` work, NOT ahead of an Article 3.2.4 expedited
+  defect (constitutional limit; see Classification above).
+- Slices are ordered by dependency in the intake; pull the first ready one on
+  the next open slot rather than waiting for the batch.
+- The live local mono-router cannot move a parcel until the relay slices land
+  (evidence in the intake): do not treat a stalled local pack as a reason to
+  retry or reroute tickets; the fix is these slices.
+- GPU arriving ~2026-09-25/26: the model-steward probe matrix is re-run on it
+  before any pack or model change; CPU numbers in the intake are the baseline.
+
 ## Standing human directive (2026-09-17, via Claude Code) — new high/critical defects auto-approved; shift-end consolidation sweep
 
 **Human, verbatim:** "New high defect[s] can be jumped automatically. Other

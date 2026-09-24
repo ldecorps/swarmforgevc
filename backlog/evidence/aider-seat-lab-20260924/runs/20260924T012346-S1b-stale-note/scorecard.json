@@ -1,0 +1,40 @@
+{
+  "scenario": "S1b-stale-note",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "turn-cap",
+  "wall_s": 67,
+  "executed": [
+    "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "seat done",
+    "seat next",
+    "seat next",
+    "seat next",
+    "seat next"
+  ],
+  "rejected": [],
+  "expected": [
+    "seat ask \".*BL-1687.*\"",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 3,
+  "exact": false,
+  "turn_latency_s": [
+    8,
+    4,
+    3,
+    2,
+    2,
+    2
+  ],
+  "stub_calls": [
+    "01:23:49\tready_for_next.sh ",
+    "01:24:04\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012346-S1b-stale-note/repo --role coordinator --question BL-1687 has no parcel in flight - who owns the next pass?",
+    "01:24:15\tdone_with_current.sh ",
+    "01:24:24\tready_for_next.sh ",
+    "01:24:33\tready_for_next.sh ",
+    "01:24:41\tready_for_next.sh ",
+    "01:24:50\tready_for_next.sh "
+  ],
+  "verify": null
+}

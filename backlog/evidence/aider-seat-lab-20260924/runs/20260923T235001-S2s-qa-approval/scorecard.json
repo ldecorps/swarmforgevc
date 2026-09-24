@@ -1,0 +1,31 @@
+{
+  "scenario": "S2s-qa-approval",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "off-card",
+  "wall_s": 32,
+  "executed": [],
+  "rejected": [
+    "(no ! line)",
+    "(no ! line)"
+  ],
+  "expected": [
+    "seat main-sync",
+    "seat freshness sync",
+    "seat freshness report",
+    "seat close BL-9001",
+    "seat promote",
+    "seat stage-sync",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    12,
+    8
+  ],
+  "stub_calls": [
+    "23:50:04\tready_for_next.sh "
+  ],
+  "verify": null
+}

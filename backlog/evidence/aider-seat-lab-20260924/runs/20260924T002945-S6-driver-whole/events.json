@@ -1,0 +1,38 @@
+[
+  {
+    "cmd": "seat next",
+    "kind": "driver-ran",
+    "t": 6.4
+  },
+  {
+    "cmd": "seat merge coordinator 1a2af1c521",
+    "kind": "driver-ran",
+    "t": 9.8
+  },
+  {
+    "ticket": "backlog/active/BL-9101-greet.yaml",
+    "kind": "ticket-read-only",
+    "t": 13.2
+  },
+  {
+    "ok": true,
+    "green": true,
+    "kind": "model-turn-done",
+    "t": 85.3
+  },
+  {
+    "cmd": "seat handoff QA BL-9101",
+    "kind": "driver-ran",
+    "t": 88.8
+  },
+  {
+    "cmd": "seat done",
+    "kind": "driver-ran",
+    "t": 92.2
+  },
+  {
+    "cmd": "seat next",
+    "kind": "driver-ran",
+    "t": 95.6
+  }
+]

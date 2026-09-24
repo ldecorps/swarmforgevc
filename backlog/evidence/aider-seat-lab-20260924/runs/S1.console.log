@@ -1,0 +1,33 @@
+[S1-stale-note +    3.0s] aider-ready {}
+[S1-stale-note +    6.4s] opening-run {"cmd": "bash swarmforge/scripts/ready_for_next.sh"}
+[S1-stale-note +  282.3s] opening-chat {"text": "The swarm ran ready_for_next.sh for you; its output is above. CONTINUE."}
+[S1-stale-note +  282.3s] reply {"turn": 1, "n_responses": 2, "text": "Understood. I will use the provided file listings and follow the specified format for any changes.", "bang": [], "fenced": []}
+[S1-stale-note +  282.3s] rejected {"cmd": null, "raw": []}
+[S1-stale-note +  416.9s] reply {"turn": 2, "n_responses": 1, "text": "I apologize for the oversight. Here is the corrected response:\n\nswarmforge/scripts/ready_for_next.sh\n```\n#!/usr/bin/env bash\n# LAB STUB of ready_for_next.sh: same print-task text as handoff_lib.bb, fixture parcels from .lab/\nsource \"$(dirname \"$0\")/_la
+[S1-stale-note +  416.9s] rejected {"cmd": null, "raw": []}
+{
+  "scenario": "S1-stale-note",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "off-card",
+  "wall_s": 417,
+  "executed": [],
+  "rejected": [
+    "(no ! line)",
+    "(no ! line)"
+  ],
+  "expected": [
+    "bb swarmforge/scripts/role_ask\\.bb .*BL-1687.*",
+    "bash swarmforge/scripts/done_with_current\\.sh",
+    "bash swarmforge/scripts/ready_for_next\\.sh"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    203,
+    70,
+    131
+  ],
+  "stub_calls": [
+    "23:17:38\tready_for_next.sh "
+  ]
+}

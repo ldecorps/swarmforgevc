@@ -1,0 +1,112 @@
+[
+  {
+    "kind": "aider-ready",
+    "t": 3.0
+  },
+  {
+    "cmd": "seat next",
+    "kind": "opening-run",
+    "t": 6.4
+  },
+  {
+    "text": "CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your ca",
+    "kind": "opening-chat",
+    "t": 31.8
+  },
+  {
+    "turn": 1,
+    "n_responses": 1,
+    "text": "! seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "bang": [
+      "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 31.9
+  },
+  {
+    "cmd": "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "kind": "ran",
+    "t": 35.3
+  },
+  {
+    "turn": 2,
+    "n_responses": 1,
+    "text": "! seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "bang": [
+      "seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 44.7
+  },
+  {
+    "cmd": "seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "kind": "ran",
+    "t": 48.1
+  },
+  {
+    "turn": 3,
+    "n_responses": 1,
+    "text": "! seat next",
+    "bang": [
+      "seat next"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 54.5
+  },
+  {
+    "cmd": "seat next",
+    "kind": "ran",
+    "t": 57.9
+  },
+  {
+    "turn": 4,
+    "n_responses": 1,
+    "text": "! seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "bang": [
+      "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 72.3
+  },
+  {
+    "cmd": "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "kind": "ran",
+    "t": 75.7
+  },
+  {
+    "turn": 5,
+    "n_responses": 1,
+    "text": "! seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "bang": [
+      "seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 85.2
+  },
+  {
+    "cmd": "seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "kind": "ran",
+    "t": 88.6
+  },
+  {
+    "turn": 6,
+    "n_responses": 1,
+    "text": "! seat next",
+    "bang": [
+      "seat next"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 95.0
+  },
+  {
+    "cmd": "seat next",
+    "kind": "ran",
+    "t": 98.4
+  }
+]

@@ -1,0 +1,21 @@
+d1ced2f lab fixture
+
+ .gitignore                                      |  3 ++
+ backlog/active/BL-9001-bookkeeping-fixture.yaml |  3 ++
+ src/greet.py                                    |  2 ++
+ swarmforge/roles/aider/coordinator.prompt       | 47 +++++++++++++++++++++++++
+ swarmforge/runtime/handoff-draft.txt            |  0
+ swarmforge/scripts/_lab_common.sh               |  4 +++
+ swarmforge/scripts/build_freshness_cli.bb       | 10 ++++++
+ swarmforge/scripts/close_ticket.sh              |  7 ++++
+ swarmforge/scripts/done_with_current.sh         |  7 ++++
+ swarmforge/scripts/main_sync_status_cli.bb      | 10 ++++++
+ swarmforge/scripts/merge_and_process            |  8 +++++
+ swarmforge/scripts/pipeline_stage_cli.bb        | 10 ++++++
+ swarmforge/scripts/promote_and_route_next.sh    |  4 +++
+ swarmforge/scripts/ready_for_next.sh            | 34 ++++++++++++++++++
+ swarmforge/scripts/role_ask.bb                  | 10 ++++++
+ swarmforge/scripts/seat                         | 39 ++++++++++++++++++++
+ swarmforge/scripts/swarm_handoff.sh             |  8 +++++
+ tests/test_greet.py                             | 12 +++++++
+ 18 files changed, 218 insertions(+)

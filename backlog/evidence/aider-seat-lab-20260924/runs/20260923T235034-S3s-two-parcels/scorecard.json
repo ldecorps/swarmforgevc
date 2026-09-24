@@ -1,0 +1,30 @@
+{
+  "scenario": "S3s-two-parcels",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "off-card",
+  "wall_s": 31,
+  "executed": [],
+  "rejected": [
+    "(no ! line)",
+    "(no ! line)"
+  ],
+  "expected": [
+    "seat ask \".*BL-1687.*\"",
+    "seat done",
+    "seat next",
+    "seat promote",
+    "seat stage-sync",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    11,
+    8
+  ],
+  "stub_calls": [
+    "23:50:37\tready_for_next.sh "
+  ],
+  "verify": null
+}

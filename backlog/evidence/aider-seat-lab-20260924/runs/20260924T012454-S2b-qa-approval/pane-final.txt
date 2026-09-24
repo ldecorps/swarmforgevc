@@ -1,0 +1,120 @@
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Already run for it: seat ask "What should I do with BL-9001?". Reply with exactly one line: ! seat <verb> [args]
+ask> , chosen from your card.
+
+! seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"
+Tokens: 1.2k sent, 30 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> NOT RUN: `seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"` is not a command in your card. Reply with exactly one line: ! seat <verb> [args],
+ask> chosen from your card.
+
+! seat ask "What should I do with BL-9001?"
+Tokens: 1.3k sent, 14 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "What should I do with BL-9001?"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Already run for it: seat ask "What should I do with BL-9001?", seat ask "What should I do with BL-9001?". Reply
+ask> with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"
+Tokens: 1.4k sent, 30 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> NOT RUN: `seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"` is not a command in your card. Reply with exactly one line: ! seat <verb> [args],
+ask> chosen from your card.
+
+! seat ask "What should I do with BL-9001?"
+Tokens: 1.5k sent, 14 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "What should I do with BL-9001?"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Already run for it: seat ask "What should I do with BL-9001?", seat ask "What should I do with BL-9001?", seat a
+ask> sk "What should I do with BL-9001?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"
+Tokens: 1.7k sent, 30 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> NOT RUN: `seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"` is not a command in your card. Reply with exactly one line: ! seat <verb> [args],
+ask> chosen from your card.
+
+! seat ask "What should I do with BL-9001?"
+Tokens: 1.8k sent, 14 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "What should I do with BL-9001?"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Already run for it: seat ask "What should I do with BL-9001?", seat ask "What should I do with BL-9001?", seat a
+ask> sk "What should I do with BL-9001?", seat ask "What should I do with BL-9001?". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"
+Tokens: 1.9k sent, 30 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> NOT RUN: `seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"` is not a command in your card. Reply with exactly one line: ! seat <verb> [args],
+ask> chosen from your card.
+
+! seat ask "What should I do with BL-9001?"
+Tokens: 2.0k sent, 14 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "What should I do with BL-9001?"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Already run for it: seat ask "What should I do with BL-9001?", seat ask "What should I do with BL-9001?", seat a
+ask> sk "What should I do with BL-9001?", seat ask "What should I do with BL-9001?", seat ask "What should I do with BL-9001?". Reply with exactly one line: ! seat <verb> [args], chosen from your card
+ask> .
+
+! seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"
+Tokens: 2.2k sent, 30 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> NOT RUN: `seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"` is not a command in your card. Reply with exactly one line: ! seat <verb> [args],
+ask> chosen from your card.
+
+! seat ask "What should I do with BL-9001?"
+Tokens: 2.3k sent, 14 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "What should I do with BL-9001?"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Already run for it: seat ask "What should I do with BL-9001?", seat ask "What should I do with BL-9001?", seat a
+ask> sk "What should I do with BL-9001?", seat ask "What should I do with BL-9001?", seat ask "What should I do with BL-9001?", seat ask "What should I do with BL-9001?". Reply with exactly one line:
+ask> ! seat <verb> [args], chosen from your card.
+
+! seat note aider 00 "QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?"
+Tokens: 2.5k sent, 30 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)                                                                                                                                                   
+ask>                                                                                                                                                                                                    
+
+
+^C again to exit
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask>
+
+
+

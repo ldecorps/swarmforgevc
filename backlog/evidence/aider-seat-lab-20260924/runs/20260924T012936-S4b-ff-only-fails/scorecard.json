@@ -1,0 +1,45 @@
+{
+  "scenario": "S4b-ff-only-fails",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "off-card",
+  "wall_s": 105,
+  "executed": [
+    "seat ask \"QA-approved BL-9001 landed abc1234 - bookkeep to done\"",
+    "seat ask \"QA-approved BL-9001 landed abc1234 - bookkeep to done\"",
+    "seat ask \"QA-approved BL-9001 landed abc1234 - bookkeep to done\"",
+    "seat ask \"QA-approved BL-9001 landed abc1234 - bookkeep to done\""
+  ],
+  "rejected": [
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done\"",
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done\"",
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done\"",
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done\""
+  ],
+  "expected": [
+    "seat main-sync",
+    "seat ff-main",
+    "seat ask \".*\"",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    9,
+    8,
+    6,
+    8,
+    6,
+    10,
+    6,
+    9
+  ],
+  "stub_calls": [
+    "01:29:40\tready_for_next.sh ",
+    "01:29:54\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012936-S4b-ff-only-fails/repo --role coordinator --question QA-approved BL-9001 landed abc1234 - bookkeep to done",
+    "01:30:18\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012936-S4b-ff-only-fails/repo --role coordinator --question QA-approved BL-9001 landed abc1234 - bookkeep to done",
+    "01:30:41\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012936-S4b-ff-only-fails/repo --role coordinator --question QA-approved BL-9001 landed abc1234 - bookkeep to done",
+    "01:31:06\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012936-S4b-ff-only-fails/repo --role coordinator --question QA-approved BL-9001 landed abc1234 - bookkeep to done"
+  ],
+  "verify": null
+}

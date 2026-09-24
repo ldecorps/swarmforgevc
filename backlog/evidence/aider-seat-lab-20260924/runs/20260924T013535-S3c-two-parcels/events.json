@@ -1,0 +1,208 @@
+[
+  {
+    "kind": "aider-ready",
+    "t": 3.0
+  },
+  {
+    "cmd": "seat next",
+    "kind": "opening-run",
+    "t": 6.4
+  },
+  {
+    "text": "CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your ca",
+    "kind": "opening-chat",
+    "t": 17.8
+  },
+  {
+    "turn": 1,
+    "n_responses": 1,
+    "text": "! seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "bang": [
+      "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\""
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 17.8
+  },
+  {
+    "cmd": "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "kind": "ran",
+    "t": 21.3
+  },
+  {
+    "turn": 2,
+    "n_responses": 1,
+    "text": "! seat done",
+    "bang": [
+      "seat done"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 28.7
+  },
+  {
+    "cmd": "seat done",
+    "kind": "ran",
+    "t": 32.1
+  },
+  {
+    "turn": 3,
+    "n_responses": 1,
+    "text": "! seat next",
+    "bang": [
+      "seat next"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 37.5
+  },
+  {
+    "cmd": "seat next",
+    "kind": "ran",
+    "t": 40.9
+  },
+  {
+    "turn": 4,
+    "n_responses": 1,
+    "text": "! seat promote",
+    "bang": [
+      "seat promote"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 52.3
+  },
+  {
+    "cmd": "seat promote",
+    "kind": "ran",
+    "t": 55.7
+  },
+  {
+    "turn": 5,
+    "n_responses": 1,
+    "text": "! seat stage-sync",
+    "bang": [
+      "seat stage-sync"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 62.1
+  },
+  {
+    "cmd": "seat stage-sync",
+    "kind": "ran",
+    "t": 65.5
+  },
+  {
+    "turn": 6,
+    "n_responses": 1,
+    "text": "! seat done",
+    "bang": [
+      "seat done"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 72.0
+  },
+  {
+    "cmd": "seat done",
+    "kind": "ran",
+    "t": 75.4
+  },
+  {
+    "turn": 7,
+    "n_responses": 1,
+    "text": "! seat next",
+    "bang": [
+      "seat next"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 80.8
+  },
+  {
+    "cmd": "seat next",
+    "kind": "ran",
+    "t": 84.2
+  },
+  {
+    "turn": 8,
+    "n_responses": 1,
+    "text": "! seat next",
+    "bang": [
+      "seat next"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 89.6
+  },
+  {
+    "cmd": "seat next",
+    "kind": "ran",
+    "t": 93.0
+  },
+  {
+    "turn": 9,
+    "n_responses": 1,
+    "text": "! seat next",
+    "bang": [
+      "seat next"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 98.5
+  },
+  {
+    "cmd": "seat next",
+    "kind": "ran",
+    "t": 101.9
+  },
+  {
+    "turn": 10,
+    "n_responses": 1,
+    "text": "! seat next",
+    "bang": [
+      "seat next"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 107.3
+  },
+  {
+    "cmd": "seat next",
+    "kind": "ran",
+    "t": 110.7
+  },
+  {
+    "turn": 11,
+    "n_responses": 1,
+    "text": "! seat next",
+    "bang": [
+      "seat next"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 116.1
+  },
+  {
+    "cmd": "seat next",
+    "kind": "ran",
+    "t": 119.5
+  },
+  {
+    "turn": 12,
+    "n_responses": 1,
+    "text": "! seat next",
+    "bang": [
+      "seat next"
+    ],
+    "fenced": [],
+    "kind": "reply",
+    "t": 125.0
+  },
+  {
+    "cmd": "seat next",
+    "kind": "ran",
+    "t": 128.4
+  }
+]

@@ -1,0 +1,31 @@
+diff --git a/src/greet.py b/src/greet.py
+index 488a588..d282150 100644
+--- a/src/greet.py
++++ b/src/greet.py
+@@ -1,2 +1,2 @@
+ def greet(name):
+-    return "Hi " + name
++    return "Hello, " + name
+diff --git a/tests/test_bl9101_acceptance.py b/tests/test_bl9101_acceptance.py
+index 60dd8b0..27cddec 100644
+--- a/tests/test_bl9101_acceptance.py
++++ b/tests/test_bl9101_acceptance.py
+@@ -5,4 +5,4 @@ from greet import greet
+ 
+ class BL9101Acceptance(unittest.TestCase):
+     def test_greet_says_hello(self):
+-        self.assertEqual(greet("Ann"), "Hello, Ann!")
++        self.assertEqual(greet("Ann"), "Hello, Ann")
+diff --git a/tests/test_greet.py b/tests/test_greet.py
+index b4cfc93..ccceae8 100644
+--- a/tests/test_greet.py
++++ b/tests/test_greet.py
+@@ -5,7 +5,7 @@ from greet import greet
+ 
+ class GreetTest(unittest.TestCase):
+     def test_greet_says_hi(self):
+-        self.assertEqual(greet("Ann"), "Hi Ann")
++        self.assertEqual(greet("Ann"), "Hello, Ann")
+ 
+ 
+ if __name__ == "__main__":

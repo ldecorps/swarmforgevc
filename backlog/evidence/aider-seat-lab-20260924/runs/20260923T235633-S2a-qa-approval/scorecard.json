@@ -1,0 +1,63 @@
+{
+  "scenario": "S2a-qa-approval",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "turn-cap",
+  "wall_s": 173,
+  "executed": [
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat note aider 00 \"Please provide guidance on what to do with BL-9001.\"",
+    "seat next",
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat next",
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat next",
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat next",
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat next",
+    "seat ask \"What should I do with BL-9001?\""
+  ],
+  "rejected": [],
+  "expected": [
+    "seat main-sync",
+    "seat freshness sync",
+    "seat freshness report",
+    "seat close BL-9001",
+    "seat promote",
+    "seat stage-sync",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    7,
+    6,
+    3,
+    10,
+    3,
+    11,
+    3,
+    12,
+    5,
+    13,
+    5,
+    13
+  ],
+  "stub_calls": [
+    "23:56:36\tready_for_next.sh ",
+    "23:56:50\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "23:57:02\tswarm_handoff.sh /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo/swarmforge/runtime/handoff-draft.txt",
+    "23:57:11\tready_for_next.sh ",
+    "23:57:28\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "23:57:37\tready_for_next.sh ",
+    "23:57:55\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "23:58:05\tready_for_next.sh ",
+    "23:58:23\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "23:58:34\tready_for_next.sh ",
+    "23:58:53\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "23:59:03\tready_for_next.sh ",
+    "23:59:23\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo --role coordinator --question What should I do with BL-9001?"
+  ],
+  "verify": null
+}

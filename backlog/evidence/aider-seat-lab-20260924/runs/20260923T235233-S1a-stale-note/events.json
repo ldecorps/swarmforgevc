@@ -1,0 +1,7 @@
+[
+  {
+    "pane": "\nUpdate git name with: git config user.name \"Your Name\"\nUpdate git email with: git config user.email \"you@example.com\"\nAider v0.86.2\nModel: openai/qwen2.5-coder:latest with ask edit format\nGit repo: .git with 20 files\nRepo-map: disabled\nAdded swarmforge/roles/aider/coordinator.prompt to the chat (read-only).\n\nswarmforge/roles/aider/coordinator.prompt (read only)\nask>\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "kind": "startup-timeout",
+    "t": 120.3
+  }
+]

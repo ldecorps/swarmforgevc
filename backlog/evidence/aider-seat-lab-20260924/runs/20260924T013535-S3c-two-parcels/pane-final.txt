@@ -1,0 +1,120 @@
+ask>
+
+! seat promote
+Tokens: 1.6k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat promote
+
+promote_and_route_next: promoted BL-9002 (priority 10) and routed a git_handoff to coder.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote. Reply with exactly one line: ! seat <verb> [args], chosen from your card
+ask> .
+
+! seat stage-sync
+Tokens: 1.7k sent, 4 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat stage-sync
+
+pipeline_stage: synced (BL-9002 active)
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: open slot + paused work - promote+route). Card row 2 applies. Already run for it: seat promote, seat stage-sync. Reply with exactly one line: ! seat <verb> [args], chos
+ask> en from your card.
+
+! seat done
+Tokens: 1.8k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat done
+
+done_with_current: completed 10_c_note.handoff
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat next
+Tokens: 1.9k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat next
+
+NO_TASK
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat next
+Tokens: 1.9k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat next
+
+NO_TASK
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat next
+Tokens: 2.0k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat next
+
+NO_TASK
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat next
+Tokens: 2.1k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat next
+
+NO_TASK
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat next
+Tokens: 2.1k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat next
+
+NO_TASK
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. No TASK is open. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat next
+Tokens: 2.2k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat next
+
+NO_TASK
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)                                                                                                                                                   
+ask>                                                                                                                                                                                                    
+
+
+^C again to exit
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask>
+
+
+

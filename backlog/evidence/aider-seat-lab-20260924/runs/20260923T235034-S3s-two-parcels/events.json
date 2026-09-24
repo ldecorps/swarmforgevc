@@ -1,0 +1,46 @@
+[
+  {
+    "kind": "aider-ready",
+    "t": 3.0
+  },
+  {
+    "cmd": "seat next",
+    "kind": "opening-run",
+    "t": 6.4
+  },
+  {
+    "text": "CONTINUE.",
+    "kind": "opening-chat",
+    "t": 20.8
+  },
+  {
+    "turn": 1,
+    "n_responses": 1,
+    "text": "Understood. I will follow the provided format and instructions for suggesting changes to files.",
+    "bang": [],
+    "fenced": [],
+    "kind": "reply",
+    "t": 20.8
+  },
+  {
+    "cmd": null,
+    "raw": [],
+    "kind": "rejected",
+    "t": 20.8
+  },
+  {
+    "turn": 2,
+    "n_responses": 1,
+    "text": "Understood. I will follow the new format and instructions for suggesting changes to files.",
+    "bang": [],
+    "fenced": [],
+    "kind": "reply",
+    "t": 31.3
+  },
+  {
+    "cmd": null,
+    "raw": [],
+    "kind": "rejected",
+    "t": 31.3
+  }
+]

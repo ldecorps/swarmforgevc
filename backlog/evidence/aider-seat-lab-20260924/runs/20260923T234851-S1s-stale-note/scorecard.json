@@ -1,0 +1,26 @@
+{
+  "scenario": "S1s-stale-note",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "off-card",
+  "wall_s": 69,
+  "executed": [],
+  "rejected": [
+    "(no ! line)",
+    "(no ! line)"
+  ],
+  "expected": [
+    "seat ask \".*BL-1687.*\"",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    48,
+    9
+  ],
+  "stub_calls": [
+    "23:48:55\tready_for_next.sh "
+  ],
+  "verify": null
+}

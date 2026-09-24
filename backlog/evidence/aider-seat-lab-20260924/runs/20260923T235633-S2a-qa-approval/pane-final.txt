@@ -1,0 +1,120 @@
+
+TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo/.lab/in_process/00_b_note.handoff
+FROM: QA
+TYPE: note
+PRIORITY: 00
+PAYLOAD:
+Re-read your role and constitution.
+
+QA-approved BL-9001 landed abc1234 - bookkeep to done
+
+ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+   (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+2) When done - or if there is nothing further you can do about it now - run:
+   swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+3) Only then run ready_for_next.sh for the next parcel.
+USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+Added 16 lines of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat ask "What should I do with BL-9001?"
+Tokens: 2.4k sent, 14 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "What should I do with BL-9001?"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat next
+Tokens: 2.5k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat next
+
+TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo/.lab/in_process/00_b_note.handoff
+FROM: QA
+TYPE: note
+PRIORITY: 00
+PAYLOAD:
+Re-read your role and constitution.
+
+QA-approved BL-9001 landed abc1234 - bookkeep to done
+
+ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+   (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+2) When done - or if there is nothing further you can do about it now - run:
+   swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+3) Only then run ready_for_next.sh for the next parcel.
+USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+Added 16 lines of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat ask "What should I do with BL-9001?"
+Tokens: 2.8k sent, 14 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "What should I do with BL-9001?"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat next
+Tokens: 2.9k sent, 3 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat next
+
+TASK: /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235633-S2a-qa-approval/repo/.lab/in_process/00_b_note.handoff
+FROM: QA
+TYPE: note
+PRIORITY: 00
+PAYLOAD:
+Re-read your role and constitution.
+
+QA-approved BL-9001 landed abc1234 - bookkeep to done
+
+ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.
+1) Read the PAYLOAD and act on it per your role prompt if it asks for something
+   (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).
+2) When done - or if there is nothing further you can do about it now - run:
+   swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)
+3) Only then run ready_for_next.sh for the next parcel.
+USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.
+Added 16 lines of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat ask "What should I do with BL-9001?"
+Tokens: 3.2k sent, 14 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "What should I do with BL-9001?"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)                                                                                                                                                   
+ask>                                                                                                                                                                                                    
+
+
+^C again to exit
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask>
+
+
+

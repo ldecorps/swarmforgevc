@@ -1,0 +1,58 @@
+{
+  "scenario": "S2b-qa-approval",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "off-card",
+  "wall_s": 154,
+  "executed": [
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat ask \"What should I do with BL-9001?\"",
+    "seat ask \"What should I do with BL-9001?\""
+  ],
+  "rejected": [
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?\"",
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?\"",
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?\"",
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?\"",
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?\"",
+    "seat note aider 00 \"QA-approved BL-9001 landed abc1234 - bookkeep to done. What should I do with it?\""
+  ],
+  "expected": [
+    "seat main-sync",
+    "seat freshness sync",
+    "seat freshness report",
+    "seat close BL-9001",
+    "seat promote",
+    "seat stage-sync",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    7,
+    9,
+    5,
+    8,
+    5,
+    10,
+    5,
+    10,
+    5,
+    11,
+    5,
+    11
+  ],
+  "stub_calls": [
+    "01:24:57\tready_for_next.sh ",
+    "01:25:11\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012454-S2b-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "01:25:33\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012454-S2b-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "01:25:57\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012454-S2b-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "01:26:21\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012454-S2b-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "01:26:45\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012454-S2b-qa-approval/repo --role coordinator --question What should I do with BL-9001?",
+    "01:27:10\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T012454-S2b-qa-approval/repo --role coordinator --question What should I do with BL-9001?"
+  ],
+  "verify": null
+}

@@ -1,0 +1,120 @@
+ask> CONTINUE. Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+Tokens: 1.0k sent, 20 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Card row 1 applies. Already run for it: seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done". Reply
+ask> with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+Tokens: 1.2k sent, 20 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Card row 1 applies. Already run for it: seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat a
+ask> sk "QA-approved BL-9001 landed abc1234 - bookkeep to done". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+Tokens: 1.4k sent, 20 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Card row 1 applies. Already run for it: seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat a
+ask> sk "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done". Reply with exactly one line: ! seat <verb> [args], chosen from your c
+ask> ard.
+
+! seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+Tokens: 1.6k sent, 20 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Card row 1 applies. Already run for it: seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat a
+ask> sk "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done". Rep
+ask> ly with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+Tokens: 1.8k sent, 20 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Card row 1 applies. Already run for it: seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat a
+ask> sk "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", sea
+ask> t ask "QA-approved BL-9001 landed abc1234 - bookkeep to done". Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+Tokens: 2.0k sent, 20 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Card row 1 applies. Already run for it: seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat a
+ask> sk "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", sea
+ask> t ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done". Reply with exactly one line: ! seat <verb> [args], chosen from you
+ask> r card.
+
+! seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+Tokens: 2.3k sent, 20 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> CONTINUE. TASK open (note: QA-approved BL-9001 landed abc1234 - bookkeep to done). Card row 1 applies. Already run for it: seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat a
+ask> sk "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", sea
+ask> t ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done", seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done".
+ask> Reply with exactly one line: ! seat <verb> [args], chosen from your card.
+
+! seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+Tokens: 2.5k sent, 20 received.
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask> /run seat ask "QA-approved BL-9001 landed abc1234 - bookkeep to done"
+
+role_ask: question queued for the human (1 pending); the answer arrives later as a note.
+Added 1 line of output to the chat.
+
+swarmforge/roles/aider/coordinator.prompt (read only)                                                                                                                                                   
+ask>                                                                                                                                                                                                    
+
+
+^C again to exit
+
+swarmforge/roles/aider/coordinator.prompt (read only)
+ask>
+
+
+

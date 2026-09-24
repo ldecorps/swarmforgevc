@@ -1,0 +1,47 @@
+[
+  {
+    "cmd": "seat next",
+    "kind": "driver-ran",
+    "t": 6.4
+  },
+  {
+    "cmd": "seat merge coordinator 9e001630da",
+    "kind": "driver-ran",
+    "t": 9.8
+  },
+  {
+    "read_only": [
+      "backlog/active/BL-9101-greet.yaml",
+      "tests/test_bl9101_acceptance.py"
+    ],
+    "editable": [
+      "src/greet.py",
+      "tests/test_greet.py"
+    ],
+    "kind": "chat-set",
+    "t": 23.5
+  },
+  {
+    "ok": true,
+    "green": true,
+    "kind": "model-turn-done",
+    "t": 252.5
+  },
+  {
+    "green": true,
+    "model_committed": true,
+    "spec_untouched": false,
+    "kind": "gate",
+    "t": 252.6
+  },
+  {
+    "cmd": "seat ask \"BL-9101: tests still fail after 1 model turns\"",
+    "kind": "driver-ran",
+    "t": 256.1
+  },
+  {
+    "cmd": "seat done",
+    "kind": "driver-ran",
+    "t": 259.5
+  }
+]

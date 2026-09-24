@@ -1,0 +1,28 @@
+{
+  "scenario": "S4s-ff-only-fails",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "off-card",
+  "wall_s": 34,
+  "executed": [],
+  "rejected": [
+    "(no ! line)",
+    "(no ! line)"
+  ],
+  "expected": [
+    "seat main-sync",
+    "seat ff-main",
+    "seat ask \".*\"",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    12,
+    10
+  ],
+  "stub_calls": [
+    "23:51:09\tready_for_next.sh "
+  ],
+  "verify": null
+}

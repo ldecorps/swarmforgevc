@@ -1,0 +1,36 @@
+{
+  "scenario": "S5s-coder-git-handoff",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "off-card",
+  "wall_s": 44,
+  "executed": [],
+  "rejected": [
+    "(no ! line)",
+    "(no ! line)"
+  ],
+  "expected": [
+    "seat merge coordinator [0-9a-f]+",
+    "seat test",
+    "seat handoff QA BL-9101",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 0,
+  "exact": false,
+  "turn_latency_s": [
+    24,
+    8
+  ],
+  "stub_calls": [
+    "23:51:44\tready_for_next.sh "
+  ],
+  "verify": {
+    "tests_green": true,
+    "greet_ok": false,
+    "handoff_draft": "",
+    "handoff_commit_resolves": false,
+    "git_log": [
+      "aeeb97e lab fixture"
+    ]
+  }
+}

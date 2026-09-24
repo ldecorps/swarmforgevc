@@ -1,0 +1,62 @@
+{
+  "scenario": "S3a-two-parcels",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "turn-cap",
+  "wall_s": 172,
+  "executed": [
+    "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "seat next",
+    "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "seat next",
+    "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "seat next",
+    "seat ask \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "seat note aider 00 \"BL-1687 has no parcel in flight - who owns the next pass?\"",
+    "seat next"
+  ],
+  "rejected": [],
+  "expected": [
+    "seat ask \".*BL-1687.*\"",
+    "seat done",
+    "seat next",
+    "seat promote",
+    "seat stage-sync",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 1,
+  "exact": false,
+  "turn_latency_s": [
+    8,
+    7,
+    3,
+    12,
+    7,
+    3,
+    13,
+    9,
+    4,
+    13,
+    9,
+    4
+  ],
+  "stub_calls": [
+    "23:59:30\tready_for_next.sh ",
+    "23:59:45\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235927-S3a-two-parcels/repo --role coordinator --question BL-1687 has no parcel in flight - who owns the next pass?",
+    "23:59:58\tswarm_handoff.sh /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235927-S3a-two-parcels/repo/swarmforge/runtime/handoff-draft.txt",
+    "00:00:08\tready_for_next.sh ",
+    "00:00:25\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235927-S3a-two-parcels/repo --role coordinator --question BL-1687 has no parcel in flight - who owns the next pass?",
+    "00:00:38\tswarm_handoff.sh /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235927-S3a-two-parcels/repo/swarmforge/runtime/handoff-draft.txt",
+    "00:00:48\tready_for_next.sh ",
+    "00:01:07\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235927-S3a-two-parcels/repo --role coordinator --question BL-1687 has no parcel in flight - who owns the next pass?",
+    "00:01:22\tswarm_handoff.sh /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235927-S3a-two-parcels/repo/swarmforge/runtime/handoff-draft.txt",
+    "00:01:32\tready_for_next.sh ",
+    "00:01:50\trole_ask.bb /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235927-S3a-two-parcels/repo --role coordinator --question BL-1687 has no parcel in flight - who owns the next pass?",
+    "00:02:06\tswarm_handoff.sh /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260923T235927-S3a-two-parcels/repo/swarmforge/runtime/handoff-draft.txt",
+    "00:02:16\tready_for_next.sh "
+  ],
+  "verify": null
+}

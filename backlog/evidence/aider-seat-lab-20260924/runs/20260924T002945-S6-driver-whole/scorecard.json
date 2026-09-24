@@ -1,0 +1,44 @@
+{
+  "scenario": "S6-driver-whole",
+  "model": "openai/qwen2.5-coder:latest",
+  "outcome": "handed-off",
+  "wall_s": 96,
+  "executed": [
+    "seat next",
+    "seat merge coordinator 1a2af1c521",
+    "seat handoff QA BL-9101",
+    "seat done",
+    "seat next"
+  ],
+  "rejected": [],
+  "expected": [
+    "seat next",
+    "seat merge coordinator [0-9a-f]+",
+    "seat handoff QA BL-9101",
+    "seat done",
+    "seat next"
+  ],
+  "prefix_match": 5,
+  "exact": false,
+  "turn_latency_s": [
+    41,
+    26
+  ],
+  "stub_calls": [
+    "00:29:49\tready_for_next.sh ",
+    "00:29:52\tmerge_and_process coordinator 1a2af1c521",
+    "00:31:11\tswarm_handoff.sh /tmp/claude-1000/-home-carillon-swarmforgevc/38901020-34df-48cb-942a-00d927431ed0/scratchpad/aider-lab/runs/20260924T002945-S6-driver-whole/repo/swarmforge/runtime/handoff-draft.txt",
+    "00:31:14\tdone_with_current.sh ",
+    "00:31:18\tready_for_next.sh "
+  ],
+  "verify": {
+    "tests_green": true,
+    "greet_ok": false,
+    "handoff_draft": "type: git_handoff\nto: QA\ntask: BL-9101\ncommit: 1a2af1c521\n",
+    "handoff_commit_resolves": true,
+    "git_log": [
+      "1a2af1c Promote BL-9101",
+      "7671a1a lab fixture"
+    ]
+  }
+}
