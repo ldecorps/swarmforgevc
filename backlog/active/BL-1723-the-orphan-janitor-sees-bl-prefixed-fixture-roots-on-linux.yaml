@@ -107,3 +107,5 @@ notes: |
   Expedite lane by severity (Article 3.2.4), after BL-1705 (same file).
   IR-DRY: one near-duplicate ("is" vs "is not" a candidate) pairs opposite
   outcomes, kept. Holder note sent to the coder (BL-1705).
+
+assigned_to: coder
