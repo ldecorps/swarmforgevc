@@ -25,8 +25,15 @@
 (defn tmux! [& args]
   (apply process/sh "tmux" args))
 
+;; BL-1719 bounce (QA D1): mirrors agent_runtime_inject/capture-pane-text's
+;; own guard - a blank/nil session must never reach tmux's `-t` (babashka's
+;; process/sh turns a nil argv element into an empty string on the real
+;; command line, and tmux's own empty `-t` falls back to an ARBITRARY
+;; current/default session rather than erroring).
 (defn capture-pane-text [socket session]
-  (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
+  (if (str/blank? session)
+    ""
+    (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session))))
 
 (defn resolve-nudge-target
   "Returns {:socket :session :agent :role} or nil when the swarm is not running."
@@ -62,7 +69,7 @@
 
 (defn nudge-resident!
   "Verified inject of instruction text into a swarm role pane.
-   Returns {:status :nudged|:skip-busy|:skip-aider-agent|:no-target|:failed :detail ...}."
+   Returns {:status :nudged|:skip-busy|:skip-aider-agent|:no-target|:no-session|:failed :detail ...}."
   [project-root role-name text & {:keys [log-fn]}]
   (let [text (str/trim (str text))
         log! (or log-fn (fn [& _] nil))]
@@ -72,8 +79,16 @@
 
       :else
       (if-let [target (resolve-nudge-target project-root role-name)]
-        (let [{:keys [socket wake-session agent role]} target
-              pane (try (capture-pane-text socket wake-session) (catch Exception _ ""))]
+        (let [{:keys [socket wake-session agent role]} target]
+        (if (nil? wake-session)
+          ;; BL-1719 bounce (QA D1): resolve-nudge-target's own
+          ;; wake-session is nil outside a rotation-router pack when the
+          ;; role has no session - a distinct, observable outcome, never
+          ;; silently falling through to capture-pane-text/notify-agent!'s
+          ;; own (also guarded) blank-session no-op.
+          {:status :no-session :role role
+           :detail (str "no session for " role-name " (" (:session target) ") outside a rotation-router pack")}
+        (let [pane (try (capture-pane-text socket wake-session) (catch Exception _ ""))]
           (cond
             (aider-agent? agent)
             {:status :skip-aider-agent
@@ -101,7 +116,7 @@
                   {:status :nudged :role role :session wake-session}))
               (catch Exception e
                 {:status :failed :role role :session wake-session
-                 :detail (.getMessage e)}))))
+                 :detail (.getMessage e)}))))))
         {:status :no-target
          :detail (str "no tmux socket or role \"" role-name "\" in roles.tsv")}))))
 

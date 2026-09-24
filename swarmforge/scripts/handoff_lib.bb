@@ -1175,31 +1175,54 @@
        (not (str/blank? session))
        (zero? (:exit (daemon-cycle-guard-lib/sh! "tmux" "-S" socket "has-session" "-t" session)))))
 
+;; BL-1719: forward reference - rotation-router-pack? is defined further
+;; down this same file (it depends on mono-router-lib, loaded above but
+;; itself sequenced later); wake-session calls it below.
+(declare rotation-router-pack?)
+
 (defn resolve-wake-session
-  "Pure wake target for a roles.tsv session name under mono-router.
-   Prefer the configured session when it exists; otherwise remap to the
-   resident pane when that exists. Keeps the configured name when nothing
-   stands so the caller still sees a real tmux failure."
-  [{:keys [configured-session configured-exists? resident-session resident-exists?]}]
+  "Pure wake target for a roles.tsv session name.
+   Prefer the configured session when it exists. Otherwise, ONLY inside a
+   rotation-router pack (BL-931), remap to the resident pane when that
+   exists - keeping the configured name when nothing stands so the caller
+   still sees a real tmux failure, byte-identical to this function's
+   pre-BL-1719 behavior under mono-router (FIRM: the remap is unchanged
+   there). Outside a rotation-router pack, a missing configured session
+   resolves to nil - BL-1719: this remap was invented for sequential
+   rotation's dormant-role shape and does not apply to a standing pack,
+   where a session-less recipient is a real (if unusual) state, not a
+   rotation artifact; redirecting its wake into an unrelated role's live
+   pane is the defect, not the fix. nil is a signal to the caller: send no
+   wake anywhere, and log the skip naming the configured session."
+  [{:keys [configured-session configured-exists? resident-session resident-exists? rotation-router-pack?]}]
   (cond
     configured-exists? configured-session
+    (not rotation-router-pack?) nil
     (and (not (str/blank? resident-session)) resident-exists?) resident-session
     :else configured-session))
 
 (defn wake-session
-  "Session that should receive a tmux wake for a roles.tsv session name.
+  "Session that should receive a tmux wake for a roles.tsv session name, or
+   nil when none should (BL-1719: outside a rotation-router pack, a
+   recipient with no session gets no wake at all - the caller must check
+   for nil and skip, logging the configured session name rather than
+   attempting a tmux send).
+
    Under mono-router / sequential rotation, dormant pipeline roles keep their
    own session names in roles.tsv but have no standing pane — only the
    resident (plus coordinator) exists. Waking the missing name fails with
    `tmux send-literal failed` and falsely marks parcels failed even when the
-   mailbox copy landed. Remap missing sessions to the resident when present."
+   mailbox copy landed. Remap missing sessions to the resident when present -
+   ONLY in a rotation-router pack; a standing pack's session-less recipient
+   is never remapped to another role's live pane."
   [socket configured-session]
   (let [resident (mono-router-resident-session)]
     (resolve-wake-session
      {:configured-session configured-session
       :configured-exists? (session-exists? socket configured-session)
       :resident-session resident
-      :resident-exists? (boolean (and resident (session-exists? socket resident)))})))
+      :resident-exists? (boolean (and resident (session-exists? socket resident)))
+      :rotation-router-pack? (rotation-router-pack?)})))
 
 (defn pane-id
   "Prefer an explicit -t target. Bare display-message is only a last resort."

@@ -27,6 +27,9 @@
     (swap! failures conj (str "FAIL: " msg "\n  got truthy: " (pr-str actual)))))
 
 ;; ── wake remap (pure) ─────────────────────────────────────────────────────
+;; BL-1719: every assertion below is the mono-router / rotation-router
+;; scenario this runner's own header describes - :rotation-router-pack?
+;; true makes that explicit, now that the remap only applies there.
 
 (assert= "standing session wakes itself"
          "swarmforge-coder"
@@ -34,7 +37,8 @@
           {:configured-session "swarmforge-coder"
            :configured-exists? true
            :resident-session "swarmforge-coder"
-           :resident-exists? true}))
+           :resident-exists? true
+           :rotation-router-pack? true}))
 
 (assert= "dormant hardender remaps to resident when hardender pane is missing"
          "swarmforge-coder"
@@ -42,7 +46,8 @@
           {:configured-session "swarmforge-hardender"
            :configured-exists? false
            :resident-session "swarmforge-coder"
-           :resident-exists? true}))
+           :resident-exists? true
+           :rotation-router-pack? true}))
 
 (assert= "dormant architect remaps to resident"
          "swarmforge-coder"
@@ -50,7 +55,8 @@
           {:configured-session "swarmforge-architect"
            :configured-exists? false
            :resident-session "swarmforge-coder"
-           :resident-exists? true}))
+           :resident-exists? true
+           :rotation-router-pack? true}))
 
 (assert= "dormant specifier remaps to resident (stuck-email flood companion)"
          "swarmforge-coder"
@@ -58,7 +64,8 @@
           {:configured-session "swarmforge-specifier"
            :configured-exists? false
            :resident-session "swarmforge-coder"
-           :resident-exists? true}))
+           :resident-exists? true
+           :rotation-router-pack? true}))
 
 (assert= "if resident is also missing, keep configured name (caller sees real tmux failure)"
          "swarmforge-cleaner"
@@ -66,7 +73,8 @@
           {:configured-session "swarmforge-cleaner"
            :configured-exists? false
            :resident-session "swarmforge-coder"
-           :resident-exists? false}))
+           :resident-exists? false
+           :rotation-router-pack? true}))
 
 (assert= "no resident known → keep configured"
          "swarmforge-QA"
@@ -74,7 +82,39 @@
           {:configured-session "swarmforge-QA"
            :configured-exists? false
            :resident-session nil
-           :resident-exists? false}))
+           :resident-exists? false
+           :rotation-router-pack? true}))
+
+;; BL-1719: OUTSIDE a rotation-router pack, a missing configured session is
+;; never remapped to another role's live pane - resolves to nil, a signal
+;; to the caller to send no wake and log the skip.
+
+(assert= "standing pack: dormant coder@2 with no session gets no wake (nil), even though a resident stands"
+         nil
+         (handoff-lib/resolve-wake-session
+          {:configured-session "swarmforge-coder@2"
+           :configured-exists? false
+           :resident-session "swarmforge-specifier"
+           :resident-exists? true
+           :rotation-router-pack? false}))
+
+(assert= "standing pack: a session that DOES exist is never redirected"
+         "swarmforge-coder"
+         (handoff-lib/resolve-wake-session
+          {:configured-session "swarmforge-coder"
+           :configured-exists? true
+           :resident-session "swarmforge-specifier"
+           :resident-exists? true
+           :rotation-router-pack? false}))
+
+(assert= "standing pack, no resident known either: still nil, never a guess"
+         nil
+         (handoff-lib/resolve-wake-session
+          {:configured-session "swarmforge-QA"
+           :configured-exists? false
+           :resident-session nil
+           :resident-exists? false
+           :rotation-router-pack? false}))
 
 ;; ── roles.tsv resident session parse ──────────────────────────────────────
 

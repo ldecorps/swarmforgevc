@@ -380,8 +380,15 @@
 (def notify-max-retries 3)
 (def notify-retry-delay-ms 200)
 
+;; BL-1719 bounce (QA D1): mirrors agent_runtime_inject/capture-pane-text's
+;; own guard - a blank/nil session must never reach tmux's `-t` (babashka's
+;; process/sh turns a nil argv element into an empty string on the real
+;; command line, and tmux's own empty `-t` falls back to an ARBITRARY
+;; current/default session rather than erroring).
 (defn capture-pane-text [socket session]
-  (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
+  (if (str/blank? session)
+    ""
+    (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session))))
 
 ;; BL-927: resident-live-role relocated to handoff-lib (handoffd.bb already
 ;; load-files handoff_lib.bb, so the reverse would be circular) - it is the
@@ -424,10 +431,12 @@
 
 (defn notify!
   [socket session agent]
-  (let [session (handoff-lib/wake-session socket session)]
-    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
-                                          :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                          :script-rel-path agent-runtime-lib/ready-script-rel-path)))
+  (let [wake-sess (handoff-lib/wake-session socket session)]
+    (if (nil? wake-sess)
+      (log! "wake-skip-no-session" session)
+      (agent-runtime-inject/notify-agent! socket wake-sess (or agent "claude")
+                                            :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                            :script-rel-path agent-runtime-lib/ready-script-rel-path))))
 
 (defn notify-in-process-resume!
   "Stuck nudge for work already sitting in in_process — chat order, never
@@ -438,12 +447,14 @@
    exactly that forbidden command, self-contradicting the message it is
    attached to (observed live: an aider seat took the fallback literally)."
   [socket session agent]
-  (let [session (handoff-lib/wake-session socket session)
+  (let [wake-sess (handoff-lib/wake-session socket session)
         text (:text (first (agent-runtime-lib/in-process-resume-steps (or agent "claude"))))]
-    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
-                                          :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                          :text text
-                                          :fallback-command agent-runtime-lib/safe-idle-fallback-command)
+    (if (nil? wake-sess)
+      (log! "wake-skip-no-session" session)
+      (agent-runtime-inject/notify-agent! socket wake-sess (or agent "claude")
+                                            :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                            :text text
+                                            :fallback-command agent-runtime-lib/safe-idle-fallback-command))
     ;; BL-597 emit, restored by BL-1273. Observes the resume that the
     ;; notify above already performs and logs; it neither gates the nudge
     ;; nor changes this function's value.
@@ -1039,7 +1050,10 @@
    tmuxClient.ts's capturePane(socket, target, -50) used for activity
    tracking."
   [socket session n]
-  (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session "-S" (str "-" n))))
+  ;; BL-1719 bounce (QA D1): same blank/nil-session guard as capture-pane-text.
+  (if (str/blank? session)
+    ""
+    (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session "-S" (str "-" n)))))
 
 (defn get-last-activity-ms [role-info socket now-ms]
   ;; Loop detection is NOT done here: bb/SCI cannot forward-reference
@@ -1193,12 +1207,17 @@
    rotation. nil when tmux cannot answer (fixture fakes, a gone session), in
    which case wake-dedup-lib decides exactly as before the hotfix."
   [socket session]
-  (try
-    (let [res (tmux! "-S" socket "list-panes" "-t" session "-F" "#{pane_pid}")
-          pid (some-> (:out res) str/split-lines first str/trim)]
-      (when (and (zero? (:exit res)) (not (str/blank? pid)) (re-matches #"\d+" pid))
-        (str "pane-pid:" pid)))
-    (catch Exception _ nil)))
+  ;; BL-1719 bounce (QA D1): a blank/nil session already means "cannot
+  ;; answer" per this function's own documented nil contract - never
+  ;; reach tmux's `-t` with one.
+  (if (str/blank? session)
+    nil
+    (try
+      (let [res (tmux! "-S" socket "list-panes" "-t" session "-F" "#{pane_pid}")
+            pid (some-> (:out res) str/split-lines first str/trim)]
+        (when (and (zero? (:exit res)) (not (str/blank? pid)) (re-matches #"\d+" pid))
+          (str "pane-pid:" pid)))
+      (catch Exception _ nil))))
 
 (defn handoff-wake-with-dedup!
   "BL-1191: gate HANDOFF_WAKE_MESSAGE injects on mailbox fingerprint + cooldown.

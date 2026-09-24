@@ -141,3 +141,6 @@ notes: |
   (the delivery step vs the inbox check) is action vs state, kept.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-24, by: QA, blamed: coder, class: behavior, commit: 75a78474c4, evidence: backlog/evidence/BL-1719-bounce-20260924.md }

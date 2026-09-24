@@ -347,7 +347,8 @@ test_handoffd_stuck_escalation_email_wiring.sh	standing
 test_handoffd_supervisor.sh	standing		
 test_handoffd_supervisor_job_reaper.sh	standing		
 test_handoffd_supervisor_reaper_path_boundary.sh	standing		
-test_handoffd_wake_attribution_wiring.sh	standing		
+test_handoffd_wake_attribution_wiring.sh	standing
+test_handoffd_wake_no_session_standing_pack.sh	standing
 test_hardening_debt_ledger_cli.sh	standing		
 test_harness_env_scrub_bl657.sh	standing		
 test_host_bootstrap.sh	standing		

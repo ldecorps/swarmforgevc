@@ -16,8 +16,16 @@
 (defn tmux! [& args]
   (apply daemon-cycle-guard-lib/sh! "tmux" args))
 
+;; BL-1719 bounce (QA D1): a blank/nil session must never reach tmux's own
+;; `-t` flag - babashka's own process/sh turns a nil argv element into an
+;; EMPTY STRING on the real command line, and tmux accepts an empty `-t`
+;; by falling back to ITS OWN current/default session rather than erroring,
+;; so the pane text this reads could be an ARBITRARY unrelated session's -
+;; never this caller's own answer.
 (defn capture-pane-text [socket session]
-  (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
+  (if (str/blank? session)
+    ""
+    (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session))))
 
 (defn last-non-blank-line [pane-text]
   (last (remove str/blank? (str/split-lines (or pane-text "")))))
@@ -122,7 +130,19 @@
    driver itself did not write - a raw path added NEXT TO text-for-agent's
    suffix logic, never a strip-after-the-fact on the same text."
   [socket session agent & {:keys [log-fn on-outcome script-rel-path text fallback-command raw?]}]
-  (let [steps (if text
+  ;; BL-1719 bounce (QA D1): the SAME guard as capture-pane-text above,
+  ;; at the one function every wake/nudge/context-clear/resume caller in
+  ;; this whole codebase funnels through - never touches tmux at all when
+  ;; the caller's own wake-session resolution came back nil/blank, so a
+  ;; caller that forgets to check first (the exact gap QA found: several
+  ;; did) still never sends `-t ""` into an unrelated live pane.
+  (if (str/blank? session)
+    (let [log! (or log-fn (fn [& _] nil))
+          report! (or on-outcome (fn [& _] nil))]
+      (log! "no-session" session "wake-session resolved to nil/blank - refusing to target an empty tmux -t")
+      (report! "no-session" "wake-session resolved to nil/blank" 0 false)
+      :no-session)
+    (let [steps (if text
                 [{:op :send-literal :text (if raw? text (text-for-agent agent text :fallback-command fallback-command))} {:op :submit}]
                 (agent-runtime-lib/wake-steps agent :script-rel-path script-rel-path))
         wake-text (:text (first (filter #(= :send-literal (:op %)) steps)))
@@ -154,7 +174,7 @@
           :else
           (do
             (Thread/sleep (notify-retry-delay-ms-for agent attempt))
-            (recur (inc attempt))))))))
+            (recur (inc attempt)))))))))
 
 (defn run-bootstrap! [socket session agent role prompt-file two-pack? & [overlay-prompt]]
   (let [steps (agent-runtime-lib/bootstrap-steps agent role

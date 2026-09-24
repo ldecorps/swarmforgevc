@@ -35,7 +35,9 @@ flowchart TD
   DRIVERSKIP(["wake/chase/resume injection\nskipped - the driver's own\ndrive-tick! owns this pane\n(invariant 2)"])
   DEFERCHECK{"note carries\nwake: defer?\n(BL-1494)"}
   CHASE{"recipient idle\nwith pending mail?"}
+  WAKESESSION{"resolve-wake-session:\nconfigured session live?\n(mono-router remap applies\nonly inside a rotation-router\npack - BL-931/BL-1719)"}
   WAKE["chase sweep wakes it\n(mono-router: rotate resident\ninto that role - respawn)"]
+  WAKENOSESSION(["nil session: EVERY tmux -t call\nsite (wake, in-process-resume,\ncontext-clear injectors, babysitter\nnudge) refuses before reaching\ntmux, logs the missing session\nname - never types into an\nunrelated live pane (BL-1719)"])
   WAIT(["stays queued in new/\nuntil the role next looks"])
   DEFERRED(["delivery/chase/nudge skip:\ndeliver-notify-skip-deferred -\nread only on the role's own\nnext ready_for_next.sh"])
 
@@ -71,9 +73,12 @@ flowchart TD
   DRIVERSEAT -->|no| DEFERCHECK
   DEFERCHECK -->|yes| DEFERRED
   DEFERCHECK -->|no| CHASE
-  CHASE -->|yes| WAKE
+  CHASE -->|yes| WAKESESSION
+  WAKESESSION -->|session exists,\nor a rotation-router pack| WAKE
+  WAKESESSION -->|no session,\nnot a rotation-router pack| WAKENOSESSION
   CHASE -->|no - busy mid-turn| WAIT
   WAKE --> READY
+  WAKENOSESSION --> WAIT
   WAIT --> READY
   DEFERRED --> READY
   READY --> PICK
@@ -129,8 +134,8 @@ flowchart TD
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
-  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE,DRIVERSEAT,DRED,DIDLE,DGATE,DFIXLEFT gate;
+  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE,DRIVERSEAT,DRED,DIDLE,DGATE,DFIXLEFT,WAKESESSION gate;
   class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED,NOTSENT,DMERGECONFLICT,DREDESCALATE,DESCALATE bad;
-  class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED,DRIVERSKIP store;
+  class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED,DRIVERSKIP,WAKENOSESSION store;
   class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH,DSERVE,DCHATSET,DFIXTYPE,DPASS act;
   class DAEMON,WAKE daemon;

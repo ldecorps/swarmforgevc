@@ -42,8 +42,15 @@
   ;; BL-1031: bounded chokepoint (daemon-cycle-guard-lib/sh! via handoff_lib).
   (apply daemon-cycle-guard-lib/sh! "tmux" args))
 
+;; BL-1719 bounce (QA D1): mirrors agent_runtime_inject/capture-pane-text's
+;; own guard - a blank/nil session must never reach tmux's `-t` (babashka's
+;; process/sh turns a nil argv element into an empty string on the real
+;; command line, and tmux's own empty `-t` falls back to an ARBITRARY
+;; current/default session rather than erroring).
 (defn capture-pane-text [socket session]
-  (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
+  (if (str/blank? session)
+    ""
+    (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session))))
 
 (defn last-non-blank-line [pane-text]
   (last (remove str/blank? (str/split-lines (or pane-text "")))))
@@ -175,10 +182,24 @@
     (chase-sweep-lib/actively-processing? pane)))
 
 (defn- notify-delivered-recipient!
-  "Wake one recipient unless deduped or busy. Mutates notified-sessions."
+  "Wake one recipient unless deduped or busy. Mutates notified-sessions.
+   BL-1719: wake-sess is nil when the recipient has no session outside a
+   rotation-router pack (handoff-lib/wake-session) - no pane receives
+   anything, and the skip is logged and traffic-recorded naming the
+   recipient's own configured session, never another role's."
   [socket session wake-sess notified-sessions recipient role-info
    project-root filename log-fn]
   (cond
+    (nil? wake-sess)
+    (do (when log-fn (log-fn "deliver-notify-skip-no-session" recipient session))
+        (record-inject-traffic! project-root
+                                 {:source "sync-deliver"
+                                  :outcome "skip"
+                                  :role recipient
+                                  :session session
+                                  :parcel filename
+                                  :detail "no session outside a rotation-router pack"}))
+
     (contains? @notified-sessions wake-sess)
     (when log-fn (log-fn "deliver-notify-skip-dedup" recipient wake-sess))
 

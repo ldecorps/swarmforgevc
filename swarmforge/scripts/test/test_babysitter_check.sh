@@ -88,8 +88,17 @@ cat > "$FAKE_BIN/tmux" <<'TMUX'
 #!/usr/bin/env bash
 echo "$*" >> "$CALL_LOG"
 for arg in "$@"; do
+  # BL-1719: this scenario's own fixture has exactly one roles.tsv row
+  # (coordinator itself) and no rotation-router marker - outside a
+  # rotation-router pack, wake-session now refuses a session that
+  # session-exists? (which shells out to has-session) reports missing,
+  # rather than falling through to notify-agent!'s own send/capture-pane
+  # confirm machinery. This scenario's own point IS that machinery
+  # (a NUDGED delivery via verified submit), not wake-session's remap
+  # decision - has-session succeeds so configured-exists? is true and
+  # wake-session returns the configured session unchanged.
   if [[ "$arg" == "has-session" ]]; then
-    exit 1
+    exit 0
   fi
   if [[ "$arg" == "capture-pane" ]]; then
     printf '❯ \n'
