@@ -138,3 +138,9 @@ notes: |
   depends_on (same file). IR-DRY: one near-duplicate (scenarios 01/02's
   Given differ only in dead vs live) is one parameterised step, kept.
   Holder note sent to coder@2 (building BL-1713) the same pass.
+  Live occurrence, 2026-09-24 10:28Z (QA transcript): QA's first
+  `land_step_cli.bb` run for BL-1687 at e9dcd8b2e9 escalated with
+  "land-step replay: could not create worktree
+  .git/land-replay-worktrees/BL-1687-e9dcd8b2e9 off origin/main"; the retry
+  built LAND_REPLAY 35ef2dbcd2. So this is live on the real land path, not
+  only in test_bl1366.

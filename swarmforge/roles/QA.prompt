@@ -241,7 +241,11 @@ You are QA.
          and BL-1694's lands print `LAND_CLEAN` for a built commit whose
          only change retired the ticket's register row. Before publishing
          any built commit, `git diff --stat origin/main <built>` must name
-         the ticket's own paths, not only `backlog/standing-reds.tsv`. It reuses `task_scope_gate_lib.bb`'s OWN attribution walk to
+         the ticket's own paths, not only `backlog/standing-reds.tsv`. A
+         path in that diff that none of the ticket's own commits touched,
+         and that no report line accounts for, is an unlanded sibling riding
+         (until BL-1717 lands). Take it out by hand: BL-1687's replay carried
+         BL-1693's step-file lines that way on 2026-09-24. It reuses `task_scope_gate_lib.bb`'s OWN attribution walk to
          decide which paths are this ticket's, so its answer agrees with the
          sibling gates by construction — a hand rebuild's does not. It builds
          git objects only: it never pushes, never sends a handoff, and never

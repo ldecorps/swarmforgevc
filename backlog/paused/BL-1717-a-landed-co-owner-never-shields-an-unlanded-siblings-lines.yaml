@@ -1,0 +1,126 @@
+id: BL-1717
+title: "BL-1687's LAND_REPLAY 35ef2dbcd2 (2026-09-24) published unlanded BL-1693's 108 lines in specs/pipeline/steps/bl538ConsolePausedTicketPagerSteps.js - a path none of BL-1687's commits touched - with no report line, because own-paths excludes a path only when an unlanded sibling owns it alone and the landed BL-1685 had also touched it; an owner whose lines on a path are already on origin/main no longer counts against excluding it, and an unlanded sibling's lines ride only on a path the landing ticket changed, as a named passenger"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in the land step (the integration point, Article
+# 1.8): it put an unlanded ticket's content on origin/main under another
+# ticket's land and said nothing - BL-1678's invariant class. QA caught it
+# by hand diff and published aa41de4286 on top to take the lines back out,
+# so main's content is right today; 35ef2dbcd2 is still in origin/main's
+# history carrying them. Not critical: nothing was lost, and QA.prompt's
+# by-hand own-path review is the standing mitigation.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: [BL-1716]
+# BL-1713 (active) and BL-1716 (paused, owns the test_bl1366 red) edit
+# land_step_lib.bb too; this ticket edits the same file's own-paths.
+# Chained BL-1713 -> BL-1716 -> BL-1717 so no two are active on one file
+# (BL-1687 lesson: sequencing only in prose is read by nothing). BL-1716
+# goes first because it owns a standing red the register throttles on.
+mutation_cost: medium
+# medium: Babashka only (no mutation/CRAP/DRY wired, BL-472) in
+# land_step_lib.bb's own-paths exclusion; one feature over a fixture
+# origin like BL-1389's; BL-1678's same-shaped feature ran 12.6 s at load
+# 18 on 2026-09-24, far inside the 300 s per-mutant ceiling (BL-1541).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1717-a-landed-co-owner-never-shields-an-unlanded-siblings-lines.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer (land-plan -> own-paths)
+# exists before the fix, so an anchor there matches before and after
+# (BL-1235); the feature drives the real land step over a fixture origin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1717LandedCoOwnerNeverShieldsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: when own-paths
+  decides whether a delivered path is an unlanded sibling's alone, an
+  owner whose own lines on that path are already on origin/main (the
+  BL-1354/BL-1389 per-path landed verdict the lib already computes) does
+  not count. FIRM: an unlanded sibling's lines reach a built commit only
+  on a path the landing ticket's own commits changed, and then only as a
+  PASSENGER_SIBLING under BL-1375's existing rules. FIRM: no change to
+  what counts as landed, to approval rules, or to stray-evidence handling.
+
+invariants:
+  - "A delivered path whose lines not yet on origin/main are attributable only to unlanded siblings never rides a land, whichever landed tickets also touched it; an unlanded sibling's lines ride only on a path the landing ticket changed, named as a passenger."
+
+description: |
+  ## What is wrong
+
+  QA note 003121 ("BL-1687 LAND_REPLAY 35ef2dbcd2 carried BL-1693 bl538
+  hunks; QA excluded by hand"). From QA's transcript,
+  `land_step_cli.bb "BL-1687 fix property two's reach floor too"
+  e9dcd8b2e9` at 10:40Z printed LAND_REPLAY 35ef2dbcd2 with
+  ENTANGLED_SIBLING BL-1693 and EXCLUDED_SIBLING_PATH lines for every
+  BL-1693 evidence file. It printed NO line for
+  `specs/pipeline/steps/bl538ConsolePausedTicketPagerSteps.js`, and the
+  built diff carried it (+110/-2).
+
+  In origin/main (ad60595219)..e9dcd8b2e9, two commits touch that file:
+  1fc2974e5a (BL-1685, landed - backlog/done/M8) and 1f18779ac4
+  (BL-1693, unlanded). None of BL-1687's commits touch it. own-paths
+  excludes a path "only on POSITIVE attribution to a ticket in
+  unlanded-siblings and no other id"; BL-1685 is another id, so the path
+  was kept. BL-1685's lines were already on main, so the lines the built
+  commit actually changed were all BL-1693's. QA published aa41de4286 on
+  top, restoring the file (`git diff ad60595219 aa41de4286 -- <file>` is
+  empty).
+
+  ## What is wanted
+  - Scenario 01: landed L and unlanded approved U both changed P, and A
+    changed only Q: the built diff names Q, not P, and the report names P
+    excluded, credited to U.
+  - Scenario 02: A also changed P: P rides carrying U's lines, and the
+    report names U as a passenger (BL-1375) - never silently.
+
+  ## How (direction, not mandate)
+  - Before the "owned by unlanded siblings alone" test in own-paths,
+    drop from the path's owner set every owner the lib's own per-path
+    landed verdict (`sibling-path-landed-fn`, BL-1389) already calls
+    landed. Reuse it; never a second notion of landed.
+  - The fixture follows BL-1389's feature (a fixture origin with sibling
+    tickets on a shared path), with L's commit landed on the fixture's
+    origin/main.
+
+  ## Scope
+  - `swarmforge/scripts/land_step_lib.bb` (own-paths' exclusion only).
+  - `specs/features/BL-1717-...feature` + the pinned handler.
+  - Docs: the land-step reference's exclusion rules.
+
+  ## Not in scope
+  - `land-plan`/`land_step_cli.bb` (BL-1713) and `replay!` (BL-1716).
+  - Reporting paths of LANDED tickets' bookkeeping that ride (35ef2dbcd2
+    also carried abandoned_commits edits to BL-1673/1691/1692/1694 YAMLs,
+    all landed tickets, which BL-1678's invariant allows).
+  - Rewriting origin/main history: 35ef2dbcd2 stays, aa41de4286 undid it.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1717-a-landed-co-owner-never-shields-an-unlanded-siblings-lines.feature`:
+     all ok (2 of 2).
+  2. The BL-1389, BL-1375, BL-1481 and BL-1678 features: all ok (the
+     neighbouring exclusion and passenger rules unchanged).
+  3. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  4. On this ticket's own land, check the built commit's diff against
+     origin/main path by path (QA.prompt interim rule) before publishing.
+
+notes: |
+  Minted 2026-09-24 by the specifier from QA note 003121, traced the same
+  pass through QA's transcript (the 10:40Z LAND_REPLAY report) and the
+  range's history for the file.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4), chained behind BL-1716 by
+  depends_on (same file). Not a standing red: no test on main fails. The
+  QA.prompt interim line (a built-diff path none of the landing ticket's
+  commits touched is a sibling riding unless a report line explains it)
+  landed in the mint commit. IR-DRY: two findings pair opposite outcomes
+  (P absent/present, excluded/passenger), kept.
