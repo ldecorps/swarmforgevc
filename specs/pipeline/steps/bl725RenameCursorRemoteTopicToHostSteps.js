@@ -11,8 +11,18 @@ const path = require('node:path');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out', 'tools');
 const core = require(path.join(EXT_OUT, 'telegramCursorBridgeCore.js'));
-const live = require(path.join(EXT_OUT, 'telegramCursorBridgeLive.js'));
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+
+// BL-1718: paths only - telegramCursorBridgeLive.js is a 211-module graph;
+// a mere require() of this file must not pay for it. Required once, on
+// first use, and cached.
+let _live = null;
+function live() {
+  if (!_live) {
+    _live = require(path.join(EXT_OUT, 'telegramCursorBridgeLive.js'));
+  }
+  return _live;
+}
 
 const FEATURE = 'The standing host-agent Telegram topic is named Host';
 
@@ -59,7 +69,7 @@ function registerSteps(registry) {
       ctx.createCalls.push({ name });
       return { success: true, messageThreadId: 999 };
     };
-    ctx.resultState = await live.ensureCursorTopic('fake-token', 'fake-chat', ctx.topicMapPath, { updateOffset: 0 }, stubCreateTopic);
+    ctx.resultState = await live().ensureCursorTopic('fake-token', 'fake-chat', ctx.topicMapPath, { updateOffset: 0 }, stubCreateTopic);
   });
 
   scoped(/^it creates one forum topic titled Host$/, (ctx) => {

@@ -33,4 +33,3 @@
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
 shell	swarmforge/scripts/test/test_bl1366_land_is_one_command.sh	BL-1716	2026-09-24	case 5 "and a subsequent land succeeds" FAIL: the replay could not create worktree .git/land-replay-worktrees/BL-9366-<sha10> off origin/main - a land killed mid-replay leaves its scratch worktree and branch; coder@2 sighting note 000065 while building BL-1713; specifier reproduced on main at 9d6fa31f6d; leaves when BL-1716 lands
-unit	extension/test/stepHandlerModuleLoadBudget.test.js	BL-1718	2026-09-24	load-sensitive: bl709BubbleItsOwnTelegramTopicSteps.js 530.7ms (fastest of 3) over the 400ms budget, and the non-vacuity fixture 417ms, at load ~10 on BL-1696 parcel b9410ccd73 (QA note 003122, evidence 4a23fe1699); green 8/8 on main at load 3.6; bl709/bl725 require telegramCursorBridgeLive (211 modules) at module scope; leaves when BL-1718 lands

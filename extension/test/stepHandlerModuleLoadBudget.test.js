@@ -153,10 +153,24 @@ test('checkHandlerBudgets non-vacuity: a fixture handler that lists a directory 
   assert.equal(rows.length, 1, `expected exactly one fixture handler, got: ${JSON.stringify(rows)}`);
   assert.equal(rows[0].listedDir, true, 'expected the fixture handler to be caught listing a directory at load');
 
-  const violations = checkHandlerBudgets(rows, { budgetMs: PER_HANDLER_BUDGET_MS });
-  assert.equal(violations.length, 1, `expected exactly one violation, got: ${JSON.stringify(violations)}`);
-  assert.equal(violations[0].file, 'zzzFixtureOffenderSteps.js');
-  assert.match(violations[0].reason, /lists a directory at module load/);
+  // BL-1718: the fixture's own require timing is host-load-dependent - a
+  // TRIVIAL fixture (one readdirSync, nothing else) measured 417ms on a
+  // busy host (2026-09-24), which would add a second, incidental timing
+  // violation and break this assertion's own count. Pinned to 0 here so
+  // this test checks only what it claims to (the listing violation is
+  // named), never load's own contribution to a fixture that carries no
+  // real work of its own; the census's REAL measurement above already
+  // proved the row came from an actual readdirSync at module load, not a
+  // hand-typed flag.
+  const pinnedRows = rows.map((row) => ({ ...row, ms: 0 }));
+  const violations = checkHandlerBudgets(pinnedRows, { budgetMs: PER_HANDLER_BUDGET_MS });
+  const listingViolation = violations.find(
+    (v) => v.file === 'zzzFixtureOffenderSteps.js' && /lists a directory at module load/.test(v.reason)
+  );
+  assert.ok(
+    listingViolation,
+    `expected a directory-listing violation for zzzFixtureOffenderSteps.js, got: ${JSON.stringify(violations)}`
+  );
 });
 
 test('checkHandlerBudgets non-vacuity: a handler that fails to require at all is named, never silently skipped', () => {

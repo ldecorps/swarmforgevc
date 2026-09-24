@@ -29,7 +29,18 @@ const {
   bubbleTopicIdFromMap,
   decideInboundAction,
 } = require('../../../extension/out/tools/telegramCursorBridgeCore');
-const { ensureBubbleTopic } = require('../../../extension/out/tools/telegramCursorBridgeLive');
+
+// BL-1718: paths only - telegramCursorBridgeLive.js is a 211-module graph;
+// a mere require() of this file must not pay for it. Required once, on
+// first use, and cached (same shape bridgeServer() above already
+// establishes for the same reason, BL-1687).
+let _telegramCursorBridgeLive = null;
+function telegramCursorBridgeLive() {
+  if (!_telegramCursorBridgeLive) {
+    _telegramCursorBridgeLive = require('../../../extension/out/tools/telegramCursorBridgeLive');
+  }
+  return _telegramCursorBridgeLive;
+}
 
 const FEATURE = 'Bubble talks in its own Telegram topic';
 const CURSOR_TOPIC = 55;
@@ -94,7 +105,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^a Bubble topic is created in the forum$/, async (ctx) => {
     assert.deepEqual(ctx.ensureDecision, { kind: 'create' });
     const mapPath = path.join(ctx.root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
-    const next = await ensureBubbleTopic(
+    const next = await telegramCursorBridgeLive().ensureBubbleTopic(
       'token',
       CHAT,
       mapPath,
@@ -137,7 +148,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^no new Bubble topic is created$/, async (ctx) => {
     assert.deepEqual(ctx.ensureDecision, { kind: 'reuse', topicId: BUBBLE_TOPIC });
     const mapPath = path.join(ctx.root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
-    const next = await ensureBubbleTopic(
+    const next = await telegramCursorBridgeLive().ensureBubbleTopic(
       'token',
       CHAT,
       mapPath,
