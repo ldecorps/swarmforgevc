@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-08-24
+Last Updated: 2026-09-24
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -43,6 +43,47 @@ SWARMFORGE_TERMINAL=none ./swarm <scratch-root> --pack local-model-mono-router
 Every role window names agent `local-model` and a `--model <id>`. Launch is
 **refused** when the local endpoint health check is not ready — the refusal
 names the endpoint.
+
+### Ollama is started by the swarm (BL-1703)
+
+Before any seat starts, the launch path probes the local endpoint for any
+pack whose seats use it — either a `local-model` agent window, or an
+`aider` window naming the endpoint directly on its own line (e.g.
+`--openai-api-base http://127.0.0.1:11434/v1`, the shape every
+`ollama-*-mono-router.conf` pack uses):
+
+- **Answers** — recorded `external` and the launch proceeds. Something
+  else (for example the Local Agent, or a hand-started server) is already
+  serving it, and the swarm leaves it alone.
+- **Silent** — the swarm starts `ollama serve` detached, waits for it to
+  answer (bounded wait, polled), and records `swarm-owned` with its pid
+  and start time.
+- **Never answers** — the swarm stops whatever it started, writes no
+  record, and refuses the launch before any seat exists, naming the
+  endpoint and the server log path.
+- **No seat on the local endpoint** — no probe, no record, launch
+  unchanged.
+
+The record lives at `.swarmforge/ollama/serve.json` (`owner`: `external` or
+`swarm-owned`, `pid`, `startedAt`, `endpoint`) — read by the stop path so a
+server the swarm did not start is never stopped by the swarm (it may be
+serving something else, like the Local Agent chat).
+
+`swarm.env` keys (all optional; the defaults reproduce the previous
+hand-run shape — bare `ollama serve`, native context length):
+
+| Key | Meaning | Default |
+|---|---|---|
+| `SWARMFORGE_OLLAMA_BINARY` | the `ollama` binary to run | `ollama` |
+| `SWARMFORGE_OLLAMA_MODELS_DIR` | `OLLAMA_MODELS` for the started server | unset (binary default) |
+| `SWARMFORGE_OLLAMA_CONTEXT_LENGTH` | `OLLAMA_CONTEXT_LENGTH` for the started server | unset (binary default) |
+| `SWARMFORGE_OLLAMA_WAIT_SECONDS` | bound on how long the launch waits for a newly started server to answer | `30` |
+| `SWARMFORGE_OLLAMA_POLL_INTERVAL_SECONDS` | how often the wait re-probes | `1` |
+
+Restarting a crashed server mid-shift is not covered here — this is a
+launch-time gate only. Stopping a swarm-owned server (BL-1704) and
+reaping ghost runners / detached run clients (BL-1705) are separate,
+not-yet-documented tickets from the same intake.
 
 ## Repair
 

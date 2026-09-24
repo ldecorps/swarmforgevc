@@ -390,6 +390,15 @@
 %% BL-1153 (2026-08-26): Mini App font-size sticky via bridge GET/PUT
 %% /web-ui-font-size -> .swarmforge/operator/web-ui-font-size-preferences.json
 %% (Live Screen, Pipeline Board, Paused pager; PWA Cache unchanged).
+%% BL-1703 (2026-09-24): a pack whose seats use the local model endpoint has
+%% ollama probed as a swarm-managed ancillary before any seat starts
+%% (swarmforge.sh's ensure_ollama_ancillary_for_launch, sourcing the new
+%% ollama_ancillary_lib.sh). An answering endpoint is recorded "external";
+%% a silent one is started detached and waited for, then recorded
+%% "swarm-owned" with its pid; one that never answers stops whatever was
+%% started and refuses the launch before any seat exists. The record lands
+%% at .swarmforge/ollama/serve.json, read by BL-1704's stop path. A pack
+%% with no seat on the local endpoint is untouched.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -437,6 +446,7 @@ flowchart TB
     INCIDENTDIR["incidents/control-plane.json (BL-958: control-plane-loss\nincidents, at most one open at a time)"]
     IDENTITY["swarm-identity (BL-313: the conf this launch\nactually loaded; BL-966: read at the master checkout\nfrom any worktree via git rev-parse --git-common-dir)"]
     ACPDIR["acp/<role>.json (BL-1081: structured seat\nsnapshot — stop reason, idle, permission;\nvibe spike seat only today)"]
+    OLLAMASTATE["ollama/serve.json (BL-1703: launch-time\nancillary record — owner (external |\nswarm-owned), pid, startedAt, endpoint;\nread by BL-1704's stop path)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
 
@@ -456,6 +466,8 @@ flowchart TB
   LAUNCHER -->|reads| SOCKET
   NAMEDMODEL -->|composes / optional --execute| OLLAMA
   OLLAMA -->|weights + manifests| MODELSTORE
+  SUBSTRATE -->|ensure_ollama_ancillary_for_launch:\nprobes before any seat starts,\nstarts if silent, refuses if never\nanswers (BL-1703)| OLLAMA
+  SUBSTRATE -->|writes owner/pid/startedAt| OLLAMASTATE
 
   TMUXCLIENT -->|tmux CLI over socket:\nsend-keys, capture-pane,\nrespawn-pane| SOCKET
   TAILER --> TMUXCLIENT

@@ -653,6 +653,53 @@ require_local_model_endpoint_ready() {
   exit 1
 }
 
+# BL-1703: ollama as a swarm-managed ancillary process. Probes the local
+# endpoint before any seat starts (called right after parse_config, ahead
+# of every create_role_session / launch_role); an answering endpoint is
+# used as-is (external), a silent one is started by the swarm and waited
+# for (swarm-owned), and one that never answers within the wait refuses
+# the launch, having stopped whatever it started. A pack with no seat on
+# the local endpoint probes nothing, starts nothing, and writes no record.
+#
+# "Uses the local endpoint" reuses two things parse_config already
+# resolved, never re-deriving the pack conf: the AGENTS array (a
+# local-model-mono-router-style pack's seats carry the "local-model" agent
+# keyword itself) and EXTRA_CLI_ARGS (an aider seat instead names the
+# endpoint on its own window line, e.g. `--openai-api-base
+# http://127.0.0.1:11434/v1` in every ollama-*-mono-router.conf pack today
+# - the SAME substring-match convention this file already uses to detect
+# perplexity.ai / dashscope.aliyuncs.com / api.b.ai on EXTRA_CLI_ARGS).
+# Checking only the agent keyword would miss every one of those real,
+# currently-launched aider+ollama packs entirely.
+# SWARMFORGE_OLLAMA_* are this feature's swarm.env keys; the defaults
+# reproduce today's hand-run shape (bare `ollama serve`, native context).
+ensure_ollama_ancillary_for_launch() {
+  local uses_local="no" i local_endpoint_url
+  local_endpoint_url="$(local_model_endpoint_url)"
+  for (( i = 1; i <= ${#AGENTS[@]}; i++ )); do
+    if [[ "${AGENTS[$i]}" == "local-model" || "${EXTRA_CLI_ARGS[$i]:-}" == *"$local_endpoint_url"* ]]; then
+      uses_local="yes"
+      break
+    fi
+  done
+
+  # shellcheck source=ollama_ancillary_lib.sh
+  source "$SCRIPT_DIR/ollama_ancillary_lib.sh"
+  if ! ollama_ancillary_ensure_ready_for_launch \
+      "$uses_local" \
+      "$(local_model_endpoint_url)" \
+      "$STATE_DIR" \
+      "${SWARMFORGE_OLLAMA_BINARY:-ollama}" \
+      "${SWARMFORGE_OLLAMA_MODELS_DIR:-}" \
+      "${SWARMFORGE_OLLAMA_CONTEXT_LENGTH:-}" \
+      "${SWARMFORGE_OLLAMA_WAIT_SECONDS:-30}" \
+      "${SWARMFORGE_OLLAMA_POLL_INTERVAL_SECONDS:-1}" \
+      "$STATE_DIR/ollama/serve.log"; then
+    error_msg "ollama-ancillary refused the launch (see above)."
+    exit 1
+  fi
+}
+
 
 # OpenRouter: a claude-harness role is OpenRouter-backed when its name appears
 # in the space-separated SWARMFORGE_OPENROUTER_ROLES env list. Env-gated on
@@ -2491,6 +2538,7 @@ ensure_runtime_git_excludes
 ensure_commit_size_guard
 check_launch_pack_guard
 parse_config
+ensure_ollama_ancillary_for_launch
 check_primacy
 check_backend_dependencies
 check_cursor_seat_admission
