@@ -72,8 +72,9 @@ description: |
      point, BL-1244), type ONE fix request carrying the answer text, then
      gate as usual (one more escalation if it still fails).
   3. **Hold release by operator.** A driver CLI:
-     `release <role> complete` completes the parcel with no handoff (so the
-     ticket can be rerouted) and clears the record; `release <role> retry`
+     `release <seat> complete` (the seat id, e.g. `coder@2`, as BL-1697's
+     state file is keyed) completes the parcel with no handoff (so the
+     ticket can be rerouted) and clears the record; `release <seat> retry`
      clears the record so the next pass serves the parcel afresh. Neither
      types anything into the pane.
   4. **Mechanical mail.** A QA merge-up note naming a QA-approved commit,
@@ -153,3 +154,7 @@ notes: |
   (four bounded behaviours on one lib plus one babysitter skip), Small (six
   scenarios, two invariants), Testable (fake pane, stand-in model,
   throwaway project).
+
+  Amended 2026-09-24 (specifier): `release` takes the seat id, matching
+  BL-1697's per-seat state file (BL-1702's mixed pack runs the driver
+  seat as `coder@2`).

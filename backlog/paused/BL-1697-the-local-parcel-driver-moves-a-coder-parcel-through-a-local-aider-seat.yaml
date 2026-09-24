@@ -85,10 +85,13 @@ description: |
   seat in any other role is not a driver seat and is left exactly as
   today, wakes included.
 
-  Per parcel, in order, recording each step in a per-role state file
-  under `.swarmforge/local-driver/`:
-  1. **Serve.** `seat next` for the seat's role (run by the driver in the
-     seat's checkout with the seat's role env); the driver reads the
+  Per parcel, in order, recording each step in a per-seat state file
+  under `.swarmforge/local-driver/`, keyed by the seat id (the window
+  name - `coder@2` when the driver seat is its stage's second seat, as in
+  BL-1702's mixed pack):
+  1. **Serve.** `seat next` for the seat (run by the driver in the
+     seat's checkout with the seat's own identity env, so the claim loop
+     applies BL-1001's tier and BL-1004's affinity to THIS seat); the driver reads the
      `in_process` parcel file itself.
   2. **Merge.** `seat merge <sender> <commit>` from the parcel's payload.
      Exit 3 (conflict) -> escalate "merge conflict" with the paths.
@@ -219,3 +222,9 @@ notes: |
   role), Estimable (one lib, three small edits, one handler; justified
   high band), Small (six scenarios, three invariants; the rest split to
   BL-1698), Testable (fake pane, stand-in model, throwaway project).
+
+  Amended 2026-09-24 (specifier, bookkeeping-level for the coder: nothing
+  built changes shape beyond the key): the state file and `seat next`
+  key on the seat id, not the role, because the human refined BL-1702 to
+  run the local coder as `coder@2` beside the Claude `coder` (BL-1702
+  source). A driver seat can be a stage's second seat.

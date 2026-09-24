@@ -1,0 +1,133 @@
+id: BL-1715
+title: "In a stage with a Claude seat beside a local driver seat (the mixed pack's coder and coder@2), a parcel the local seat still fails after its last fix turn is recorded, given up and worked next by the Claude seat with no deferral - the local seat never takes that ticket again, its failed changes leave its tree, every local attempt (handed off, given up or escalated) leaves one outcome row, and a stage with only driver seats keeps BL-1697's escalate-and-hold"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 0
+direction: queue-jump
+depends_on: [BL-1697, BL-1698]
+# BL-1697 builds the driver and its escalate path this ticket branches;
+# BL-1698 shares the driver state file (resume, release) - both unbuilt.
+# BL-1702 (the mixed pack) depends on this ticket.
+mutation_cost: medium
+# medium: Babashka only (no mutation/CRAP/DRY wired, BL-472), but it
+# touches the shared claim path in ready_for_next_task.bb (BL-1001 tier
+# filter, BL-1004 affinity) that every stage seat runs; one feature over
+# BL-1697's fake-seat fixture.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1715-a-driver-seat-that-fails-a-parcel-hands-it-to-its-stages-claude-seat.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers (BL-1697's driver
+# escalate step, ready_for_next_task.bb's claim loop) do not exist yet /
+# exist before the fix, so no call-site anchor gates anything (BL-1235);
+# the feature drives the real claim loop over a fixture, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1715DriverSeatGiveUpSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Approved at mint under the queue-jump convention (STEERING.md: a JumpQ
+  child of a human priority ask lands approved - the local-models intake
+  was queue-jumped by the human 2026-09-23), and every choice in it is the
+  human's own in-session answer of 2026-09-24 (see source). FIRM: only in a
+  stage that has a non-driver seat does a failed parcel leave the local
+  seat; a driver-only stage escalates and holds exactly as BL-1697/BL-1698
+  specify. FIRM: the Claude seat claims the handed parcel on its next poll,
+  with no rework-affinity deferral to the seat that gave up, and that seat
+  never claims the ticket again while it is in the stage. FIRM: the failed
+  attempt's changes are reverted out of the local seat's branch (never
+  reset), so its next parcel starts on its pre-claim tree.
+
+invariants:
+  - "A parcel a driver seat gives up is worked next by a non-driver seat of the same stage, with no deferral to the seat that gave up, and that seat never claims the ticket again while it is in the stage."
+  - "Every parcel a driver seat ends - handed off, given up or escalated - leaves exactly one outcome row, and a given-up attempt leaves nothing of itself in the local seat's tree."
+
+description: |
+  ## What is wanted
+
+  BL-1697 ends a failed local parcel with `seat ask` and an escalated
+  hold: right when the local seat is the stage's only seat, wrong when a
+  Claude seat stands beside it. The human chose (2026-09-24) to run the
+  first local coder as `coder@2` beside the Claude `coder`, and that a
+  local failure goes to the Claude seat rather than waiting on the human.
+
+  1. **Give up, don't hold, when a sibling can take it.** After the last
+     fix turn fails, if the driver seat's stage has a non-driver sibling
+     seat: record the outcome row (below); revert the attempt's commits
+     on the seat's branch (A Bounce Must Be Reverted Out Of The Bouncing
+     Branch - `git revert`, never reset) so the tree matches the pre-claim
+     tree; complete the parcel on the local seat without a handoff; and
+     put the same parcel (task, received commit, priority) back where the
+     stage's seats claim it. Spec write permission is restored first, as
+     on every BL-1697 exit path.
+  2. **The Claude seat takes it at once.** Its claim is not deferred by
+     BL-1004 rework affinity: the seat that gave up does not count as a
+     seat that worked the task.
+  3. **The local seat never takes it again.** Not the handed-over parcel
+     (it is low-cost, so BL-1001's easy tier would otherwise let it), and
+     not a later rework bounce for the same ticket while it is in the
+     stage.
+  4. **Outcome rows.** One row per parcel the driver ends, in
+     `.swarmforge/local-driver/outcomes.jsonl`: seat id, model, ticket,
+     outcome (`handed-off` | `given-up` | `escalated`), failed condition
+     (none on handed-off), fix turns used, wall time. This is the local
+     seat's scorecard under live swarm control; the BL-1702 runbook reads
+     it.
+  5. **Driver-only stage unchanged.** No sibling non-driver seat:
+     BL-1697's escalate-and-hold, plus its outcome row.
+
+  ## How (direction, not mandate)
+  - The never-again rule and the no-deferral rule are both claim-time
+    decisions: they belong in the claim loop beside BL-1001's tier filter
+    and BL-1004's affinity (pure decision in a lib, IO in
+    `ready_for_next_task.bb`), fed by a durable give-up marker per
+    (ticket, seat) that the driver writes. Seat identity never escapes the
+    mailbox layer (BL-983 invariant).
+  - The fixture reuses BL-1697's fake aider seat and a fixture pack with
+    two coder windows (one `claude`, one `aider` under the driver).
+
+  ## Scope
+  - The driver lib from BL-1697 (the give-up branch), the claim-path lib
+    and `swarmforge/scripts/ready_for_next_task.bb`.
+  - `specs/features/BL-1715-...feature` + the pinned handler.
+  - Docs: BL-1697's how-to gains the give-up path and the outcome rows.
+
+  ## Not in scope
+  - Which tickets the local seat may claim: BL-1001's `--seat-tier easy`
+    on its window line already restricts it to `mutation_cost: low`
+    (BL-1702 declares it).
+  - The mixed pack itself, the probe gate and the runbook (BL-1702).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1715-a-driver-seat-that-fails-a-parcel-hands-it-to-its-stages-claude-seat.feature`:
+     all ok (5 of 5).
+  2. The BL-1697 and BL-1698 features, and the BL-1004 and BL-1001 bb
+     runners (`swarmforge/scripts/test/seat_affinity_lib_test_runner.bb`,
+     `swarmforge/scripts/test/seat_difficulty_lib_test_runner.bb`): all
+     green - the claim path is shared by every stage seat.
+  3. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  The live test is BL-1702's canary, the operator's act.
+
+source: |
+  Human, verbatim (via Claude Code, 2026-09-24, on BL-1702): "Regarding
+  1702, a suggestion: we might take advantage of the fact that we have 2
+  coder seats: we could dedicate coder2 to be sraffed by the local LLM so
+  it can be put to test in a swarm controller environment..."
+  The human's in-session answers to the specifier's three questions, same
+  day: "Which tickets may the local coder@2 seat claim?" - "Low-cost
+  tickets (Recommended)"; "Where should the local coder@2 run?" -
+  "Separate pack you launch (Recommended)"; "When the local seat fails a
+  parcel after its fix turns, what happens?" - "Hand it to Claude coder
+  (Recommended)".
+
+notes: |
+  Minted 2026-09-24 by the specifier from the human's BL-1702 suggestion
+  and answers (source). The third answer is this ticket; the first two
+  amend BL-1702 in the same commit. IR-DRY: one remaining possible-synonym
+  (the two-seat Background vs scenario 04's "the Claude seat is removed")
+  is setup vs modification, kept.

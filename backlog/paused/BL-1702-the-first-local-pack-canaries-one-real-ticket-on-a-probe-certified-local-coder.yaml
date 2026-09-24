@@ -1,12 +1,12 @@
 id: BL-1702
-title: "The first local pack canaries one real ticket - its shape is the human's ruling (recommended - a mixed standing pack with the coder seat on a local model under the driver and every other seat on Claude), its launch refuses a local coder model without a passing steward probe summary even when PACK_STAFFING_SKIP_GATE is set, and a runbook names the canary ticket choice, what to watch and the rollback"
+title: "The first local pack runs a probe-certified local coder beside the Claude coder - the human's ruling A as refined 2026-09-24: full-forge's shape with coder@2 on a local model under the driver at --seat-tier easy (low-cost tickets only), the Claude coder taking every other ticket and every local give-up (BL-1715), Claude on every other seat; its launch refuses a local coder model without a passing steward probe summary even when PACK_STAFFING_SKIP_GATE is set, and a runbook names start, watch (the outcome rows), stop and rollback"
 milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
 priority: 0
 direction: queue-jump
-depends_on: [BL-1698, BL-1699, BL-1700, BL-1701]
+depends_on: [BL-1698, BL-1699, BL-1700, BL-1701, BL-1715]
 mutation_cost: low
 # low (for the recommended branch): one pack conf, one small launch-path
 # check, a runbook; the Gherkin mutation gate runs static roster and gate
@@ -68,21 +68,28 @@ description: |
      `PACK_STAFFING_SKIP_GATE=1` - swarm.env's default on this host
      (db5d1313e4) - must NOT skip it: a gate the default skips enforces
      nothing. Its own override, if any, must be loud and name a reason.
-  2. **Runbook** (`docs/how-to/`): how to pick the canary ticket (low
-     risk, small, acceptance already red, no pipeline-script scope), how
-     to start the pack, what to watch (the driver state file, the
-     llm-history log, handoffd's escalations), the stop criteria, and the
-     rollback (relaunch the previous pack; release the held parcel with
-     BL-1698's `release <role> complete`; reroute the ticket).
+  2. **Runbook** (`docs/how-to/`): what the local seat will take (every
+     `mutation_cost: low` coder parcel while it is idle - BL-1001 prefers
+     the least-capable idle seat - and nothing else), so what to check in
+     the active set before launching; how to start the pack; what to
+     watch (BL-1715's `.swarmforge/local-driver/outcomes.jsonl`, the
+     driver state file, the llm-history log, handoffd's escalations); the
+     stop criteria; and the rollback (relaunch full-forge; a parcel the
+     local seat still holds goes to the Claude coder by BL-1715's give-up,
+     or by BL-1698's `release coder@2 complete` if the driver is down).
 
-  ## Branch A (recommended) - mixed standing pack
+  ## Branch A (ruled) - mixed pack, refined by the human 2026-09-24
   3. `swarmforge/packs/mixed-local-coder.conf`: `full-forge.conf`'s shape
-     with the `coder` window on aider under the driver (model named by the
+     with its `coder` window unchanged (Claude, `--seat-tier hard`) and
+     its `coder@2` window on aider under the driver (model named by the
      probe summary, BL-1699 launch flags, `seat_test_command` declared)
-     and every other seat on Claude; one coder seat (no `coder@2`) for the
-     canary.
-  4. The canary: after this lands the operator runs it and records the
-     evidence (not a ticket gate).
+     at `--seat-tier easy`, so BL-1001's live claim filter gives it
+     `mutation_cost: low` tickets only; every other seat on Claude.
+     A separate pack the operator launches; `full-forge.conf` is not
+     changed.
+  4. The canary: after this lands the operator launches the pack for
+     canary sessions (the GPU is due within days) and records the
+     evidence from the outcome rows (not a ticket gate).
 
   ## Branch B or C
   The specifier mints the ruled branch's successor slices (B -
@@ -116,7 +123,8 @@ description: |
 
   ## Scope (branch A)
   - New: `swarmforge/scripts/local_coder_probe_gate_cli.bb` (+ lib if
-    needed), `swarmforge/packs/mixed-local-coder.conf`.
+    needed), `swarmforge/packs/mixed-local-coder.conf` (two coder seats,
+    item 3).
   - `swarmforge/scripts/swarmforge.sh` (call the probe gate).
   - New: `specs/pipeline/steps/bl1702FirstLocalPackCanarySteps.js` (BL-233).
   - Docs: the runbook; `docs/diagrams/swarm-flow.mmd`.
@@ -129,16 +137,30 @@ qa_e2e_procedure: |
   not launch the pack.
   1. `node specs/pipeline/cli.js specs/features/BL-1702-the-first-local-pack-canaries-one-real-ticket-on-a-probe-certified-local-coder.feature`:
      all scenarios ok.
-  2. `bb swarmforge/scripts/local_coder_probe_gate_cli.bb <root>
+  2. Read `swarmforge/packs/mixed-local-coder.conf`: `coder` on claude at
+     `--seat-tier hard`, `coder@2` on aider at `--seat-tier easy`, every
+     other window claude; `full-forge.conf` unchanged in the diff.
+  3. `bb swarmforge/scripts/local_coder_probe_gate_cli.bb <root>
      mixed-local-coder` against a scratch root with no probe summary:
      refuses naming the model; with `PACK_STAFFING_SKIP_GATE=1` exported:
      still refuses.
-  3. Read the runbook: canary choice, start, watch list, stop criteria,
-     rollback steps each present and naming real commands.
-  4. `git diff main...HEAD --name-only` names only the Scope files, docs
+  4. Read the runbook: what the local seat takes, start, watch list
+     (outcome rows included), stop criteria, rollback steps each present
+     and naming real commands.
+  5. `git diff main...HEAD --name-only` names only the Scope files, docs
      and evidence.
 
 source: |
+  Human, verbatim (via Claude Code, 2026-09-24, refining ruling A):
+  "Regarding 1702, a suggestion: we might take advantage of the fact that
+  we have 2 coder seats: we could dedicate coder2 to be sraffed by the
+  local LLM so it can be put to test in a swarm controller environment..."
+  and the in-session answers: "Which tickets may the local coder@2 seat
+  claim?" - "Low-cost tickets (Recommended)"; "Where should the local
+  coder@2 run?" - "Separate pack you launch (Recommended)"; "When the local
+  seat fails a parcel after its fix turns, what happens?" - "Hand it to
+  Claude coder (Recommended)" (that answer is BL-1715).
+
   backlog/INTAKE-local-aider-seats-20260924.md, slices L4 (the ruling)
   and L6 (the live canary): "L4 is a real choice: it goes back to the
   human with its pros and cons (below) before it is specified"; "L6 - the
@@ -183,3 +205,12 @@ notes: |
   Valuable (the first real local parcel), Estimable (one conf, one small
   CLI, one doc), Small (two scenarios, one invariant), Testable (static
   roster and gate checks; the canary itself is operator evidence).
+
+  Amended 2026-09-24 (specifier) on the human's refinement of ruling A
+  (source): the local coder is now coder@2 at the easy seat tier beside
+  the unchanged Claude coder, in a separate pack; BL-1715 (the give-up to
+  the Claude seat and the outcome rows) minted and added to depends_on;
+  item 3, the runbook item, scenario 01 and the QA procedure rewritten.
+  human_ruling stays A - this is the human's own refinement of it, so
+  human_approval stays approved. BL-1697 amended in the same commit to key
+  its driver state on the seat id (coder@2), not the role.
