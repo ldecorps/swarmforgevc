@@ -40,49 +40,20 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
-const { spawnSync } = require('node:child_process');
 const { mkSharedTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
-
-const EXTENSION_ROOT = path.join(__dirname, '..');
-const REPO_ROOT = path.dirname(EXTENSION_ROOT);
-const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
-const ENTRY = 'promotion_gates_cli.bb';
-const RUNNER_REL = path.join('test', 'bl1028_promotion_refusal_property_runner.bb');
+const {
+  SCRIPTS,
+  ENTRY,
+  RUNNER_REL,
+  BASE_CLOSURE,
+  closureOf,
+  copyScriptsTree,
+  runCopyInto,
+} = require('./helpers/bl1538ClosureFixture');
 
 const LOAD_LINE = (name) =>
   `(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "${name}")))`;
-
-function closureOf(scriptsDir, entry) {
-  const out = spawnSync('bb', [path.join(scriptsDir, 'bb_load_closure_cli.bb'), scriptsDir, entry], {
-    encoding: 'utf8',
-  });
-  assert.equal(out.status, 0, `closure CLI failed: ${out.stderr}`);
-  return out.stdout.split('\n').filter(Boolean).sort();
-}
-
-// What the runner does for its copy step, run behaviourally via its real
-// `--copy-into` flag against an arbitrary scratch scripts tree - never a
-// parse of its source.
-function derivedCopySet(scriptsDir, dest) {
-  const runnerPath = path.join(scriptsDir, RUNNER_REL);
-  const run = spawnSync('bb', [runnerPath, '--copy-into', dest], { encoding: 'utf8' });
-  assert.equal(run.status, 0, `--copy-into failed: ${run.stderr}`);
-  return fs.readdirSync(dest).filter((f) => f.endsWith('.bb')).sort();
-}
-
-function copyScriptsTree(dest) {
-  for (const name of fs.readdirSync(SCRIPTS)) {
-    const from = path.join(SCRIPTS, name);
-    if (fs.statSync(from).isFile()) {
-      fs.copyFileSync(from, path.join(dest, name));
-    }
-  }
-  // The runner derives scripts-dir from its OWN location (parent of parent),
-  // so the scratch copy must sit at the same depth under the scratch tree.
-  fs.mkdirSync(path.join(dest, 'test'), { recursive: true });
-  fs.copyFileSync(path.join(SCRIPTS, RUNNER_REL), path.join(dest, RUNNER_REL));
-}
 
 const DEPTHS = ['at the entry point', 'inside a lib it loads'];
 // BL-1586: the per-cell run count expressed through runsPerCell rather than
@@ -125,7 +96,9 @@ describe('BL-1538 invariant 1: the copy set is derived from the closure, never h
               fs.writeFileSync(hostPath, `${injected}\n${source}`);
             }
 
-            const copied = derivedCopySet(root, dest);
+            const result = runCopyInto(root, dest);
+            assert.equal(result.status, 0, `--copy-into failed (depth=${depth}): ${result.stderr}`);
+            const copied = result.copied;
             const closure = closureOf(root, ENTRY);
 
             assert.deepEqual(copied, closure, 'the copy set and the closure disagree');
@@ -146,7 +119,7 @@ describe('BL-1538 invariant 1: the copy set is derived from the closure, never h
 });
 
 describe('BL-1538 invariant 2: the guard reads what the fixture actually copies, never what its source claims', () => {
-  const closure = closureOf(SCRIPTS, ENTRY);
+  const closure = BASE_CLOSURE;
   const COPY_ANCHOR =
     '(doseq [dep promotion-gate-deps]\n      (fs/copy (fs/path scripts-dir dep) (fs/path dest dep) {:replace-existing true}))';
 
@@ -181,10 +154,15 @@ describe('BL-1538 invariant 2: the guard reads what the fixture actually copies,
               .replace('(def promotion-gate-deps', `${decoy}(def promotion-gate-deps`);
             fs.writeFileSync(runnerPath, broken);
 
-            const copied = derivedCopySet(root, dest);
+            const result = runCopyInto(root, dest);
+            assert.equal(result.status, 0, `--copy-into failed (member=${removed}): ${result.stderr}`);
+            const copied = result.copied;
             const have = new Set(copied);
 
-            assert.ok(!have.has(removed), `${removed} was expected to be dropped from the real copy but is present`);
+            assert.ok(
+              !have.has(removed),
+              `${removed} was expected to be dropped from the real copy but is present; observed copy set: ${copied.join(', ')}`
+            );
             // This IS the guard's own comparison (bbFixtureClosureGate.js's
             // missingFromList): the closure member not present in what was
             // actually copied.
