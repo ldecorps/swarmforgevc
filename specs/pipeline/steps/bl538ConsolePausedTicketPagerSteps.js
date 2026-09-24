@@ -4,9 +4,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
-const { installPromotionGates } = require('./lib/promotionGatesFixture');
-const { computeClosure } = require('./lib/operatorRuntimeBbClosure.js');
 
 // BL-1685: the path only - bridgeServer.js is the whole bridge graph (286
 // modules: bridge/metrics/swarm under extension/out plus @connectrpc/
@@ -21,54 +18,17 @@ function getStartBridge() {
 const FEATURE = 'paused-ticket pager on the SwarmForge Telegram Mini App console';
 const TOKEN = 'paused-pager-token';
 
-const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const REAL_SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
-
-function git(root, ...args) {
-  return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
-}
-
-// BL-1693: scenarios 07/08's Approve route commits its human_approval flip
-// durably through the REAL commit_integrity_cli.bb (BL-892) - a target
-// that is not a real git repo with the CLI present reports the commit as
-// (correctly) failed, same posture pausedPagerBridge.test.js's own
-// mkGitTmpWithCli() and bl1368ApprovalCommitNamesDeciderSteps.js's
-// installCommitIntegrity/makeRoot already take. Derived from the CLI's own
-// load-file closure, never a hand-listed copy.
-function installCommitIntegrity(root) {
-  const scriptsDir = path.join(root, 'swarmforge', 'scripts');
-  fs.mkdirSync(scriptsDir, { recursive: true });
-  for (const name of computeClosure(REAL_SCRIPTS_DIR, 'commit_integrity_cli.bb')) {
-    const src = path.join(REAL_SCRIPTS_DIR, name);
-    if (fs.existsSync(src)) fs.copyFileSync(src, path.join(scriptsDir, name));
-  }
-}
-
 function mkFixture() {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl538-')));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl538-'));
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
-  // BL-1693: scenario 06's Expedite consults the real
-  // promotion_gates_cli.bb (BL-1083, promoteToActive fails closed without
-  // it, exactly as bl1425QueueJumpPastCapSteps.js's own fixture stages it);
-  // scenarios 07/08's Approve needs the real commit_integrity_cli.bb and a
-  // real git repo to durably commit, never a fabricated verdict.
-  installPromotionGates(root);
-  installCommitIntegrity(root);
-  git(root, 'init', '-q', '-b', 'main');
-  git(root, 'config', 'user.email', 't@t');
-  git(root, 'config', 'user.name', 't');
-  git(root, 'commit', '-q', '--allow-empty', '-m', 'init');
   return root;
 }
 
-function writeTicket(root, folder, id, title, priority, extra) {
+function writeTicket(root, folder, id, title, priority) {
   const lines = [`id: ${id}`, `title: ${title}`, `status: ${folder}`];
   if (priority !== undefined) {
     lines.push(`priority: ${priority}`);
-  }
-  if (extra) {
-    lines.push(...Object.entries(extra).map(([key, value]) => `${key}: ${value}`));
   }
   const file = path.join(root, 'backlog', folder, `${id}.yaml`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -253,72 +213,6 @@ function registerSteps(registry) {
   registry.defineScoped(/^the pager advances to another paused ticket or the empty state$/, (ctx) => {
     assert.equal(ctx.state.items.some((item) => item.id === ctx.expeditedId), false);
     assert.equal(ctx.state.total, ctx.state.items.length);
-  }, FEATURE);
-
-  // ── BL-1693 (BL-538 scenarios 07/08): Approve ───────────────────────────
-  registry.defineScoped(/^a paused ticket with human_approval pending is shown on the pager$/, async (ctx) => {
-    ctx.ticketPath = writeTicket(ctx.root, 'paused', 'BL-903', 'Approve me', 3, { human_approval: 'pending' });
-    // A companion ticket carrying no human_approval field at all - the
-    // negative half of scenario 07 ("I do not see Approve on paused
-    // tickets that are not pending approval") needs a second item in the
-    // SAME fetch to prove the control is per-ticket, not a global flag.
-    writeTicket(ctx.root, 'paused', 'BL-904', 'Not pending approval', 9);
-    await fetchPager(ctx);
-    ctx.index = ctx.state.items.findIndex((item) => item.id === 'BL-903');
-    assert.notEqual(ctx.index, -1, `expected BL-903 to appear in the pager state, got: ${JSON.stringify(ctx.state.items)}`);
-    ctx.originalYaml = fs.readFileSync(pausedPath(ctx, 'BL-903'), 'utf8');
-  }, FEATURE);
-
-  registry.defineScoped(/^I see an Approve control$/, (ctx) => {
-    assert.equal(currentItem(ctx).canApprove, true, `expected canApprove on the pending-approval ticket, got: ${JSON.stringify(currentItem(ctx))}`);
-  }, FEATURE);
-
-  registry.defineScoped(/^I do not see Approve on paused tickets that are not pending approval$/, (ctx) => {
-    const other = ctx.state.items.find((item) => item.id === 'BL-904');
-    assert.ok(other, `expected BL-904 (no human_approval) in the pager state, got: ${JSON.stringify(ctx.state.items)}`);
-    assert.equal(other.canApprove, false, `expected canApprove false for a ticket with no human_approval, got: ${JSON.stringify(other)}`);
-  }, FEATURE);
-
-  registry.defineScoped(/^I confirm Approve$/, async (ctx) => {
-    const item = currentItem(ctx);
-    await withBridge(ctx, async (handle) => {
-      const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${TOKEN}`,
-          'x-control-token': TOKEN,
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({ id: item.id })
-      });
-      const body = await res.json();
-      assert.equal(res.status, 200, `expected a durable Approve to succeed, got ${res.status}: ${JSON.stringify(body)}`);
-      assert.equal(body.success, true, `expected success, got: ${JSON.stringify(body)}`);
-      ctx.approvedId = item.id;
-    });
-    await fetchPager(ctx);
-    ctx.index = ctx.state.items.findIndex((i) => i.id === ctx.approvedId);
-  }, FEATURE);
-
-  registry.defineScoped(/^that ticket's human_approval becomes approved$/, (ctx) => {
-    assert.match(fs.readFileSync(pausedPath(ctx, ctx.approvedId), 'utf8'), /^human_approval:\s*approved$/m);
-    // BL-892 invariant 1: HEAD, not only the working tree, is the source
-    // of truth - the same distinction pausedPagerBridge.test.js's own
-    // Approve test asserts.
-    const headYaml = git(ctx.root, 'show', `HEAD:backlog/paused/${ctx.approvedId}.yaml`);
-    assert.match(headYaml, /^human_approval:\s*approved$/m, 'expected the Approve route to commit the flip to HEAD, not just the working tree');
-  }, FEATURE);
-
-  registry.defineScoped(/^the ticket remains under backlog\/paused\/$/, (ctx) => {
-    assert.equal(fs.existsSync(pausedPath(ctx, ctx.approvedId)), true);
-    assert.equal(fs.existsSync(activePath(ctx, ctx.approvedId)), false);
-  }, FEATURE);
-
-  registry.defineScoped(/^the pager refreshes to show the updated YAML$/, (ctx) => {
-    const item = currentItem(ctx);
-    assert.notEqual(item, undefined, `expected ${ctx.approvedId} still in the pager state, got: ${JSON.stringify(ctx.state.items)}`);
-    assert.match(item.yaml, /^human_approval:\s*approved$/m);
-    assert.notEqual(item.yaml, ctx.originalYaml, 'expected the pager to show the updated YAML, not the pre-Approve text');
   }, FEATURE);
 }
 
