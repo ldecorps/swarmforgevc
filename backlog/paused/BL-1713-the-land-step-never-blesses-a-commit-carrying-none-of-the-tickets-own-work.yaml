@@ -1,0 +1,184 @@
+id: BL-1713
+title: "land_step_cli.bb printed LAND_CLEAN three times on 2026-09-24 (BL-1691 twice, BL-1694 once) for a built commit whose only change retired the ticket's standing-red register row - QA ran it from its worktree citing HEAD with the shared checkout as repo root, the CLI resolved HEAD there (origin/main), found nothing delivered and blessed the empty land; the CLI refuses a citation that means different commits in the caller's checkout and the repo root, and the plan refuses a range with no commit credited to the landing ticket"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in the land step (the integration point, Article
+# 1.8) that builds and blesses a commit retiring a ticket's standing-red
+# register row while landing none of its fix - a broken safety signal:
+# the register would stop throttling on a red that is still red, and the
+# ticket would close as done. Not critical: QA diffed the built commit
+# by hand each time and landed tip-pure commits it built itself
+# (75b3d014df, a0c48e9a39), so nothing wrong reached origin/main.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+# BL-1241 (the replay), BL-1343 (an emptied own-path set with paths
+# delivered is a refusal), BL-1447 (replay-incomplete), BL-1631 (the land
+# retires register rows) and BL-1678 (a clean land is a built tip-pure
+# commit) are all in backlog/done. No open ticket touches land_step_cli.bb
+# or land-plan (grep of paused/ and active/ for land_step, 2026-09-24).
+mutation_cost: medium
+# medium: Babashka only (no mutation/CRAP/DRY wired, BL-472) in
+# land_step_cli.bb and land_step_lib.bb's land-plan; one feature and
+# handler over a fixture origin with a linked worktree. The BL-1678
+# feature, same shape (fixture origin, real CLI), ran 12.6 s at load 18
+# on 2026-09-24 - well inside the 300 s per-mutant ceiling (BL-1541).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1713-the-land-step-never-blesses-a-commit-carrying-none-of-the-tickets-own-work.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers (QA's land recipe,
+# land_main_publish.sh) already call land_step_cli.bb, so an anchor there
+# matches before and after the fix (BL-1235); the feature drives the real
+# CLI over a fixture origin, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1713LandNeverBlessesAnEmptyRangeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: a commit argument
+  that resolves to different commits in the caller's current checkout and
+  in the repo root's checkout is refused with LAND_ESCALATE naming both,
+  never silently resolved in the repo root; a full sha resolves the same
+  in both and is unaffected. FIRM: a range origin/main..<commit> that
+  holds no commit the land step's own subject attribution credits to the
+  landing ticket is refused with LAND_ESCALATE naming the ticket and the
+  range, before any replay is built, so no commit, branch or register-row
+  retirement is produced. FIRM: an ordinary land (the ticket's own commit
+  in range, cited by sha) is unchanged, register-row retirement included.
+
+invariants:
+  - "The land step prints LAND_CLEAN or LAND_REPLAY only for a range origin/main..<commit> holding at least one commit credited to the landing ticket; any other range is LAND_ESCALATE with no commit built, no branch created and no register row retired."
+  - "The commit a land plans is the one the caller named: a citation that resolves to different commits in the caller's checkout and in the repo root's checkout is refused, never resolved silently in either."
+
+description: |
+  ## What is wrong
+
+  QA's land for BL-1691 on 2026-09-24 ran, from `.worktrees/QA`:
+  `bb swarmforge/scripts/land_step_cli.bb BL-1691 HEAD /home/carillon/swarmforgevc`
+  (QA transcript, 07:11Z and 07:14Z). `canonicalize-commit` resolves the
+  argument with `git -C <repo-root> rev-parse`, so HEAD became the shared
+  master checkout's HEAD - eff9ef984e, identical to origin/main at that
+  moment (`git reflog main`: there from 07:09Z until 07:17Z; both built
+  commits' parent is eff9ef984e, the CLI's own origin/main read). The
+  delivered diff was therefore empty; `own-paths` answers `[]` as "a real
+  answer ONLY when the tip is identical to origin/main"; `land-plan`
+  returned :land; and the built commit (28241f2597, b75f7fd84c) carried
+  one change - `backlog/standing-reds.tsv` minus BL-1691's row (BL-1631's
+  retirement). The CLI printed `LAND_CLEAN` for it. BL-1694's land at
+  07:21Z did the same (525c2c284f: two register rows removed, nothing
+  else). QA caught each by diffing the built commit against origin/main,
+  and hand-built the real lands (75b3d014df, a0c48e9a39).
+
+  QA's evidence
+  (`backlog/evidence/BL-1691-land-step-cli-own-paths-empty-defect-QA-20260924.md`)
+  suspected the `--first-parent` walk through untagged "Merge documenter
+  ... into QA." merges. The specifier checked that against the real
+  inputs: at QA's actual tip (44973c8f24) `full-delivered-paths` and
+  `own-range-touched-paths` both list all 62 delivered paths, the 15
+  BL-1691 test files included, and `own-paths` reads the full
+  origin-main..commit diff (BL-1315), not the first-parent walk. The
+  commit resolved in the wrong checkout; the walk was never reached.
+
+  Two faults, one outcome:
+  1. The citation is resolved in the repo root's checkout, not the
+     caller's. QA.prompt tells QA both "from the repo root" (the
+     land-step bullet) and "<your worktree root>" as the third argument
+     (the landed-tool bullet); a relative ref like HEAD is only
+     meaningful in the checkout it was typed in.
+  2. `land-plan` blesses a range carrying none of the ticket's work.
+     Whatever the cause - a wrong checkout, a mistyped sha, a sibling's
+     tip - a land whose range holds no commit credited to the landing
+     ticket has nothing of that ticket's to land, and the only thing the
+     built commit can then do on its own is retire the ticket's register
+     rows. An untagged commit touching a path is worse: `own-paths`
+     excludes only on positive attribution, so its content would ride as
+     the landing ticket's.
+
+  ## What is wanted
+
+  - Scenario 01 (outline): the CLI refuses a citation that does not name
+    a commit carrying A's own work - HEAD meaning different commits in
+    the two checkouts (reason names both resolved shas), origin/main's
+    own sha, and a tip whose only new commit names no ticket (reason
+    names A and the range). Nothing is built in any row: no commit, no
+    `land-replay` branch or worktree.
+  - Scenario 02: A cited by its full sha from the QA worktree, with the
+    shared checkout as repo root, still prints LAND_CLEAN and its built
+    commit carries A's path and retires A's register row - the refusals
+    above must not catch an ordinary land.
+
+  ## How (direction, not mandate)
+
+  - The citation check sits in `land_step_cli.bb` next to
+    `canonicalize-commit`: resolve the argument in the caller's cwd
+    checkout too, when the cwd is inside one, and refuse on
+    disagreement. A cwd outside any checkout (a scratch copy of the tool,
+    QA.prompt's landed-tool bullet) keeps today's repo-root resolution.
+  - The range check belongs in `land-plan`, before `replay!`, reusing
+    the SAME subject attribution the lib already has
+    (`commit-subject-attribution` / `pipeline-stage-lib/extract-ticket-id`
+    over `ancestry-commits root origin-main commit`) - never a second
+    notion of "names the ticket". It then covers every caller,
+    `land_main_publish.sh` included.
+  - LAND_ESCALATE keeps its existing shape: the verdict line, then the
+    reason on the next line, exit 1.
+  - The fixture is a git-init origin under mkdtemp with a linked worktree
+    for QA (engineering Guardrails: prove `--git-common-dir` before any
+    mutating git command; never the live repository).
+
+  ## Scope
+
+  - `swarmforge/scripts/land_step_cli.bb` (citation check, usage text).
+  - `swarmforge/scripts/land_step_lib.bb` (`land-plan` range check).
+  - `specs/features/BL-1713-...feature` + the pinned handler, registered.
+  - Docs: the land-step reference/how-to that lists LAND_ESCALATE reasons.
+
+  ## Not in scope
+
+  - QA.prompt: the specifier lands the interim citation rule itself on
+    main in the mint pass (BL-798); this parcel changes no prompt.
+  - What counts as landed, attribution rules, the replay's content rules
+    (BL-1272/BL-1354/BL-1389/BL-1678) - unchanged.
+  - The leftover `.git/land-replay-worktrees/test-BL-1691` QA removed by
+    hand - not reproduced; mint separately if it recurs.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1713-the-land-step-never-blesses-a-commit-carrying-none-of-the-tickets-own-work.feature`:
+     all ok (4 of 4).
+  2. `node specs/pipeline/cli.js specs/features/BL-1678-a-land-never-ships-an-unapproved-forward-that-shares-no-path-with-the-landing-ticket.feature`
+     and the BL-1241 feature: all ok (no regression in the land step's
+     existing verdicts).
+  3. Live probe: from `.worktrees/QA` (its checkout IS the tool under
+     review), with QA's tip ahead of the shared checkout's HEAD, run
+     `bb swarmforge/scripts/land_step_cli.bb <this task> HEAD /home/carillon/swarmforgevc`.
+     It prints LAND_ESCALATE naming both shas, and
+     `git branch --list 'land-replay*'` and `git worktree list` gain
+     nothing.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  5. Land THIS ticket by a full sha, never HEAD.
+
+notes: |
+  Minted 2026-09-24 by the specifier from QA note 003110 ("land_step_cli.bb
+  LAND_CLEAN empty diff on BL-1691"). Root cause re-derived the same pass
+  from QA's transcript (the invocation), `git reflog main` (the shared
+  checkout's HEAD equalled origin/main) and a read-only probe of
+  full-delivered-paths / own-range-touched-paths at QA's real tip
+  44973c8f24 (62 paths, all 15 BL-1691 test files present) - the
+  first-parent hypothesis in QA's evidence does not hold.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). IR-DRY: one remaining
+  near-duplicate finding (the When step in scenario 01's outline vs
+  scenario 02) is intended - one step pattern, one handler, a different
+  citation argument; scenarios 01/02 of the first draft were merged into
+  the outline to clear the rest. Interim QA.prompt rule (cite a full sha;
+  the third argument is where the CLI resolves it) landed by the
+  specifier in the mint commit.

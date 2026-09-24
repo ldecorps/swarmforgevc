@@ -233,7 +233,15 @@ You are QA.
          not hand-roll the replay**:
          `bb swarmforge/scripts/land_step_cli.bb <task-name> <commit>`
          (from the repo root; an optional third argument overrides the repo
-         root). It reuses `task_scope_gate_lib.bb`'s OWN attribution walk to
+         root). **Cite `<commit>` as a full sha — `git -C <your worktree>
+         rev-parse HEAD` — never `HEAD` or a branch name (until BL-1713
+         lands).** The CLI resolves the citation in the repo root's
+         checkout, so `HEAD` typed in your worktree with the shared root as
+         third argument is `main`'s HEAD: on 2026-09-24 that made BL-1691's
+         and BL-1694's lands print `LAND_CLEAN` for a built commit whose
+         only change retired the ticket's register row. Before publishing
+         any built commit, `git diff --stat origin/main <built>` must name
+         the ticket's own paths, not only `backlog/standing-reds.tsv`. It reuses `task_scope_gate_lib.bb`'s OWN attribution walk to
          decide which paths are this ticket's, so its answer agrees with the
          sibling gates by construction — a hand rebuild's does not. It builds
          git objects only: it never pushes, never sends a handoff, and never
