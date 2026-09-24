@@ -3,6 +3,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { classifyTopicThread } = require('../out/concierge/topicThreadKind');
 const {
   readSwarmIconId,
@@ -42,23 +43,6 @@ const ROLE_IDS = () =>
   fc.constantFrom('coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA', 'specifier');
 const UNSTORABLE_IDS = () => fc.constantFrom('', ' ', '   ', '\t', '\n');
 
-// Equal-weighted across five kinds, each kind lands ~10% of the time, and
-// over 60 runs a specific one is missed ~0.18% - which across the three
-// tests below and six required kinds is a ~1% chance of a spurious red per
-// full-lane run. A flaky commit gate is worse than no floor at all (the
-// sibling BL-1225 file failed exactly this way), so the draw is flattened:
-// each kind gets its own weight and the run count is raised, putting the
-// miss probability below one in a million.
-const STORABLE_ID = () =>
-  fc.oneof(
-    { arbitrary: TICKET_IDS(), weight: 1 },
-    { arbitrary: SUPERVISOR_IDS(), weight: 1 },
-    { arbitrary: EPIC_IDS(), weight: 1 },
-    { arbitrary: STANDING_IDS(), weight: 1 },
-    { arbitrary: ROLE_IDS(), weight: 1 }
-  );
-const ANY_ID = () =>
-  fc.oneof({ arbitrary: STORABLE_ID(), weight: 5 }, { arbitrary: UNSTORABLE_IDS(), weight: 1 });
 const ICON_ID = () =>
   fc.string({ minLength: 1, maxLength: 24 }).filter((s) => s.trim().length > 0);
 
@@ -75,11 +59,27 @@ function idKind(id) {
   return 'role';
 }
 
-function assertReach(seen, kinds) {
-  for (const kind of kinds) {
-    assert.ok((seen.get(kind) ?? 0) > 0, `generator never reached a ${kind} id: ${[...seen]}`);
-  }
+// BL-1691: per-kind generators for constructing reach by an outer loop -
+// the same six/five kinds idKind() classifies, one arbitrary per cell.
+// Filtered (not just the raw per-kind pool) because idKind()'s own
+// classification disagrees with three pool members the original combined
+// draw's post-hoc bucketing papered over: EPIC_IDS()'s 'bubble' has no
+// dash (idKind falls through to 'role'), STANDING_IDS()'s 'Approvals' is
+// not all-uppercase (falls through to 'role'), and ROLE_IDS()'s 'QA' IS
+// all-uppercase (idKind reads it as 'standing' before ever reaching the
+// role fallback). The filter guarantees every draw in a cell truly
+// classifies as that cell's kind - construction, not "very likely".
+function forKind(kind, generatorFn) {
+  return () => generatorFn().filter((id) => idKind(id) === kind);
 }
+const STORABLE_KIND_GENERATORS = {
+  ticket: forKind('ticket', TICKET_IDS),
+  supervisor: forKind('supervisor', SUPERVISOR_IDS),
+  epic: forKind('epic', EPIC_IDS),
+  standing: forKind('standing', STANDING_IDS),
+  role: forKind('role', ROLE_IDS),
+};
+const ANY_KIND_GENERATORS = { ...STORABLE_KIND_GENERATORS, unstorable: forKind('unstorable', UNSTORABLE_IDS) };
 
 function withRoot(fn) {
   const root = mkTmpDir('sfvc-bl1210-prop-');
@@ -100,30 +100,34 @@ function markerStoreFiles(root) {
 }
 
 test('property (invariant 1): recordSwarmIconId reports recorded if and only if the marker is readable back', () => {
-  const seen = new Map();
-  fc.assert(
-    fc.property(ANY_ID(), ICON_ID(), (id, iconId) => {
-      const kind = idKind(id);
-      seen.set(kind, (seen.get(kind) ?? 0) + 1);
-      withRoot((root) => {
-        const outcome = recordSwarmIconId(root, id, iconId, SILENT, SILENT);
-        assert.ok(
-          outcome === 'recorded' || outcome === 'refused',
-          `recordSwarmIconId returned ${JSON.stringify(outcome)}, which no caller can handle`
-        );
-        if (outcome === 'recorded') {
-          assert.equal(readSwarmIconId(root, id), iconId);
-        } else {
-          // A refusal wrote NOTHING - not a tracked record, not a store entry.
-          assert.equal(readSwarmIconId(root, id), undefined);
-          assert.equal(fs.existsSync(recordPath(root, id)), false);
-          assert.deepEqual(markerStoreFiles(root), []);
-        }
-      });
-    }),
-    { numRuns: 150 }
-  );
-  assertReach(seen, ['ticket', 'supervisor', 'epic', 'standing', 'role', 'unstorable']);
+  const KINDS = Object.keys(ANY_KIND_GENERATORS);
+  const PER_CELL_RUNS = runsPerCell(150, KINDS.length);
+  const seen = Object.fromEntries(KINDS.map((k) => [k, 0]));
+  for (const kind of KINDS) {
+    fc.assert(
+      fc.property(ANY_KIND_GENERATORS[kind](), ICON_ID(), (id, iconId) => {
+        assert.equal(idKind(id), kind, `generator for ${kind} produced an id of a different kind: ${id}`);
+        seen[kind] += 1;
+        withRoot((root) => {
+          const outcome = recordSwarmIconId(root, id, iconId, SILENT, SILENT);
+          assert.ok(
+            outcome === 'recorded' || outcome === 'refused',
+            `recordSwarmIconId returned ${JSON.stringify(outcome)}, which no caller can handle`
+          );
+          if (outcome === 'recorded') {
+            assert.equal(readSwarmIconId(root, id), iconId);
+          } else {
+            // A refusal wrote NOTHING - not a tracked record, not a store entry.
+            assert.equal(readSwarmIconId(root, id), undefined);
+            assert.equal(fs.existsSync(recordPath(root, id)), false);
+            assert.deepEqual(markerStoreFiles(root), []);
+          }
+        });
+      }),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, KINDS, PER_CELL_RUNS, 'id-kind');
 });
 
 test('property (invariant 1): a refused write is a returned value, never only a line on stderr', () => {
@@ -143,38 +147,46 @@ test('property (invariant 1): a refused write is a returned value, never only a 
 });
 
 test('property (invariant 2): every storable id records a readable marker, whatever kind it is', () => {
-  const seen = new Map();
-  fc.assert(
-    fc.property(STORABLE_ID(), ICON_ID(), (id, iconId) => {
-      const kind = idKind(id);
-      seen.set(kind, (seen.get(kind) ?? 0) + 1);
-      withRoot((root) => {
-        assert.equal(recordSwarmIconId(root, id, iconId, SILENT, SILENT), 'recorded');
-        assert.equal(readSwarmIconId(root, id), iconId);
-      });
-    }),
-    { numRuns: 150 }
-  );
-  assertReach(seen, ['ticket', 'supervisor', 'epic', 'standing', 'role']);
+  const KINDS = Object.keys(STORABLE_KIND_GENERATORS);
+  const PER_CELL_RUNS = runsPerCell(150, KINDS.length);
+  const seen = Object.fromEntries(KINDS.map((k) => [k, 0]));
+  for (const kind of KINDS) {
+    fc.assert(
+      fc.property(STORABLE_KIND_GENERATORS[kind](), ICON_ID(), (id, iconId) => {
+        assert.equal(idKind(id), kind, `generator for ${kind} produced an id of a different kind: ${id}`);
+        seen[kind] += 1;
+        withRoot((root) => {
+          assert.equal(recordSwarmIconId(root, id, iconId, SILENT, SILENT), 'recorded');
+          assert.equal(readSwarmIconId(root, id), iconId);
+        });
+      }),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, KINDS, PER_CELL_RUNS, 'id-kind');
 });
 
 test('property (invariant 2): the marker location varies by kind but only ticket ids get a tracked record', () => {
-  const seen = new Map();
-  fc.assert(
-    fc.property(STORABLE_ID(), ICON_ID(), (id, iconId) => {
-      const kind = idKind(id);
-      seen.set(kind, (seen.get(kind) ?? 0) + 1);
-      withRoot((root) => {
-        recordSwarmIconId(root, id, iconId, SILENT, SILENT);
-        // BL-695's boundary, kept: tracked records stay ticket-only.
-        assert.equal(
-          fs.existsSync(recordPath(root, id)),
-          classifyTopicThread(id) === 'ticket',
-          `tracked record presence is wrong for ${kind} id ${JSON.stringify(id)}`
-        );
-      });
-    }),
-    { numRuns: 150 }
-  );
-  assertReach(seen, ['ticket', 'supervisor', 'epic', 'standing', 'role']);
+  const KINDS = Object.keys(STORABLE_KIND_GENERATORS);
+  const PER_CELL_RUNS = runsPerCell(150, KINDS.length);
+  const seen = Object.fromEntries(KINDS.map((k) => [k, 0]));
+  for (const kind of KINDS) {
+    fc.assert(
+      fc.property(STORABLE_KIND_GENERATORS[kind](), ICON_ID(), (id, iconId) => {
+        assert.equal(idKind(id), kind, `generator for ${kind} produced an id of a different kind: ${id}`);
+        seen[kind] += 1;
+        withRoot((root) => {
+          recordSwarmIconId(root, id, iconId, SILENT, SILENT);
+          // BL-695's boundary, kept: tracked records stay ticket-only.
+          assert.equal(
+            fs.existsSync(recordPath(root, id)),
+            classifyTopicThread(id) === 'ticket',
+            `tracked record presence is wrong for ${kind} id ${JSON.stringify(id)}`
+          );
+        });
+      }),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, KINDS, PER_CELL_RUNS, 'id-kind');
 });

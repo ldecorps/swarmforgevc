@@ -24,6 +24,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { deriveCommitGuardFixtureSet } = require('./helpers/commitGuardFixtureSet');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -69,42 +70,48 @@ function withRoot(fn) {
 
 describe('BL-1398 declared invariants', () => {
   it('inv1: the set follows the runner in both directions, with no test edited', () => {
+    // BL-1691: added/removed constructed as two cells (addNotRemove fixed
+    // per cell) rather than sampled via fc.boolean().
+    const CELLS = ['added', 'removed'];
+    const PER_CELL_RUNS = runsPerCell(25, CELLS.length);
     const reach = { added: 0, removed: 0 };
-    fc.assert(
-      fc.property(
-        fc.uniqueArray(GUARD_NAME, { minLength: 2, maxLength: 5 }),
-        GUARD_NAME,
-        fc.boolean(),
-        (base, extra, addNotRemove) => {
-          // Constructed: the extra guard is one the base does not name, and
-          // the removed guard is drawn FROM the base - never a coincidence.
-          fc.pre(!base.includes(extra));
-          const named = addNotRemove ? [...base, extra] : base.slice(0, base.length - 1);
-          const dropped = addNotRemove ? null : base[base.length - 1];
-          reach[addNotRemove ? 'added' : 'removed'] += 1;
+    for (const cell of CELLS) {
+      const addNotRemoveConst = cell === 'added';
+      fc.assert(
+        fc.property(
+          fc.uniqueArray(GUARD_NAME, { minLength: 2, maxLength: 5 }),
+          GUARD_NAME,
+          fc.constant(addNotRemoveConst),
+          (base, extra, addNotRemove) => {
+            // Constructed: the extra guard is one the base does not name, and
+            // the removed guard is drawn FROM the base - never a coincidence.
+            fc.pre(!base.includes(extra));
+            const named = addNotRemove ? [...base, extra] : base.slice(0, base.length - 1);
+            const dropped = addNotRemove ? null : base[base.length - 1];
+            reach[addNotRemove ? 'added' : 'removed'] += 1;
 
-          withRoot((root) => {
-            makeSeam(root, named, [...base, extra]);
-            const guards = derivedGuards(root);
-            assert.deepEqual(guards, named, 'the derived set must be exactly what the runner names');
-            if (addNotRemove) {
-              assert.ok(guards.includes(extra), 'a guard added to the runner must appear');
-            } else {
-              // Still present ON THE TREE, no longer named: the set follows
-              // the runner, not the directory listing.
-              assert.ok(!guards.includes(dropped), 'a guard the runner no longer names must not appear');
-              assert.ok(
-                fs.existsSync(path.join(root, 'swarmforge', 'scripts', dropped)),
-                'the removed guard must still be on the tree, or this case proves nothing',
-              );
-            }
-          });
-        },
-      ),
-      { numRuns: 25 },
-    );
-    assert.ok(reach.added > 0, `generator never reached an addition: ${JSON.stringify(reach)}`);
-    assert.ok(reach.removed > 0, `generator never reached a removal: ${JSON.stringify(reach)}`);
+            withRoot((root) => {
+              makeSeam(root, named, [...base, extra]);
+              const guards = derivedGuards(root);
+              assert.deepEqual(guards, named, 'the derived set must be exactly what the runner names');
+              if (addNotRemove) {
+                assert.ok(guards.includes(extra), 'a guard added to the runner must appear');
+              } else {
+                // Still present ON THE TREE, no longer named: the set follows
+                // the runner, not the directory listing.
+                assert.ok(!guards.includes(dropped), 'a guard the runner no longer names must not appear');
+                assert.ok(
+                  fs.existsSync(path.join(root, 'swarmforge', 'scripts', dropped)),
+                  'the removed guard must still be on the tree, or this case proves nothing',
+                );
+              }
+            });
+          },
+        ),
+        { numRuns: PER_CELL_RUNS },
+      );
+    }
+    assertReachFloor(reach, CELLS, PER_CELL_RUNS, 'guard-change-direction');
   }, 120000);
 
   it('inv2: a guard the runner names but the tree lacks refuses, naming it', () => {

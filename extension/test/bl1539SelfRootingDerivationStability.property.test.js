@@ -51,6 +51,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { deriveSelfRooting, synthScriptsDir, REAL_SCRIPTS_DIR } = require('../../specs/pipeline/steps/lib/bl1539SelfRootingDerivationLib');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 // The guard refuses outright ("derivation broke: no self-rooting script
 // found") when a scripts dir carries NO self-rooting script at all - its
@@ -80,13 +81,12 @@ const LINE_COUNT_RANGE = {
   medium: [70, 190],
   large: [300, 700],
 };
-const sizeBucketArb = fc.constantFrom('small', 'medium', 'large');
-const fillerArb = sizeBucketArb.chain((bucket) => {
+const SIZE_BUCKETS = Object.keys(LINE_COUNT_RANGE);
+const fillerArbFor = (bucket) => {
   const [minLength, maxLength] = LINE_COUNT_RANGE[bucket];
   return fc.array(fillerLineArb, { minLength, maxLength });
-});
+};
 const markerArb = fc.constantFrom(...MARKERS);
-const hasMarkerArb = fc.boolean();
 const positionArb = fc.double({ min: 0, max: 1, noNaN: true });
 const repeatsArb = fc.integer({ min: 2, max: 3 });
 
@@ -101,53 +101,64 @@ function buildFileText(filler, hasMarker, marker, position) {
 }
 
 test('property (BL-1539 invariant): the self-rooting verdict on a file is a function of its text alone, stable across repeats regardless of size', () => {
-  const seenSizeBucket = new Set();
-  const seenMarker = new Set();
-  try {
-    fc.assert(
-      fc.property(fillerArb, hasMarkerArb, markerArb, positionArb, repeatsArb, (filler, hasMarker, marker, position, repeats) => {
-        const text = buildFileText(filler, hasMarker, marker, position);
-        const sizeBucket = text.length < 4096 ? 'small' : text.length < 16384 ? 'medium' : 'large';
-        seenSizeBucket.add(sizeBucket);
-        seenMarker.add(hasMarker);
+  // BL-1691: the 3x2 product (size bucket x hasMarker) constructed as six
+  // cells - the filler's own line-count range fixes the bucket, hasMarker
+  // fixed per cell - rather than sampled independently and checked after.
+  const HAS_MARKER_CELLS = [true, false];
+  const CELLS = SIZE_BUCKETS.flatMap((bucket) => HAS_MARKER_CELLS.map((hm) => `${bucket}-${hm}`));
+  const PER_CELL_RUNS = runsPerCell(24, CELLS.length);
+  const reach = Object.fromEntries(CELLS.map((c) => [c, 0]));
 
-        const sandbox = synthScriptsDir('bl1539-prop-');
-        try {
-          fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, ANCHOR_SELF_ROOTING_FILE), path.join(sandbox, ANCHOR_SELF_ROOTING_FILE));
-          const fileName = 'probe_target.sh';
-          fs.writeFileSync(path.join(sandbox, fileName), text);
-          const guardPath = path.join(sandbox, 'test', 'test_shell_fixture_dispatch_isolation.sh');
+  for (const bucket of SIZE_BUCKETS) {
+    for (const hasMarkerCell of HAS_MARKER_CELLS) {
+      const cell = `${bucket}-${hasMarkerCell}`;
+      fc.assert(
+        fc.property(
+          fillerArbFor(bucket),
+          fc.constant(hasMarkerCell),
+          markerArb,
+          positionArb,
+          repeatsArb,
+          (filler, hasMarker, marker, position, repeats) => {
+            const text = buildFileText(filler, hasMarker, marker, position);
+            const actualBucket = text.length < 4096 ? 'small' : text.length < 16384 ? 'medium' : 'large';
+            assert.equal(actualBucket, bucket, `cell ${cell}'s own filler range produced a ${actualBucket}-sized file, not ${bucket}`);
+            reach[cell] += 1;
 
-          const verdicts = [];
-          for (let i = 0; i < repeats; i += 1) {
-            verdicts.push(deriveSelfRooting(guardPath).includes(fileName));
+            const sandbox = synthScriptsDir('bl1539-prop-');
+            try {
+              fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, ANCHOR_SELF_ROOTING_FILE), path.join(sandbox, ANCHOR_SELF_ROOTING_FILE));
+              const fileName = 'probe_target.sh';
+              fs.writeFileSync(path.join(sandbox, fileName), text);
+              const guardPath = path.join(sandbox, 'test', 'test_shell_fixture_dispatch_isolation.sh');
+
+              const verdicts = [];
+              for (let i = 0; i < repeats; i += 1) {
+                verdicts.push(deriveSelfRooting(guardPath).includes(fileName));
+              }
+
+              const expected = hasMarker;
+              for (let i = 0; i < verdicts.length; i += 1) {
+                assert.equal(
+                  verdicts[i],
+                  expected,
+                  `run ${i + 1}/${repeats}: expected flagged=${expected} (marker=${hasMarker ? marker : 'none'}, size=${text.length}B), got=${verdicts[i]}`
+                );
+              }
+              const distinct = new Set(verdicts);
+              assert.equal(distinct.size, 1, `verdict was not stable across ${repeats} runs: ${JSON.stringify(verdicts)} (size=${text.length}B)`);
+            } finally {
+              fs.rmSync(sandbox, { recursive: true, force: true });
+            }
           }
-
-          const expected = hasMarker;
-          for (let i = 0; i < verdicts.length; i += 1) {
-            assert.equal(
-              verdicts[i],
-              expected,
-              `run ${i + 1}/${repeats}: expected flagged=${expected} (marker=${hasMarker ? marker : 'none'}, size=${text.length}B), got=${verdicts[i]}`
-            );
-          }
-          const distinct = new Set(verdicts);
-          assert.equal(distinct.size, 1, `verdict was not stable across ${repeats} runs: ${JSON.stringify(verdicts)} (size=${text.length}B)`);
-        } finally {
-          fs.rmSync(sandbox, { recursive: true, force: true });
-        }
-      }),
-      { numRuns: 24 }
-    );
-  } finally {
-    // Generator reach, asserted rather than hoped for (BL-654): every size
-    // bucket and both marker states must have been drawn, or the property
-    // silently tested less than it claims.
-    for (const bucket of ['small', 'medium', 'large']) {
-      assert.ok(seenSizeBucket.has(bucket), `generator-reach: never generated a "${bucket}" file`);
-    }
-    for (const hasMarker of [true, false]) {
-      assert.ok(seenMarker.has(hasMarker), `generator-reach: never generated hasMarker=${hasMarker}`);
+        ),
+        { numRuns: PER_CELL_RUNS }
+      );
     }
   }
+
+  // Generator reach, asserted rather than hoped for (BL-654): every
+  // (bucket x marker) cell must have been drawn, or the property silently
+  // tested less than it claims.
+  assertReachFloor(reach, CELLS, PER_CELL_RUNS, 'size-bucket-x-marker');
 });

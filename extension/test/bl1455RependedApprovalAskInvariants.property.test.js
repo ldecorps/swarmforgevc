@@ -21,6 +21,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { runConciergeTick } = require('../out/concierge/conciergeTick');
 const { approvalAskRecordedOnLiveTopic } = require('../out/concierge/approvalAskReconcile');
 const {
@@ -140,9 +141,12 @@ function seedPriorAsk(root, id, kind) {
 // first closedOnLive*/closedOnStale case generated, since sent.length stays
 // 0 where the property demands 1. Restored, all runs pass.
 test('BL-1455 invariant 1: a not-pending to pending transition ends the tick with a live ask reflecting current ruling_options, whatever prior ask history the store holds', async () => {
+  const PRIOR_ASK_KINDS = ['none', 'closedOnLive', 'closedOnLiveLegacyText', 'closedOnStale', 'liveUndecided'];
+  const PER_CELL_RUNS = runsPerCell(40, PRIOR_ASK_KINDS.length);
   const reached = new Set();
+  for (const priorAskKindCell of PRIOR_ASK_KINDS) {
   await fc.assert(
-    fc.asyncProperty(fc.integer({ min: 1, max: 1000000 }), rulingOptionsArb, priorAskKindArb, async (n, rulingOptions, priorAskKind) => {
+    fc.asyncProperty(fc.integer({ min: 1, max: 1000000 }), rulingOptionsArb, fc.constant(priorAskKindCell), async (n, rulingOptions, priorAskKind) => {
       const id = `BL-${1455000 + n}`;
       const root = mkTmpDir('bl1455-inv1-');
       const folderItem = { id, title: 'fixture', humanApproval: 'pending' };
@@ -186,11 +190,15 @@ test('BL-1455 invariant 1: a not-pending to pending transition ends the tick wit
         assert.ok(buttons[0].some((b) => b.text === 'Approve'), 'plain decision buttons when no options are declared');
       }
     }),
-    { numRuns: 40 }
+    { numRuns: PER_CELL_RUNS }
   );
-  for (const kind of ['none', 'closedOnLive', 'closedOnLiveLegacyText', 'closedOnStale', 'liveUndecided']) {
-    assert.ok(reached.has(kind), `generator reach: priorAskKind=${kind} was never generated`);
   }
+  assertReachFloor(
+    Object.fromEntries(PRIOR_ASK_KINDS.map((k) => [k, reached.has(k) ? 1 : 0])),
+    PRIOR_ASK_KINDS,
+    1,
+    'prior-ask-kind'
+  );
 });
 
 // ── Invariant 2 ───────────────────────────────────────────────────────────
@@ -200,22 +208,24 @@ test('BL-1455 invariant 1: a not-pending to pending transition ends the tick wit
 // fixtures below as live, failing the first assertion. Restored, all runs
 // pass.
 test('BL-1455 invariant 2: a decided ask never reads as live, whether marked by the structured flag or only the legacy decided-text suffix - the ONE predicate both the edge guard and reconcile share', () => {
-  const reached = new Set();
-  fc.assert(
-    fc.property(fc.integer({ min: 1, max: 100 }), fc.boolean(), (topicId, useLegacyTextOnly) => {
-      reached.add(useLegacyTextOnly);
-      const decidedText = 'ask text\n-- Approved 2026-09-05 08:14 UTC';
-      const closedRecord = useLegacyTextOnly ? { topicId, text: decidedText } : { topicId, closed: true };
-      const openRecord = useLegacyTextOnly ? { topicId, text: 'ask text' } : { topicId, closed: false };
+  const CELLS = [true, false];
+  const PER_CELL_RUNS = runsPerCell(50, CELLS.length);
+  const reached = { true: 0, false: 0 };
+  for (const useLegacyTextOnlyCell of CELLS) {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 100 }), fc.constant(useLegacyTextOnlyCell), (topicId, useLegacyTextOnly) => {
+        reached[useLegacyTextOnly] += 1;
+        const decidedText = 'ask text\n-- Approved 2026-09-05 08:14 UTC';
+        const closedRecord = useLegacyTextOnly ? { topicId, text: decidedText } : { topicId, closed: true };
+        const openRecord = useLegacyTextOnly ? { topicId, text: 'ask text' } : { topicId, closed: false };
 
-      assert.equal(approvalAskRecordedOnLiveTopic('X', { X: closedRecord }, topicId), false, 'a decided ask must never read as live');
-      assert.equal(approvalAskRecordedOnLiveTopic('X', { X: openRecord }, topicId), true, 'an undecided ask on the live topic must read as live');
-    }),
-    { numRuns: 50 }
-  );
-  for (const flag of [true, false]) {
-    assert.ok(reached.has(flag), `generator reach: useLegacyTextOnly=${flag} was never generated`);
+        assert.equal(approvalAskRecordedOnLiveTopic('X', { X: closedRecord }, topicId), false, 'a decided ask must never read as live');
+        assert.equal(approvalAskRecordedOnLiveTopic('X', { X: openRecord }, topicId), true, 'an undecided ask on the live topic must read as live');
+      }),
+      { numRuns: PER_CELL_RUNS }
+    );
   }
+  assertReachFloor(reached, ['true', 'false'], PER_CELL_RUNS, 'use-legacy-text-only');
 });
 
 // ── Invariant 3 ───────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const { pollAndForward } = require('../out/tools/telegramFrontDeskBotCore');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const PRINCIPAL_ID = 111;
 
@@ -60,29 +61,40 @@ const ownedTopicArb = fc.record({
   local: fc.option(fc.integer({ min: 3000, max: 3999 }), { nil: undefined }),
 });
 
+// BL-1691: three cells, one per owned-topic kind, each with a generator
+// that FIXES its own kind's field to a bound integer (never undefined) -
+// the other two fields stay optionally bound/unbound, unused by this
+// test's own assertions - so every cell's own kind is reached on every
+// run, never left to a 50/50 fc.option draw plus a 1-in-3 pick.
+const OWNED_RANGES = { cursor: { min: 1000, max: 1999 }, bubble: { min: 2000, max: 2999 }, local: { min: 3000, max: 3999 } };
+const boundTopicArbFor = (boundKind) =>
+  fc.record({
+    cursor: boundKind === 'cursor' ? fc.integer(OWNED_RANGES.cursor) : fc.option(fc.integer(OWNED_RANGES.cursor), { nil: undefined }),
+    bubble: boundKind === 'bubble' ? fc.integer(OWNED_RANGES.bubble) : fc.option(fc.integer(OWNED_RANGES.bubble), { nil: undefined }),
+    local: boundKind === 'local' ? fc.integer(OWNED_RANGES.local) : fc.option(fc.integer(OWNED_RANGES.local), { nil: undefined }),
+  });
+
 test('property (invariant): every bridge-owned topic (cursor, Bubble, or local seat) is forwarded whole and never opens a subject', async () => {
+  const CELLS = ['cursor', 'bubble', 'local'];
+  const PER_CELL_RUNS = runsPerCell(60, CELLS.length);
   const seen = { cursor: 0, bubble: 0, local: 0 };
   let updateId = 1;
-  await fc.assert(
-    fc.asyncProperty(ownedTopicArb, fc.constantFrom('cursor', 'bubble', 'local'), async (topicMap, pick) => {
-      const messageTopicId = topicMap[pick];
-      if (messageTopicId === undefined) {
-        // This owned-topic kind was not bound in this draw - not applicable.
-        return;
-      }
-      seen[pick] += 1;
-      updateId += 1;
-      const { opened, forwarded } = await routeOne(topicMap, messageTopicId, updateId);
-      assert.equal(forwarded.length, 1, `the ${pick} topic's update must be forwarded whole: ${JSON.stringify(forwarded)}`);
-      assert.equal(forwarded[0].update_id, updateId);
-      assert.deepEqual(opened, [], `a support subject was opened for the owned ${pick} topic: ${JSON.stringify(opened)}`);
-    }),
-    { numRuns: 60 }
-  );
-  assert.ok(
-    seen.cursor >= 1 && seen.bubble >= 1 && seen.local >= 1,
-    `generator never reached all three owned-topic kinds: ${JSON.stringify(seen)}`
-  );
+  for (const pick of CELLS) {
+    await fc.assert(
+      fc.asyncProperty(boundTopicArbFor(pick), fc.constant(pick), async (topicMap, pick) => {
+        const messageTopicId = topicMap[pick];
+        assert.notEqual(messageTopicId, undefined, `cell ${pick}'s own generator failed to bind its topic`);
+        seen[pick] += 1;
+        updateId += 1;
+        const { opened, forwarded } = await routeOne(topicMap, messageTopicId, updateId);
+        assert.equal(forwarded.length, 1, `the ${pick} topic's update must be forwarded whole: ${JSON.stringify(forwarded)}`);
+        assert.equal(forwarded[0].update_id, updateId);
+        assert.deepEqual(opened, [], `a support subject was opened for the owned ${pick} topic: ${JSON.stringify(opened)}`);
+      }),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, CELLS, PER_CELL_RUNS, 'owned-topic-kind');
 });
 
 test('property (invariant, the other side): a topic none of the three own still opens its subject exactly as before', async () => {

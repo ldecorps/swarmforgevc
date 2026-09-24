@@ -20,6 +20,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { readPersistedContextEvents, selectEventsWithinLimits } = require('../out/metrics/contextTelemetryProducer');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -85,20 +86,24 @@ function writeStore(telemetryDir, content) {
 }
 
 test('property (invariant 1): the bb and TS readers agree on every store shape - whole, torn-tail, or interior-damaged', () => {
+  const DAMAGE_KINDS = ['none', 'tornTail', 'interior'];
+  const PER_CELL_RUNS = runsPerCell(30, DAMAGE_KINDS.length);
   const seen = { none: 0, tornTail: 0, interior: 0 };
-  const caseArb = fc
-    .integer({ min: 2, max: 5 })
-    .chain((wholeCount) =>
-      fc.tuple(
-        fc.constant(wholeCount),
-        fc.constantFrom('none', 'tornTail', 'interior'),
-        garbageArb,
-        fc.integer({ min: 0, max: wholeCount - 1 })
-      )
-    );
+  const caseArbFor = (damageKindCell) =>
+    fc
+      .integer({ min: 2, max: 5 })
+      .chain((wholeCount) =>
+        fc.tuple(
+          fc.constant(wholeCount),
+          fc.constant(damageKindCell),
+          garbageArb,
+          fc.integer({ min: 0, max: wholeCount - 1 })
+        )
+      );
 
+  for (const damageKindCell of DAMAGE_KINDS) {
   fc.assert(
-    fc.property(caseArb, ([wholeCount, damageKind, garbage, interiorIndex]) => {
+    fc.property(caseArbFor(damageKindCell), ([wholeCount, damageKind, garbage, interiorIndex]) => {
       seen[damageKind] += 1;
       const dir = mkTmpDir('sfvc-bl1477-inv1-');
       const wholeLines = Array.from({ length: wholeCount }, (_, i) => JSON.stringify(wholeEvent(`w${i}`)));
@@ -137,23 +142,40 @@ test('property (invariant 1): the bb and TS readers agree on every store shape -
       assert.equal(tsResult.tornTailLine, expectTornAtLine);
       assert.equal(bbResult.tornTailLine, expectTornAtLine);
     }),
-    { numRuns: 30 }
+    { numRuns: PER_CELL_RUNS }
   );
+  }
 
-  assert.ok(seen.none >= 1, `generator never produced a whole store: ${JSON.stringify(seen)}`);
-  assert.ok(seen.tornTail >= 1, `generator never produced a torn tail: ${JSON.stringify(seen)}`);
-  assert.ok(seen.interior >= 1, `generator never produced interior damage: ${JSON.stringify(seen)}`);
+  assertReachFloor(seen, DAMAGE_KINDS, PER_CELL_RUNS, 'damage-kind');
 });
 
 test('property (invariant 2): a tick never exceeds its cap or its deadline, and nothing is lost or duplicated across ticks', () => {
+  // BL-1691: three cells, each parameter set constructed to GUARANTEE its
+  // own stop reason - a small cap with a never-tripping deadline for
+  // capBound, a generous cap with a fast-tripping deadline for
+  // deadlineBound, and a generous cap with a never-tripping deadline for
+  // exhausted - rather than hoping the four-way draw happened to land there.
+  const STOP_REASON_CELLS = {
+    capBound: () =>
+      fc.record({
+        eventCount: fc.integer({ min: 3, max: 20 }),
+        cap: fc.constant(1),
+        deadlineMs: fc.constant(10_000_000),
+        stepMs: fc.constant(0),
+      }),
+    deadlineBound: () =>
+      fc.integer({ min: 3, max: 20 }).map((n) => ({ eventCount: n, cap: n, deadlineMs: 500, stepMs: 1000 })),
+    exhausted: () =>
+      fc.integer({ min: 1, max: 20 }).map((n) => ({ eventCount: n, cap: n, deadlineMs: 100, stepMs: 0 })),
+  };
+  const CELLS = Object.keys(STOP_REASON_CELLS);
+  const PER_CELL_RUNS = runsPerCell(60, CELLS.length);
   const seen = { capBound: 0, deadlineBound: 0, exhausted: 0 };
+  for (const cell of CELLS) {
   fc.assert(
     fc.property(
-      fc.integer({ min: 1, max: 60 }),
-      fc.integer({ min: 1, max: 60 }),
-      fc.integer({ min: 0, max: 5000 }),
-      fc.integer({ min: 0, max: 2000 }),
-      (eventCount, cap, deadlineMs, stepMs) => {
+      STOP_REASON_CELLS[cell](),
+      ({ eventCount, cap, deadlineMs, stepMs }) => {
         const events = Array.from({ length: eventCount }, (_, i) => wholeEvent(`e${i}`));
         // clock[0] is the call inside selectEventsWithinLimits' own `start`;
         // clock[k] (k>=1) is the call made right after selecting the k-th
@@ -182,17 +204,18 @@ test('property (invariant 2): a tick never exceeds its cap or its deadline, and 
           );
           if (stoppedForCap) seen.capBound += 1;
           if (stoppedForDeadline) seen.deadlineBound += 1;
+          assert.notEqual(cell, 'exhausted', `the 'exhausted' cell's own construction stopped early instead`);
         } else {
           seen.exhausted += 1;
+          assert.equal(cell, 'exhausted', `cell ${cell}'s own construction exhausted instead of stopping early for its intended reason`);
         }
       }
     ),
-    { numRuns: 60 }
+    { numRuns: PER_CELL_RUNS }
   );
+  }
 
-  assert.ok(seen.capBound >= 1, `generator never hit the cap bound: ${JSON.stringify(seen)}`);
-  assert.ok(seen.deadlineBound >= 1, `generator never hit the deadline bound: ${JSON.stringify(seen)}`);
-  assert.ok(seen.exhausted >= 1, `generator never exhausted every event within one tick: ${JSON.stringify(seen)}`);
+  assertReachFloor(seen, CELLS, PER_CELL_RUNS, 'stop-reason');
 });
 
 test('property (invariant 2, multi-tick face): repeated ticks record every event exactly once, in order, respecting the cap each time', () => {

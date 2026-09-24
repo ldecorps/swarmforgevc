@@ -28,6 +28,7 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const GUARD_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'git_handoff_recipient_guard_lib.bb');
@@ -136,21 +137,24 @@ test('BL-1565 invariant: reverse-hop copies never address the coordinator (nor a
 });
 
 test('BL-1565 non-vacuity floor: the generator reaches both a refused git_handoff and an allowed one', () => {
-  let sawRefuse = false;
-  let sawAllow = false;
-  fc.assert(
-    fc.property(
-      fc.constantFrom('git_handoff'),
-      fc.boolean(),
-      (type, includeCoordinator) => {
-        const recipients = includeCoordinator ? ['coordinator', 'architect'] : ['architect', 'cleaner'];
-        const result = decide(type, recipients);
-        if (result === 'refuse') sawRefuse = true;
-        if (result === 'allow') sawAllow = true;
-      }
-    ),
-    { numRuns: 20 }
-  );
-  assert.ok(sawRefuse, 'generator never reached a refused decision');
-  assert.ok(sawAllow, 'generator never reached an allowed decision');
+  // BL-1691: two cells (includeCoordinator fixed per cell) rather than a
+  // single fc.boolean() draw.
+  const CELLS = [true, false];
+  const PER_CELL_RUNS = runsPerCell(20, CELLS.length);
+  const seen = { refuse: 0, allow: 0 };
+  for (const includeCoordinatorCell of CELLS) {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('git_handoff'),
+        fc.constant(includeCoordinatorCell),
+        (type, includeCoordinator) => {
+          const recipients = includeCoordinator ? ['coordinator', 'architect'] : ['architect', 'cleaner'];
+          const result = decide(type, recipients);
+          seen[result] += 1;
+        }
+      ),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, ['refuse', 'allow'], PER_CELL_RUNS, 'decision');
 });

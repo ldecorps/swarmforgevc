@@ -26,6 +26,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { persistRoutedPhoto, ROUTED_PHOTO_STORE_BOUND } = require('../out/tools/telegram-front-desk-bot');
 const { runPollCycle, annotateRoutedMediaText } = require('../out/tools/telegramFrontDeskBotCore');
 
@@ -104,102 +105,117 @@ async function routeThroughCore(update, caption, photoOutcome) {
 // ── invariant 1 ──────────────────────────────────────────────────────────
 
 test('property (invariant 1): a fetch failure never blocks the caption, writes no file, and logs exactly one audit line naming id and reason, never content', async () => {
+  const FAILURE_KINDS = ['getFileFail', 'downloadFail', 'sizeCap'];
+  const PER_CELL_RUNS = runsPerCell(20, FAILURE_KINDS.length);
   const seen = { getFileFail: 0, downloadFail: 0, sizeCap: 0 };
-  await fc.assert(
-    fc.asyncProperty(
-      fc.constantFrom('getFileFail', 'downloadFail', 'sizeCap'),
-      fc.string({ minLength: 1, maxLength: 30 }).map((s) => `caption-${s}`),
-      fc.integer({ min: 1, max: 1_000_000 }),
-      async (failureKind, caption, updateId) => {
-        seen[failureKind] += 1;
-        const root = mkTmpDir('sfvc-bl1402-inv1-');
-        try {
-          const update = mkPhotoUpdate(updateId, caption);
-          const outcome = await persistRoutedPhoto('token', root, update, failureDeps(failureKind));
-          assert.equal(outcome.kind, 'failed', `expected a failed outcome for ${failureKind}`);
-          assert.ok(outcome.reason && outcome.reason.length > 0);
-          assert.equal(
-            fs.existsSync(path.join(root, '.swarmforge', 'operator', 'media')),
-            false,
-            'no file (nor even the media dir) must be created on a fetch failure'
-          );
+  for (const failureKind of FAILURE_KINDS) {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ minLength: 1, maxLength: 30 }).map((s) => `caption-${s}`),
+        fc.integer({ min: 1, max: 1_000_000 }),
+        async (caption, updateId) => {
+          seen[failureKind] += 1;
+          const root = mkTmpDir('sfvc-bl1402-inv1-');
+          try {
+            const update = mkPhotoUpdate(updateId, caption);
+            const outcome = await persistRoutedPhoto('token', root, update, failureDeps(failureKind));
+            assert.equal(outcome.kind, 'failed', `expected a failed outcome for ${failureKind}`);
+            assert.ok(outcome.reason && outcome.reason.length > 0);
+            assert.equal(
+              fs.existsSync(path.join(root, '.swarmforge', 'operator', 'media')),
+              false,
+              'no file (nor even the media dir) must be created on a fetch failure'
+            );
 
-          const { opened, auditLines } = await routeThroughCore(update, caption, outcome);
-          assert.equal(opened.length, 1);
-          assert.equal(
-            opened[0],
-            annotateRoutedMediaText(caption, update),
-            'the routed text must stay byte-identical to the pre-BL-1402 annotation on a persist failure'
-          );
-          assert.equal(auditLines.length, 1, `expected exactly one audit line, got: ${JSON.stringify(auditLines)}`);
-          assert.ok(auditLines[0].includes(String(updateId)), `audit line must name the update id: ${auditLines[0]}`);
-          assert.equal(auditLines[0].includes(caption), false, 'the audit line must never carry message content');
-        } finally {
-          fs.rmSync(root, { recursive: true, force: true });
+            const { opened, auditLines } = await routeThroughCore(update, caption, outcome);
+            assert.equal(opened.length, 1);
+            assert.equal(
+              opened[0],
+              annotateRoutedMediaText(caption, update),
+              'the routed text must stay byte-identical to the pre-BL-1402 annotation on a persist failure'
+            );
+            assert.equal(auditLines.length, 1, `expected exactly one audit line, got: ${JSON.stringify(auditLines)}`);
+            assert.ok(auditLines[0].includes(String(updateId)), `audit line must name the update id: ${auditLines[0]}`);
+            assert.equal(auditLines[0].includes(caption), false, 'the audit line must never carry message content');
+          } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+          }
         }
-      }
-    ),
-    { numRuns: 20 }
-  );
-  assert.ok(
-    seen.getFileFail >= 1 && seen.downloadFail >= 1 && seen.sizeCap >= 1,
-    `generator never reached all three failure kinds invariant 1 names: ${JSON.stringify(seen)}`
-  );
+      ),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, FAILURE_KINDS, PER_CELL_RUNS, 'failure-kind');
 });
 
 // ── invariant 2 ──────────────────────────────────────────────────────────
 
 test("property (invariant 2): BL-620's note is byte-identical on every photo-persist outcome, and a saved path always rides its own line after it", async () => {
+  const OUTCOME_KINDS = ['saved', 'already-saved', 'failed', 'not-applicable'];
+  const PER_CELL_RUNS = runsPerCell(25, OUTCOME_KINDS.length);
   const seen = { saved: 0, 'already-saved': 0, failed: 0, 'not-applicable': 0 };
-  await fc.assert(
-    fc.asyncProperty(
-      fc.string({ minLength: 1, maxLength: 30 }).map((s) => `caption-${s}`),
-      fc.constantFrom('saved', 'already-saved', 'failed', 'not-applicable'),
-      fc.string({ minLength: 1, maxLength: 20 }).map((s) => `.swarmforge/operator/media/${s}.jpg`),
-      fc.integer({ min: 1, max: 1_000_000 }),
-      async (caption, kind, savedPath, updateId) => {
-        seen[kind] += 1;
-        const update = mkPhotoUpdate(updateId, caption);
-        const outcome =
-          kind === 'saved' || kind === 'already-saved'
-            ? { kind, path: savedPath }
-            : kind === 'failed'
-              ? { kind, reason: 'some reason' }
-              : { kind: 'not-applicable' };
+  for (const kind of OUTCOME_KINDS) {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ minLength: 1, maxLength: 30 }).map((s) => `caption-${s}`),
+        fc.string({ minLength: 1, maxLength: 20 }).map((s) => `.swarmforge/operator/media/${s}.jpg`),
+        fc.integer({ min: 1, max: 1_000_000 }),
+        async (caption, savedPath, updateId) => {
+          seen[kind] += 1;
+          const update = mkPhotoUpdate(updateId, caption);
+          const outcome =
+            kind === 'saved' || kind === 'already-saved'
+              ? { kind, path: savedPath }
+              : kind === 'failed'
+                ? { kind, reason: 'some reason' }
+                : { kind: 'not-applicable' };
 
-        const { opened } = await routeThroughCore(update, caption, outcome);
-        assert.equal(opened.length, 1);
-        const text = opened[0];
-        const expectedNote = annotateRoutedMediaText(caption, update);
-        assert.ok(text.startsWith(expectedNote), `the routed text must always start with BL-620's exact note: ${text}`);
+          const { opened } = await routeThroughCore(update, caption, outcome);
+          assert.equal(opened.length, 1);
+          const text = opened[0];
+          const expectedNote = annotateRoutedMediaText(caption, update);
+          assert.ok(text.startsWith(expectedNote), `the routed text must always start with BL-620's exact note: ${text}`);
 
-        if (kind === 'saved' || kind === 'already-saved') {
-          assert.equal(text, `${expectedNote}\n[image saved: ${savedPath}]`, 'the saved path must ride its own line right after the note');
-        } else {
-          assert.equal(text, expectedNote, `a ${kind} outcome must never add a saved-path line`);
+          if (kind === 'saved' || kind === 'already-saved') {
+            assert.equal(text, `${expectedNote}\n[image saved: ${savedPath}]`, 'the saved path must ride its own line right after the note');
+          } else {
+            assert.equal(text, expectedNote, `a ${kind} outcome must never add a saved-path line`);
+          }
         }
-      }
-    ),
-    { numRuns: 25 }
-  );
-  assert.ok(
-    seen.saved >= 1 && seen['already-saved'] >= 1 && seen.failed >= 1 && seen['not-applicable'] >= 1,
-    `generator never reached all four outcome kinds: ${JSON.stringify(seen)}`
-  );
+      ),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, OUTCOME_KINDS, PER_CELL_RUNS, 'outcome-kind');
 });
 
 // ── invariant 3 ──────────────────────────────────────────────────────────
 
 test('property (invariant 3): the media store never exceeds its bound (oldest-first pruning), and a redelivered update never writes a second file', async () => {
-  const seen = { pruned: 0, redelivered: 0 };
-  await fc.assert(
-    fc.asyncProperty(
-      fc.integer({ min: ROUTED_PHOTO_STORE_BOUND - 5, max: ROUTED_PHOTO_STORE_BOUND + 10 }),
-      fc.integer({ min: 1, max: 100_000 }),
-      fc.boolean(),
-      async (preCount, updateId, redeliver) => {
-        const root = mkTmpDir('sfvc-bl1402-inv3-');
-        try {
+  // BL-1691: `pruned` (preCount >= BOUND) and `redelivered` are two
+  // independent boolean floors over the same draw - constructed as the
+  // product (4 cells) so BOTH are guaranteed by construction rather than
+  // sampled: each cell's own generator range/constant guarantees that
+  // cell's outcome on every one of its runs (the same narrowed-range
+  // technique BL-1587's bl1275 precedent uses for its own boundary floor).
+  const PRUNED_CELLS = ['over-bound', 'under-bound'];
+  const REDELIVER_CELLS = ['redelivered', 'not-redelivered'];
+  const CELLS = PRUNED_CELLS.flatMap((p) => REDELIVER_CELLS.map((r) => `${p}+${r}`));
+  const PER_CELL_RUNS = runsPerCell(30, CELLS.length);
+  const seen = Object.fromEntries(CELLS.map((c) => [c, 0]));
+  for (const prunedCell of PRUNED_CELLS) {
+    for (const redeliverCell of REDELIVER_CELLS) {
+      const cell = `${prunedCell}+${redeliverCell}`;
+      const redeliver = redeliverCell === 'redelivered';
+      const preCountArb =
+        prunedCell === 'over-bound'
+          ? fc.integer({ min: ROUTED_PHOTO_STORE_BOUND, max: ROUTED_PHOTO_STORE_BOUND + 10 })
+          : fc.integer({ min: ROUTED_PHOTO_STORE_BOUND - 5, max: ROUTED_PHOTO_STORE_BOUND - 1 });
+      await fc.assert(
+        fc.asyncProperty(preCountArb, fc.integer({ min: 1, max: 100_000 }), async (preCount, updateId) => {
+          seen[cell] += 1;
+          const root = mkTmpDir('sfvc-bl1402-inv3-');
+          try {
           const dir = path.join(root, '.swarmforge', 'operator', 'media');
           fs.mkdirSync(dir, { recursive: true });
           const seedIds = [];
@@ -222,7 +238,6 @@ test('property (invariant 3): the media store never exceeds its bound (oldest-fi
           );
 
           if (preCount + 1 > ROUTED_PHOTO_STORE_BOUND) {
-            seen.pruned += 1;
             assert.equal(namesAfterFirst.length, ROUTED_PHOTO_STORE_BOUND, 'the store must hold exactly its bound after a prune');
             const survivingSeed = seedIds.filter((id) => namesAfterFirst.includes(`${id}.jpg`));
             const removedSeed = seedIds.filter((id) => !namesAfterFirst.includes(`${id}.jpg`));
@@ -235,20 +250,19 @@ test('property (invariant 3): the media store never exceeds its bound (oldest-fi
           }
 
           if (redeliver) {
-            seen.redelivered += 1;
             const second = await persistRoutedPhoto('token', root, mkPhotoUpdate(updateId, 'cap'), deps);
             assert.equal(second.kind, 'already-saved');
             assert.equal(second.path, first.path);
             const namesAfterSecond = fs.readdirSync(dir);
             assert.equal(namesAfterSecond.length, namesAfterFirst.length, 'a redelivery must never change the store size');
           }
-        } finally {
-          fs.rmSync(root, { recursive: true, force: true });
-        }
-      }
-    ),
-    { numRuns: 30 }
-  );
-  assert.ok(seen.pruned >= 1, 'generator never reached the over-bound prune case');
-  assert.ok(seen.redelivered >= 1, 'generator never reached a redelivery');
+          } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+          }
+        }),
+        { numRuns: PER_CELL_RUNS }
+      );
+    }
+  }
+  assertReachFloor(seen, CELLS, PER_CELL_RUNS, 'pruned-redeliver-cell');
 });

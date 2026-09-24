@@ -22,6 +22,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { runPollCycle } = require('../out/tools/telegramFrontDeskBotCore');
 const {
   providerChatTopicMapPath,
@@ -111,52 +112,55 @@ function adaptersFor(root, update, outcome, opened, posted) {
 // ── invariant 1 ──────────────────────────────────────────────────────────
 
 test('property (invariant 1): a bound topic never opens a support subject', async () => {
+  const OUTCOME_TO_CELL = { answer: 'answered', 'refuse-no-key': 'refused', 'provider-throws': 'failed', 'empty-reply': 'empty' };
+  const OUTCOMES = Object.keys(OUTCOME_TO_CELL);
+  const CELLS = Object.values(OUTCOME_TO_CELL);
+  const PER_CELL_RUNS = runsPerCell(25, OUTCOMES.length);
   const seen = { answered: 0, refused: 0, failed: 0, empty: 0 };
-  await fc.assert(
-    fc.asyncProperty(seatOutcomeArb, fc.string({ minLength: 1, maxLength: 40 }), async (outcome, text) => {
-      seen[
-        { answer: 'answered', 'refuse-no-key': 'refused', 'provider-throws': 'failed', 'empty-reply': 'empty' }[outcome]
-      ] += 1;
+  for (const outcome of OUTCOMES) {
+    await fc.assert(
+      fc.asyncProperty(fc.constant(outcome), fc.string({ minLength: 1, maxLength: 40 }), async (outcome, text) => {
+        seen[OUTCOME_TO_CELL[outcome]] += 1;
 
-      const root = mkTmpDir('sfvc-bl1383-inv1-');
-      try {
-        writeMap(root, {
-          [BOUND_TOPIC]: { model: 'glm-4', baseUrl: 'https://api.example.test', apiKeyEnv: 'FAKE_KEY' },
-        });
-        const opened = [];
-        const posted = [];
-        const update = mkUpdate(BOUND_TOPIC, text);
-        await runPollCycle(
-          { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE },
-          PRINCIPAL_ID,
-          adaptersFor(root, update, outcome, opened, posted),
-          BACKOFF_CONFIG,
-          FIXTURE_NOW
-        );
+        const root = mkTmpDir('sfvc-bl1383-inv1-');
+        try {
+          writeMap(root, {
+            [BOUND_TOPIC]: { model: 'glm-4', baseUrl: 'https://api.example.test', apiKeyEnv: 'FAKE_KEY' },
+          });
+          const opened = [];
+          const posted = [];
+          const update = mkUpdate(BOUND_TOPIC, text);
+          await runPollCycle(
+            { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE },
+            PRINCIPAL_ID,
+            adaptersFor(root, update, outcome, opened, posted),
+            BACKOFF_CONFIG,
+            FIXTURE_NOW
+          );
 
-        assert.deepEqual(
-          opened,
-          [],
-          `a support subject was opened for bound topic ${BOUND_TOPIC} on the "${outcome}" path`
-        );
-        // ...and the topic was not merely silently swallowed: the seat spoke.
-        assert.ok(posted.length > 0, `nothing was posted into the bound topic on the "${outcome}" path`);
-        assert.ok(posted.every((p) => p.topicId === BOUND_TOPIC));
-      } finally {
-        fs.rmSync(root, { recursive: true, force: true });
-      }
-    }),
-    { numRuns: 25 }
-  );
+          assert.deepEqual(
+            opened,
+            [],
+            `a support subject was opened for bound topic ${BOUND_TOPIC} on the "${outcome}" path`
+          );
+          // ...and the topic was not merely silently swallowed: the seat spoke.
+          assert.ok(posted.length > 0, `nothing was posted into the bound topic on the "${outcome}" path`);
+          assert.ok(posted.every((p) => p.topicId === BOUND_TOPIC));
+        } finally {
+          fs.rmSync(root, { recursive: true, force: true });
+        }
+      }),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
 
   // Reachability floors: invariant 1 names three endings explicitly, so a run
   // that only ever answered would pass it without testing what it claims.
-  assert.ok(seen.answered >= 1, `generator never answered: ${JSON.stringify(seen)}`);
-  assert.ok(seen.refused >= 1, `generator never refused: ${JSON.stringify(seen)}`);
-  assert.ok(seen.failed >= 1, `generator never hit a provider failure: ${JSON.stringify(seen)}`);
+  assertReachFloor(seen, CELLS, PER_CELL_RUNS, 'seat-outcome');
 });
 
 test('property (invariant 1, the other side): an UNBOUND topic still opens its subject', async () => {
+  const UNBOUND_RUNS = runsPerCell(25, 1);
   const seen = { unbound: 0 };
   await fc.assert(
     fc.asyncProperty(
@@ -185,9 +189,9 @@ test('property (invariant 1, the other side): an UNBOUND topic still opens its s
         }
       }
     ),
-    { numRuns: 25 }
+    { numRuns: UNBOUND_RUNS }
   );
-  assert.ok(seen.unbound >= 1, 'generator produced no unbound topic');
+  assertReachFloor(seen, ['unbound'], 1, 'unbound-topic');
 });
 
 // ── invariant 2 ──────────────────────────────────────────────────────────
@@ -197,6 +201,7 @@ test('property (invariant 1, the other side): an UNBOUND topic still opens its s
 // credentials contributes neither. Both decoys are derived from the real
 // values so a leak would be unmistakable rather than coincidental.
 test('property (invariant 2): credentials come from env and the map, never the working tree', async () => {
+  const DECOY_RUNS = runsPerCell(25, 1);
   const seen = { decoyPresent: 0 };
   await fc.assert(
     fc.asyncProperty(fc.string({ minLength: 1, maxLength: 20 }), async (decoySuffix) => {
@@ -247,12 +252,13 @@ test('property (invariant 2): credentials come from env and the map, never the w
         fs.rmSync(root, { recursive: true, force: true });
       }
     }),
-    { numRuns: 25 }
+    { numRuns: DECOY_RUNS }
   );
-  assert.ok(seen.decoyPresent >= 1, 'generator never planted a decoy credential');
+  assertReachFloor(seen, ['decoyPresent'], 1, 'decoy-present');
 });
 
 test('property (invariant 2): the seat reads no credential when the env var is absent', async () => {
+  const REFUSED_RUNS = runsPerCell(25, 1);
   const seen = { refused: 0 };
   await fc.assert(
     fc.asyncProperty(fc.string({ minLength: 1, maxLength: 20 }), async (decoySuffix) => {
@@ -286,7 +292,7 @@ test('property (invariant 2): the seat reads no credential when the env var is a
         fs.rmSync(root, { recursive: true, force: true });
       }
     }),
-    { numRuns: 25 }
+    { numRuns: REFUSED_RUNS }
   );
-  assert.ok(seen.refused >= 1, 'generator never reached the missing-key refusal');
+  assertReachFloor(seen, ['refused'], 1, 'missing-key-refusal');
 });

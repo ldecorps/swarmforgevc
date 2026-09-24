@@ -34,7 +34,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
 const childProcess = require('node:child_process');
-const { assertReachFloor } = require('./helpers/reachFloors');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { derivePaneActivitySignal } = require('../out/bridge/residentPaneLive');
 
 const FIXTURES = path.join(__dirname, '..', '..', 'specs', 'features', 'fixtures', 'BL-970');
@@ -66,45 +66,53 @@ describe('BL-1243 invariant 1: green never comes from anywhere but the pane', ()
 
   it('paints ok only when the pane own signal says ok', () => {
     const coverage = {};
+    // BL-1691: the outer shape loop was already constructed; the INNER
+    // aggregate draw was still sampled (fc.constantFrom over 3 values).
+    // Nested: shape x aggregate, runsPerCell(SHAPE_FLOOR, AGGREGATES.length)
+    // per cell (12/3 = 4) - the same 4 the pre-existing floors below
+    // already named, now reached by construction rather than hoped for.
+    const AGGREGATE_RUNS = runsPerCell(SHAPE_FLOOR, AGGREGATES.length);
     for (const shape of Object.keys(SHAPES)) {
-      fc.assert(
-        fc.property(fc.constantFrom(...AGGREGATES), (aggregate) => {
-          coverage[shape] = (coverage[shape] || 0) + 1;
-          coverage[`aggregate:${aggregate}`] = (coverage[`aggregate:${aggregate}`] || 0) + 1;
+      for (const aggregate of AGGREGATES) {
+        fc.assert(
+          fc.property(fc.constant(aggregate), (aggregate) => {
+            coverage[shape] = (coverage[shape] || 0) + 1;
+            coverage[`aggregate:${aggregate}`] = (coverage[`aggregate:${aggregate}`] || 0) + 1;
 
-          const base = SHAPES[shape]();
-          const pane = { ...base, activitySignal: derivePaneActivitySignal(base.paneText) };
-          const painted = resolve(pane, aggregate);
+            const base = SHAPES[shape]();
+            const pane = { ...base, activitySignal: derivePaneActivitySignal(base.paneText) };
+            const painted = resolve(pane, aggregate);
 
-          // BL-1243 scenario 06: a FAILED poll outranks every per-pane signal,
-          // because the view is repainting the last snapshot and none of those
-          // signals is current any more.
-          if (aggregate === 'err') {
-            coverage['aggregate:err:checked'] = (coverage['aggregate:err:checked'] || 0) + 1;
-            assert.equal(painted, 'err', `a ${shape} pane was painted ${painted} while the poll was failing`);
+            // BL-1243 scenario 06: a FAILED poll outranks every per-pane signal,
+            // because the view is repainting the last snapshot and none of those
+            // signals is current any more.
+            if (aggregate === 'err') {
+              coverage['aggregate:err:checked'] = (coverage['aggregate:err:checked'] || 0) + 1;
+              assert.equal(painted, 'err', `a ${shape} pane was painted ${painted} while the poll was failing`);
+              return true;
+            }
+            if (painted === 'ok') {
+              assert.equal(
+                pane.activitySignal,
+                'ok',
+                `a ${shape} pane painted ok on a signal it did not derive from itself (aggregate ${aggregate})`
+              );
+            }
+            if (shape === 'blank' || shape === 'uncaptured') {
+              assert.notEqual(painted, 'ok', `a ${shape} pane went green`);
+            }
             return true;
-          }
-          if (painted === 'ok') {
-            assert.equal(
-              pane.activitySignal,
-              'ok',
-              `a ${shape} pane painted ok on a signal it did not derive from itself (aggregate ${aggregate})`
-            );
-          }
-          if (shape === 'blank' || shape === 'uncaptured') {
-            assert.notEqual(painted, 'ok', `a ${shape} pane went green`);
-          }
-          return true;
-        }),
-        { numRuns: SHAPE_FLOOR }
-      );
+          }),
+          { numRuns: AGGREGATE_RUNS }
+        );
+      }
     }
     assertReachFloor(coverage, Object.keys(SHAPES), SHAPE_FLOOR, 'pane shape');
     // An aggregate that is never 'ok' cannot expose the defect this invariant
     // is about, so the green aggregate carries its own floor.
-    assertReachFloor(coverage, ['aggregate:ok'], 4, 'green aggregate draws');
+    assertReachFloor(coverage, ['aggregate:ok'], AGGREGATE_RUNS, 'green aggregate draws');
     // ...and the failed-poll clause must actually have been exercised too.
-    assertReachFloor(coverage, ['aggregate:err:checked'], 4, 'failed-poll draws');
+    assertReachFloor(coverage, ['aggregate:err:checked'], AGGREGATE_RUNS, 'failed-poll draws');
   });
 
   it('lets two panes under one aggregate disagree, which is the whole point', () => {
@@ -140,28 +148,35 @@ describe('BL-1243 invariant 2: the signal costs no capture and no poll', () => {
       };
     }
     const coverage = {};
+    // BL-1691: text/blank/absent constructed as three cells, each with a
+    // generator that guarantees its own shape - the real fixture files
+    // (non-blank pane captures) for 'text' (empty-capture.txt excluded -
+    // it is itself blank, the fixture SHAPES's own 'blank' member), a
+    // fixed empty string for 'blank', a fixed undefined for 'absent'.
+    const INPUT_SHAPE_GENERATORS = {
+      text: () => fc.constantFrom(...fs.readdirSync(FIXTURES).map((n) => fixture(n)).filter((t) => t.trim())),
+      blank: () => fc.constant(''),
+      absent: () => fc.constant(undefined),
+    };
+    const INPUT_SHAPES = Object.keys(INPUT_SHAPE_GENERATORS);
+    const PER_SHAPE_RUNS = runsPerCell(200, INPUT_SHAPES.length);
     try {
-      fc.assert(
-        fc.property(
-          fc.oneof(
-            fc.constantFrom(...fs.readdirSync(FIXTURES).map((n) => fixture(n))),
-            fc.string(),
-            fc.constant(''),
-            fc.constant(undefined)
-          ),
-          (text) => {
-            coverage[text === undefined ? 'absent' : text.trim() ? 'text' : 'blank'] =
-              (coverage[text === undefined ? 'absent' : text.trim() ? 'text' : 'blank'] || 0) + 1;
+      for (const shape of INPUT_SHAPES) {
+        fc.assert(
+          fc.property(INPUT_SHAPE_GENERATORS[shape](), (text) => {
+            const actualShape = text === undefined ? 'absent' : text.trim() ? 'text' : 'blank';
+            assert.equal(actualShape, shape, `the ${shape} cell's own generator produced a ${actualShape} value`);
+            coverage[shape] = (coverage[shape] || 0) + 1;
             const signal = derivePaneActivitySignal(text);
             assert.ok(
               signal === undefined || ['ok', 'stale', 'err'].includes(signal),
               `the signal left the palette: ${signal}`
             );
             return true;
-          }
-        ),
-        { numRuns: 200 }
-      );
+          }),
+          { numRuns: PER_SHAPE_RUNS }
+        );
+      }
     } finally {
       for (const name of spawnEntryPoints) {
         childProcess[name] = saved[name];
@@ -169,7 +184,7 @@ describe('BL-1243 invariant 2: the signal costs no capture and no poll', () => {
     }
     // All three input shapes, or the "no capture" claim is only proven for
     // whichever one the draw happened to favour.
-    assertReachFloor(coverage, ['text', 'blank', 'absent'], 5, 'input shape');
+    assertReachFloor(coverage, INPUT_SHAPES, PER_SHAPE_RUNS, 'input shape');
   });
 
   it('is a pure function: the same pane text always answers the same way', () => {

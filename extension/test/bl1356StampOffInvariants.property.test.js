@@ -30,6 +30,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { assertRunWritesNoDecision } = require('./helpers/stampOff');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const FIXTURE_PREFIX = 'bl1356-property-';
 const HOTFIX = 'abc1234567';
@@ -140,7 +141,12 @@ test('BL-1356/BL-654 invariant 1: the verdict is about what the run wrote, never
       }
       return true;
     }),
-    { numRuns: STATES.length * Object.keys(WRITES).length * 2 }
+    // BL-1691: reach here is already guaranteed BY CONSTRUCTION by the
+    // exhaustive cross-product loop below, not by this sampled draw - this
+    // fc.assert is a supplementary spot-check, its own budget routed
+    // through runsPerCell (single-cell identity) so the shared reach-floor
+    // machinery below is what the coverage is actually asserted through.
+    { numRuns: runsPerCell(STATES.length * Object.keys(WRITES).length * 2, 1) }
   );
 
   // Enumerated, so the cross-product is covered whatever the draw did.
@@ -155,8 +161,7 @@ test('BL-1356/BL-654 invariant 1: the verdict is about what the run wrote, never
     }
   }
 
-  assert.ok(reach.untouched > 0 && reach.written > 0, 'both sides of the verdict must be exercised');
-  assert.ok(reach.decidedStart > 0, 'a row already decided before the run must be exercised');
+  assertReachFloor(reach, ['untouched', 'written', 'decidedStart'], 1, 'run-shape');
 });
 
 test('BL-1356/BL-654 invariant 2: a run that stamps a decision fails from EVERY starting state', () => {
@@ -183,13 +188,16 @@ test('BL-1356/BL-654 invariant 2: a run that stamps a decision fails from EVERY 
     }
   }
 
-  for (const state of STATES) assert.ok(reach[state] > 0, `never exercised a row starting at ${state}`);
+  assertReachFloor(reach, STATES, 1, 'starting-state');
 
   fc.assert(
     fc.property(fc.constantFrom(...STATES), fc.constantFrom(...decisionWrites), (state, writeName) => {
       assert.match(verdict(state, writeName), /^fails: /);
       return true;
     }),
-    { numRuns: 20 }
+    // BL-1691: same posture as invariant 1's own supplementary fc.assert -
+    // the exhaustive loop above already guarantees reach; this is a
+    // spot-check, budget routed through runsPerCell for the classifier.
+    { numRuns: runsPerCell(20, 1) }
   );
 });

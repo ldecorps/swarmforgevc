@@ -30,6 +30,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const GATES_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'promotion_gates_cli.bb');
@@ -87,59 +88,82 @@ const ticketArb = (index) =>
   }));
 
 test('BL-1340/BL-654 invariant 1: promotion never refuses for a condition no role can clear while the ticket stays unpromoted', () => {
+  // BL-1691: the three named cells constructed directly - each cell's own
+  // generator fixes draft/pinned to guarantee that cell's shape; expedited
+  // stays randomized (unused by this test's own assertions).
+  const CELL_ARBS = {
+    selfConverting: () => fc.record({ draft: fc.constant(true), pinned: fc.constant(true), expedited: fc.boolean() }),
+    parked: () => fc.record({ draft: fc.constant(true), pinned: fc.constant(false), expedited: fc.boolean() }),
+    live: () => fc.record({ draft: fc.constant(false), pinned: fc.boolean(), expedited: fc.boolean() }),
+  };
+  const CELLS = Object.keys(CELL_ARBS);
+  const PER_CELL_RUNS = runsPerCell(24, CELLS.length);
   const reach = { selfConverting: 0, parked: 0, live: 0 };
 
-  fc.assert(
-    fc.property(ticketArb(1), (t) => {
-      const root = newRoot();
-      try {
-        const file = writeTicket(root, t);
-        const { status, out } = runCli(['evaluate', root, file, 'false', '5']);
-        const selfConverting = t.draft && t.pinned;
-        if (selfConverting) reach.selfConverting += 1;
-        else if (t.draft) reach.parked += 1;
-        else reach.live += 1;
+  for (const cell of CELLS) {
+    fc.assert(
+      fc.property(
+        CELL_ARBS[cell]().map((t) => ({ ...t, id: `BL-9401`, priority: 10 })),
+        (t) => {
+          const root = newRoot();
+          try {
+            const file = writeTicket(root, t);
+            const { status, out } = runCli(['evaluate', root, file, 'false', '5']);
+            const selfConverting = t.draft && t.pinned;
+            reach[selfConverting ? 'selfConverting' : t.draft ? 'parked' : 'live'] += 1;
 
-        if (selfConverting) {
-          // The deadlock case. Nothing available to any role clears it while
-          // the ticket stays paused: the coordinator cannot promote, the
-          // coder never receives it, and the specifier cannot repoint
-          // `acceptance:` at a .feature that does not exist yet without
-          // throwing the runner for every other parcel (BL-233).
-          assert.equal(status, 0, `a self-converting draft was refused:\n${out}`);
-          assert.match(out, /^ALLOW$/m);
-        } else if (t.draft) {
-          // A parked draft is still refused - and the refusal must say which
-          // kind it is, or it reproduces the silence it removes.
-          assert.notEqual(status, 0, `a parked draft was admitted:\n${out}`);
-          assert.match(out, /parked/);
-          assert.match(out, /no conversion pinned/);
-        } else {
-          assert.equal(status, 0, `a live feature pointer was refused:\n${out}`);
-        }
-        return true;
-      } finally {
-        fs.rmSync(root, { recursive: true, force: true });
-      }
-    }),
-    { numRuns: 24 },
-  );
+            if (selfConverting) {
+              // The deadlock case. Nothing available to any role clears it while
+              // the ticket stays paused: the coordinator cannot promote, the
+              // coder never receives it, and the specifier cannot repoint
+              // `acceptance:` at a .feature that does not exist yet without
+              // throwing the runner for every other parcel (BL-233).
+              assert.equal(status, 0, `a self-converting draft was refused:\n${out}`);
+              assert.match(out, /^ALLOW$/m);
+            } else if (t.draft) {
+              // A parked draft is still refused - and the refusal must say which
+              // kind it is, or it reproduces the silence it removes.
+              assert.notEqual(status, 0, `a parked draft was admitted:\n${out}`);
+              assert.match(out, /parked/);
+              assert.match(out, /no conversion pinned/);
+            } else {
+              assert.equal(status, 0, `a live feature pointer was refused:\n${out}`);
+            }
+            return true;
+          } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+          }
+        },
+      ),
+      { numRuns: PER_CELL_RUNS },
+    );
+  }
 
-  assert.ok(reach.selfConverting > 0, 'generator never produced a self-converting draft - the deadlock corner went untested');
-  assert.ok(reach.parked > 0, 'generator never produced a parked draft - the refusal that must SURVIVE went untested');
-  assert.ok(reach.live > 0, 'generator never produced an ordinary live pointer');
+  assertReachFloor(reach, CELLS, PER_CELL_RUNS, 'promotion-shape');
 });
 
 test('BL-1340/BL-654 invariant 2: the expedite lane is decided over the full candidate set, never after a buildability filter', () => {
+  // BL-1691: the starvable shape is DERIVED, not hoped for - every draw
+  // fixes one expedited-draft ticket (the starved candidate) and one
+  // buildable non-expedited ticket (the one the old partition would have
+  // preferred), then mixes in 0-2 further random tickets for variety. The
+  // draw budget (24) and per-draw body are unchanged; only the array's own
+  // construction guarantees the shape invariant 2 exercises.
+  const REQUIRED = [
+    { draft: true, pinned: true, expedited: true },
+    { draft: false, pinned: true, expedited: false },
+  ];
+  const STARVABLE_SET_RUNS = runsPerCell(24, 1);
   const reach = { starvableSets: 0 };
 
   fc.assert(
     fc.property(
       fc.array(fc.record({ draft: fc.boolean(), pinned: fc.constant(true), expedited: fc.boolean() }), {
-        minLength: 2,
-        maxLength: 4,
+        minLength: 0,
+        maxLength: 2,
       }),
-      (raw) => {
+      (extra) => {
+        const raw = [...REQUIRED, ...extra];
         const root = newRoot();
         try {
           const tickets = raw.map((t, i) => ({
@@ -150,12 +174,11 @@ test('BL-1340/BL-654 invariant 2: the expedite lane is decided over the full can
             priority: t.expedited ? 90 : 1,
           }));
           const expedited = tickets.filter((t) => t.expedited);
-          if (expedited.length === 0) return true;
           // The set the old bash partition would have starved: an expedited
-          // defect pointing at a draft, alongside a buildable non-expedited one.
-          if (expedited.some((t) => t.draft) && tickets.some((t) => !t.expedited && !t.draft)) {
-            reach.starvableSets += 1;
-          }
+          // defect pointing at a draft, alongside a buildable non-expedited one -
+          // guaranteed present by REQUIRED above, on every draw.
+          assert.ok(expedited.some((t) => t.draft) && tickets.some((t) => !t.expedited && !t.draft));
+          reach.starvableSets += 1;
 
           const files = tickets.map((t) => writeTicket(root, t));
           const { status, out } = runCli(['select', root, '5', ...files]);
@@ -171,13 +194,10 @@ test('BL-1340/BL-654 invariant 2: the expedite lane is decided over the full can
         }
       },
     ),
-    { numRuns: 24 },
+    { numRuns: STARVABLE_SET_RUNS },
   );
 
-  assert.ok(
-    reach.starvableSets > 0,
-    'generator never built the set the old buildability partition would have starved - invariant 2 was never actually exercised',
-  );
+  assertReachFloor(reach, ['starvableSets'], 1, 'starvable-set');
 });
 
 test('BL-1340/BL-654 invariant 2: the router hands the chokepoint one undivided candidate set', () => {

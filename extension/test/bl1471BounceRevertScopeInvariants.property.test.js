@@ -31,6 +31,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_bounce_revert_scope.sh');
@@ -108,58 +109,63 @@ function runGuard(root, message) {
   return { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 
-const caseArb = fc.record({
-  otherTicketCount: fc.integer({ min: 0, max: 3 }),
-  isOmission: fc.boolean(),
-  classIndex: fc.nat(),
-});
+// BL-1691: the file's own header already names the 2x2 product as the
+// thing that must be reached by construction - four cells, one per
+// (scope x omission-class) combination, each fixing both axes.
+const SCOPE_CELLS = { scoped: () => fc.constant(0), violating: () => fc.integer({ min: 1, max: 3 }) };
+const OMISSION_CELLS = { omission: true, nonOmission: false };
+const PRODUCT_CELLS = Object.keys(SCOPE_CELLS).flatMap((scope) => Object.keys(OMISSION_CELLS).map((om) => `${scope}-${om}`));
 
 test('BL-1471/BL-654 invariants: a bounce revert stays scoped to its own ticket, and an omission bounce reverts nothing', () => {
+  const PER_CELL_RUNS = runsPerCell(20, PRODUCT_CELLS.length);
   const reach = { scoped: 0, violating: 0, omission: 0, nonOmission: 0 };
 
-  fc.assert(
-    fc.property(caseArb, (c) => {
-      const classes = c.isOmission ? OMISSION_CLASSES : OTHER_CLASSES;
-      const failureClass = classes[c.classIndex % classes.length];
-      const ticketIds = ['BL-9001'];
-      for (let i = 0; i < c.otherTicketCount; i += 1) ticketIds.push(`BL-90${20 + i}`);
+  for (const scope of Object.keys(SCOPE_CELLS)) {
+    for (const om of Object.keys(OMISSION_CELLS)) {
+      const isOmission = OMISSION_CELLS[om];
+      fc.assert(
+        fc.property(
+          fc.record({ otherTicketCount: SCOPE_CELLS[scope](), classIndex: fc.nat() }),
+          (c) => {
+            const classes = isOmission ? OMISSION_CLASSES : OTHER_CLASSES;
+            const failureClass = classes[c.classIndex % classes.length];
+            const ticketIds = ['BL-9001'];
+            for (let i = 0; i < c.otherTicketCount; i += 1) ticketIds.push(`BL-90${20 + i}`);
 
-      const { root, files, message } = buildFixture(ticketIds, failureClass);
-      try {
-        if (c.isOmission) reach.omission += 1;
-        else reach.nonOmission += 1;
-        if (c.otherTicketCount === 0) reach.scoped += 1;
-        else reach.violating += 1;
+            const { root, files, message } = buildFixture(ticketIds, failureClass);
+            try {
+              reach[isOmission ? 'omission' : 'nonOmission'] += 1;
+              reach[c.otherTicketCount === 0 ? 'scoped' : 'violating'] += 1;
 
-        const { status, out } = runGuard(root, message);
+              const { status, out } = runGuard(root, message);
 
-        if (c.isOmission) {
-          // invariant 2: an omission bounce reverts nothing - refused
-          // outright, regardless of how scoped the diff itself is.
-          assert.notEqual(status, 0, `an omission-class (${failureClass}) revert was waved through:\n${out}`);
-          assert.match(out, /nothing to revert/i, `an omission refusal must say so:\n${out}`);
-        } else if (c.otherTicketCount === 0) {
-          assert.equal(status, 0, `a revert scoped to its own ticket's paths was refused:\n${out}`);
-        } else {
-          // invariant 1: touching another ticket's path is refused, naming
-          // every such path and ticket (Article 4.4's one-pass-names-every
-          // -violation shape, not merely the first).
-          assert.notEqual(status, 0, `a revert touching another ticket's path was waved through:\n${out}`);
-          for (let i = 1; i < ticketIds.length; i += 1) {
-            assert.ok(out.includes(ticketIds[i]), `refusal must name ${ticketIds[i]}:\n${out}`);
-            assert.ok(out.includes(files[i]), `refusal must name ${files[i]}:\n${out}`);
+              if (isOmission) {
+                // invariant 2: an omission bounce reverts nothing - refused
+                // outright, regardless of how scoped the diff itself is.
+                assert.notEqual(status, 0, `an omission-class (${failureClass}) revert was waved through:\n${out}`);
+                assert.match(out, /nothing to revert/i, `an omission refusal must say so:\n${out}`);
+              } else if (c.otherTicketCount === 0) {
+                assert.equal(status, 0, `a revert scoped to its own ticket's paths was refused:\n${out}`);
+              } else {
+                // invariant 1: touching another ticket's path is refused, naming
+                // every such path and ticket (Article 4.4's one-pass-names-every
+                // -violation shape, not merely the first).
+                assert.notEqual(status, 0, `a revert touching another ticket's path was waved through:\n${out}`);
+                for (let i = 1; i < ticketIds.length; i += 1) {
+                  assert.ok(out.includes(ticketIds[i]), `refusal must name ${ticketIds[i]}:\n${out}`);
+                  assert.ok(out.includes(files[i]), `refusal must name ${files[i]}:\n${out}`);
+                }
+              }
+              return true;
+            } finally {
+              fs.rmSync(root, { recursive: true, force: true });
+            }
           }
-        }
-        return true;
-      } finally {
-        fs.rmSync(root, { recursive: true, force: true });
-      }
-    }),
-    { numRuns: 20 },
-  );
+        ),
+        { numRuns: PER_CELL_RUNS }
+      );
+    }
+  }
 
-  assert.ok(reach.scoped > 0, 'never exercised a scoped (passing) revert');
-  assert.ok(reach.violating > 0, 'never exercised a scope-violating revert');
-  assert.ok(reach.omission > 0, 'never exercised an omission-class bounce');
-  assert.ok(reach.nonOmission > 0, 'never exercised a non-omission-class bounce');
+  assertReachFloor(reach, ['scoped', 'violating', 'omission', 'nonOmission'], PER_CELL_RUNS, 'bounce-shape');
 });

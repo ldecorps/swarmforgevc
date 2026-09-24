@@ -36,6 +36,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { deriveCommitGuardFixtureSet } = require('./helpers/commitGuardFixtureSet');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -97,35 +98,46 @@ function withRoot(fn) {
 
 describe('BL-1484 declared invariants', () => {
   it('inv1: the set follows either chain shape in both directions, with no test edited', () => {
+    // BL-1691: the 2x2 product (added/removed x directCall/runGuard)
+    // constructed as four cells, both axes fixed per cell.
+    const DIRECTION_CELLS = { added: true, removed: false };
+    const SHAPE_CELLS = { directCall: true, runGuard: false };
+    const CELLS = Object.keys(DIRECTION_CELLS).flatMap((d) => Object.keys(SHAPE_CELLS).map((s) => `${d}-${s}`));
+    const PER_CELL_RUNS = runsPerCell(30, CELLS.length);
     const reach = { added: 0, removed: 0, directCall: 0, runGuard: 0 };
-    fc.assert(
-      fc.property(
-        fc.uniqueArray(GUARD_NAME, { minLength: 2, maxLength: 5 }),
-        GUARD_NAME,
-        fc.boolean(),
-        fc.boolean(),
-        (base, extra, addNotRemove, directCall) => {
-          fc.pre(!base.includes(extra));
-          const named = addNotRemove ? [...base, extra] : base.slice(0, base.length - 1);
-          const dropped = addNotRemove ? null : base[base.length - 1];
-          reach[addNotRemove ? 'added' : 'removed'] += 1;
-          reach[directCall ? 'directCall' : 'runGuard'] += 1;
+    for (const direction of Object.keys(DIRECTION_CELLS)) {
+      for (const shape of Object.keys(SHAPE_CELLS)) {
+        const addNotRemoveConst = DIRECTION_CELLS[direction];
+        const directCallConst = SHAPE_CELLS[shape];
+        fc.assert(
+          fc.property(
+            fc.uniqueArray(GUARD_NAME, { minLength: 2, maxLength: 5 }),
+            GUARD_NAME,
+            fc.constant(addNotRemoveConst),
+            fc.constant(directCallConst),
+            (base, extra, addNotRemove, directCall) => {
+              fc.pre(!base.includes(extra));
+              const named = addNotRemove ? [...base, extra] : base.slice(0, base.length - 1);
+              const dropped = addNotRemove ? null : base[base.length - 1];
+              reach[addNotRemove ? 'added' : 'removed'] += 1;
+              reach[directCall ? 'directCall' : 'runGuard'] += 1;
 
-          withRoot((root) => {
-            const guards = derivedGuards(root, named, [...base, extra], directCall);
-            assert.deepEqual(guards, named, `the derived set must be exactly what the chain names (directCall=${directCall})`);
-            if (addNotRemove) {
-              assert.ok(guards.includes(extra), 'a guard added to the chain must appear');
-            } else {
-              assert.ok(!guards.includes(dropped), 'a guard the chain no longer names must not appear');
-            }
-          });
-        },
-      ),
-      { numRuns: 30 },
-    );
-    assert.ok(reach.added > 0 && reach.removed > 0, `generator never reached both directions: ${JSON.stringify(reach)}`);
-    assert.ok(reach.directCall > 0 && reach.runGuard > 0, `generator never reached both shapes: ${JSON.stringify(reach)}`);
+              withRoot((root) => {
+                const guards = derivedGuards(root, named, [...base, extra], directCall);
+                assert.deepEqual(guards, named, `the derived set must be exactly what the chain names (directCall=${directCall})`);
+                if (addNotRemove) {
+                  assert.ok(guards.includes(extra), 'a guard added to the chain must appear');
+                } else {
+                  assert.ok(!guards.includes(dropped), 'a guard the chain no longer names must not appear');
+                }
+              });
+            },
+          ),
+          { numRuns: PER_CELL_RUNS },
+        );
+      }
+    }
+    assertReachFloor(reach, ['added', 'removed', 'directCall', 'runGuard'], PER_CELL_RUNS, 'inv1-shape');
   }, 120000);
 
   it('inv3: a guard the chain names but the tree lacks refuses, naming it - for either shape', () => {
