@@ -65,6 +65,22 @@ wait_for() {
   return 1
 }
 
+# BL-1692: front_desk_supervisor.bb writes its pid file at start, but only
+# stamps front-desk-supervisor.status.json's per-child build_sha from its
+# FIRST write-status! tick after the children are spawned - measured
+# ~0.3 s (pid file present, no status yet) versus ~1.2 s (status file with
+# both children's build_sha) on this host. A reader that only waits for
+# the pid file can land inside that window and see running_sha null for
+# every process, a legitimate transient (BL-328), not a real staleness
+# reading. This is the stricter readiness signal every launch site uses
+# before reading a report or a status field.
+wait_for_front_desk_ready() {
+  local root="$1"
+  wait_for 10 bash -c "
+    python3 -c \"import json; d = json.load(open('$root/.swarmforge/operator/front-desk-supervisor.status.json')); exit(0 if d.get('bridge', {}).get('build_sha') and d.get('bot', {}).get('build_sha') else 1)\" 2>/dev/null
+  "
+}
+
 # ── merged-code-reaches-daemons-01/06: report names both builds, flags a
 #    stale process, never flags a fresh one, for every language ───────────
 ROOT="$(mk_git_root)"
@@ -123,6 +139,7 @@ echo "$OLD_SHA" > "$ROOT/extension/out/BUILD_SHA"
 export TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x TELEGRAM_PRINCIPAL_USER_ID=x
 bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
 wait_for 5 test -f "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" || fail "02 setup: front-desk group did not start"
+wait_for_front_desk_ready "$ROOT" || fail "02 setup: front-desk group did not publish build_sha for bridge and bot"
 OLD_SUP_PID="$(cat "$ROOT/.swarmforge/operator/front-desk-supervisor.pid")"
 
 # The real merge: a real commit, reachable from main, touching this
@@ -215,6 +232,7 @@ NPMEOF
 chmod +x "$FAKE_BIN_04/npm"
 PATH="$FAKE_BIN_04:$PATH" bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
 wait_for 5 test -f "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" || fail "04/07 setup: front-desk group did not start"
+wait_for_front_desk_ready "$ROOT" || fail "04/07 setup: front-desk group did not publish build_sha for bridge and bot"
 
 # The real merge - a real commit, reachable from main - with NO sync call
 # anywhere in this block. extension/out/BUILD_SHA still names OLD_SHA.
@@ -270,6 +288,7 @@ NPMEOF
 chmod +x "$FAKE_BIN_08/npm"
 PATH="$FAKE_BIN_08:$PATH" bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
 wait_for 5 test -f "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" || fail "08 setup: front-desk group did not start"
+wait_for_front_desk_ready "$ROOT" || fail "08 setup: front-desk group did not publish build_sha for bridge and bot"
 
 git -C "$ROOT" commit -q --allow-empty -m "merge: unreachable fix"
 git -C "$ROOT" branch -f main
