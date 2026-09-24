@@ -448,8 +448,9 @@ test_required_stages_ticket_lookup_collision.sh	standing
 test_reroute.sh	standing		
 test_rescue_orphaned_work.sh	standing		
 test_reset_worktrees_align_main.sh	standing		
-test_resume_on_start.sh	standing		
-test_retirement_readdition_guard.sh	standing		
+test_resume_on_start.sh	standing
+test_retire_seat_stays_dropped.sh	standing
+test_retirement_readdition_guard.sh	standing
 test_role_ask.sh	standing		
 test_role_lifecycle_cli.sh	standing		
 test_rotate_pack_router_gate.sh	standing		
