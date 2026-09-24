@@ -1,0 +1,29 @@
+# qwen3.8-27b-iq3s-seat:latest - the ISTA-DASLab Qwen3.8-27B IQ3_S quant tuned
+# for the LOCAL CHAT SEAT (Bubble Let's Talk + the Telegram QWEN_LOCAL topic),
+# on the CPU-only host, 2026-09-24 (human: "Try to make iq3 work as the local
+# llm (not coder 2.5)").
+#
+# Why a variant tag and not the base tag: the seat's request is one
+# non-streaming /api/generate call per turn (localQwenSeatLive.ts), and the
+# phone gives up after ~5 minutes. On this CPU the base quant reads a prompt at
+# ~2.5 tok/s and generates ~1-1.6 tok/s, and its hybrid (qwen35) architecture
+# gets no prefix-cache reuse across turns, so every token of every turn is
+# paid for. Bounding the reply is the one lever that needs no seat-code change:
+#   num_predict 120   a spoken-length answer, at most ~2 min of generation
+#   num_ctx 4096      seat turns are < 1.5k tokens; a smaller KV cache is
+#                     less RAM beside the full forge on a 19 GB host
+#   num_thread 16     measured 2026-09-24 (short briefing, 120-token cap):
+#                     default 10 threads read the prompt at 1.8-2.5 tok/s,
+#                     16 threads at 3.3-3.6 tok/s (generation unchanged,
+#                     ~1.5 tok/s); a warm turn went 124 s -> 91 s, a cold one
+#                     351 s -> 279 s. 16 leaves 4 of 20 CPUs for the swarm.
+# The base tag keeps its own defaults for anything else that uses it.
+#
+# Apply:  ollama create qwen3.8-27b-iq3s-seat:latest -f swarmforge/packs/qwen3.8-27b-iq3s-seat.Modelfile
+# Use:    SWARMFORGE_LOCAL_SEAT_MODEL="qwen3.8-27b-iq3s-seat:latest" in .swarmforge/swarm.env,
+#         then restart the front desk (bridge + bot read the model id from process.env).
+# Undo:   point SWARMFORGE_LOCAL_SEAT_MODEL back at the base tag; `ollama rm qwen3.8-27b-iq3s-seat:latest`.
+FROM hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S
+PARAMETER num_ctx 4096
+PARAMETER num_predict 120
+PARAMETER num_thread 16
