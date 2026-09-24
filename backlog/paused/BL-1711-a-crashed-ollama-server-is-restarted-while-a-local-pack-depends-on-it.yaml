@@ -1,0 +1,140 @@
+id: BL-1711
+title: "A crashed ollama server is restarted while a local pack depends on it - handoffd watches the recorded server and, once its process is gone and the endpoint has stayed silent through a confirmation window, reaps the dead server's orphaned runners, starts a new server the BL-1703 way, records it swarm-owned and raises one alert; a live-but-silent server is never killed, one missed probe changes nothing, and restarts stop with one escalation after 3 in 30 minutes"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: human-requested
+depends_on: [BL-1703, BL-1705]
+mutation_cost: low
+# low: a handoffd sweep that shells to BL-1703's bash lib (no Stryker lane
+# for bb or bash); the Gherkin handler runs a stand-in ollama binary and
+# endpoint with a short confirmation window, seconds per run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1711-a-crashed-ollama-server-is-restarted-while-a-local-pack-depends-on-it.feature
+
+# handoffd.bb is the pre-existing live consumer (the always-on loop,
+# itself restarted by handoffd_supervisor); it must reach BL-1703's lib to
+# restart the server. Lib filename fixed by BL-1703 (BL-874); absent from
+# handoffd.bb on main today. BL-1704 anchors the same filename in the stop
+# paths, not here.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::ollama_ancillary_lib.sh::the daemon loop restarts a crashed ollama server through BL-1703s lib'
+  - 'specs/pipeline/steps/bl1711OllamaCrashRestartSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  You said yes on 2026-09-24 to restarting ollama after a crash; this is
+  that ticket. Please review the feature file. FIRM - a crash means the
+  server's process is gone; a server that is alive but not answering is
+  never killed (a large model can take minutes to load on this CPU) and
+  gets no restart; one missed probe changes nothing; after 3 restarts in
+  30 minutes the sweep stops and raises one escalation instead of
+  looping. A crashed server that the swarm had found already running
+  (external) is restarted too, because a local pack depends on it, and
+  the new one is recorded swarm-owned so the stop paths (BL-1704) stop it.
+
+invariants:
+  - "handoffd never signals a live ollama serve process, and it starts a new one only when the recorded server's process is gone, the endpoint stayed silent through the whole confirmation window, and fewer than 3 restarts happened in the last 30 minutes."
+
+description: |
+  ## What is wanted
+  A handoffd sweep (the loop already runs every few seconds; its health
+  sweeps go through `run-sweep!`) that acts only while BL-1703's ollama
+  record exists, i.e. while a pack that uses the local endpoint is
+  running:
+  1. **Probe** the recorded endpoint each pass.
+  2. **Crash** = the recorded pid is gone (or no longer `ollama serve`)
+     AND the endpoint has stayed silent for the whole confirmation window
+     (a bounded number of seconds, default in the lib, overridable by env
+     for tests). On a crash:
+     - reap the dead server's orphaned runners with BL-1705's
+       `reapable-ollama-ghost?` classification (an 11 GB runner left
+       behind would starve the new server of memory);
+     - start a new server with BL-1703's start function (same binary,
+       models directory and context length from swarm.env);
+     - record it `swarm-owned` with the new pid and start time;
+     - raise one alert through the daemon's existing alert path, naming
+       the old pid, the new pid and the server log.
+  3. **Not a crash** - the process is alive but the endpoint is silent,
+     or one probe missed and the next answered: do nothing (log once per
+     episode for the alive-but-silent case).
+  4. **Bound**: at most 3 restarts in any 30 minutes. A fourth crash in
+     the window starts nothing and raises one escalation that restarts
+     are exhausted, naming the server log.
+  5. **No record**: no probe, no start (a Claude-only pack, or after a
+     stop removed the record).
+
+  ## Why
+  The human, 2026-09-23 (the ask split into BL-1703/1704/1705): "Add
+  ollama as an ancillary process managed by the swarm start/stop scripts,
+  and make sure the daemon can clean up after it when it crashes or leaves
+  ghost processes." Asked on 2026-09-24 whether restart after a crash was
+  wanted too, the human answered "yes". Today a mid-shift crash leaves
+  every local seat failing its requests until someone restarts the server
+  by hand; nothing supervises it (no systemd on this WSL host).
+
+  ## How (direction, not mandate)
+  - handoffd is bb and BL-1703's lib is bash: shell to one lib entry (for
+    example a `restart_if_crashed` function) rather than re-implementing
+    the start in bb, so start and restart can never drift.
+  - Keep the restart history (timestamps) in the record or beside it so
+    the bound survives a handoffd restart.
+  - The alert path: whatever handoffd's other health escalations use
+    today (the endless-loop halt's Telegram and email path is the
+    precedent); one alert per restart, one escalation when exhausted.
+  - Tests (T1): a stand-in `ollama` binary and a tiny local HTTP responder
+    on a free port in a `mkdtemp` project; a stand-in runner process for
+    the reap scenario; never the real server, never port 11434.
+  - Documenter: the local-model how-to's "ollama is started by the swarm"
+    section gains the restart rule, the bound and the escalation;
+    `architecture.mmd` if BL-1703 drew ollama as an ancillary (add the
+    restart edge from handoffd).
+
+  ## Scope
+  - `swarmforge/scripts/handoffd.bb` (the sweep),
+    `swarmforge/scripts/ollama_ancillary_lib.sh` (BL-1703's; a restart
+    entry beside the start).
+  - New: `specs/pipeline/steps/bl1711OllamaCrashRestartSteps.js` (BL-233).
+  - Docs; `docs/diagrams/architecture.mmd` if affected.
+  - Out of scope: killing or restarting a hung (alive but silent) server;
+    restarting ollama when no pack depends on it; the Local Agent's own
+    auto-start.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA does not start,
+  kill or restart the real ollama server.
+  1. `node specs/pipeline/cli.js specs/features/BL-1711-a-crashed-ollama-server-is-restarted-while-a-local-pack-depends-on-it.feature`:
+     all scenarios ok.
+  2. BL-1703's and BL-1705's features still pass on the same commit.
+  3. Read the sweep: nothing in it signals a process whose command line
+     is `ollama serve`; the restart runs only on a gone pid plus a full
+     silent window.
+  4. `git diff main...HEAD --name-only` names only the Scope files, docs,
+     the diagram and evidence.
+
+source: |
+  backlog/archive/INTAKE-operator-question-1790153120168.md (split 1:3 on
+  2026-09-24 into BL-1703/BL-1704/BL-1705; this is a fourth slice the
+  human asked for the same day). Human ask (2026-09-23, LOCAL_AGENT topic,
+  verbatim): "Add ollama as an ancillary process managed by the swarm
+  start/stop scripts, and make sure the daemon can clean up after it when
+  it crashes or leaves ghost processes." Human, 2026-09-24, in the
+  specifier's Claude Code session, answering "Automatic restart after a
+  crash wasn't in your ask, so I left it out; say if you want it", verbatim: "yes".
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat) on the human's
+  "yes", the same session. Pending: the feature file is new and the "yes"
+  answered the scope, not the file. Depends on BL-1703 (the record and
+  the start function) and BL-1705 (the ghost classification it reaps
+  with).
+
+  INVEST: Independent (depends_on names both unbuilt siblings), Negotiable
+  (window length, history storage, alert path are direction), Valuable (a
+  mid-shift crash heals itself instead of failing every local seat until
+  someone notices), Estimable (one sweep, one lib entry), Small (five
+  scenarios, one invariant), Testable (stand-in binary, endpoint, runner).
