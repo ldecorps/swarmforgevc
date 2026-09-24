@@ -144,3 +144,5 @@ notes: |
   .git/land-replay-worktrees/BL-1687-e9dcd8b2e9 off origin/main"; the retry
   built LAND_REPLAY 35ef2dbcd2. So this is live on the real land path, not
   only in test_bl1366.
+
+assigned_to: coder
