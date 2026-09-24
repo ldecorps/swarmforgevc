@@ -1,0 +1,208 @@
+id: BL-1697
+title: "The local parcel driver in handoffd moves a coder git_handoff parcel through a local aider seat deterministically - serve, merge, chat set with the spec read-only and physically unwritable, one instruction, then a gate that hands off only on a red-to-green acceptance run, a model commit and a byte-identical spec, and otherwise raises one question naming the condition that failed; handoffd's own wakes, chase pokes and resume banners stop reaching a driver seat"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 0
+direction: queue-jump
+depends_on: [BL-1696]
+mutation_cost: medium
+# medium: a new Babashka lib (no Stryker lane for bb, engineering.prompt
+# "Startup Tools") wired into handoffd's loop; the Gherkin mutation gate
+# runs the feature's handler per mutant over fake panes and a stand-in
+# model, all in seconds.
+slice_size_envelope: high
+size_envelope_decision: "justify not split - serve, merge, chat set, instruction, gate and escalation share one per-parcel state record and deliver value only together (a gate with no loop, or a loop with no gate, moves nothing or moves wrong work); resume after restart, the escalation hold, note parcels and babysitterd are already split out to BL-1698"
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1697-the-local-parcel-driver-moves-a-coder-parcel-through-a-local-aider-seat.feature
+
+# The lib filename is fixed at mint so the consumer anchor is a literal
+# that will exist (BL-874). handoffd.bb is the pre-existing live consumer:
+# the anchor proves the daemon loop loads the driver, which is the wiring
+# that matters (BL-1235). No anchor on the lib's own use of seat: the
+# lib is this parcel's own file, so a pattern in it matches by
+# construction and gates nothing.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::local_parcel_driver_lib.bb::the daemon loop loads and runs the driver (BL-1235 consumer anchor)'
+  - 'specs/pipeline/steps/bl1697LocalParcelDriverSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Queue-jump slice L2 (core) of INTAKE-local-aider-seats-20260924, minted
+  approved under the human's own jump request (STEERING.md 2026-09-23;
+  2026-09-15 ruling). No choice is posed here. FIRM: Claude seats and
+  Claude packs behave exactly as before; a local seat never hands off
+  without a red-to-green acceptance run, a model commit and an untouched
+  spec; no pipeline script is ever in the seat's chat; nothing runs off
+  the seat allow-list.
+
+invariants:
+  - "The driver queues a git_handoff for a parcel only when all four hold: the acceptance run failed after the merge and before the model turn, it passes after the last model turn, at least one commit exists after the post-merge HEAD, and every spec file is byte-identical to its pre-turn copy; every other outcome ends in exactly one escalation naming the first failed condition and no handoff."
+  - "While the driver owns a seat, every text that enters that seat's pane is typed by the driver; no other handoffd injection (new-mail wake, chase poke, in-process resume banner) reaches it."
+  - "Every seat whose provider lacks the parcel-driver capability (every Claude seat) receives byte-identical wake, chase and resume text to before this ticket."
+
+description: |
+  ## What is wrong
+  A local aider seat cannot move a parcel. The live qwen2.5-coder
+  mono-router moved nothing in 45 minutes on 2026-09-23: its coder held
+  BL-1687's parcel since 09:43Z, never saw the task after a relaunch,
+  asked for it twice and replied `! true`. Headless aider has no command
+  channel (BL-1696 description). The overnight lab
+  (`backlog/evidence/aider-seat-lab-20260924.md`) settled the design:
+  - a 7B model cannot hold a multi-step procedure even with a stateful
+    relay (0/4 on the six-command row; 0/2 as a model-led coder);
+  - a deterministic driver ran the lifecycle flawlessly (S6, S6d);
+  - given the chance the model games the test: S6d edited the READ-ONLY
+    acceptance test to match its bug, the suite went green with a commit,
+    and only the driver's spec-untouched check stopped a false pass;
+  - `/read-only` is advisory under `--yes-always` ("Allow edits to file
+    not in chat?" is auto-accepted), so the spec must be protected
+    outside aider;
+  - aider drops edits to files not yet in the chat
+    (`check_for_file_mentions` runs before `apply_updates`), so the files
+    the model must edit are added up front;
+  - the first S6 run handed off an UNCHANGED tree in 96 s because the old
+    tests already passed, so "tests green" alone is never a pass.
+
+  ## Why
+  This is the piece that lets a local model do real parcel work at all.
+  handoffd already owns every pane injection from one loop; a driver
+  outside it would race the wake and chase injections, so it lives there.
+
+  ## What is wanted
+  A driver in `swarmforge/scripts/local_parcel_driver_lib.bb` (filename
+  fixed at mint; the wiring anchor names it), run from handoffd's loop,
+  for seats whose provider carries a new parcel-driver capability in
+  `prompt_engine_lib.bb`'s `provider-capabilities` (set on `aider` only).
+  In this slice it drives the `coder` role's `git_handoff` parcels; any
+  other role on a driver seat is left exactly as today.
+
+  Per parcel, in order, recording each step in a per-role state file
+  under `.swarmforge/local-driver/`:
+  1. **Serve.** `seat next` for the seat's role (run by the driver in the
+     seat's checkout with the seat's role env); the driver reads the
+     `in_process` parcel file itself.
+  2. **Merge.** `seat merge <sender> <commit>` from the parcel's payload.
+     Exit 3 (conflict) -> escalate "merge conflict" with the paths.
+  3. **Red check.** `seat test` with `SEAT_TICKET=<BL>` and
+     `SEAT_ACCEPTANCE=<the ticket's acceptance: path>` in its
+     environment. It must FAIL; a pass escalates "acceptance passed
+     before any edit" and no instruction is sent.
+  4. **Chat set.** Clear the chat; `/read-only` the ticket YAML and its
+     acceptance feature (the spec); `/add` the existing files the ticket
+     names as editable. Record the spec files' bytes (hash) and remove
+     their write permission for the duration of the model turns.
+  5. **One instruction**, typed WITHOUT the aider no-narration suffix:
+     implement BL-<n> exactly as the read-only ticket describes so the
+     read-only acceptance passes; never edit a read-only file.
+  6. **Gate** after the pane is idle: `seat test` (same env) passes; at
+     least one commit after the post-merge HEAD; every spec file
+     byte-identical. On a failure, type one fix request naming the failed
+     condition and gate again, up to `seat_fix_turns` (pack `config`,
+     default 3) fix requests.
+  7. **Pass** -> `seat handoff <next role> <BL>` then `seat done`.
+     **Fail after the last fix turn** -> `seat ask "<BL>: <condition>"`
+     and the parcel stays `in_process` with the state file marked
+     escalated (the hold's release is BL-1698). Spec write permission is
+     restored on every exit path.
+
+  handoffd's new-mail wake, chase poke and in-process resume paths skip
+  a driver seat (its driver is the only writer to that pane) and are
+  unchanged for every other seat.
+
+  ## How (direction, not mandate)
+  - Capability, not provider name (capability-branching-01): the driver
+    and the injection paths read the flag, never the string "aider".
+  - Model output comes from the seat's `--llm-history-file`
+    (`.swarmforge/aider-llm-history/<role>.log`, ab1d4cb2bd); the pane is
+    only for typing and idle detection (the existing
+    capture/pending-input helpers in `agent_runtime_inject.bb`). Never
+    scrape the pane for the model's reply.
+  - Raw typing without the suffix: `notify-agent!` appends
+    `aider-no-narration-suffix` to any `:text`; add a raw path next to it
+    rather than stripping text after the fact.
+  - The next role: whatever the existing forward routing computes for the
+    coder (chain order plus `required_stages`), never a literal
+    "cleaner".
+  - "Files the ticket names": repo-relative paths in the ticket that exist
+    in the checkout, plus the `required_wiring` paths; a named path that
+    does not exist yet is created by `/add`. Never `/add` anything under
+    `swarmforge/scripts/`, `swarmforge/roles/` or `swarmforge/constitution/`
+    (Firm: no pipeline script in a seat's chat).
+  - Idle detection must tolerate aider's own `--auto-test` loop (BL-1699
+    adds it): the turn ends when aider returns to its prompt, not at the
+    first reply.
+  - Tests (T1): a fake tmux that records typed text and serves a scripted
+    capture, a canned llm-history file, a `mkdtemp` + `git init` project
+    proven by `rev-parse --git-common-dir` before any mutating git
+    command (BL-1390), and a stand-in model that reacts to the
+    instruction by committing a prepared edit. No real model, no live
+    router.
+  - Documenter: a how-to for the driver (what it does per parcel, the
+    state file, the escalation texts); `handoff-flow.mmd`'s change
+    trigger (the handoff file lifecycle, its gates) fires - add the
+    driver's serve/gate/escalate path for driver seats to it in this
+    parcel.
+
+  ## Scope
+  - New: `swarmforge/scripts/local_parcel_driver_lib.bb`.
+  - `swarmforge/scripts/handoffd.bb` (run the driver; skip driver seats
+    in wake/chase/resume).
+  - `swarmforge/scripts/prompt_engine_lib.bb` (the capability flag) and
+    `swarmforge/scripts/agent_runtime_inject.bb` (the raw typing path).
+  - New: `specs/pipeline/steps/bl1697LocalParcelDriverSteps.js` (BL-233).
+  - Docs: one how-to; `docs/diagrams/handoff-flow.mmd`.
+  - Out of scope: resume after a restart, the escalation hold's release,
+    note parcels, babysitterd (BL-1698); aider launch flags and bootstrap
+    text (BL-1699); non-coder roles on driver seats (the BL-1702 ruling);
+    any Claude seat or pack.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). The live router is
+  NOT started (intake test tiers: this slice is T1).
+  1. `node specs/pipeline/cli.js specs/features/BL-1697-the-local-parcel-driver-moves-a-coder-parcel-through-a-local-aider-seat.feature`:
+     all scenarios ok.
+  2. The shell and bb suites that cover handoffd's wake, chase and resume
+     paths (`swarmforge/scripts/test/test_handoffd_chase_sweep_wiring.sh`
+     and its siblings in `suite-manifest.tsv`) are green, one run.
+  3. Read the diff: every wake/chase/resume skip reads the capability
+     flag, not the provider name (`grep -n '"aider"'` in the changed
+     handoffd lines prints nothing new).
+  4. `git diff main...HEAD --name-only` names only the Scope files,
+     tests, docs, the diagram and evidence.
+
+source: |
+  backlog/INTAKE-local-aider-seats-20260924.md (slice L2), filed by the
+  operator (Claude Code) 2026-09-24 with evidence
+  backlog/evidence/aider-seat-lab-20260924.md. It also absorbs the relay
+  proposal of backlog/INTAKE-aider-coordinator-card.md (2945f2d07f),
+  scope item c, whose open question 1 ("Does the relay belong in handoffd
+  ... or in the seat's launch wrapper?") the lab answered: handoffd.
+  Human, verbatim (via Claude Code, 2026-09-23 ~23:05 BST): "When you are
+  done with your experimentation, write the final proposal for the
+  specifier to pick tomorrow morning. Make it super high priority btw,
+  qjump it. The priority is now to introduce local models. I have a
+  graphic card arriving in a couple of days, so the tocken generation
+  should be boosted"
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat). Approved at
+  mint under the human's explicit queue-jump request (STEERING.md
+  2026-09-23; 2026-09-15 ruling); no choice posed. The intake's L2 is
+  split here: this ticket is the per-parcel loop and gate; BL-1698 takes
+  resume after restart, the hold's release, note parcels and babysitterd.
+
+  Deviation from the intake, stated: the intake's chat set protects "files
+  the inbound commit ADDED". That is the lab fixture's shape; in this
+  repository the ticket and its feature are minted on main long before
+  the coordinator's routing commit, so the spec is named from the ticket
+  itself (the YAML and its `acceptance:` path).
+
+  INVEST: Independent (BL-1696 only, sequenced by depends_on), Negotiable
+  (state file shape, idle detection, path extraction are direction),
+  Valuable (the first path by which a local model's edit reaches the next
+  role), Estimable (one lib, three small edits, one handler; justified
+  high band), Small (six scenarios, three invariants; the rest split to
+  BL-1698), Testable (fake pane, stand-in model, throwaway project).
