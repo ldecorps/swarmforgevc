@@ -1,0 +1,117 @@
+id: BL-1721
+title: "The unit suite's per-file budget guard refused extension/test/emitLifecycleSnapshotCli.test.js (10.9 s) and extension/test/telegramFrontDeskBotCli.test.js (11.3 s) as new poles on BL-1703's parcel a6a5b51a5c at load about 10 (QA note 003132), though their BL-1633 confirm-alone measures 16 ms and 4.2 s on main - the refusal prints only the in-suite duration, so nobody can tell a slow confirmation from a failed one (a failure counts as over budget); the guard names each offender's alone result or failure, and retries a failed confirmation once before it counts"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it holds BL-1703 at QA (Article 4.2). It is
+# load-sensitive: the same two files pass on main at load 3 the same hour.
+status: todo
+epic: unit-suite-speed
+priority: 7
+direction: swarm-reported
+depends_on: []
+# BL-1619, BL-1625 and BL-1629 (paused) also touch the suite-duration
+# tooling; none is active, so the coordinator's orthogonality check orders
+# them. BL-1633 (the confirm-alone step) is in backlog/done.
+mutation_cost: medium
+# medium: TypeScript (Stryker-covered) in check-suite-file-budget.ts's
+# verdict/format path plus recordTestDuration.js's confirmation call; the
+# guard already takes the confirmation as an injected function, so the
+# feature and unit tests stub it - no real vitest spawn per mutant.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1721-a-failed-pole-confirmation-is-said-and-retried-once.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer (npm test's post-run
+# recordTestDuration.js -> runGuardAgainstReport) exists before the fix,
+# so an anchor there matches before and after (BL-1235); the feature
+# drives the real guard with an injected confirmation.
+required_wiring:
+  - 'specs/pipeline/steps/bl1721FailedPoleConfirmationSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the 7.0 s per-file
+  budget and the pole register's rules are unchanged. FIRM: BL-1633's
+  fail-closed posture is kept - a confirmation that fails twice still
+  counts as over budget and refuses; the one retry is the only change to
+  the decision. FIRM: every offender line names what the confirmation
+  returned - an alone duration, or each failure with its reason - never
+  the in-suite duration alone.
+
+invariants:
+  - "A per-file budget refusal never rests on a confirmation it did not report: every new-pole line names the alone duration or each confirmation failure with its reason."
+
+description: |
+  ## What is wrong
+
+  QA note 003132 and evidence 32afd7a356
+  (`backlog/evidence/BL-1703-unowned-red-hold-QA-20260924.md`): `npm
+  test` at BL-1703's parcel a6a5b51a5c, via qa-gather.js at load about
+  10, passed every test and exited 1 on the suite file budget guard:
+  `2 new-pole offender(s): extension/test/emitLifecycleSnapshotCli.test.js:
+  10.9s exceeds the 7.0s per-file budget` / `extension/test/
+  telegramFrontDeskBotCli.test.js: 11.3s exceeds the 7.0s per-file
+  budget`. The same qa-gather run reported `stragglers_before exit 1`
+  (orphaned test processes present before it started).
+
+  Specifier, main, same hour, load 3.1-3.4: both files pass (the
+  front-desk file 4.0 s, 276 tests), and calling the guard's own
+  `confirmPoleAlone` (recordTestDuration.js, exported) returns 16 ms and
+  4,156 ms - both would be contention, a pass. So at QA's run each
+  confirmation either measured 7 s or more alone or returned null, which
+  BL-1633's FIRM counts as over budget. A 16 ms file measuring 7 s alone
+  is implausible even at load 10, so a failed confirmation is the likely
+  one - but the refusal line prints only the in-suite number, and the
+  confirmation spawns vitest with `stdio: 'ignore'`, so its reason is
+  gone. BL-1633's own comment records one real null cause
+  (ERR_CHILD_PROCESS_STDIO_MAXBUFFER, 2026-09-18).
+
+  ## What is wanted
+  - Scenario 01 (outline): fail then 4.2 s -> contention, both numbers
+    named; fail twice -> new pole, both failures named; 8.0 s alone ->
+    new pole, both durations named.
+  - A null carries its reason out of the confirmation: the spawn error,
+    the timeout, a missing report, or no entry for the file.
+
+  ## How (direction, not mandate)
+  - `confirmPoleAlone` returns `{ms}` or `{failed: reason}` instead of a
+    bare null; the verdict path retries once on `failed` and keeps both
+    results for the line. `runGuardAgainstReport` already takes the
+    confirmation as a parameter - the tests inject it.
+
+  ## Scope
+  - `extension/scripts/recordTestDuration.js` (the confirmation's result).
+  - `extension/src/tools/check-suite-file-budget.ts` (retry, verdict,
+    line format) and its unit tests.
+  - `specs/features/BL-1721-...feature` + the pinned handler.
+
+  ## Not in scope
+  - The per-file budget, the pole register, or cutting either file's
+    in-suite time (BL-791's slices).
+  - Straggler processes before a run (qa-gather already reports them).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1721-a-failed-pole-confirmation-is-said-and-retried-once.feature`:
+     all ok (3 of 3).
+  2. `cd extension && npm test`: the suite passes; record the host load
+     average and, if the guard prints any offender line, that it names an
+     alone result or failures.
+  3. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  4. After landing: the land prints REGISTER_ROW_RETIRED for both rows;
+     resume BL-1703's land.
+
+notes: |
+  Minted 2026-09-24 by the specifier from QA's unowned-red note 003132
+  (holding BL-1703), the same pass (standing-red amendment 2026-09-05);
+  two register rows (unit, both files) added in the mint commit; the
+  confirmations re-run on main the same hour.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1703.

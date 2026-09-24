@@ -33,3 +33,5 @@
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
 shell	swarmforge/scripts/test/test_bl1366_land_is_one_command.sh	BL-1716	2026-09-24	case 5 "and a subsequent land succeeds" FAIL: the replay could not create worktree .git/land-replay-worktrees/BL-9366-<sha10> off origin/main - a land killed mid-replay leaves its scratch worktree and branch; coder@2 sighting note 000065 while building BL-1713; specifier reproduced on main at 9d6fa31f6d; leaves when BL-1716 lands
+unit	extension/test/emitLifecycleSnapshotCli.test.js	BL-1721	2026-09-24	suite per-file budget guard refused it as a new pole, 10.9s in-suite at load ~10 on BL-1703 parcel a6a5b51a5c (QA note 003132, evidence 32afd7a356); confirm-alone 16ms on main at load 3.1; leaves when BL-1721 lands
+unit	extension/test/telegramFrontDeskBotCli.test.js	BL-1721	2026-09-24	suite per-file budget guard refused it as a new pole, 11.3s in-suite at load ~10 on BL-1703 parcel a6a5b51a5c (QA note 003132, evidence 32afd7a356); confirm-alone 4.2s on main at load 3.1; leaves when BL-1721 lands
