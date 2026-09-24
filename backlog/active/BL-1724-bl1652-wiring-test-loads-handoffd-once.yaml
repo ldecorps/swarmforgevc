@@ -90,3 +90,5 @@ notes: |
   Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
   BL-1697. Fourth load-driven red this shift (BL-1718, BL-1721, BL-1724,
   BL-1725): host load 11-14 from concurrent test lanes.
+
+assigned_to: coder
