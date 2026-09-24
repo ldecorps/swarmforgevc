@@ -133,3 +133,5 @@ notes: |
   INVEST at mint: one observable outcome (the seat answers with project
   context), one sitting (the code exists), testable through the fake
   completion seam; the patch's own five tests are the unit half.
+
+assigned_to: coder
