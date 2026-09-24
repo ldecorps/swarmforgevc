@@ -88,14 +88,22 @@ description: |
     the file text and `prompt` is exactly the inbound text; absent or
     whitespace-only -> the completion call carries no system value.
   - `docs/reference/local-model-briefing.md` lands with the parcel as the
-    operator wrote it; the documenter checks its facts against
-    `local-engineering.prompt` and the roles list and adds a short
-    "briefing file" section to the local-seat how-to (BL-1235's page).
+    operator wrote it LAST: byte-identical to
+    `backlog/evidence/BL-1682-operator-briefing-20260924.md` (the
+    operator's 2026-09-24 trim for the CPU-bound IQ3 27B seat, 1049 bytes,
+    sha256 8ff4ad6a7e615b71344547fd80a4f958c4edac3e7e97cb0fc93d07d0437fe55c),
+    which supersedes the 2026-09-21 draft in the patch (amended 2026-09-24,
+    QA spec-gap note 003144). The documenter checks its facts against
+    `local-engineering.prompt` and the roles list (the trim spells the role
+    "hardener"; the repo's role id is `hardender` - a fact to report, the
+    wording is the operator's to change) and adds a short "briefing file"
+    section to the local-seat how-to (BL-1235's page).
 
   ## Scope
   - `extension/src/tools/localQwenSeatLive.ts`,
     `extension/test/bl1235LocalQwenSeatLive.test.js` (from the patch).
-  - `docs/reference/local-model-briefing.md` (new, from the patch);
+  - `docs/reference/local-model-briefing.md` (new, from the 2026-09-24
+    evidence copy, not the patch's 09-21 draft);
     the local-seat how-to (documenter).
   - `specs/features/BL-1682-the-local-seat-sends-the-project-briefing-as-its-system-prompt.feature`
     and `specs/pipeline/steps/bl1682LocalSeatBriefingSystemPromptSteps.js`
@@ -109,8 +117,9 @@ qa_e2e_procedure: |
      green, including the five briefing tests from the patch.
   2. `node specs/pipeline/cli.js specs/features/BL-1682-the-local-seat-sends-the-project-briefing-as-its-system-prompt.feature`:
      all ok.
-  3. `git show <parcel>:docs/reference/local-model-briefing.md | head -3`
-     prints the operator's heading; the how-to names the file.
+  3. `git show <parcel>:docs/reference/local-model-briefing.md | sha256sum`
+     is 8ff4ad6a7e615b71344547fd80a4f958c4edac3e7e97cb0fc93d07d0437fe55c
+     (the operator's 2026-09-24 text); the how-to names the file.
   4. Live (optional, operator): with the briefing on disk, one message in
      the local seat topic answers about SwarmForge rather than generically.
 
@@ -133,5 +142,20 @@ notes: |
   INVEST at mint: one observable outcome (the seat answers with project
   context), one sitting (the code exists), testable through the fake
   completion seam; the patch's own five tests are the unit half.
+
+  Amended 2026-09-24 ~13:25Z on QA's spec-gap note 003144 (evidence
+  a7de7946c6): the parcel was built correctly from the 09-21 draft the
+  ticket named, but the operator trimmed the live briefing on 2026-09-24
+  (07:44 local, 1049 bytes, first line "You are a local assistant for the
+  SwarmForge VC project...") for the CPU-bound IQ3 27B seat, where a
+  2212-byte system prompt costs about twice the trim on every turn.
+  Ruling: "as the operator wrote it" means the operator's latest text, so
+  the trim lands; its exact bytes are copied to
+  backlog/evidence/BL-1682-operator-briefing-20260924.md (the coder cannot
+  see the master checkout's untracked file). Rebuild: the coder replaces
+  the parcel's briefing with that file, the documenter re-checks facts,
+  QA re-runs the changed-file checks. The master precondition stands: the
+  operator's untracked copy must be cleared (it is identical to the
+  evidence copy) before the land, or the reconcile merge refuses.
 
 assigned_to: coder
