@@ -899,3 +899,21 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   QA, `commit: 4b7615bc14`, the documenter's forward) - never a fresh Work
   note to the coder, never a re-run from the start. Verify by the
   receiver's `in_process/` naming the task on its next turn.
+
+## Dropping a seat mid-shift: every roster copy, then the session (2026-09-24, until BL-1720 lands)
+- Killing a seat's session is undone by the babysitter within minutes: its
+  session repair reads `.swarmforge/roles.tsv` (written at launch), never
+  the pack conf. Editing the conf changes nothing until the next launch.
+  Editing only the master roster leaves every worktree's own
+  `.worktrees/<role>/.swarmforge/roles.tsv` copy listing the seat, and
+  senders in those worktrees read their copy. So a dropped seat keeps
+  receiving reverse-hop copies, and its wakes are typed into another pane
+  (BL-1719).
+- To drop a seat until BL-1720's retire verb exists: remove its row from
+  `.swarmforge/roles.tsv`, `.swarmforge/sessions.tsv` and every
+  `.worktrees/*/.swarmforge/roles.tsv` (copy the edited master over each
+  one, as `swarmforge.sh` does at launch), and only then kill its session.
+  Then list its `inbox/new` and `inbox/in_process` and decide what is
+  there. 2026-09-24's coder@2 drop missed the worktree copies and
+  `sessions.tsv`, which left three BL-1703 reverse copies stranded and
+  four empty wakes in the specifier's pane.

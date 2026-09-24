@@ -1,0 +1,141 @@
+id: BL-1719
+title: "Phantom 'You have new handoff mail' wakes: handoff-lib/wake-session remaps a wake whose recipient has no tmux session to the mono-router resident (the first non-coordinator roles.tsv row) in EVERY pack, so after the operator dropped the coder@2 seat on 2026-09-24 (fe664164b0) each wake for coder@2 was typed into the specifier's pane (4 empty wakes, 09:49:41-11:26:53Z) while coder@2's own parcels woke nowhere; inject-traffic.log carries 30 such cross-pane wakes since 2026-09-13; outside a rotation-router pack a wake for a missing session is skipped and logged, on both delivery paths"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour across roles (human, 2026-09-24:
+# "You are not the only one getting those, it's worth investigating where
+# they originate from and stop the noise."). Every phantom wake costs the
+# woken seat a turn, and the wake the parcel's real recipient needed is
+# lost. Not critical: no parcel is lost - the mailbox copy lands and the
+# chase ladder or the recipient's own poll still finds it.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: human-requested
+depends_on: []
+# No open ticket touches handoff_lib.bb's wake-session/resolve-wake-session
+# (grep of paused/ and active/, 2026-09-24). BL-1720 (the stale worktree
+# roster that addressed parcels to the removed seat) is the sibling cause;
+# either alone stops today's noise, both are needed for the class.
+mutation_cost: medium
+# medium: Babashka only (no mutation/CRAP/DRY wired, BL-472) in
+# handoff_lib.bb's wake-session (shared by handoffd's notify! and the
+# sender's sync delivery), one bb runner case and one feature over a
+# private tmux server fixture.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1719-a-wake-for-a-missing-session-never-lands-in-another-roles-pane.feature
+
+# Handler pin only (BL-233, BL-1371). Both consumers (handoffd.bb's notify
+# and handoff_inject_lib.bb's deliver-parcel!) already call wake-session,
+# so an anchor there matches before and after (BL-1235); the feature drives
+# both real delivery paths against a private tmux server.
+required_wiring:
+  - 'specs/pipeline/steps/bl1719WakeForMissingSessionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options), and it answers the human's
+  own request to stop the noise (source). FIRM: the resident remap stays
+  exactly as it is in a rotation-router pack (BL-931's
+  rotation-router-pack?, the one shared resolution); outside one, a wake
+  whose configured session does not exist is not sent anywhere and is
+  logged as skipped with the missing session named. FIRM: the fix is in
+  the one shared resolver both delivery paths call, never two copies. FIRM:
+  the fixture runs on a private tmux server and proves it never touches
+  the live one (engineering Guardrails, BL-1390).
+
+invariants:
+  - "Outside a rotation-router pack, a wake is typed only into the session roles.tsv names for the parcel's recipient; a recipient with no session gets no wake, on every delivery path."
+
+description: |
+  ## What is wrong
+
+  The human, 2026-09-24 (verbatim, after the specifier reported repeated
+  empty wakes): "You are not the only one getting those, it's worth
+  investigating where they originate from and stop the noise."
+
+  Traced by the specifier the same day:
+  - The specifier's session transcript has 9 wake lines; 4 found an empty
+    mailbox: 09:49:41.838Z, 11:16:38Z, 11:18:31Z, 11:26:53Z. Each is within
+    one second of a parcel addressed to coder@2: 011167 (coordinator,
+    09:49:41), 001014 (cleaner, 11:16:37), 002563 (architect, 11:18:30),
+    002567 (architect, 11:26:52).
+  - `.swarmforge/handoffs/inject-traffic.log`, 09:49:41.844Z:
+    `source=sync-deliver outcome=ok role=coder@2 session=swarmforge-specifier`.
+    The other three went through handoffd, which does not write that log.
+  - fe664164b0 (09:49:26Z, operator): "Drop coder@2 second-Claude seat".
+    The live tmux server has no swarmforge-coder@2 session.
+  - `handoff-lib/wake-session` -> `resolve-wake-session`: configured
+    session missing and resident present -> the resident's session.
+    `mono-router-resident-session` is "first non-coordinator roles.tsv
+    session", in this standing pack `swarmforge-specifier`. The docstring
+    scopes the remap to mono-router / sequential rotation; the code
+    applies it in every pack.
+  - The same class, historically: inject-traffic.log has 30 wakes typed
+    into a session other than the recipient's since 2026-09-13 (QA,
+    hardender, documenter, specifier, architect, cleaner -> swarmforge-coder,
+    and today coder@2 -> swarmforge-specifier). Which of those days ran a
+    rotation-router pack, where the remap is correct, is not reconstructed
+    here. The count covers the sync-delivery path only.
+
+  ## What is wanted
+  - Scenario 01 (outline, both delivery paths): standing pack, a note to
+    coder@2 with no session - no pane receives anything, the skip is
+    logged naming the missing session, the note is in coder@2's inbox.
+  - Scenario 02: rotation-router pack - a dormant role's wake still goes
+    to the resident, unchanged.
+
+  ## How (direction, not mandate)
+  - Gate the remap in `wake-session` (or `resolve-wake-session`'s caller)
+    on `rotation-router-pack?`; the pure resolver gains the pack fact as
+    an input so it stays testable without tmux.
+  - The fixture writes its own `.swarmforge/tmux-socket` pointing at a
+    private tmux server started by the test, unsets TMUX for every
+    subprocess, and asserts the live socket path appears nowhere in the
+    fixture (BL-1390's proof posture).
+
+  ## Scope
+  - `swarmforge/scripts/handoff_lib.bb` (wake-session / resolve-wake-session).
+  - A bb runner case beside the existing wake-session tests.
+  - `specs/features/BL-1719-...feature` + the pinned handler.
+  - Docs: the handoff-flow reference's wake paragraph (handoff-flow.mmd
+    only if its wake edge names the remap).
+
+  ## Not in scope
+  - Why worktree senders still address a removed seat (BL-1720).
+  - The three stranded coder@2 parcels (coordinator/operator bookkeeping).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1719-a-wake-for-a-missing-session-never-lands-in-another-roles-pane.feature`:
+     all ok (3 of 3).
+  2. The existing wake-session / mono-router bb runners and
+     `swarmforge/scripts/test/test_handoffd_notify_verified.sh`: green.
+  3. After the land, with a standing pack running: rows written after the
+     land time whose session is not the recipient's own read zero -
+     `awk '{r="";s="";for(i=1;i<=NF;i++){if($i~/^role=/)r=substr($i,6);if($i~/^session=/)s=substr($i,9)} if(r!=""&&s!="swarmforge-"r)print}' .swarmforge/handoffs/inject-traffic.log`
+     (the census this ticket counted 30 with), filtered to lines after the
+     land's timestamp.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+source: |
+  Human, verbatim (via Claude Code, 2026-09-24, specifier session): "You
+  are not the only one getting those, it's worth investigating where they
+  originate from and stop the noise."
+
+notes: |
+  Minted 2026-09-24 by the specifier from the human's request (source),
+  traced the same pass through the specifier's own session transcript,
+  inject-traffic.log, the live tmux session list, roles.tsv and
+  handoff_lib.bb. A hypothesis that a property-test fixture (BL-1203's)
+  reached the live server through an inherited TMUX was tested against a
+  private decoy server and ruled out.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). IR-DRY: one possible-synonym
+  (the delivery step vs the inbox check) is action vs state, kept.

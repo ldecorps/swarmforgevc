@@ -1,0 +1,140 @@
+id: BL-1720
+title: "A seat dropped mid-shift does not stay dropped: on 2026-09-24 the coordinator killed swarmforge-coder@2 and dropped its window from the pack (fe664164b0, 09:49Z), babysitterd resurrected it from the start-time roles.tsv at 09:53Z, and after the master roles.tsv was edited by hand (09:55Z) sessions.tsv and all eight worktree roles.tsv copies still listed coder@2 - so cleaner and architect kept addressing reverse-hop copies to it (three BL-1703 copies stranded in its inbox) and each one's wake landed in the specifier's pane (BL-1719); one retire operation takes a seat out of every roster copy, and nothing resurrects or addresses it afterwards"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - an operator directive (drop a
+# seat) cannot be carried out against a running swarm: killing the pane
+# is undone by the babysitter within minutes, editing the conf changes
+# nothing until the next launch, and a hand-edited master roster leaves
+# every worktree sender addressing the gone seat. Not critical: nothing is
+# lost; stranded copies are merge-only and the next full launch rewrites
+# every copy.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: human-requested
+depends_on: []
+# No open ticket touches seat retirement or the worktree roster copies
+# (grep of paused/ and active/, 2026-09-24). BL-1719 (the wake remap) is
+# the sibling; neither depends on the other.
+mutation_cost: medium
+# medium: Babashka/shell only (no mutation/CRAP/DRY wired, BL-472): a
+# retire verb that reuses swarmforge.sh's own roster writers
+# (write_roles_file / write_sessions_file / the per-worktree cp at
+# swarmforge.sh:1304) and kills the session; one feature over a fixture
+# swarm on a private tmux server.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1720-a-seat-dropped-mid-shift-stays-dropped.feature
+
+# Handler pin only (BL-233, BL-1371). The retire verb is new and its only
+# caller is the coordinator's prompt (landed by the specifier, see notes),
+# so no production anchor exists to pin (BL-1235); the feature drives the
+# real verb, babysitter sweep and swarm_handoff over a fixture.
+required_wiring:
+  - 'specs/pipeline/steps/bl1720SeatDroppedMidShiftStaysDroppedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options), from the human's request to
+  stop the wake noise (source). FIRM: one operation retires a seat - the
+  master roles.tsv, sessions.tsv and every worktree's roles.tsv copy lose
+  its row in the same step, then its session is killed - reusing the
+  launcher's own roster writers, never a second format. FIRM: the
+  babysitter's repair and every sender read the retired roster, so the
+  seat is neither resurrected nor addressed. FIRM: the seat's worktree,
+  branch and mailbox are left in place (the next launch or a human decides
+  them); parcels already stranded there are reported, not moved.
+
+invariants:
+  - "After a seat is retired, no roster copy the swarm reads - master roles.tsv, sessions.tsv, any worktree's roles.tsv - lists it, and no delivery or session repair targets it."
+
+description: |
+  ## What is wrong
+
+  Traced 2026-09-24 by the specifier while chasing phantom wakes (BL-1719)
+  and confirmed by the operator session's own record
+  (memory: babysitterd-resurrects-config-dropped-seat-from-stale-roles-tsv):
+  - 09:49:06Z `tmux kill-session -t swarmforge-coder@2`; 09:49:26Z
+    fe664164b0 comments `window coder@2` out of swarmforge.conf and
+    packs/full-forge.conf ("Drop coder@2 second-Claude seat (operator
+    directive 2026-09-24): coder no longer the bottleneck; re-add once
+    local-LLM driver-seat wiring lands").
+  - 09:53:05Z babysitterd `REPAIR [repaired] swarmforge-coder@2`: its
+    roster comes from `.swarmforge/roles.tsv`, written once at launch; it
+    never reads the pack conf.
+  - 09:55:44Z the master `.swarmforge/roles.tsv` was rewritten without
+    coder@2 by hand; `sessions.tsv` and `tmux-socket` keep their 09:00
+    launch mtimes.
+  - Every `.worktrees/<role>/.swarmforge/roles.tsv` still has the coder@2
+    row (10 rows, launch-time copy from `swarmforge.sh:1304`), and
+    `swarm_handoff.bb`'s `project-root` prefers a worktree carrying its
+    own `.swarmforge/roles.tsv`, so `reverse-roles` reads the stale copy.
+  - Result: cleaner 001014 (11:16Z) and architect 002563/002567
+    (11:18Z, 11:26Z), `non-forwarding: true` reverse copies for BL-1703,
+    sit in `.worktrees/coder2/.swarmforge/handoffs/inbox/new/`; each
+    delivery's wake was remapped into the specifier's pane (BL-1719).
+  - Likely also, not verified live: BL-1004's rework affinity reads
+    sibling seats from the same stale copy, so a rework for a task the
+    gone seat worked defers the Claude coder's claim until the cross-seat
+    deadline.
+
+  ## What is wanted
+  - Scenario 01: retiring coder@2 removes its row from the master
+    roles.tsv, sessions.tsv and every worktree copy, and kills its session.
+  - Scenario 02: the babysitter's sweep after that creates no session for
+    it.
+  - Scenario 03: a back-all send from the architect's worktree addresses
+    no copy to it.
+  - The verb prints the parcels still in the retired seat's mailbox
+    (new/ and in_process/), so the caller can decide them.
+
+  ## How (direction, not mandate)
+  - A verb beside the launcher (`swarmforge/scripts/retire_seat.sh` or a
+    `swarmforge.sh retire-seat <seat>` entry) that rewrites the rosters
+    through the launcher's own writers, from the current conf, then kills
+    the session - in that order, so the babysitter never sees a missing
+    session that the roster still lists.
+  - The fixture uses a private tmux server and proves the live socket is
+    never touched (engineering Guardrails, BL-1390).
+
+  ## Scope
+  - The new verb (and whatever shared shell lib it needs).
+  - `specs/features/BL-1720-...feature` + the pinned handler.
+  - Docs: a how-to for dropping or re-adding a seat mid-shift.
+
+  ## Not in scope
+  - Re-adding a seat mid-shift (the inverse verb) - a later slice if
+    wanted; today the next launch adds it.
+  - The wake remap into another pane (BL-1719).
+  - Moving or deleting the three stranded coder@2 parcels.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1720-a-seat-dropped-mid-shift-stays-dropped.feature`:
+     all ok (3 of 3).
+  2. The babysitter runner and the reverse-hop runner (the existing
+     reverse_hop_lib and babysitterd sweep tests): green.
+  3. The verb with no argument prints usage and exits non-zero; with an
+     unknown seat it refuses naming it and changes no file.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+source: |
+  Human, verbatim (via Claude Code, 2026-09-24, specifier session): "You
+  are not the only one getting those, it's worth investigating where they
+  originate from and stop the noise."
+
+notes: |
+  Minted 2026-09-24 by the specifier with BL-1719, from the same trace.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). The interim coordinator.prompt
+  rule (how to drop a seat mid-shift until this lands: every roster copy,
+  then the session) is landed by the specifier in the mint commit; when
+  this lands the specifier replaces it with a pointer to the verb (BL-798).
+  IR-DRY: one possible-synonym (the Given "has been retired" vs the When
+  "is retired") is state vs action, kept.
