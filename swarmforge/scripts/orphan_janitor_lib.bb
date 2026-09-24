@@ -37,9 +37,13 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 
 ;; Linux mktemp under /tmp, plus Darwin $TMPDIR (/var/folders/…/T/) checkouts
-;; left by acceptance / BL-622 primary-launch sandboxes.
+;; left by acceptance / BL-622 primary-launch sandboxes. BL-1723: the
+;; bl<digits>- family (852 step-handler/test fixture sites, 2026-09-24
+;; census) is a known fixture-root shape on BOTH hosts, not Darwin-only -
+;; the Linux /tmp branch gains it too, nothing else new (candidacy only;
+;; the sweep's own reap conditions are untouched).
 (def disposable-root-re
-  #"(?:/tmp/(?:tmp\.[^/\s]+|aps-[^/\s]+|sfvc-[^/\s]+)|/var/folders/[^/\s]+/[^/\s]+/T/(?:tmp\.[^/\s]+|aps-[^/\s]+|sfvc-[^/\s]+|bl\d+-[^/\s]+))")
+  #"(?:/tmp/(?:tmp\.[^/\s]+|aps-[^/\s]+|sfvc-[^/\s]+|bl\d+-[^/\s]+)|/var/folders/[^/\s]+/[^/\s]+/T/(?:tmp\.[^/\s]+|aps-[^/\s]+|sfvc-[^/\s]+|bl\d+-[^/\s]+))")
 
 (defn tmp-project-root?
   "True when a path is a disposable mktemp/sandbox checkout — never the host repo."

@@ -202,6 +202,38 @@
          (orphan-janitor-lib/tmp-ancillary-cmdline?
           "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/bl622-primary-launch-fblFqQ/extension/out/tools/start-bridge-headless.js /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/bl622-primary-launch-fblFqQ 8765"))
 
+;; BL-1723: the bl<digits>- family is a known fixture-root shape on Linux
+;; /tmp too, not Darwin-only under /var/folders/.../T/.
+
+(assert= "extract Linux /tmp bl-prefixed root (BL-849's own aps-root shape)"
+         "/tmp/bl849-aps-root-Ab12Cd"
+         (orphan-janitor-lib/extract-disposable-root
+          "bash /tmp/bl849-aps-root-Ab12Cd/bin/babysitterd.sh /tmp/bl849-aps-root-Ab12Cd"))
+
+(assert= "extract Linux /tmp bl-prefixed root (land fixture shape)"
+         "/tmp/bl1366-land-Xy34Zw"
+         (orphan-janitor-lib/extract-disposable-root
+          "bash /tmp/bl1366-land-Xy34Zw/bin/babysitterd.sh /tmp/bl1366-land-Xy34Zw"))
+
+(assert= "Linux /tmp bl-prefixed babysitterd detected as an ancillary candidate"
+         true
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "bash /tmp/bl849-aps-root-Ab12Cd/bin/babysitterd.sh /tmp/bl849-aps-root-Ab12Cd"))
+
+(assert= "a bl-word with no digits (blog-notes) is never a disposable root"
+         nil
+         (orphan-janitor-lib/extract-disposable-root
+          "bash /tmp/blog-notes/bin/babysitterd.sh /tmp/blog-notes"))
+
+(assert= "a session scratchpad path is never a disposable root"
+         nil
+         (orphan-janitor-lib/extract-disposable-root
+          "bash /tmp/claude-1000/session-scratchpad/bin/babysitterd.sh /tmp/claude-1000/session-scratchpad"))
+
+(assert= "the live host repo path is never a disposable root"
+         false
+         (orphan-janitor-lib/tmp-project-root? "/home/carillon/swarmforgevc"))
+
 (assert= "worktree babysitterd.sh aimed at Darwin tmp root detected"
          true
          (orphan-janitor-lib/tmp-ancillary-cmdline?
