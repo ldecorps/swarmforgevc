@@ -1,0 +1,149 @@
+id: BL-1706
+title: "Swarm stamp-off: hotfix 7d109d3b2e - consult-eligible? refuses the mono-router consult spawn outright on a pack that declares `config single_inference_slot 1`, so a stuck role's session never contends with the mid-turn resident for a one-request-at-a-time local model; every other pack unchanged - review-only certification (BL-848) of what landed on 2026-09-23"
+milestone: M8
+type: defect
+severity: medium
+# medium: the behaviour is live on main; what is open is the review the
+# constitution owes a hotfix (BL-848). Not high: nothing is degraded
+# today, and the ledger's resurfacing keeps the ask alive.
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-directive
+depends_on: []
+mutation_cost: low
+# low: review-only; Babashka only (no mutation/CRAP/DRY wired, BL-472);
+# one step handler drives the real consult-eligible?, the real conf
+# parser and handoffd's spawn with a fake tmux.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1706-swarm-stamp-single-inference-slot-consult-refusal-7d109d3b2e.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired (handoffd's spawn-consult-session! passes the flag).
+# The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1706SwarmStampSingleInferenceSlotSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed. What needs sign-off is the DISPOSITION only - that reviewing the
+  landed diff of 7d109d3b2e (BL-848 posture) rather than re-implementing
+  it is right, and that medium is the right severity for a review of
+  behaviour already live. FIRM - the parcel changes no file except
+  evidence, the feature, the step handler (plus lib/ helpers) and test
+  files under swarmforge/scripts/test/; a confirmed finding is a narrow
+  follow-up via note to the specifier, never an in-parcel rewrite; the
+  parcel never writes human_decision into backlog/hotfix-ledger.yaml - you
+  record certify or waive with hotfix_ledger_update.bb --decide after this
+  reaches done.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, a step handler (plus its lib/ helpers) or a file under swarmforge/scripts/test/; mono_router_lib.bb, handoffd.bb and every pack conf are read, never edited."
+
+description: |
+  ## What
+  An operator hotfix is live on main and has never been through a gate.
+  This is that gate: a REVIEW ticket - confirm or refute, and open narrow
+  follow-ups for anything found.
+
+  ## The failure it fixed (from the commit message)
+  The mono-router consult spawn (hotfix 5bdf93beed, 2026-09-12, stamped by
+  BL-1549) starts a stuck role's own session when the resident is refused
+  a rotation with `:departing-mid-parcel`. That refusal only fires while
+  the resident is mid-turn, so on a pack whose backend serves one request
+  at a time the spawned session is a second requester for the slot the
+  resident holds. Observed 2026-09-23 on ollama-ista-iq3s-mono-router: the
+  coordinator and a QA consult session both retrying litellm timeouts,
+  the coder idle.
+
+  ## What landed (files to review)
+  - `swarmforge/scripts/mono_router_lib.bb`: `consult-eligible?` takes
+    `:single-inference-slot?` and refuses when true;
+    `parse-single-inference-slot?` reads `config single_inference_slot 1`.
+  - `swarmforge/scripts/handoffd.bb`: `single-inference-slot-pack?`
+    resolves the flag through `backlog-depth-lib/conf-file-path` (the
+    same resolution as `auth-respawn-max-attempts`) and
+    `spawn-consult-session!` passes it.
+  - `swarmforge/scripts/test/mono_router_lib_test_runner.bb`: the TDD
+    assertions.
+
+  ## Review goals
+  1. Scenarios 01-03 green against the real functions.
+  2. Absent flag is byte-for-byte the prior behaviour: BL-1549's feature
+     (`specs/features/BL-1549-swarm-stamp-consult-session-5bdf93beed.feature`)
+     passes on the parcel commit. Whichever of BL-1549 and this ticket
+     lands second re-runs the other's feature in its evidence.
+  3. PROBE, do not fix - the census of packs the flag should cover. At
+     mint, 1 of 4 tracked `ollama-*-mono-router.conf` packs sets it
+     (`ollama-qwen2.5-coder-mono-router.conf`, via ef6048b949);
+     `ollama-mixed`, `ollama-qwen3-8b` and `ollama-qwen3` do not, and of
+     the 3 untracked siblings only `ollama-ista-iq3s` does. Count with
+     `for f in $(git ls-files 'swarmforge/packs/ollama-*.conf'); do grep
+     -c '^config single_inference_slot 1' $f; done`. Record the census at
+     the parcel commit in evidence; if a local pack that shares one
+     inference slot still lacks the flag, note the specifier (a one-line
+     conf change, never this parcel's).
+  4. Record, do not review: whether a local pack should consult-spawn at
+     all is superseded for driver seats by BL-1697/BL-1698, where the
+     driver is the only writer to a driver seat's pane. Say so in the
+     evidence; do not extend the review there.
+
+  ## Scenario notes for the coder
+  - Scenario 01 calls `mono-router-lib/consult-eligible?` directly with a
+    map where every other check passes; scenario 02 calls
+    `parse-single-inference-slot?` on the four conf texts.
+  - Scenario 03 drives handoffd's `spawn-consult-session!` against a
+    `mkdtemp` project whose effective conf declares the flag, with a fake
+    tmux that records `new-session`; assert none recorded and no consult
+    marker written.
+  - Do NOT assert the ledger row's `human_decision` in a scenario: it
+    goes red, correctly, the day the human certifies (BL-1006). It is a
+    QA procedure step instead.
+  - The step handler is `bl1706SwarmStampSingleInferenceSlotSteps.js`,
+    landing in the SAME commit as the feature (BL-233).
+
+source: |
+  backlog/hotfix-ledger.yaml row `7d109d3b2e` (detected 2026-09-23, state
+  pending, stamp_ticket null; recorded by 3ccdff339c). Surfaced by the
+  coordinator's note "hotfix 7d109d3b2e has no stamp ticket (ledger
+  pending) - mint review ticket" (inbound
+  00_20260924T062712Z_011029, 2026-09-24T06:27Z). Hotfix landed on main
+  2026-09-23 11:52 BST with `Hotfix-Certification: pending`. From the
+  commit message, verbatim: "On a pack whose model backend serves one
+  request at a time (ollama `-np 1`, every seat pointed at the same local
+  :11434 endpoint - all seven ollama-*-mono-router.conf packs), that
+  escape hatch backfires" and "Absent/false reproduces every existing
+  pack's behavior byte-for-byte - this is opt-in per pack, not a default
+  change."
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat) completing the
+  coordinator's note the same pass. Grepped `7d109d3b2e` across
+  backlog/paused, active, done and hold before minting (BL-1253/BL-1260
+  duplicate-stamp lesson): the only hit was BL-1701, which cites the
+  commit as a pointer, not a stamp. The ledger row existed (pending, not
+  absent); linked with `hotfix_ledger_update.bb --link` in the mint
+  commit. Minted pending: medium is outside the 2026-09-17 auto-approval
+  carve-out. Epic local-llm-swarm (the fix is for local packs); BL-1549,
+  the stamp of the hotfix this one amends, is in swarm-reliability.
+
+  INVEST: Independent, Negotiable (fixture shape is direction), Valuable
+  (closes the owed review), Estimable (three scenarios over three known
+  functions), Small, Testable (real functions, fake tmux).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler (+ lib/), and files under swarmforge/scripts/test/
+     (invariant).
+  2. `node specs/pipeline/cli.js specs/features/BL-1706-swarm-stamp-single-inference-slot-consult-refusal-7d109d3b2e.feature`:
+     all scenarios ok.
+  3. `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb`: ok.
+  4. The evidence records review goal 3's census at the parcel commit and
+     goal 2's BL-1549 feature run.
+  5. `backlog/hotfix-ledger.yaml` row 7d109d3b2e: `human_decision: null`.
+  6. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide 7d109d3b2e approved|waived` and commits the ledger.
