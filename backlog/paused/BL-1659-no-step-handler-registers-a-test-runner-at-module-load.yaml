@@ -12,7 +12,7 @@ status: todo
 epic: unit-suite-speed
 priority: 7
 direction: swarm-reported
-depends_on: [BL-1630]
+depends_on: [BL-1630, BL-1718]
 # BL-1630 (active at the coder) lands the require census helper with the
 # node:module loader intercept and the module-load budget guard this
 # parcel extends; it promotes after BL-1630 lands. BL-1636 (done) landed
@@ -142,3 +142,8 @@ notes: |
   75 files, one shape; the feature pins the property (scenario 01's
   count) and the recipe (04) so the coder can codemod the majority and
   hand-check the 3 `after` handlers; the envelope is declared medium.
+
+  Amended 2026-09-24 (specifier): depends_on gains BL-1718, which edits
+  the same guard file (stepHandlerModuleLoadBudget.test.js's non-vacuity
+  case) as an expedited standing-red owner; sequencing only, nothing in
+  this ticket's scope changes.

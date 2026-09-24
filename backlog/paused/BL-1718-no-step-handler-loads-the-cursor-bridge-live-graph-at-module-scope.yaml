@@ -1,0 +1,129 @@
+id: BL-1718
+title: "extension/test/stepHandlerModuleLoadBudget.test.js is red under host load (QA, BL-1696's parcel b9410ccd73, load about 10, 2026-09-24): bl709BubbleItsOwnTelegramTopicSteps.js measured 530 ms (fastest of three) against the 400 ms budget because it and bl725RenameCursorRemoteTopicToHostSteps.js - the only 2 of the 13 handlers that mention it - require extension/out/tools/telegramCursorBridgeLive (211 modules, about 230 ms quiet) at module scope; both move the require inside their steps, and the guard's non-vacuity case stops counting a timing violation the host load can add to its fixture (417 ms)"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it holds BL-1696 at QA (Article 4.2). It is
+# load-sensitive - green 8/8 on main at load 3.6 the same hour - which
+# is how a guard file stays red on busy shifts and green on quiet ones.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+# BL-1659 (paused) also edits stepHandlerModuleLoadBudget.test.js (a
+# node:test check); it now depends_on this ticket. No open ticket touches
+# the bl709 or bl725 handlers (grep of paused/ and active/, 2026-09-24).
+mutation_cost: low
+# low: two handler files move one require each inside the step that uses
+# it; one unit-test assertion; the acceptance scenario is a static read
+# of the handler files - seconds per mutant.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1718-no-step-handler-loads-the-cursor-bridge-live-graph-at-module-scope.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers (the two handlers'
+# own steps) exist before the fix, so an anchor there matches before and
+# after (BL-1235); the census scenario is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1718CursorBridgeLiveLoadsInsideTheStepSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: both handlers that
+  require telegramCursorBridgeLive at module scope move it inside the
+  step that uses it - both, because the census charges a shared graph to
+  its first eager requirer and fixing bl709 alone hands the cost to bl725
+  (the BL-1685 cascade). FIRM: the guard's 400 ms budget and its
+  fastest-of-three sampling are unchanged; only the non-vacuity case's
+  expectation changes, so a load-added timing violation on its fixture no
+  longer fails it. FIRM: no allowlist entry (2026-09-20 ruling: timing
+  variance is not an accepted reason).
+
+invariants:
+  - "No step handler under specs/pipeline/steps requires extension/out/tools/telegramCursorBridgeLive at module scope, in either the relative-path or the path.join(EXT_OUT, ...) form."
+
+description: |
+  ## What is wrong
+
+  QA note 003122 and evidence 4a23fe1699
+  (`backlog/evidence/BL-1696-unowned-red-hold-QA-20260924.md`). QA's
+  `npm test` at BL-1696's parcel b9410ccd73, load about 10, failed two
+  cases in `extension/test/stepHandlerModuleLoadBudget.test.js`:
+  1. "bl709BubbleItsOwnTelegramTopicSteps.js: incremental require cost
+     530.7ms exceeds the 400ms budget (confirmed alone)".
+  2. The non-vacuity case "a fixture handler that lists a directory at
+     module load is named": expected exactly one violation, got two - the
+     directory listing AND "incremental require cost 417.0ms exceeds the
+     400ms budget" on a trivial fixture.
+  BL-1687's row for this file was retired by its land (aa41de4286), so
+  the red had no owner.
+
+  Specifier, main, same hour: the file passes 8/8 at load 3.6.
+  `require('./specs/pipeline/steps/bl709BubbleItsOwnTelegramTopicSteps.js')`
+  in a fresh node loads 212 modules in 211-214 ms (three runs, load 4.5).
+  `require('./extension/out/tools/telegramCursorBridgeLive')` alone is 211
+  modules, 231 ms; a builtins-only require is 2 ms. So bl709's cost is
+  that one module-scope require (line 32), scaled by host load.
+
+  Census (BL-1445), counted 2026-09-24:
+  `git grep -l 'telegramCursorBridgeLive' -- 'specs/pipeline/steps/*Steps.js'`
+  = 13 handlers;
+  `grep -l "^const .*require(.*telegramCursorBridgeLive" specs/pipeline/steps/*Steps.js`
+  = 2 at module scope: bl709 (relative path) and bl725
+  (`require(path.join(EXT_OUT, 'telegramCursorBridgeLive.js'))`, line 14).
+  bl725 sorts after bl709, so it pays nothing today and all of it the
+  moment bl709 alone is fixed.
+
+  Failure 2 is a test flaw on its own: a fixture's require timing is
+  host-dependent, so asserting the violation COUNT lets load add one.
+
+  ## What is wanted
+  - bl709 and bl725 require telegramCursorBridgeLive inside the step(s)
+    that call it (BL-1658/BL-1685/BL-1687's pattern); their own features
+    still pass.
+  - The non-vacuity case asserts the fixture's listing violation is named
+    - by pinning the fixture's timing under budget through the census
+    helper's existing injection seam, or by asserting on the listing
+    violation's presence rather than the count. Never by widening the
+    budget.
+  - Scenario 01: the census, pinned to its two known members.
+
+  ## How (direction, not mandate)
+  - The census step must recognise both require idioms; pinning bl725 in
+    the candidate set is what proves it (a matcher blind to path.join
+    would miss it - BL-1445).
+
+  ## Scope
+  - `specs/pipeline/steps/bl709BubbleItsOwnTelegramTopicSteps.js`,
+    `specs/pipeline/steps/bl725RenameCursorRemoteTopicToHostSteps.js`.
+  - `extension/test/stepHandlerModuleLoadBudget.test.js` (non-vacuity
+    case only).
+  - `specs/features/BL-1718-...feature` + the pinned handler.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1718-no-step-handler-loads-the-cursor-bridge-live-graph-at-module-scope.feature`:
+     all ok.
+  2. The BL-709 and BL-725 features (the handlers' own): all ok.
+  3. `cd extension && npx vitest run test/stepHandlerModuleLoadBudget.test.js`:
+     8 of 8; record the host load average beside the result.
+  4. `node -e` requiring each of the two handlers in a fresh process
+     loads well under 50 modules (was 212).
+  5. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  6. After landing: the land prints REGISTER_ROW_RETIRED for the
+     stepHandlerModuleLoadBudget.test.js row; resume BL-1696's land.
+
+notes: |
+  Minted 2026-09-24 by the specifier from QA's unowned-red note 003122
+  (holding BL-1696), the same pass (standing-red amendment 2026-09-05);
+  register row added in the mint commit; the census and the fresh-process
+  measurements re-run on main the same hour.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). BL-1659's depends_on gains
+  this ticket (same guard file). Holder note sent to QA naming BL-1696.
