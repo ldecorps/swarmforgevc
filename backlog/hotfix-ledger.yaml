@@ -367,34 +367,34 @@
   subject: "Fix self-contradictory fallback in the in-process-resume STOP banner"
   detected_at: 2026-09-23
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1707
   human_decision: null
   decided_at: null
 - commit: 7ba57573ff
   subject: "Add coder-stop_banner_compliance and coder-tool_capability_denial safety competencies"
   detected_at: 2026-09-23
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1707
   human_decision: null
   decided_at: null
 - commit: e94b78a7a3
   subject: "Withdraw coder-tool_capability_denial from the certification gate"
   detected_at: 2026-09-23
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1707
   human_decision: null
   decided_at: null
 - commit: ab1d4cb2bd
   subject: "Aider seats read repo-root model settings by absolute path; log LLM requests"
   detected_at: 2026-09-23
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1708
   human_decision: null
   decided_at: null
 - commit: d0dd4d36b7
   subject: "qwen2.5-coder mono-router: serve the model's native 32k window, hold the repo map"
   detected_at: 2026-09-23
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1708
   human_decision: null
   decided_at: null

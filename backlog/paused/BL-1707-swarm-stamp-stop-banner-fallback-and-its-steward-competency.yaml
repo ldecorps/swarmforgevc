@@ -1,0 +1,140 @@
+id: BL-1707
+title: "Swarm stamp-off: hotfixes 22a2a9fc7f, 7ba57573ff and e94b78a7a3 - the in-process-resume STOP banner no longer tells an aider seat to run the script it forbids, the local compliance battery gains the coder-stop_banner_compliance safety competency (a coder-tool_capability_denial added alongside it was withdrawn the same evening) and survives a timed-out probe - review-only certification (BL-848) of what landed on 2026-09-23"
+milestone: M8
+type: defect
+severity: medium
+# medium: all three are live on main; what is open is the review the
+# constitution owes each hotfix (BL-848). Nothing is degraded today.
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-directive
+depends_on: []
+mutation_cost: low
+# low: review-only; Babashka and Python (no mutation lane for either);
+# the handler drives notify-agent! over a fake tmux, the pure safety gate,
+# and the battery against a stand-in endpoint.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1707-swarm-stamp-stop-banner-fallback-and-its-steward-competency.feature
+
+# A review parcel adds no production call site; every mechanism under
+# review is already wired. The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1707SwarmStampStopBannerCompetencySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed. What needs sign-off is the DISPOSITION only - one review ticket
+  for three same-day hotfixes that share one subject (the STOP banner and
+  the competency that probes it; the withdrawn competency's add and
+  removal are one net change), reviewing the landed diffs rather than
+  re-implementing them, at medium severity. FIRM - the parcel changes no
+  file except evidence, the feature, the step handler (plus lib/ helpers)
+  and test files under swarmforge/scripts/test/; a confirmed finding is a
+  narrow follow-up via note to the specifier; the parcel never writes
+  human_decision into backlog/hotfix-ledger.yaml.
+
+invariants:
+  - "The stamp never rewrites the hotfixes: every file the parcel touches is evidence, a feature, a step handler (plus its lib/ helpers) or a file under swarmforge/scripts/test/; agent_runtime_inject.bb, agent_runtime_lib.bb, prompt_engine_lib.bb, handoffd.bb, model_steward_lib.bb and local_model_compliance_battery.py are read, never edited."
+
+description: |
+  ## What
+  Three operator hotfixes from 2026-09-23, live on main, never through a
+  gate. This is that gate: a REVIEW ticket - confirm or refute, open
+  narrow follow-ups for anything found.
+
+  ## What landed (files to review)
+  - **22a2a9fc7f.** `agent_runtime_inject.bb`'s no-narration suffix
+    appended "if nothing to do, reply exactly `! ready_for_next.sh`" to
+    every injected aider text, including handoffd's in-process-resume
+    banner, which says "Do NOT run ready_for_next.sh again" in the same
+    breath. Observed live: an aider coder/QA seat re-ran the forbidden
+    script. `notify-agent!` gains `:fallback-command` (default unchanged);
+    `notify-in-process-resume!` passes `safe-idle-fallback-command`
+    (`"true"`). Test: `test_agent_runtime_inject_mock.sh`.
+  - **7ba57573ff.** `local_model_compliance_battery.py` and
+    `model_steward_lib.bb`: two safety-critical competencies
+    (`coder-stop_banner_compliance`, `coder-tool_capability_denial`);
+    `_escalating_probe` catches a per-call error instead of crashing
+    before the scorecard write; the default per-call timeout 240 s ->
+    900 s, overridable by `MODEL_STEWARD_BATTERY_TIMEOUT_S`.
+  - **e94b78a7a3.** Withdraws `coder-tool_capability_denial` from the
+    gate and the battery: it failed a model for asking to have a file
+    added to the chat, which aider's own system prompt requires. The gate
+    ignores the entry on old scorecards.
+
+  ## Review goals
+  1. Scenarios 01-03 green against the real code.
+  2. The existing tests pass on the parcel commit:
+     `test_agent_runtime_inject_mock.sh`, `model_steward_test_runner.bb`.
+  3. Record, do not review: under BL-1697 (paused) a driver seat receives
+     no resume banner at all; the banner and this fallback remain for
+     every non-driver aider seat. Scenario 01 pins a QA seat for that
+     reason. A successor ticket that brings QA under the driver retires
+     scenario 01's banner row (BL-1006).
+  4. PROBE, do not fix: whether the 900 s default is still right once the
+     GPU is in (the commit itself says it is "still not always enough on
+     this hardware"). Record the battery's measured per-call times, if any
+     run exists after the GPU lands, in evidence.
+
+  ## Scenario notes for the coder
+  - Scenario 01 drives `notify-agent!` (with `:text`, and via
+    `notify-in-process-resume!`) against a fake tmux recording typed text,
+    for an agent whose capability is `:shell-run-script`.
+  - Scenario 02 calls `certification-safety-gate` on the three entry
+    lists.
+  - Scenario 03 runs the battery against a stand-in HTTP endpoint that
+    stalls past a short `MODEL_STEWARD_BATTERY_TIMEOUT_S` on one probe;
+    never the real ollama.
+  - Do NOT assert the ledger rows' `human_decision` in a scenario (red
+    the day the human certifies, BL-1006); it is a QA step.
+  - The step handler is `bl1707SwarmStampStopBannerCompetencySteps.js`,
+    landing in the SAME commit as the feature (BL-233).
+
+source: |
+  backlog/hotfix-ledger.yaml rows `22a2a9fc7f`, `7ba57573ff`, `e94b78a7a3`
+  (all detected 2026-09-23, state pending, stamp_ticket null; recorded by
+  30990bd3b0). Surfaced by the coordinator's notes "hotfix <sha> has no
+  stamp ticket (ledger pending) - mint review ticket" (inbounds
+  00_20260924T062802Z_011031, 00_20260924T062814Z_011032,
+  00_20260924T062927Z_011034). From the commit messages, verbatim:
+  "Observed live 2026-09-23: an aider coder/QA seat took the fallback
+  literally and re-ran the forbidden script." (22a2a9fc7f); "a single
+  timeout (a real, live outcome on a slow CPU-only model, not a fluke)
+  crashed the whole script before the scorecard write at the bottom"
+  (7ba57573ff); "A gate that grades correct behaviour as unsafe refuses
+  good models for the wrong reason (the weekly recruiter consults it)."
+  (e94b78a7a3).
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat) completing
+  three coordinator notes in one pass. The three are consolidated into
+  one stamp, as BL-1549 stamped two (the 2026-09-17 directive to cut
+  near-duplicate tickets): one subject, same author and day, and
+  7ba57573ff and e94b78a7a3 are a single net change. Grepped each SHA
+  across backlog/paused, active, done and hold before minting: no prior
+  stamp. All three ledger rows existed (pending) and are linked in the
+  mint commit. Minted pending: medium is outside the 2026-09-17
+  auto-approval carve-out.
+
+  INVEST: Independent, Negotiable (fixture shapes are direction), Valuable
+  (closes three owed reviews in one parcel), Estimable (three scenarios
+  over known functions), Small, Testable (fake tmux, pure gate, stand-in
+  endpoint).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler (+ lib/), and files under swarmforge/scripts/test/
+     (invariant).
+  2. `node specs/pipeline/cli.js specs/features/BL-1707-swarm-stamp-stop-banner-fallback-and-its-steward-competency.feature`:
+     all scenarios ok.
+  3. `bash swarmforge/scripts/test/test_agent_runtime_inject_mock.sh` and
+     `bb swarmforge/scripts/test/model_steward_test_runner.bb`: green.
+  4. `backlog/hotfix-ledger.yaml` rows 22a2a9fc7f, 7ba57573ff,
+     e94b78a7a3: `human_decision: null`.
+  5. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide <sha> approved|waived` for each and commits the ledger.

@@ -1,0 +1,130 @@
+id: BL-1708
+title: "Swarm stamp-off: hotfixes ab1d4cb2bd and d0dd4d36b7 - every aider seat's launch line passes the repo-root model settings and metadata by absolute path and logs its requests with --llm-history-file, and the qwen2.5-coder pack serves the model's native 32k window through a per-model Modelfile with aider's repo map pinned at 1024 tokens - review-only certification (BL-848) of what landed on 2026-09-23"
+milestone: M8
+type: defect
+severity: medium
+# medium: both are live on main; what is open is the review the
+# constitution owes each hotfix (BL-848). Nothing is degraded today.
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-directive
+depends_on: []
+mutation_cost: low
+# low: review-only; bash and a Modelfile (no mutation lane); the handler
+# drives the real launch-script generator and reads two files.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1708-swarm-stamp-aider-seats-see-the-served-context-window.feature
+
+# A review parcel adds no production call site. The handler entry is the
+# BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1708SwarmStampAiderContextWindowSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed. What needs sign-off is the DISPOSITION only - one review ticket
+  for two same-day hotfixes with one purpose (an aider seat sees the
+  context window and model settings actually served), reviewing the
+  landed diffs rather than re-implementing them, at medium severity. FIRM
+  - the parcel changes no file except evidence, the feature, the step
+  handler (plus lib/ helpers) and NEW test files under
+  swarmforge/scripts/test/ (not test_aider_seat_launch_config.sh, which
+  BL-1699 extends); the parcel never writes human_decision into
+  backlog/hotfix-ledger.yaml.
+
+invariants:
+  - "The stamp never rewrites the hotfixes: every file the parcel touches is evidence, a feature, a step handler (plus its lib/ helpers) or a new file under swarmforge/scripts/test/; swarmforge.sh, start-swarm-ollama-qwen2.5-coder.sh, swarmforge/packs/qwen2.5-coder-32k.Modelfile and test_aider_seat_launch_config.sh are read, never edited."
+
+description: |
+  ## What
+  Two operator hotfixes from 2026-09-23, live on main, never through a
+  gate. This is that gate: a REVIEW ticket - confirm or refute, open
+  narrow follow-ups for anything found.
+
+  ## What landed (files to review)
+  - **ab1d4cb2bd.** `swarmforge.sh`'s aider launch body passes
+    `--model-settings-file` and `--model-metadata-file` with absolute
+    repo-root paths (aider looked only in its own git root, the worktree,
+    so only the coordinator ever read them: one IQ3_S model ran "diff" as
+    coordinator and "whole" as QA, and think:false never reached
+    coder/QA) and `--llm-history-file` per role under
+    `.swarmforge/aider-llm-history/`, created before aider starts. Test:
+    `test_aider_seat_launch_config.sh` (registered standing).
+  - **d0dd4d36b7.** `swarmforge/packs/qwen2.5-coder-32k.Modelfile`
+    (`PARAMETER num_ctx 32768` on the existing tag, per model rather than
+    the global `OLLAMA_CONTEXT_LENGTH`, which would also grow the 12 GB
+    IQ3_S) and `start-swarm-ollama-qwen2.5-coder.sh` exporting
+    `AIDER_MAP_TOKENS=1024` (aider sizes its map at window/8).
+
+  ## Review goals
+  1. Scenarios 01-03 green against the real generator and files.
+  2. `bash swarmforge/scripts/test/test_aider_seat_launch_config.sh`
+     passes on the parcel commit.
+  3. Record, do not review: the host-local `.aider.model.metadata.json`
+    (gitignored) was set to 32768 by hand in the same session; it is not
+    in the repository. Record its presence and value on this host in
+    evidence, with the observation that a fresh host would not have it.
+  4. Record, do not review: BL-1699 (paused) changes the same aider launch
+     line (role note, test loop, timeout) and keeps these three flags;
+     whichever lands second re-runs the other's feature in its evidence.
+  5. PROBE, do not fix: the commit's own "pre-existing" claim that
+     `test_openrouter_provider_support.sh` fails identically on unmodified
+     main (staffing gate, seat-model-unresolved). Run it once on the
+     parcel commit and record the result; if still red and not in
+     `backlog/standing-reds.tsv`, send the specifier an `unowned-red`
+     note (standing-red amendment 2026-09-05).
+
+  ## Scenario notes for the coder
+  - Scenario 01/02 generate launch scripts the way
+    `test_aider_seat_launch_config.sh` does, from the handler, without
+    editing that test.
+  - Scenario 03 reads the Modelfile and the start script statically.
+  - Do NOT assert the ledger rows' `human_decision` in a scenario (red the
+    day the human certifies, BL-1006); it is a QA step.
+  - The step handler is `bl1708SwarmStampAiderContextWindowSteps.js`,
+    landing in the SAME commit as the feature (BL-233).
+
+source: |
+  backlog/hotfix-ledger.yaml rows `ab1d4cb2bd` and `d0dd4d36b7` (detected
+  2026-09-23, state pending, stamp_ticket null; recorded by 30990bd3b0 and
+  15ff4a83e0). Surfaced by the coordinator's notes "hotfix <sha> has no
+  stamp ticket (ledger pending) - mint review ticket" (inbounds
+  00_20260924T062940Z_011035, 00_20260924T063009Z_011036). Evidence both
+  commits cite: backlog/evidence/aider-seat-context-budget-20260923.md.
+  From the commit messages, verbatim: "For every seat except the
+  coordinator that is its worktree, where these untracked repo-root files
+  never exist - so only the coordinator ever read them." (ab1d4cb2bd);
+  "Ollama drops the overflow silently - the coordinator never saw its
+  role prompt." (d0dd4d36b7).
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat) completing
+  two coordinator notes in one pass, consolidated into one stamp as
+  BL-1549 stamped two (one purpose, one evidence file, same day). Grepped
+  both SHAs across backlog/paused, active, done and hold before minting:
+  ab1d4cb2bd is cited by BL-1697/BL-1699 as pointers, not stamps; no prior
+  stamp for either. Both ledger rows existed (pending) and are linked in
+  the mint commit. Minted pending: medium is outside the 2026-09-17
+  auto-approval carve-out.
+
+  INVEST: Independent, Negotiable, Valuable (closes two owed reviews),
+  Estimable (three scenarios, static reads plus the real generator),
+  Small, Testable.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler (+ lib/), and new files under swarmforge/scripts/test/
+     (invariant).
+  2. `node specs/pipeline/cli.js specs/features/BL-1708-swarm-stamp-aider-seats-see-the-served-context-window.feature`:
+     all scenarios ok.
+  3. `bash swarmforge/scripts/test/test_aider_seat_launch_config.sh`: PASS.
+  4. The evidence records goals 3 and 5.
+  5. `backlog/hotfix-ledger.yaml` rows ab1d4cb2bd, d0dd4d36b7:
+     `human_decision: null`.
+  6. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide <sha> approved|waived` for each and commits the ledger.
