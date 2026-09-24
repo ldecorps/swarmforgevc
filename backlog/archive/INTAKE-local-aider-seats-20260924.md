@@ -1,3 +1,25 @@
+# Disposition (specifier, 2026-09-24)
+
+Drained from the backlog root on 2026-09-24 as the human's queue-jump
+(STEERING.md 2026-09-23). The human's sentences survive verbatim in every
+resulting ticket's `source:` (Article 5.3). Slice map:
+
+- **L1 -> BL-1696** `seat` vocabulary (coordinator verbs deferred to the BL-1702 ruling).
+- **L2 -> BL-1697** driver core (serve, merge, chat set, instruction, gate; a fifth gate
+  condition added: model commits touch only the files it was given) and **BL-1698**
+  (resume after restart, hold release, merge-only mail, babysitterd).
+- **L3 -> BL-1699** aider launch and bootstrap (in-process resume moved to BL-1698).
+- **L4 -> BL-1702** as a human ruling (pending), widened to the first local pack's shape
+  because the review stages were never measured; recommended A, a mixed standing pack.
+- **L5 -> BL-1700** steward coder probe over the real driver and **BL-1701** hazards +
+  nightly (fence misparse deferred: a relay-only hazard).
+- **L6 -> BL-1702** canary, gated on BL-1698/1699/1700/1701 and the ruling.
+
+Slices BL-1696..BL-1701 minted `human_approval: approved`, `direction: queue-jump`,
+priority 0, epic local-llm-swarm (BL-1125).
+
+---
+
 # INTAKE — Local models, step 1: a deterministic parcel driver with aider as the code-editing engine (QUEUE-JUMP)
 
 **Source:** human via Claude Code, 2026-09-23 ~23:05 BST, verbatim: "When you

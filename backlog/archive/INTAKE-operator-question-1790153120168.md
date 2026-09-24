@@ -1,3 +1,15 @@
+# Disposition (specifier, 2026-09-24)
+
+Drained 1:3; the human's sentence survives verbatim in each ticket's `source:`:
+**BL-1703** (launch probes and starts ollama, refuses on a dead endpoint),
+**BL-1704** (the full-stack stop and kill_all_swarm stop only a swarm-owned server),
+**BL-1705** (the orphan janitor reaps ghost runners and detached run clients).
+All pending human review. Also the first input of the 2026-09-23 specifier A/B;
+see backlog/evidence/specifier-ab-20260923-arm-claude-opus-5-5-20260924.md.
+Pinned copy: .swarmforge/operator/benchmark-corpus-specifier-ab-20260923/.
+
+---
+
 # Intake: a question the Operator could not answer
 
 Filed by the Operator (2026-09-23T08:45:20.168985334Z) - a question came in via Telegram

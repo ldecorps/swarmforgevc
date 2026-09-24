@@ -1,3 +1,16 @@
+# Disposition (specifier, 2026-09-24)
+
+Drained together with INTAKE-local-aider-seats-20260924, which superseded it in
+part. Its human sentences survive verbatim in BL-1702's `source:` (Article 5.3).
+Scope a (aider seats load a short read-only note, no constitution index, no
+script names) -> BL-1699. Scope c (the relay) -> BL-1697's driver in handoffd,
+which answers open question 1. Scope b, d, e, f and open questions 2-4 belong
+to an LLM coordinator and live only in branch C of the BL-1702 ruling. The draft
+card `swarmforge/roles/aider/coordinator.prompt` stays inert; the human reviews
+it before it could ever go live.
+
+---
+
 # Intake: a compact coordinator card for local aider seats, and the command relay it needs
 
 > **2026-09-24 — superseded in part** by `backlog/INTAKE-local-aider-seats-20260924.md` (queue-jump).

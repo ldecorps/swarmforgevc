@@ -1,3 +1,15 @@
+# Disposition (specifier, 2026-09-24)
+
+The Anthropic arm ran on the live specifier seat - claude-opus-5-5 (the human moved
+the seat from Fable that morning, db5d1313e4), not Fable - and is recorded in
+backlog/evidence/specifier-ab-20260923-arm-claude-opus-5-5-20260924.md with the
+intake's open questions answered. Arm A (local) never produced output. It is kept as a
+remaining slice on epic BL-1125 (sandboxed run over the pinned corpus, after
+the GPU and the human's go-ahead). The human's sentence is quoted verbatim in the
+evidence file.
+
+---
+
 # Intake: a question the Operator could not answer
 
 Filed by the Operator (2026-09-23T09:18:40.662003974Z) - a question came in via Telegram
