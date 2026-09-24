@@ -1,0 +1,168 @@
+id: BL-1710
+title: "The documenter runs on demand instead of holding a standing seat - a pack window declared on-demand keeps its roles.tsv row, worktree and mailbox so every hop is unchanged, starts no session at launch, gets its own session started through the consult path when its mail arrives and torn down by the existing consult sweep when idle, raises no missing-session alarm while dormant, and full-forge declares its documenter on-demand"
+milestone: M8
+type: feature
+status: todo
+epic: on-demand-roles
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: Babashka (handoffd, launch registration, babysitter health) and
+# bash (launch path); no Stryker lane for either. The Gherkin handler runs
+# fake-tmux passes, seconds per run.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1710-the-documenter-runs-on-demand-instead-of-holding-a-standing-seat.feature
+
+# handoffd.bb is the pre-existing live consumer that must start an
+# on-demand role's session when its mail arrives; the helper name is fixed
+# at mint so the anchor is a literal that will exist (BL-874), absent on
+# main today. The full-forge anchor is the bare token, which appears
+# nowhere in that conf today, so the coder keeps the freedom to place it
+# before or after the receive mode.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::spawn-on-demand-session!::mail for an on-demand role starts its session (BL-1235 consumer anchor)'
+  - 'swarmforge/packs/full-forge.conf::on-demand::full-forge declares its documenter on-demand'
+  - 'specs/pipeline/steps/bl1710DocumenterOnDemandSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Your ruling A (2026-09-24) turned into one slice. Please review the
+  feature file. One correction to the question I sent - A does NOT free
+  the documenter's worktree or mailbox. Both stay as files, because the
+  mail is how the role is called and the worktree is where the on-demand
+  session commits; what goes is the standing session (its window, process,
+  context and idle tokens). FIRM - every parcel still gets its docs pass
+  before QA (Article 1.7 and the chain are unchanged); nothing about
+  routing, the hop order or the mailbox format changes; a dormant
+  on-demand role is never reported as a dead or stuck seat; standing roles
+  behave exactly as before. Settled at mint as defaults, say if you want
+  otherwise - the morning briefing stays a documenter call (the closing
+  ceremony already starts the documenter's session through
+  consult_spawn_cli.bb); the freed window is not given to another role.
+
+invariants:
+  - "An on-demand role's mail is handled exactly like a standing role's (same mailbox, same hops, same helpers); the only difference is that its session exists only while it has mail or a consult marker."
+  - "Every role whose window is not declared on-demand is launched, woken, chased and health-checked byte-identically to before this ticket."
+
+description: |
+  ## What is wanted
+  1. **Pack declaration.** A `window` line may carry the token
+     `on-demand` in the position list after the worktree (beside the
+     receive mode, e.g. `window documenter claude documenter on-demand
+     --model ...`). The launch writes the role's `roles.tsv` row as today,
+     marked on-demand, creates its worktree and mailbox as today, and
+     creates no tmux session for it.
+  2. **Start on mail.** When handoffd would wake a role whose row is
+     on-demand and whose session does not exist, it starts the role's own
+     `roles.tsv` session through the consult path (the one-atomic-command
+     session create of BL-1018 and the consult marker format
+     `.swarmforge/daemon/consult/<role>.json`, as `consult_spawn_cli.bb`
+     does), once, in a helper named `spawn-on-demand-session!` (the name
+     is fixed; the wiring anchor names it), then delivers the wake. A
+     second pass with the session already up starts nothing.
+  3. **Teardown.** The existing `consult-teardown-sweep!` ends the session
+     when it is idle with nothing actionable, exactly as it does for a
+     consult today; no new teardown code is expected.
+  4. **Quiet while dormant.** The chase sweep and babysitterd's health
+     pass treat a missing session for an on-demand role with an empty
+     inbox as normal, not missing/stuck/dead; with mail waiting, the
+     start-on-mail path owns it.
+  5. **full-forge** declares its documenter window `on-demand`.
+
+  ## Why
+  The human, 2026-09-23: "As for documentor: a bit like model steward or
+  recruiter, it does not need to be a seat, more a role. It can be called
+  by any agent who needs to publish something, typically like the
+  documentor." Ruled 2026-09-24: keep the per-parcel docs pass, run it as
+  an on-demand job. The machinery exists already for other reasons: the
+  consult spawn (hotfix 5bdf93beed, stamped by BL-1549) and
+  `consult_spawn_cli.bb` (hotfix 2026-09-16), which the night closing
+  ceremony uses to start the documenter's session for the morning
+  briefing. This slice makes "started by its mail" the documenter's normal
+  life instead of an escape hatch.
+
+  ## How (direction, not mandate)
+  - Reuse, do not fork, the consult spawn: the session create and marker
+    write should be the same code `consult_spawn_cli.bb` and
+    `spawn-consult-session!` use (they are deliberately separate today;
+    if sharing them is out of reach, call the CLI).
+  - The on-demand mark in `roles.tsv`: a new trailing column or a
+    separate list; whatever the readers already tolerate (the roster
+    parsers must not misread a new column - check `handoff_lib.bb` and
+    `pack_staffing_gate_lib.bb` readers).
+  - Mono-router packs are out of scope: their dormant roles already work
+    by rotation and consult; the token is for standing packs.
+  - The call contract any agent uses to ask the documenter to publish (a
+    note or git_handoff naming the commit to document; the documenter
+    answers with its own commit or a note, and never publishes without a
+    commit to point at) is prompt prose, landed by the specifier on main
+    in `swarmforge/roles/documenter.prompt` at mint; this slice builds no
+    new CLI for it.
+  - Tests (T1): fake tmux recording `new-session`/`kill-session`, a
+    `mkdtemp` project with a pack conf and mailboxes; drive the real
+    handoffd passes, the real chase sweep and babysitterd's real health
+    pass.
+  - Documenter: `swarm-flow.mmd`'s change trigger (role worktree
+    assignments / how a role is seated) fires - mark the documenter as
+    on-demand in the flow; `architecture.mmd` if the tmux relationship
+    drawing shows one session per role.
+
+  ## Scope
+  - `swarmforge/scripts/swarmforge.sh` (launch: parse the token, register
+    the row, skip the session), `swarmforge/scripts/handoffd.bb` (start on
+    mail; quiet chase), babysitterd's health pass, `swarmforge/packs/full-forge.conf`.
+  - New: `specs/pipeline/steps/bl1710DocumenterOnDemandSteps.js` (BL-233).
+  - Docs and diagrams as above.
+  - Out of scope: mono-router packs; giving the freed window to another
+    role; a publish CLI; any change to Article 1.7 or the chain.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA does not
+  relaunch the live swarm.
+  1. `node specs/pipeline/cli.js specs/features/BL-1710-the-documenter-runs-on-demand-instead-of-holding-a-standing-seat.feature`:
+     all scenarios ok.
+  2. The handoffd chase/consult wiring tests and the babysitter tests in
+     `suite-manifest.tsv` are green, one run.
+  3. `grep -n 'on-demand' swarmforge/packs/full-forge.conf` shows exactly
+     the documenter window line; no other pack conf changed.
+  4. `git diff main...HEAD --name-only` names only the Scope files, tests,
+     docs, diagrams and evidence.
+  5. After landing, on the next live launch of full-forge (operator):
+     `tmux ls` shows no documenter session while its inbox is empty, and
+     the next hardender->documenter git_handoff starts one and reaches QA.
+
+source: |
+  backlog/INTAKE-operator-question-1790153142349.md (Operator,
+  2026-09-23T08:45:42Z). Human ask (2026-09-23, LOCAL_AGENT topic,
+  verbatim): "As for documentor: a bit like model steward or recruiter, it
+  does not need to be a seat, more a role. It can be called by any agent
+  who needs to publish something, typically like the documentor." Human
+  ruling on the specifier's role_ask (2026-09-24, verbatim): "A - keep the
+  docs pass as an on-demand job (recommended)".
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat) on the human's
+  ruling, the same pass. The intake's five "needs specifying" points,
+  settled: (1) who may call and how - any role, by a note or git_handoff
+  to the documenter, as today; the prompt carries the contract; (2)
+  publish contract - a commit to document in, a commit or note out, no
+  publish without a commit (prompt prose, landed at mint); (3) queue,
+  roles.tsv row, window - queue and row stay, the window becomes on-demand;
+  (4) morning briefing - stays a documenter call (ruling A of 2026-09-07
+  stands; the ceremony already starts the session via consult_spawn_cli.bb);
+  (5) the freed pack slot - not reassigned (epic BL-1709 remaining slice).
+  Prompt half (BL-798): the call contract and the on-demand session rule
+  are landed by the specifier in swarmforge/roles/documenter.prompt
+  section "You are a role any agent can call to publish" in the mint
+  commit itself; nothing in this parcel builds or edits that prose.
+  This intake is also the second input of the 2026-09-23 specifier A/B;
+  see backlog/evidence/specifier-ab-20260923-arm-claude-opus-5-5-20260924.md.
+
+  INVEST: Independent, Negotiable (the roster mark, sharing the consult
+  code are direction), Valuable (a standing seat stops costing an idle
+  session), Estimable (launch skip, one spawn helper, two quiet-when-dormant
+  checks, one pack line), Small (five scenarios, two invariants), Testable
+  (fake tmux over the real passes).

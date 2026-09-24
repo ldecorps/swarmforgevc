@@ -1,0 +1,34 @@
+id: BL-1709
+title: "EPIC — Roles that are called, not seated: a pipeline role keeps its hop, worktree and mailbox but runs as an on-demand session started by its mail and torn down when idle, the way the model steward and the recruiter are jobs rather than seats - the documenter first; do not promote directly"
+milestone: M8
+type: epic
+epic: on-demand-roles
+status: todo
+priority: 10
+depends_on: []
+decomposes_into: [BL-1710]
+remaining_slices:
+  - "Whether the window the documenter frees in a standing pack goes to another role (for example a second QA or coder seat) - not asked by the human; raise it only with evidence that a stage is starved"
+  - "Other roles on demand (candidates - art-director, which already sits outside the chain) - only on a human ask"
+mutation_cost: high
+acceptance:
+  none: "tracker only - see decomposes_into children for acceptance"
+human_approval: approved
+approval_context: >
+  Tracker only. The human asked for the documenter to be a called role
+  (2026-09-23) and ruled the shape on 2026-09-24 (keep the per-parcel docs
+  pass, run it as an on-demand job).
+
+source: |
+  backlog/INTAKE-operator-question-1790153142349.md (Operator,
+  2026-09-23T08:45:42Z). Human ask (2026-09-23, LOCAL_AGENT topic,
+  verbatim): "As for documentor: a bit like model steward or recruiter, it
+  does not need to be a seat, more a role. It can be called by any agent
+  who needs to publish something, typically like the documentor." Human
+  ruling on the specifier's role_ask (2026-09-24, verbatim): "A - keep the
+  docs pass as an on-demand job (recommended)".
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat). UMBRELLA /
+  tracking item (type: epic), NOT directly promotable - the coordinator
+  promotes child slices. New milestone not needed: M8 fits.

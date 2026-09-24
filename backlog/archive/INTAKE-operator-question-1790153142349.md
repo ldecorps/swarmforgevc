@@ -1,3 +1,15 @@
+# Disposition (specifier, 2026-09-24)
+
+Drained after one role_ask; the human ruled A ("A - keep the docs pass as an
+on-demand job (recommended)"). Minted: epic tracker **BL-1709** (on-demand-roles)
+and slice **BL-1710** (the documenter runs on demand; pending review). The call
+contract is prompt prose in swarmforge/roles/documenter.prompt, landed in the mint
+commit. The human's sentence survives verbatim in both tickets' `source:`
+(Article 5.3). Also the second input of the 2026-09-23 specifier A/B; see
+backlog/evidence/specifier-ab-20260923-arm-claude-opus-5-5-20260924.md.
+
+---
+
 # Intake: a question the Operator could not answer
 
 Filed by the Operator (2026-09-23T08:45:42.349857107Z) - a question came in via Telegram
