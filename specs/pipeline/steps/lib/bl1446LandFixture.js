@@ -146,6 +146,16 @@ function mkTmpDir(prefix) {
   return mkSocketFixtureRoot(prefix);
 }
 
+// BL-1716: pid's CURRENT start time in epoch ms, via the REAL
+// land-step-lib/process-start-ms - never a parallel JS reimplementation of
+// "when did this process start" (a value replay!'s own liveness check
+// resolves independently for the SAME pid, so both sides must agree by
+// construction, not by coincidence). null when pid is not running.
+function processStartMs(pid) {
+  const out = bb(libExpr(`(println (or (land-step-lib/process-start-ms ${pid}) "null"))`));
+  return out === 'null' ? null : Number(out);
+}
+
 // The five stage commits (coder, cleaner, architect, hardener, documenter)
 // for BL-9001, with the last hop (documenter -> QA) recorded in the
 // handoff archive - the Background every scenario of both BL-1446 and
@@ -180,4 +190,5 @@ module.exports = {
   replay,
   mkTmpDir,
   buildParcelBranch,
+  processStartMs,
 };

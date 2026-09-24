@@ -2286,6 +2286,110 @@
   [cherry-pick-result]
   (boolean (re-find #"previous cherry-pick is now empty" (str (:err cherry-pick-result)))))
 
+;; ── BL-1716: a replay killed mid-build leaves its scratch worktree and
+;;    branch behind - `cleanup!`/`drop-branch!` run on every exit path
+;;    replay! itself reaches, but a SIGTERM/SIGKILL/host-restart reaches
+;;    none of them. The next replay of the SAME ticket+commit must then
+;;    tell a scratch a dead run left behind (safe to clear) apart from one
+;;    a still-live run owns (FIRM: never touched) or one no record can
+;;    place at all (BL-1385/BL-1390's posture: reap only what is provably
+;;    dead, never what merely looks idle). ──────────────────────────────
+
+(defn process-start-ms
+  "Epoch ms of pid's CURRENT start time, or nil when pid is not running or
+   its start time cannot be determined. Recomputing this for the same
+   still-running pid always answers the same value - a process's start
+   time never changes over its own lifetime - which is what lets a REUSED
+   pid be told apart from the run that actually owns a leftover scratch."
+  [pid]
+  (try
+    (when-let [ph (.orElse (java.lang.ProcessHandle/of (long pid)) nil)]
+      (when (.isAlive ph)
+        (some-> (.orElse (.startInstant (.info ph)) nil) (.toEpochMilli))))
+    (catch Exception _ nil)))
+
+(defn replay-scratch-owner-record-path
+  "Where a scratch's owning run's {pid, start-ms} is recorded - a SIBLING
+   of the scratch worktree directory (never inside it), so it is never
+   mistaken for parcel-authored content and survives long enough for THIS
+   same cleanup pass to remove it explicitly after `fs/delete-tree`
+   clears the directory itself."
+  [common-dir id]
+  (str (fs/path common-dir "land-replay-worktrees" (str id ".owner.json"))))
+
+(defn write-replay-scratch-owner-record!
+  [path pid start-ms]
+  (try
+    (fs/create-dirs (fs/parent path))
+    (spit path (json/generate-string {:pid pid :start-ms start-ms}))
+    true
+    (catch Exception _ false)))
+
+(defn read-replay-scratch-owner-record
+  "The {:pid :start-ms} a scratch's owner record holds, or nil when the
+   record is missing, unreadable, or malformed - never thrown, matching
+   replay!'s own no-throw contract."
+  [path]
+  (try
+    (when (fs/exists? path)
+      (json/parse-string (slurp path) true))
+    (catch Exception _ nil)))
+
+(defn stale-scratch-age-bound-ms []
+  (let [hours (or (some-> (System/getenv "SWARMFORGE_LAND_REPLAY_STALE_SCRATCH_HOURS")
+                          (Double/parseDouble))
+                  2.0)]
+    (long (* hours 3600000))))
+
+(defn- scratch-age-ms!
+  [scratch]
+  (try
+    (- (System/currentTimeMillis) (.toMillis (fs/last-modified-time scratch)))
+    (catch Exception _ 0)))
+
+(defn- branch-ref-age-ms!
+  "Age of a branch's own loose ref file - the only age signal available
+   for a branch that survives with no scratch directory (a past success's
+   own worktree cleanup, or a `worktree add -b` interrupted after writing
+   the ref but before finishing the checkout). 0 (never past any bound)
+   when the ref has been packed into packed-refs or is otherwise
+   unreadable - FIRM: an age this function cannot establish is never
+   mistaken for staleness."
+  [common-dir branch]
+  (try
+    (- (System/currentTimeMillis)
+       (.toMillis (fs/last-modified-time (fs/path common-dir "refs" "heads" branch))))
+    (catch Exception _ 0)))
+
+(defn stale-scratch-decision
+  "Pure: whether a pre-existing replay scratch (a worktree directory
+   already sitting at this run's own scratch path - a leftover from an
+   earlier attempt at the SAME ticket+commit) may be cleared before this
+   run builds its own.
+
+   :exists? - false trivially proceeds; there is nothing to reap.
+   :record - the {:pid :start-ms} owner record read back for the scratch,
+     or nil when none was ever written (a scratch predating this fix, or
+     one whose owning run died between `worktree add` and the write).
+   :owner-alive? - true only when :record is present AND a live process
+     with that EXACT pid+start-ms is running right now - irrelevant, and
+     never read, when :record is nil; a reused pid is never mistaken for
+     the run that actually made this scratch.
+   :age-past-bound? - true when a RECORDLESS scratch is older than the
+     stale-scratch age bound - irrelevant, and never read, when :record
+     is present, since a record's own liveness is authoritative over age.
+
+   Returns {:action :proceed} (nothing to reap, or a dead leftover - safe
+   to clear and continue) or {:action :refuse :owner-pid pid-or-nil} -
+   FIRM: a live or an unestablished owner is never touched."
+  [{:keys [exists? record owner-alive? age-past-bound?]}]
+  (cond
+    (not exists?) {:action :proceed}
+    (and record owner-alive?) {:action :refuse :owner-pid (:pid record)}
+    record {:action :proceed}
+    age-past-bound? {:action :proceed}
+    :else {:action :refuse :owner-pid nil}))
+
 (defn replay!
   "Builds a tip-pure commit for task-ticket-id's own-paths, on top of
    origin/main, in a DEDICATED linked worktree
@@ -2318,22 +2422,75 @@
       {:success false :reason (str "land-step replay: could not resolve the git directory of " root)}
 
       :else
-      (let [branch (str "land-replay/" task-ticket-id "-" (subs commit 0 (min 10 (count commit))))
-            scratch (str (fs/path common-dir "land-replay-worktrees" (str task-ticket-id "-" (subs commit 0 (min 10 (count commit))))))
-            cleanup! (fn []
-                       (git! root "worktree" "remove" "-f" scratch)
-                       (fs/delete-tree scratch {:force true}))
+      (let [id (str task-ticket-id "-" (subs commit 0 (min 10 (count commit))))
+            branch (str "land-replay/" id)
+            scratch (str (fs/path common-dir "land-replay-worktrees" id))
+            owner-record-path (replay-scratch-owner-record-path common-dir id)
+            ;; Split so the SUCCESS path (below) can remove only the
+            ;; worktree directory - the branch AND its owner record both
+            ;; survive success on purpose (the branch for QA's own land
+            ;; action; the record so a LATER re-land attempt for the SAME
+            ;; ticket+commit can tell this now-ownerless branch apart from
+            ;; one a still-running replay owns, rather than reading "no
+            ;; record" and waiting out the age bound on a branch that is
+            ;; provably done, not merely idle).
+            remove-worktree-dir! (fn []
+                                    (git! root "worktree" "remove" "-f" scratch)
+                                    (fs/delete-tree scratch {:force true}))
+            remove-owner-record! (fn [] (fs/delete-if-exists owner-record-path))
+            ;; Used to abandon a build attempt outright (a failure, or
+            ;; reaping a confirmed-dead leftover before starting a fresh
+            ;; one) - both the directory and the record go together.
+            cleanup! (fn [] (remove-worktree-dir!) (remove-owner-record!))
             ;; `worktree add -b` creates the branch even when it then fails to
             ;; make the checkout, so every failure path deletes it - including
             ;; this one, which used to return early and leak it. Deleting a
             ;; branch that was never created is not itself a failure: git!
             ;; reports a status and the status is deliberately ignored.
             drop-branch! (fn [] (git! root "branch" "-q" "-D" branch))
-            create (git! root "worktree" "add" "-q" "-b" branch scratch origin-main)]
+            branch-exists? (zero? (:exit (git! root "show-ref" "--verify" "--quiet" (str "refs/heads/" branch))))
+            dir-exists? (fs/directory? scratch)
+            ;; A branch can survive with NO directory - a past SUCCESSFUL
+            ;; replay's own worktree cleanup removes the directory but
+            ;; (as of this fix) never the branch, and a `worktree add -b`
+            ;; interrupted mid-checkout can leave the branch ref written
+            ;; (near-instant) without ever finishing the working tree (git's
+            ;; own pre-existing failure shape this file's own comment above
+            ;; already documents). Either way it is a leftover to classify,
+            ;; not something a directory-only check would ever see.
+            leftover? (or dir-exists? branch-exists?)
+            record (when leftover? (read-replay-scratch-owner-record owner-record-path))
+            owner-alive? (boolean
+                          (when record
+                            (= (:start-ms record) (process-start-ms (:pid record)))))
+            leftover-age-ms (cond
+                               dir-exists? (scratch-age-ms! scratch)
+                               branch-exists? (branch-ref-age-ms! common-dir branch)
+                               :else 0)
+            age-past-bound? (and leftover? (not record)
+                                 (>= leftover-age-ms (stale-scratch-age-bound-ms)))
+            decision (stale-scratch-decision {:exists? leftover? :record record
+                                               :owner-alive? owner-alive?
+                                               :age-past-bound? age-past-bound?})]
+        (if (= :refuse (:action decision))
+          {:success false
+           :reason (str "land-step replay: scratch " scratch
+                        (if-let [pid (:owner-pid decision)]
+                          (str " is owned by a live run (pid " pid ") - refusing to touch it")
+                          " has an unestablished owner - refusing to touch it"))}
+        (do
+          (when leftover? (cleanup!) (drop-branch!))
+          (let [create (git! root "worktree" "add" "-q" "-b" branch scratch origin-main)]
         (if-not (zero? (:exit create))
           (do (cleanup!)
               (drop-branch!)
-              {:success false :reason (str "land-step replay: could not create worktree " scratch " off origin/main")})
+              {:success false :reason (str "land-step replay: could not create worktree " scratch
+                                            " off origin/main: " (str/trim (or (:err create) "")))})
+          (do
+            (write-replay-scratch-owner-record!
+             owner-record-path
+             (.pid (java.lang.ProcessHandle/current))
+             (process-start-ms (.pid (java.lang.ProcessHandle/current))))
           ;; BL-1650 items 1-2: any closed-owner pure-evidence strays are
           ;; cherry-picked (`-x`, keeping the stray's own author/subject)
           ;; onto the scratch branch BEFORE the parcel's own tip-pure
@@ -2416,9 +2573,14 @@
                               ;; start refusing every land - a second deadlock in
                               ;; place of the one this ticket dissolves.
                               refusals (if (seq passengers) (run-guards scratch passengers) [])]
-                          (cleanup!)
+                          ;; Directory only here - a TRUE success (below)
+                          ;; leaves the branch AND its owner record both
+                          ;; surviving on purpose (see the comment above
+                          ;; `remove-worktree-dir!`'s definition).
+                          (remove-worktree-dir!)
                           (if (seq refusals)
                             (do (drop-branch!)
+                                (remove-owner-record!)
                                 {:success false
                                  :reason (str "land-step replay: refusing to publish " task-ticket-id
                                               " - the replayed tree is not self-consistent with passenger sibling(s) "
@@ -2428,7 +2590,7 @@
                             {:success true :commit sha :branch branch :passengers (set passengers)
                              :restored-registry-rows (:restored restore-result)
                              :retired-registry-rows (:retired restore-result)
-                             :stray-landed @stray-landed}))))))))))))))))
+                             :stray-landed @stray-landed}))))))))))))))))))))
 
 ;; ── BL-1447: a built replay is verified complete before land-plan ever
 ;;    returns :replay, reading git objects only - never the attribution

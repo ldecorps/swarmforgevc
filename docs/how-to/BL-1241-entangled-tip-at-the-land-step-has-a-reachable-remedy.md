@@ -1494,3 +1494,51 @@ sha) is unaffected by either new check, register-row retirement included.
 
 Acceptance:
 `specs/features/BL-1713-the-land-step-never-blesses-a-commit-carrying-none-of-the-tickets-own-work.feature`.
+
+## A killed replay's leftover scratch is recovered, never left to jam the next land (BL-1716)
+
+`replay!`'s own `cleanup!`/branch-drop calls run on every exit path the
+Babashka process itself reaches — but a `SIGTERM`, `SIGKILL`, a pane
+kill, or a host restart ends the process inside the replay and reaches
+none of them, leaving the scratch worktree directory and/or its
+`land-replay/<id>-<sha10>` branch behind. Before this fix, the *next*
+land of that same ticket+commit hit `git worktree add -b` failing on the
+leftover, and reported it as `"... entangled tip - ... specifier
+adjudication needed"` — a misleading reason that named an adjudication
+instead of git's own error, live on the real land path (2026-09-24: QA's
+own `land_step_cli.bb` run for BL-1687 hit exactly this and needed a
+retry).
+
+`replay!` now writes a sibling `<id>.owner.json` record (`pid`,
+`start-ms`) the moment it creates a fresh scratch, and checks for a
+leftover worktree directory OR branch (either can survive alone — a
+successful replay's branch deliberately survives for QA's own land action
+to read, with its directory already removed by that same run's cleanup)
+before building. A leftover clears only when it is provably dead:
+
+- **no leftover** — proceeds as before.
+- **a recorded owner still alive** (its pid's start time still matches
+  the record — a reused pid is never mistaken for the run that made the
+  scratch) — **refused**, the owner's pid named, worktree and branch left
+  completely untouched.
+- **a recorded owner confirmed dead** — the leftover is cleared, then a
+  fresh scratch is built.
+- **no record at all** (a scratch that predates this fix, or died between
+  `worktree add` and the record write) — cleared only once it is older
+  than `SWARMFORGE_LAND_REPLAY_STALE_SCRATCH_HOURS` (default 2.0h,
+  mirroring the orphan janitor's own stale-threshold env vars); younger
+  than that, or when neither directory mtime nor the branch's own loose-ref
+  mtime can be read, it is **refused** with an unestablished owner —
+  never guessed dead (the same BL-1385/BL-1390 posture: reap only what no
+  live run owns).
+
+A create-failure's `LAND_ESCALATE` reason now always carries git's own
+stderr text, never a generic message. On a true success only the
+worktree *directory* is removed — the branch and its owner record both
+survive on purpose, so a later re-land of the same ticket+commit can tell
+"already landed, nothing to commit" (the correct, benign outcome for a
+repeat land — `land-plan`'s own pre-existing refusal, out of this
+ticket's scope) apart from a scratch a still-running replay owns.
+
+Acceptance:
+`specs/features/BL-1716-a-land-replay-recovers-the-scratch-a-killed-land-left-behind.feature`.

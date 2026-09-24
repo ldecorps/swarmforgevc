@@ -76,15 +76,36 @@ run_land() {
 }
 land_out() { cat "$WORK/$name.land.out" "$WORK/$name.land.err" 2>/dev/null; }
 origin_main() { git -C "$origin" rev-parse main 2>/dev/null; }
+# BL-1716 amendment: the land publishes a tip-pure REPLAY commit (BL-1241),
+# never the cited SHA verbatim - the name printed as LAND_PUBLISHED, not $SHA.
+published_sha() { grep -oE 'LAND_PUBLISHED [0-9a-f]+' <<<"$(land_out)" | tail -1 | awk '{print $2}'; }
 
 # ── 1. a clean approved commit lands, no force, lock gone ─────────────────
 setup one
+BEFORE_MAIN="$(origin_main)"
 SHA="$(approve_commit)"
 run_land "$SHA"; rc=$?
-if [[ "$(origin_main)" == "$SHA" ]]; then
-  pass "the approved commit reached origin/main"
+PUBLISHED="$(published_sha)"
+if [[ -n "$PUBLISHED" && "$(origin_main)" == "$PUBLISHED" ]]; then
+  pass "the land's published commit reached origin/main"
 else
-  fail "origin/main is $(origin_main), expected $SHA; land said: $(land_out | tail -3)"
+  fail "origin/main is $(origin_main), no LAND_PUBLISHED sha found; land said: $(land_out | tail -3)"
+fi
+PARENTS="$(git -C "$origin" log -1 --format='%P' "$PUBLISHED" 2>/dev/null)"
+if [[ -n "$PUBLISHED" && "$PARENTS" == "$BEFORE_MAIN" ]]; then
+  pass "the published commit's one parent is the previous origin/main"
+else
+  fail "published commit '$PUBLISHED' has parent(s) '$PARENTS', expected exactly '$BEFORE_MAIN'"
+fi
+# $PUBLISHED lives only in $origin (the replay's own scratch worktree pushed
+# it directly, never through $root) and $SHA lives only in $root (the
+# approved commit was never itself pushed) - fetch $PUBLISHED into $root so
+# both objects are comparable in ONE repository.
+gq "$root" fetch origin "$PUBLISHED"
+if [[ -n "$PUBLISHED" ]] && g "$root" diff --quiet "$SHA" "$PUBLISHED" -- ; then
+  pass "the published tree carries the approved commit's own content byte-identical"
+else
+  fail "the published tree differs from the approved commit: $(g "$root" diff --stat "$SHA" "$PUBLISHED" 2>&1)"
 fi
 if grep -qE '\-\-force|\+refs/' <<<"$(land_out)"; then
   fail "the land used a force push"
@@ -198,8 +219,18 @@ else
   fail "a killed land left the lock held"
 fi
 run_land "$SHA"
+# BL-1716 amendment: a repeat land of the SAME already-landed ticket+commit
+# correctly reports replay!'s own "nothing to commit" (BL-1474) - not a
+# defect, since the killed land's own content is already on origin/main by
+# the time this second call runs (bash defers a trapped TERM until the
+# `$(bb ...)` child exits, so the first land always finishes first - see
+# the coder's BL-1716-spec-gap-shell-test-residual-20260924.md evidence).
+# A genuine fresh publish (some other host/timing truly interrupting the
+# first land mid-flight) still passes too.
 if [[ "$(origin_main)" == "$SHA" ]] || grep -q 'LAND_PUBLISHED' <<<"$(land_out)"; then
   pass "and a subsequent land succeeds"
+elif grep -q 'nothing to commit' <<<"$(land_out)"; then
+  pass "and a repeat land of the already-landed commit correctly finds nothing to commit"
 else
   fail "the next land could not proceed: $(land_out | tail -3)"
 fi

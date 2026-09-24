@@ -33,3 +33,25 @@ Feature: BL-1716 A land replay recovers the scratch a killed land left behind
     Given the parcel's replay worktree path is occupied by a plain file
     When the land step replays the parcel
     Then the replay refuses with a reason that carries git's own error text
+
+  # BL-1716 a-recordless-scratch-past-the-age-bound-is-cleared-04
+  Scenario: a scratch with no owner record (predating this fix) past the stale-scratch age bound is cleared
+    Given the parcel's replay worktree and scratch branch exist with no owner record
+    And the stale-scratch age bound is 0 hours
+    When the land step replays the parcel
+    Then it builds the tip-pure commit off origin/main
+    And no replay worktree for BL-9716 remains registered or on disk
+
+  # BL-1716 a-recordless-scratch-still-young-is-refused-unestablished-05
+  Scenario: a scratch with no owner record and still within the age bound is refused with no owner named
+    Given the parcel's replay worktree and scratch branch exist with no owner record
+    When the land step replays the parcel
+    Then the replay refuses naming no owner at all
+    And the worktree and branch remain, still with no owner record
+
+  # BL-1716 a-branch-only-leftover-with-no-directory-is-cleared-06
+  Scenario: a branch surviving a past success, with no directory and a dead owner, is cleared and the replay succeeds
+    Given the parcel's replay branch exists with no directory, recorded to a run that is no longer alive
+    When the land step replays the parcel
+    Then it builds the tip-pure commit off origin/main
+    And no replay worktree for BL-9716 remains registered or on disk
