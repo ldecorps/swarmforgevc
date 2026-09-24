@@ -1,0 +1,163 @@
+id: BL-1699
+title: "Aider seats launch with a short read-only role note instead of the constitution, pipeline and role prompt, a bootstrap text that names no repo path, no pipeline script and no bang command, aider's own test loop running `seat test` on coder seats, and the pack's aider timeout on the launch line - so no pipeline script ever enters an aider seat's chat; Claude seats unchanged"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 0
+direction: queue-jump
+depends_on: [BL-1696, BL-1697]
+mutation_cost: low
+# low: bash launch assembly and Babashka prompt composition (neither has a
+# Stryker lane); the Gherkin mutation gate runs generated-text checks in
+# seconds.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1699-aider-seats-launch-with-a-short-role-note-no-repo-paths-and-the-seat-test-loop.feature
+
+# Handler pin only (BL-233, BL-1371). Every behaviour here lives in
+# pre-existing live code (swarmforge.sh's launch assembly,
+# prompt_engine_lib.bb's composer, agent_runtime_lib.bb's bootstrap
+# steps), and the scenarios drive those real generators, so the consumer
+# is exercised directly; there is no new mechanism waiting for a call site.
+required_wiring:
+  - 'specs/pipeline/steps/bl1699AiderSeatLaunchAndBootstrapSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Queue-jump slice L3 of INTAKE-local-aider-seats-20260924, minted approved
+  under the human's own jump request (STEERING.md 2026-09-23; 2026-09-15
+  ruling). No choice is posed. FIRM: no pipeline script is ever in an
+  aider seat's chat, editable or read-only; Claude seats' launch lines and
+  bootstrap texts are byte-identical to before.
+
+invariants:
+  - "No text an aider seat is given at launch or bootstrap (launch arguments excepted) contains a path that exists in the repository or the basename of any file under swarmforge/scripts."
+  - "For every non-aider provider in every pack conf, the generated launch line and bootstrap text are byte-identical to the output of main before this ticket."
+
+description: |
+  ## What is wrong
+  Measured 2026-09-23 (`backlog/evidence/aider-seat-context-budget-20260923.md`,
+  `backlog/evidence/aider-seat-lab-20260924.md`):
+  - The aider bootstrap text (`prompt_engine_lib.bb` `aider-bootstrap-text`)
+    names `ready_for_next.sh` and the handoff draft path. aider auto-adds
+    every mentioned path, so under `--yes-always` each aider seat had a
+    pipeline script in its chat as an EDITABLE file with auto-commit on;
+    lab S1 watched the 7B model rewrite one twice.
+  - `bootstrap-steps` (`agent_runtime_lib.bb`, `:add-files-then-paste`)
+    `/add`s `constitution.prompt`, `PIPELINE.md` and the role prompt. The
+    coordinator's first request was 20,381 tokens against an 8,192 window;
+    Ollama silently dropped the oldest messages, which were exactly those
+    files. The constitution an aider seat gets is a 390-token index that
+    claims the articles are "inlined right after", which is false there.
+  - The bootstrap tells the model to reply with `!` lines. aider never
+    runs a model's `!` line (BL-1696), so the instruction is inert.
+  - The OpenAI client's 600 s default timeout is shorter than a cold CPU
+    turn; the SDK retried three times inside one aider attempt.
+
+  ## What is wanted
+  1. **Role note, read-only.** An aider seat's launch line loads
+     `swarmforge/roles/aider/<role>.note` with `--read` when that file
+     exists, else a generic note. This slice writes the coder's note (a
+     few lines: it edits code to satisfy a read-only ticket and its
+     acceptance feature, it never edits a read-only file, instructions
+     arrive one at a time in the chat) and the generic one. No bootstrap
+     step `/add`s the constitution, the pipeline or a role prompt for an
+     aider seat.
+  2. **Bootstrap text** for every aider role: no path that exists in the
+     repository, no basename of a file under `swarmforge/scripts`, no
+     "reply with `!`" instruction.
+  3. **Coder seats** get `--test-cmd` running `swarmforge/scripts/seat
+     test` and `--auto-test`; other roles get neither.
+  4. **`seat test` scope from the driver.** When `SEAT_TICKET` /
+     `SEAT_ACCEPTANCE` are unset (aider's own test loop does not set
+     them), `seat test` reads them from the running role's BL-1697 driver
+     record; with no record it runs the command unscoped, as BL-1696 does.
+  5. **Timeout.** A pack `config aider_timeout_seconds <n>` becomes
+     `--timeout <n>` on every aider launch line; absent, no flag (aider's
+     default).
+
+  ## How (direction, not mandate)
+  - The existing inert card `swarmforge/roles/aider/coordinator.prompt`
+    (2945f2d07f) is NOT loaded by this slice: whether an LLM coordinator
+    exists at all is the BL-1702 ruling. The coordinator seat gets the
+    generic note until then.
+  - Keep the role notes out of `standing_rule_violations_files.bb`'s scan
+    unless that file scans `roles/` recursively; they are not rule
+    sources.
+  - Edit format and context size per model come from the probe (BL-1700)
+    and from the pack's own window line (`--edit-format`, already passed
+    through `extra_cli`); nothing to build here.
+  - The byte-identity check for non-aider providers: capture the generated
+    launch scripts and bootstrap texts of every pack from main before the
+    change as a committed golden fixture, and compare.
+  - `test_aider_seat_launch_config.sh` (ab1d4cb2bd) is the natural home
+    for the launch-line checks; extend it rather than add a sibling.
+  - Documenter: the aider seat section of the local-model how-to (what an
+    aider seat receives at launch, the role notes, the timeout key);
+    `architecture.mmd` is not triggered (no host/webview/tmux/state-layout
+    change).
+
+  ## Scope
+  - `swarmforge/scripts/swarmforge.sh` (aider launch line),
+    `swarmforge/scripts/prompt_engine_lib.bb` (aider bootstrap text),
+    `swarmforge/scripts/agent_runtime_lib.bb` (aider bootstrap steps),
+    `swarmforge/scripts/seat` (test scope fallback).
+  - New: `swarmforge/roles/aider/coder.note` and a generic note.
+  - `swarmforge/scripts/test/test_aider_seat_launch_config.sh` and a golden
+    fixture; new `specs/pipeline/steps/bl1699AiderSeatLaunchAndBootstrapSteps.js`
+    (BL-233).
+  - Docs as above.
+  - Out of scope: the driver (BL-1697, BL-1698); the coordinator card and
+    any relay (the BL-1702 ruling); edit-format choice per model (BL-1700);
+    Claude seats and packs.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). The live router is
+  NOT started (T1 slice).
+  1. `node specs/pipeline/cli.js specs/features/BL-1699-aider-seats-launch-with-a-short-role-note-no-repo-paths-and-the-seat-test-loop.feature`:
+     all scenarios ok.
+  2. `bash swarmforge/scripts/test/test_aider_seat_launch_config.sh`: PASS.
+  3. Generate the ollama-qwen2.5-coder-mono-router coder seat's launch
+     script and bootstrap text the way the test does and read them: the
+     bootstrap text names no `ready_for_next`, no `handoff-draft`, no
+     `swarmforge/`; the launch line has `--read` on the coder note,
+     `--test-cmd` and `--auto-test`.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     golden fixture, docs and evidence.
+
+source: |
+  backlog/INTAKE-local-aider-seats-20260924.md (slice L3; its in-process
+  resume bullet moved to BL-1698). It also carries scope item a and
+  facts 4 of backlog/INTAKE-aider-coordinator-card.md (2945f2d07f): "aider
+  seats load roles/aider/<role>.prompt when it exists ... via /read-only,
+  not /add; no constitution index for aider seats ... the bootstrap text
+  stops naming pipeline scripts". Evidence:
+  backlog/evidence/aider-seat-lab-20260924.md,
+  backlog/evidence/aider-seat-context-budget-20260923.md. Human, verbatim
+  (via Claude Code, 2026-09-23 ~23:05 BST): "When you are done with your
+  experimentation, write the final proposal for the specifier to pick
+  tomorrow morning. Make it super high priority btw, qjump it. The
+  priority is now to introduce local models. I have a graphic card
+  arriving in a couple of days, so the tocken generation should be
+  boosted"
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat). Approved at
+  mint under the human's explicit queue-jump request (STEERING.md
+  2026-09-23; 2026-09-15 ruling); no choice posed.
+
+  Deviations from the intake, stated: (1) in-process resume moved to
+  BL-1698 because re-serving a parcel is the driver's job; (2) depends on
+  BL-1697 as well as BL-1696, because `seat test` reads the driver's
+  record when aider's own test loop runs it without a ticket in the
+  environment; (3) the role note is `.note`, not the card's `.prompt`,
+  and the coordinator card stays inert pending BL-1702.
+
+  INVEST: Independent (BL-1696/BL-1697 by depends_on), Negotiable (note
+  wording, golden shape, where the checks live are direction), Valuable
+  (removes the live hazard of an editable pipeline script in every aider
+  seat and ~18k tokens per request), Estimable (generated-text changes in
+  three known functions, one sitting), Small (six scenarios, two
+  invariants), Testable (generated launch lines and texts, no model).

@@ -1,0 +1,155 @@
+id: BL-1698
+title: "The local parcel driver is safe to live with - a restart mid-parcel resumes from the recorded step with the spec writable again, an escalated parcel is released by the human's answer (one more fix request) or an operator release (complete or retry), a QA merge-up note or non-forwarding reverse copy is merged and completed with no model turn, any other note is passed to the human and completed, and babysitterd stops nudging driver seats"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 0
+direction: queue-jump
+depends_on: [BL-1697]
+mutation_cost: medium
+# medium: Babashka changes (no Stryker lane for bb); the Gherkin mutation
+# gate runs the handler per mutant over fake panes, all in seconds.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1698-the-local-parcel-driver-survives-a-restart-releases-its-hold-and-handles-merge-only-mail.feature
+
+# Handler pin only (BL-233, BL-1371). The resume, release and mail paths
+# live in BL-1697's driver lib, which handoffd already loads (BL-1697's
+# consumer anchor); scenario 06 drives babysitterd's real nudge pass, so
+# the babysitter skip is exercised through its live consumer rather than
+# pinned by a string the coder has not chosen yet (BL-874).
+required_wiring:
+  - 'specs/pipeline/steps/bl1698LocalParcelDriverLifecycleSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Queue-jump slice L2b of INTAKE-local-aider-seats-20260924 (split from the
+  intake's L2 at mint), minted approved under the human's own jump request
+  (STEERING.md 2026-09-23; 2026-09-15 ruling). No choice is posed. FIRM:
+  a restart never re-merges, never re-instructs a model mid-turn and never
+  leaves the spec unwritable; no mail is ever left wedging a driver seat;
+  Claude seats are nudged exactly as before.
+
+invariants:
+  - "After any driver or seat restart, no spec file of any parcel the driver has touched is left without write permission once the driver's first pass completes."
+  - "Every mail a driver seat receives ends in exactly one of: a git_handoff after a passing gate, a completion, or a recorded hold with a question raised; none stays in process without a driver record naming why."
+
+description: |
+  ## What is wrong
+  BL-1697's driver runs a coder parcel end to end but is fragile around
+  it:
+  - A handoffd restart or seat relaunch mid-parcel has no defined
+    resumption: the driver could re-merge, re-send the instruction to a
+    model that already answered, or leave the spec files without write
+    permission. The live coder on 2026-09-23 showed what a relaunch does
+    to an aider seat today: its fresh chat never contained the task, and
+    the in-process banner ("re-read inbox/in_process ... USE YOUR TOOLS
+    NOW") is something an aider seat cannot act on.
+  - An escalated parcel is held with no way out.
+  - Mail that needs no model at all (QA's merge-up note, Article 2.5 and
+    handoff-protocol.md "QA approval and merge-up"; a `non-forwarding:
+    true` reverse copy, Article 2.4) has no handling, and any other note
+    in a driver seat's `in_process` blocks every parcel behind it,
+    because `ready_for_next.sh` serves `in_process` first.
+  - babysitterd injects its own nudges into panes. Into an aider
+    coordinator on 2026-09-21 that produced bogus commits on main and a
+    self-sustaining escalation loop; into a driver seat it would race
+    the driver.
+
+  ## What is wanted
+  1. **Resume.** On start, for each role with a driver record: restore
+     write permission on every spec file the record names, then continue
+     from the recorded step. A parcel already merged is not merged again.
+     A parcel stopped during a model turn is gated first; it is
+     re-instructed only if the gate fails and fix turns remain. A
+     relaunched seat's chat is set up again (clear, read-only spec,
+     editable files) before any fix request.
+  2. **Hold release by answer.** When the answer to the driver's question
+     for that role is available, consume it through the role-answer
+     delivery path (`deliver-role-answer.js --role <role>`, the only entry
+     point, BL-1244), type ONE fix request carrying the answer text, then
+     gate as usual (one more escalation if it still fails).
+  3. **Hold release by operator.** A driver CLI:
+     `release <role> complete` completes the parcel with no handoff (so the
+     ticket can be rerouted) and clears the record; `release <role> retry`
+     clears the record so the next pass serves the parcel afresh. Neither
+     types anything into the pane.
+  4. **Mechanical mail.** A QA merge-up note naming a QA-approved commit,
+     or a `non-forwarding: true` git_handoff: `seat merge` that commit,
+     then `seat done`; no model turn, no handoff. A conflict escalates
+     like BL-1697's merge conflict.
+  5. **Any other note.** Raise one question quoting the note's sender and
+     text, then `seat done`. The human decides; the seat never wedges.
+     If the role's question slot is already taken (`role_ask.bb` answers
+     `already-pending`), send the same text as a priority-00 note to the
+     coordinator instead, and record which was used.
+  6. **babysitterd** skips a driver seat in its nudge pass, reading the
+     same capability flag BL-1697 added; Claude seats unchanged.
+
+  ## How (direction, not mandate)
+  - The release CLI sits beside the lib (e.g.
+    `local_parcel_driver_cli.bb`), thin `main` over tested helpers
+    (engineering.prompt "CLI main() is a thin wrapper").
+  - Recognizing a merge-up note: the sender is QA and the message carries
+    a QA-approved 10-hex commit (handoff-protocol.md's example
+    `BL-042 QA-approved a1b2c3d4e5 - merge your branch up to QA's`). Do
+    not key on anything looser.
+  - `babysitter_nudge_lib.bb` already branches on the wake style
+    (`aider-agent?`); the skip belongs next to it and must read the new
+    capability, not the provider name.
+  - Tests (T1) as in BL-1697: fake tmux, stand-in model, `mkdtemp` + `git
+    init` project proven before any mutating git command (BL-1390). No
+    model, no live router.
+  - Documenter: extend BL-1697's how-to with resume, the release CLI and
+    the mail rules; update `handoff-flow.mmd` if the driver branch it drew
+    gains the release/mail paths.
+
+  ## Scope
+  - `swarmforge/scripts/local_parcel_driver_lib.bb` (BL-1697's lib), a new
+    thin release CLI beside it, `swarmforge/scripts/babysitter_nudge_lib.bb`.
+  - New: `specs/pipeline/steps/bl1698LocalParcelDriverLifecycleSteps.js`
+    (BL-233).
+  - Docs: the driver how-to; `docs/diagrams/handoff-flow.mmd` if its
+    driver branch changes.
+  - Out of scope: non-coder roles on driver seats (the BL-1702 ruling);
+    aider launch and bootstrap (BL-1699); any Claude seat or pack.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). The live router is
+  NOT started (T1 slice).
+  1. `node specs/pipeline/cli.js specs/features/BL-1698-the-local-parcel-driver-survives-a-restart-releases-its-hold-and-handles-merge-only-mail.feature`:
+     all scenarios ok.
+  2. BL-1697's feature still passes on the same commit (the driver core is
+     not regressed): `node specs/pipeline/cli.js specs/features/BL-1697-the-local-parcel-driver-moves-a-coder-parcel-through-a-local-aider-seat.feature`.
+  3. The babysitter suites in `swarmforge/scripts/test/suite-manifest.tsv`
+     are green, one run.
+  4. The release CLI with no arguments prints usage and exits non-zero,
+     touching no mailbox.
+  5. `git diff main...HEAD --name-only` names only the Scope files, tests,
+     docs and evidence.
+
+source: |
+  backlog/INTAKE-local-aider-seats-20260924.md (slice L2, split at mint;
+  its L3 "In-process resume" bullet also lands here, because re-serving a
+  parcel is the driver's job). Evidence:
+  backlog/evidence/aider-seat-lab-20260924.md. Human, verbatim (via Claude
+  Code, 2026-09-23 ~23:05 BST): "When you are done with your
+  experimentation, write the final proposal for the specifier to pick
+  tomorrow morning. Make it super high priority btw, qjump it. The
+  priority is now to introduce local models. I have a graphic card
+  arriving in a couple of days, so the tocken generation should be
+  boosted"
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat). Approved at
+  mint under the human's explicit queue-jump request (STEERING.md
+  2026-09-23; 2026-09-15 ruling); no choice posed.
+
+  INVEST: Independent (BL-1697 only, by depends_on), Negotiable (record
+  format, CLI shape, note recognition detail are direction), Valuable (a
+  driver seat that survives a restart and never wedges on mail), Estimable
+  (four bounded behaviours on one lib plus one babysitter skip), Small (six
+  scenarios, two invariants), Testable (fake pane, stand-in model,
+  throwaway project).

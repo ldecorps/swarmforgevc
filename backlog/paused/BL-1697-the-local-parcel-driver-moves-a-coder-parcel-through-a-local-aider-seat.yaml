@@ -76,8 +76,11 @@ description: |
   fixed at mint; the wiring anchor names it), run from handoffd's loop,
   for seats whose provider carries a new parcel-driver capability in
   `prompt_engine_lib.bb`'s `provider-capabilities` (set on `aider` only).
-  In this slice it drives the `coder` role's `git_handoff` parcels; any
-  other role on a driver seat is left exactly as today.
+  In this slice it drives the `coder` role's `git_handoff` parcels. A
+  seat is a **driver seat** when its provider carries the capability AND
+  its current role is one the driver drives (here: `coder`); an aider
+  seat in any other role is not a driver seat and is left exactly as
+  today, wakes included.
 
   Per parcel, in order, recording each step in a per-role state file
   under `.swarmforge/local-driver/`:
@@ -110,7 +113,8 @@ description: |
 
   handoffd's new-mail wake, chase poke and in-process resume paths skip
   a driver seat (its driver is the only writer to that pane) and are
-  unchanged for every other seat.
+  unchanged for every other seat, including an aider seat in a role the
+  driver does not drive.
 
   ## How (direction, not mandate)
   - Capability, not provider name (capability-branching-01): the driver
