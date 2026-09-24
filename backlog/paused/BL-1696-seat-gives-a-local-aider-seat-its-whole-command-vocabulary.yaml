@@ -1,0 +1,199 @@
+id: BL-1696
+title: "`seat` gives a local aider seat its whole command vocabulary: a short verb with fixed arguments for each step a parcel needs (next, done, ask, merge, test, handoff, note), each verb runs exactly one pipeline script or git subcommand, the verbs are allow-listed per role, and any malformed argument is refused before anything runs"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 0
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one bash script with no Stryker target (bash has no mutation lane,
+# engineering.prompt "Startup Tools"); the Gherkin mutation gate runs over
+# the feature's handler only, and every scenario is a sub-second spawn in
+# a throwaway repo.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1696-seat-gives-a-local-aider-seat-its-whole-command-vocabulary.feature
+
+# Handler pin only (BL-233, BL-1371). `seat` has no live caller yet: its
+# consumer is the local parcel driver, BL-1697, which pins its own call
+# into seat. An anchor on seat itself would be satisfied by this parcel's
+# own diff and gate nothing (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1696SeatCommandVocabularySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Queue-jump slice L1 of INTAKE-local-aider-seats-20260924, minted approved
+  under the human's own jump request (STEERING.md 2026-09-23 section; the
+  2026-09-15 ruling that an explicit jump request is the approval for a
+  plain, no-choice gate). No choice is posed here. FIRM: nothing runs off
+  the per-role allow-list; no argument ever reaches a shell for
+  evaluation; a merge conflict is aborted, never left for a model to
+  resolve; the test verb never reports success when no test command is
+  configured.
+
+invariants:
+  - "Every `seat` invocation runs at most the one script or git subcommand its verb names, and a refused invocation (malformed argument, verb outside the role's set, unknown verb) runs nothing and leaves the working tree unchanged."
+  - "No caller-supplied argument is ever evaluated by a shell: each reaches its script as one argv element, and text arguments containing a dollar sign, a backtick, a backslash or a double quote are refused."
+
+description: |
+  ## What is wrong
+  A local aider seat cannot perform any pipeline step. Verified in the
+  aider 0.86.2 source and in the overnight lab
+  (`backlog/evidence/aider-seat-lab-20260924.md`, section 1):
+  - aider never runs a `!` line from a model reply (`!` is REPL input);
+  - it parses fenced shell blocks only in diff/editblock format and
+    AUTO-DECLINES them under `--yes-always` (`explicit_yes_required`,
+    io.py:867);
+  - any repo path in a reply or in typed input is auto-added to the chat;
+    lab S1 put a pipeline script in the chat and the 7B model rewrote it.
+  Every pipeline step (merge, test, hand off, done) is a command, so no
+  prompt can make an aider seat move a parcel. The live qwen2.5-coder
+  mono-router moved no parcel in 45 minutes on 2026-09-23.
+
+  ## Why
+  The deterministic local parcel driver (BL-1697) runs the lifecycle for
+  a local seat by typing `/run seat <verb> ...` into its pane (the one
+  path aider executes headless). `seat` is that vocabulary: short verbs,
+  fixed arguments, no repo paths and no shell syntax, so neither the
+  driver's typed text nor anything a model echoes can pull a pipeline
+  script into the chat or compose shell. The lab prototype
+  (`backlog/evidence/aider-seat-lab-20260924/template.tar.gz`,
+  `template/swarmforge/scripts/seat`) proved the shape against stubs.
+
+  ## What is wanted
+  `swarmforge/scripts/seat <verb> [args]`, runnable from any role's
+  checkout (stock macOS `/bin/bash` 3.2), with these verbs:
+
+  | verb | runs |
+  |---|---|
+  | `next` | `ready_for_next.sh` |
+  | `done` | `done_with_current.sh` |
+  | `ask "<text>"` | `role_ask.bb <project-root> --role <role> --question <text>` |
+  | `note <role> <NN> "<text>"` | writes a `note` draft (message at most 80 chars) and runs `swarm_handoff.sh` on it |
+  | `handoff <role> BL-<n>` | writes a `git_handoff` draft (task `BL-<n>`, commit = the checkout's 10-hex HEAD) and queues it through the two-call audit protocol (Article 2.3, BL-1529) |
+  | `merge <from-role> <sha>` | `git merge --no-ff --no-edit <sha>` in the checkout; on conflict `git merge --abort`, print the conflicted paths, exit 3 |
+  | `test` | the live pack's declared seat test command; none declared -> exit 2, "no seat test command is configured" |
+
+  - The draft goes where Article 2.2 says for the running role:
+    `<checkout>/tmp/handoff.txt` for a worktree role,
+    `swarmforge/runtime/handoff-draft.txt` for a master-resident one.
+  - Argument rules: a role argument must be a role in the live
+    `.swarmforge/roles.tsv` (the lab model invented a role called
+    "aider"); a ticket is `BL-<digits>`; a sha is 7-40 hex AND resolves
+    to a commit; a priority is two digits; text is non-empty, has no
+    dollar sign, backtick, backslash or double quote, and a note message
+    is at most 80 characters.
+  - Per-role verb sets, read from one table in the script: every pipeline
+    role gets all seven; `coordinator` gets `next`, `done`, `ask`, `note`.
+    A verb outside the running role's set is refused like a malformed
+    argument.
+  - A refusal prints the verb's usage line (an unknown verb lists the
+    running role's verbs) and exits 2 with nothing run.
+
+  **Deliberately NOT in this slice:** the intake's coordinator verbs
+  (`main-sync`, `ff-main`, `freshness`, `close`, `promote`,
+  `stage-sync`). Whether any model ever types them depends on the
+  local pack-shape ruling posed on BL-1702: under the recommended
+  deterministic coordinator no model does, and daemon code calls those
+  scripts directly. The specifier adds them in the ruled branch's slice
+  if one is needed. This keeps `seat` to the surface the driver uses.
+
+  ## How (direction, not mandate)
+  - Start from the lab prototype; replace its stub-era mappings with the
+    real ones above. `merge_and_process` is a payload instruction, not a
+    script (`swarm_handoff.bb` `body`), so the merge verb runs git
+    itself.
+  - Two roots: the checkout is `git rev-parse --show-toplevel`; the
+    project root (for `role_ask.bb` and `.swarmforge/roles.tsv`) is the
+    parent of `git rev-parse --path-format=absolute --git-common-dir`.
+  - The role is `SWARMFORGE_ROLE` (exported per window by
+    `swarmforge.sh`); unset means refuse, never a default role.
+  - `handoff` should reach `handoff_lib.bb`'s `queue-git-handoff!` (the
+    script-sender form of the two-call protocol) or run
+    `swarm_handoff.sh` twice on the identical draft; either way a second
+    AUDIT_REQUIRED is a failure, not a loop.
+  - The seat test command: a `config seat_test_command <command>` line in
+    the pack conf, resolved from the effective conf the way
+    `backlog_depth_lib.bb` resolves `active_backlog_max_depth`. The value
+    is operator-authored pack config, not caller input, so running it is
+    not a breach of invariant 2.
+  - Tests: the acceptance handler drives `seat` in a `mkdtemp` + `git
+    init` repo whose `swarmforge/scripts` holds recorder stubs (each
+    appends its argv to one log); prove the fixture root with `git
+    rev-parse --git-common-dir` before any mutating git command
+    (engineering.prompt Guardrails, BL-1390). No real pipeline script and
+    no model is ever run.
+  - Documenter: a reference page for `seat` (verbs, per-role sets,
+    argument rules, exit codes 0/2/3) under `docs/reference/`; no
+    registered diagram changes (`seat` is not yet wired).
+
+  ## Scope
+  - New: `swarmforge/scripts/seat`.
+  - New: `specs/pipeline/steps/bl1696SeatCommandVocabularySteps.js`
+    (same parcel as the feature, BL-233).
+  - Optional: a shell test under `swarmforge/scripts/test/` plus its
+    `suite-manifest.tsv` row, if the coder wants coverage beyond the
+    acceptance handler.
+  - Docs: one reference page.
+  - Out of scope: the driver (BL-1697), aider launch and bootstrap text
+    (BL-1699), any change to Claude seats or packs, the coordinator verbs
+    above.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1696-seat-gives-a-local-aider-seat-its-whole-command-vocabulary.feature`:
+     all scenarios ok.
+  2. From a scratch `git worktree` of the parcel commit under `./tmp/`,
+     with `SWARMFORGE_ROLE=coder`: `swarmforge/scripts/seat rebase main`
+     exits 2 and lists the seven coder verbs; `swarmforge/scripts/seat
+     note aider 50 "x"` exits 2; `SWARMFORGE_ROLE=coordinator
+     swarmforge/scripts/seat merge coder HEAD` exits 2. None of these
+     writes a draft or touches a mailbox (`git status` clean,
+     `ls .swarmforge/handoffs/*/inbox/new` unchanged). Remove the scratch
+     worktree afterwards.
+  3. Stock bash 3.2 compatibility: `grep -nE
+     'mapfile|readarray|declare -A' swarmforge/scripts/seat` prints
+     nothing (BL-1627).
+  4. `git diff main...HEAD --name-only` names only `seat`, the feature,
+     its handler, an optional shell test + manifest row, the reference
+     doc and evidence.
+
+source: |
+  backlog/INTAKE-local-aider-seats-20260924.md (slice L1), filed by the
+  operator (Claude Code) 2026-09-24 with evidence
+  backlog/evidence/aider-seat-lab-20260924.md and harness
+  backlog/evidence/aider-seat-lab-20260924/. Human, verbatim (via Claude
+  Code, 2026-09-23 ~23:05 BST): "When you are done with your
+  experimentation, write the final proposal for the specifier to pick
+  tomorrow morning. Make it super high priority btw, qjump it. The
+  priority is now to introduce local models. I have a graphic card
+  arriving in a couple of days, so the tocken generation should be
+  boosted" - and, on how to test it: "how do you suggest the swarm will
+  deal with this testing of the local aider? will it spin it up, to test
+  the live prob?"
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat) draining the
+  backlog root. Approved at mint under the human's explicit queue-jump
+  request (STEERING.md 2026-09-23; 2026-09-15 ruling); the ticket poses no
+  choice. Slice order from the intake: L1 (this) -> L2 driver core
+  (BL-1697) -> L2b driver resume/hold (BL-1698), L3 launch and bootstrap
+  (BL-1699), L5 probe harness (BL-1700, BL-1701), L6 canary with the
+  pack-shape ruling (BL-1702).
+
+  Deviation from the intake, stated so it can be challenged: the six
+  coordinator verbs are deferred to the ruled branch (see description),
+  because building them now builds surface no model may ever type.
+
+  Test tiers (intake table): this slice is T1 only - recorder stubs, no
+  model, seconds. It never starts the live router.
+
+  INVEST: Independent (no unbuilt dependency), Negotiable (script shape
+  and conf reading are direction), Valuable (the driver's only way to act
+  on a local seat), Estimable (one script, seven verbs, one sitting),
+  Small (six scenarios, two invariants), Testable (recorder stubs in a
+  throwaway repo).
