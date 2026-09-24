@@ -21,7 +21,16 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
-const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 const { operatorDocs, bubbleHealth, bubbleHostPage, bubbleLivePage } = require(
   path.join(EXT_DIR, 'out', 'bridge', 'letsTalkRoutes')
 );
@@ -47,7 +56,7 @@ function writeManifest(targetPath, manifest) {
 }
 
 async function fetchManifest(ctx) {
-  ctx.bridge = await startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
+  ctx.bridge = await bridgeServer().startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
   const response = await fetch(`http://127.0.0.1:${ctx.bridge.port}/lets-talk/ui-bundle.json`, {
     headers: { authorization: `Bearer ${TOKEN}` },
   });

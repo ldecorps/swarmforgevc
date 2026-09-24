@@ -95,6 +95,22 @@ moved all fourteen requires inside the step that starts a bridge, the
 same shape as BL-1630's twelve, so requiring any of them alone loads
 nothing beyond the handler itself.
 
+A text census can miss the same defect: seventeen more handlers loaded
+`bridgeServer` eagerly through shapes a substring/`^const` grep does not
+match — sixteen via `require(path.join(EXT_DIR, 'out', 'bridge',
+'bridgeServer'))` at module scope, and `bl709BubbleItsOwnTelegramTopicSteps.js`
+via a require inside a module-scope object literal (bl1634, bl551,
+bl565, bl709, bl788, bl829, bl851, bl866, burnRate, deviceRegistry,
+gateAnswer, gatesList, noInboundMessageIsEverLost,
+operatorProactiveNotify, replyRelayAtLeastOnce, standingOperatorTopic,
+telegramTopicThreads — all Steps.js). BL-1687 found them with the loader
+itself as the census — requiring each handler alone in a fresh process
+and checking `require.cache` for `bridgeServer.js` — rather than a text
+grep, and moved all seventeen requires inside their starting step the
+same way. The lesson for this guard: the require syntax is not the
+contract, what the loader actually loads is — a census against the guard
+should probe the loader, not grep the source.
+
 ## Why
 
 See `backlog/paused/BL-1371-a-step-handler-registers-without-a-shared-file.yaml`

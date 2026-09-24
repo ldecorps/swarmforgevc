@@ -18,7 +18,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
-const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 
 const TOKEN = 'aps-companion-manifest-token';
 
@@ -81,7 +90,7 @@ function registerSteps(registry) {
   // ── Background ──────────────────────────────────────────────────────
   registry.define(/^a bridge serving an authorized client$/, async (ctx) => {
     ctx.target = mkTmp();
-    ctx.handle = await startBridge(ctx.target, path.join(ctx.target, 'runs.jsonl'), TOKEN);
+    ctx.handle = await bridgeServer().startBridge(ctx.target, path.join(ctx.target, 'runs.jsonl'), TOKEN);
     ctx.useAuth = true;
   });
 

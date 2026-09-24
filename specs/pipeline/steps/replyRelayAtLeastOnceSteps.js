@@ -36,7 +36,16 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
-const { startBridge } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 const { relaySseReplies } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'tools', 'telegramFrontDeskBotCore'));
 
 const TOKEN = 'bl320-acceptance-token';
@@ -67,7 +76,7 @@ function readCursor(targetPath) {
 
 async function startRealBridge(ctx) {
   ctx.target = mkTmp();
-  ctx.handle = await startBridge(ctx.target, path.join(ctx.target, 'runs.jsonl'), TOKEN, { pollIntervalMs: 20 });
+  ctx.handle = await bridgeServer().startBridge(ctx.target, path.join(ctx.target, 'runs.jsonl'), TOKEN, { pollIntervalMs: 20 });
 }
 
 async function realAck(port, id) {
@@ -209,14 +218,14 @@ function registerSteps(registry) {
       { id: 'r1', threadId: SUBJECT, text: 'first' },
       { id: 'r2', threadId: SUBJECT, text: 'second' },
     ]);
-    const firstHandle = await startBridge(ctx.target, path.join(ctx.target, 'runs.jsonl'), TOKEN, { pollIntervalMs: 20 });
+    const firstHandle = await bridgeServer().startBridge(ctx.target, path.join(ctx.target, 'runs.jsonl'), TOKEN, { pollIntervalMs: 20 });
     await realAck(firstHandle.port, 'r1');
     firstHandle.stop();
   });
 
   registry.define(/^the bridge restarts$/, async (ctx) => {
     ctx.cursorAfterAck = readCursor(ctx.target);
-    ctx.handle = await startBridge(ctx.target, path.join(ctx.target, 'runs.jsonl'), TOKEN, { pollIntervalMs: 20 });
+    ctx.handle = await bridgeServer().startBridge(ctx.target, path.join(ctx.target, 'runs.jsonl'), TOKEN, { pollIntervalMs: 20 });
   });
 
   registry.define(/^it resumes from the last genuinely acknowledged cursor position$/, (ctx) => {

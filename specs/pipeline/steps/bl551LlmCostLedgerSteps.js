@@ -26,7 +26,16 @@ const {
   chooseCostTrendAxisScale,
 } = require(path.join(EXT_OUT, 'metrics', 'llmCostLedger'));
 const { llmCostTelemetryDir } = require(path.join(EXT_OUT, 'metrics', 'llmCostLedgerStore'));
-const { startBridge } = require(path.join(EXT_OUT, 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(EXT_OUT, 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 const { computeCostHealthSidecar, renderCostHealthSection, renderCostTrendChartLines } = require(path.join(EXT_OUT, 'notify', 'costHealthSidecar'));
 
 const HANDOFF_DELIVERY_RUNNER = path.join(SCRIPTS_DIR, 'bl551_handoff_delivery_llm_cost_ledger_acceptance_runner.sh');
@@ -315,7 +324,7 @@ function registerSteps(registry) {
   }, FEATURE);
 
   registry.defineScoped(/^an authorized request is made to the cost rank endpoint for the 24 hour horizon$/, async (ctx) => {
-    const handle = await startBridge(ctx.bridgeRoot, path.join(ctx.bridgeRoot, 'runs.jsonl'), BRIDGE_TOKEN, { nowMs: ctx.bridgeNowMs });
+    const handle = await bridgeServer().startBridge(ctx.bridgeRoot, path.join(ctx.bridgeRoot, 'runs.jsonl'), BRIDGE_TOKEN, { nowMs: ctx.bridgeNowMs });
     try {
       const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=24h`, {
         headers: { authorization: `Bearer ${BRIDGE_TOKEN}` },

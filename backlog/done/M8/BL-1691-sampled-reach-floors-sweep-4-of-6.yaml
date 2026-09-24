@@ -10,6 +10,15 @@ severity: high
 # until this lands. The other fourteen files carry the same seed-miss
 # probability and are the epic's next slice by its own order.
 status: todo
+abandoned_commits: [0cb4df5ecb]
+# BL-1241: landed as 75b3d014df, a hand-built tip-pure replay off
+# origin/main eff9ef984e - land_step_cli.bb's LAND_CLEAN output for this
+# ticket carried only the standing-red retirement line and omitted the
+# parcel's own test-file diffs (reproduced twice, once after a fresh
+# origin/main sync), so the replay was built by hand from the parcel's
+# own evidence-listed scope files (QA evidence BL-1691-QA-20260924.md).
+# The cited/reviewed commit was 44973c8f24 (QA's held tip); the
+# land-approval mapping (BL-1334) records 75b3d014df <- 44973c8f24.
 epic: sampled-reach-floors
 priority: 2
 direction: swarm-reported

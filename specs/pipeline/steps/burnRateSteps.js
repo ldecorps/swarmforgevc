@@ -13,7 +13,16 @@ const os = require('node:os');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const { computeBurnRateTokensPerHour, DEFAULT_BURN_RATE_WINDOW_MS } = require(path.join(EXT_DIR, 'out', 'metrics', 'burnRate'));
-const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 
 const NOW_MS = Date.parse('2026-07-09T08:15:00Z');
 
@@ -77,7 +86,7 @@ function registerSteps(registry) {
   // ── burn-rate-03 ────────────────────────────────────────────────────
   registry.define(/^an unauthorized request is made to the burn-rate endpoint$/, async (ctx) => {
     const target = mkTmp();
-    const handle = await startBridge(target, path.join(target, 'runs.jsonl'), 'aps-burn-rate-token');
+    const handle = await bridgeServer().startBridge(target, path.join(target, 'runs.jsonl'), 'aps-burn-rate-token');
     try {
       const res = await fetch(`http://127.0.0.1:${handle.port}/burn-rate`);
       ctx.status = res.status;

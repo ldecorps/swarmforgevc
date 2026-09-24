@@ -28,7 +28,16 @@ const {
   PRICING_TABLE_AS_OF_LABEL,
 } = require(path.join(EXT_OUT, 'metrics', 'syntheticLlmCost'));
 const { PRICING_TABLE_VERSION } = require(path.join(EXT_OUT, 'metrics', 'pricingTable'));
-const { startBridge } = require(path.join(EXT_OUT, 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(EXT_OUT, 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 const { runSwarmCostRank } = require(path.join(EXT_OUT, 'tools', 'swarm-cost-rank'));
 const { computeCostHealthSidecar, renderCostHealthSection } = require(path.join(EXT_OUT, 'notify', 'costHealthSidecar'));
 
@@ -238,7 +247,7 @@ function registerSteps(registry) {
 
   registry.defineScoped(/^the 7 day horizon rollup runs via swarm-cost-rank or the cost rank endpoint$/, async (ctx) => {
     ctx.cliResult = runSwarmCostRank({ horizon: '7d', topN: undefined, groupBy: [] }, ctx.rollupRoot, ctx.nowMs);
-    const handle = await startBridge(ctx.rollupRoot, path.join(ctx.rollupRoot, 'runs.jsonl'), BRIDGE_TOKEN, { nowMs: ctx.nowMs });
+    const handle = await bridgeServer().startBridge(ctx.rollupRoot, path.join(ctx.rollupRoot, 'runs.jsonl'), BRIDGE_TOKEN, { nowMs: ctx.nowMs });
     try {
       const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=7d`, {
         headers: { authorization: `Bearer ${BRIDGE_TOKEN}` },

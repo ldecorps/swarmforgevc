@@ -22,7 +22,16 @@ const { execFileSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
-const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 const { ensureOperatorTopic } = require(path.join(EXT_DIR, 'out', 'tools', 'telegram-front-desk-bot'));
 const { decideUpdateAction, subjectForTopic, topicForSubject, resolveReplyTopicId, OPERATOR_SUBJECT_ID } = require(
   path.join(EXT_DIR, 'out', 'tools', 'telegramFrontDeskBotCore')
@@ -73,7 +82,7 @@ function fakeCreatePost() {
 }
 
 async function withBridge(root, fn) {
-  const handle = await startBridge(root, path.join(root, 'runs.jsonl'), BRIDGE_TOKEN);
+  const handle = await bridgeServer().startBridge(root, path.join(root, 'runs.jsonl'), BRIDGE_TOKEN);
   try {
     return await fn(handle);
   } finally {

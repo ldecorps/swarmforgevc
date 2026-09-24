@@ -18,7 +18,16 @@ const { spawn } = require('node:child_process');
 const { pollAndForward, runPollCycle, offsetAfterDelivery } = require(
   path.join(__dirname, '..', '..', '..', 'extension', 'out', 'tools', 'telegramFrontDeskBotCore')
 );
-const { ingestTelegramInboundMessage } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'bridgeServer'));
+// BL-1687: paths only - bridgeServer.js is the whole bridge graph (286
+// modules); a mere require() of this file must not pay for it. Required
+// once, on first use, and cached (same shape BL-1658/BL-1685 established).
+let _bridgeServer = null;
+function bridgeServer() {
+  if (!_bridgeServer) {
+    _bridgeServer = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'bridgeServer'));
+  }
+  return _bridgeServer;
+}
 const { appendOperatorEvent } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'operatorEventQueue'));
 const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
 
@@ -80,7 +89,7 @@ function fakePollAdapters(ctx, { deliver }) {
     getUpdates: async () => ({ success: true, updates: [mkUpdate(ctx.updateId)] }),
     postToBridge: async () => {
       if (ctx.failureKind === 'event-cannot-be-queued') {
-        const result = ingestTelegramInboundMessage(ctx.bridgeTarget, ctx.subjectId, 'telegram', 'a human message', ctx.updateId);
+        const result = bridgeServer().ingestTelegramInboundMessage(ctx.bridgeTarget, ctx.subjectId, 'telegram', 'a human message', ctx.updateId);
         return result.success;
       }
       return deliver;
@@ -181,14 +190,14 @@ function registerSteps(registry) {
   registry.define(/^a message from the human was accepted but its acknowledgement was lost$/, (ctx) => {
     ctx.bridgeTarget = mkTmp('sfvc-bl369-dedup-');
     ctx.updateId = 900;
-    const first = ingestTelegramInboundMessage(ctx.bridgeTarget, ctx.subjectId, 'telegram', 'hello', ctx.updateId);
+    const first = bridgeServer().ingestTelegramInboundMessage(ctx.bridgeTarget, ctx.subjectId, 'telegram', 'hello', ctx.updateId);
     if (!first.success) {
       throw new Error('expected the first delivery to have been accepted (this scenario is about a LOST ack, not a failed accept)');
     }
   });
 
   registry.define(/^the same message is delivered again$/, (ctx) => {
-    ctx.redelivery = ingestTelegramInboundMessage(ctx.bridgeTarget, ctx.subjectId, 'telegram', 'hello', ctx.updateId);
+    ctx.redelivery = bridgeServer().ingestTelegramInboundMessage(ctx.bridgeTarget, ctx.subjectId, 'telegram', 'hello', ctx.updateId);
     if (!ctx.redelivery.success) {
       throw new Error('expected a pure redelivery of an already-accepted message to still report success (it WAS handled)');
     }
