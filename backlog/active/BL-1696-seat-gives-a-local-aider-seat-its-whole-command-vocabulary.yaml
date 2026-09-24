@@ -197,3 +197,5 @@ notes: |
   on a local seat), Estimable (one script, seven verbs, one sitting),
   Small (six scenarios, two invariants), Testable (recorder stubs in a
   throwaway repo).
+
+assigned_to: coder
