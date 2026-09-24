@@ -79,6 +79,16 @@ export const PRICING_TABLE: Record<string, ModelPricing> = {
   // estimateCostUsd returns null, never a guessed or zero rate, for a turn
   // that actually spent cache-creation tokens on this model.
   'claude-fable-5-1': { inputPerMTok: 10, outputPerMTok: 50, cacheReadPerMTok: 0.25 },
+  // BL-1712: the full-forge specifier seat's actual model since 2026-09-24
+  // (swarmforge/packs/full-forge.conf, db5d1313e4), replacing claude-fable-5-1
+  // above. Verified against the project's Claude API reference (cached
+  // 2026-06-24, re-read 2026-09-24): input $4, output $20, cache read $0.20
+  // per million tokens. Cache-creation is not stated in that reference and is
+  // deliberately left unset rather than derived from any sibling row
+  // (BL-1436 invariant 1) - estimateCostUsd returns null, never a guessed or
+  // zero rate, for a turn that actually spent cache-creation tokens on this
+  // model.
+  'claude-opus-5-5': { inputPerMTok: 4, outputPerMTok: 20, cacheReadPerMTok: 0.2 },
 };
 
 export interface UsageTotalsForCost {

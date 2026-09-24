@@ -94,9 +94,10 @@ test('estimateCostUsd returns null for a model absent from the table, rather tha
 // anywhere - only a manual `node -e` probe, which nothing gates on.
 // claude-fable-5-1's own cacheCreatePerMTok is deliberately absent (its
 // published rate is not stated in the project's Claude API reference,
-// never derived from the sibling claude-fable-5 row) - this is the ONE
-// row in PRICING_TABLE that can actually reach costFrom's undefined-rate
-// branch, so it is asserted directly rather than via a synthetic table.
+// never derived from the sibling claude-fable-5 row) - one of the rows
+// in PRICING_TABLE that can actually reach costFrom's undefined-rate
+// branch (BL-1712 added a second, claude-opus-5-5, below), so it is
+// asserted directly rather than via a synthetic table.
 test('estimateCostUsd returns null for a nonzero cache-creation usage on a model with no published cache-creation rate', () => {
   assert.equal(PRICING_TABLE['claude-fable-5-1'].cacheCreatePerMTok, undefined,
     'fixture assumption: claude-fable-5-1 has no cacheCreatePerMTok - if this ever gains one, point this test at another unpublished-rate row');
@@ -113,6 +114,32 @@ test('estimateCostUsd still prices claude-fable-5-1\'s other categories despite 
   assert.equal(estimateCostUsd({ inputTokens: 0, outputTokens: 1_000_000, cacheCreationTokens: 0, cacheReadTokens: 0 }, 'claude-fable-5-1'), rates.outputPerMTok);
   assert.equal(estimateCostUsd({ inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 1_000_000 }, 'claude-fable-5-1'), rates.cacheReadPerMTok);
   assert.equal(estimateCostUsd({ inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }, 'claude-fable-5-1'), 0);
+});
+
+// BL-1712: the full-forge specifier seat moved to claude-opus-5-5
+// (db5d1313e4), whose published cache-creation rate is likewise absent from
+// the project's Claude API reference - the same honest-null shape BL-1436
+// covered for claude-fable-5-1, asserted directly for this second row too.
+test('estimateCostUsd returns null for a nonzero cache-creation usage on claude-opus-5-5 (no published cache-creation rate)', () => {
+  assert.equal(PRICING_TABLE['claude-opus-5-5'].cacheCreatePerMTok, undefined,
+    'fixture assumption: claude-opus-5-5 has no cacheCreatePerMTok - if this ever gains one, point this test at another unpublished-rate row');
+  const usage = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 1_000_000, cacheReadTokens: 0 };
+  assert.equal(estimateCostUsd(usage, 'claude-opus-5-5'), null);
+});
+
+test('estimateCostUsd still prices claude-opus-5-5\'s other categories despite its unpublished cache-creation rate', () => {
+  const rates = PRICING_TABLE['claude-opus-5-5'];
+  assert.equal(estimateCostUsd({ inputTokens: 1_000_000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }, 'claude-opus-5-5'), rates.inputPerMTok);
+  assert.equal(estimateCostUsd({ inputTokens: 0, outputTokens: 1_000_000, cacheCreationTokens: 0, cacheReadTokens: 0 }, 'claude-opus-5-5'), rates.outputPerMTok);
+  assert.equal(estimateCostUsd({ inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 1_000_000 }, 'claude-opus-5-5'), rates.cacheReadPerMTok);
+  assert.equal(estimateCostUsd({ inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }, 'claude-opus-5-5'), 0);
+});
+
+test('BL-1712: claude-opus-5-5 is priced at its published rate for each token category', () => {
+  const rates = PRICING_TABLE['claude-opus-5-5'];
+  assert.equal(rates.inputPerMTok, 4);
+  assert.equal(rates.outputPerMTok, 20);
+  assert.equal(rates.cacheReadPerMTok, 0.2);
 });
 
 test('estimateCostUsd returns zero for a known model with zero usage', () => {

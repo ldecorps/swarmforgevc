@@ -44,3 +44,26 @@ invariant (an unpriced category is reported as unknown, never miscosted)
 applied to a per-model gap rather than a whole-row one. `modelDisplayName.ts`
 now maps the id to `Fable 5.1`. Acceptance:
 `specs/features/BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature`.
+
+## The same gap recurred for `claude-opus-5-5` (BL-1712)
+
+The identical pattern repeated on 2026-09-24: the full-forge specifier
+seat moved to `claude-opus-5-5` (`swarmforge/packs/full-forge.conf`,
+`db5d1313e4`, replacing `claude-fable-5-1` above), and
+`pricingTable.test.js`'s coverage check went red the same hour, again
+naming the gap. `claude-opus-5-5` is now priced (input $4, output $20,
+cache read $0.20 per million tokens — verified against the project's
+Claude API reference, cached 2026-06-24 and re-read 2026-09-24, not
+copied from any sibling row). As with `claude-fable-5-1`, no
+cache-creation rate is published for this model, so the row leaves
+`cacheCreatePerMTok` unset rather than deriving one (BL-1436 invariant 1)
+— `estimateCostUsd` returns `null`, never a guessed or zero rate, for a
+turn that actually spends cache-creation tokens on this model.
+`modelDisplayName.ts` now maps the id to `Opus 5.5`. Acceptance:
+`specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feature`.
+
+This is the second time a human-directed pack model change left this
+coverage check red on main until an unrelated parcel's gate caught it
+(2026-09-04 for `claude-fable-5-1`, 2026-09-24 for `claude-opus-5-5`) —
+recorded here, not yet scoped as a preventive gate on the pack-conf commit
+itself (BL-1712's notes).
