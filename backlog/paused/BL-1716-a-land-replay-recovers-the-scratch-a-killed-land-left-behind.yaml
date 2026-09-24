@@ -1,0 +1,140 @@
+id: BL-1716
+title: "swarmforge/scripts/test/test_bl1366_land_is_one_command.sh is red on main - a land killed mid-replay leaves its land-replay worktree and scratch branch behind (replay!'s cleanup runs on every exit path it reaches, and a SIGTERM reaches none), so the next land of the same ticket and commit fails `worktree add -b`, escalates as 'specifier adjudication needed' without git's reason, and only the attempt after it succeeds; the replay clears a scratch whose run is dead before creating its own, never touches one a live run owns, and a create failure carries git's own error"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment), and the fault is live in the land step (the
+# integration point): any land interrupted inside the replay - a killed
+# pane, a respawn, a host restart - makes the next land of that parcel
+# escalate with a misleading reason. Not critical: the escalating attempt
+# cleans up after itself, so a second attempt lands; nothing wrong is
+# published.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: [BL-1713]
+# BL-1713 (active, at coder@2) edits land_step_lib.bb's land-plan and
+# land_step_cli.bb; this ticket edits the same file's replay!. Named here
+# so the promotion gate holds this one until BL-1713 is in done (BL-1687:
+# a sequencing written as prose is read by nothing).
+mutation_cost: medium
+# medium: Babashka only (no mutation/CRAP/DRY wired, BL-472) in
+# land_step_lib.bb's replay! plus one feature over a fixture origin; the
+# BL-1678 feature, same shape, ran 12.6 s at load 18 on 2026-09-24, far
+# inside the 300 s per-mutant ceiling (BL-1541). The red shell test
+# itself (about 40 s) is a QA/register check, not an acceptance step.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1716-a-land-replay-recovers-the-scratch-a-killed-land-left-behind.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers (land-plan -> replay!,
+# land_step_cli.bb, land_main_publish.sh) exist before the fix, so an
+# anchor there matches before and after (BL-1235); the feature drives the
+# real replay over a fixture origin, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1716LandReplayRecoversStaleScratchSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: a scratch worktree
+  or branch is cleared only when the run that made it is provably dead; a
+  scratch whose owner is alive, or cannot be established, is refused with
+  its owner named and left exactly as it was (BL-1385/BL-1390: a blind
+  sweep destroys sibling runs). FIRM: every replay refusal to create its
+  worktree carries git's own error text. FIRM: nothing else about the
+  replay's content, its guards or its cleanup on the paths it already
+  reaches changes.
+
+invariants:
+  - "A land replay never fails because of a scratch worktree or branch left by a dead earlier run, and never removes one whose owning run is alive or unknown."
+
+description: |
+  ## What is wrong
+
+  `bash swarmforge/scripts/test/test_bl1366_land_is_one_command.sh`, run
+  by the specifier on main at 9d6fa31f6d (2026-09-24, load 3.4): every
+  case passes except case 5's second half -
+  `FAIL: the next land could not proceed: BL-9366-fixture-task: entangled
+  tip - ... specifier adjudication needed.` /
+  `land-step replay: could not create worktree
+  /tmp/bl1366-land-*/five/.git/land-replay-worktrees/BL-9366-3aaf388713
+  off origin/main`. coder@2 reported it (note 000065) while building
+  BL-1713.
+
+  Case 5 starts `land_main_publish.sh --land`, sends SIGTERM after 2 s,
+  checks the publish lock is gone (it is - the shell trap holds), then
+  lands the same commit again. `replay!` (land_step_lib.bb) builds in
+  `<git-common-dir>/land-replay-worktrees/<id>-<sha10>` on branch
+  `land-replay/<id>-<sha10>`, both named by ticket and commit only, and
+  its `cleanup!`/`drop-branch!` run on every path the Babashka process
+  reaches - but a SIGTERM (or SIGKILL, a pane kill, a respawn) ends the
+  process inside the replay and reaches none of them. The second land's
+  `worktree add -b` then fails on the leftover branch or path; its own
+  failure path does clean up, which is why an attempt after it succeeds,
+  but that attempt has already escalated with a reason that names an
+  adjudication and omits git's stderr.
+
+  Likely red since BL-1678 (4823eafa41, 2026-09-21): a clean land now
+  builds a replay too, so the 2 s kill lands inside `replay!`. (QA's
+  hand removal of `.git/land-replay-worktrees/test-BL-1691` this morning
+  does not follow `replay!`'s naming and is not this mechanism.)
+
+  ## What is wanted
+  - Scenario 01: a scratch worktree and branch recorded to a run that is
+    no longer alive are cleared, and the replay builds as usual.
+  - Scenario 02: one recorded to a live run is refused, the owner named,
+    worktree and branch untouched.
+  - Scenario 03: a create failure's reason carries git's own error text.
+  - `test_bl1366_land_is_one_command.sh` passes on the parcel commit;
+    its register row leaves with this land (BL-1631).
+
+  ## How (direction, not mandate)
+  - Record the owning run in the scratch at creation (pid plus start
+    time, so a reused pid is not mistaken for the owner) and decide
+    dead/alive from it; a scratch with no record (made before this fix)
+    is dead only past an age bound. BL-1385/BL-1390's posture: reap only
+    what no live run owns.
+  - A shutdown hook that cleans up on SIGTERM is welcome but cannot be
+    the fix - SIGKILL and a host restart reach no hook.
+  - The publish lock already serialises `land_main_publish.sh`; QA also
+    runs `land_step_cli.bb` directly, so the owner record, not the lock,
+    is what proves a scratch is dead.
+
+  ## Scope
+  - `swarmforge/scripts/land_step_lib.bb` (`replay!` only).
+  - `specs/features/BL-1716-...feature` + the pinned handler.
+  - Docs: the land-step reference/how-to's replay section.
+
+  ## Not in scope
+  - `land-plan` and `land_step_cli.bb` (BL-1713, landing first).
+  - The test file itself: it is right; the land step is wrong.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1716-a-land-replay-recovers-the-scratch-a-killed-land-left-behind.feature`:
+     all ok (3 of 3).
+  2. `bash swarmforge/scripts/test/test_bl1366_land_is_one_command.sh`:
+     no FAIL line; "and a subsequent land succeeds" passes.
+  3. The BL-1678, BL-1241 and BL-1713 features: all ok (the replay's
+     other paths unchanged).
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  5. After landing: the land prints REGISTER_ROW_RETIRED for the
+     test_bl1366 row, and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `"unowned":[]`.
+
+notes: |
+  Minted 2026-09-24 by the specifier from coder@2's unowned-red note 000065
+  ("unowned-red test_bl1366_land_is_one_command.sh, pre-existing"), the
+  same pass (standing-red amendment 2026-09-05); reproduced on main at
+  9d6fa31f6d; register row added in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4), held behind BL-1713 by
+  depends_on (same file). IR-DRY: one near-duplicate (scenarios 01/02's
+  Given differ only in dead vs live) is one parameterised step, kept.
+  Holder note sent to coder@2 (building BL-1713) the same pass.
