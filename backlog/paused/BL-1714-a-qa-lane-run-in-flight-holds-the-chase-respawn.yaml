@@ -1,0 +1,144 @@
+id: BL-1714
+title: "The chase ladder respawned QA at 07:02:50Z on 2026-09-24 while QA's own qa-gather run for BL-1694 had been alive 31 minutes under the QA worktree - BL-1652's lane guard pattern names Stryker, vitest and the bb test runners but not qa-gather.js or the acceptance CLI QA runs directly (node specs/pipeline/cli.js), so a QA waiting on its gatherer reads as idle; both entry points, scoped to the chased role's worktree, hold the respawn"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real but contained fault - the respawn killed a 31-minute
+# verification run and the session holding it (QA session 1007da45 ended
+# 07:02:52Z, 4c3d9ab6 began 07:02:51Z), and the fresh seat recovered the
+# review within four minutes (unowned-red evidence a404193f42 at 07:06Z).
+# No wrong land, no lost commit. Not high: the gather run itself had not
+# produced output in 31 minutes (0-byte result file), so what was lost
+# was time, not a verdict.
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+# BL-1652 (the lane guard) and BL-1673 (the scan excludes its own pid)
+# are in backlog/done. BL-1551 (paused) corrects how a SKIPPED respawn is
+# recorded; this respawn was real (the QA session ended), so the two are
+# orthogonal: BL-1551 touches chaser telemetry rows, this touches the
+# lane pattern. No open ticket touches lane_process_lib.bb (grep of
+# paused/ and active/, 2026-09-24).
+mutation_cost: low
+# low: one Babashka regex (no mutation/CRAP/DRY wired, BL-472) and its bb
+# test; the feature reuses BL-1652's fixture shape, whose own feature ran
+# 6.1 s at load 13 on 2026-09-24 - far inside the 300 s per-mutant
+# ceiling (BL-1541).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1714-a-qa-lane-run-in-flight-holds-the-chase-respawn.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer (handoffd.bb's
+# role-lane-running? -> lane-process-lib/lane-running?) exists before the
+# fix, so an anchor there matches before and after (BL-1235); the feature
+# drives the real chase sweep, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1714QaLaneRunHoldsRespawnSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file needs your review before this slice promotes. The ask:
+  that a QA checklist gather run (extension/out/tools/qa-gather.js) and a
+  direct acceptance run (node specs/pipeline/cli.js) count as a running
+  lane for the chase ladder, exactly as vitest, Stryker and the bb test
+  runners already do (BL-1652). FIRM: scoped to the chased role's own
+  worktree, as today - a run under another worktree changes nothing for
+  QA. FIRM: the existing posture carries over unchanged - a role with a
+  lane alive is chased, never respawned, for as long as the lane lives,
+  so a hung gather now holds a quiet QA the same way a hung vitest already
+  does; no new timeout is added here.
+
+invariants:
+  - "A chase respawn never fires for a role while a lane entry point that role's prompt directs it to run is alive scoped to that role's worktree."
+
+description: |
+  ## What is wrong
+
+  The 2026-09-24 closing-ceremony packet named "16 chases in QA" as its
+  second hypothesis. The lifecycle ledger
+  (`.swarmforge/lean/2026-09-24.jsonl`) has QA's BL-1694 parcel chased
+  sixteen times from 06:29:34Z to 07:01:18Z, then a respawn row at
+  07:02:50Z. The respawn was real: QA's Claude session 1007da45 ended at
+  07:02:52Z and 4c3d9ab6 began at 07:02:51Z.
+
+  What QA was doing: its first `timeout 590 node
+  extension/out/tools/qa-gather.js --ticket BL-1694` hit the 590 s
+  timeout; at 06:31:08Z it re-ran the same command in the background
+  (no timeout) and ended its turn to wait. The pane went quiet, the
+  heartbeat aged, and at the ceiling `decide-stale-item-action` answers
+  "respawned" unless `pane-busy?` or `lane-running?` holds. The gather
+  was still alive - its background task file reads "Terminated
+  [killed]", mtime 07:02Z, and its redirected result file is 0 bytes -
+  so `lane-running?` answered false with a lane running.
+
+  Why: `lane-process-lib/lane-process-pattern` is
+  `stryker|vitest\.properties\.config\.mjs|\bnpm exec vitest\b|\bnpx vitest\b|\(vitest|_test_runner\.bb|run_acceptance\.sh`.
+  `node extension/out/tools/qa-gather.js` matches none of it, and
+  neither does `node specs/pipeline/cli.js <feature>`, the acceptance
+  command every `qa_e2e_procedure` names. Between child processes (the
+  gatherer runs its lanes one after another through spawnSync) nothing
+  in the table matches at all.
+
+  ## What is wanted
+
+  - Scenario 01 (outline): with QA's heartbeat dead, its pane quiet and
+    its items at the chase ceiling, a live `qa-gather.js` process or a
+    live `specs/pipeline/cli.js` process scoped to the QA worktree means
+    the sweep triggers no respawn for QA.
+  - Scenario 02: the same gather process scoped to the coder worktree
+    leaves QA's respawn to its own readings - exactly one respawn fires.
+
+  ## How (direction, not mandate)
+
+  - Widen `lane-process-pattern` in `swarmforge/scripts/lane_process_lib.bb`
+    (it is deliberately its own literal, not worktree_stray_lib's - the
+    file header says why; keep it that way). The scoping
+    (`project-scoped-process?` on cmdline or cwd) is unchanged.
+  - The feature reuses BL-1652's fixture (daemon-shaped `.swarmforge`,
+    aged heartbeat, items at the ceiling) with its own scoped handler;
+    a real short-lived process whose cmdline carries the lane command,
+    with its cwd under the fixture worktree, stands in for the run.
+  - Record in the evidence the census of lane entry points the role
+    prompts name (`grep -n 'qa-gather\|specs/pipeline/cli.js\|run_acceptance\|vitest'
+    swarmforge/roles/*.prompt`) and which the widened pattern now covers,
+    so the next missed entry point is a one-line diff with its reason.
+
+  ## Scope
+
+  - `swarmforge/scripts/lane_process_lib.bb` (the pattern and its
+    comment) and its bb test.
+  - `specs/features/BL-1714-...feature` + the pinned handler.
+  - Docs: the chase-ladder reference that lists what holds a respawn.
+
+  ## Not in scope
+
+  - Why the second gather run produced nothing in 31 minutes, and why
+    the first exceeded 590 s - no mechanism in hand yet; a hypothesis
+    in the 2026-09-24 lean-pass evidence, ticketed if it recurs.
+  - How skipped respawns are recorded (BL-1551).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1714-a-qa-lane-run-in-flight-holds-the-chase-respawn.feature`:
+     all ok (3 of 3).
+  2. `node specs/pipeline/cli.js specs/features/BL-1652-the-chase-sweep-never-respawns-a-busy-role-and-respawns-at-most-once-per-sweep.feature`:
+     all ok (4 of 4) - the existing guard is unchanged.
+  3. Live read, no respawn provoked: while your own qa-gather run for
+     this ticket is alive, `bb -e '(load-file "swarmforge/scripts/lane_process_lib.bb") (prn (lane-process-lib/lane-running? "<your worktree>"))'`
+     prints true.
+  4. The evidence carries the lane entry-point census.
+  5. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+notes: |
+  Minted 2026-09-24 by the specifier from the 2026-09-24 closing-ceremony
+  packet (coordinator note 011062), hypothesis "16 chase(s) in QA this
+  shift", traced the same pass through the lifecycle ledger, QA's two
+  Claude session transcripts and the killed background task's output
+  file. Recorded as the pass's process_ticket outcome; evidence in
+  backlog/evidence/closing-ceremony-lean-pass-2026-09-24.md. IR-DRY: one
+  possible-synonym finding ("exactly one respawn" vs "no respawn") is two
+  opposite outcomes, kept.
