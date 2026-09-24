@@ -25,7 +25,7 @@ required_wiring:
   - 'swarmforge/scripts/kill_all_swarm.sh::ollama_ancillary_lib.sh::kill_all_swarm stops a swarm-owned ollama server'
   - 'specs/pipeline/steps/bl1704OllamaStopPathsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Second of the three tickets from your 2026-09-23 ollama ask (BL-1703
   starts and probes, this stops, BL-1705 reaps ghosts). Please review the

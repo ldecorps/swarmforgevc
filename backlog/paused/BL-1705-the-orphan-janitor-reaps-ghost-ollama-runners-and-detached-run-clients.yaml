@@ -25,7 +25,7 @@ required_wiring:
   - 'swarmforge/scripts/orphan_janitor_sweep_lib.bb::orphan-janitor-lib/reapable-ollama-ghost?::the live janitor sweep applies the ollama ghost class'
   - 'specs/pipeline/steps/bl1705OllamaGhostJanitorSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Third of the three tickets from your 2026-09-23 ollama ask (BL-1703
   starts and probes, BL-1704 stops, this reaps ghosts). Please review the
