@@ -114,10 +114,16 @@
    :fallback-command (only meaningful alongside :text) overrides the no-
    narration suffix's literal \"nothing to do\" fallback - see text-for-
    agent's docstring; omitted, every existing caller keeps today's
-   ready-script-rel-path fallback byte-for-byte."
-  [socket session agent & {:keys [log-fn on-outcome script-rel-path text fallback-command]}]
+   ready-script-rel-path fallback byte-for-byte.
+   :raw? true (BL-1697) sends :text completely as-is - no
+   aider-no-narration-suffix appended regardless of the agent's wake-style.
+   For the local parcel driver's own messages (chat-set commands, the one
+   instruction, a fix request), which must be free of any suffix the
+   driver itself did not write - a raw path added NEXT TO text-for-agent's
+   suffix logic, never a strip-after-the-fact on the same text."
+  [socket session agent & {:keys [log-fn on-outcome script-rel-path text fallback-command raw?]}]
   (let [steps (if text
-                [{:op :send-literal :text (text-for-agent agent text :fallback-command fallback-command)} {:op :submit}]
+                [{:op :send-literal :text (if raw? text (text-for-agent agent text :fallback-command fallback-command))} {:op :submit}]
                 (agent-runtime-lib/wake-steps agent :script-rel-path script-rel-path))
         wake-text (:text (first (filter #(= :send-literal (:op %)) steps)))
         log! (or log-fn (fn [& _] nil))

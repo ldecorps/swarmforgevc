@@ -88,10 +88,19 @@
               :bootstrap-style :paste-prompt-file
               :bootstrap-text-style :generic
               :startup-delay-ms 3000}
+   ;; BL-1697: aider has no command channel of its own (never runs a
+   ;; model's "!" line; auto-declines fenced shell blocks under
+   ;; --yes-always) and a 7B model cannot hold this pipeline's multi-step
+   ;; procedure itself (overnight lab, 2026-09-24) - so a seat running it
+   ;; is driven externally by handoffd's own local_parcel_driver_lib.bb,
+   ;; never handed the procedure in its own prompt. :parcel-driver marks
+   ;; that capability; absence (every other agent) reads as false, same
+   ;; shape as :acp.
    "aider"   {:wake-style :shell-run-script
               :bootstrap-style :add-files-then-paste
               :bootstrap-text-style :aider
-              :startup-delay-ms 5000}
+              :startup-delay-ms 5000
+              :parcel-driver true}
    ;; Mistral Vibe: a CLI coding agent with bash tools, so it takes the SAME
    ;; shape as claude/copilot — the role prompt is embedded in the launch
    ;; command (positional PROMPT) and it is woken by chatting at it. Do NOT
@@ -142,6 +151,15 @@
    :acp key reads as false - absence means pane-driven, never unknown."
   [agent]
   (boolean (:acp (capabilities agent))))
+
+(defn parcel-driver-capable?
+  "BL-1697: does this agent's provider need an external driver to move a
+   pipeline parcel through it? Capability, not provider name
+   (capability-branching-01) - handoffd's own injection paths and the
+   driver's own seat check read this, never a raw \"aider\" string. A
+   missing :parcel-driver key reads as false."
+  [agent]
+  (boolean (:parcel-driver (capabilities agent))))
 
 ;; The ONE seat this spike hosts behind the ACP host in production
 ;; (approval_context: Mistral Vibe). Other :acp agents stay pane-driven.

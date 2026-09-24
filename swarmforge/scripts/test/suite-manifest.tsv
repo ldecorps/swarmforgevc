@@ -320,7 +320,8 @@ test_handoffd_chase_sweep_wiring.sh	standing
 test_handoffd_closing_ceremony_gate_wiring.sh	standing		
 test_handoffd_closing_context_clear_wiring.sh	standing		
 test_handoffd_cooldown_sweep_wiring.sh	standing		
-test_handoffd_dead_letter_notify_wiring.sh	standing		
+test_handoffd_dead_letter_notify_wiring.sh	standing
+test_handoffd_driver_seat_injection_skip.sh	standing
 test_handoffd_expedite_park_reversal_wiring.sh	standing		
 test_handoffd_flow_watchdog_wiring.sh	standing		
 test_handoffd_idempotent_archive.sh	standing		

@@ -30,7 +30,12 @@ VERBS_ALL="next done ask note handoff merge test"
 VERBS_COORDINATOR="next done ask note"
 
 role_verbs() {
-  case "$1" in
+  # BL-1697: roles.tsv keys a stage's second seat as "coder@2" (a mixed
+  # pack's local seat beside the Claude coder) - the SEAT id, never a
+  # second role. Stripped so a driver seat gets coder's verb set
+  # regardless of which numbered seat it is.
+  local base="${1%%@*}"
+  case "$base" in
     coder|cleaner|architect|hardender|documenter|QA) printf '%s' "$VERBS_ALL" ;;
     coordinator) printf '%s' "$VERBS_COORDINATOR" ;;
     *) printf '' ;;

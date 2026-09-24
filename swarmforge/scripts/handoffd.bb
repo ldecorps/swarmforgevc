@@ -30,6 +30,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "local_parcel_driver_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_email_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_generation_schedule_lib.bb")))
@@ -497,6 +498,13 @@
                                                           notified-sessions (atom #{})}}]
   (let [wake-sess (handoff-lib/wake-session socket session)]
     (cond
+      ;; BL-1697 invariant 2: while the driver owns this seat, no other
+      ;; handoffd injection (new-mail wake included) reaches its pane -
+      ;; checked first, ahead of every other reason this wake might have
+      ;; landed or been skipped.
+      (local-parcel-driver-lib/driver-seat? agent role)
+      (log! "deliver-notify-skip-driver-seat" role (str recipient-path))
+
       (not new-delivery?)
       (log! "deliver-notify-skip-duplicate" role (str recipient-path))
 
@@ -686,7 +694,11 @@
   (when-not (or (tmux-inject-disabled?) (outbound-wakes-suppressed?))
     (let [pending (for [[_ role-info] roles
                         :let [role (:role role-info)]
+                        ;; BL-1697 invariant 2: a startup wake is still a
+                        ;; handoffd injection - never reaches a seat the
+                        ;; driver owns.
                         :when (and (seq (inbox-new-files role-info))
+                                   (not (local-parcel-driver-lib/driver-seat? (:agent role-info) role))
                                    (not (recipient-pane-busy? socket roles role)))]
                     role-info)]
       ;; BL-1490: this phase runs OUTSIDE run-sweep! (before the poll loop
@@ -2036,7 +2048,13 @@
    so it is not a case this ticket's 'no wake text reaches a pane without
    attribution' invariant covers."
   [socket roles role resident-wake-suppressed? notify-fn! sweep mailbox-dir-key]
-  (let [action (chase-poke-action roles socket role)
+  (if (local-parcel-driver-lib/driver-seat? (:agent (get roles role)) role)
+    ;; BL-1697 invariant 2: while the driver owns this seat, no other
+    ;; handoffd injection reaches its pane - chase poke and in-process
+    ;; resume both funnel through this one shared function.
+    (do (log! "chase-wake-skip-driver-seat" role)
+        {:attempted false :landed false})
+    (let [action (chase-poke-action roles socket role)
         ri (get roles role)
         wake-sess (handoff-lib/wake-session socket (:session ri))
         resident-target? (mono-router-lib/resident-poke-target?
@@ -2079,7 +2097,7 @@
                                    (:session ri) (:agent ri) notify-fn!))]
               (when (and landed (:resident-budget? plan))
                 (reset! resident-wake-suppressed? true))
-              {:attempted true :landed landed}))))
+              {:attempted true :landed landed})))))
 
 (defn- head-commit-10
   "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
@@ -2183,6 +2201,27 @@
               (str (control-plane-lib/incidents-file state-dir)))))
     (catch Exception e
       (log! "control-plane-incident-error" (.getMessage e)))))
+
+;; BL-1697: advances every live driver seat by one tick - never blocks
+;; waiting for a model turn (drive-tick!'s own contract: as much as is
+;; ready this tick, nothing more). One seat's exception never stops the
+;; sweep from reaching the rest, same isolation as every other sweep in
+;; this file's own cadence block.
+(defn local-parcel-driver-sweep! [roles socket]
+  (doseq [[role-id role-info] roles
+          :when (local-parcel-driver-lib/driver-seat? (:agent role-info) (:role role-info))]
+    (try
+      (local-parcel-driver-lib/drive-tick!
+       {:project-root (str project-root)
+        :checkout (:worktree-path role-info)
+        :role role-id
+        :seat-id role-id
+        :agent (:agent role-info)
+        :socket socket
+        :session (:session role-info)
+        :fix-turns-limit local-parcel-driver-lib/default-fix-turns})
+      (catch Exception e
+        (log! "local-parcel-driver-error" role-id (.getMessage e))))))
 
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
@@ -5565,6 +5604,17 @@
                     (canary-sweep!)
                     (catch Exception e
                       (log! "canary-sweep-error" (.getMessage e))))
+                  ;; BL-1697: every cycle, not gated to chase-sweep's own
+                  ;; cadence - the driver's own idle-detection needs to be
+                  ;; responsive to a model turn ending, and drive-tick!
+                  ;; itself never blocks (nothing to do this tick is the
+                  ;; common, cheap case for every non-driver seat and every
+                  ;; driver seat mid-turn).
+                  (reset! daemon-cycle-guard-lib/current-context "local-parcel-driver-sweep")
+                  (try
+                    (local-parcel-driver-sweep! (load-roles) socket)
+                    (catch Exception e
+                      (log! "local-parcel-driver-sweep-error" (.getMessage e))))
                   (reset! daemon-cycle-guard-lib/current-context "outside-sweep")
                   ;; BL-146: chase/nudge sweep runs on its own cadence,
                   ;; sharing this single process/thread with delivery -

@@ -3,6 +3,20 @@
 %% file lifecycle new/ -> in_process/ -> completed/, the validation and
 %% branch-claim gates that can refuse a claim, and the daemon sweeps that
 %% wake a role which is not looking at its own mailbox.
+%% BL-1697 (2026-09-24): a coder-role seat whose provider carries the
+%% parcel-driver capability (aider today) is a DRIVER SEAT. handoffd's own
+%% new-mail wake, chase poke and in-process-resume injections all skip a
+%% driver seat - it is driven instead, once per daemon cycle, by
+%% local_parcel_driver_lib.bb's drive-tick! (serve via `seat next`, merge,
+%% a red acceptance check, a read-only chat set + one typed instruction,
+%% then a gate on the model's turn: a commit exists, acceptance now
+%% passes, the spec files are byte-identical, and every touched path was
+%% in the editable set). A gate pass runs `seat handoff` + `seat done`
+%% (the ordinary FORWARD/DONE path, below); a gate fail with fix turns
+%% left types one fix request and re-gates; a gate fail at the limit (or
+%% a merge conflict, or acceptance already green before any edit) runs
+%% `seat ask` and holds the parcel `in_process`, escalated. See the
+%% driver-seat subgraph below.
 flowchart TD
   START(["sender role finishes work\nand commits"])
   DRAFT["writes a handoff draft\n(field: value headers, not JSON)"]
@@ -17,6 +31,8 @@ flowchart TD
   DEPTH["prints active-backlog-depth\nWARNING if over cap"]
 
   DAEMON["handoffd sweeps:\nreplicates into each role's own\n.worktrees/<role> mailbox"]
+  DRIVERSEAT{"recipient is a driver seat?\n(coder/coder@2 on a\nparcel-driver-capable agent -\nBL-1697)"}
+  DRIVERSKIP(["wake/chase/resume injection\nskipped - the driver's own\ndrive-tick! owns this pane\n(invariant 2)"])
   DEFERCHECK{"note carries\nwake: defer?\n(BL-1494)"}
   CHASE{"recipient idle\nwith pending mail?"}
   WAKE["chase sweep wakes it\n(mono-router: rotate resident\ninto that role - respawn)"]
@@ -50,7 +66,9 @@ flowchart TD
   WRITE --> SENT
   WRITE --> DEPTH
   WRITE --> DAEMON
-  DAEMON --> DEFERCHECK
+  DAEMON --> DRIVERSEAT
+  DRIVERSEAT -->|yes| DRIVERSKIP
+  DRIVERSEAT -->|no| DEFERCHECK
   DEFERCHECK -->|yes| DEFERRED
   DEFERCHECK -->|no| CHASE
   CHASE -->|yes| WAKE
@@ -77,13 +95,42 @@ flowchart TD
   DONE -.->|omitted| STALE
   FORWARD -.->|recipient repeats\nthis whole cycle| START
 
+  subgraph DRIVER["Driver seat per-tick loop (BL-1697, replaces\nREADY..DONE above for this seat only)"]
+    DSERVE["drive-tick!: `seat next` claims\nthe in_process parcel,\n`seat merge <sender> <commit>`"]
+    DMERGECONFLICT(["exit 3 (or nonzero):\n`seat ask` \"merge conflict\",\nstate escalated"])
+    DRED{"`seat test`\n(red check, before\nany model turn)"}
+    DREDESCALATE(["passed already:\n`seat ask` \"acceptance\npassed before any edit\",\nno instruction sent"])
+    DCHATSET["chat cleared; ticket YAML +\nacceptance feature /read-only'd\nAND chmod unwritable;\neditable files /add'ed;\none raw instruction typed\n(no narration suffix)"]
+    DIDLE{"pane idle?"}
+    DGATE{"gate: commit exists,\nacceptance now passes,\nspec bytes identical,\ntouched paths ⊆ editable set"}
+    DFIXLEFT{"fix turns\nremaining?"}
+    DFIXTYPE["one fix request typed,\nnaming the failed condition;\ngate again next tick"]
+    DESCALATE(["fix turns exhausted:\nspec write permission restored,\n`seat ask` \"<ticket>: <condition>\",\nstate escalated (held for BL-1698)"])
+    DPASS["spec write permission restored,\n`seat handoff <next-role> <ticket>`\n(next-required-stage, never literal),\n`seat done`, state cleared"]
+  end
+
+  DRIVERSKIP --> DSERVE
+  DSERVE -->|merge conflict| DMERGECONFLICT
+  DSERVE -->|merged clean| DRED
+  DRED -->|already green| DREDESCALATE
+  DRED -->|red, as expected| DCHATSET
+  DCHATSET --> DIDLE
+  DIDLE -->|not yet - next tick| DIDLE
+  DIDLE -->|idle| DGATE
+  DGATE -->|pass| DPASS
+  DGATE -->|fail| DFIXLEFT
+  DFIXLEFT -->|yes| DFIXTYPE
+  DFIXTYPE -.->|awaits idle again| DIDLE
+  DFIXLEFT -->|no| DESCALATE
+  DPASS -.->|same forward/done shape\nas the ordinary path| FORWARD
+
   classDef gate fill:#9a6700,color:#fff,stroke:#5c4200;
   classDef bad fill:#cf222e,color:#fff,stroke:#82071e;
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
-  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE gate;
-  class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED,NOTSENT bad;
-  class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED store;
-  class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH act;
+  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE,DRIVERSEAT,DRED,DIDLE,DGATE,DFIXLEFT gate;
+  class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED,NOTSENT,DMERGECONFLICT,DREDESCALATE,DESCALATE bad;
+  class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED,DRIVERSKIP store;
+  class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH,DSERVE,DCHATSET,DFIXTYPE,DPASS act;
   class DAEMON,WAKE daemon;
