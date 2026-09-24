@@ -22,7 +22,7 @@ blocked_notes: |
   file-level orthogonality awareness). Unblock (set status: todo) once
   BL-1649 reaches backlog/done/.
 epic: multi-seat-stages
-priority: 8
+priority: 9
 direction: swarm-reported
 depends_on: []
 # BL-648 (the sweep), BL-983 (seat mailboxes, stage-queue-dir), BL-1004

@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: disaster-recovery-loop
-priority: 3
+priority: 4
 direction: human-requested
 depends_on: []
 decomposes_into: [BL-1169, BL-1170, BL-1171]

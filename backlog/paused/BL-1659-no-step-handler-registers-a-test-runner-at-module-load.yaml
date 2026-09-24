@@ -10,7 +10,7 @@ severity: medium
 # not a safety signal.
 status: todo
 epic: unit-suite-speed
-priority: 6
+priority: 7
 direction: swarm-reported
 depends_on: [BL-1630]
 # BL-1630 (active at the coder) lands the require census helper with the

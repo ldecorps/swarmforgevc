@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: unit-suite-speed
-priority: 4
+priority: 5
 direction: swarm-reported
 depends_on: []
 # suite-manifest.tsv (BL-1239), run_acceptance.sh (BL-112),

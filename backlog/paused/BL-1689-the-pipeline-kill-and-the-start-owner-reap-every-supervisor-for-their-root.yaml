@@ -11,7 +11,7 @@ severity: medium
 # affected; the swarm was down on purpose when it showed.
 status: todo
 epic: swarm-reliability
-priority: 7
+priority: 8
 direction: swarm-reported
 depends_on: []
 # BL-1688 (paused, minted alongside) bounds the storm this multiplies;

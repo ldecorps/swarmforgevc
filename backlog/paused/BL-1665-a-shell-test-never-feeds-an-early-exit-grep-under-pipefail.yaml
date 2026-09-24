@@ -8,7 +8,7 @@ severity: medium
 # file BL-1664 owns); not a safety signal, not throttling the register.
 status: todo
 epic: code-quality-gates
-priority: 6
+priority: 7
 direction: swarm-reported
 depends_on: []
 # BL-1660 (the same race in local_ollama_pack_shape_lib.sh) and BL-1664

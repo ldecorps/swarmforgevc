@@ -4,7 +4,7 @@ milestone: M8
 type: epic
 status: todo
 epic: deterministic-transit-assist
-priority: 1
+priority: 3
 direction: human-requested
 depends_on: []
 decomposes_into: [BL-668, BL-1360, BL-1361, BL-1362, BL-1363, BL-1366, BL-1370, BL-1411]

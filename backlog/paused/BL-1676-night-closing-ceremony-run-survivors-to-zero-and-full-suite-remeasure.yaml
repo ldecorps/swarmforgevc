@@ -8,7 +8,7 @@ severity: medium
 # 2026-09-10: a reason per survivor names an owner).
 status: todo
 epic: first-run-mutation-debt
-priority: 5
+priority: 6
 direction: swarm-reported
 depends_on: []
 # BL-1640 (active, hardender at mint) and BL-1641 (active, coder at mint) both change this file (sleep-path deadlines; the ensure-briefing deps): promote only after BOTH land; orthogonality, not dependency.

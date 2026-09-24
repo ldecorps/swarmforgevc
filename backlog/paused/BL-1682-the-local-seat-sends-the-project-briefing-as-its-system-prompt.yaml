@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
-priority: 6
+priority: 7
 direction: human-requested
 source: "role_ask answer 2026-09-21, backlog/answers-archive/ANSWER-BL-1682-mint-a-ticket-for-the-local-seat-briefing.md"
 depends_on: []

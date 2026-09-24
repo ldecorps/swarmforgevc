@@ -12,7 +12,7 @@ severity: medium
 # signal is broken and nothing is lost.
 status: todo
 epic: swarm-reliability
-priority: 5
+priority: 6
 direction: swarm-reported
 depends_on: []
 # BL-675 (the cron watchdog) and BL-789 (sourcing swarm.env here) are in

@@ -4,7 +4,7 @@ milestone: M8
 type: epic
 epic: sampled-reach-floors
 status: todo
-priority: 0
+priority: 1
 direction: queue-jump
 depends_on: []
 human_approval: approved

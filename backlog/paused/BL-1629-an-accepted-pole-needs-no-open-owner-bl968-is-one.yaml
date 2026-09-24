@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: unit-suite-speed
-priority: 8
+priority: 9
 direction: swarm-reported
 depends_on: []
 # BL-1598 (the register and check-suite-file-budget.ts) is in backlog/done;

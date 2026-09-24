@@ -14,7 +14,7 @@ severity: medium
 # HEAD on a landing branch for minutes per land) it recurs at every land.
 status: todo
 epic: swarm-reliability
-priority: 6
+priority: 7
 direction: swarm-reported
 depends_on: []
 # BL-1241 (the replay), BL-1298 (replay from the caller's worktree),

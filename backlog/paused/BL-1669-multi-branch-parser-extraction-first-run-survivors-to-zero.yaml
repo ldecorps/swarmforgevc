@@ -8,7 +8,7 @@ severity: medium
 # here (rule of 2026-09-10: a reason per survivor names an owner).
 status: todo
 epic: first-run-mutation-debt
-priority: 5
+priority: 6
 direction: swarm-reported
 depends_on: []
 # BL-755 (the file) is in backlog/done; BL-1667 (active, at hardender at
