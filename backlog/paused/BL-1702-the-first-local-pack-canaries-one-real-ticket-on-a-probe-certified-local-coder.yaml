@@ -26,7 +26,10 @@ required_wiring:
   - 'swarmforge/scripts/swarmforge.sh::local_coder_probe_gate_cli.bb::every launch of a pack with a driver seat checks the coder model probe summary'
   - 'specs/pipeline/steps/bl1702FirstLocalPackCanarySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - Mixed standing pack, local coder under the driver and Claude for every other seat, LLM coordinator question deferred to the GPU probe (recommended)
+ruling_provenance: tapped
 approval_context: >
   This is the choice the intake said must come back to you before it is
   specified (its slice L4, "local packs run the coordinator
