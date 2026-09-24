@@ -127,3 +127,5 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4). BL-1659's depends_on gains
   this ticket (same guard file). Holder note sent to QA naming BL-1696.
+
+assigned_to: coder
