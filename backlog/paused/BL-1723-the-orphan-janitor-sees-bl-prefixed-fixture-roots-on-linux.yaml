@@ -1,0 +1,109 @@
+id: BL-1723
+title: "specs/features/BL-849-swarm-stamp-darwin-orphan-janitor-hotfix.feature scenario 03 row 2 is red on main (7 pass / 1 fail, coder note 002118): orphan_janitor_lib.bb's disposable-root-re accepts bl<number>- fixture roots only under Darwin's /var/folders/.../T/, never under Linux /tmp, so the Linux host's janitor is blind to ancillaries left under /tmp/bl<N>-* roots - the shape 852 fixture sites in the step handlers and tests create; the Linux branch accepts the same bl<number>- family"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment), and the janitor it names is a live health
+# mechanism that cannot see about half of the swarm's own fixture roots on
+# this host. Not critical: nothing is reaped wrongly - the gap is only
+# leaks left in place.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: [BL-1705]
+# BL-1705 (active, at the coder) edits orphan_janitor_lib.bb and
+# orphan_janitor_sweep_lib.bb; this ticket edits the same regex file, so
+# it follows (BL-1687 lesson: sequencing only in prose is read by nothing).
+mutation_cost: low
+# low: one Babashka regex (no mutation/CRAP/DRY wired, BL-472); the
+# feature is a pure classifier read, milliseconds per run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1723-the-orphan-janitor-sees-bl-prefixed-fixture-roots-on-linux.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers (the janitor sweep's
+# candidate filter) call extract-disposable-root before and after the fix
+# (BL-1235); the feature drives the real classifier.
+required_wiring:
+  - 'specs/pipeline/steps/bl1723JanitorSeesBlFixtureRootsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the Linux /tmp branch
+  gains exactly the bl<digits>- family the Darwin branch already has, no
+  other shape; the live project root, and /tmp paths of any other shape
+  (a bl-word without digits, a session scratchpad), stay non-disposable.
+  FIRM: only candidacy widens - the sweep's existing orphan and age
+  conditions for reaping are untouched, so a live test run's ancillaries
+  are never reaped for matching the shape (BL-1385/BL-1390).
+
+invariants:
+  - "A path is a disposable root only if it names a fixture root shape under the host's temporary base - tmp., aps-, sfvc- or bl<digits>- - and the live project root never is."
+
+description: |
+  ## What is wrong
+
+  Coder note 002118 (while hardening BL-1705) and its evidence
+  `backlog/evidence/BL-1705-unowned-red-BL849-sweep-20260924.md` (coder
+  branch): the BL-849 feature's scenario 03, Example 2 ("the Darwin
+  process handle API"), fails `expected pid <n> to be recognized as a
+  disposable-root ancillary candidate`. Reproduced by the specifier on
+  main the same hour: `# pass 7`, `# fail 1`, same row.
+
+  Why: the row spawns a real `bash <root>/bin/babysitterd.sh <root>`
+  under `mkSocketFixtureRoot('bl849-aps-root-')`, i.e.
+  `/tmp/bl849-aps-root-XXXX`. `disposable-root-re` accepts
+  `/tmp/(tmp.|aps-|sfvc-)...` and, only under
+  `/var/folders/.../T/`, also `bl\d+-...`. Checked with the real lib:
+  `extract-disposable-root` returns nil for
+  `/tmp/bl849-aps-root-Ab12Cd` and `/tmp/aps-Ab12Cd` for the aps shape.
+
+  History: BL-849 landed 2026-08-09 on the Mac, where the handler's root
+  came from `os.tmpdir()` (`/var/folders/.../T/bl849-...`, matched). BL-948
+  (77c887dc5c, 2026-08-20) moved the handler to `mkSocketFixtureRoot`,
+  which always roots under `/tmp`; the host is now Linux. Census,
+  2026-09-24: fixture-creation sites in `specs/pipeline/steps` and
+  `extension/test` using a `bl<N>-` prefix: 852; using tmp./aps-/sfvc-:
+  882 (grep over mkSocketFixtureRoot / mkTmpDir / mkdtempSync prefixes).
+
+  ## What is wanted
+  - Scenario 01 (outline): `/tmp/bl849-aps-root-...`,
+    `/tmp/bl1366-land-...` and `/tmp/aps-...` roots classify as candidates.
+  - Scenario 02 (outline): the live project root, `/tmp/blog-notes` and a
+    session scratchpad under `/tmp/claude-1000/` do not.
+  - BL-849's feature is 8 of 8 on the parcel commit.
+
+  ## Scope
+  - `swarmforge/scripts/orphan_janitor_lib.bb` (`disposable-root-re`) and
+    its bb test.
+  - `specs/features/BL-1723-...feature` + the pinned handler.
+
+  ## Not in scope
+  - The BL-849 handler (it is right: its row is a real process under a real
+    fixture root on this host).
+  - The sweep's reap conditions.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1723-the-orphan-janitor-sees-bl-prefixed-fixture-roots-on-linux.feature`:
+     all ok (6 of 6).
+  2. `node specs/pipeline/cli.js specs/features/BL-849-swarm-stamp-darwin-orphan-janitor-hotfix.feature`:
+     8 of 8.
+  3. The orphan-janitor bb runners and the BL-1705 feature: green.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  5. After landing: REGISTER_ROW_RETIRED for the BL-849 feature row.
+
+notes: |
+  Minted 2026-09-24 by the specifier from coder note 002118, the same pass
+  (standing-red amendment 2026-09-05); register row added in the mint
+  commit; reproduced and the classifier read on main the same hour.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4), after BL-1705 (same file).
+  IR-DRY: one near-duplicate ("is" vs "is not" a candidate) pairs opposite
+  outcomes, kept. Holder note sent to the coder (BL-1705).
