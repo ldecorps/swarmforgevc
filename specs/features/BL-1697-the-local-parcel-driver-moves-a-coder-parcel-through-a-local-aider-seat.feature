@@ -7,7 +7,8 @@ Feature: BL-1697 the local parcel driver moves a coder parcel through a local ai
   parcel, sets up the chat with the ticket and its acceptance feature
   read-only and physically unwritable, sends the model one instruction,
   and gates the result. Only a red-to-green acceptance run, a model
-  commit and a byte-identical spec earn a handoff; anything else ends in
+  commit that touches only the files it was given and a byte-identical
+  spec earn a handoff; anything else ends in
   one escalation that names the condition that failed. These scenarios
   use a fake pane and a scripted stand-in for the model; no model runs.
 
@@ -38,6 +39,7 @@ Feature: BL-1697 the local parcel driver moves a coder parcel through a local ai
       | commits an edit that leaves the acceptance failing on every turn   | acceptance still failing   |
       | makes no commit                                                    | no model commit            |
       | commits a change to the acceptance feature and a passing edit      | spec changed               |
+      | commits a passing edit and a change to a file it was not given     | edited outside its files   |
 
   # BL-1697 the-local-parcel-driver-moves-a-coder-parcel-03
   Scenario: the driver gives up only after the configured number of fix turns

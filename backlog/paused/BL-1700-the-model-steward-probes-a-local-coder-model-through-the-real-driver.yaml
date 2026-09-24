@@ -1,0 +1,166 @@
+id: BL-1700
+title: "The model steward's probe runs the real local parcel driver against a real aider seat on a named model in a throwaway repository per run, over five committed coder fixture tickets whose acceptance starts red, with a turn cap and a wall-clock cap, a scorecard per run and a summary that applies the four-of-five coder bar - on demand, never in the standing suite, never touching the live repository or router"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 0
+direction: queue-jump
+depends_on: [BL-1697, BL-1699]
+mutation_cost: medium
+# medium: a harness plus a steward verb (Babashka preferred, no Stryker
+# lane); the Gherkin mutation gate runs the handler per mutant over a
+# stand-in aider, about a minute per feature run (15 stand-in runs plus a
+# 5 s cap scenario), inside the BL-1358 300 s ceiling (BL-1541).
+slice_size_envelope: high
+size_envelope_decision: "justify not split - the harness, the five fixture tickets and the scorecard/bar are one measurement that is meaningless in parts (a harness with no fixtures measures nothing; fixtures with no bar decide nothing); hazards and the nightly schedule are already split to BL-1701, and lifecycle/coordinator rows wait on the BL-1702 ruling"
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1700-the-model-steward-probes-a-local-coder-model-through-the-real-driver.feature
+
+# model_steward_cli.bb is the pre-existing live consumer: the anchor is its
+# dispatch on the new verb, fixed at mint as "probe" so the literal will
+# exist (BL-874); a probe lib reached from nowhere would pass its own tests
+# and be unrunnable (BL-1235).
+required_wiring:
+  - 'swarmforge/scripts/model_steward_cli.bb::"probe"::the steward CLI dispatches the probe verb (BL-1235 consumer anchor)'
+  - 'specs/pipeline/steps/bl1700StewardCoderProbeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Queue-jump slice L5 (core) of INTAKE-local-aider-seats-20260924, minted
+  approved under the human's own jump request (STEERING.md 2026-09-23;
+  2026-09-15 ruling). No choice is posed; the four-of-five bar is the
+  intake's own. FIRM: the probe never runs in the standing suite, never
+  touches the live repository, mailboxes or router, and never counts a
+  handoff with a changed spec as a pass.
+
+invariants:
+  - "A fixture ticket counts as handed off only when the real driver queued its git_handoff with every spec file byte-identical to the fixture's committed copy; a run with any other end is scored with the driver's named condition or the cap that stopped it."
+  - "No probe run changes the live repository's HEAD, index, worktrees or mailboxes, and every process a run started (aider, tmux server, driver) is gone when the run's scorecard is written."
+
+description: |
+  ## What is wrong
+  Whether a local model can do the coder's job has only been measured by
+  hand: the overnight lab's `lab.py` (`backlog/evidence/aider-seat-lab-20260924/`)
+  run by the operator on CPU. qwen2.5-coder 7B Q4 got a one-line ticket
+  almost right, could not fix its own miss across three turns, and tried
+  to edit the acceptance test instead (S6, S6d). A GPU arrives around
+  2026-09-25/26 and the standing directive (STEERING.md 2026-09-23) says
+  the probe matrix is re-run on it before any pack or model change. The
+  existing BL-1127 coder battery (`local_coder_battery.sh`) exercises a
+  claim/edit/test/handoff loop the model itself drives - the lifecycle
+  the lab proved a 7B model cannot run - so it does not measure the
+  driver-era job.
+
+  ## What is wanted
+  `model_steward_cli.bb probe <model> [--scenario <id>]...` (the verb name
+  is fixed; the wiring anchor names it):
+  1. **Endpoint first.** Probe the model's endpoint; no answer -> exit
+     non-zero naming the endpoint, write nothing.
+  2. **Per run:** a fresh `mkdtemp` root, `git init`, filled from a
+     committed fixture template (stub pipeline scripts, one fixture
+     ticket with its red acceptance test); a private tmux socket; a real
+     aider seat launched the BL-1699 way on the named model; the REAL
+     BL-1697 driver lib driving the parcel. A turn cap and a wall-clock
+     cap (defaults set in the harness, overridable per invocation).
+  3. **Five coder fixture tickets** of rising difficulty, committed (a
+     one-line fix; a two-line change across two functions; a new function
+     with its test; a fix spanning two files; a change that must keep an
+     existing test green). Each has an acceptance test that fails on the
+     fixture and passes on a known-good solution committed beside it
+     (the harness's selftest proves both, no model).
+  4. **Scorecard per run** (JSON): model id as resolved from the endpoint,
+     scenario, outcome (handed off / the driver's escalation condition /
+     turn cap / wall-clock cap), turns, wall time, the llm-history path.
+     **Summary** per invocation: handed-off count out of five and the
+     verdict (`pass` at four or more), written under
+     `backlog/evidence/` as `local-coder-probe-<model>-<UTC>.md` beside
+     the BL-1127 battery reports.
+  5. **Cleanup:** the run's repository and every process it started are
+     removed when its scorecard is written (under a cap as well).
+
+  ## How (direction, not mandate)
+  - Port from the lab harness; Babashka is preferred
+    (engineering.prompt), Python is acceptable if the port is cheaper
+    (precedent: `local_model_compliance_battery.py`). Either way the
+    model-free selftest is part of the harness.
+  - Call the driver lib's per-parcel entry directly with the sandbox's
+    roots and socket; do not run a whole handoffd.
+  - Fixture template: committed files under a steward fixtures directory,
+    not the lab's tarball in `backlog/evidence/`.
+  - Reap by recorded pid/owner, never by pattern (BL-1385, BL-1390: a
+    prefix sweep destroys sibling runs).
+  - Evidence obligation for the parcel: the coder's (or hardener's)
+    evidence carries ONE real-model run of the one-line fixture ticket on
+    whatever local model is installed, with its scorecard, taken with no
+    local router running (memory of 2026-09-23: two llama-server runners
+    on this CPU starve each other). The full five-ticket matrix is the
+    operator's run on the GPU.
+  - Documenter: a how-to for `probe` (prerequisites, caps, reading a
+    scorecard, the bar) in the model steward's docs; no registered
+    diagram trigger.
+
+  ## Scope
+  - `swarmforge/scripts/model_steward_cli.bb` (the `probe` verb) and a new
+    probe lib/harness beside it; committed fixture template and five
+    fixture tickets with known-good solutions.
+  - New: `specs/pipeline/steps/bl1700StewardCoderProbeSteps.js` (BL-233).
+  - Docs and evidence as above.
+  - Out of scope: hazard scenarios and the nightly schedule (BL-1701);
+    lifecycle/coordinator rows (the BL-1702 ruling's branch); certifying
+    or staffing a pack from a probe result (the steward's existing certify
+    path decides that); the BL-1127 battery itself.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA does not run a
+  real-model probe (minutes to hours on CPU, and it must not share the CPU
+  with a live router); it reads the committed evidence.
+  1. `node specs/pipeline/cli.js specs/features/BL-1700-the-model-steward-probes-a-local-coder-model-through-the-real-driver.feature`:
+     all scenarios ok.
+  2. The harness selftest (no model): every fixture's acceptance test is
+     red on the fixture and green on its known-good solution.
+  3. Read the parcel evidence: one real-model scorecard for the one-line
+     fixture, naming the model id resolved from the endpoint, the outcome
+     and the wall time.
+  4. `bb swarmforge/scripts/model_steward_cli.bb probe` with no model
+     prints usage and exits non-zero.
+  5. `git diff main...HEAD --name-only` names only the Scope files,
+     fixtures, docs and evidence.
+
+source: |
+  backlog/INTAKE-local-aider-seats-20260924.md (slice L5, split at mint:
+  hazards and the nightly schedule went to BL-1701). Intake test tier T2:
+  "the probe harness (L5): a real aider seat on the real model in a
+  throwaway repo with stub pipeline scripts; scored scenarios ... on
+  demand, nightly, as acceptance for L2/L3 and for any model/pack change
+  ... per-run turn cap + wall-clock cap; scorecard". Pass bar from the
+  intake: "≥4/5 red→green fixture tickets handed off with the spec
+  untouched". Human, verbatim (via Claude Code, 2026-09-23 ~23:05 BST),
+  on how to test it: "how do you suggest the swarm will deal with this
+  testing of the local aider? will it spin it up, to test the live prob?"
+  - and: "When you are done with your experimentation, write the final
+  proposal for the specifier to pick tomorrow morning. Make it super high
+  priority btw, qjump it. The priority is now to introduce local models.
+  I have a graphic card arriving in a couple of days, so the tocken
+  generation should be boosted"
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat). Approved at
+  mint under the human's explicit queue-jump request (STEERING.md
+  2026-09-23; 2026-09-15 ruling); no choice posed.
+
+  Deviation from the intake, stated: the intake gives L5 "deps: L1; grows
+  with L2". The probe's purpose is to measure the model doing the
+  driver-era job, which needs the real driver and the real launch shape,
+  so it depends on BL-1697 and BL-1699. Until they land, the operator can
+  still run the lab's own `lab.py` on the GPU (the directive's re-run
+  before any pack change does not wait on this ticket).
+
+  INVEST: Independent (BL-1697/BL-1699 by depends_on), Negotiable
+  (language, cap defaults, fixture content are direction), Valuable (the
+  bar that decides whether a model may take a coder seat), Estimable
+  (port of a working harness plus five small fixtures; justified high
+  band), Small (five scenarios, two invariants; hazards split off),
+  Testable (stand-in aider for the lane; one real-model scorecard as
+  evidence).

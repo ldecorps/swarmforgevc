@@ -1,5 +1,5 @@
 id: BL-1697
-title: "The local parcel driver in handoffd moves a coder git_handoff parcel through a local aider seat deterministically - serve, merge, chat set with the spec read-only and physically unwritable, one instruction, then a gate that hands off only on a red-to-green acceptance run, a model commit and a byte-identical spec, and otherwise raises one question naming the condition that failed; handoffd's own wakes, chase pokes and resume banners stop reaching a driver seat"
+title: "The local parcel driver in handoffd moves a coder git_handoff parcel through a local aider seat deterministically - serve, merge, chat set with the spec read-only and physically unwritable, one instruction, then a gate that hands off only on a red-to-green acceptance run, a model commit touching only the files it was given and a byte-identical spec, and otherwise raises one question naming the condition that failed; handoffd's own wakes, chase pokes and resume banners stop reaching a driver seat"
 milestone: M8
 type: feature
 status: todo
@@ -39,7 +39,7 @@ approval_context: >
   the seat allow-list.
 
 invariants:
-  - "The driver queues a git_handoff for a parcel only when all four hold: the acceptance run failed after the merge and before the model turn, it passes after the last model turn, at least one commit exists after the post-merge HEAD, and every spec file is byte-identical to its pre-turn copy; every other outcome ends in exactly one escalation naming the first failed condition and no handoff."
+  - "The driver queues a git_handoff for a parcel only when all five hold: the acceptance run failed after the merge and before the model turn, it passes after the last model turn, at least one commit exists after the post-merge HEAD, every spec file is byte-identical to its pre-turn copy, and every path those commits touch is in the editable set the driver added to the chat; every other outcome ends in exactly one escalation naming the first failed condition and no handoff."
   - "While the driver owns a seat, every text that enters that seat's pane is typed by the driver; no other handoffd injection (new-mail wake, chase poke, in-process resume banner) reaches it."
   - "Every seat whose provider lacks the parcel-driver capability (every Claude seat) receives byte-identical wake, chase and resume text to before this ticket."
 
@@ -65,6 +65,9 @@ description: |
     the model must edit are added up front;
   - the first S6 run handed off an UNCHANGED tree in 96 s because the old
     tests already passed, so "tests green" alone is never a pass.
+  - any repo path in a model reply is auto-added to the chat as editable
+    (lab section 1, fact 3), so the files a model may change must be
+    checked at the gate, not assumed from the chat set.
 
   ## Why
   This is the piece that lets a local model do real parcel work at all.
@@ -102,7 +105,10 @@ description: |
      read-only acceptance passes; never edit a read-only file.
   6. **Gate** after the pane is idle: `seat test` (same env) passes; at
      least one commit after the post-merge HEAD; every spec file
-     byte-identical. On a failure, type one fix request naming the failed
+     byte-identical; every path those commits touch is in the editable
+     set of step 4 (a path mentioned in a reply is auto-added by aider
+     and can be edited; lab S1 watched a 7B model rewrite a pipeline
+     script that way). On a failure, type one fix request naming the failed
      condition and gate again, up to `seat_fix_turns` (pack `config`,
      default 3) fix requests.
   7. **Pass** -> `seat handoff <next role> <BL>` then `seat done`.
@@ -194,7 +200,10 @@ source: |
 notes: |
   Minted 2026-09-24 by the specifier (claude-opus-5-5 seat). Approved at
   mint under the human's explicit queue-jump request (STEERING.md
-  2026-09-23; 2026-09-15 ruling); no choice posed. The intake's L2 is
+  2026-09-23; 2026-09-15 ruling); no choice posed. Amended the same
+  morning, before promotion, to add the fifth gate condition (commits
+  touch only the editable set) while scoping BL-1701's hazards. The
+  intake's L2 is
   split here: this ticket is the per-parcel loop and gate; BL-1698 takes
   resume after restart, the hold's release, note parcels and babysitterd.
 
