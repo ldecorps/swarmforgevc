@@ -1,0 +1,82 @@
+id: BL-1728
+title: "swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh exits 2 on main with 'REFUSED project-root /tmp/tmp.*: not inside a git checkout' - since BL-1517 (3252212a66, 2026-09-22) operator_runtime.bb refuses a root that is not a git checkout, and this BL-906 test still builds its fixture with a bare mktemp -d; the fixture root is a git init checkout proven by rev-parse --git-common-dir, so the test exercises the watchdog again"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it holds BL-1720 at QA (Article 4.2), and it has
+# been red since 2026-09-22 with no row - the BL-906 watchdog ("tell,
+# never restart") has had no running test for two days.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+# No open ticket touches this test file (grep of paused/ and active/,
+# 2026-09-24).
+mutation_cost: low
+# low: one shell test's fixture builder; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-fixture chore with no scenarios of its own (BL-1251): the pointer
+# names the feature this test serves, which must still resolve; it is not
+# a claim of ownership over BL-906's contract.
+acceptance: specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: operator_runtime.bb's
+  refusal of a non-checkout root stays (BL-1517); the test adapts. FIRM:
+  the fixture root is a `git init` under mkdtemp, proven by
+  `git -C <root> rev-parse --git-common-dir` naming the fixture's own .git
+  before any git command runs, and the live repository is never touched
+  (engineering Guardrails, BL-1390). FIRM: every assertion the test makes
+  today stays.
+
+invariants:
+  - "The watchdog test's fixture root is its own git checkout, and no git command in the test resolves to the live repository."
+
+description: |
+  ## What is wrong
+
+  QA note 003152 and evidence 7d558cc562: the babysitter runner sweep
+  (BL-1720's qa_e2e step 2) reached
+  `swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh`,
+  which exited 2 with `REFUSED project-root /tmp/tmp.gInNOieaZC: not inside
+  a git checkout (git -C <arg> rev-parse --git-common-dir failed)`. QA
+  reproduced it on origin/main's own scripts; the specifier reproduced it
+  on main (`REFUSED project-root /tmp/tmp.I50M7vel19: ...`, exit 2).
+
+  `make_fixture` (line 28) is `d="$(mktemp -d)"` plus copied scripts;
+  `operator_runtime.bb "$root" --tick-once` refuses such a root since
+  BL-1517 (`git log -S'not inside a git checkout'`: 3252212a66,
+  2026-09-22). The test was never updated when BL-1517 landed.
+
+  ## What is wanted
+  - `make_fixture` `git init`s the root (and commits what the runtime
+    needs), proves the root with `rev-parse --git-common-dir`, and the test
+    passes with every current assertion.
+
+  ## Scope
+  - `swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh` only.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh`:
+     exit 0, no REFUSED line.
+  2. `node specs/pipeline/cli.js specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature`:
+     all ok.
+  3. `git diff main...HEAD --name-only` names only the test file and
+     evidence.
+  4. After landing: REGISTER_ROW_RETIRED for the test's row; resume
+     BL-1720's land.
+
+notes: |
+  Minted 2026-09-24 by the specifier from QA's unowned-red note 003152
+  (holding BL-1720), the same pass as BL-1727 (standing-red amendment
+  2026-09-05); register row added in the mint commit; reproduced on main.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1720.

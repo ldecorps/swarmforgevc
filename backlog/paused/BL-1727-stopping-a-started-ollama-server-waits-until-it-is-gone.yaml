@@ -1,0 +1,95 @@
+id: BL-1727
+title: "extension/test/bl1703OllamaLaunchProbe.property.test.js failed at load ~11 (QA, BL-1720's parcel d24e8d4b0c): 'expected pid 7123 to be stopped' after a refused launch - ollama_ancillary_lib.sh's ollama_ancillary_stop_pid sends one TERM and returns at once, so the refused launch (BL-1703) and the swarm's stop paths (BL-1704) report a started ollama server stopped while it may still be running; the helper waits, bounded, for the pid to exit, escalates to KILL, and fails naming the pid if even that does not end it"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it holds BL-1720 at QA (Article 4.2). The product
+# fault behind it is live: a real ollama serve that is slow to exit or
+# ignores TERM stays running (holding its model's memory) after the swarm
+# says it stopped it. Not critical: nothing is lost; the process is the
+# swarm's own and the next stop path or reboot ends it.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-1703 and BL-1704 (landed) call the helper; BL-1711 (paused, restart a
+# crashed ollama) touches the same lib's start side - orthogonal function,
+# same file, the coordinator orders them.
+mutation_cost: low
+# low: one shell function in ollama_ancillary_lib.sh plus a feature over
+# real short-lived fixture processes; the longest case waits one bound.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1727-stopping-a-started-ollama-server-waits-until-it-is-gone.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers (BL-1703's refused
+# launch, BL-1704's stop paths) already call ollama_ancillary_stop_pid,
+# so an anchor there matches before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1727OllamaStopWaitsUntilGoneSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the helper still only
+  ever signals a pid its own lib started (BL-1703's FIRM). FIRM: success
+  means the pid is not alive when the helper returns; the wait is bounded
+  (TERM, then KILL after the bound), never an unbounded spin; a pid still
+  alive after KILL is a named failure the caller reports. FIRM: every
+  caller's behaviour is otherwise unchanged.
+
+invariants:
+  - "When ollama_ancillary_stop_pid returns success, the pid it was given is not alive."
+
+description: |
+  ## What is wrong
+
+  QA note 003152 and evidence 7d558cc562
+  (`backlog/evidence/BL-1720-unowned-red-hold-QA-20260924.md`): the
+  property lane at load ~11 failed `invariant: a never-answering endpoint
+  refuses the launch and leaves no started process running` with
+  `AssertionError: expected pid 7123 to be stopped` (line 85) - the
+  fixture's fake responder, alive at the assertion, gone a minute later.
+  Specifier on main at load 3.1: 2/2 green in 7.2 s. A race, but on the
+  product's side: `ollama_ancillary_stop_pid` (ollama_ancillary_lib.sh)
+  is `kill "$pid" || true` after an alive check - it never waits, so
+  "leaves no started process running" holds only when the process happens
+  to die before the caller's next look.
+
+  ## What is wanted
+  - Scenario 01 (outline): a process that exits after TERM, one that
+    ignores TERM, and one already gone - the helper succeeds and the pid
+    is not alive the moment it returns.
+  - Scenario 02: a process the helper cannot end - it fails naming the
+    live pid.
+  - The bound is a named constant (seconds of TERM grace before KILL, and
+    a short wait after KILL), stated in the lib's header.
+
+  ## Scope
+  - `swarmforge/scripts/ollama_ancillary_lib.sh` (`ollama_ancillary_stop_pid`)
+    and its shell test.
+  - `specs/features/BL-1727-...feature` + the pinned handler.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1727-stopping-a-started-ollama-server-waits-until-it-is-gone.feature`:
+     all ok (4 of 4).
+  2. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1703OllamaLaunchProbe.property.test.js`:
+     2 of 2; record the host load.
+  3. The BL-1703 and BL-1704 features and test_ollama_ancillary_launch_gate.sh: green.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  5. After landing: REGISTER_ROW_RETIRED for the property file's row;
+     resume BL-1720's land.
+
+notes: |
+  Minted 2026-09-24 by the specifier from QA's unowned-red note 003152
+  (holding BL-1720), the same pass as BL-1728 (standing-red amendment
+  2026-09-05); register row added in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1720.
