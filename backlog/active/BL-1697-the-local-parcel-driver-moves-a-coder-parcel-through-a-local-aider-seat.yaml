@@ -228,3 +228,5 @@ notes: |
   key on the seat id, not the role, because the human refined BL-1702 to
   run the local coder as `coder@2` beside the Claude `coder` (BL-1702
   source). A driver seat can be a stage's second seat.
+
+assigned_to: coder
