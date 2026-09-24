@@ -2549,6 +2549,28 @@
                              :reason (str path " attributed to the unapproved " owner)})
                           {:safe? true})))))))))))))
 
+;; ── BL-1713: a land never blesses a range with none of the ticket's own
+;; work ─────────────────────────────────────────────────────────────────
+;;
+;; A citation that resolves to origin/main itself, or to a tip whose own
+;; new commits never name the landing ticket, has nothing of that ticket's
+;; to land - the only thing land-plan's own build could previously do with
+;; such a range was retire the ticket's standing-red register rows and
+;; print LAND_CLEAN for an otherwise-empty diff (BL-1691/BL-1694,
+;; 2026-09-24: QA's own citation-mismatch bug, BL-1713's other half,
+;; produced exactly this range in both cases). Reuses the SAME subject
+;; attribution `commit-subject-attribution` already reads per-commit and
+;; the SAME candidate walk `land-plan` already computes (`ancestry-commits
+;; root origin-main commit`) - never a second notion of "names the ticket".
+(defn- range-credits-ticket?
+  "True when at least one commit in `candidates` (origin-main..commit,
+   already walked) is subject-attributed to `task-ticket-id` - an ordinary
+   land's common case. False for an empty range (commit resolves to
+   origin-main itself) or a range whose own commits never name this
+   ticket, whatever else they name."
+  [root task-ticket-id candidates]
+  (boolean (some #(contains? (:ids (commit-subject-attribution root %)) task-ticket-id) candidates)))
+
 (defn land-plan
   "The land step's own decision: {:action :land :own-paths [...] :commit sha
    :branch name} when no entanglement is present; {:action :replay
@@ -2687,6 +2709,18 @@
           stray-paths (into #{} (mapcat :paths) stray-commits)]
       (cond
         warning {:action :escalate :reason warning}
+
+        ;; BL-1713 invariant 1: checked BEFORE any replay is built - a
+        ;; range with nothing of the ticket's own in it has no work to
+        ;; publish, whatever else `entangled-siblings`/`stray-commits`
+        ;; above found reading it. `candidates` nil (the walk itself could
+        ;; not run) is left to the existing downstream fail-open paths,
+        ;; unchanged - this only ever fires on a range it COULD read.
+        (and candidates (not (range-credits-ticket? root task-ticket-id candidates)))
+        {:action :escalate
+         :reason (str "land-step: " origin-main ".." commit
+                      " holds no commit credited to " task-ticket-id)}
+
         :else
         ;; BL-1678: a clean tip (no entangled sibling found) used to
         ;; return bare {:action :land} here - the caller then published

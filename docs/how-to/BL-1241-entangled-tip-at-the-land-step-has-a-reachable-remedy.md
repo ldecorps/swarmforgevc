@@ -1450,3 +1450,47 @@ tree, and leaves no stray worktree registered).
 `specs/pipeline/steps/bl1546ClosedOwnerNeverSilentlyExcludesSteps.js` backs
 `specs/features/BL-1546-a-path-owned-only-by-a-closed-ticket-is-never-silently-excluded.feature`
 the same way.
+
+## `LAND_ESCALATE` also refuses a citation that means nothing of the ticket's own (BL-1713)
+
+Two more `LAND_ESCALATE` reasons, both checked *before* `land-plan` builds
+anything (no commit, branch, or register-row retirement is ever produced
+when either fires):
+
+- **Checkout mismatch.** `<commit>` (e.g. `HEAD`) is only meaningful in
+  the checkout it was typed in. `land_step_cli.bb` now resolves the
+  citation in the caller's own cwd checkout as well as in `<repo-root>`,
+  and refuses when they disagree: `land-step: <commit> resolves to
+  <cwd-sha> in the caller's own checkout and <canonical-sha> in the repo
+  root <repo-root> - cite a full sha, or run this CLI from the checkout it
+  should read`. A full sha (which resolves the same everywhere), or a
+  caller cwd that is not itself inside a git checkout (a scratch copy of
+  the tool, or the `repoint`/`verify-push` verbs' own landed-tool
+  callers), is unaffected — today's repo-root-only resolution still
+  applies there.
+- **Empty or uncredited range.** `land-plan` refuses whenever
+  `origin/main..<commit>` holds no commit subject-attributed to the
+  landing ticket — reusing the same `commit-subject-attribution` the
+  entangled-sibling walk already reads, never a second notion of "names
+  the ticket": `land-step: <origin-main>..<commit> holds no commit
+  credited to <task-ticket-id>`. This covers a citation that resolves to
+  `origin/main` itself as well as a tip whose only new commits name a
+  sibling or nobody at all.
+
+**Root cause (2026-09-24):** QA ran `land_step_cli.bb BL-1691 HEAD
+/home/carillon/swarmforgevc` from `.worktrees/QA`. `HEAD` resolved in the
+shared master checkout named as `repo-root` — not QA's own advanced tip —
+and at that moment the shared checkout's `HEAD` equalled `origin/main`.
+`land-plan` had nothing of BL-1691's own work to diff, so the only content
+in the built commit was `standing-reds.tsv` losing BL-1691's register row
+(BL-1631's retirement) — and the tool printed `LAND_CLEAN` for it anyway.
+The same shape recurred for BL-1694 minutes later. QA caught both by
+diffing the built commit against `origin/main` by hand and landed
+hand-built, tip-pure commits instead (`75b3d014df`, `a0c48e9a39`); nothing
+wrong reached `origin/main`. Interim rule until this fix landed: **cite
+the land by a full sha, never `HEAD`** — now stated in `QA.prompt`
+directly. An ordinary land (the ticket's own commit in range, cited by
+sha) is unaffected by either new check, register-row retirement included.
+
+Acceptance:
+`specs/features/BL-1713-the-land-step-never-blesses-a-commit-carrying-none-of-the-tickets-own-work.feature`.

@@ -46,6 +46,16 @@
 ;;   conflict, an unreadable range). Per QA.prompt: not a bounce to the
 ;;   author - a `note` (priority 00) to the specifier naming the
 ;;   conflicting paths, and stop.
+;;   BL-1713: also on either of two checks, run before any commit, branch
+;;   or register row is touched. (1) <commit> resolves to a DIFFERENT sha
+;;   in the caller's own cwd checkout than in <repo-root> - the reason
+;;   names both; a full sha, or a cwd outside any checkout, is unaffected.
+;;   (2) origin/main..<commit> holds no commit whose subject credits
+;;   <task-name>'s own ticket - the reason names the ticket and the
+;;   range; this is what let a citation meaning origin/main itself (or a
+;;   tip carrying only a sibling's or nobody's work) print LAND_CLEAN for
+;;   a built commit whose only change retired the ticket's own
+;;   standing-red register row (BL-1691/BL-1694, 2026-09-24).
 ;;
 ;; BL-1678: land_step_cli.bb verify-push <commit> <repo-root>
 ;;   The publish step's own backstop (land_step_lib.bb's verify-push-safe) -
@@ -159,6 +169,25 @@
   (let [res (process/sh ["git" "-C" (str project-root) "rev-parse" commit]) ]
     (when (zero? (:exit res)) (str/trim (:out res)))))
 
+;; BL-1713 invariant 2: a relative citation like HEAD is only meaningful in
+;; the checkout it was typed in - resolving it in the repo-root checkout
+;; instead (canonicalize-commit above, unchanged) silently answers a
+;; DIFFERENT commit when the caller's own cwd is a separate checkout
+;; (2026-09-24: QA ran this CLI from .worktrees/QA, passed the shared
+;; master checkout as repo-root, and HEAD meant the shared checkout's HEAD,
+;; not QA's own advanced tip - land-plan then built and blessed an empty
+;; diff). No `-C`: this resolves `commit` in whatever directory THIS
+;; process actually started in, never `project-root`.
+;;
+;; nil when the caller's cwd is not itself inside a git checkout (a
+;; scratch copy of the tool, or the repoint/verify-push verbs' own
+;; landed-tool callers - keeps today's repo-root-only resolution) or when
+;; it resolves the SAME commit there (a full sha, or the caller's cwd IS
+;; the repo root) - a real disagreement only.
+(defn- caller-cwd-commit [commit]
+  (let [res (process/sh ["git" "rev-parse" commit])]
+    (when (zero? (:exit res)) (str/trim (:out res)))))
+
 ;; BL-1678: :land and :replay now share this exact same body - land-plan
 ;; builds a real tip-pure commit for BOTH, so a clean tip owes the caller
 ;; every line a replay always did (stray evidence, restored/retired
@@ -246,6 +275,14 @@
         (when-not canonical
           (binding [*out* *err*] (println (str "Cannot resolve commit: " commit)))
           (System/exit 2))
+        (let [cwd-sha (caller-cwd-commit commit)]
+          (when (and cwd-sha (not= cwd-sha canonical))
+            (println "LAND_ESCALATE")
+            (println (str "land-step: " commit " resolves to " cwd-sha
+                          " in the caller's own checkout and " canonical
+                          " in the repo root " project-root
+                          " - cite a full sha, or run this CLI from the checkout it should read"))
+            (System/exit 1)))
         (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)
               ;; BL-1431: resolved ONCE, here, at the true entry point of this
               ;; land-step invocation - land-plan and, when it decides

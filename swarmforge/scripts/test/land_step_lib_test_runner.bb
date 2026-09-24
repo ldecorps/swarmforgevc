@@ -1072,14 +1072,22 @@ RESOLVED BY THIS TICKET
 
 ;; scenario 04: an empty replay set is a refusal whenever the tip still
 ;; differs from origin/main - and the land step's own decision escalates.
+;; BL-1713: this exact shape - a differing tip whose only commit credits a
+;; SIBLING, never the landing ticket - is also invariant 1's own range
+;; check, which now runs BEFORE own-paths is ever reached and refuses
+;; first, so the reason is BL-1713's own (naming the landing ticket and
+;; the range), never own-paths' path-naming warning from BL-1343/03's own
+;; scenario (still reachable - see BL-1463 below, whose range DOES credit
+;; the landing ticket and so reaches own-paths' own attribution refusal
+;; unaffected).
 (with-fixture [root]
   (mark-origin-main-here! root)
   (commit! root "specs/pipeline/steps/bl9001Steps.js" "// own\n" "BL-9002: sibling commit carrying it")
   (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
         plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
     (assert= "BL-1343/04: an empty replay set on a differing tip escalates" :escalate (:action plan))
-    (assert-includes "BL-1343/04: and says which path it would have dropped"
-                     (:reason plan) "specs/pipeline/steps/bl9001Steps.js")))
+    (assert-includes "BL-1343/04: and names the landing ticket (BL-1713's own range check catches this first)"
+                     (:reason plan) "BL-9001")))
 
 ;; scenario 05: an empty set on an IDENTICAL tip is a real answer, not a
 ;; refusal. The negative case that matters most (qa_e2e_procedure step 3):
