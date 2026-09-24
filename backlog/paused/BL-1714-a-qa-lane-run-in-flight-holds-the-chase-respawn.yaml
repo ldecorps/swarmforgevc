@@ -38,7 +38,7 @@ acceptance: specs/features/BL-1714-a-qa-lane-run-in-flight-holds-the-chase-respa
 required_wiring:
   - 'specs/pipeline/steps/bl1714QaLaneRunHoldsRespawnSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file needs your review before this slice promotes. The ask:
   that a QA checklist gather run (extension/out/tools/qa-gather.js) and a
