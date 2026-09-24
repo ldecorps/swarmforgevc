@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# BL-1703: ollama as a swarm-managed ancillary process, start-and-probe half
+# (BL-1704 sources this same lib for the stop side). Sourced by
+# swarmforge.sh (zsh) at launch time and, for tests, run directly under
+# bash - every function here uses only constructs identical under POSIX
+# sh, bash 3.2, and zsh: no arrays, no bash-4-only builtins. The caller
+# supplies whatever it already resolved (whether the pack uses the local
+# endpoint, the endpoint URL) as plain arguments; this file never inspects
+# a pack conf or a shell array itself (BL-1703's own direction: "read the
+# pack conf the launch path already resolved; do not re-derive it").
+
+# The same two probe paths swarmforge.sh's own local_model_endpoint_ready
+# already uses (Ollama's native tags endpoint, then the OpenAI /models
+# path) - kept identical so a healthy answer means the same thing in both
+# places.
+ollama_ancillary_probe() {
+  local url="$1"
+  local probe_root="${url%/v1}"
+  curl -sf --max-time 2 "${probe_root}/api/tags" >/dev/null 2>&1 \
+    && return 0
+  curl -sf --max-time 2 "${url}/models" >/dev/null 2>&1
+}
+
+ollama_ancillary_record_path() {
+  local state_dir="$1"
+  printf '%s/ollama/serve.json\n' "$state_dir"
+}
+
+# owner is "external" or "swarm-owned"; pid/started_at are empty for
+# "external" (the swarm never started it, so it has nothing of its own to
+# record about the process).
+ollama_ancillary_write_record() {
+  local record_path="$1"
+  local owner="$2"
+  local pid="$3"
+  local started_at="$4"
+  local endpoint="$5"
+  local record_dir
+  record_dir="$(dirname "$record_path")"
+  mkdir -p "$record_dir"
+  {
+    printf '{\n'
+    printf '  "owner": "%s",\n' "$owner"
+    if [ -n "$pid" ]; then
+      printf '  "pid": %s,\n' "$pid"
+    else
+      printf '  "pid": null,\n'
+    fi
+    if [ -n "$started_at" ]; then
+      printf '  "startedAt": "%s",\n' "$started_at"
+    else
+      printf '  "startedAt": null,\n'
+    fi
+    printf '  "endpoint": "%s"\n' "$endpoint"
+    printf '}\n'
+  } > "$record_path"
+}
+
+# Starts `<binary> serve` detached, models dir and context length taken
+# from the caller's own resolved swarm.env values (empty means: leave the
+# corresponding ollama env var unset, matching whatever the binary already
+# defaults to). Prints the started pid on stdout.
+ollama_ancillary_start_server() {
+  local binary="$1"
+  local models_dir="$2"
+  local context_length="$3"
+  local log_path="$4"
+  local log_dir
+  log_dir="$(dirname "$log_path")"
+  mkdir -p "$log_dir"
+  if [ -n "$models_dir" ]; then
+    OLLAMA_MODELS="$models_dir"
+    export OLLAMA_MODELS
+  fi
+  if [ -n "$context_length" ]; then
+    OLLAMA_CONTEXT_LENGTH="$context_length"
+    export OLLAMA_CONTEXT_LENGTH
+  fi
+  nohup "$binary" serve >"$log_path" 2>&1 < /dev/null &
+  local server_pid=$!
+  disown 2>/dev/null || true
+  printf '%s\n' "$server_pid"
+}
+
+# 0 (still alive) / 1 (already gone) - never errors on an unknown pid.
+ollama_ancillary_pid_alive() {
+  local pid="$1"
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" >/dev/null 2>&1
+}
+
+# Never left running by a launch that stops using it (a refused launch, or
+# BL-1704's own stop paths): only ever signals a pid THIS lib itself
+# started, never a server the swarm did not start (that pid is simply
+# never passed in - the FIRM constraint from the ticket's approval_context
+# is enforced by the CALLER never handing this an externally-owned pid,
+# not by anything guessed here).
+ollama_ancillary_stop_pid() {
+  local pid="$1"
+  ollama_ancillary_pid_alive "$pid" || return 0
+  kill "$pid" >/dev/null 2>&1 || true
+}
+
+# The whole start-and-probe contract for one launch (BL-1703 invariant: no
+# seat of a pack using the local endpoint starts unless this returns 0).
+#
+# Args: uses_local(yes|no) url state_dir binary models_dir context_length
+#       wait_seconds poll_interval_seconds log_path
+#
+# Returns 0 and (for a pack that uses the endpoint) writes a record when
+# the launch may proceed; returns 1, stops anything it started, and writes
+# no record when the endpoint never answered within the wait.
+ollama_ancillary_ensure_ready_for_launch() {
+  local uses_local="$1"
+  local url="$2"
+  local state_dir="$3"
+  local binary="$4"
+  local models_dir="$5"
+  local context_length="$6"
+  local wait_seconds="$7"
+  local poll_interval="$8"
+  local log_path="$9"
+
+  # BL-1703 scenario 03: a pack with no seat on the local endpoint probes
+  # nothing, starts nothing, and leaves no record - launch unchanged.
+  if [ "$uses_local" != "yes" ]; then
+    return 0
+  fi
+
+  local record_path
+  record_path="$(ollama_ancillary_record_path "$state_dir")"
+
+  if ollama_ancillary_probe "$url"; then
+    ollama_ancillary_write_record "$record_path" "external" "" "" "$url"
+    return 0
+  fi
+
+  local started_pid
+  started_pid="$(ollama_ancillary_start_server "$binary" "$models_dir" "$context_length" "$log_path")"
+  local started_at
+  started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  local elapsed=0
+  while [ "$elapsed" -lt "$wait_seconds" ]; do
+    if ollama_ancillary_probe "$url"; then
+      ollama_ancillary_write_record "$record_path" "swarm-owned" "$started_pid" "$started_at" "$url"
+      return 0
+    fi
+    sleep "$poll_interval"
+    elapsed=$((elapsed + poll_interval))
+  done
+
+  ollama_ancillary_stop_pid "$started_pid"
+  echo "ollama-ancillary: local-model endpoint $url never answered within ${wait_seconds}s (server log: $log_path)" >&2
+  return 1
+}
