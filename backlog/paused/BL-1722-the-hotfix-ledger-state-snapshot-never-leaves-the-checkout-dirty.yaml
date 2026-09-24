@@ -1,0 +1,101 @@
+id: BL-1722
+title: "operator_runtime.bb's hotfix-certification sweep writes each row's derived state back into the tracked backlog/hotfix-ledger.yaml on the shared checkout and never commits it, while hotfix_ledger_update.bb --link sets the stamp ticket but not the state - so every stamp link and every later state change leaves an uncommitted diff (the coordinator met the same one, blob bf0098db82, three times on 2026-09-24) and the committed ledger shows stale states; the sweep leaves the ledger committed and current"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, contained fault - a recurring dirty tracked file on the
+# shared checkout that the coordinator keeps stopping on, which a broad
+# `git add` could sweep into an unrelated commit, and a committed ledger
+# whose states read stale to the human reviewer. It blocks nothing:
+# handoffd's master reconcile stayed up to date through all of 2026-09-24.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+# No open ticket touches the certification sweep's ledger write (grep of
+# paused/ and active/, 2026-09-24).
+mutation_cost: low
+# low: Babashka only (no mutation/CRAP/DRY wired, BL-472), one function in
+# operator_runtime.bb plus one feature over a fixture repository.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1722-the-hotfix-ledger-state-snapshot-never-leaves-the-checkout-dirty.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer (operator_runtime.bb's
+# sweep loop) exists before the fix (BL-1235); the feature drives the
+# real sweep over a fixture repository.
+required_wiring:
+  - 'specs/pipeline/steps/bl1722HotfixLedgerSnapshotCommittedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file needs your review before this slice promotes. The ask:
+  the operator runtime's hotfix-certification sweep, which already writes
+  each row's derived state into backlog/hotfix-ledger.yaml, commits that
+  write itself - pathspec-scoped to the one file, through the shared commit
+  path the front desk and coordinator use - so the shared checkout is never
+  left with its diff and the committed ledger always reads current. FIRM:
+  the sweep still never writes stamp_ticket, human_decision or decided_at
+  (hotfix_ledger_update.bb's, run by a human). FIRM: a sweep with no state
+  change makes no commit.
+
+invariants:
+  - "After the certification sweep, git status shows no change to backlog/hotfix-ledger.yaml, and every row's committed state equals the state the sweep derived."
+
+description: |
+  ## What is wrong
+
+  Coordinator note 011272 (2026-09-24): "hotfix-ledger.yaml uncommitted
+  diff bf0098db82 recurring 3x today - real ticket?". The specifier read it:
+  - `git diff -- backlog/hotfix-ledger.yaml` (blob 33bcfd2252 ->
+    bf0098db82) flips `state: pending` -> `state: stamp-open` on six rows
+    (7d109d3b2e, 22a2a9fc7f, 7ba57573ff, e94b78a7a3, ab1d4cb2bd,
+    d0dd4d36b7). Those are the rows linked to BL-1706/1707/1708 by
+    `hotfix_ledger_update.bb --link` in the mint commits 13de10391f and
+    ff3f15a6ac; the link set `stamp_ticket` and left `state: pending`.
+  - The writer is `operator_runtime.bb` (write-hotfix-ledger-entries!,
+    `atomic-spit!`), whose own header says it "persists the derived
+    `state` snapshot + newly-detected entries back to the ledger". Nothing
+    commits it, so a restore is rewritten on the next sweep, and every
+    later transition (stamp-open -> awaiting-human -> ...) dirties it again.
+
+  ## What is wanted
+  - Scenario 01: after the sweep, HEAD's ledger reads stamp-open for the
+    linked row and the tree carries no ledger change.
+  - Scenario 02: a second sweep with nothing new makes no commit.
+
+  ## How (direction, not mandate)
+  - Commit through `commit_integrity_cli.bb` (application lock, pathspec,
+    verified landing) with a byline naming the operator runtime - never a
+    raw `git commit` on the shared checkout (2026-09-07 incident).
+  - Newly detected entries the sweep appends ride the same commit.
+
+  ## Scope
+  - `swarmforge/scripts/operator_runtime.bb` (the sweep's ledger write).
+  - `specs/features/BL-1722-...feature` + the pinned handler.
+  - Docs: the hotfix-certification reference's note on who commits the
+    ledger.
+
+  ## Not in scope
+  - `hotfix_ledger_update.bb --link` setting the state itself (the sweep's
+    commit makes it moot).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1722-the-hotfix-ledger-state-snapshot-never-leaves-the-checkout-dirty.feature`:
+     all ok (2 of 2).
+  2. The operator runtime's existing hotfix-certification tests: green.
+  3. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  4. After the land, one shift later: `git status --short --
+     backlog/hotfix-ledger.yaml` on the shared checkout is empty, and
+     `git log -- backlog/hotfix-ledger.yaml` shows the runtime's commits.
+
+notes: |
+  Minted 2026-09-24 by the specifier from coordinator note 011272. The six
+  stale rows were the specifier's own links from the same morning; the
+  specifier committed the runtime's derived states for them in the mint
+  commit, so the shared checkout is clean now - and dirties again at the
+  next link or state change until this lands.
