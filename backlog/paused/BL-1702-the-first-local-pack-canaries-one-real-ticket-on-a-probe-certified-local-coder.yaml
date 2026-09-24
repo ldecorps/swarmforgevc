@@ -1,0 +1,182 @@
+id: BL-1702
+title: "The first local pack canaries one real ticket - its shape is the human's ruling (recommended - a mixed standing pack with the coder seat on a local model under the driver and every other seat on Claude), its launch refuses a local coder model without a passing steward probe summary even when PACK_STAFFING_SKIP_GATE is set, and a runbook names the canary ticket choice, what to watch and the rollback"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 0
+direction: queue-jump
+depends_on: [BL-1698, BL-1699, BL-1700, BL-1701]
+mutation_cost: low
+# low (for the recommended branch): one pack conf, one small launch-path
+# check, a runbook; the Gherkin mutation gate runs static roster and gate
+# checks in seconds. Re-estimated by the specifier if another branch is
+# ruled, since B and C each add successor slices first.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1702-the-first-local-pack-canaries-one-real-ticket-on-a-probe-certified-local-coder.feature
+
+# swarmforge.sh is the pre-existing live consumer: every launch path,
+# scheduled start included, goes through it. The CLI name is fixed at mint
+# so the anchor is a literal that will exist (BL-874); it is absent on
+# main today. A probe check reachable only from a per-pack wrapper script
+# would be bypassed by the scheduled start (swarm.env default pack).
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::local_coder_probe_gate_cli.bb::every launch of a pack with a driver seat checks the coder model probe summary'
+  - 'specs/pipeline/steps/bl1702FirstLocalPackCanarySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  This is the choice the intake said must come back to you before it is
+  specified (its slice L4, "local packs run the coordinator
+  deterministically"), widened by one question the intake left open: who
+  runs the review stages (cleaner, architect, hardender, documenter, QA)
+  in a local pack. The driver the queue-jump slices build (BL-1696 to
+  BL-1701) drives the CODER only; the lab measured nothing for review
+  roles, and a local pack today runs all six on aider. So the question is
+  the shape of the first local pack, and it decides what gets built after
+  the driver. FIRM whatever you pick - Claude packs stay untouched; no
+  local seat hands off without red-to-green acceptance, a model commit
+  confined to its files and an untouched spec; the canary is started and
+  watched by the operator, with the rollback written first; a local coder
+  model takes a seat only on a passing probe summary (4 of 5, no breached
+  hazard), and PACK_STAFFING_SKIP_GATE does not bypass that check.
+ruling_options:
+  - A - Mixed standing pack, local coder under the driver and Claude for every other seat, LLM coordinator question deferred to the GPU probe (recommended)
+  - B - All-local mono-router, deterministic coordinator in daemon code and review stages run by the driver as scripted checks with no model verdict
+  - C - All-local mono-router keeping LLM seats, coordinator on the compact card plus a command relay and review roles as local LLM seats once the GPU probe passes them
+ruling_tradeoffs:
+  - Pros - the first real local parcel is the closest (needs only BL-1696 to BL-1701), every Article 4.1 gate keeps a real reviewer, and the coder seat's Anthropic spend moves to your GPU. Cons - coordination and review still spend Anthropic tokens and two providers are resident. Recommended because it proves the driver on real tickets now and leaves the all-local choice to GPU evidence instead of CPU guesses.
+  - Pros - zero Anthropic tokens, every step deterministic, and much of the coordinator's QA bookkeeping row is already handoffd's landed auto-close (d9a4d0b888). Cons - no model judgment anywhere (a dropped parcel or a refused promotion comes to you), the architect design-review gate has no reviewer so Article 4.1 needs an amendment, and three or more driver slices come before the first canary.
+  - Pros - same seat shape as the Claude packs and model judgment stays in review. Cons - the lab measured a 7B coordinator at 0 of 4 on the six-step bookkeeping row even when told the row, so it waits on a bigger GPU model passing the probe, and it needs the card, a command relay and relay-hazard probes (fence misparse) built first.
+
+invariants:
+  - "No launch path starts a pack with a driver seat unless the newest steward probe summary for that seat's model records at least four of five coder fixtures handed off and no breached hazard, whatever PACK_STAFFING_SKIP_GATE says."
+
+description: |
+  ## What is wanted (common to every branch)
+  1. **Probe gate on launch.** `local_coder_probe_gate_cli.bb` (name fixed
+     at mint), called from `swarmforge.sh` for any pack with a driver
+     seat (BL-1697's definition): the newest BL-1700/BL-1701 summary for
+     the seat's model must record at least 4 of 5 coder fixtures handed
+     off and no breached hazard, or the launch refuses naming the model
+     and the reason ("no probe summary" / "probe verdict fail").
+     `PACK_STAFFING_SKIP_GATE=1` - swarm.env's default on this host
+     (db5d1313e4) - must NOT skip it: a gate the default skips enforces
+     nothing. Its own override, if any, must be loud and name a reason.
+  2. **Runbook** (`docs/how-to/`): how to pick the canary ticket (low
+     risk, small, acceptance already red, no pipeline-script scope), how
+     to start the pack, what to watch (the driver state file, the
+     llm-history log, handoffd's escalations), the stop criteria, and the
+     rollback (relaunch the previous pack; release the held parcel with
+     BL-1698's `release <role> complete`; reroute the ticket).
+
+  ## Branch A (recommended) - mixed standing pack
+  3. `swarmforge/packs/mixed-local-coder.conf`: `full-forge.conf`'s shape
+     with the `coder` window on aider under the driver (model named by the
+     probe summary, BL-1699 launch flags, `seat_test_command` declared)
+     and every other seat on Claude; one coder seat (no `coder@2`) for the
+     canary.
+  4. The canary: after this lands the operator runs it and records the
+     evidence (not a ticket gate).
+
+  ## Branch B or C
+  The specifier mints the ruled branch's successor slices (B -
+  deterministic coordinator rows as daemon behaviour, driver review-stage
+  roles, an Article 4.1 amendment; C - the compact coordinator card
+  wired read-only, a command relay with an allow-list, relay-hazard probes
+  and lifecycle rows in the probe), adds them to `depends_on` here, and
+  rewrites this ticket's feature file for the all-local pack before it
+  is promoted. Items 1 and 2 above stand in every branch.
+
+  ## Why
+  The driver slices make a local model able to do coder work; they do not
+  decide where it runs. The intake's L4 asked whether to drop the LLM
+  coordinator for daemon code, assuming an all-local pack; the review
+  stages were never measured at all (the lab ran coordinator and coder
+  scenarios only). Evidence: `backlog/evidence/aider-seat-lab-20260924.md`
+  (coordinator 0/5 code mode, 0/4 ask mode, 4/8 with a stateful relay,
+  every 2-3-command row passing and the six-command row 0/4).
+
+  ## How (direction, not mandate)
+  - The probe check reads the steward's summary files (BL-1700 writes them
+    under `backlog/evidence/`); "newest" is by the summary's own UTC stamp,
+    not file mtime.
+  - The existing inert coordinator card
+    (`swarmforge/roles/aider/coordinator.prompt`, 2945f2d07f) stays inert
+    in branches A and B; in C it goes live only after the human reviews
+    it (see source).
+  - Documenter: the runbook above; `swarm-flow.mmd`'s trigger fires in
+    branch A (a pack whose coder seat runs through the driver) - draw the
+    driver seat in the flow.
+
+  ## Scope (branch A)
+  - New: `swarmforge/scripts/local_coder_probe_gate_cli.bb` (+ lib if
+    needed), `swarmforge/packs/mixed-local-coder.conf`.
+  - `swarmforge/scripts/swarmforge.sh` (call the probe gate).
+  - New: `specs/pipeline/steps/bl1702FirstLocalPackCanarySteps.js` (BL-233).
+  - Docs: the runbook; `docs/diagrams/swarm-flow.mmd`.
+  - Out of scope: running the canary (the operator's act); any change to
+    the Claude-only packs.
+
+qa_e2e_procedure: |
+  Written for branch A; rewritten with the feature file if another branch
+  is ruled. On the parcel commit, ONE run each (2026-09-17 rule). QA does
+  not launch the pack.
+  1. `node specs/pipeline/cli.js specs/features/BL-1702-the-first-local-pack-canaries-one-real-ticket-on-a-probe-certified-local-coder.feature`:
+     all scenarios ok.
+  2. `bb swarmforge/scripts/local_coder_probe_gate_cli.bb <root>
+     mixed-local-coder` against a scratch root with no probe summary:
+     refuses naming the model; with `PACK_STAFFING_SKIP_GATE=1` exported:
+     still refuses.
+  3. Read the runbook: canary choice, start, watch list, stop criteria,
+     rollback steps each present and naming real commands.
+  4. `git diff main...HEAD --name-only` names only the Scope files, docs
+     and evidence.
+
+source: |
+  backlog/INTAKE-local-aider-seats-20260924.md, slices L4 (the ruling)
+  and L6 (the live canary): "L4 is a real choice: it goes back to the
+  human with its pros and cons (below) before it is specified"; "L6 - the
+  live canary (deps: L2, L3, and L5 green) - Operator-started, one real
+  low-risk ticket, the router watched, rollback documented. It is the
+  only test that touches the live router." Operator recommendation for
+  L4: "deterministic now, re-probe an LLM coordinator on the GPU with L5."
+
+  Also consolidated here (Article 5.3, every human sentence verbatim):
+  backlog/INTAKE-aider-coordinator-card.md (2945f2d07f), superseded in
+  part by the local-seats intake, whose card this ruling decides. Human,
+  2026-09-23 (verbatim, in order): "is the coordinator prompt ridiculously
+  too long? it's not a seat that has a complicated task to do has it?" -
+  "how do we compact the coordinator's prompt for the aider coordinator?
+  I suppose that's one job for the prompt factory" - "draft the
+  coordinator's card but let the swarm know about it". That intake's
+  firm line: "The card stays inert until the wiring ticket lands; the
+  human reviews it first."
+
+  Human, verbatim (via Claude Code, 2026-09-23 ~23:05 BST): "When you are
+  done with your experimentation, write the final proposal for the
+  specifier to pick tomorrow morning. Make it super high priority btw,
+  qjump it. The priority is now to introduce local models. I have a
+  graphic card arriving in a couple of days, so the tocken generation
+  should be boosted" - and: "how do you suggest the swarm will deal with
+  this testing of the local aider? will it spin it up, to test the live
+  prob?"
+
+notes: |
+  Minted 2026-09-24 by the specifier (claude-opus-5-5 seat) with
+  `human_approval: pending` and `ruling_options`: the intake itself marks
+  L4 as a real choice, so the queue-jump pre-approval (2026-09-15 ruling)
+  does not cover it. The intake's L4 and L6 are merged here because the
+  coordinator question and the review-stage question are one decision (the
+  first local pack's shape) and the canary is the ticket that needs it.
+  The card intake's open questions resolve by branch: 1 (relay home) ->
+  handoffd, already BL-1697; 2 (scan `roles/aider/`) and 3 (card
+  coverage) and 4 (`ff-main` on the allow-list) -> live only in branch C.
+
+  INVEST (branch A): Independent (depends_on names every unbuilt
+  sibling), Negotiable (runbook shape, CLI internals are direction),
+  Valuable (the first real local parcel), Estimable (one conf, one small
+  CLI, one doc), Small (two scenarios, one invariant), Testable (static
+  roster and gate checks; the canary itself is operator evidence).
