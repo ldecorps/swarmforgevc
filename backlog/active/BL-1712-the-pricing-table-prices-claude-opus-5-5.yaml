@@ -73,7 +73,10 @@ description: |
   2. `extension/src/swarm/modelDisplayName.ts` maps `claude-opus-5-5` to
      `Opus 5.5` (BL-1436 did the same for Fable 5.1).
   3. The two register rows this mint adds leave in the same land
-     (REGISTER_ROW_RETIRED, BL-1631).
+     (REGISTER_ROW_RETIRED, BL-1631). The parcel never edits
+     `backlog/standing-reds.tsv` (coder.prompt, BL-1663): scenario 04
+     asserts both rows present and owned by BL-1712 at the parcel
+     commit; their absence is qa_e2e step 5, after the land.
   4. `PRICING_TABLE_VERSION` unchanged: adding a row changes no existing
      rate (BL-1436 added a row without a bump).
 
@@ -122,6 +125,15 @@ notes: |
   (severity defect, no ruling_options) - see
   auto-approve-high-severity-defects-amendment-20260917.md. Expedite lane
   by severity (Article 3.2.4). Holder note sent to QA naming BL-1694.
+  Amended 2026-09-24 08:25Z on the coder's spec-gap note 002111: scenario
+  04 asserted "no register row names" either file at the parcel commit,
+  the wording BL-1638's 2026-09-21 adjudication already superseded
+  (BL-1663: register rows are the specifier's to add and the land's to
+  remove). Now asserts both rows present and owned by BL-1712; tag renamed
+  `...-register-rows-owned-04` (unbuilt scenario of an in-flight ticket,
+  BL-1006 does not apply). The mint was the spec gap, not the coder's
+  work; no bounce recorded (asked by note). Still AUTO-APPROVED - this
+  aligns the contract to a governing rule and poses no choice.
 
   Recurrence, recorded not scoped: this is the second time a
   human-directed pack model change (09-04 fable-5-1, 09-24 opus-5-5) left

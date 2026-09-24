@@ -9,8 +9,10 @@ Feature: BL-1712 the pricing table prices claude-opus-5-5
   claude-opus-5-5 at the rates in the project's Claude API reference with
   the source beside them; a rate that reference does not publish (cache
   creation) stays unset, never derived from a sibling row; the
-  display-name map names the model; and both register rows leave in the
-  same land. Scenarios 01 and 04 read the parcel's own tree.
+  display-name map names the model; and both register rows stay owned by
+  this ticket in the parcel and are retired by its land (BL-1631) - a
+  parcel never edits the register (BL-1663). Scenarios 01 and 04 read the
+  parcel's own tree.
 
   # BL-1712 the-pricing-table-prices-claude-opus-5-5-01
   Scenario: every model the swarm roster references has a pricing entry
@@ -35,8 +37,8 @@ Feature: BL-1712 the pricing table prices claude-opus-5-5
     When the cost is estimated
     Then the estimate is null
 
-  # BL-1712 the-pricing-table-prices-claude-opus-5-5-04
-  Scenario: the display-name map names the model and both register rows are gone
+  # BL-1712 the-pricing-table-prices-claude-opus-5-5-register-rows-owned-04
+  Scenario: the display-name map names the model and both register rows are owned by BL-1712
     When the display-name map and the standing-red register are read from the parcel's own tree
     Then claude-opus-5-5 displays as "Opus 5.5"
-    And no register row names pricingTable.test.js or the BL-1436 feature file
+    And the register rows naming pricingTable.test.js and the BL-1436 feature file are both present and each names BL-1712 as its owner

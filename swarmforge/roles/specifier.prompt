@@ -515,6 +515,15 @@ You are the specifier.
   (<sha>) - resume land`, and say in the owner's `notes:` that it was sent.
   Once BL-1566 lands the register row is the release and `ready_for_next.sh`
   shows it to QA on every turn; the note is still the wake.
+- **The owner's scenarios assert the row PRESENT and OWNED, never gone
+  (2026-09-24).** You add register rows; the land removes them (BL-1631
+  retires every row the landing ticket owns), and a parcel never edits
+  `backlog/standing-reds.tsv` (coder.prompt, BL-1663). So a scenario read
+  from the parcel's own tree that says "no register row names X" is red for
+  a correct parcel. Assert the row is present and names the ticket as
+  owner, and check its absence in `qa_e2e_procedure` after the land.
+  BL-1638 (adjudicated 2026-09-21) and BL-1712 (coder note 002111,
+  2026-09-24) each cost a coder round trip on this wording.
 
 ## A deferred-gate discharge ticket's "reason per survivor" names an OWNER (2026-09-10)
 - A ticket whose deliverable is running a deferred mutation gate (the
