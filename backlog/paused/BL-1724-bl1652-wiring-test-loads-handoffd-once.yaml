@@ -1,0 +1,92 @@
+id: BL-1724
+title: "extension/test/bl1652HandoffdRespawnReadingsWiring.test.js breaks the unit suite's 7 s per-file budget under host load (QA, BL-1697's parcel 8e0fd17c06: 13.4 s in-suite, 9.6 s alone at load 13.2; specifier on main: 8.0 s alone at load 12.4) because each of its seven cases starts a fresh bb that loads the whole handoffd.bb (about 1 s each under load); the file loads handoffd.bb in one bb process per run, as BL-1663 did for bl1474's property"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it holds BL-1697 at QA (Article 4.2) and the
+# unit suite exits 1 on it whenever two or three lanes run at once.
+status: todo
+epic: unit-suite-speed
+priority: 7
+direction: swarm-reported
+depends_on: []
+# No open ticket touches this test file (grep of paused/ and active/,
+# 2026-09-24). BL-1721 (the guard's confirmation report) is orthogonal:
+# this file's confirmation measured it genuinely over budget.
+mutation_cost: low
+# low: one test file's harness; no production code; the acceptance
+# pointer's feature is unaffected.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-speed chore with no scenarios of its own (BL-1251): the pointer
+# names the feature this test file hardens, which must still resolve;
+# it is not a claim of ownership over BL-1652's contract.
+acceptance: specs/features/BL-1652-the-chase-sweep-never-respawns-a-busy-role-and-respawns-at-most-once-per-sweep.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: every one of the
+  file's seven cases keeps asserting what it asserts today against the
+  real handoffd.bb; only the number of bb processes changes. FIRM: the
+  probe form stays in a file, never on argv (BL-1673 - a form naming a
+  fixture worktree on argv is seen by lane-running?'s own scan). FIRM: the
+  7.0 s budget is unchanged and no suite-poles row is added.
+
+invariants:
+  - "One run of the file starts exactly one bb process that loads handoffd.bb, whatever the number of cases."
+
+description: |
+  ## What is wrong
+
+  QA note 003138 and evidence b8b7a3ab55
+  (`backlog/evidence/BL-1697-unowned-red-hold-QA-20260924.md`): the unit
+  suite, run by qa-gather at load 11-14, exited 1 on the per-file budget:
+  `extension/test/bl1652HandoffdRespawnReadingsWiring.test.js: 13.4s
+  exceeds the 7.0s per-file budget` (every test passing). Alone at load
+  13.2: 7/7 in 9.6 s. Specifier on main, load 12.4: 8.0 s alone. QA timed
+  a bare `load-file handoffd.bb` at 737-1140 ms under that load.
+
+  The file's `loadHandoffdAndRun` (BL-1673 shape: form in a file, bb FILE
+  invocation) is called once per case, so seven cases load handoffd.bb
+  seven times. The confirmation measured it over budget alone, so this is
+  a real pole at that load, not BL-1721's failed-confirmation case.
+
+  ## What is wanted
+  - One bb process per file run evaluates every case's form (for example
+    one script printing one line of results per case, parsed by the
+    cases), keeping each case's assertion and its failure message
+    per-case.
+  - The `role-lane-running?` cases still see their spawned lane process:
+    it is started before the single bb run and stopped after it.
+
+  ## How (direction, not mandate)
+  - BL-1663's pattern for bl1474's property: build every case's form, run
+    bb once in a `beforeAll`, and have each `test` read its own result.
+
+  ## Scope
+  - `extension/test/bl1652HandoffdRespawnReadingsWiring.test.js` only.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), from `extension/`.
+  1. `npx vitest run test/bl1652HandoffdRespawnReadingsWiring.test.js`:
+     7 of 7; record its duration and the host load average beside it -
+     expect under half of the 8.0 s measured alone at load 12.4.
+  2. `node specs/pipeline/cli.js ../specs/features/BL-1652-the-chase-sweep-never-respawns-a-busy-role-and-respawns-at-most-once-per-sweep.feature`
+     (from the repo root): all ok.
+  3. The file's bb call site count: one `execFileSync('bb'` (or spawn) in
+     the file, reached once per run.
+  4. After landing: REGISTER_ROW_RETIRED for this file's row; resume
+     BL-1697's land.
+
+notes: |
+  Minted 2026-09-24 by the specifier from QA's unowned-red note 003138
+  (holding BL-1697), the same pass (standing-red amendment 2026-09-05);
+  register row added in the mint commit; measured alone on main the same
+  hour.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1697. Fourth load-driven red this shift (BL-1718, BL-1721, BL-1724,
+  BL-1725): host load 11-14 from concurrent test lanes.

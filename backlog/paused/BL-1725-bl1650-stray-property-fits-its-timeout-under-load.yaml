@@ -1,0 +1,85 @@
+id: BL-1725
+title: "extension/test/bl1650LandStepPureEvidenceStrayInvariants.property.test.js invariant 2 timed out at its 20 s ceiling in the property lane at load 11-14 (QA, BL-1697's parcel 8e0fd17c06) and takes 10.8 s alone at load 12.4 on main, because every fast-check draw builds a fresh git origin fixture and runs the whole land_step_cli.bb; the draws are decided in one bb process against one shared fixture per shape, one real CLI run stays as the wiring case, and the reach floor is unchanged"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it holds BL-1697 at QA (Article 4.2) and fails the
+# property lane whenever two or three lanes run at once.
+status: todo
+epic: unit-suite-speed
+priority: 7
+direction: swarm-reported
+depends_on: []
+# No open ticket touches this test file (grep of paused/ and active/,
+# 2026-09-24). BL-1596 (bare per-test timeouts) is orthogonal: this case
+# carries none - it hits the lane's own 20 s ceiling.
+mutation_cost: low
+# low: one property file's harness; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-speed chore with no scenarios of its own (BL-1251): the pointer
+# names the feature this property hardens, which must still resolve; it
+# is not a claim of ownership over BL-1650's contract.
+acceptance: specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: invariant 2 keeps
+  its reach floor and its draw count (assertReachFloor/runsPerCell values
+  unchanged - BL-1691's floor audit rule) and every assertion it makes
+  today. FIRM: at least one draw per run still goes through the real
+  land_step_cli.bb end to end (the wiring). FIRM: no per-test timeout is
+  added or raised (BL-1596).
+
+invariants:
+  - "Invariant 2's reach floor, draw count and assertions are unchanged, and at least one draw per run exercises the real land_step_cli.bb."
+
+description: |
+  ## What is wrong
+
+  QA note 003138 and evidence b8b7a3ab55: the property lane at load 11-14
+  failed `BL-1650/BL-654 invariant 2: a landed stray is recorded` with
+  `Error: Test timed out in 20000ms.` (test/bl1650LandStepPureEvidenceStray
+  Invariants.property.test.js:177). Specifier on main, load 12.4: the file
+  alone passes, invariant 2 in 10.8 s, invariant 1 in 2.5 s.
+
+  Each of invariant 2's draws (shapes 1-3, runsPerCell(9, 3)) calls
+  `buildStrayLandsFixture` (a fresh repository with an origin and
+  commits) and then `runCli` (a full `bb land_step_cli.bb` run), about
+  1.2 s per draw at that load.
+
+  ## What is wanted
+  - Invariant 2's per-draw decision is made without a fresh fixture and
+    a fresh CLI process per draw: one fixture per shape (reset between
+    draws), and the draws' land runs made in one bb process calling the
+    lib the CLI wraps (BL-1663's pattern).
+  - One draw per run still runs the real CLI and asserts its printed
+    lines, so the CLI wiring stays covered.
+
+  ## Scope
+  - `extension/test/bl1650LandStepPureEvidenceStrayInvariants.property.test.js`
+    (and a helper beside it if one is needed).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), from `extension/`.
+  1. `npx vitest run --config vitest.properties.config.mjs test/bl1650LandStepPureEvidenceStrayInvariants.property.test.js`:
+     2 of 2; record invariant 2's duration and the host load - expect
+     well under half of the 10.8 s measured at load 12.4.
+  2. The floor audit: `git diff main...HEAD -- extension/test | grep -E
+     '(numRuns|assertReachFloor|runsPerCell)'` - no value lowered.
+  3. `node specs/pipeline/cli.js specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature`
+     (from the repo root): all ok.
+  4. After landing: REGISTER_ROW_RETIRED for this file's row; resume
+     BL-1697's land.
+
+notes: |
+  Minted 2026-09-24 by the specifier from QA's unowned-red note 003138
+  (holding BL-1697), the same pass as BL-1724 (standing-red amendment
+  2026-09-05); register row added in the mint commit; measured alone on
+  main the same hour.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1697.
