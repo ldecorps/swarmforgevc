@@ -150,5 +150,10 @@ notes: |
   re-verified at mint: swarm lines 6 and 16-26 (ARCHIVE_URL, the copy
   block); swarmforge.sh:453-459 (core.hooksPath). gpu-bargain-hunter's
   hand-built tree was inspected read-only (eight role prompts, 249 lines).
-  ROLE PROMPTS DUE (BL-798): item 4, landed by the specifier before the
-  coder starts; not landed at mint because the ruling may be C.
+  ROLE PROMPTS LANDED (BL-798): 3fc659e997, 2026-09-25, after the human
+  tapped ruling A. There are eight prompts under
+  swarmforge/starter-kit/roles/ (QA, architect, cleaner, coder,
+  coordinator, documenter, hardender, specifier), copied from
+  gpu-bargain-hunter's hand-written set with one project-specific ticket
+  reference removed, plus swarmforge/starter-kit/README.md. The feature
+  was written for A, so nothing was rewritten.
