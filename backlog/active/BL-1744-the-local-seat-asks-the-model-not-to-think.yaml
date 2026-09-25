@@ -136,3 +136,4 @@ notes: |
   HEAD") now reads "master's working-tree copy": see qa step 4.
 
 assigned_to: coder
+abandoned_commits: [fc626005ca]

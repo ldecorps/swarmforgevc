@@ -248,7 +248,7 @@ describe('BL-1235 the completion call', () => {
     });
 
     assert.equal(sawUrl, `${ENDPOINT}/api/generate`);
-    assert.deepEqual(sawBody, { model: 'qwen3:14b', prompt: 'hello', stream: false });
+    assert.deepEqual(sawBody, { model: 'qwen3:14b', prompt: 'hello', think: false, stream: false });
     assert.equal(reply, 'hi');
   });
 
@@ -263,6 +263,7 @@ describe('BL-1235 the completion call', () => {
       model: 'qwen3:14b',
       prompt: 'hello',
       system: 'You are the local seat.',
+      think: false,
       stream: false,
     });
   });

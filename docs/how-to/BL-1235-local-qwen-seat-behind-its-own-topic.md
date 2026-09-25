@@ -162,6 +162,17 @@ project is.
   time — never rewritten wholesale by the coder). Editing it going
   forward is an ordinary docs change to that one file, not a code change.
 
+## Thinking is always off for this seat (BL-1744)
+
+`completeWithLocalModel` sends ollama's own `think: false` on every
+completion request, with or without a briefing. Measured live against
+qwen3.8-27b-iq3s-seat: with thinking on, a turn spent its whole reply
+budget inside an unsuppressed `<think>` block and never answered (132s,
+cut off); with `think: false`, the same question answered cleanly in 51s.
+This seat's whole purpose is a short spoken-style reply, so thinking is
+never made configurable here — a model with no thinking capability
+ignores the field.
+
 ## Out of scope
 
 Moving, wrapping, or replacing Cursor anywhere (explicitly refused by the

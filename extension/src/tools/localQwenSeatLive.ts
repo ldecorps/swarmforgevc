@@ -129,6 +129,17 @@ export async function readLocalEndpoint(
  * test asserting on it) never has to account for a briefing prefix. Omitted
  * when undefined - `JSON.stringify` drops an undefined-valued key - so a
  * caller with no briefing sends exactly the request this seat always sent.
+ *
+ * `think: false` is ollama's own native toggle for a reasoning-capable model
+ * (`ollama show` lists it under Capabilities). Measured live against
+ * qwen3.8-27b-iq3s-seat on this CPU-only host: with thinking on, a turn spent
+ * its whole 120-token reply budget on an unsuppressed `<think>` block and
+ * never reached an answer (132s, cut off mid-thought); with `think: false`,
+ * the same question answered cleanly in 51s with no `<think>` at all. This
+ * seat's whole purpose is a short spoken-style reply (the briefing says
+ * "Answer in a few short sentences that read well aloud"), so thinking is
+ * always off here, not made configurable. A model with no thinking
+ * capability ignores the field.
  */
 export async function completeWithLocalModel(
   modelId: string,
@@ -140,7 +151,7 @@ export async function completeWithLocalModel(
   const res = await fetchFn(`${endpointUrl}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: modelId, prompt, system, stream: false }),
+    body: JSON.stringify({ model: modelId, prompt, system, think: false, stream: false }),
   });
   const raw = await res.text();
   if (!res.ok) {
