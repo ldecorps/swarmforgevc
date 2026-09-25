@@ -27,7 +27,10 @@ required_wiring:
   - 'swarm::install_starter_kit::the wrapper points a target with no engine at the kit install instead of fetching upstream'
   - 'specs/pipeline/steps/bl1758StarterKitSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - the onboarding installs a starter kit from this local checkout and the swarm wrapper stops fetching upstream (recommended)
+ruling_provenance: tapped
 approval_context: >
   New feature file and one real choice: where a fresh target's engine,
   pack and prompts come from. FIRM whatever you pick: the engine and the
