@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-25T21:28:59.674231131Z","feature_name":"BL-1760 bl1074's reach floors are constructed","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1760-bl1074s-reach-floors-are-constructed.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1760 bl1074's reach floors are constructed
 
   extension/test/bl1074PostCloseRefileDuration.property.test.js draws

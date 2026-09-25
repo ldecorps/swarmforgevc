@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const { countGitSpawns } = require('./helpers/gitSpawnCounter');
 const { newRepo, git, writeTicket, move } = require('./helpers/backlogCorpusFixture');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const {
   computeMeanTicketTime,
   MEAN_TICKET_TIME_GIT_SUBPROCESS_BOUND,
@@ -63,38 +64,39 @@ function copyClosedThenRefiled(refileCount) {
 }
 
 test('property (invariant 1): post-close re-files leave the measured duration at the close', () => {
-  // Non-vacuity: include the refileCount=0 arm so a broken impl that always
-  // returns null fails, and refileCount≥1 so the defect this ticket fixes
-  // is reached by construction. Also include a copy-close arm (architect
-  // bounce D1) so the Add-fallback path is generated, not only rename closes.
-  let casesWithRefile = 0;
-  let casesWithCopyClose = 0;
-  const numRuns = 12;
-  fc.assert(
-    fc.property(fc.integer({ min: 0, max: 3 }), fc.boolean(), (refileCount, copyClose) => {
-      const repo = copyClose
-        ? copyClosedThenRefiled(refileCount)
-        : closedThenRefiled(refileCount);
-      const result = computeMeanTicketTime(repo);
-      assert.equal(result.sampleCount, 1);
-      assert.equal(result.meanMs, EXPECTED_MS);
-      if (refileCount > 0) {
-        casesWithRefile += 1;
-      }
-      if (copyClose) {
-        casesWithCopyClose += 1;
-      }
-    }),
-    { numRuns }
+  // BL-1760: (refileCount, copyClose) fully determines the case - no other
+  // randomness is drawn - so the reach floors (2 re-files, 2 copy-closes)
+  // are made unmissable BY CONSTRUCTION, the same shape sweeps 1-4 applied
+  // (BL-1585..BL-1587, BL-1691), rather than hoped for from a sampled
+  // fc.boolean() coin flip (QA note 003193: 1 copy-close in 12 draws).
+  // refileCount=0 stays in the cell list so a broken impl that always
+  // returns null still fails; refileCount>=1 x copyClose reaches both the
+  // rename-close and the Add-fallback (architect bounce D1) paths.
+  const REFILE_COUNTS = [0, 1, 2, 3];
+  const COPY_CLOSE_STATES = [false, true];
+  const CELLS = REFILE_COUNTS.flatMap((refileCount) =>
+    COPY_CLOSE_STATES.map((copyClose) => ({ refileCount, copyClose }))
   );
-  assert.ok(
-    casesWithRefile >= 2,
-    `generator reached a post-close re-file in only ${casesWithRefile} of ${numRuns} cases`
-  );
-  assert.ok(
-    casesWithCopyClose >= 2,
-    `generator reached a copy-close in only ${casesWithCopyClose} of ${numRuns} cases`
-  );
+  const PER_CELL_RUNS = runsPerCell(CELLS.length, CELLS.length);
+  const seen = { refile: 0, copyClose: 0 };
+  for (const { refileCount, copyClose } of CELLS) {
+    fc.assert(
+      fc.property(fc.constant(refileCount), fc.constant(copyClose), (rc, cc) => {
+        const repo = cc ? copyClosedThenRefiled(rc) : closedThenRefiled(rc);
+        const result = computeMeanTicketTime(repo);
+        assert.equal(result.sampleCount, 1);
+        assert.equal(result.meanMs, EXPECTED_MS);
+        if (rc > 0) {
+          seen.refile += 1;
+        }
+        if (cc) {
+          seen.copyClose += 1;
+        }
+      }),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, ['refile', 'copyClose'], 2, 'post-close-case');
 });
 
 test('property (invariant 2): re-file count does not add git subprocesses beyond the shared-walk bound', () => {
