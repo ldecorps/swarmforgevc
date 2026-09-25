@@ -26,7 +26,7 @@ acceptance: specs/features/BL-1746-swarm-stamp-swarm-name-remote-control-prefix-
 required_wiring:
   - 'specs/pipeline/steps/bl1746SwarmNameRemoteControlPrefixSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   asked. FIRM: review-only - the stamp never rewrites the hotfix. FIRM: the
