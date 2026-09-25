@@ -34,7 +34,7 @@ acceptance: specs/features/BL-1730-a-property-worker-that-dies-on-the-heap-cap-n
 required_wiring:
   - 'specs/pipeline/steps/bl1730HeapCapDeathNamesItsFileSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sign-off on the new feature file: two scenarios, both over fixture
   property files under a small cap, never the full lane. FIRM: the cap,
