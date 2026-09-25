@@ -1,5 +1,5 @@
 id: BL-1753
-title: "The night closing ceremony never starts a documenter session beside a mono-router resident - when rotate_to_role.sh refuses because the resident holds a parcel, the ceremony keeps asking for the rotate on every tick until the briefing's hard deadline and then takes BL-1641's deadline briefing path, instead of spawning the documenter through consult_spawn_cli.bb (ruling A, recommended; B forces the rotate)"
+title: "The night closing ceremony never starts a documenter session beside a mono-router resident - when rotate_to_role.sh refuses because the resident holds a parcel, the ceremony forces the rotate (SWARMFORGE_ROTATE_FORCE=1) and leaves the held parcel in its role's in_process for the next shift, instead of spawning the documenter through consult_spawn_cli.bb (the human's ruling B, 2026-09-25)"
 milestone: M8
 type: defect
 severity: medium
@@ -31,23 +31,19 @@ human_ruling: |
   B - force the resident to documenter at the drain deadline, leaving its held parcel in_process for the next shift
 ruling_provenance: tapped
 approval_context: >
-  New feature file, and one real choice (the intake asked for it to come to
-  you with its trade-off). FIRM either way: the ceremony never starts a
-  documenter session beside the resident, and on a standing pack
-  (full-forge, this repo's nights) nothing changes. The choice is what the
-  ceremony does when the resident still holds a parcel after the drain
-  deadline. The feature file is written for A. If you pick B, I rewrite
-  scenarios 02 and 03 and re-pend it before it can be promoted.
-ruling_options:
-  - A - keep asking the resident to rotate on every tick until the hard deadline, then take BL-1641's deadline briefing path (recommended)
-  - B - force the resident to documenter at the drain deadline, leaving its held parcel in_process for the next shift
-ruling_tradeoffs:
-  - Pros - one resident always, and the resident's turn is never cut; the ceremony already drains new work, so the resident is usually free well before the deadline; if it is not, BL-1641 lands the documenter branch's own briefing or composes the headless banked one, so the morning still gets a briefing. Cons - on a night the resident stays busy to the deadline, the briefing is the thinner deadline one rather than a fresh documenter write-up. Recommended because it never interrupts work and the miss already has a built fallback.
-  - Pros - the documenter always writes the briefing itself, on time. Cons - the resident is pulled off its parcel mid-turn; whatever it had not committed stays uncommitted in its worktree overnight and the parcel waits in_process until the role comes back next shift, which is the half-finished-turn state the rotate refusal exists to prevent.
+  You ruled B (force the rotate) on the first ask, approve commit
+  d191197cf0. The feature was written for A, so as promised scenarios 02
+  and 03 are rewritten for B and this asks you to look at them again: 02
+  asserts a refused rotate is forced and the coder parcel stays in
+  coder's in_process; 03 asserts a resident holding no parcel is rotated
+  without force. FIRM as before: the ceremony never starts a documenter
+  session beside the resident, and on a standing pack (full-forge) nothing
+  changes. No new choice is posed; the A/B options are kept in notes.
 
 invariants:
   - "The ceremony never creates a tmux session and never runs consult_spawn_cli.bb, on any pack."
-  - "The recorded closing sequence names rotate-documenter at most once however many ticks re-ask for the rotate (BL-658's sequence scenarios stay green)."
+  - "The ceremony forces a rotate only after the plain rotate was refused, and a forced rotate never moves, completes or deletes the parcel the resident held."
+  - "The recorded closing sequence names rotate-documenter at most once (BL-658's sequence scenarios stay green)."
 
 description: |
   ## What is wrong
@@ -60,17 +56,20 @@ description: |
   the resident, until the consult teardown sweep finds it idle. The
   briefing is work, so on a mono-router pack that is a second resident.
   The machine emits `rotate-documenter` once, on entering the briefing
-  phase (`nightClosingCeremonyLive.ts` `enterBriefing`), and
-  `advanceBriefing` never asks again.
+  phase (`nightClosingCeremonyLive.ts` `enterBriefing`).
 
-  ## What is wanted (ruling A)
+  ## What is wanted (the human's ruling B, 2026-09-25)
 
   1. `rotateDocumenter` never calls `spawnConsultDocumenter` (delete it
      if nothing else calls it; `consult_spawn_cli.bb` itself stays - see 4).
-  2. While the briefing phase waits, and the rotation was requested but
-     the active role is not yet documenter, every tick re-asks for the
-     rotate. The sequence records `rotate-documenter` once (pushUnique).
-  3. At the hard deadline, BL-1641's path (`ensure-briefing`, the loud
+  2. When the plain `rotate_to_role.sh documenter` is refused, run it
+     once more with `SWARMFORGE_ROTATE_FORCE=1` (the override
+     `rotate_to_role.bb` documents). The parcel the resident held stays in
+     its role's `inbox/in_process/`, untouched, and is resumed the next
+     time the resident plays that role (`ready_for_next.sh` checks
+     in_process first). A rotate that is not refused is never forced.
+  3. If even the forced rotate fails (no session, no launch script),
+     BL-1641's hard-deadline path (`ensure-briefing`, the loud
      `closing-briefing-missing`, `night-stop`) runs unchanged.
   4. KEPT: `consult_spawn_cli.bb` and `test_consult_spawn_cli.sh` (BL-1710,
      the approved on-demand Art Director, reuses that spawn), and the
@@ -95,19 +94,14 @@ description: |
      - BL-1549's ceremony scenarios were retired to a tombstone by the
        specifier at mint.
 
-  ## If the human rules B instead
-
-  The specifier rewrites scenarios 02 and 03 before promotion: at the
-  drain deadline the ceremony forces the rotate (rotate_to_role.sh's
-  force path). The held parcel stays in_process, and no second session is
-  ever started (invariant 1 holds for both options).
-
   ## How (direction, not mandate)
 
-  - The re-ask belongs in the pure machine (`advanceBriefing` emitting
-    `rotate-documenter` while `rotationRequested` and `activeRole !==
-    'documenter'`), so the unit and property lanes can pin it without a
-    fixture.
+  - The force belongs in the executor (`rotateDocumenter` in
+    `night-closing-ceremony-run.ts`); the pure machine keeps emitting
+    `rotate-documenter` once. "The rotate was forced" / "not forced" reads
+    a stub `rotate_to_role.sh` call log in the fixture (argv and
+    `SWARMFORGE_ROTATE_FORCE`), and "the coder parcel is still in coder's
+    in_process" reads the fixture mailbox.
   - The feature handler drives `runNightClosingCeremony` with injected
     deps over a mkdtemp fixture (BL-1390), with a fake tmux recording
     `new-session`; "consult_spawn_cli.bb is not run" reads a stub CLI's
@@ -129,7 +123,7 @@ description: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule). No live ceremony.
   1. `node specs/pipeline/cli.js specs/features/BL-1753-the-closing-ceremony-never-starts-a-documenter-beside-a-mono-router-resident.feature`:
-     4 of 4.
+     4 of 4 (02 and 03 are ruling B's).
   2. BL-658's, BL-1593's and BL-1641's features: all scenarios ok.
   3. Under `extension/`: `npx vitest run nightClosingCeremony` (the
      live, run and fallback files) green, and the three ceremony property
@@ -151,9 +145,18 @@ source: |
   human with the trade-off."
 
 notes: |
+  2026-09-25, specifier: RE-PENDED DELIBERATELY. The human tapped B on
+  the first ask (approve commit d191197cf0, human_ruling above). The
+  feature had been written for A, and the first approval_context promised
+  "If you pick B, I rewrite scenarios 02 and 03 and re-pend it before it
+  can be promoted", so 02-03 are rewritten for B and human_approval is
+  back at pending for a look at the new scenarios. ruling_options and
+  ruling_tradeoffs are removed so the fresh ask is a plain approve, not
+  the A/B choice again; they were: A - keep asking the resident to rotate
+  on every tick until the hard deadline, then take BL-1641's deadline
+  briefing path (recommended); B - force the resident to documenter at
+  the drain deadline, leaving its held parcel in_process for the next
+  shift. Never restored to approved by the specifier.
   Minted 2026-09-25 by the specifier, same 1:N split as BL-1752 (ask 3).
   Ledger row a27d082c2d (the ceremony's consult fallback) relinked from
-  BL-1549 to this ticket; human_decision stays null. Written for ruling A;
-  on a B ruling the specifier re-pends after rewriting scenarios 02-03,
-  and the coordinator does not promote until the feature matches the
-  ruling.
+  BL-1549 to this ticket; human_decision stays null.

@@ -82,23 +82,25 @@ description: |
   seat": I probably messed up when I asked for that: I meant Art
   Director." The Art Director reviews the look and feel of what the swarm
   publishes for a human; the documenter is its typical caller. The
-  machinery exists already for other reasons: the consult spawn (hotfix
-  5bdf93beed, stamped by BL-1549) and `consult_spawn_cli.bb` (hotfix
-  2026-09-16). This slice makes "started by its mail" the Art Director's
+  machinery exists already for other reasons: `consult_spawn_cli.bb`
+  (hotfix a27d082c2d, 2026-09-16) and the consult teardown sweep
+  (hotfix 5bdf93beed). This slice makes "started by its mail" the Art Director's
   normal life.
 
   ## How (direction, not mandate)
   - Reuse, do not fork, the consult spawn: the session create and marker
-    write should be the same code `consult_spawn_cli.bb` and
-    `spawn-consult-session!` use (they are deliberately separate today;
-    if sharing them is out of reach, call the CLI).
+    write should be the code `consult_spawn_cli.bb` uses (share it, or
+    call the CLI). The daemon's own copy, `spawn-consult-session!`, is
+    deleted by BL-1752 (amended 2026-09-25).
   - The on-demand mark in `roles.tsv`: a new trailing column or a
     separate list; whatever the readers already tolerate (the roster
     parsers must not misread a new column - check `handoff_lib.bb` and
     `pack_staffing_gate_lib.bb` readers).
   - The mechanism is role-agnostic; only full-forge's art-director line
     uses it in this slice. Mono-router packs are out of scope: their
-    dormant roles already work by rotation and consult.
+    dormant roles work by rotation, and a mono-router pack never starts
+    a second session (the human, 2026-09-25, "Mono router = 1 resident";
+    BL-1752, BL-1753).
   - The call contract (any role, typically the documenter, sends a note
     naming the artifact and where it renders; the Art Director answers
     `LGTM` or a defect list, as it answers QA's sign-off) is prompt prose,
@@ -149,6 +151,13 @@ source: |
   Director."
 
 notes: |
+  2026-09-25, specifier: direction and narrative amended for the
+  mono-router one-resident ruling (BL-1752, BL-1753). BL-1752 deletes
+  spawn-consult-session!, so the on-demand start reuses
+  consult_spawn_cli.bb's code; that CLI and the teardown sweep are KEPT
+  for this ticket. BL-1549 (the stamp this narrative named) was retired
+  the same day. Nothing in the approved scope, invariants or feature
+  changes, so the approval stands (no re-pend, BL-1455).
   Minted 2026-09-24 by the specifier (claude-opus-5-5 seat), first for the
   documenter on the human's role_ask answer "A - keep the docs pass as an
   on-demand job (recommended)" (commit 435d4ad7cd), then retargeted the

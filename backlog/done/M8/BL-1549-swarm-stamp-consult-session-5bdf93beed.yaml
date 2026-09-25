@@ -8,7 +8,8 @@ severity: medium
 # no briefing); what is open is the review the constitution owes a hotfix
 # (BL-848). Not high: nothing is degraded today, and the ledger's
 # resurfacing keeps the ask alive without the expedite lane.
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1752
 epic: swarm-reliability
 priority: 20
 direction: swarm-reported
@@ -337,6 +338,19 @@ description: |
     socket.
 
 notes: |
+  RETIRED 2026-09-25 by the specifier (Article 3.6, Consolidation
+  Authority BL-680), superseded by BL-1752 (the chase half, 5bdf93beed)
+  and BL-1753 (the ceremony half, a27d082c2d). The human ruled the same
+  day that a mono-router pack has exactly one resident ("Mono router = 1
+  resident"); both spawners this stamp would have certified are removed by
+  those two slices. What survives, consult-teardown-sweep! and
+  consult_spawn_cli.bb, stays for BL-1710's on-demand sessions and is
+  exercised by BL-1710's own feature. Ledger rows relinked in the
+  retirement commit: 5bdf93beed -> BL-1752, a27d082c2d -> BL-1753;
+  human_decision stays null for the human's --decide. The feature file
+  (including BL-1591's absorbed scenarios) is kept as a scenario-less
+  tombstone (check_merge_deletion.sh, BL-1662).
+
   Ledger: linked to row 5bdf93beed via `hotfix_ledger_update.bb --link` in
   the mint commit. The mint commit also carries the coordinator's
   uncommitted ledger edits (the row itself, and four sibling rows

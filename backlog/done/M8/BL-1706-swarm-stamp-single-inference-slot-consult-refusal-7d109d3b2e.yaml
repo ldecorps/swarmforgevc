@@ -6,7 +6,8 @@ severity: medium
 # medium: the behaviour is live on main; what is open is the review the
 # constitution owes a hotfix (BL-848). Not high: nothing is degraded
 # today, and the ledger's resurfacing keeps the ask alive.
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1752
 epic: local-llm-swarm
 priority: 20
 direction: human-directive
@@ -120,6 +121,16 @@ source: |
   change."
 
 notes: |
+  RETIRED 2026-09-25 by the specifier (Article 3.6, Consolidation
+  Authority BL-680), superseded by BL-1752. The human ruled the same day
+  that a mono-router pack has exactly one resident ("Mono router = 1
+  resident"). BL-1752 removes the chase's consult spawn, and with it
+  consult-eligible? and the single_inference_slot knob that this stamp
+  would have certified. A review of code the next slice deletes certifies
+  nothing. The ledger row 7d109d3b2e was relinked to BL-1752 in the
+  retirement commit; human_decision stays null for the human's --decide.
+  The feature file is kept as a scenario-less tombstone (check_merge_deletion.sh, BL-1662).
+
   Minted 2026-09-24 by the specifier (claude-opus-5-5 seat) completing the
   coordinator's note the same pass. Grepped `7d109d3b2e` across
   backlog/paused, active, done and hold before minting (BL-1253/BL-1260
