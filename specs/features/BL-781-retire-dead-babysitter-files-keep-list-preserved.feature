@@ -24,10 +24,11 @@ Feature: Dead babysitter wake-runtime files are deleted and scenario 15 is no lo
     Then that path does not exist
 
   # BL-781 scenario-15-allowlist-03
-  Scenario: the BL-611 scenario 15 allowlist no longer exempts deleted wake-runtime files
-    Given the BL-611 scenario 15 step handler allowlist at the parcel commit
-    When the allowlist paths are read
-    Then the allowlist does not name any deleted wake-runtime babysitter file
+  # RETIRED 2026-09-25 (never reworded): it read BL-611 scenario 15's per-file
+  # "babysitter" allowlist, and the specifier's BL-1739 ruling deletes that
+  # allowlist outright (BL-611 feature, scenario 15 comment). With no allowlist
+  # nothing can be exempted, so the property holds by construction; scenario 04
+  # still runs BL-611 scenario 15's scan and fails on any deleted file.
 
   # BL-781 bl611-scenario-15-still-passes-04
   Scenario: BL-611 scenario 15 still passes without allowlisting wake runtime

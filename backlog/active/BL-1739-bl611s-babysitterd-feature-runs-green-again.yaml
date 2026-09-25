@@ -92,11 +92,40 @@ description: |
       swarmforge/packs, extension/src, and the root launch scripts. Test
       files, specs/, docs/ and backlog/ may name retired files as history.
       Zero hits on main at the ruling.
+  - BL-781's two readers of the deleted allowlist run green too (added
+    2026-09-25 on QA note 003191). The ruling above missed them, and the
+    rebuild c4c81e8f57 left both red. They are the only consumers
+    (`git grep -e isAllowedBabysitterMatch -e "explicitly KEEPs" -e
+    scanRepoForBabysitter` at 276c48aa92, backlog/ excluded):
+    - `extension/test/bl781LiveGrepOffender.property.test.js`, test
+      "BL-611 allowlist does not exempt deleted wake-runtime paths". It
+      asserts `isAllowedBabysitterMatch` exists and is red. Rebuild it to
+      state BL-781's invariant 1 ("by absence, not allowlist exemption")
+      in the new shape. Suggested checks: the BL-611 handler defines no
+      babysitter allowlist function, and `RETIRED_FILE_PATHS` names every
+      `DELETED_WAKE` path. Check non-vacuity by hand: a planted allowlist
+      function, or a dropped `RETIRED_FILE_PATHS` entry, fails it.
+    - `specs/pipeline/steps/bl781RetireDeadBabysitterFilesKeepListPreservedSteps.js`:
+      - BL-781 scenario 04 ("BL-611 scenario 15 still passes without
+        allowlisting wake runtime") is kept. Its handler slices the BL-611
+        source from `function isAllowedBabysitterMatch` and reads
+        `scan.offenders`, and both are gone. Rebuild it on today's scan
+        (`forbidden` plus `liveCodeMatches`). Exporting
+        `scanRepoForBabysitter` from the BL-611 handler is one way, not
+        a mandate.
+      - BL-781 scenario 03 is RETIRED on main by the specifier (its
+        feature carries the comment). Delete its three now-unused step
+        definitions ("the BL-611 scenario 15 step handler allowlist at
+        the parcel commit", "the allowlist paths are read", "the allowlist
+        does not name any deleted wake-runtime babysitter file").
 
   ## Scope
 
   - `specs/pipeline/steps/bl611BabysitterdLifecycleSteps.js` (fixtures,
     allowlist).
+  - `extension/test/bl781LiveGrepOffender.property.test.js` and
+    `specs/pipeline/steps/bl781RetireDeadBabysitterFilesKeepListPreservedSteps.js`
+    (BL-781's allowlist readers, above).
   - The babysitter sweep library, only if item 2 is a real regression.
 
 constraints: >
@@ -113,7 +142,11 @@ qa_e2e_procedure: |
   2. The BL-1129 feature stays green.
   3. `git diff main...HEAD --name-only` names only the Scope files, docs
      and evidence; no `specs/features/` path.
-  4. After the land: REGISTER_ROW_RETIRED for the BL-611 feature row.
+  4. `node specs/pipeline/cli.js specs/features/BL-781-retire-dead-babysitter-files-keep-list-preserved.feature`:
+     every scenario passes (scenario 03 is gone).
+  5. `extension/test/bl781LiveGrepOffender.property.test.js` alone under
+     the property config: 5 of 5.
+  6. After the land: REGISTER_ROW_RETIRED for the BL-611 feature row.
 
 notes: |
   Minted 2026-09-25 by the specifier, found in the same census as BL-1738
@@ -129,4 +162,14 @@ notes: |
   This is a spec amendment, not a coder defect. The parcel was at the
   cleaner when the ruling landed, so the cleaner and the coder were both
   noted: merge main, and the coder rebuilds the scenario-15 handler.
+
+  2026-09-25, QA note 003191: the rebuild (c4c81e8f57) did what the
+  ruling said, and BL-781's property test went red on it. The ruling
+  never counted who else reads `isAllowedBabysitterMatch`. The count,
+  done now, finds exactly BL-781's property test and its scenario 03/04
+  handler (What is wanted). The specifier's gap, not the coder's: bounce
+  recorded as spec-gap against the specifier. BL-781 scenario 03 is
+  RETIRED in its own feature on main. At the note the parcel was at QA
+  (documenter 276c48aa92), which does not touch that feature. QA and
+  the coder were noted to merge main and rebuild.
 assigned_to: coder
