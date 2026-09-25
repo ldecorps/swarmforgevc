@@ -14,15 +14,16 @@
 // Encoded against the REAL wired scripts as fresh `bb` child processes -
 // never a reimplementation of project_root_arg_lib.bb's own check.
 //
-// Generator reach: property one draws (site, bad-arg) pairs across the
-// SIX real wiring sites (three CLIs, three harnesses) crossed with TWO
-// bad-arg shapes (flag-shaped, not-a-directory) - 12 combinations, well
-// within the generator's reach, and the assertions below prove every
-// site and both shapes were actually drawn, not merely offered. Property
-// two draws across the three harnesses invoked with NO argument at all -
-// the absent-root path a flag-shaped or not-a-directory arg cannot
-// reach, since "absent" is a different branch through check-root
-// (:blank) than "present but invalid".
+// Generator reach: property one iterates the 12 (site, bad-arg-shape)
+// cells - the SIX real wiring sites (three CLIs, three harnesses) crossed
+// with TWO bad-arg shapes (flag-shaped, not-a-directory) - drawing
+// runsPerCell(30, 12) times per cell from a shape-specific arbitrary, so
+// every site and both shapes are reached BY CONSTRUCTION (BL-1763),
+// never merely offered to a uniform fc.constantFrom draw that could miss
+// one. Property two iterates the three harnesses the same way, invoked
+// with NO argument at all - the absent-root path a flag-shaped or
+// not-a-directory arg cannot reach, since "absent" is a different branch
+// through check-root (:blank) than "present but invalid".
 //
 // Runs ONLY via `npm run test:properties`.
 
@@ -33,6 +34,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -62,85 +64,116 @@ const SITES = [
   { name: 'commit_integrity_856_scenarios_cli.bb', file: path.join(TEST_SCRIPTS_DIR, 'commit_integrity_856_scenarios_cli.bb'), argsFor: (arg) => [arg], isHarness: true },
 ];
 
-const siteArbitrary = fc.constantFrom(...SITES);
+const SHAPES = ['flagShaped', 'notADirectory'];
 
-const badArgArbitrary = fc.oneof(
-  fc.constantFrom('--help', '--tick-once', '-x', '--unknown-flag').map((arg) => ({ shape: 'flagShaped', arg })),
-  fc
+// BL-1763 hardening: project_root_arg_lib.bb's check-root has a DISTINCT
+// cond branch per shape (`:flag-shaped` on a leading "-", `:not-a-
+// directory` otherwise), each rendered as different reason text by
+// reason-text - the whole reason BL-1517 exists (the flag-shaped hazard
+// was the one silently accepted before the fix). The refusal-line
+// assertion below only ever checked "REFUSED project-root <arg>:", never
+// which reason followed it - so a BADARG_ARBS[shape] arbitrary that
+// drifted to produce the OTHER shape's kind of string (verified by hand:
+// mutating notADirectory's generator to draw '--help' instead of a
+// random non-flag string) would go completely undetected, since the
+// shape LABEL is hardcoded in the same .map() regardless of what value
+// the generator actually produced. Pinning the expected reason text per
+// shape here closes that gap.
+const EXPECTED_REASON_TEXT = {
+  flagShaped: 'looks like a flag, not a path',
+  notADirectory: 'not an existing directory',
+};
+
+// One arbitrary per shape - each guarantees that shape by construction,
+// never sampled from a shared fc.oneof that could favor one over the
+// other.
+const BADARG_ARBS = {
+  flagShaped: fc.constantFrom('--help', '--tick-once', '-x', '--unknown-flag').map((arg) => ({ shape: 'flagShaped', arg })),
+  notADirectory: fc
     .string({ minLength: 1, maxLength: 12 })
     .filter((s) => /^[a-zA-Z0-9_-]+$/.test(s))
-    .map((s) => ({ shape: 'notADirectory', arg: `bl1517-nonexistent-${s}` }))
-);
+    .map((s) => ({ shape: 'notADirectory', arg: `bl1517-nonexistent-${s}` })),
+};
+
+const SITE_SHAPE_CELL_COUNT = SITES.length * SHAPES.length;
+const SITE_SHAPE_PER_CELL_RUNS = runsPerCell(30, SITE_SHAPE_CELL_COUNT);
 
 test(
   'property (BL-1517 invariants 1 & 3): every wired site refuses a bad root-position argument, names it verbatim, and leaves the scratch cwd byte-identical',
   () => {
     let draws = 0;
-    const seenSites = new Set();
-    const seenShapes = new Set();
-    fc.assert(
-      fc.property(siteArbitrary, badArgArbitrary, fc.integer({ min: 0, max: 999999 }), (site, badArg, salt) => {
-        draws += 1;
-        seenSites.add(site.name);
-        seenShapes.add(badArg.shape);
-        const scratch = mkScratchDir(`bl1517-prop-${salt}-`);
-        try {
-          const before = snapshot(scratch);
-          const result = spawnSync('bb', [site.file, ...site.argsFor(badArg.arg)], { cwd: scratch, encoding: 'utf8' });
-          const after = snapshot(scratch);
-          assert.notEqual(result.status, 0, `${site.name}(${badArg.shape}=${badArg.arg}): expected a non-zero exit, got 0`);
-          assert.match(
-            result.stderr,
-            new RegExp(`REFUSED project-root ${escapeRegExp(badArg.arg)}:`),
-            `${site.name}(${badArg.shape}=${badArg.arg}): expected a REFUSED project-root line naming the arg verbatim, got: ${result.stderr}`
-          );
-          assert.deepEqual(
-            after,
-            before,
-            `${site.name}(${badArg.shape}=${badArg.arg}): expected no new entry in the scratch cwd, before: ${JSON.stringify(before)}, after: ${JSON.stringify(after)}`
-          );
-        } finally {
-          fs.rmSync(scratch, { recursive: true, force: true });
-        }
-      }),
-      { numRuns: 30 }
-    );
-    assert.equal(seenSites.size, SITES.length, `expected the generator to reach every site, reached: ${JSON.stringify([...seenSites])}`);
-    assert.equal(seenShapes.size, 2, `expected the generator to reach both bad-arg shapes, reached: ${JSON.stringify([...seenShapes])}`);
-    assert.ok(draws >= 20);
+    const siteCoverage = {};
+    const shapeCoverage = {};
+    for (const site of SITES) {
+      for (const shape of SHAPES) {
+        fc.assert(
+          fc.property(BADARG_ARBS[shape], fc.integer({ min: 0, max: 999999 }), (badArg, salt) => {
+            draws += 1;
+            siteCoverage[site.name] = (siteCoverage[site.name] || 0) + 1;
+            shapeCoverage[badArg.shape] = (shapeCoverage[badArg.shape] || 0) + 1;
+            const scratch = mkScratchDir(`bl1517-prop-${salt}-`);
+            try {
+              const before = snapshot(scratch);
+              const result = spawnSync('bb', [site.file, ...site.argsFor(badArg.arg)], { cwd: scratch, encoding: 'utf8' });
+              const after = snapshot(scratch);
+              assert.notEqual(result.status, 0, `${site.name}(${badArg.shape}=${badArg.arg}): expected a non-zero exit, got 0`);
+              assert.match(
+                result.stderr,
+                new RegExp(`REFUSED project-root ${escapeRegExp(badArg.arg)}: ${escapeRegExp(EXPECTED_REASON_TEXT[badArg.shape])}`),
+                `${site.name}(${badArg.shape}=${badArg.arg}): expected a REFUSED project-root line naming the arg verbatim with reason "${EXPECTED_REASON_TEXT[badArg.shape]}", got: ${result.stderr}`
+              );
+              assert.deepEqual(
+                after,
+                before,
+                `${site.name}(${badArg.shape}=${badArg.arg}): expected no new entry in the scratch cwd, before: ${JSON.stringify(before)}, after: ${JSON.stringify(after)}`
+              );
+            } finally {
+              fs.rmSync(scratch, { recursive: true, force: true });
+            }
+          }),
+          { numRuns: SITE_SHAPE_PER_CELL_RUNS }
+        );
+      }
+    }
+    assertReachFloor(siteCoverage, SITES.map((s) => s.name), 1, 'site');
+    assertReachFloor(shapeCoverage, SHAPES, 1, 'shape');
+    assert.ok(draws >= SITE_SHAPE_CELL_COUNT);
   },
   SUBPROCESS_HEAVY_TIMEOUT_MS
 );
 
 const HARNESSES = SITES.filter((s) => s.isHarness);
+const HARNESS_PER_CELL_RUNS = runsPerCell(15, HARNESSES.length);
 
 test(
   'property (BL-1517 invariant 2): every harness invoked with NO argument refuses instead of defaulting to the process cwd, over repeated independent draws',
   () => {
     let draws = 0;
-    const seen = new Set();
-    fc.assert(
-      fc.property(fc.constantFrom(...HARNESSES), fc.integer({ min: 0, max: 999999 }), (harness, salt) => {
-        draws += 1;
-        seen.add(harness.name);
-        const scratch = mkScratchDir(`bl1517-noarg-${salt}-`);
-        try {
-          const result = spawnSync('bb', [harness.file], { cwd: scratch, encoding: 'utf8' });
-          assert.notEqual(result.status, 0, `${harness.name}: expected a non-zero exit on a bare invocation`);
-          assert.match(result.stderr, /REFUSED project-root/, `${harness.name}: expected a REFUSED line, got: ${result.stderr}`);
-          assert.equal(
-            fs.existsSync(path.join(scratch, '.swarmforge')),
-            false,
-            `${harness.name}: expected no .swarmforge created under the scratch cwd`
-          );
-        } finally {
-          fs.rmSync(scratch, { recursive: true, force: true });
-        }
-      }),
-      { numRuns: 15 }
-    );
-    assert.equal(seen.size, HARNESSES.length, `expected the generator to reach all three harnesses, reached: ${JSON.stringify([...seen])}`);
-    assert.ok(draws >= 9);
+    const harnessCoverage = {};
+    for (const harness of HARNESSES) {
+      fc.assert(
+        fc.property(fc.integer({ min: 0, max: 999999 }), (salt) => {
+          draws += 1;
+          harnessCoverage[harness.name] = (harnessCoverage[harness.name] || 0) + 1;
+          const scratch = mkScratchDir(`bl1517-noarg-${salt}-`);
+          try {
+            const result = spawnSync('bb', [harness.file], { cwd: scratch, encoding: 'utf8' });
+            assert.notEqual(result.status, 0, `${harness.name}: expected a non-zero exit on a bare invocation`);
+            assert.match(result.stderr, /REFUSED project-root/, `${harness.name}: expected a REFUSED line, got: ${result.stderr}`);
+            assert.equal(
+              fs.existsSync(path.join(scratch, '.swarmforge')),
+              false,
+              `${harness.name}: expected no .swarmforge created under the scratch cwd`
+            );
+          } finally {
+            fs.rmSync(scratch, { recursive: true, force: true });
+          }
+        }),
+        { numRuns: HARNESS_PER_CELL_RUNS }
+      );
+    }
+    assertReachFloor(harnessCoverage, HARNESSES.map((h) => h.name), 1, 'harness');
+    assert.ok(draws >= HARNESSES.length);
   },
   SUBPROCESS_HEAVY_TIMEOUT_MS
 );

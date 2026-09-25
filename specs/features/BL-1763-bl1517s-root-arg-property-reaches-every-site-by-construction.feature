@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-25T22:43:54.573909863Z","feature_name":"BL-1763 bl1517's root-arg property reaches every site by construction","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1763-bl1517s-root-arg-property-reaches-every-site-by-construction.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1763 bl1517's root-arg property reaches every site by construction
 
   extension/test/bl1517ProjectRootArgInvariants.property.test.js draws a
