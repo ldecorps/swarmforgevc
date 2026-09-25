@@ -1,4 +1,4 @@
-# INTAKE — DEFECT: onboarding a genuinely greenfield target hits two real gaps (broken survey-template prose, and no working path to an actual launch)
+# INTAKE — DEFECT: onboarding a genuinely greenfield target hits five real gaps, only found by actually reaching a live launch (broken survey-template prose, an incompatible bootstrapped engine, missing git-hooks wiring, the front desk's hardcoded dependency on a compiled VS Code extension, and Claude Code's own first-run trust dialog blocking headless panes)
 
 **Source:** the operator (Claude Code), while live-onboarding a real new
 target (`/home/carillon/gpu-bargain-hunter`) at the human's request,
@@ -113,6 +113,91 @@ correctly today — "No discernible use cases were found in this
 codebase." — proving the graceful-empty-case pattern already exists in
 this codebase; the contract and prompt derivations just don't use it.
 
+## Gap 3 — the bootstrapped upstream engine doesn't understand this project's own config vocabulary at all (worse than Gap 1 suggested)
+
+Copying `mono-router.conf` (this repo's own, confirmed generic) onto the
+self-installed upstream `swarmforge/scripts/` was not enough on its own.
+Launch refused with `Invalid config line 6: config
+active_backlog_max_depth 2` — a byte-for-byte-identical line to one this
+repo's own `swarmforge.conf` uses today (`config active_backlog_max_depth
+6`, `swarmforge/swarmforge.conf:16`).
+
+Cause, confirmed live: **this repo no longer has a `swarmforge.bb` at
+all** (`find . -iname swarmforge.bb` finds nothing outside
+`.worktrees/`) — its config-parsing logic was refactored years ago into
+`swarmforge.sh` plus a family of focused `.bb` scripts
+(`backlog_depth_cli.bb`, `promotion_gates_lib.bb`, etc.). The
+self-installed upstream `swarmforge.bb` (1,071 lines, fetched fresh from
+`unclebob/swarm-forge`) is a genuinely older, differently-shaped parser
+built for the Lieutenant/`projects/` paradigm (Gap 1) and does not
+recognize this project's own pipeline config keys at all — not a missing
+value, a different, incompatible engine.
+
+**What actually unblocked it:** deleting the bootstrapped
+`swarmforge/scripts/` entirely and replacing it with a full copy of this
+repo's own `swarmforge/scripts/` (used unmodified — the same tree this
+session already launched `full-forge` and `ollama-ista-iq3s-mono-router`
+with tonight). That surfaced a second, related gap immediately: this
+repo's own commit guards are wired via `core.hooksPath =
+swarmforge/git-hooks` (a tracked directory), never `.git/hooks/`
+directly — but the FIRST (vestigial) launch attempt had already installed
+a stray `.git/hooks/commit-msg` pointing at a script
+(`commit_msg_hook.bb`) that doesn't exist anywhere in this repo's own
+scripts, from an older hook-installation convention the bootstrapped
+`swarmforge.sh` apparently still uses. `swarmforge/git-hooks/` (4 files)
+also needs copying and `core.hooksPath` needs setting explicitly; nothing
+in the launch path does this for a fresh target today.
+
+## Gap 4 — the Telegram front desk hardcodes a dependency on a compiled VS Code extension
+
+`launch_front_desk.sh` (copied in unmodified with the rest of
+`swarmforge/scripts/`) resolves its bridge entrypoint as
+`"$ROOT/extension/out/tools/start-bridge-headless.js"` — `$ROOT` being
+the *target's own* project root. This is true for swarmforgevc because
+here the thing-being-built and the thing-running-the-swarm are the same
+repo; it is never true for an unrelated target. Launch failed cleanly
+(`bridge entrypoint not found ... run npm run compile in extension/`),
+and so did the Cursor Remote bridge for the identical reason.
+`gpu-bargain-hunter` is running with no Telegram monitoring and no
+`/rc` (remote-control-from-phone) as a direct result — a real gap given
+the whole point of provisioning this target's own dedicated bot
+(BL-380/381) was phone-based monitoring from launch.
+
+The onboarding CLIs this session used successfully throughout
+(`propose-onboarding-contract.js`, `provision-onboarding-telegram-channel.js`,
+etc.) are all run FROM swarmforgevc's own compiled `extension/out/tools/`,
+taking the target path as an argument — proving the pattern "swarmforgevc's
+compiled tools operate on a target path" already works. The front desk
+bridge itself has never been exercised that way; it assumes co-location.
+
+## Gap 5 — Claude Code's own first-run trust dialog blocks a headless pane, silently, on a genuinely new directory
+
+Not a `swarmforge` gap, but hit in the same session and worth recording
+here since it's part of the same "never exercised against a truly fresh
+directory tree" story: every Claude-agent pane in a brand-new
+`--dangerously-skip-permissions` launch first hits Claude Code's own
+one-time-per-directory "Is this a project you created or one you trust?"
+dialog, which that flag does **not** cover. Observed live: the
+`coordinator` pane sat silently stuck on it (status showed `UP`, looked
+healthy, was actually blocked on stdin); the `coder` pane's session
+**vanished entirely** — consistent with an unattended/empty input
+landing on the dialog's highlighted default, `❯ No, exit`, which exits
+the process and (with no `remain-on-exit`) closes the pane, so `coder`
+read as cleanly `DOWN` with no error to explain why.
+
+Trust state lives in `~/.claude.json`'s `projects` map
+(`hasTrustDialogAccepted: true` per absolute path) — every worktree
+swarmforgevc itself launches into is presumably already trusted from
+earlier sessions, which is why this has apparently never been hit before
+tonight. `swarm ensure`'s own repair pass, run after answering the
+coordinator's prompt by hand, respawned `coder` and — unexplained, worth
+someone confirming rather than assuming — it did *not* re-hit the
+dialog. If that was inherited trust from the already-answered root rather
+than a fluke, launching a target's `coordinator`/`master` pane first,
+answering its dialog, then bringing up the rest may already be a
+sufficient real-world fix; if it was a fluke, every fresh worktree needs
+its own answer.
+
 ## Ask
 
 1. Gap 1: make `./swarm <path> --pack mono-router` actually reach a
@@ -129,8 +214,28 @@ this codebase; the contract and prompt derivations just don't use it.
    the same graceful-empty-case handling `deriveUseCaseInventory` already
    has, for an empty `languages` array and a `layoutSummary` that's a full
    sentence rather than a short noun phrase.
+3. Gap 3: whatever Gap 1's fix installs, make sure the *engine*
+   (`swarmforge/scripts/`) it installs actually understands the config
+   vocabulary of whatever pack it ships alongside — a starter kit whose
+   pack and whose parser disagree fails exactly this way again. Also wire
+   `swarmforge/git-hooks/` + `core.hooksPath` for a fresh target (nothing
+   does today), and stop installing a stray `.git/hooks/commit-msg` that
+   points at a script the installed engine doesn't have.
+4. Gap 4: make the front desk (and Cursor Remote bridge) reachable for an
+   unrelated target — most likely by pointing them at swarmforgevc's own
+   compiled `extension/out/` via an explicit location rather than assuming
+   `$ROOT/extension/out/` exists, mirroring the pattern the onboarding
+   CLIs already use successfully (run from swarmforgevc, target path as an
+   argument).
+5. Gap 5: confirm whether trusting a target's root/`master` pane before
+   bringing up its worktree panes is a real, reliable fix, or a fluke —
+   then either document that ordering as part of the launch flow, or make
+   the launch pre-trust every pane path it's about to start (worktrees
+   included) the way the standing worktrees this repo already runs
+   presumably were, at some point, made to be.
 
-Draft acceptance (the specifier refines at mint; likely two tickets):
+Draft acceptance (the specifier refines at mint; likely five tickets, or
+fewer if some share a fix):
 
 ```gherkin
 Scenario: A target with nothing but a README reaches a real launch command
@@ -149,4 +254,24 @@ Scenario: An empty survey produces a real engineering.prompt
   When proposePromptsFromSurvey runs
   Then the generated engineering.prompt's Tech Stack section says
     plainly that no stack is chosen yet, never a truncated fragment
+
+Scenario: The installed engine understands the installed pack's config
+  Given a fresh target launched with a starter pack
+  When the pack's own config file is read at launch
+  Then every config line it contains is recognized, not refused
+
+Scenario: A fresh target's commits are guarded like every other target's
+  Given a fresh target launched for the first time
+  When a commit is made in it
+  Then the same commit guards swarmforgevc itself runs are enforced
+
+Scenario: The front desk reaches an unrelated target
+  Given a fresh, unrelated target with its own Telegram bot provisioned
+  When the front desk is launched for it
+  Then the bridge and bot start, with no extension/ of its own required
+
+Scenario: A fresh target's panes don't silently die on the trust dialog
+  Given a fresh target directory Claude Code has never seen
+  When its panes are launched non-interactively
+  Then no pane is blocked or exits on an unanswered trust dialog
 ```
