@@ -122,3 +122,5 @@ notes: |
   added here, both measured alone at mint, and QA got a holder note naming
   BL-1729. The acceptance pointer is unchanged (BL-1650's feature); the
   two new files serve BL-1108 and BL-1565, whose features stay green.
+
+assigned_to: coder
