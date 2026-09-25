@@ -1,5 +1,5 @@
 id: BL-1732
-title: "A standing Telegram forum topic 'Intake' (principal-only) opens a Mini App form: a narrative 'As <actor> / I want to <action> / So I can <goal>' whose three slots are dropdowns over a shared, seeded vocabulary (with add-new, shared only on Submit), one or more free-text Given/When/Then scenarios and optional notes; Submit writes an INTAKE file at the backlog root and the topic confirms it with the file's GitHub permalink"
+title: "A standing Telegram forum topic 'Intake' (principal-only) opens a Mini App form: a narrative 'As <actor> / I want to <action> / So I can <goal>' whose three slots are dropdowns over a shared, seeded vocabulary (with add-new, shared only on Submit), one or more free-text Given/When/Then scenarios, an optional 'any rule that should always hold?' note and optional notes; Submit writes an INTAKE file at the backlog root and the topic confirms it with the file's GitHub permalink"
 type: feature
 milestone: M8
 status: todo
@@ -83,6 +83,17 @@ source: |
   > 1: I want to be able to delete what I dont want from dropdown lists.
   > 2: qjulp at the back of the local llm slices
 
+  **Amendment 2026-09-25 (pre-implementation, no coder has claimed this
+  parcel yet).** The human, on the operator's own suggestion that "propose
+  an invariant from these scenarios" belongs to Verify (BL-1735) rather than
+  a mandatory field on a form that didn't exist yet, and on the operator's
+  offered alternative:
+
+  > Yes please add an optional section "any rule that should always hold?"
+
+  Folded into this slice rather than BL-1735, because it is a form field:
+  captured whether or not the draft is ever verified.
+
 description: |
   ## What is wanted
 
@@ -107,13 +118,20 @@ description: |
       vocabulary, each with "add new…". An added value is usable in this
       draft at once and joins the shared list only on Submit (answer 8);
     - one or more scenarios in free text (Given/When/Then, plus And/But);
+    - an optional "any rule that should always hold?" field, free text, one
+      or more lines (2026-09-25 amendment). It travels with the intake the
+      same way notes does; nothing derives from it or checks it in this
+      slice. Verify (BL-1735) proposing an invariant from the scenarios is
+      separate and unaffected: that arrives as a suggestion, this is what
+      the human chose to write down themselves;
     - an optional notes field (answer 7).
     One draft at a time in this slice; BL-1733 keeps several. The page
     never uses browser storage (Architecture rule 3; the header of
     `webUiFontSizePreference.ts`).
   - **Submit** writes `backlog/INTAKE-<slug>-<yyyymmdd>.md` at the backlog
     root. It holds "As <actor> / I want to <action> / So I can <goal>",
-    the scenarios and the notes. The file and the vocabulary update are
+    the scenarios, the rule field (when not blank) and the notes. The
+    file and the vocabulary update are
     committed together through `commit_integrity_cli.bb` (the front desk's
     own commit path, BL-1368; BL-415's `operator_file_question.bb` is the
     closest prior art). The topic then confirms with the file's GitHub
@@ -174,16 +192,20 @@ out_of_scope: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1732-the-intake-topic-opens-a-form-that-files-an-intake.feature`:
-     all ok (8 of 8).
+     all ok (10 of 10).
   2. Live, bridge and tunnel up: send any message in the Intake topic. The
      topic answers with the way into the form. Open the form at phone
      width: the three dropdowns offer the starter values.
-  3. Submit a draft with a narrative, one scenario and one new goal.
+  3. Submit a draft with a narrative, one scenario, one new goal, and the
+     rule field holding "an archived QA e2e intake is never promoted".
      Put "QA e2e test - retire on drain" in the notes field; the specifier
      archives that intake without minting.
      An INTAKE file appears at the backlog root in one commit with the
-     vocabulary update. The topic posts its permalink. A fresh draft offers
-     the new goal.
+     vocabulary update, holding the rule field's text. The topic posts its
+     permalink. A fresh draft offers the new goal.
+  3a. Submit a second draft with a narrative and one scenario, the rule
+      field left blank: the INTAKE file is written all the same, with no
+      rule section in it.
   4. `curl` the submit route without the control token: refused, and no
      file is written.
   5. With the tunnel stopped, ask the topic for the form: it says the form
@@ -195,3 +217,11 @@ qa_e2e_procedure: |
 notes: |
   Minted 2026-09-25 by the specifier from the backlog-root intake
   (queue-jump, human-approved by the jump request).
+  Amended 2026-09-25 (~07:59Z) by the operator session at the human's
+  direction: the optional "any rule that should always hold?" field
+  (source: amendment), scenarios 07-08, QA steps 1, 3 and 3a. Landed by the
+  specifier, which also tightened scenario 08 from "the INTAKE file is
+  written" (already proved by 04) to the description's "(when not blank)"
+  clause: a blank rule leaves no rule section. Both new scenarios reuse
+  04's Given. human_approval stays approved: the human asked for this
+  change. Still paused, unclaimed, so no holder needs a note.

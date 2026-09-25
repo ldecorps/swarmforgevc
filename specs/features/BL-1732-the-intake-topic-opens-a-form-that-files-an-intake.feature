@@ -7,9 +7,10 @@ Feature: BL-1732 The Intake topic opens a form that files an intake in the share
   shared vocabulary seeded with a starter list. Any slot can take a new
   value, which joins the shared list only when an intake using it is
   submitted. Below the narrative go one or more free-text Given/When/Then
-  scenarios and optional notes. Submit writes an INTAKE file at the backlog
-  root, the specifier's usual queue, and the topic confirms it with the
-  file's permalink.
+  scenarios, an optional "any rule that should always hold?" field and
+  optional notes. Submit writes an INTAKE file at the backlog root, the
+  specifier's usual queue, and the topic confirms it with the file's
+  permalink.
 
   Background:
     Given the shared vocabulary holds the starter list
@@ -56,3 +57,18 @@ Feature: BL-1732 The Intake topic opens a form that files an intake in the share
     When the draft is submitted without the bridge's device token
     Then the submit is refused
     And no INTAKE file is written
+
+  # BL-1732 a-written-rule-travels-with-the-intake-07
+  Scenario: a rule written in the optional field travels with the intake
+    Given a draft with a narrative and one scenario
+    And the draft's rule field holds "a submitted intake is never silently dropped"
+    When I submit the draft
+    Then the INTAKE file holds the rule "a submitted intake is never silently dropped"
+
+  # BL-1732 a-blank-rule-leaves-no-rule-section-08
+  Scenario: a blank rule field still files the intake, with no rule section
+    Given a draft with a narrative and one scenario
+    And the draft's rule field is blank
+    When I submit the draft
+    Then an INTAKE file holding the narrative and the scenario is at the backlog root
+    And the INTAKE file holds no rule section
