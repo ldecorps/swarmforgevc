@@ -59,19 +59,34 @@ description: |
     needs), proves the root with `rev-parse --git-common-dir`, and the test
     passes with every current assertion.
 
+  - (Amended 2026-09-25, coder@2's unowned-red note 000067, evidence
+    `backlog/evidence/BL-1728-unowned-red-bl906-20260925.md`.) The BL-906
+    feature this ticket's `acceptance:` points at has the same break in
+    its OWN step handler.
+    `specs/pipeline/steps/bl906OperatorBabysitterdFreshnessWatchdogSteps.js`
+    builds its fixture roots with a bare `fs.mkdtempSync` (prefixes
+    `bl906-op-` and `bl906-lc-`, lines ~108 and ~207). So 6 of its 10
+    scenarios fail with `REFUSED project-root ...: not inside a git
+    checkout`, and qa_e2e step 2 below could never pass. Those roots are
+    `git init`ed too, and proven by `rev-parse --git-common-dir` before
+    any git write (Guardrails, BL-1390), so the feature runs 10 of 10.
+    The feature file itself is not edited.
+
   ## Scope
-  - `swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh` only.
+  - `swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh`.
+  - `specs/pipeline/steps/bl906OperatorBabysitterdFreshnessWatchdogSteps.js`
+    (fixture roots only; amended 2026-09-25).
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `bash swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh`:
      exit 0, no REFUSED line.
   2. `node specs/pipeline/cli.js specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature`:
-     all ok.
-  3. `git diff main...HEAD --name-only` names only the test file and
-     evidence.
-  4. After landing: REGISTER_ROW_RETIRED for the test's row; resume
-     BL-1720's land.
+     all ok (10 of 10; 4 of 10 on main at the 2026-09-25 amendment).
+  3. `git diff main...HEAD --name-only` names only the test file, the
+     bl906 step handler and evidence.
+  4. After landing: REGISTER_ROW_RETIRED for both of this ticket's rows
+     (the shell test and the BL-906 feature); resume BL-1720's land.
 
 notes: |
   Minted 2026-09-24 by the specifier from QA's unowned-red note 003152
@@ -80,5 +95,11 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
   BL-1720.
+  2026-09-25: coder@2 (holding this parcel at the coder stage) raised
+  unowned-red note 000067: the BL-906 feature's own step handler has the
+  same BL-1517 fallout. This ticket owns it, because its acceptance pointer
+  IS that feature and could not pass otherwise. There is no new ticket.
+  Scope amended and an acceptance-lane register row added (owner BL-1728)
+  in the amendment commit. Note sent to coder@2 the same pass.
 
 assigned_to: coder@2
