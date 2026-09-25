@@ -1,0 +1,159 @@
+id: BL-1753
+title: "The night closing ceremony never starts a documenter session beside a mono-router resident - when rotate_to_role.sh refuses because the resident holds a parcel, the ceremony keeps asking for the rotate on every tick until the briefing's hard deadline and then takes BL-1641's deadline briefing path, instead of spawning the documenter through consult_spawn_cli.bb (ruling A, recommended; B forces the rotate)"
+milestone: M8
+type: defect
+severity: medium
+# medium: the ceremony's fallback breaks the pack's one-resident definition
+# whenever a router pack runs at bedtime with the resident mid-parcel; this
+# repo's night runs full-forge, so no live exposure here today. Not high:
+# nothing is degraded, and BL-1641 already guarantees a briefing at the
+# deadline.
+status: todo
+epic: local-llm-swarm
+priority: 11
+direction: human-directive
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript under Stryker - nightClosingCeremonyLive.ts (the pure
+# machine) and night-closing-ceremony-run.ts (the executor, which carries
+# first-run survivor debt owned by BL-1676). The change is small: drop one
+# fallback call, re-emit one action per tick.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1753-the-closing-ceremony-never-starts-a-documenter-beside-a-mono-router-resident.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1753CeremonyNeverStartsADocumenterSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+human_ruling: |
+  B - force the resident to documenter at the drain deadline, leaving its held parcel in_process for the next shift
+ruling_provenance: tapped
+approval_context: >
+  New feature file, and one real choice (the intake asked for it to come to
+  you with its trade-off). FIRM either way: the ceremony never starts a
+  documenter session beside the resident, and on a standing pack
+  (full-forge, this repo's nights) nothing changes. The choice is what the
+  ceremony does when the resident still holds a parcel after the drain
+  deadline. The feature file is written for A. If you pick B, I rewrite
+  scenarios 02 and 03 and re-pend it before it can be promoted.
+ruling_options:
+  - A - keep asking the resident to rotate on every tick until the hard deadline, then take BL-1641's deadline briefing path (recommended)
+  - B - force the resident to documenter at the drain deadline, leaving its held parcel in_process for the next shift
+ruling_tradeoffs:
+  - Pros - one resident always, and the resident's turn is never cut; the ceremony already drains new work, so the resident is usually free well before the deadline; if it is not, BL-1641 lands the documenter branch's own briefing or composes the headless banked one, so the morning still gets a briefing. Cons - on a night the resident stays busy to the deadline, the briefing is the thinner deadline one rather than a fresh documenter write-up. Recommended because it never interrupts work and the miss already has a built fallback.
+  - Pros - the documenter always writes the briefing itself, on time. Cons - the resident is pulled off its parcel mid-turn; whatever it had not committed stays uncommitted in its worktree overnight and the parcel waits in_process until the role comes back next shift, which is the half-finished-turn state the rotate refusal exists to prevent.
+
+invariants:
+  - "The ceremony never creates a tmux session and never runs consult_spawn_cli.bb, on any pack."
+  - "The recorded closing sequence names rotate-documenter at most once however many ticks re-ask for the rotate (BL-658's sequence scenarios stay green)."
+
+description: |
+  ## What is wrong
+
+  `rotateDocumenter` (`extension/src/tools/night-closing-ceremony-run.ts`,
+  around line 176) runs `rotate_to_role.sh documenter`. That refuses
+  whenever the resident holds a real in_process parcel (BL-805). On
+  refusal it calls `spawnConsultDocumenter`, which runs
+  `consult_spawn_cli.bb` and starts the documenter's full session beside
+  the resident, until the consult teardown sweep finds it idle. The
+  briefing is work, so on a mono-router pack that is a second resident.
+  The machine emits `rotate-documenter` once, on entering the briefing
+  phase (`nightClosingCeremonyLive.ts` `enterBriefing`), and
+  `advanceBriefing` never asks again.
+
+  ## What is wanted (ruling A)
+
+  1. `rotateDocumenter` never calls `spawnConsultDocumenter` (delete it
+     if nothing else calls it; `consult_spawn_cli.bb` itself stays - see 4).
+  2. While the briefing phase waits, and the rotation was requested but
+     the active role is not yet documenter, every tick re-asks for the
+     rotate. The sequence records `rotate-documenter` once (pushUnique).
+  3. At the hard deadline, BL-1641's path (`ensure-briefing`, the loud
+     `closing-briefing-missing`, `night-stop`) runs unchanged.
+  4. KEPT: `consult_spawn_cli.bb` and `test_consult_spawn_cli.sh` (BL-1710,
+     the approved on-demand Art Director, reuses that spawn), and the
+     consult teardown sweep. After this parcel the CLI has no caller until
+     BL-1710 lands. That is deliberate and recorded here; if BL-1710 is
+     ever retired, a removal slice follows.
+  5. Contracts move in this parcel (the intake's ask 4), census taken at
+     mint (`git grep -l -e rotateDocumenter -e spawnConsultDocumenter -e
+     rotate-documenter -e rotationRequested`):
+     - `extension/test/nightClosingCeremonyRotateDocumenterFallback.test.js`
+       runs the REAL `consult_spawn_cli.bb` and asserts a documenter
+       session is spawned. Rewrite it for the new fallback.
+     - BL-1593's landed feature reads that file: 02 (one `mkTmpDir`) and
+       04 (the file passes alone under the unit config). Keep the path
+       and one `mkTmpDir`, or note the specifier to retire the scenario
+       before deleting the file (BL-1006).
+     - `nightClosingCeremonyLive.test.js` and `nightClosingCeremonyRun.test.js`,
+       the property tests `bl1528…`, `bl1640…` and `bl1641…`, BL-658's
+       feature (its sequence strings), and the shell tests
+       `bl658_night_closing_ceremony_mutation_sweep.sh` and
+       `test_bl1393_one_ceremony_every_sleep.sh`: all stay green.
+     - BL-1549's ceremony scenarios were retired to a tombstone by the
+       specifier at mint.
+
+  ## If the human rules B instead
+
+  The specifier rewrites scenarios 02 and 03 before promotion: at the
+  drain deadline the ceremony forces the rotate (rotate_to_role.sh's
+  force path). The held parcel stays in_process, and no second session is
+  ever started (invariant 1 holds for both options).
+
+  ## How (direction, not mandate)
+
+  - The re-ask belongs in the pure machine (`advanceBriefing` emitting
+    `rotate-documenter` while `rotationRequested` and `activeRole !==
+    'documenter'`), so the unit and property lanes can pin it without a
+    fixture.
+  - The feature handler drives `runNightClosingCeremony` with injected
+    deps over a mkdtemp fixture (BL-1390), with a fake tmux recording
+    `new-session`; "consult_spawn_cli.bb is not run" reads a stub CLI's
+    call log in the fixture's scripts dir.
+  - The inert coordinator note `rotateDocumenter` sends after the fallback
+    ("BL-658: rotate resident to documenter") is the coder's call: keep,
+    or drop with a reason in evidence.
+
+  ## Scope
+
+  - `extension/src/tools/night-closing-ceremony-run.ts`,
+    `extension/src/quality/nightClosingCeremonyLive.ts`, their tests (above).
+  - New: `specs/pipeline/steps/bl1753CeremonyNeverStartsADocumenterSteps.js`.
+  - Docs: the ceremony's reference/how-to pages if they describe the
+    consult fallback (none found at mint).
+  - Out of scope: the chase (BL-1752), the question helper (BL-1754),
+    `consult_spawn_cli.bb`, the teardown sweep, BL-1641's deadline path.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). No live ceremony.
+  1. `node specs/pipeline/cli.js specs/features/BL-1753-the-closing-ceremony-never-starts-a-documenter-beside-a-mono-router-resident.feature`:
+     4 of 4.
+  2. BL-658's, BL-1593's and BL-1641's features: all scenarios ok.
+  3. Under `extension/`: `npx vitest run nightClosingCeremony` (the
+     live, run and fallback files) green, and the three ceremony property
+     files alone under the property config.
+  4. `git grep -n spawnConsultDocumenter -- extension/src` on the parcel
+     commit: no hit.
+  5. `git diff main...HEAD --name-only` names only the Scope files, tests,
+     docs and evidence.
+
+source: |
+  backlog/archive/INTAKE-mono-router-one-resident-questions-not-residents-20260925.md
+  (operator, via Claude Code, 2026-09-25, commit bd8cd60a50), ask 3. The
+  human, verbatim (Article 5.3):
+  > Yes, enforce 1 resident at any one time
+  > It's a basic rule of the monorouter, right? The central tenet. Mono router = 1 resident
+  > Having said that, an agent can spin an ephemeral other agent if it has a question for it. But that is not quite the same thing as installing a secondary resident.
+  The intake, on this ask: "Whether the ceremony waits for, or rotates,
+  the resident before stopping the swarm is a real choice: put it to the
+  human with the trade-off."
+
+notes: |
+  Minted 2026-09-25 by the specifier, same 1:N split as BL-1752 (ask 3).
+  Ledger row a27d082c2d (the ceremony's consult fallback) relinked from
+  BL-1549 to this ticket; human_decision stays null. Written for ruling A;
+  on a B ruling the specifier re-pends after rewriting scenarios 02-03,
+  and the coordinator does not promote until the feature matches the
+  ruling.
