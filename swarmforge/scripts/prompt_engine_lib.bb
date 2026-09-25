@@ -96,8 +96,14 @@
    ;; never handed the procedure in its own prompt. :parcel-driver marks
    ;; that capability; absence (every other agent) reads as false, same
    ;; shape as :acp.
+   ;; BL-1699: :paste-prompt-file, never :add-files-then-paste - an aider
+   ;; seat's launch line already loads its read-only role note via --read
+   ;; (swarmforge.sh), so no bootstrap step /adds the constitution,
+   ;; PIPELINE or the role prompt as an editable file (BL-1698's own "What
+   ;; is wrong": aider auto-adds every /add'd path as EDITABLE under
+   ;; --yes-always).
    "aider"   {:wake-style :shell-run-script
-              :bootstrap-style :add-files-then-paste
+              :bootstrap-style :paste-prompt-file
               :bootstrap-text-style :aider
               :startup-delay-ms 5000
               :parcel-driver true}
@@ -379,27 +385,42 @@
 (def aider-no-narration-suffix
   " Your entire reply must be one or more lines starting with `!` and nothing else — no explanation, no summary, no restating these instructions, no acknowledgement. If there is nothing to do right now, your entire reply must be exactly this one line: `! ")
 
-(defn aider-bootstrap-text [role draft coord-note]
+;; BL-1699 QA bounce D1 (2026-09-25): aider's own file-mention rule adds
+;; any reply WORD that exactly equals a tracked relative path, a
+;; directory prefix of one, or a swarmforge/scripts basename - the
+;; generic coord-note (coordinator-two-pack-note, shared with every other
+;; provider's bootstrap text) names "backlog/paused"/"backlog/active",
+;; and the coordinator prose below used to name "swarm" (the ./swarm
+;; launcher, a tracked file), "seat" (swarmforge/scripts/seat), and the
+;; bare directories "backlog"/"scripts" - all four real leaks. This
+;; sentence is aider's OWN path-free variant, never the shared coord-note.
+(defn- aider-coordinator-two-pack-note [two-pack?]
+  (when two-pack?
+    " This pack has no specifier: promote paused tickets into the active queue (respecting the configured depth cap), then send task handoffs directly to coder."))
+
+(defn aider-bootstrap-text
+  "BL-1699: no repository path, no swarmforge/scripts basename, and no
+   'reply with `!`' instruction (BL-1696 already established aider never
+   runs a model's `!` line, so the old instruction was inert). The seat's
+   launch line already loaded a short read-only role note via --read
+   (swarmforge.sh); this text only orients the model, never names where
+   anything lives. A driver-backed role (every non-coordinator role today)
+   is instructed and gated externally, one turn at a time, by
+   local_parcel_driver_lib.bb - this text never tells it to run anything
+   itself."
+  [role two-pack?]
   (if (= role "coordinator")
-    (str "You are the SwarmForge coordinator in aider." coord-note
-         " You are an ORCHESTRATOR ONLY — read swarmforge/roles/coordinator.prompt and obey it. "
-         "Your job: inspect .swarmforge/ and backlog/, route parcels with swarm_handoff.sh, chase stalls, control intake. "
-         "NEVER edit production code, tests, or swarmforge/scripts; NEVER commit domain or infrastructure changes yourself — that is coder/cleaner work. "
-         "Do not rewrite ready_for_next.sh, handoffd, or other pipeline machinery unless a human explicitly ordered it. "
-         "You may read any file; you CANNOT apply edits or commit - this seat runs aider with --dry-run and --no-auto-commits, so an edit block you emit is discarded, never written. "
-         "Write a handoff draft with a shell command instead, e.g. `! printf 'type: note\\nto: coder\\npriority: 50\\nmessage: ...\\n' > " draft "`, then `! swarmforge/scripts/swarm_handoff.sh " draft "`. "
-         "Ticket moves go through the helpers that commit for you (promote_and_route_next.sh, commit_integrity_cli.bb); never `git commit` yourself. "
-         "Then run `" ready-script-rel-path "` once and wait for wake-ups. "
-         "No self-scheduled polling (/loop, cron, or \"check again in N minutes\")."
-         aider-no-narration-suffix ready-script-rel-path "`")
+    (str "You are the SwarmForge coordinator in aider." (aider-coordinator-two-pack-note two-pack?)
+         " You are an ORCHESTRATOR ONLY, following the read-only note you were given. "
+         "Your job: inspect the pipeline's current state, route parcels, chase stalls, control ticket intake. "
+         "NEVER edit production code, tests, or infrastructure tooling; NEVER commit domain or infrastructure changes yourself — that is coder/cleaner work. "
+         "Do not rewrite pipeline machinery unless a human explicitly ordered it. "
+         "You may read any file; you CANNOT apply edits or commit - this aider session runs with --dry-run and --no-auto-commits, so an edit block you emit is discarded, never written. "
+         "Instructions arrive one at a time in this chat; apply only what the current one asks for, then wait for the next one.")
     (str "You are the SwarmForge " role " agent running in aider with full repository read and write access. "
          "Never claim you cannot read or edit files — that is what aider does. "
-         "The files just added are your constitution, pipeline, and role instructions. Read each one completely. "
-         "For constitution.prompt and swarmforge/roles/" role ".prompt, also read every file they reference recursively, and obey all instructions. "
-         "Handoff drafts: " draft ". "
-         "Then run `" ready-script-rel-path "` once and wait for work. "
-         "Do not self-schedule polling (/loop, cron, or \"check again in N minutes\")."
-         aider-no-narration-suffix ready-script-rel-path "`")))
+         "Follow the read-only role note you were given. "
+         "Instructions arrive one at a time in this chat; apply only what the current one asks for, then wait for the next one.")))
 
 (defn generic-bootstrap-text
   "fragment-cache-atom/content-fn (BL-574 Slice 2): the role and pack-overlay
@@ -476,7 +497,7 @@
                        (when two-pack?
                          " This pack has no specifier: promote items from backlog/paused into backlog/active (respect active_backlog_max_depth), then send task handoffs directly to coder."))
         body (case style
-               :aider (aider-bootstrap-text role draft coord-note)
+               :aider (aider-bootstrap-text role two-pack?)
                :mock (mock-bootstrap-text role)
                (generic-bootstrap-text role draft two-pack? overlay? overlay-prompt
                                        fragment-cache-atom fragment-content-fn))

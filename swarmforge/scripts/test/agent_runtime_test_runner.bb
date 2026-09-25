@@ -100,15 +100,25 @@
 (assert-true "claude bootstrap is empty (launch embeds prompt)"
              (empty? (agent-runtime-lib/bootstrap-steps "claude" "coder")))
 
+;; BL-1699: an aider seat's chat starts with its role note loaded read-only
+;; on the LAUNCH LINE (swarmforge.sh's own --read flag, not a bootstrap
+;; step), so bootstrap-steps for aider carries no :send-literal op at all -
+;; :paste-prompt-file is sleep, paste the composed prompt file, submit.
+;; Before this ticket aider used :add-files-then-paste, which /add'd the
+;; constitution/PIPELINE/role prompt (and, under two-pack?, the two-pack
+;; overlay prompt path) as EDITABLE files before pasting - exactly the
+;; hazard BL-1698/BL-1699's own "What is wrong" describes; that shape no
+;; longer exists for aider and must not silently come back.
 (let [aider-steps (agent-runtime-lib/bootstrap-steps "aider" "coder"
                                                      :two-pack? true
                                                      :prompt-file "/tmp/prompt.md")
       ops (step-ops aider-steps)]
   (assert= "aider bootstrap starts with sleep" :sleep (first ops))
-  (assert-true "aider bootstrap includes /add"
-               (some #(str/includes? (:text %) "/add") (filter #(= :send-literal (:op %)) aider-steps)))
-  (assert-true "aider bootstrap includes two-pack prompt in /add"
-               (some #(str/includes? (:text %) "two-pack.prompt") (filter #(= :send-literal (:op %)) aider-steps)))
+  (assert= "aider bootstrap is sleep/paste-file/submit only - no :add, no :send-literal"
+           [:sleep :paste-file :submit]
+           ops)
+  (assert-true "aider bootstrap has no /add step even under two-pack?"
+               (not-any? #(and (= :send-literal (:op %)) (str/includes? (:text %) "/add")) aider-steps))
   (assert-true "aider bootstrap pastes prompt file"
                (some #(= "/tmp/prompt.md" (:path %)) (filter #(= :paste-file (:op %)) aider-steps))))
 
@@ -132,9 +142,14 @@
              (str/includes? (agent-runtime-lib/bootstrap-text "aider" "coordinator" :two-pack? true)
                             "ORCHESTRATOR ONLY"))
 
-(assert-true "aider coordinator mentions runtime draft path"
-             (str/includes? (agent-runtime-lib/bootstrap-text "aider" "coordinator")
-                            "swarmforge/runtime/handoff-draft.txt"))
+;; BL-1699 invariant 1: no repo path anywhere in an aider seat's bootstrap
+;; text, including the pre-ticket draft-path mention this coordinator text
+;; used to carry (the seat's launch line already loads its read-only role
+;; note via --read; this text only orients the model, never names where
+;; anything lives).
+(assert-true "aider coordinator no longer names the runtime draft path"
+             (not (str/includes? (agent-runtime-lib/bootstrap-text "aider" "coordinator")
+                                 "swarmforge/runtime/handoff-draft.txt")))
 
 ;; ── BL-519: inlined stable prefix, not runtime Read instructions ──────────
 (assert-true "claude coder text inlines the constitution instead of instructing a Read"

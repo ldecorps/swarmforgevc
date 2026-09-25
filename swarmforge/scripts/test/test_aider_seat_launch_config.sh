@@ -74,15 +74,102 @@ grep -qF -- "--yes-always --no-detect-urls" "$LAUNCH" \
   || fail "05: existing aider flags must be preserved"
 pass "05: existing --yes-always --no-detect-urls preserved"
 
+ROOT_NOTES="$(mk_root)"
+mkdir -p "$ROOT_NOTES/swarmforge/roles/aider"
+printf 'coder note\n' > "$ROOT_NOTES/swarmforge/roles/aider/coder.note"
+printf 'generic note\n' > "$ROOT_NOTES/swarmforge/roles/aider/generic.note"
+printf 'QA role prompt\n' > "$ROOT_NOTES/swarmforge/roles/QA.prompt"
+cat > "$ROOT_NOTES/swarmforge/swarmforge.conf" <<'EOF'
+config aider_timeout_seconds 90
+window coder aider coder --model openai/qwen2.5-coder:latest --openai-api-base http://127.0.0.1:11434/v1 --no-gitignore
+window QA aider QA --model openai/qwen2.5-coder:latest --openai-api-base http://127.0.0.1:11434/v1 --no-gitignore
+EOF
+zsh -c "source '$SWARMFORGE_SH' '$ROOT_NOTES'; parse_config; $index_of_role_snippet write_role_launch_script \"\$(index_of_role coder)\"; write_role_launch_script \"\$(index_of_role QA)\""
+LAUNCH_CODER_NOTES="$ROOT_NOTES/.swarmforge/launch/coder.sh"
+LAUNCH_QA_NOTES="$ROOT_NOTES/.swarmforge/launch/QA.sh"
+[[ -f "$LAUNCH_CODER_NOTES" && -f "$LAUNCH_QA_NOTES" ]] || fail "07: coder/QA launch scripts were not written"
+
+grep -qF -- "--read '$ROOT_NOTES/swarmforge/roles/aider/coder.note'" "$LAUNCH_CODER_NOTES" \
+  || fail "07: a coder aider seat must --read its own role note when one exists"
+pass "07: coder aider seat reads its own role note"
+
+grep -qF -- "--read '$ROOT_NOTES/swarmforge/roles/aider/generic.note'" "$LAUNCH_QA_NOTES" \
+  || fail "08: a QA aider seat with no QA.note must --read the generic note"
+pass "08: aider seat with no role-specific note falls back to the generic note"
+
+grep -qF -- "--test-cmd 'swarmforge/scripts/seat test' --auto-test" "$LAUNCH_CODER_NOTES" \
+  || fail "09: a coder aider seat must run aider's own test loop"
+pass "09: coder aider seat gets --test-cmd/--auto-test"
+
+grep -qE -- '--test-cmd|--auto-test' "$LAUNCH_QA_NOTES" \
+  && fail "10: a non-coder aider seat must not get the test loop flags"
+pass "10: non-coder aider seat has no test loop flags"
+
+grep -qF -- "--timeout 90" "$LAUNCH_CODER_NOTES" \
+  || fail "11: config aider_timeout_seconds must become --timeout on the coder seat"
+grep -qF -- "--timeout 90" "$LAUNCH_QA_NOTES" \
+  || fail "11: config aider_timeout_seconds must become --timeout on every aider seat"
+pass "11: aider_timeout_seconds becomes --timeout on every aider launch line"
+
 ROOT_CLAUDE="$(mk_root)"
 cat > "$ROOT_CLAUDE/swarmforge/swarmforge.conf" <<'EOF'
 window coder claude coder --model claude-haiku-4-5-20251001 --dangerously-skip-permissions --effort low
 EOF
 zsh -c "source '$SWARMFORGE_SH' '$ROOT_CLAUDE'; parse_config; $index_of_role_snippet write_role_launch_script \"\$(index_of_role coder)\""
 LAUNCH_CLAUDE="$ROOT_CLAUDE/.swarmforge/launch/coder.sh"
-[[ -f "$LAUNCH_CLAUDE" ]] || fail "06: claude coder launch script was not written"
+[[ -f "$LAUNCH_CLAUDE" ]] || fail "12: claude coder launch script was not written"
 grep -qE -- "--model-settings-file|--model-metadata-file|--llm-history-file|aider-llm-history" "$LAUNCH_CLAUDE" \
-  && fail "06: aider-only flags must not leak into a non-aider seat"
-pass "06: non-aider seats are untouched"
+  && fail "12: aider-only flags must not leak into a non-aider seat"
+grep -qE -- "aider/coder\.note|aider/generic\.note|--read '|--test-cmd|--auto-test|--timeout " "$LAUNCH_CLAUDE" \
+  && fail "12: BL-1699's aider-only flags (--read/--test-cmd/--auto-test/--timeout) must not leak into a non-aider seat"
+pass "12: non-aider seats are untouched"
+
+# ── 13: `seat test` runs UNSCOPED (no SEAT_TICKET/SEAT_ACCEPTANCE) when
+# aider's own --auto-test loop calls it directly and there is no BL-1697
+# driver record for the seat - requirement 4's own negative case, never
+# exercised by the acceptance feature's scenario 05 (which only covers the
+# "has a record" path). A real throwaway git checkout carrying the real
+# `seat` + local_parcel_driver_cli.bb/lib.bb closure (BL-1699's own
+# acceptance step handler convention), never a re-implementation of the
+# fallback logic. ────────────────────────────────────────────────────────
+DRIVER_CLOSURE_FILES=(
+  seat
+  backlog_depth_conf_path_cli.bb
+  backlog_depth_lib.bb
+  swarm_identity_lib.bb
+  daemon_cycle_guard_lib.bb
+  local_parcel_driver_cli.bb
+  local_parcel_driver_lib.bb
+  agent_runtime_inject.bb
+  required_stages_lib.bb
+  agent_runtime_lib.bb
+  prompt_engine_lib.bb
+)
+ROOT13="$(mktemp -d)"
+register_tmp_dir "$ROOT13"
+mkdir -p "$ROOT13/swarmforge/scripts" "$ROOT13/.swarmforge/local-driver"
+git -C "$ROOT13" init -q -b main
+git -C "$ROOT13" config user.email "bl1699-fixture@example.test"
+git -C "$ROOT13" config user.name "BL-1699 Fixture"
+for f in "${DRIVER_CLOSURE_FILES[@]}"; do
+  cp "$SCRIPT_DIR/../$f" "$ROOT13/swarmforge/scripts/$f"
+  chmod --reference="$SCRIPT_DIR/../$f" "$ROOT13/swarmforge/scripts/$f" 2>/dev/null || chmod +x "$ROOT13/swarmforge/scripts/$f"
+done
+LOG13="$ROOT13/seat-test-env.log"
+printf "config seat_test_command printf 'TICKET=[%%s] ACCEPTANCE=[%%s]\\\\n' \"\$SEAT_TICKET\" \"\$SEAT_ACCEPTANCE\" > '%s'\n" "$LOG13" \
+  > "$ROOT13/swarmforge/swarmforge.conf"
+printf 'seat-test-env.log\n' > "$ROOT13/.gitignore"
+git -C "$ROOT13" add -A
+git -C "$ROOT13" commit -q -m seed
+# No .swarmforge/local-driver/coder.json is ever written - "no record".
+(
+  cd "$ROOT13" \
+    && env -u SEAT_TICKET -u SEAT_ACCEPTANCE SWARMFORGE_ROLE=coder PACK_STAFFING_SKIP_GATE=1 \
+       bash "$ROOT13/swarmforge/scripts/seat" test
+) || fail "13: seat test (no driver record) must still exit 0 and run the command unscoped"
+[[ -f "$LOG13" ]] || fail "13: seat_test_command never ran"
+grep -qF -- "TICKET=[] ACCEPTANCE=[]" "$LOG13" \
+  || fail "13: expected seat test to run with SEAT_TICKET/SEAT_ACCEPTANCE unset (BL-1696's original unscoped behaviour), got: $(cat "$LOG13")"
+pass "13: seat test with no driver record runs unscoped, exactly BL-1696's original behaviour"
 
 echo "ALL PASS"

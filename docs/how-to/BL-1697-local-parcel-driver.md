@@ -26,6 +26,44 @@ does not drive — is untouched: it keeps receiving handoffd's ordinary
 new-mail wake, chase poke and in-process-resume injections exactly as
 before.
 
+## What an aider seat receives at launch (BL-1699)
+
+No pipeline script — editable, read-only, or merely named — ever reaches
+an aider seat's chat. Four pieces on the launch line and bootstrap text,
+all in `swarmforge.sh`'s `aider` launch branch and
+`prompt_engine_lib.bb`'s `aider-bootstrap-text`:
+
+- **Role note, `--read`.** `swarmforge/roles/aider/<role>.note` — a few
+  plain-language lines (this slice ships `coder.note`; every other role
+  falls back to `generic.note`) — loads via `--read`, not `/add`: the
+  model can see it but never edit it. No bootstrap step `/add`s the
+  constitution, `PIPELINE.md`, or a role prompt for an aider seat (the
+  old shape blew an 8k-token Ollama context window with files the seat
+  never needed to see in full).
+- **Bootstrap text names no path.** `aider-bootstrap-text` no longer
+  mentions `ready_for_next.sh`, the handoff draft path, or any other
+  repository path or `swarmforge/scripts` basename — aider auto-`/add`s
+  every path a reply merely names, so naming one there made it an
+  editable file with auto-commit on. It also drops the old "reply with
+  `!`" instruction: aider never runs a model's `!` line (BL-1696), so
+  that instruction was always inert.
+- **Coder-only test loop.** Only a `coder`-role seat (its base role,
+  stripped of a `@N` suffix) gets `--test-cmd 'swarmforge/scripts/seat
+  test' --auto-test` on its launch line; every other aider role gets
+  neither flag. When aider's own test loop invokes `seat test` this way,
+  `SEAT_TICKET`/`SEAT_ACCEPTANCE` are not set in the environment (aider
+  never sets them) — `seat` then reads this seat's own BL-1697 driver
+  record for its running ticket and acceptance path; with no record (or
+  no ticket in it yet), `seat test` runs unscoped, exactly as BL-1696
+  left it.
+- **Timeout.** A pack's `config aider_timeout_seconds <n>` becomes
+  `--timeout <n>` on every aider launch line, any role; absent, no flag
+  (aider's own default applies).
+
+Claude seats' launch lines and bootstrap texts are untouched — this is an
+aider-only change, gated the same way every driver-seat behaviour is:
+by capability, never by a provider-name check sprinkled at each call site.
+
 ## What handoffd does differently for a driver seat
 
 `handoffd.bb` runs `local-parcel-driver-sweep!` every cycle, advancing
@@ -95,7 +133,6 @@ file, independent of the Claude `coder`'s).
   driving `note` parcels — all BL-1698.
 - **Non-`coder` roles on a driver seat** — deferred to the BL-1702
   pack-shape ruling.
-- **aider launch flags and bootstrap text** — BL-1699.
 - Any Claude seat or pack — entirely untouched (capability-gated, never a
   provider-name check).
 
@@ -108,4 +145,5 @@ file, independent of the Claude `coder`'s).
 | `docs/diagrams/handoff-flow.mmd` | The driver-seat per-tick loop, diagrammed alongside the ordinary handoff mechanism |
 
 Acceptance:
-`specs/features/BL-1697-the-local-parcel-driver-moves-a-coder-parcel-through-a-local-aider-seat.feature`.
+`specs/features/BL-1697-the-local-parcel-driver-moves-a-coder-parcel-through-a-local-aider-seat.feature`,
+`specs/features/BL-1699-aider-seats-launch-with-a-short-role-note-no-repo-paths-and-the-seat-test-loop.feature`.

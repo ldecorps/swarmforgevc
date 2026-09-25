@@ -174,8 +174,8 @@ USE YOUR TOOLS NOW. Re-printing the task or chatting without edits is failure.")
 ;; :bootstrap-text-style, never the provider name - registering a new
 ;; provider under :bootstrap-text-style :generic needs no new text-builder
 ;; at all; only wording as genuinely novel as aider's needs one of these.
-(defn aider-bootstrap-text [role draft coord-note]
-  (prompt-engine-lib/aider-bootstrap-text role draft coord-note))
+(defn aider-bootstrap-text [role two-pack?]
+  (prompt-engine-lib/aider-bootstrap-text role two-pack?))
 
 (defn generic-bootstrap-text [role draft two-pack? overlay? overlay-prompt]
   ;; BL-574: PromptEngine's generic-bootstrap-text now takes a fragment-cache

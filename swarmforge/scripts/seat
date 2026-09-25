@@ -221,6 +221,18 @@ case "$verb" in
       echo "seat: no seat test command is configured" >&2
       exit 2
     fi
+    # BL-1699 requirement 4: aider's own --auto-test loop calls `seat test`
+    # directly, never through the driver's seat-test! (which sets these two
+    # vars itself) - so when neither is already set, fall back to this
+    # seat's own BL-1697 driver record. No record (or no ticket in it yet)
+    # leaves $cmd to run unscoped, exactly BL-1696's original behaviour.
+    if [[ -z "${SEAT_TICKET:-}" && -z "${SEAT_ACCEPTANCE:-}" ]] && command -v bb >/dev/null 2>&1; then
+      scope_out="$(bb "$S/local_parcel_driver_cli.bb" test-scope "$project_root" "$role" 2>/dev/null)" && {
+        SEAT_TICKET="$(printf '%s\n' "$scope_out" | sed -n 's/^SEAT_TICKET=//p')"
+        SEAT_ACCEPTANCE="$(printf '%s\n' "$scope_out" | sed -n 's/^SEAT_ACCEPTANCE=//p')"
+        export SEAT_TICKET SEAT_ACCEPTANCE
+      }
+    fi
     cd "$root" && exec bash -c "$cmd"
     ;;
 esac

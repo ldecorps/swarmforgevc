@@ -1,6 +1,6 @@
 # `seat` — a local aider seat's whole command vocabulary (BL-1696)
 
-**Last Updated:** 2026-09-24
+**Last Updated:** 2026-09-25
 
 ## What it is
 
@@ -42,7 +42,7 @@ no default role.
 | `note <role> <NN> "<text>"` | writes a `note` draft (`to`, `priority`, `message`, message ≤80 chars) and runs `swarm_handoff.sh` on it | passthrough |
 | `handoff <role> BL-<n>` | writes a `git_handoff` draft (task `BL-<n>`, commit = the checkout's 10-hex HEAD, priority `50`) and queues it through the two-call self-audit protocol (Article 2.3, BL-1529) | passthrough, or 2 if the audit challenge repeats on an identical draft |
 | `merge <from-role> <sha>` | `git merge --no-ff --no-edit <sha>`; on conflict, prints the conflicted paths and runs `git merge --abort` | 0, or 3 on conflict (aborted) |
-| `test` | the live pack's declared `seat_test_command` (from the effective pack conf, resolved the way `active_backlog_max_depth` is); refuses if none is configured | passthrough, or 2 if unconfigured |
+| `test` | the live pack's declared `seat_test_command` (from the effective pack conf, resolved the way `active_backlog_max_depth` is); refuses if none is configured. When `SEAT_TICKET`/`SEAT_ACCEPTANCE` are both unset (aider's own `--auto-test` loop calls this with neither set), scopes them from this seat's own BL-1697 driver record (`local_parcel_driver_cli.bb test-scope`, BL-1699 requirement 4) when one exists naming a ticket; runs unscoped otherwise, exactly BL-1696's original behaviour | passthrough, or 2 if unconfigured |
 
 A refused invocation always prints a usage line and exits **2**, with
 nothing run and the tree unchanged. An unknown verb's usage line lists the
@@ -88,7 +88,9 @@ model may ever need to type.
 
 ## Out of scope here
 
-The local parcel driver that calls `seat` (BL-1697), aider launch and
-bootstrap text (BL-1699), and any change to Claude seats or packs.
+The local parcel driver that calls `seat` (BL-1697), and any change to
+Claude seats or packs. Aider launch and bootstrap text (BL-1699) is
+documented in
+[BL-1697's how-to](../how-to/BL-1697-local-parcel-driver.md#what-an-aider-seat-receives-at-launch-bl-1699).
 
 See also: [Non-Pipeline Agents — Reference Table](BL-643-non-pipeline-agents-reference-table.md).

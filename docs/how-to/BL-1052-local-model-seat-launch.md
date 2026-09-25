@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-09-24
+Last Updated: 2026-09-25
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -12,7 +12,7 @@ is [BL-1053](./BL-1053-route-work-to-a-local-model-seat.md).
 | | |
 |---|---|
 | **This pack** | `swarmforge/packs/local-model-mono-router.conf` — agent token `local-model`, shell-capable, model id on the window line |
-| **Not this pack** | `qwen-mono-router.conf` — agent `aider`, file-editor shape, no autonomous shell. Keep both; pick by what the seat must **do**, not by the model catalog they may share |
+| **Not this pack** | `qwen-mono-router.conf` — agent `aider`, file-editor shape, no autonomous shell. Keep both; pick by what the seat must **do**, not by the model catalog they may share. What an aider seat receives at launch: [BL-1697's how-to](./BL-1697-local-parcel-driver.md#what-an-aider-seat-receives-at-launch-bl-1699) |
 | **First-quest binary** | `qwen` from `@qwen-code/qwen-code` (OpenAI-compat auth against loopback). The agent **token** stays `local-model`; babysitter/`./swarm ensure` look for argv needle `qwen` via `agent_process_marker_lib.bb` |
 | **Not the old qwen-code seat** | The withdrawn `qwen-code-mono-router` / Token Plan cloud path was superseded; see `backlog/evidence/BL-1052-BL-1053-supersede-disposition-20260823.md` |
 

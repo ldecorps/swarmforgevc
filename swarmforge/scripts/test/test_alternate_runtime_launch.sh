@@ -196,8 +196,10 @@ grep -q "ORCHESTRATOR ONLY" "$PROMPT7" \
   || fail "07: aider coordinator prompt must forbid coding, got: $(cat "$PROMPT7")"
 grep -q "no specifier" "$PROMPT7" \
   || fail "07: two-pack coordinator prompt must note direct-to-coder routing"
+# BL-1699 invariant 1: no repo path anywhere in an aider seat's bootstrap
+# text - the pre-ticket draft-path mention is gone, not just relocated.
 grep -q "swarmforge/runtime/handoff-draft.txt" "$PROMPT7" \
-  || fail "07: coordinator prompt must use runtime handoff draft path"
+  && fail "07: BL-1699 removed the runtime draft path from aider bootstrap text; it must not come back"
 pass "07: aider coordinator gets orchestration-only two-pack bootstrap"
 
 # ── 8: gemini agent launch body + GEMINI_API_KEY via -e (BL-130), never on disk ─

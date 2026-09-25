@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-25T19:25:48.948501858Z","feature_name":"BL-1699 aider seats launch with a short role note, no repo paths and the seat test loop","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1699-aider-seats-launch-with-a-short-role-note-no-repo-paths-and-the-seat-test-loop.feature","background_hash":"f2ded7f33a71ada4b171f5547fd7e1adc14314a3e5bfe9290b061bef63403fd7","implementation_hash":"unknown","scenarios":[{"index":2,"name":"only a coder aider seat runs aider's test loop through the seat test verb","scenario_hash":"ba59dbba3e0aa7c369484affc7b6c639c2cb23ec1b9c20858f31eb170342d64e","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-25T19:25:48.948501858Z"},{"index":3,"name":"the pack's aider timeout reaches the launch line only when it is declared","scenario_hash":"f264deabe908247d6af963ea7db75346699c1bec90b2144d9bf09b1145911a69","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-25T19:25:48.948501858Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1699 aider seats launch with a short role note, no repo paths and the seat test loop
 
   aider auto-adds every repo path a message mentions, so today's

@@ -250,6 +250,19 @@
 (defn seat-test! [checkout role ticket acceptance-path]
   (seat! checkout role ["test"] {"SEAT_TICKET" ticket "SEAT_ACCEPTANCE" acceptance-path}))
 
+(defn driver-test-scope
+  "BL-1699 requirement 4: what `seat test` should scope to when aider's OWN
+   --auto-test loop calls it directly - never through seat-test! above, so
+   SEAT_TICKET/SEAT_ACCEPTANCE are never set in that caller's environment.
+   Reads this seat's own BL-1697 driver record (the same one resume/hold
+   read) for :ticket/:acceptancePath. nil when there is no record, or the
+   record names no ticket yet (pre-merge/mechanical-mail phases) - the
+   caller then runs unscoped, exactly BL-1696's original behaviour."
+  [project-root seat-id]
+  (let [{:keys [ticket acceptancePath]} (read-driver-state project-root seat-id)]
+    (when (and ticket acceptancePath)
+      {:ticket ticket :acceptancePath acceptancePath})))
+
 ;; ── Impure: read-only file protection - advisory `/read-only` in the
 ;; chat is auto-accepted under --yes-always (BL-1696/BL-1697's own "What
 ;; is wrong"), so the real protection is the filesystem permission; both

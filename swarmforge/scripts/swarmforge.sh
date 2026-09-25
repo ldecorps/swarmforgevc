@@ -315,6 +315,10 @@ REMOTE_CONTROL_DEFAULT=1
 # The coordinator (always provisioned separately, BL-243) is never
 # affected by this - see is_sequential_dormant.
 ROTATION_MODE=""
+# BL-1699: `config aider_timeout_seconds <n>` becomes `--timeout <n>` on
+# every aider launch line (any role); absent, no flag (aider's own
+# default applies). Empty string means "no flag", never a stray one.
+AIDER_TIMEOUT_SECONDS=""
 if [[ "${SWARMFORGE_REMOTE_CONTROL:-}" == "0" ]]; then
   REMOTE_CONTROL_DEFAULT=0
 fi
@@ -849,6 +853,13 @@ parse_config() {
               exit 1
               ;;
           esac
+          ;;
+        aider_timeout_seconds)
+          if [[ -z "${fields[3]:-}" || ! "${fields[3]}" =~ ^[0-9]+$ ]]; then
+            error_msg "Invalid config line $line_no: aider_timeout_seconds requires a positive integer"
+            exit 1
+          fi
+          AIDER_TIMEOUT_SECONDS="${fields[3]}"
           ;;
       esac
       continue
@@ -1957,7 +1968,36 @@ RESUMECHECK
       # path (aider skips a missing one silently). --llm-history-file records
       # every request per role so seat prompts can be measured and replayed.
       local aider_history_dir="$STATE_DIR/aider-llm-history"
-      launch_body=$'export BROWSER="${BROWSER:-/usr/bin/true}"\n'"mkdir -p '$aider_history_dir'"$'\naider'"${extra_cli:+ $extra_cli}"" --yes-always --no-detect-urls --model-settings-file '$WORKING_DIR/.aider.model.settings.yml' --model-metadata-file '$WORKING_DIR/.aider.model.metadata.json' --llm-history-file '$aider_history_dir/${role}.log'"
+      # BL-1699 requirement 1: a short read-only role note replaces the old
+      # /add of constitution.prompt/PIPELINE.md/the role prompt (aider
+      # auto-adds every /add'd path as an EDITABLE file under --yes-always -
+      # BL-1698's own "What is wrong"). The base role (seat suffix, e.g.
+      # "coder@2", stripped) picks the note; a role with none written yet
+      # gets the generic one. Loaded via --read so aider can see it without
+      # being able to edit or auto-commit it.
+      local aider_base_role="${role%%@*}"
+      local aider_note_file="$WORKING_DIR/swarmforge/roles/aider/${aider_base_role}.note"
+      if [[ ! -f "$aider_note_file" ]]; then
+        aider_note_file="$WORKING_DIR/swarmforge/roles/aider/generic.note"
+      fi
+      local aider_read_flag=""
+      if [[ -f "$aider_note_file" ]]; then
+        aider_read_flag=" --read '$aider_note_file'"
+      fi
+      # Requirement 3: only a coder seat runs aider's own test loop, scoped
+      # by `seat test` (requirement 4's driver-record fallback handles the
+      # SEAT_TICKET/SEAT_ACCEPTANCE aider's own loop never sets). Every
+      # other role gets neither flag - aider's auto-test loop is coder-only.
+      local aider_test_flags=""
+      if [[ "$aider_base_role" == "coder" ]]; then
+        aider_test_flags=" --test-cmd 'swarmforge/scripts/seat test' --auto-test"
+      fi
+      # Requirement 5: config aider_timeout_seconds -> --timeout, every role.
+      local aider_timeout_flag=""
+      if [[ -n "$AIDER_TIMEOUT_SECONDS" ]]; then
+        aider_timeout_flag=" --timeout $AIDER_TIMEOUT_SECONDS"
+      fi
+      launch_body=$'export BROWSER="${BROWSER:-/usr/bin/true}"\n'"mkdir -p '$aider_history_dir'"$'\naider'"${extra_cli:+ $extra_cli}"" --yes-always --no-detect-urls${aider_read_flag}${aider_test_flags}${aider_timeout_flag} --model-settings-file '$WORKING_DIR/.aider.model.settings.yml' --model-metadata-file '$WORKING_DIR/.aider.model.metadata.json' --llm-history-file '$aider_history_dir/${role}.log'"
       ;;
     vibe)
       # Mistral Vibe (pipx install mistral-vibe): a real CLI coding AGENT with

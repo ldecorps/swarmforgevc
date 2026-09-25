@@ -93,7 +93,7 @@ pass "01: local-model is registered chat-message/embedded in provider-capabiliti
   || fail "02: expected aider wake style shell-run-script, got: $(capability aider :wake-style)"
 [[ "$(capability aider :bootstrap-style)" != "$(capability local-model :bootstrap-style)" ]] \
   || fail "02: aider and local-model must not share a bootstrap style"
-pass "02: aider keeps shell-run-script/add-files-then-paste, distinct from local-model"
+pass "02: aider keeps shell-run-script/paste-prompt-file, distinct from local-model"
 
 # ── 03/04: launch targets loopback, selects model, carries prompt, -y ─────
 ROOT3="$(mk_root)"
