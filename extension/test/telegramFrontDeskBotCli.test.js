@@ -2512,23 +2512,6 @@ function readDraftNote(draftPath) {
   return fs.readFileSync(draftPath, 'utf8');
 }
 
-// BL-1518 below still drives the real CLI directly (never faked - it is
-// the CLI's own refusal/delivery contract under test), so the real-outbox
-// reader stays for that one test.
-function readQueuedOutboxNote(root) {
-  const outboxDir = path.join(root, '.swarmforge', 'handoffs', 'outbox');
-  const files = fs.readdirSync(outboxDir);
-  assert.equal(files.length, 1, `expected exactly one queued handoff, got: ${JSON.stringify(files)}`);
-  return fs.readFileSync(path.join(outboxDir, files[0]), 'utf8');
-}
-
-// A refused real-CLI send (BL-1518 below) must leave no outbox at all -
-// this must not throw when the directory was never created.
-function listOutboxFilesIfPresent(root) {
-  const outboxDir = path.join(root, '.swarmforge', 'handoffs', 'outbox');
-  return fs.existsSync(outboxDir) ? fs.readdirSync(outboxDir).length : 0;
-}
-
 // BL-1620 hardening: every other test in this file passes a fake
 // `runHandoff`, so none of them any longer exercises `runHandoff`'s own
 // DEFAULT value - the real `execFileAsync('bb', [cli, draftPath], opts)`
@@ -2638,50 +2621,39 @@ test('BL-607: enqueueRoleAnswerNote falls back to a file pointer + writes the fu
   assert.equal(stored.text, longAnswer);
 });
 
-// BL-1518: the actual mutation-escape shape, exercised directly against the
-// real CLI enqueueRoleAnswerNote shells to. A mutant of the options object
-// enqueueRoleAnswerNote passes to execFileAsync (cwd + env dropped or
-// emptied) makes the child process inherit whatever the CALLING process's
-// own cwd and SWARMFORGE_ROLE happen to be - here reproduced by spawning
-// swarm_handoff.bb with an EXPLICIT wrong cwd/env (a subprocess spawn
-// option, never a real process.chdir() - Node disallows chdir() inside a
-// worker thread and Stryker's own runner always runs in one; see this
-// file's sibling CLI test files for the same constraint). The CLI must
-// refuse rather than deliver into the wrong project's mailbox.
-test('BL-1518: swarm_handoff.bb refuses a draft that lies outside the project root a wrong cwd/env resolves, and delivers normally once cwd/env point at the draft\'s own root', () => {
+// BL-1742: the real-spawn version of this test (two real `bb
+// swarm_handoff.bb` processes, ~9.7s of this file's own 15.2s alone on
+// main) never called enqueueRoleAnswerNote at all - it drove the CLI
+// directly, so no mutant in telegram-front-desk-bot.ts was ever exercised
+// by it. What it proved (the CLI refusing a draft outside the resolved
+// root, naming both, queueing nothing under either root; a normal send
+// once cwd/env point at the draft's own root) is exactly BL-1518's
+// feature scenarios 01/02 (specs/features/BL-1518-...feature) plus its
+// own property runner (bl1518_handoff_draft_root_guard_property_runner.bb,
+// 400 runs, six boundary categories) - both already run independently,
+// so nothing here was dropped, only de-duplicated.
+//
+// The actual mutant this test's own old comment named - the options
+// object enqueueRoleAnswerNote passes to its runHandoff seam (cwd + env
+// dropped or emptied) - was never killed by the real-spawn version at
+// all, since it never called enqueueRoleAnswerNote. This cheap seam test
+// is the real kill: fakeRunHandoff records the opts it was actually
+// called with, asserted directly against enqueueRoleAnswerNote's own real
+// production call (telegram-front-desk-bot.ts ~line 1851).
+test('BL-1518/BL-1742: enqueueRoleAnswerNote hands its runHandoff seam the target root as cwd and SWARMFORGE_ROLE=coordinator in env', async () => {
   const root = swarmHandoffFixture();
-  const otherRoot = swarmHandoffFixture();
-  const cli = path.join(root, 'swarmforge', 'scripts', 'swarm_handoff.bb');
-  const draftPath = path.join(root, 'tmp', 'handoff.txt');
-  fs.mkdirSync(path.dirname(draftPath), { recursive: true });
-  fs.writeFileSync(draftPath, 'type: note\nto: specifier\npriority: 00\nmessage: sample answer gamma\n');
+  const { runHandoff, calls } = fakeRunHandoff();
 
-  assert.throws(
-    () => execFileSync('bb', [cli, draftPath], {
-      cwd: otherRoot,
-      env: { ...process.env, SWARMFORGE_ROLE: 'coder' },
-      stdio: 'pipe',
-    }),
-    (err) => {
-      const stderr = err.stderr ? err.stderr.toString() : '';
-      assert.match(stderr, /HANDOFF_DRAFT_OUTSIDE_ROOT/);
-      assert.ok(stderr.includes(draftPath), 'the refusal must name the draft path');
-      assert.ok(stderr.includes(otherRoot), 'the refusal must name the wrongly-resolved root');
-      return true;
-    },
-    'a draft outside the resolved root must be refused, non-zero exit'
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer delta', undefined, runHandoff);
+
+  assert.equal(ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].opts.cwd, root, 'runHandoff must be called with cwd pointed at the draft\'s own root');
+  assert.equal(
+    calls[0].opts.env.SWARMFORGE_ROLE,
+    'coordinator',
+    'runHandoff must be called with SWARMFORGE_ROLE set, never inherited from the calling process'
   );
-  assert.equal(listOutboxFilesIfPresent(otherRoot), 0, 'nothing must be queued under the unrelated second fixture');
-  assert.equal(listOutboxFilesIfPresent(root), 0, 'the refused send must not have queued anything under the correct fixture either');
-
-  execFileSync('bb', [cli, draftPath], {
-    cwd: root,
-    env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' },
-    stdio: 'pipe',
-  });
-
-  const content = readQueuedOutboxNote(root);
-  assert.match(content, /^message: sample answer gamma$/m);
 });
 
 test('BL-607: enqueueRoleAnswerNote returns false, never throws, when the handoff CLI fails (e.g. no roles.tsv to resolve the role against)', async () => {
