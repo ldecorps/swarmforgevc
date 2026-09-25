@@ -498,10 +498,24 @@ display_name_for_role() {
 
 remote_control_session_name_for_role() {
   local role="$1"
+  local prefix="SwarmForge"
+  # BL-090's own multi-swarm identity (config swarm_name, default "primary")
+  # already exists but was never wired into RC naming, so every swarm's
+  # auto-provisioned coordinator (never a window line, so it can't set its
+  # own --remote-control) showed up as the identical "SwarmForge-Coordinator"
+  # regardless of which project it belonged to - confirmed live running two
+  # concurrent swarms (this repo's own, and a freshly onboarded second
+  # target) under one account, 2026-09-25. Use it when set to something
+  # other than the default, so a swarm with no explicit swarm_name (every
+  # existing single-swarm setup, primary included) keeps its current,
+  # already-bookmarked RC names unchanged.
+  if [[ "$SWARM_NAME" != "primary" ]]; then
+    prefix="$SWARM_NAME"
+  fi
   if [[ "$role" == "QA" ]]; then
-    echo "SwarmForge-QA"
+    echo "${prefix}-QA"
   else
-    echo "SwarmForge-$(display_name_for_role "$role")"
+    echo "${prefix}-$(display_name_for_role "$role")"
   fi
 }
 
