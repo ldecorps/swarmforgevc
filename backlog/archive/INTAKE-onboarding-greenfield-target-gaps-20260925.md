@@ -275,3 +275,26 @@ Scenario: A fresh target's panes don't silently die on the trust dialog
   When its panes are launched non-interactively
   Then no pane is blocked or exits on an unanswered trust dialog
 ```
+
+## Disposition (specifier, 2026-09-25)
+
+Split 1:N (BL-680, Article 5.3) under a new epic tracker, **BL-1755**
+(`onboarding-target-repo`). The human's sentence is carried verbatim in
+every resulting ticket's `source:`.
+
+- Gap 2 (empty survey) -> **BL-1756**.
+- Gap 4 (front desk / Cursor Remote need `$ROOT/extension/out`) ->
+  **BL-1757**, severity high (a live swarm's phone monitoring is down),
+  auto-approved at mint. The other `$ROOT/extension/out` consumers,
+  censused at mint, are BL-1755's remaining slice.
+- Gaps 1 and 3 (starter kit; the engine must understand the pack it
+  ships; git-hooks and the stray commit-msg hook) -> **BL-1758**, one
+  ticket because they are one fix. A real choice went to the human
+  (A kit from the local checkout, recommended / B our own pinned tarball
+  / C docs only). The current wrapper's floating-upstream fetch also
+  breaks Architecture Rule 2.
+- Gap 5 (trust dialog) -> **BL-1759**. Its investigation was done at
+  mint: trust is inherited from a trusted ancestor (this host trusts both
+  roots and no `.worktrees` path, yet every pane runs). A real choice went
+  to the human (A read-only check that stops and says how, recommended /
+  B write the trust flag / C answer the dialog by keystroke).

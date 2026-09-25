@@ -1,0 +1,91 @@
+id: BL-1756
+title: "A survey of a target with no code yet proposes a grammatical contract and prompts - proposeContractFromSurvey and proposePromptsFromSurvey say plainly that there is no code and no stack yet instead of slotting the fallback 'the surveyed' into a sentence ('Work within the existing the surveyed codebase', a Tech Stack of the lone line 'the surveyed'); a survey with at least one language keeps today's wording byte for byte"
+milestone: M8
+type: defect
+severity: medium
+# medium: onboarding a greenfield target proposes a broken CONTRACT.md and
+# an engineering.prompt whose Tech Stack tells the target's agents nothing;
+# a human sees the contract in negotiation, but the prompts reach agents.
+# Contained to onboarding a target with no code. Not high: no running
+# swarm is degraded.
+status: todo
+epic: onboarding-target-repo
+priority: 4
+direction: operator-found
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript under Stryker, two small pure functions
+# (contractSurvey.ts, promptProposal.ts) with fixture tests already in the
+# unit lane; the change is one empty-case branch each.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1756-a-survey-of-a-target-with-no-code-proposes-a-grammatical-contract-and-prompts.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1756SurveyWithNoCodeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  New feature file; no choice posed. What needs sign-off: an empty survey
+  says plainly that the target has no code and no stack yet (the same
+  posture USE-CASES.md already takes). FIRM: a survey with any language
+  produces byte-identical output to today's.
+
+invariants:
+  - "For every survey with at least one language, the proposed contract and prompts are byte-identical to today's."
+
+description: |
+  ## What is wrong
+
+  `extension/src/onboarding/contractSurvey.ts` and `promptProposal.ts`
+  both set `languageList` to `'the surveyed'` when `facts.languages` is
+  empty. They then interpolate it into "Work within the existing
+  ${languageList} codebase (layout: ${facts.layoutSummary})." and "Rewriting
+  or replacing the existing ${languageList} stack.", and use it as the
+  whole `# Tech Stack` section of engineering.prompt. For a greenfield
+  target the layout summary is a full sentence ("Greenfield project: only
+  README.md ... exist. No source tree, no chosen language/runtime yet."),
+  and it lands mid-sentence too. Measured live on gpu-bargain-hunter,
+  2026-09-25 (source).
+
+  ## What is wanted
+
+  - An empty `languages` survey proposes a contract whose scope says the
+    target has no code yet (and so nothing existing to rewrite), and an
+    engineering.prompt whose Tech Stack says no stack is chosen yet. No
+    line reads "existing the surveyed".
+  - Any survey with a language: byte-identical output (the invariant).
+
+  ## How (direction, not mandate)
+
+  - Prior art: `deriveUseCaseInventory` / `generateUseCaseInventoryMarkdown`
+    already say "No discernible use cases were found in this codebase."
+  - One shared "no code yet" predicate for both functions is the
+    obvious move; the wording is the coder's.
+
+  ## Scope
+
+  - `extension/src/onboarding/contractSurvey.ts`,
+    `extension/src/onboarding/promptProposal.ts`, their unit tests.
+  - New: `specs/pipeline/steps/bl1756SurveyWithNoCodeSteps.js`.
+  - Docs: the onboarding how-to/tutorial if it quotes the proposed text.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1756-a-survey-of-a-target-with-no-code-proposes-a-grammatical-contract-and-prompts.feature`:
+     every scenario ok (01, 02 x2).
+  2. The onboarding unit tests (contract survey, prompt proposal) green.
+  3. `git diff main...HEAD --name-only` names only the Scope files,
+     tests, docs and evidence.
+
+source: |
+  backlog/archive/INTAKE-onboarding-greenfield-target-gaps-20260925.md,
+  Gap 2 (operator, via Claude Code, 2026-09-25). The human, verbatim
+  (Article 5.3):
+  > Happy for you to hit fix to get the ball rolmibg but let the swarm know
+
+notes: |
+  Minted 2026-09-25 by the specifier, 1:N split of the onboarding intake
+  (epic BL-1755). Code claims re-verified at mint (contractSurvey.ts:8,13,16;
+  promptProposal.ts:37,47 and the Tech Stack line).

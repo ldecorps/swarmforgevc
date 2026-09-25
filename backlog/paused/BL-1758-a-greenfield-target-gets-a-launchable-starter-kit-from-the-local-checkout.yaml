@@ -1,0 +1,151 @@
+id: BL-1758
+title: "A greenfield target gets a launchable starter kit from the local swarmforgevc checkout - one install copies this checkout's own engine (swarmforge/scripts), git-hooks, handoff protocol, generic constitution, the mono-router pack and a generic role-prompt set into a target that has only a README, writes a conf recording the checkout and commit, and wires core.hooksPath; the swarm wrapper never fetches upstream's floating main (ruling A, recommended)"
+milestone: M8
+type: defect
+severity: medium
+# medium: the documented onboarding flow cannot reach a launch on any
+# target with no swarmforge/ tree (docs/how-to/BL-1582-...md section 6);
+# the one live target was hand-fixed, so no running swarm is degraded.
+status: todo
+epic: onboarding-target-repo
+priority: 5
+direction: operator-found
+depends_on: []
+mutation_cost: medium
+# medium: a bb installer (no Stryker lane for Babashka, BL-472) plus a
+# bash wrapper change; the risk is file-set correctness and never touching
+# an existing target, both pinned by fixture scenarios that run in seconds.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1758-a-greenfield-target-gets-a-launchable-starter-kit-from-the-local-checkout.feature
+
+# BL-1235: the installer's consumers are the swarm wrapper's refusal (it
+# must name the install) and the onboarding how-to - the wrapper line is the
+# one code consumer, anchored on the pre-existing file.
+required_wiring:
+  - 'swarm::install_starter_kit::the wrapper points a target with no engine at the kit install instead of fetching upstream'
+  - 'specs/pipeline/steps/bl1758StarterKitSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  New feature file and one real choice: where a fresh target's engine,
+  pack and prompts come from. FIRM whatever you pick: the engine and the
+  pack a target receives come from the same place, so they always agree
+  (the incompatible upstream engine was the worst of the gaps), and an
+  install never touches a target that already has a swarmforge/ tree. The
+  feature file is written for A. If you pick B or C, I rewrite it and
+  re-pend before it can be promoted.
+ruling_options:
+  - A - the onboarding installs a starter kit from this local checkout and the swarm wrapper stops fetching upstream (recommended)
+  - B - the swarm wrapper's self-install fetches the same kit from this repo's own tarball pinned by commit instead of upstream's floating main
+  - C - docs only - the onboarding how-to lists what a fresh target needs and the operator copies it by hand
+ruling_tradeoffs:
+  - Pros - engine, pack and hooks come from one checkout at one recorded commit, so they cannot disagree; nothing is fetched over the network, which is what Architecture Rule 2 asks; the onboarding already runs from this checkout on the target host. Cons - a target can only be onboarded on a host that holds a swarmforgevc checkout, and the kit's generic role prompts are a second prompt set to keep current. Recommended because it is the hand fix that worked on gpu-bargain-hunter, made repeatable.
+  - Pros - a target needs only the swarm wrapper and network access. Cons - this repo's tarball must be reachable from the target host without credentials, every engine change needs a pinned commit published and bumped, the wrapper gains a second install source, and the second prompt set still needs keeping current.
+  - Pros - no code to build or review. Cons - every new target repeats the hand workaround (about an hour live on 2026-09-25), the upstream fetch stays in the wrapper, and the next operator meets the same incompatible engine; the human asked the swarm to fix the gaps, not to document them.
+
+invariants:
+  - "The engine, hooks, pack and conf a target receives all come from one checkout at one recorded commit."
+  - "An install never writes into a target that already holds a swarmforge/ tree; it refuses and leaves every file byte-identical."
+  - "No file that describes swarmforgevc itself (project.prompt, engineering.prompt, local-engineering.prompt, constitution/articles/reference/, swarmforge/roles/) is copied into a target."
+
+description: |
+  ## What is wrong
+
+  The `swarm` wrapper (repo root, copied into a target and run there)
+  self-installs from `https://github.com/unclebob/swarm-forge/archive/refs/heads/main.tar.gz`
+  when `swarmforge/scripts` is missing. That is a floating branch head of
+  upstream, against Architecture Rule 2 (upstream changes enter only
+  through drift-watch review, and the bootstrap is pinned by commit). It
+  copies only `swarmforge/scripts` and the articles. Upstream ships no
+  packs and no pipeline role prompts (its one role is `lieutenant.prompt`,
+  a different topology), and its `swarmforge.bb` refuses this project's
+  config vocabulary: "Invalid config line 6: config
+  active_backlog_max_depth 2". `swarmforge/git-hooks/` never reaches the
+  target, so the `core.hooksPath` our `swarmforge.sh` sets
+  (`ensure_commit_size_guard`, line 459) points at nothing. The upstream
+  engine also left a stray `.git/hooks/commit-msg` naming a script that
+  does not exist. All found live on gpu-bargain-hunter, 2026-09-25 (source).
+
+  ## What is wanted (ruling A)
+
+  1. An installer, run from this checkout with a target path (a
+     `swarmforge/scripts/install_starter_kit.bb`; the name is fixed because
+     the wiring anchor and the wrapper's message use it), copies into a
+     target that has no `swarmforge/` tree:
+     - this checkout's `swarmforge/scripts`, `swarmforge/git-hooks`,
+       `swarmforge/handoff-protocol.md`, `swarmforge/constitution.prompt`,
+       and constitution articles 01-05 plus `workflow.prompt`;
+     - `swarmforge/packs/mono-router.conf` and `mono-router.prompt`;
+     - one generic role prompt per role the pack names, from
+       `swarmforge/starter-kit/roles/`;
+     - a `swarmforge/swarmforge.conf` that records `config tooling_root
+       <this checkout>` (BL-1757's reader) and the checkout commit it was
+       copied from.
+  2. The target's first launch has `core.hooksPath` pointing at the kit's
+     hooks and no `.git/hooks/commit-msg` (scenario 05).
+  3. The `swarm` wrapper no longer fetches anything. With no
+     `swarmforge/scripts` it exits non-zero naming the installer.
+     swarmforgevc itself always has its scripts, so it never reaches that
+     branch.
+  4. **Generic role prompts (BL-798, specifier-owned, landed on main
+     before the coder starts).** The specifier lands
+     `swarmforge/starter-kit/roles/*.prompt`, seeded from the eight short
+     prompts the operator hand-wrote for gpu-bargain-hunter (249 lines;
+     that swarm runs and mints tickets on them), and records the commit in
+     `notes:`.
+
+  ## How (direction, not mandate)
+
+  - The operator's hand fix is the reference: gpu-bargain-hunter's
+    `swarmforge/` tree (constitution, git-hooks, handoff-protocol.md,
+    packs, roles, scripts, swarmforge.conf) is what a working kit looks
+    like. Compare the installer's output against it.
+  - Copy the live files at install time rather than duplicating them
+    under `starter-kit/`. Only the role prompts (and a conf template) need
+    their own generic copy.
+  - The onboarding's ready-to-launch step may run the installer. At
+    minimum, the how-to (`docs/how-to/BL-1582-onboarder-run-an-onboarding-end-to-end.md`
+    section 6) names it before the launch command.
+
+  ## Scope
+
+  - New: `swarmforge/scripts/install_starter_kit.bb` (+ a pure lib if
+    split) and its test registered in `suite-manifest.tsv`;
+    `swarmforge/starter-kit/` (the conf template; the roles are the
+    specifier's, item 4); `specs/pipeline/steps/bl1758StarterKitSteps.js`.
+  - `swarm` (the wrapper's self-install block).
+  - Docs: the onboarding how-to and `docs/tutorials/Onboarding-New-Project.md`.
+  - Out of scope: upstream unclebob/swarm-forge; the other
+    `$ROOT/extension/out` consumers (epic BL-1755); the trust dialog
+    (BL-1759).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1758-a-greenfield-target-gets-a-launchable-starter-kit-from-the-local-checkout.feature`:
+     every scenario ok (01-07).
+  2. The installer's own test from `suite-manifest.tsv`: green.
+  3. `grep -n "unclebob/swarm-forge" swarm` on the parcel commit: no hit.
+  4. The role prompts of item 4 are on main at the commit recorded in
+     `notes:`.
+  5. `git diff main...HEAD --name-only` names only the Scope files,
+     tests, docs and evidence.
+
+source: |
+  backlog/archive/INTAKE-onboarding-greenfield-target-gaps-20260925.md,
+  Gaps 1 and 3 (operator, via Claude Code, 2026-09-25). The human,
+  verbatim (Article 5.3):
+  > Happy for you to hit fix to get the ball rolmibg but let the swarm know
+
+notes: |
+  Minted 2026-09-25 by the specifier, 1:N split of the onboarding intake
+  (epic BL-1755). Gaps 1 and 3 are one ticket: "whatever Gap 1's fix
+  installs, make sure the engine it installs actually understands the
+  config vocabulary of whatever pack it ships alongside" is true by
+  construction only when both come from one place. Code claims
+  re-verified at mint: swarm lines 6 and 16-26 (ARCHIVE_URL, the copy
+  block); swarmforge.sh:453-459 (core.hooksPath). gpu-bargain-hunter's
+  hand-built tree was inspected read-only (eight role prompts, 249 lines).
+  ROLE PROMPTS DUE (BL-798): item 4, landed by the specifier before the
+  coder starts; not landed at mint because the ruling may be C.

@@ -1,0 +1,120 @@
+id: BL-1759
+title: "A launch never leaves a pane blocked or dead on Claude Code's first-run trust dialog - before starting any pane of a pack with a claude seat, the launch checks read-only that Claude Code trusts the target root or an ancestor, and if not starts nothing and names the root and the one step that trusts it; a pack with no claude seat is not checked, an unparseable Claude config warns and never blocks, and the launch never writes Claude Code's own config (ruling A, recommended)"
+milestone: M8
+type: defect
+severity: medium
+# medium: a first launch on a fresh target loses panes silently (one
+# blocked while status reads UP, one exited on the dialog's "No, exit"
+# default); every directory this host already launches is trusted, so no
+# running swarm is affected. Not high: one manual answer recovers it.
+status: todo
+epic: onboarding-target-repo
+priority: 6
+direction: operator-found
+depends_on: []
+mutation_cost: low
+# low: a shell/bb check in the launch path (no Stryker lane), exercised
+# against a fixture Claude config through an env seam - never the live
+# ~/.claude.json.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1759-a-launch-never-leaves-a-pane-on-claude-codes-trust-dialog.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1759ClaudeTrustCheckSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  New feature file and one real choice: how a launch deals with Claude
+  Code's trust dialog on a directory it has never seen. Found at mint
+  (read-only, trust flags only): this host's ~/.claude.json trusts
+  /home/carillon/swarmforgevc and /home/carillon/gpu-bargain-hunter and
+  none of their .worktrees paths, yet every role pane runs, so trusting a
+  target's root once covers all its panes. FIRM whatever you pick: a pane
+  is never left silently blocked or exited on the dialog. The feature is
+  written for A. If you pick B or C, I rewrite it and re-pend.
+ruling_options:
+  - A - check read-only before starting any pane, and when the root is untrusted start nothing and tell the human the one step that trusts it (recommended)
+  - B - write the trust flag for the target root into ~/.claude.json before starting any pane
+  - C - start the root pane first and answer the dialog in it by keystroke, then start the rest
+ruling_tradeoffs:
+  - Pros - never touches a file Claude Code owns and rewrites constantly; the human makes the trust decision the dialog exists to ask, once per target; a first launch fails fast and loud instead of losing panes. Cons - a first launch on a fresh target stops once and needs one manual step. Recommended because trust is the human's call and the step is once per target.
+  - Pros - a first launch runs unattended. Cons - edits ~/.claude.json while this host's live Claude sessions rewrite it, so a concurrent write can be lost or clobber their state; it also grants trust on the human's behalf.
+  - Pros - unattended, and it uses Claude Code's own dialog. Cons - keystrokes into a dialog whose wording and default can change with any Claude Code release (the default today is No, exit), and a misread quits the pane, which is exactly the 2026-09-25 failure.
+
+invariants:
+  - "The launch never writes the Claude config."
+  - "A pack with no claude seat launches exactly as today, whatever the Claude config says."
+
+description: |
+  ## What is wrong
+
+  Claude Code asks "Is this a project you created or one you trust?" the
+  first time it runs in a directory, and `--dangerously-skip-permissions`
+  does not skip it. On gpu-bargain-hunter's first launch (2026-09-25) the
+  coordinator pane sat blocked on it while status read UP, and the coder
+  pane exited: its highlighted default is "No, exit", and with no
+  remain-on-exit the pane closed and read cleanly DOWN (source).
+
+  Found at mint, read-only (trust flags only): the ancestor rule. This
+  host's `~/.claude.json` `projects` map trusts `/home/carillon/swarmforgevc`
+  and `/home/carillon/gpu-bargain-hunter` and none of their `.worktrees/*`
+  paths, yet every swarmforgevc role pane runs, and the target's coder
+  respawned without the dialog once its root had been answered. The
+  intake's question, "real fix or fluke", is answered: trust is inherited
+  from a trusted ancestor, so the root must be trusted before any Claude
+  pane starts.
+
+  ## What is wanted (ruling A)
+
+  1. Before creating any session for a pack with at least one `claude`
+     seat, the launch reads the Claude config (`~/.claude.json`, behind an
+     env seam for tests) and looks for `hasTrustDialogAccepted: true` on the
+     target root or any ancestor path.
+  2. None found: exit non-zero before any session exists, naming the root
+     and the one step that trusts it (run `claude` once in that directory
+     and accept).
+  3. A config that cannot be parsed prints a warning naming it, and the
+     launch proceeds. A missing config counts as untrusted.
+  4. The config is only ever read.
+
+  ## How (direction, not mandate)
+
+  - Where the check lives is the coder's call (the launch path in
+    `swarmforge.sh` before session creation, or a bb helper it calls).
+    `swarm ensure` and babysitterd's respawns need no check once the
+    root is trusted.
+  - Seat providers come from the pack's window lines (`claude` is the one
+    that shows the dialog).
+
+  ## Scope
+
+  - The launch path (`swarmforge/scripts/swarmforge.sh` and/or a new bb
+    helper), its test registered in `suite-manifest.tsv`.
+  - New: `specs/pipeline/steps/bl1759ClaudeTrustCheckSteps.js`.
+  - Docs: the onboarding how-to's launch section names the one-time trust
+    step.
+  - Out of scope: any write to Claude Code's config; non-claude providers'
+    own first-run prompts.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA never points
+  the check at the live ~/.claude.json with a write-capable build.
+  1. `node specs/pipeline/cli.js specs/features/BL-1759-a-launch-never-leaves-a-pane-on-claude-codes-trust-dialog.feature`:
+     every scenario ok (01, 02 x2, 03, 04, 05).
+  2. The check's own test from `suite-manifest.tsv`: green.
+  3. `git diff main...HEAD --name-only` names only the Scope files,
+     tests, docs and evidence.
+
+source: |
+  backlog/archive/INTAKE-onboarding-greenfield-target-gaps-20260925.md,
+  Gap 5 (operator, via Claude Code, 2026-09-25). The human, verbatim
+  (Article 5.3):
+  > Happy for you to hit fix to get the ball rolmibg but let the swarm know
+
+notes: |
+  Minted 2026-09-25 by the specifier, 1:N split of the onboarding intake
+  (epic BL-1755). The intake's investigation half was done at mint by
+  reading only the `hasTrustDialogAccepted` flags of ~/.claude.json's
+  projects map, nothing else in that file.

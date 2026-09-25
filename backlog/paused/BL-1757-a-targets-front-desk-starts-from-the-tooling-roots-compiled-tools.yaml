@@ -1,0 +1,125 @@
+id: BL-1757
+title: "A target's Telegram front desk and Cursor Remote bridge start from the tooling root's compiled tools - a pack conf may name the swarmforgevc checkout that serves it (config tooling_root <abs path>), swarmforge.sh exports it as SWARMFORGE_TOOLING_ROOT, and launch_front_desk.sh and start_cursor_bridge.sh resolve their node entrypoints there while still serving the target; a project with its own extension/out and no tooling root resolves exactly as today, and neither is refused naming both places looked"
+milestone: M8
+type: defect
+severity: high
+# high: a live swarm's human-facing health channel is down - gpu-bargain-
+# hunter (onboarded 2026-09-25, its own Telegram bot provisioned for phone
+# monitoring, BL-380/381) runs with no front desk and no /rc because both
+# launchers look for $ROOT/extension/out, which only swarmforgevc has.
+status: todo
+epic: onboarding-target-repo
+priority: 3
+direction: operator-found
+depends_on: []
+mutation_cost: low
+# low: bash launchers plus one config key in swarmforge.sh's parser; no
+# Stryker lane for shell. Scenarios run the launchers' own dry-run modes
+# (FRONT_DESK_LAUNCH_DRYRUN; start_cursor_bridge.sh gets one if it has
+# none) against mkdtemp fixtures - seconds.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1757-a-targets-front-desk-starts-from-the-tooling-roots-compiled-tools.feature
+
+# The consumer anchors are the two pre-existing launchers the ticket was
+# filed to fix (BL-1235): each must actually read the exported variable.
+required_wiring:
+  - 'swarmforge/scripts/launch_front_desk.sh::SWARMFORGE_TOOLING_ROOT::the front desk resolves its bridge and bot entrypoints through the tooling root'
+  - 'swarmforge/scripts/start_cursor_bridge.sh::SWARMFORGE_TOOLING_ROOT::the Cursor Remote bridge resolves its entrypoint through the tooling root'
+  - 'specs/pipeline/steps/bl1757TargetFrontDeskToolingRootSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity high
+  defect, no choice posed, no ruling_options). New feature file. FIRM:
+  swarmforgevc's own launch resolves byte-identically (no tooling root
+  set, its own extension/out). The writer of the conf line for NEW
+  targets is BL-1758's starter kit; for gpu-bargain-hunter it is one line
+  the operator adds after this lands (qa step 5).
+
+invariants:
+  - "A launch that sets no tooling root resolves every entrypoint exactly as today ($ROOT/extension/out)."
+  - "The served project root passed to the bridge and bot is always the target, never the tooling root."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/launch_front_desk.sh:50-51` sets
+  `BRIDGE_ENTRYPOINT="$ROOT/extension/out/tools/start-bridge-headless.js"`
+  and `BOT_ENTRYPOINT=".../telegram-front-desk-bot.js"`, and
+  `start_cursor_bridge.sh:27` does the same for
+  `telegram-cursor-bridge.js`. `$ROOT` is the project the swarm serves. A
+  target's `swarm` wrapper runs its own copy of `swarmforge/scripts` with
+  `ROOT=<target>`, and no target but swarmforgevc builds the extension.
+  Launch refused cleanly on gpu-bargain-hunter, 2026-09-25 ("bridge
+  entrypoint not found ... run npm run compile in extension/").
+
+  ## What is wanted
+
+  1. `swarmforge.sh`'s pack-conf parser accepts `config tooling_root
+     <absolute path>` (today an unknown key is silently ignored) and
+     exports it as `SWARMFORGE_TOOLING_ROOT` to the services the launch
+     starts. A relative or missing path is an `Invalid config line` error,
+     like every other malformed config value.
+  2. Both launchers resolve each entrypoint under
+     `$SWARMFORGE_TOOLING_ROOT/extension/out/tools/` when it is set,
+     otherwise under `$ROOT/extension/out/tools/` as today. The served root
+     argument stays `$ROOT`.
+  3. When neither place has the entrypoint, the launcher exits non-zero
+     naming both paths it looked in (scenario 04), and starts nothing.
+
+  ## How (direction, not mandate)
+
+  - The pattern already exists: `launch_onboarder.sh` and
+    `launch_negotiation_relay.sh` resolve through `$SWARM_REPO_ROOT`. Match
+    their shape rather than inventing a third.
+  - One small resolve helper sourced by both launchers keeps them from
+    drifting (a constant shared across two scripts needs one source,
+    BL-897).
+  - Relaunch paths (the front desk supervisor, babysitterd, `swarm
+    ensure`) may not inherit the launch's environment. Have the helper
+    fall back to reading the pack conf's `tooling_root` itself when the
+    variable is unset, so a daemon-driven restart resolves the same way.
+  - Fixtures per BL-1390: mkdtemp roots; never the live
+    `.swarmforge/operator/` or a live bot token.
+
+  ## Scope
+
+  - `swarmforge/scripts/swarmforge.sh` (the config key),
+    `swarmforge/scripts/launch_front_desk.sh`,
+    `swarmforge/scripts/start_cursor_bridge.sh`, a shared resolve helper
+    if extracted, their shell tests (registered in `suite-manifest.tsv`).
+  - New: `specs/pipeline/steps/bl1757TargetFrontDeskToolingRootSteps.js`.
+  - Docs: the onboarding how-to (BL-1582's page) names the conf line.
+  - Out of scope: the other `$ROOT/extension/out` consumers (epic
+    BL-1755's remaining slice, census there), and installing the conf
+    line for new targets (BL-1758).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1757-a-targets-front-desk-starts-from-the-tooling-roots-compiled-tools.feature`:
+     every scenario ok (01, 02 x3, 03, 04).
+  2. The launchers' shell tests from `suite-manifest.tsv`: green.
+  3. On this checkout: `FRONT_DESK_LAUNCH_DRYRUN=1 bash
+     swarmforge/scripts/launch_front_desk.sh "$PWD"` prints entrypoints
+     under this checkout's own `extension/out` (invariant 1).
+  4. `git diff main...HEAD --name-only` names only the Scope files,
+     tests, docs and evidence.
+  5. Operator, after the land (not QA): add `config tooling_root
+     /home/carillon/swarmforgevc` to gpu-bargain-hunter's pack conf once
+     that repo takes this change, relaunch its front desk, and confirm its
+     bot answers.
+
+source: |
+  backlog/archive/INTAKE-onboarding-greenfield-target-gaps-20260925.md,
+  Gap 4 (operator, via Claude Code, 2026-09-25). The human, verbatim
+  (Article 5.3):
+  > Happy for you to hit fix to get the ball rolmibg but let the swarm know
+
+notes: |
+  Minted 2026-09-25 by the specifier, 1:N split of the onboarding intake
+  (epic BL-1755). Code claims re-verified at mint (launch_front_desk.sh:50-51,
+  start_cursor_bridge.sh:27; launch_onboarder.sh:24,35 is the prior art).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).

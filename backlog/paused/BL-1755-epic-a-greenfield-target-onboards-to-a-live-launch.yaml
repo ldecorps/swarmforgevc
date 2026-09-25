@@ -1,0 +1,34 @@
+id: BL-1755
+title: "EPIC - A greenfield target onboards to a live launch: the documented onboarding flow reaches a working swarm on a target with nothing but a README, with its own front desk, guarded commits and no pane lost to Claude Code's trust dialog; do not promote directly"
+milestone: M8
+type: epic
+epic: onboarding-target-repo
+status: todo
+priority: 3
+depends_on: []
+decomposes_into: [BL-1756, BL-1757, BL-1758, BL-1759]
+remaining_slices:
+  - "Every other script that runs a swarmforgevc compiled tool resolves it through BL-1757's tooling root, not $ROOT/extension/out - census 2026-09-25 (git grep extension/out/tools in swarmforge/scripts/*.sh) finish_shift_lib.sh (the ceremony CLI), kill_pipeline_swarm.sh (record-run), promote_and_route_next.sh (deprecate-check, which is skipped when absent, so a foreign target's promotions run with no freshness gate), active_pool_freshness_audit.sh, launch_resident_spy_tunnel.sh, check_feature_handler_registration.sh; mint once BL-1757 lands"
+mutation_cost: high
+acceptance:
+  none: "tracker only - see decomposes_into children for acceptance"
+human_approval: pending
+approval_context: >
+  Tracker only, never promoted itself. It groups the four gaps the
+  operator hit live onboarding gpu-bargain-hunter on 2026-09-25, after
+  you said "let the swarm know". The two children with a real choice
+  (BL-1758 the starter kit, BL-1759 the trust dialog) carry their own
+  options.
+
+source: |
+  backlog/archive/INTAKE-onboarding-greenfield-target-gaps-20260925.md
+  (operator, via Claude Code, 2026-09-25, commits 82b928abe2 and
+  dca9b90cc8). The human, verbatim (Article 5.3):
+  > Happy for you to hit fix to get the ball rolmibg but let the swarm know
+
+notes: |
+  Minted 2026-09-25 by the specifier. The epic key onboarding-target-repo
+  was used by BL-344 (done) and had no tracker; this is its tracker.
+  Milestone M8, which fits. 1:N split of the intake: Gap 2 -> BL-1756;
+  Gap 4 -> BL-1757; Gaps 1 and 3 -> BL-1758 (one fix: the engine and the
+  pack it ships must come from the same place); Gap 5 -> BL-1759.
