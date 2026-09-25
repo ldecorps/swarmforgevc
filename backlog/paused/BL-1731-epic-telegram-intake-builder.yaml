@@ -1,0 +1,152 @@
+id: BL-1731
+title: "EPIC - Telegram Intake topic: the human files intakes from a phone form in one ubiquitous language (narrative dropdowns over a shared vocabulary, free-text Gherkin), with Verify by the specifier and an Ask-specifier voice panel; do not promote directly, tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: telegram-intake-builder
+priority: 0
+# 0 ties only the local-llm-swarm epic (BL-1125); the slices carry own
+# priority 21, above every local-llm-swarm ticket (0..20), so the gate
+# (BL-900: epic priority, own priority, id) serves every local-LLM ticket
+# first and these next, ahead of every other epic (1 and up).
+direction: queue-jump
+depends_on: []
+decomposes_into: [BL-1732, BL-1733, BL-1734, BL-1735, BL-1736, BL-1737]
+remaining_slices: []
+acceptance:
+  none: "tracker only - see decomposes_into children for acceptance"
+mutation_cost: medium
+human_approval: approved
+approval_context: >
+  Minted approved: the human named this work and its place in the queue
+  ("qjulp at the back of the local llm slices"). Under the 2026-09-15
+  ruling a queue-jump request is the approval for a plain gate, and every
+  real choice was answered in the clarification round below, so there is
+  no ruling_options.
+
+source: |
+  Raw intake `backlog/INTAKE-telegram-intake-builder-20260925.md`: the
+  human, via Claude Code acting as specifier for the clarification round,
+  2026-09-25; drained by the specifier the same day into epic BL-1731 and
+  slices BL-1732..BL-1737. This is the epic tracker.
+
+  The human's sentences, verbatim (Article 5.3; every slice carries all of
+  them):
+
+  > New intake - ask me for clarifications before putting it in, as if you were the swarm specifier.
+  >
+  > I want a new specialised topic in telegram for helping me inputing new intakes.
+  > I am to start by defining a overall goal in thus form
+  >
+  > As a user
+  > I want to do this action
+  > So i can acheive this goal
+  >
+  > I want "a user", "do this action" and "acheive this goal" to be drop down lists populated with what the previous the previous intakes have. This to enforce ubiiquitous language.
+  > I can add a new value to the dropdown in case uts empty or does not contain what I want.
+  >
+  > Then I want to add one or more gherkins scenarios.
+  > Given some state
+  > When something happens
+  > Then some other state
+  >
+  > Add a "verify" button to have the intake given to the specifier so that it can run is usual skills on it (dry, invest, etc), so he maybcome back with improvements for the pending intake. I can accept or not his changes.
+  >
+  > Add a submit button so the intake is put in the usual queue.
+
+  > Can I also get a "ask specifier" button ? If I want interactive helpnfrom him while working on this? A push to talk and a tts talking back to me would be great, a bit like we have with bubble, but the agent would be the specifier.
+
+  > 1: I want to be able to delete what I dont want from dropdown lists.
+  > 2: qjulp at the back of the local llm slices
+
+description: |
+  As the human
+  I want to file a new intake from my phone
+  So I can keep the backlog in one ubiquitous language
+
+  ## Clarifications (asked and answered 2026-09-25, recorded in the intake)
+
+  | # | Question | The human's answer |
+  |---|---|---|
+  | 1 | Where does the editor live? | A Mini App form, opened from the new topic |
+  | 2 | History holds ~2 real narratives: how do the dropdowns start? | A curated starter list, which then grows from submitted intakes |
+  | 3 | Who runs Verify, and when? | On demand, at any hour: a one-shot specifier run outside the pipeline |
+  | 4 | How are its suggestions taken? | One by one, each with Accept/Reject, plus Accept all |
+  | 5 | How are Given/When/Then entered? | Free text (And/But lines too), checked by IR-DRY at Verify |
+  | 6 | Can an unverified draft be submitted? | Yes. Verify is optional; the specifier still applies INVEST when it drains the queue |
+  | 7 | A free-text notes field? | Yes, optional |
+  | 8 | When does an added value join the shared list? | On Submit; usable in the draft at once |
+  | 9 | While talking, can the specifier change the draft? | It proposes; its changes arrive as the same suggestions as Verify's |
+  | 10 | What can it see? | The draft, the vocabulary, and the backlog, feature files and docs, read-only |
+  | 11 | Where can the human talk to it from? | Inside the intake form (v1) |
+  | 12 | "Push to talk" = hold-to-talk? | No: Let's Talk's existing controls (tap to talk, tap to send, optional hands-free) |
+  | 13 | Prune the starter list now? | Keep it whole; the human deletes unwanted values from the dropdowns |
+  | 14 | Priority? | Queue-jump, at the back of the local-LLM slices |
+
+  ## Slices (one chain; every slice touches the form's modules)
+
+  The intake proposed three slices. Applied INVEST's Small at mint, S1 and
+  S2 each carried more than one sitting, so they are split:
+  - BL-1732 (S1): the Intake topic, the form and Submit.
+  - BL-1733 (S1): kept drafts, and deleting dropdown values (answer 1).
+  - BL-1734 (S2): Verify's host checks (IR-DRY, vocabulary
+    near-duplicates, backlog overlap) and the Accept/Reject suggestion
+    list.
+  - BL-1735 (S2): Verify's per-draft, read-only specifier session and its
+    INVEST review.
+  - BL-1736 (S2): staleness, one Verify at a time, and the Verify history
+    in the INTAKE file.
+  - BL-1737 (S3): the Ask specifier voice and text panel.
+
+  ## Firm (the intake's; carried in every slice's approval_context)
+
+  - Nothing the specifier suggests, from Verify or from talking, reaches
+    the draft without the human's tap.
+  - Verify and Ask never touch the pipeline specifier seat and never wait
+    on a shift.
+  - The specifier session is read-only: no writes, no commits, no shell.
+  - Deleting a vocabulary value never rewrites a submitted intake or an
+    open draft.
+  - The Intake topic answers only the principal. The support/intake 🎟
+    topic is unchanged.
+  - The voice path reuses Let's Talk's loop and engines. No new STT/TTS
+    engine in v1.
+
+  ## Out of scope (v1)
+
+  - The Bubble Android app and Telegram voice notes as Ask surfaces.
+  - Hold-to-talk.
+  - Scenario Outline/Examples tables.
+  - Renaming or merging vocabulary values (Delete is in).
+  - A vocabulary for steps.
+
+  ## Premises checked at mint (2026-09-25, specifier)
+
+  - Forum topics cannot carry `web_app` buttons. The console already
+    answers this with a `url` button in the topic and a `web_app` button in
+    the principal's private chat (`residentSpyTunnelNotify.ts`,
+    `notify-resident-spy-tunnel.ts`).
+  - The Mini App pages authenticate with the bridge device token (`?bearer=`)
+    and a control token for writes (`bridgeServer.ts`). There is no
+    Telegram initData validation.
+  - BL-415's filed-intake path writes at the backlog root and commits
+    through commit-integrity, but does not push. The permalink resolves
+    once `main` reaches origin.
+  - `runFrontDeskOneShot` runs Claude with no tools (`--tools ""`), and no
+    Claude CLI session is resumed anywhere in the tree. The read-only,
+    per-draft session is new work (BL-1735), not a reuse.
+  - Let's Talk's turn loop takes its agent as an injected dependency
+    (`letsTalkRoutes.ts:324`, `cursorBridgeAgentSession.ts:31-39`), so
+    BL-1737 reuses it unchanged.
+
+notes: |
+  Minted 2026-09-25 by the specifier from the backlog-root intake. The
+  place in the queue is encoded as an ORDERING the gate reads (epic
+  priority 0, slices 21), never as prose (BL-1687) and never as a
+  depends_on on a local-LLM ticket, which would park this behind the
+  BL-1702 ruling and its GPU canary. It differs from the intake's own
+  suggestion (slices at 1): that would have sorted ahead of BL-1704 and
+  BL-1711 (local-llm-swarm, own priority 2) and the 4-20 tickets, while the
+  human asked for "the back of the local llm slices". If the human wants
+  it behind the older queue-jumped epics too (BL-1583 at 1, BL-1172 at 2,
+  BL-712 at 4), move this tracker's priority above theirs.

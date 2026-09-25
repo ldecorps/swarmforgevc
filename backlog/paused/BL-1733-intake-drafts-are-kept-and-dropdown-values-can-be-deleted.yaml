@@ -1,0 +1,131 @@
+id: BL-1733
+title: "The intake form keeps several drafts on the bridge host - listed when the form opens, resumable, discardable (a discarded draft's added values never reach the shared list) - and each dropdown value can be deleted with a confirm; a delete removes it from later drafts and never rewrites a submitted intake or an open draft"
+type: feature
+milestone: M8
+status: todo
+epic: telegram-intake-builder
+priority: 21
+# priority 21 under an epic tracker at 0: the gate sorts by epic priority,
+# then own priority, then id (BL-900). Only the local-llm-swarm epic shares
+# epic priority 0, and its slices' own priorities run 0..20, so every one of
+# them sorts ahead of these ("qjulp at the back of the local llm slices")
+# while these sort ahead of every other epic (epic priority 1 and up).
+direction: queue-jump
+depends_on: [BL-1732]
+# BL-1732 builds the form, the vocabulary store and Submit.
+mutation_cost: medium
+# medium: TypeScript under Stryker - a drafts store and routes, and a
+# vocabulary delete; five scenarios over the routes and stores.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1733-intake-drafts-are-kept-and-dropdown-values-can-be-deleted.feature
+
+# Handler pin (BL-233, BL-1371).
+required_wiring:
+  - 'specs/pipeline/steps/bl1733IntakeDraftsAndDeleteSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted `human_approval: approved`: the human named this work and its
+  queue place ("qjulp at the back of the local llm slices"), and under the
+  2026-09-15 ruling a queue-jump request is the approval for a plain gate.
+  Every real choice was put to the human and answered in the clarification
+  round (table in the epic tracker BL-1731), so no ruling_options.
+  This slice (S1 part 2) keeps drafts and deletes values; it is the
+  human's answer 1 ("I want to be able to delete what I dont want from
+  dropdown lists.").
+  FIRM (the intake's, for every slice): nothing the specifier suggests,
+  from Verify or from talking, reaches the draft without the human's tap;
+  Verify and Ask never touch the pipeline specifier seat and never wait on
+  a shift; the specifier session is read-only; deleting a vocabulary value
+  never rewrites a submitted intake or an open draft; the Intake topic
+  answers only the principal and the support/intake topic is unchanged;
+  the voice path reuses Let's Talk's loop and engines.
+
+invariants:
+  - "Deleting a vocabulary value never changes a submitted intake or an open draft."
+  - "A draft's content lives on the bridge host, never in the page's browser storage."
+
+source: |
+  Raw intake `backlog/INTAKE-telegram-intake-builder-20260925.md`: the
+  human, via Claude Code acting as specifier for the clarification round,
+  2026-09-25; drained by the specifier the same day into epic BL-1731 and
+  slices BL-1732..BL-1737. This ticket is S1 part 2: kept drafts and deleting dropdown values.
+
+  The human's sentences, verbatim (Article 5.3; every slice carries all of
+  them):
+
+  > New intake - ask me for clarifications before putting it in, as if you were the swarm specifier.
+  >
+  > I want a new specialised topic in telegram for helping me inputing new intakes.
+  > I am to start by defining a overall goal in thus form
+  >
+  > As a user
+  > I want to do this action
+  > So i can acheive this goal
+  >
+  > I want "a user", "do this action" and "acheive this goal" to be drop down lists populated with what the previous the previous intakes have. This to enforce ubiiquitous language.
+  > I can add a new value to the dropdown in case uts empty or does not contain what I want.
+  >
+  > Then I want to add one or more gherkins scenarios.
+  > Given some state
+  > When something happens
+  > Then some other state
+  >
+  > Add a "verify" button to have the intake given to the specifier so that it can run is usual skills on it (dry, invest, etc), so he maybcome back with improvements for the pending intake. I can accept or not his changes.
+  >
+  > Add a submit button so the intake is put in the usual queue.
+
+  > Can I also get a "ask specifier" button ? If I want interactive helpnfrom him while working on this? A push to talk and a tts talking back to me would be great, a bit like we have with bubble, but the agent would be the specifier.
+
+  > 1: I want to be able to delete what I dont want from dropdown lists.
+  > 2: qjulp at the back of the local llm slices
+
+description: |
+  ## What is wanted
+
+  - **Drafts** are kept by the bridge host, several at once
+    (`.swarmforge/operator/intake-drafts/`, for example, following the
+    `.swarmforge/operator/*.json` stores the other Mini App routes keep).
+    They are listed when the form opens, and each can be resumed exactly as
+    left or discarded. Values added to a draft stay in that draft until
+    Submit (BL-1732), so discarding the draft drops them.
+  - **Delete**: each dropdown value has a Delete that asks for a confirm.
+    A confirmed delete removes the value from the shared vocabulary,
+    committed through the same path as Submit. A cancelled one changes
+    nothing. A submitted intake is a file already written and is never
+    touched. An open draft keeps its value even after the value leaves the
+    list.
+
+  ## Scope
+
+  - The form page and its routes (BL-1732's modules).
+  - The drafts store; the vocabulary store's delete.
+  - `specs/features/BL-1733-...feature` + the pinned handler.
+constraints: >
+  No browser storage in the page (Architecture rule 3). A delete is a
+  vocabulary commit, never an edit of any INTAKE file or draft. Renaming
+  or merging values stays out of scope (intake v1).
+
+out_of_scope: |
+  - Verify and Ask (BL-1734..BL-1737).
+  - Renaming or merging vocabulary values (intake v1 out of scope).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1733-intake-drafts-are-kept-and-dropdown-values-can-be-deleted.feature`:
+     all ok (6 of 6).
+  2. Live at phone width: start two drafts, close the form, reopen it.
+     Both are listed and each resumes as left. Discard one that added an
+     actor: a fresh draft does not offer that actor.
+  3. Delete a seeded value you will restore by hand afterwards, first
+     cancelling and then confirming. It stays after the cancel and leaves
+     later drafts after the confirm. An intake that used it still reads
+     it. Restore the value.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+notes: |
+  Minted 2026-09-25 by the specifier from the backlog-root intake
+  (queue-jump, human-approved by the jump request).

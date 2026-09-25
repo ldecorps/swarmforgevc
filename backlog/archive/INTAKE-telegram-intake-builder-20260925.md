@@ -1,3 +1,27 @@
+# Disposition (specifier, 2026-09-25)
+
+Drained without a further question: every real choice had been put to the
+human and answered (table below). Minted epic tracker **BL-1731**
+(telegram-intake-builder, M8) and six slices, all `human_approval:
+approved` as a queue-jump. Each slice's `source:` carries every human
+sentence verbatim (Article 5.3).
+
+INVEST split the intake's three proposed slices into six, because S1 and
+S2 each carried more than one sitting:
+- S1 → **BL-1732** (topic, form, Submit) + **BL-1733** (kept drafts,
+  deleting values).
+- S2 → **BL-1734** (host checks + suggestions), **BL-1735** (read-only
+  per-draft specifier session), **BL-1736** (staleness, one at a time,
+  Verify history).
+- S3 → **BL-1737** (Ask panel).
+
+The slices form one `depends_on` chain, because every one touches the
+form's modules. The queue place is an ordering the gate reads: the tracker
+has epic priority 0, and each slice has own priority 21, behind every
+local-llm-swarm ticket (0 to 20). This differs from the intake's
+suggested 1, which would have jumped BL-1704 and BL-1711. The gate's own
+sort keys confirmed the order at mint.
+
 # INTAKE — An "Intake" Telegram topic whose Mini App form writes intakes in one ubiquitous language, with Verify and an Ask-specifier voice panel (QUEUE-JUMP, directly behind the local-LLM slices)
 
 **Source:** the human, via Claude Code acting as specifier for the

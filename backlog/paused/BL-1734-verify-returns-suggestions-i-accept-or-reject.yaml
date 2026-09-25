@@ -1,0 +1,140 @@
+id: BL-1734
+title: "The intake form's Verify button runs the host's own checks on the draft - IR-DRY over its steps, near-duplicates between its narrative values and the vocabulary, and backlog tickets that already deliver its action - and lists each finding as a suggestion with its own Accept and Reject plus Accept all; nothing reaches the draft without a tap"
+type: feature
+milestone: M8
+status: todo
+epic: telegram-intake-builder
+priority: 21
+# priority 21 under an epic tracker at 0: the gate sorts by epic priority,
+# then own priority, then id (BL-900). Only the local-llm-swarm epic shares
+# epic priority 0, and its slices' own priorities run 0..20, so every one of
+# them sorts ahead of these ("qjulp at the back of the local llm slices")
+# while these sort ahead of every other epic (epic priority 1 and up).
+direction: queue-jump
+depends_on: [BL-1733]
+# BL-1733 keeps drafts on the host; Verify's suggestions belong to a kept
+# draft.
+mutation_cost: medium
+# medium: TypeScript under Stryker - three deterministic checks, the
+# suggestion model and its accept/reject routes; five scenarios, no
+# Claude call (BL-1735 adds the session).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1734-verify-returns-suggestions-i-accept-or-reject.feature
+
+# Handler pin (BL-233, BL-1371).
+required_wiring:
+  - 'specs/pipeline/steps/bl1734VerifySuggestionsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted `human_approval: approved`: the human named this work and its
+  queue place ("qjulp at the back of the local llm slices"), and under the
+  2026-09-15 ruling a queue-jump request is the approval for a plain gate.
+  Every real choice was put to the human and answered in the clarification
+  round (table in the epic tracker BL-1731), so no ruling_options.
+  This slice (S2 part 1) is Verify's host checks and the suggestion
+  protocol; the specifier session's review is BL-1735.
+  FIRM (the intake's, for every slice): nothing the specifier suggests,
+  from Verify or from talking, reaches the draft without the human's tap;
+  Verify and Ask never touch the pipeline specifier seat and never wait on
+  a shift; the specifier session is read-only; deleting a vocabulary value
+  never rewrites a submitted intake or an open draft; the Intake topic
+  answers only the principal and the support/intake topic is unchanged;
+  the voice path reuses Let's Talk's loop and engines.
+
+invariants:
+  - "Nothing Verify returns changes a draft until the human taps Accept or Accept all."
+
+source: |
+  Raw intake `backlog/INTAKE-telegram-intake-builder-20260925.md`: the
+  human, via Claude Code acting as specifier for the clarification round,
+  2026-09-25; drained by the specifier the same day into epic BL-1731 and
+  slices BL-1732..BL-1737. This ticket is S2 part 1: Verify's host checks and the suggestion list.
+
+  The human's sentences, verbatim (Article 5.3; every slice carries all of
+  them):
+
+  > New intake - ask me for clarifications before putting it in, as if you were the swarm specifier.
+  >
+  > I want a new specialised topic in telegram for helping me inputing new intakes.
+  > I am to start by defining a overall goal in thus form
+  >
+  > As a user
+  > I want to do this action
+  > So i can acheive this goal
+  >
+  > I want "a user", "do this action" and "acheive this goal" to be drop down lists populated with what the previous the previous intakes have. This to enforce ubiiquitous language.
+  > I can add a new value to the dropdown in case uts empty or does not contain what I want.
+  >
+  > Then I want to add one or more gherkins scenarios.
+  > Given some state
+  > When something happens
+  > Then some other state
+  >
+  > Add a "verify" button to have the intake given to the specifier so that it can run is usual skills on it (dry, invest, etc), so he maybcome back with improvements for the pending intake. I can accept or not his changes.
+  >
+  > Add a submit button so the intake is put in the usual queue.
+
+  > Can I also get a "ask specifier" button ? If I want interactive helpnfrom him while working on this? A push to talk and a tts talking back to me would be great, a bit like we have with bubble, but the agent would be the specifier.
+
+  > 1: I want to be able to delete what I dont want from dropdown lists.
+  > 2: qjulp at the back of the local llm slices
+
+description: |
+  ## What is wanted
+
+  - A **Verify** button on each draft. It runs, on demand at any hour:
+    - **IR-DRY over the draft's steps.** Write the draft's scenarios as a
+      temporary feature under the bridge's own temp root, then run the
+      vendored `bb gherkin-parser` and `bb gherkin-ir-dry-checker` from
+      `swarmforge/vendor/aps/`, as the specifier does at mint (answer 5).
+    - **Near-duplicate narrative values**: a draft value that differs from
+      an existing vocabulary value only by case, an article or spacing
+      ("operator" and "the operator"), or by a small edit distance.
+    - **Backlog overlap**: tickets in `backlog/active`, `paused` and `done`
+      whose title or feature narrative already delivers the draft's action.
+      The top few, each named by id.
+  - Each finding becomes one **suggestion**: what was found, and
+    optionally a proposed change to the draft. Each has Accept and Reject,
+    with Accept all over the open ones (answer 4). Accepting a suggestion
+    with a proposed change applies it. Accepting one without a change (such
+    as "BL-123 already delivers this") just acknowledges it. Nothing is
+    applied without a tap.
+  - The suggestion shape is the one BL-1735's specifier session and
+    BL-1737's Ask panel will also produce. Keep it source-agnostic, with a
+    `source` field.
+
+  ## Scope
+
+  - The form page and routes; a verify module with the three checks and
+    the suggestion model.
+  - `specs/features/BL-1734-...feature` + the pinned handler.
+constraints: >
+  Verify runs entirely on the bridge host in this slice: no Claude call,
+  no handoff, nothing sent to any pipeline seat. The IR-DRY run's temp
+  feature file lives under a swept temp root and never under
+  specs/features/.
+
+out_of_scope: |
+  - The specifier session's INVEST review: BL-1735.
+  - Staleness, one Verify at a time, and the history in the INTAKE file:
+    BL-1736.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1734-verify-returns-suggestions-i-accept-or-reject.feature`:
+     all ok (5 of 5).
+  2. Live at phone width: a draft whose two scenarios share a Given step,
+     with actor "operator" and the action "file a new intake from my
+     phone". Verify lists the repeated step, the actor near-duplicate and
+     at least one existing ticket, each with Accept and Reject. Reject
+     one: the draft is unchanged. Accept all: every proposed change
+     applies.
+  3. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+notes: |
+  Minted 2026-09-25 by the specifier from the backlog-root intake
+  (queue-jump, human-approved by the jump request).

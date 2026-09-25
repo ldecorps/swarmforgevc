@@ -1,0 +1,197 @@
+id: BL-1732
+title: "A standing Telegram forum topic 'Intake' (principal-only) opens a Mini App form: a narrative 'As <actor> / I want to <action> / So I can <goal>' whose three slots are dropdowns over a shared, seeded vocabulary (with add-new, shared only on Submit), one or more free-text Given/When/Then scenarios and optional notes; Submit writes an INTAKE file at the backlog root and the topic confirms it with the file's GitHub permalink"
+type: feature
+milestone: M8
+status: todo
+epic: telegram-intake-builder
+priority: 21
+# priority 21 under an epic tracker at 0: the gate sorts by epic priority,
+# then own priority, then id (BL-900). Only the local-llm-swarm epic shares
+# epic priority 0, and its slices' own priorities run 0..20, so every one of
+# them sorts ahead of these ("qjulp at the back of the local llm slices")
+# while these sort ahead of every other epic (epic priority 1 and up).
+direction: queue-jump
+depends_on: []
+# First slice of epic BL-1731; nothing unbuilt ahead of it.
+mutation_cost: medium
+# medium: TypeScript under Stryker - a topic ensure, a Mini App page and
+# its bridge routes, a vocabulary store with its seed, and the intake
+# writer; six scenarios over the routes and stores, no live Telegram.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1732-the-intake-topic-opens-a-form-that-files-an-intake.feature
+
+# Handler pin (BL-233, BL-1371).
+required_wiring:
+  - 'specs/pipeline/steps/bl1732IntakeTopicFormSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+  - 'extension/src/bridge/bridgeServer.ts::/intake-form::the live bridge server routes the form page (BL-1235: the consumer that reaches it)'
+
+human_approval: approved
+approval_context: >
+  Minted `human_approval: approved`: the human named this work and its
+  queue place ("qjulp at the back of the local llm slices"), and under the
+  2026-09-15 ruling a queue-jump request is the approval for a plain gate.
+  Every real choice was put to the human and answered in the clarification
+  round (table in the epic tracker BL-1731), so no ruling_options.
+  This slice (S1 of the intake) is the topic, the form and Submit; kept
+  drafts and value deletion are BL-1733.
+  FIRM (the intake's, for every slice): nothing the specifier suggests,
+  from Verify or from talking, reaches the draft without the human's tap;
+  Verify and Ask never touch the pipeline specifier seat and never wait on
+  a shift; the specifier session is read-only; deleting a vocabulary value
+  never rewrites a submitted intake or an open draft; the Intake topic
+  answers only the principal and the support/intake topic is unchanged;
+  the voice path reuses Let's Talk's loop and engines.
+
+invariants:
+  - "A value joins the shared vocabulary only as part of a submitted intake that uses it."
+  - "Only the principal can file an intake or change the shared vocabulary: the form's write routes refuse a request without the bridge's device and control tokens, and the Intake topic ignores everyone else."
+
+source: |
+  Raw intake `backlog/INTAKE-telegram-intake-builder-20260925.md`: the
+  human, via Claude Code acting as specifier for the clarification round,
+  2026-09-25; drained by the specifier the same day into epic BL-1731 and
+  slices BL-1732..BL-1737. This ticket is S1: the Intake topic, its form and Submit.
+
+  The human's sentences, verbatim (Article 5.3; every slice carries all of
+  them):
+
+  > New intake - ask me for clarifications before putting it in, as if you were the swarm specifier.
+  >
+  > I want a new specialised topic in telegram for helping me inputing new intakes.
+  > I am to start by defining a overall goal in thus form
+  >
+  > As a user
+  > I want to do this action
+  > So i can acheive this goal
+  >
+  > I want "a user", "do this action" and "acheive this goal" to be drop down lists populated with what the previous the previous intakes have. This to enforce ubiiquitous language.
+  > I can add a new value to the dropdown in case uts empty or does not contain what I want.
+  >
+  > Then I want to add one or more gherkins scenarios.
+  > Given some state
+  > When something happens
+  > Then some other state
+  >
+  > Add a "verify" button to have the intake given to the specifier so that it can run is usual skills on it (dry, invest, etc), so he maybcome back with improvements for the pending intake. I can accept or not his changes.
+  >
+  > Add a submit button so the intake is put in the usual queue.
+
+  > Can I also get a "ask specifier" button ? If I want interactive helpnfrom him while working on this? A push to talk and a tts talking back to me would be great, a bit like we have with bubble, but the agent would be the specifier.
+
+  > 1: I want to be able to delete what I dont want from dropdown lists.
+  > 2: qjulp at the back of the local llm slices
+
+description: |
+  ## What is wanted
+
+  - **The topic.** A new standing forum topic "Intake". It is created,
+    reused and rebound like the other standing topics (the `ensure*Topic`
+    family in `extension/src/tools/telegram-front-desk-bot.ts`, decisions in
+    `telegramTopicDecisions.ts`, ids in
+    `.swarmforge/operator/telegram-standing-topic-ids.json`) and answers
+    only the principal (`isFromPrincipal`). It is distinct from the
+    support/intake 🎟 SUP threads (BL-418), which are unchanged.
+  - **The way in.** Forum topics cannot carry `web_app` buttons
+    (`residentSpyTunnelNotify.ts:80-96`), so follow the console's
+    precedent: a `url` button in the topic, plus the `web_app` button in
+    the principal's private chat (`notify-resident-spy-tunnel.ts`). Any
+    principal message in the topic is answered with the way in. When the
+    tunnel is down, the answer says the form is unreachable and why
+    (scenario 05), never a dead button.
+  - **The form**, served at `/intake-form` beside `/epic-reorder` and
+    `/catch-up` in `bridgeServer.ts`, and authenticated like them:
+    `?bearer=` to read, plus the control token for writes. It has:
+    - three narrative dropdowns (actor, action, goal) over the shared
+      vocabulary, each with "add new…". An added value is usable in this
+      draft at once and joins the shared list only on Submit (answer 8);
+    - one or more scenarios in free text (Given/When/Then, plus And/But);
+    - an optional notes field (answer 7).
+    One draft at a time in this slice; BL-1733 keeps several. The page
+    never uses browser storage (Architecture rule 3; the header of
+    `webUiFontSizePreference.ts`).
+  - **Submit** writes `backlog/INTAKE-<slug>-<yyyymmdd>.md` at the backlog
+    root. It holds "As <actor> / I want to <action> / So I can <goal>",
+    the scenarios and the notes. The file and the vocabulary update are
+    committed together through `commit_integrity_cli.bb` (the front desk's
+    own commit path, BL-1368; BL-415's `operator_file_question.bb` is the
+    closest prior art). The topic then confirms with the file's GitHub
+    permalink (`github-permalink` in `operator_lib.bb`, BL-415). Nothing
+    pushes in that path today; the permalink resolves once `main` reaches
+    origin.
+  - **The vocabulary** is durable and tracked, seeded with the starter
+    list below. It is stored outside the backlog root's top level, whose
+    files are the raw intake queue; `backlog/vocabulary/intake-narrative.yaml`,
+    for example. Values are stored without the template words. The
+    parenthetical glossary is hint text, not part of the value.
+
+  **Starter vocabulary.** Seed all of it (answer 13); the human deletes
+  what they don't want in BL-1733.
+  - Actors: the human (the one authorised Telegram principal) · a phone
+    user · a SwarmForge VC user (someone running the swarm on their own
+    repo) · the operator (a Claude Code session supervising the swarm) ·
+    the specifier · the coder · the cleaner · the architect · the
+    hardender (the repo's spelling) · the documenter · QA · the
+    coordinator · the art director.
+  - Actions: file a new intake from my phone · see that an agent has
+    accepted my question · chat with a local model about the project ·
+    run a swarm seat on a local model · approve or reject a pending
+    decision.
+  - Goals: know the swarm is working on it · keep the backlog in one
+    ubiquitous language · work on the project away from my desk · cut
+    cloud token costs · trust that nothing lands without review.
+
+  ## Why the dropdowns are seeded, not mined (intake evidence, 2026-09-25)
+
+  - Of 1,382 feature files, 9 contain an "As a" line and only 2 are real
+    narratives. 4 of 95 archived intakes contain one.
+  - Steps stay free text: there are 19,309 distinct step phrases, and the
+    most reused appears 9 times.
+
+  ## Scope
+
+  - `extension/src/tools/telegram-front-desk-bot.ts` and
+    `telegramTopicDecisions.ts` (the topic and its answer).
+  - A new `extension/src/bridge/intakeFormUiHtml.ts` plus a routes module,
+    wired in `bridgeServer.ts`.
+  - The vocabulary store and its seed file; the intake writer.
+  - `specs/features/BL-1732-...feature` + the pinned handler.
+constraints: >
+  The form page keeps no browser storage (Architecture rule 3). Acceptance
+  drives the bridge routes, the stores and the topic decision in-process;
+  the Telegram client and the phone are the unsuitable boundary
+  (engineering Design And Testability). No new STT/TTS, no Verify here.
+  The support/intake SUP threads are untouched (BL-418).
+
+out_of_scope: |
+  - Kept drafts and deleting values: BL-1733.
+  - Verify: BL-1734, BL-1735, BL-1736. Ask specifier: BL-1737.
+  - From the intake, for v1: the Bubble Android app and Telegram voice notes
+    as Ask surfaces; hold-to-talk; Scenario Outline/Examples tables;
+    renaming or merging vocabulary values; a vocabulary for steps.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1732-the-intake-topic-opens-a-form-that-files-an-intake.feature`:
+     all ok (8 of 8).
+  2. Live, bridge and tunnel up: send any message in the Intake topic. The
+     topic answers with the way into the form. Open the form at phone
+     width: the three dropdowns offer the starter values.
+  3. Submit a draft with a narrative, one scenario and one new goal.
+     Put "QA e2e test - retire on drain" in the notes field; the specifier
+     archives that intake without minting.
+     An INTAKE file appears at the backlog root in one commit with the
+     vocabulary update. The topic posts its permalink. A fresh draft offers
+     the new goal.
+  4. `curl` the submit route without the control token: refused, and no
+     file is written.
+  5. With the tunnel stopped, ask the topic for the form: it says the form
+     is unreachable and why.
+  6. Art Director sign-off note on the form's look (Article 1.10).
+  7. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+notes: |
+  Minted 2026-09-25 by the specifier from the backlog-root intake
+  (queue-jump, human-approved by the jump request).

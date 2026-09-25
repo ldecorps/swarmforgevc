@@ -1,0 +1,143 @@
+id: BL-1737
+title: "An Ask panel in the intake form talks to the draft's own specifier session through Let's Talk's existing turn loop and controls (tap to talk, tap to send, optional hands-free, hold music, mute) plus a text box; replies are short and spoken with the full text shown, any change it wants arrives as an ordinary suggestion, a later Verify runs in the same session, and the transcript goes into the submitted intake"
+type: feature
+milestone: M8
+status: todo
+epic: telegram-intake-builder
+priority: 21
+# priority 21 under an epic tracker at 0: the gate sorts by epic priority,
+# then own priority, then id (BL-900). Only the local-llm-swarm epic shares
+# epic priority 0, and its slices' own priorities run 0..20, so every one of
+# them sorts ahead of these ("qjulp at the back of the local llm slices")
+# while these sort ahead of every other epic (epic priority 1 and up).
+direction: queue-jump
+depends_on: [BL-1736]
+# BL-1735 builds the per-draft specifier session this panel talks to;
+# BL-1736 edits the same intake writer, so this lands after it (one chain).
+mutation_cost: medium
+# medium: TypeScript under Stryker - an agentSession adapter over the
+# BL-1735 session, form routes for turns, and the transcript section;
+# Let's Talk's loop and engines are reused unchanged.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1737-ask-the-specifier-by-voice-or-text-from-the-intake-form.feature
+
+# Handler pin (BL-233, BL-1371).
+required_wiring:
+  - 'specs/pipeline/steps/bl1737AskSpecifierPanelSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted `human_approval: approved`: the human named this work and its
+  queue place ("qjulp at the back of the local llm slices"), and under the
+  2026-09-15 ruling a queue-jump request is the approval for a plain gate.
+  Every real choice was put to the human and answered in the clarification
+  round (table in the epic tracker BL-1731), so no ruling_options.
+  This slice (S3) is the Ask panel; answers 9, 11 and 12 of the
+  clarification round fix its shape.
+  FIRM (the intake's, for every slice): nothing the specifier suggests,
+  from Verify or from talking, reaches the draft without the human's tap;
+  Verify and Ask never touch the pipeline specifier seat and never wait on
+  a shift; the specifier session is read-only; deleting a vocabulary value
+  never rewrites a submitted intake or an open draft; the Intake topic
+  answers only the principal and the support/intake topic is unchanged;
+  the voice path reuses Let's Talk's loop and engines.
+
+invariants:
+  - "An Ask turn never changes the draft; any change the specifier wants arrives as a suggestion that waits for the human's tap."
+
+source: |
+  Raw intake `backlog/INTAKE-telegram-intake-builder-20260925.md`: the
+  human, via Claude Code acting as specifier for the clarification round,
+  2026-09-25; drained by the specifier the same day into epic BL-1731 and
+  slices BL-1732..BL-1737. This ticket is S3: the Ask specifier panel.
+
+  The human's sentences, verbatim (Article 5.3; every slice carries all of
+  them):
+
+  > New intake - ask me for clarifications before putting it in, as if you were the swarm specifier.
+  >
+  > I want a new specialised topic in telegram for helping me inputing new intakes.
+  > I am to start by defining a overall goal in thus form
+  >
+  > As a user
+  > I want to do this action
+  > So i can acheive this goal
+  >
+  > I want "a user", "do this action" and "acheive this goal" to be drop down lists populated with what the previous the previous intakes have. This to enforce ubiiquitous language.
+  > I can add a new value to the dropdown in case uts empty or does not contain what I want.
+  >
+  > Then I want to add one or more gherkins scenarios.
+  > Given some state
+  > When something happens
+  > Then some other state
+  >
+  > Add a "verify" button to have the intake given to the specifier so that it can run is usual skills on it (dry, invest, etc), so he maybcome back with improvements for the pending intake. I can accept or not his changes.
+  >
+  > Add a submit button so the intake is put in the usual queue.
+
+  > Can I also get a "ask specifier" button ? If I want interactive helpnfrom him while working on this? A push to talk and a tts talking back to me would be great, a bit like we have with bubble, but the agent would be the specifier.
+
+  > 1: I want to be able to delete what I dont want from dropdown lists.
+  > 2: qjulp at the back of the local llm slices
+
+description: |
+  ## What is wanted
+
+  - **Transport**: Let's Talk's turn loop as it is. `processLetsTalkTurn`
+    (`extension/src/bridge/letsTalkRoutes.ts:324`) takes its agent as the
+    injected `agentSession` (`{promptAgent, resetSession, readAgentId}`,
+    `cursorBridgeAgentSession.ts:31-39`). Here that is an adapter over the
+    draft's BL-1735 session. The turn routes sit under the form and are
+    guarded like `/lets-talk/turn`.
+  - **The panel** sits inside the form (answer 11) and reuses Let's Talk's
+    controls: tap to talk, tap to send, optional hands-free, hold music
+    and mute (answer 12, not hold-to-talk). It adds a text box for typing
+    instead. Speech-to-text is local whisper.cpp on the bridge host and
+    replies are spoken by the phone's `speechSynthesis` (BL-696). No new
+    engine.
+  - **Replies** are short and spoken-style, with the full text shown under
+    the draft.
+  - **Changes** the specifier wants arrive as BL-1734 suggestions (the same
+    parser, `source: specifier`). Nothing applies without a tap (answer 9).
+  - **Transcript**: Submit writes the conversation into the INTAKE file
+    beside the Verify history.
+  - **Cost**: each turn is one Claude call, the same as a Verify press.
+
+  ## Scope
+
+  - An agentSession adapter over the BL-1735 session; the form's Ask routes
+    and panel; the intake writer's transcript section.
+  - `specs/features/BL-1737-...feature` + the pinned handler (fake session
+    and fake STT/TTS in acceptance).
+constraints: >
+  Let's Talk's own page, routes and engines are not changed; the Ask panel
+  reuses them. Acceptance fakes the session, STT and TTS; the phone's
+  audio is the unsuitable boundary.
+
+out_of_scope: |
+  - From the intake, for v1: the Bubble Android app and Telegram voice notes
+    as Ask surfaces; hold-to-talk.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1737-ask-the-specifier-by-voice-or-text-from-the-intake-form.feature`:
+     all ok (5 of 5).
+  2. Live on the phone: open a draft, tap talk, ask "is there already a
+     ticket for this?", and tap again. The answer is spoken and its text
+     shown. Type a question: same.
+  3. Ask it to add a scenario: a suggestion appears and the draft is
+     unchanged until Accept.
+  4. Press Verify: the run log shows the conversation's session id.
+  5. Submit.
+     Put "QA e2e test - retire on drain" in the notes field; the specifier
+     archives that intake without minting.
+     The INTAKE file holds the transcript.
+  6. Art Director sign-off note on the panel's look (Article 1.10).
+  7. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+notes: |
+  Minted 2026-09-25 by the specifier from the backlog-root intake
+  (queue-jump, human-approved by the jump request).

@@ -1,0 +1,127 @@
+id: BL-1736
+title: "A Verify result is marked stale as soon as its draft is edited, only one Verify runs per draft at a time (a second press says one is running and starts nothing), and the submitted INTAKE file carries every suggestion with what the human did with it, so the draining specifier does not repeat that review"
+type: feature
+milestone: M8
+status: todo
+epic: telegram-intake-builder
+priority: 21
+# priority 21 under an epic tracker at 0: the gate sorts by epic priority,
+# then own priority, then id (BL-900). Only the local-llm-swarm epic shares
+# epic priority 0, and its slices' own priorities run 0..20, so every one of
+# them sorts ahead of these ("qjulp at the back of the local llm slices")
+# while these sort ahead of every other epic (epic priority 1 and up).
+direction: queue-jump
+depends_on: [BL-1735]
+# BL-1734 builds the suggestions this slice versions and records; BL-1735
+# edits the same verify module, so this lands after it (the epic is one
+# chain - every slice touches the form's modules, orthogonality allows no
+# overlap).
+mutation_cost: low
+# low: a draft revision counter, a per-draft run lock, and one more
+# section in the INTAKE writer; three scenarios.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1736-a-verify-is-current-or-stale-and-travels-with-the-intake.feature
+
+# Handler pin (BL-233, BL-1371).
+required_wiring:
+  - 'specs/pipeline/steps/bl1736VerifyStalenessAndHistorySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted `human_approval: approved`: the human named this work and its
+  queue place ("qjulp at the back of the local llm slices"), and under the
+  2026-09-15 ruling a queue-jump request is the approval for a plain gate.
+  Every real choice was put to the human and answered in the clarification
+  round (table in the epic tracker BL-1731), so no ruling_options.
+  This slice (S2 part 3) is the Verify's lifecycle and record.
+  FIRM (the intake's, for every slice): nothing the specifier suggests,
+  from Verify or from talking, reaches the draft without the human's tap;
+  Verify and Ask never touch the pipeline specifier seat and never wait on
+  a shift; the specifier session is read-only; deleting a vocabulary value
+  never rewrites a submitted intake or an open draft; the Intake topic
+  answers only the principal and the support/intake topic is unchanged;
+  the voice path reuses Let's Talk's loop and engines.
+
+invariants:
+  - "A Verify result the form shows as current was computed on the draft exactly as it now reads."
+
+source: |
+  Raw intake `backlog/INTAKE-telegram-intake-builder-20260925.md`: the
+  human, via Claude Code acting as specifier for the clarification round,
+  2026-09-25; drained by the specifier the same day into epic BL-1731 and
+  slices BL-1732..BL-1737. This ticket is S2 part 3: staleness, one Verify at a time, and the Verify history.
+
+  The human's sentences, verbatim (Article 5.3; every slice carries all of
+  them):
+
+  > New intake - ask me for clarifications before putting it in, as if you were the swarm specifier.
+  >
+  > I want a new specialised topic in telegram for helping me inputing new intakes.
+  > I am to start by defining a overall goal in thus form
+  >
+  > As a user
+  > I want to do this action
+  > So i can acheive this goal
+  >
+  > I want "a user", "do this action" and "acheive this goal" to be drop down lists populated with what the previous the previous intakes have. This to enforce ubiiquitous language.
+  > I can add a new value to the dropdown in case uts empty or does not contain what I want.
+  >
+  > Then I want to add one or more gherkins scenarios.
+  > Given some state
+  > When something happens
+  > Then some other state
+  >
+  > Add a "verify" button to have the intake given to the specifier so that it can run is usual skills on it (dry, invest, etc), so he maybcome back with improvements for the pending intake. I can accept or not his changes.
+  >
+  > Add a submit button so the intake is put in the usual queue.
+
+  > Can I also get a "ask specifier" button ? If I want interactive helpnfrom him while working on this? A push to talk and a tts talking back to me would be great, a bit like we have with bubble, but the agent would be the specifier.
+
+  > 1: I want to be able to delete what I dont want from dropdown lists.
+  > 2: qjulp at the back of the local llm slices
+
+description: |
+  ## What is wanted
+
+  - Each draft carries a revision. A Verify result records the revision it
+    reviewed, and any edit after it marks the result stale in the form.
+    Its suggestions stay visible, marked as possibly out of date.
+  - One Verify per draft at a time. A second press while one runs starts
+    nothing, and the form says a Verify is already running.
+  - Submit writes a "Verify history" section into the INTAKE file. It
+    lists each suggestion, its source (host check or specifier session)
+    and its outcome: accepted, rejected or left open. Then the draining
+    specifier knows what was already reviewed (answer 6: Verify is
+    optional, and the specifier still applies INVEST at drain).
+
+  ## Scope
+
+  - The drafts store (revision), the verify module (run lock), the intake
+    writer (history section).
+  - `specs/features/BL-1736-...feature` + the pinned handler.
+constraints: >
+  The run lock is per draft and released on every exit path of a Verify,
+  including a failed or timed-out session run.
+
+out_of_scope: |
+  - Ask specifier and its transcript: BL-1737.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1736-a-verify-is-current-or-stale-and-travels-with-the-intake.feature`:
+     all ok (3 of 3).
+  2. Live: verify a draft, edit a scenario, and see the result marked
+     stale. Press Verify twice quickly: the second press says a Verify is
+     running.
+  3. Submit a draft with one accepted and one rejected suggestion.
+     Put "QA e2e test - retire on drain" in the notes field; the specifier
+     archives that intake without minting.
+     The INTAKE file's Verify history lists both, with their outcomes.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+notes: |
+  Minted 2026-09-25 by the specifier from the backlog-root intake
+  (queue-jump, human-approved by the jump request).
