@@ -32,7 +32,6 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-unit	extension/test/bl1652HandoffdRespawnReadingsWiring.test.js	BL-1724	2026-09-24	per-file budget: 13.4s in-suite, 9.6s alone at load ~13 on BL-1697 parcel 8e0fd17c06 (QA note 003138, evidence b8b7a3ab55); 8.0s alone on main at load 12.4; seven fresh bb loads of handoffd.bb; leaves when BL-1724 lands
 property	extension/test/bl1650LandStepPureEvidenceStrayInvariants.property.test.js	BL-1725	2026-09-24	invariant 2 timed out at 20000ms in the property lane at load 11-14 on BL-1697 parcel 8e0fd17c06 (QA note 003138); 10.8s alone on main at load 12.4; a fresh fixture and a full land_step_cli run per draw; leaves when BL-1725 lands
 property	extension/test/bl1703OllamaLaunchProbe.property.test.js	BL-1727	2026-09-24	invariant "a never-answering endpoint refuses the launch and leaves no started process running" failed at load ~11 on BL-1720 parcel d24e8d4b0c: expected pid 7123 to be stopped (QA note 003152, evidence 7d558cc562); ollama_ancillary_stop_pid sends TERM and never waits; green on main at load 3.1; leaves when BL-1727 lands
 shell	swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh	BL-1728	2026-09-24	exit 2: REFUSED project-root /tmp/tmp.*: not inside a git checkout - BL-1517 (3252212a66, 2026-09-22) refuses non-checkout roots and the fixture is a bare mktemp -d; red since 2026-09-22 (QA note 003152); leaves when BL-1728 lands
