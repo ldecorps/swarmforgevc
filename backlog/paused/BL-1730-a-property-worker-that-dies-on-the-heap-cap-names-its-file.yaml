@@ -1,0 +1,145 @@
+id: BL-1730
+title: "A property-lane fork worker that dies on the V8 heap cap is reported only as 'Channel closed' / ERR_IPC_CHANNEL_CLOSED with no file named - BL-1651's per-file ceiling is checked after each test, so an allocation that outruns it between checks kills the worker first (its invariant 1, 'fails as that file, by name', does not hold for that shape), and on 2026-09-25 naming the two offenders took two hand bisections over 77 files: the death names the file that worker was running, in the lane output and in the property guard's refusal log"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real but contained defect. The lane still goes red and the
+# guard still refuses: the signal fires, it just cannot say which file. No
+# heap death is live once BL-1729 lands, so this bites only the next
+# regression of the class, which it then turns from a bisection into a
+# name. Not high: nothing is degraded while no file crosses the cap.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: human-intake
+depends_on: []
+# BL-1651 (done) built the per-file ceiling (propertyLaneHeapGuardSetup.js)
+# and BL-1275 (done) the guard's refusal log; BL-1729 (paused, sibling
+# from the same intake) removes today's two offenders. Independent of it:
+# this ticket's feature drives a fixture file, never the real offenders.
+mutation_cost: medium
+# medium: new JS in the property lane's setup/reporting path under
+# Stryker, plus a feature whose two scenarios each spawn a short vitest
+# run over two fixture files (seconds each, far inside BL-1541's
+# per-mutant ceiling).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1730-a-property-worker-that-dies-on-the-heap-cap-names-its-file.feature
+
+# Handler pin only (BL-233, BL-1371). The mechanism's consumer is the
+# property lane's own config and the guard, both of which exist before
+# and after; the feature drives both end to end, so the handler is the
+# anchor that gates something.
+required_wiring:
+  - 'specs/pipeline/steps/bl1730HeapCapDeathNamesItsFileSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Sign-off on the new feature file: two scenarios, both over fixture
+  property files under a small cap, never the full lane. FIRM: the cap,
+  the per-file ceiling and the fork pool are unchanged. This ticket only
+  adds a name to a death that already happens. FIRM: the name is the file
+  the dead worker was running, never a guess across every file in flight.
+  With 15 forks, up to 15 files run at once, and naming them all would
+  send the next investigator to the wrong 14. FIRM: the refusal log names
+  it too, since that log is what a later adjudication reads (BL-1275).
+
+invariants:
+  - "When a property-lane fork worker dies on its heap cap, the run's own output names the file that worker was running, and names no other file as one whose worker died."
+
+source: |
+  Raw intake `backlog/INTAKE-property-lane-heap-cap-crash-regressed-20260925.md`,
+  filed by the operator (Claude Code) at the human's go-ahead on
+  2026-09-25, drained by the specifier the same day. It was split into
+  BL-1729 (asks 1 and 3) and this ticket (ask 2: "Make a worker that dies
+  at the heap cap name the test file(s) it was running, in the lane output
+  and in the refusal log.").
+
+  The operator asked: "The regression matters beyond this hotfix: it blocks
+  every `extension/src` commit on `main` unless someone overrides the
+  guard. Want me to file it as an intake for today's day shift, citing
+  BL-1651 and the three refusal logs?" The human, verbatim (Article 5.3):
+
+  > Ok
+
+description: |
+  ## What is wrong
+
+  `vitest.properties.config.mjs` runs the lane in forks, each spawned with
+  `--max-old-space-size=<workerHeapMB>`, one file per fork at a time
+  (isolation on). BL-1651's gate (`extension/test/helpers/propertyLaneHeapGuardSetup.js`)
+  is an `afterEach` that reads `process.memoryUsage().heapUsed` and fails
+  the test by file name above the per-file ceiling (85% of the cap).
+  - A test whose own allocation outruns the gap between two `afterEach`
+    calls never reaches the next one: V8 aborts the fork with `FATAL ERROR:
+    Reached heap limit`. Reading a 475 MB tree in one call is that shape.
+  - The main process sees only its IPC channel close. The lane output and
+    the guard's refusal log (`.swarmforge/property-guard-refusals/`,
+    BL-1275) carry a GC trace, a native stack and `Serialized Error: {
+    code: 'ERR_IPC_CHANNEL_CLOSED' }`, but no file name.
+  - Evidence: refusal-000001..000005 on the main checkout. The operator
+    then ran 49 files alone and the specifier 28 more before
+    `bl874PortableTimeInvariants` and `tempDirTrapGuard` were found
+    (BL-1729).
+
+  ## What is wanted
+
+  - When a fork dies on the heap cap, the lane output carries one line
+    naming the test file that fork was running, marked as a heap-cap death
+    (for example `[property-lane-heap] worker died on the heap cap
+    (640 MB) running test/<file>`). Any other files in flight on other
+    forks are not named as the death.
+  - The guard's refusal log carries the same line. If the guard keeps only
+    part of the run's output, that line is in the part kept.
+  - A lane with no heap death prints no such line.
+
+  ## How (direction, not mandate)
+
+  - The main process cannot ask a dead worker what it was running, so the
+    worker says it first. A setup file can record `<pid> -> current test
+    file` in a per-run directory at each file's start, and a vitest
+    reporter can read the dead fork's record when the run ends with a
+    closed channel. Other shapes are fine: node's
+    `--heapsnapshot-near-heap-limit` hook, or a
+    `process.on('exit')`-proof marker.
+  - Any per-run directory is created and removed like every other
+    property-lane temp root (BL-971 sweep, BL-1385 owner-pid reaping).
+  - Keep the recording path cheap: one small write per file start, never
+    per test, on a lane of 458 files.
+
+  ## Scope
+
+  - `extension/vitest.properties.config.mjs` (a reporter or setup entry).
+  - `extension/test/helpers/` (the recording side).
+  - `swarmforge/scripts/check_property_suite_drift.sh`, only if the
+    refusal log would otherwise drop the line.
+  - `specs/features/BL-1730-...feature` + the pinned handler.
+
+constraints: >
+  The per-worker cap, the per-file ceiling (BL-1651) and the fork pool
+  (BL-871) are unchanged. The unit lane's config is untouched: this is the
+  property lane's mechanism. The feature never runs the full lane (BL-1541
+  per-mutant ceiling). Fixture property files live under mkdtemp and are
+  removed in a finally (BL-971/BL-1385). The handler lands in the same
+  commit as the feature (BL-233).
+
+out_of_scope: |
+  - Fixing today's two offenders: BL-1729.
+  - A standing census-coverage guard: considered at mint and not minted
+    (see BL-1729 out_of_scope).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule); record host load.
+  1. `node specs/pipeline/cli.js specs/features/BL-1730-a-property-worker-that-dies-on-the-heap-cap-names-its-file.feature`:
+     all ok (2 of 2).
+  2. `cd extension && npm run test:properties` once: no heap-death line
+     (BL-1729 landed; if not, the line names bl874PortableTimeInvariants
+     and tempDirTrapGuard, which is itself a pass for this ticket).
+  3. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+
+notes: |
+  Minted 2026-09-25 by the specifier from the backlog-root intake, the
+  same pass as BL-1729. Medium severity, so not expedited, and it minted
+  `pending` like any non-severity feature file.

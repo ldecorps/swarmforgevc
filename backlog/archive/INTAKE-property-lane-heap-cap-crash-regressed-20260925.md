@@ -1,3 +1,28 @@
+# Disposition (specifier, 2026-09-25)
+
+Drained without a question: the intake's asks were concrete, and the root
+cause was found at mint. On the shared main checkout,
+`bl874PortableTimeInvariants` (894 MB alone) and `tempDirTrapGuard`
+(1778 MB) walk the repository root through `walkFilesTolerant`. That walk
+skips `.worktrees` but not the gitignored `.swarmforge/`, whose
+`operator/vscode-cli/` holds 475 MB of `.js`. That makes two heap deaths in
+every main-checkout refusal and none in any worktree.
+
+- **Ask 1 (find and fix) + ask 3 (re-measure the census)** → **BL-1729**
+  (defect, high, expedited, auto-approved). The walk never opens the root's
+  `.swarmforge/` or `tmp/`, and the census is regenerated from one
+  completing lane run: 458 files, 32 unmeasured at mint. Register rows for
+  both files were added in the mint commit, owner BL-1729.
+- **Ask 2 (a heap-cap death names its file)** → **BL-1730** (defect,
+  medium, pending review).
+- **"Keep it current when property files are added"** was not minted as a
+  standing guard. Once BL-1730 lands, a file that grows past the cap names
+  itself on every lane run, which is the detection the census was for. A
+  row-per-file guard would add a measuring step to every parcel that adds a
+  property file. Recorded in BL-1729's `out_of_scope`.
+- The side finding (bl1703OllamaLaunchProbe) is BL-1727's: it is active and
+  owns that register row.
+
 # INTAKE — DEFECT: the property lane dies on the V8 per-worker heap cap again (BL-1651's crash is back), so every commit touching extension/src is refused unless the guard is overridden
 
 **Source:** filed by the operator (Claude Code) at the human's go-ahead,

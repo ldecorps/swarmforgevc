@@ -1,0 +1,194 @@
+id: BL-1729
+title: "The property lane dies on the V8 per-worker heap cap on the shared main checkout (BL-1651's crash signature back: two FATAL heap deaths then ERR_IPC_CHANNEL_CLOSED, 5 of 5 main refusals, 0 in any worktree), so every extension/src commit on main is refused unless the guard is overridden: bl874PortableTimeInvariants and tempDirTrapGuard walk the whole repository root through the shared tolerant walk, which skips .worktrees/ but not the gitignored .swarmforge/, and read its 475 MB of bundled .js (the operator's VS Code CLI servers) into one worker (894 MB and 1778 MB alone on main); the walk never opens the root's runtime directories"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. On the shared main checkout the pre-commit
+# property guard cannot return a verdict: the full lane crashes the same
+# way on every run (refusal-000001..000005, 2026-09-17 and 2026-09-24/25,
+# two heap deaths each), so every commit there that stages extension/src or
+# a property file must override the guard (BL-1121: recovery only, never
+# the standing recipe) and ships with its properties unverified. The lane's
+# verdict also depends on which checkout runs it, not on the code. Not
+# critical: nothing is lost, and role worktrees and lands are unaffected.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: human-intake
+depends_on: []
+# BL-1443 (done) made walkFilesTolerant the one shared property-lane tree
+# walk; BL-1651 (done) built the per-file heap ceiling and the census;
+# BL-1730 (paused, sibling from the same intake) makes a heap-cap death
+# name its file; independent of this one.
+mutation_cost: low
+# low: one test helper's directory filter plus the two callers' walk
+# scope, a feature over a small fixture repository, and one measured lane
+# run to regenerate the census. Test-lane JS only, no extension/src.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1729-a-property-lane-repository-walk-never-reads-the-checkouts-runtime-state.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers (the two property
+# files) already call walkFilesTolerant, so an anchor there would match
+# before and after the fix and gate nothing (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1729PropertyWalkSkipsRuntimeStateSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the per-worker cap and
+  fork pool are not raised - BL-1651 sized the cap to the host and the
+  fault is what the walk reads, not the cap. FIRM: the two property files
+  keep their assertions (exactly one definition repo-wide); only the scope
+  of the walk changes. FIRM: the walk still reads every tracked .js file
+  under the root, nested directories included (scenario 02 is the
+  non-vacuity check).
+
+invariants:
+  - "A tree walk rooted at the repository root never opens a file under the root's runtime directories .swarmforge/ and tmp/, so what it reads, and the heap it takes, are the same on the shared main checkout as in a role worktree at the same commit."
+
+source: |
+  Raw intake `backlog/INTAKE-property-lane-heap-cap-crash-regressed-20260925.md`,
+  filed by the operator (Claude Code) at the human's go-ahead on
+  2026-09-25, drained by the specifier the same day. It was split into this
+  ticket (asks 1 and 3) and BL-1730 (ask 2).
+
+  The operator asked: "The regression matters beyond this hotfix: it blocks
+  every `extension/src` commit on `main` unless someone overrides the
+  guard. Want me to file it as an intake for today's day shift, citing
+  BL-1651 and the three refusal logs?" The human, verbatim (Article 5.3):
+
+  > Ok
+
+description: |
+  ## What is wrong
+
+  The pre-commit property guard (`check_property_suite_drift.sh`) runs the
+  full property lane. On the shared main checkout, every run since
+  2026-09-17 ends the same way. Two fork workers die with
+  `FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out
+  of memory`, 2.4-3.1 s after starting, with about 616 MB still live after
+  a full mark-compact against the 640 MB cap. Then vitest reports
+  `Serialized Error: { code: 'ERR_IPC_CHANNEL_CLOSED' }` and the commit is
+  refused.
+  - Evidence: `.swarmforge/property-guard-refusals/refusal-000001` to
+    `000005` on the main checkout. Every one has exactly two heap deaths.
+  - Budget line of the latest: `forks=15 workerHeapMB=640
+    fileHeapCeilingMB=544 freeRamMB=18031`.
+  - No refusal log in any role worktree has a heap death (44 logs across
+    eight worktrees).
+
+  Found by the specifier on 2026-09-25, on the main checkout, one file at a
+  time (`vitest run --config vitest.properties.config.mjs --logHeapUsage
+  <file>`; a single-file run gets forks=1 and a host-sized cap, so neither
+  file dies alone):
+  - `test/bl874PortableTimeInvariants.property.test.js`: 894 MB heap used.
+  - `test/tempDirTrapGuard.property.test.js`: 1778 MB. It walks twice.
+  - 26 other candidates stayed at 13-23 MB, including every file touching
+    the telemetry stores and every other tree-walking file. The operator's
+    own run of the 49 recently changed files found nothing either.
+
+  Both files carry the same `findFunctionDefinitionFiles(REPO_ROOT, name)`.
+  It calls `walkFilesTolerant(REPO_ROOT, { extension: '.js', withContent:
+  true })` (`extension/test/helpers/tolerantTreeWalk.js`, BL-1443). The
+  helper's `DEFAULT_EXCLUDED_DIR_NAMES` skips `node_modules`, `.git`, `out`,
+  `coverage`, `.stryker-tmp`, `vendor` and `.worktrees`, but not
+  `.swarmforge`.
+  - On main, `.swarmforge/operator/vscode-cli/` holds 1,085 .js files,
+    475 MB: five VS Code CLI server installs, 2026-07-28 to 2026-09-22.
+  - `withContent: true` returns every file's content in one array, so the
+    whole 475 MB is live at once.
+  - A role worktree's `.swarmforge/` has no such directory. BL-1651's
+    census measured both files at 58-59 MB for that reason.
+
+  ## What is wanted
+
+  1. The walk never opens a file under the repository root's runtime
+     directories `.swarmforge/` and `tmp/` (both gitignored). Scenario 01
+     proves it on a fixture repository with a spying `fsImpl`: the helper
+     takes one since BL-1443, so "never opened" is observable, not just
+     "filtered out after reading". Scenario 02 proves every tracked .js
+     file, nested included, is still read.
+  2. On the main checkout, both property files run alone stay within the
+     census's order of magnitude (tens of MB, not hundreds), and the full
+     lane completes with no heap death (qa_e2e steps 2-3).
+  3. `extension/test/property-lane-heap-census.txt` is regenerated from ONE
+     measured lane run after the fix, BL-1651's procedure (`--logHeapUsage`,
+     quiet host, load recorded). It has a row for every property file: 458
+     today, one of them under `test/helpers/`, against 426 rows, so 32
+     files have never been measured. Its header also records which
+     checkout the run was on. The census is generated, never hand-edited.
+
+  ## How (direction, not mandate)
+
+  - The cheapest fix is adding `.swarmforge` and `tmp` to the helper's
+    default exclusions. They protect every caller, and BL-1443 made this
+    helper the one walk every property-lane tree walk shares. If you do,
+    scope `tmp` to the root: a fixture root named `tmp` must still be
+    walkable. Making the walk gitignore-aware instead is equally fine,
+    provided a fixture root that is not a git repository (BL-1443's own
+    fixtures) still walks.
+  - The two files' duplicated `findFunctionDefinitionFiles` could stream
+    (check each file's text as it is read, keep nothing) rather than
+    collect. That is optional, and the fix does not depend on it.
+  - The fixture repository is `git init` under mkdtemp and proven by
+    `rev-parse --git-common-dir` before any git write (Guardrails,
+    BL-1390).
+
+  ## Scope
+
+  - `extension/test/helpers/tolerantTreeWalk.js`.
+  - `extension/test/bl874PortableTimeInvariants.property.test.js` and
+    `extension/test/tempDirTrapGuard.property.test.js`: walk scope only,
+    never the assertions.
+  - `extension/test/property-lane-heap-census.txt`: regenerated.
+  - `specs/features/BL-1729-...feature` + the pinned handler.
+
+constraints: >
+  The per-worker heap cap, the per-file ceiling and the fork pool
+  (BL-871/BL-1651) are unchanged. No property file's assertion changes. The
+  handler lands in the same commit as the feature (BL-233). The feature
+  never runs the full lane (BL-1541's per-mutant ceiling); it drives the
+  walk on a small fixture repository. This parcel never edits
+  backlog/standing-reds.tsv (coder.prompt, BL-1663); the land retires this
+  ticket's two rows (BL-1631).
+
+out_of_scope: |
+  - Naming the file whose worker died on the heap cap: BL-1730.
+  - A standing guard that fails a new property file with no census row.
+    Considered at mint and not minted. Once BL-1730 lands, a file that
+    grows past the cap names itself on every lane run, which is the
+    detection the census was for. The census stays a dated baseline,
+    regenerated whenever the lane's budget or walk changes.
+  - bl1703OllamaLaunchProbe's red (BL-1727 owns it).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule); record host load.
+  1. `node specs/pipeline/cli.js specs/features/BL-1729-a-property-lane-repository-walk-never-reads-the-checkouts-runtime-state.feature`:
+     all ok (3 of 3).
+  2. On the parcel commit, the census has a row for every property file:
+     `comm -3 <(cd extension && find test -name '*.property.test.js' | sort) <(grep -v '^#' extension/test/property-lane-heap-census.txt | cut -f1 | sort)`
+     prints nothing (32 lines at mint). Neither of the two files' rows is above 100 MB.
+  3. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  4. After the land, on the shared main checkout (`cd extension`, after
+     `npm run compile`), run each of the two files alone with
+     `--logHeapUsage`. Each stays under 100 MB (894 and 1778 MB before).
+     Then read the next main-checkout refusal log or guard pass: no
+     `Reached heap limit`. The land's REGISTER_ROW_RETIRED names both
+     rows.
+
+notes: |
+  Minted 2026-09-25 by the specifier from the backlog-root intake (Article
+  3.2.4 expedite lane by severity; the intake noted it jumps today's
+  queue-jumped local-LLM slices, and the human was told when it was filed).
+  Register rows for both files added in the mint commit, owner BL-1729
+  (standing-red amendment 2026-09-05). They are red only on the shared main
+  checkout. No parcel is held on them, so no holder note is due.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  The intake's side finding (bl1703OllamaLaunchProbe red alone on an idle
+  host) belongs to BL-1727 (active), which owns that register row. No
+  second ticket was minted.
