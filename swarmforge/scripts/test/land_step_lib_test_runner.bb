@@ -3950,6 +3950,65 @@ RESOLVED BY THIS TICKET
         (assert-true "BL-1678: the refusal names the merge-commit reason, not a different guard's reason"
                      (boolean (re-find #"merge commit" (str (:reason verdict)))))))))
 
+;; ── BL-1717: a landed co-owner never shields an unlanded sibling's lines ──
+;; on the same path. BL-9001 (landed - its own lines separately reach
+;; origin/main under a different commit) and BL-9002 (unlanded) both touch
+;; shared.md; the landing ticket BL-9003 touches only its own file. The
+;; path's only lines not yet on origin/main are BL-9002's, so it must be
+;; excluded - the 35ef2dbcd2 incident own-paths used to let ride whole.
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [base (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "shared.md" "L line\n" "BL-9001: touch the shared path")
+    (commit! root "shared.md" "L line\nU line\n" "BL-9002: touch the shared path")
+    (commit! root "BL-9003-own.txt" "own\n" "BL-9003: the landing ticket's own file")
+    (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+      ;; BL-9001's own lines, and only BL-9001's, given a separate
+      ;; presence on origin/main under a different commit object - "landed
+      ;; elsewhere, under a different sha" (BL-1389's own all-landed shape).
+      (sh! root "git" "checkout" "-q" "-b" "landing" base)
+      (commit! root "shared.md" "L line\n" "BL-9001: touch the shared path (replayed)")
+      (mark-origin-main-here! root)
+      (sh! root "git" "checkout" "-q" "main")
+      (let [result (land-step-lib/own-paths root tip "BL-9003")]
+        (assert= "BL-1717: excludes the shared path even though a landed co-owner also touched it"
+                 ["BL-9003-own.txt"] (:paths result))))))
+
+;; Negative control: BEFORE this fix, the pre-BL-1717 condition asked only
+;; `(every? unlanded-siblings owners)` OR `(not-any? path-landed? owners)` -
+;; both false here (BL-9001 is not in unlanded-siblings, and BL-9001 IS
+;; landed on the path), so the path rode. Reusing the same fixture confirms
+;; both raw owners are still named in the exclusion report, whichever
+;; caller (CLI, land-plan) prints it - own-paths itself has no report
+;; surface, so this only re-asserts the :paths verdict already checked
+;; above from a second angle: the shared path is absent, its landed
+;; co-owner notwithstanding.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [base (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "shared.md" "L line\n" "BL-9001: touch the shared path")
+    (commit! root "shared.md" "L line\nU line\n" "BL-9002: touch the shared path")
+    (commit! root "backlog/active/BL-9002-x.yaml"
+             "id: BL-9002\nstatus: todo\nhuman_approval: approved\n"
+             "BL-9002: the sibling's ticket")
+    (commit! root "BL-9003-own.txt" "own\n" "BL-9003: the landing ticket's own file")
+    ;; BL-9003 ALSO touches the shared path this time - the passenger shape
+    ;; (BL-1375/BL-1332): once a real co-owner of the SAME task-ticket-id,
+    ;; own-paths includes it and credits BL-9002 as a passenger, never
+    ;; silently.
+    (commit! root "shared.md" "L line\nU line\nA line\n" "BL-9003: also touch the shared path")
+    (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "checkout" "-q" "-b" "landing" base)
+      (commit! root "shared.md" "L line\n" "BL-9001: touch the shared path (replayed)")
+      (mark-origin-main-here! root)
+      (sh! root "git" "checkout" "-q" "main")
+      (let [result (land-step-lib/own-paths root tip "BL-9003")]
+        (assert= "BL-1717: the shared path rides when the landing ticket also touches it, crediting the unlanded co-owner as a passenger"
+                 #{"BL-9003-own.txt" "shared.md"} (set (:paths result)))
+        (assert= "BL-1717: BL-9002 rides as a named passenger, never silently"
+                 #{"BL-9002"} (:passengers result))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))

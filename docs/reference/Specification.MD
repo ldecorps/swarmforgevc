@@ -1,5 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 25, 2026 (BL-1717: `own-paths` now drops every
+owner whose own per-path verdict is already landed (`path-landed?`, the
+same BL-1389 per-path read) from a path's owner set before asking whether
+what remains is unlanded-siblings-only, so a landed co-owner can no longer
+shield an unlanded sibling's lines on a shared path. Before this fix, a
+path with a landed owner AND an unlanded sibling — but no attribution to
+the landing ticket itself — was kept in with no report line, because
+`own-paths` excluded a path "only on positive attribution to a ticket in
+unlanded-siblings and no other id," and the landed owner counted as
+"another id." Live on 2026-09-24: `land_step_cli.bb`'s BL-1687 run built
+`35ef2dbcd2`, carrying unlanded BL-1693's 108 lines in
+`specs/pipeline/steps/bl538ConsolePausedTicketPagerSteps.js` — a path none
+of BL-1687's own commits touched, co-owned by landed BL-1685 — onto
+`origin/main` unreported; QA caught it by hand diff and published
+`aa41de4286` on top to take the lines back out. A path shared with the
+LANDING ticket's own attribution is unaffected: it still rides carrying
+the sibling's lines as a named `PASSENGER_SIBLING` (BL-1375, unchanged).
+Nothing about what counts as landed, approval rules, or stray-evidence
+handling changes. Acceptance:
+`specs/features/BL-1717-a-landed-co-owner-never-shields-an-unlanded-siblings-lines.feature`.
+How-to:
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(new "A landed co-owner never shields an unlanded sibling's lines on the
+same path (BL-1717)" section). No new extension command or setting; no
+diagram edit — this is swarm-internal land-step tooling.)
+Prior entry —
+
+
 **Last Updated:** September 24, 2026 (BL-1705: the orphan janitor gains an
 `ollama-ghost` reap class — a leaked `llama-server`/`ollama runner`
 process and a detached `ollama run` client left behind once ollama moved

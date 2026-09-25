@@ -1542,3 +1542,44 @@ ticket's scope) apart from a scratch a still-running replay owns.
 
 Acceptance:
 `specs/features/BL-1716-a-land-replay-recovers-the-scratch-a-killed-land-left-behind.feature`.
+
+## A landed co-owner never shields an unlanded sibling's lines on the same path (BL-1717)
+
+`own-paths` excludes a delivered path only when every owner attributed to
+it is an unlanded sibling — but two owners already suffice for a landed
+one to be among them, and before this fix that landed owner's mere
+presence in `:owners` was enough to keep the path in, whatever the other
+owners' status. On 2026-09-24, `land_step_cli.bb`'s BL-1687 run
+built `35ef2dbcd2`: the path
+`specs/pipeline/steps/bl538ConsolePausedTicketPagerSteps.js` was touched
+by landed BL-1685 and unlanded BL-1693, but by none of BL-1687's own
+commits. `own-paths` kept the path (BL-1685, a landed owner, was "another
+id" beside the unlanded sibling) and reported nothing, so the built diff
+carried BL-1693's 108 lines onto `origin/main` with no
+`EXCLUDED_SIBLING_PATH` line naming them. QA caught it by hand diff and
+published `aa41de4286` on top to take the lines back out; `35ef2dbcd2`
+itself stays in `origin/main`'s history.
+
+`own-paths` now drops every owner whose own per-path verdict is already
+`path-landed?` (the same BL-1389 per-path read, never a second notion of
+landed) from a path's owner set BEFORE asking whether what remains is
+unlanded-siblings-only. A landed owner's lines are already on
+`origin/main`, so its presence must never save a path whose not-yet-landed
+content is entirely an unlanded sibling's:
+
+- a path owned by a landed ticket ALONE — unaffected, replays as before.
+- a path owned by an unlanded sibling ALONE — unaffected, still excluded
+  (BL-1315).
+- a path owned by a landed ticket AND an unlanded sibling, with no
+  attribution to the landing ticket itself — now excluded, the sibling
+  named (the BL-1687/BL-1693 shape above).
+- a path also owned by the LANDING ticket — carries the sibling's lines as
+  a named `PASSENGER_SIBLING` (BL-1375's existing rule, unchanged): the
+  landed co-owner still does not shield the sibling's lines, but the
+  landing ticket's own attribution still means the path rides, reported.
+
+Nothing about what counts as landed, approval rules, or stray-evidence
+handling changes; this is `own-paths`' exclusion test only.
+
+Acceptance:
+`specs/features/BL-1717-a-landed-co-owner-never-shields-an-unlanded-siblings-lines.feature`.

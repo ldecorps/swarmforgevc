@@ -1878,7 +1878,26 @@
                      ;; then it is asked of THIS path, because the two walks
                      ;; attribute different sets and the verdict may never have
                      ;; seen this one.
-                     (not-any? #(path-landed? % path) (:owners attribution))))
+                     (not-any? #(path-landed? % path) (:owners attribution))
+                     ;; BL-1717: a landed co-owner never shields an unlanded
+                     ;; sibling's lines on the same path. Drop every owner
+                     ;; whose OWN per-path verdict is already landed
+                     ;; (path-landed? - the same BL-1389 per-path read, never
+                     ;; a second notion of landed) before asking whether
+                     ;; ANYTHING remains at all - never narrowed to whether
+                     ;; the remainder is ticket-level unlanded-siblings, the
+                     ;; QA D1 bug (2026-09-25): a not-yet-landed owner absent
+                     ;; from unlanded-siblings (BL-1687's exact shape - BL-9002/
+                     ;; BL-1693 was never in the ticket-level set) must exclude
+                     ;; the path exactly as clause 2 above already would if NO
+                     ;; owner were landed; a landed co-owner's mere presence in
+                     ;; :owners must not save a path whose NOT-yet-landed
+                     ;; content is anybody else's (BL-1687's 35ef2dbcd2 incident
+                     ;; - BL-1685 landed and touched the path, BL-1693 unlanded
+                     ;; and also touched it, and BL-1685's landed presence
+                     ;; alone let the whole file, including BL-1693's lines,
+                     ;; ride).
+                     (seq (remove #(path-landed? % path) (:owners attribution)))))
                (recur (rest remaining) acc
                       (conj excluded {:path path :owners (:owners attribution)})
                       passengers content-clear)
