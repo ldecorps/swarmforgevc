@@ -24,7 +24,7 @@ acceptance: specs/features/BL-1754-a-role-asks-another-role-a-question-through-a
 required_wiring:
   - 'specs/pipeline/steps/bl1754PeerQuestionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   New feature file. This is your "an agent can spin an ephemeral other
   agent if it has a question for it", built as a helper the ASKING role
