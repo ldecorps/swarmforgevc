@@ -9,7 +9,7 @@ priority: 28
 direction: human-requested
 depends_on: []
 mutation_cost: medium
-decomposes_into: [BL-792, BL-1038, BL-1039, BL-1598, BL-1599, BL-1618, BL-1619, BL-1620, BL-1741, BL-1742]
+decomposes_into: [BL-792, BL-1038, BL-1039, BL-1598, BL-1599, BL-1618, BL-1619, BL-1620, BL-1741, BL-1742, BL-1745]
 
 remaining_slices:
   - "Slice D, first cut - MINTED 2026-09-17 as BL-1620: bl968StepRegistryMaterializedTreeGuard (69.9 s) and telegramFrontDeskBotCli (65.3 s), their suite-poles.tsv rows moved to BL-1620. Next cuts, one or two files each as BL-1620 lands: renderBriefingBurndownCli 36.6 s, briefingDigestLineCli 36.3 s, bl1277UnscopedStepCollisionGuard 23.6 s, renderBriefingDiagramsCli 14.6 s, epicReorderBridge 10.6 s, pilotAcceptanceGateCli 8.5 s, recordBounceCli 7.3 s; emitLifecycleSnapshotCli on watch."

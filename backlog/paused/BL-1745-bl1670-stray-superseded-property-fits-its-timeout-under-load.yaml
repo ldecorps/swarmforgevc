@@ -1,0 +1,93 @@
+id: BL-1745
+title: "extension/test/bl1670LandStrayConflictSupersededInvariant.property.test.js timed out at the property lane's 20 s default in QA's run at load 5.6 (BL-1727's parcel e9b1c4f30e) and takes 5.1 s alone on main - each of its nine draws builds a fresh git fixture and runs the whole land_step_cli.bb, and unlike its land-step siblings (bl1308 300 s, bl1678 120 s, bl1713 SUBPROCESS_HEAVY_TIMEOUT_MS) it declares no timeout, so any contended lane run can kill it; the invariant fits the lane under contention with its assertions and reach floor unchanged"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it holds BL-1727 at QA (Article 4.2).
+status: todo
+epic: unit-suite-speed
+priority: 7
+direction: swarm-reported
+depends_on: []
+# BL-1725 (active) fixes the sibling bl1650 file the same way. It touches
+# a different file, and this ticket needs nothing it builds, so it is not
+# a dependency.
+mutation_cost: low
+# low: one test file; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file chore with no scenarios of its own (BL-1251): the pointer names
+# the feature BL-1670 itself declared, which must still resolve (8 of 8 on
+# main at mint). It is not a claim of ownership over BL-1650's contract.
+acceptance: specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: every assertion the
+  property makes today stays, the three shapes keep their reach floor, and
+  the real land_step_cli.bb still runs for at least one draw per run.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA note 003170, evidence 211e8b6ae4 (BL-1727's pass, full property lane
+  through qa-gather, load 5.56):
+  `FAIL test/bl1670LandStrayConflictSupersededInvariant.property.test.js >
+  BL-1670/BL-654 invariant ... Error: Test timed out in 20000ms.` No
+  register row and no open ticket, so it is unowned and holds BL-1727.
+
+  Measured at mint on main: 5.1 s alone at load 3.2, passed. The test
+  loops 3 shapes x `runsPerCell(9, 3)` draws, and every draw calls a
+  `SHAPE_BUILDERS` fixture builder (a fresh repository with commits) and
+  `runCli` (a full `bb land_step_cli.bb` process). It passes no timeout,
+  so it runs under `vitest.properties.config.mjs`'s `testTimeout: 20000`.
+  With lane parallelism, 4x its solo time is enough to kill it.
+
+  ## Census (land-step property files that run the real CLI per draw)
+  `grep -l 'land_step_cli.bb' extension/test/*.property.test.js`, 5 files:
+  - bl1650 (no timeout declared) - owned by BL-1725 (active), same fix
+    shape.
+  - bl1670 (no timeout declared) - this ticket.
+  - bl1308 (`timeout: 300_000`), bl1678 (`timeout: 120000`), bl1713
+    (`SUBPROCESS_HEAVY_TIMEOUT_MS`, 240 s): not red. Run together at mint
+    (three forks, load 5-10), their slowest single tests took 25 s, 35 s
+    and 16 s. That is lane cost, not a red, so nothing is minted for them.
+
+  ## What is wanted
+  - The invariant completes inside the lane under contention. How
+    (direction, not mandate): either BL-1725's shape (one fixture per
+    shape reset between draws, draws decided in one bb process through
+    the lib the CLI wraps, one real CLI run kept as the wiring case), or
+    declaring `SUBPROCESS_HEAVY_TIMEOUT_MS` as bl1713 does. The first
+    also makes the lane faster; say in the evidence which was chosen and
+    why.
+  - The assertions, the three shapes and `assertReachFloor` stay as they
+    are.
+
+  ## Scope
+  - `extension/test/bl1670LandStrayConflictSupersededInvariant.property.test.js`
+    (and a helper beside it if one is needed).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1670LandStrayConflictSupersededInvariant.property.test.js`:
+     green; record its duration and the 1-minute load.
+  2. `node specs/pipeline/cli.js specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature`:
+     all ok (8 of 8).
+  3. `git diff main...HEAD --name-only` names only the test file, a helper
+     if any, and evidence.
+  4. After landing: REGISTER_ROW_RETIRED for this ticket's property row;
+     resume BL-1727's land.
+
+notes: |
+  Minted 2026-09-25 by the specifier from QA's unowned-red note 003170
+  (holding BL-1727, evidence 211e8b6ae4). Register row added in the mint
+  commit; measured at mint, and the land-step census counted at mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1727.
