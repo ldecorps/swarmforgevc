@@ -1,0 +1,151 @@
+id: BL-1740
+title: "extension/test/bl1505DedupSuppressedChaseCountInvariants.property.test.js is red whenever the live swarm is paused - chase_sweep_lib.bb's run-sweep! reads the control pause through handoff-lib/pause-hold-active?, which resolves the LIVE project root from git's common dir, so a fixture sweep run from any checkout or worktree holds its fixture parcel while a closing ceremony or bedtime pause is active (3 of 3 red at 07:28Z on 2026-09-25, inside the 07:11-07:45Z ceremony pause; green on main at 08:07Z); the sweep takes the pause reading from its adapters like every other reading, and handoffd passes the live one"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment). It reddens the property lane for every commit made
+# during a pause window (every closing ceremony), and coder@2 had to commit
+# BL-1728 with SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 to get past it.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+# No open ticket touches chase_sweep_lib.bb's pause read or this test file
+# (grep of paused/ and active/ for bl1505DedupSuppressed and
+# pause-hold-active, 2026-09-25). BL-1714 (paused) changes the lane
+# guard's process pattern in the same lib, a different function.
+mutation_cost: medium
+# medium: one read moved behind an adapter in chase_sweep_lib.bb, one
+# adapter added to handoffd.bb's map, one new step handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1740-the-chase-sweep-reads-the-pause-from-its-caller.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1740ChaseSweepPauseFromCallerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+  - 'swarmforge/scripts/handoffd.bb:::pause-hold-active?::the live sweep passes the pause reading as an adapter (BL-1235: the consumer that reaches it)'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options). FIRM: a control pause still holds every queued parcel
+  in the LIVE sweep, exactly as e9f91d6746 made it (the human's 2026-09-21
+  "drain the seats" directive); only where the reading comes from changes.
+  FIRM: the adapter key is `:pause-hold-active?` (fixed at mint so the
+  wiring anchor is a literal, BL-874). FIRM: no test edits its way around
+  this with its own project root; the lib stops reading the checkout.
+
+invariants:
+  - "run-sweep! decides a parcel is pause-held only from the pause adapter its caller passes; nothing it calls resolves the checkout the process runs in to make that decision."
+
+description: |
+  ## What is wrong
+
+  coder@2's unowned-red note 000068, evidence
+  `backlog/evidence/BL-1728-unowned-red-bl1505-property-20260925.md` (on
+  coder@2's branch, 2fa4d85946). Committing BL-1728 at 07:28:40Z, the
+  property guard refused:
+  `test/bl1505DedupSuppressedChaseCountInvariants.property.test.js`,
+  3 of 3 red ("expected chaseCount 1 ... got 0"), still red when run alone.
+
+  The specifier ran the same file alone on main at 08:07Z: 3 of 3 green
+  (28 s). The difference is the pause. The availability ledger has a
+  `pause-start` (`night-closing-ceremony`) at 07:11:24Z and a `pause-end`
+  at 07:45:09Z, so the refusal fell inside a live control pause.
+
+  Mechanism: `run-sweep!` computes
+  `pause-held? (handoff-lib/pause-hold-active?)` once per role
+  (`chase_sweep_lib.bb` ~line 683). The hotfix e9f91d6746 (2026-09-21)
+  added that line. `pause-hold-active?` reads
+  `.swarmforge/operator/control-pause.json` under `(target-root)`. With no
+  explicit root set, `target-root` falls back to the parent of
+  `git rev-parse --git-common-dir`, and from any linked worktree that is
+  the live master checkout. The test drives `run-sweep!` through `bb -e`
+  over a mkdtemp fixture inbox. Its parcel is read as pause-held, so the
+  sweep never chases it and the count stays 0. Every other reading
+  `run-sweep!` makes (liveness, busy, lane, activity, rate-limit
+  cooldown) arrives through `adapters`, and this one does not.
+
+  Reproduced at mint: the test's own sweep snippet, run from a scratch
+  `git init` checkout whose `control-pause.json` is `{"active":true}`,
+  writes no chase sidecar. The same snippet from the same checkout at
+  `{"active":false}` writes `chaseCount 1`.
+
+  ## What is wanted
+  - `run-sweep!` takes the pause reading from its adapters under the key
+    `:pause-hold-active?`. A sweep whose adapters carry no such key
+    treats nothing as pause-held. Every existing fixture then stops
+    reading the live marker with no edit of its own.
+  - handoffd's chase-sweep adapter map (the map passed at
+    `chase-sweep-lib/run-sweep!`, handoffd.bb ~line 2397) passes the live
+    reading. A paused swarm still holds every queued parcel, as the
+    2026-09-21 directive requires.
+  - How (direction, not mandate): `optional-adapter-call`, as the
+    `:role-agent-busy?` and `:role-lane-running?` readings already do.
+  - The new feature's step handler builds its checkout with `git init`
+    under mkdtemp and proves it with `rev-parse --git-common-dir` before
+    running anything (Guardrails, BL-1390). It writes the pause marker
+    only inside that checkout, never in the live one.
+
+  ## Scope
+  - `swarmforge/scripts/chase_sweep_lib.bb` (the pause read in
+    `run-sweep!`).
+  - `swarmforge/scripts/handoffd.bb` (one adapter entry).
+  - The feature, its step handler
+    `specs/pipeline/steps/bl1740ChaseSweepPauseFromCallerSteps.js`, and
+    its `index.js` registration.
+
+  ## Census (for the architect)
+  Test files that drive the sweep:
+  `grep -rlE 'run-sweep!|sweep-role-inbox!' extension/test
+  swarmforge/scripts/test specs/pipeline/steps` finds 25 (24 tracked, plus
+  one untracked scratch runner, `bl1652-non-vacuity-runner-*.bb`). Three
+  of them set their own project root: bl852's step handler,
+  `chase_sweep_test_runner.bb` and the scratch runner. Only bl1505's
+  property file was seen red, because the property lane is the one the
+  pre-commit guard runs. The rest go red under a pause only if they
+  assert on a stale `new/` item's outcome. The invariant covers all of
+  them through the lib default, so no fixture is edited one by one.
+
+out_of_scope: |
+  - The dequeue half of e9f91d6746: `handoff_lib.bb`'s
+    `resolve-dequeueable-candidates` lower arities default to the same
+    live `pause-hold-active?`. Run from a scratch checkout with an active
+    pause, `handoff_lib_test_runner.bb` still printed ALL TESTS PASSED
+    (checked at mint), so no red is owned there. Mint a ticket if one
+    appears.
+  - e9f91d6746 carries no `Hotfix-Certification:` trailer and has no
+    `backlog/hotfix-ledger.yaml` row. The ledger tracks trailered commits,
+    so no row is created. This ticket's feature does pin the chase-sweep
+    half of that hotfix's behaviour (the live-reading row).
+  - The lane guard's process pattern in the same lib: BL-1714.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1740-the-chase-sweep-reads-the-pause-from-its-caller.feature`:
+     all ok (4 of 4).
+  2. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1505DedupSuppressedChaseCountInvariants.property.test.js`:
+     3 of 3 green.
+  3. In-process probe, which never touches the live marker: in a scratch
+     `git init` checkout under the QA worktree's `tmp/`, write
+     `.swarmforge/operator/control-pause.json` as `{"active":true}`. From
+     that checkout, run the bl1505 test's `runOneSweep` snippet once
+     (adapters without `:pause-hold-active?`). The fixture parcel's
+     sidecar reads `chaseCount 1`. Remove the scratch checkout.
+  4. `grep -n ':pause-hold-active?' swarmforge/scripts/handoffd.bb`: the
+     entry sits in the map passed at `chase-sweep-lib/run-sweep!`.
+     `grep -n 'handoff-lib/pause-hold-active?' swarmforge/scripts/chase_sweep_lib.bb`:
+     no match.
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's property row.
+
+notes: |
+  Minted 2026-09-25 by the specifier from coder@2's unowned-red note
+  000068 (raised while committing BL-1728; coder@2 committed with the
+  guard skip and holds nothing on it). Register row added in the mint
+  commit, with the mechanism reproduced at mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to coder@2
+  the same pass.
