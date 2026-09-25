@@ -296,6 +296,32 @@
 (defn chat-add! [socket session agent path]
   (type-raw! socket session agent (str "/add " path)))
 
+;; BL-1698 D3 (QA bounce 2026-09-25), refined by pass 2 (D1/D2, same day):
+;; a relaunched aider chat has no memory of a pre-crash /clear, /read-only
+;; or /add - a fix request typed straight into it (run-gate!'s normal
+;; path, or resume-from-hold!'s answer-driven one) would land with no
+;; spec context and, worse, into a spec file the running process never
+;; marked unwritable. `chat-set-up!` is continue-after-merge!'s own
+;; sequence, factored out so every fix-request path redoes it.
+;;
+;; Pass 1 gated this on a "done once per daemon process" marker; pass 2
+;; found two live gaps a process-lifetime marker cannot see - the same
+;; process's own hold-release fix request (D1, fixed by resume-from-hold!
+;; calling this unconditionally) and a seat relaunched mid-parcel without
+;; a daemon restart (D2 - a fresh aider process in the same pane, which a
+;; process-lifetime marker never notices). QA's own remediation pointer
+;; sanctions the direct fix for both: redo the set-up before every fix
+;; request, full stop - no marker, no pane-identity probe to keep in
+;; sync with reality. The per-turn cost is one /clear + a few /read-only
+;; and /add lines; correctness after either failure mode is worth it.
+(defn- chat-set-up! [ctx state]
+  (let [{:keys [checkout agent socket session]} ctx
+        {:keys [specFiles editablePaths]} state]
+    (chat-clear! socket session agent)
+    (doseq [p specFiles] (chat-read-only! socket session agent p))
+    (doseq [p editablePaths] (chat-add! socket session agent (str (fs/path checkout p))))
+    (doseq [p specFiles] (set-writable! p false))))
+
 (def instruction-text-template
   "implement %s exactly as the read-only ticket describes so the read-only acceptance passes; never edit a read-only file.")
 
@@ -351,10 +377,238 @@
   (doseq [p (:specFiles state)]
     (set-writable! p true)))
 
-(defn start-new-parcel!
-  "Step 1-5. Returns nil when there is nothing to serve this tick."
-  [ctx]
+;; ── BL-1698 requirement 1: boot-time write-permission sweep ─────────────
+;; A crash between `set-writable! p false` and the driver's own terminal
+;; path (which always restores it) leaves a spec file physically
+;; unwritable with no live record left to restore it via the normal
+;; terminal path - the ONLY safety net is a sweep that scans every
+;; persisted record, not just the one this tick happens to be driving.
+
+(defn resume-writable-sweep!
+  "For every driver record under state-dir (every seat, every role),
+   restores write permission on every spec file the record names.
+   Idempotent - an already-writable file is untouched. Must run once,
+   before this process's first drive-tick! - never per-tick, which would
+   defeat the \"unwritable while the model works\" protection itself."
+  [project-root]
+  (let [dir (state-dir project-root)]
+    (when (fs/exists? dir)
+      (doseq [f (fs/list-dir dir)]
+        (when (str/ends-with? (str f) ".json")
+          (let [seat-id (str/replace (fs/file-name f) #"\.json$" "")
+                state (read-driver-state project-root seat-id)]
+            (restore-spec-writable! state)))))))
+
+;; ── BL-1698 requirement 4: mail that needs no model turn ────────────────
+
+(def ^:private qa-merge-up-pattern
+  #"QA-approved ([0-9a-f]{10}) - merge your branch up to QA's")
+
+(defn qa-merge-up-note?
+  "True when a `type: note` message matches handoff-protocol.md's own QA
+   merge-up shape (Article 2.5's example: \"BL-042 QA-approved
+   a1b2c3d4e5 - merge your branch up to QA's\"). The exact shape only,
+   never sender alone - a note FROM QA that is not this shape still
+   takes requirement 5's ask path."
+  [message]
+  (boolean (re-find qa-merge-up-pattern (or message ""))))
+
+(defn merge-up-commit [message]
+  (second (re-find qa-merge-up-pattern (or message ""))))
+
+(defn mechanical-mail!
+  "Requirement 4: merge the named commit with no model turn, then
+   complete with no git_handoff and no text typed into the pane. A merge
+   conflict escalates like a ticket parcel's own merge-conflict path
+   (BL-1697), using \"mail\" as the pseudo-ticket id since this mail
+   carries no ticket of its own - the question is raised AND a driver
+   record is persisted naming why, same as start-ticket-parcel!'s own
+   conflict branch, so the mail never sits in_process with no record
+   (invariant 2) and an operator can release it via release-hold! the
+   same way any other hold is released."
+  [ctx sender commit]
+  (let [{:keys [project-root checkout role seat-id]} ctx
+        merge-result (seat! checkout role ["merge" sender commit])]
+    (if (zero? (:exit merge-result))
+      (seat! checkout role ["done"])
+      (do (escalate! ctx "mail" "merge conflict")
+          (write-driver-state! project-root seat-id {:escalated true :ticket "mail" :reason "merge conflict"})))))
+
+;; ── BL-1698 requirement 5: any other note ────────────────────────────────
+
+(defn- truncate-80 [s]
+  (let [s (str s)]
+    (if (> (count s) 80) (subs s 0 80) s)))
+
+(defn ask-or-escalate-to-coordinator!
+  "Raises one question for the driver's own role (`seat ask`, which execs
+   role_ask.bb and passes its stdout straight through); when that role's
+   ask slot is already taken (role_ask.bb -> {:asked false :reason
+   \"already-pending\"}), sends the SAME text to the coordinator instead
+   as a priority-00 note (`seat note`, its own 80-char bound) - the mail
+   never wedges the seat either way. Returns which path was used."
+  [ctx question]
+  (let [{:keys [checkout role]} ctx
+        ask-result (seat! checkout role ["ask" question])
+        parsed (try (json/parse-string (str/trim (or (:out ask-result) "")) true)
+                    (catch Exception _ nil))]
+    (if (and parsed (false? (:asked parsed)) (= "already-pending" (:reason parsed)))
+      (do (seat! checkout role ["note" "coordinator" "00" (truncate-80 question)])
+          :coordinator-note)
+      :role-ask)))
+
+;; ── BL-1698 requirement 2: hold release by the human's answer ───────────
+
+(defn answer-available?
+  "The ONLY sanctioned entry point for a waiting answer (BL-1244):
+   `deliver-role-answer.js --role <role>`, never a direct read of
+   role-answers/<role>.json. Returns the answer text, or nil when there
+   is nothing to act on yet (no-answer/already-consumed/mismatch all
+   read the same to this caller)."
+  [checkout role]
+  (let [deliver-js (str (fs/path checkout "extension" "out" "tools" "deliver-role-answer.js"))]
+    (when (fs/exists? deliver-js)
+      (let [result (daemon-cycle-guard-lib/sh! {:dir checkout} "node" deliver-js "--role" role)]
+        (when (zero? (:exit result))
+          (let [parsed (try (json/parse-string (:out result) true) (catch Exception _ nil))]
+            (when (= "delivered" (:kind parsed))
+              (:text parsed))))))))
+
+(defn answer-fix-request-text [ticket answer-text]
+  (format "%s: %s - fix it; never edit a read-only file." ticket answer-text))
+
+(defn resume-from-hold!
+  "When a waiting answer is available for an escalated hold that carries
+   gate context (:acceptancePath - a real ticket parcel past its merge),
+   consumes it, ALWAYS redoes the chat set-up first (pass 2 D1: escalation
+   has just made the spec writable again, so the answer's fix request
+   must never land in a chat that still thinks the spec is read-only from
+   the prior fix turn), types ONE fix request carrying the answer text, and re-arms
+   the gate at its OWN limit (fixTurnsUsed = fixTurnsLimit, not
+   fixTurnsLimit - 1: the answer's fix request IS the one extra try, so
+   the very next failed gate must escalate immediately rather than typing
+   a second, generic fix request first - BL-1698 D4). A hold with no
+   :acceptancePath (a mail merge-conflict hold - requirement 4 promises
+   it no model turn) has no gate to re-arm and no ticket instruction to
+   answer; its disposition is genuinely ambiguous (BL-1698 D5), so this
+   is a no-op and the answer is left UNCONSUMED - an operator resolves it
+   via `release` instead. A no-op either way when no answer is waiting -
+   the hold stays parked, same as before this ticket."
+  [ctx state]
+  (let [{:keys [project-root seat-id agent socket session]} ctx]
+    (when (:acceptancePath state)
+      (when-let [answer-text (answer-available? (:checkout ctx) (:role ctx))]
+        (let [ticket (:ticket state)
+              fix-limit (or (:fixTurnsLimit state) default-fix-turns)]
+          (chat-set-up! ctx state)
+          (type-raw! socket session agent (answer-fix-request-text ticket answer-text))
+          (write-driver-state!
+           project-root seat-id
+           (-> state
+               (dissoc :escalated :reason)
+               (assoc :phase "awaiting-model"
+                      :fixTurnsLimit fix-limit
+                      :fixTurnsUsed fix-limit))))))))
+
+;; ── BL-1698 requirement 3: hold release by the operator ──────────────────
+
+(defn release-hold!
+  "A driver CLI verb, never typing into the pane. \"complete\" completes
+   the parcel with no git_handoff (so the ticket can be rerouted) and
+   clears the record; \"retry\" clears the record so the next pass
+   serves the parcel afresh. Restores spec write permission either way,
+   same invariant as every other terminal path. Returns nil when there
+   is no record for this seat (nothing to release)."
+  [project-root checkout role seat-id mode]
+  (let [state (read-driver-state project-root seat-id)]
+    (when state
+      (restore-spec-writable! state)
+      (case mode
+        "complete"
+        (do (seat! checkout role ["done"])
+            (clear-driver-state! project-root seat-id)
+            {:result "completed"})
+        "retry"
+        (do (clear-driver-state! project-root seat-id)
+            {:result "cleared"})
+        (throw (ex-info (str "release-hold!: unknown mode " (pr-str mode)) {:mode mode}))))))
+
+;; ── BL-1698 requirement 1: the resumable half of a ticket parcel ────────
+
+(defn- persist-post-merge!
+  [project-root seat-id ticket sender post-merge-head]
+  (write-driver-state! project-root seat-id
+                        {:phase "post-merge" :ticket ticket :senderRole sender :postMergeHead post-merge-head}))
+
+(defn continue-after-merge!
+  "Red-check through typing the instruction - called fresh right after a
+   merge, or on resume when state is already at phase \"post-merge\";
+   either way the merge itself never runs again here (invariant: a
+   parcel commit is merged exactly once). State is persisted to phase
+   \"awaiting-model\" BEFORE the instruction is typed, so a crash after
+   that point resumes straight into drive-tick!'s \"awaiting-model\"
+   branch and never retypes it."
+  [ctx state]
   (let [{:keys [project-root checkout role seat-id agent socket session fix-turns-limit]} ctx
+        {:keys [ticket postMergeHead senderRole]} state
+        ticket-yaml-path (str (fs/path checkout "backlog" "active" (str ticket ".yaml")))
+        ticket-content (slurp ticket-yaml-path)
+        acceptance-path (ticket-acceptance-path ticket-content)
+        acceptance-full (str (fs/path checkout acceptance-path))
+        red (seat-test! checkout role ticket acceptance-full)
+        red-decision (red-check-decision (zero? (:exit red)))]
+    (if-not (:pass red-decision)
+      (do (escalate! ctx ticket (:reason red-decision))
+          (write-driver-state! project-root seat-id {:escalated true :ticket ticket :reason (:reason red-decision)}))
+      (let [editable (->> (editable-paths ticket-content)
+                           (remove forbidden-chat-path?)
+                           vec)
+            spec-files [ticket-yaml-path acceptance-full]
+            spec-hashes (into {} (map (fn [p] [p (file-sha256 p)]) spec-files))]
+        (chat-set-up! ctx {:specFiles spec-files :editablePaths editable})
+        (write-driver-state!
+         project-root seat-id
+         {:phase "awaiting-model"
+          :ticket ticket
+          :senderRole senderRole
+          :postMergeHead postMergeHead
+          :specFiles spec-files
+          :specHashesBefore spec-hashes
+          :editablePaths editable
+          :fixTurnsUsed 0
+          :fixTurnsLimit (or fix-turns-limit default-fix-turns)
+          :acceptancePath acceptance-full})
+        (type-raw! socket session agent (instruction-text ticket))))))
+
+(defn- start-ticket-parcel!
+  [ctx sender commit ticket]
+  (let [{:keys [project-root checkout role seat-id]} ctx
+        ticket-yaml-path (str (fs/path checkout "backlog" "active" (str ticket ".yaml")))]
+    (when-not (fs/exists? ticket-yaml-path)
+      ;; Named by the parcel but not (yet) visible in this checkout - the
+      ;; same "merge main first" condition every Claude role hits
+      ;; (BL-1614); merge before reading it.
+      (git! checkout "fetch" "origin" "main")
+      (git! checkout "merge" "origin/main" "-m" (format "Merge main into %s.\n\nBy coder." role)))
+    (let [merge-result (seat! checkout role ["merge" sender commit])]
+      (if-not (zero? (:exit merge-result))
+        (do (escalate! ctx ticket "merge conflict")
+            (write-driver-state! project-root seat-id {:escalated true :ticket ticket :reason "merge conflict"}))
+        (let [post-merge-head (head-sha checkout)]
+          ;; Persisted immediately - a crash between here and the chat
+          ;; set-up resumes at phase "post-merge" and skips the merge.
+          (persist-post-merge! project-root seat-id ticket sender post-merge-head)
+          (continue-after-merge! ctx (read-driver-state project-root seat-id)))))))
+
+(defn start-new-parcel!
+  "Step 1-5, generalized to every mail shape (BL-1698): a ticket
+   git_handoff (unchanged behaviour, now split so the merge is
+   resumable - requirement 1), a QA merge-up note or a non-forwarding
+   reverse copy (requirement 4, no model turn), or any other note
+   (requirement 5). Returns nil when there is nothing to serve this
+   tick."
+  [ctx]
+  (let [{:keys [checkout role]} ctx
         served (seat! checkout role ["next"])]
     (when (zero? (:exit served))
       (let [in-process-dir (fs/path checkout ".swarmforge" "handoffs" "inbox" "in_process")
@@ -363,59 +617,25 @@
                                   first)]
         (when parcel-file
           (let [parcel-text (slurp (str parcel-file))
+                mail-type (read-yaml-field parcel-text "type")
                 sender (read-yaml-field parcel-text "from")
                 commit (read-yaml-field parcel-text "commit")
                 ticket (read-yaml-field parcel-text "task")
-                ticket-yaml-path (str (fs/path checkout "backlog" "active" (str ticket ".yaml")))]
-            (when-not (fs/exists? ticket-yaml-path)
-              ;; Named by the parcel but not (yet) visible in this
-              ;; checkout - the same "merge main first" condition every
-              ;; Claude role hits (BL-1614); merge before reading it.
-              (git! checkout "fetch" "origin" "main")
-              (git! checkout "merge" "origin/main" "-m" (format "Merge main into %s.\n\nBy coder." role)))
-            (let [ticket-content (slurp ticket-yaml-path)
-                  acceptance-path (ticket-acceptance-path ticket-content)
-                  acceptance-full (str (fs/path checkout acceptance-path))
-                  merge-result (seat! checkout role ["merge" sender commit])]
-              (cond
-                (= 3 (:exit merge-result))
-                (do (escalate! ctx ticket "merge conflict")
-                    (write-driver-state! project-root seat-id {:escalated true :ticket ticket :reason "merge conflict"}))
+                message (read-yaml-field parcel-text "message")
+                non-forwarding? (= "true" (read-yaml-field parcel-text "non-forwarding"))]
+            (cond
+              (and (= mail-type "note") (qa-merge-up-note? message))
+              (mechanical-mail! ctx sender (merge-up-commit message))
 
-                (not (zero? (:exit merge-result)))
-                (do (escalate! ctx ticket "merge conflict")
-                    (write-driver-state! project-root seat-id {:escalated true :ticket ticket :reason "merge conflict"}))
+              (and (= mail-type "git_handoff") non-forwarding?)
+              (mechanical-mail! ctx sender commit)
 
-                :else
-                (let [post-merge-head (head-sha checkout)
-                      red (seat-test! checkout role ticket acceptance-full)
-                      red-decision (red-check-decision (zero? (:exit red)))]
-                  (if-not (:pass red-decision)
-                    (do (escalate! ctx ticket (:reason red-decision))
-                        (write-driver-state! project-root seat-id
-                                              {:escalated true :ticket ticket :reason (:reason red-decision)}))
-                    (let [editable (->> (editable-paths ticket-content)
-                                         (remove forbidden-chat-path?)
-                                         vec)
-                          spec-files [ticket-yaml-path acceptance-full]
-                          spec-hashes (into {} (map (fn [p] [p (file-sha256 p)]) spec-files))]
-                      (chat-clear! socket session agent)
-                      (doseq [p spec-files] (chat-read-only! socket session agent p))
-                      (doseq [p editable] (chat-add! socket session agent (str (fs/path checkout p))))
-                      (doseq [p spec-files] (set-writable! p false))
-                      (type-raw! socket session agent (instruction-text ticket))
-                      (write-driver-state!
-                       project-root seat-id
-                       {:phase "awaiting-model"
-                        :ticket ticket
-                        :senderRole sender
-                        :postMergeHead post-merge-head
-                        :specFiles spec-files
-                        :specHashesBefore spec-hashes
-                        :editablePaths editable
-                        :fixTurnsUsed 0
-                        :fixTurnsLimit (or fix-turns-limit default-fix-turns)
-                        :acceptancePath acceptance-full}))))))))))))
+              (= mail-type "note")
+              (do (ask-or-escalate-to-coordinator! ctx (format "%s: %s" sender message))
+                  (seat! checkout role ["done"]))
+
+              :else
+              (start-ticket-parcel! ctx sender commit ticket))))))))
 
 (defn run-gate!
   "Step 6-7, called once the pane is confirmed idle."
@@ -443,7 +663,8 @@
         (seat! checkout role ["done"])
         (clear-driver-state! project-root seat-id))
       (if (< fixTurnsUsed fixTurnsLimit)
-        (do (type-raw! socket session agent (fix-request-text ticket (:reason decision)))
+        (do (chat-set-up! ctx state)
+            (type-raw! socket session agent (fix-request-text ticket (:reason decision)))
             (write-driver-state! project-root seat-id (assoc state :fixTurnsUsed (inc fixTurnsUsed))))
         (do (restore-spec-writable! state)
             (escalate! ctx ticket (:reason decision))
@@ -454,15 +675,21 @@
    tick - never blocks waiting for the model. handoffd's own poll cadence
    calls this once per cycle for every live driver seat; a test drives it
    in a tight loop until the parcel reaches a terminal state (handed off
-   or escalated)."
+   or escalated). An escalated hold checks once for a waiting human
+   answer (requirement 2, a no-op when there is none); a \"post-merge\"
+   phase resumes the ticket flow without re-merging (requirement 1)."
   [ctx]
   (let [{:keys [project-root seat-id socket session]} ctx
         state (read-driver-state project-root seat-id)]
     (cond
-      (:escalated state) nil
+      (:escalated state)
+      (resume-from-hold! ctx state)
 
       (nil? state)
       (start-new-parcel! ctx)
+
+      (= "post-merge" (:phase state))
+      (continue-after-merge! ctx state)
 
       (= "awaiting-model" (:phase state))
       (when (turn-idle? (agent-runtime-inject/capture-pane-text socket session))
@@ -470,14 +697,22 @@
 
 (defn drive-to-end!
   "Test/CLI convenience: ticks until the seat's state reaches a terminal
-   condition (no state file, or escalated) or max-ticks is exhausted -
-   never used by the live daemon, which calls drive-tick! once per its
-   own cycle instead."
+   condition (no state file, or escalated with no tick since having
+   become so) or max-ticks is exhausted - never used by the live daemon,
+   which calls drive-tick! once per its own cycle instead.
+   prev-escalated? (BL-1698): an ALREADY-escalated hold still gets ONE
+   tick before the loop treats it as terminal, so a waiting human answer
+   (requirement 2) gets its chance to resolve it - a hold that becomes
+   escalated freshly DURING this loop still stops promptly (one more,
+   harmless tick after it does, same as before this ticket)."
   [ctx & {:keys [max-ticks poll-interval-ms] :or {max-ticks 200 poll-interval-ms 10}}]
-  (loop [n 0]
+  (loop [n 0
+         prev-escalated? false]
     (let [state (read-driver-state (:project-root ctx) (:seat-id ctx))]
-      (if (or (>= n max-ticks) (:escalated state) (and (nil? state) (pos? n)))
+      (if (or (>= n max-ticks)
+              (and (:escalated state) prev-escalated?)
+              (and (nil? state) (pos? n)))
         state
         (do (drive-tick! ctx)
             (Thread/sleep (long poll-interval-ms))
-            (recur (inc n)))))))
+            (recur (inc n) (boolean (:escalated state))))))))

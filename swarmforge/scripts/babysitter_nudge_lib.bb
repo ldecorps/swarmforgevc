@@ -67,9 +67,20 @@
 (defn aider-agent? [agent]
   (= :shell-run-script (:wake-style (agent-runtime-lib/capabilities agent))))
 
+;; BL-1698 D2 (QA bounce 2026-09-25): a driver seat (BL-1697's
+;; parcel-driver capability, prompt-engine-lib/parcel-driver-capable?)
+;; must never be nudged either, on the same reasoning as aider-agent? -
+;; the driver holds every step and types exactly one instruction per
+;; turn (local_parcel_driver_lib.bb), so an injected nudge is a second,
+;; unowned turn racing the driver's own. This is the capability flag
+;; itself, not a provider-name check - a driver-capable seat with any
+;; other :wake-style is still skipped.
+(defn driver-seat? [agent]
+  (prompt-engine-lib/parcel-driver-capable? agent))
+
 (defn nudge-resident!
   "Verified inject of instruction text into a swarm role pane.
-   Returns {:status :nudged|:skip-busy|:skip-aider-agent|:no-target|:no-session|:failed :detail ...}."
+   Returns {:status :nudged|:skip-busy|:skip-aider-agent|:skip-driver-seat|:no-target|:no-session|:failed :detail ...}."
   [project-root role-name text & {:keys [log-fn]}]
   (let [text (str/trim (str text))
         log! (or log-fn (fn [& _] nil))]
@@ -95,6 +106,12 @@
              :role role
              :session wake-session
              :detail "aider seat — nudge withheld, not injected (see aider-agent? for why)"}
+
+            (driver-seat? agent)
+            {:status :skip-driver-seat
+             :role role
+             :session wake-session
+             :detail "driver-capable seat — the local parcel driver owns this pane's turns (see driver-seat? for why)"}
 
             (pane-busy? pane)
             {:status :skip-busy
@@ -125,6 +142,7 @@
     :nudged (str "NUDGED: " role " via " session)
     :skip-busy (str "SKIP_BUSY: " role " — " detail)
     :skip-aider-agent (str "SKIP_AIDER_AGENT: " role " — " detail)
+    :skip-driver-seat (str "SKIP_DRIVER_SEAT: " role " — " detail)
     :no-target (str "NO_NUDGE: " detail)
     :failed (str "FAILED: " (or detail "unknown"))
     (str "FAILED: " (or detail "unknown"))))

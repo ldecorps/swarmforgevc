@@ -17,6 +17,24 @@
 %% a merge conflict, or acceptance already green before any edit) runs
 %% `seat ask` and holds the parcel `in_process`, escalated. See the
 %% driver-seat subgraph below.
+%% BL-1698 (2026-09-25): `resume-writable-sweep!` (never a bare
+%% drive-tick! at boot) runs once at daemon start, sweeping every
+%% persisted driver record and restoring write permission on every spec
+%% file it names - crash safety, never per-tick. An escalated hold is no
+%% longer a dead end. A TICKET hold (gate context intact) checks each
+%% tick for a waiting human answer (`deliver-role-answer.js --role`,
+%% BL-1244) and, if one arrived, redoes the chat set-up unconditionally,
+%% types ONE fix request carrying it, and re-arms the gate at its own
+%% limit. A mail/merge-conflict hold has no gate context, so an answer
+%% never resolves it - an operator's driver CLI `release <seat>
+%% complete|retry` is the only way out (of any hold), outside any tick,
+%% never typing into the pane.
+%% A served parcel that is not a ticket git_handoff - a QA merge-up note
+%% or a non-forwarding reverse copy - merges with no model turn and
+%% completes (a conflict escalates the same way, under pseudo-ticket
+%% "mail"); any other note raises one question (or, if the role's ask
+%% slot is already taken, a priority-00 note to the coordinator instead)
+%% and completes - no mail is ever left wedging the seat.
 flowchart TD
   START(["sender role finishes work\nand commits"])
   DRAFT["writes a handoff draft\n(field: value headers, not JSON)"]
@@ -100,8 +118,15 @@ flowchart TD
   DONE -.->|omitted| STALE
   FORWARD -.->|recipient repeats\nthis whole cycle| START
 
-  subgraph DRIVER["Driver seat per-tick loop (BL-1697, replaces\nREADY..DONE above for this seat only)"]
-    DSERVE["drive-tick!: `seat next` claims\nthe in_process parcel,\n`seat merge <sender> <commit>`"]
+  subgraph DRIVER["Driver seat per-tick loop (BL-1697/BL-1698, replaces\nREADY..DONE above for this seat only)"]
+    DBOOT["daemon start: resume-writable-sweep!\nonce (every persisted record,\nevery seat), before any seat's\nfirst tick this process\n(BL-1698 req 1)"]
+    DSERVE["drive-tick!: `seat next`\nclaims the in_process parcel"]
+    DMAILTYPE{"parcel type?\n(BL-1698 reqs 4-5)"}
+    DMAILMERGE["mechanical-mail!:\n`seat merge <sender> <commit>`,\nno model turn"]
+    DMAILCONFLICT(["conflict: `seat ask`\n\"mail: merge conflict\",\nstate escalated\n(pseudo-ticket \"mail\")"])
+    DMAILDONE["`seat done`\n(no handoff, no model turn)"]
+    DMAILNOTE["ask-or-escalate-to-coordinator!:\n`seat ask` <sender>: <message>;\nask slot already-pending ->\n`seat note coordinator 00 ...` instead"]
+    DMERGE["`seat merge <sender> <commit>`\n(ticket git_handoff only)"]
     DMERGECONFLICT(["exit 3 (or nonzero):\n`seat ask` \"merge conflict\",\nstate escalated"])
     DRED{"`seat test`\n(red check, before\nany model turn)"}
     DREDESCALATE(["passed already:\n`seat ask` \"acceptance\npassed before any edit\",\nno instruction sent"])
@@ -109,14 +134,27 @@ flowchart TD
     DIDLE{"pane idle?"}
     DGATE{"gate: commit exists,\nacceptance now passes,\nspec bytes identical,\ntouched paths ⊆ editable set"}
     DFIXLEFT{"fix turns\nremaining?"}
-    DFIXTYPE["one fix request typed,\nnaming the failed condition;\ngate again next tick"]
-    DESCALATE(["fix turns exhausted:\nspec write permission restored,\n`seat ask` \"<ticket>: <condition>\",\nstate escalated (held for BL-1698)"])
+    DFIXTYPE["chat set up again\nunconditionally, one fix request\ntyped naming the failed condition;\ngate again next tick"]
+    DESCALATE(["fix turns exhausted:\nspec write permission restored,\n`seat ask` \"<ticket>: <condition>\",\nstate escalated"])
     DPASS["spec write permission restored,\n`seat handoff <next-role> <ticket>`\n(next-required-stage, never literal),\n`seat done`, state cleared"]
+    DHOLDCHECK{"escalated TICKET hold only\n(:acceptancePath set), next tick:\nanswer-available?\n(deliver-role-answer.js\n--role <role>, BL-1244)"}
+    DRESUME["resume-from-hold!: chat set up\nagain unconditionally, ONE fix\nrequest typed carrying the answer\ntext; fixTurnsUsed = fixTurnsLimit\n(one more try only, BL-1698 D4)"]
+    DRELEASE{"operator (outside any tick):\ndriver CLI `release <seat>\ncomplete|retry` - the ONLY way\nout of a mail hold (BL-1698 D5)"}
+    DRELCOMPLETE["release-hold! complete:\nwrite permission restored,\n`seat done` (no handoff),\nrecord cleared"]
+    DRELRETRY["release-hold! retry:\nwrite permission restored,\nrecord cleared - parcel\nserved fresh next tick"]
   end
 
+  DBOOT --> DRIVERSKIP
   DRIVERSKIP --> DSERVE
-  DSERVE -->|merge conflict| DMERGECONFLICT
-  DSERVE -->|merged clean| DRED
+  DSERVE --> DMAILTYPE
+  DMAILTYPE -->|QA merge-up note,\nor non-forwarding\ngit_handoff| DMAILMERGE
+  DMAILTYPE -->|any other note| DMAILNOTE
+  DMAILTYPE -->|ticket git_handoff| DMERGE
+  DMAILMERGE -->|conflict| DMAILCONFLICT
+  DMAILMERGE -->|clean| DMAILDONE
+  DMAILNOTE --> DMAILDONE
+  DMERGE -->|merge conflict| DMERGECONFLICT
+  DMERGE -->|merged clean| DRED
   DRED -->|already green| DREDESCALATE
   DRED -->|red, as expected| DCHATSET
   DCHATSET --> DIDLE
@@ -127,6 +165,16 @@ flowchart TD
   DFIXLEFT -->|yes| DFIXTYPE
   DFIXTYPE -.->|awaits idle again| DIDLE
   DFIXLEFT -->|no| DESCALATE
+  DESCALATE --> DHOLDCHECK
+  DHOLDCHECK -->|answer waiting| DRESUME
+  DHOLDCHECK -->|none yet - stays held| DHOLDCHECK
+  DRESUME -.->|awaits idle again| DIDLE
+  DMERGECONFLICT -.->|answer NEVER resolves\na mail/merge-conflict hold\n- release only| DRELEASE
+  DMAILCONFLICT -.->|answer NEVER resolves\na mail/merge-conflict hold\n- release only| DRELEASE
+  DESCALATE -.->|any time,\nno tick required| DRELEASE
+  DRELEASE -->|complete| DRELCOMPLETE
+  DRELEASE -->|retry| DRELRETRY
+  DRELRETRY -.->|next tick serves\nthe parcel afresh| DSERVE
   DPASS -.->|same forward/done shape\nas the ordinary path| FORWARD
 
   classDef gate fill:#9a6700,color:#fff,stroke:#5c4200;
@@ -134,8 +182,8 @@ flowchart TD
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
-  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE,DRIVERSEAT,DRED,DIDLE,DGATE,DFIXLEFT,WAKESESSION gate;
-  class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED,NOTSENT,DMERGECONFLICT,DREDESCALATE,DESCALATE bad;
-  class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED,DRIVERSKIP,WAKENOSESSION store;
-  class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH,DSERVE,DCHATSET,DFIXTYPE,DPASS act;
+  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE,DRIVERSEAT,DRED,DIDLE,DGATE,DFIXLEFT,WAKESESSION,DMAILTYPE,DHOLDCHECK,DRELEASE gate;
+  class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED,NOTSENT,DMERGECONFLICT,DREDESCALATE,DESCALATE,DMAILCONFLICT bad;
+  class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED,DRIVERSKIP,WAKENOSESSION,DMAILDONE,DRELCOMPLETE,DRELRETRY store;
+  class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH,DSERVE,DCHATSET,DFIXTYPE,DPASS,DBOOT,DMERGE,DMAILMERGE,DMAILNOTE,DRESUME act;
   class DAEMON,WAKE daemon;

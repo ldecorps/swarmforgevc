@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c6bf0ca44fc1c112619fb80c511b94c770b4a7456cf540591d955902c992ac82
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-25T16:44:02.940517151Z","feature_name":"BL-1698 the local parcel driver survives a restart, releases its hold and handles merge-only mail","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1698-the-local-parcel-driver-survives-a-restart-releases-its-hold-and-handles-merge-only-mail.feature","background_hash":"60f0d55e6ec02564e7176ae94782e788be163f65ae077a09a5b4525428e556e1","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a driver restarted mid-parcel resumes from its recorded step","scenario_hash":"95e402f798970c07a4c4f8c4e1d45c56988be9e66b434e61749825b526c0a736","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-25T16:44:02.940517151Z"},{"index":2,"name":"an operator release ends a hold without a model turn","scenario_hash":"130cadb6729f913e1f2ab9351d29df7864e0f6704f5f52a0bb4db1d4b3c227cf","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-25T16:44:02.940517151Z"},{"index":3,"name":"mail that needs no model turn is merged and completed mechanically","scenario_hash":"91c6eb32ff3464808fcaafa856d0b81f3ee28dd0fbb78432b51f30ffb5615acb","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-25T16:44:02.940517151Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1698 the local parcel driver survives a restart, releases its hold and handles merge-only mail
 
   BL-1697's driver runs one coder parcel end to end, holds a parcel it

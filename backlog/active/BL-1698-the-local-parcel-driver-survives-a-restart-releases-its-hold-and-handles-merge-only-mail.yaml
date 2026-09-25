@@ -160,3 +160,9 @@ notes: |
   seat as `coder@2`).
 
 assigned_to: coder
+bounce_count: 3
+bounce_history:
+  - { at: 2026-09-25, by: QA, blamed: coder, class: acceptance, commit: 01c5595b84, evidence: backlog/evidence/BL-1698-QA-20260925.md }
+  - { at: 2026-09-25, by: architect, blamed: coder, class: unit, commit: eefad0e138, evidence: backlog/evidence/BL-1698-architect-bounce-20260925.md }
+  - { at: 2026-09-25, by: QA, blamed: coder, class: behavior, commit: bcfcd35eef, evidence: backlog/evidence/BL-1698-QA-20260925-2.md }
+abandoned_commits: [dd5737a4d1]

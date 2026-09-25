@@ -1,6 +1,6 @@
 # The local parcel driver — moving a coder parcel through a local aider seat
 
-**Last Updated:** 2026-09-24
+**Last Updated:** 2026-09-25
 
 A headless local (aider) seat has no command channel of its own — it never
 runs a `!` line and auto-declines fenced shell blocks — so it cannot move a
@@ -127,14 +127,114 @@ file, independent of the Claude `coder`'s).
    `escalated`. An escalated parcel stays `in_process` — releasing that
    hold is a separate ticket (BL-1698), not built here.
 
+## Surviving a restart (BL-1698)
+
+A crash or relaunch between `set-writable!` making a spec file unwritable
+and the driver's own terminal path (which always restores it) would leave
+that file physically unwritable with no live record left to fix it — the
+per-parcel terminal paths above are the ordinary safety net, but they only
+run when the process that set the file unwritable gets to finish.
+
+`resume-writable-sweep!` — never a bare `drive-tick!` at boot — is the
+one true "driver starts" entry point: the live daemon calls it exactly
+once, at its own startup, before any seat's first `drive-tick!` for this
+process. For **every** seat's persisted state file under
+`.swarmforge/local-driver/`, not just the one a later tick happens to be
+driving, it restores write permission on every spec file that record
+names (idempotent — an already-writable file is untouched). Only after
+that sweep does the daemon tick normally, one seat at a time, exactly as
+before this ticket. A parcel already past its merge (state at phase
+`"post-merge"`) resumes straight into `continue-after-merge!` and is
+never re-merged; a parcel stopped mid-model-turn (phase
+`"awaiting-model"`) is gated first on the next idle tick, and is
+re-instructed only if that gate fails with fix turns remaining.
+
+Every fix request — the normal retry path, the hold-release path below,
+after a daemon restart, or a seat merely relaunched mid-parcel with no
+daemon restart at all — redoes the chat set-up first (clear, read-only
+spec, editable files) **unconditionally**, not once per process. A
+relaunched aider chat has no memory of a pre-crash `/clear`, `/read-only`
+or `/add`, and a first cut of this gated the set-up on a "done once per
+daemon process" marker, which missed two live cases: the same process's
+own hold-release fix request (the spec had just been made writable again
+by the escalation that preceded it) and a seat relaunched without a
+daemon restart at all (a fresh aider process in the same pane, invisible
+to a process-lifetime marker). Redoing the set-up before every fix
+request, unconditionally, closes both — the per-turn cost is one `/clear`
+plus a few `/read-only`/`/add` lines.
+
+## Releasing an escalated hold (BL-1698)
+
+An escalated parcel (the driver's own turn-limit or merge-conflict path,
+above) no longer just sits `in_process` forever. Two ways out:
+
+- **By answer — a ticket hold only.** A hold carries gate context
+  (`:acceptancePath`) only when it is a real ticket parcel past its
+  merge; a mail merge-conflict hold (the pseudo-ticket `"mail"`,
+  below) never does. Only the former is resolved this way: once a
+  waiting answer exists for that role, `drive-tick!` consumes it through
+  the one sanctioned entry point, `deliver-role-answer.js --role <role>`
+  (BL-1244 — never a direct read of `role-answers/<role>.json`), redoes
+  the chat set-up unconditionally (the escalation just before this made
+  the spec writable again, so the fix request must never land in a chat
+  that still thinks it's read-only from the prior turn), and types
+  **one** fix request carrying the answer text. The gate is re-armed at
+  its own limit (`fixTurnsUsed` set to `fixTurnsLimit`) — the answer's
+  fix request **is** the one extra try, so the very next failed gate
+  escalates immediately rather than typing a second, generic fix request
+  first. A **mail hold's** answer is left unconsumed — there is no gate to
+  re-arm and no ticket instruction to answer, so its disposition is
+  genuinely ambiguous; an operator resolves it via `release` instead. Both
+  cases are a no-op while no answer is waiting.
+- **By operator, either kind of hold.** The driver CLI's second verb, keyed by seat id (e.g.
+  `coder@2`, matching BL-1697's own per-seat state file):
+
+  ```
+  local_parcel_driver_cli.bb release <project-root> <checkout> <role> <seat-id> complete
+  local_parcel_driver_cli.bb release <project-root> <checkout> <role> <seat-id> retry
+  ```
+
+  Neither types anything into the pane. `complete` restores spec write
+  permission, completes the parcel with **no** `git_handoff` (so the
+  ticket can be rerouted by hand), and clears the record. `retry` restores
+  spec write permission and clears the record only — the next tick serves
+  the parcel afresh, from the top. With no record for that seat, it prints
+  `null` and exits 1: nothing to release.
+
+## Mail that needs no model turn (BL-1698)
+
+Not every parcel a driver seat receives is a ticket `git_handoff`. Three
+more shapes, handled with no chat instruction ever typed:
+
+- **A QA merge-up note** (handoff-protocol.md's own shape — `"BL-042
+  QA-approved a1b2c3d4e5 - merge your branch up to QA's"`, the exact
+  sender+text pattern, never sender alone) or a **`non-forwarding: true`**
+  reverse copy: `seat merge <sender> <commit>` then `seat done` — no
+  `git_handoff`, no model turn. A merge conflict escalates exactly like a
+  ticket parcel's own conflict path (`seat ask`, a driver record
+  persisted under the pseudo-ticket id `"mail"`), so the hold is visible.
+  This hold carries no gate context, so a waiting human answer never
+  resolves it (see "Releasing an escalated hold" above) — `release-hold!`
+  is the only way out.
+- **Any other note**: one question is raised (`seat ask`, quoting the
+  sender and the note text) and the seat completes (`seat done`) — the
+  note never wedges the seat. If that role's ask slot is already taken
+  (`role_ask.bb` answers `already-pending`), the same text goes to the
+  **coordinator** instead as a priority-`00` note (`seat note coordinator
+  00 <text>`, its own 80-character bound).
+
 ## What this driver does not do (yet)
 
-- **Resume after a daemon/host restart**, releasing an escalated hold, and
-  driving `note` parcels — all BL-1698.
 - **Non-`coder` roles on a driver seat** — deferred to the BL-1702
   pack-shape ruling.
 - Any Claude seat or pack — entirely untouched (capability-gated, never a
   provider-name check).
+- babysitterd's nudge pass (`babysitter_nudge_lib.bb`'s `nudge-resident!`)
+  skips a driver seat via its own `driver-seat?` check
+  (`prompt-engine-lib/parcel-driver-capable?`, the same capability
+  `driver-seat?` above reads — never a provider-name check), distinct from
+  the pre-existing `aider-agent?` wake-style skip that still covers every
+  other aider seat.
 
 ## Related
 
@@ -146,4 +246,5 @@ file, independent of the Claude `coder`'s).
 
 Acceptance:
 `specs/features/BL-1697-the-local-parcel-driver-moves-a-coder-parcel-through-a-local-aider-seat.feature`,
+`specs/features/BL-1698-the-local-parcel-driver-survives-a-restart-releases-its-hold-and-handles-merge-only-mail.feature`,
 `specs/features/BL-1699-aider-seats-launch-with-a-short-role-note-no-repo-paths-and-the-seat-test-loop.feature`.

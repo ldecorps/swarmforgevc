@@ -134,6 +134,8 @@ function makeLocalParcelDriverFixture() {
       ['coordinator', 'master', root, 'sf-coordinator', 'Coordinator', 'claude', 'task', 'off', 'forward-only'].join(
         '\t'
       ),
+      // BL-1698 requirement 4: a QA merge-up note names QA as the sender.
+      ['QA', 'QA', root, 'sf-QA', 'QA', 'claude', 'task', 'off', 'forward-only'].join('\t'),
     ].join('\n') + '\n'
   );
 
@@ -199,6 +201,128 @@ function makeLocalParcelDriverFixture() {
         )
       );
       return p;
+    },
+
+    // BL-1698 requirement 4b: a non-forwarding reverse-hop copy - merged
+    // and completed mechanically, no model turn.
+    queueNonForwardingParcel(commitSha, { from = 'cleaner' } = {}) {
+      const p = path.join(
+        root,
+        '.swarmforge',
+        'handoffs',
+        'inbox',
+        'new',
+        `00_20260924T000000Z_000002_from_${from}_to_coder_for_coder.handoff`
+      );
+      fs.writeFileSync(
+        p,
+        [
+          'type: git_handoff',
+          'from: ' + from,
+          'to: coder',
+          'priority: 00',
+          'non-forwarding: true',
+          'task: BL-9',
+          'commit: ' + commitSha,
+          '',
+        ].join('\n')
+      );
+      return p;
+    },
+
+    // BL-1698 requirements 4a/5: a `type: note` mail item - either a QA
+    // merge-up note (handoff-protocol.md's own shape) or any other note.
+    queueNoteMail(message, { from = 'specifier' } = {}) {
+      const p = path.join(
+        root,
+        '.swarmforge',
+        'handoffs',
+        'inbox',
+        'new',
+        `00_20260924T000000Z_000003_from_${from}_to_coder_for_coder.handoff`
+      );
+      fs.writeFileSync(
+        p,
+        ['type: note', 'from: ' + from, 'to: coder', 'priority: 00', 'message: ' + message, ''].join('\n')
+      );
+      return p;
+    },
+
+    // BL-1698 requirement 2: a waiting human answer, matched to a
+    // pending role-ask marker by the SAME asked_at_ms both files carry
+    // (telegram-front-desk-bot.ts's own correlation contract).
+    writeWaitingAnswer(text) {
+      const askedAtMs = Date.now();
+      const awaitingDir = path.join(root, '.swarmforge', 'operator', 'role-awaiting');
+      const answersDir = path.join(root, '.swarmforge', 'operator', 'role-answers');
+      fs.mkdirSync(awaitingDir, { recursive: true });
+      fs.mkdirSync(answersDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(awaitingDir, 'coder.json'),
+        JSON.stringify({ question: 'acceptance still failing', asked_at_ms: askedAtMs })
+      );
+      fs.writeFileSync(
+        path.join(answersDir, 'coder.json'),
+        JSON.stringify({ text, recordedAt: new Date().toISOString(), askedAtMs })
+      );
+    },
+
+    // BL-1698 requirement 2's own consumption path - a minimal stand-in
+    // for extension/out/tools/deliver-role-answer.js (the same
+    // delivered/no-answer/mismatch/already-consumed shape, never a
+    // direct read of role-answers/<role>.json by the driver itself).
+    installDeliverRoleAnswerStub() {
+      const dir = path.join(root, 'extension', 'out', 'tools');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'deliver-role-answer.js'),
+        `#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
+const idx = process.argv.indexOf('--role');
+const role = idx >= 0 ? process.argv[idx + 1] : undefined;
+const root = process.cwd();
+const answerPath = path.join(root, '.swarmforge', 'operator', 'role-answers', role + '.json');
+const awaitingPath = path.join(root, '.swarmforge', 'operator', 'role-awaiting', role + '.json');
+let answer;
+try { answer = JSON.parse(fs.readFileSync(answerPath, 'utf8')); } catch { answer = undefined; }
+if (!answer) { console.log(JSON.stringify({ kind: 'no-answer' })); process.exit(0); }
+if (answer.consumedAt !== undefined) { console.log(JSON.stringify({ kind: 'already-consumed' })); process.exit(0); }
+let awaiting;
+try { awaiting = JSON.parse(fs.readFileSync(awaitingPath, 'utf8')); } catch { awaiting = undefined; }
+const askedAtMs = awaiting ? awaiting.asked_at_ms : undefined;
+if (answer.askedAtMs === undefined || askedAtMs === undefined || answer.askedAtMs !== askedAtMs) {
+  console.log(JSON.stringify({ kind: 'mismatch' }));
+  process.exit(0);
+}
+fs.writeFileSync(answerPath, JSON.stringify({ ...answer, consumedAt: new Date().toISOString() }));
+console.log(JSON.stringify({ kind: 'delivered', text: answer.text }));
+`
+      );
+    },
+
+    // BL-1698 requirement 3: the release CLI verb, never typed into a
+    // pane.
+    releaseHold(mode) {
+      const result = spawnSync('bb', [DRIVER_CLI, 'release', root, root, 'coder', 'coder', mode], {
+        encoding: 'utf8',
+      });
+      return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
+    },
+
+    // BL-1698 requirement 1: directly construct a persisted driver
+    // record at a given phase - the test's own stand-in for "a driver
+    // restarted mid-parcel", since each CLI invocation is already a
+    // fresh process (there is no long-lived one to actually kill).
+    writeDriverState(state) {
+      const dir = path.join(root, '.swarmforge', 'local-driver');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'coder.json'), JSON.stringify(state));
+    },
+
+    readDriverState() {
+      const p = path.join(root, '.swarmforge', 'local-driver', 'coder.json');
+      return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : null;
     },
 
     // A commit on a side branch, merged in by the driver's own "merge"
@@ -285,25 +409,28 @@ function makeLocalParcelDriverFixture() {
 
     // Drives exactly one tick of the real driver via the CLI - the test
     // orchestrates the "model" between calls, and flips the fake tmux's
-    // own rules to move the pane between busy/idle.
-    driveOneTick(fixTurnsLimit = 3) {
-      const result = spawnSync(
-        'bb',
-        [
-          DRIVER_CLI,
-          root,
-          root,
-          'coder',
-          'coder',
-          'aider',
-          fixture.tmux.socketPath || 'fake-socket',
-          'sf-coder',
-          String(fixTurnsLimit),
-          '1',
-          '0',
-        ],
-        { encoding: 'utf8' }
-      );
+    // own rules to move the pane between busy/idle. Accepts either a
+    // bare fixTurnsLimit number (BL-1697's own call shape, unchanged) or
+    // an options object; { resume: true } (BL-1698) runs the
+    // write-permission sweep once before this tick, standing in for
+    // "the driver starts again".
+    driveOneTick(opts = 3) {
+      const { fixTurnsLimit = 3, resume = false } = typeof opts === 'number' ? { fixTurnsLimit: opts } : opts;
+      const args = [
+        DRIVER_CLI,
+        root,
+        root,
+        'coder',
+        'coder',
+        'aider',
+        fixture.tmux.socketPath || 'fake-socket',
+        'sf-coder',
+        String(fixTurnsLimit),
+        '1',
+        '0',
+      ];
+      if (resume) args.push('resume');
+      const result = spawnSync('bb', args, { encoding: 'utf8' });
       return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
     },
 

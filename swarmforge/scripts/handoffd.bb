@@ -5551,6 +5551,12 @@
     (let [roles  (load-roles)
         socket (str/trim (slurp (str socket-file)))]
     (self-heal-stale-stubs! roles)
+    ;; BL-1698 requirement 1: restore write permission on every spec file
+    ;; any driver record names, once, before this process's first
+    ;; drive-tick! for any driver seat - a crash mid-parcel must never
+    ;; leave a spec file physically unwritable with no live record left
+    ;; to restore it.
+    (local-parcel-driver-lib/resume-writable-sweep! project-root)
     (log-rotation-actionability-ordering-warnings!)
     (cond
       poll-once-only?

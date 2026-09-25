@@ -219,6 +219,7 @@ test_autonomous_swarm_pack.sh	standing
 test_availability_ledger_lib.sh	standing		
 test_babysitter_check.sh	standing		
 test_babysitter_nudge_resident.sh	standing
+test_babysitter_nudge_driver_seat_skip.sh	standing
 test_babysitterd_census_lib.sh	standing
 test_babysitterd_heartbeat_pulses.sh	standing
 test_babysitterd_lifecycle.sh	standing		
@@ -322,6 +323,7 @@ test_handoffd_closing_context_clear_wiring.sh	standing
 test_handoffd_cooldown_sweep_wiring.sh	standing		
 test_handoffd_dead_letter_notify_wiring.sh	standing
 test_handoffd_driver_seat_injection_skip.sh	standing
+test_handoffd_startup_restores_driver_spec_writable.sh	standing
 test_handoffd_expedite_park_reversal_wiring.sh	standing		
 test_handoffd_flow_watchdog_wiring.sh	standing		
 test_handoffd_idempotent_archive.sh	standing		
