@@ -100,6 +100,7 @@ notes: |
   row added in the mint commit, owner BL-1766. Same family as BL-1764
   (a test reading the wall clock against local-day logic), different fix:
   this property must read the real clock, so it is not folded into
-  BL-1764.
+  BL-1764. Holder told the same pass (BL-1566): note to QA, "BL-1762:
+  bl1648RegisterCliInjectedDate owned by BL-1766 (d6878c7b5b) - resume".
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
