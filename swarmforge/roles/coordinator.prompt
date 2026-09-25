@@ -917,3 +917,18 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   there. 2026-09-24's coder@2 drop missed the worktree copies and
   `sessions.tsv`, which left three BL-1703 reverse copies stranded and
   four empty wakes in the specifier's pane.
+
+## coder@2 gets a new ticket only when three are waiting (operator directive 2026-09-25, accepted rule proposal)
+- Route every new ticket to `coder`. Send one to `coder@2` only when the
+  coder seats' queue holds at least 3 tickets waiting to start: parcels in
+  `coder`'s `inbox/new` plus active tickets promoted for a coder and not
+  yet dispatched. Below 3, coder@2 stays idle. An idle second seat is the
+  intended state, not an open slot to fill.
+- Why: QA reviews both coder branches, and splitting the review across two
+  seats is cumbersome at today's volume. The second seat pays for itself
+  only under real backlog pressure. This is also the human's 2026-09-24
+  line on coder@2: it was dropped because the coder was no longer the
+  bottleneck, and re-added the same day.
+- Not covered: work coder@2 already holds, and a rebuild or send-back of a
+  ticket it built, stay with coder@2. The rule gates new tickets only, and
+  moving a built parcel to the other seat breaks its branch lineage.
