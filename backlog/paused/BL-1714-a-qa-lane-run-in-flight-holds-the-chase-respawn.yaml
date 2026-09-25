@@ -1,5 +1,5 @@
 id: BL-1714
-title: "The chase ladder respawned QA at 07:02:50Z on 2026-09-24 while QA's own qa-gather run for BL-1694 had been alive 31 minutes under the QA worktree - BL-1652's lane guard pattern names Stryker, vitest and the bb test runners but not qa-gather.js or the acceptance CLI QA runs directly (node specs/pipeline/cli.js), so a QA waiting on its gatherer reads as idle; both entry points, scoped to the chased role's worktree, hold the respawn"
+title: "The chase ladder respawned QA at 07:02:50Z on 2026-09-24 while QA's own qa-gather run for BL-1694 had been alive 31 minutes under the QA worktree - BL-1652's lane guard pattern names Stryker, vitest and the bb test runners but not qa-gather.js or the acceptance CLI QA runs directly (node specs/pipeline/cli.js), so a QA waiting on its gatherer reads as idle; both entry points, scoped to the chased role's worktree, hold the respawn; hotfix 72d2da04da (2026-09-25) already added the land step (land_step_cli.bb, land_main_publish.sh) after the same ladder killed every QA land mid-flight, and this ticket is also that hotfix's stamp"
 milestone: M8
 type: defect
 severity: medium
@@ -53,6 +53,7 @@ approval_context: >
 
 invariants:
   - "A chase respawn never fires for a role while a lane entry point that role's prompt directs it to run is alive scoped to that role's worktree."
+  - "The stamp never rewrites hotfix 72d2da04da: land_step_cli.bb and land_main_publish.sh stay in lane-process-pattern, and laneProcessLib.test.js keeps the hotfix's land-step test."
 
 description: |
   ## What is wrong
@@ -113,6 +114,31 @@ description: |
   - `specs/features/BL-1714-...feature` + the pinned handler.
   - Docs: the chase-ladder reference that lists what holds a respawn.
 
+  ## Hotfix 72d2da04da - stamped here (consolidated 2026-09-25)
+
+  Landed 2026-09-25 11:13Z, `Hotfix-Certification: pending`, ledger row
+  pending until linked here (coordinator note 011586). Its commit message:
+  chase respawned QA every ~6 min (10:52:50Z, 10:58:35Z, logged
+  `busy=false lane=false`) while QA waited on BL-1724's land step, so
+  every land was killed mid-flight and left a stale land lock - a
+  livelock that held QA at zero landings. It added
+  `land_step_cli\.bb|land_main_publish\.sh` to `lane-process-pattern` and
+  a land-step test to `extension/test/laneProcessLib.test.js` (red on the
+  old pattern, green after). No change to handoffd.bb or BL-1652's guard.
+  It is the same gap this ticket was minted for, found one entry point
+  over, so the stamp is folded in here rather than minted separately
+  (BL-680 N:1 merge; both touch the one regex).
+
+  Since the hotfix the pattern reads
+  `stryker|...|_test_runner\.bb|run_acceptance\.sh|land_step_cli\.bb|land_main_publish\.sh`,
+  so `qa-gather.js` and `specs/pipeline/cli.js` are still unmatched.
+
+  Review goals for the hotfix (confirm or refute, never rewrite):
+  1. Scenario 01's two land rows pass against the real pattern.
+  2. The land-step test in `laneProcessLib.test.js` stays and stays green.
+  3. The lane entry-point census (How, above) lists the two land commands
+     as covered by 72d2da04da.
+
   ## Not in scope
 
   - Why the second gather run produced nothing in 31 minutes, and why
@@ -123,7 +149,7 @@ description: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1714-a-qa-lane-run-in-flight-holds-the-chase-respawn.feature`:
-     all ok (3 of 3).
+     all ok (5 of 5).
   2. `node specs/pipeline/cli.js specs/features/BL-1652-the-chase-sweep-never-respawns-a-busy-role-and-respawns-at-most-once-per-sweep.feature`:
      all ok (4 of 4) - the existing guard is unchanged.
   3. Live read, no respawn provoked: while your own qa-gather run for
@@ -142,3 +168,12 @@ notes: |
   backlog/evidence/closing-ceremony-lean-pass-2026-09-24.md. IR-DRY: one
   possible-synonym finding ("exactly one respawn" vs "no respawn") is two
   opposite outcomes, kept.
+  2026-09-25: consolidated with the stamp of hotfix 72d2da04da (land
+  step in lane-process-pattern), coordinator note 011586. Same regex,
+  same failure class, same invariant. Scenario 01 gains two rows (the land
+  commands, which pass on main since the hotfix). A second invariant
+  keeps the hotfix's alternatives, and the ledger row is linked to this
+  ticket. Paused and unclaimed, so there is no holder to notify. The
+  approval stands: the added rows fall inside the approved invariant
+  ("a lane entry point that role's prompt directs it to run" - QA.prompt
+  names both land commands).

@@ -6,9 +6,12 @@ Feature: BL-1714 A QA lane run in flight holds the chase respawn
   thirty-one minutes under QA's own worktree. BL-1652's lane guard exists
   to prevent exactly this, but its process pattern names Stryker, vitest
   and the bb test runners, not the gatherer or the acceptance CLI QA
-  runs directly. This feature is that either run, scoped to the chased
-  role's worktree, holds the respawn, and that a run under another
-  role's worktree still does not.
+  runs directly. On 2026-09-25 the same ladder respawned QA every six
+  minutes while it waited on a land step, killing every land mid-flight;
+  hotfix 72d2da04da added the land commands to the pattern, and this
+  feature stamps that too. This feature is that any of these runs,
+  scoped to the chased role's worktree, holds the respawn, and that a run
+  under another role's worktree still does not.
 
   Background:
     Given a fixture root with a daemon-shaped .swarmforge, a QA role whose heartbeat is ten minutes old, and five inbox items on QA each already chased three times
@@ -24,6 +27,8 @@ Feature: BL-1714 A QA lane run in flight holds the chase respawn
       | lane command                                                   |
       | node extension/out/tools/qa-gather.js --ticket BL-9999          |
       | node specs/pipeline/cli.js specs/features/BL-9999-a.feature     |
+      | bb swarmforge/scripts/land_step_cli.bb BL-9999 0123456789       |
+      | swarmforge/scripts/land_main_publish.sh . --decide-only         |
 
   # BL-1714 a-lane-run-under-another-worktree-does-not-hold-qa-02
   Scenario: a gather run under the coder worktree leaves QA's respawn to its own readings
