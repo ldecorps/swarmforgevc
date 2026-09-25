@@ -44,6 +44,27 @@ test('lane-process-lib/lane-running? detects a real matching process scoped to i
   }
 });
 
+// A land in flight is work a respawn would kill (chase respawned QA mid-land, 2026-09-25).
+test('a land step running under the worktree counts as a lane, so a chase respawn waits', () => {
+  for (const landProcess of ['land_step_cli.bb', 'land_main_publish.sh']) {
+    const worktree = mkTmpDir('bl1652-lane-land-');
+    const child = spawn('bash', ['-c', `exec -a ${landProcess} sleep 30`], { cwd: worktree, stdio: 'ignore' });
+    try {
+      execFileSync('sleep', ['0.3']);
+      assert.equal(laneRunning(worktree), true, `expected a ${landProcess} process under this cwd to hold off a respawn`);
+    } finally {
+      if (child.pid) {
+        try {
+          process.kill(child.pid, 'SIGKILL');
+        } catch {
+          // already dead - fine
+        }
+      }
+      fs.rmSync(worktree, { recursive: true, force: true });
+    }
+  }
+});
+
 test('lane-process-lib/lane-running? reads false when no lane process is running under the worktree', () => {
   const worktree = mkTmpDir('bl1652-lane-quiet-');
   try {

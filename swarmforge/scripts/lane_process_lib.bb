@@ -20,8 +20,11 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 
 ;; Vitest, Stryker/gherkin mutation, a bb test runner
-;; (swarmforge/scripts/test/*_test_runner.bb), or the acceptance-pipeline
-;; CLI (run_acceptance.sh) - deliberately its OWN pattern, not
+;; (swarmforge/scripts/test/*_test_runner.bb), the acceptance-pipeline
+;; CLI (run_acceptance.sh), or a land in flight (land_step_cli.bb,
+;; land_main_publish.sh - 2026-09-25: chase respawned QA every ~6 min while
+;; it waited on a ~5-10 min land, killing every land mid-flight and leaving
+;; a stale land lock each time) - deliberately its OWN pattern, not
 ;; worktree_stray_lib.bb's job-process-pattern (mirrored 1:1 with
 ;; handoffd_supervisor.bb's own copy under a BL-897 agreement test) - this
 ;; answers a different question (is a lane running right now, so a respawn
@@ -29,7 +32,7 @@
 ;; two literals would make an unrelated ticket's orphan-pattern edit
 ;; silently change what a respawn waits on.
 (def lane-process-pattern
-  #"(?i)stryker|vitest\.properties\.config\.mjs|\bnpm exec vitest\b|\bnpx vitest\b|\(vitest|_test_runner\.bb|run_acceptance\.sh")
+  #"(?i)stryker|vitest\.properties\.config\.mjs|\bnpm exec vitest\b|\bnpx vitest\b|\(vitest|_test_runner\.bb|run_acceptance\.sh|land_step_cli\.bb|land_main_publish\.sh")
 
 (defn lane-running?
   "True when a lane-process-pattern process is running scoped to worktree
