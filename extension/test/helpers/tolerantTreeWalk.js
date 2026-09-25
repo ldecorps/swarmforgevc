@@ -23,12 +23,28 @@ const path = require('node:path');
 
 const DEFAULT_EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'out', 'coverage', '.stryker-tmp', 'vendor', '.worktrees']);
 
+// BL-1729: the repository root's own runtime state, never a basename-
+// anywhere exclusion like DEFAULT_EXCLUDED_DIR_NAMES above - only skipped
+// as a DIRECT CHILD OF THE WALK ROOT, so a fixture root named `tmp` (or
+// one that builds its own nested `.swarmforge/`-shaped content for an
+// unrelated test) is still walked. On the shared main checkout,
+// `.swarmforge/operator/vscode-cli/` alone holds 475 MB of bundled VS Code
+// CLI server .js - reading it into one worker's `withContent: true` array
+// is what crashed the property lane's heap cap (a role worktree's
+// `.swarmforge/` has no such directory, so this was invisible there).
+const DEFAULT_ROOT_ONLY_EXCLUDED_DIR_NAMES = new Set(['.swarmforge', 'tmp']);
+
 // walkFilesTolerant(root, opts) -> string[] of file paths, or
 // {path, content}[] when opts.withContent is true.
 //
 // opts:
-//   excludeDirs  Set<string> of directory basenames never recursed into.
-//                Default DEFAULT_EXCLUDED_DIR_NAMES (bl874's own set).
+//   excludeDirs  Set<string> of directory basenames never recursed into,
+//                at any depth. Default DEFAULT_EXCLUDED_DIR_NAMES (bl874's
+//                own set).
+//   rootOnlyExcludeDirs  Set<string> of directory basenames never recursed
+//                into ONLY when they are a direct child of `root` itself -
+//                a fixture nesting the same basename deeper is unaffected.
+//                Default DEFAULT_ROOT_ONLY_EXCLUDED_DIR_NAMES.
 //   extension    Only files whose name ends with this string are yielded.
 //                Default: every file.
 //   withContent  When true, each result is {path, content}: the file is
@@ -46,6 +62,7 @@ const DEFAULT_EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'out', 'cove
 function walkFilesTolerant(root, opts = {}) {
   const {
     excludeDirs = DEFAULT_EXCLUDED_DIR_NAMES,
+    rootOnlyExcludeDirs = DEFAULT_ROOT_ONLY_EXCLUDED_DIR_NAMES,
     extension = null,
     withContent = false,
     encoding = 'utf8',
@@ -56,10 +73,12 @@ function walkFilesTolerant(root, opts = {}) {
 
   function walk(dir) {
     const entries = fsImpl.readdirSync(dir, { withFileTypes: true });
+    const atRoot = dir === root;
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (!excludeDirs.has(entry.name)) {
+        const excluded = excludeDirs.has(entry.name) || (atRoot && rootOnlyExcludeDirs.has(entry.name));
+        if (!excluded) {
           walk(full);
         }
         continue;
@@ -88,4 +107,4 @@ function walkFilesTolerant(root, opts = {}) {
   return results;
 }
 
-module.exports = { walkFilesTolerant, DEFAULT_EXCLUDED_DIR_NAMES };
+module.exports = { walkFilesTolerant, DEFAULT_EXCLUDED_DIR_NAMES, DEFAULT_ROOT_ONLY_EXCLUDED_DIR_NAMES };

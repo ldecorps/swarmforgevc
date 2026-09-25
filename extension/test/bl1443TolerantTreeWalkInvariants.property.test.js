@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { walkFilesTolerant, DEFAULT_EXCLUDED_DIR_NAMES } = require('./helpers/tolerantTreeWalk');
+const { walkFilesTolerant, DEFAULT_EXCLUDED_DIR_NAMES, DEFAULT_ROOT_ONLY_EXCLUDED_DIR_NAMES } = require('./helpers/tolerantTreeWalk');
 
 // BL-1443 declared invariants (backlog/active/BL-1443-property-walks-tolerate-vanishing-fixtures.yaml):
 //   1. "A file that vanishes between a directory listing and its read is
@@ -136,6 +136,58 @@ test('property (hardener addition): a directory named in excludeDirs is never re
       assert.ok(
         results.includes(keptFile),
         `expected the sibling file ${keptFile} to be reported, got: ${results.join(', ')}`
+      );
+    }),
+    { numRuns: 10 }
+  );
+});
+
+// ── Hardener addition (BL-1729): rootOnlyExcludeDirs had zero coverage of
+// its OWN defining property - that the exclusion applies only at the walk
+// root, never at any depth. No test built a tree with a NESTED directory
+// sharing a rootOnlyExcludeDirs basename (BL-1729's own feature only
+// exercises the name at the root itself, per its Background/Scenario
+// text - it never asserts the nested case). Confirmed by hand-mutation:
+// dropping the `atRoot &&` guard so rootOnlyExcludeDirs.has(entry.name)
+// applies unconditionally (matching DEFAULT_EXCLUDED_DIR_NAMES's own
+// at-any-depth behavior) left BL-1729's feature, this file's other tests,
+// and the full property lane green - exactly the regression the ticket's
+// own FIRM constraint and the helper's own comment forbid ("a fixture
+// nesting the same basename deeper is unaffected"), and a real-world risk:
+// extension/tmp is a genuine nested `tmp` directory under the repo root
+// these same two property files walk. Closed here: a marker file inside a
+// rootOnlyExcludeDirs-named directory AT THE ROOT is never reported, the
+// identical basename ONE LEVEL DEEPER is.
+const rootOnlyExcludedDirNameArb = fc.constantFrom(...DEFAULT_ROOT_ONLY_EXCLUDED_DIR_NAMES);
+
+test('property (hardener addition): a rootOnlyExcludeDirs name is skipped only at the walk root, read when nested', () => {
+  fc.assert(
+    fc.property(rootOnlyExcludedDirNameArb, (excludedName) => {
+      const root = mkTmpDir('bl1443-prop-root-excl-');
+
+      // At the root itself: must be skipped.
+      const atRootDir = path.join(root, excludedName);
+      fs.mkdirSync(atRootDir, { recursive: true });
+      fs.writeFileSync(path.join(atRootDir, 'marker.js'), '// at root - should never be reported\n');
+
+      // The SAME basename, nested one level under an ordinary directory:
+      // must still be read - this is the property's whole point.
+      const nestedParent = path.join(root, 'nested-parent');
+      fs.mkdirSync(nestedParent, { recursive: true });
+      const nestedDir = path.join(nestedParent, excludedName);
+      fs.mkdirSync(nestedDir, { recursive: true });
+      const nestedFile = path.join(nestedDir, 'marker.js');
+      fs.writeFileSync(nestedFile, '// nested - should be reported\n');
+
+      const results = walkFilesTolerant(root, { extension: '.js' });
+
+      assert.ok(
+        !results.some((p) => p.startsWith(atRootDir + path.sep)),
+        `expected nothing under the root-level ${atRootDir}, got: ${results.join(', ')}`
+      );
+      assert.ok(
+        results.includes(nestedFile),
+        `expected the nested ${nestedFile} to be reported (rootOnlyExcludeDirs must not apply below the root), got: ${results.join(', ')}`
       );
     }),
     { numRuns: 10 }
