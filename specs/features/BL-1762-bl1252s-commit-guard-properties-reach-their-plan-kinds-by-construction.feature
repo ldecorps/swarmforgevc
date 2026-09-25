@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=36777a0775d326cc16889f75d6cec72ca53cf5663e7675ce8cd1a7134da11015
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-25T21:41:13.163181351Z","feature_name":"BL-1762 bl1252's commit-guard properties reach their plan kinds by construction","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1762-bl1252s-commit-guard-properties-reach-their-plan-kinds-by-construction.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each bl1252 property file reaches its plan kinds by construction through the shared helpers","scenario_hash":"469d9234d9f4a257ab0fad6d31d25de183390b4dc11ea73cdb375266f00f9e5f","mutation_count":5,"result":{"Total":5,"Killed":5,"Survived":0,"Errors":0},"tested_at":"2026-09-25T21:41:13.163181351Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1762 bl1252's commit-guard properties reach their plan kinds by construction
 
   The five bl1252 commit-guard property files draw PLAN() 60 times from

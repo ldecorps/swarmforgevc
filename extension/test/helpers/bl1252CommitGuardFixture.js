@@ -92,6 +92,54 @@ const PLAN = () =>
     { arbitrary: SUITE_ONLY_PLAN(), weight: 1 }
   );
 
+// BL-1762: kind-specific arbitraries, one per assertReach/assertReachFloor
+// kind, each guaranteeing that kind BY CONSTRUCTION rather than hoping a
+// weighted PLAN() draw lands there (the RANDOM_PLAN 8-weight branch is
+// exactly what missed a suiteOnly plan in QA's property lane on
+// 2026-09-25). All start every guard passing (0) and set only what the
+// kind needs, so the reached-guard analysis in
+// bl1252UnexpectedFailureNeverPassesInvariant.property.test.js ("only a
+// guard the tiering actually invokes is in scope") stays satisfied by
+// construction too: a single broken guard with every other guard passing
+// is always reached, whether it is an index guard (INDEX_GUARDS.includes)
+// or the suite guard with all index guards passing (indexAllPass).
+function allPassing() {
+  return Object.fromEntries(ALL_GUARDS.map((g) => [g, 0]));
+}
+
+const NONZERO_INDEX_STATE = () => fc.constantFrom(1, 2, 127, 'missing');
+
+const MULTI_INDEX_VIOLATION_PLAN = () =>
+  fc
+    .subarray(INDEX_GUARDS, { minLength: 2, maxLength: INDEX_GUARDS.length })
+    .chain((failing) =>
+      fc.tuple(...failing.map(() => NONZERO_INDEX_STATE())).map((states) => {
+        const plan = allPassing();
+        failing.forEach((g, i) => {
+          plan[g] = states[i];
+        });
+        return plan;
+      })
+    );
+
+const UNEXPECTED_PLAN = () =>
+  fc
+    .constantFrom(...ALL_GUARDS)
+    .chain((guard) =>
+      fc.constantFrom(2, 127).map((state) => {
+        const plan = allPassing();
+        plan[guard] = state;
+        return plan;
+      })
+    );
+
+const MISSING_PLAN = () =>
+  fc.constantFrom(...ALL_GUARDS).map((guard) => {
+    const plan = allPassing();
+    plan[guard] = 'missing';
+    return plan;
+  });
+
 function writeFixture(root, plan) {
   const guards = path.join(root, 'guards');
   const ran = path.join(root, 'ran');
@@ -146,12 +194,6 @@ function planKinds(plan) {
   };
 }
 
-function assertReach(seen, kinds) {
-  for (const kind of kinds) {
-    assert.ok(seen[kind] > 0, `generator never reached a ${kind} plan: ${JSON.stringify(seen)}`);
-  }
-}
-
 function freshSeen() {
   return { clean: 0, multiIndexViolation: 0, unexpected: 0, missing: 0, suiteOnly: 0 };
 }
@@ -171,14 +213,31 @@ function withRoot(fn) {
   }
 }
 
+// BL-1762: one arbitrary per kind assertReach/assertReachFloor can name,
+// keyed identically to planKinds()'s own keys - a test file iterates
+// Object.entries(KIND_PLANS) rather than hand-picking which arbitrary goes
+// with which kind string.
+const KIND_PLANS = {
+  clean: CLEAN_PLAN,
+  multiIndexViolation: MULTI_INDEX_VIOLATION_PLAN,
+  unexpected: UNEXPECTED_PLAN,
+  missing: MISSING_PLAN,
+  suiteOnly: SUITE_ONLY_PLAN,
+};
+
 module.exports = {
   ALL_GUARDS,
   INDEX_GUARDS,
   SUITE_GUARD,
   PLAN,
+  CLEAN_PLAN,
+  SUITE_ONLY_PLAN,
+  MULTI_INDEX_VIOLATION_PLAN,
+  UNEXPECTED_PLAN,
+  MISSING_PLAN,
+  KIND_PLANS,
   runRunner,
   legacyChainRefuses,
-  assertReach,
   freshSeen,
   tally,
   withRoot,
