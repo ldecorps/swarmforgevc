@@ -1,0 +1,94 @@
+id: BL-1750
+title: "BL-458 scenario 05 ('an interrupted step file still tears down its detached process tree') fails before it reaches its subject - fixtureReaperAbnormalExitHarness.js launches the real launch_front_desk.sh against a bare mkdtemp root and gives the bridge 5 s for its token file and 5 s to answer /pipeline, and on this host it throws 'fixture bridge never came up' (red at BL-1738's mint and still red on BL-1738's fix, which does not touch this root); the cause is found and recorded, and the harness brings its bridge up so the scenario tests what it names"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red (2026-09-05 register amendment); the row moves here
+# from BL-1738, whose land would otherwise retire it while still red.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: [BL-1738]
+# BL-1738 (active, at the cleaner) edits bl458AcceptanceFixtureProcessLeakSteps.js
+# (scenario 06's reap root) - the handler this scenario runs under; BL-1738
+# lands first so scenario 06 is green and this ticket's run isolates 05.
+mutation_cost: medium
+# medium: cause not yet known - diagnosis first, then a harness or fixture
+# fix; bounded by the stop rule below.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A step-handler fixture chore (BL-1251): the pointer names the feature the
+# harness serves. It is not a claim of ownership over BL-458's contract.
+acceptance: specs/features/BL-458-acceptance-fixture-process-leak.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: no BL-458 scenario
+  text changes, and the scenario keeps launching the real front-desk
+  launcher (it tests that a detached tree is torn down, so a fake bridge
+  would test nothing).
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  BL-458's scenario 05 was red at BL-1738's mint census with
+  `Error: fixture bridge never came up`, and BL-1738's text predicted it
+  might stay red after the roots are fixed. coder note 002136 (evidence
+  `backlog/evidence/BL-1738-coder-20260925.md`, 6887fd5988) confirms it:
+  still red, BL-458 5 of 6. Its root (`ctx.root`,
+  `aps-fixture-reaper-abnormal-exit-`) never reaches `operator_runtime.bb`,
+  so BL-1517's refusal is not the cause. The front-desk launch path has
+  no git-checkout guard (checked at mint).
+
+  `specs/pipeline/steps/lib/fixtureReaperAbnormalExitHarness.js`
+  symlinks the compiled `extension/out` into the root. It runs
+  `launch_front_desk.sh <root>` with fake Telegram creds, waits 5000 ms
+  for `.swarmforge/operator/bridge-token`, then waits 5000 ms for
+  `GET /pipeline` to answer 200, and throws at ~line 68.
+
+  Hypotheses, none verified:
+  (a) The two 5 s waits are too short for a cold bb supervisor plus a
+      node bridge at this host's usual load (10-30 on 20 cores).
+  (b) The supervisor refuses its resolution and exits without claiming
+      the pid (the BL-622 branch `launch_front_desk.sh` describes).
+  (c) Something else in the fixture root.
+  The supervisor's own log is `<root>/.swarmforge/operator/front-desk-supervisor.log`.
+  The harness's teardown removes it, so read it before teardown.
+
+  ## What is wanted
+  - The evidence names the cause, quoting the supervisor/bridge log line.
+  - The harness, or the step that prepares its root, is fixed so the
+    bridge comes up and scenario 05 runs to its own assertions. BL-458
+    runs 6 of 6.
+  - STOP RULE: if the cause is in production code (the launcher, the
+    supervisor, the bridge), do not fix it here. Record it and send the
+    specifier a `note` (spec-gap) so it gets its own ticket.
+
+  ## Scope
+  - `specs/pipeline/steps/lib/fixtureReaperAbnormalExitHarness.js` and/or
+    `specs/pipeline/steps/bl458AcceptanceFixtureProcessLeakSteps.js`
+    (scenario 05's root and waits only).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-458-acceptance-fixture-process-leak.feature`:
+     all ok (6 of 6); record the host load.
+  2. The evidence names the cause with a quoted log line. If it names a
+     production cause, the parcel came with a spec-gap note and not a
+     fix.
+  3. No front-desk process from the fixture outlives the run:
+     `pgrep -af 'aps-fixture-reaper-abnormal-exit-'` is empty afterwards.
+  4. After landing: REGISTER_ROW_RETIRED for BL-458's acceptance row.
+
+notes: |
+  Minted 2026-09-25 by the specifier from coder note 002136 (BL-1738's
+  residual findings). The cause is not known at mint, so the ticket is
+  diagnosis-first with a stop rule (INVEST Estimable through a bounded
+  spike). The register row was re-owned from BL-1738 in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).

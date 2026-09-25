@@ -1,0 +1,76 @@
+id: BL-1748
+title: "BL-325's feature stays red at scenarios 2 and 6 once BL-1738 fixes its fixture root: the OPERATOR_DECIDE_STUB script text in humanInTheLoopClosedSteps.js carries a dead `require('./lib/socketFixtureRoot')`, so the stub the fixture writes to <root>/extension/out/tools/operator-decide.js throws MODULE_NOT_FOUND when spawned and never appends to consumed.log ('expected operator-decide.js invoked with [...], got []'); the stub loads only what it uses"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red (2026-09-05 register amendment); the row moves here
+# from BL-1738, whose land would otherwise retire it while still red.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: [BL-1738]
+# BL-1738 (active, at the cleaner) edits humanInTheLoopClosedSteps.js - its
+# module-scope require and fixture root - and this ticket edits the stub
+# string in the same file. BL-1738 must land first; its fix is also what
+# unmasks this one.
+mutation_cost: low
+# low: one line removed from a fixture's stub string.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A step-handler fixture chore (BL-1251): the pointer names the feature the
+# handler serves, which must still resolve. It is not a claim of ownership
+# over BL-325's contract.
+acceptance: specs/features/BL-325-human-in-the-loop-closed.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: no BL-325 scenario,
+  Examples row or narrative line changes.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  coder note 002136, evidence `backlog/evidence/BL-1738-coder-20260925.md`
+  (on the coder branch, 6887fd5988), section "Residual failures". With
+  BL-1738's fix, BL-325 runs 5 of 7. Scenarios 2 ("A reply typed into
+  the item's topic reaches a consumer that acts on it") and 6 ("The whole
+  loop closes without the human being bypassed") fail with `expected
+  operator-decide.js invoked with [...], got []`.
+
+  `OPERATOR_DECIDE_STUB` (humanInTheLoopClosedSteps.js ~line 34) is the
+  SOURCE TEXT of a script the fixture writes to
+  `<root>/extension/out/tools/operator-decide.js`. Its third line is
+  `const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');`.
+  No `./lib/` exists beside the written file, so the spawned stub throws
+  `MODULE_NOT_FOUND` before its `appendFileSync` to `consumed.log`. The
+  coder reproduced it in isolation. The line looks like the same BL-948
+  edit (77c887dc5c) that should have gone at the module top. BL-1738
+  adds the real module-scope require, and this is the stray copy.
+
+  ## What is wanted
+  - The stub text loads only `fs` and `path`, which is what it uses.
+    Scenarios 2 and 6 go green, and BL-325 runs 7 of 7.
+
+  ## Scope
+  - `specs/pipeline/steps/humanInTheLoopClosedSteps.js` (the stub string
+    only).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-325-human-in-the-loop-closed.feature`:
+     all ok (7 of 7).
+  2. `git diff main...HEAD --name-only` names only the handler and
+     evidence.
+  3. After landing: REGISTER_ROW_RETIRED for BL-325's acceptance row.
+
+notes: |
+  Minted 2026-09-25 by the specifier from coder note 002136 (BL-1738's
+  residual findings). The register row was re-owned from BL-1738 in the
+  mint commit, and BL-1738's qa_e2e was amended to expect it.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).

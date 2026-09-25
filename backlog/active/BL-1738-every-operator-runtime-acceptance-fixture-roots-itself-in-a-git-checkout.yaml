@@ -145,12 +145,20 @@ qa_e2e_procedure: |
      all ok (15 of 15 including the 14 outline rows).
   2. `node specs/pipeline/cli.js <feature>` for each of the fifteen
      features in the table: all ok, and no `not inside a git checkout`
-     line in any output. At mint they took about 8 min together while
+     line in any output. Three named scenarios are exempt, each red for
+     another reason that this fix unmasks, and each now owned elsewhere
+     (amended 2026-09-25, coder note 002136): BL-325 scenarios 2 and 6
+     (dead require in the stub, BL-1748), BL-458 scenario 05 (fixture
+     bridge never came up, BL-1750), BL-877 scenario 7 (real /proc
+     reachable on Linux, BL-1749). Expect 5 of 7, 5 of 6 and 6 of 7 there,
+     failing only with those messages. At mint they took about 8 min together while
      failing, BL-877 alone about 300 s. Green runs may be longer.
   3. The eight features listed green in the description stay green.
   4. `git diff main...HEAD --name-only` names only the Scope files, the
      feature, the handler, docs and evidence.
-  5. After the land: REGISTER_ROW_RETIRED for all fifteen rows.
+  5. After the land: REGISTER_ROW_RETIRED for the twelve rows still owned
+     by BL-1738. The BL-325, BL-458 and BL-877 rows were re-owned to
+     BL-1748, BL-1750 and BL-1749 on 2026-09-25 and stay.
 
 notes: |
   Minted 2026-09-25 by the specifier. Found while owning coder@2's

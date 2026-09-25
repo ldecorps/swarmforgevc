@@ -1,0 +1,77 @@
+id: BL-1749
+title: "BL-877 scenario 7 ('a host with no working liveness facility says so') is red on Linux once BL-1738 fixes its fixture root: its 'no liveness facility can be reached' step forces only lsof unavailable (SWARMFORGE_LSOF_BIN) on the premise that /proc is already absent on the macOS dev host, so on this Linux host the sandbox sweep reads the real /proc and never logs 'liveness could not be determined this pass'; the step also points SWARMFORGE_PROC_DIR at a path that does not exist"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red (2026-09-05 register amendment); the row moves here
+# from BL-1738, whose land would otherwise retire it while still red.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: [BL-1738]
+# BL-1738 (active, at the cleaner) edits bl877PortableProcessLivenessSteps.js
+# (its project root) - same file; BL-1738 must land first, and its fix is
+# what unmasks this one (all 7 scenarios failed on the refusal before).
+mutation_cost: low
+# low: one step handler's env setup.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A step-handler fixture chore (BL-1251): the pointer names the feature the
+# handler serves. It is not a claim of ownership over BL-877's contract.
+acceptance: specs/features/BL-877-portable-process-liveness-without-proc.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: no BL-877 scenario
+  text changes, and the scenario still ends with the sandbox directory
+  kept.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  coder note 002136, evidence `backlog/evidence/BL-1738-coder-20260925.md`
+  (6887fd5988): with BL-1738's fix, BL-877 runs 6 of 7. Scenario 7 fails
+  with `expected runtime.log to record that liveness could not be
+  determined`. The sweep logs ordinary scan/reap lines instead.
+
+  Cause, read at mint: the step `a host on which no liveness facility can
+  be reached` (bl877PortableProcessLivenessSteps.js ~line 235) sets only
+  `ctx.env.SWARMFORGE_LSOF_BIN = '/nonexistent/...'`. Its comment says
+  "/proc is already absent on this project's own macOS dev/CI host".
+  This host is Linux (WSL). Scenario 7 sets no userland, so
+  `rootLiveProcessIn` builds no fake proc, and `proc_fd_scan_lib.bb`
+  falls back to the real `/proc`. Liveness is therefore determinable, and
+  `operator_runtime.bb`'s "liveness could not be determined this pass"
+  line (~878) never fires. Before 2026-09-22 the scenario could not be
+  seen failing this way, because every BL-877 scenario died earlier on
+  BL-1517's refusal.
+
+  ## What is wanted
+  - The step makes both facilities unreachable on any host: it also sets
+    `SWARMFORGE_PROC_DIR` (the seam `proc_fd_scan_lib.bb` ~line 48 already
+    reads) to a path that does not exist. No later Given in the scenario
+    may point it back at a real or fake proc.
+  - BL-877 runs 7 of 7 on Linux, as it did on macOS.
+
+  ## Scope
+  - `specs/pipeline/steps/bl877PortableProcessLivenessSteps.js`.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-877-portable-process-liveness-without-proc.feature`:
+     all ok (7 of 7). Record the duration.
+  2. `git diff main...HEAD --name-only` names only the handler and
+     evidence.
+  3. After landing: REGISTER_ROW_RETIRED for BL-877's acceptance row.
+
+notes: |
+  Minted 2026-09-25 by the specifier from coder note 002136 (BL-1738's
+  residual findings). The cause was traced at mint from the step and the
+  seam. The register row was re-owned from BL-1738 in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
