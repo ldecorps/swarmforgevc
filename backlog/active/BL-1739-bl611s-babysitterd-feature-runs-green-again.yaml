@@ -100,9 +100,9 @@ description: |
   - The babysitter sweep library, only if item 2 is a real regression.
 
 constraints: >
-  No BL-611 scenario, Examples row or narrative is edited in this parcel
-  (the one retired step was retired by the specifier on main, 2026-09-25);
-  a stale scenario goes to the specifier as a note. This parcel never
+  No BL-611 scenario, Examples row or narrative is edited in this parcel.
+  The specifier withdrew one BL-611 step on main on 2026-09-25 (see What
+  is wanted); a stale scenario goes to the specifier as a note. This parcel never
   edits backlog/standing-reds.tsv (BL-1663); its land retires the row
   (BL-1631).
 
