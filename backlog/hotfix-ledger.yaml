@@ -398,3 +398,10 @@
   stamp_ticket: BL-1708
   human_decision: null
   decided_at: null
+- commit: a45dc5865d
+  subject: "Give a swarm's coordinator a project-scoped Remote Control name via the existing swarm_name identity"
+  detected_at: 2026-09-25
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
