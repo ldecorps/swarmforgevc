@@ -680,7 +680,15 @@
         ;; (2026-09-21: a bedtime pause held ~19 parcels across every role's
         ;; inbox and this sweep alarmed on each one once they aged past its
         ;; threshold).
-        pause-held? (handoff-lib/pause-hold-active?)
+        ;; BL-1740: taken from the adapters, like every other reading here
+        ;; (:role-agent-busy?/:role-lane-running? above), never resolved
+        ;; directly - the direct call resolved the LIVE checkout's
+        ;; control-pause.json via git-common-dir from ANY checkout or
+        ;; worktree, so a fixture sweep run anywhere held its fixture parcel
+        ;; whenever a real pause was active on the live swarm. Adapters
+        ;; carrying no :pause-hold-active? key (every pre-BL-1740
+        ;; fixture/property-runner) treat nothing as pause-held, unchanged.
+        pause-held? (boolean (optional-adapter-call adapters :pause-hold-active? role))
         ;; BL-1004: forced only if some non-terminal item actually needs the
         ;; hold check - an empty inbox costs no roles.tsv/conf/mailbox reads.
         deferral-ctx (delay (stage-deferral-context role))

@@ -2351,6 +2351,20 @@
                   (fn [role] (role-lane-running? (get roles role)))
                   :get-heartbeat-age-seconds
                   (fn [role] (heartbeat-age-seconds role now-ms))
+                  ;; BL-1740: the live pause reading, passed as an adapter so
+                  ;; run-sweep! never resolves the checkout it runs in itself
+                  ;; (a fixture sweep run from ANY checkout used to read the
+                  ;; live master's control-pause.json, holding its fixture
+                  ;; parcel whenever a real closing-ceremony/bedtime pause was
+                  ;; active). role is unused - a control pause holds every
+                  ;; role's inbox uniformly (handoff-lib/pause-hold-active?
+                  ;; itself takes no role), same optional-adapter-call
+                  ;; calling convention as :role-agent-busy?/:role-lane-running?
+                  ;; above. A paused live swarm still holds every queued
+                  ;; parcel (the 2026-09-21 directive) - only where the
+                  ;; reading comes from changes.
+                  :pause-hold-active?
+                  (fn [role] (handoff-lib/pause-hold-active?))
                   :role-worktree-dirty?
                   (fn [role] (boolean (role-worktree-dirty? roles role)))
                   :claim-idle-context
