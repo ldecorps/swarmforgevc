@@ -7,7 +7,7 @@ contents do not grow as the repository does. A standing gate scans the
 test directory and fails on any file whose cost is a function of the live
 repository's size or history, unless the file records why it must be.
 
-**Last Updated:** 2026-09-05
+**Last Updated:** 2026-09-25
 
 ## Background
 
@@ -33,9 +33,13 @@ Of the seven originally-measured files, three (`gitHistoryAdapter.test.js`,
 `blTopicStore.test.js`, `costHealthSidecar.test.js`) turned out to resolve
 no live root at all — they spawn `git` into `mkTmpDir` temp dirs, which is
 BL-1039's shape — and were reassigned there. This ticket's actual
-live-repository readers are four files (~99.9s): `renderBriefingDiagramsCli`,
+live-repository readers were four files (~99.9s): `renderBriefingDiagramsCli`,
 `renderBriefingBurndownCli`, `briefingDigestLineCli`, and
-`emitLifecycleSnapshotCli`.
+`emitLifecycleSnapshotCli`. BL-1741 (2026-09-25) converted the fourth to a
+fixture checkout (its `finally` restore of a live `.swarmforge/` file made
+its own cost and correctness depend on which worktree ran it and what day
+it last held a snapshot — an unowned red, BL-1717's pass) — the exemption
+table below reflects the three that remain.
 
 ## How It Works
 
@@ -94,7 +98,8 @@ alike, so BL-1038 scenario 03's "clean tree" verdict was vacuous for it
 and every other rev-parse-rooted file until then.
 
 **The indirect case (`liveRootEscapesIntoProduction`).** The four headline
-files never write a growth operation inline — they bind the live root and
+files (at the time, including `emitLifecycleSnapshotCli`; see Background)
+never wrote a growth operation inline — they bind the live root and
 hand it to a production module (`runCli`, `renderBriefingBurndown`,
 `lifecycleSnapshotPath`), which does the reading. An architect review
 caught the guard blind to this twice: the direct-pattern scan returned
@@ -109,7 +114,7 @@ level of indirection doesn't hide it.
 
 A `// BL-1038-EXEMPT: <reason>` comment justifies a file that must read
 the live repository. As with BL-1039's guard, the checked relation is that
-a *reason* is present, not merely the marker. Six files carry a recorded
+a *reason* is present, not merely the marker. Five files carry a recorded
 exemption:
 
 | File | Why it must read the live repo |
@@ -118,10 +123,13 @@ exemption:
 | `renderBriefingBurndownCli.test.js` | two of its tests are a smoke test that the real-repo fallback path still derives history; its other tests already run against a fixture snapshot |
 | `briefingDigestLineCli.test.js` | proves the compiled CLI's thin `main()` wrapper is genuinely wired against the real repo — an in-process fixture run can't check that |
 | `chaseTrendLineCli.test.js` | same wiring proof, one test |
-| `emitLifecycleSnapshotCli.test.js` | resolves a path under the live root and restores the file afterward — a wiring check, not a repository walk |
 | `pricingTable.test.js` | the live read *is* the assertion — it collects the models the repo's conf/packs actually reference and checks pricing coverage; a pinned copy would freeze the model list and hide a newly-referenced unpriced model |
 
-None of the six is a blanket file exemption where every other call site
+`emitLifecycleSnapshotCli.test.js` carried a sixth exemption until BL-1741
+(2026-09-25) converted it to a fixture checkout (see Background); it is no
+longer in this table and carries no exemption marker.
+
+None of the five is a blanket file exemption where every other call site
 still exists unconverted — each reason names the one thing about that
 file the shared fixture or a pinned copy cannot express.
 

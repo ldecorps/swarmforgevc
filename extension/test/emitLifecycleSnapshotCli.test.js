@@ -2,15 +2,9 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { ensureLifecycleSnapshot, main } = require('../out/tools/emit-lifecycle-snapshot');
 const { lifecycleSnapshotPath, writeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
-
-// BL-1038-EXEMPT: the live root goes to lifecycleSnapshotPath(), which only
-// RESOLVES a path under the root - the test then reads and restores that file
-// so the real snapshot is left untouched. It is a wiring check that the
-// compiled CLI writes where the library says it will, and a pinned root would
-// resolve to a fixture path and prove nothing about the real one. No walk of
-// the repository, so no growth in its size or history.
 
 const DAY1 = Date.parse('2026-08-15T09:00:00Z');
 const DAY1_LATER = Date.parse('2026-08-15T18:00:00Z');
@@ -114,26 +108,48 @@ async function runCli(cwd) {
   return writes.join('');
 }
 
+function git(dir, ...args) {
+  return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+}
+
+// BL-1741: main() calls resolveProjectRoot(process.cwd()) unconditionally
+// (no injected seam) and, via ensureLifecycleSnapshot's own default
+// runGitLogFn, does a REAL git log walk - so this test needs a REAL git
+// fixture, never the checkout the suite itself runs in (that made this
+// file's own duration - and whether it walked at all - depend on which
+// worktree ran it and what day it last held a snapshot, BL-1717's 16.1 s
+// refusal). BL-1390: proven isolated (git-common-dir resolves inside the
+// fixture root) before any further git write.
+function mkFixtureCheckout() {
+  const dir = mkTmp();
+  git(dir, 'init', '-q', '-b', 'main');
+  const commonDir = git(dir, 'rev-parse', '--git-common-dir').trim();
+  assert.ok(
+    path.resolve(dir, commonDir).startsWith(dir),
+    `fixture git-common-dir must resolve inside the fixture root, got "${commonDir}"`
+  );
+  git(dir, 'config', 'user.email', 't@t');
+  git(dir, 'config', 'user.name', 't');
+  git(dir, 'config', 'commit.gpgsign', 'false');
+  // resolveProjectRoot requires .swarmforge/roles.tsv at the git root -
+  // content is irrelevant, only presence is checked.
+  fs.mkdirSync(path.join(dir, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.swarmforge', 'roles.tsv'), '');
+  fs.mkdirSync(path.join(dir, 'backlog', 'paused'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'backlog', 'paused', 'BL-1.yaml'), 'id: BL-1\nstatus: todo\n');
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-q', '-m', 'BL-1: seed');
+  return dir;
+}
+
 test('the compiled CLI runs against the real repo and prints a path/walked JSON result', async () => {
-  const repoRoot = path.join(__dirname, '..', '..');
-  const writtenPath = lifecycleSnapshotPath(repoRoot);
-  const preexisted = fs.existsSync(writtenPath);
-  const priorContent = preexisted ? fs.readFileSync(writtenPath, 'utf8') : null;
-  try {
-    const output = await runCli(repoRoot);
-    const parsed = JSON.parse(output);
-    assert.equal(typeof parsed.path, 'string');
-    assert.ok(parsed.path.includes(path.join('.swarmforge', 'briefing', 'lifecycle-snapshot.json')));
-    assert.equal(typeof parsed.walked, 'boolean');
-  } finally {
-    // This CLI writes into the real worktree's .swarmforge/ (gitignored,
-    // but still shared with any live daemon in this same worktree) -
-    // restore whatever was there before this test ran, never leave a
-    // stray artifact behind.
-    if (preexisted) {
-      fs.writeFileSync(writtenPath, priorContent, 'utf8');
-    } else {
-      fs.rmSync(writtenPath, { force: true });
-    }
-  }
+  const fixtureRoot = mkFixtureCheckout();
+  const output = await runCli(fixtureRoot);
+  const parsed = JSON.parse(output);
+  assert.equal(typeof parsed.path, 'string');
+  assert.equal(parsed.path, lifecycleSnapshotPath(fixtureRoot));
+  assert.ok(parsed.path.includes(path.join('.swarmforge', 'briefing', 'lifecycle-snapshot.json')));
+  // A brand-new fixture with no pre-existing snapshot always walks - unlike
+  // the real worktree this used to run against, that is now deterministic.
+  assert.equal(parsed.walked, true);
 });

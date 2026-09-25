@@ -262,19 +262,22 @@ test('BL-1038: the guard, the fixture helper and this test file are self-exempt'
 // ── the real tree ─────────────────────────────────────────────────────────
 
 // The architect's standing requirement from SEND BACK #2, made executable:
-// the clean scan must stop passing VACUOUSLY with respect to the four files
+// the clean scan must stop passing VACUOUSLY with respect to the files
 // this ticket was minted to fix. Green here previously meant "the guard cannot
 // see them", which is indistinguishable from "they are fine" unless something
 // asserts the difference. Strip each file's exemption and the guard must name
 // it - so if a later change makes the scan blind again, this goes red rather
-// than the tree quietly reporting [].
-test('BL-1038 D1: the four headline files are genuinely REACHED - remove the exemption and each is a violation', () => {
+// than the tree quietly reporting []. BL-1741 removed
+// emitLifecycleSnapshotCli.test.js from this list: its own fix eliminated
+// the live-repo derivation pattern entirely (a real fixture git checkout,
+// never __dirname-derived), so there is no longer an exemption to strip -
+// the guard is correctly blind to it now, not vacuously so.
+test('BL-1038 D1: the headline files are genuinely REACHED - remove the exemption and each is a violation', () => {
   const fs = require('node:fs');
   const named = [
     'renderBriefingDiagramsCli.test.js',
     'renderBriefingBurndownCli.test.js',
     'briefingDigestLineCli.test.js',
-    'emitLifecycleSnapshotCli.test.js',
   ];
   const unreached = [];
   for (const file of named) {
