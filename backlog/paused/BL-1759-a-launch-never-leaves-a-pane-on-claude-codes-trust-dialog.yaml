@@ -24,7 +24,10 @@ acceptance: specs/features/BL-1759-a-launch-never-leaves-a-pane-on-claude-codes-
 required_wiring:
   - 'specs/pipeline/steps/bl1759ClaudeTrustCheckSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - check read-only before starting any pane, and when the root is untrusted start nothing and tell the human the one step that trusts it (recommended)
+ruling_provenance: tapped
 approval_context: >
   New feature file and one real choice: how a launch deals with Claude
   Code's trust dialog on a directory it has never seen. Found at mint
