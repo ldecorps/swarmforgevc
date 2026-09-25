@@ -1,0 +1,104 @@
+id: BL-1760
+title: "bl1074PostCloseRefileDuration's reach floors are constructed, not sampled - invariant 1 draws (refileCount 0..3, copyClose boolean) 12 times and then demands 2 re-files and 2 copy-closes, a coin flip that went red in QA's property lane on 2026-09-25 (1 copy-close in 12); rewrite it on helpers/reachFloors (runsPerCell, assertReachFloor) at the unchanged floors, as BL-1583's sweeps did, so the census reads it constructed"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting is high (2026-09-05 register
+# amendment). An intermittent property-lane red with nothing wrong in the
+# code blocks QA approvals (Article 4.2) and throttles intake (BL-1429)
+# until it is owned and drained.
+status: todo
+epic: sampled-reach-floors
+priority: 2
+direction: qa-found
+depends_on: []
+mutation_cost: low
+# low: one test file and evidence; the shared reachFloors helper exists
+# (sweeps 1-4 used it). The feature reads source and runs the census CLI,
+# seconds per run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1760-bl1074s-reach-floors-are-constructed.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1760Bl1074ReachFloorsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity high
+  defect, no choice posed, no ruling_options). New feature file, the same
+  two-scenario shape as BL-1583's sweeps. FIRM: both floors stay at 2 and
+  nothing is seeded, retried or given a larger budget to hide the miss.
+
+invariants:
+  - "No reach floor value, draw budget, timeout or tolerance in the file is lowered, raised, widened, seeded or retried; both floors (2 re-files, 2 copy-closes) are asserted after the change at the same value, and invariant 2 is untouched."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1074PostCloseRefileDuration.property.test.js`,
+  invariant 1 (lines ~65-98): `fc.property(fc.integer({min: 0, max: 3}),
+  fc.boolean(), ...)` with `numRuns = 12`. It counts `casesWithRefile` and
+  `casesWithCopyClose`, then asserts each `>= 2`. At least 2 heads in 12
+  unseeded draws is not guaranteed. QA's property lane run on the BL-1739
+  parcel (fbb9e1f147, 2026-09-25) failed with "generator reached a
+  copy-close in only 1 of 12 cases" (backlog/evidence/BL-1739-QA-20260925.md,
+  QA note 003193). One run on main the same day was green (1.48 s), which
+  is what a seed miss looks like.
+
+  BL-1583's census never caught it. `bb
+  swarmforge/scripts/sampled_reach_floor_census_cli.bb .` reads the file
+  as `no-floor 8`: it takes invariant 2's literal `numRuns: 8` and does
+  not bind the floor to the `{ numRuns }` shorthand. It is the only
+  misread among the three files using the "generator reached ... in only"
+  counter idiom (meanTicketTimeCost: constructed; metricsTickGate:
+  sampled-high). The classifier gap is recorded on epic BL-1583's
+  remaining slices and is not this ticket's.
+
+  ## What is wanted
+
+  - Invariant 1 iterates the cells it must reach (refileCount 0..3 x
+    copyClose false/true, or the subset the floors need) with
+    `runsPerCell` draws each, and asserts both floors through
+    `assertReachFloor` at 2, like sweeps 1-4 (BL-1585..BL-1587, BL-1691).
+  - The census CLI then reads the file `constructed` (scenario 02).
+
+  ## Scope
+
+  - `extension/test/bl1074PostCloseRefileDuration.property.test.js` only
+    (+ evidence).
+  - New: `specs/pipeline/steps/bl1760Bl1074ReachFloorsSteps.js`. The step
+    texts match BL-1691's, so reuse its handler's functions rather than
+    copying them, scoped to this feature.
+  - Out of scope: the census classifier (BL-1583 remaining slice); every
+    other property file.
+
+constraints: >
+  The parcel never edits backlog/standing-reds.tsv (BL-1663); its land
+  retires the row (BL-1631).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1760-bl1074s-reach-floors-are-constructed.feature`:
+     2 of 2.
+  2. `cd extension && npx vitest run --config vitest.properties.config.mjs
+     test/bl1074PostCloseRefileDuration.property.test.js`: 3 of 3.
+  3. The register row for the file names BL-1760 on the parcel commit.
+  4. `git diff main...HEAD --name-only` names only the test file, the step
+     handler, the feature's steps registration and evidence.
+  5. After the land: REGISTER_ROW_RETIRED for
+     `extension/test/bl1074PostCloseRefileDuration.property.test.js`.
+
+source: |
+  QA note 003193 (2026-09-25T14:15Z): "unowned-red bl1074 refile property
+  reach floor 1/12; see BL-1739-QA ev". Evidence
+  backlog/evidence/BL-1739-QA-20260925.md (QA worktree b122f6bb6a), Detail.
+
+notes: |
+  Minted 2026-09-25 by the specifier on QA's unowned-red note. Register
+  row added in the mint commit, owner BL-1760. No parcel is held on this
+  red (QA bounced BL-1739 for its own D1), so the note to QA records the
+  owner and releases nothing.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
