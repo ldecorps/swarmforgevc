@@ -45,8 +45,8 @@
   dir is removed in a `finally` and swept by prefix BEFORE the run too
   (BL-971 — a killed run traps nothing), reaping ONLY roots no live run
   owns (a dead recorded owner pid, or an age bound): under concurrent
-  invocation a blind prefix sweep destroys sibling runs (BL-1385, BL-1390:
-  1156 copies of one e2e each deleting the others). See **engineering-detailed.prompt**
+  invocation a blind prefix sweep destroys sibling runs (BL-1385, BL-1390).
+  See **engineering-detailed.prompt**
   §"Test Speed And Isolation" for the full pre-trim wording.
 
 ## Acceptance Pipeline
@@ -96,7 +96,6 @@
   `git init`/`git clone` under mkdtemp, proven by `rev-parse
   --git-common-dir` before any mutating git command - `git -C ""` is the
   current directory and a linked worktree shares the live `.git/config`
-  (BL-1390: the parcel's own test wrote its fixture URL into the shared
-  origin and broke every push). See
+  (BL-1390). See
   **engineering-detailed.prompt** §Guardrails for the full pre-trim text
   and every incident narrative.

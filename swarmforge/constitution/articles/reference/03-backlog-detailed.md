@@ -63,3 +63,39 @@ On-demand elaboration for `03_backlog.md`. Not inlined at boot.
     seat or the human.
 - Adoption record: **deprecator-freshness-gate-amendment-2026-08-27.md**.
   Intake: `backlog/archive/INTAKE-deprecator-stale-rules-dead-logic-docs.md`.
+
+
+## 3.2 rule 4 "Expedited Defects" - full text (boot-inlined article, pre-2026-09-25 trim)
+
+`03_backlog.md`'s rule 4, verbatim, before the specifier compressed it on
+2026-09-25 to bring the boot prefix back under the BL-859 budget (44954
+chars measured against 44000; nothing in the rule changed):
+
+4. **Expedited Defects** – A ticket of `type: defect` whose `severity:` is
+   `critical` or `high` is *expedited*: among the eligible candidates it is
+   promoted ahead of every non-expedited ticket, regardless of its ticket
+   `priority:` value. Within the expedited set, rule 2's priority ordering
+   applies unchanged.
+   - **Transition** (legacy `type: bug`): **expedite-defects-amendment-2026-07-25.md** §3.1.
+   - **A standing red rides this lane** (2026-09-05): a test failing on
+     `main` is `type: defect`, `severity: high` at first sighting; see
+     **standing-red-register-amendment-2026-09-05.md**.
+   - **Missing `severity:` fails CLOSED**: a defect with no `severity:` field
+     is NOT expedited — absence must never buy priority. The coordinator
+     surfaces such tickets for triage rather than guessing a severity.
+   - **Ordering only**: expedite reorders the queue only — never an extra
+     active slot (rule 1), never overrides orthogonality (rule 3), the
+     mutation-heavy window (3.4), or the circuit breaker (3.5); under a
+     throttled cap of `1`/`0`, expedited tickets fit the reduced capacity or wait.
+   - **Two `priority:` scales — never conflate**: this rule concerns the
+     ticket YAML `priority:` (promotion order) only. Expediting a ticket
+     never bumps its handoff `priority:` to `00` — that lane is reserved for
+     genuinely blocking decisions. See **expedite-defects-amendment-2026-07-25.md**.
+   - **Auto-approved at mint** (operator hotfix, 2026-09-17): a
+     newly minted ticket that qualifies for this rule (`type: defect`,
+     `severity: critical` or `high`) is minted `human_approval: approved`
+     directly — no human tap gates it before promotion — UNLESS its
+     `approval_context` poses a genuine choice, in which case it still
+     declares `ruling_options` and mints `pending` like any other ruling; a
+     real ruling is never auto-decided by severity alone. See
+     **auto-approve-high-severity-defects-amendment-20260917.md**.

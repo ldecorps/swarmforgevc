@@ -11,34 +11,19 @@
 1. **Max Active Depth** – The coordinator must enforce `active_backlog_max_depth` (from `swarmforge.conf`).
 2. **Eligibility** – Items are promoted in priority order (highest first).
 3. **Orthogonality** – Avoid promoting items that conflict with active work.
-4. **Expedited Defects** – A ticket of `type: defect` whose `severity:` is
-   `critical` or `high` is *expedited*: among the eligible candidates it is
-   promoted ahead of every non-expedited ticket, regardless of its ticket
-   `priority:` value. Within the expedited set, rule 2's priority ordering
-   applies unchanged.
-   - **Transition** (legacy `type: bug`): **expedite-defects-amendment-2026-07-25.md** §3.1.
-   - **A standing red rides this lane** (2026-09-05): a test failing on
-     `main` is `type: defect`, `severity: high` at first sighting; see
-     **standing-red-register-amendment-2026-09-05.md**.
-   - **Missing `severity:` fails CLOSED**: a defect with no `severity:` field
-     is NOT expedited — absence must never buy priority. The coordinator
-     surfaces such tickets for triage rather than guessing a severity.
-   - **Ordering only**: expedite reorders the queue only — never an extra
-     active slot (rule 1), never overrides orthogonality (rule 3), the
-     mutation-heavy window (3.4), or the circuit breaker (3.5); under a
-     throttled cap of `1`/`0`, expedited tickets fit the reduced capacity or wait.
-   - **Two `priority:` scales — never conflate**: this rule concerns the
-     ticket YAML `priority:` (promotion order) only. Expediting a ticket
-     never bumps its handoff `priority:` to `00` — that lane is reserved for
-     genuinely blocking decisions. See **expedite-defects-amendment-2026-07-25.md**.
-   - **Auto-approved at mint** (operator hotfix, 2026-09-17): a
-     newly minted ticket that qualifies for this rule (`type: defect`,
-     `severity: critical` or `high`) is minted `human_approval: approved`
-     directly — no human tap gates it before promotion — UNLESS its
-     `approval_context` poses a genuine choice, in which case it still
-     declares `ruling_options` and mints `pending` like any other ruling; a
-     real ruling is never auto-decided by severity alone. See
-     **auto-approve-high-severity-defects-amendment-20260917.md**.
+4. **Expedited Defects** – A `type: defect` with `severity: critical` or
+   `high` is promoted ahead of every non-expedited eligible ticket, whatever
+   its ticket `priority:`; rule 2 orders within the expedited set. A standing
+   red on `main` is `high` at first sighting
+   (**standing-red-register-amendment-2026-09-05.md**). A missing
+   `severity:` fails CLOSED: never expedited, surfaced for triage. Ordering
+   only: never an extra slot, never past rules 1 and 3, 3.4 or 3.5. It never
+   bumps the handoff `priority:` to `00` (two scales, never conflated). A
+   qualifying defect mints `human_approval: approved` unless its
+   `approval_context` poses a real choice (`ruling_options`,
+   **auto-approve-high-severity-defects-amendment-20260917.md**). Full text
+   and the legacy `type: bug` transition: **expedite-defects-amendment-2026-07-25.md**,
+   **03-backlog-detailed.md** §"3.2 rule 4".
 
 ## 3.3 Coordinator Duties
 1. **Intake Control** – New specs land in `backlog/paused/` (written by specifier).

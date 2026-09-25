@@ -51,9 +51,8 @@ only — no Windows-specific code (the swarm substrate depends on tmux). See
    endpoints, control actions). Only git-SHA-derivable data rides the static
    PWA; route any live/machine-local/write-path need to the LIVE holistic UI
    instead — confirm which surface a request means before speccing.
-   (Recurred 3x in 2026-07-10: BL-252 suite-duration trend, BL-265
-   gate-answer view, BL-257 slices 3-4 changed-since-visit + live trends.)
-   See **local-engineering-detailed.prompt** for the full pre-trim wording.
+   Recurred 3x (BL-252, BL-265, BL-257). See
+   **local-engineering-detailed.prompt** for the full pre-trim wording.
 6. Epics have icons on TWO distinct surfaces, never one implementation
    assumed to cover both (PWA/fleet-console/bot-avatar vs Telegram topic
    icons); each icon set has its own pool and collision rule. See

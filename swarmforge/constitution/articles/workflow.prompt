@@ -18,6 +18,10 @@
   A successful handoff delivers to `inbox/new/` and injects a tmux wake; run
   `ready_for_next.sh` and work the task. A backup-mailbox delivery gets a
   brief note.
+- A question for another role mid-turn (BL-1754):
+  `bb swarmforge/scripts/peer_question.bb <root> --from <you> --to <role>
+  --question "<text>"` answers once, read-only, then exits (until it lands,
+  send a `note`). Work for that role is a `note` and waits for it.
 
 ## Context Clear Requires Startup Re-Read
 - Never `/clear` unless context is at least 75% full; if the fraction is
