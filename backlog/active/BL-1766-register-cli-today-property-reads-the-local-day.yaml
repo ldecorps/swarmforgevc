@@ -104,3 +104,5 @@ notes: |
   bl1648RegisterCliInjectedDate owned by BL-1766 (d6878c7b5b) - resume".
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
+
+assigned_to: coder
