@@ -37,6 +37,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
+const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const RUNNER = path.join(
@@ -155,7 +156,7 @@ test('BL-1108/BL-654 invariant 1: every configured agent token uses its own proc
     libMap,
     'runner markers must match agent_process_marker_lib.bb'
   );
-});
+}, SUBPROCESS_HEAVY_TIMEOUT_MS);
 
 test('BL-1108/BL-654 invariant 2: non-Claude seats report remote-control OFF; agent health stays independently checkable', () => {
   const { markers } = runBb('markers', {});

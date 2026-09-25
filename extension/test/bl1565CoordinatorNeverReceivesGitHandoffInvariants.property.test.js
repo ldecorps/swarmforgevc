@@ -29,6 +29,7 @@ const fc = require('fast-check');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const GUARD_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'git_handoff_recipient_guard_lib.bb');
@@ -134,7 +135,7 @@ test('BL-1565 invariant: reverse-hop copies never address the coordinator (nor a
     ),
     { numRuns: 100 }
   );
-});
+}, SUBPROCESS_HEAVY_TIMEOUT_MS);
 
 test('BL-1565 non-vacuity floor: the generator reaches both a refused git_handoff and an allowed one', () => {
   // BL-1691: two cells (includeCoordinator fixed per cell) rather than a

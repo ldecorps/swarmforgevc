@@ -31,6 +31,7 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_cli.bb');
@@ -194,4 +195,4 @@ test('BL-1670/BL-654 invariant: a pure-evidence/doc stray conflict superseded on
   }
 
   assertReachFloor(reach, shapes, RUNS, 'stray-conflict-superseded shape');
-});
+}, SUBPROCESS_HEAVY_TIMEOUT_MS);
