@@ -75,9 +75,47 @@ const stderrCaseArb = fc.oneof(
   asciiString(TRUNCATE_LIMIT + 500, TRUNCATE_LIMIT + 3000).map((s) => ({ kind: 'well-over-limit', stderr: s }))
 );
 
+const STDERR_KINDS = ['empty', 'whitespace-only', 'short', 'short-with-newline', 'at-limit', 'one-over-limit', 'well-over-limit'];
+
+// One fixed stderr string per kind (BL-1747): used to build the 14
+// constructed (kind x index-empty) cells below, so the reachability floor
+// holds by construction rather than by chance over 40 unseeded draws.
+function constructedStderrFor(kind) {
+  switch (kind) {
+    case 'empty':
+      return '';
+    case 'whitespace-only':
+      return '   \n\t  ';
+    case 'short':
+      return 'x';
+    case 'short-with-newline':
+      return 'x\n';
+    case 'at-limit':
+      return 'x'.repeat(TRUNCATE_LIMIT);
+    case 'one-over-limit':
+      return 'x'.repeat(TRUNCATE_LIMIT + 1);
+    case 'well-over-limit':
+      return 'x'.repeat(TRUNCATE_LIMIT + 500);
+    default:
+      throw new Error(`BL-1747: unknown stderr kind "${kind}"`);
+  }
+}
+
+// 14 cells, one per (kind x index-empty) combination - every declared shape
+// on both sides, by construction, independent of what the sampler draws.
+function constructedDraws() {
+  const draws = [];
+  for (const kind of STDERR_KINDS) {
+    for (const indexEmpty of [true, false]) {
+      draws.push(['BL-9001', indexEmpty, { kind, stderr: constructedStderrFor(kind) }]);
+    }
+  }
+  return draws;
+}
+
 test('property (invariant 1): nothing to commit is reported only when the index is empty, whatever stderr says', () => {
   const inputArb = fc.tuple(fc.constantFrom('BL-9001', 'BL-42', 'GH-7'), fc.boolean(), stderrCaseArb);
-  const draws = fc.sample(inputArb, 40);
+  const draws = constructedDraws().concat(fc.sample(inputArb, 40));
   const reasons = replayCommitRefusalReasons(draws);
 
   const seen = new Set();
@@ -115,15 +153,11 @@ test('property (invariant 1): nothing to commit is reported only when the index 
     }
   });
 
-  // Reachability floor (BL-654): every declared shape must actually have
-  // been generated at least once, on both sides of index-empty where it
-  // matters, or a branch could pass unexercised.
-  for (const kind of ['empty', 'whitespace-only', 'short', 'short-with-newline', 'at-limit', 'one-over-limit', 'well-over-limit']) {
-    assert.ok(
-      seen.has(`true:${kind}`) || seen.has(`false:${kind}`),
-      `generator never produced stderr kind "${kind}": ${JSON.stringify([...seen])}`
-    );
+  // Reachability floor (BL-654/BL-1747): every declared shape must have
+  // been exercised on BOTH sides of index-empty - guaranteed by the 14
+  // constructed cells above, not left to the sampler's chance.
+  for (const kind of STDERR_KINDS) {
+    assert.ok(seen.has(`true:${kind}`), `generator never produced index-empty stderr kind "${kind}": ${JSON.stringify([...seen])}`);
+    assert.ok(seen.has(`false:${kind}`), `generator never produced non-empty-index stderr kind "${kind}": ${JSON.stringify([...seen])}`);
   }
-  assert.ok([...seen].some((s) => s.startsWith('true:')), 'generator never exercised the index-empty branch');
-  assert.ok([...seen].some((s) => s.startsWith('false:')), 'generator never exercised the non-empty-index branch');
 });
