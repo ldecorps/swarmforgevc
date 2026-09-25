@@ -138,3 +138,5 @@ notes: |
   mid-shift crash heals itself instead of failing every local seat until
   someone notices), Estimable (one sweep, one lib entry), Small (five
   scenarios, one invariant), Testable (stand-in binary, endpoint, runner).
+
+assigned_to: coder

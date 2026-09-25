@@ -161,3 +161,5 @@ notes: |
   seat and ~18k tokens per request), Estimable (generated-text changes in
   three known functions, one sitting), Small (six scenarios, two
   invariants), Testable (generated launch lines and texts, no model).
+
+assigned_to: coder
