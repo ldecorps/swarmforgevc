@@ -107,12 +107,13 @@ qa_e2e_procedure: |
   3. `git diff <parcel> -- extension/src/tools/localQwenSeatLive.ts extension/test/bl1235LocalQwenSeatLive.test.js`
      against the evidence file's diff: identical, or the difference is
      named in a stage's evidence.
-  4. After landing: on the master checkout, `git status --short --
-     extension/src/tools/localQwenSeatLive.ts extension/test/bl1235LocalQwenSeatLive.test.js`
-     prints nothing (the staged copy now equals HEAD), and
-     `bb swarmforge/scripts/build_freshness_cli.bb . sync` is no longer
-     refused on these paths. If the landed content differs, tell the
-     coordinator the staged copy is superseded.
+  4. After landing: master's working-tree copy of the two files (UNSTAGED
+     since 2026-09-25 11:3xZ, see notes) is superseded by the land. Tell
+     the coordinator to `git restore --` both paths on the master
+     checkout (identical content, nothing is lost) so BL-891's reconcile
+     can absorb the land. Then `git status --short -- <both paths>` prints
+     nothing, and `bb swarmforge/scripts/build_freshness_cli.bb . sync` is
+     no longer refused on them.
 
 notes: |
   Minted 2026-09-25 by the specifier from coordinator note 011573
@@ -122,3 +123,14 @@ notes: |
   is not the specifier's to commit, unstage or discard.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
+  2026-09-25 ~11:33Z: the STAGED copy also blocked BL-891's
+  master-main reconcile repo-wide ("index-not-clean", master 3 ahead / 1
+  behind; coordinator note 011616). A staged path blocks the absorb merge
+  unconditionally, while an unstaged one blocks only on overlap
+  (master_main_reconcile_lib.bb, BL-1653). So the specifier ran
+  `git restore --staged` on the two paths only. The content stays in the
+  working tree (verified: worktree == old index, and the evidence file
+  matches it byte for byte), the running bot's compiled fix is untouched,
+  and `git add` would reverse it. The incoming land (BL-1727) does not
+  touch these files. The FIRM above ("master's staged copy then matches
+  HEAD") now reads "master's working-tree copy": see qa step 4.
