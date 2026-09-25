@@ -1,0 +1,155 @@
+id: BL-1752
+title: "On a mono-router pack the chase never starts a second session to serve a role's mail - a :departing-mid-parcel refusal leaves the target role's mail for the resident, which the chase rotates once its turn ends; the chase's consult spawn (spawn-consult-session!, consult-eligible?) and the single_inference_slot knob only it read are removed"
+milestone: M8
+type: defect
+severity: medium
+# medium: a defect against the pack's own definition (mono-router.conf
+# line 1, "ONE resident pipeline agent"), live on any router pack without
+# the interim knob; no live exposure in this repo today (the day shift runs
+# full-forge, which has no resident, and the only live router pack,
+# gpu-bargain-hunter, refuses every consult through the interim knob).
+# Not high: nothing is degraded while the knob holds.
+status: todo
+epic: local-llm-swarm
+priority: 10
+direction: human-directive
+depends_on: []
+mutation_cost: low
+# low: Babashka (handoffd.bb, mono_router_lib.bb) has no mutation/CRAP/DRY
+# wired (BL-472); the change is a removal plus its tests. The feature's
+# handler drives the real chase through the fake-tmux shape
+# swarmforge/scripts/test/test_chase_departing_mid_parcel_gate.sh already
+# uses - seconds per run, inside the BL-1358 ceiling.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1752-the-chase-never-starts-a-second-session-on-a-mono-router-pack.feature
+
+# A removal adds no production call site; the handler entry is the BL-233
+# in-parcel pin (BL-1371).
+required_wiring:
+  - 'specs/pipeline/steps/bl1752ChaseNeverStartsASecondSessionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  New feature file, so it needs a tap; no choice is posed. What needs
+  sign-off: (1) the fix is removal - on a :departing-mid-parcel refusal the
+  chase now does nothing, and the waiting mail is served when the resident
+  rotates after its turn (a delay, never a deadlock: that refusal needs the
+  resident both holding a parcel AND working right now); (2) the mint
+  retires two stamp tickets you approved earlier, BL-1549 (review of
+  hotfixes 5bdf93beed and a27d082c2d) and BL-1706 (review of 7d109d3b2e),
+  because they would certify code this ticket and BL-1753 remove - their
+  ledger rows move to BL-1752/BL-1753 and still wait for your --decide.
+  FIRM: consult-teardown-sweep! and consult_spawn_cli.bb stay - BL-1710
+  (the on-demand Art Director on standing packs, approved) builds on them.
+  FIRM: questions are BL-1754's, not this ticket's.
+
+invariants:
+  - "On a mono-router pack the chase sweep creates no tmux session for any role, whatever mail is waiting and whatever state the resident is in."
+  - "Every chase gate outcome other than the removed spawn (:busy, :cooldown, :already-active, :rotate, and the :departing-mid-parcel refusal itself) decides and logs exactly as before."
+
+description: |
+  ## What is wrong
+
+  `handoffd.bb`'s chase (around line 1993) calls `spawn-consult-session!`
+  whenever `mono-router-lib/should-rotate-resident?` refuses with
+  `:departing-mid-parcel` (the resident holds a parcel AND is working).
+  `consult-eligible?` (`mono_router_lib.bb:656`) passes for ANY actionable
+  mail of the target role - parcels, intakes and notes alike - and the
+  spawned session runs the role's full `launch/<role>.sh`: the whole role
+  loop, until its mailbox is empty. That is a second resident. On
+  2026-09-25 it put two specifiers on one intake in gpu-bargain-hunter,
+  each asking the human a different question (source).
+
+  ## What is wanted
+
+  1. On `:departing-mid-parcel` the chase logs and telemeters as today
+     and starts nothing. The target role's mail waits; the next chase
+     after the resident's turn ends rotates it as it already does.
+  2. `spawn-consult-session!` and `consult-eligible?` are deleted with
+     their tests (about 12 assertions in
+     `swarmforge/scripts/test/mono_router_lib_test_runner.bb`).
+  3. The `single_inference_slot` knob goes with them: its only reader was
+     `consult-eligible?` (`parse-single-inference-slot?`,
+     `single-inference-slot-pack?`). Remove the parser, the helper, and the
+     knob line plus its comment in
+     `swarmforge/packs/ollama-qwen2.5-coder-mono-router.conf`. A conf that
+     still carries the line (another repo's copied conf) must launch as
+     today: unknown `config` keys already fall through in `swarmforge.sh`
+     (scenario 03 pins it).
+  4. KEPT, not dead: the consult marker helpers and
+     `consult-teardown-sweep!` (they tear down sessions the ceremony still
+     starts until BL-1753 lands, and BL-1710's on-demand sessions after
+     that), `consult_spawn_cli.bb` and `test_consult_spawn_cli.sh`.
+  5. Contracts move in this parcel (the intake's ask 4). The mono-router
+     lib runner and `test_chase_departing_mid_parcel_gate.sh` stay green.
+     BL-1549's and BL-1706's feature files were retired to scenario-less
+     tombstones by the specifier at mint, so nothing executable asserts
+     the spawn.
+
+  ## How (direction, not mandate)
+
+  - Scenario 01's third row: root intakes count as specifier's actionable
+    mail in `role-mail-row`, which is why consult fired on one. The handler
+    validates every Outline value against explicit KNOWN_VALUES.
+  - Fixture roots per BL-1390 (`git init` under mkdtemp, proven with
+    `rev-parse --git-common-dir`); the fake tmux and its socket live inside
+    the fixture, never the live socket.
+  - "No tmux session is created" reads the fake tmux log for
+    `new-session`; "no consult marker is written" reads
+    `.swarmforge/daemon/consult/` in the fixture.
+
+  ## Scope
+
+  - `swarmforge/scripts/handoffd.bb`, `swarmforge/scripts/mono_router_lib.bb`,
+    `swarmforge/packs/ollama-qwen2.5-coder-mono-router.conf`.
+  - Tests: `swarmforge/scripts/test/mono_router_lib_test_runner.bb`; the
+    chase gate shell test if the coder extends it.
+  - New: `specs/pipeline/steps/bl1752ChaseNeverStartsASecondSessionSteps.js`
+    (+ `lib/` helpers).
+  - Docs: no living page describes the consult (verified at mint:
+    only `docs/briefings/2026-09-13.md` and `2026-09-24.md`, which are
+    history). The documenter checks the mono-router how-to/reference pages.
+  - Out of scope: the ceremony (BL-1753), the question helper (BL-1754),
+    `consult_spawn_cli.bb`, the teardown sweep.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1752-the-chase-never-starts-a-second-session-on-a-mono-router-pack.feature`:
+     every scenario ok (01 x3, 02, 03).
+  2. `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb`,
+     `bash swarmforge/scripts/test/test_chase_departing_mid_parcel_gate.sh`
+     and `bash swarmforge/scripts/test/test_consult_spawn_cli.sh`: green.
+  3. `git grep -n -e spawn-consult-session -e consult-eligible -e single_inference_slot -e single-inference-slot -- swarmforge/scripts swarmforge/packs extension/src`
+     on the parcel commit: no hit outside `swarmforge/scripts/test/`.
+  4. `git diff main...HEAD --name-only` names only the Scope files,
+     tests, docs and evidence.
+  5. Operator, after the land (not QA): gpu-bargain-hunter's interim
+     `config single_inference_slot 1` can be lifted once that repo takes
+     this change. Removing it is a question for the human there, since
+     BL-1754's helper would then be the only second agent.
+
+source: |
+  backlog/archive/INTAKE-mono-router-one-resident-questions-not-residents-20260925.md
+  (operator, via Claude Code, 2026-09-25, commit bd8cd60a50). The human,
+  verbatim (Article 5.3):
+  > Yes, enforce 1 resident at any one time
+  > It's a basic rule of the monorouter, right? The central tenet. Mono router = 1 resident
+  > Having said that, an agent can spin an ephemeral other agent if it has a question for it. But that is not quite the same thing as installing a secondary resident.
+
+notes: |
+  Minted 2026-09-25 by the specifier. 1:N split of the intake above
+  (BL-680): asks 1 and 5 -> BL-1752; ask 3 -> BL-1753; ask 2 -> BL-1754;
+  ask 4 (contracts move with the code) is carried by each slice. The
+  intake's live incident and its code reading were re-verified at mint:
+  `:departing-mid-parcel` requires departing-parcel? AND
+  departing-working? (should-rotate-resident?), so dropping the spawn
+  delays mail and cannot recreate BL-1535's deadlock.
+  Consolidation (Article 3.6 retirement, same pass): BL-1706 (stamp of
+  7d109d3b2e, the knob) retired superseded-by-BL-1752; BL-1549 (stamp of
+  5bdf93beed + a27d082c2d) retired superseded-by-BL-1752 and BL-1753.
+  Ledger rows relinked with hotfix_ledger_update.bb --link: 5bdf93beed
+  and 7d109d3b2e -> BL-1752. human_decision stays null (the human's).
+  BL-1710's direction amended the same pass: spawn-consult-session! goes,
+  so its on-demand start reuses consult_spawn_cli.bb's code.
