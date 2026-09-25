@@ -119,3 +119,30 @@ Scenario: The ceremony never starts a documenter beside a seated resident
   When the night closing ceremony needs the morning briefing
   Then no documenter session is started beside the resident
 ```
+
+## Disposition (specifier, 2026-09-25)
+
+Split 1:N (BL-680, Article 5.3). The human's three sentences are carried
+verbatim in every resulting ticket's `source:`.
+
+- Ask 1 (chase never spawns to serve work) and ask 5 (drop
+  `single_inference_slot`) -> **BL-1752** (approved by the human the same
+  day).
+- Ask 3 (the ceremony's briefing goes to the resident) -> **BL-1753**. The
+  choice went to the human with its trade-offs: ruling **B**, force the
+  rotate and keep the held parcel in_process. Its feature was rewritten
+  for B and re-pended.
+- Ask 2 (a question gets an ephemeral agent) -> **BL-1754**. The design
+  was decided as delegated: the asking role runs `peer_question.bb`, a
+  one-shot read-only Claude call, and no daemon starts it.
+- Ask 4 (contracts move with the code) -> carried by each slice. Census
+  at mint: the mono-router lib runner, the chase-gate and consult CLI
+  shell tests, the ceremony fallback test, and BL-1593's and BL-658's
+  features.
+- Retired in the same pass: BL-1706 (stamp of 7d109d3b2e) into BL-1752,
+  and BL-1549 (stamp of 5bdf93beed + a27d082c2d) into BL-1752/BL-1753.
+  Ledger rows were relinked; `human_decision` stays the human's.
+- Kept, not dead: `consult_spawn_cli.bb` and `consult-teardown-sweep!`,
+  for BL-1710's on-demand Art Director on standing packs.
+- Not in this repo: lifting gpu-bargain-hunter's interim knob is an
+  operator action once that repo takes BL-1752 (BL-1752 qa step 5).

@@ -1,0 +1,138 @@
+id: BL-1754
+title: "A role with a question for another role asks it through a one-shot read-only helper that answers and exits - bb swarmforge/scripts/peer_question.bb --from <role> --to <role> --question <text> runs the target role's own prompts as one print-mode Claude call with file-reading tools only, prints the answer, records the question and answer, and never claims a parcel, drains an intake, starts a tmux session or outlives its answer; a target seat on any other provider is refused by name"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-directive
+depends_on: []
+mutation_cost: medium
+# medium: a bb CLI (no mutation/CRAP/DRY wired for Babashka, BL-472) whose
+# risk is process handling - a bounded child, killed with its group on
+# timeout, and no survivor on any exit path. The feature's handler runs
+# the real CLI against a recording fake `claude` on PATH in a mkdtemp
+# fixture; the timeout scenario uses a 2 s bound, so a run is seconds.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1754-a-role-asks-another-role-a-question-through-a-one-shot-read-only-helper.feature
+
+# BL-1235: the only consumer of this CLI is agent prompt prose (below), which
+# the specifier owns and no code path calls, so there is no live-consumer
+# anchor to pin; the handler entry is the BL-233 in-parcel pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1754PeerQuestionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  New feature file. This is your "an agent can spin an ephemeral other
+  agent if it has a question for it", built as a helper the ASKING role
+  runs, not something the daemon starts. What needs sign-off: it runs the
+  target role's prompts as one read-only Claude call (it can read files,
+  never write, edit or run a shell), prints the answer to the asker,
+  records the question and answer, and exits. It never enters the role
+  loop, so it is not a second resident. Claude seats only in this slice;
+  any other provider is refused by name and the question goes as a note.
+  Approve to build it; reject if a question should simply wait for the
+  resident like other mail (BL-1752 already makes it wait).
+
+invariants:
+  - "The helper never writes to the repository, a mailbox or the backlog; its only durable output is its own question record under .swarmforge/."
+  - "When the CLI returns - answer, refusal or timeout - no process it started is alive."
+
+description: |
+  ## What is wanted
+
+  1. `bb swarmforge/scripts/peer_question.bb <project-root> --from <role>
+     --to <role> --question "<text>" [--timeout-s <n>]`:
+     - resolves `--to` from `roles.tsv`; refuses (exit non-zero, provider
+       named) unless that seat's provider is `claude`;
+     - runs ONE print-mode `claude` call with the target role's composed
+       prompts (the same composition its launch uses), the target seat's
+       model, and file-reading tools only (no write, edit or shell tool);
+       the user message is the question, prefixed with who is asking;
+     - prints the answer on stdout, exit 0;
+     - writes one record (from, to, question, answer or refusal/timeout
+       reason, timestamps) under `.swarmforge/peer-questions/`;
+     - on timeout (a stated default in minutes, overridable) kills the
+       child with its process group and exits non-zero saying so.
+  2. It never runs `ready_for_next.sh` or any mailbox helper, never
+     starts a tmux session, and never touches the target's inbox or the
+     backlog (scenario 03).
+  3. **Prompt line (BL-798, specifier-owned, landed on main before the
+     coder starts; its commit is recorded in `notes:`).** Proposed text for
+     `swarmforge/constitution/articles/workflow.prompt`, "Handoff
+     transport": "A question for another role mid-turn: `bb
+     swarmforge/scripts/peer_question.bb <root> --from <you> --to <role>
+     --question "<text>"` gives a one-shot, read-only answer and exits.
+     Anything that needs the other role to change a file is a `note` and
+     waits for that role (on a mono-router pack, for the resident)."
+
+  ## Why
+
+  The human, 2026-09-25 (source): one resident is the central tenet of a
+  mono-router pack. A question is allowed a short-lived helper; serving
+  work is not. BL-1752 and BL-1753 remove the consult sessions that served
+  work. This slice is the sanctioned path for a question, and it works
+  the same on standing packs.
+
+  ## How (direction, not mandate)
+
+  - Prior art: the expeditor's stage command spawns `claude -p` directly
+    (`expedite_lib.bb`, `expedite_cli.bb`'s EXPEDITE_STAGE_RUNNER test
+    seam); BL-1735 (paused) designs the same read-only one-shot run for
+    the intake form. Whichever lands second reuses the first's launcher
+    rather than forking it.
+  - Prompt composition: reuse `prompt_engine_lib`'s composer (the one the
+    boot prefix gate measures), never a re-derived concatenation.
+  - Tests: a fake `claude` on PATH in a mkdtemp fixture (BL-1390) records
+    argv/env to a log and prints a canned answer, or sleeps for the
+    timeout scenario. Outline values are validated against explicit
+    KNOWN_VALUES.
+
+  ## Scope
+
+  - New: `swarmforge/scripts/peer_question.bb` (+ a pure lib if the coder
+    splits it), its shell/bb test registered in `suite-manifest.tsv`,
+    `specs/pipeline/steps/bl1754PeerQuestionSteps.js`.
+  - Docs: a how-to page for asking another role a question.
+  - Out of scope: the chase and the ceremony (BL-1752, BL-1753); any
+    daemon-started helper; non-claude providers (a later slice, on
+    evidence that one is needed).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1754-a-role-asks-another-role-a-question-through-a-one-shot-read-only-helper.feature`:
+     every scenario ok (01, 02, 03, 04 x2, 05).
+  2. The CLI's own test from `suite-manifest.tsv`: green.
+  3. `bb swarmforge/scripts/peer_question.bb` with no arguments prints
+     usage and exits non-zero.
+  4. The prompt line (What is wanted 3) is on main at the commit recorded
+     in `notes:`.
+  5. `git diff main...HEAD --name-only` names only the Scope files,
+     tests, docs and evidence.
+
+source: |
+  backlog/archive/INTAKE-mono-router-one-resident-questions-not-residents-20260925.md
+  (operator, via Claude Code, 2026-09-25, commit bd8cd60a50), ask 2. The
+  human, verbatim (Article 5.3):
+  > Yes, enforce 1 resident at any one time
+  > It's a basic rule of the monorouter, right? The central tenet. Mono router = 1 resident
+  > Having said that, an agent can spin an ephemeral other agent if it has a question for it. But that is not quite the same thing as installing a secondary resident.
+  The intake, on this ask: "The specifier decides how a question is
+  recognized (handoff type, role_ask, a dedicated verb) and how the helper
+  is launched".
+
+notes: |
+  Minted 2026-09-25 by the specifier, same 1:N split as BL-1752 (ask 2).
+  Design decided at mint as the intake delegated: the ASKER runs a CLI, a
+  dedicated verb, rather than the daemon recognizing a question. The
+  daemon-started consult is what the human ruled out, and nothing about a
+  question needs the daemon. Named peer_question, not role_ask, because
+  role_ask.bb already means asking the human.
+  PROMPT LINE DUE (BL-798): the specifier lands What is wanted 3 on main
+  before this ticket reaches the coder. The boot prefix was over budget at
+  mint (44954/44000), so that commit also moves prose out to reference/.
+  Not landed at mint, because the human may reject the feature; record
+  the commit here when landed.
