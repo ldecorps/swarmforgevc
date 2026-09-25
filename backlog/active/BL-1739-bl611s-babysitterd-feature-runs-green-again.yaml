@@ -74,9 +74,24 @@ description: |
   - For each of the three items, the ticket's evidence records the cause
     as found and the change made: fixture topology, allowlist entry, or a
     code fix if the babysitter really regressed.
-  - The allowlist entry is added for that file by name and explained in
-    place, never widened to a pattern that would also admit the retired
-    agent-based babysitter's names.
+  - ~~The allowlist entry is added for that file by name~~ SUPERSEDED
+    2026-09-25 by the specifier's ruling on the coder's note 002139. The
+    coder found the per-file allowlist missing ~200 files, not 1:
+    "babysitter" is now the daemon's everyday name (1068 tracked files).
+    The scenario-15 step "Then the only matches are the deterministic
+    daemon, its salvaged pure libraries, docs, and history" is RETIRED in
+    BL-611's feature on main, with a comment in the feature. The handler
+    now:
+    - deletes that step's definition, `isAllowedBabysitterMatch` and the
+      `offenders` scan, including the allowlist lines this parcel added;
+    - makes the remaining step ("no babysitter.prompt role, LLM launch
+      path, or wake runtime remains") assert two things: no
+      `RETIRED_FILE_PATHS` entry is tracked (as today), AND no live-code
+      file matches `FORBIDDEN_RETIRED_PATTERNS`. Live code means tracked
+      files under swarmforge/scripts (not test/), swarmforge/roles,
+      swarmforge/packs, extension/src, and the root launch scripts. Test
+      files, specs/, docs/ and backlog/ may name retired files as history.
+      Zero hits on main at the ruling.
 
   ## Scope
 
@@ -85,7 +100,8 @@ description: |
   - The babysitter sweep library, only if item 2 is a real regression.
 
 constraints: >
-  No BL-611 scenario, Examples row or narrative is edited in this parcel;
+  No BL-611 scenario, Examples row or narrative is edited in this parcel
+  (the one retired step was retired by the specifier on main, 2026-09-25);
   a stale scenario goes to the specifier as a note. This parcel never
   edits backlog/standing-reds.tsv (BL-1663); its land retires the row
   (BL-1631).
@@ -106,4 +122,11 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
 
+  2026-09-25: specifier ruling on coder note 002139 (scenario 15's
+  per-file allowlist cannot keep up with "babysitter" as the daemon's
+  everyday name). The step is retired in BL-611's feature on main, and
+  the handler moves to a live-code retired-name check (What is wanted).
+  This is a spec amendment, not a coder defect. The parcel was at the
+  cleaner when the ruling landed, so the cleaner and the coder were both
+  noted: merge main, and the coder rebuilds the scenario-15 handler.
 assigned_to: coder

@@ -171,11 +171,20 @@ Feature: babysitterd is a deterministic daemon managed by the swarm lifecycle
     And no keystrokes are sent toward the menu
 
   # BL-611 agent-babysitter-fully-removed-15
+  #
+  # 2026-09-25, specifier ruling on BL-1739 (coder note 002139): the step
+  # "Then the only matches are the deterministic daemon, its salvaged pure
+  # libraries, docs, and history" is retired. "babysitter" has since become
+  # the daemon's everyday name: 1068 tracked files, 1063 bare-word uses. A
+  # curated per-file allowlist of who may say it goes red every time
+  # anything new mentions the daemon, and it gained four directory rules in
+  # one pass. The guard this scenario exists for stays in the step below:
+  # no retired path is present and nothing references one. Scenario 16
+  # checks that ./swarm status has no row for the retired babysitter.
   Scenario: the agent-based babysitter is gone and the daemon owns the name
     Given the repo after this ticket lands
     When a repo-wide grep for "babysitter" is run
-    Then the only matches are the deterministic daemon, its salvaged pure libraries, docs, and history
-    And no babysitter.prompt role, LLM launch path, or wake runtime remains
+    Then no babysitter.prompt role, LLM launch path, or wake runtime remains
 
   # BL-611 status-and-scripts-clean-16
   Scenario: start, stop, and ensure scripts run clean and status reports the live daemon
