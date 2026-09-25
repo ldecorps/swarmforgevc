@@ -104,6 +104,8 @@ notes: |
   reproduced by the specifier the same pass (TZ sweep above). Sibling
   production defect split out as BL-1765 (INVEST Independent and Small:
   this slice is test-only and drains the register; BL-1765 needs its
-  own bound).
+  own bound). Holder told the same pass (BL-1566): note to QA,
+  "BL-1704: nightClosingCeremonyRun.test.js owned by BL-1764 (05a55c0f98)"
+  (message cap 80 chars, so the "- resume land" suffix was dropped).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
