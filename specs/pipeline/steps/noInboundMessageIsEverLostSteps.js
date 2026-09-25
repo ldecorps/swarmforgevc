@@ -30,6 +30,7 @@ function bridgeServer() {
 }
 const { appendOperatorEvent } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'operatorEventQueue'));
 const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -40,8 +41,11 @@ function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
+// BL-1738: operator_runtime.bb refuses a root that is not itself a git
+// checkout (BL-1517) - only THIS root (ctx.runtimeTarget) is ever passed to
+// it; ctx.bridgeTarget (still built via the bare mkTmp above) never is.
 function mkRuntimeFixture() {
-  const target = mkTmp('sfvc-bl369-runtime-');
+  const target = mkFixtureGitRoot('sfvc-bl369-runtime-');
   const scriptsDir = path.join(target, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
   fs.mkdirSync(path.join(target, '.swarmforge', 'operator'), { recursive: true });

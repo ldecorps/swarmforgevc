@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -64,8 +65,12 @@ function knownSweep(value) {
   return SWEEP_CONFIGS[value];
 }
 
+// BL-1738: only projectRoot is ever passed to operator_runtime.bb (sweptRoot
+// is the sweep's own target, via cfg.rootEnv, never a project-root arg) -
+// that CLI refuses a root that is not itself a git checkout (BL-1517), so
+// this one alone goes through the shared helper.
 function mkFixture(cfg) {
-  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl460-project-'));
+  const projectRoot = mkFixtureGitRoot('bl460-project-');
   const sweptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl460-swept-'));
   return { projectRoot, sweptRoot, cfg };
 }

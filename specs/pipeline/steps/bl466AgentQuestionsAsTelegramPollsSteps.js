@@ -20,8 +20,8 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
@@ -35,8 +35,10 @@ const PRINCIPAL_ID = 111;
 const QUESTION = 'which environment?';
 const OPTIONS = ['staging', 'prod'];
 
+// BL-1738: operator_runtime.bb refuses a root that is not itself a git
+// checkout (BL-1517) - the shared helper builds one.
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'aps-agent-question-poll-'));
+  return mkFixtureGitRoot('aps-agent-question-poll-');
 }
 
 function opPath(root, ...rest) {

@@ -9,8 +9,8 @@
 // test_operator_runtime_tick.sh's own make_roster_fixture shell helper.
 const path = require('node:path');
 const fs = require('node:fs');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const OPERATOR_RUNTIME_BB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'operator_runtime.bb');
@@ -28,7 +28,9 @@ function hibernationStatePath(root) {
 }
 
 function mkRosterFixture(roles) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-operator-hibernate-'));
+  // BL-1738: operator_runtime.bb refuses a root that is not itself a git
+  // checkout (BL-1517) - the shared helper builds one.
+  const root = mkFixtureGitRoot('aps-operator-hibernate-');
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.mkdirSync(opPath(root), { recursive: true });

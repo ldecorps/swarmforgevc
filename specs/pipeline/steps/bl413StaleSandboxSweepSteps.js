@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const DECISION_RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'sandbox_sweep_decision_acceptance_runner.bb');
@@ -119,7 +120,11 @@ function registerSteps(registry) {
   // throwaway project-root (isolated .swarmforge/ state) and the swept root
   // are disposable fixture directories.
   registry.define(/^the sweep's temp root is pointed at a test-owned directory via its override seam$/, (ctx) => {
-    ctx.projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl413-project-'));
+    // BL-1738: only ctx.projectRoot is ever passed to operator_runtime.bb
+    // (ctx.sweptRoot/ctx.outsideRoot are the sweep's own targets, never a
+    // project-root arg) - that CLI refuses a root that is not itself a git
+    // checkout (BL-1517), so this one alone goes through the shared helper.
+    ctx.projectRoot = mkFixtureGitRoot('bl413-project-');
     ctx.sweptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl413-swept-'));
     ctx.outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl413-outside-'));
 

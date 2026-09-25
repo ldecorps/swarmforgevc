@@ -19,8 +19,8 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const OPERATOR_ASK_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'operator_ask.bb');
@@ -30,8 +30,10 @@ const ASKING_THREAD = 'SUP-A';
 const OTHER_THREAD = 'SUP-B';
 const QUESTION = 'free-email-scanner is not reachable - tell me 1, 2, or 3';
 
+// BL-1738: operator_runtime.bb refuses a root that is not itself a git
+// checkout (BL-1517) - the shared helper builds one.
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'aps-answer-pairing-'));
+  return mkFixtureGitRoot('aps-answer-pairing-');
 }
 
 function opPath(root, ...rest) {

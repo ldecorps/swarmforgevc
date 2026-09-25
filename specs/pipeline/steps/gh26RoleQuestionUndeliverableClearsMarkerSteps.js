@@ -12,9 +12,9 @@
 // its own file location, never the fixture root, so no sandbox copy is
 // needed here). Only the Telegram network boundary (sendReply) is faked.
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out');
@@ -36,8 +36,10 @@ function scoped(registry, pattern, handler) {
   registry.defineScoped(pattern, handler, FEATURE_NAME);
 }
 
+// BL-1738: operator_runtime.bb refuses a root that is not itself a git
+// checkout (BL-1517) - the shared helper builds one.
 function mkTmpRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-gh26-'));
+  return mkFixtureGitRoot('sfvc-gh26-');
 }
 
 function writeAwaitingMarker(root, role, contents) {

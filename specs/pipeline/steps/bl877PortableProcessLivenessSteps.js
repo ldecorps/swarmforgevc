@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const OPERATOR_RUNTIME = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'operator_runtime.bb');
@@ -157,7 +158,12 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the sweeps are pointed at a private fixture root, never the real \/tmp$/,
     (ctx) => {
-      ctx.projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl877-project-'));
+      // BL-1738: only ctx.projectRoot is ever passed to operator_runtime.bb
+      // (ctx.sandboxRoot/ctx.fixtureReapRoot are sweep-target env vars,
+      // never a project-root arg) - that CLI refuses a root that is not
+      // itself a git checkout (BL-1517), so this one alone goes through the
+      // shared helper.
+      ctx.projectRoot = mkFixtureGitRoot('bl877-project-');
       ctx.sandboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl877-sandbox-'));
       ctx.fixtureReapRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl877-fixture-'));
       ctx.children = [];

@@ -14,6 +14,7 @@ const { execFileSync, spawnSync, spawn } = require('node:child_process');
 
 const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { gitifyFixtureRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -22,8 +23,14 @@ function mkTmp(prefix) {
   return mkSocketFixtureRoot(prefix);
 }
 
+// BL-1738: this root is passed to operator_runtime.bb via tick(), which
+// refuses a root that is not itself a git checkout (BL-1517) - gitified on
+// top of mkSocketFixtureRoot's own short-base/socket-length guarantee
+// (BL-948), never in place of it. mkRoleLifecycleFixture's root below is
+// never passed to operator_runtime.bb (only to the bash role_lifecycle.sh,
+// which check-root does not gate) and stays a bare socket fixture root.
 function mkRuntimeFixture() {
-  const target = mkTmp('sfvc-bl368-runtime-');
+  const target = gitifyFixtureRoot(mkTmp('sfvc-bl368-runtime-'));
   const scriptsDir = path.join(target, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
   fs.mkdirSync(path.join(target, '.swarmforge', 'operator'), { recursive: true });

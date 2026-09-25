@@ -18,6 +18,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawn } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const DECISION_RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'fixture_reapable_decision_acceptance_runner.bb');
@@ -175,7 +176,12 @@ function registerSteps(registry) {
 
   // ── fixture-process-leak-03 ──────────────────────────────────────────────
   registry.define(/^a live process is rooted in the running swarm socket directory \/tmp\/swarmforge-<uid>$/, (ctx) => {
-    ctx.reapProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl458-project-'));
+    // BL-1738: only ctx.reapProjectRoot is passed to operator_runtime.bb
+    // (ctx.reapRoot is the SWARMFORGE_FIXTURE_REAP_ROOT sweep target env
+    // var, never a project-root arg) - that CLI refuses a root that is not
+    // itself a git checkout (BL-1517), so this one alone goes through the
+    // shared helper.
+    ctx.reapProjectRoot = mkFixtureGitRoot('bl458-project-');
     ctx.reapRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl458-reap-root-'));
     ctx.socketRootDir = path.join(ctx.reapRoot, 'swarmforge-9999');
     fs.mkdirSync(ctx.socketRootDir);

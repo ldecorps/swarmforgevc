@@ -1,7 +1,6 @@
 aChurnRewriteDoesNotMintACommitSteps.js
 aDroppedMessageMustNotParkTheOffsetSteps.js
 aTieIsReportedAsATieSteps.js
-answerPairingAcrossThreadsSteps.js
 backlogDepthCapOverrideSteps.js
 backlogDepthSteps.js
 backlogFoldersStatusSteps.js
@@ -229,7 +228,6 @@ bl458AcceptanceFixtureProcessLeakSteps.js
 bl460TmpSweepsBoundDeletesSteps.js
 bl463MutationCooldownIgnoresOwnParcelSteps.js
 bl464PipelineBoardAuthoritativeStageSourceSteps.js
-bl466AgentQuestionsAsTelegramPollsSteps.js
 bl477UpstreamDriftWatchSteps.js
 bl487BoardFreshnessWithoutCoordinatorSyncSteps.js
 bl488HeldTicketIdResolvesWithoutLeadingTokenSteps.js
@@ -467,7 +465,6 @@ frontDeskAutoOpenSubjectSteps.js
 gh22ContextTelemetrySteps.js
 gh23ContextBudgetDashboardSteps.js
 gh24CoordinatorActivityTelegramFeedSteps.js
-gh26RoleQuestionUndeliverableClearsMarkerSteps.js
 gherkinLintGateWrappedStepRejectionSteps.js
 gherkinMutationSteps.js
 headlessResourceSamplingSteps.js
@@ -479,13 +476,9 @@ onboardingNegotiationSteps.js
 onboardingPromptsSteps.js
 onboardingTelegramChannelSteps.js
 operatorAskAwaitSteps.js
-operatorAutoHibernateSteps.js
 operatorCoordinatorHandoffSteps.js
-operatorLongtermMemorySteps.js
 operatorPassesAQuestionDownSteps.js
 operatorProactiveNotifySteps.js
-operatorSeedRaceLaunchGraceSteps.js
-operatorSelfGenProvenanceSteps.js
 operatorThreadLifecycleSteps.js
 pendingApprovalAsksInTopicSteps.js
 providerObservabilityParitySteps.js

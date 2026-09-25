@@ -12,6 +12,19 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+// BL-1738 D1 (BL-325's own defect, not the bare-mkdtemp shape): mkRuntimeFixture
+// below calls mkSocketFixtureRoot, but the identifier was never bound in
+// this file's own scope - only inside the OPERATOR_DECIDE_STUB string
+// literal further down, a separate script's source text, not this module's.
+// Real top-level require so the real call site can resolve it.
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+// BL-1738: mkSocketFixtureRoot's own root is a bare mkdtemp, never a git
+// checkout (confirmed against its real source, contra this ticket's mint-
+// time assumption) - operator_runtime.bb refuses it (BL-1517) the same way
+// it refuses every other handler's bare root; gitified on top, never in
+// place of mkSocketFixtureRoot's own short-base/socket-length guarantee
+// (BL-948).
+const { gitifyFixtureRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
@@ -58,7 +71,7 @@ function opPath(root, ...rest) {
 }
 
 function mkRuntimeFixture(roles) {
-  const root = mkSocketFixtureRoot('aps-human-in-loop-');
+  const root = gitifyFixtureRoot(mkSocketFixtureRoot('aps-human-in-loop-'));
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.mkdirSync(opPath(root), { recursive: true });

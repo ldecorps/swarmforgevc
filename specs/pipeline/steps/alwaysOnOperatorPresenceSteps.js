@@ -20,6 +20,7 @@ const os = require('node:os');
 const { execFileSync, spawnSync, spawn } = require('node:child_process');
 const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { gitifyFixtureRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -68,8 +69,12 @@ function mkThreadRoot() {
   return root;
 }
 
+// BL-1738: this fixture's root becomes ctx.runtimeTarget below, passed to
+// operator_runtime.bb, which refuses a root that is not itself a git
+// checkout (BL-1517) - gitified on top of mkSocketFixtureRoot's own
+// short-base/socket-length guarantee (BL-948), never in place of it.
 function mkAttendFixture() {
-  const d = mkTmp('sfvc-bl359-attend-');
+  const d = gitifyFixtureRoot(mkTmp('sfvc-bl359-attend-'));
   fs.mkdirSync(path.join(d, '.swarmforge', 'operator'), { recursive: true });
   fs.mkdirSync(path.join(d, 'swarmforge', 'roles'), { recursive: true });
   fs.writeFileSync(path.join(d, 'swarmforge', 'roles', 'operator.prompt'), '');

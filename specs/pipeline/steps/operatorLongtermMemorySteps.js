@@ -8,8 +8,8 @@
 // real timers.
 const path = require('node:path');
 const fs = require('node:fs');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -17,8 +17,10 @@ const OPERATOR_MEMORY_CLI = path.join(SCRIPTS_DIR, 'operator_memory.bb');
 const SUPPORT_THREAD_CLI = path.join(SCRIPTS_DIR, 'support_thread.bb');
 const OPERATOR_RUNTIME = path.join(SCRIPTS_DIR, 'operator_runtime.bb');
 
+// BL-1738: operator_runtime.bb refuses a root that is not itself a git
+// checkout (BL-1517) - the shared helper builds one.
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'aps-operator-memory-'));
+  return mkFixtureGitRoot('aps-operator-memory-');
 }
 
 function distill(root, fact) {

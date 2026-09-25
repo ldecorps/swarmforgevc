@@ -20,7 +20,7 @@
 // comment documents; neither file exports its fixture helpers.
 const path = require('node:path');
 const fs = require('node:fs');
-const os = require('node:os');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 function opPath(root, ...rest) {
   return path.join(root, '.swarmforge', 'operator', ...rest);
@@ -31,7 +31,9 @@ function rolesTsvPath(root) {
 }
 
 function mkRosterFixture(roles) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-operator-seed-race-'));
+  // BL-1738: operator_runtime.bb refuses a root that is not itself a git
+  // checkout (BL-1517) - the shared helper builds one.
+  const root = mkFixtureGitRoot('aps-operator-seed-race-');
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.mkdirSync(opPath(root), { recursive: true });

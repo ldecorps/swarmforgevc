@@ -8,8 +8,8 @@
 // pattern backlogDepthSteps.js uses for backlog_depth_lib.bb.
 const path = require('node:path');
 const fs = require('node:fs');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { mkFixtureGitRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -29,7 +29,9 @@ function hibernationStatePath(root) {
 }
 
 function mkRosterFixture(roles) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-operator-selfgen-'));
+  // BL-1738: operator_runtime.bb refuses a root that is not itself a git
+  // checkout (BL-1517) - the shared helper builds one.
+  const root = mkFixtureGitRoot('aps-operator-selfgen-');
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.mkdirSync(opPath(root), { recursive: true });
