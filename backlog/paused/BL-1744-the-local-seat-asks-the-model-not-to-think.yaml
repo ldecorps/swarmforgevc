@@ -1,0 +1,124 @@
+id: BL-1744
+title: "The local seat's completion request never turns thinking off - on qwen3.8-27b-iq3s-seat a turn spent its whole reply budget inside an unsuppressed <think> block and never answered (132 s, cut off); ollama's native think: false answers cleanly in 51 s. The human twice directed the operator's fix be committed, but it has sat STAGED on the master checkout since 2026-09-24 because every commit on main dies in the property guard's heap-cap crash (BL-1729), and it now blocks build_freshness_cli.bb sync; the pipeline lands the same change: completeWithLocalModel sends think: false on every request"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in a human-facing seat (the QWEN_LOCAL topic and
+# Bubble's Let's Talk local seat). The running bot has the fix only because
+# the operator compiled the staged source. A build-freshness sync forced
+# with --override would rebuild from HEAD and bring the fault back, and
+# unforced the sync stays refused.
+status: todo
+epic: local-llm-swarm
+priority: 7
+direction: human-directed
+depends_on: []
+# No open ticket touches localQwenSeatLive.ts (grep of paused/ and active/,
+# 2026-09-25). BL-1235 and BL-1682 (both done) built the file.
+mutation_cost: low
+# low: one request-body field and two test assertions, as in the reference
+# diff; one new step handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1744-the-local-seat-asks-the-model-not-to-think.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1744LocalSeatThinkOffSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No consumer anchor: completeWithLocalModel's live caller (the seat's
+# default deps.complete, localQwenSeatLive.ts ~line 204) already exists and
+# is unchanged; the change is inside the function the feature drives.
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options), and the change itself is the one the human directed
+  twice (quoted in source). FIRM: the parcel lands the operator's staged
+  diff (backlog/evidence/BL-1744-staged-operator-hotfix-think-false-20260925.md)
+  unless a stage finds a defect in it, so that master's staged copy then
+  matches HEAD and stops blocking the sync. FIRM: thinking is always off
+  for this seat, not made configurable (the reference diff's own comment
+  says why).
+
+invariants: []
+
+source: |
+  The human, to the operator session:
+
+  > one agents yesterday found a way to suppress the <think> thing ,maybne with a nothink option
+
+  (2026-09-24 18:22Z.) After the operator's two live runs:
+
+  > let's test it first
+
+  (18:27Z.) Then:
+
+  > ok commit and let the swarm know
+
+  (18:33Z.) The commit was refused by the property guard, and the
+  guard-skip override was refused by the operator's permission
+  classifier. The next morning:
+
+  > Commit the think:false and push both parts
+
+  (2026-09-25 06:33Z.) The guarded commit died again in the property
+  lane's heap-cap crash, the operator reported it still staged, and the
+  human answered "Ok". Coordinator note 011573 (11:10Z):
+  `build_freshness_cli.bb sync` REFUSED, remedy "land the change through
+  QA, or rerun with --override". This ticket is the first of those.
+
+description: |
+  ## What is wrong
+
+  `completeWithLocalModel` (`extension/src/tools/localQwenSeatLive.ts`
+  ~line 144) posts `{ model, prompt, system, stream: false }` to ollama's
+  `/api/generate`. On a thinking-capable model the reply opens a `<think>`
+  block that can use the seat's whole reply budget before any answer. The
+  operator measured it on qwen3.8-27b-iq3s-seat: 132 s, cut off
+  mid-thought. The seat's whole purpose is a short spoken-style answer
+  (its briefing says "Answer in a few short sentences that read well
+  aloud").
+
+  ## What is wanted
+  - Every completion request carries `think: false`, with or without a
+    system prompt. A model without the thinking capability ignores the
+    field.
+  - The two request-body assertions in
+    `extension/test/bl1235LocalQwenSeatLive.test.js` expect it.
+  - The reference is the operator's staged diff, captured verbatim in
+    `backlog/evidence/BL-1744-staged-operator-hotfix-think-false-20260925.md`
+    (13 source lines, most of them the docstring's reason, and 2 test
+    lines). The operator ran it green: 8 test files, 78 tests. BL-1682's
+    property invariant B ("no key other than `system` ever changes")
+    still holds, because the field is present in both bodies.
+
+  ## Scope
+  - `extension/src/tools/localQwenSeatLive.ts` (`completeWithLocalModel`
+    and its docstring).
+  - `extension/test/bl1235LocalQwenSeatLive.test.js` (two assertions).
+  - The feature, its step handler and `index.js` registration.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1744-the-local-seat-asks-the-model-not-to-think.feature`:
+     all ok (2 of 2).
+  2. `cd extension && npx vitest run --config vitest.config.mjs test/bl1235LocalQwenSeatLive.test.js`:
+     all pass.
+  3. `git diff <parcel> -- extension/src/tools/localQwenSeatLive.ts extension/test/bl1235LocalQwenSeatLive.test.js`
+     against the evidence file's diff: identical, or the difference is
+     named in a stage's evidence.
+  4. After landing: on the master checkout, `git status --short --
+     extension/src/tools/localQwenSeatLive.ts extension/test/bl1235LocalQwenSeatLive.test.js`
+     prints nothing (the staged copy now equals HEAD), and
+     `bb swarmforge/scripts/build_freshness_cli.bb . sync` is no longer
+     refused on these paths. If the landed content differs, tell the
+     coordinator the staged copy is superseded.
+
+notes: |
+  Minted 2026-09-25 by the specifier from coordinator note 011573
+  (build-freshness sync refused on the staged file). The staged change's
+  author and the human's instructions were traced in the operator
+  session's transcript. The change stays staged on master untouched: it
+  is not the specifier's to commit, unstage or discard.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).

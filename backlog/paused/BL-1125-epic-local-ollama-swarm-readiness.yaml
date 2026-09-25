@@ -6,7 +6,7 @@ type: epic
 epic: local-llm-swarm
 priority: 0
 depends_on: []
-decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143, BL-1682, BL-1696, BL-1697, BL-1698, BL-1699, BL-1700, BL-1701, BL-1702, BL-1703, BL-1704, BL-1705, BL-1706, BL-1707, BL-1708, BL-1711]
+decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143, BL-1682, BL-1696, BL-1697, BL-1698, BL-1699, BL-1700, BL-1701, BL-1702, BL-1703, BL-1704, BL-1705, BL-1706, BL-1707, BL-1708, BL-1711, BL-1744]
 remaining_slices:
   - "Successor slices of the BL-1702 pack-shape ruling, minted by the specifier once the human rules - B needs deterministic coordinator rows as daemon behaviour, driver review-stage roles and an Article 4.1 amendment; C needs the compact coordinator card wired read-only, a command relay with an allow-list, relay-hazard probes and lifecycle rows in the probe; A needs none"
   - "The seat coordinator verbs deferred from BL-1696 (main-sync, ff-main, freshness, close, promote, stage-sync), only if the BL-1702 ruling keeps an LLM coordinator"
