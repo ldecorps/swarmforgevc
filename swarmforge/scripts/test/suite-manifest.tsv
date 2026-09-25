@@ -385,6 +385,7 @@ test_mutation_cooldown_gate.sh	standing
 test_named_tunnel_liveness_ancillary_start.sh	standing		
 test_negotiation_relay_supervisor_tick.sh	standing
 test_ollama_ancillary_launch_gate.sh	standing
+test_ollama_ancillary_stop_pid.sh	standing
 test_onboarder_supervisor_ignores_old_heartbeat.sh	standing
 test_onboarder_supervisor_tick.sh	standing		
 test_openrouter_claude_env.sh	standing		

@@ -8,6 +8,16 @@
 # endpoint, the endpoint URL) as plain arguments; this file never inspects
 # a pack conf or a shell array itself (BL-1703's own direction: "read the
 # pack conf the launch path already resolved; do not re-derive it").
+#
+# BL-1727: ollama_ancillary_stop_pid's own bounds - seconds of TERM grace
+# before escalating to KILL, the poll interval while waiting, and a short
+# wait after KILL before giving up and reporting failure. `:=` only sets a
+# value when unset/null, so a test can override any of the three by
+# exporting it before sourcing this file; production keeps the defaults, a
+# real server time to shut down cleanly.
+: "${OLLAMA_ANCILLARY_STOP_TERM_GRACE_SECONDS:=5}"
+: "${OLLAMA_ANCILLARY_STOP_KILL_GRACE_SECONDS:=2}"
+: "${OLLAMA_ANCILLARY_STOP_POLL_INTERVAL_SECONDS:=1}"
 
 # The same two probe paths swarmforge.sh's own local_model_endpoint_ready
 # already uses (Ollama's native tags endpoint, then the OpenAI /models
@@ -89,16 +99,44 @@ ollama_ancillary_pid_alive() {
   kill -0 "$pid" >/dev/null 2>&1
 }
 
-# Never left running by a launch that stops using it (a refused launch, or
-# BL-1704's own stop paths): only ever signals a pid THIS lib itself
-# started, never a server the swarm did not start (that pid is simply
-# never passed in - the FIRM constraint from the ticket's approval_context
-# is enforced by the CALLER never handing this an externally-owned pid,
-# not by anything guessed here).
+# Polls until PID is gone or BOUND_SECONDS elapse, at
+# OLLAMA_ANCILLARY_STOP_POLL_INTERVAL_SECONDS intervals. Returns 0 the
+# moment it is gone (including immediately, if it already was); 1 if the
+# bound is reached with it still alive.
+ollama_ancillary_wait_gone() {
+  local pid="$1"
+  local bound_seconds="$2"
+  local elapsed=0
+  while [ "$elapsed" -lt "$bound_seconds" ]; do
+    ollama_ancillary_pid_alive "$pid" || return 0
+    sleep "$OLLAMA_ANCILLARY_STOP_POLL_INTERVAL_SECONDS"
+    elapsed=$((elapsed + OLLAMA_ANCILLARY_STOP_POLL_INTERVAL_SECONDS))
+  done
+  ! ollama_ancillary_pid_alive "$pid"
+}
+
+# BL-1727: never left running by a launch that stops using it (a refused
+# launch, or BL-1704's own stop paths): only ever signals a pid THIS lib
+# itself started, never a server the swarm did not start (that pid is
+# simply never passed in - the FIRM constraint from the ticket's
+# approval_context is enforced by the CALLER never handing this an
+# externally-owned pid, not by anything guessed here). Waits, bounded, for
+# the pid to actually be gone rather than firing one signal and returning
+# at once: success means the pid is not alive the moment this returns; a
+# pid still alive after TERM's grace and a KILL escalation is a named
+# failure, never silently reported as stopped.
 ollama_ancillary_stop_pid() {
   local pid="$1"
   ollama_ancillary_pid_alive "$pid" || return 0
+
   kill "$pid" >/dev/null 2>&1 || true
+  ollama_ancillary_wait_gone "$pid" "$OLLAMA_ANCILLARY_STOP_TERM_GRACE_SECONDS" && return 0
+
+  kill -9 "$pid" >/dev/null 2>&1 || true
+  ollama_ancillary_wait_gone "$pid" "$OLLAMA_ANCILLARY_STOP_KILL_GRACE_SECONDS" && return 0
+
+  echo "ollama-ancillary: pid $pid still alive after TERM and KILL" >&2
+  return 1
 }
 
 # The whole start-and-probe contract for one launch (BL-1703 invariant: no
@@ -150,7 +188,13 @@ ollama_ancillary_ensure_ready_for_launch() {
     elapsed=$((elapsed + poll_interval))
   done
 
-  ollama_ancillary_stop_pid "$started_pid"
+  # BL-1727: ollama_ancillary_stop_pid can now return 1 (a pid that
+  # outlives KILL). Under a caller's `set -e` an unguarded call here would
+  # abort right at this line, silently skipping the diagnostic below and
+  # this function's own `return 1` - a real change to "every caller's
+  # behaviour is otherwise unchanged" (FIRM). `|| true`: this function
+  # already reports ITS OWN failure unconditionally next.
+  ollama_ancillary_stop_pid "$started_pid" || true
   echo "ollama-ancillary: local-model endpoint $url never answered within ${wait_seconds}s (server log: $log_path)" >&2
   return 1
 }
