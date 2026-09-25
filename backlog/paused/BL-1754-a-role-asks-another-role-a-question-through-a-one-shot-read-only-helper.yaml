@@ -131,8 +131,11 @@ notes: |
   daemon-started consult is what the human ruled out, and nothing about a
   question needs the daemon. Named peer_question, not role_ask, because
   role_ask.bb already means asking the human.
-  PROMPT LINE DUE (BL-798): the specifier lands What is wanted 3 on main
-  before this ticket reaches the coder. The boot prefix was over budget at
-  mint (44954/44000), so that commit also moves prose out to reference/.
-  Not landed at mint, because the human may reject the feature; record
-  the commit here when landed.
+  PROMPT LINE LANDED (BL-798): 5482a952c9, 2026-09-25, after the human
+  approved (660622ef07). It is in workflow.prompt "Handoff transport",
+  shortened from What is wanted 3 to fit the boot budget: "A question for
+  another role mid-turn (BL-1754): `bb swarmforge/scripts/peer_question.bb
+  <root> --from <you> --to <role> --question "<text>"` answers once,
+  read-only, then exits (until it lands, send a `note`). Work for that
+  role is a `note` and waits for it." The same commit brought the boot
+  prefix back under budget (44954 -> 43884/44000).
