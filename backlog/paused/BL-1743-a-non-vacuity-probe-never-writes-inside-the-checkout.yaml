@@ -1,0 +1,137 @@
+id: BL-1743
+title: "Eight test files' non-vacuity probes write their deliberately broken copy of a script INSIDE the checkout (beside the real script in swarmforge/scripts/ or swarmforge/scripts/test/, or in extension/test/helpers/) and remove it only in a finally, so a killed run leaves it behind - at 06:35Z on 2026-09-25 a killed property run on the main checkout left bl1652's two broken copies (a chase_sweep_lib.bb with the per-sweep respawn cap removed, and its runner) in swarmforge/scripts/, the 08:00Z launch's sync_worktree_scripts copied them into seven worktrees, and QA reported its tree dirty; a probe's broken copy lives under a temporary root of its own and the next probe reaps any root a dead run left"
+milestone: M8
+type: defect
+severity: medium
+# medium: contained. No test is red and nothing loads the stray copies,
+# but every killed run (BL-1729's heap deaths on the main checkout kill
+# property workers) litters the checkout, the launch sync spreads it to
+# every seat, and a stray broken copy of a live lib sits one glob away
+# from being loaded.
+status: todo
+epic: code-quality-gates
+priority: 25
+direction: swarm-reported
+depends_on: []
+# No open ticket touches these probes (grep of paused/ and active/ for
+# non-vacuity-scratch, 2026-09-25). BL-1740 changes chase_sweep_lib.bb,
+# not the bl1505/bl1652 test files this ticket edits.
+mutation_cost: medium
+# medium: eight test files, fifteen sites, most of them one line once a
+# shared helper exists; plus that helper and one step handler.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1743-a-non-vacuity-probe-never-writes-inside-the-checkout.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1743ProbeScratchOutsideCheckoutSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# The consumers are the eight probe files themselves, and scenario 01 gates
+# every one of them by census, so no second anchor is declared (BL-1235: an
+# anchor on a helper the parcel adds would be satisfied by construction).
+
+human_approval: pending
+approval_context: >
+  Sign-off asked for: that a probe's broken copy must never be written
+  inside the checkout, even though today's placement beside the real
+  script is what makes the copy's relative loads resolve. The direction
+  below keeps those loads working from a temporary root. FIRM: every
+  probe still proves its test red against the broken copy - no probe is
+  deleted or weakened. FIRM: the launch script sync is not changed here
+  (see out_of_scope).
+
+invariants:
+  - "No test or step handler writes a file under the checkout it runs from to build a broken copy of a script; every broken copy lives under a temporary root that its run removes, and a root whose recorded owner pid is dead is reaped by the next probe run."
+
+description: |
+  ## What is wrong
+
+  QA note 003163 (07:01Z): the QA tree was dirty with a scratch `.bb`
+  from a killed bl1652 property run. At mint, the same two untracked
+  files are in the master checkout and in seven of the eight worktrees
+  (coder@2's has none):
+  `swarmforge/scripts/bl1652-non-vacuity-scratch2-11946-1790318102522.bb`
+  (128 KB, chase_sweep_lib.bb with the BL-1652 per-sweep respawn cap
+  removed) and
+  `swarmforge/scripts/test/bl1652-non-vacuity-runner-11946-1790318102522.bb`.
+  The master copies date from 06:35:02Z, a run of pid 11946 whose
+  `finally` never ran. Every worktree copy has mtime 08:00:02Z, the
+  launch second: `swarmforge.sh`'s `sync_worktree_scripts` copies master's
+  `swarmforge/scripts/` into each worktree and skips only paths the
+  worktree's own git tracks (BL-373).
+
+  The probe (bl1652 lines ~123 and ~240) writes its broken copy beside
+  the real script, so that the copy's sibling `load-file` calls resolve.
+  Those calls go through `(fs/parent (fs/canonicalize *file*))`. It then
+  removes the copy in a `finally`. A SIGKILL, a heap-cap worker death
+  (BL-1729) or a timeout skips the `finally`. There is no pre-run sweep
+  (the BL-971 rule for mkdtemp fixtures).
+
+  ## Census (derived, then pinned - BL-1445)
+  `grep -rlE '(scratch|broken)[A-Za-z]*\s*=\s*path\.join\((path\.dirname\(|__dirname|[A-Z_]*DIR\b)' extension/test specs/pipeline/steps`
+  finds 8 files and 15 sites (`grep -rnE` on the same pattern):
+  - `extension/test/bl1458BriefingTriggerInvariants.property.test.js`
+  - `extension/test/bl1459DocumenterBriefingTipGuardInvariants.property.test.js`
+  - `extension/test/bl1505DedupSuppressedChaseCountInvariants.property.test.js`
+  - `extension/test/bl1630NoStepHandlerModuleLoadWorkInvariants.property.test.js`
+    (writes into `extension/test/helpers/`)
+  - `extension/test/bl1652ChaseRespawnBusyGuardInvariants.property.test.js`
+  - `extension/test/bl1671MergeDeletionGuardInvariants.property.test.js`
+  - `specs/pipeline/steps/bl938AgedNoteRotateFixtureRotationRouterSteps.js`
+  - `specs/pipeline/steps/bl943FixtureCleanupVerdictSteps.js`
+    (writes into `swarmforge/scripts/test/`)
+  After the fix this regex finds none, by design. Scenario 01's census
+  therefore derives the population as "every file that builds a broken
+  copy of a script, whichever way" and pins it at these 8, with bl1652
+  among them.
+
+  ## What is wanted
+  - Each probe builds its broken copy under a temporary root of its own.
+    The root is removed in `finally`, and a pre-run sweep reaps any root
+    whose recorded owner pid is dead (BL-971/BL-1385: never a blind
+    prefix sweep - a live sibling run's root is kept).
+  - How (direction, not mandate): one shared helper that makes the root,
+    writes the broken copy there, and symlinks the real script's siblings
+    beside it. The copy's `load-file` of `handoff_lib.bb` and the others
+    then resolves, while the siblings' own canonical paths stay in the
+    real tree.
+  - Every probe still shows its test red against the broken copy, as
+    today.
+
+  ## Scope
+  - The 8 census files.
+  - A shared helper under `extension/test/helpers/` (step handlers may
+    require it too).
+  - The feature and its step handler plus `index.js` registration.
+
+out_of_scope: |
+  - `sync_worktree_scripts` copying master's UNTRACKED script files into
+    every worktree at launch. That is what spread this litter, but
+    restricting it to tracked source files has a cost: a new uncommitted
+    script in master would stop reaching the seats on relaunch. That is a
+    ruling for the human, not a rider on this ticket. Mint it if
+    untracked litter spreads again from any other source.
+  - Removing the existing stray copies (16 untracked files, pid 11946
+    dead, across master and seven worktrees). They were not made by
+    this ticket. The new sweep reaps temporary roots only and never
+    deletes anything inside a checkout. The coordinator was told the same
+    pass: a one-time removal, master first, or the next launch's sync
+    copies them back.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1743-a-non-vacuity-probe-never-writes-inside-the-checkout.feature`:
+     all ok (2 of 2).
+  2. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1652ChaseRespawnBusyGuardInvariants.property.test.js test/bl1505DedupSuppressedChaseCountInvariants.property.test.js`:
+     green (bl1505 only outside a control pause until BL-1740 lands); then
+     `git status --short -- swarmforge/ extension/test/helpers/` in the
+     QA worktree shows no new `*non-vacuity*` path.
+  3. The census grep from the description: no match.
+  4. `git diff main...HEAD --name-only` names only the census files, the
+     helper, the feature, its handler, `index.js`, docs and evidence.
+
+notes: |
+  Minted 2026-09-25 by the specifier from QA's note 003163 (QA tree dirty,
+  bl1652 scratch from a killed run). The census was derived and pinned at
+  mint. Launch-sync propagation was found at mint (worktree copies'
+  mtime = the launch second).
