@@ -173,3 +173,6 @@ notes: |
   (documenter 276c48aa92), which does not touch that feature. QA and
   the coder were noted to merge main and rebuild.
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-25, by: specifier, blamed: specifier, class: spec-gap, commit: 276c48aa92, evidence: backlog/evidence/BL-1739-bounce-20260925.md }
