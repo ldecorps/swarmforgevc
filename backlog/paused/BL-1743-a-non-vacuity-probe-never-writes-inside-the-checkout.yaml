@@ -30,7 +30,7 @@ required_wiring:
 # every one of them by census, so no second anchor is declared (BL-1235: an
 # anchor on a helper the parcel adds would be satisfied by construction).
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sign-off asked for: that a probe's broken copy must never be written
   inside the checkout, even though today's placement beside the real
