@@ -32,7 +32,6 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-property	extension/test/bl1650LandStepPureEvidenceStrayInvariants.property.test.js	BL-1725	2026-09-24	invariant 2 timed out at 20000ms in the property lane at load 11-14 on BL-1697 parcel 8e0fd17c06 (QA note 003138); 10.8s alone on main at load 12.4; a fresh fixture and a full land_step_cli run per draw; leaves when BL-1725 lands
 property	extension/test/bl874PortableTimeInvariants.property.test.js	BL-1729	2026-09-17	kills its fork on the 640 MB worker heap cap in the full lane on the shared main checkout only: walks the repo root through walkFilesTolerant, which skips .worktrees but not .swarmforge, and reads 475 MB of .js under .swarmforge/operator/vscode-cli (894 MB alone on main, specifier 2026-09-25); two heap deaths in each of refusal-000001..000005; green in every role worktree; leaves when BL-1729 lands
 property	extension/test/tempDirTrapGuard.property.test.js	BL-1729	2026-09-17	same walk as bl874PortableTimeInvariants, run twice (1778 MB alone on main, specifier 2026-09-25); the second of the two heap deaths per main-checkout refusal; green in every role worktree; leaves when BL-1729 lands
 acceptance	specs/features/BL-282-operator-longterm-memory.feature	BL-1738	2026-09-25	2 of 5 fail: REFUSED project-root /tmp/aps-operator-*: not inside a git checkout (BL-1517 fallout, operatorLongtermMemorySteps.js); specifier census on main 2026-09-25; leaves when BL-1738 lands
