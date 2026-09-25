@@ -12,7 +12,7 @@ remaining_slices:
 mutation_cost: high
 acceptance:
   none: "tracker only - see decomposes_into children for acceptance"
-human_approval: pending
+human_approval: approved
 approval_context: >
   Tracker only, never promoted itself. It groups the four gaps the
   operator hit live onboarding gpu-bargain-hunter on 2026-09-25, after
