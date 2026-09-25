@@ -105,3 +105,5 @@ notes: |
   causes). Register row added in the mint commit, owner BL-1739.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
+
+assigned_to: coder
