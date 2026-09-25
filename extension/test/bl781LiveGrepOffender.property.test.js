@@ -5,19 +5,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
 const { isLiveGrepOffender } = require('../../specs/pipeline/steps/lib/bl781LiveGrepOffender');
+const { isLiveCodePath } = require('../../specs/pipeline/steps/bl611BabysitterdLifecycleSteps');
 
 // BL-781 declared invariants (coder-authored first, BL-654):
 // 1. Scenario 15 "no wake runtime remains" is by absence, not allowlist exemption.
 // 2. Salvaged assess_lib / nudge_lib / nudge_resident remain live.
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
-const BL611_STEPS = path.join(
-  REPO_ROOT,
-  'specs',
-  'pipeline',
-  'steps',
-  'bl611BabysitterdLifecycleSteps.js'
-);
 
 const DELETED_WAKE = [
   'swarmforge/scripts/babysitter_lib.bb',
@@ -61,16 +55,16 @@ test('invariant: product script hits stay live (paired collision-style counterpa
   );
 });
 
-test('invariant: BL-611 allowlist does not exempt deleted wake-runtime paths', () => {
-  const src = fs.readFileSync(BL611_STEPS, 'utf8');
-  const allowblock = src.match(/function isAllowedBabysitterMatch[\s\S]*?^}/m);
-  assert.ok(allowblock, 'isAllowedBabysitterMatch must exist');
+test('invariant: BL-611 no longer exempts deleted wake-runtime paths from the live-code scan', () => {
+  // BL-1739 (2026-09-25) dropped the per-file "babysitter" allowlist
+  // (isAllowedBabysitterMatch) in favor of isLiveCodePath: a retired-name
+  // content match is only a regression when it sits in live code. Follows
+  // BL-781 feature scenario 04 (BL-611 scenario 15 still passes with no
+  // allowlist, by construction) onto this unit test: every deleted
+  // wake-runtime path must be live code, so a resurrected reference to it
+  // is scanned, never exempted.
   for (const dead of DELETED_WAKE) {
-    assert.equal(
-      allowblock[0].includes(`'${dead}'`),
-      false,
-      `allowlist must not name ${dead}`
-    );
+    assert.equal(isLiveCodePath(dead), true, `${dead} must not be exempt from the live-code scan`);
   }
 });
 
