@@ -402,13 +402,13 @@
   subject: "Give a swarm's coordinator a project-scoped Remote Control name via the existing swarm_name identity"
   detected_at: 2026-09-25
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1746
   human_decision: null
   decided_at: null
 - commit: 72d2da04da
   subject: "A land in flight counts as a lane, so chase never respawns QA mid-land"
   detected_at: 2026-09-25
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1714
   human_decision: null
   decided_at: null

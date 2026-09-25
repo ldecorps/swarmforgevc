@@ -1,0 +1,101 @@
+id: BL-1746
+title: "Swarm stamp-off: hotfix a45dc5865d - remote_control_session_name_for_role in swarmforge.sh uses the swarm's config swarm_name as the Remote Control prefix when it is not the default 'primary', so a second swarm's coordinator (never a window line, so it could not name itself) no longer shows up as a second identical SwarmForge-Coordinator; a swarm with no swarm_name keeps its SwarmForge-* names; review-only, plus a probe of the two readers that still assume the SwarmForge- prefix"
+milestone: M8
+type: defect
+severity: medium
+# medium: the hotfix is live and correct as far as its commit shows, but it
+# has never been through a gate and ships no test of its own. Two other
+# readers of the name were not updated (probe 2).
+status: todo
+epic: fleet-topology
+priority: 30
+direction: swarm-reported
+depends_on: []
+# No open ticket touches remote_control_session_name_for_role or
+# list_remote_control_sessions.sh (grep of paused/ and active/, 2026-09-25).
+mutation_cost: low
+# low: review-only; shell/Babashka only (no mutation/CRAP/DRY wired, BL-472);
+# one step handler drives the launcher's real naming function.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1746-swarm-stamp-swarm-name-remote-control-prefix-a45dc5865d.feature
+
+# A review parcel adds no production call site; the mechanism under review is
+# already wired (every Claude seat's launch line, swarmforge.sh ~894/~1096).
+required_wiring:
+  - 'specs/pipeline/steps/bl1746SwarmNameRemoteControlPrefixSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  asked. FIRM: review-only - the stamp never rewrites the hotfix. FIRM: the
+  handler drives the launcher's real remote_control_session_name_for_role
+  (and the display_name_for_role it calls), never a copy of their logic.
+  The probes are recorded as findings, not fixed here.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, a step handler (plus its lib/ helpers) or a file under swarmforge/scripts/test/; swarmforge.sh, orphan_agent_reaper_sweep_lib.bb and list_remote_control_sessions.sh are read, never edited."
+
+description: |
+  ## What
+  An operator hotfix is live on main and has never been through a gate.
+  This is that gate: a REVIEW ticket. It confirms or refutes the hotfix and
+  opens narrow follow-ups for anything it finds.
+
+  ## The failure it fixed (from the commit message)
+  `remote_control_session_name_for_role` hardcoded `SwarmForge-`. A window
+  line can pass its own `--remote-control`, but the coordinator is never
+  a window line (BL-243). So a second target launched under the same
+  account (gpu-bargain-hunter, 2026-09-25) showed a coordinator that
+  could not be told apart from this repo's in the Remote Control list.
+
+  ## What landed (file to review)
+  - `swarmforge/scripts/swarmforge.sh` ~line 499: `prefix` is
+    `SwarmForge`, or `$SWARM_NAME` when it is not `primary`
+    (`SWARM_NAME` defaults to `primary` at ~304 and is set by
+    `config swarm_name <name>` at ~792). It applies to QA and to every
+    other role. The hotfix ships no test.
+
+  ## Review goals
+  1. Scenario 01 green against the real function. Default and `primary`
+     are byte-for-byte the prior names.
+  2. PROBE, do not fix - readers that still assume the `SwarmForge-`
+     prefix. At mint:
+     - `swarmforge/scripts/orphan_agent_reaper_sweep_lib.bb`
+       `remote-control-cmdline?` matches only `--remote-control\s+SwarmForge-`
+       (BL-486). A named swarm's agents are therefore never candidates.
+       That protects a legitimately running second swarm from this repo's
+       reaper, but it also leaves a named swarm's dry-run leftovers
+       unreaped. Record which of the two the BL-486 posture intends.
+     - `swarmforge/scripts/list_remote_control_sessions.sh` ~line 39
+       builds the names itself as `SwarmForge-<Role>`, a second copy of the
+       naming rule. For a named swarm it prints the wrong names.
+     Count with `grep -rn 'SwarmForge-' swarmforge/scripts/*.sh
+     swarmforge/scripts/*.bb | grep -v '^[^:]*:[0-9]*: *;;\|#'` and record
+     each hit as reads-the-name or cosmetic. Anything that reads the name
+     is a follow-up ticket, not an edit here.
+  3. PROBE - a swarm that sets `swarm_name primary` explicitly keeps
+     `SwarmForge-*`. It is in the outline. Record whether that is the
+     intended reading of "primary" as the default name.
+
+  ## Scope
+  - The feature, its step handler and `index.js` registration, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1746-swarm-stamp-swarm-name-remote-control-prefix-a45dc5865d.feature`:
+     all ok (5 of 5).
+  2. `bash swarmforge/scripts/test/test_remote_control_launch.sh` and
+     `bash swarmforge/scripts/test/test_remote_control_health.sh`: pass.
+  3. Live read, nothing launched: `ps -eo args | grep -o -- '--remote-control [^ ]*' | sort -u`
+     shows this swarm's seats as `SwarmForge-*`.
+  4. The evidence carries the probe census and a disposition per hit.
+  5. `git diff main...HEAD --name-only` names only the feature, the
+     handler, `index.js`, test files and evidence.
+
+notes: |
+  Minted 2026-09-25 by the specifier from coordinator note 011621 (hotfix
+  ledger pending row, stamp-open triage). Ledger row linked with
+  `hotfix_ledger_update.bb --link a45dc5865d BL-1746` in the mint commit.
+  The probes were found at mint by reading the other readers of the name.
