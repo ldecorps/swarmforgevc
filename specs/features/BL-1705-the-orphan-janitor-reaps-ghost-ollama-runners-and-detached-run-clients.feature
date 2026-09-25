@@ -22,10 +22,10 @@ Feature: BL-1705 the orphan janitor reaps ghost ollama runners and detached run 
     Then it is "<verdict>"
 
     Examples:
-      | command                         | parent                  | age        | verdict |
-      | llama-server --model m.gguf     | a live ollama serve     | 3 hours    | kept    |
-      | llama-server --model m.gguf     | init                    | 3 hours    | reaped  |
-      | ollama runner --model m.gguf    | init                    | 10 minutes | reaped  |
+      | command                                                                    | parent                  | age        | verdict |
+      | llama-server --model m.gguf                                                | a live ollama serve     | 3 hours    | kept    |
+      | /usr/lib/ollama/llama-server --model /home/u/.ollama/models/blobs/sha256-64b5 | init                | 3 hours    | reaped  |
+      | ollama runner --model m.gguf                                               | init                    | 10 minutes | reaped  |
       | ollama run qwen2.5-coder:latest | init                    | 2 hours    | reaped  |
       | ollama run qwen2.5-coder:latest | init                    | 5 minutes  | kept    |
       | ollama run qwen2.5-coder:latest | a live interactive shell | 2 hours   | kept    |

@@ -118,7 +118,7 @@ function registerSteps(registry) {
       assert.equal(ctx.sweepResult['ghost-reaped'], true, `expected the ghost runner to be reaped, got: ${JSON.stringify(ctx.sweepResult)}`);
       const pid = ctx.sweepResult['ghost-pid'];
       const found = (ctx.sweepResult.audits || []).some(
-        (line) => line.includes(`pid=${pid} `) && line.includes('cmd=llama-server')
+        (line) => line.includes(`pid=${pid} `) && line.includes('llama-server')
       );
       if (!found) {
         throw new Error(`expected an audit line naming pid=${pid} and its command, got: ${JSON.stringify(ctx.sweepResult.audits)}`);

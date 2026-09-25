@@ -552,6 +552,64 @@
     (finally
       (fs/delete-tree root))))
 
+;; BL-1726: a bare llama-server counts as ollama's own worker only with
+;; BOTH marks - an ollama-installed lib path AND a --model blob argument.
+
+(assert= "ollama's own llama-server (lib path + blob model) is ollama's own worker"
+         true
+         (orphan-janitor-lib/ollama-own-llama-server-cmdline?
+          "/mnt/d/dev/ollama/lib/ollama/llama-server --model /home/u/.ollama/models/blobs/sha256-64b5 --port 40483"))
+
+(assert= "a llama.cpp build's server (no ollama lib path) is never ollama's own worker"
+         false
+         (orphan-janitor-lib/ollama-own-llama-server-cmdline?
+          "/home/u/llama.cpp/build/bin/llama-server -m /home/u/models/qwen3-27b.gguf --port 8080"))
+
+(assert= "a PATH-resolved llama-server (no path at all) is never ollama's own worker"
+         false
+         (orphan-janitor-lib/ollama-own-llama-server-cmdline?
+          "llama-server --model /home/u/.ollama/models/blobs/sha256-64b5 --port 8081"))
+
+(assert= "an ollama-installed server on a non-blob model is never ollama's own worker"
+         false
+         (orphan-janitor-lib/ollama-own-llama-server-cmdline?
+          "/usr/lib/ollama/llama-server --model /data/models/local.gguf --port 8082"))
+
+(assert= "any llama-server, marked or not, is still classified (seen) as a model-runner candidate"
+         true
+         (orphan-janitor-lib/ollama-model-runner-cmdline?
+          "/home/u/llama.cpp/build/bin/llama-server -m /home/u/models/qwen3-27b.gguf --port 8080"))
+
+(assert= "reapable-ollama-ghost?: ollama's own llama-server with a dead parent is reaped"
+         true
+         (orphan-janitor-lib/reapable-ollama-ghost?
+          {:in-live-window-set? false
+           :cmdline "/usr/lib/ollama/llama-server --model /home/u/.ollama/models/blobs/sha256-64b5"
+           :parent-orphaned? true
+           :parent-live-ollama-serve? false
+           :age-ms 10800000
+           :grace-ms 0}))
+
+(assert= "reapable-ollama-ghost?: a hand-started llama.cpp server with a dead parent is never reaped"
+         false
+         (orphan-janitor-lib/reapable-ollama-ghost?
+          {:in-live-window-set? false
+           :cmdline "/home/u/llama.cpp/build/bin/llama-server -m /home/u/models/qwen3-27b.gguf"
+           :parent-orphaned? true
+           :parent-live-ollama-serve? false
+           :age-ms 10800000
+           :grace-ms 0}))
+
+(assert= "reapable-ollama-ghost?: `ollama runner` stays ollama's by name, no marks needed"
+         true
+         (orphan-janitor-lib/reapable-ollama-ghost?
+          {:in-live-window-set? false
+           :cmdline "/usr/local/bin/ollama runner --model /home/u/.ollama/models/blobs/sha256-64b5"
+           :parent-orphaned? true
+           :parent-live-ollama-serve? false
+           :age-ms 600000
+           :grace-ms 0}))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (System/exit 1))

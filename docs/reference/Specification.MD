@@ -27,6 +27,32 @@ same path (BL-1717)" section). No new extension command or setting; no
 diagram edit — this is swarm-internal land-step tooling.)
 Prior entry —
 
+**Last Updated:** September 24, 2026 (BL-1726: narrows BL-1705's
+`ollama-ghost` reap class — as landed, ANY `llama-server`-shaped process
+whose parent was not a live `ollama serve` was reap-eligible at any age,
+so a llama.cpp server a human starts by hand outside the swarm (parent: a
+shell) would be killed at the next janitor sweep the moment one existed.
+QA caught it reviewing BL-1705 itself (note 003143); the over-broad rule
+was the specifier's own BL-1705 spec, not a QA-missed build defect. A bare
+`llama-server` now counts as ollama's own worker only with BOTH marks:
+its executable inside an ollama installation's lib directory
+(`.../lib/ollama/llama-server`) AND its `--model` argument naming an
+ollama model blob (`.../models/blobs/sha256-`) — the narrower of the
+possible rules, since the cost of a false reap is killing a process the
+swarm does not own. `ollama runner` is unaffected — it stays ollama's own
+by name alone, no further marks needed (nothing else legitimately runs a
+process by that name). A `llama-server` that fails either mark is still
+classified as seen (never silently unscanned, `ollama-model-runner-cmdline?`'s
+own "seen, never silently unscanned" contract) but is always kept,
+whatever its parent or age — a hand-started llama.cpp build, a
+PATH-resolved binary reading an ollama blob without the lib-directory
+path, and an ollama-installed server pointed at a non-blob model file are
+each kept, not reaped. Nothing else about BL-1705 changes: `ollama serve`
+itself, the live-tmux-window exemption, and the detached `ollama run`
+client's grace-period rule are untouched. Acceptance:
+`specs/features/BL-1726-the-ghost-reaper-touches-only-ollamas-own-llama-server.feature`.
+No new extension command, setting, or UI change; no diagram edit.)
+Prior entry —
 
 **Last Updated:** September 24, 2026 (BL-1705: the orphan janitor gains an
 `ollama-ghost` reap class — a leaked `llama-server`/`ollama runner`

@@ -242,11 +242,45 @@
   [cmdline]
   (boolean (re-find #"(?:^|/)ollama\s+serve\b" (or cmdline ""))))
 
-(defn ollama-model-runner-cmdline?
+(defn ollama-runner-cmdline?
+  "`ollama runner ...` - ollama's own by name, no further marks needed."
+  [cmdline]
+  (boolean (re-find #"(?:^|/)ollama\s+runner\b" (or cmdline ""))))
+
+(defn llama-server-cmdline?
+  "Any llama-server-shaped process, ollama's own or not - classification
+   only (BL-1726: a kept llama-server must still be seen, never silently
+   unscanned), never alone sufficient for reap eligibility."
+  [cmdline]
+  (boolean (re-find #"(?:^|/)llama-server\b" (or cmdline ""))))
+
+(defn ollama-own-llama-server-cmdline?
+  "BL-1726: a bare llama-server counts as ollama's own worker only with
+   BOTH marks - its executable inside an ollama installation's lib
+   directory (.../lib/ollama/llama-server) AND its --model argument
+   naming an ollama model blob (.../models/blobs/sha256-). The narrower of
+   the possible rules: the cost of a false reap is killing a process the
+   swarm does not own (a hand-started llama.cpp server, parent a shell).
+   `ollama runner` never reaches this predicate - it is ollama's by name
+   (ollama-runner-cmdline?)."
   [cmdline]
   (let [c (or cmdline "")]
-    (boolean (or (re-find #"(?:^|/)llama-server\b" c)
-                 (re-find #"(?:^|/)ollama\s+runner\b" c)))))
+    (boolean
+     (and (llama-server-cmdline? c)
+          (re-find #"/lib/ollama/llama-server\b" c)
+          (re-find #"--model\s+\S*/models/blobs/sha256-" c)))))
+
+(defn ollama-model-runner-cmdline?
+  "True for anything the janitor treats as a model-runner process for
+   CLASSIFICATION purposes (ollama-ghost-candidate-cmdline?'s own 'seen,
+   never silently unscanned' contract) - an `ollama runner` by name, or
+   ANY llama-server whatever its ownership marks. Reap eligibility
+   (reapable-ollama-ghost?) narrows further for a bare llama-server
+   (BL-1726, ollama-own-llama-server-cmdline?)."
+  [cmdline]
+  (let [c (or cmdline "")]
+    (boolean (or (llama-server-cmdline? c)
+                 (ollama-runner-cmdline? c)))))
 
 (defn ollama-run-client-cmdline?
   [cmdline]
@@ -263,22 +297,27 @@
 ;; Pure: ollama ghost runners and detached run clients (BL-1705,
 ;; invariant 1: "the janitor never signals an ollama serve process, nor a
 ;; runner whose parent is a live ollama serve"). The server itself is
-;; always kept (left to the stop paths, BL-1704). A model runner is
+;; always kept (left to the stop paths, BL-1704). An `ollama runner` is
 ;; reaped, ANY age, once its parent is no longer a live `ollama serve` -
 ;; no grace period, mirroring the ticket's "reap, any age" direction. A
-;; detached `ollama run` client is reaped only once BOTH it has been
-;; reparented to init (pid 1 / WSL's /init - the same signal
-;; process-table-lib/parent-orphaned? already computes for every other
-;; class) AND its age exceeds the grace period; a run client under any
-;; other still-live parent (e.g. an interactive shell) is kept regardless
-;; of age.
+;; bare llama-server is reaped on that same parent condition ONLY when it
+;; also carries ollama's own ownership marks (BL-1726) - otherwise it is a
+;; process the swarm does not own (a hand-started llama.cpp server) and is
+;; always kept, whatever its parent or age. A detached `ollama run` client
+;; is reaped only once BOTH it has been reparented to init (pid 1 / WSL's
+;; /init - the same signal process-table-lib/parent-orphaned? already
+;; computes for every other class) AND its age exceeds the grace period; a
+;; run client under any other still-live parent (e.g. an interactive
+;; shell) is kept regardless of age.
 (defn reapable-ollama-ghost?
   [{:keys [in-live-window-set? cmdline parent-orphaned? parent-live-ollama-serve?
            age-ms grace-ms]}]
   (cond
     in-live-window-set? false
     (ollama-serve-cmdline? cmdline) false
-    (ollama-model-runner-cmdline? cmdline) (not parent-live-ollama-serve?)
+    (ollama-runner-cmdline? cmdline) (not parent-live-ollama-serve?)
+    (llama-server-cmdline? cmdline) (and (ollama-own-llama-server-cmdline? cmdline)
+                                          (not parent-live-ollama-serve?))
     (ollama-run-client-cmdline? cmdline) (and (boolean parent-orphaned?)
                                                (>= (or age-ms 0) (or grace-ms 0)))
     :else false))

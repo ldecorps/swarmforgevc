@@ -57,8 +57,13 @@
         owned-pid 910200
         kills (atom [])
         audits (atom [])
-        cmdlines {ghost-pid "llama-server --model m.gguf"
-                  owned-pid "llama-server --model m.gguf"}
+        ;; BL-1726: both marked as ollama's own worker (a path inside an
+        ;; ollama installation's lib dir, a --model naming a blob) - the
+        ;; ghost/owned split here tests the parent-liveness rule alone,
+        ;; unchanged by BL-1726's narrower ownership check.
+        own-cmdline "/usr/lib/ollama/llama-server --model /home/u/.ollama/models/blobs/sha256-64b5"
+        cmdlines {ghost-pid own-cmdline
+                  owned-pid own-cmdline}
         adapters {:list-candidate-pids! (fn [] [ghost-pid owned-pid])
                   :cmdline! (fn [p] (get cmdlines p))
                   :cwd! (fn [_] nil)

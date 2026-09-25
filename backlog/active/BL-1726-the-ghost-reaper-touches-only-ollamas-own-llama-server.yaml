@@ -159,3 +159,4 @@ bounce_count: 2
 bounce_history:
   - { at: 2026-09-25, by: specifier, blamed: specifier, class: spec-gap, commit: 785ebef0fc, evidence: backlog/evidence/BL-1726-bounce-20260925.md }
   - { at: 2026-09-25, by: specifier, blamed: coder, class: invariant-unencoded, commit: 785ebef0fc, evidence: backlog/evidence/BL-1726-bounce-20260925.md }
+abandoned_commits: [bf10475984]
