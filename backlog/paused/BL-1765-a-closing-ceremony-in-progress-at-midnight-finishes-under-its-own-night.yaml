@@ -1,0 +1,114 @@
+id: BL-1765
+title: "A closing ceremony in progress at local midnight finishes under the night it started - night-closing-ceremony-run.ts re-derives nightKey from each tick's calendar day, so a sleep that starts the ceremony shortly before midnight abandons that night on its next tick and freezes promotion again for a new one (the first night's briefing is never asked for, the drain runs twice); a night in progress keeps its day up to its own sleep ceiling, and past that ceiling or once done the calendar day decides as before"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real fault in live code, but contained - it needs a sleep
+# (finish-shift, a bedtime, a hand-run night-stop) started within about
+# 35 minutes of local midnight. The scheduled bedtimes are 17:00 and
+# 09:00; an evening shift closed by hand late at night hits it.
+status: todo
+epic: swarm-reliability
+priority: 3
+direction: specifier-found
+depends_on: []
+mutation_cost: low
+# low: one decision in one function (where the tick's night key comes
+# from) plus its tests; the acceptance handler drives the runner over
+# stand-in deps in milliseconds.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1765-a-closing-ceremony-in-progress-at-midnight-finishes-under-its-own-night.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1765CeremonyCrossesMidnightSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  New feature file and a behaviour change in the live ceremony runner.
+  FIRM: the bound. A night in progress keeps the day it started under only
+  up to its own hard deadline plus SLEEP_CEILING_GRACE_MS (the ceiling the
+  sleep loop already gives up at). It is deliberately NOT a longer window
+  such as 24 hours: a longer carry-over would resume a night that died at
+  17:00 when the 09:00 day shift starts and run its night-stop into the new
+  shift. Past the ceiling, and for an idle or done night, nothing changes.
+
+invariants:
+  - "A night whose phase is neither idle nor done keeps the nightKey it started under on every tick up to its own hardDeadlineMs plus SLEEP_CEILING_GRACE_MS; outside that bound, and for an idle or done night, the key is the tick's local calendar day exactly as before this change."
+
+description: |
+  ## What is wrong
+
+  `runNightClosingCeremony` (`extension/src/tools/night-closing-ceremony-run.ts`)
+  sets `nightKey = localDayKey(nowMs)` on every tick, and
+  `advanceNightClosingCeremony` (`extension/src/quality/nightClosingCeremonyLive.ts`)
+  continues a night only while `prev.nightKey === obs.nightKey`. A sleep
+  that starts the ceremony at 23:50 local gets a 35-minute hard deadline
+  (25 drain + 10 briefing). Its first tick after midnight carries a new
+  key, so the machine treats the night as a different one, and a sleep
+  tick is always due, so it runs `startFrozen` again: a second
+  `freeze-promotion`, a new drain, a lean packet and briefing instruction
+  for the new date. The first night's briefing is never asked for.
+
+  Found while owning BL-1764: the unit tests went red at 23:29 BST for
+  exactly this reason (their fake ticks crossed midnight). Reproduced on
+  `main` at 23:30 BST with `TZ=Europe/London` (3 failed) against
+  `TZ=UTC` (20 of 20).
+
+  ## What is wanted
+
+  - When the previous state is a night in progress (phase `frozen` or
+    `briefing`) and the tick is at or before `prev.hardDeadlineMs +
+    SLEEP_CEILING_GRACE_MS`, the tick uses `prev.nightKey` for both
+    `nightKey` and `dayKey`: the briefing check, `instruct-briefing` and
+    `ensure-briefing` all name the night the ceremony started (scenarios
+    01 and 02).
+  - Past that ceiling, and whenever the previous night is idle or done,
+    the tick's own local calendar day decides, exactly as today (scenario
+    01's third row and scenario 03).
+
+  ## How (direction, not mandate)
+
+  Decide the tick's key in the runner before building `obs`, from `prev`,
+  so the pure machine keeps its one equality test. `SLEEP_CEILING_GRACE_MS`
+  is already exported from `nightClosingCeremonyLive.ts`.
+
+  ## Scope
+
+  - `extension/src/tools/night-closing-ceremony-run.ts`, a test in
+    `extension/test/` for the bound (+ evidence).
+  - New: `specs/pipeline/steps/bl1765CeremonyCrossesMidnightSteps.js` and
+    its registration. Build every instant from a local date-time
+    (`new Date(2026, 8, 25, 23, 50)`), never the wall clock (BL-1764).
+  - Out of scope: the daemon's closure window, deadlines, and the lean
+    ledger's day bucketing (BL-1456 owns the ceremony's event window).
+
+constraints: >
+  BL-1764 (the register owner for the unit red) and BL-1676 (paused,
+  survivors in the same runner and test file) touch the same files; the
+  coordinator keeps them apart (Concurrent Work Orthogonality). This
+  change alone does not make BL-1764's tests hour-proof: their third tick
+  is at +40 minutes, past this bound.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1765-a-closing-ceremony-in-progress-at-midnight-finishes-under-its-own-night.feature`:
+     every scenario ok (01 x4, 02, 03).
+  2. `cd extension && npx vitest run test/nightClosingCeremonyRun.test.js`
+     and the new bound test: green.
+  3. Read the diff: the tick's key is taken from `prev` only for a
+     `frozen` or `briefing` night at or before its ceiling; no other
+     branch of the runner or the machine changes.
+
+source: |
+  Found by the specifier on 2026-09-25 while minting BL-1764 on QA note
+  003224 ("unowned-red nightClosingCeremonyRun.test.js 3xBL-1641 red;
+  ev 3379869072").
+
+notes: |
+  Minted 2026-09-25 by the specifier, split from BL-1764 (INVEST: that
+  slice is test-only and drains the register; this one is a production
+  change with its own bound). IR-DRY: the three medium findings are one
+  step reused with a literal and a placeholder, and a Given and a Then
+  with different meanings; left as they are.
