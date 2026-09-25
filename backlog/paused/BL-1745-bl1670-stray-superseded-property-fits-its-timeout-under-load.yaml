@@ -1,5 +1,5 @@
 id: BL-1745
-title: "extension/test/bl1670LandStrayConflictSupersededInvariant.property.test.js timed out at the property lane's 20 s default in QA's run at load 5.6 (BL-1727's parcel e9b1c4f30e) and takes 5.1 s alone on main - each of its nine draws builds a fresh git fixture and runs the whole land_step_cli.bb, and unlike its land-step siblings (bl1308 300 s, bl1678 120 s, bl1713 SUBPROCESS_HEAVY_TIMEOUT_MS) it declares no timeout, so any contended lane run can kill it; the invariant fits the lane under contention with its assertions and reach floor unchanged"
+title: "Three subprocess-heavy property invariants time out at the property lane's 20 s default under contention and declare no timeout of their own - bl1670LandStrayConflictSupersededInvariant (QA, BL-1727's parcel, load 5.6; 5.1 s alone), bl1108CursorSeatReadiness invariant 1 and bl1565CoordinatorNeverReceivesGitHandoffInvariants' reverse-hop invariant (QA, BL-1729's parcel, load 11.7; 6.2 s and 6.3 s alone) - each fits the lane under contention with its assertions and reach floor unchanged"
 milestone: M8
 type: defect
 severity: high
@@ -58,8 +58,32 @@ description: |
     (three forks, load 5-10), their slowest single tests took 25 s, 35 s
     and 16 s. That is lane cost, not a red, so nothing is minted for them.
 
+  ## Consolidated 2026-09-25: bl1108 and bl1565 (QA note 003185)
+
+  QA's property run on BL-1729's parcel a724ae759e (load 11.70, evidence
+  433082e8ee) timed out two more invariants at 20000 ms:
+  - `bl1108CursorSeatReadiness.property.test.js` > invariant 1 ("every
+    configured agent token uses its own process marker"). Alone on main
+    at load ~4: 6.2 s (invariant 2: 3.6 s). It spawns `bb` from inside
+    the property.
+  - `bl1565CoordinatorNeverReceivesGitHandoffInvariants.property.test.js` >
+    the reverse-hop invariant ("reverse-hop copies never address the
+    coordinator"). Alone: 6.3 s.
+  Neither declares a timeout. Both have the bl1670 shape, a third of the
+  ceiling alone, so this ticket owns all three rather than minting one
+  per file (BL-680 N:1; it was paused and unclaimed).
+
+  Wider census, NOT this ticket's scope: 187 property files spawn a
+  subprocess and 112 of them declare no timeout (`for f in
+  extension/test/*.property.test.js` with a spawn call and none of
+  `SUBPROCESS_HEAVY_TIMEOUT_MS|timeout: N|}, N)`). Most spawn one fast
+  process and are fine. A lane-wide fix (a per-test duration census
+  against the ceiling from the lane's JSON report) is a separate process
+  question if more of them surface.
+
   ## What is wanted
-  - The invariant completes inside the lane under contention. How
+  - Each of the three invariants completes inside the lane under
+    contention (the direction below applies to each file). How
     (direction, not mandate): either BL-1725's shape (one fixture per
     shape reset between draws, draws decided in one bb process through
     the lib the CLI wraps, one real CLI run kept as the wiring case), or
@@ -70,19 +94,21 @@ description: |
     are.
 
   ## Scope
-  - `extension/test/bl1670LandStrayConflictSupersededInvariant.property.test.js`
-    (and a helper beside it if one is needed).
+  - `extension/test/bl1670LandStrayConflictSupersededInvariant.property.test.js`,
+    `extension/test/bl1108CursorSeatReadiness.property.test.js`,
+    `extension/test/bl1565CoordinatorNeverReceivesGitHandoffInvariants.property.test.js`
+    (and a helper beside them if one is needed).
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
-  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1670LandStrayConflictSupersededInvariant.property.test.js`:
-     green; record its duration and the 1-minute load.
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1670LandStrayConflictSupersededInvariant.property.test.js test/bl1108CursorSeatReadiness.property.test.js test/bl1565CoordinatorNeverReceivesGitHandoffInvariants.property.test.js`:
+     green; record each file's duration and the 1-minute load.
   2. `node specs/pipeline/cli.js specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature`:
      all ok (8 of 8).
   3. `git diff main...HEAD --name-only` names only the test file, a helper
      if any, and evidence.
-  4. After landing: REGISTER_ROW_RETIRED for this ticket's property row;
-     resume BL-1727's land.
+  4. After landing: REGISTER_ROW_RETIRED for this ticket's three property
+     rows (bl1670, bl1108, bl1565).
 
 notes: |
   Minted 2026-09-25 by the specifier from QA's unowned-red note 003170
@@ -91,3 +117,8 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
   BL-1727.
+  2026-09-25: consolidated with QA's unowned-red note 003185 (bl1108 and
+  bl1565, holding BL-1729, evidence 433082e8ee). Two register rows were
+  added here, both measured alone at mint, and QA got a holder note naming
+  BL-1729. The acceptance pointer is unchanged (BL-1650's feature); the
+  two new files serve BL-1108 and BL-1565, whose features stay green.
