@@ -192,3 +192,5 @@ notes: |
   The intake's side finding (bl1703OllamaLaunchProbe red alone on an idle
   host) belongs to BL-1727 (active), which owns that register row. No
   second ticket was minted.
+
+assigned_to: coder
