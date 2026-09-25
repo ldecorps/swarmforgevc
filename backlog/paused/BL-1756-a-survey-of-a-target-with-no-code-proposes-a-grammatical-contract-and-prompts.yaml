@@ -25,7 +25,7 @@ acceptance: specs/features/BL-1756-a-survey-of-a-target-with-no-code-proposes-a-
 required_wiring:
   - 'specs/pipeline/steps/bl1756SurveyWithNoCodeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   New feature file; no choice posed. What needs sign-off: an empty survey
   says plainly that the target has no code and no stack yet (the same
