@@ -1,0 +1,120 @@
+id: BL-1761
+title: "confirmPoleAlone finds a repo-relative test file inside a Stryker sandbox - recordTestDuration.js resolves 'extension/test/x.test.js' against REPO_ROOT_DIR (one directory above the extension root), which in a sandbox is .stryker-tmp/ with no extension/ child, so confirmPoleAloneOutcomeShapes.test.js fails in every sandbox's initial test run and Stryker refuses to mutate ANY target on this host since BL-1721 landed (2026-09-24)"
+milestone: M8
+type: defect
+severity: high
+# high: a broken quality gate. Every hardener mutation run fails its
+# initial test run ("There were failed tests in the initial test run"),
+# so every TypeScript parcel hardened since 2026-09-24 16:08 fell back to
+# the degraded no-tooling posture. Not critical: nothing is lost, and the
+# unit lane on main is green.
+status: todo
+epic: code-quality-gates
+priority: 1
+direction: hardender-found
+depends_on: []
+mutation_cost: medium
+# medium: one TypeScript-side script (extension/scripts, under Stryker
+# when mutated) and its unit test. The feature spawns one real vitest
+# child per scenario against a small test (seconds), inside the BL-1358
+# ceiling.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1761-confirm-pole-alone-finds-a-repo-relative-test-file-inside-a-stryker-sandbox.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1761ConfirmPoleAloneSandboxSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity high
+  defect, no choice posed, no ruling_options). New feature file. FIRM:
+  the fix is in the resolution, never in skipping, excluding or
+  sandbox-detecting the test that exposed it.
+
+invariants:
+  - "A repo-root-relative test path and its absolute equivalent resolve to the same file, in the real checkout and inside a Stryker sandbox."
+
+description: |
+  ## What is wrong
+
+  `extension/scripts/recordTestDuration.js:64` sets `REPO_ROOT_DIR =
+  path.join(ROOT_DIR, '..')` with `ROOT_DIR` the extension root, and
+  `confirmPoleAlone` (line 97) joins a repo-relative file onto it. Under
+  Stryker the sandbox directory itself is the extension root (the BL-1066
+  rule in hardender.prompt), so `REPO_ROOT_DIR` is `.stryker-tmp/`.
+  `strykerSandboxSiblingsLib.js` links the named repo-root siblings
+  (`swarmforge/`, `docs/`, `pwa/`, `specs/`, `backlog/`, `.github/`), which
+  is why `REGISTER_PATH` still resolves. But `.stryker-tmp/extension/`
+  never exists, so the confirmation returns `{failed: "no entry for
+  extension/test/bl1007ContentionBudgetSmoke.test.js in the confirmation
+  report"}`. `confirmPoleAloneOutcomeShapes.test.js`'s first test (BL-1721,
+  landed aa99c7fc39, 2026-09-24 16:08) asserts `{ms}` on exactly that call.
+  It fails in every sandbox, and Stryker's initial test run fails for any
+  `--mutate` target (hardener evidence
+  `backlog/evidence/BL-1742-hardender-20260925.md`, attempt 2).
+
+  ## What is wanted
+
+  1. A repo-relative path under `extension/` resolves to the same file
+     whether `ROOT_DIR` is the real extension root or a sandbox (the
+     invariant). Absolute paths resolve as today.
+  2. The hardener's evidence for this parcel records the dry-run line of
+     one `npx stryker run --mutate out/<some file>.js` run with
+     `confirmPoleAloneOutcomeShapes.test.js` green inside it. That run is
+     the proof of the sandbox case, and it is the hardener's gate to run,
+     never QA's (2026-09-22 rule).
+
+  ## How (direction, not mandate)
+
+  - Resolving a leading `extension/` against `ROOT_DIR` itself (the
+    extension root, which the sandbox is) is sandbox-neutral and needs no
+    new sibling link. A per-sandbox `extension` link in `.stryker-tmp/`
+    cannot work, because sandboxes are concurrent and would share one name.
+  - Scenario 01's fixture: copy `recordTestDuration.js` into a mkdtemp
+    extension root under a parent with no `extension/` (BL-1390), symlink
+    `node_modules` and the vitest config, and add one trivial passing test.
+
+  ## Scope
+
+  - `extension/scripts/recordTestDuration.js`,
+    `extension/test/confirmPoleAloneOutcomeShapes.test.js` (a sandbox-
+    shaped case may be added; never removed or skipped).
+  - New: `specs/pipeline/steps/bl1761ConfirmPoleAloneSandboxSteps.js`.
+  - Out of scope: the sibling-link lib; other `path.join(ROOT_DIR, '..')`
+    sites (the hardener lists any it meets in evidence, as a census).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA starts no
+  mutation run.
+  1. `node specs/pipeline/cli.js specs/features/BL-1761-confirm-pole-alone-finds-a-repo-relative-test-file-inside-a-stryker-sandbox.feature`:
+     2 of 2.
+  2. `cd extension && npx vitest run test/confirmPoleAloneOutcomeShapes.test.js`:
+     green.
+  3. Read the hardener's committed evidence: it records the Stryker
+     dry-run line of one `--mutate` run and the confirmPoleAlone test green
+     inside it (What is wanted 2).
+  4. `git diff main...HEAD --name-only` names only the Scope files,
+     tests and evidence.
+
+source: |
+  Hardener rule_proposal 001513 (2026-09-25T14:16Z, role:hardender):
+  "confirmPoleAlone's REPO_ROOT_DIR is one parent past ROOT_DIR; in a
+  Stryker sandbox it lands off .stryker-tmp/ with no extension/, so ANY
+  Stryker dry run fails full-suite (BL-1066-class, uncovered)." Rationale:
+  "Cost ~4min during BL-1742. No ticket owns
+  confirmPoleAlone/recordTestDuration.js (grepped active/paused). Blocks
+  all Stryker runs repo-wide - mint a BL-1066-class defect."
+
+notes: |
+  Minted 2026-09-25 by the specifier, accepting the hardener's
+  rule_proposal as a defect. No prompt rule was added: hardender.prompt
+  already carries the BL-1066 sandbox rule this is an instance of.
+  Re-verified at mint: recordTestDuration.js:64 and :99; test landed with
+  aa99c7fc39. Every TypeScript parcel hardened between 2026-09-24 16:08
+  and this ticket's land had no working mutation run. Their hardener
+  evidence records the degraded fallback (as BL-1742's does), so no
+  hidden debt is claimed as discharged.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
