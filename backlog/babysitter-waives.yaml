@@ -125,6 +125,11 @@
   reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-72d2da04da93dd3bcac2130d9758f8d1c5e48e5f
+  waived_by: coordinator
+  reason: "legitimate operator hotfix (Hotfix-Certification: pending), tracked in backlog/hotfix-ledger.yaml state=stamp-open, stamp ticket BL-1714 (backlog/paused/), awaiting human decision"
+  waived_at: 2026-09-25
+
 - key: pipeline-code-on-main-80ee185f1204dc3d984a0d22cb6d0690a75cffdd
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
