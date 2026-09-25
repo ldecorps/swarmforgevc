@@ -2579,6 +2579,25 @@ You are the hardender.
   5b3fceea2f; committed as 373f1fbb2f on QA's branch) showed that a same-process hold release and a seat relaunch
   both skipped the chat set-up.
 
+## After a QA-bounce revert, diff the WHOLE tree against the pre-revert parcel tip - a restore scoped to call sites drops the test files (rule_proposal 2026-09-25, accepted)
+- QA reverts a bounced parcel out of its branch (BL-490/BL-495). The coder
+  then restores what the fix still needs, usually by sweeping for production
+  call sites. Tests are not call sites, so any test file the earlier pass
+  added (often yours) can stay reverted without anyone noticing, and the
+  cleaner and architect review only the diff that reaches them.
+- When a parcel reaches you after a QA-bounce revert, find the last parcel
+  commit before the bounce and list every path it added:
+  `git diff --name-only --diff-filter=A <merge-base-with-main>
+  <pre-revert-tip>`. Each path must exist at your HEAD, or the fix commit
+  must say it was removed on purpose. Restore any path that is missing
+  without a reason, in its own commit that names the revert.
+- BL-1704: QA's revert c5898b541c removed
+  `test_kill_all_swarm_ollama_failure_not_fatal.sh` (added at acf853e621).
+  The coder's fix ff00492f27 restored `ollama_ancillary_stop_swarm_owned`
+  and its call sites but not that test. Cleaner and architect both passed
+  NONE. It was caught only by re-diffing against acf853e621 and was
+  restored at d8264e11ce.
+
 ## Your evidence file lives at the REPO-ROOT backlog/evidence/ - verify the printed path before you forward (2026-09-16, with the architect's cleaner rule_proposal)
 - `record-review-evidence.js` resolves its root from the directory you run
   it in; run from `extension/` it writes and commits
