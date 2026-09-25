@@ -103,3 +103,4 @@ notes: |
   in the amendment commit. Note sent to coder@2 the same pass.
 
 assigned_to: coder@2
+abandoned_commits: [b0467d1f7a]

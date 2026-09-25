@@ -22,10 +22,11 @@
 //     for its own lifecycle scenarios - no sandboxing needed since these
 //     scripts don't load-file operator_runtime's dependency web.
 
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -103,9 +104,44 @@ function waitFor(predicate, { tries = 25, intervalMs = 200 } = {}) {
   return predicate();
 }
 
+// BL-1728 (amended 2026-09-25): operator_runtime.bb refuses a project-root
+// that is not a git checkout (project_root_arg_lib.bb, BL-1517) - both
+// fixture roots below are `git init`ed and PROVEN before anything else
+// touches them (engineering Guardrails, BL-1390: proven under the fixture
+// itself, never resolving to the live repository, before any mutating git
+// command). initGitFixtureRoot is the one place either builder does this.
+function proveGitFixtureIsolated(root) {
+  const commonDir = execFileSync('git', ['-C', root, 'rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim();
+  assert.ok(
+    path.resolve(root, commonDir).startsWith(root),
+    `fixture git-common-dir must resolve inside the fixture root, got "${commonDir}"`
+  );
+}
+
+function initGitFixtureRoot(root) {
+  execFileSync('git', ['init', '-q', '-b', 'main', root]);
+  proveGitFixtureIsolated(root);
+  execFileSync('git', [
+    '-C',
+    root,
+    '-c',
+    'user.email=bl906-fixture@example.com',
+    '-c',
+    'user.name=bl906 fixture',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '-q',
+    '--allow-empty',
+    '-m',
+    'fixture',
+  ]);
+}
+
 // ── scenarios 01/02/07: sandboxed operator_runtime.bb ──────────────────────
 function mkOperatorFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl906-op-'));
+  initGitFixtureRoot(root);
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'babysitterd'), { recursive: true });
   fs.mkdirSync(path.join(root, 'swarmforge', 'scripts'), { recursive: true });
@@ -205,6 +241,7 @@ function readStatusField(root, keys) {
 // ── scenarios 04/05/06: real start_babysitterd.sh / swarm_status.bb ────────
 function startLifecycleFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl906-lc-'));
+  initGitFixtureRoot(root);
   // babysitterd.sh's own tick loop shells out to `sleep "$INTERVAL_S"`
   // (default 300) as a CHILD of the daemon's own pid - SIGKILL to the
   // daemon's pid does not cascade to that in-flight child (no setsid on
