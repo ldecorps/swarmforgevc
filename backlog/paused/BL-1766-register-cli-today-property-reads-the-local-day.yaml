@@ -1,0 +1,105 @@
+id: BL-1766
+title: "bl1648RegisterCliInjectedDateInvariants' invariant-2 property builds its 'first seen today' row from the UTC day (new Date().toISOString()) while standing_red_register_cli.bb with no --now reads the local day (LocalDate/now), so it goes red (age 1, expected 0) every night from 00:00 to 01:00 BST - red in QA's property lane on 2026-09-26 at 00:1x BST, holding BL-1762's land; the property computes today the way the CLI does"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting is high (2026-09-05 register
+# amendment). It holds a QA land tonight (BL-1762, Article 4.2) and reds
+# every property lane for an hour each night during BST.
+status: todo
+epic: swarm-reliability
+priority: 2
+direction: qa-found
+depends_on: []
+mutation_cost: low
+# low: one test in one property file; no production change. The feature
+# runs that one test under two time zones, under a second each.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1766-register-cli-today-property-reads-the-local-day.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1766RegisterTodayLocalDaySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity high
+  defect, no choice posed, no ruling_options). New feature file. FIRM:
+  the property still runs the CLI with no date and still asserts age 0;
+  only how the test computes "today" changes. The CLI is not changed.
+
+invariants:
+  - "The property still invokes standing_red_register_cli.bb with no --now argument on a row first seen today and asserts age 0; no assertion is loosened except across a local midnight that falls inside the test's own run."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1648RegisterCliInjectedDateInvariants.property.test.js`
+  line 94: `const today = new Date().toISOString().slice(0, 10);` is the
+  UTC day. `swarmforge/scripts/standing_red_register_cli.bb` line 111,
+  with no `--now`, uses `(str (java.time.LocalDate/now))`, the JVM's
+  local day. From 00:00 to 01:00 BST the local day is one ahead of UTC,
+  the CLI reports `age_days` 1, and `assert.equal(report.rows[0].age_days, 0)`
+  fails ("1 !== 0" at :98).
+
+  QA's property lane on the BL-1762 parcel (182e17b230, 2026-09-26 00:1x
+  BST) failed exactly this test (evidence 90e70ff34b on QA's branch; hold
+  `.swarmforge/qa-holds/BL-1762.json`). The specifier reproduced it on
+  `main` at 00:13 BST: `TZ=Europe/London` 1 failed / 2 passed, `TZ=UTC`
+  3 passed; and the single test fails under `TZ=Etc/GMT-14` and passes
+  under `TZ=Etc/GMT+12` (the acceptance's discriminator).
+
+  ## What is wanted
+
+  - The test builds its "first seen today" row from the local calendar
+    day, the day `LocalDate/now` returns in the same process environment.
+    It passes under both `Etc/GMT-14` and `Etc/GMT+12` (scenario 01).
+  - A local midnight inside the test's own run (today read before the
+    CLI, the CLI reading the next day) is handled without a retry, for
+    example by reading the local day before and after and accepting age 1
+    only when the two differ.
+
+  ## Scope
+
+  - That one test in the property file (+ evidence).
+  - New: `specs/pipeline/steps/bl1766RegisterTodayLocalDaySteps.js` and its
+    registration. It runs the one test with vitest's `-t` filter under
+    `TZ=<zone>` and pins the count at exactly 1 test (a renamed test must
+    not pass as zero tests, BL-1445).
+  - Out of scope: the CLI. Census 2026-09-26 of
+    `grep -n "toISOString().slice(0, 10)" extension/test/*.test.js`: five
+    files. bl789MacHostSwitchFreshnessBridgeAdoptInvariants (:234) and
+    telegramBridgeCostLineCli (:214) also build a "today" from the UTC day
+    and were green in QA's lanes at 00:1x BST; the two bl1232 files format
+    fixed instants. None is examined here.
+
+constraints: >
+  The parcel never edits backlog/standing-reds.tsv (BL-1663); its land
+  retires the row (BL-1631).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1766-register-cli-today-property-reads-the-local-day.feature`:
+     both rows ok.
+  2. `cd extension && TZ=Europe/London npx vitest run --config vitest.properties.config.mjs test/bl1648RegisterCliInjectedDateInvariants.property.test.js`:
+     3 of 3 (whatever the hour).
+  3. The register row for `bl1648RegisterCliInjectedDateInvariants`
+     names BL-1766 on the parcel commit.
+  4. `git diff main...HEAD --name-only` names only the property file,
+     the step handler, its registration and evidence.
+  5. After the land: REGISTER_ROW_RETIRED for
+     `extension/test/bl1648RegisterCliInjectedDateInvariants.property.test.js`.
+
+source: |
+  QA note 003229 (2026-09-25T23:13Z): "unowned-red
+  bl1648RegisterCliInjectedDate inv2 1!==0 at midnight; ev 90e70ff34b".
+
+notes: |
+  Minted 2026-09-26 by the specifier on QA's unowned-red note. Register
+  row added in the mint commit, owner BL-1766. Same family as BL-1764
+  (a test reading the wall clock against local-day logic), different fix:
+  this property must read the real clock, so it is not folded into
+  BL-1764.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
