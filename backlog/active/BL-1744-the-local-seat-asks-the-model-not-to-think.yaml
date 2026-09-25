@@ -134,3 +134,5 @@ notes: |
   and `git add` would reverse it. The incoming land (BL-1727) does not
   touch these files. The FIRM above ("master's staged copy then matches
   HEAD") now reads "master's working-tree copy": see qa step 4.
+
+assigned_to: coder
