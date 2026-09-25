@@ -6,7 +6,7 @@ status: todo
 epic: local-llm-swarm
 priority: 2
 direction: human-requested
-depends_on: [BL-1703, BL-1705]
+depends_on: [BL-1703, BL-1704, BL-1705]
 mutation_cost: low
 # low: a handoffd sweep that shells to BL-1703's bash lib (no Stryker lane
 # for bb or bash); the Gherkin handler runs a stand-in ollama binary and
@@ -132,6 +132,15 @@ notes: |
   answered the scope, not the file. Depends on BL-1703 (the record and
   the start function) and BL-1705 (the ghost classification it reaps
   with).
+
+  Amended 2026-09-25 by the specifier on QA's note (003219, evidence
+  backlog/evidence/BL-1711-QA-20260925.md on QA's branch, 58fa13a266):
+  BL-1704 added to depends_on. The parcel calls two helpers only BL-1704
+  defines, ollama_ancillary_read_record_field and
+  ollama_ancillary_pid_is_ollama_serve (neither is on origin/main). Without
+  them every record reads as crashed and a live-but-silent server would be
+  restarted, which breaks the FIRM. BL-1711 lands after BL-1704. Nothing the
+  coder builds changes: this fixes the land order only.
 
   INVEST: Independent (depends_on names both unbuilt siblings), Negotiable
   (window length, history storage, alert path are direction), Valuable (a
