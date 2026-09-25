@@ -41,7 +41,12 @@ const FORBIDDEN_RETIRED_PATTERNS = [
 
 function loadBl611Scan() {
   const src = fs.readFileSync(BL611_STEPS, 'utf8');
-  const start = src.indexOf('function isAllowedBabysitterMatch');
+  // BL-1739 replaced the per-file "babysitter" allowlist
+  // (isAllowedBabysitterMatch) with isLiveCodePath; scanRepoForBabysitter's
+  // other dependencies (RETIRED_FILE_PATHS, FORBIDDEN_RETIRED_PATTERNS,
+  // listTrackedFiles) sit between this marker and isLiveCodePath itself, so
+  // the slice still carries everything scanRepoForBabysitter needs.
+  const start = src.indexOf('const RETIRED_FILE_PATHS');
   const end = src.indexOf('function registerSteps(registry)');
   const { spawnSync: shSpawn } = require('node:child_process');
   const evalFn = new Function(
@@ -126,7 +131,7 @@ function registerSteps(registry) {
       );
     }
     for (const deleted of DELETED_WAKE_RUNTIME) {
-      if (scan.offenders.includes(deleted)) {
+      if (scan.liveCodeMatches.includes(deleted)) {
         throw new Error(`deleted wake-runtime file still matched scan: ${deleted}`);
       }
     }

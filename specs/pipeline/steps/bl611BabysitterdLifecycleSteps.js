@@ -258,88 +258,6 @@ const CHECK_05_FIXTURES = {
   },
 };
 
-// ── scenario 15 allowlist: files a repo-wide "babysitter" grep may match ───
-function isAllowedBabysitterMatch(relPath) {
-  const p = relPath.replace(/\\/g, '/');
-  if (p.startsWith('backlog/') || p.startsWith('docs/')) return true; // history/records
-  if (p === 'backlog/topics/BABYSITTER.json') return true;
-  // the deterministic daemon itself + its thin wrappers
-  if (/^swarmforge\/scripts\/babysitterd?(_check|d_sweep_lib|\.sh|d\.sh)?/.test(p)) return true;
-  if (p === 'swarmforge/scripts/start_babysitterd.sh') return true;
-  // every test file, regardless of filename — cross-ticket test suites
-  // referencing the shared daemon/paths/env-vars are expected and harmless;
-  // scenario 15's real concern is retired-agent PRODUCT code, not test refs.
-  if (p.startsWith('swarmforge/scripts/test/')) return true;
-  if (p.startsWith('specs/pipeline/steps/')) return true;
-  // salvaged pure libraries this ticket explicitly KEEPs
-  if (
-    [
-      'swarmforge/scripts/babysitter_assess_lib.bb',
-      'swarmforge/scripts/babysitter_nudge_lib.bb',
-      'swarmforge/scripts/babysitter_nudge_resident.bb',
-    ].includes(p)
-  ) {
-    return true;
-  }
-  // lifecycle scripts wiring the daemon in (comments + real calls)
-  if (
-    [
-      'swarmforge/scripts/start_ancillary_services.sh',
-      'swarmforge/scripts/stop_ancillary_services.sh',
-      'swarmforge/scripts/kill_all_swarm.sh',
-      'swarmforge/scripts/kill_pipeline_swarm.sh',
-      'swarmforge/scripts/swarm_ensure.bb',
-      'swarmforge/scripts/swarm_status.bb',
-      'swarmforge/scripts/stack_survivor_scan.sh',
-      'swarmforge/scripts/daemon_log_freshness.conf',
-      'swarmforge/scripts/daemon_log_freshness_check.sh',
-      'swarmforge/scripts/freshness_stop_marker_lib.sh',
-      'swarmforge/scripts/ancillary_provider_lib.sh',
-      'swarmforge/roles/coordinator.prompt',
-      'start-swarm.sh',
-      'stop-swarm.sh',
-      'swarm-kill',
-    ].includes(p)
-  ) {
-    return true;
-  }
-  // disposable-onboarding-root orphan reaping is a distinct, unrelated
-  // concern (stray processes from throwaway test sandboxes, not the swarm's
-  // own babysitter) — out of this ticket's scope, left untouched.
-  if (
-    [
-      'swarmforge/scripts/orphan_janitor_lib.bb',
-      'swarmforge/scripts/orphan_janitor_sweep_lib.bb',
-      'swarmforge/scripts/operator_runtime.bb',
-      'swarmforge/scripts/flow_watchdog_lib.bb',
-      'extension/src/tools/telegramCursorBridgePilot.ts',
-      'extension/test/telegramCursorBridgePilot.test.js',
-    ].includes(p)
-  ) {
-    return true;
-  }
-  // the expeditor already names the shipped daemon process pattern
-  if (['swarmforge/scripts/expedite_lib.bb', 'swarmforge/scripts/expedite_cli.bb'].includes(p)) return true;
-  if (p.startsWith('specs/features/')) return true;
-  // salvaged pure topic decision (durable Babysitter Telegram topic record)
-  if (
-    [
-      'extension/src/tools/telegram-front-desk-bot.ts',
-      'extension/src/tools/telegramFrontDeskBotCore.ts',
-      'extension/src/tools/telegramTopicDecisions.ts',
-      'extension/test/telegramFrontDeskBotCore.test.js',
-      // BL-586: BABYSITTER is one entry in this file's example standing-
-      // subject-id list, exercising the same reuse-or-create shape the
-      // pipeline board's own identity fix mirrors - not a babysitter-daemon
-      // reference at all.
-      'extension/test/bl586PipelineBoardTopicIdentity.property.test.js',
-    ].includes(p)
-  ) {
-    return true;
-  }
-  return false;
-}
-
 // Used two ways: (a) scenario 15 checks these FILES no longer EXIST — a
 // historical mention of the old filename in backlog/docs/evidence prose (or
 // in this very scanner's own detection logic) is expected and fine, only a
@@ -392,10 +310,44 @@ function listTrackedFiles() {
   return result.stdout.split('\n').filter(Boolean);
 }
 
+// BL-1739 ruling (2026-09-25, specifier on coder note 002139): "live code"
+// for the retired-name content check below - a tracked file here naming a
+// retired path is a real regression, never a historical mention. Test
+// files (including swarmforge/scripts/test/), specs/, docs/ and backlog/
+// may name a retired file as history and are excluded, same posture
+// RETIRED_FILE_PATHS' own file-existence check already takes.
+function isLiveCodePath(rel) {
+  if (rel.startsWith('swarmforge/scripts/test/')) return false;
+  if (rel.startsWith('swarmforge/scripts/')) return true;
+  if (rel.startsWith('swarmforge/roles/')) return true;
+  if (rel.startsWith('swarmforge/packs/')) return true;
+  if (rel.startsWith('extension/src/')) return true;
+  if (!rel.includes('/')) {
+    // BL-1739 (architect bounce 2): root launch scripts only - an
+    // extension-shaped check, not a curated name list, so a future launch
+    // script needs no entry added here either. A .sh script, or an
+    // extension-less executable name (`swarm`, `swarm-kill`,
+    // `finish-shift`) - never root-level docs/config/data (README.md,
+    // CONTRACT.md, bb.edn, swarmforge.lock.json, upstream-watch.json,
+    // vercel.json, .gitignore), which may legitimately narrate the
+    // daemon's own history, the same "history/records" posture docs/ and
+    // backlog/ already get, one directory up.
+    return !rel.startsWith('.') && (rel.endsWith('.sh') || !rel.includes('.'));
+  }
+  return false;
+}
+
 function scanRepoForBabysitter() {
-  const offenders = [];
   const tracked = new Set(listTrackedFiles());
+  // File-existence check (not a content scan) — a historical mention of a
+  // retired filename in backlog/docs prose is expected; a resurrected file
+  // AT that path is the actual regression scenario 15 guards against.
+  const forbidden = RETIRED_FILE_PATHS.filter((rel) => tracked.has(rel));
+  // Content check, live code only (isLiveCodePath) — a retired name still
+  // referenced from code that actually runs, not a historical mention.
+  const liveCodeMatches = [];
   for (const rel of tracked) {
+    if (!isLiveCodePath(rel)) continue;
     const abs = path.join(REPO_ROOT, rel);
     let content;
     try {
@@ -403,14 +355,11 @@ function scanRepoForBabysitter() {
     } catch {
       continue; // binary or unreadable — not a text match
     }
-    if (!/babysit/i.test(content) && !/babysit/i.test(path.basename(rel))) continue;
-    if (!isAllowedBabysitterMatch(rel)) offenders.push(rel);
+    if (FORBIDDEN_RETIRED_PATTERNS.some((pattern) => pattern.test(content))) {
+      liveCodeMatches.push(rel);
+    }
   }
-  // File-existence check (not a content scan) — a historical mention of a
-  // retired filename in backlog/docs prose is expected; a resurrected file
-  // AT that path is the actual regression scenario 15 guards against.
-  const forbidden = RETIRED_FILE_PATHS.filter((rel) => tracked.has(rel));
-  return { offenders, forbidden };
+  return { forbidden, liveCodeMatches };
 }
 
 function registerSteps(registry) {
@@ -628,7 +577,18 @@ function registerSteps(registry) {
 
   // ── Scenario 07: rotate-not-honored ──────────────────────────────────────
   registry.defineScoped(/^the newest completed parcel carries a rotate instruction older than the grace period$/, (ctx) => {
-    ensureState(ctx).rotate = { 'note-name': '000741_rotate', 'note-target': 'architect', 'note-age-min': 15, 'grace-min': 10 };
+    // BL-1739: check-rotate-not-honored gates on :rotation-router? (BL-1129 -
+    // standing packs never rotate, so the check is suppressed there). A
+    // rotate note only ever exists on a rotation/router pack in the first
+    // place - this scenario's own premise - so the fixture declares that
+    // topology explicitly rather than leaving the field absent/falsy.
+    ensureState(ctx).rotate = {
+      'note-name': '000741_rotate',
+      'note-target': 'architect',
+      'note-age-min': 15,
+      'grace-min': 10,
+      'rotation-router?': true,
+    };
   }, FEATURE);
 
   registry.defineScoped(/^its target role differs from the active-role file's persona$/, (ctx) => {
@@ -803,7 +763,15 @@ function registerSteps(registry) {
     ensureState(ctx).agedClaim = { 'age-min': 45, 'owner-busy?': false };
   }, FEATURE);
 
-  registry.defineScoped(/^no other motion is present$/, () => {}, FEATURE);
+  // BL-1739: BL-1109 made motion-in-process? key on :abandoned?, not
+  // owner-busy? - "a non-abandoned in_process claim is motion even when the
+  // owning pane is idle this sweep" (that lib's own comment). An idle owner
+  // ALONE no longer starves; the fixture must also say this claim is
+  // genuinely abandoned (what "no other motion is present" means here) for
+  // it to read as anything but ordinary idle motion.
+  registry.defineScoped(/^no other motion is present$/, (ctx) => {
+    ensureState(ctx).agedClaim['abandoned?'] = true;
+  }, FEATURE);
 
   registry.defineScoped(/^this claim does contribute to a starved finding$/, (ctx) => {
     const st = ensureState(ctx);
@@ -959,17 +927,18 @@ function registerSteps(registry) {
     ensureState(ctx).scan = scanRepoForBabysitter();
   }, FEATURE);
 
-  registry.defineScoped(/^the only matches are the deterministic daemon, its salvaged pure libraries, docs, and history$/, (ctx) => {
-    const st = ensureState(ctx);
-    if (st.scan.offenders.length > 0) {
-      throw new Error(`unexpected "babysitter" matches outside the allowlist:\n${st.scan.offenders.join('\n')}`);
-    }
-  }, FEATURE);
-
+  // BL-1739 ruling (2026-09-25): the "only matches" per-file allowlist step
+  // is retired in the feature (specifier commit on main) - "babysitter" is
+  // now the daemon's everyday name (1068 tracked files), and a curated
+  // allowlist cannot keep up. The guard this scenario exists for stays in
+  // the step below, extended to a live-code content check.
   registry.defineScoped(/^no babysitter\.prompt role, LLM launch path, or wake runtime remains$/, (ctx) => {
     const st = ensureState(ctx);
     if (st.scan.forbidden.length > 0) {
       throw new Error(`retired agent-babysitter artifacts still present:\n${st.scan.forbidden.join('\n')}`);
+    }
+    if (st.scan.liveCodeMatches.length > 0) {
+      throw new Error(`live code references a retired agent-babysitter name:\n${st.scan.liveCodeMatches.join('\n')}`);
     }
   }, FEATURE);
 
@@ -1026,4 +995,4 @@ function registerSteps(registry) {
   }, FEATURE);
 }
 
-module.exports = { registerSteps };
+module.exports = { registerSteps, isLiveCodePath };
