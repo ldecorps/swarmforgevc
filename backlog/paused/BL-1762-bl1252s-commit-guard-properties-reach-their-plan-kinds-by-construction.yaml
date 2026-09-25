@@ -1,0 +1,109 @@
+id: BL-1762
+title: "bl1252's five commit-guard property files reach their plan kinds by construction - each samples PLAN() 60 times (clean and suiteOnly weighted 1 in 10) and then asserts every kind through the fixture's local assertReach, so a kind goes undrawn by chance; bl1252ExpensiveGuardTieringInvariant went red in QA's property lane on 2026-09-25 ('never reached a suiteOnly plan') and holds BL-1741's land; rewrite all five on helpers/reachFloors so the census reads them constructed"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting is high (2026-09-05 register
+# amendment), and it holds a QA land today (BL-1741, Article 4.2). The
+# other four files carry the same seed-miss shape and would be the next
+# reds.
+status: todo
+epic: sampled-reach-floors
+priority: 2
+direction: qa-found
+depends_on: []
+mutation_cost: low
+# low: five test files, one shared test fixture, and evidence; the shared
+# reachFloors helper exists (BL-1583 sweeps 1-4). The feature reads
+# source and runs the census CLI in seconds.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1762-bl1252s-commit-guard-properties-reach-their-plan-kinds-by-construction.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1762Bl1252ReachFloorsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity high
+  defect, no choice posed, no ruling_options). New feature file, the same
+  shape as BL-1583's sweeps and BL-1760. FIRM: every kind each file
+  asserts today is still asserted, with nothing seeded, retried or given
+  a larger budget to hide a miss.
+
+invariants:
+  - "No reach floor, draw budget, timeout or tolerance in the five files is lowered, raised, widened, seeded or retried; every plan kind a file asserts reached before the change is asserted after it, and every property assertion is unchanged."
+
+description: |
+  ## What is wrong
+
+  `extension/test/helpers/bl1252CommitGuardFixture.js` builds `PLAN()` as
+  a weighted `fc.oneof` (RANDOM_PLAN 8, CLEAN_PLAN 1, SUITE_ONLY_PLAN 1)
+  and exposes `assertReach(seen, kinds)`, which asserts `seen[kind] > 0`.
+  The five `bl1252*.property.test.js` files each draw 60 plans and then
+  `assertReach`. That is a sampled floor. QA's `npm run test:properties`
+  on the BL-1741 parcel (193e08a310, load 4.49) failed
+  `bl1252ExpensiveGuardTieringInvariant` invariant 2: "generator never
+  reached a suiteOnly plan:
+  {"clean":3,"multiIndexViolation":57,"unexpected":51,"missing":31,"suiteOnly":0}"
+  (QA evidence 81fb5df870, `backlog/evidence/BL-1741-unowned-red-hold-QA-20260925.md`).
+  One run on main the same day was green (1.46 s, load 4.0).
+
+  `bb swarmforge/scripts/sampled_reach_floor_census_cli.bb .` reads all
+  five files as `no-floor 60`: the classifier does not see a floor
+  asserted through a local helper. That is the second classifier blind
+  spot found today, after BL-1760's `{ numRuns }` shorthand, and it is
+  recorded on epic BL-1583's remaining slices.
+
+  ## What is wanted
+
+  - Each file iterates the plan kinds it asserts, drawing `runsPerCell`
+    plans from a kind-specific arbitrary per cell, and asserts each floor
+    through `assertReachFloor`, as BL-1583's sweeps did. The fixture keeps
+    or re-exports the kind arbitraries (CLEAN_PLAN, SUITE_ONLY_PLAN, ...)
+    the cells need. The local `assertReach` goes, or wraps
+    `assertReachFloor`.
+  - The census then reads all five files `constructed` (scenario 02).
+
+  ## Scope
+
+  - The five `extension/test/bl1252*.property.test.js` files and
+    `extension/test/helpers/bl1252CommitGuardFixture.js` (+ evidence).
+  - New: `specs/pipeline/steps/bl1762Bl1252ReachFloorsSteps.js`. Reuse
+    BL-1691's step functions rather than copying them.
+  - Out of scope: the census classifier (BL-1583 remaining slice), and
+    commit guard behaviour (no production file changes).
+
+constraints: >
+  The parcel never edits backlog/standing-reds.tsv (BL-1663); its land
+  retires the row (BL-1631).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1762-bl1252s-commit-guard-properties-reach-their-plan-kinds-by-construction.feature`:
+     every scenario ok (01 x5, 02).
+  2. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1252`:
+     5 of 5 files green.
+  3. The register row for `bl1252ExpensiveGuardTieringInvariant` names
+     BL-1762 on the parcel commit.
+  4. `git diff main...HEAD --name-only` names only the six test files,
+     the step handler, its registration and evidence.
+  5. After the land: REGISTER_ROW_RETIRED for
+     `extension/test/bl1252ExpensiveGuardTieringInvariant.property.test.js`.
+
+source: |
+  QA note 003196 (2026-09-25T14:28Z): "unowned-red bl1252 property reach
+  floor holds BL-1741; evidence 81fb5df870". QA hold file
+  .swarmforge/qa-holds/BL-1741.json (reds:
+  bl1252ExpensiveGuardTieringInvariant.property.test.js).
+
+notes: |
+  Minted 2026-09-25 by the specifier on QA's unowned-red note. Register
+  row added in the mint commit, owner BL-1762, for the one file that
+  failed. The other four files share the shape and the fixture, so they
+  are fixed in the same parcel (INVEST Small holds: one fixture, five
+  small files, the sweeps' pattern). QA noted the same pass: "BL-1741:
+  bl1252ExpensiveGuardTieringInvariant owned by BL-1762 - resume land".
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
