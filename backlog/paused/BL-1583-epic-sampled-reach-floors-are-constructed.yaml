@@ -129,4 +129,15 @@ notes: |
   bl1254MissingVerdictNeverBounces reads no-floor and is excluded
   (census corrected here, not in the evidence file).
 
+  Invariant wording for every sweep slice (specifier, 2026-09-26, on QA
+  note 003227 about BL-1760, evidence 309913f845): "draw budget" means the
+  runs spent on inputs that still vary. A constructed cell whose inputs
+  are all fc.constant has exactly one distinct case, so its run count may
+  drop to 1 without weakening anything. BL-1760 went from 12 runs to 8
+  (8 constant cells x 1), and QA correctly read that as no change to the
+  budget. Mint later slices with this spelled out, e.g. "no reach floor,
+  timeout or tolerance is lowered, and no input that still varies gets
+  fewer runs per cell". BL-1762 and BL-1763 were minted with the older
+  wording and are read the same way.
+
 mutation_cost: low
