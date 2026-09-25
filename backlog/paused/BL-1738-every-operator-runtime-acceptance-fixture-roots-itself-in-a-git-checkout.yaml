@@ -1,0 +1,165 @@
+id: BL-1738
+title: "Fifteen acceptance features are red on main, 47 scenarios. Fourteen fail on BL-1517's refusal (operator_runtime.bb refuses a project root outside a git checkout since 3252212a66, 2026-09-22) because their step handlers build fixture roots with a bare mkdtemp. BL-325's handler calls mkSocketFixtureRoot outside the scope that required it. Fix: one shared step-library helper builds an isolated git-checkout fixture root, every one of the fourteen handlers uses it, and BL-325's reference is fixed"
+milestone: M8
+type: defect
+severity: high
+# high: standing reds at first registered sighting (2026-09-05 register
+# amendment) - fifteen durable acceptance contracts have not run green
+# since 2026-09-22 (BL-325 since BL-948, 2026-08-20), so any parcel whose
+# QA evidence names one is held (Article 4.2) and none of them guards
+# anything. Not critical: production behaviour is not implicated; the
+# fixtures are.
+status: todo
+epic: swarm-reliability
+priority: 3
+direction: specifier-found
+depends_on: []
+# BL-1517 (done) made the refusal; BL-1728 (active, coder@2) fixes the
+# same fallout in BL-906's handler and the babysitterd watchdog shell test
+# - it owns those two rows, this ticket does not touch its files.
+mutation_cost: medium
+# medium: one new step-library helper plus a two- or three-line change in
+# each of fifteen handler files; the new feature is two fast scenarios
+# (a helper contract and a static read of fourteen handlers). No feature
+# file of the fifteen changes.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1738-every-operator-runtime-acceptance-fixture-roots-itself-in-a-git-checkout.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers are the thirteen
+# handlers, which scenario 02 reads by name; an anchor on the helper's own
+# file would be satisfied by construction (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1738OperatorRuntimeFixtureGitRootSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: no scenario of the
+  fifteen features changes; only how their handlers build fixture roots
+  (and BL-325's reference). FIRM: every fixture root is a git checkout
+  under mkdtemp whose own git common directory is inside it, proven before
+  any git write (Guardrails, BL-1390) - never the live repository.
+  FIRM: BL-1517's refusal stays; the fixtures come into line with it.
+
+invariants:
+  - "Every fixture project root the shared helper returns is a git checkout whose git common directory lies inside that root, so no git command a handler runs against it can reach the live repository."
+
+description: |
+  ## What is wrong
+
+  Specifier census on main, 2026-09-25, one run per feature
+  (`node specs/pipeline/cli.js <feature>`), started from coder@2's
+  unowned-red note 000067 on BL-906 (owned by BL-1728). Every step handler
+  that spawns `operator_runtime.bb` was mapped to its feature, and the
+  refused root's mkdtemp prefix traced back to the handler that builds it:
+
+  | Feature | Failing | Handler (refused prefix) |
+  |---|---|---|
+  | BL-282 operator-longterm-memory | 2 of 5 | operatorLongtermMemorySteps.js (aps-operator-) |
+  | BL-307 swarm-auto-hibernate-on-drain | 7 of 7 | operatorAutoHibernateSteps.js (aps-operator-hib) |
+  | BL-310 swarm-seed-race-launch-grace | 4 of 4 | operatorSeedRaceLaunchGraceSteps.js (aps-operator-s) |
+  | BL-318 autopark-coordinator-self-generates | 2 of 4 | operatorSelfGenProvenanceSteps.js (aps-operator-s) |
+  | BL-354 answer-pairing-across-threads | 5 of 5 | answerPairingAcrossThreadsSteps.js (aps-answer-p) |
+  | BL-359 always-on-operator-presence | 1 of 6 | alwaysOnOperatorPresenceSteps.js (sfvc-bl359-) |
+  | BL-368 control-loss-is-not-agent-death | 2 of 3 | controlLossIsNotAgentDeathSteps.js (sfvc-bl368-r) |
+  | BL-369 no-inbound-message-is-ever-lost | 1 of 6 | noInboundMessageIsEverLostSteps.js (sfvc-bl369-r) |
+  | BL-413 stale-sandbox-sweep | 1 of 6 | bl413StaleSandboxSweepSteps.js (bl413-p) |
+  | BL-458 acceptance-fixture-process-leak | 2 of 6 | bl458AcceptanceFixtureProcessLeakSteps.js (bl458-p) |
+  | BL-460 tmp-sweeps-bound-deletes-not-scan | 6 of 18 | bl460TmpSweepsBoundDeletesSteps.js (bl460-p) |
+  | BL-466 agent-questions-as-telegram-polls | 2 of 2 | bl466AgentQuestionsAsTelegramPollsSteps.js (aps-agent-question-poll) |
+  | BL-877 portable-process-liveness-without-proc | 7 of 7 | bl877PortableProcessLivenessSteps.js (bl877-project) |
+  | GH-26 undeliverable-role-question-clears-marker | 1 of 5 | gh26RoleQuestionUndeliverableClearsMarkerSteps.js (sfvc-gh26) |
+  | BL-325 human-in-the-loop-closed | 4 of 7 | humanInTheLoopClosedSteps.js: `mkSocketFixtureRoot is not defined` |
+
+  - Every failure in the first fourteen rows is `REFUSED project-root
+    /tmp/<prefix>...: not inside a git checkout`, with one exception.
+    BL-458's scenario 05 fails one layer down with `fixture bridge never
+    came up`, most likely the same refusal inside the supervisor it
+    launches. If it stays red after the roots are fixed, note the
+    specifier rather than widening this parcel. `operator_runtime.bb`
+    refuses such a root since BL-1517 (3252212a66, 2026-09-22), and none
+    of these handlers was updated when it landed.
+  - BL-325 is a different defect in the same family. The handler requires
+    `mkSocketFixtureRoot` inside one function (around line 37) and calls it
+    from another scope (line 61), last touched by BL-948 (77c887dc5c,
+    2026-08-20). Its roots already `git init`.
+  - Green in the same census, so outside this ticket: BL-481, BL-848,
+    BL-1224, BL-1517, BL-383, BL-276, BL-283 and BL-284.
+  - BL-877's feature takes about 300 s failing (a 240 s bound timed it
+    out on the first pass). Its 7 of 7 are the same refusal.
+  - Also outside: BL-906 (BL-1728 owns it) and BL-611 (three reds of other
+    causes, BL-1739).
+
+  ## What is wanted
+
+  1. One shared helper in `specs/pipeline/steps/lib/`. It returns a
+     fixture project root that is a fresh `git init` under mkdtemp, with an
+     initial commit, proven by `git -C <root> rev-parse --git-common-dir`
+     resolving inside the root. It is registered for the same cleanup as
+     today's roots (BL-971 sweep, BL-1385 owner-pid reaping). BL-1563's
+     `proveFixtureIsolated` is prior art for the proof.
+  2. Each of the fourteen handlers builds its operator-runtime project
+     roots through that helper. Anything the handler already copies into
+     the root (scripts, `.swarmforge/` state) is copied as before; commit
+     it only if the runtime needs it tracked.
+  3. BL-325's handler reaches `mkSocketFixtureRoot` from the scope that
+     uses it.
+  4. All fifteen features run green (qa_e2e step 2).
+
+  ## How (direction, not mandate)
+
+  - Some handlers share a prefix (`aps-operator-`) and may share a local
+    root builder. Fix the builder once where it is shared.
+  - Where a handler's scenario deliberately needs a NON-git root (a
+    refusal case), keep that one on a bare mkdtemp and say so in a
+    comment. None of the fifteen is known to need one.
+
+  ## Scope
+
+  - `specs/pipeline/steps/lib/<the new helper>.js`.
+  - The fifteen handler files named in the table.
+  - `specs/features/BL-1738-...feature` + the pinned handler.
+
+constraints: >
+  No scenario, Examples row or feature narrative of the fifteen features
+  changes. BL-1517's refusal is not relaxed. No fixture ever runs a git
+  command against the live repository (BL-1390). This parcel never edits
+  backlog/standing-reds.tsv (coder.prompt, BL-1663); its land retires the
+  fifteen rows (BL-1631). The handler lands in the same commit as the
+  feature (BL-233).
+
+out_of_scope: |
+  - BL-906's handler and the babysitterd watchdog shell test: BL-1728.
+  - BL-611's three reds: BL-1739.
+  - A guard that finds future handlers of this shape by derivation. The
+    census here is pinned by name. A derived guard needs a matcher for
+    "spawns operator_runtime.bb on a root it built", and a matcher blind
+    to one idiom goes green on two files (BL-1445).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule); record host load.
+  1. `node specs/pipeline/cli.js specs/features/BL-1738-every-operator-runtime-acceptance-fixture-roots-itself-in-a-git-checkout.feature`:
+     all ok (15 of 15 including the 14 outline rows).
+  2. `node specs/pipeline/cli.js <feature>` for each of the fifteen
+     features in the table: all ok, and no `not inside a git checkout`
+     line in any output. At mint they took about 8 min together while
+     failing, BL-877 alone about 300 s. Green runs may be longer.
+  3. The eight features listed green in the description stay green.
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  5. After the land: REGISTER_ROW_RETIRED for all fifteen rows.
+
+notes: |
+  Minted 2026-09-25 by the specifier. Found while owning coder@2's
+  unowned-red note 000067 (BL-906 → BL-1728): the same BL-1517 fallout
+  census swept every handler that spawns operator_runtime.bb (logs were
+  host-local under tmp/bl1517-census/, not kept). Fifteen register rows
+  added in the mint commit, owner BL-1738. With them the register
+  holds more than 10 rows, which engages the BL-1429 intake throttle by
+  design until the reds drain.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). No parcel is held on these
+  rows today, so no holder note is due.

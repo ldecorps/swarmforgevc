@@ -1,0 +1,107 @@
+id: BL-1739
+title: "BL-611's babysitterd lifecycle feature is red on main, 3 of 27 scenarios, each for its own reason: the rotate-not-honored CRIT is not produced (expected a CRIT rotate-unhonored finding, got nil - BL-1129 skips that check on standing packs), an idle-owner aged in_process claim no longer contributes to a starved finding, and the repo-wide 'babysitter' scan finds BL-1071's property test outside its allowlist (since 2026-08-23); the feature runs 27 of 27 without changing a scenario"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting (2026-09-05 register
+# amendment); a durable acceptance contract for the swarm's own watchdog
+# guards nothing while three of its scenarios fail. Not critical: no
+# evidence yet that babysitterd's live behaviour is wrong - two of the
+# three look like fixtures that drifted from later tickets.
+status: todo
+epic: swarm-reliability
+priority: 3
+direction: specifier-found
+depends_on: []
+# BL-1738 (paused, same mint pass) owns the operator-runtime fixture
+# reds; this is a different feature with different causes. BL-1129 (done)
+# made rotate-not-honored skip standing packs.
+mutation_cost: low
+# low: fixture and allowlist changes in one step handler, plus at most a
+# small babysitter-lib fix if scenario 2 turns out to be a real
+# regression.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# The pointer names the feature this ticket must make green; it is not a
+# claim of ownership over BL-611's contract (BL-1251 retirement/chore shape).
+acceptance: specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity defect,
+  no choice posed, no ruling_options); no new feature file. FIRM: no
+  scenario of BL-611's feature is edited by the coder (coder.prompt "Does
+  Not Own"). If a scenario turns out to assert behaviour a later ticket
+  deliberately changed, the coder notes the specifier, who retires or
+  re-tenses it (BL-1006), rather than bending the code back.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  Specifier run on main, 2026-09-25:
+  `node specs/pipeline/cli.js specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature`
+  gives 24 pass and 3 fail in 83 s. None of the failures is BL-1517's
+  refusal (BL-1738 owns those).
+  1. `rotate-not-honored-check-9-07` ("an honored-vs-unhonored rotate note
+     is distinguished correctly") fails at "Then a CRIT finding names the
+     parcel, expected persona, and actual persona": `expected a CRIT
+     rotate-unhonored finding, got nil`. BL-1129 (done) makes the babysitter
+     skip this check on standing packs. The likely cause: the fixture never
+     declares a rotation (router) pack, the one topology where the check
+     still applies.
+  2. "an aged in_process claim under active work does not read as
+     starvation" fails at "Then this claim does contribute to a starved
+     finding": `expected the idle-owner aged claim to contribute to a
+     starved finding`. The cause has not been traced. It may be the same
+     topology or a later starvation rule.
+  3. Scenario 15 ("the agent-based babysitter is gone and the daemon owns
+     the name") fails at its repo-wide scan: `unexpected "babysitter"
+     matches outside the allowlist:
+     extension/test/bl1071SweepSurvivesAnyProbeFailure.property.test.js`.
+     That file is BL-1071's own property test of the babysitter sweep
+     (e80ceab3e3, 2026-08-23). It legitimately names the babysitter, and
+     the handler's allowlist
+     (`specs/pipeline/steps/bl611BabysitterdLifecycleSteps.js`, around
+     line 261) was never extended for it.
+
+  ## What is wanted
+
+  - The feature runs 27 of 27 on the parcel commit, with no scenario text
+    changed.
+  - For each of the three items, the ticket's evidence records the cause
+    as found and the change made: fixture topology, allowlist entry, or a
+    code fix if the babysitter really regressed.
+  - The allowlist entry is added for that file by name and explained in
+    place, never widened to a pattern that would also admit the retired
+    agent-based babysitter's names.
+
+  ## Scope
+
+  - `specs/pipeline/steps/bl611BabysitterdLifecycleSteps.js` (fixtures,
+    allowlist).
+  - The babysitter sweep library, only if item 2 is a real regression.
+
+constraints: >
+  No BL-611 scenario, Examples row or narrative is edited in this parcel;
+  a stale scenario goes to the specifier as a note. This parcel never
+  edits backlog/standing-reds.tsv (BL-1663); its land retires the row
+  (BL-1631).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature`:
+     27 of 27.
+  2. The BL-1129 feature stays green.
+  3. `git diff main...HEAD --name-only` names only the Scope files, docs
+     and evidence; no `specs/features/` path.
+  4. After the land: REGISTER_ROW_RETIRED for the BL-611 feature row.
+
+notes: |
+  Minted 2026-09-25 by the specifier, found in the same census as BL-1738
+  (BL-611's handler spawns operator_runtime.bb; its failures are of other
+  causes). Register row added in the mint commit, owner BL-1739.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
