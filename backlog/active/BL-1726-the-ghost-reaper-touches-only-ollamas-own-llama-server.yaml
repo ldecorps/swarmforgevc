@@ -79,14 +79,48 @@ description: |
     or an `ollama runner`; a llama.cpp build's server, a PATH-resolved
     llama-server on an ollama blob, and an ollama-installed server on a
     non-blob model are kept.
-  - A kept llama-server is still classified (seen, logged as not ollama's),
-    never silently unscanned.
+  - A kept llama-server is still a sweep candidate: the sweep classifies it
+    and counts it in its own `swept N candidate(s)` line, and never skips it
+    unscanned. No per-process "kept" line is required. (Amended 2026-09-25,
+    QA D3: the mint said "logged as not ollama's" and named neither a
+    scenario nor a target log. One line per kept process on every sweep
+    would repeat for as long as a hand-started server runs. The count
+    already shows it was seen.)
+
+  ## Send-back 2026-09-25 (QA evidence 91d5967fe5, parcel 9c10e2985f)
+  - D1 (invariant-unencoded, coder): the rebuild adds a coder-authored,
+    non-vacuous property test for invariant 1,
+    `extension/test/bl1726*.property.test.js`. It drives
+    `reapable-ollama-ghost?` over a CONSTRUCTED command-line space: the
+    executable (inside an ollama lib dir / a llama.cpp build / PATH-resolved
+    / `ollama runner`) x the model (an ollama blob / any other path) x
+    parent liveness, age and the live-window flag. Its property: whenever
+    the predicate says reap for a llama-server, both marks are present.
+    Assert the reach floor, and show it red against a broken predicate
+    (the pattern is `extension/test/bl1705OllamaGhostJanitor.property.test.js`).
+    The invariant is encodable, so a stated non-encodability reason does
+    not discharge it.
+  - D2 (spec-gap, specifier): the fix falsified BL-1705's Examples row 2
+    (a bare `llama-server`, parent init, reaped), and this ticket's Scope
+    did not name it. The coder's amendment is RATIFIED by the specifier.
+    Row 2 now carries both ollama marks and is still reaped, so BL-1705's
+    point (a ghost runner is reaped) stands under the narrower
+    classification. The bl1705 audit assertion is loosened to match the
+    full executable path, and the bl1705 acceptance runner's fixture
+    command lines carry both marks. All three paths are in Scope below.
+    Nothing is reverted.
 
   ## Scope
   - `swarmforge/scripts/orphan_janitor_lib.bb` (`ollama-model-runner-cmdline?`
     or its use in `reapable-ollama-ghost?`) and its bb test.
   - `specs/features/BL-1726-...feature` + the pinned handler.
   - Docs: the janitor reference's ollama paragraph.
+  - Ratified at the 2026-09-25 send-back (D2):
+    `specs/features/BL-1705-the-orphan-janitor-reaps-ghost-ollama-runners-and-detached-run-clients.feature`
+    (Examples row 2), `specs/pipeline/steps/bl1705OllamaGhostJanitorSteps.js`
+    (audit assertion), `swarmforge/scripts/test/bl1705_ollama_ghost_janitor_acceptance_runner.bb`
+    (fixture command lines).
+  - Added at the send-back (D1): `extension/test/bl1726*.property.test.js`.
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
@@ -99,8 +133,11 @@ qa_e2e_procedure: |
      ollama's worker by its marks); on the same command line with the
      executable path replaced by `/home/u/llama.cpp/build/bin/llama-server`
      - false.
-  4. `git diff main...HEAD --name-only` names only the Scope files, the
-     feature, the handler, docs and evidence.
+  4. `git diff main...HEAD --name-only` names only the Scope files
+     (including the three ratified BL-1705 paths and the bl1726 property
+     test), the feature, the handler, docs and evidence.
+  5. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1726*.property.test.js`:
+     green, with its reach floor asserted.
 
 notes: |
   Minted 2026-09-24 by the specifier from QA note 003143. The over-broad
@@ -108,5 +145,13 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4). Until it lands: do not start
   a llama.cpp llama-server by hand on this host while the swarm runs.
+  2026-09-25: QA held the parcel (evidence 91d5967fe5) on D1-D3, all routed
+  to the specifier as a note. Amended the same pass: D2 ratified, D3
+  struck to the sweep count, D1 named as the rebuild's property test. See
+  the description's "Send-back" section and
+  backlog/evidence/BL-1726-bounce-20260925.md. The rebuild goes to the
+  coder from the documenter's parcel commit 9c10e2985f. The architect's
+  NONE (180506630d) passed D1, which architect.prompt's Invariants Review
+  makes a send-back (QA's upstream note).
 
 assigned_to: coder
