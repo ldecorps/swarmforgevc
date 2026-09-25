@@ -1,0 +1,95 @@
+id: BL-1741
+title: "extension/test/emitLifecycleSnapshotCli.test.js breaks the unit suite's 7 s per-file budget in every worktree (QA, BL-1717's parcel: 16.1 s in-suite, 9.6 s alone) yet takes 35 ms on main - its 'the compiled CLI runs against the real repo' test runs emit-lifecycle-snapshot against the checkout it sits in, which walks the full backlog history unless that checkout already holds a same-day snapshot, and only main does (QA and coder@2 have none, coder's dates from 2026-09-06); the test then deletes or restores what it wrote, so a worktree walks again on every run; the test runs the CLI against a fixture git checkout and never reads or writes a live one"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment). Every worktree's unit lane exits 1 on it, and
+# BL-1721 (done) owned the same file without cutting it.
+status: todo
+epic: unit-suite-speed
+priority: 7
+direction: swarm-reported
+depends_on: []
+# No open ticket touches this test file (grep of paused/ and active/ for
+# emitLifecycleSnapshotCli, 2026-09-25).
+mutation_cost: low
+# low: one test's fixture; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-fixture chore with no scenarios of its own (BL-1251): the pointer
+# names the feature the snapshot CLI serves, which must still resolve. It
+# is not a claim of ownership over BL-897's contract.
+acceptance: specs/features/BL-897-briefing-gathers-lifecycles-once.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: the test still runs
+  the compiled CLI as a subprocess and still asserts its path/walked JSON.
+  FIRM: the fixture root is a `git init` under mkdtemp, proven by
+  `rev-parse --git-common-dir` before any git command (Guardrails,
+  BL-1390), and nothing under any live checkout's `.swarmforge/` is read
+  or written.
+
+invariants:
+  - "No test in emitLifecycleSnapshotCli.test.js reads or writes a path under the checkout it runs from; every CLI run it makes is rooted in its own fixture git checkout."
+
+description: |
+  ## What is wrong
+
+  QA note 003166, evidence e81a640797 (BL-1717's pass): the per-file
+  budget guard refused `extension/test/emitLifecycleSnapshotCli.test.js`,
+  16.1 s in-suite and still 9.6 s run alone, with no register row. That
+  makes it an unowned red. BL-1721 (done 2026-09-24) owned the same file
+  and fixed only the guard's reporting. It measured the file alone on
+  main, 16 ms, and so never found the cause.
+
+  The cause is test 4, "the compiled CLI runs against the real repo".
+  It runs `out/tools/emit-lifecycle-snapshot.js` with
+  `repoRoot = path.join(__dirname, '..', '..')`, which is whatever
+  checkout the suite runs in. The CLI does the one full-history backlog
+  `git log` walk (BL-897) unless
+  `.swarmforge/briefing/lifecycle-snapshot.json` there already holds
+  today's `dayKey`. Found at mint (08:15Z): main holds today's snapshot
+  (the daemon writes it) and the file takes 35 ms alone at load 31.
+  QA's and coder@2's worktrees hold no snapshot, and coder's is dated
+  2026-09-06, so the test walks there. Its `finally` then deletes the new
+  snapshot or restores the stale one, so the next run walks again. The
+  test also writes into a live `.swarmforge/` that its own comment says
+  is "shared with any live daemon in this same worktree".
+
+  ## What is wanted
+  - Test 4 runs the compiled CLI against a fixture checkout (`git init`
+    under mkdtemp, a commit or two under `backlog/`), not the live one,
+    and asserts the same path/walked JSON. The file runs in well under
+    the budget in every checkout, whether or not that checkout holds a
+    snapshot.
+  - The other three tests already use injected seams. They stay as they
+    are.
+
+  ## Scope
+  - `extension/test/emitLifecycleSnapshotCli.test.js`.
+
+qa_e2e_procedure: |
+  On the parcel commit, in the QA worktree (which holds no lifecycle
+  snapshot), ONE run each (2026-09-17 rule).
+  1. `cd extension && npx vitest run --config vitest.config.mjs test/emitLifecycleSnapshotCli.test.js --reporter=json --outputFile=tmp/bl1741.json`:
+     4 of 4 pass, and the file's duration in the report is under 7000 ms.
+     Record the duration and the 1-minute load.
+  2. `ls .swarmforge/briefing/lifecycle-snapshot.json` in the QA worktree:
+     absent after the run, as it was before (the test wrote nothing
+     there).
+  3. `node specs/pipeline/cli.js specs/features/BL-897-briefing-gathers-lifecycles-once.feature`:
+     all ok.
+  4. After landing: REGISTER_ROW_RETIRED for this ticket's unit row.
+
+notes: |
+  Minted 2026-09-25 by the specifier from QA's unowned-red note 003166
+  (BL-1717's pass, evidence e81a640797; the coordinator relayed the same
+  red as note 011488). QA held nothing on it, because BL-1717 was bounced
+  for its own defects. Register row added in the mint commit; the cause
+  was measured at mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).

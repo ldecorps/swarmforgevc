@@ -1,0 +1,107 @@
+id: BL-1742
+title: "extension/test/telegramFrontDeskBotCli.test.js breaks the 7 s per-file budget again (QA, BL-1717's parcel: 19.2 s in-suite, 8.1 s alone at load 9.5-14; 15.2 s alone on main at load 31), 9.7 s of it in one test - BL-1518's, which spawns the real swarm_handoff.bb twice and never calls the front desk's own code, so it cannot kill the enqueueRoleAnswerNote options mutant its comment names and only repeats what BL-1518's feature scenarios 01-02 already prove; a seam test asserting that enqueueRoleAnswerNote passes cwd and SWARMFORGE_ROLE takes its place, so the file's test count holds"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment). Every unit-lane run under the swarm's normal load
+# exits 1 on it. BL-1620 cut this file once, and BL-1721 (done) owned it
+# again without cutting it.
+status: todo
+epic: unit-suite-speed
+priority: 7
+direction: swarm-reported
+depends_on: []
+# No open ticket touches this test file (grep of paused/ and active/ for
+# telegramFrontDeskBotCli, 2026-09-25).
+mutation_cost: medium
+# medium: the hardener re-runs telegram-front-desk-bot.ts mutation over
+# enqueueRoleAnswerNote; the seam test is what kills its options mutant.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file chore with no scenarios of its own (BL-1251): BL-1620's
+# feature is the durable contract for this file (it comes under budget
+# alone, its test count at the parcel is >= main's, nothing is skipped).
+# Its count step reads `main:` against the parcel, which is the check that
+# a replacement rather than a deletion satisfies. Pointing at it is not a
+# claim of ownership over BL-1620's contract.
+acceptance: specs/features/BL-1620-two-unit-lane-poles-come-under-the-per-file-budget.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: the file's test count
+  does not drop (BL-1620's contract). FIRM: no assertion is lost - the
+  real-spawn test's CLI half is BL-1518's scenarios 01-02 and
+  bl1518_handoff_draft_root_guard_property_runner.bb today; anything it
+  asserts that those do not moves to the bb lane, never out of existence.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA note 003166, evidence e81a640797 (BL-1717's pass): the per-file
+  budget guard refused `extension/test/telegramFrontDeskBotCli.test.js`,
+  19.2 s in-suite and 8.1 s alone, with no register row. That makes it an
+  unowned red. Measured again at mint on main at load 31: 15.2 s alone,
+  276 tests. 9.7 s of that is one test (line ~2651):
+  "BL-1518: swarm_handoff.bb refuses a draft that lies outside the
+  project root a wrong cwd/env resolves, and delivers normally once
+  cwd/env point at the draft's own root". It builds two
+  `swarmHandoffFixture()` roots and runs `bb swarm_handoff.bb` twice, for
+  real.
+
+  Its comment says it covers a mutant of the options object that
+  `enqueueRoleAnswerNote` passes (cwd and env dropped or emptied). But it
+  never calls `enqueueRoleAnswerNote`: it spawns the CLI directly, so no
+  mutant in `telegram-front-desk-bot.ts` is exercised by it. What it does
+  prove, the CLI refusing a draft outside the resolved root, naming both,
+  and queueing nothing under either root, plus a normal send from the
+  draft's own root, is exactly BL-1518's feature scenarios 01-02. The
+  property runner `swarmforge/scripts/test/bl1518_handoff_draft_root_guard_property_runner.bb`
+  covers it too. No test in the file asserts the `{ cwd, env }` that
+  `enqueueRoleAnswerNote` hands its `runHandoff` seam
+  (`telegram-front-desk-bot.ts` ~line 1851).
+
+  ## What is wanted
+  - A seam test: `enqueueRoleAnswerNote` through `fakeRunHandoff` (the
+    file's own BL-1620 convention) records one call whose `opts.cwd` is
+    the target root and whose `opts.env.SWARMFORGE_ROLE` is
+    `coordinator`. This is the cheap kill for the mutant the old
+    comment named.
+  - The real-spawn test leaves this file. Anything it asserts that
+    BL-1518's scenarios 01-02 and property runner do not already assert
+    moves to the bb lane (a `swarmforge/scripts/test/` runner), and is
+    not dropped.
+  - The file comes back under the 7000 ms budget alone, with a test count
+    at the parcel >= main's (BL-1620's scenario 01, the acceptance
+    pointer above).
+
+  ## Scope
+  - `extension/test/telegramFrontDeskBotCli.test.js`.
+  - A bb-lane runner under `swarmforge/scripts/test/`, only if an
+    assertion has to move.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `cd extension && npx vitest run --config vitest.config.mjs test/telegramFrontDeskBotCli.test.js --reporter=json --outputFile=tmp/bl1742.json`:
+     all pass, the file's duration under 7000 ms. Record the duration
+     with the 1-minute load beside it.
+  2. `node specs/pipeline/cli.js specs/features/BL-1620-two-unit-lane-poles-come-under-the-per-file-budget.feature`:
+     all ok (the count step compares the parcel against `main:`).
+  3. `node specs/pipeline/cli.js specs/features/BL-1518-a-handoff-cli-never-writes-outside-the-root-its-draft-lives-in.feature`:
+     all ok.
+  4. Read the hardener's evidence: the `enqueueRoleAnswerNote` options
+     mutant (cwd/env dropped) is killed, naming the killing test.
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's unit row.
+
+notes: |
+  Minted 2026-09-25 by the specifier from QA's unowned-red note 003166
+  (BL-1717's pass, evidence e81a640797; the coordinator relayed the same
+  red as note 011488). QA held nothing on it, because BL-1717 was bounced
+  for its own defects. Register row added in the mint commit; measured at
+  mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
