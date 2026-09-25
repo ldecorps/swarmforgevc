@@ -1,0 +1,103 @@
+id: BL-1763
+title: "bl1517ProjectRootArgInvariants reaches every wired site and harness by construction - it draws one of six sites 30 times and one of three harnesses 15 times, then asserts every one was drawn (about 1 run in 40 misses a site); it went red in QA's property lane on 2026-09-25 (five of six sites) and holds BL-1744's land; rewrite both properties on helpers/reachFloors so the census reads it constructed"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting is high (2026-09-05 register
+# amendment), and it holds a QA land today (BL-1744, Article 4.2).
+status: todo
+epic: sampled-reach-floors
+priority: 2
+direction: qa-found
+depends_on: []
+mutation_cost: low
+# low: one test file and evidence; the shared reachFloors helper exists.
+# The feature reads source and runs the census CLI in seconds.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1763-bl1517s-root-arg-property-reaches-every-site-by-construction.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1763Bl1517ReachFloorsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity high
+  defect, no choice posed, no ruling_options). New feature file, the same
+  shape as BL-1760 and BL-1762. FIRM: every site and harness is still
+  exercised and every property assertion is unchanged; nothing is seeded,
+  retried or given a larger budget to hide a miss.
+
+invariants:
+  - "No reach floor, draw budget, timeout or tolerance in the file is lowered, raised, widened, seeded or retried; every site, harness and bad-argument shape asserted reached before the change is asserted after it, and every per-case assertion is unchanged."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1517ProjectRootArgInvariants.property.test.js`:
+  property 1 draws `fc.constantFrom(...SITES)` (six wired sites) and a
+  bad-argument shape (two), `numRuns: 30`, then asserts
+  `seenSites.size === SITES.length` and `seenShapes.size === 2`. Property
+  2 draws `fc.constantFrom(...HARNESSES)` (three), `numRuns: 15`, then
+  asserts all three. A uniform draw misses at least one of six sites in
+  30 runs with probability 0.025, and one of three harnesses in 15 runs
+  with probability 0.007. QA's `npm run test:properties` on the BL-1744
+  parcel (21a188d947, load 12.55) failed property 1: "expected the
+  generator to reach every site, reached:
+  ["operator_runtime.bb","expedite_cli.bb","dropped_parcel_sweep_harness.bb","dispatch_gap_sweep_harness.bb","main_sync_status_cli.bb"]"
+  (QA evidence 01b2e061f7). commit_integrity_856_scenarios_cli.bb was
+  never drawn.
+
+  `sampled_reach_floor_census_cli.bb` reads the file as `no-floor 15`:
+  a floor written as an equality on a Set's size is a third shape the
+  classifier does not see (after BL-1760's `{ numRuns }` shorthand and
+  BL-1762's local helper), recorded on epic BL-1583.
+
+  ## What is wanted
+
+  - Both properties iterate their sites (and bad-argument shapes, and
+    harnesses) as cells with `runsPerCell` draws each, and assert the
+    floors through `assertReachFloor`, as BL-1583's sweeps did.
+  - The census then reads the file `constructed` (scenario 02).
+  - Each site spawns a real bb process per draw, so keep the per-cell
+    draw count as small as `runsPerCell` allows. The file's wall time
+    must not grow past its current budget; record before and after in
+    evidence.
+
+  ## Scope
+
+  - `extension/test/bl1517ProjectRootArgInvariants.property.test.js`
+    (+ evidence).
+  - New: `specs/pipeline/steps/bl1763Bl1517ReachFloorsSteps.js`. Reuse
+    BL-1691's step functions.
+  - Out of scope: the census classifier (BL-1583 remaining slice); the
+    wired scripts themselves (no production change).
+
+constraints: >
+  The parcel never edits backlog/standing-reds.tsv (BL-1663); its land
+  retires the row (BL-1631).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1763-bl1517s-root-arg-property-reaches-every-site-by-construction.feature`:
+     2 of 2.
+  2. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1517ProjectRootArgInvariants.property.test.js`:
+     green; its duration is recorded next to the evidence's before figure.
+  3. The register row for the file names BL-1763 on the parcel commit.
+  4. `git diff main...HEAD --name-only` names only the test file, the
+     step handler, its registration and evidence.
+  5. After the land: REGISTER_ROW_RETIRED for
+     `extension/test/bl1517ProjectRootArgInvariants.property.test.js`.
+
+source: |
+  QA note 003205 (2026-09-25T15:32Z): "unowned-red bl1517 root-arg
+  property reach floor holds BL-1744; ev 01b2e061f7". QA hold file
+  .swarmforge/qa-holds/BL-1744.json.
+
+notes: |
+  Minted 2026-09-25 by the specifier on QA's unowned-red note. Register
+  row added in the mint commit, owner BL-1763. QA noted the same pass:
+  "BL-1744: bl1517ProjectRootArgInvariants owned by BL-1763 - resume land".
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
