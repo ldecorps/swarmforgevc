@@ -80,7 +80,10 @@ qa_e2e_procedure: |
      all ok (4 of 4).
   2. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1703OllamaLaunchProbe.property.test.js`:
      2 of 2; record the host load.
-  3. The BL-1703 and BL-1704 features and test_ollama_ancillary_launch_gate.sh: green.
+  3. The BL-1703 feature and test_ollama_ancillary_launch_gate.sh: green.
+     BL-1704's feature is NOT run: BL-1704 is unbuilt (paused, no step
+     handler), so its scenarios read "no step handler matched" by design
+     (amended 2026-09-25, hardener spec-gap note 001501).
   4. `git diff main...HEAD --name-only` names only the Scope files, the
      feature, the handler, docs and evidence.
   5. After landing: REGISTER_ROW_RETIRED for the property file's row;
@@ -93,5 +96,11 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
   BL-1720.
+  2026-09-25: qa_e2e step 3 amended on the hardener's spec-gap note
+  001501 (evidence 880de06e88): it named BL-1704's feature green, but
+  BL-1704 is unbuilt and its feature has no handler (5 of 5 not ok by
+  design). Only the step changed; nothing in the Scope or the build did.
+  The parcel was at QA's inbox when the amendment landed, so QA got a note
+  to merge main.
 
 assigned_to: coder@2
