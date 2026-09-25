@@ -126,3 +126,6 @@ notes: |
   (P absent/present, excluded/passenger), kept.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-25, by: QA, blamed: coder, class: behavior, commit: e81a640797, evidence: backlog/evidence/BL-1717-QA-20260925.md }
