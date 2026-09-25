@@ -158,3 +158,5 @@ notes: |
   Amended 2026-09-24 (specifier): `release` takes the seat id, matching
   BL-1697's per-seat state file (BL-1702's mixed pack runs the driver
   seat as `coder@2`).
+
+assigned_to: coder
