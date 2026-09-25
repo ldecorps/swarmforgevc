@@ -1,0 +1,92 @@
+id: BL-1747
+title: "extension/test/bl1474ReplayCommitRefusalReasonInvariants.property.test.js fails its own reach floor about once in 70 runs - it draws 40 unseeded samples over 7 equally weighted stderr kinds and then asserts every kind appeared, and (6/7)^40 x 7 is about 1.5 percent; QA's property run on BL-1726's parcel missed 'whitespace-only'; every kind x index-empty cell is constructed so the floor holds by construction, and the sampled draws stay on top"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it holds BL-1726 at QA (Article 4.2), and at ~1.5
+# percent per run it will keep reddening unrelated parcels.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+# No open ticket touches this test file (grep of paused/ and active/,
+# 2026-09-25). BL-1474 and BL-1663 (both done) built it.
+mutation_cost: low
+# low: one test file's draw construction; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file chore with no scenarios of its own (BL-1251): the pointer names
+# the feature BL-1474 declared, which must still resolve (5 of 5 on main at
+# mint). It is not a claim of ownership over BL-1474's contract.
+acceptance: specs/features/BL-1474-the-replay-reports-why-its-commit-was-refused.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: every assertion the
+  property makes today stays, the draws still go through one bb process
+  (BL-1663), and the floor still fails loudly if a cell is ever missing.
+
+invariants:
+  - "bl1474's reach floor holds for every seed: each of the 7 stderr kinds is exercised on both sides of index-empty in every run, by construction rather than by sampling."
+
+description: |
+  ## What is wrong
+
+  QA note 003177, evidence fd7781b7c6 (BL-1726's pass, property lane,
+  load 3.66): `AssertionError: generator never produced stderr kind
+  "whitespace-only"`. The file is not in BL-1726's diff, and it has no
+  register row or open ticket.
+
+  The test (line ~80) takes `fc.sample(inputArb, 40)`: 40 draws, no seed,
+  over `stderrCaseArb`, an `fc.oneof` of 7 equally weighted kinds. The
+  floor (line ~121) then asserts each kind appeared at least once. A given
+  kind is missed with probability (6/7)^40, about 0.21 percent, so some
+  kind is missed in roughly 1.5 percent of runs. The floor is sampled, so
+  it fails by chance and not because of any defect. It has been like this
+  since the floor landed (BL-1474's audit fix, 2026-09-08). BL-1663
+  (0a06a32707) kept 40 unseeded draws when it moved `fc.assert` to
+  `fc.sample`. At mint the property passes on main far more often than it
+  fails, so a single green run proves nothing either way.
+
+  ## What is wanted
+  - The draws begin with one constructed input per (kind x index-empty)
+    cell, 14 in all, followed by the sampled draws. All of them still go
+    through `replayCommitRefusalReasons` in one call (BL-1663).
+  - The floor asserts every cell, both sides of index-empty for every
+    kind. That is stricter than today's "either side", and it holds by
+    construction.
+  - Every per-draw assertion stays as it is.
+
+  ## Census (unseeded samples feeding a floor)
+  `grep -lE 'never produced' extension/test/*.test.js`, then for each hit
+  `grep -c 'fc\.sample('` and `grep -c seed`. Only two files sample with
+  no seed: this one (7-kind floor over 40 draws) and
+  `bl896BriefingOpenCountInvariants.property.test.js` (one reached flag
+  over 300 draws, not red). No ticket is minted for bl896.
+
+  ## Scope
+  - `extension/test/bl1474ReplayCommitRefusalReasonInvariants.property.test.js`.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1474ReplayCommitRefusalReasonInvariants.property.test.js`:
+     green.
+  2. Read the test: the 14 constructed cells precede the sample, and the
+     floor loop checks both `true:<kind>` and `false:<kind>`. This is the
+     proof the floor cannot miss. One green run is not.
+  3. `node specs/pipeline/cli.js specs/features/BL-1474-the-replay-reports-why-its-commit-was-refused.feature`:
+     all ok (5 of 5).
+  4. After landing: REGISTER_ROW_RETIRED for this ticket's property row;
+     resume BL-1726's land.
+
+notes: |
+  Minted 2026-09-25 by the specifier from QA's unowned-red note 003177
+  (holding BL-1726, evidence fd7781b7c6). Register row added in the mint
+  commit; the miss probability was worked out from the generator at mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1726.
