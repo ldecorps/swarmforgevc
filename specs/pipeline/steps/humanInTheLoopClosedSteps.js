@@ -47,7 +47,6 @@ const GATE_PANE_TEXT = SNIPPET;
 const OPERATOR_DECIDE_STUB = `
 const fs = require('fs');
 const path = require('path');
-const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 fs.appendFileSync(path.join(__dirname, '..', '..', '..', 'consumed.log'), JSON.stringify(process.argv.slice(2)) + '\\n');
 `;
 
