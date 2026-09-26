@@ -1,0 +1,204 @@
+id: BL-1787
+title: "A closed owner's pure-evidence or doc stray that the land step can neither cherry-pick nor prove superseded (BL-1670 grounds a/b, BL-1768 ground c) aborts the whole replay today, so a stray on paths the landing ticket never touched turns EVERY land into LAND_ESCALATE and a condition (g) hand build (BL-1657 and three more on 2026-09-20; BL-1748, BL-1764, BL-1704, BL-1766 and BL-1749 on 2026-09-26, each after a 20-40 min walk): when none of the stray's paths is one of the landing ticket's own, the step leaves it unlanded, prints LAND_STRAY_DEFERRED naming it, and still builds, verifies and records the landing ticket's own commit"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and recurring, but not firing right now. BL-1768 (landed
+# f3bfa6b995, 14:18Z 2026-09-26) cleared the stray behind today's five hand
+# builds, and no QA escalation has named a stray since. The fault is the
+# class: each new stray shape nobody has a ground for stops every land until
+# someone writes one (09-19 BL-1636, 09-20 BL-1657, 09-26 a225d85d8b).
+epic: swarm-reliability
+priority: 15
+depends_on: []
+mutation_cost: low
+# low: one branch in land_step_lib.bb replay!'s stray loop plus one CLI
+# print line (Babashka: no mutation/CRAP/DRY lane, engineering "Startup
+# Tools"); the gherkin mutation re-runs a four-row feature on BL-1650's
+# fixture shape (BL-1650's eleven rows ran in 9.0 s, BL-1768 QA evidence).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1787-a-stray-the-land-step-cannot-land-never-holds-the-landing-tickets-own-land.feature
+verification_category: land-path-ownership
+retires:
+  - specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature
+  - specs/pipeline/steps/bl1650LandStepPureEvidenceStraySteps.js
+
+invariants:
+  - "At every path of a deferred stray, the commit the land step prints carries origin/main's content: a stray that was neither landed nor proven superseded never reaches main under any ticket."
+  - "A stray is deferred only when every path it touches is under backlog/evidence/ or docs/ and none is a path the landing ticket's own commits changed; any other stray the step cannot land escalates by name, exactly as before."
+
+required_wiring:
+  - "swarmforge/scripts/land_step_cli.bb::LAND_STRAY_DEFERRED::the CLI QA runs, and land_main_publish.sh --land runs for it, prints each deferral"
+
+human_approval: pending
+approval_context: >
+  FIRM: the landing ticket's own land never waits on content that is not
+  the landing ticket's. FIRM: a deferred stray is never landed, never
+  reported superseded, and never reported LANDED_SIBLING; it is named on
+  one LAND_STRAY_DEFERRED line on every land that meets it, and QA sends
+  the specifier one note per stray sha. FIRM: a stray on a path the
+  landing ticket also changed, and any stray touching a path outside
+  backlog/evidence/ and docs/ (BL-1785's ticket-record strays included),
+  still escalates by name as today. Chosen at mint, open to your
+  amendment: this relaxes a hard stop. Today an unprovable stray stops
+  every land until someone adjudicates it. After this lands it is a
+  printed line and one note, and the adjudication happens off the land
+  path. The specifier's condition (g) rulings (2026-09-20 and
+  2026-09-26) already told QA to leave such a stray alone and hand-build
+  the land, so the tool now does what QA was ruled to do by hand.
+
+description: |
+  ## Why
+
+  The land step lands a closed owner's pure-evidence stray itself
+  (BL-1650). When the cherry-pick conflicts, it lands nothing for the
+  stray if one of three superseded grounds holds (BL-1670 a/b, BL-1768
+  c), and otherwise aborts the WHOLE replay with `land-step replay: could
+  not cherry-pick stray evidence commit <sha>`. The stray sits on every
+  role branch, so every land after it escalates the same way, whatever
+  ticket is landing and wherever its paths are. The specifier's ruling
+  for that shape is condition (g)
+  (`backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md`):
+  leave the stray alone and hand-build the parcel's tip-pure commit from
+  its own paths. QA did that for BL-1657 and three more lands on
+  2026-09-20, and for BL-1748, BL-1764, BL-1704, BL-1766 and BL-1749 on
+  2026-09-26, each after a 20-40 minute walk ended in the escalate. Every
+  one of those hand builds is a `land-path-ownership` hand check
+  (BL-1782), and a new ground (BL-1670, then BL-1768) only ever fixed the
+  stray in front of it.
+
+  ## What is wanted
+
+  1. In `land_step_lib.bb` `replay!`'s stray loop, a cherry-pick that
+     conflicts and that `stray-superseded-verdict` does not prove
+     superseded no longer aborts the replay when BOTH hold:
+     - every path the stray touches is pure evidence or documentation
+       (`pure-evidence-or-docs-paths?`, BL-1650's own allowlist), and
+     - none of those paths is in the landing ticket's `own-paths`.
+     The step aborts that cherry-pick, leaves the scratch branch as it was
+     before it, records the stray as deferred and goes on to the next
+     stray and then the landing ticket's own commit. Every existing check
+     on the built commit (completeness, BL-1447; registry rows, BL-1604;
+     the land-approval record) runs exactly as today.
+  2. Either condition failing keeps today's refusal byte for byte: the
+     replay aborts and the step prints LAND_ESCALATE naming the stray's
+     commit (scenario 02). A stray touching a ticket file, the shape
+     BL-1785 widens the stray set to, is never deferred. BL-1785's FIRM
+     line says such a record lands, is superseded, or escalates.
+  3. A deferred stray's owner is not landed. It is never added to the
+     landed set and never printed LANDED_SIBLING (BL-1272: landed is a
+     positive content finding).
+  4. `land_step_cli.bb` prints one line per deferred stray, in the shape
+     of its `LAND_STRAY_SUPERSEDED` line:
+     `LAND_STRAY_DEFERRED <sha> <comma-joined paths> <reason>`, where the
+     reason says the cherry-pick conflicted and no superseded ground held.
+     The verdict line (LAND_CLEAN or LAND_REPLAY, exit 0) is unchanged.
+     `land_main_publish.sh --land` already pushes on either, so it needs
+     no change.
+  5. Retire BL-1650's scenario 08
+     (`an-unproven-other-owner-rewrite-still-escalates-by-name-08`, both
+     Examples rows). Its fixture's stray is on a path the landing ticket
+     never touches, so it goes red exactly when this ships (BL-1006:
+     retire, never reword). This ticket's scenario 01 runs the same two
+     shapes against the new behaviour, and scenario 02 keeps the
+     escalation where it still applies. Re-tense the BL-1650 `Feature:`
+     narrative's last BL-1768 sentence if it states the escalation as
+     present behaviour. Remove the scenario-08-only builders and steps
+     from `bl1650LandStepPureEvidenceStraySteps.js`, but first grep every
+     `.feature` file for each pattern, because this ticket's handler may
+     reuse them.
+
+  How (direction, not mandate): the `:else` branch of the stray `cond` in
+  `replay!` already holds `paths` and the abort. It needs `own-paths`,
+  which `replay!` already receives. Return the deferrals under their own
+  key (e.g. `:stray-deferred`) beside `:stray-landed`, and thread them
+  through `land-plan`'s result the way `:stray-landed` is threaded. The
+  fixtures can reuse BL-1650's `UNPROVEN_OTHER_OWNER_SHAPE_BUILDERS`
+  shapes. Move them into this ticket's handler
+  `bl1787LandStrayDeferredSteps` when scenario 08 retires.
+
+  ## Scope
+  - `swarmforge/scripts/land_step_lib.bb` (`replay!`, `land-plan`) and
+    `swarmforge/scripts/land_step_cli.bb` (the print).
+  - `swarmforge/scripts/test/land_step_lib_test_runner.bb`: cases for
+    both conditions and the scratch branch after an aborted pick.
+  - The feature file, its handler `bl1787LandStrayDeferredSteps` and its
+    `specs/pipeline/steps/index.js` registration.
+  - Retirement: BL-1650's feature file and handler (both declared under
+    `retires:`).
+  - Documenter: the BL-1241 how-to's stray section
+    (`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`)
+    gains the deferral.
+
+  ## Not in scope
+  - BL-1546's closed-owner refusal on a non-stray path, and BL-1785's
+    ticket-record strays: both keep escalating.
+  - The walk's 20-40 minute duration.
+  - Adjudicating any deferred stray. That stays the specifier's, prompted
+    by QA's note (QA.prompt prose landed at mint).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1787-a-stray-the-land-step-cannot-land-never-holds-the-landing-tickets-own-land.feature`:
+     all ok (01 x2, 02, 03).
+  2. `node specs/pipeline/cli.js specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature`:
+     all ok, and `grep -c 'still-escalates-by-name-08' <that file>` is 0.
+  3. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
+  4. `git grep -n LAND_STRAY_DEFERRED -- swarmforge/scripts` names
+     land_step_lib.bb and land_step_cli.bb only (the test runner may
+     also appear).
+  5. After the land, on the next ordinary land, read the land step's
+     output. Record whether any LAND_STRAY_DEFERRED line appeared and, if
+     it did, that the land published anyway. A land with none still
+     passes this step.
+
+source: |
+  Specifier spec pass, 2026-09-26: minting the owner of the
+  `land-path-ownership` verification-debt category, which BL-1782 seeds at
+  its threshold of 3 (4 rows: BL-1711, BL-1748, BL-1764, BL-1768). BL-1782's
+  notes oblige the specifier to mint it before BL-1784 lands, or intake
+  drops to cap 1 on arrival. Evidence read: QA.prompt's land section, the
+  condition (g) rule and its instances in
+  backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md,
+  backlog/evidence/BL-1768-QA-20260926.md item 3, land_step_lib.bb
+  (replay!, land-plan, own-paths, stray-evidence-commits,
+  stray-superseded-verdict) and land_main_publish.sh run_land.
+  No human sentence is quoted. The human directive behind the category is
+  quoted verbatim in BL-1782's source.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) as the owner of
+  verification category land-path-ownership (BL-1782). The category's hand
+  check has two halves:
+  - Every land, whatever the step printed. QA.prompt told QA to ALWAYS
+    hand-build the tip-pure commit from the parcel's evidence-listed
+    paths, even on LAND_CLEAN. That was the BL-1678 mint's interim
+    (ba94fe4c5e, 13:47 2026-09-21). BL-1678 landed at 15:45 the same day,
+    and LAND_CLEAN and LAND_REPLAY have both named a commit built fresh
+    off origin/main from the ticket's own paths since. The interim was
+    written without "Until BL-1678 lands", so QA's retire trigger never
+    fired. The specifier retired it in this mint's commit. QA now
+    publishes the step's own commit through `land_main_publish.sh
+    <qa-worktree> --land`, and hand-builds only after LAND_ESCALATE.
+  - After an escalate. This ticket removes the stray-conflict cause, which
+    was every condition (g) instance on record. BL-1785 (paused, high)
+    removes the closed-owner ticket-record cause behind BL-1768's own
+    land. Other LAND_ESCALATE causes (a real content block on a shared
+    path, BL-1481) remain legitimate hand work.
+  Also landed at mint: QA.prompt's "Once BL-1787 lands" note duty for
+  LAND_STRAY_DEFERRED.
+  BL-1785 and this ticket both edit land_step_lib.bb, so the
+  orthogonality rule keeps them from being active together. Either order
+  works: this ticket defers only pure evidence/docs strays, so the
+  ticket-record strays BL-1785 adds still escalate here, as BL-1785's
+  FIRM line requires.
+  Dependency check: BL-1650, BL-1670 and BL-1768 are all in done/.
+  Nothing in depends_on.
+  INVEST: Independent (every ground it builds on has landed). Negotiable
+  (the How is direction; only the printed line's name is fixed, by the
+  wiring anchor and QA's prose). Valuable (an unprovable stray no longer
+  turns every land into a hand build). Estimable (one cond branch, one
+  print, BL-1670's fixtures are the template). Small (3 scenarios, 4
+  runs, 2 invariants). Testable (mkdtemp fixtures driven through the CLI,
+  the same shape as BL-1650's feature).

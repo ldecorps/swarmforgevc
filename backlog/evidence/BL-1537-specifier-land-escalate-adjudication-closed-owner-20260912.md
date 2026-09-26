@@ -546,3 +546,30 @@ such file after 09-02 and 09-14). It was moved aside to
 `tmp/stray-land-main-publish-lock-file-20260926.bak`, and the retry published.
 
 By QA.
+
+## Condition (g), the whole class: owned by BL-1787 (specifier, 2026-09-26)
+
+Every condition (g) instance above is one shape: a closed owner's
+pure-evidence or doc stray whose cherry-pick conflicts with no superseded
+ground, on paths the landing ticket never touched. BL-1670 (grounds a/b)
+and BL-1768 (ground c) each fixed the stray in front of them. BL-1787
+fixes the class: such a stray is deferred (`LAND_STRAY_DEFERRED`), never
+landed or reported superseded, and the landing ticket's own commit is
+still built and published. A stray on a path the landing ticket also
+changed, or one touching anything outside `backlog/evidence/` and
+`docs/`, still escalates. Until BL-1787 lands, condition (g) stays the
+interim exactly as applied above. After it lands, QA notes the specifier
+once per deferred stray sha (QA.prompt), and that note is where a
+deferred stray gets adjudicated.
+
+Same pass: QA.prompt's "ALWAYS hand-build the tip-pure landing commit,
+whether or not the step printed LAND_CLEAN" rule, BL-1678's mint interim
+of 2026-09-21, is retired. BL-1678 landed at 15:45 that day, and since
+then LAND_CLEAN and LAND_REPLAY name a commit built off origin/main from
+the ticket's own paths. QA now lands through `land_main_publish.sh
+<qa-worktree> --land`, and hand-builds only on LAND_ESCALATE. The same
+pass retired the dead BL-1405, BL-1444, BL-1459, BL-1470, BL-1472/1473,
+BL-1650, BL-1713, BL-1717 and BL-1773 interims in QA.prompt's land
+section.
+
+By specifier.
