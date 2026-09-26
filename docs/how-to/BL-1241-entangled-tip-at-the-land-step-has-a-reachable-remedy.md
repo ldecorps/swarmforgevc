@@ -115,25 +115,42 @@ land_step_cli.bb <task-name> <commit> [repo-root]
   `LAND_ESCALATE` unconditionally, which stalled every later parcel on six
   role branches carrying BL-1459's bounced first-round doc commit
   (BL-1657, BL-1661, BL-1667, BL-1664 all queued behind it on 2026-09-20).
-  Before the abort, `stray-superseded-verdict` checks two provable
+  Before the abort, `stray-superseded-verdict` checks three provable
   grounds, either sufficient: **(a) content-subset** — the stray's own
   post-image at its paths, diffed from `origin/main`, adds no line (a
   strict subset of what main already carries, e.g. an evidence-log append
-  main's own later, larger append already contains in full); or **(b)
+  main's own later, larger append already contains in full); **(b)
   rewritten-by-owner** — every `HEAD`-side conflicting line traces
   (`git blame`) to a commit on `origin/main` whose own subject names
-  exactly the stray's owner ticket (its own later rebuild superseded it).
-  Either ground found, the loop aborts only THAT cherry-pick, prints
-  `LAND_STRAY_SUPERSEDED <sha> <paths> <reason>` (reason is the fixed tag
-  `content-subset-of-origin-main` for (a), or the comma-joined short shas
-  of the superseding commits for (b)), and continues the walk — the
-  sibling still reports `LANDED_SIBLING`, nothing is abandoned, and every
-  later verdict computes as if the stray had landed cleanly. A conflict
-  whose `HEAD`-side lines trace to any OTHER ticket, to an untagged
-  commit, to one not yet on `origin/main`, or a diff that would drop a
-  line `origin/main` lacks, fails both grounds and `--abort`s +
+  exactly the stray's owner ticket (its own later rebuild superseded it);
+  or **(c) rewritten-after-owner-landed** (BL-1768, 2026-09-26) — every
+  non-blank line the stray's OWN patch (against its immediate parent, not
+  a diff against `origin/main`) adds at its paths is either already
+  present verbatim in `origin/main`'s current copy, or is one of the
+  conflict's own incoming ("theirs") lines (a line that would simply
+  vanish unexplained never qualifies), AND every `HEAD`-side conflicting
+  line was last written by a commit that has one of the OWNER'S OWN landed
+  commits on that same path as an ancestor — proven by ANCESTRY, so the
+  rewriting commit may belong to ANY ticket, not only the stray's owner
+  (ground (b)'s narrower same-owner-tag test), so long as the rewrite came
+  strictly after the owner's own text landed there. Ground (c) closes the
+  gap ground (b) left: `a225d85d8b` (BL-1703's `Last Updated:` line) was
+  rewritten by BL-1699's `f729af01b9` — a different ticket, but an ancestor
+  of `f729af01b9` traces to BL-1703's own landed commit — so every QA land
+  carrying that stray on its branch paid a ~20 minute walk before
+  escalating (BL-1748, BL-1764, both hand-built under condition (g)) until
+  this ground shipped. Any ground found, the loop aborts only THAT
+  cherry-pick, prints `LAND_STRAY_SUPERSEDED <sha> <paths> <reason>`
+  (reason is the fixed tag `content-subset-of-origin-main` for (a), or the
+  comma-joined short shas of the superseding commits for (b)/(c)), and
+  continues the walk — the sibling still reports `LANDED_SIBLING`, nothing
+  is abandoned, and every later verdict computes as if the stray had
+  landed cleanly. A conflict whose `HEAD`-side lines trace to a commit that
+  is not a descendant of one of the owner's own landed commits, to one not
+  yet on `origin/main`, or a diff that would drop a line `origin/main`
+  lacks outside the conflict, fails all three grounds and `--abort`s +
   `LAND_ESCALATE`s by name exactly as before — this narrows nothing wider
-  than these two provable shapes, and a code-path stray (outside
+  than these three provable shapes, and a code-path stray (outside
   `backlog/evidence/`/`docs/`) never reaches this check at all.
 
   A `LANDED_SIBLING` line does not change what action `land-plan` returns —

@@ -378,10 +378,126 @@ function registerSteps(registry) {
         git(ctx.root, 'checkout', '-q', 'role');
       },
     ],
+    [
+      "was rewritten by another ticket after its owner's land",
+      // Ground (c), BL-1768: a225d85d8b's own shape. The stray and main's
+      // later commit rewrite the SAME line from a common base differently
+      // (a genuine one-line conflict), but main's rewrite is tagged with a
+      // DIFFERENT ticket - the reason is that OTHER commit's own short sha,
+      // never the owner's (SIBLING's) own landed one, which lands FIRST.
+      (ctx) => {
+        const docPath = `docs/how-to/${SIBLING}-guide.md`;
+        commitFile(ctx.root, docPath, 'Header\nStep 1\nStep 2\n', 'seed doc content');
+        markOriginMain(ctx.root);
+
+        git(ctx.root, 'checkout', '-q', '-b', 'role');
+        commitFile(
+          ctx.root,
+          docPath,
+          'Header\nStep 1\nStep 2 (old wording)\n',
+          `${SIBLING}: incident evidence, committed after the ticket moved on`,
+        );
+        ctx.strayCommit = head(ctx.root);
+        ctx.strayPaths = [docPath];
+
+        git(ctx.root, 'checkout', '-q', 'main');
+        // SIBLING's OWN land carries the stray's exact text FIRST.
+        commitFile(ctx.root, docPath, 'Header\nStep 1\nStep 2 (old wording)\n', `${SIBLING}: land the guide's step 2 wording`);
+        // A DIFFERENT ticket rewrites that same line AFTER SIBLING landed.
+        commitFile(
+          ctx.root,
+          docPath,
+          'Header\nStep 1\nStep 2 (rewritten by another ticket)\n',
+          'BL-9999: unrelated later rewrite of the guide step 2 wording',
+        );
+        ctx.expectedReason = head(ctx.root).slice(0, 10);
+        writeDoneTicket(ctx.root, SIBLING);
+        markOriginMain(ctx.root);
+
+        git(ctx.root, 'checkout', '-q', 'role');
+      },
+    ],
+  ]);
+
+  // ── scenario 08 (BL-1768): a conflict another ticket's rewrite does NOT
+  // prove superseded - either because the stray still adds a line origin/
+  // main never gets at all (outside the conflict), or because the other
+  // ticket's rewrite predates the owner's own land (ancestry runs the
+  // wrong way) - still escalates by name, exactly as before ground (c).
+  const UNPROVEN_OTHER_OWNER_SHAPE_BUILDERS = new Map([
+    [
+      "was rewritten by another ticket after its owner's land beside a stray line that is missing",
+      (ctx) => {
+        const docPath = `docs/how-to/${SIBLING}-guide.md`;
+        commitFile(ctx.root, docPath, 'Header\nStep 1\nStep 2\nStep 3\n', 'seed doc content');
+        markOriginMain(ctx.root);
+
+        git(ctx.root, 'checkout', '-q', '-b', 'role');
+        commitFile(
+          ctx.root,
+          docPath,
+          'Header\nStep 1\nStep 2 (old wording)\nStep 3\nStep 4 (new, only on the stray)\n',
+          `${SIBLING}: incident evidence, committed after the ticket moved on`,
+        );
+        ctx.strayCommit = head(ctx.root);
+        ctx.strayPaths = [docPath];
+
+        git(ctx.root, 'checkout', '-q', 'main');
+        commitFile(ctx.root, docPath, 'Header\nStep 1\nStep 2 (old wording)\nStep 3\n', `${SIBLING}: land the guide's step 2 wording`);
+        commitFile(
+          ctx.root,
+          docPath,
+          'Header\nStep 1\nStep 2 (rewritten by another ticket)\nStep 3\n',
+          'BL-9999: unrelated later rewrite of the guide step 2 wording',
+        );
+        writeDoneTicket(ctx.root, SIBLING);
+        markOriginMain(ctx.root);
+
+        git(ctx.root, 'checkout', '-q', 'role');
+      },
+    ],
+    [
+      "conflicts with a line another ticket wrote before its owner's land",
+      (ctx) => {
+        const docPath = `docs/how-to/${SIBLING}-guide.md`;
+        commitFile(ctx.root, docPath, 'Header\nStep 1\nStep 2\nStep 3\n', 'seed doc content');
+        markOriginMain(ctx.root);
+
+        git(ctx.root, 'checkout', '-q', '-b', 'role');
+        commitFile(
+          ctx.root,
+          docPath,
+          'Header\nStep 1\nStep 2 (old wording)\nStep 3\n',
+          `${SIBLING}: incident evidence, committed after the ticket moved on`,
+        );
+        ctx.strayCommit = head(ctx.root);
+        ctx.strayPaths = [docPath];
+
+        git(ctx.root, 'checkout', '-q', 'main');
+        // The other ticket rewrites Step 2 FIRST...
+        commitFile(
+          ctx.root,
+          docPath,
+          'Header\nStep 1\nStep 2 (rewritten by another ticket)\nStep 3\n',
+          'BL-9999: unrelated EARLY rewrite of the guide step 2 wording',
+        );
+        // ...then SIBLING's own land touches a DIFFERENT line only.
+        commitFile(
+          ctx.root,
+          docPath,
+          'Header\nStep 1\nStep 2 (rewritten by another ticket)\nStep 3 (SIBLING touched this line only)\n',
+          `${SIBLING}: land touches step 3 only, never step 2`,
+        );
+        writeDoneTicket(ctx.root, SIBLING);
+        markOriginMain(ctx.root);
+
+        git(ctx.root, 'checkout', '-q', 'role');
+      },
+    ],
   ]);
 
   scoped(/^a stray commit off the lineage whose path (.+) on origin\/main$/, (ctx, shape) => {
-    const build = SUPERSEDED_SHAPE_BUILDERS.get(shape);
+    const build = SUPERSEDED_SHAPE_BUILDERS.get(shape) || UNPROVEN_OTHER_OWNER_SHAPE_BUILDERS.get(shape);
     if (!build) {
       throw new Error(`bl1670: unknown stray shape: ${shape}`);
     }
@@ -446,6 +562,23 @@ function registerSteps(registry) {
     const ownFile = git(ctx.root, 'show', `${replayCommit}:backlog/active/${LANDING}-fixture.yaml`);
     assert.equal(ownFile.trim(), `id: ${LANDING}`, `expected the landing ticket's own path on the replay tip, got: ${ownFile}`);
     spawnSync('git', ['-C', ctx.root, 'branch', '-q', '-D', replayBranch]);
+  });
+
+  // ── scenario 08 (BL-1768) ────────────────────────────────────────────
+  scoped(/^it exits LAND_ESCALATE naming the stray's commit$/, (ctx) => {
+    assert.equal(ctx.cli.status, 1, `expected LAND_ESCALATE (exit 1), got: ${JSON.stringify(ctx.cli)}`);
+    assert.ok(ctx.cli.stdout.includes('LAND_ESCALATE'), `expected LAND_ESCALATE, got: ${ctx.cli.stdout}`);
+    assert.ok(
+      ctx.cli.stdout.includes(ctx.strayCommit),
+      `expected the escalation to name the stray's own commit ${ctx.strayCommit}, got: ${ctx.cli.stdout}`,
+    );
+  });
+
+  scoped(/^no LAND_STRAY_SUPERSEDED line is printed$/, (ctx) => {
+    assert.ok(
+      !ctx.cli.stdout.split('\n').some((l) => l.startsWith('LAND_STRAY_SUPERSEDED')),
+      `expected no LAND_STRAY_SUPERSEDED line, got: ${ctx.cli.stdout}`,
+    );
   });
 }
 

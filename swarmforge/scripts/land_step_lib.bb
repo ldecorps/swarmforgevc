@@ -982,10 +982,105 @@
                       (keep #(second (re-find #"^([0-9a-f]{40})\s" %)) (str/split-lines (:out res)))))))
         ranges))
 
+;; ── BL-1768: ground (c) - a stray whose conflict is explained by ANOTHER
+;; ticket's rewrite, made only after the stray's OWN owner already landed
+;; its own text there. Ground (b) requires the rewriting commit to be
+;; tagged with the owner itself (a later fix by the SAME ticket, e.g. a
+;; rebuild); condition (g) also covers the wider shape any later commit
+;; superseding it, whoever authored it - proven by ANCESTRY (the rewrite
+;; came after the owner's own text landed), never by subject identity.
+;; a225d85d8b's own shape: BL-1703 lands a `Last Updated:` line, BL-1699
+;; later rewrites that same line - a different ticket, but strictly after.
+
+(defn- conflict-marker-theirs-blocks
+  "Pure. Mirrors conflict-marker-ours-blocks above for the OTHER side - the
+   text between each `=======` and its matching `>>>>>>> ` marker: the
+   incoming (cherry-picked) commit's own conflicting lines, never the
+   'ours' side conflict-marker-ours-blocks already reads. Same one-region-
+   at-a-time state machine, independent of the ours-side tracker - each
+   reads only the markers it cares about."
+  [file-text]
+  (loop [lines (str/split-lines (or file-text "")) in-theirs? false cur [] acc []]
+    (if (empty? lines)
+      acc
+      (let [line (first lines) rest-lines (rest lines)]
+        (cond
+          (str/starts-with? line "=======")
+          (recur rest-lines true [] acc)
+
+          (and in-theirs? (str/starts-with? line ">>>>>>> "))
+          (recur rest-lines false [] (conj acc cur))
+
+          in-theirs?
+          (recur rest-lines true (conj cur line) acc)
+
+          :else
+          (recur rest-lines false cur acc))))))
+
+(defn- stray-own-patch-added-lines
+  "The non-blank lines `sha`'s OWN patch - against its immediate PARENT,
+   never a diff against origin-main (ground (a)'s own base) or the stray's
+   full snapshot - adds at `path`. What THIS commit itself introduced, so
+   an unrelated pre-existing difference earlier in the file's history is
+   never mistaken for something this stray added."
+  [root sha path]
+  (let [changes (rev-range-line-changes root (str sha "^") sha [path])]
+    (into #{} (remove str/blank?) (get-in changes [path :added]))))
+
+(defn- stray-added-lines-explained-by-conflict?
+  "Ground (c) requirement 1: every non-blank line `sha`'s own patch adds at
+   `path` is either present verbatim in origin-main's CURRENT copy of
+   `path`, or is one of the incoming ('theirs') lines the cherry-pick
+   conflict actually rendered there - accounted for by a real conflict,
+   never a line that simply vanished unexplained (a stray that would drop
+   a line origin/main lacks OUTSIDE the conflict never qualifies). nil
+   origin-main content (a real read failure, never a genuine absence -
+   `blob-lines` already reports that as `#{}`) fails closed."
+  [root scratch origin-main sha path]
+  (let [added (stray-own-patch-added-lines root sha path)]
+    (or (empty? added)
+        (when-let [main-lines (blob-lines root origin-main path)]
+          (let [wt-path (str (fs/path scratch path))
+                theirs-lines (if (fs/exists? wt-path)
+                               (into #{} (mapcat identity) (conflict-marker-theirs-blocks (slurp wt-path)))
+                               #{})]
+            (every? #(or (contains? main-lines %) (contains? theirs-lines %)) added))))))
+
+(defn- owner-landed-commit-ancestor-of?
+  "Ground (c) requirement 2's per-commit test: some commit reachable from
+   origin-main, in `path`'s OWN history, whose subject names EXACTLY
+   `owner` (the same subject-attribution ground (b) uses), is an ancestor
+   of `blamed-sha` - the rewrite `blamed-sha` performs came strictly AFTER
+   the owner's own text landed there, whoever authored the rewrite.
+   Scoped to `path`'s own log, never the whole repository's - the owner's
+   original text necessarily touched this same path when it landed."
+  [root origin-main owner path blamed-sha]
+  (let [log (git! root "log" "--format=%H" origin-main "--" path)]
+    (and (zero? (:exit log))
+         (boolean
+          (some (fn [candidate]
+                  (and (= owner (commit-ticket-id root candidate))
+                       (zero? (:exit (git! root "merge-base" "--is-ancestor" candidate blamed-sha)))))
+                (remove str/blank? (str/split-lines (:out log))))))))
+
+(defn- stray-rewritten-after-owner-landed?
+  "Ground (c) requirement 2, given requirement 1 already holds: every
+   HEAD-side conflicting line across `paths` was last written by a commit
+   that has one of the owner's OWN landed commits (on that same path) as
+   an ancestor. Returns the blamed shas (for the reason text) or nil - no
+   conflict hunks found at all fails closed, same posture as ground (b)."
+  [root scratch origin-main owner paths]
+  (let [shas-by-path (into {} (map (fn [p] [p (blame-line-shas scratch p (conflict-hunk-head-ranges scratch p))])) paths)
+        all-shas (into #{} (mapcat val) shas-by-path)]
+    (when (and (seq all-shas)
+               (every? (fn [[p shas]] (every? #(owner-landed-commit-ancestor-of? root origin-main owner p %) shas))
+                       shas-by-path))
+      all-shas)))
+
 (defn stray-superseded-verdict
   "nil, or {:reason \"...\"} - whether this stray's cherry-pick CONFLICT (a
    real one, not `cherry-pick-already-applied?`'s empty-patch shape) is
-   superseded on either provable ground, checked in order:
+   superseded on any provable ground, checked in order:
 
    (a) content-subset: `stray-content-subset-of-origin-main?` - the reason
        is a fixed, self-explanatory tag (no single sha decides this one;
@@ -994,11 +1089,18 @@
        was last written by a commit on origin/main whose own subject
        names EXACTLY `owner` - the reason names those commits' own short
        shas (QA's own by-hand evidence already reads this way: 8fad11b0dc).
+   (c) rewritten-after-owner-landed (BL-1768): every non-blank line the
+       stray's OWN patch adds is either already in origin-main's copy or
+       is one of the conflict's own incoming lines (never a line that
+       simply vanished unexplained), AND every HEAD-side conflicting line
+       was last written by a commit descending from one of the owner's
+       OWN landed commits on that path - ANY later rewrite, not only one
+       tagged with the owner itself (condition (g)'s wider shape).
 
-   Must be called BEFORE the caller aborts the cherry-pick - ground (b)
-   reads the conflict-marked working tree the abort would erase. nil when
-   neither ground holds: the caller aborts and escalates by name exactly
-   as before."
+   Must be called BEFORE the caller aborts the cherry-pick - grounds (b)
+   and (c) read the conflict-marked working tree the abort would erase.
+   nil when no ground holds: the caller aborts and escalates by name
+   exactly as before."
   [{:keys [root scratch origin-main sha owner paths]}]
   (cond
     (stray-content-subset-of-origin-main? root origin-main sha paths)
@@ -1008,10 +1110,15 @@
     (let [shas (into #{}
                       (mapcat (fn [p] (blame-line-shas scratch p (conflict-hunk-head-ranges scratch p))))
                       paths)]
-      (when (and (seq shas)
-                 (every? #(zero? (:exit (git! root "merge-base" "--is-ancestor" % origin-main))) shas)
-                 (= #{owner} (into #{} (map #(commit-ticket-id root %)) shas)))
-        {:reason (str/join "," (sort (map #(subs % 0 (min 10 (count %))) shas)))}))))
+      (or
+       (when (and (seq shas)
+                  (every? #(zero? (:exit (git! root "merge-base" "--is-ancestor" % origin-main))) shas)
+                  (= #{owner} (into #{} (map #(commit-ticket-id root %)) shas)))
+         {:reason (str/join "," (sort (map #(subs % 0 (min 10 (count %))) shas)))})
+
+       (when (every? #(stray-added-lines-explained-by-conflict? root scratch origin-main sha %) paths)
+         (when-let [rewrite-shas (stray-rewritten-after-owner-landed? root scratch origin-main owner paths)]
+           {:reason (str/join "," (sort (map #(subs % 0 (min 10 (count %))) rewrite-shas)))}))))))
 
 (defn- source-verdict
   "One tree's answer about one ticket."

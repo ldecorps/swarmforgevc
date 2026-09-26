@@ -96,6 +96,22 @@ Feature: BL-1650 The land step lands a pure-evidence closed-owner stray itself
     And it lands the ticket's own paths
 
     Examples:
-      | shape                                               |
-      | is a strict content subset of a later append        |
-      | was rewritten by a later landed commit of its owner |
+      | shape                                                  |
+      | is a strict content subset of a later append           |
+      | was rewritten by a later landed commit of its owner    |
+      | was rewritten by another ticket after its owner's land |
+
+  # BL-1650 an-unproven-other-owner-rewrite-still-escalates-by-name-08
+  # BL-1768 (2026-09-26): another ticket's rewrite supersedes a stray only
+  # after the stray's owner landed, and only when nothing else is lost.
+  Scenario Outline: a pure-evidence stray whose conflict another ticket's commit does not prove superseded still escalates by name
+    Given a stray commit off the lineage whose path <shape> on origin/main
+    And a replay tip that carries the stray and a landed sibling behind it
+    When the land step replays the cited ticket
+    Then it exits LAND_ESCALATE naming the stray's commit
+    And no LAND_STRAY_SUPERSEDED line is printed
+
+    Examples:
+      | shape                                                                                      |
+      | was rewritten by another ticket after its owner's land beside a stray line that is missing |
+      | conflicts with a line another ticket wrote before its owner's land                         |

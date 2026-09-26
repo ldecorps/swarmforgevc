@@ -3989,6 +3989,107 @@ RESOLVED BY THIS TICKET
           (assert-true "BL-1670 negative control: the sibling stays unlanded, never silently dropped"
                        (contains? (:unlanded plan) "BL-9002")))))))
 
+;; ── BL-1768 ground (c): a stray's conflicting line was rewritten by
+;; ANOTHER ticket, but only AFTER the stray's own owner (BL-9002) landed
+;; its own text there first - a225d85d8b's own shape (BL-1703 lands the
+;; line, BL-1699 rewrites it later). Ground (b) alone would fail here (the
+;; rewriting commit is tagged BL-9999, not BL-9002) but ground (c) still
+;; supersedes, naming the REWRITING commit (never BL-9002's own landed one).
+(with-fixture [root]
+  (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2\n" "seed doc content")
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role" seed)
+    (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (old wording)\n"
+             "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "checkout" "-q" "-b" "main-line" seed)
+        ;; BL-9002's OWN land carries the stray's exact text FIRST.
+        (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (old wording)\n"
+                 "BL-9002: land the guide's step 2 wording")
+        ;; A DIFFERENT ticket rewrites that same line AFTER BL-9002 landed.
+        (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (rewritten by another ticket)\n"
+                 "BL-9999: unrelated later rewrite of the guide's step 2 wording")
+        (let [rewrite (:out (sh! root "git" "rev-parse" "HEAD"))]
+          (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+          (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+          (sh! root "git" "checkout" "-q" "role")
+          (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+            (assert= "BL-1768 ground (c): a conflict rewritten by another ticket after the owner's own land still replays through, never escalates"
+                     :replay (:action plan))
+            (assert-true "BL-1768 ground (c): the stray is recorded superseded, not landed as a fresh commit"
+                         (true? (:superseded? (first (:stray-landed plan)))))
+            (assert= "BL-1768 ground (c): the reason names the REWRITING commit's own short sha, never the owner's own landed one"
+                     (subs rewrite 0 10) (:reason (first (:stray-landed plan))))
+            (assert-true "BL-1768 ground (c): the sibling is reported LANDED_SIBLING, never entangled"
+                         (contains? (:landed plan) "BL-9002"))
+            (sh! root "git" "branch" "-q" "-D" (:branch plan))))))))
+
+;; ── BL-1768 ground (c) row 1: the stray ALSO adds a line elsewhere that
+;; origin-main never gets at all (outside the conflict) - ground (c) must
+;; NOT supersede; that extra, unaccounted line still escalates by name.
+(with-fixture [root]
+  (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2\nStep 3\n" "seed doc content")
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role" seed)
+    (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (old wording)\nStep 3\nStep 4 (new, only on the stray)\n"
+             "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "checkout" "-q" "-b" "main-line" seed)
+        (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (old wording)\nStep 3\n"
+                 "BL-9002: land the guide's step 2 wording")
+        (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (rewritten by another ticket)\nStep 3\n"
+                 "BL-9999: unrelated later rewrite of the guide's step 2 wording")
+        (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+        (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+        (sh! root "git" "checkout" "-q" "role")
+        (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+          (assert= "BL-1768 ground (c) row 1: a stray line origin-main never gets at all, outside the conflict, still escalates - never superseded"
+                   :escalate (:action plan))
+          (assert-includes "BL-1768 ground (c) row 1: the reason names the cherry-pick failure"
+                           (:reason plan) "could not cherry-pick stray evidence commit")
+          (assert-includes "BL-1768 ground (c) row 1: the reason names the stray's own sha"
+                           (:reason plan) stray))))))
+
+;; ── BL-1768 ground (c) row 2: the OTHER ticket's rewrite happened BEFORE
+;; the owner's (BL-9002's) own land, not after - ground (c) must NOT
+;; supersede; the timing (ancestry) is backwards.
+(with-fixture [root]
+  (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2\nStep 3\n" "seed doc content")
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role" seed)
+    (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (old wording)\nStep 3\n"
+             "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "checkout" "-q" "-b" "main-line" seed)
+        ;; The other ticket rewrites Step 2 FIRST...
+        (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (rewritten by another ticket)\nStep 3\n"
+                 "BL-9999: unrelated EARLY rewrite of the guide's step 2 wording")
+        ;; ...then BL-9002's own land touches a DIFFERENT line only.
+        (commit! root "docs/how-to/BL-9002-guide.md" "Header\nStep 1\nStep 2 (rewritten by another ticket)\nStep 3 (BL-9002 touched this line only)\n"
+                 "BL-9002: land touches step 3 only, never step 2")
+        (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+        (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+        (sh! root "git" "checkout" "-q" "role")
+        (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+          (assert= "BL-1768 ground (c) row 2: a rewrite that PREDATES the owner's own land still escalates - ancestry runs the wrong way"
+                   :escalate (:action plan))
+          (assert-includes "BL-1768 ground (c) row 2: the reason names the cherry-pick failure"
+                           (:reason plan) "could not cherry-pick stray evidence commit")
+          (assert-includes "BL-1768 ground (c) row 2: the reason names the stray's own sha"
+                           (:reason plan) stray))))))
+
 ;; ── BL-1670 ground (a) fold isolation: stray-content-subset-of-origin-main?
 ;; folds `every?` over `paths` - a stray that genuinely touches more than
 ;; one backlog/evidence/ or docs/ path (the everyday shape: an incident
