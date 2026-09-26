@@ -42,9 +42,14 @@ test('confirmPoleAlone names "no entry" when vitest runs but finds nothing to ma
 });
 
 test('confirmPoleAlone resolves an absolute file path identically to its repo-root-relative equivalent', () => {
-  const repoRoot = path.join(__dirname, '..', '..');
+  // BL-1761: the absolute form must be built without a fixed parent-count
+  // walk-up (the BL-1066 hazard) - `__dirname` here IS the sandbox's own
+  // extension/test/ directory under Stryker, so the target file (this
+  // file's own sibling) is reached directly, never via `../..` + a
+  // repo-relative segment re-appended (that lands one level too shallow
+  // in a Stryker sandbox, where the sandbox itself is the extension root).
   const relFile = 'extension/test/bl1007ContentionBudgetSmoke.test.js';
-  const absFile = path.join(repoRoot, relFile);
+  const absFile = path.join(__dirname, 'bl1007ContentionBudgetSmoke.test.js');
   const viaRel = confirmPoleAlone(relFile);
   const viaAbs = confirmPoleAlone(absFile);
   assert.ok(!('failed' in viaRel) && !('failed' in viaAbs), `expected both forms to succeed, got: ${JSON.stringify({ viaRel, viaAbs })}`);

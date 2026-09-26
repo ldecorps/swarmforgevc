@@ -94,9 +94,31 @@ const REGISTER_PATH = path.join(ROOT_DIR, '..', 'backlog', 'suite-poles.tsv');
 // modes actually happened: a spawn error, a timeout (the child killed by
 // signal after the 3x-budget wait), a missing report file, or a report
 // with no entry for this file.
+// BL-1761: a leading "extension/" segment is this file's OWN extension
+// root re-expressed repo-root-relative (the BL-1633 convention above).
+// Resolving it against rootDir ITSELF - which under a Stryker sandbox
+// already IS that root (BL-1066's own rule) - works whether rootDir is a
+// real checkout's extension/ or a sandbox standing in for it; resolving it
+// against repoRootDir (one directory further up) only works when
+// repoRootDir really has an "extension" child, true in a real checkout but
+// never inside a sandbox, whose parent (.stryker-tmp/) has no such child.
+// Takes rootDir/repoRootDir as parameters, never this module's own
+// ROOT_DIR/REPO_ROOT_DIR constants, so it is directly testable against
+// both shapes without a second copy of this file per shape.
+function resolveConfirmedFile(file, rootDir, repoRootDir) {
+  if (path.isAbsolute(file)) {
+    return file;
+  }
+  const EXTENSION_PREFIX = 'extension/';
+  if (file.startsWith(EXTENSION_PREFIX)) {
+    return path.join(rootDir, file.slice(EXTENSION_PREFIX.length));
+  }
+  return path.join(repoRootDir, file);
+}
+
 function confirmPoleAlone(file) {
   const vitestBin = path.join(ROOT_DIR, 'node_modules', '.bin', 'vitest');
-  const absFile = path.isAbsolute(file) ? file : path.join(REPO_ROOT_DIR, file);
+  const absFile = resolveConfirmedFile(file, ROOT_DIR, REPO_ROOT_DIR);
   const dir = path.dirname(absFile);
   const base = path.basename(absFile);
   const tmpReport = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bl1633-confirm-')), 'report.json');
@@ -223,7 +245,7 @@ function main() {
 // BL-1633: exported for the acceptance handler (scenario 03) to call the
 // SAME confirmer `npm test` itself runs, never a re-statement of it -
 // requiring this module must not re-run the whole suite as a side effect.
-module.exports = { confirmPoleAlone };
+module.exports = { confirmPoleAlone, resolveConfirmedFile };
 
 if (require.main === module) {
   main();
