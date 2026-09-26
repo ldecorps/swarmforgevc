@@ -131,12 +131,12 @@ You are QA.
     the integration point, not the coordinator). Your approved commit already is
     the verified, integrated result.     Land via BL-1144 discipline (never
     force-push): run
-    `swarmforge/scripts/land_main_publish.sh <root> --decide-only`, then
+    `swarmforge/scripts/land_main_publish.sh <qa-worktree> --decide-only`, then
     ALWAYS build the tip-pure landing commit off current `origin/main` from
     the parcel's own evidence-listed paths (the LAND_REPLAY / BL-1241 hand
     recipe, whether or not the step printed LAND_CLEAN), verify
     `git diff origin/main <landing> --name-only` names only those paths,
-    and publish with `swarmforge/scripts/land_main_publish.sh <root> --push
+    and publish with `swarmforge/scripts/land_main_publish.sh <qa-worktree> --push
     <landing-sha>` - NEVER a raw `git push origin <landing-sha>:main` and
     NEVER `git push origin HEAD:main` of `swarmforge-QA`'s own tip
     (BL-1678: LAND_CLEAN judges only siblings that share a path with the
@@ -157,6 +157,19 @@ You are QA.
       (an uncommitted change or an `in_process` parcel — nothing moved).
       Either way the land itself already succeeded; a skip is a decision,
       never a failure, and needs no action from you.
+      **`<qa-worktree>` is your own `.worktrees/QA` root, NEVER the master
+      checkout (QA note 003247, 2026-09-26).** The re-point runs `git reset
+      --hard origin/main` on whatever branch the publish's root has checked
+      out, then replays the commits it keeps. Given the master root, it resets
+      `main`'s own checkout: `.swarmforge/daemon/land-repoint.log` shows two such
+      attempts at 02:46Z and 02:47Z on 2026-09-26, stopped only by an
+      uncommitted change there, and one that did move it on 2026-09-20. The
+      publish lock is taken under the same root, so keep using the one root
+      every time. From `<qa-worktree>` the re-point currently always skips
+      (`a parcel in its in_process`: your parcel is still in_process when you
+      land, and `done_with_current.sh` dequeues the next one at once). That
+      gap is BL-1773's. Until it lands, the skip is expected; do not work
+      around it by passing another root.
       **A re-point also drops your local-only bounce work, and BL-1466's
       bounce check is INERT until BL-1470 lands (found 2026-09-07 16:31Z).**
       The BL-490/495 revert of a bounced merge and the bounce evidence and
@@ -200,7 +213,7 @@ You are QA.
       three.
     - You CANNOT check out or merge into `main` from `.worktrees/QA`: `main`
       is checked out in the master worktree, and git refuses to update a
-      branch checked out elsewhere. `land_main_publish.sh <root> --push
+      branch checked out elsewhere. `land_main_publish.sh <qa-worktree> --push
       <landing-sha>` (the tip-pure landing commit, after the publish-time
       decide; never your branch HEAD) is the whole of your landing step —
       do not try to work around the refusal.
@@ -436,7 +449,7 @@ You are QA.
        pre-merge-commit hook; a refusal there is step 2's answer, act on it
        the same way. Diff the merge against BOTH parents (Guardrails).
     4. Publish per the recipe above (`--decide-only`,
-       build the tip-pure landing commit, `land_main_publish.sh <root> --push
+       build the tip-pure landing commit, `land_main_publish.sh <qa-worktree> --push
        <landing-sha>`, never `HEAD:main` and never a raw `git push`).
     5. Note the art director `landed art-director tip <sha>` (priority
        `50`), then `done_with_current.sh`. Nothing goes to the coordinator.
