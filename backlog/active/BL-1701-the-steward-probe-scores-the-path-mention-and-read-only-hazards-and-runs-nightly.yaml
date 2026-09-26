@@ -133,3 +133,5 @@ notes: |
   (two fixtures, a scoring rule, one nightly hook), Small (four scenarios,
   one invariant), Testable (stand-in aider for the lane; real-model runs
   as evidence).
+
+assigned_to: coder
