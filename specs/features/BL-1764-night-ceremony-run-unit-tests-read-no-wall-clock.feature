@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c952e1543b04b6dc953a91ee5fd32bb6b2391e71cf5624b22047c92fe867b1c7
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-26T00:07:57.645694555Z","feature_name":"BL-1764 nightClosingCeremonyRun's unit tests never read the wall clock","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1764-night-ceremony-run-unit-tests-read-no-wall-clock.feature","background_hash":"f1cfdec0a6307e053396748843665f3de8a38f31d17f585c652bfd360d6ac15f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the file reads no wall clock","scenario_hash":"b1ff0e0ed7bad29f4f2523e681e8361d335f0b8e6bfc80147d233f1465de1b62","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-26T00:07:57.645694555Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1764 nightClosingCeremonyRun's unit tests never read the wall clock
   The ceremony runner keys a night on the local calendar day. A test that
   starts its ticks at the real current time and then advances 40 minutes

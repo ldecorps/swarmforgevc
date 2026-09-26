@@ -8,6 +8,11 @@ const { runNightClosingCeremony, mainHasBriefing } = require('../out/tools/night
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
+// BL-1764: a fixed local noon, never the wall clock - every tick this
+// file makes (up to +40 min) stays inside the same local calendar day
+// regardless of when the suite actually runs, whatever TZ it runs under.
+const FIXED_NOW_MS = new Date(2026, 8, 25, 12, 0, 0).getTime();
+
 function makeDeps(over = {}) {
   const state = { current: null };
   const actions = [];
@@ -64,11 +69,11 @@ function makeDeps(over = {}) {
 test('live run freezes and instructs when due with empty in_process', () => {
   const { deps, actions, state } = makeDeps();
   // now local 05:30-ish is not needed — evaluate stub forces ceremonyDue.
-  const result = runNightClosingCeremony('/tmp/bl658-fixture', '/tmp/conf', Date.now(), deps);
+  const result = runNightClosingCeremony('/tmp/bl658-fixture', '/tmp/conf', FIXED_NOW_MS, deps);
   assert.equal(result.gateMode, 'ceremony');
   assert.ok(actions.some((a) => a[0] === 'freeze'));
   // first tick freezes; second advances drain→briefing
-  const result2 = runNightClosingCeremony('/tmp/bl658-fixture', '/tmp/conf', Date.now() + 1000, deps);
+  const result2 = runNightClosingCeremony('/tmp/bl658-fixture', '/tmp/conf', FIXED_NOW_MS + 1000, deps);
   assert.ok(actions.some((a) => a[0] === 'rotate'));
   assert.ok(actions.some((a) => a[0] === 'instruct'));
   assert.equal(state.current.phase, 'briefing');
@@ -94,8 +99,8 @@ test('live run night-stops once briefing is marked sent', () => {
 
 test('BL-1393: the ceremony delivers the lean packet before it instructs the briefing', () => {
   const { deps, actions } = makeDeps();
-  runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', Date.now(), deps);
-  runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', Date.now() + 1000, deps);
+  runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', FIXED_NOW_MS, deps);
+  runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', FIXED_NOW_MS + 1000, deps);
 
   const kinds = actions.map((a) => a[0]);
   assert.ok(kinds.includes('lean'), `no lean packet delivered: ${kinds.join(', ')}`);
@@ -113,18 +118,18 @@ test('BL-1393: a sleep path runs the ceremony even when the gate window is off',
     evaluate: () => ({ mode: 'off', scheduleState: 'ok', surfaced: 'nothing', ceremonyDue: false }),
   });
 
-  const gated = runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', Date.now(), deps);
+  const gated = runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', FIXED_NOW_MS, deps);
   assert.equal(gated.advanced, false, 'with no sleep path the window still gates the daemon');
   assert.deepEqual(actions, []);
 
-  const slept = runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', Date.now(), deps, false, 'finish-shift');
+  const slept = runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', FIXED_NOW_MS, deps, false, 'finish-shift');
   assert.equal(slept.gateMode, 'sleep:finish-shift');
   assert.ok(actions.some((a) => a[0] === 'freeze'), 'the sleep path freezes promotion');
 });
 
 test('BL-1393: a sleep after no shift of work records an empty outcome and sends no briefing', () => {
   const { deps, actions } = makeDeps({ workedAShift: () => false });
-  runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', Date.now(), deps, false, 'finish-shift');
+  runNightClosingCeremony('/tmp/bl1393', '/tmp/conf', FIXED_NOW_MS, deps, false, 'finish-shift');
 
   const kinds = actions.map((a) => a[0]);
   assert.ok(kinds.includes('empty'), `no empty outcome recorded: ${kinds.join(', ')}`);
@@ -142,8 +147,8 @@ test('BL-1528: a loud code from deliverLeanPacket is surfaced through deps.surfa
       return ['closing-lean-packet-undeliverable 2026-09-13'];
     },
   });
-  runNightClosingCeremony('/tmp/bl1528', '/tmp/conf', Date.now(), deps);
-  const result = runNightClosingCeremony('/tmp/bl1528', '/tmp/conf', Date.now() + 1000, deps);
+  runNightClosingCeremony('/tmp/bl1528', '/tmp/conf', FIXED_NOW_MS, deps);
+  const result = runNightClosingCeremony('/tmp/bl1528', '/tmp/conf', FIXED_NOW_MS + 1000, deps);
 
   assert.ok(
     actions.some((a) => a[0] === 'surface' && a[1] === 'closing-lean-packet-undeliverable 2026-09-13'),
@@ -161,8 +166,8 @@ test('BL-1528: a loud code from deliverLeanPacket is surfaced through deps.surfa
 
 test('BL-1528: a lean-packet send with no loud codes leaves loudSurfaces untouched', () => {
   const { deps, actions } = makeDeps();
-  runNightClosingCeremony('/tmp/bl1528b', '/tmp/conf', Date.now(), deps);
-  const result = runNightClosingCeremony('/tmp/bl1528b', '/tmp/conf', Date.now() + 1000, deps);
+  runNightClosingCeremony('/tmp/bl1528b', '/tmp/conf', FIXED_NOW_MS, deps);
+  const result = runNightClosingCeremony('/tmp/bl1528b', '/tmp/conf', FIXED_NOW_MS + 1000, deps);
 
   assert.ok(!actions.some((a) => a[0] === 'surface'), 'expected no surface call when deliverLeanPacket reports nothing');
   assert.deepEqual(result.state.loudSurfaces, []);
@@ -204,7 +209,7 @@ test('BL-1640: the daemon path keeps its own hardcoded drain budget, ignoring th
       briefingBudgetMinutes: 1,
     }),
   });
-  const nowMs = Date.now();
+  const nowMs = FIXED_NOW_MS;
   const result = runNightClosingCeremony('/tmp/bl1640b', '/tmp/conf', nowMs, deps);
   assert.equal(result.state.drainDeadlineMs, nowMs + 25 * 60_000);
 });
@@ -214,7 +219,7 @@ test('BL-1640: a second sleep after a worked shift the same day starts a new cer
   // (isolates the restart mechanism from the unrelated "already briefed
   // today" short-circuit, which itself also correctly reopens as 'done').
   const { deps, state } = makeDeps({ workedAShift: () => false });
-  const nowMs = Date.now();
+  const nowMs = FIXED_NOW_MS;
   const first = runNightClosingCeremony('/tmp/bl1640c', '/tmp/conf', nowMs, deps, false, 'finish-shift');
   assert.equal(first.state.phase, 'done');
 
@@ -229,7 +234,7 @@ test('BL-1640: a second sleep after a worked shift the same day starts a new cer
 
 test('BL-1640: a second sleep with no shift since stays quiet over a done state', () => {
   const { deps, state } = makeDeps();
-  const nowMs = Date.now();
+  const nowMs = FIXED_NOW_MS;
   deps.briefingSent = () => true;
   runNightClosingCeremony('/tmp/bl1640d', '/tmp/conf', nowMs, deps, false, 'finish-shift');
   assert.equal(state.current.phase, 'done');
@@ -242,7 +247,7 @@ test('BL-1640: a second sleep with no shift since stays quiet over a done state'
 
 test('BL-1640: the daemon sweep never reopens a done night, even after a worked shift', () => {
   const { deps, state } = makeDeps();
-  const nowMs = Date.now();
+  const nowMs = FIXED_NOW_MS;
   deps.briefingSent = () => true;
   runNightClosingCeremony('/tmp/bl1640e', '/tmp/conf', nowMs, deps, false, 'finish-shift');
   assert.equal(state.current.phase, 'done');
@@ -265,7 +270,7 @@ test('BL-1641: at the hard deadline, ensure-briefing lands the documenter commit
       throw new Error('must not run when landing succeeded');
     },
   });
-  const t0 = Date.now();
+  const t0 = FIXED_NOW_MS;
   runNightClosingCeremony('/tmp/bl1641a', '/tmp/conf', t0, deps, false, 'finish-shift');
   runNightClosingCeremony('/tmp/bl1641a', '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
   const result = runNightClosingCeremony('/tmp/bl1641a', '/tmp/conf', t0 + 40 * 60_000, deps, false, 'finish-shift');
@@ -289,7 +294,7 @@ test('BL-1641: when landing fails, ensure-briefing falls back to composing the h
       return true;
     },
   });
-  const t0 = Date.now();
+  const t0 = FIXED_NOW_MS;
   runNightClosingCeremony('/tmp/bl1641b', '/tmp/conf', t0, deps, false, 'finish-shift');
   runNightClosingCeremony('/tmp/bl1641b', '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
   const result = runNightClosingCeremony('/tmp/bl1641b', '/tmp/conf', t0 + 40 * 60_000, deps, false, 'finish-shift');
@@ -303,7 +308,7 @@ test('BL-1641: when neither lands nor composes, the sequence still ends briefing
     landDocumenterBriefing: () => null,
     composeHeadlessBriefing: () => false,
   });
-  const t0 = Date.now();
+  const t0 = FIXED_NOW_MS;
   runNightClosingCeremony('/tmp/bl1641c', '/tmp/conf', t0, deps, false, 'finish-shift');
   runNightClosingCeremony('/tmp/bl1641c', '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
   const result = runNightClosingCeremony('/tmp/bl1641c', '/tmp/conf', t0 + 40 * 60_000, deps, false, 'finish-shift');
@@ -320,7 +325,7 @@ test('BL-1528: a loud code from recordEmptyOutcome is surfaced the same way', ()
       return ['closing-lean-packet-undeliverable 2026-09-13'];
     },
   });
-  const result = runNightClosingCeremony('/tmp/bl1528c', '/tmp/conf', Date.now(), deps, false, 'finish-shift');
+  const result = runNightClosingCeremony('/tmp/bl1528c', '/tmp/conf', FIXED_NOW_MS, deps, false, 'finish-shift');
 
   assert.ok(
     actions.some((a) => a[0] === 'surface' && a[1] === 'closing-lean-packet-undeliverable 2026-09-13'),
