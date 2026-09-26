@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2b8056914226f61f3f3dfb6caaa7a6c9038d759106f51f32dc1d7827dd4cdbfc
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-26T05:32:30.629612477Z","feature_name":"BL-1773 A land re-points the QA branch while QA holds the landed parcel","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1773-a-land-re-points-the-qa-branch-while-qa-holds-the-landed-parcel.feature","background_hash":"f092c20d82f52295c9d748f2d44574f32410312634487a315a340f32bc4c62f6","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the re-point still skips when the in-process parcel is not the landed ticket's own","scenario_hash":"03c0489857623ccdd266b52cc2a2a093467658f7a53bad491697de3beca9e513","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-26T05:32:30.629612477Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1773 A land re-points the QA branch while QA holds the landed parcel
 
   After every land the publish re-points QA's branch to origin/main
@@ -33,3 +38,11 @@ Feature: BL-1773 A land re-points the QA branch while QA holds the landed parcel
       | a git_handoff whose task names a different ticket   |
       | a note that names no ticket                         |
       | the landed ticket's git_handoff and a second parcel |
+      | the landed ticket's git_handoff and a claim-progress sidecar named for a different parcel |
+
+  # BL-1773 the-landed-parcels-own-sidecar-does-not-block-the-re-point-03
+  Scenario: the re-point proceeds when the landed ticket's parcel carries its own claim-progress sidecar
+    Given the worktree's in_process holds a git_handoff whose task names the landed ticket
+    And the worktree's in_process holds that parcel's claim-progress sidecar
+    When the post-land re-point runs for the landed ticket
+    Then it prints LAND_REPOINTED and the branch tip equals origin/main

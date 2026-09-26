@@ -760,7 +760,34 @@ land (BL-1438).** It refuses — never running `git reset --hard` — on an
 uncommitted change or a parcel still in `in_process` (checked first, since
 an in-process parcel's own mailbox file is untracked and would otherwise
 misreport as a generic dirty tree), each refusal named in
-`.swarmforge/daemon/land-repoint.log`; on a verified-clean tree it moves
+`.swarmforge/daemon/land-repoint.log`.
+
+**The in_process guard no longer blocks on the landed parcel's own
+mailbox file (BL-1773, 2026-09-26).** QA always lands from its own
+worktree while the parcel it is landing still sits in that worktree's
+`in_process` — before this fix the guard skipped on every single QA
+land, so the QA branch's history never converged. Given the landed
+ticket id, `only-landed-tickets-own-pending?` no longer blocks on:
+- a pending file that is a `git_handoff` whose `task:` names that SAME
+  ticket (the same `extract-ticket-id` `classify-repoint-candidate`
+  uses);
+- **that same file's own registered sidecars (amended 2026-09-26, QA
+  spec gap 003254)** — `landed-parcel-sidecar-of?` checks a candidate
+  file's name against the landed parcel file's name plus one of
+  `handoff-lib`'s `sidecar-suffixes` (never restated locally), so
+  handoffd's `claim-progress.json` sidecar — always present beside the
+  parcel at a QA land, since QA commits its evidence before landing —
+  no longer trips the guard the way the first version of this fix
+  still did.
+
+Any other pending file — another ticket's, a note, one naming no ticket
+at all, an unreadable file, a sidecar named for a DIFFERENT file, or a
+second copy of the landed parcel's own file — still blocks exactly as
+before. With no landed ticket id in view (an old caller, or a hand-run
+`repoint`), every pending file still blocks, unchanged. Acceptance:
+`specs/features/BL-1773-a-land-re-points-the-qa-branch-while-qa-holds-the-landed-parcel.feature`.
+
+On a verified-clean tree it moves
 both the branch and the worktree to `origin/main` and logs the old and new
 tip. `land_step_cli.bb`'s `repoint <repo-root>` verb wraps it, and
 `land_main_publish.sh`'s `run_land` invokes that verb immediately after

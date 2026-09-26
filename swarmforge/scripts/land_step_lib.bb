@@ -54,6 +54,11 @@
 ;; shipped `abandoned_commits:` reader - never a second YAML-list parser
 ;; here.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_lib.bb")))
+;; BL-1773 (amended): sidecar-suffixes is handoff_lib.bb's own registry of
+;; sidecar filename suffixes (.nudge, .chase.json, .claim-progress.json,
+;; .batch-claim-progress.json) - reused here, never restated, so a fifth
+;; registered sidecar kind never drifts between the two files.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 
 ;; This lib's own directory, captured at load time: the tree guards the land
 ;; step runs (BL-1375 invariant 2) are its siblings, and *file* is no longer
@@ -3086,6 +3091,69 @@
           :else
           {:disposition :drop :sha commit :subject subject :reason "not bookkeeping"})))))
 
+(defn- parse-handoff-headers
+  "Plain `field: value` header lines up to the first blank line (the
+   handoff draft format, Article 2.2) -> lower-cased key -> trimmed value
+   map. nil for nil content (an unreadable file) - the caller's fail-closed
+   signal, never an empty map standing in for \"could not read this\"."
+  [content]
+  (when content
+    (let [[header _] (str/split content #"\n\n" 2)]
+      (into {}
+            (for [line (str/split-lines (or header ""))
+                  :let [[k v] (str/split line #":\s*" 2)]
+                  :when (and k v (not (str/blank? k)))]
+              [(str/lower-case (str/trim k)) (str/trim v)])))))
+
+(defn- in-process-file-is-landed-tickets-own?
+  "BL-1773: true when this file's own headers are a `git_handoff` whose
+   `task:` names landed-task-ticket-id (pipeline-stage-lib/extract-ticket-id,
+   the same extractor classify-repoint-candidate uses). false for a note, a
+   file naming a different ticket or no ticket at all, or one that cannot
+   be read (fail-closed - an unreadable file is never treated as the
+   landed ticket's own)."
+  [file landed-task-ticket-id]
+  (let [content (try (slurp (str file)) (catch Exception _ nil))
+        headers (parse-handoff-headers content)]
+    (boolean
+     (and headers
+          (= "git_handoff" (get headers "type"))
+          (= landed-task-ticket-id
+             (pipeline-stage-lib/extract-ticket-id (get headers "task")))))))
+
+(defn- landed-parcel-sidecar-of?
+  "BL-1773 (amended): true when `file`'s own name is `parcel-file`'s name
+   plus one of handoff-lib's registered sidecar-suffixes - the same
+   registry handoffd and completion use, never restated here. A sidecar
+   named for any OTHER file (another parcel's, or an orphan whose parcel
+   is gone) is false, even when the suffix itself matches."
+  [file parcel-file]
+  (let [parcel-name (fs/file-name parcel-file)
+        file-name (fs/file-name file)]
+    (boolean (some #(= file-name (str parcel-name %)) handoff-lib/sidecar-suffixes))))
+
+(defn- only-landed-tickets-own-pending?
+  "BL-1773 (amended 2026-09-26, QA spec gap 003254): true when `pending` is
+   the landed ticket's own git_handoff PLUS ONLY that same file's
+   handoff_lib-registered sidecars - handoffd's claim-progress sidecar
+   sits beside the parcel at every QA land, because QA commits evidence
+   before it lands, so the ORIGINAL 'exactly one file' reading skipped on
+   every land regardless. With no landed-task-ticket-id in view (an old
+   caller, or a hand-run repoint), always false - every pending file still
+   blocks, unchanged from before this ticket. A sidecar named for any
+   OTHER file - another parcel's, or an orphan whose parcel is gone -
+   still blocks, as does a SECOND file that is itself another git_handoff
+   naming the landed ticket (an unexpected duplicate, never treated as
+   'the same one parcel twice')."
+  [pending landed-task-ticket-id]
+  (and (some? landed-task-ticket-id)
+       (seq pending)
+       (let [parcels (filter #(in-process-file-is-landed-tickets-own? % landed-task-ticket-id) pending)]
+         (and (= 1 (count parcels))
+              (let [parcel-file (first parcels)
+                    rest-files (remove #(= % parcel-file) pending)]
+                (every? #(landed-parcel-sidecar-of? % parcel-file) rest-files))))))
+
 (defn post-land-repoint!
   "{:action :repointed :old-tip :new-tip} on success, or {:action :skipped
    :reason \"...\"} when it is not safe to run - NEVER a bare `reset --hard`
@@ -3105,6 +3173,18 @@
    as redundant rather than re-applied a second time. Omitted (an old
    caller, or a hand-run repoint with no ticket in view), every local-only
    commit is judged purely on shape - the same guards, unchanged.
+
+   BL-1773 (amended 2026-09-26, QA spec gap 003254): the SAME key also
+   narrows the in_process guard - QA always lands while the parcel it is
+   landing, AND handoffd's claim-progress sidecar for it, sit in its own
+   in_process, so from QA's own worktree this guard used to skip on every
+   single land regardless. in_process no longer blocks ONLY when it holds
+   the landed ticket's own git_handoff PLUS ONLY that same file's
+   handoff_lib-registered sidecars (see only-landed-tickets-own-pending?
+   above); any other pending shape - another ticket's, a note, one naming
+   no ticket, an unreadable one, a sidecar named for any other file, or a
+   second git_handoff beside the landed one's own - still blocks exactly
+   as before.
 
    Every commit reachable from `old-tip` and not from `origin-main` is
    enumerated BEFORE the reset and classified: a commit whose own subject
@@ -3141,8 +3221,10 @@
       ;; BL-1421's own ruling, same shape: in-process is checked BEFORE
       ;; dirty - an in_process parcel's own mailbox file is untracked, which
       ;; would otherwise misreport it as a generic "uncommitted change"
-      ;; instead of naming the real reason.
-      (seq pending)
+      ;; instead of naming the real reason. BL-1773 (amended): in_process
+      ;; holding the landed ticket's own git_handoff plus only that file's
+      ;; registered sidecars no longer counts here.
+      (and (seq pending) (not (only-landed-tickets-own-pending? pending landed-task-ticket-id)))
       (let [r {:action :skipped :reason "a parcel in its in_process" :old-tip old-tip}]
         (log-repoint! root r) r)
 
