@@ -579,8 +579,11 @@
   "Task names of every git_handoff, and every completed Work note, directly
    in dir or inside its batch_* subdirectories - one mailbox state's
    contribution to a seat's durable record of the tasks it has worked
-   (BL-1004/BL-1616). A git_handoff attributes through its `task` header; a
-   `note` attributes through the ONE shared reader
+   (BL-1004/BL-1616). A git_handoff attributes through its `task` header
+   UNLESS it carries `outcome: given-up` (BL-1715: a local driver seat's
+   own give-up completion - the seat that gave up does not count as a
+   seat that worked the task, so a sibling seat's next claim is never
+   deferred to it); a `note` attributes through the ONE shared reader
    (supersede-lib/task-name-from-content, BL-1185/BL-1608's own parser -
    never a second one), UNLESS it was completed with a `--no-work` reason
    (the `no_work_reason` header done_with_current.sh stamps) - a declined
@@ -591,10 +594,35 @@
   (set (keep (fn [f]
                (let [type (header-field f "type")]
                  (cond
-                   (= "git_handoff" type) (header-field f "task")
+                   (and (= "git_handoff" type) (not= "given-up" (header-field f "outcome")))
+                   (header-field f "task")
                    (and (= "note" type) (nil? (header-field f "no_work_reason")))
                    (supersede-lib/task-name-from-content (slurp (str f)))
                    :else nil)))
+             (concat (handoff-files dir)
+                     (mapcat handoff-files (batch-dirs dir))))))
+
+;; ── BL-1715: the give-up marker IS the completed handoff file itself ────
+;; A stage-shared completed/ directory (BL-983: coder and coder@2 share one
+;; physical mailbox) is scanned identically by every seat of the stage -
+;; `outcome_seat` (stamped alongside `outcome: given-up` by
+;; local_parcel_driver_lib.bb's give-up! path) is what makes the "never
+;; claims that ticket again" rule seat-specific rather than stage-wide: a
+;; sibling seat's own read of the same directory, filtered by ITS OWN
+;; current-role, sees an empty set unless it is the one that gave up.
+
+(defn given-up-task-names-in
+  "Task names seat-id has given up on, per the durable outcome_seat/outcome
+   markers a driver's own completed handoff carries (BL-1715) - read from
+   dir (plus its batch_* subdirectories). Never expires (no age check):
+   the seat that gave a ticket up is excluded for as long as its own
+   completed record of doing so exists."
+  [dir seat-id]
+  (set (keep (fn [f]
+               (when (and (= "git_handoff" (header-field f "type"))
+                          (= "given-up" (header-field f "outcome"))
+                          (= seat-id (header-field f "outcome_seat")))
+                 (header-field f "task")))
              (concat (handoff-files dir)
                      (mapcat handoff-files (batch-dirs dir))))))
 

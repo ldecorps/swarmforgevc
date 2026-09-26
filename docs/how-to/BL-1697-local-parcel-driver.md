@@ -1,6 +1,6 @@
 # The local parcel driver — moving a coder parcel through a local aider seat
 
-**Last Updated:** 2026-09-25
+**Last Updated:** 2026-09-26
 
 A headless local (aider) seat has no command channel of its own — it never
 runs a `!` line and auto-declines fenced shell blocks — so it cannot move a
@@ -122,10 +122,42 @@ file, independent of the Claude `coder`'s).
    3 — not yet pack-configurable) → one fix request is typed naming the
    failed condition, and the gate runs again on the next idle tick.
 
-   **Fail at the turn limit** → spec write permission is restored, `seat
-   ask "<ticket>: <condition>"` is sent, and the state file is marked
-   `escalated`. An escalated parcel stays `in_process` — releasing that
-   hold is a separate ticket (BL-1698), not built here.
+   **Fail at the turn limit, stage has a non-driver sibling seat (BL-1715)**
+   → the parcel is **given up**, not escalated-and-held: spec write
+   permission is restored; an outcome row (`given-up`, see below) is
+   recorded; this seat's own `in_process` handoff file is stamped
+   `outcome: given-up` / `outcome_seat: <role>` and moved to `completed/`
+   (that stamp is the durable per-(ticket, seat) marker — no separate
+   store); every commit this seat made since its pre-claim `HEAD` is
+   `git revert`-ed, newest first, never `git reset` (A Bounce Must Be
+   Reverted Out Of The Bouncing Branch's own discipline), so the seat's
+   tree matches its pre-claim tree; and a fresh `git_handoff` naming the
+   same task, received commit and priority is written straight into the
+   stage's shared `inbox/new/` queue, for **any** seat of the stage to
+   claim on its own next poll — a Claude sibling claims it at once, with
+   no BL-1004 rework-affinity deferral (the seat that gave up is excluded
+   from that check, not counted as a seat that "worked" the task). The
+   seat that gave the parcel up is barred from claiming it again — the
+   handed-off parcel itself, low-cost or not, and any later rework bounce
+   for the same ticket — for as long as the ticket stays in this stage
+   (`given-up-task-names-in`, read at claim time in
+   `ready_for_next_task.bb`, permanent — never BL-1004's own 30-minute
+   window).
+
+   **Fail at the turn limit, stage has no non-driver sibling seat** → spec
+   write permission is restored, `seat ask "<ticket>: <condition>"` is
+   sent, and the state file is marked `escalated`. An escalated parcel
+   stays `in_process` — releasing that hold is a separate ticket (BL-1698),
+   not built here.
+
+## The driver's scorecard (BL-1715)
+
+Every parcel the driver ends — handed off, given up or escalated — leaves
+exactly one row in `.swarmforge/local-driver/outcomes.jsonl`: seat id,
+model, ticket, outcome (`handed-off` | `given-up` | `escalated`), failed
+condition (nil on `handed-off`), fix turns used, wall time. This is the
+local seat's scorecard under live swarm control; BL-1702's mixed-pack
+runbook reads it.
 
 ## Surviving a restart (BL-1698)
 

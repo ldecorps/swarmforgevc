@@ -51,6 +51,34 @@
   (boolean (and (prompt-engine-lib/parcel-driver-capable? agent)
                 (contains? driving-roles (base-role role)))))
 
+;; ── Impure: sibling-seat identity (BL-1715, the give-up branch) ─────────
+;; Reads roles.tsv directly - identity/agent, never mailbox state, so this
+;; has no dependency on handoff_lib.bb (BL-983's own layering).
+
+(defn- roles-tsv-rows [project-root]
+  (let [p (fs/path project-root ".swarmforge" "roles.tsv")]
+    (if (fs/exists? p)
+      (->> (str/split-lines (slurp (str p)))
+           (remove str/blank?)
+           (map #(str/split % #"\t")))
+      [])))
+
+(defn has-non-driver-sibling?
+  "True when role's stage (base-role stripped) has at least one OTHER
+   roles.tsv row of the same stage whose agent is not driver-capable
+   (BL-1715 requirement 1: give up rather than escalate-and-hold only when
+   such a sibling exists to work the parcel next)."
+  [project-root role]
+  (let [stage (base-role role)]
+    (boolean
+     (some (fn [row]
+             (let [row-role (nth row 0 nil)
+                   row-agent (nth row 5 nil)]
+               (and (not= row-role role)
+                    (= stage (base-role row-role))
+                    (not (driver-seat? row-agent row-role)))))
+           (roles-tsv-rows project-root)))))
+
 ;; ── Pure: the red-check decision (step 3, before any model turn) ────────
 
 (defn red-check-decision
@@ -224,6 +252,31 @@
 (defn clear-driver-state! [project-root seat-id]
   (let [p (state-path project-root seat-id)]
     (when (fs/exists? p) (fs/delete p))))
+
+;; ── BL-1715 requirement 4: the local seat's own scorecard ───────────────
+
+(defn outcomes-path [project-root]
+  (str (fs/path (state-dir project-root) "outcomes.jsonl")))
+
+(defn record-outcome!
+  "Appends one JSON line - seat id, model, ticket, outcome
+   (handed-off|given-up|escalated), failed condition (nil on handed-off),
+   fix turns used, wall time. Append-only: one row per parcel the driver
+   ends. The BL-1702 runbook reads this as the local seat's scorecard
+   under live swarm control."
+  [project-root {:keys [seat-id model ticket outcome reason fix-turns-used wall-ms]}]
+  (let [p (outcomes-path project-root)]
+    (fs/create-dirs (fs/parent p))
+    (spit p
+          (str (json/generate-string
+                {:seatId seat-id :model model :ticket ticket :outcome outcome
+                 :reason reason :fixTurnsUsed fix-turns-used :wallMs wall-ms
+                 :at (str (java.time.Instant/now))})
+               "\n")
+          :append true)))
+
+(defn- driver-wall-ms [started-at-ms]
+  (when started-at-ms (- (System/currentTimeMillis) started-at-ms)))
 
 ;; ── Impure: the seat CLI (BL-1696) - the driver's only channel into the
 ;; seat's own checkout; never a pipeline script run directly ─────────────
@@ -536,9 +589,10 @@
 ;; ── BL-1698 requirement 1: the resumable half of a ticket parcel ────────
 
 (defn- persist-post-merge!
-  [project-root seat-id ticket sender post-merge-head]
+  [project-root seat-id ticket sender post-merge-head extra]
   (write-driver-state! project-root seat-id
-                        {:phase "post-merge" :ticket ticket :senderRole sender :postMergeHead post-merge-head}))
+                        (merge {:phase "post-merge" :ticket ticket :senderRole sender :postMergeHead post-merge-head}
+                               extra)))
 
 (defn continue-after-merge!
   "Red-check through typing the instruction - called fresh right after a
@@ -550,7 +604,7 @@
    branch and never retypes it."
   [ctx state]
   (let [{:keys [project-root checkout role seat-id agent socket session fix-turns-limit]} ctx
-        {:keys [ticket postMergeHead senderRole]} state
+        {:keys [ticket postMergeHead senderRole commit priority preClaimHead startedAtMs]} state
         ticket-yaml-path (str (fs/path checkout "backlog" "active" (str ticket ".yaml")))
         ticket-content (slurp ticket-yaml-path)
         acceptance-path (ticket-acceptance-path ticket-content)
@@ -559,7 +613,10 @@
         red-decision (red-check-decision (zero? (:exit red)))]
     (if-not (:pass red-decision)
       (do (escalate! ctx ticket (:reason red-decision))
-          (write-driver-state! project-root seat-id {:escalated true :ticket ticket :reason (:reason red-decision)}))
+          (write-driver-state! project-root seat-id {:escalated true :ticket ticket :reason (:reason red-decision)})
+          (record-outcome! project-root {:seat-id seat-id :model agent :ticket ticket :outcome "escalated"
+                                          :reason (:reason red-decision) :fix-turns-used 0
+                                          :wall-ms (driver-wall-ms startedAtMs)}))
       (let [editable (->> (editable-paths ticket-content)
                            (remove forbidden-chat-path?)
                            vec)
@@ -572,6 +629,10 @@
           :ticket ticket
           :senderRole senderRole
           :postMergeHead postMergeHead
+          :commit commit
+          :priority priority
+          :preClaimHead preClaimHead
+          :startedAtMs startedAtMs
           :specFiles spec-files
           :specHashesBefore spec-hashes
           :editablePaths editable
@@ -581,9 +642,11 @@
         (type-raw! socket session agent (instruction-text ticket))))))
 
 (defn- start-ticket-parcel!
-  [ctx sender commit ticket]
-  (let [{:keys [project-root checkout role seat-id]} ctx
-        ticket-yaml-path (str (fs/path checkout "backlog" "active" (str ticket ".yaml")))]
+  [ctx sender commit ticket priority]
+  (let [{:keys [project-root checkout role seat-id agent]} ctx
+        ticket-yaml-path (str (fs/path checkout "backlog" "active" (str ticket ".yaml")))
+        pre-claim-head (head-sha checkout)
+        started-at-ms (System/currentTimeMillis)]
     (when-not (fs/exists? ticket-yaml-path)
       ;; Named by the parcel but not (yet) visible in this checkout - the
       ;; same "merge main first" condition every Claude role hits
@@ -593,11 +656,16 @@
     (let [merge-result (seat! checkout role ["merge" sender commit])]
       (if-not (zero? (:exit merge-result))
         (do (escalate! ctx ticket "merge conflict")
-            (write-driver-state! project-root seat-id {:escalated true :ticket ticket :reason "merge conflict"}))
+            (write-driver-state! project-root seat-id {:escalated true :ticket ticket :reason "merge conflict"})
+            (record-outcome! project-root {:seat-id seat-id :model agent :ticket ticket :outcome "escalated"
+                                            :reason "merge conflict" :fix-turns-used 0
+                                            :wall-ms (driver-wall-ms started-at-ms)}))
         (let [post-merge-head (head-sha checkout)]
           ;; Persisted immediately - a crash between here and the chat
           ;; set-up resumes at phase "post-merge" and skips the merge.
-          (persist-post-merge! project-root seat-id ticket sender post-merge-head)
+          (persist-post-merge! project-root seat-id ticket sender post-merge-head
+                                {:commit commit :priority priority
+                                 :preClaimHead pre-claim-head :startedAtMs started-at-ms})
           (continue-after-merge! ctx (read-driver-state project-root seat-id)))))))
 
 (defn start-new-parcel!
@@ -621,6 +689,7 @@
                 sender (read-yaml-field parcel-text "from")
                 commit (read-yaml-field parcel-text "commit")
                 ticket (read-yaml-field parcel-text "task")
+                priority (read-yaml-field parcel-text "priority")
                 message (read-yaml-field parcel-text "message")
                 non-forwarding? (= "true" (read-yaml-field parcel-text "non-forwarding"))]
             (cond
@@ -635,13 +704,111 @@
                   (seat! checkout role ["done"]))
 
               :else
-              (start-ticket-parcel! ctx sender commit ticket))))))))
+              (start-ticket-parcel! ctx sender commit ticket priority))))))))
+
+;; ── BL-1715 requirement 1: the give-up branch ────────────────────────────
+
+(defn- inbox-dir [project-root state]
+  (str (fs/path project-root ".swarmforge" "handoffs" "inbox" (name state))))
+
+(defn- complete-in-process-as-given-up!
+  "Stamps `outcome: given-up` and `outcome_seat: role` onto THIS seat's own
+   in-process parcel file and moves it to completed/ - the local seat's
+   own bookkeeping for the ticket it just gave up, never a git_handoff
+   forward. The stamp IS the durable per-(ticket, seat) marker
+   handoff_lib.bb's given-up-task-names-in/worked-task-names-in read back
+   later (no separate store)."
+  [project-root role]
+  (let [dir (inbox-dir project-root :in_process)
+        f (some->> (when (fs/exists? dir) (fs/list-dir dir))
+                   (filter #(str/ends-with? (str %) ".handoff"))
+                   first)]
+    (when f
+      (let [text (slurp (str f))
+            stamped (str (str/trim-newline text) "\noutcome: given-up\noutcome_seat: " role "\n")
+            target (fs/path (inbox-dir project-root :completed) (fs/file-name f))]
+        (fs/create-dirs (fs/parent target))
+        (spit (str target) stamped)
+        (fs/delete f)))))
+
+(defn- commit-shas-since
+  "Newest-first commit shas strictly after since-sha, up to and including
+   HEAD."
+  [checkout since-sha]
+  (->> (str/split-lines (:out (git! checkout "log" "--format=%H" (str since-sha "..HEAD"))))
+       (remove str/blank?)))
+
+(defn- merge-commit-sha? [checkout sha]
+  (> (count (str/split (str/trim (or (:out (git! checkout "log" "-1" "--format=%P" sha)) "")) #"\s+"))
+     1))
+
+(defn revert-to-pre-claim!
+  "Reverts every commit made since pre-claim-head, newest first, via `git
+   revert` (a non-merge commit reverted plainly, a merge with `-m 1`) -
+   never `git reset`, which would rewrite history (A Bounce Must Be
+   Reverted Out Of The Bouncing Branch's own discipline: revert, not
+   reset). A no-op when pre-claim-head is unknown or already HEAD."
+  [checkout pre-claim-head]
+  (when (and pre-claim-head (not= (head-sha checkout) pre-claim-head))
+    (doseq [sha (commit-shas-since checkout pre-claim-head)]
+      (if (merge-commit-sha? checkout sha)
+        (git! checkout "revert" "--no-edit" "-m" "1" sha)
+        (git! checkout "revert" "--no-edit" sha)))))
+
+(defn- handoff-timestamp-token []
+  (-> (str (java.time.Instant/now))
+      (str/replace #"[-:]" "")
+      (str/replace #"\.\d+Z$" "Z")))
+
+(defn- requeue-parcel!
+  "Writes a fresh git_handoff draft naming the SAME task, received commit
+   and priority directly into the stage's shared queue, so any seat of the
+   stage (a Claude seat included) claims it on its own next poll with no
+   deferral (handoff_lib.bb's worked-task-names-in excludes the given-up
+   completion) - the seat that gave it up is excluded permanently instead
+   (given-up-task-names-in), never by this fresh copy."
+  [project-root role sender ticket commit priority]
+  (let [dir (inbox-dir project-root :new)
+        fname (str "00_" (handoff-timestamp-token) "_" (format "%06d" (rand-int 1000000))
+                   "_from_" sender "_to_" role "_for_" role ".handoff")]
+    (fs/create-dirs dir)
+    (spit (str (fs/path dir fname))
+          (str "type: git_handoff\n"
+               "from: " sender "\n"
+               "to: " role "\n"
+               "priority: " (or priority "50") "\n"
+               "task: " ticket "\n"
+               "commit: " commit "\n"
+               "\n"
+               "merge_and_process " sender " " commit "\n"))))
+
+(defn give-up!
+  "BL-1715 requirement 1: the last fix turn still fails and this stage has
+   a non-driver sibling seat - give the parcel up rather than
+   escalate-and-hold. Spec write permission is restored first, as on every
+   other exit path. The revert (never reset) brings the seat's tree back
+   to exactly its pre-claim state; the fresh re-queued copy is what a
+   sibling seat's next poll claims."
+  [ctx state reason]
+  (let [{:keys [project-root checkout role seat-id agent]} ctx
+        {:keys [ticket senderRole commit priority preClaimHead fixTurnsUsed startedAtMs]} state]
+    (restore-spec-writable! state)
+    (record-outcome! project-root
+                      {:seat-id seat-id :model agent :ticket ticket :outcome "given-up"
+                       :reason reason :fix-turns-used fixTurnsUsed :wall-ms (driver-wall-ms startedAtMs)})
+    (complete-in-process-as-given-up! project-root role)
+    (revert-to-pre-claim! checkout preClaimHead)
+    (requeue-parcel! project-root role senderRole ticket commit priority)
+    (clear-driver-state! project-root seat-id)))
 
 (defn run-gate!
-  "Step 6-7, called once the pane is confirmed idle."
+  "Step 6-7, called once the pane is confirmed idle. BL-1715: when the last
+   fix turn still fails and this stage has a non-driver sibling seat, the
+   parcel is given up (give-up!) rather than escalated-and-held."
   [ctx state]
   (let [{:keys [project-root checkout role seat-id agent socket session]} ctx
-        {:keys [ticket postMergeHead specFiles specHashesBefore editablePaths acceptancePath fixTurnsUsed fixTurnsLimit]} state
+        {:keys [ticket postMergeHead specFiles specHashesBefore editablePaths acceptancePath
+                fixTurnsUsed fixTurnsLimit startedAtMs]} state
         gate-result (seat-test! checkout role ticket acceptancePath)
         commit-count (commit-count-since checkout postMergeHead)
         touched (touched-paths-since checkout postMergeHead)
@@ -661,14 +828,22 @@
         (when next-role
           (seat! checkout role ["handoff" next-role ticket]))
         (seat! checkout role ["done"])
+        (record-outcome! project-root {:seat-id seat-id :model agent :ticket ticket :outcome "handed-off"
+                                        :reason nil :fix-turns-used fixTurnsUsed
+                                        :wall-ms (driver-wall-ms startedAtMs)})
         (clear-driver-state! project-root seat-id))
       (if (< fixTurnsUsed fixTurnsLimit)
         (do (chat-set-up! ctx state)
             (type-raw! socket session agent (fix-request-text ticket (:reason decision)))
             (write-driver-state! project-root seat-id (assoc state :fixTurnsUsed (inc fixTurnsUsed))))
-        (do (restore-spec-writable! state)
-            (escalate! ctx ticket (:reason decision))
-            (write-driver-state! project-root seat-id (assoc state :escalated true :reason (:reason decision))))))))
+        (if (has-non-driver-sibling? project-root role)
+          (give-up! ctx state (:reason decision))
+          (do (restore-spec-writable! state)
+              (escalate! ctx ticket (:reason decision))
+              (record-outcome! project-root {:seat-id seat-id :model agent :ticket ticket :outcome "escalated"
+                                              :reason (:reason decision) :fix-turns-used fixTurnsUsed
+                                              :wall-ms (driver-wall-ms startedAtMs)})
+              (write-driver-state! project-root seat-id (assoc state :escalated true :reason (:reason decision)))))))))
 
 (defn drive-tick!
   "Advances one seat's driver state by exactly as much as is ready this

@@ -503,9 +503,19 @@
                 ;; BL-1001: drop candidates this seat must not take (tier /
                 ;; prefer-fit). They stay in the stage queue for a peer.
                 tiers                (seat-difficulty-lib/parse-seat-tiers pack-conf)
+                ;; BL-1715: a local driver seat that gave a ticket up must
+                ;; never claim it again while it is in the stage - never a
+                ;; deferral (BL-1004's own 30-minute window), permanent.
+                ;; The marker lives in THIS seat's own completed/ mailbox
+                ;; (given-up-task-names-in), so a sibling seat's identical
+                ;; read of the shared directory is unaffected.
+                given-up-tasks       (handoff-lib/given-up-task-names-in
+                                       (handoff-lib/my-mailbox-dir :completed)
+                                       (handoff-lib/current-role))
                 claimable            (->> decided
                                           (remove #(= :defer (:action (second %))))
                                           (filter (fn [[f _]] (difficulty-allows-claim? f tiers pack-conf)))
+                                          (remove (fn [[f _]] (contains? given-up-tasks (claim-task-name f))))
                                           vec)]
             (doseq [[f decision] deferred]
               (println (seat-affinity-lib/deferral-line

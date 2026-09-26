@@ -92,7 +92,7 @@ const ROLE_ASK_STUB = (logPath) => `#!/usr/bin/env bb
   (spit "${logPath}" (str "role_ask.bb" (apply str (map #(str "\\u001f" %) args)) "\\n") :append true))
 `;
 
-function makeLocalParcelDriverFixture() {
+function makeLocalParcelDriverFixture({ driverRole = 'coder' } = {}) {
   sweepStaleRootsOnce();
   const root = mkProcessTmpDir(`${PREFIX}${process.pid}-`);
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
@@ -125,19 +125,31 @@ function makeLocalParcelDriverFixture() {
     fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, name), path.join(scriptsDir, name));
   }
 
-  fs.writeFileSync(
-    path.join(root, '.swarmforge', 'roles.tsv'),
-    [
-      ['coder', 'coder', root, 'sf-coder', 'Coder', 'aider', 'task', 'off', 'forward-only'].join('\t'),
-      ['specifier', 'master', root, 'sf-specifier', 'Specifier', 'claude', 'task', 'off', 'forward-only'].join('\t'),
-      ['cleaner', 'cleaner', root, 'sf-cleaner', 'Cleaner', 'claude', 'batch', 'off', 'back-one'].join('\t'),
-      ['coordinator', 'master', root, 'sf-coordinator', 'Coordinator', 'claude', 'task', 'off', 'forward-only'].join(
+  const otherRoleRows = [
+    ['specifier', 'master', root, 'sf-specifier', 'Specifier', 'claude', 'task', 'off', 'forward-only'],
+    ['cleaner', 'cleaner', root, 'sf-cleaner', 'Cleaner', 'claude', 'batch', 'off', 'back-one'],
+    ['coordinator', 'master', root, 'sf-coordinator', 'Coordinator', 'claude', 'task', 'off', 'forward-only'],
+    // BL-1698 requirement 4: a QA merge-up note names QA as the sender.
+    ['QA', 'QA', root, 'sf-QA', 'QA', 'claude', 'task', 'off', 'forward-only'],
+  ];
+
+  // BL-1715: writes the coder stage's own roles.tsv rows - one per seat,
+  // sharing the SAME worktree path (BL-983: a stage's seats share one
+  // physical mailbox) - plus every other role's row, unchanged. seatRows
+  // is [{role, agent}, ...]; the mixed-pack scenarios call this directly
+  // to add/remove the Claude sibling seat without re-seeding the fixture.
+  function writeRolesTsv(seatRows) {
+    const seatLines = seatRows.map((r) =>
+      [r.role, 'coder', root, `sf-${r.role.replace('@', '')}`, 'Coder', r.agent, 'task', 'off', 'forward-only'].join(
         '\t'
-      ),
-      // BL-1698 requirement 4: a QA merge-up note names QA as the sender.
-      ['QA', 'QA', root, 'sf-QA', 'QA', 'claude', 'task', 'off', 'forward-only'].join('\t'),
-    ].join('\n') + '\n'
-  );
+      )
+    );
+    fs.writeFileSync(
+      path.join(root, '.swarmforge', 'roles.tsv'),
+      [...seatLines, ...otherRoleRows.map((r) => r.join('\t'))].join('\n') + '\n'
+    );
+  }
+  writeRolesTsv([{ role: driverRole, agent: 'aider' }]);
 
   // The acceptance check: `editable.txt` must contain MARKER for the
   // ticket's own acceptance to "pass". Wired as this pack's
@@ -304,7 +316,7 @@ console.log(JSON.stringify({ kind: 'delivered', text: answer.text }));
     // BL-1698 requirement 3: the release CLI verb, never typed into a
     // pane.
     releaseHold(mode) {
-      const result = spawnSync('bb', [DRIVER_CLI, 'release', root, root, 'coder', 'coder', mode], {
+      const result = spawnSync('bb', [DRIVER_CLI, 'release', root, root, driverRole, driverRole, mode], {
         encoding: 'utf8',
       });
       return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
@@ -317,12 +329,53 @@ console.log(JSON.stringify({ kind: 'delivered', text: answer.text }));
     writeDriverState(state) {
       const dir = path.join(root, '.swarmforge', 'local-driver');
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, 'coder.json'), JSON.stringify(state));
+      fs.writeFileSync(path.join(dir, `${driverRole}.json`), JSON.stringify(state));
     },
 
     readDriverState() {
-      const p = path.join(root, '.swarmforge', 'local-driver', 'coder.json');
+      const p = path.join(root, '.swarmforge', 'local-driver', `${driverRole}.json`);
       return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : null;
+    },
+
+    readOutcomes() {
+      const p = path.join(root, '.swarmforge', 'local-driver', 'outcomes.jsonl');
+      if (!fs.existsSync(p)) return [];
+      return fs
+        .readFileSync(p, 'utf8')
+        .split('\n')
+        .filter((l) => l.trim().length > 0)
+        .map((l) => JSON.parse(l));
+    },
+
+    // BL-1715: the coder stage's own roles.tsv rows, re-writable mid-test
+    // (scenario 04 removes the Claude sibling seat) without re-seeding the
+    // fixture. seatRows is [{role, agent}, ...]. Committed immediately -
+    // an UNCOMMITTED change here is not safe: makeSenderCommit's own
+    // branch-switch dance (`checkout -b`, `commit -am`, `checkout main`)
+    // sweeps an uncommitted tracked-file edit into the side branch and
+    // main's checkout then restores its OWN last-committed content,
+    // silently reverting this write.
+    writeRolesTsv(seatRows) {
+      writeRolesTsv(seatRows);
+      git(root, ['add', '.swarmforge/roles.tsv']);
+      git(root, ['commit', '-q', '-m', 'fixture: update roles.tsv']);
+    },
+
+    driverRole,
+
+    // BL-1715: polls a role's real claim path directly - the LEAF script
+    // (never the seat/ready_for_next.sh wrapper, which would run this
+    // fixture's own simplified stub) - mirrors BL-1004's own poll()
+    // helper. Used to check what a FRESH poll by either seat of the
+    // mixed pack actually does, independent of the driver's own
+    // internal orchestration.
+    pollRole(role) {
+      const result = spawnSync(
+        'bb',
+        [path.join(REAL_SCRIPTS_DIR, 'ready_for_next_task.bb')],
+        { cwd: root, encoding: 'utf8', env: { ...process.env, SWARMFORGE_ROLE: role } }
+      );
+      return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
     },
 
     // A commit on a side branch, merged in by the driver's own "merge"
@@ -420,11 +473,11 @@ console.log(JSON.stringify({ kind: 'delivered', text: answer.text }));
         DRIVER_CLI,
         root,
         root,
-        'coder',
-        'coder',
+        driverRole,
+        driverRole,
         'aider',
         fixture.tmux.socketPath || 'fake-socket',
-        'sf-coder',
+        `sf-${driverRole.replace('@', '')}`,
         String(fixTurnsLimit),
         '1',
         '0',

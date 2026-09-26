@@ -35,6 +35,23 @@
 %% "mail"); any other note raises one question (or, if the role's ask
 %% slot is already taken, a priority-00 note to the coordinator instead)
 %% and completes - no mail is ever left wedging the seat.
+%% BL-1715 (2026-09-26): at the fix-turn limit, a stage with a non-driver
+%% sibling seat (a Claude coder beside a driver coder@2) GIVES UP the
+%% parcel instead of escalating-and-holding: spec write permission is
+%% restored, an outcome row is recorded, this seat's own in_process
+%% handoff is stamped outcome: given-up / outcome_seat: <role> and moved
+%% to completed/ (the durable per-(ticket, seat) marker), every commit
+%% since pre-claim HEAD is git-reverted (never reset) so the seat's tree
+%% matches its pre-claim tree, and a fresh git_handoff naming the same
+%% task/commit/priority is written straight into the stage's shared
+%% inbox/new/ for ANY seat - a Claude sibling claims it at once, no
+%% BL-1004 rework-affinity deferral - while the seat that gave up is
+%% barred from claiming that ticket again in this stage
+%% (given-up-task-names-in, checked at claim time, permanent). A
+%% driver-only stage (no non-driver sibling) still escalates-and-holds
+%% exactly as BL-1697/BL-1698. Every ended parcel (handed-off, given-up
+%% or escalated) leaves one row in
+%% .swarmforge/local-driver/outcomes.jsonl.
 flowchart TD
   START(["sender role finishes work\nand commits"])
   DRAFT["writes a handoff draft\n(field: value headers, not JSON)"]
@@ -135,7 +152,9 @@ flowchart TD
     DGATE{"gate: commit exists,\nacceptance now passes,\nspec bytes identical,\ntouched paths ⊆ editable set"}
     DFIXLEFT{"fix turns\nremaining?"}
     DFIXTYPE["chat set up again\nunconditionally, one fix request\ntyped naming the failed condition;\ngate again next tick"]
-    DESCALATE(["fix turns exhausted:\nspec write permission restored,\n`seat ask` \"<ticket>: <condition>\",\nstate escalated"])
+    DSIBLING{"fix turns exhausted:\nstage has a non-driver\nsibling seat? (BL-1715)"}
+    DGIVEUP(["give-up!: spec writable restored,\noutcome row recorded, own\nin_process handoff stamped\noutcome: given-up / outcome_seat\nand moved to completed/, every\ncommit since pre-claim HEAD\ngit-reverted (never reset),\nfresh git_handoff for the SAME\ntask/commit/priority written into\nthe stage's shared inbox/new/,\nstate cleared"])
+    DESCALATE(["fix turns exhausted, no sibling:\nspec write permission restored,\n`seat ask` \"<ticket>: <condition>\",\nstate escalated"])
     DPASS["spec write permission restored,\n`seat handoff <next-role> <ticket>`\n(next-required-stage, never literal),\n`seat done`, state cleared"]
     DHOLDCHECK{"escalated TICKET hold only\n(:acceptancePath set), next tick:\nanswer-available?\n(deliver-role-answer.js\n--role <role>, BL-1244)"}
     DRESUME["resume-from-hold!: chat set up\nagain unconditionally, ONE fix\nrequest typed carrying the answer\ntext; fixTurnsUsed = fixTurnsLimit\n(one more try only, BL-1698 D4)"]
@@ -164,7 +183,10 @@ flowchart TD
   DGATE -->|fail| DFIXLEFT
   DFIXLEFT -->|yes| DFIXTYPE
   DFIXTYPE -.->|awaits idle again| DIDLE
-  DFIXLEFT -->|no| DESCALATE
+  DFIXLEFT -->|no| DSIBLING
+  DSIBLING -->|yes - give up,\nnever hold| DGIVEUP
+  DSIBLING -->|no - driver-only\nstage| DESCALATE
+  DGIVEUP -.->|any seat of the stage\nclaims it next poll| WRITE
   DESCALATE --> DHOLDCHECK
   DHOLDCHECK -->|answer waiting| DRESUME
   DHOLDCHECK -->|none yet - stays held| DHOLDCHECK
@@ -182,8 +204,8 @@ flowchart TD
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
-  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE,DRIVERSEAT,DRED,DIDLE,DGATE,DFIXLEFT,WAKESESSION,DMAILTYPE,DHOLDCHECK,DRELEASE gate;
+  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE,DRIVERSEAT,DRED,DIDLE,DGATE,DFIXLEFT,DSIBLING,WAKESESSION,DMAILTYPE,DHOLDCHECK,DRELEASE gate;
   class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED,NOTSENT,DMERGECONFLICT,DREDESCALATE,DESCALATE,DMAILCONFLICT bad;
-  class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED,DRIVERSKIP,WAKENOSESSION,DMAILDONE,DRELCOMPLETE,DRELRETRY store;
+  class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED,DRIVERSKIP,WAKENOSESSION,DMAILDONE,DRELCOMPLETE,DRELRETRY,DGIVEUP store;
   class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH,DSERVE,DCHATSET,DFIXTYPE,DPASS,DBOOT,DMERGE,DMAILMERGE,DMAILNOTE,DRESUME act;
   class DAEMON,WAKE daemon;
