@@ -1,0 +1,162 @@
+id: BL-1775
+title: "A second swarm never runs with the primary's Telegram identity - zsh sources ~/.zshenv, which exports the primary's TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID, into swarmforge.sh and every role launch script, so gpu-bargain-hunter's handoffd and coordinator carry swarmforgevc's bot and chat (verified by hash 2026-09-26); a swarm that is not the recorded primary root applies its own fleet creds, or none, in its launcher and in every role launch script after the shell profile, and the primary is unchanged"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety boundary that is live now. Every process of the
+# second swarm holds the primary's bot token. Any env-reading sender there
+# posts into the primary's group, and a getUpdates poller on that token
+# would silently steal the primary's inbound (BL-380; the BL-622 incident
+# lost ~9h). Nothing has leaked yet only because nothing in the second
+# swarm posts through env today. Not critical: no data lost so far.
+status: todo
+epic: onboarding-target-repo
+priority: 3
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: shell (swarmforge.sh) plus a small bb CLI over the existing
+# fleet_telegram_creds_lib; no mutation/CRAP/DRY wired for either
+# (BL-472), gated by the shell suite and the feature. zsh fixtures under a
+# fake HOME; keep the feature well inside the per-mutant ceiling (BL-1541).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1775-a-second-swarm-never-runs-with-the-primarys-telegram-identity.feature
+
+# The helper's file name is fixed here because the consumer anchor names
+# it. swarmforge.sh is the pre-existing live consumer: it starts every
+# daemon and writes every role launch script (BL-1235: anchor the
+# consumer, never the new module).
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::swarm_telegram_env_cli.bb::the launcher and its role launch scripts apply the identity'
+  - 'specs/pipeline/steps/bl1775SecondSwarmTelegramIdentitySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity high
+  defect, no choice posed, no ruling_options). FIRM: the recorded primary
+  root's TELEGRAM_* environment is unchanged; a non-primary swarm resolves
+  through fleet_telegram_creds_lib (BL-436/BL-622), never a second copy of
+  its rules; with no fleet creds file the variables are unset, never the
+  primary's; the fix is at the launch boundary, not in each of the 20
+  scripts that read the variables.
+
+invariants:
+  - "No process started from a non-primary swarm's launcher or role launch scripts holds the recorded primary's TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID."
+  - "The recorded primary root's launch environment is unchanged for every TELEGRAM_* variable."
+
+description: |
+  ## What is wrong
+
+  - zsh sources `~/.zshenv` on every invocation, interactive or not. On
+    this host that file exports the primary swarm's `TELEGRAM_BOT_TOKEN`
+    and `TELEGRAM_CHAT_ID` (operator memory: it re-exports real keys over
+    fixture values too).
+  - `swarmforge/scripts/swarmforge.sh` is `#!/usr/bin/env zsh`, and it
+    starts every daemon from its own environment (handoffd through
+    `start_handoff_daemon.sh`, the operator runtime, the watchdogs).
+    `harness_env_scrub_lib.bb` strips `TELEGRAM_BOT_TOKEN` from the tmux
+    server only, and its own docstring says handoffd "forks from the
+    launcher process, whose own environment this list never touches".
+  - Every role launch script `write_role_launch_script` writes
+    (`.swarmforge/launch/<role>.sh`) is `#!/usr/bin/env zsh`, so each pane
+    re-reads `~/.zshenv` and gets the primary's token back after the scrub.
+  - Verified by hash on gpu-bargain-hunter's handoffd and coordinator on
+    2026-09-26: both carried swarmforgevc's token and chat `-1004415865297`,
+    not their own.
+  - Only the front desk was isolated: `front_desk_supervisor.bb` and
+    `onboarder_supervisor.bb` resolve through `fleet_telegram_creds_lib`
+    (BL-436, BL-622). Census of what else reads the variables, 20 files:
+    `git grep -l -E 'TELEGRAM_(BOT_TOKEN|CHAT_ID)' -- swarmforge/scripts | grep -v /test/`
+    (for example `coordinator_activity_feed_post.bb`,
+    `expedite_progress_notify.bb`, `babysitterd_freshness_lib.bb`).
+
+  ## What is wanted
+
+  1. When the launch root is not the recorded primary root
+     (`fleet-telegram-creds-lib/env-fallback-allowed?` false), swarmforge.sh
+     sets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from the swarm's own
+     `~/.swarmforge/fleet/<swarm_name>/telegram.json` before it starts
+     anything, or unsets both when that file does not exist.
+  2. Every role launch script it writes applies the same identity after
+     the shell profile has run, so `~/.zshenv` cannot put the primary's
+     back.
+  3. The recorded primary root: nothing changes.
+
+  ## How (direction, not mandate)
+
+  - One small bb CLI, `swarmforge/scripts/swarm_telegram_env_cli.bb` (the
+    name is fixed because the wiring anchor names it), over
+    `fleet_telegram_creds_lib`: given the root, the swarm name and HOME,
+    it prints the `export` / `unset` lines to eval, or nothing for the
+    primary. swarmforge.sh evals it once, early; `write_role_launch_script`
+    emits the same eval into each script right after its shebang block.
+    One resolver, two call sites, no second copy of BL-622's rules.
+  - The swarm name is the one the launch already resolved into
+    `.swarmforge/swarm-identity` (`swarm_identity_lib`).
+  - Fixtures: a mkdtemp HOME with a `.zshenv` exporting fake primary
+    values and `~/.swarmforge/fleet/primary/root` recording another path;
+    run the written scripts with `HOME=<fixture> zsh`. Never the real home,
+    never a real token (BL-1390). Scenario 02's census counts the scripts
+    written for the fixture pack against the roles that pack names
+    (BL-1445: a derived population pins its count).
+
+  ## Scope
+
+  - `swarmforge/scripts/swarmforge.sh` (the early eval and the launch
+    script template), new `swarmforge/scripts/swarm_telegram_env_cli.bb`,
+    a shell test registered in `suite-manifest.tsv`.
+  - The feature, `specs/pipeline/steps/bl1775SecondSwarmTelegramIdentitySteps.js`,
+    `specs/pipeline/steps/index.js`.
+  - Docs: the onboarding how-to names what a second swarm's processes
+    carry (documenter).
+  - Out of scope: daemon restarts that do not go through swarmforge.sh
+    (cron, babysitterd resurrection) and the 20 readers themselves. If a
+    restart path is found to bypass the launcher, that is a note to the
+    specifier for a follow-up slice, not an in-parcel edit.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1775-a-second-swarm-never-runs-with-the-primarys-telegram-identity.feature`:
+     all ok (4 rows of 01, 02, 03). Record the duration.
+  2. The new shell test: ALL PASS.
+  3. After the land, on gpu-bargain-hunter only if it is running and the
+     human agrees to a relaunch: hash `TELEGRAM_BOT_TOKEN` from
+     `/proc/<pid>/environ` of its handoffd and coordinator pane
+     (`sha256sum`, never print the value) and compare with the hash of
+     the botToken in `~/.swarmforge/fleet/GpuBargainHunter/telegram.json`.
+     They match. If it is not running, record that and skip.
+  4. `git diff main...HEAD --name-only` names only the Scope files and
+     evidence.
+
+source: |
+  backlog/INTAKE-second-swarm-telegram-line-to-the-human-20260926.md,
+  item 1 (operator via Claude Code, commits a5cb9d29fb and 85e42786db).
+  The human, verbatim (Article 5.3): "gbh swarm needs me but it's not
+  surfacing anything on telegram. Onboarding should at a minimum create a
+  topic for the coordinator to use" and "can you fix the onboarding
+  process to not do the same mistake next time?"
+  Intake item 1, verbatim: "Wanted: a non-primary swarm's launch scripts
+  export its own fleet creds AFTER the shell profile is sourced, or env
+  senders resolve through `fleet_telegram_creds_lib` the way the front
+  desk does."
+  Parents: BL-380, BL-436, BL-622, BL-1049.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat). 1:N split of
+  the intake: see BL-1774's notes for the whole map.
+  The intake offered two fixes; the launch boundary was chosen at spec
+  time because it is two call sites against 20 readers, and it also
+  covers readers added later. It is direction, not a ruling.
+  Checked at mint: swarmforge.sh and the role launch scripts are zsh
+  (shebangs), and the tmux scrub already removes the token from the
+  server, so the pane gets it from ~/.zshenv, not from tmux.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
+
+  INVEST: Independent (no open ticket edits the launch template's env or
+  the creds lib), Negotiable (resolver shape is direction), Valuable (a
+  second swarm cannot post as or poll the primary), Estimable (one CLI
+  over an existing lib, two call sites), Small, Testable (zsh under a
+  fixture HOME).

@@ -423,7 +423,7 @@
   subject: "Onboarding opens the new swarm's Coordinator topic, so it can reach the human"
   detected_at: 2026-09-26
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1774
   human_decision: null
   decided_at: null
 - commit: 6cef9b7ecd
