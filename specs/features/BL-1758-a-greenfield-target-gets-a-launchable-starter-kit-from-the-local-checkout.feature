@@ -41,6 +41,7 @@ Feature: BL-1758 A greenfield target gets a launchable starter kit from the loca
     Given a fixture target the starter kit was installed into
     Then its swarmforge.conf carries "config tooling_root" naming the local checkout
     And it records the checkout commit the kit was copied from
+    And it declares "config swarm_name" with the swarm name the install was given
 
   # BL-1758 commits-are-guarded-05
   Scenario: the target's first launch guards its commits through the kit's hooks

@@ -6,7 +6,7 @@ epic: onboarding-target-repo
 status: todo
 priority: 3
 depends_on: []
-decomposes_into: [BL-1756, BL-1757, BL-1758, BL-1759]
+decomposes_into: [BL-1756, BL-1757, BL-1758, BL-1759, BL-1774, BL-1775, BL-1776]
 remaining_slices:
   - "Every other script that runs a swarmforgevc compiled tool resolves it through BL-1757's tooling root, not $ROOT/extension/out - census 2026-09-25 (git grep extension/out/tools in swarmforge/scripts/*.sh) finish_shift_lib.sh (the ceremony CLI), kill_pipeline_swarm.sh (record-run), promote_and_route_next.sh (deprecate-check, which is skipped when absent, so a foreign target's promotions run with no freshness gate), active_pool_freshness_audit.sh, launch_resident_spy_tunnel.sh, check_feature_handler_registration.sh; mint once BL-1757 lands"
 mutation_cost: high
@@ -32,3 +32,11 @@ notes: |
   Milestone M8, which fits. 1:N split of the intake: Gap 2 -> BL-1756;
   Gap 4 -> BL-1757; Gaps 1 and 3 -> BL-1758 (one fix: the engine and the
   pack it ships must come from the same place); Gap 5 -> BL-1759.
+  2026-09-26: second intake folded in,
+  backlog/INTAKE-second-swarm-telegram-line-to-the-human-20260926.md
+  (the second swarm's Telegram line to the human). BL-1774 stamps hotfix
+  e5a03ee6c7 (the Coordinator topic); BL-1775 ends the cross-swarm
+  credential leak through ~/.zshenv; BL-1776 makes the provisioner refuse
+  an undeclared swarm name; BL-1758 amended to write config swarm_name.
+  Hotfix 6cef9b7ecd's stamp and the kit's coordinator rule wait on the
+  human's answer to the intake's open question.

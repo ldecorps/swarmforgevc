@@ -84,8 +84,10 @@ description: |
      - one generic role prompt per role the pack names, from
        `swarmforge/starter-kit/roles/`;
      - a `swarmforge/swarmforge.conf` that records `config tooling_root
-       <this checkout>` (BL-1757's reader) and the checkout commit it was
-       copied from.
+       <this checkout>` (BL-1757's reader), the checkout commit it was
+       copied from, and `config swarm_name <name>` for the swarm name the
+       installer is given (a required argument; amended 2026-09-26, see
+       notes).
   2. The target's first launch has `core.hooksPath` pointing at the kit's
      hooks and no `.git/hooks/commit-msg` (scenario 05).
   3. The `swarm` wrapper no longer fetches anything. With no
@@ -157,3 +159,16 @@ notes: |
   gpu-bargain-hunter's hand-written set with one project-specific ticket
   reference removed, plus swarmforge/starter-kit/README.md. The feature
   was written for A, so nothing was rewritten.
+  AMENDED 2026-09-26 by the specifier (still paused, nothing built): the
+  installer takes the swarm name as a required argument and the conf it
+  writes declares `config swarm_name <name>` (What item 1, scenario 04's
+  last line). Source: backlog/INTAKE-second-swarm-telegram-line-to-the-human-20260926.md
+  item 3, verbatim: "Wanted: onboarding writes `swarm_name` into the
+  target's pack BEFORE provisioning, from the same value." The kit's
+  mono-router.conf declares no swarm_name, so without this a kit target
+  would default to "primary". Its sibling BL-1776 makes the provisioner
+  refuse a name the target does not declare. Not re-pended: this adds one
+  line to what ruling A already approved and implements the human's own
+  intake. Intake item 2 (the kit's coordinator rule for notify_human.sh /
+  human_replies.sh) lands in swarmforge/starter-kit/roles/coordinator.prompt
+  once the human answers the intake's open question.

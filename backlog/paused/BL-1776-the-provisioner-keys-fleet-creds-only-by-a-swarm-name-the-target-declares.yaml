@@ -1,0 +1,128 @@
+id: BL-1776
+title: "provision-onboarding-telegram-channel.js keys a new swarm's fleet creds only by a swarm name the target declares - it wrote gpu-bargain-hunter's to ~/.swarmforge/fleet/gpu-bargain-hunter/ while the pack said config swarm_name GpuBargainHunter, so the front desk found none (2026-09-26); before any other step it checks the name against the target's swarmforge.conf and pack confs and refuses an undeclared one, naming what the target does declare, with nothing written and no call to Telegram"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, contained onboarding fault. The operator hit it once and
+# repaired it by hand (fleet dir renamed); the tutorial line from hotfix
+# e5a03ee6c7 warns about it; nothing is broken right now.
+status: todo
+epic: onboarding-target-repo
+priority: 3
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript under Stryker: one small check function plus its call
+# at the top of main(); the provisioner's existing tests already stub the
+# network and os.homedir.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1776-the-provisioner-keys-fleet-creds-only-by-a-swarm-name-the-target-declares.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1776ProvisionerDeclaredSwarmNameSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Intake item 3 offered two fixes: onboarding writes swarm_name into the
+  target before provisioning, or the provisioner reads it from the target
+  instead of taking a free argument. This ticket takes a middle path: the
+  argument stays (the tutorial and callers keep working) but must be a
+  name the target already declares; the writing half goes to the starter
+  kit (BL-1758 now records config swarm_name). FIRM: the check runs before
+  any Telegram call or file write; a refusal names every swarm_name the
+  target declares, or the missing config line; a target with several
+  packs may provision under any name one of them declares.
+
+invariants:
+  - "The provisioner never writes ~/.swarmforge/fleet/<name>/, the host secrets file or the target's operator files, and never calls Telegram, for a <name> that no conf in the target declares."
+
+description: |
+  ## What is wrong
+
+  - `provision-onboarding-telegram-channel.js <target> <token> <bot>
+    <host-secrets> <swarm-name> [port]` writes
+    `~/.swarmforge/fleet/<swarm-name>/telegram.json` under the name it is
+    given (`buildAdapters` -> `writeFleetTelegramCreds`).
+  - The front desk resolves by the swarm's own name
+    (`fleet_telegram_creds_lib`, keyed by `swarm_name`).
+  - gpu-bargain-hunter was provisioned as `gpu-bargain-hunter` before its
+    pack declared `config swarm_name GpuBargainHunter`. Its credentials
+    were unfindable until the operator renamed the fleet dir by hand
+    (2026-09-26).
+  - Hotfix e5a03ee6c7 added a tutorial line asking for the same name. A
+    doc line is not a check.
+
+  ## What is wanted
+
+  1. Before anything else (the offset read, getUpdates, any write), the
+     provisioner collects every `config swarm_name` the target declares
+     in `swarmforge/swarmforge.conf` and in each
+     `swarmforge/packs/*.conf`.
+  2. It proceeds only when `<swarm-name>` is one of them.
+  3. Otherwise it exits non-zero and writes nothing:
+     - when the target declares other names, the message names the
+       argument and each declared name with its file;
+     - when it declares none, the message names the argument and the
+       line to add, `config swarm_name <name>`.
+
+  ## How (direction, not mandate)
+
+  - `parseConfigValue` in `extension/src/util/swarmforgeConfig.ts` already
+    reads one `config <key>` line; reuse it per file rather than a new
+    regex.
+  - Export the check so the acceptance handler drives it directly for the
+    accept rows. The refusal rows run the real `main()` in-process with a
+    stubbed `fetch` and `os.homedir` (the engineering CLI rule), and
+    assert no call and no fleet dir.
+
+  ## Scope
+
+  - `extension/src/tools/provision-onboarding-telegram-channel.ts`,
+    `extension/test/provisionOnboardingTelegramChannelCli.test.js`.
+  - The feature, `specs/pipeline/steps/bl1776ProvisionerDeclaredSwarmNameSteps.js`,
+    `specs/pipeline/steps/index.js`.
+  - Docs: the tutorial's `<swarm-name>` paragraph says the provisioner
+    now refuses an undeclared name (documenter).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1776-the-provisioner-keys-fleet-creds-only-by-a-swarm-name-the-target-declares.feature`:
+     four cases ok (01 x2, 02 x2). Record the duration.
+  2. `cd extension && npx vitest run test/provisionOnboardingTelegramChannelCli.test.js`:
+     all pass.
+  3. Read-only probe, no network: run the compiled CLI against a mkdtemp
+     target whose pack declares `config swarm_name Probe`, with swarm name
+     `probe`, a fake token and HOME pointed at a mkdtemp dir. It exits
+     non-zero naming `Probe`, and `<HOME>/.swarmforge/fleet/` does not
+     exist.
+  4. `git diff main...HEAD --name-only` names only the Scope files and
+     evidence.
+
+source: |
+  backlog/INTAKE-second-swarm-telegram-line-to-the-human-20260926.md,
+  item 3 (operator via Claude Code, commits a5cb9d29fb and 85e42786db).
+  The human, verbatim (Article 5.3): "gbh swarm needs me but it's not
+  surfacing anything on telegram. Onboarding should at a minimum create a
+  topic for the coordinator to use" and "can you fix the onboarding
+  process to not do the same mistake next time?"
+  Intake item 3, verbatim: "The fleet dir must be keyed by the target's
+  `swarm_name`. GBH's was keyed by its repo slug because `swarm_name` was
+  set after provisioning." / "Wanted: onboarding writes `swarm_name` into
+  the target's pack BEFORE provisioning, from the same value." / "Or: the
+  provisioner reads it from the target instead of taking a free argument."
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat). 1:N split of
+  the intake: see BL-1774's notes for the whole map. The "writes
+  swarm_name" half is an amendment to BL-1758 (paused, the installer),
+  landed in the same commit as this mint.
+  Pending, not auto-approved: severity medium, and approval_context names
+  the middle path taken between the intake's two options.
+
+  INVEST: Independent (BL-1758's installer writing the name helps but is
+  not needed: an operator can add the line by hand, as the refusal says),
+  Negotiable (check shape is direction), Valuable (a mis-keyed fleet dir
+  can no longer be written), Estimable (one check at the top of main),
+  Small, Testable (fixture target and home, stubbed fetch).
