@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=14e2cb9df1e1bcce2251950e11b338ef2c06f5a6da06c38a8172964761880711
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-26T06:50:59.168394138Z","feature_name":"BL-1772 The --push publish re-points the QA branch after a land","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1772-the-push-publish-re-points-the-qa-branch-after-a-land.feature","background_hash":"481fe4231a5bad42df5e8ada62cd090ed8be769f97450eacbbdd12179470de75","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a worktree with work in it is left alone and the --push still succeeds","scenario_hash":"24014a450b6e137f5dc4db373b617480ddc2d0828d4bf19b25be367628c909bd","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-26T06:50:59.168394138Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1772 The --push publish re-points the QA branch after a land
 
   Stamp-off of hotfix db4da5c573 (BL-848). BL-1438 had wired

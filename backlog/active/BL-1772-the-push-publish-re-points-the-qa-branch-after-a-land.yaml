@@ -17,7 +17,7 @@ mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
-acceptance: specs/features/BL-1772-the-push-publish-re-points-the-qa-branch-after-a-land.feature.draft
+acceptance: specs/features/BL-1772-the-push-publish-re-points-the-qa-branch-after-a-land.feature
 
 # A review parcel adds no production call site; the mechanism under review
 # is already wired (run_push after LAND_PUBLISHED, QA.prompt --push).
