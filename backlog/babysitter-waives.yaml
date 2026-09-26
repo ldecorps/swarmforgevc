@@ -235,6 +235,11 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-e5a03ee6c7
+  waived_by: coordinator
+  reason: "Registered hotfix (backlog/hotfix-ledger.yaml, stamp intake INTAKE-second-swarm-telegram-line-to-the-human-20260926.md); commit e5a03ee6c7 is confirmed on main/QA-ancestor. Per hotfix landing path, closed by coordinator waive, not QA land-approval record."
+  waived_at: 2026-09-26
+
 - key: pipeline-code-on-main-eda4bb193409a4a936b1d949307a3631fb0c5bac
   waived_by: coordinator
   reason: "QA land-step used wrong source: ticket approved via 5599094577 (APPROVED, blocker owned by BL-1498), but land-replay eda4bb1934 named source b687ad2040 (QA review NONE). Land-approvals store has the replay recorded. Procedural issue, not a true Article 4.2 violation - work was approved, just landed via wrong source commit."
