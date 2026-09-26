@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 26, 2026 (BL-1769: `qa-gather`'s unit/property
+`register_join` entries are now parsed from each check's WHOLE captured
+output (stdout + stderr, unbounded), never from the report's 4000-char
+display excerpt — the same `onRawOutcome` seam BL-1554's architect bounce
+already used for the register check's own parse, extended to the unit and
+properties rows. Before this fix, a red run whose stderr tail was mostly
+BL-871's allowlisted `[vitest-worker]: Timeout calling "onTaskUpdate"`
+noise pushed the `FAIL <file>` line out of the excerpt's tail, so the join
+came back empty — read as "no failing file" rather than "still red,
+unknown which file." Live twice in two days: BL-1726 QA (2026-09-25) and
+BL-1766 QA (2026-09-26), each leaving a red UNIDENTIFIED with no owner the
+one-run rule could mint. A unit or properties row that ran red and names
+no failing file anywhere in its output now contributes one `unidentified`
+join entry keyed by the check id, so the join's kinds are `owned` (a
+register row carries this ticket's id), `unowned` (a row names a different
+ticket), `absent` (no row) or `unidentified` (a red row this parser could
+not attribute to any file at all) — never silently empty. The bounded
+display excerpt itself is unchanged; only the join's own parse source
+moved. `RegisterJoinKind` in `extension/src/quality/qaGather.ts` names all
+four. Acceptance:
+`specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature`
+(scenarios 07 and 08). No new extension command, setting, or UI change; no
+diagram edit.)
+Prior entry —
+
 **Last Updated:** September 25, 2026 (BL-1717: `own-paths` now drops every
 owner whose own per-path verdict is already landed (`path-landed?`, the
 same BL-1389 per-path read) from a path's owner set before asking whether

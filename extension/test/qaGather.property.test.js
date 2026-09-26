@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const { CHECKLIST, runChecklist } = require('../out/quality/qaGather');
+const { CHECKLIST, runChecklist, buildRegisterJoin, tailExcerpt, EXCERPT_MAX_CHARS } = require('../out/quality/qaGather');
 const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 // BL-1554 invariants (coder-authored first, per BL-654):
@@ -150,6 +150,60 @@ test('property: every generated run has exactly one row per checklist id, in the
         assert.ok(row.status === 'ran' || row.status === 'blocked', `row ${row.id} has a non-mechanical status: ${row.status}`);
       }
     }),
+    { numRuns: 200 },
+  );
+}, propertyLaneTimeoutMs(20000));
+
+// BL-1769 invariant (coder-authored first, per BL-654): a unit or
+// properties row that ran with a non-zero exit always contributes at
+// least one register_join entry - each failing file it names, or one
+// `unidentified` entry for that check - whatever the length of its
+// output. Generates a FAIL line at a random offset inside random-length
+// filler on BOTH sides (up to 2x EXCERPT_MAX_CHARS, so the line often
+// falls outside the display excerpt's own tail window) and asserts the
+// entry the join actually produces against exit and hasFailLine alone -
+// never against row.excerpt, the exact bounded field the pre-fix code
+// wrongly parsed (BL-1726, BL-1766).
+const FAIL_FILE_NAMES = ['test/foo.test.js', 'test/bar.property.test.js', 'test/nested/baz.test.tsx', 'test/qux.property.test.ts'];
+
+// Filler that can never itself accidentally form a FAIL-line match.
+function filler(length) {
+  return '.'.repeat(length);
+}
+
+test('property (BL-1769 invariant): a red unit/properties row always contributes at least one register_join entry, whatever the length or offset of its output', () => {
+  fc.assert(
+    fc.property(
+      fc.constantFrom('unit', 'properties'),
+      fc.integer({ min: 0, max: 255 }),
+      fc.boolean(),
+      fc.constantFrom(...FAIL_FILE_NAMES),
+      fc.nat({ max: EXCERPT_MAX_CHARS * 2 }),
+      fc.nat({ max: EXCERPT_MAX_CHARS * 2 }),
+      (checkId, exit, hasFailLine, fileName, prefixPad, suffixPad) => {
+        const failLine = ` FAIL  ${fileName} > x\n`;
+        const wholeOutput = hasFailLine
+          ? filler(prefixPad) + failLine + filler(suffixPad)
+          : filler(prefixPad + suffixPad);
+        const row = { id: checkId, status: 'ran', exit, excerpt: tailExcerpt(wholeOutput) };
+        const join = buildRegisterJoin([row], undefined, undefined, new Map([[checkId, wholeOutput]]));
+
+        // The invariant's own claim, stated directly: non-zero exit never
+        // comes back with an empty join.
+        if (exit !== 0) {
+          assert.ok(join.length >= 1, `non-zero exit (${exit}) produced an empty join for output length ${wholeOutput.length}`);
+        }
+
+        // The precise shape, branch by branch.
+        if (hasFailLine) {
+          assert.deepEqual(join, [{ file: `extension/${fileName}`, join: 'absent' }]);
+        } else if (exit !== 0) {
+          assert.deepEqual(join, [{ file: checkId, join: 'unidentified' }]);
+        } else {
+          assert.deepEqual(join, []);
+        }
+      }
+    ),
     { numRuns: 200 },
   );
 }, propertyLaneTimeoutMs(20000));

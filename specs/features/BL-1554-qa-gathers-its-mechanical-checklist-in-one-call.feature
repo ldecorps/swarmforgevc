@@ -70,3 +70,27 @@ Feature: BL-1554 QA gathers its mechanical checklist in one call
     And the register check answers with a row for extension/test/bl1606example.property.test.js that is owned by BL-1606
     When qa-gather runs for BL-1554-FIX over the fake runner
     Then the report's register join lists extension/test/bl1606example.property.test.js as owned
+
+  # BL-1554 qa-gathers-checklist-07 (BL-1769, 2026-09-26)
+  # BL-1726 and BL-1766 QA: the FAIL line sat above the display excerpt's tail.
+  Scenario Outline: a failing file named before a long tail of noise is still joined to the register
+    Given the fake runner answers the <check> check with exit 1, an output naming the failing file extension/test/early.property.test.js, then more stderr than the report's excerpt keeps
+    And the register check answers with a row for extension/test/early.property.test.js that is owned by BL-1553
+    When qa-gather runs for BL-1554-FIX over the fake runner
+    Then the report's register join lists extension/test/early.property.test.js as owned
+
+    Examples:
+      | check      |
+      | unit       |
+      | properties |
+
+  # BL-1554 qa-gathers-checklist-08 (BL-1769, 2026-09-26)
+  Scenario Outline: a red suite whose output names no failing file is reported unidentified, never as an empty join
+    Given the fake runner answers the <check> check with exit 1 and an output that names no failing file
+    When qa-gather runs for BL-1554-FIX over the fake runner
+    Then the report's register join lists the <check> check as unidentified
+
+    Examples:
+      | check      |
+      | unit       |
+      | properties |

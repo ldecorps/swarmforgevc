@@ -12,6 +12,7 @@ const {
   tailExcerpt,
   composeQaGatherReport,
   parseRegisterOutput,
+  EXCERPT_MAX_CHARS,
 } = require('../out/quality/qaGather');
 const { findTicketYamlContent, gatherQaChecklist, defaultRunFn } = require('../out/metrics/qaGatherAdapter');
 
@@ -171,21 +172,30 @@ test('parseFailingFilesFromVitestOutput returns nothing for clean output', () =>
   assert.deepEqual(parseFailingFilesFromVitestOutput('Test Files  12 passed (12)\nTests  40 passed (40)'), []);
 });
 
+// rawMap: the raw-output-by-check-id map failingFilesFromRow/buildRegisterJoin
+// now require (BL-1769) - built from the SAME text the old tests put in
+// `excerpt`, since these fixtures are short enough that excerpt and the
+// whole raw output are identical; the long-tail test below is the one that
+// actually exercises the difference.
+function rawMap(pairs) {
+  return new Map(pairs);
+}
+
 test('failingFilesFromRow reads unit/properties rows via the vitest parser and acceptance rows by its own declared path on a non-zero exit', () => {
   const unitRow = { id: 'unit', status: 'ran', exit: 1, excerpt: ' FAIL  test/foo.test.js > x' };
-  assert.deepEqual(failingFilesFromRow(unitRow, undefined), ['extension/test/foo.test.js']);
+  assert.deepEqual(failingFilesFromRow(unitRow, undefined, rawMap([['unit', unitRow.excerpt]])), ['extension/test/foo.test.js']);
 
   const cleanUnitRow = { id: 'unit', status: 'ran', exit: 0, excerpt: 'all good' };
-  assert.deepEqual(failingFilesFromRow(cleanUnitRow, undefined), []);
+  assert.deepEqual(failingFilesFromRow(cleanUnitRow, undefined, rawMap([['unit', cleanUnitRow.excerpt]])), []);
 
   const acceptanceRow = { id: 'acceptance', status: 'ran', exit: 1, excerpt: 'not ok 1 - a scenario' };
-  assert.deepEqual(failingFilesFromRow(acceptanceRow, 'specs/features/BL-1-x.feature'), ['specs/features/BL-1-x.feature']);
+  assert.deepEqual(failingFilesFromRow(acceptanceRow, 'specs/features/BL-1-x.feature', rawMap([])), ['specs/features/BL-1-x.feature']);
 
   const passingAcceptanceRow = { id: 'acceptance', status: 'ran', exit: 0, excerpt: 'ok 1 - a scenario' };
-  assert.deepEqual(failingFilesFromRow(passingAcceptanceRow, 'specs/features/BL-1-x.feature'), []);
+  assert.deepEqual(failingFilesFromRow(passingAcceptanceRow, 'specs/features/BL-1-x.feature', rawMap([])), []);
 
   const blockedRow = { id: 'unit', status: 'blocked', exit: null, excerpt: '' };
-  assert.deepEqual(failingFilesFromRow(blockedRow, undefined), []);
+  assert.deepEqual(failingFilesFromRow(blockedRow, undefined, rawMap([])), []);
 
   // A BLOCKED acceptance row specifically - the status!=='ran' guard is
   // the only thing standing between a never-run check and the acceptance
@@ -193,29 +203,45 @@ test('failingFilesFromRow reads unit/properties rows via the vitest parser and a
   // (null !== 0). Without the guard this would wrongly report the
   // acceptance feature as failing when it never even ran.
   const blockedAcceptanceRow = { id: 'acceptance', status: 'blocked', exit: null, excerpt: '' };
-  assert.deepEqual(failingFilesFromRow(blockedAcceptanceRow, 'specs/features/BL-1-x.feature'), []);
+  assert.deepEqual(failingFilesFromRow(blockedAcceptanceRow, 'specs/features/BL-1-x.feature', rawMap([])), []);
 });
 
 test('isFailingAcceptanceRow is false for every OTHER row id, even one over budget/nonzero exit', () => {
   const unitRow = { id: 'unit', status: 'ran', exit: 1, excerpt: '' };
-  assert.deepEqual(failingFilesFromRow(unitRow, undefined).length >= 0, true); // sanity: still parses via the unit branch, not acceptance
+  assert.deepEqual(failingFilesFromRow(unitRow, undefined, rawMap([])).length >= 0, true); // sanity: still parses via the unit branch, not acceptance
   const wiringRow = { id: 'wiring', status: 'ran', exit: 1, excerpt: '' };
-  assert.deepEqual(failingFilesFromRow(wiringRow, 'specs/features/x.feature'), []);
+  assert.deepEqual(failingFilesFromRow(wiringRow, 'specs/features/x.feature', rawMap([])), []);
+});
+
+// BL-1769: the whole point of the raw-output seam - a FAIL line that a
+// BOUNDED excerpt would have sliced off is still found when the caller
+// passes the real, unbounded output.
+test('failingFilesFromRow finds a FAIL line the display excerpt would have cut off', () => {
+  const failLine = ' FAIL  test/early.property.test.js > x\n';
+  const noise = 'z'.repeat(EXCERPT_MAX_CHARS + 500);
+  const wholeOutput = failLine + noise;
+  const row = { id: 'properties', status: 'ran', exit: 1, excerpt: tailExcerpt(wholeOutput) };
+  // The excerpt alone (what the pre-BL-1769 code parsed) no longer names the file.
+  assert.deepEqual(parseFailingFilesFromVitestOutput(row.excerpt), []);
+  // The raw, unbounded output still does.
+  assert.deepEqual(
+    failingFilesFromRow(row, undefined, rawMap([['properties', wholeOutput]])),
+    ['extension/test/early.property.test.js']
+  );
 });
 
 // ── buildRegisterJoin ────────────────────────────────────────────────────
 
 test('buildRegisterJoin classifies owned/unowned/absent exactly per the register CLI\'s own owned field', () => {
-  const rows = [
-    { id: 'properties', status: 'ran', exit: 1, excerpt: ' FAIL  extension/test/owned.property.test.js > x\n FAIL  extension/test/stale.property.test.js > y\n FAIL  extension/test/fresh.property.test.js > z' },
-  ];
+  const excerpt = ' FAIL  extension/test/owned.property.test.js > x\n FAIL  extension/test/stale.property.test.js > y\n FAIL  extension/test/fresh.property.test.js > z';
+  const rows = [{ id: 'properties', status: 'ran', exit: 1, excerpt }];
   const register = {
     rows: [
       { lane: 'property', file: 'extension/test/owned.property.test.js', ticket: 'BL-1553', first_seen: '2026-09-10', age_days: 6, owned: true },
       { lane: 'property', file: 'extension/test/stale.property.test.js', ticket: 'BL-1', first_seen: '2026-08-01', age_days: 46, owned: false },
     ],
   };
-  const join = buildRegisterJoin(rows, register, undefined);
+  const join = buildRegisterJoin(rows, register, undefined, rawMap([['properties', excerpt]]));
   assert.deepEqual(join, [
     { file: 'extension/test/fresh.property.test.js', join: 'absent' },
     { file: 'extension/test/owned.property.test.js', join: 'owned', ticket: 'BL-1553' },
@@ -224,8 +250,9 @@ test('buildRegisterJoin classifies owned/unowned/absent exactly per the register
 });
 
 test('buildRegisterJoin with no register data reports every failing file absent', () => {
-  const rows = [{ id: 'unit', status: 'ran', exit: 1, excerpt: ' FAIL  test/foo.test.js > x' }];
-  assert.deepEqual(buildRegisterJoin(rows, undefined, undefined), [{ file: 'extension/test/foo.test.js', join: 'absent' }]);
+  const excerpt = ' FAIL  test/foo.test.js > x';
+  const rows = [{ id: 'unit', status: 'ran', exit: 1, excerpt }];
+  assert.deepEqual(buildRegisterJoin(rows, undefined, undefined, rawMap([['unit', excerpt]])), [{ file: 'extension/test/foo.test.js', join: 'absent' }]);
 });
 
 // BL-1554 QA bounce D1: unit/properties rows run with cwd: extension/, so
@@ -233,9 +260,11 @@ test('buildRegisterJoin with no register data reports every failing file absent'
 // extension/test/... the way the register's own rows always are - the join
 // must still match, for both lanes.
 test('buildRegisterJoin matches a bare unit/properties vitest path against the register\'s extension/-relative row', () => {
+  const unitExcerpt = ' FAIL  test/bl1277UnscopedStepCollisionGuard.test.js > x';
+  const propsExcerpt = ' FAIL  test/bl968MaterializedGuardSensitivity.property.test.js > y';
   const rows = [
-    { id: 'unit', status: 'ran', exit: 1, excerpt: ' FAIL  test/bl1277UnscopedStepCollisionGuard.test.js > x' },
-    { id: 'properties', status: 'ran', exit: 1, excerpt: ' FAIL  test/bl968MaterializedGuardSensitivity.property.test.js > y' },
+    { id: 'unit', status: 'ran', exit: 1, excerpt: unitExcerpt },
+    { id: 'properties', status: 'ran', exit: 1, excerpt: propsExcerpt },
   ];
   const register = {
     rows: [
@@ -243,10 +272,101 @@ test('buildRegisterJoin matches a bare unit/properties vitest path against the r
       { lane: 'property', file: 'extension/test/bl968MaterializedGuardSensitivity.property.test.js', ticket: 'BL-1606', first_seen: '2026-09-10', age_days: 6, owned: true },
     ],
   };
-  const join = buildRegisterJoin(rows, register, undefined);
+  const join = buildRegisterJoin(rows, register, undefined, rawMap([['unit', unitExcerpt], ['properties', propsExcerpt]]));
   assert.deepEqual(join, [
     { file: 'extension/test/bl1277UnscopedStepCollisionGuard.test.js', join: 'owned', ticket: 'BL-1607' },
     { file: 'extension/test/bl968MaterializedGuardSensitivity.property.test.js', join: 'owned', ticket: 'BL-1606' },
+  ]);
+});
+
+// BL-1769 invariant: a red unit/properties row that names no failing file
+// anywhere in its whole output contributes one `unidentified` entry keyed
+// by the check id - never a silent empty join that reads as "no failing
+// file" (BL-1726, BL-1766: both lost a real red to exactly this).
+test('buildRegisterJoin reports unidentified for a red unit/properties row that names no failing file', () => {
+  const noise = 'allowlisted BL-871 [vitest-worker]: Timeout calling "onTaskUpdate"\n'.repeat(20);
+  const rows = [{ id: 'properties', status: 'ran', exit: 1, excerpt: tailExcerpt(noise) }];
+  const join = buildRegisterJoin(rows, undefined, undefined, rawMap([['properties', noise]]));
+  assert.deepEqual(join, [{ file: 'properties', join: 'unidentified' }]);
+});
+
+test('buildRegisterJoin never reports unidentified for a green row, a blocked row, or a named-failure row', () => {
+  const greenRow = { id: 'unit', status: 'ran', exit: 0, excerpt: 'all good' };
+  assert.deepEqual(buildRegisterJoin([greenRow], undefined, undefined, rawMap([['unit', 'all good']])), []);
+
+  const blockedRow = { id: 'properties', status: 'blocked', exit: null, excerpt: '' };
+  assert.deepEqual(buildRegisterJoin([blockedRow], undefined, undefined, rawMap([])), []);
+
+  const namedExcerpt = ' FAIL  test/foo.test.js > x';
+  const namedRow = { id: 'unit', status: 'ran', exit: 1, excerpt: namedExcerpt };
+  assert.deepEqual(
+    buildRegisterJoin([namedRow], undefined, undefined, rawMap([['unit', namedExcerpt]])),
+    [{ file: 'extension/test/foo.test.js', join: 'absent' }]
+  );
+});
+
+// BL-1769 hardener pass: isRedParseableRow ANDs four clauses
+// (status/exit/exit/id), and every existing fixture above satisfies or
+// fails several of them together (a blocked row has BOTH status!=='ran'
+// AND exit===null; a green row has BOTH exit===0 and a unit/properties
+// id) - none can discriminate any one clause from its sibling. Each case
+// below isolates exactly one clause while holding the other three at the
+// value that would otherwise report "unidentified".
+test('buildRegisterJoin: isRedParseableRow single-clause isolation - a red row for a check outside unit/properties is never unidentified', () => {
+  // Isolates the id clause: status 'ran', exit non-zero and non-null (both
+  // "unidentified" values), but id 'register' - not a check this join can
+  // ever attribute a failing file to.
+  const registerRow = { id: 'register', status: 'ran', exit: 1, excerpt: 'register cli crashed' };
+  assert.deepEqual(buildRegisterJoin([registerRow], undefined, undefined, rawMap([])), []);
+});
+
+test('buildRegisterJoin: isRedParseableRow single-clause isolation - a synthetic non-ran row with a numeric exit is never unidentified', () => {
+  // Isolates the status clause from exit!==null: a status other than 'ran'
+  // paired with a NON-null exit (unrealistic in production, but exactly
+  // what discriminates status alone - every real 'blocked' row also has
+  // exit===null, so it can never tell these two clauses apart).
+  const blockedWithExit = { id: 'unit', status: 'blocked', exit: 1, excerpt: '' };
+  assert.deepEqual(buildRegisterJoin([blockedWithExit], undefined, undefined, rawMap([])), []);
+});
+
+test('buildRegisterJoin: isRedParseableRow single-clause isolation - a synthetic ran row with a null exit is never unidentified', () => {
+  // Isolates exit!==null itself: status==='ran' and id 'unit' both hold
+  // (so a mutant removing status/id clauses stays masked by THIS case,
+  // but that's fine - other cases above cover those), only exit is null.
+  // The status-isolation case above cannot discriminate this clause: its
+  // status!=='ran' already forces the whole `&&` chain false by
+  // short-circuit, so a mutant on exit!==null is never even evaluated
+  // there.
+  const ranWithNullExit = { id: 'unit', status: 'ran', exit: null, excerpt: '' };
+  assert.deepEqual(buildRegisterJoin([ranWithNullExit], undefined, undefined, rawMap([])), []);
+});
+
+test('buildRegisterJoin sorts unidentified entries, never leaving them in the rows\' own insertion order', () => {
+  // "unit" is inserted before "properties" (the rows array below matches
+  // CHECKLIST's own order) - alphabetical sort puts "properties" first,
+  // discriminating .sort() from a no-op.
+  const rows = [
+    { id: 'unit', status: 'ran', exit: 1, excerpt: '' },
+    { id: 'properties', status: 'ran', exit: 1, excerpt: '' },
+  ];
+  const join = buildRegisterJoin(rows, undefined, undefined, rawMap([['unit', 'no fail line here'], ['properties', 'no fail line here']]));
+  assert.deepEqual(join, [
+    { file: 'properties', join: 'unidentified' },
+    { file: 'unit', join: 'unidentified' },
+  ]);
+});
+
+test('buildRegisterJoin mixes a named failure and an unidentified check in the same report', () => {
+  const unitExcerpt = ' FAIL  test/foo.test.js > x';
+  const propsNoise = 'nothing named here, just noise\n';
+  const rows = [
+    { id: 'unit', status: 'ran', exit: 1, excerpt: unitExcerpt },
+    { id: 'properties', status: 'ran', exit: 1, excerpt: tailExcerpt(propsNoise) },
+  ];
+  const join = buildRegisterJoin(rows, undefined, undefined, rawMap([['unit', unitExcerpt], ['properties', propsNoise]]));
+  assert.deepEqual(join, [
+    { file: 'extension/test/foo.test.js', join: 'absent' },
+    { file: 'properties', join: 'unidentified' },
   ]);
 });
 

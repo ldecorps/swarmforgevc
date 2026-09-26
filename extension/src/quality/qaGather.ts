@@ -110,7 +110,9 @@ export interface CheckRow {
   reason?: string;
 }
 
-const EXCERPT_MAX_CHARS = 4000;
+// BL-1769: exported so a fixture building "more than the excerpt keeps"
+// tracks this constant rather than a hard-coded copy of it.
+export const EXCERPT_MAX_CHARS = 4000;
 
 export function tailExcerpt(text: string, maxChars: number = EXCERPT_MAX_CHARS): string {
   if (text.length <= maxChars) {
@@ -198,7 +200,7 @@ export interface RegisterReport {
   rows: RegisterRow[];
 }
 
-export type RegisterJoinKind = 'owned' | 'unowned' | 'absent';
+export type RegisterJoinKind = 'owned' | 'unowned' | 'absent' | 'unidentified';
 
 export interface RegisterJoinEntry {
   file: string;
@@ -242,12 +244,25 @@ function toRepoRootRelative(file: string): string {
   return file.startsWith('extension/') ? file : `extension/${file}`;
 }
 
-export function failingFilesFromRow(row: CheckRow, acceptanceFeature: string | undefined): string[] {
+// BL-1769: unit/properties rows parse from their WHOLE (unbounded) output,
+// never row.excerpt (BL-1554 architect bounce D1's own fix, applied to the
+// register check only, left this one on the display-bounded excerpt) - a
+// red run whose stderr crowds the last EXCERPT_MAX_CHARS with allowlisted
+// noise (e.g. BL-871's onTaskUpdate timeouts) pushed the FAIL line itself
+// out of the tail, so the join came back empty and read as "no failing
+// file" (BL-1726, BL-1766). rawOutputByCheckId is composeQaGatherReport's
+// own onRawOutcome capture, the same seam parseRegisterOutput already uses
+// for the register check - never a second runFn call.
+export function failingFilesFromRow(
+  row: CheckRow,
+  acceptanceFeature: string | undefined,
+  rawOutputByCheckId: ReadonlyMap<string, string>
+): string[] {
   if (row.status !== 'ran') {
     return [];
   }
   if (row.id === 'unit' || row.id === 'properties') {
-    return parseFailingFilesFromVitestOutput(row.excerpt).map(toRepoRootRelative);
+    return parseFailingFilesFromVitestOutput(rawOutputByCheckId.get(row.id) ?? '').map(toRepoRootRelative);
   }
   if (isFailingAcceptanceRow(row, acceptanceFeature)) {
     return [acceptanceFeature as string];
@@ -255,24 +270,60 @@ export function failingFilesFromRow(row: CheckRow, acceptanceFeature: string | u
   return [];
 }
 
-export function buildRegisterJoin(rows: CheckRow[], register: RegisterReport | undefined, acceptanceFeature: string | undefined): RegisterJoinEntry[] {
+// A red (non-zero exit) unit/properties row is the only shape that can
+// ever go "unidentified" below - a row this parser could plausibly name a
+// failing file for, but did not, on this run's own output.
+function isRedParseableRow(row: CheckRow): boolean {
+  return row.status === 'ran' && row.exit !== null && row.exit !== 0 && (row.id === 'unit' || row.id === 'properties');
+}
+
+// BL-1769 (hardener extraction, CRAP): the collection half of
+// buildRegisterJoin's own invariant - a red unit/properties row always
+// contributes at least one entry, each failing file it names, or (when it
+// names none at all) one `unidentified` entry keyed by the check id, never
+// a silent omission that reads as "nothing failed". Pulled out so
+// buildRegisterJoin's own complexity does not grow past its pre-BL-1769
+// baseline (differential complexity gate, engineering.prompt).
+function collectFailingAndUnidentified(
+  rows: CheckRow[],
+  acceptanceFeature: string | undefined,
+  rawOutputByCheckId: ReadonlyMap<string, string>
+): { failing: Set<string>; unidentifiedChecks: Set<string> } {
+  const failing = new Set<string>();
+  const unidentifiedChecks = new Set<string>();
+  for (const row of rows) {
+    const files = failingFilesFromRow(row, acceptanceFeature, rawOutputByCheckId);
+    if (files.length > 0) {
+      for (const f of files) {
+        failing.add(f);
+      }
+    } else if (isRedParseableRow(row)) {
+      unidentifiedChecks.add(row.id);
+    }
+  }
+  return { failing, unidentifiedChecks };
+}
+
+export function buildRegisterJoin(
+  rows: CheckRow[],
+  register: RegisterReport | undefined,
+  acceptanceFeature: string | undefined,
+  rawOutputByCheckId: ReadonlyMap<string, string>
+): RegisterJoinEntry[] {
   const byFile = new Map<string, RegisterRow>();
   for (const r of register?.rows ?? []) {
     byFile.set(r.file, r);
   }
-  const failing = new Set<string>();
-  for (const row of rows) {
-    for (const f of failingFilesFromRow(row, acceptanceFeature)) {
-      failing.add(f);
-    }
-  }
-  return [...failing].sort().map((file) => {
+  const { failing, unidentifiedChecks } = collectFailingAndUnidentified(rows, acceptanceFeature, rawOutputByCheckId);
+  const namedEntries = [...failing].sort().map((file) => {
     const row = byFile.get(file);
     if (!row) {
       return { file, join: 'absent' as const };
     }
     return { file, join: (row.owned ? 'owned' : 'unowned') as RegisterJoinKind, ticket: row.ticket };
   });
+  const unidentifiedEntries = [...unidentifiedChecks].sort().map((id) => ({ file: id, join: 'unidentified' as const }));
+  return [...namedEntries, ...unidentifiedEntries];
 }
 
 // Parses the register check's own RAW (unbounded) stdout, never the row's
@@ -334,12 +385,16 @@ export function composeQaGatherReport(
   const acceptanceFeature = yamlContent ? readAcceptancePath(yamlContent) : undefined;
   const ctx: CheckContext = { root, ticketId, task: opts.task, commit: opts.commit, acceptanceFeature };
   let registerRawStdout: string | undefined;
+  const rawOutputByCheckId = new Map<string, string>();
   const checks = runChecklist(CHECKLIST, ctx, runFn, (id, outcome) => {
     if (id === 'register') {
       registerRawStdout = outcome.stdout;
     }
+    if (id === 'unit' || id === 'properties') {
+      rawOutputByCheckId.set(id, outcome.stdout + outcome.stderr);
+    }
   });
   const register = parseRegisterOutput(checks.find((c) => c.id === 'register'), registerRawStdout);
-  const register_join = buildRegisterJoin(checks, register, acceptanceFeature);
+  const register_join = buildRegisterJoin(checks, register, acceptanceFeature, rawOutputByCheckId);
   return { ticket: ticketId, task: opts.task, commit: opts.commit, root, checks, register_join };
 }

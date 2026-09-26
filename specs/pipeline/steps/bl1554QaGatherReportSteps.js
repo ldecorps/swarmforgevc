@@ -13,6 +13,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { gatherQaChecklist } = require('../../../extension/out/metrics/qaGatherAdapter');
+const { EXCERPT_MAX_CHARS } = require('../../../extension/out/quality/qaGather');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1554 QA gathers its mechanical checklist in one call';
@@ -214,6 +215,35 @@ function registerSteps(registry) {
     const entry = ctx.bl1554.report.register_join.find((r) => r.file === file);
     assert.ok(entry, `no register_join entry for ${file}: ${JSON.stringify(ctx.bl1554.report.register_join)}`);
     assert.equal(entry.join, join);
+  });
+
+  // ── scenario 07 (outline, BL-1769) ──────────────────────────────────
+  // "more stderr than the report's excerpt keeps": built from the module's
+  // own exported EXCERPT_MAX_CHARS, never a hard-coded copy of it - the
+  // FAIL line sits in stdout, real filler stderr past the bound pushes it
+  // out of tailExcerpt's own kept tail, exactly BL-1726/BL-1766's shape.
+  scoped(
+    /^the fake runner answers the (unit|properties) check with exit 1, an output naming the failing file (\S+), then more stderr than the report's excerpt keeps$/,
+    (ctx, check, file) => {
+      if (!ctx.bl1554.script) ctx.bl1554.script = {};
+      ctx.bl1554.script[check] = {
+        exit: 1,
+        stdout: ` FAIL  ${file} > some assertion\n`,
+        stderr: 'z'.repeat(EXCERPT_MAX_CHARS + 500),
+      };
+      ctx.bl1554.lastFile = file;
+    }
+  );
+
+  // ── scenario 08 (outline, BL-1769) ──────────────────────────────────
+  scoped(/^the fake runner answers the (unit|properties) check with exit 1 and an output that names no failing file$/, (ctx, check) => {
+    if (!ctx.bl1554.script) ctx.bl1554.script = {};
+    ctx.bl1554.script[check] = { exit: 1, stdout: 'Test Files  1 failed (12)\nno FAIL line here, just a summary\n' };
+  });
+
+  scoped(/^the report's register join lists the (unit|properties) check as unidentified$/, (ctx, check) => {
+    const entry = ctx.bl1554.report.register_join.find((r) => r.file === check);
+    assert.deepEqual(entry, { file: check, join: 'unidentified' }, `expected an unidentified entry for ${check}: ${JSON.stringify(ctx.bl1554.report.register_join)}`);
   });
 }
 
