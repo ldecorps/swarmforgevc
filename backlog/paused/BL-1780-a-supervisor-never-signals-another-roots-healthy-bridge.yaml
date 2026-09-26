@@ -1,0 +1,123 @@
+id: BL-1780
+title: "A front-desk supervisor never signals a healthy bridge that serves a different project root - BL-789's adopt-or-free frees it today (kill -TERM then -KILL), which takes down another swarm's live front desk whenever two roots resolve one bridge port - it leaves it running, starts no bridge of its own and logs the port and the other root; an unhealthy bridge and a non-bridge listener are still freed"
+milestone: M8
+type: defect
+severity: medium
+# medium: defense in depth. The live path (a fixture root resolving the
+# host's port) is closed by BL-1779. What remains needs two declared roots
+# on one host resolving one port. This host runs two swarms (the primary
+# on 8765, GpuBargainHunter on 8767), so that is one misconfiguration
+# away, and the result is another swarm's front desk killed.
+epic: swarm-reliability
+priority: 20
+depends_on: []
+mutation_cost: low
+# low: one pure decision in front_desk_supervisor_lib.bb (Babashka, no
+# mutation/CRAP/DRY wired, BL-472), one branch in the supervisor, one
+# feature over fixture listeners.
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1780-a-supervisor-never-signals-another-roots-healthy-bridge.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer (the supervisor's
+# maybe-adopt-or-spawn-bridge! calling decide-bridge-port-action) exists
+# before the fix, so an anchor there gates nothing (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1780OtherRootsHealthyBridgeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A plain approve, with no choice posed. FIRM: when a healthy bridge
+  serving a different project root holds this supervisor's bridge port,
+  the supervisor sends it no signal, starts no bridge of its own, and
+  logs one line naming the port and that root. FIRM: BL-789's other
+  cases are unchanged: our own healthy bridge is adopted; an unhealthy
+  bridge of any root, or a listener that is not a bridge, is freed.
+  Changed from today: BL-789's docstring lists "another swarm's own
+  bridge" under :free, and no BL-789 scenario pins that case.
+
+invariants:
+  - "A front-desk supervisor never sends a signal to a process that holds its bridge port while serving a different project root and answering its health route."
+
+description: |
+  ## What is wrong
+
+  `front_desk_supervisor_lib.bb`'s `decide-bridge-port-action` returns
+  `:free` for anything on the port that is not our own healthy bridge.
+  Its docstring says so: "an unrelated process, another swarm's own
+  bridge, or an unhealthy bridge". `maybe-adopt-or-spawn-bridge!` then
+  runs `free-foreign-pid!` (kill -TERM, then -KILL) and spawns its own
+  bridge on that port. BL-1750's coder evidence quotes this killing the
+  host's live bridge (`free-port bridge pid= 24261 cmdline= node
+  .../start-bridge-headless.js /home/carillon/swarmforgevc 8765`), from a
+  fixture that resolved the host's port. BL-1779 closes that channel.
+  This ticket closes the kill for every other way two roots can meet on
+  one port.
+
+  ## What is wanted
+  1. A healthy bridge (answers its health route) whose cmdline names a
+     different project root is never signalled. The supervisor starts no
+     bridge on that port, and logs one line naming the port and the
+     holder's root. The line is written once per episode, not once per
+     tick.
+  2. Unchanged: our own healthy bridge is adopted; an unhealthy bridge,
+     whatever its root, and a non-bridge listener are freed, then ours is
+     spawned (BL-789 scenarios stay green).
+
+  ## How (direction, not mandate)
+  - A third decision value (e.g. `:refuse`) from the pure function.
+    Where the bridge row goes on a refusal (not-started, retried next
+    tick) follows check-one!'s existing state machine. Coder's call.
+  - The fixture's "healthy bridge serving another project root" can be a
+    stand-in process whose cmdline carries
+    `start-bridge-headless.js <other-root> <port>` and which answers
+    `/lets-talk` with 200. BL-789's handler already builds similar
+    listeners.
+
+  ## Scope
+  - `swarmforge/scripts/front_desk_supervisor_lib.bb`
+    (`decide-bridge-port-action` and its docstring),
+    `swarmforge/scripts/front_desk_supervisor.bb` (the refusal branch),
+    and their bb runner tests.
+  - The feature, the pinned handler and its registration.
+  - Docs: the front-desk supervisor reference or how-to, wherever the
+    adopt-or-free rule is described.
+
+  ## Not in scope
+  - How a root resolves its port (BL-1779, BL-1776).
+  - Telling the human about a port collision beyond the log line.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1780-a-supervisor-never-signals-another-roots-healthy-bridge.feature`:
+     all ok (3 of 3).
+  2. The BL-789 feature: all ok. The supervisor lib's bb runner: green.
+     Before and after, the live bridge's pid on 8765 is unchanged and
+     `GET /pipeline` still answers.
+  3. `git diff main...HEAD --name-only` names only Scope files, docs and
+     evidence.
+
+source: |
+  Hardener note 001555 (2026-09-26 11:04Z), verbatim: "BL-1750 found
+  sibling live-bridge-kill hazard, 5 files, see evidence". The fixture
+  half of that hazard is BL-1779. This is the kill mechanism itself,
+  found by reading `decide-bridge-port-action` at mint.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) beside BL-1779,
+  the same pass. It shares front_desk_supervisor.bb with BL-1779 (a
+  different function), so the two are sequenced by orthogonality, not by
+  dependency. Checked at mint: BL-789's feature pins "a healthy bridge
+  listener already on our port is adopted" and "a non-bridge listener on
+  our port is cleared"; neither covers a healthy bridge of another root,
+  so no scenario is retired.
+  IR-DRY: no findings.
+  Freshness: deprecate-check was run after the last edit.
+
+  INVEST: Independent (orthogonal to BL-1779 by function), Negotiable
+  (the decision value and the retry shape are direction), Valuable (no
+  swarm's live front desk is killed by another's supervisor), Estimable
+  (one pure branch plus one call site), Small (two scenarios, one
+  invariant), Testable (stand-in listeners on fixture ports, plus the
+  live-pid check in QA's step 2).

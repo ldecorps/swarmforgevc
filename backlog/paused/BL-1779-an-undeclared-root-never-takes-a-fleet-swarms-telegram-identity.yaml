@@ -1,0 +1,189 @@
+id: BL-1779
+title: "A project root whose own swarm-identity declares no swarm name (every test fixture root) never reads a fleet creds file and never writes the primary-root record - under the host's real HOME it used to resolve the primary's bot token and bridge port, so a fixture front desk polled the human's bot and freed the live bridge's port - and the five step handlers that start a fixture front desk give it a fleet home of its own"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault. Every run of the five handlers below on this host can
+# start a second getUpdates poller on the human's bot (BL-622's
+# message-stealing incident class) and kill the live front-desk bridge.
+# The host's own record proves a fixture has already impersonated the
+# primary here: ~/.swarmforge/fleet/primary/root names /tmp/tmp.yRA6sJ6QgV
+# (written 2026-07-28 23:45).
+epic: swarm-reliability
+priority: 5
+depends_on: []
+mutation_cost: medium
+# medium: Babashka lib (no mutation/CRAP/DRY wired, BL-472) plus up to
+# five step-handler env edits and a census run of 36 test files, each
+# once.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1779-an-undeclared-root-never-takes-a-fleet-swarms-telegram-identity.feature
+
+# Handler pin only (BL-233, BL-1371). The consumers (front_desk_supervisor.bb
+# and fleet_telegram_creds_cli.bb calling resolve-telegram-creds) exist
+# before the fix, so an anchor there gates nothing (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1779UndeclaredRootFleetIdentitySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  FIRM: a root whose own .swarmforge/swarm-identity declares no swarm name
+  never reads any fleet creds file and never writes the primary-root
+  record. It resolves only through BL-622's environment fallback, which is
+  unchanged. A root that declares its name (the primary, GBH, any
+  provisioned swarm) resolves exactly as today. FIRM: the five step
+  handlers named below give any front desk they start a fleet home inside
+  their own fixture root, BL-1750's pattern. Not decided here: repairing
+  this host's primary-root record, which names a fixture tmp root. BL-622
+  makes that an operator edit.
+
+invariants:
+  - "A project root whose own swarm-identity declares no swarm name never reads a fleet creds file and never writes the primary-root record, under any HOME or SWARMFORGE_FLEET_HOME."
+
+description: |
+  ## What is wrong
+
+  The hardener found this while hardening BL-1750 (note 001555, evidence
+  ce8afe10e4). The specifier traced it at mint and found it wider than
+  the note. `swarm_identity_lib.bb`'s `own-swarm-name` returns
+  `"primary"` for a root with no `.swarmforge/swarm-identity`, and every
+  mkdtemp fixture root is such a root. `front_desk_supervisor.bb` reads
+  fleet creds from `$SWARMFORGE_FLEET_HOME`, or the real `$HOME` when that
+  is unset. `resolve-telegram-creds` lets the creds file win wholesale:
+  bot token, chat id and bridge port. On this host that file
+  (`~/.swarmforge/fleet/primary/telegram.json`) holds the live bot's token
+  and port 8765. So a fixture front desk under the real HOME:
+  - spawns its bot with the human's real token. The bridge and the bot
+    are independent process rows in `tick!`, so this happens whatever
+    the bridge does. That is a second poller on the human's bot, BL-622's
+    incident class, where "the rival getUpdates poller silently stole
+    this swarm's inbound messages for ~9 hours";
+  - binds 8765, and BL-789's adopt-or-free `:free` kills the live bridge
+    holding it (BL-1750 coder evidence quotes the `free-port` line);
+  - in the bootstrap window, `ensure-primary-root-recorded!` records the
+    FIXTURE as the primary root. This host's record names
+    `/tmp/tmp.yRA6sJ6QgV` (mtime 2026-07-28 23:45), so it already
+    happened here.
+  BL-622 closed the environment channel for non-primary roots. The
+  creds-file channel, keyed by the defaulted name, stayed open.
+
+  ## What is wanted
+
+  1. **An undeclared root takes no fleet identity.** When a root's own
+     swarm-identity declares no `swarm_name`, `resolve-telegram-creds`
+     reads no fleet creds file, and the supervisor never calls
+     `ensure-primary-root-recorded!` for it. Its resolution goes only
+     through BL-622's `env-fallback-allowed?` rule, unchanged: refused
+     where a record names another root, the environment otherwise. The
+     real primary is unaffected. `swarmforge.sh` persists swarm-identity
+     (line ~1222) before it launches the front desk (line ~2560), so
+     every real launch is declared.
+  2. **The five handlers get hermetic front desks.** Each of
+     `bl404LaunchFrontDeskHonorsParkedFlagSteps.js`,
+     `bl629SyncQaApprovalGateSteps.js`, `frontDeskSurvivesRebootSteps.js`,
+     `mergedCodeReachesDaemonsSteps.js` and
+     `frontDeskHeadlessLauncherSteps.js` (hardener note 001555) that can
+     start a front desk passes `SWARMFORGE_FLEET_HOME` inside its own
+     fixture root, and a `BRIDGE_PORT` of its own if it has none (the
+     default is 8765), BL-1750's harness pattern. A handler that turns
+     out never to start one says so in its evidence line instead.
+  3. **Census run, once each, AFTER item 1 is in the checkout.** The
+     census has 36 files: `git grep -l -E
+     'launch_front_desk\.sh|front_desk_supervisor\.bb' -- specs/pipeline/steps
+     swarmforge/scripts/test extension/test ':!*.txt' ':!*.conf' ':!*.tsv'`
+     (counted at mint; the five files above must be among them). Run each
+     census file once and record the verdict per file in the evidence. A
+     file that goes red because its undeclared fixture is now refused, or
+     because it relied on an undeclared root reading its fixture creds
+     file or writing the record (BL-436/BL-622 handlers: declare the name
+     in the fixture instead, and the scenario text stays true), is fixed
+     in this parcel the same way. A red with any other cause is a `note`
+     to the specifier, not scope.
+     **Never run a census file on this host before item 1 is in the
+     checkout: before the fix, running one is exactly how the live desk
+     gets hit.**
+
+  ## How (direction, not mandate)
+  - A `declared-swarm-name` accessor (nil when the file or its
+    `swarm_name` is absent) beside `own-swarm-name`, used only at the
+    fleet-creds and primary-record call sites. Every other caller keeps
+    the "primary" default.
+  - Scenario 02 can start the supervisor with its stop file already
+    present. The record write happens at namespace load, so the process
+    exits without ticking and nothing is spawned.
+  - A refusal line for an undeclared root that says to launch the swarm
+    once (which writes swarm-identity) or to provision a name is kinder
+    than BL-622's generic line. Coder's call.
+
+  ## Scope
+  - `swarmforge/scripts/fleet_telegram_creds_lib.bb`,
+    `swarmforge/scripts/swarm_identity_lib.bb` (the accessor),
+    `swarmforge/scripts/front_desk_supervisor.bb` (the record call site),
+    and their bb runner tests.
+  - The feature, `specs/pipeline/steps/bl1779UndeclaredRootFleetIdentitySteps.js`
+    and its registration.
+  - The five handlers, and any census file that goes red from item 1.
+  - Docs: the front-desk how-to or reference that describes creds
+    resolution gains the undeclared-root rule.
+
+  ## Not in scope
+  - The host's own primary-root record (names `/tmp/tmp.yRA6sJ6QgV`).
+    BL-622 makes moving it an operator edit. The specifier surfaced it to
+    the human at mint.
+  - A healthy bridge of ANOTHER declared root on our port is still freed
+    by BL-789's `:free`. BL-1780 owns that guard.
+  - A fixture that DECLARES "primary" while running under the real HOME
+    would still read the real creds. No census file does this today, and
+    item 3's run would show one that did.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1779-an-undeclared-root-never-takes-a-fleet-swarms-telegram-identity.feature`:
+     all ok (4 of 4: two outline rows, 02, 03).
+  2. BL-622, BL-436, BL-458, BL-404, BL-629, BL-351, BL-328 and BL-292
+     features: all ok. Before the run, record the live bridge's pid (the
+     `lsof -ti tcp:8765 -sTCP:LISTEN` holder) and `ls
+     ~/.swarmforge/fleet/primary/`; after the run, the same pid still
+     listens, `GET /pipeline` still answers, and the primary-root record
+     is byte-identical.
+  3. The coder's census table covers 36 files, each with a verdict.
+  4. `git diff main...HEAD --name-only` names only Scope files, docs and
+     evidence.
+
+source: |
+  Hardener note 001555 (2026-09-26 11:04Z), verbatim: "BL-1750 found
+  sibling live-bridge-kill hazard, 5 files, see evidence". Evidence
+  ce8afe10e4 (BL-1750 hardener pass): "five OTHER step-handler files spawn
+  the real `launch_front_desk.sh` with the real `$HOME` and no
+  `SWARMFORGE_FLEET_HOME` override, so any of them can hit the exact same
+  live-bridge-kill hazard this ticket just fixed for one harness".
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) from hardener
+  note 001555, the same pass. Checked at mint, read-only: the host's
+  primary creds file carries botToken/chatId/bridgePort 8765;
+  `~/.swarmforge/fleet/primary/root` reads `/tmp/tmp.yRA6sJ6QgV`; the
+  bridge and the bot are separate `tick!` rows (front_desk_supervisor.bb
+  ~448-451); the refusal branch exits before any spawn (~652). The
+  hardener's five handlers were mapped to BL-404, BL-629, BL-351, BL-328
+  and BL-292. No census file was RUN at mint, for the reason item 3
+  gives.
+  Split from BL-1780 (the bridge-port guard): each closes a different
+  channel, and neither needs the other to land first.
+  IR-DRY: five findings, all kept. Three pair a Then with its own
+  negation ("is" / "is not") or a Given with its later Then ("has no" /
+  "still has no"). One is declared vs undeclared, and one is the outline
+  placeholder against its concrete row.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Freshness: deprecate-check was run after the last edit.
+
+  INVEST: Independent (no open ticket edits these files; BL-1750, at the
+  documenter, already landed its harness's own FLEET_HOME), Negotiable
+  (accessor shape and refusal wording are direction), Valuable (no
+  fixture can poll the human's bot, free the live bridge's port or claim
+  the primary record), Estimable (one resolution branch, one call site,
+  five handlers, a bounded census), Small (three scenarios, one
+  invariant), Testable (creds CLI over fixture fleet homes, and the live
+  pid check in QA's step 2).
