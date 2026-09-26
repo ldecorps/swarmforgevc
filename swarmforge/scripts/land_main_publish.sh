@@ -227,12 +227,13 @@ run_land() {
 
   echo "LAND_PUBLISHED $land_sha"
 
-  # BL-1438: the QA-branch re-point (BL-1432 option 1) runs ONLY here -
-  # after the land has genuinely published, never on a LAND_STOPPED return
-  # above and never on a rejected push (invariant 1: both return before
-  # reaching this line). Its own exit code is captured and printed but
-  # NEVER propagated into this function's own return value (invariant 2):
-  # a skipped re-point is a decision the land already survived, not a
+  # BL-1438 / BL-1772: the QA-branch re-point (BL-1432 option 1) runs
+  # after the land has genuinely published - here and, for the hand-built
+  # path, in run_push below. Never on a LAND_STOPPED return above and
+  # never on a rejected push (invariant 1: both return before reaching
+  # this line). Its own exit code is captured and printed but NEVER
+  # propagated into this function's own return value (invariant 2): a
+  # skipped re-point is a decision the land already survived, not a
   # reason to fail one that already published. post-land-repoint!'s own
   # guards (an uncommitted change, a parcel still in_process, or
   # origin/main not resolving) are the only guards this call adds none of
@@ -283,6 +284,23 @@ run_push() {
     return 5
   fi
   echo "LAND_PUBLISHED $commit"
+
+  # BL-1772: the same re-point --land already runs (BL-1438). --push is
+  # the path QA's standing hand-build recipe uses, so without this call
+  # the QA branch never converges and every later land walks the leftover
+  # history. Same invariants as run_land: skip never fails the publish;
+  # only after LAND_PUBLISHED; post-land-repoint!'s guards only. The
+  # published commit's subject, when it names a ticket, is the BL-1467
+  # landed-task so that ticket's own bookkeeping drops as redundant.
+  local landed_task=""
+  landed_task="$(git -C "$ROOT" log -1 --format=%s "$commit" 2>/dev/null || true)"
+  local repoint_out=""
+  if [[ -n "$landed_task" ]]; then
+    repoint_out="$(bb "$SCRIPT_DIR/land_step_cli.bb" repoint "$ROOT" "$landed_task" 2>&1)" || true
+  else
+    repoint_out="$(bb "$SCRIPT_DIR/land_step_cli.bb" repoint "$ROOT" 2>&1)" || true
+  fi
+  printf '%s\n' "$repoint_out"
   return 0
 }
 
