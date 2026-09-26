@@ -1,0 +1,126 @@
+id: BL-1770
+title: "briefingDigestLineCli.test.js times out at 20 s in the unit lane (QA, BL-1766 parcel, 2026-09-26) because three of its tests run the digest CLI against the LIVE repository and derive every backlog lifecycle from its whole git history - 11.5 s, 10.5 s and 8.8 s each run alone at load 15 - the same work that makes it a 36.3 s duration pole: the three wiring tests run against a small mkdtemp git fixture, so the timeout red and the pole leave together"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (2026-09-05 register amendment);
+# it holds BL-1766 at QA (Article 4.2).
+status: todo
+epic: unit-suite-speed
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test file; no production change.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file chore (BL-1251): the pointer names the feature whose steps
+# read this file's shape (BL-363's in-process CLI guard), the contract the
+# rewrite must keep. It is not a claim of ownership over BL-363's contract.
+acceptance: specs/features/BL-363-clis-tested-in-process.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: no production change
+  (briefing-digest-line.ts and gitHistoryAdapter.ts are read, never
+  edited); no test timeout is raised; BL-363's shape rules for the file
+  still hold.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA note 003244 (evidence b2a4e82530, BL-1766 QA pass): `npm test` exit
+  1, 1 of 10875 failed. The failure was
+  `extension/test/briefingDigestLineCli.test.js` "the compiled CLI runs
+  against the real repo and prints both lines": `Error: Test timed out in
+  20000ms.` (24.7 s). The run shared the host with the hardener's Stryker
+  run.
+
+  Cause, measured at mint (specifier, 2026-09-26 03:01 local, the file
+  alone, load 15.0): three tests call the CLI with `cwd` at the repository
+  root, and `briefing-digest-line.ts` (~line 83) then runs
+  `deriveTicketLifecycles(runGitLog(projectRoot, 'backlog'))` over the
+  whole live history.
+  - "runs against the real repo and prints both lines": 11541 ms.
+  - "falls back to deriving its own history when --snapshot points at a
+    nonexistent file": 10530 ms.
+  - "runs standalone as a subprocess and produces the same result":
+    8844 ms.
+  - Every other test is under 12 ms. The `--snapshot` test, which skips
+    the walk, takes 339 ms.
+
+  The file is also BL-791 slice D's 36.3 s pole (`backlog/suite-poles.tsv`
+  row, measured 2026-09-16). The same three walks are that pole, so this
+  ticket takes that row over as well. The walks grow with the repository,
+  so the timeout gets more likely every week.
+
+  ## What is wanted
+  - No test in the file reads the live repository. The three wiring tests
+    run the CLI against a fixture project root: a `git init` under the
+    file's own `mkTmpDir` root, holding a small `backlog/` history (a few
+    commits, enough for one merged and one blocked ticket) and a briefings
+    directory. Each still asserts both printed lines, as today.
+  - The `BL-1038-EXEMPT` comment goes with the live read. It exists only to
+    excuse that read, and a stale exemption misleads the next reader.
+  - BL-363's guard keeps passing on the file (`specs/features/BL-363-clis-tested-in-process.feature`,
+    `clisTestedInProcessSteps.js`):
+    - exactly one `execFileSync('node', ...)` subprocess spawn;
+    - `main` imported for in-process calls;
+    - more test cases than spawns;
+    - output still asserted.
+  - The file measures under 80% of the 7000 ms per-file budget in the unit
+    lane, so its pole row retires at the land (BL-1598's stale rule).
+
+  ## How (direction, not mandate)
+  - One fixture root per file (a `beforeAll`) is enough; the fixture only
+    has to make the CLI's two lines non-trivial.
+  - Before any mutating git command, prove the fixture is its own
+    repository (`git rev-parse --git-common-dir` inside the mkdtemp root,
+    BL-1390).
+  - `mkTmpDir` already sweeps and cleans up (BL-971/BL-1385).
+
+  ## Scope
+  - `extension/test/briefingDigestLineCli.test.js`, and a helper under
+    `extension/test/helpers/` if the fixture wants one. Plus evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. From `extension/`: `npx vitest run test/briefingDigestLineCli.test.js
+     --reporter=json --outputFile=tmp/BL-1770-bdl.json`: every test passes.
+     Record the file's duration and the 1-minute load.
+  2. `node specs/pipeline/cli.js specs/features/BL-363-clis-tested-in-process.feature`:
+     all ok.
+  3. `grep -n "__dirname, '..', '..'\|BL-1038-EXEMPT" extension/test/briefingDigestLineCli.test.js`:
+     no match.
+  4. `git diff main...HEAD --name-only` names only the Scope files and
+     evidence.
+  5. After landing: REGISTER_ROW_RETIRED for the unit row in
+     `backlog/standing-reds.tsv` and for the file's row in
+     `backlog/suite-poles.tsv`.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) from QA's
+  unowned-red note 003244, the same pass. Per-test durations were measured
+  with the vitest JSON reporter on the file alone. Precedent: bl1277's
+  timeout red was owned apart from its pole (BL-1600), but here the pole
+  and the red share one cause and one fix, so one ticket owns both. The
+  suite-poles.tsv row moves from BL-791 in the mint commit, and BL-791's
+  slice D line records the cut.
+
+  QA's note also names "+1 prop red". It is UNIDENTIFIED (qa-gather's tail
+  excerpt lost the FAIL line; that tool gap is BL-1769), so no row can be
+  written for it yet; QA's evidence re-runs the lane on resume with the
+  full log kept.
+
+  The unit register row was added in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
+
+  INVEST: Independent (no open ticket touches the file), Negotiable
+  (fixture shape is direction), Valuable (one standing red and one 36 s
+  pole gone), Estimable (three tests, one fixture), Small (one test file),
+  Testable (the file's own run, BL-363's feature).

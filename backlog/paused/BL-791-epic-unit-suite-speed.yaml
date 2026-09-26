@@ -9,10 +9,10 @@ priority: 28
 direction: human-requested
 depends_on: []
 mutation_cost: medium
-decomposes_into: [BL-792, BL-1038, BL-1039, BL-1598, BL-1599, BL-1618, BL-1619, BL-1620, BL-1741, BL-1742, BL-1745]
+decomposes_into: [BL-792, BL-1038, BL-1039, BL-1598, BL-1599, BL-1618, BL-1619, BL-1620, BL-1741, BL-1742, BL-1745, BL-1770]
 
 remaining_slices:
-  - "Slice D, first cut - MINTED 2026-09-17 as BL-1620: bl968StepRegistryMaterializedTreeGuard (69.9 s) and telegramFrontDeskBotCli (65.3 s), their suite-poles.tsv rows moved to BL-1620. Next cuts, one or two files each as BL-1620 lands: renderBriefingBurndownCli 36.6 s, briefingDigestLineCli 36.3 s, bl1277UnscopedStepCollisionGuard 23.6 s, renderBriefingDiagramsCli 14.6 s, epicReorderBridge 10.6 s, pilotAcceptanceGateCli 8.5 s, recordBounceCli 7.3 s; emitLifecycleSnapshotCli on watch."
+  - "Slice D, first cut - MINTED 2026-09-17 as BL-1620: bl968StepRegistryMaterializedTreeGuard (69.9 s) and telegramFrontDeskBotCli (65.3 s), their suite-poles.tsv rows moved to BL-1620. Next cuts, one or two files each as BL-1620 lands: renderBriefingBurndownCli 36.6 s, briefingDigestLineCli 36.3 s (MINTED 2026-09-26 as BL-1770 when its timeout red surfaced; its suite-poles.tsv row moved there), bl1277UnscopedStepCollisionGuard 23.6 s, renderBriefingDiagramsCli 14.6 s, epicReorderBridge 10.6 s, pilotAcceptanceGateCli 8.5 s, recordBounceCli 7.3 s; emitLifecycleSnapshotCli on watch."
   - "Slice E - the property lane's pole register and summed-work ratchet, the BL-1598/BL-1599 mirror, minted from the census BL-1619's recorder produces (top ten files by work on its first row). Not before BL-1619 lands."
   - "Slice F - a mapped-set runner for the intermediate roles (run only the unit tests Article 4.5 maps to the changed production paths), once BL-1618 holds the lane table and the unit lane exceeds a minute; today it is 36 s and BL-1618 alone removes the hours."
   - "Slice G - timing rows for the bb property and shell runners under swarmforge/scripts/test/ (190 and 201 files, no record), if they are ever run as a lane outside the hardender."
