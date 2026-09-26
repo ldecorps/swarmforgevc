@@ -1,0 +1,167 @@
+id: BL-1772
+title: "The --push publish path and QA's standing hand-build recipe never re-point swarmforge-QA, so the land walk's cost bound (BL-1438 / BL-1461) is not in effect on the path QA actually uses and every land walks about 2700 branch-only commits for about 20 minutes (2026-09-26): after LAND_PUBLISHED, --push invokes the same post-land-repoint! --land already runs, and the QA land recipe publishes through that path"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in delivery machinery. QA's standing recipe is
+# --decide-only plus a hand-built tip-pure SHA, never --land, so the
+# re-point BL-1461 named as the walk's cost bound never runs. Every land
+# pays the full walk. Not critical: the hand recipe still lands parcels
+# and the swarm stays up.
+status: todo
+epic: swarm-reliability
+priority: 0
+direction: human-requested
+depends_on: []
+# BL-1438 and BL-1461 are done. BL-1768 (paused) ends a stray escalation
+# that forces more hand-builds; it does not re-point and is not a
+# dependency. BL-1679 (paused) also edits land_step_lib.bb: this slice
+# must not be active beside it if the coder touches that file; the
+# intended edit is land_main_publish.sh run_push and the QA prompt.
+mutation_cost: low
+# low: one existing verb called from one more branch, a prompt sentence,
+# a self-converting draft and its handler over a mkdtemp fixture.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1772-the-push-publish-re-points-the-qa-branch-after-a-land.feature.draft
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1772PushPublishRepointsQaBranchSteps.js::registerSteps::the handler lands with the feature so discovery registers every scenario (BL-1371); this entry pins the draft conversion (BL-1340)'
+  - 'swarmforge/roles/QA.prompt::--push::the standing hand-build land recipe publishes through land_main_publish.sh --push, the path that re-points; LAND_REPOINTED already appears in the prompt describing --land and would gate nothing'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so this would ordinarily need a
+  tap; it is minted approved under the 2026-09-17 operator hotfix
+  (severity defect, no choice posed, no ruling_options). FIRM: the
+  candidate walk stays origin/main..tip (BL-1461); post-land-repoint!'s
+  own guards are the only guards; a skipped re-point never fails a
+  publish that already printed LAND_PUBLISHED; the QA recipe change does
+  not drop the hand-built tip-pure step.
+
+invariants:
+  - "A skipped re-point never fails a --push that already printed LAND_PUBLISHED: the publish exits 0 and prints LAND_REPOINT_SKIPPED with a reason, never silent."
+  - "The re-point runs only after LAND_PUBLISHED: never on LAND_STOPPED, never on a refused or rejected push, and never more than once per --push."
+  - "post-land-repoint!'s own guards are the only guards: the publish adds no second notion of clean, and a skip on an uncommitted change or an in_process parcel is what it reports."
+
+description: |
+  ## What is wrong
+
+  Every QA land walks `origin/main..tip` on the QA branch (BL-1461) and
+  pays for every review merge and tip-pure leftover that branch still
+  carries. BL-1432 / BL-1438 made the cost bound a re-point of
+  `swarmforge-QA` to `origin/main` after a successful land. That re-point
+  runs only in `land_main_publish.sh` `run_land`, after `LAND_PUBLISHED`.
+
+  QA's standing recipe (`swarmforge/roles/QA.prompt`) is not `--land`.
+  It is: acquire the lock, `--decide-only`, ALWAYS hand-build a tip-pure
+  commit off current `origin/main` from the parcel's evidence-listed
+  paths, `git push origin <sha>:main`, release the lock. The prompt
+  still says "the publish re-points your branch after every land
+  (BL-1438)" and names `LAND_REPOINTED` / `LAND_REPOINT_SKIPPED` - those
+  lines describe `--land`, which this recipe never runs. `--push` (BL-1678)
+  exists for exactly this hand-built SHA and also does not re-point.
+
+  Live numbers, 2026-09-26, on BL-1768: about 2700 branch-only commits,
+  about 20 minutes per land walk, then often `LAND_ESCALATE` and another
+  hand-build. BL-1768's `out_of_scope` names this walk and the `--push`
+  path never re-pointing as not its job.
+
+  ## What is wanted
+
+  After `land_main_publish.sh --push` prints `LAND_PUBLISHED`, it invokes
+  the same `land_step_cli.bb repoint` verb `--land` already runs, prints
+  that verb's line, and does not let a skip fail the publish. A
+  `LAND_STOPPED` `--push` never re-points.
+
+  QA's standing land recipe publishes the hand-built SHA through
+  `land_main_publish.sh --push` (not a raw `git push origin <sha>:main`),
+  so the re-point actually runs. The recipe must not hold the land lock
+  across that `--push` call: `--push` acquires the lock itself, and a
+  held lock would time out the publish.
+
+  The prompt's existing BL-1438 sentences are retensed to the path QA
+  actually runs. The hand-built tip-pure step stays (the prompt's ALWAYS).
+
+  ## How (direction, not mandate)
+
+  - `run_push` already prints `LAND_PUBLISHED $commit` on success and
+    returns. The `--land` block immediately below that line in `run_land`
+    is the shape to match: capture the verb, print it, ignore its exit.
+  - `--push` has no task name today (`LAND_TASK` is the commit). The
+    verb accepts an optional landed-ticket id (BL-1467). Passing the
+    ticket id from the published commit's subject, when one is there,
+    drops that ticket's own bookkeeping as redundant; omitting it keeps
+    today's classify-on-shape behaviour. Either is fine if the scenarios
+    hold.
+  - Fixture: reuse BL-1438's bare-origin-plus-QA-worktree shape, driven
+    through `--push <sha>` rather than `--land <task> <sha>`. Scenario 03
+    uses verify-push-safe's refusal (a merge commit, or a foreign path),
+    never the live checkout.
+  - Prove the root with `rev-parse --git-common-dir` before any mutating
+    git command (BL-1390). `post-land-repoint!` moves a branch, so the
+    fixture must be its own repository.
+
+  ## Out of scope
+
+  - Re-bounding the candidate walk to the parcel (BL-1461 undid that
+    bound for a silent-CLEAN reason; it stays wide).
+  - BL-1768's stray-superseded ground (c).
+  - Speeding `qa-gather` or the unit/property lanes (BL-791).
+  - A one-time operator re-point of the live QA worktree (the operator
+    can run `bb swarmforge/scripts/land_step_cli.bb repoint <qa-root>
+    <ticket>` today if that tree is clean and `in_process` is empty;
+    this ticket makes the next land do it).
+
+constraints: >
+  Fixture repositories are mkdtemp git init roots (BL-1390). No change to
+  which commits are candidates, to post-land-repoint!'s guards, or to the
+  ALWAYS hand-built tip-pure step.
+
+out_of_scope: |
+  The walk bound, BL-1768, qa-gather duration, and a hand re-point of the
+  live QA branch.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1772-the-push-publish-re-points-the-qa-branch-after-a-land.feature`:
+     four cases ok (01, two rows of 02, 03). Record the duration.
+  2. From the QA checkout, after the next successful hand-built land that
+     used `--push`: the publish output shows `LAND_PUBLISHED` then
+     `LAND_REPOINTED <old> <new>` (or `LAND_REPOINT_SKIPPED` naming a
+     real dirty tree or in_process parcel); when it re-pointed,
+     `git -C .worktrees/QA rev-list --count origin/main..HEAD` is 0
+     afterwards.
+  3. `git diff main...HEAD --name-only` names only the Scope files,
+     the converted feature, its handler, and evidence.
+
+source: |
+  Operator, 2026-09-26, Cursor session: "explore the best option to speed
+  up the landings and qjump the resulting ticket(s)". Parents: BL-1432,
+  BL-1438, BL-1461, BL-1768 out_of_scope (the ~20 minute walk and --push
+  never re-pointing). QA.prompt land recipe (decide-only, ALWAYS
+  hand-build, raw git push). land_main_publish.sh run_push (LAND_PUBLISHED
+  then return 0, no repoint).
+
+notes: |
+  Minted 2026-09-26 by Cursor on the operator's land-speed ask, after
+  reading BL-1432/1438/1461/1768 and the live --land vs --push vs QA
+  recipe split. The best option is restoring the already-ruled cost bound
+  on the path QA actually uses, not re-bounding the walk (BL-1461) and
+  not speeding the walk while the branch keeps growing. AUTO-APPROVED
+  under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  INVEST: Independent (BL-1438 landed; BL-1768 is a different outcome),
+  Negotiable (how the ticket id reaches the verb, and whether the recipe
+  calls --push or the verb after a raw push, are direction; the FIRM
+  text requires --push in the prompt so the wiring gate can see it),
+  Valuable (one outcome: a successful QA publish re-points), Estimable
+  (one call, one prompt sentence, three scenarios), Small (low envelope),
+  Testable (real --push on a mkdtemp fixture plus one live land).
+  IR-DRY (2026-09-26): one possible-synonym (score 0.545) between the
+  success When and the stopped-push When; kept, they name different
+  outcomes. Queue-jumped at mint on the operator's ask (priority 0,
+  active/, crossed the depth cap).

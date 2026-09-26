@@ -1,0 +1,47 @@
+Feature: BL-1772 The --push publish re-points the QA branch after a land
+
+  BL-1438 wired post-land-repoint! into land_main_publish.sh --land only.
+  QA's standing recipe is --decide-only, a hand-built tip-pure commit, and
+  a publish of that SHA - never --land - so the re-point never runs. The
+  QA branch then keeps every review merge, the land walk ranges over them
+  (BL-1461: origin/main..tip, the cost bound is the re-point), and every
+  land pays about twenty minutes (about 2700 branch-only commits on
+  2026-09-26, recorded on BL-1768 and left out of that ticket's scope).
+
+  This feature is that land_main_publish.sh --push, after it has printed
+  LAND_PUBLISHED, invokes the same re-point verb --land already runs,
+  prints what happened, never lets a skipped re-point fail the publish,
+  and never re-points a publish that stopped. Every scenario runs the
+  real publish script against a fixture repository with a bare origin
+  under a temporary directory, never the live checkout.
+
+  Background:
+    Given a fixture repository with a bare origin and a QA-style worktree holding a tip-pure landing commit that --push will publish
+
+  # BL-1772 a-published-push-re-points-a-clean-branch-01
+  Scenario: after LAND_PUBLISHED on --push on a clean worktree the branch is re-pointed to origin/main
+    Given the QA-style worktree is clean and its in_process mailbox is empty
+    When land_main_publish.sh --push publishes the landing commit
+    Then it prints LAND_PUBLISHED and then LAND_REPOINTED with the old tip and the new tip
+    And the QA-style branch tip equals origin/main
+    And the re-point log carries the entry
+
+  # BL-1772 a-skipped-re-point-never-fails-the-push-02
+  Scenario Outline: a worktree with work in it is left alone and the --push still succeeds
+    Given the QA-style worktree holds <work>
+    When land_main_publish.sh --push publishes the landing commit
+    Then it prints LAND_PUBLISHED and then LAND_REPOINT_SKIPPED naming <work>
+    And it exits 0
+    And nothing about the branch or the worktree has moved
+
+    Examples:
+      | work                        |
+      | an uncommitted change       |
+      | a parcel in its in_process  |
+
+  # BL-1772 a-stopped-push-never-re-points-03
+  Scenario: a --push that stops before publishing never re-points
+    Given the publish step refuses the landing commit
+    When land_main_publish.sh --push is run against that commit
+    Then it prints LAND_STOPPED and no re-point line
+    And the branch was left exactly where the refusal found it
