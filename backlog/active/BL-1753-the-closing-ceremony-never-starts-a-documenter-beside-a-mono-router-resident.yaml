@@ -160,3 +160,5 @@ notes: |
   Minted 2026-09-25 by the specifier, same 1:N split as BL-1752 (ask 3).
   Ledger row a27d082c2d (the ceremony's consult fallback) relinked from
   BL-1549 to this ticket; human_decision stays null.
+
+assigned_to: coder
