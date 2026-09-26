@@ -399,6 +399,21 @@
 %% started and refuses the launch before any seat exists. The record lands
 %% at .swarmforge/ollama/serve.json, read by BL-1704's stop path. A pack
 %% with no seat on the local endpoint is untouched.
+%% BL-1711 (2026-09-25, D1 fix 2026-09-26): while that record exists,
+%% handoffd.bb's own poll loop probes the recorded endpoint each cycle.
+%% Crash = the recorded pid is gone (or no longer ollama serve) - or, for
+%% an external record with no pid, nothing answers a bare TCP connect to
+%% the recorded endpoint's own host/port (never a host-wide process-name
+%% scan - QA D1 found the first cut's `ps`-and-grep read "alive" on any
+%% host, self-matching or matching an unrelated ollama serve) - AND the
+%% endpoint stayed silent for a whole confirmation window - never a
+%% live-but-silent server (a large model can take minutes to load). On a
+%% crash: reaps the dead server's orphaned runners (BL-1705's
+%% classification), starts a new server the BL-1703 way, re-records it
+%% swarm-owned with the new pid, and raises one alert
+%% (RESTARTED/RESTART_FAILED/ESCALATED, one wording each) naming the pids
+%% and the server log. At most 3 restarts in any 30 minutes; a 4th starts
+%% nothing and raises the ESCALATED alert instead.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -468,6 +483,8 @@ flowchart TB
   OLLAMA -->|weights + manifests| MODELSTORE
   SUBSTRATE -->|ensure_ollama_ancillary_for_launch:\nprobes before any seat starts,\nstarts if silent, refuses if never\nanswers (BL-1703)| OLLAMA
   SUBSTRATE -->|writes owner/pid/startedAt| OLLAMASTATE
+  OLLAMASTATE -->|handoffd.bb ollama-crash-restart\nsweep: probes the recorded endpoint\nevery poll cycle while the record\nexists; never signals a live ollama\nserve process (BL-1711)| OLLAMA
+  OLLAMA -->|pid gone (or, external,\nno answer on a TCP connect to\nthe recorded host/port)\n+ endpoint silent through the\nconfirmation window: reap dead\nrunners (BL-1705), restart the\nBL-1703 way, re-record swarm-owned,\nalert (BL-1711)| OLLAMASTATE
 
   TMUXCLIENT -->|tmux CLI over socket:\nsend-keys, capture-pane,\nrespawn-pane| SOCKET
   TAILER --> TMUXCLIENT

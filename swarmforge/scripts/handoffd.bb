@@ -2574,6 +2574,81 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
+;; ── BL-1711: restart a crashed ollama server while a local pack depends
+;; on it - ollama_ancillary_lib.sh (bash) owns the whole decision (crash
+;; confirmation window, restart bound, the actual start); this sweep only
+;; resolves swarm.env's own keys (the same ones swarmforge.sh reads at
+;; launch, BL-1703), shells to the restart CLI once per tick, and raises
+;; the SAME operator alert channel send-open-slot-escalation-alert! above
+;; already uses, when (and only when) the CLI printed a RESTARTED,
+;; RESTART_FAILED or ESCALATED line. ───────────────────────────────────
+(defn- swarm-env-value [key default]
+  (let [env-file (fs/path state-dir "swarm.env")]
+    (if-not (fs/exists? env-file)
+      default
+      (let [result (daemon-cycle-guard-lib/sh!
+                    ["bash" "-c" (str "source " (pr-str (str env-file)) " 2>/dev/null; printf '%s' \"$" key "\"")])]
+        (if (and (zero? (:exit result)) (not (str/blank? (:out result))))
+          (:out result)
+          default)))))
+
+;; BL-1711 QA D2: the CLI's own token line (ESCALATED/RESTART_FAILED share
+;; a shape, "<verb> <n1> <n2> <path>") is what a human received verbatim -
+;; "SwarmForge: ESCALATED 1 1800 …" for a single failed restart is
+;; indistinguishable from the bound being exhausted. Render the human text
+;; from the parsed token instead, one wording per outcome.
+(defn- ollama-restart-alert-text [action-line]
+  (let [[verb a b log-path] (str/split action-line #" " 4)]
+    (case verb
+      "RESTARTED"
+      {:subject "ollama server restarted"
+       :text (format "ollama crashed and was restarted: pid %s -> %s, server log: %s" a b log-path)}
+      "RESTART_FAILED"
+      {:subject "ollama restart failed"
+       :text (format "ollama crashed (old pid %s); the restart (new pid %s) never answered - server log: %s" a b log-path)}
+      "ESCALATED"
+      {:subject "ollama restart escalation"
+       :text (format "ollama restarts exhausted (%s in %ss) - not restarting, server log: %s" a b log-path)}
+      {:subject "ollama restart alert" :text action-line})))
+
+(defn send-ollama-restart-alert! [action-line]
+  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
+        {:keys [subject text]} (ollama-restart-alert-text action-line)
+        tg-text (str "SwarmForge: " text)]
+    (log! "ollama-restart-alert" action-line)
+    (try
+      (fs/create-dirs (fs/parent reply-outbox))
+      (spit (str reply-outbox)
+            (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+            :append true)
+      (log! "ollama-restart-alert-telegram" action-line)
+      (catch Exception e (log! "ollama-restart-alert-telegram-error" (.getMessage e))))
+    (try
+      (daemon-alarm-lib/send-configured-email!
+       project-root conf-file subject text
+       {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+      (log! "ollama-restart-alert-email" action-line)
+      (catch Exception e (log! "ollama-restart-alert-email-error" (.getMessage e))))))
+
+(defn ollama-crash-restart-sweep! []
+  (let [record-path (fs/path state-dir "ollama" "serve.json")]
+    (when (fs/exists? record-path)
+      (let [binary (swarm-env-value "SWARMFORGE_OLLAMA_BINARY" "ollama")
+            models-dir (swarm-env-value "SWARMFORGE_OLLAMA_MODELS_DIR" "")
+            context-length (swarm-env-value "SWARMFORGE_OLLAMA_CONTEXT_LENGTH" "")
+            wait-seconds (swarm-env-value "SWARMFORGE_OLLAMA_WAIT_SECONDS" "30")
+            poll-interval (swarm-env-value "SWARMFORGE_OLLAMA_POLL_INTERVAL_SECONDS" "1")
+            log-path (str (fs/path state-dir "ollama" "serve.log"))
+            result (daemon-cycle-guard-lib/sh!
+                    ["bash" (str (fs/path script-dir "ollama_ancillary_restart_cli.sh"))
+                     (str project-root) binary models-dir context-length
+                     wait-seconds poll-interval log-path])
+            action-line (str/trim (or (:out result) ""))]
+        (when-not (str/blank? action-line)
+          (send-ollama-restart-alert! action-line))))))
+
 (defn open-slot-nudge-sweep! [roles]
   (try
     (let [active-count (chase-sweep-lib/count-backlog-yaml backlog-active-dir)
@@ -5778,6 +5853,11 @@
                     ;; BL-222/BL-214/BL-258/BL-309/BL-316 above.
                     (run-sweep! "dead-letter-notify-sweep"
                         #(dead-letter-notify-sweep!))
+                    ;; BL-1711: ollama crash-restart sweep shares the same
+                    ;; cadence - a no-op cheaper than a chase-sweep tick
+                    ;; whenever no local-endpoint pack has left a record.
+                    (run-sweep! "ollama-crash-restart-sweep"
+                        #(ollama-crash-restart-sweep!))
                     ;; BL-350: resource-sample sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353 above.

@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-09-25
+Last Updated: 2026-09-26
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -110,10 +110,68 @@ hand-run shape — bare `ollama serve`, native context length):
 | `SWARMFORGE_OLLAMA_WAIT_SECONDS` | bound on how long the launch waits for a newly started server to answer | `30` |
 | `SWARMFORGE_OLLAMA_POLL_INTERVAL_SECONDS` | how often the wait re-probes | `1` |
 
-Restarting a crashed server mid-shift is not covered here — this is a
-launch-time gate only. Stopping a swarm-owned server is documented above
-("Ollama is stopped by the swarm (BL-1704)"); reaping ghost runners and
-detached run clients (BL-1705, narrowed by BL-1726) is documented in
+### A crashed ollama server is restarted (BL-1711)
+
+While `serve.json` exists (a local-endpoint pack is running), handoffd's
+own poll loop runs an `ollama-crash-restart-sweep!` every cycle: it
+resolves the same `swarm.env` keys the launch used and shells once to
+`ollama_ancillary_restart_cli.sh` (`ollama_ancillary_lib.sh`'s
+`ollama_ancillary_restart_if_crashed` — the same lib the launch and stop
+paths use, so start/restart can never drift).
+
+- **Establishing "process gone".** A `swarm-owned` record is checked by
+  its own pid (`ollama_ancillary_pid_is_ollama_serve`). An `external`
+  record carries no pid at all (BL-1703 writes `"pid": null` for one), so
+  there is nothing to pin a pid check to — a bare TCP connect to the
+  recorded endpoint's own host/port (`ollama_ancillary_any_ollama_serve_alive`,
+  bash's own `/dev/tcp`, no curl round-trip, read-only, never a signal)
+  substitutes for it: something listening on that port counts as alive,
+  gone counts as not, scoped to the ONE process this record actually
+  names. (QA D1, 2026-09-26: a first cut piped `ps -eo args=` to `grep`,
+  which matched grep's own argv line and read "alive" on every host
+  regardless of any real server; a fix scanning `ps` output for the
+  pattern was still a host-wide sweep and a false positive for this
+  record's own external process on any host already running an unrelated
+  `ollama serve` — the port-scoped connect is what actually pins the
+  check to this one record, matching what `ollama_ancillary_probe`
+  already keys off of.) Without this, an external server that is merely
+  alive-but-silent (loading a large model) would look permanently
+  "crashed" and a second server would start alongside it.
+- **Crash** = "process gone" by the check above **and** the endpoint has
+  stayed silent for the whole confirmation window
+  (`OLLAMA_ANCILLARY_CRASH_CONFIRM_SECONDS`, default `10`). On a
+  confirmed crash: the dead server's orphaned runners are reaped first
+  (BL-1705's `reapable-ollama-ghost?` classification — an 11 GB runner
+  left behind would starve the new server of memory), then a new server
+  is started the BL-1703 way (same binary, models directory, context
+  length) and recorded `swarm-owned` with the new pid — even if the
+  crashed one had been `external`, since a local pack still depends on
+  it.
+- **A live-but-silent server is never killed or restarted** — a large
+  model can take minutes to load on a CPU host, for both a swarm-owned
+  and an external record. One missed probe changes nothing; only a full
+  silent confirmation window counts as a crash.
+- **Restart bound.** At most `OLLAMA_ANCILLARY_RESTART_MAX_IN_WINDOW`
+  (default `3`) restarts in any `OLLAMA_ANCILLARY_RESTART_WINDOW_SECONDS`
+  (default `1800`) — timestamps logged to `.swarmforge/ollama/restarts.log`
+  so the bound survives a handoffd restart.
+- **No record** (a Claude-only pack, or after a stop removed it): no
+  probe, no restart.
+
+**The alert** (Telegram + email, the same channel the endless-loop halt
+uses) has one wording per outcome, parsed from the CLI's own token line
+rather than echoed verbatim (a raw `ESCALATED 1 1800 …` line reads the
+same for "one restart's new server never came up" as for "the bound is
+exhausted" — the human could not tell them apart):
+
+| CLI token | Alert says |
+|---|---|
+| `RESTARTED <old-pid> <new-pid> <log>` | ollama crashed and was restarted: pid `<old>` → `<new>`, server log: `<log>` |
+| `RESTART_FAILED <old-pid> <new-pid> <log>` | ollama crashed (old pid `<old>`); the restart (new pid `<new>`) never answered — server log: `<log>` |
+| `ESCALATED <count> <window> <log>` | ollama restarts exhausted (`<count>` in `<window>`s) — not restarting, server log: `<log>` |
+
+Reaping ghost runners and detached run clients with no live server at all
+(BL-1705, narrowed by BL-1726) is documented in
 `docs/reference/Specification.MD`'s BL-1705/BL-1726 entries.
 
 ## Repair

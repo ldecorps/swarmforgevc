@@ -41,6 +41,13 @@ Feature: BL-1711 a crashed ollama server is restarted while a local pack depends
       | the server's process is alive but the endpoint stays silent                 |
       | the endpoint misses one probe and then answers                              |
 
+  # BL-1711 a-crashed-ollama-server-is-restarted-02b
+  Scenario: an external server with no recorded pid is alive but the endpoint stays silent
+    Given the record says the server is "external" with no recorded pid, and a live process reads as ollama serve
+    When handoffd's ollama restart sweep runs until the window has passed
+    Then no server was started and no process was signalled
+    And the external process is still alive
+
   # BL-1711 a-crashed-ollama-server-is-restarted-03
   Scenario: an orphaned runner of the crashed server is reaped before the new server starts
     Given the record says the server is "swarm-owned"
