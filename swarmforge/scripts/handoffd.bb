@@ -1739,32 +1739,20 @@
           (chase-sweep-lib/pane-recently-active?
            activity-role now-ms chase-resident-recent-activity-ms)))))
 
-;; Hotfix 2026-09-12: ephemeral consult sessions (operator-directed). See
-;; mono-router-lib/consult-eligible? for the full rationale - this is the IO
-;; side: spawn target-role's OWN roles.tsv session (untouched by the mono-
-;; router resident) just long enough to answer the mail that would otherwise
-;; sit stuck behind a :departing-mid-parcel refusal, then tear it back down
-;; once it goes quiet. Session create/respawn goes through
-;; single-role-repair-lib/resolve-single-role-repair exclusively (BL-1018) -
-;; the SAME one-atomic-command-per-state lib swarm_ensure.bb's
-;; ensure-standing-role! uses - specifically to inherit its guarantee that a
-;; missing session is created WITH its launch command in one tmux call and
-;; never a create-then-respawn-into-it sequence (the 2026-08-21 incident that
-;; took the whole pack tmux server down). A present session is never
-;; consult-spawned into; consult-eligible? and the session-exists? check
-;; below both refuse before this runs.
+;; BL-1752 (2026-09-26): the marker directory/file paths - written by
+;; consult_spawn_cli.bb's own on-demand spawn (BL-1710), read and cleared
+;; here by consult-teardown-sweep! once a consult session goes quiet. This
+;; file's OWN automatic spawn-on-refusal function pair (hotfix 2026-09-12,
+;; this file's departing-mid-parcel branch and mono-router-lib's own pure
+;; eligibility gate) is removed - the human, 2026-09-25: "Mono router = 1
+;; resident". A
+;; refusal now only logs and leaves the mail for the resident's next turn
+;; (attempt-resident-rotate! below); an agent that wants a second, ephemeral
+;; session for a question still gets one, but only on-demand via
+;; consult_spawn_cli.bb, never automatically from this gate.
 (defn- consult-dir [] (fs/path daemon-dir "consult"))
 
 (defn- consult-marker-path [role] (fs/path (consult-dir) (str role ".json")))
-
-(defn- consult-active? [role]
-  (boolean (fs/exists? (consult-marker-path role))))
-
-(defn- write-consult-marker! [role requested-by now-ms]
-  (fs/create-dirs (consult-dir))
-  (spit (str (consult-marker-path role))
-        (json/generate-string {:role role :requested_by requested-by
-                                :started_at_ms now-ms})))
 
 (defn- clear-consult-marker! [role]
   (try (fs/delete-if-exists (consult-marker-path role))
@@ -1777,53 +1765,6 @@
   [socket session]
   (let [pane (try (capture-pane-text socket session) (catch Exception _ ""))]
     (chase-sweep-lib/actively-processing? pane)))
-
-(defn- single-inference-slot-pack? []
-  "2026-09-23: the effective config's single_inference_slot flag - resolved
-   via backlog-depth-lib/conf-file-path (whatever pack swarm-identity
-   recorded at launch), same resolution as auth-respawn-max-attempts/
-   note-actionable-after-ms above. Opt-in per pack (ollama-*-mono-router.conf
-   set it; every other pack leaves it unset and this stays false)."
-  (mono-router-lib/parse-single-inference-slot?
-   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
-        (catch Exception _ nil))))
-
-(defn spawn-consult-session!
-  "Fires from attempt-resident-rotate!'s :departing-mid-parcel branch only.
-   No-op (returns nil) whenever consult-eligible? refuses, the role has no
-   roles.tsv row, or its session already exists (owned by us or not - either
-   way this is not the create path, resolve-single-role-repair's own
-   session-present? branch is for a role's normal respawn, not this one)."
-  [socket target-role departing-role]
-  (try
-    (let [role-info (handoff-lib/load-role-info target-role)
-          target-session (:session role-info)
-          resident-session (handoff-lib/mono-router-resident-session)
-          eligible? (mono-router-lib/consult-eligible?
-                     {:gate :departing-mid-parcel
-                      :target-role target-role
-                      :departing-role departing-role
-                      :target-session target-session
-                      :resident-session resident-session
-                      :consult-already-active? (consult-active? target-role)
-                      :single-inference-slot? (single-inference-slot-pack?)})]
-      (when (and eligible? role-info
-                 (not (handoff-lib/session-exists? socket target-session)))
-        (let [launch-script (fs/path state-dir "launch" (str target-role ".sh"))
-              {:keys [status commands]}
-              (single-role-repair-lib/resolve-single-role-repair
-               {:socket socket :session target-session
-                :launch-script (str launch-script)
-                :env-args (openrouter-respawn-env-args)
-                :session-present? false})]
-          (if (not= :ok status)
-            (log! "consult-spawn-refused" target-role (name status))
-            (do
-              (doseq [cmd commands] (apply daemon-cycle-guard-lib/sh! cmd))
-              (write-consult-marker! target-role departing-role (System/currentTimeMillis))
-              (log! "consult-spawn" target-role (str "requested-by=" departing-role)))))))
-    (catch Exception e
-      (log! "consult-spawn-error" target-role (.getMessage e)))))
 
 (defn consult-teardown-sweep!
   "Periodic: tear a consult session back down once it has gone quiet AND its
@@ -1985,12 +1926,10 @@
             (log-chaser-telemetry!
              {:type "departing-mid-parcel" :role departing-role
               :handoffId (str (fs/file-name blocking-file)) :signal working-signal}
-             (System/currentTimeMillis))
-            ;; Hotfix 2026-09-12: the resident correctly stays put, but
-            ;; target-role's mail still deserves an answer - spawn its own
-            ;; ephemeral consult session rather than leave it stuck behind
-            ;; a resident that may not go idle for a while.
-            (spawn-consult-session! socket target-role departing-role))
+             (System/currentTimeMillis)))
+          ;; BL-1752: the resident correctly stays put; target-role's mail
+          ;; waits for the resident's next turn - no second session (the
+          ;; human, 2026-09-25: "Mono router = 1 resident").
           {:ok false :reason (name gate)})
       (let [result (handoff-lib/rotate-resident-to! target-role)]
         (when (:ok result)

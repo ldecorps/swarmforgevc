@@ -50,6 +50,25 @@ if [[ " $* " == *" capture-pane "* ]]; then
   echo ""
   exit 0
 fi
+if [[ " $* " == *" has-session "* ]]; then
+  # BL-1752: every existing case (01-07) never reaches a real session-exists?
+  # check, so the default (exit 0, "yes it exists") is untouched for them.
+  # SESSION_MISSING names the ONE session a case wants to read as absent -
+  # the create-vs-respawn fork spawn-consult-session!/resolve-single-role-
+  # repair actually branches on - so a case that needs to prove "no session
+  # gets CREATED" is testing the real create path, not a vacuously-skipped
+  # one (a session tmux already reports as present is never a create call).
+  sess=""
+  prev=""
+  for arg in "$@"; do
+    if [[ "$prev" == "-t" ]]; then sess="$arg"; fi
+    prev="$arg"
+  done
+  if [[ -n "${SESSION_MISSING:-}" && "$sess" == "$SESSION_MISSING" ]]; then
+    exit 1
+  fi
+  exit 0
+fi
 echo "$*" >> "$TMUX_LOG"
 exit 0
 TMUX
@@ -130,6 +149,40 @@ clear_hardender_parcels() {
   rm -f "$HARD_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
 }
 
+# BL-1752: specifier's own mailbox, seeded with each of the three mail
+# shapes the ticket's own Outline names - a git_handoff parcel, a note, and
+# a raw intake in the backlog root. attempt-resident-rotate! never reads
+# any of these itself (it decides purely from the RESIDENT's own state and
+# the target identity - the reason a fixed 5-line fake tmux script can
+# stand in for a real chase at all), so this exists to prove the removed
+# spawn stays removed regardless of which mail shape a real chase sweep
+# would have found actionable, not because the low-level gate branches on
+# mail content.
+queue_specifier_git_handoff() {
+  printf 'id: spec-gh\nfrom: architect\nto: specifier\npriority: 50\ntype: git_handoff\ntask: BL-9001\ncommit: bbbbbbbbbb\n\nmerge_and_process architect bbbbbbbbbb\n' \
+    > "$SPEC_WT/.swarmforge/handoffs/inbox/new/01_spec-gh.handoff"
+}
+
+queue_specifier_note() {
+  printf 'id: spec-note\nfrom: documenter\nto: specifier\npriority: 50\ntype: note\nmessage: a question from documenter\n' \
+    > "$SPEC_WT/.swarmforge/handoffs/inbox/new/01_spec-note.handoff"
+}
+
+queue_raw_backlog_intake() {
+  mkdir -p "$ROOT/backlog"
+  printf 'id: BL-9002\ntitle: "a raw human intake"\n' > "$ROOT/backlog/BL-9002-a-raw-intake.yaml"
+}
+
+clear_specifier_extra_mail() {
+  rm -f "$SPEC_WT/.swarmforge/handoffs/inbox/new"/01_*.handoff
+  rm -f "$ROOT/backlog"/BL-9002-*.yaml
+}
+
+consult_marker_for() {
+  local role="$1"
+  echo "$ROOT/.swarmforge/daemon/consult/${role}.json"
+}
+
 audit_dir_for_role() {
   local role="$1"
   local sha
@@ -159,6 +212,7 @@ run_attempt_rotate() {
   local target="$1"
   SWARMFORGE_ALLOW_TMP_DAEMON=1 PATH="$FAKE_BIN:$PATH" \
     LIVE_ROLE="${LIVE_ROLE:-}" PANE_PID="${PANE_PID:-}" \
+    SESSION_MISSING="${SESSION_MISSING:-}" \
     bb -e "
 (load-file \"$HANDOFFD_BB\")
 (println (@#'handoffd/attempt-resident-rotate! \"$ROOT/fake.sock\" \"$target\"))
@@ -325,6 +379,96 @@ grep -q '"role":"specifier"' "$TFILE" \
 pass "07: marker/live divergence - refusal and telemetry follow the LIVE role (hardender), never the stale marker (specifier)"
 clear_hardender_parcels
 rm -f "$ROOT/.swarmforge/telemetry"/chaser-*.jsonl
+echo "hardender" > "$ROOT/.swarmforge/mono-router-active-role"
+LIVE_ROLE="hardender"
+
+# ── BL-1752: on a departing-mid-parcel refusal the chase creates no second
+# session for the target role, whatever mail was waiting for it - the
+# human's "mono-router = one resident" (2026-09-25), removing the hotfix
+# 2026-09-12 ephemeral-consult spawn entirely. This fixture's own
+# hardender/specifier pair stands in for the feature's documenter/
+# specifier pair - the gate below is keyed on IDENTITY (departing vs
+# target role) and RESIDENT STATE, never on which role name is used, the
+# same abstraction case 01a-07 above already rely on. ──────────────────────
+PANE_PID="$WORKING_PANE_PID"
+# specifier's own session reads as ABSENT so a create IS the path under
+# test (a session tmux already reports present is never a create call -
+# see make_fake_tmux's has-session branch above).
+SESSION_MISSING="swarmforge-specifier"
+for case_id in "08a:a git_handoff parcel" "08b:a note from documenter" "08c:a raw intake in the backlog root"; do
+  label="${case_id#*:}"
+  marker="${case_id%%:*}"
+  queue_hardender_parcel "$marker"
+  case "$marker" in
+    08a) queue_specifier_git_handoff ;;
+    08b) queue_specifier_note ;;
+    08c) queue_raw_backlog_intake ;;
+  esac
+  : > "$TMUX_LOG"
+  rm -f "$(consult_marker_for specifier)"
+  OUT="$(run_attempt_rotate specifier 2>&1)"
+  echo "$OUT" | grep -q ":ok false" || fail "$marker: expected refusal, got: $OUT"
+  echo "$OUT" | grep -q "departing-mid-parcel" || fail "$marker: expected :reason departing-mid-parcel, got: $OUT"
+  grep -q "new-session" "$TMUX_LOG" \
+    && fail "$marker: no tmux session may ever be created for a departing-mid-parcel refusal, log: $(cat "$TMUX_LOG")"
+  [[ -f "$(consult_marker_for specifier)" ]] \
+    && fail "$marker: no consult marker may be written, found $(consult_marker_for specifier)"
+  pass "$marker: mail for another role (${label}) never starts a second session while the resident works"
+  clear_hardender_parcels
+  clear_specifier_extra_mail
+  echo "hardender" > "$ROOT/.swarmforge/mono-router-active-role"
+done
+SESSION_MISSING=""
+
+# ── BL-1752 resident-serves-the-mail-when-its-turn-ends-09: once the
+# resident's turn ends (idle - the SAME state case 02 above already
+# proves yields to dependency mail) the waiting mail is served by the
+# ordinary rotate path - a respawn of the ONE shared resident pane, never
+# a second, new session. ──────────────────────────────────────────────────
+PANE_PID="$IDLE_PANE_PID"
+queue_hardender_parcel case09
+queue_specifier_git_handoff
+: > "$TMUX_LOG"
+rm -f "$(consult_marker_for specifier)"
+OUT="$(run_attempt_rotate specifier 2>&1)"
+grep -q "respawn-pane" "$TMUX_LOG" || fail "09: expected the resident to be rotated to specifier (respawn-pane), log: $(cat "$TMUX_LOG")"
+grep -q "new-session" "$TMUX_LOG" \
+  && fail "09: rotating the shared resident pane must never create a new tmux session, log: $(cat "$TMUX_LOG")"
+[[ -f "$(consult_marker_for specifier)" ]] \
+  && fail "09: no consult marker may be written by an ordinary rotate"
+pass "09: the waiting mail is served once the resident's turn ends, via the shared pane, never a second session"
+clear_hardender_parcels
+clear_specifier_extra_mail
+echo "hardender" > "$ROOT/.swarmforge/mono-router-active-role"
+
+# ── BL-1752 retired-knob-is-inert-10: a pack conf that still carries the
+# retired `single_inference_slot` line (a repo that has not yet taken this
+# change) parses exactly as one without it - nothing reads that key any
+# more, so its mere presence must never perturb an unrelated key's own
+# parse, or the chase gate. ────────────────────────────────────────────────
+PANE_PID="$WORKING_PANE_PID"
+RETIRED_KNOB_CONF="config rotation router
+config single_inference_slot 1
+"
+PARSED="$(bb -e "
+(load-file \"$REAL_SCRIPTS_DIR/mono_router_lib.bb\")
+(println (mono-router-lib/conf-rotation-router? \"$RETIRED_KNOB_CONF\"))
+")"
+[[ "$(echo "$PARSED" | tr -d '[:space:]')" == "true" ]] \
+  || fail "10: expected a conf carrying the retired knob to still parse rotation router=true, got: $PARSED"
+queue_hardender_parcel case10
+queue_specifier_git_handoff
+SESSION_MISSING="swarmforge-specifier"
+: > "$TMUX_LOG"
+rm -f "$(consult_marker_for specifier)"
+OUT="$(run_attempt_rotate specifier 2>&1)"
+echo "$OUT" | grep -q "departing-mid-parcel" || fail "10: expected :reason departing-mid-parcel, got: $OUT"
+grep -q "new-session" "$TMUX_LOG" \
+  && fail "10: the retired knob's mere presence must not enable a second session, log: $(cat "$TMUX_LOG")"
+pass "10: a pack conf that still carries the single-inference-slot knob launches and chases like one without it"
+SESSION_MISSING=""
+clear_hardender_parcels
+clear_specifier_extra_mail
 echo "hardender" > "$ROOT/.swarmforge/mono-router-active-role"
 LIVE_ROLE="hardender"
 

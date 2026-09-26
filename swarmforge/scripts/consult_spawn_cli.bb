@@ -18,9 +18,11 @@
 ;; "briefing-missing" then "swarm-stopped" in the same ceremony run, no
 ;; chase-rotate/consult-spawn event for documenter anywhere that night).
 ;;
-;; This CLI is the SAME fix already proven for chase's own
-;; :departing-mid-parcel refusal (handoffd.bb's spawn-consult-session!,
-;; landed 2026-09-15, BL-1549): spin up the role's OWN roles.tsv session
+;; This CLI is the SAME fix once proven for chase's own :departing-mid-
+;; parcel refusal (handoffd.bb's automatic consult spawn, landed
+;; 2026-09-15 as BL-1549, removed 2026-09-26 as BL-1752 - "mono-router =
+;; one resident" - a chase refusal now only waits for the resident's next
+;; turn): spin up the role's OWN roles.tsv session
 ;; (never the resident's), write the same consult marker format
 ;; (.swarmforge/daemon/consult/<role>.json) handoffd.bb's EXISTING
 ;; consult-teardown-sweep! already watches every cycle - so teardown needs

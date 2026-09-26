@@ -146,11 +146,13 @@ function briefingSent(target: string, dayKey: string): boolean {
 // "rotate-documenter" -> "briefing-missing" -> "swarm-stopped" in one
 // ceremony run, no chase-rotate/consult-spawn event for documenter that
 // whole night). The real fallback: spawn documenter's OWN ephemeral
-// session via consult_spawn_cli.bb - the same fix already proven for
-// chase's own :departing-mid-parcel refusal (handoffd.bb's
-// spawn-consult-session!, BL-1549) - which never touches the resident and
+// session via consult_spawn_cli.bb - never touches the resident, and
 // tears itself down via the already-certified consult-teardown-sweep!
-// once documenter goes idle with nothing left pending. Exported
+// once documenter goes idle with nothing left pending. BL-1752
+// (2026-09-26) removed handoffd.bb's own automatic use of this same
+// mechanism on chase's departing-mid-parcel refusal ("mono-router = one
+// resident"); this on-demand ceremony call is unaffected - it never went
+// through that removed path. Exported
 // separately from buildRealDeps so a test can drive it directly against a
 // fixture without mocking execFileSync.
 export function spawnConsultDocumenter(target: string): void {
