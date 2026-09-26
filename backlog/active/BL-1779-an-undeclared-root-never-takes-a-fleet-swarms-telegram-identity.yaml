@@ -149,6 +149,10 @@ qa_e2e_procedure: |
      listens, `GET /pipeline` still answers, and the primary-root record
      is byte-identical.
   3. The coder's census table covers 36 files, each with a verdict.
+     BL-351 scenario 03 is green in it; it is the standing red this
+     ticket owns.
+  After the land, `backlog/standing-reds.tsv` has no BL-351 row (the land
+  step retires rows the landing ticket owns, BL-1631).
   4. `git diff main...HEAD --name-only` names only Scope files, docs and
      evidence.
 
@@ -177,6 +181,16 @@ notes: |
   "still has no"). One is declared vs undeclared, and one is the outline
   placeholder against its concrete row.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Owns a standing red from 2026-09-26: coder note 002187 reported
+  `specs/features/BL-351-front-desk-survives-reboot.feature` scenario 03
+  "fetch failed", pre-existing on main. The specifier traced it to this
+  mechanism: `frontDeskSurvivesRebootSteps.js` passes BRIDGE_PORT and the
+  real HOME, the fixture resolves the primary creds file's port 8765, and
+  scenario 03 fetches its own ctx.bridgePort. A register row naming this
+  ticket was added and the holder note sent in the same pass (bookkeeping
+  only: nothing built changes). The live front desk crash-looped
+  12:28Z-12:46Z and gave up once with an escalation. Test runs on this
+  host are a probable cause, not a proven one.
   Freshness: deprecate-check was run after the last edit.
 
   INVEST: Independent (no open ticket edits these files; BL-1750, at the
