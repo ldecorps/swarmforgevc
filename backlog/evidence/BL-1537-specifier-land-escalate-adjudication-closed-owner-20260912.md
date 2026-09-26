@@ -443,3 +443,29 @@ Full adjudication:
 `backlog/evidence/BL-1640-land-escalate-adjudication-specifier-20260921.md`.
 
 By specifier.
+
+## Instance - BL-1748's land, condition (g) (QA, 2026-09-26)
+
+`bb swarmforge/scripts/land_step_cli.bb BL-1748 c3b39bd51d...` (origin/main's
+tool; the QA branch carries no land-step change) printed `LAND_ESCALATE`
+with `ENTANGLED_SIBLING` BL-1671, BL-1704, BL-1711, BL-1717 and `land-step
+replay: could not cherry-pick stray evidence commit a225d85d8b`. The stray is
+closed BL-1703's documenter commit ("document ollama as a swarm-managed
+launch ancillary": `docs/diagrams/architecture.mmd`,
+`docs/how-to/BL-1052-local-model-seat-launch.md`). BL-1703's land d51983e4a9
+already carries every non-blank line it adds except its `Last Updated:
+2026-09-24` line, which BL-1699's f729af01b9 later rewrote, so the
+cherry-pick conflicts: superseded, condition (g). Both paths still differ at
+the QA tip only because open BL-1704/BL-1711 edit them. BL-1671 and BL-1717
+are closed. None of these paths is BL-1748's.
+
+Landed per (g): tip-pure 0b3e02d0a3 off origin/main 80545c1957, holding
+BL-1748's own paths only (`specs/pipeline/steps/humanInTheLoopClosedSteps.js`,
+seven `backlog/evidence/BL-1748-*.md`) plus the retirement of BL-325's
+acceptance row in `backlog/standing-reds.tsv`. BL-325 ran 7 of 7 on that
+exact tree before the push. The land approval is recorded against
+629e4e9f2d, and `is_qa_ancestor.sh 0b3e02d0a3` exits 0.
+`abandoned_commits: [629e4e9f2d]` is recorded on the ticket. The stray is left
+alone.
+
+By QA.
