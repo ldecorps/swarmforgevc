@@ -123,3 +123,5 @@ notes: |
   start_cursor_bridge.sh:27; launch_onboarder.sh:24,35 is the prior art).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
+
+assigned_to: coder
