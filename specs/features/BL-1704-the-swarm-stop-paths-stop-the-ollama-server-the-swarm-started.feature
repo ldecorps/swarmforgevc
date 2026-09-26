@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d4fb90ede042b62c9cbb33cfb80ac04ceebcb0a3169af0db5f2850d5d2d13f04
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-26T00:27:32.662575214Z","feature_name":"BL-1704 the swarm stop paths stop the ollama server the swarm started","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1704-the-swarm-stop-paths-stop-the-ollama-server-the-swarm-started.feature","background_hash":"d81d214fcc723865e5e81d2dea6b25285b360bfa04396330d2b0ddae71b3efe6","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a stop path stops a swarm-owned server and its runner","scenario_hash":"4b27e3cc484f2b36d3b1f5edd04c53b92dbec14bc593e64386fdc13d81dbf980","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-26T00:27:32.662575214Z"},{"index":2,"name":"a record that no longer matches a live server is cleared without killing anything","scenario_hash":"988ee9d0cf32118ce2a2549544cceeb063882c449dcdd629470a02af4fe1e418","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-26T00:27:32.662575214Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1704 the swarm stop paths stop the ollama server the swarm started
 
   BL-1703 records whether the running ollama server was started by the

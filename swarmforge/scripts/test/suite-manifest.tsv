@@ -361,6 +361,7 @@ test_is_qa_ancestor_expedite_store.sh	standing
 test_is_qa_ancestor_land_replay_store.sh	standing		
 test_is_qa_ancestor_yaml_store.sh	standing		
 test_issue_intake_loop.sh	standing		
+test_kill_all_swarm_ollama_failure_not_fatal.sh	standing
 test_kill_all_swarm_vitest_reap.sh	excluded	2026-08-23	live-only: invokes kill_all_swarm.sh for real; safe only from a detached host shell with env -u TMUX (2026-08-22 session wipe)
 test_kill_pipeline_copilot_scope.sh	standing		
 test_land_step_records_approval.sh	standing		
@@ -481,6 +482,7 @@ test_start_ancillary_services_operator_watch_gate.sh	standing
 test_start_handoff_daemon.sh	standing		
 test_start_stop_bridge_headless.sh	standing		
 test_start_stop_cursor_bridge.sh	standing		
+test_stop_ancillary_services_ollama_failure_not_fatal.sh	standing
 test_stop_ancillary_services_onboarder_dual_clear.sh	standing		
 test_stop_ancillary_services_tunnel_orphan_reap.sh	standing		
 test_stop_operator_runtime_watch_first.sh	standing		
