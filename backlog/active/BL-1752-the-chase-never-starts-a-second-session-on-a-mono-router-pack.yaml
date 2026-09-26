@@ -153,3 +153,5 @@ notes: |
   and 7d109d3b2e -> BL-1752. human_decision stays null (the human's).
   BL-1710's direction amended the same pass: spawn-consult-session! goes,
   so its on-demand start reuses consult_spawn_cli.bb's code.
+
+assigned_to: coder
