@@ -18,14 +18,26 @@
 // half quantifies over the real dispatch through real git/seat
 // subprocesses across three terminal shapes - not a pure module a
 // generator can drive; same disposition BL-1697/1698's own invariant 2
-// recorded, encoded instead by the acceptance feature's scenarios 01/03/04
-// (BL-1715-a-driver-seat-that-fails-a-parcel-hands-it-to-its-stages-claude-seat.feature),
-// which run the real driver end to end for handed-off, given-up and
-// escalated alike. The tree-revert half IS a pure-enough module
-// (revert-to-pre-claim!, over a real throwaway git repo) and is
-// property-tested below across randomly generated commit chains (a mix of
-// plain commits and merges), not just the acceptance feature's one fixed
-// shape.
+// recorded, encoded instead by the acceptance feature's scenarios 01/04
+// (BL-1715-a-driver-seat-that-fails-a-parcel-hands-it-to-its-stages-claude-seat.feature)
+// and BL-1778's own feature's scenario 03, which run the real driver end
+// to end for handed-off, given-up and escalated alike. The tree-revert
+// half IS a pure-enough module (revert-attempt-commits!, over a real
+// throwaway git repo) and is property-tested below - REPLACING the
+// pre-BL-1778 property here, which asserted the tree returns to
+// pre-claim-head (revert-to-pre-claim!'s own old contract, now retired: it
+// also reverted the claim's own merges and everything they brought in,
+// the exact defect BL-1778 fixes). The two BL-1778 invariants instead:
+// (1) only the attempt's own first-parent, non-merge commits after
+// post-merge-head are reverted, never a merge commit and never anything
+// reachable from post-merge-head; (2) the tree after a give-up equals the
+// tree at post-merge-head. Generated over BOTH axes the ticket's own "How"
+// names: a main merge or none, and the received commit merged as a merge
+// commit or as a fast-forward - each combination reached by construction
+// (assertReachFloor), never merely hoped for by a uniform draw - alongside
+// a generated attempt chain (0-4 plain commits, matching drive-tick!'s own
+// shape: a driver seat's own fix-turn commits are always plain, never a
+// merge, so the generator never draws one for the attempt itself).
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -33,6 +45,7 @@ const path = require('node:path');
 const fc = require('fast-check');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor } = require('./helpers/reachFloors');
 
 const LIB = path.join(__dirname, '..', '..', 'swarmforge', 'scripts', 'local_parcel_driver_lib.bb');
 const HANDOFF_LIB = path.join(__dirname, '..', '..', 'swarmforge', 'scripts', 'handoff_lib.bb');
@@ -197,13 +210,7 @@ test('non-vacuous: worked-task-names-in DOES attribute a plain git_handoff with 
   }
 });
 
-// ── Invariant 2 (tree half): revert-to-pre-claim! ─────────────────────────
-// A random chain of commits since pre-claim-head (a mix of plain commits
-// and merges of a side branch) - revert-to-pre-claim! must bring the tree
-// back to byte-identical content, whatever the chain's shape, without
-// EVER using `git reset` (history length only grows).
-
-const stepArb = fc.constantFrom('plain', 'merge');
+// ── Invariant 2 (tree half): revert-attempt-commits! (BL-1778) ────────────
 
 function makeRepo(root) {
   git(root, ['init', '-q', '-b', 'main']);
@@ -214,66 +221,185 @@ function makeRepo(root) {
   git(root, ['commit', '-q', '-m', 'seed']);
 }
 
-test('invariant 2: revert-to-pre-claim! restores the exact pre-claim tree across randomly generated commit chains (plain commits and merges)', () => {
+// BL-1778: builds a claim's post-merge-head under one of four combinations
+// - {mainMerge: true|false} x {receivedFastForward: true|false} - then
+// returns it plus the repo, for the caller to layer an attempt chain on
+// top of.
+function buildClaim(root, { mainMerge, receivedFastForward }) {
+  makeRepo(root);
+  if (mainMerge) {
+    const branch = 'main-advance';
+    git(root, ['checkout', '-q', '-b', branch]);
+    fs.writeFileSync(path.join(root, 'main-advanced.txt'), 'main advanced\n');
+    git(root, ['add', '-A']);
+    git(root, ['commit', '-q', '-m', 'main: advance']);
+    git(root, ['checkout', '-q', 'main']);
+    git(root, ['merge', '-q', '--no-ff', branch, '-m', 'Merge main.']);
+    git(root, ['branch', '-q', '-D', branch]);
+  }
+  const senderBranch = 'sender';
+  const startSha = git(root, ['rev-parse', 'HEAD']).trim();
+  git(root, ['checkout', '-q', '-b', senderBranch]);
+  fs.writeFileSync(path.join(root, 'received.txt'), 'received content\n');
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-q', '-m', 'sender commit']);
+  const senderSha = git(root, ['rev-parse', 'HEAD']).trim();
+  git(root, ['checkout', '-q', 'main']);
+  if (!receivedFastForward) {
+    git(root, ['reset', '-q', '--hard', startSha]);
+  }
+  git(root, ['merge', ...(receivedFastForward ? ['--ff-only'] : ['--no-ff', '-m', 'merge sender']), senderSha]);
+  git(root, ['branch', '-q', '-D', senderBranch]);
+  return git(root, ['rev-parse', 'HEAD']).trim();
+}
+
+const claimShapeArb = fc.record({
+  mainMerge: fc.boolean(),
+  receivedFastForward: fc.boolean(),
+});
+const CLAIM_SHAPE_CELLS = [
+  'mainMerge=false,ff=false',
+  'mainMerge=false,ff=true',
+  'mainMerge=true,ff=false',
+  'mainMerge=true,ff=true',
+];
+const CLAIM_SHAPE_FLOOR = 2;
+
+test('invariants 1 and 2: revert-attempt-commits! reverts only the attempt, keeping the post-merge tree, over generated claim shapes and attempt chains', () => {
+  const reach = {};
   fc.assert(
-    fc.property(fc.array(stepArb, { minLength: 0, maxLength: 5 }), (steps) => {
+    fc.property(claimShapeArb, fc.integer({ min: 0, max: 4 }), (claimShape, attemptCount) => {
+      const cell = `mainMerge=${claimShape.mainMerge},ff=${claimShape.receivedFastForward}`;
+      reach[cell] = (reach[cell] || 0) + 1;
       const root = mkTmpDir(FIXTURE_PREFIX);
       try {
-        makeRepo(root);
-        const preClaimHead = git(root, ['rev-parse', 'HEAD']).trim();
-        const preClaimFiles = fs.readdirSync(root).filter((f) => f !== '.git').sort();
-
-        steps.forEach((step, i) => {
-          if (step === 'plain') {
-            fs.writeFileSync(path.join(root, `plain-${i}.txt`), `plain ${i}\n`);
-            git(root, ['add', '-A']);
-            git(root, ['commit', '-q', '-m', `plain ${i}`]);
-          } else {
-            const branch = `side-${i}`;
-            git(root, ['checkout', '-q', '-b', branch]);
-            fs.writeFileSync(path.join(root, `side-${i}.txt`), `side ${i}\n`);
-            git(root, ['add', '-A']);
-            git(root, ['commit', '-q', '-m', `side ${i}`]);
-            git(root, ['checkout', '-q', 'main']);
-            git(root, ['merge', '-q', '--no-ff', branch, '-m', `merge side ${i}`]);
-            git(root, ['branch', '-q', '-D', branch]);
-          }
-        });
-
+        const postMergeHead = buildClaim(root, claimShape);
+        const postMergeFiles = fs.readdirSync(root).filter((f) => f !== '.git').sort();
         const historyBefore = git(root, ['rev-list', '--count', 'HEAD']).trim();
+
+        for (let i = 0; i < attemptCount; i += 1) {
+          fs.writeFileSync(path.join(root, `attempt-${i}.txt`), `attempt ${i}\n`);
+          git(root, ['add', '-A']);
+          git(root, ['commit', '-q', '-m', `attempt ${i}`]);
+        }
+
         execFileSync('bb', [
           '-e',
-          `(load-file "${LIB}") (local-parcel-driver-lib/revert-to-pre-claim! "${root}" "${preClaimHead}")`,
+          `(load-file "${LIB}") (local-parcel-driver-lib/revert-attempt-commits! "${root}" "${postMergeHead}")`,
         ]);
-        const historyAfter = git(root, ['rev-list', '--count', 'HEAD']).trim();
 
-        const diff = git(root, ['diff', preClaimHead, 'HEAD', '--stat']).trim();
-        assert.equal(diff, '', `expected the tree to match pre-claim exactly after revert, steps=${JSON.stringify(steps)}, diff:\n${diff}`);
+        // Invariant 2: the tree after the revert equals the post-merge
+        // tree, whatever the claim shape or attempt chain length.
+        const diff = git(root, ['diff', postMergeHead, 'HEAD', '--stat']).trim();
+        assert.equal(
+          diff,
+          '',
+          `claim=${JSON.stringify(claimShape)} attemptCount=${attemptCount}: expected the tree to match post-merge-head, diff:\n${diff}`
+        );
         const filesAfter = fs.readdirSync(root).filter((f) => f !== '.git').sort();
-        assert.deepEqual(filesAfter, preClaimFiles, `expected the exact same file set, steps=${JSON.stringify(steps)}`);
-        // Never `git reset`: history only ever grows (revert commits are
-        // added, nothing is ever thrown away).
-        if (steps.length > 0) {
+        assert.deepEqual(
+          filesAfter,
+          postMergeFiles,
+          `claim=${JSON.stringify(claimShape)} attemptCount=${attemptCount}: expected the exact post-merge file set`
+        );
+
+        // Invariant 1: never a reset (history only grows: the original
+        // attempt commits stay, plus exactly one revert commit per
+        // attempt commit - 2*attemptCount new commits total), never a
+        // revert of the claim's own merge or received-commit content.
+        const historyAfter = git(root, ['rev-list', '--count', 'HEAD']).trim();
+        assert.equal(
+          Number(historyAfter),
+          Number(historyBefore) + 2 * attemptCount,
+          `claim=${JSON.stringify(claimShape)} attemptCount=${attemptCount}: expected ${attemptCount} attempt commit(s) plus ${attemptCount} revert commit(s), before=${historyBefore} after=${historyAfter}`
+        );
+        const subjectsSince = git(root, ['log', '--format=%s', `${postMergeHead}..HEAD`])
+          .trim()
+          .split('\n')
+          .filter(Boolean);
+        for (const subj of subjectsSince) {
           assert.ok(
-            Number(historyAfter) > Number(historyBefore),
-            `expected revert to ADD commits (never reset), before=${historyBefore} after=${historyAfter}`
+            !/^Revert "(Merge main\.|merge sender|sender commit|main: advance)"$/.test(subj),
+            `claim=${JSON.stringify(claimShape)} attemptCount=${attemptCount}: a claim commit was reverted: "${subj}"`
           );
         }
+        const revertSubjects = subjectsSince.filter((s) => /^Revert "attempt \d+"$/.test(s));
+        const attemptSubjects = subjectsSince.filter((s) => /^attempt \d+$/.test(s));
+        assert.equal(
+          revertSubjects.length,
+          attemptCount,
+          `claim=${JSON.stringify(claimShape)} attemptCount=${attemptCount}: expected exactly ${attemptCount} revert-of-attempt subject(s), got ${JSON.stringify(subjectsSince)}`
+        );
+        assert.equal(
+          attemptSubjects.length,
+          attemptCount,
+          `claim=${JSON.stringify(claimShape)} attemptCount=${attemptCount}: expected the original ${attemptCount} attempt subject(s) to remain in history (revert, never reset), got ${JSON.stringify(subjectsSince)}`
+        );
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
     }),
-    { numRuns: 20 }
+    { numRuns: 60 }
   );
+  assertReachFloor(reach, CLAIM_SHAPE_CELLS, CLAIM_SHAPE_FLOOR, 'claim shape');
 });
 
-test('non-vacuous: revert-to-pre-claim! is a no-op when HEAD already equals pre-claim-head', () => {
+test('a merge the attempt itself made mid-attempt keeps its content - excluded from revert by --no-merges, never the attempt\'s own work', () => {
+  const root = mkTmpDir(FIXTURE_PREFIX);
+  try {
+    const postMergeHead = buildClaim(root, { mainMerge: false, receivedFastForward: false });
+
+    fs.writeFileSync(path.join(root, 'attempt-0.txt'), 'attempt 0\n');
+    git(root, ['add', '-A']);
+    git(root, ['commit', '-q', '-m', 'attempt 0']);
+
+    const sideBranch = 'attempt-side';
+    git(root, ['checkout', '-q', '-b', sideBranch]);
+    fs.writeFileSync(path.join(root, 'attempt-side.txt'), 'attempt side content\n');
+    git(root, ['add', '-A']);
+    git(root, ['commit', '-q', '-m', 'attempt side commit']);
+    git(root, ['checkout', '-q', 'main']);
+    git(root, ['merge', '-q', '--no-ff', sideBranch, '-m', 'attempt merges its own side branch']);
+    git(root, ['branch', '-q', '-D', sideBranch]);
+
+    fs.writeFileSync(path.join(root, 'attempt-1.txt'), 'attempt 1\n');
+    git(root, ['add', '-A']);
+    git(root, ['commit', '-q', '-m', 'attempt 1']);
+
+    execFileSync('bb', [
+      '-e',
+      `(load-file "${LIB}") (local-parcel-driver-lib/revert-attempt-commits! "${root}" "${postMergeHead}")`,
+    ]);
+
+    // The two plain attempt commits are reverted; the mid-attempt merge
+    // (and the side content it brought) is kept.
+    assert.ok(fs.existsSync(path.join(root, 'attempt-side.txt')), 'expected the mid-attempt merge\'s own content to survive the revert');
+    assert.ok(!fs.existsSync(path.join(root, 'attempt-0.txt')), 'expected attempt 0 to be reverted');
+    assert.ok(!fs.existsSync(path.join(root, 'attempt-1.txt')), 'expected attempt 1 to be reverted');
+    const subjectsSince = git(root, ['log', '--format=%s', `${postMergeHead}..HEAD`]).trim().split('\n').filter(Boolean);
+    assert.ok(
+      !subjectsSince.includes('Revert "attempt merges its own side branch"'),
+      `expected the mid-attempt merge itself never reverted, got: ${JSON.stringify(subjectsSince)}`
+    );
+    assert.ok(
+      subjectsSince.includes('Revert "attempt 0"') && subjectsSince.includes('Revert "attempt 1"'),
+      `expected both plain attempt commits reverted, got: ${JSON.stringify(subjectsSince)}`
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('non-vacuous: revert-attempt-commits! is a no-op when HEAD already equals post-merge-head', () => {
   const root = mkTmpDir(FIXTURE_PREFIX);
   try {
     makeRepo(root);
     const head = git(root, ['rev-parse', 'HEAD']).trim();
-    execFileSync('bb', ['-e', `(load-file "${LIB}") (local-parcel-driver-lib/revert-to-pre-claim! "${root}" "${head}")`]);
-    assert.equal(git(root, ['rev-parse', 'HEAD']).trim(), head, 'expected no new commit when already at pre-claim head');
+    execFileSync('bb', [
+      '-e',
+      `(load-file "${LIB}") (local-parcel-driver-lib/revert-attempt-commits! "${root}" "${head}")`,
+    ]);
+    assert.equal(git(root, ['rev-parse', 'HEAD']).trim(), head, 'expected no new commit when already at post-merge-head');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

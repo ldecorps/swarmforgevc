@@ -31,11 +31,10 @@ Feature: BL-1715 A driver seat that fails a parcel hands it to its stage's Claud
       | the handed-over parcel       |
       | a later rework bounce        |
 
-  # BL-1715 the-failed-attempt-leaves-the-local-tree-03
-  Scenario: the local seat's tree after the give-up matches its tree before the claim
-    When the driver finishes coder@2's last fix turn
-    Then coder@2's checkout has the same tree it had before it claimed the parcel
-    And one outcome row records coder@2, its model, the ticket, "given-up", the failed condition and the fix turns used
+  # BL-1715 the-failed-attempt-leaves-the-local-tree-03: retired by BL-1778.
+  # A give-up's tree contract now lives there (the post-merge tree, not
+  # the pre-claim tree this scenario pinned) - retired, never reworded
+  # (BL-1778's own direction).
 
   # BL-1715 a-driver-only-stage-keeps-the-hold-04
   Scenario: a stage with no Claude seat keeps the escalate-and-hold path

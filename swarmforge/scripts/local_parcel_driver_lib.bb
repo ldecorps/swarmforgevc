@@ -731,29 +731,34 @@
         (spit (str target) stamped)
         (fs/delete f)))))
 
-(defn- commit-shas-since
-  "Newest-first commit shas strictly after since-sha, up to and including
-   HEAD."
-  [checkout since-sha]
-  (->> (str/split-lines (:out (git! checkout "log" "--format=%H" (str since-sha "..HEAD"))))
+(defn- attempt-commit-shas
+  "Newest-first, first-parent, non-merge commit shas made strictly after
+   post-merge-head, up to and including HEAD - the attempt's OWN work.
+   --first-parent --no-merges together mean this list can never name a
+   merge commit, and never a commit only reachable from a side branch a
+   merge brought in (main's own commits, or the sender's commits when the
+   claim's receive merge fast-forwarded) - those are main or claim
+   content, not the attempt's."
+  [checkout post-merge-head]
+  (->> (str/split-lines (:out (git! checkout "rev-list" "--first-parent" "--no-merges"
+                                     (str post-merge-head "..HEAD"))))
        (remove str/blank?)))
 
-(defn- merge-commit-sha? [checkout sha]
-  (> (count (str/split (str/trim (or (:out (git! checkout "log" "-1" "--format=%P" sha)) "")) #"\s+"))
-     1))
-
-(defn revert-to-pre-claim!
-  "Reverts every commit made since pre-claim-head, newest first, via `git
-   revert` (a non-merge commit reverted plainly, a merge with `-m 1`) -
-   never `git reset`, which would rewrite history (A Bounce Must Be
-   Reverted Out Of The Bouncing Branch's own discipline: revert, not
-   reset). A no-op when pre-claim-head is unknown or already HEAD."
-  [checkout pre-claim-head]
-  (when (and pre-claim-head (not= (head-sha checkout) pre-claim-head))
-    (doseq [sha (commit-shas-since checkout pre-claim-head)]
-      (if (merge-commit-sha? checkout sha)
-        (git! checkout "revert" "--no-edit" "-m" "1" sha)
-        (git! checkout "revert" "--no-edit" sha)))))
+(defn revert-attempt-commits!
+  "BL-1778: reverts only the attempt's own first-parent, non-merge commits
+   after post-merge-head, newest first, via `git revert` - never `git
+   reset`, which would rewrite history (A Bounce Must Be Reverted Out Of
+   The Bouncing Branch's own discipline: revert, not reset). Never
+   reverts a merge commit (the claim's own `Merge main` / `merge <sender>
+   <commit>`) and never reverts anything reachable from post-merge-head,
+   so the seat's tree after a give-up equals its tree at post-merge-head
+   (invariants 1 and 2) - never the wider pre-claim-head BL-1715 reverted
+   to, which also undid the claim's own merges and everything they
+   brought in. A no-op when post-merge-head is unknown or already HEAD."
+  [checkout post-merge-head]
+  (when (and post-merge-head (not= (head-sha checkout) post-merge-head))
+    (doseq [sha (attempt-commit-shas checkout post-merge-head)]
+      (git! checkout "revert" "--no-edit" sha))))
 
 (defn- handoff-timestamp-token []
   (-> (str (java.time.Instant/now))
@@ -786,18 +791,20 @@
   "BL-1715 requirement 1: the last fix turn still fails and this stage has
    a non-driver sibling seat - give the parcel up rather than
    escalate-and-hold. Spec write permission is restored first, as on every
-   other exit path. The revert (never reset) brings the seat's tree back
-   to exactly its pre-claim state; the fresh re-queued copy is what a
-   sibling seat's next poll claims."
+   other exit path. BL-1778: the revert (never reset) brings the seat's
+   tree back to exactly its post-merge state - the claim's own merges
+   (main, and the received commit) stay, exactly as after any ordinary
+   claim; only the attempt's own commits since are undone. The fresh
+   re-queued copy is what a sibling seat's next poll claims."
   [ctx state reason]
   (let [{:keys [project-root checkout role seat-id agent]} ctx
-        {:keys [ticket senderRole commit priority preClaimHead fixTurnsUsed startedAtMs]} state]
+        {:keys [ticket senderRole commit priority postMergeHead fixTurnsUsed startedAtMs]} state]
     (restore-spec-writable! state)
     (record-outcome! project-root
                       {:seat-id seat-id :model agent :ticket ticket :outcome "given-up"
                        :reason reason :fix-turns-used fixTurnsUsed :wall-ms (driver-wall-ms startedAtMs)})
     (complete-in-process-as-given-up! project-root role)
-    (revert-to-pre-claim! checkout preClaimHead)
+    (revert-attempt-commits! checkout postMergeHead)
     (requeue-parcel! project-root role senderRole ticket commit priority)
     (clear-driver-state! project-root seat-id)))
 

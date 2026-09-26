@@ -128,10 +128,16 @@ file, independent of the Claude `coder`'s).
    recorded; this seat's own `in_process` handoff file is stamped
    `outcome: given-up` / `outcome_seat: <role>` and moved to `completed/`
    (that stamp is the durable per-(ticket, seat) marker — no separate
-   store); every commit this seat made since its pre-claim `HEAD` is
-   `git revert`-ed, newest first, never `git reset` (A Bounce Must Be
-   Reverted Out Of The Bouncing Branch's own discipline), so the seat's
-   tree matches its pre-claim tree; and a fresh `git_handoff` naming the
+   store); only the attempt's own first-parent, non-merge commits made
+   since its persisted `postMergeHead` are `git revert`-ed, newest first,
+   never `git reset` (A Bounce Must Be Reverted Out Of The Bouncing
+   Branch's own discipline) and never a merge commit or anything reachable
+   from `postMergeHead` (BL-1778 — reverting the claim's own `Merge main`/
+   received-commit merge would make git treat their content as merged and
+   removed, so a later merge would not bring it back and this seat's next
+   forward would delete it downstream), so the seat's tree matches its
+   tree right after the claim's own merges, never the wider pre-claim
+   tree; and a fresh `git_handoff` naming the
    same task, received commit and priority is written straight into the
    stage's shared `inbox/new/` queue, for **any** seat of the stage to
    claim on its own next poll — a Claude sibling claims it at once, with

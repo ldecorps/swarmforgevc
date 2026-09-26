@@ -185,33 +185,10 @@ function registerSteps(registry) {
     assert.equal(files.length, 1, 'expected exactly one seat to hold the claim');
   });
 
-  // ── Scenario 03 ──────────────────────────────────────────────────────
-  scoped(/^coder@2's checkout has the same tree it had before it claimed the parcel$/, (ctx) => {
-    const diff = execFileSync('git', ['diff', ctx.preClaimHead, 'HEAD', '--stat'], {
-      cwd: ctx.fixture.root,
-      encoding: 'utf8',
-    });
-    assert.equal(
-      diff.trim(),
-      '',
-      `expected no tree diff from the pre-claim head:\n${diff}\n${ctx.tickResult.stdout}\n${ctx.tickResult.stderr}`
-    );
-  });
-
-  scoped(
-    /^one outcome row records coder@2, its model, the ticket, "given-up", the failed condition and the fix turns used$/,
-    (ctx) => {
-      const rows = ctx.fixture.readOutcomes();
-      assert.equal(rows.length, 1, `expected exactly one outcome row, got: ${JSON.stringify(rows)}`);
-      const row = rows[0];
-      assert.equal(row.seatId, 'coder@2', `unexpected seatId: ${JSON.stringify(row)}`);
-      assert.equal(row.model, 'aider', `unexpected model: ${JSON.stringify(row)}`);
-      assert.equal(row.ticket, 'BL-9', `unexpected ticket: ${JSON.stringify(row)}`);
-      assert.equal(row.outcome, 'given-up', `unexpected outcome: ${JSON.stringify(row)}`);
-      assert.ok(row.reason, `expected a failed condition, got: ${JSON.stringify(row)}`);
-      assert.equal(row.fixTurnsUsed, 1, `unexpected fixTurnsUsed: ${JSON.stringify(row)}`);
-    }
-  );
+  // Scenario 03 retired by BL-1778 (the tree/outcome-row contract now
+  // lives in BL-1778's own feature, over the post-merge tree rather than
+  // the pre-claim tree these two handlers pinned) - handlers removed,
+  // never left orphaned.
 
   // ── Scenario 04 ──────────────────────────────────────────────────────
   scoped(/^the Claude seat is removed from the fixture coder stage$/, (ctx) => {

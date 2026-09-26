@@ -40,9 +40,11 @@
 %% parcel instead of escalating-and-holding: spec write permission is
 %% restored, an outcome row is recorded, this seat's own in_process
 %% handoff is stamped outcome: given-up / outcome_seat: <role> and moved
-%% to completed/ (the durable per-(ticket, seat) marker), every commit
-%% since pre-claim HEAD is git-reverted (never reset) so the seat's tree
-%% matches its pre-claim tree, and a fresh git_handoff naming the same
+%% to completed/ (the durable per-(ticket, seat) marker), only the
+%% attempt's own commits since its post-merge HEAD are git-reverted
+%% (never reset, never a merge commit or the claim's own main/received
+%% content - BL-1778) so the seat's tree matches its tree right after the
+%% claim's own merges, and a fresh git_handoff naming the same
 %% task/commit/priority is written straight into the stage's shared
 %% inbox/new/ for ANY seat - a Claude sibling claims it at once, no
 %% BL-1004 rework-affinity deferral - while the seat that gave up is
@@ -153,7 +155,7 @@ flowchart TD
     DFIXLEFT{"fix turns\nremaining?"}
     DFIXTYPE["chat set up again\nunconditionally, one fix request\ntyped naming the failed condition;\ngate again next tick"]
     DSIBLING{"fix turns exhausted:\nstage has a non-driver\nsibling seat? (BL-1715)"}
-    DGIVEUP(["give-up!: spec writable restored,\noutcome row recorded, own\nin_process handoff stamped\noutcome: given-up / outcome_seat\nand moved to completed/, every\ncommit since pre-claim HEAD\ngit-reverted (never reset),\nfresh git_handoff for the SAME\ntask/commit/priority written into\nthe stage's shared inbox/new/,\nstate cleared"])
+    DGIVEUP(["give-up!: spec writable restored,\noutcome row recorded, own\nin_process handoff stamped\noutcome: given-up / outcome_seat\nand moved to completed/, only the\nattempt's own commits since\npost-merge HEAD git-reverted\n(never reset, never a merge -\nBL-1778), fresh git_handoff for\nthe SAME task/commit/priority\nwritten into the stage's shared\ninbox/new/, state cleared"])
     DESCALATE(["fix turns exhausted, no sibling:\nspec write permission restored,\n`seat ask` \"<ticket>: <condition>\",\nstate escalated"])
     DPASS["spec write permission restored,\n`seat handoff <next-role> <ticket>`\n(next-required-stage, never literal),\n`seat done`, state cleared"]
     DHOLDCHECK{"escalated TICKET hold only\n(:acceptancePath set), next tick:\nanswer-available?\n(deliver-role-answer.js\n--role <role>, BL-1244)"}
