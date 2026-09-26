@@ -426,3 +426,10 @@
   stamp_ticket: null
   human_decision: null
   decided_at: null
+- commit: 6cef9b7ecd
+  subject: "A swarm's coordinator can message and poll the human in its own Telegram topic"
+  detected_at: 2026-09-26
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
