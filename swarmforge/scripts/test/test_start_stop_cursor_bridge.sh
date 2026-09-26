@@ -18,6 +18,7 @@ make_fixture() {
   cp "$SRC/start_cursor_bridge.sh" "$SRC/stop_cursor_bridge.sh" \
      "$SRC/cursor_bridge_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" \
      "$SRC/bridge_supervisor_env_lib.bb" "$SRC/cursor_ripgrep_env.sh" \
+     "$SRC/tooling_root_lib.sh" \
      "$d/swarmforge/scripts/"
   printf '' > "$d/extension/out/tools/telegram-cursor-bridge.js"
   printf '%s' "$d"
@@ -67,6 +68,35 @@ F="$(make_fixture)"
 OUT="$(bash "$(STOP_IN "$F")" "$F" 2>&1)"
 check "stop is idempotent when nothing is running" '[[ "$OUT" == *"not running"* ]]'
 rm -rf "$F"
+
+# ── BL-1757: a configured tooling root resolves the cursor bridge entrypoint
+#    under it instead of the target's own (missing) build; the served root
+#    argument passed to the bridge always still names the target ──────────
+F="$(make_fixture)"
+rm -f "$F/extension/out/tools/telegram-cursor-bridge.js"
+TOOL="$(mktemp -d)"; register_tmp_dir "$TOOL"
+mkdir -p "$TOOL/extension/out/tools"
+printf '' > "$TOOL/extension/out/tools/telegram-cursor-bridge.js"
+printf 'config tooling_root %s\n' "$TOOL" > "$F/swarmforge/swarmforge.conf"
+DRY="$(CURSOR_BRIDGE_LAUNCH_DRYRUN=1 bash "$(START_IN "$F")" "$F" 2>&1)"
+check "a configured tooling root resolves the cursor bridge entrypoint under it, served root still names the target" \
+  '[[ "$DRY" == *"DRYRUN bridge cmd: node $TOOL/extension/out/tools/telegram-cursor-bridge.js $F"* ]]'
+rm -rf "$F" "$TOOL"
+
+# ── BL-1757: neither the tooling root nor the target has the compiled
+#    entrypoint - refuses naming both paths, starts nothing (scenario 04) ──
+F="$(make_fixture)"
+rm -f "$F/extension/out/tools/telegram-cursor-bridge.js"
+TOOL2="$(mktemp -d)"; register_tmp_dir "$TOOL2"
+printf 'config tooling_root %s\n' "$TOOL2" > "$F/swarmforge/swarmforge.conf"
+OUT="$(TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x TELEGRAM_PRINCIPAL_USER_ID=x CURSOR_API_KEY=x \
+  bash "$(START_IN "$F")" "$F" 2>&1)" && rc=0 || rc=$?
+check "neither place has the entrypoint: launch refuses (non-zero)" '[[ "$rc" -ne 0 ]]'
+check "the refusal names the tooling root's own path" \
+  '[[ "$OUT" == *"$TOOL2/extension/out/tools/telegram-cursor-bridge.js"* ]]'
+check "the refusal names the target's own path too" \
+  '[[ "$OUT" == *"$F/extension/out/tools/telegram-cursor-bridge.js"* ]]'
+rm -rf "$F" "$TOOL2"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "start_stop_cursor_bridge smoke: ALL CHECKS PASSED"
