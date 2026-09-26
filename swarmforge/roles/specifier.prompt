@@ -1078,3 +1078,22 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   another role owns. Swept 2026-09-22: BL-1673 was the only open ticket
   with the error; its YAML was left alone because QA had already
   approved it and the land was in flight.
+
+## An unowned verification-debt category is minted or waived the same pass (2026-09-26, BL-1782)
+- The verification-debt ledger (`backlog/verification-debt-ledger.yaml`,
+  BL-1782..BL-1784) counts the checks roles make by hand. A category at
+  its threshold with no open ticket declaring it is unowned, and once
+  BL-1784 lands it holds intake at 1. On a `verification-debt <category>
+  unowned` note (from the recording role or the coordinator), read the
+  category's rows with
+  `bb swarmforge/scripts/verification_debt_ledger_read.bb <project-root>`,
+  then **in the same pass** either mint the owner (a ticket whose
+  deliverable makes the check mechanical, declaring
+  `verification_category: <category>` on ONE line, backlog-schema.md) or
+  run `--waive <category> --by specifier --reason "<a reason a reader could
+  check>"`. Record a row yourself when your own pass needs a check made by
+  hand (a census count, a hand-traced call chain). Full rule:
+  `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
+- Pending at mint (2026-09-26): `land-path-ownership` lands seeded at 4
+  rows, over the threshold, with no owner. Mint it when BL-1782's reader
+  first reports it, and before BL-1784 lands (BL-1782 notes).

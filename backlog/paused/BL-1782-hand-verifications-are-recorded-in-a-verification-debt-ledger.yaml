@@ -1,0 +1,202 @@
+id: BL-1782
+title: "A role that checks or classifies something by hand, with no script to decide it, records one row in a new verification-debt ledger (backlog/verification-debt-ledger.yaml, keyed by category and ticket, committed on main by the recorder itself). A reader counts each category's outstanding rows against a conf threshold (default 3) and reports a category at or over it with no open ticket declaring `verification_category:` as unowned. The ledger lands seeded with the four land path-ownership hand checks of 2026-09-26 (BL-1711, BL-1748, BL-1764, BL-1768)"
+milestone: M8
+status: todo
+type: feature
+epic: lean-aware-coordinator
+priority: 20
+depends_on: []
+mutation_cost: low
+# low: Babashka lib + two thin CLIs (no mutation/CRAP/DRY lane for bb,
+# engineering "Startup Tools"); the gherkin mutation re-runs a six-scenario
+# feature whose steps shell a bb CLI against a mkdtemp git fixture.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1782-hand-verifications-are-recorded-in-a-verification-debt-ledger.feature
+
+invariants:
+  - "Recording the same (category, ticket) pair any number of times, by any role, leaves exactly one row for it (idempotent under redelivery and re-landing)."
+  - "A category is owned only by an open ticket (backlog/paused or backlog/active) whose top-level one-line verification_category field names it by exact id; prose never owns a category and a closed ticket never does, so the mechanism fails toward reporting unowned."
+  - "The ledger is written only through the recorder and read only through the reader; no other script or module parses the file (BL-1428 invariant 1's shape)."
+
+required_wiring: []
+# Honest empty (BL-1235): the recorder's callers are the role prompts, prose
+# the specifier landed on main in the mint commit (not a code call site),
+# and the reader's first code consumer is BL-1784's throttle signal, the
+# named wiring slice, which pins emit-throttle-recommendation.ts itself.
+
+human_approval: pending
+approval_context: >
+  FIRM (from the intake): a register in the standing-reds /
+  hardening-debt-ledger idiom, with keyed rows, a mechanical count and
+  discharge tracking, not a new LLM judgement layer and not a prompt
+  rule as the only enforcement. Chosen at mint, open to your amendment:
+  the threshold defaults to 3 (conf key verification_debt_threshold); one
+  row per category and ticket, so a second role re-checking the same
+  ticket adds nothing; the recorder commits its own row on main so no
+  role has to hand-commit; the category for the seed is
+  land-path-ownership, and it lands with four rows, so it is already at
+  the threshold. Settling a category is BL-1783, and the intake throttle
+  is BL-1784.
+
+description: |
+  ## Why
+
+  Human, 2026-09-26 (verbatim in `source:`): replace ad hoc LLM work with
+  tools "wherever it makes sense", and enforce that "even harder on the
+  swarm engine" than a coordinator duty. The prompting case is QA's
+  BL-1711 land. QA grepped the branch for the paths that belonged to
+  BL-1711 before trusting the land step's keep/drop classification. It
+  worked, but QA re-derives that check from scratch each session and two
+  sessions can do it differently. A prompt rule saying "notice these and
+  ask for a tool" is itself an LLM remembering a policy. This slice builds
+  the register that does the noticing. Roles record what they checked by
+  hand, and a script counts it.
+
+  ## What is wanted
+
+  1. **The ledger**: `backlog/verification-debt-ledger.yaml`, a YAML list
+     in `backlog/hardening-debt-ledger.yaml`'s style, with a header
+     comment stating what a row is and that only the recorder writes it.
+     One row per hand verification: `category` (a kebab-case id such as
+     `land-path-ownership`), `ticket` (the ticket the check was made for,
+     `BL-<n>` or `GH-<n>`), `role`, `description` (what was checked by
+     hand, one line), `detected_at` (YYYY-MM-DD), and an optional
+     `evidence` path.
+  2. **The recorder**, at this fixed path, because the role prompts
+     already name it:
+     `bb swarmforge/scripts/verification_debt_ledger_update.bb <project-root> --record <category> --ticket <id> --role <role> --description "<text>" [--evidence <path>] [--on YYYY-MM-DD]`.
+     - It appends the row and commits it on `<project-root>`'s checked-out
+       branch, pathspec-scoped to the ledger, through
+       `commit_integrity_lib.bb`'s `commit-with-integrity!` (the lock the
+       front desk and coordinator bookkeeping already share). Roles call it
+       with the master checkout as `<project-root>`, so a row never rides a
+       parcel and is never lost to a bounce.
+     - When the commit cannot be made, it leaves the file as it was and
+       exits non-zero naming why. The role retries on a later turn.
+     - A second record for the same (category, ticket) writes nothing,
+       exits 0 and prints
+       `VERIFICATION_DEBT_ALREADY_RECORDED <category> <ticket>`.
+     - When the record leaves the category unowned (next item), it prints
+       `VERIFICATION_DEBT_UNOWNED <category> count=<n> threshold=<t>`.
+       That line is the role's cue to send the specifier a note (prompt
+       prose, landed at mint).
+     - It refuses (non-zero, naming the field, nothing written) a category
+       that is not a kebab-case id, a ticket that is not a backlog ticket
+       id, or a blank description.
+  3. **The reader**:
+     `bb swarmforge/scripts/verification_debt_ledger_read.bb <project-root>`
+     prints one JSON object with the threshold, and per category the
+     outstanding `count`, `over_threshold`, `owners` (open ticket ids
+     declaring it) and its rows, plus an `unowned` list of the category
+     ids that are at or over the threshold with no owner. An absent ledger
+     reads as no categories.
+     - The threshold comes from `swarmforge.conf`'s
+       `verification_debt_threshold` (a positive integer, default 3),
+       read the same way `standing_red_max_count` is.
+     - Ownership is a top-level `verification_category:` line in a ticket
+       under `backlog/paused/` or `backlog/active/`. It is one physical
+       line, a scalar or a flow list, matched by exact id, the same shape
+       as `ritual_class` (backlog-schema.md row landed at mint).
+     - Every row counts as outstanding in this slice. BL-1783 adds the
+       settle fields and the reader's exclusion of settled rows.
+  4. **The seed**: the ledger lands with four `land-path-ownership` rows,
+     all role QA and detected 2026-09-26, each naming its record:
+     - BL-1711: grepped the branch for the ticket's own paths before
+       trusting the land step's keep/drop (the intake).
+     - BL-1748 and BL-1764: tip-pure lands built by hand under condition
+       (g) after LAND_ESCALATE on stray a225d85d8b (BL-1768's title).
+     - BL-1768: built by hand with its own paths only after
+       `land_step_cli.bb` ran 39m26s and escalated on the BL-1546
+       closed-owner guard (`backlog/evidence/BL-1768-QA-20260926.md`
+       item 3).
+
+  How (direction, not mandate): mirror `hardening_debt_ledger_lib.bb` /
+  `_update.bb` / `_read.bb` (a lib plus two thin CLIs, thin-wrapper rule),
+  resolve a ticket id with the extractor `standing_red_register_cli.bb`
+  already uses, and reuse whatever conf reader `standing_red_register_lib`
+  or `mutation_cooldown_gate.bb` uses rather than writing a new one.
+
+  ## Scope
+  - `backlog/verification-debt-ledger.yaml` (new, seeded).
+  - `swarmforge/scripts/verification_debt_ledger_lib.bb`, `_update.bb`,
+    `_read.bb` (new) and a bb test runner for the lib.
+  - The feature file and its step handler `bl1782VerificationDebtLedgerSteps`.
+
+  ## Not in scope
+  - Discharge and waive verbs (BL-1783). The intake throttle (BL-1784).
+  - The role-prompt prose telling roles when to record, and the
+    `verification_category` schema row. The specifier landed both in the
+    mint commit.
+  - The owning ticket for `land-path-ownership` itself. The seed puts it
+    at the threshold on arrival, and minting its owner is the specifier's
+    first use of the reader (see notes).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1782-hand-verifications-are-recorded-in-a-verification-debt-ledger.feature`:
+     all ok.
+  2. `bb swarmforge/scripts/verification_debt_ledger_read.bb <parcel checkout>`:
+     `land-path-ownership` shows count 4, threshold 3, and is in
+     `unowned` unless an open ticket already declares it.
+  3. In a mkdtemp `git init` scratch repo (never the live checkout), record
+     one row and confirm `git log -1 --stat` shows a commit touching only
+     `backlog/verification-debt-ledger.yaml`. Record it again and confirm
+     no second commit and the ALREADY_RECORDED line.
+  4. `git grep -l 'verification-debt-ledger.yaml' -- swarmforge extension`
+     lists only the new lib/CLIs, their test runner and the handler
+     (invariant 3). Prose files and the reference doc are not code and do
+     not count.
+
+source: |
+  Raw intake `backlog/INTAKE-mechanize-recurring-llm-verification-20260926.md`
+  (human via Claude Code, 2026-09-26), drained by the specifier the same
+  day and archived to `backlog/archive/`. The human's two sentences,
+  verbatim (Article 5.3):
+  "I think we should have tool removing llm work wherever it makes sense"
+  "this principle should be a core responsibility of the lean coordinator. Or
+  is there a way to enforce this rule even harder on the swarm engine?"
+  The intake split 1:3 (Consolidation Authority): this ticket is the
+  ledger, the recorder and the reader. BL-1783 is settling a category and
+  BL-1784 is the intake throttle. The coordinator's soft duty and every
+  role's recording duty are prompt prose the specifier landed at mint.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) from the root
+  intake above. Prose landed in the same commit: the reference rule
+  `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`,
+  a pointer in every pipeline role prompt, the coordinator's soft duty,
+  the specifier's owner-minting duty, and the backlog-schema.md
+  `verification_category` row (BL-798: prose is the specifier's to land).
+  The prose tells roles the script ships with this ticket and to record
+  nothing until it exists.
+
+  Seed judgement, asked for by the intake: the category is at or over the
+  threshold on arrival. BL-1467, BL-1670 and BL-1773 are earlier rounds in
+  the same line, each a tool that took one keep/drop decision off QA's
+  hands, so they are settled history and are not seeded as rows. BL-1768
+  (landed f3bfa6b995 today) removed the a225d85d8b escalation behind the
+  BL-1748 and BL-1764 hand builds. Its own land then escalated on a
+  different guard and was built by hand too, and BL-1711's grep was a check
+  on a land that did not escalate at all. So four hand checks in one day,
+  no open ticket owns the category, and BL-1768 does not declare it. The
+  owner is not minted here. What the tool should be (a per-path ownership
+  proof printed by the land step, a scripted condition (g) build, or
+  something else) needs QA.prompt's condition (g) procedure and the
+  3383-line land_step_lib.bb read end to end, and that is its own spec
+  pass. The specifier mints it when this ticket's reader first reports
+  the category unowned, and must mint it before BL-1784 lands, or the
+  throttle drops intake to 1 on arrival (that is correct, but avoidable).
+
+  INVEST: Independent (no unbuilt dependency; BL-1783 and BL-1784 depend
+  on this one). Negotiable (the How is direction; the recorder path is
+  fixed only because prose names it). Valuable (the swarm counts its own
+  hand checks and names the categories that need a tool). Estimable (the
+  hardening-debt ledger's three bb files are the template, about 400
+  lines). Small (6 scenarios, 3 invariants). Testable (every scenario runs
+  in a mkdtemp git fixture except 06, which only reads the repository's
+  own ledger).
+  Census for scenario 06: the four seed tickets are named in the ticket and
+  read from committed records (the intake, BL-1768's title,
+  backlog/evidence/BL-1768-QA-20260926.md). This is a pinned list, not a
+  derived population.

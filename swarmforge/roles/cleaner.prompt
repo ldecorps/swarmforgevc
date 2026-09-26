@@ -240,3 +240,15 @@ You are the cleaner.
   this list is the rule. Why: on 2026-09-16/17 six roles each ran the full
   unit lane, the 320 s property lane and the acceptance run per parcel at
   cap 5-6 - hours of wall-clock. The human's words: backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.
+
+## A check you did by hand is a row in the verification-debt ledger (2026-09-26, BL-1782)
+- When your pass needed a check or classification made by hand, one no
+  script decided and one other tickets will need again, record one row:
+  `bb swarmforge/scripts/verification_debt_ledger_update.bb <project-root> --record <category> --ticket <id> --role <you> --description "<what you checked>"`,
+  with the MASTER checkout as `<project-root>`. The recorder commits the
+  row itself. Reuse an existing category (read
+  `verification_debt_ledger_read.bb` first). If the recorder prints
+  `VERIFICATION_DEBT_UNOWNED`, send the specifier a `note` (priority
+  `00`) naming the category, then carry on. When a row is owed and when
+  it is not: `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
+  The script ships with BL-1782. Until it lands there is nothing to record.

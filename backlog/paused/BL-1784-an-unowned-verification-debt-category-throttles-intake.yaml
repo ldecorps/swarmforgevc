@@ -1,0 +1,126 @@
+id: BL-1784
+title: "An unowned verification-debt category is an Article 3.5 health signal: emit-throttle-recommendation reads BL-1782's reader and recommends a cap of 1 while any category is at or over its threshold with no open owner and not settled, folds it with the rework and standing-red signals by taking the lowest, logs each change naming the category, and withdraws once the specifier mints an owner or the category is settled, so effective_backlog_depth_cli.bb, which the coordinator reads before every promotion, enforces it without anyone remembering to"
+milestone: M8
+status: todo
+type: feature
+epic: lean-aware-coordinator
+priority: 20
+depends_on: [BL-1782, BL-1783]
+mutation_cost: medium
+# medium: a new TypeScript signal module in the Stryker lane
+# (standingRedSignal.ts is ~140 lines) plus a fold in
+# emit-throttle-recommendation.ts; four scenarios.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1784-an-unowned-verification-debt-category-throttles-intake.feature
+
+invariants:
+  - "The verification-debt signal can only lower the effective cap: the emitted recommendation is the minimum over every signal, and a null from this signal never outranks a number from another."
+  - "The signal reads the ledger only through BL-1782's reader CLI; no TypeScript code parses backlog/verification-debt-ledger.yaml."
+
+required_wiring:
+  - "extension/src/tools/emit-throttle-recommendation.ts::computeVerificationDebtRecommendation(::the live throttle emitter, run by effective_backlog_depth_cli.bb at every promotion, calls the new signal"
+# The symbol name is chosen at mint so the anchor is a literal (BL-874). It
+# anchors the CONSUMER's call, not the declaration (BL-1235): the function
+# is declared in a new module and matches here only if the emitter calls it.
+
+human_approval: pending
+approval_context: >
+  FIRM (the intake): an unowned category gates promotion "the way the
+  standing-red register throttles on an unowned row", and the prompt rule
+  is not the only enforcement. Chosen at mint, open to your amendment: cap
+  1 (a soft stop like BL-1429's, never 0) from the moment a category is
+  unowned, with no grace period. It is a global cap, not one scoped to
+  the category, because the categories are kinds of check and not kinds
+  of ticket (every ticket lands, so a land-time category touches all of
+  them). The seeded land-path-ownership category is at the threshold on
+  arrival, so if its owner is not minted before this lands, intake drops
+  to 1 the day it lands.
+
+description: |
+  ## Why
+
+  Human, 2026-09-26 (verbatim in `source:`), asked whether the rule could be
+  enforced "even harder on the swarm engine" than as a coordinator duty.
+  BL-1782 makes the swarm count its hand checks and BL-1783 lets a category
+  be settled. Without this slice, an unowned category is a line in a JSON
+  report that someone must remember to read. BL-1429 already solved the
+  same shape for standing reds: the register became a throttle input to
+  `effective_backlog_depth_cli.bb`, which the coordinator must call before
+  every promotion (coordinator.prompt). This slice adds a third input.
+
+  ## What is wanted
+
+  1. A signal module beside `extension/src/metrics/standingRedSignal.ts`
+     that runs `swarmforge/scripts/verification_debt_ledger_read.bb` and
+     returns `{recommendedCap: 1, categories: [<unowned ids>]}` when the
+     reader's `unowned` list is non-empty, else null. It is exported as
+     `computeVerificationDebtRecommendation(targetRepoPath)`, and the name
+     is fixed by `required_wiring`.
+  2. `emit-throttle-recommendation.ts` calls it and folds its cap into
+     `recommendedCap` by the same min-of-signals rule, and carries it in
+     the recommendation JSON under its own key.
+     `describeChangeReason` names it: "verification-debt category
+     <id>" when it binds, and names it as what cleared when it stops
+     binding. The BL-1429 architect bounce's rule applies: credit a
+     clearing only to the signal that was actually binding.
+  3. Absent ledger, or a reader that fails: no constraint from this signal,
+     and a failure is logged the way the standing-red signal logs its own.
+     A broken reader must not freeze intake. Mirror whatever
+     `computeStandingRedRecommendation` does on CLI failure.
+
+  ## Scope
+  - A new `extension/src/metrics/verificationDebtSignal.ts` (name is the
+    coder's) and its unit tests.
+  - `extension/src/tools/emit-throttle-recommendation.ts`.
+  - The feature file and its step handler `bl1784VerificationDebtThrottleSteps`.
+  - The briefing burn-section wording, if `burnSectionText.ts` lists the
+    throttle's causes (it names BL-1429's today). The documenter checks
+    the docs that list them.
+
+  ## Not in scope
+  - The ledger, recorder, reader and settle verbs (BL-1782, BL-1783).
+  - Minting any category's owner. That is the specifier's, prompted by the
+    recorder's VERIFICATION_DEBT_UNOWNED line and the coordinator's note.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1784-an-unowned-verification-debt-category-throttles-intake.feature`:
+     all ok.
+  2. Unit and property lanes green for the new module and
+     emit-throttle-recommendation.ts.
+  3. On the live checkout, read-only:
+     `bb swarmforge/scripts/effective_backlog_depth_cli.bb <root>` and
+     `.swarmforge/coordinator/throttle-recommendation.json`. If the reader
+     reports any unowned category, the recommendation carries it and the
+     printed depth is at most 1. If not, the verification-debt key is null.
+     Record which one held.
+
+source: |
+  Raw intake `backlog/INTAKE-mechanize-recurring-llm-verification-20260926.md`
+  (human via Claude Code, 2026-09-26), split 1:3 by the specifier the same
+  day. BL-1782 is the ledger, BL-1783 settles a category, and this ticket
+  is the throttle. The human's two sentences, verbatim (Article 5.3):
+  "I think we should have tool removing llm work wherever it makes sense"
+  "this principle should be a core responsibility of the lean coordinator. Or
+  is there a way to enforce this rule even harder on the swarm engine?"
+  The intake's own proposal, which this slice builds: "gates further
+  promotion in that category the way the standing-red register throttles
+  on an unowned row".
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat).
+  Not a ruling_options ticket. The intake proposes one behaviour (the
+  unowned-red throttle), and the only alternative considered, a grace
+  period before the cap drops, is a refinement the human can ask for
+  through Amend. A prompt-only option was not offered: the intake's FIRM
+  line excludes it.
+  Before this lands, the specifier mints the owner of the seeded
+  land-path-ownership category (BL-1782 notes), or intake drops to 1 on
+  arrival until it does.
+  INVEST: Independent (depends_on BL-1782 and BL-1783, which must land
+  first). Negotiable (module name, JSON key and log wording are the
+  coder's; only the wired symbol is fixed). Valuable (the rule holds when
+  nobody remembers it). Estimable (BL-1429's standingRedSignal.ts and its
+  fold are the template). Small (4 scenarios, 2 invariants). Testable
+  (fixture root, the same shape as BL-1429's feature).

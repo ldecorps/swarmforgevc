@@ -932,3 +932,23 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
 - Not covered: work coder@2 already holds, and a rebuild or send-back of a
   ticket it built, stay with coder@2. The rule gates new tickets only, and
   moving a built parcel to the other seat breaks its branch lineage.
+
+## A check you did by hand is a row in the verification-debt ledger (2026-09-26, BL-1782)
+- When your pass needed a check or classification made by hand, one no
+  script decided and one other tickets will need again, record one row:
+  `bb swarmforge/scripts/verification_debt_ledger_update.bb <project-root> --record <category> --ticket <id> --role <you> --description "<what you checked>"`,
+  with the MASTER checkout as `<project-root>`. The recorder commits the
+  row itself. Reuse an existing category (read
+  `verification_debt_ledger_read.bb` first). If the recorder prints
+  `VERIFICATION_DEBT_UNOWNED`, send the specifier a `note` (priority
+  `00`) naming the category, then carry on. When a row is owed and when
+  it is not: `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
+  The script ships with BL-1782. Until it lands there is nothing to record.
+- **Your soft duty (the human's "core responsibility of the lean
+  coordinator", 2026-09-26).** At every closing ceremony, and whenever the
+  effective depth reads 1 on the verification-debt signal (BL-1784), run
+  `bb swarmforge/scripts/verification_debt_ledger_read.bb <project-root>`.
+  For each id in `unowned` with no open specifier note about it, send the
+  specifier one `note` (priority `00`) naming the category, its count and
+  its tickets. The throttle is the hard layer; this note is how the
+  specifier hears the same shift.

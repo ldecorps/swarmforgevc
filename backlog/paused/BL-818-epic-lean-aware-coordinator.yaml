@@ -7,7 +7,7 @@ epic: lean-aware-coordinator
 priority: 10
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-819, BL-820, BL-1365, BL-1528, BL-1551]
+decomposes_into: [BL-819, BL-820, BL-1365, BL-1528, BL-1551, BL-1782, BL-1783, BL-1784]
 source: |
   Raw intake `backlog/INTAKE-lean-aware-coordinator.md` (human via Cursor
   2026-08-05 ~09:55 CEST, amended ~09:58 for the shift-closing ceremony),
@@ -17,6 +17,24 @@ source: |
   promotable; children are promoted individually.
 
 notes: |
+  ## 2026-09-26 — the verification-debt ledger (BL-1782, BL-1783, BL-1784)
+
+  Root intake `INTAKE-mechanize-recurring-llm-verification-20260926.md`
+  (archived), the human verbatim: "I think we should have tool removing llm
+  work wherever it makes sense" and "this principle should be a core
+  responsibility of the lean coordinator. Or is there a way to enforce this
+  rule even harder on the swarm engine?" Locked decision 1 is applied
+  again, not reopened: the coordinator's part is a duty (landed in
+  coordinator.prompt at mint), not a new seat. The "even harder" half is a
+  third register beside standing-reds.tsv and hardening-debt-ledger.yaml.
+  Roles record the checks they make by hand, a script counts them by
+  category, and BL-1784 folds an unowned category into the Article 3.5
+  throttle the way BL-1429 folded unowned reds. This is the self-reported
+  counterpart of BL-1365's determinism candidates, which infer hand-made
+  rituals from commit subjects. The two catch different things and neither
+  replaces the other. Rule text:
+  `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
+
   ## 2026-09-03 — locked decision 1 re-applied, not re-opened
 
   The operator asked whether the determinism sweep (BL-667's 2026-09-03

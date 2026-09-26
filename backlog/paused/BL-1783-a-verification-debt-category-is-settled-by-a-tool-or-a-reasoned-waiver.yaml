@@ -1,0 +1,113 @@
+id: BL-1783
+title: "A verification-debt category leaves the unowned state only by being settled: --discharge marks every outstanding row with discharged_at and a committed discharged_evidence file once a tool makes the check mechanical, and --waive marks them with waived_at, waived_by and a non-blank reason when the check is not worth a tool. Settling never removes a row, touches only the named category, and a hand check recorded after a settle counts again from one"
+milestone: M8
+status: todo
+type: feature
+epic: lean-aware-coordinator
+priority: 20
+depends_on: [BL-1782]
+mutation_cost: low
+# low: two verbs added to BL-1782's bb lib and recorder CLI plus the
+# reader's exclusion of settled rows; four scenarios.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1783-a-verification-debt-category-is-settled-by-a-tool-or-a-reasoned-waiver.feature
+
+invariants:
+  - "A settle verb never removes a row or rewrites a row's recorded fields; it only adds the settle fields, so what was hand-checked stays readable next to how it was settled."
+  - "A settle verb changes only outstanding rows of the category it names; rows of every other category, and rows already settled, are byte-identical before and after."
+
+required_wiring: []
+# Honest empty (BL-1235): the verbs are called by whoever ships a tool or
+# decides a waiver (prompt prose landed with BL-1782's mint), and the
+# reader's code consumer is BL-1784.
+
+human_approval: pending
+approval_context: >
+  FIRM (from the intake): discharge tracking in the hardening-debt ledger's
+  pattern, "until either a tool ships (row discharged, evidence linked ...)
+  or the ticket owner explicitly waives it". Chosen at mint, open to your
+  amendment: a settle applies to the whole category, not one row; a waiver
+  must name who waived it and why, with a blank reason refused; anyone may
+  run either verb (the waiver records who did, it does not check
+  permission); a hand check recorded after a settle is new debt and counts
+  again from one, so a tool that turns out not to cover the case brings
+  the category back on its own.
+
+description: |
+  ## Why
+
+  BL-1782's reader reports a category unowned at its threshold, and an open
+  ticket declaring it only holds it while that ticket is open. Once the
+  tool ships and its ticket closes, the category would read unowned again,
+  forever, unless the ledger can record that the debt was paid. The intake
+  names the two ways out: a tool ships (discharged, evidence linked, the
+  hardening-debt ledger's `discharged_at` / `discharged_evidence`), or the
+  owner decides the check is not worth a tool and waives it. BL-1784's
+  throttle cannot arm safely without both.
+
+  ## What is wanted
+
+  Two more verbs on BL-1782's recorder,
+  `swarmforge/scripts/verification_debt_ledger_update.bb`, committing the
+  same way `--record` does:
+  - `--discharge <category> --by <who> --evidence <path> [--on YYYY-MM-DD]`
+    adds `discharged_at`, `discharged_by` and `discharged_evidence` to every
+    outstanding row of the category. It refuses (non-zero, naming why,
+    nothing written) with no `--evidence`, an evidence path that is not a
+    file under `<project-root>`, or no outstanding row in the category.
+  - `--waive <category> --by <who> --reason "<text>" [--on YYYY-MM-DD]`
+    adds `waived_at`, `waived_by` and `waive_reason`. It refuses with no
+    `--by`, a blank reason, or no outstanding row.
+  - The reader counts only outstanding rows (neither discharged nor
+    waived), so a settled category reads count 0 and never unowned. A row
+    recorded after the settle is outstanding and counts from one.
+  - Settled rows stay in the file and in the reader's per-category row
+    list with their settle fields.
+
+  How (direction, not mandate): the hardening-debt ledger's `--discharge`
+  (BL-1439) is the template, including its refusal to be a silent no-op.
+
+  ## Scope
+  - `swarmforge/scripts/verification_debt_ledger_lib.bb`, `_update.bb`,
+    `_read.bb` and the lib's test runner (all BL-1782's).
+  - The feature file and its step handler `bl1783VerificationDebtSettleSteps`.
+
+  ## Not in scope
+  - The intake throttle (BL-1784). Any tool for a real category.
+  - Deciding when to discharge or waive: that is prose (the
+    verification-debt reference rule, landed with BL-1782's mint).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1783-a-verification-debt-category-is-settled-by-a-tool-or-a-reasoned-waiver.feature`:
+     all ok.
+  2. In a mkdtemp `git init` scratch repo (never the live checkout), record
+     three rows in one category and two in another, waive the first, and
+     diff the ledger before and after: only the three rows gained the
+     waive fields and nothing else changed (invariants 1 and 2).
+  3. The live ledger is untouched by the parcel except for rows BL-1782
+     seeded (`git diff origin/main -- backlog/verification-debt-ledger.yaml`
+     is empty once BL-1782 has landed).
+
+source: |
+  Raw intake `backlog/INTAKE-mechanize-recurring-llm-verification-20260926.md`
+  (human via Claude Code, 2026-09-26), split 1:3 by the specifier the same
+  day. BL-1782 is the ledger, this ticket settles a category, and BL-1784
+  is the throttle. The human's two sentences, verbatim (Article 5.3):
+  "I think we should have tool removing llm work wherever it makes sense"
+  "this principle should be a core responsibility of the lean coordinator. Or
+  is there a way to enforce this rule even harder on the swarm engine?"
+  The intake's own proposal, which this slice builds: "until either a tool
+  ships (row discharged, evidence linked, same pattern as
+  hardening-debt-ledger's discharged_at/discharged_evidence) or the ticket
+  owner explicitly waives it."
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat).
+  INVEST: Independent (depends_on BL-1782 only, which must land first).
+  Negotiable (the How is direction). Valuable (a category whose tool
+  shipped stops reading unowned, and one not worth a tool can be closed
+  with a reason). Estimable (two verbs on a lib that exists by then, with
+  BL-1439's --discharge as the template). Small (4 scenarios). Testable
+  (mkdtemp git fixture).
