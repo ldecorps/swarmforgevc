@@ -125,6 +125,11 @@ notes: |
   over known functions), Small, Testable (fake tmux, pure gate, stand-in
   endpoint).
 
+  2026-09-26 (specifier): 7ba57573ff's new competency left four test files
+  red on main (planted certify scorecards carry only the 09-21 pair). That
+  fallout is owned by BL-1767 with register rows; the review records it as
+  a finding already owned and does not fix it here.
+
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `git diff main...HEAD --name-only` names only evidence, the feature,

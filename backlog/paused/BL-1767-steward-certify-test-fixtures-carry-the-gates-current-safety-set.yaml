@@ -1,0 +1,146 @@
+id: BL-1767
+title: "Four model-steward test files are red on main because their planted passing scorecards predate the certify safety gate's third competency (coder-stop_banner_compliance, hotfix 7ba57573ff, 2026-09-23) and BL-1079's seed census predates anthropic/claude-opus-4-8 (BL-669, 2026-08-25): test_model_steward_cli.sh case 05 (and 05d behind it), BL-547 scenarios 14-15, BL-556 scenario 5, BL-1079 scenarios 1 and 4"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (2026-09-05 register amendment);
+# QA's unowned-red note 003239 (evidence ba2210db18) named the shell test,
+# and the mint census found three acceptance features red on the same cause.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: test fixtures and step handlers only; Babashka/shell have no
+# mutation lane, and the handlers are acceptance glue.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-fixture chore (BL-1251): the pointer names one feature the fix must
+# turn green. It is not a claim of ownership over BL-547's contract; the
+# other three files are listed in Scope and in qa_e2e_procedure.
+acceptance: specs/features/BL-547-model-steward-infrastructure-agent.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: the certify safety
+  gate is right and stays as it is; only the tests' planted fixtures and
+  one stale census move. No scenario text changes in any feature file.
+
+invariants:
+  - "Every planted passing-certification scorecard in the four files carries every member of model_steward_lib's safety-critical-competencies as pass, read from the lib when the test runs or asserted equal to it (BL-897), so adding a competency to that set leaves all four files green."
+
+description: |
+  ## What is wrong
+
+  QA note 003239 (evidence `backlog/evidence/BL-1700-QA-20260926.md`,
+  ba2210db18): `bash swarmforge/scripts/test/test_model_steward_cli.sh`
+  stops at `FAIL: 05: certify exited 1 with a planted scorecard: certify
+  refused: safety competencies absent from scorecard:
+  coder-stop_banner_compliance`. It fails the same way on main, so it
+  predates BL-1700.
+
+  Cause, read at mint: hotfix 7ba57573ff (2026-09-23) added
+  `coder-stop_banner_compliance` to `safety-critical-competencies` in
+  `swarmforge/scripts/model_steward_lib.bb` (~line 184). certify now
+  refuses any scorecard that does not carry all three as `pass`. The
+  2026-09-21 fixture sweep (34f24f93e5) had hand-copied the two
+  competencies of that day into each planted card. The third was never
+  added, and the sweep had missed BL-556's card entirely.
+
+  Census at mint (specifier, 2026-09-26, on main 8d5024e07e). Every
+  caller of the steward CLI's certify path was run once:
+  - `test_model_steward_cli.sh`: case 05 FAIL (above). Case 05d greps
+    for the refusal `absent from scorecard: coordinator-infra_edit_refusal,
+    coordinator-no_fabricated_work`, but the gate now also lists
+    `coder-stop_banner_compliance`, first in sort order. The script stops
+    at its first FAIL, so 05d is the next red behind 05.
+  - BL-547 feature: 13 of 15. Scenarios 14 and 15 fail with the same
+    refusal (`bl547ModelStewardSteps.js` ~lines 259 and 311 plant the
+    two-entry card).
+  - BL-556 feature: 5 of 6. Scenario 5's step `"winner-model" is
+    currently certified with a prior passing gate` reads `candidate`.
+    The winner card planted by `bl556EvaluateIngestSteps.js` (~line 70)
+    carries no safety competency at all.
+  - BL-1079 feature: 3 of 5.
+    - Scenario 4 [2] fails the same refusal
+      (`bl1079CursorStewardCertifySteps.js` ~line 79).
+    - Scenario 1 fails for a different, older reason. At ~line 136 the
+      step `no anthropic identity was added or altered by the seed change`
+      asserts the seed carries exactly one anthropic identity. BL-669
+      (d43046f6b8, 2026-08-25) legitimately added anthropic/claude-opus-4-8,
+      so the count is 2. 34f24f93e5 recorded this as "a pre-existing seed
+      drift" on 2026-09-21, and no ticket ever took it.
+  - Green and out of scope: BL-557 feature 7 of 7,
+    `model_steward_test_runner.bb`, `bl1079_cursor_certification_gate_property_runner.bb`,
+    `bl1337_profile_cast_test_runner.bb`, `pack_staffing_gate_lib_test_runner.bb`.
+
+  ## What is wanted
+  - Every planted passing card in the four files satisfies the gate as it
+    stands. Per the invariant, this is the durable half: this is the second
+    time a new safety competency has reddened these fixtures. Direction,
+    not mandate: build the card's safety entries from
+    `model-steward-lib/safety-critical-competencies`, loaded with
+    `bb -e '(load-file "swarmforge/scripts/model_steward_lib.bb") ...'`.
+    A literal list is acceptable only with a check asserting it equals the
+    lib's set.
+  - Case 05d's expected refusal names every absent competency the gate
+    would list, read the same way, not a hand-copied pair.
+  - BL-1079 scenario 1's step keeps its intent without the frozen count:
+    the Cursor seed change neither borrows an anthropic id nor alters
+    anthropic/claude-sonnet-5. The step's other two checks (~lines 133 and
+    139) already carry both. A legitimately added anthropic identity must
+    not redden the step.
+  - With safety entries on BL-556's winner card, the scenarios that read
+    that card's entries (capability dimensions) still hold. Check them;
+    do not assume.
+
+  ## Scope
+  - `swarmforge/scripts/test/test_model_steward_cli.sh`
+  - `specs/pipeline/steps/bl547ModelStewardSteps.js`
+  - `specs/pipeline/steps/bl556EvaluateIngestSteps.js`
+  - `specs/pipeline/steps/bl1079CursorStewardCertifySteps.js`
+  - A shared test helper if the coder wants one (under
+    `specs/pipeline/steps/lib/` or `swarmforge/scripts/test/`), plus
+    evidence.
+  - Read, never edited: `model_steward_lib.bb`, `model_steward_cli.bb`,
+    `model_steward_store.bb`, `swarmforge/model-steward/seed/models.seed.json`,
+    and every `.feature` file.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_model_steward_cli.sh`: no FAIL
+     line; 05 and 05d PASS.
+  2. `node specs/pipeline/cli.js <feature>` for BL-547 (15 of 15),
+     BL-556 (6 of 6) and BL-1079 (5 of 5). Record each duration.
+  3. `bb swarmforge/scripts/test/model_steward_test_runner.bb`: ALL PASS.
+  4. `git diff main...HEAD --name-only` names only the Scope files and
+     evidence: no steward lib/CLI/store, no seed, no `.feature`.
+  5. After landing: REGISTER_ROW_RETIRED for all four BL-1767 rows in
+     `backlog/standing-reds.tsv`.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) from QA's
+  unowned-red note 003239. The note named the shell test only; the mint
+  census added the three acceptance files (same cause, one older cause on
+  BL-1079). One ticket, not four, because the register is keyed per test
+  file and BL-1079's handler carries both causes. Grepped
+  backlog/active and backlog/paused for every Scope file: no open ticket
+  touches them (BL-712's epic tracker only names BL-1079's feature).
+  Census commands, re-runnable:
+  `git grep -ln coordinator-no_fabricated_work -- specs/pipeline/steps swarmforge/scripts/test extension/test`,
+  then `for f in $(git grep -ln 'model_steward_cli\|model_steward_lib' -- specs/pipeline/steps swarmforge/scripts/test extension/test); do grep -l certify $f; done`,
+  running each hit once.
+  BL-1707 (paused) is the owed review of hotfix 7ba57573ff. This fallout
+  is that hotfix's, so its review records it as already owned here.
+  The four register rows were added in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
+
+  INVEST: Independent (no open ticket touches the Scope files), Negotiable
+  (derivation is direction), Valuable (four standing reds, one of which
+  blocks BL-1700's approval), Estimable (four fixture sites and one step
+  check, all located), Small (test code only), Testable (the four files'
+  own runs).
