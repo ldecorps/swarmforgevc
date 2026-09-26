@@ -469,3 +469,28 @@ exact tree before the push. The land approval is recorded against
 alone.
 
 By QA.
+
+## Instance - BL-1764's land, condition (g) (QA, 2026-09-26)
+
+Same stray and same shape as BL-1748's instance above: `land_step_cli.bb` on
+the synced tip ac8de1a4b3 printed `LAND_ESCALATE` and `could not cherry-pick
+stray evidence commit a225d85d8b`. Its `ENTANGLED_SIBLING` list (BL-1671,
+BL-1700, BL-1704, BL-1711, BL-1717, BL-1748, BL-1766) comes from the aborted
+walk. BL-1671, BL-1717 and BL-1748 are closed, and BL-1700's content is
+reverted on the QA tip (5915c8016d). None of them shares a path with BL-1764.
+Landed per (g): tip-pure 3bdea668c2 off origin/main 1d693251f3, holding
+BL-1764's own paths plus the retirement of its `nightClosingCeremonyRun.test.js`
+unit row. The approval is recorded against cf943f28ad (the predicate exits 0),
+and `abandoned_commits: [cf943f28ad]` is on the ticket.
+
+New since BL-1748's instance: BL-1670 is landed (`LAND_STRAY_SUPERSEDED`), yet
+it does not catch this stray. Neither of its grounds holds. (a) fails because
+the stray's post-image adds `Last Updated: 2026-09-24`, which origin/main
+lacks. (b) fails because the conflicting origin/main line was last written by
+BL-1699's f729af01b9, not by the stray's owner BL-1703. Condition (g) covers a
+rewrite by any later main commit; BL-1670 automated only the same-owner
+rewrite. So every land from a branch carrying a225d85d8b (QA's does, and the
+`--push` publish path never re-points it) pays a full walk (~20 min), escalates,
+and needs this hand build.
+
+By QA.
