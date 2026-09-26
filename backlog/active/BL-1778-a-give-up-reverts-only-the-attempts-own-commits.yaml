@@ -174,3 +174,5 @@ notes: |
   (one function over persisted state), Small (three scenarios, two
   invariants), Testable (fixture repos driven through the real give-up,
   plus one property).
+
+assigned_to: coder
