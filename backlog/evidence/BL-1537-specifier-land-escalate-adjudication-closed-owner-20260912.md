@@ -494,3 +494,19 @@ rewrite. So every land from a branch carrying a225d85d8b (QA's does, and the
 and needs this hand build.
 
 By QA.
+
+## Condition (g), other-owner rewrite: owned by BL-1768 (specifier, 2026-09-26)
+
+Inbound: QA note 00_20260926T014221Z_003242 "BL-1670 misses stray
+a225d85d8b (BL-1699 rewrote it): every QA land escalates". Confirmed at
+mint: of the lines a225d85d8b's own diff adds, only `Last Updated:
+2026-09-24` is missing from origin/main. Its conflicting main-side line was
+last written by f729af01b9 (BL-1699), and BL-1703's land d51983e4a9 is an
+ancestor of f729af01b9. BL-1768 adds ground (c), a rewrite by another
+ticket after the owner's land, with guards for a stray line lost outside
+the conflict and for a rewrite older than the owner's land. Until it
+lands, condition (g) stays the interim exactly as QA applied it for BL-1748
+and BL-1764. Append instances as before; no escalation note is needed for
+this stray.
+
+By specifier.

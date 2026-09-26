@@ -1,0 +1,218 @@
+id: BL-1768
+title: "The land step's superseded-stray check (BL-1670) accepts a conflicting rewrite only from the stray's OWN ticket, so a closed-owner doc stray whose one missing line another ticket rewrote after the owner landed - BL-1703's a225d85d8b, whose `Last Updated:` line BL-1699's f729af01b9 rewrote after BL-1703's land d51983e4a9 - aborts every land after a ~20 min walk (BL-1748, BL-1764 on 2026-09-26, both hand-built under condition (g)): a third ground decides superseded when every line the stray adds that origin/main lacks sits in a conflicting hunk whose main side a descendant of the owner's landed commit last wrote"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in delivery machinery. QA's branch carries
+# a225d85d8b and the --push publish path never re-points it, so every land
+# pays a full walk, escalates, and falls back to the hand-built tip-pure
+# recipe (condition (g)). Not critical: the hand recipe lands parcels and
+# the swarm stays up.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+# BL-1670 (grounds a and b) is done. BL-1679 (paused) also edits
+# land_step_lib.bb and its runner: not a dependency, but the two must not
+# be active together (Concurrent Work Orthogonality).
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one more ground in
+# stray-superseded-verdict, runner cases, one Examples row and one
+# scenario in BL-1650's existing handler over mkdtemp fixtures.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature
+# The contract is BL-1650's feature with the row and scenario 08 below
+# added by this parcel, steps landing in the existing handler in the SAME
+# commit (BL-233). Not a claim of ownership over BL-1650's contract.
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1650LandStepPureEvidenceStraySteps.js::no LAND_STRAY_SUPERSEDED line is printed::scenario 08 step lands with the scenario (BL-233)'
+
+human_approval: approved
+approval_context: >
+  One Examples row and one scenario are added to a landed feature file,
+  so this would ordinarily need a tap; it is minted approved under the
+  2026-09-17 operator hotfix (severity defect, no choice posed, no
+  ruling_options). FIRM: grounds (a) and (b), the candidate set, scenario
+  06's tip-content rule and the D1 already-applied skip are unchanged;
+  the new ground applies to pure-evidence and doc strays only; a stray
+  that would drop a line origin/main lacks outside the conflict, or whose
+  conflicting main-side line predates the owner's land, still escalates
+  by name (BL-1546: never decided silently).
+
+invariants:
+  - "Ground (c) never skips a line the stray adds that origin/main lacks unless that line sits in a conflicting hunk whose origin/main side was last written only by commits descending from a landed commit of the stray's owner; every other shape escalates by name."
+
+description: |
+  ## What is wrong
+
+  QA note 003242 and QA's two condition (g) instances in
+  `backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md`
+  (BL-1748 and BL-1764, 2026-09-26). On the QA branch, `land_step_cli.bb`
+  walks about 20 minutes, then prints `LAND_ESCALATE` with `land-step
+  replay: could not cherry-pick stray evidence commit a225d85d8b`. The
+  ENTANGLED_SIBLING list printed with it is noise from the aborted walk.
+
+  The stray is closed BL-1703's documenter commit (`docs/diagrams/architecture.mmd`,
+  `docs/how-to/BL-1052-local-model-seat-launch.md`). Verified at mint:
+  - Of the non-blank lines the stray's own diff adds, only `Last Updated:
+    2026-09-24` is missing from origin/main.
+  - That line conflicts with main's `Last Updated:`, last written by
+    BL-1699's f729af01b9.
+  - BL-1703's tip-pure land d51983e4a9 is an ancestor of f729af01b9.
+
+  `stray-superseded-verdict` (`swarmforge/scripts/land_step_lib.bb`
+  ~line 980) decides superseded on two grounds, and neither holds here:
+  - (a) content-subset: fails, because the stray's post-image carries a
+    line main lacks.
+  - (b) every conflicting main-side line was last written by a commit
+    tagged EXACTLY with the stray's owner: fails, because the writer is
+    BL-1699.
+
+  The specifier's condition (g) (ruled 2026-09-20) covers a rewrite by
+  any later main commit; BL-1670 automated only the same-owner half. That
+  narrowing came from BL-1670's own `How` direction ("Superseded iff the
+  set is exactly {the stray's owner}"). Its FIRM text never required it.
+
+  ## What is wanted
+
+  - A third ground (c), checked after (a) and (b), for a pure-evidence or
+    doc stray whose cherry-pick conflicts. It decides superseded when both
+    of these hold:
+    1. Every non-blank line the stray's OWN diff adds (its patch against
+       its parent, not its snapshot) is either present verbatim in
+       origin/main's copy of that path, or lies in a conflicting hunk.
+    2. Every main-side line of those conflicting hunks was last written
+       (`git blame`) by a commit that has a landed commit of the stray's
+       owner on origin/main as an ancestor. That is, the rewrite came after
+       the owner's text landed. The owner's landed commits are found by the
+       same subject attribution ground (b) uses.
+  - On ground (c) it aborts only that cherry-pick, prints
+    `LAND_STRAY_SUPERSEDED <sha> <path> <reason>` with the reason naming
+    the rewriting commits' short shas (as (b) does), and continues. The
+    replay and every sibling verdict complete.
+  - Any other shape still escalates by name, unchanged:
+    - a stray line main lacks outside the conflict;
+    - a conflicting main-side line written before the owner's land;
+    - an owner with no landed commit on origin/main;
+    - a code path.
+  - BL-1650's feature gains, in the parcel and with its steps in the same
+    commit, one Examples row on scenario 07 and a new scenario 08. The
+    specifier linted and IR-DRY-checked both on a scratch copy of the
+    feature 2026-09-26: clean parse. The one new IR-DRY finding pairs
+    `no LAND_STRAY_SUPERSEDED line is printed` with scenario 02's
+    `no LAND_STRAY_EVIDENCE_LANDED line is printed`. These assert
+    different markers, and merging them would reword a landed scenario, so
+    it is kept.
+
+    Scenario 07 Examples, repadded, with the new third row:
+
+    ```
+        Examples:
+          | shape                                                  |
+          | is a strict content subset of a later append           |
+          | was rewritten by a later landed commit of its owner    |
+          | was rewritten by another ticket after its owner's land |
+    ```
+
+    Appended after scenario 07:
+
+    ```
+      # BL-1650 an-unproven-other-owner-rewrite-still-escalates-by-name-08
+      # BL-1768 (2026-09-26): another ticket's rewrite supersedes a stray only
+      # after the stray's owner landed, and only when nothing else is lost.
+      Scenario Outline: a pure-evidence stray whose conflict another ticket's commit does not prove superseded still escalates by name
+        Given a stray commit off the lineage whose path <shape> on origin/main
+        And a replay tip that carries the stray and a landed sibling behind it
+        When the land step replays the cited ticket
+        Then it exits LAND_ESCALATE naming the stray's commit
+        And no LAND_STRAY_SUPERSEDED line is printed
+
+        Examples:
+          | shape                                                                                      |
+          | was rewritten by another ticket after its owner's land beside a stray line that is missing |
+          | conflicts with a line another ticket wrote before its owner's land                         |
+    ```
+
+  ## How (direction, not mandate)
+
+  - Fixture for the new 07 row, following the handler's existing ground
+    (b) builder:
+    - seed a doc;
+    - on the role branch, the stray (tagged with the sibling) rewrites
+      line L;
+    - on main, the sibling's land carries the stray's text, then a commit
+      tagged with a DIFFERENT ticket rewrites L;
+    - the expected reason names that other commit.
+  - 08 row 1: the same fixture, where the stray also adds a line elsewhere
+    that main never gets.
+  - 08 row 2: the other ticket rewrites L BEFORE the sibling's land, and
+    the sibling's land touches a different line.
+  - Each row goes into `SUPERSEDED_SHAPE_BUILDERS` (or a sibling map for
+    08) as an explicit KNOWN_VALUES key, never passed through.
+
+  ## Scope
+  - `swarmforge/scripts/land_step_lib.bb`, `swarmforge/scripts/test/land_step_lib_test_runner.bb`.
+  - `specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature`
+    and `specs/pipeline/steps/bl1650LandStepPureEvidenceStraySteps.js`.
+  - The land-step how-to that documents LAND_STRAY_SUPERSEDED (documenter),
+    and evidence.
+
+constraints: >
+  No change to which strays are candidates, to grounds (a) and (b), to
+  scenario 06's tip-content rule, or to the D1 already-applied skip.
+  Fixture repositories are mkdtemp git init roots (BL-1390).
+
+out_of_scope: |
+  - The ~20 minute walk over ~2700 branch-only commits on the QA branch,
+    and the --push publish path never re-pointing swarmforge-QA (QA's
+    09-26 observation). This fix ends the escalation, not the walk.
+  - Cleaning a225d85d8b off role branches by hand (BL-1670's reasoning: a
+    restore re-diverges at the next 3-way sync merge).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature`:
+     11 cases ok (scenarios 01-06, three rows of 07, two rows of 08).
+     Record the duration.
+  2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
+  3. From the QA checkout, with the parcel's land step, over the live
+     approved tip that carries a225d85d8b: prints `LAND_STRAY_SUPERSEDED
+     a225d85d8b` naming f729af01b9 in the reason, and no LAND_ESCALATE for
+     that stray. One run; record its wall time.
+  4. `git diff main...HEAD --name-only` names only the Scope files and
+     evidence.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-26 (inbound
+  00_20260926T014221Z_003242_from_QA), verbatim: "BL-1670 misses stray
+  a225d85d8b (BL-1699 rewrote it): every QA land escalates". QA evidence,
+  verbatim (BL-1764's instance): "Condition (g) covers a rewrite by any
+  later main commit; BL-1670 automated only the same-owner rewrite. So
+  every land from a branch carrying a225d85d8b (QA's does, and the
+  `--push` publish path never re-points it) pays a full walk (~20 min),
+  escalates, and needs this hand build." Parents: BL-1670, BL-1650,
+  BL-1546, BL-1241.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) while
+  completing QA's note, the same pass. The three facts (only the
+  `Last Updated:` line missing; f729af01b9 its main-side writer;
+  d51983e4a9 an ancestor of f729af01b9) were checked at mint with
+  `git show a225d85d8b`, `grep -qxF` per added line against origin/main,
+  and `git merge-base --is-ancestor`. The "after the owner's land" clause
+  keeps ground (c) from being trivially true: every main-side line is
+  written by some origin/main commit, so "landed" alone proves nothing.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Condition (g) stays the interim until this lands. The coordinator was
+  asked to promote it ahead (expedite lane, Article 3.2.4).
+
+  INVEST: Independent (BL-1679 shares a file, so they are sequenced by
+  orthogonality, not by dependency), Negotiable (fixture shapes and the
+  attribution helper are direction), Valuable (ends a guaranteed
+  escalation on every QA land), Estimable (one ground beside two landed
+  ones), Small (one function, three fixture rows), Testable (mkdtemp
+  fixtures plus one live run).
