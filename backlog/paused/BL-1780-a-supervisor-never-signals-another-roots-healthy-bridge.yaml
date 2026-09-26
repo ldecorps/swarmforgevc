@@ -26,7 +26,7 @@ acceptance: specs/features/BL-1780-a-supervisor-never-signals-another-roots-heal
 required_wiring:
   - 'specs/pipeline/steps/bl1780OtherRootsHealthyBridgeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A plain approve, with no choice posed. FIRM: when a healthy bridge
   serving a different project root holds this supervisor's bridge port,
