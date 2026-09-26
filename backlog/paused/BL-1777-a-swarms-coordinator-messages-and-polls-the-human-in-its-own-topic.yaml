@@ -25,7 +25,7 @@ acceptance: specs/features/BL-1777-a-swarms-coordinator-messages-and-polls-the-h
 required_wiring:
   - 'specs/pipeline/steps/bl1777CoordinatorNotifyAndRepliesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Stamp-off of an operator hotfix you authorised on 2026-09-26. What needs
   sign-off is the DISPOSITION only - that reviewing the landed diff (BL-848
