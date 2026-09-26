@@ -13,6 +13,18 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'standing_red_register_cli.bb');
 
+// BL-1766: standing_red_register_cli.bb with no --now reads the JVM's
+// LOCAL day (java.time.LocalDate/now), not UTC - Date#toISOString() is
+// always UTC, so a UTC-day "today" is wrong from local midnight to UTC
+// midnight (a whole hour during BST). Node's own local getters (which
+// respect TZ, exactly like the JVM does) give the same day the CLI reads.
+function localDay(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function write(root, relPath, content) {
   const full = path.join(root, relPath);
   fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -91,11 +103,18 @@ test('property (BL-1648 invariant 2) non-vacuity: distinct injected dates really
 });
 
 test('property (BL-1648 invariant 2): no date argument reads today (age 0 for a row first seen today)', () => {
-  const today = new Date().toISOString().slice(0, 10);
-  const root = buildFixture(today);
+  // Reads the local day before AND after the CLI call: a local midnight
+  // that falls inside this test's own run (the CLI now reads the next
+  // local day) is accepted as age 1, never a flake or a retry - anything
+  // else is a real invariant-2 violation.
+  const dayBefore = localDay();
+  const root = buildFixture(dayBefore);
   try {
     const report = JSON.parse(runCli(root, null).stdout.trim());
-    assert.equal(report.rows[0].age_days, 0);
+    const dayAfter = localDay();
+    const crossedMidnight = dayAfter !== dayBefore;
+    const expectedAge = crossedMidnight ? 1 : 0;
+    assert.equal(report.rows[0].age_days, expectedAge);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

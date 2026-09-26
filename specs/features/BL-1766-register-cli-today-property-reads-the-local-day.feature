@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c2bf4d39a2593f869ddcad6c22ef0782294323d74961b93e2d74506402e70d12
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-26T00:06:39.378824769Z","feature_name":"BL-1766 the register CLI's \"no date reads today\" property compares against the CLI's own local day","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1766-register-cli-today-property-reads-the-local-day.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the property passes on either side of the UTC date line","scenario_hash":"5e969a807badd3be7ed2f8a48c4d90a7eecf3f3f5f1e98c2b6a42e7d917281c1","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-26T00:06:39.378824769Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1766 the register CLI's "no date reads today" property compares against the CLI's own local day
   standing_red_register_cli.bb, given no --now, takes today from
   java.time.LocalDate/now, which is the local calendar day. The BL-1648
