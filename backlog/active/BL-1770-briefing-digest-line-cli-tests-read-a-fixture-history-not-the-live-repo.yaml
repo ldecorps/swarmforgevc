@@ -126,3 +126,5 @@ notes: |
   (fixture shape is direction), Valuable (one standing red and one 36 s
   pole gone), Estimable (three tests, one fixture), Small (one test file),
   Testable (the file's own run, BL-363's feature).
+
+assigned_to: coder
