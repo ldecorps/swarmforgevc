@@ -45,6 +45,19 @@
 (defn- mark-origin-main-here! [root]
   (sh! root "git" "update-ref" "refs/remotes/origin/main" (:out (sh! root "git" "rev-parse" "HEAD"))))
 
+;; Same exclude technique record-handoff! below already uses: `.swarmforge/`
+;; via `.git/info/exclude`, never gitignore'd content itself, never
+;; committed - so a fixture's own mailbox writes under `.swarmforge/`
+;; never register as an "uncommitted change" the way the real checkout's
+;; top-level `.gitignore` already prevents (BL-1421's own naming: the
+;; in_process guard is meant to be checked before dirty, not folded into
+;; it by an untracked mailbox file).
+(defn- exclude-swarmforge! [root]
+  (let [exclude-file (fs/path root ".git" "info" "exclude")]
+    (when-not (and (fs/exists? exclude-file) (str/includes? (slurp (str exclude-file)) ".swarmforge/"))
+      (fs/create-dirs (fs/parent exclude-file))
+      (spit (str exclude-file) "\n.swarmforge/\n" :append true))))
+
 ;; BL-1446: records a completed handoff for task-name citing commit - the
 ;; durable boundary last-handoff-commit reads back
 ;; (salvage-lib/latest-item-handoffs), same shape
@@ -2400,6 +2413,135 @@ RESOLVED BY THIS TICKET
       (assert= "post-land-repoint!: a parcel in in_process is never repointed"
                :skipped (:action result))
       (assert= "post-land-repoint!: names the reason"
+               "a parcel in its in_process" (:reason result)))))
+
+;; ── BL-1773: the landed ticket's own in_process parcel does not block ──────
+
+(with-fixture [root]
+  (exclude-swarmforge! root)
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))
+        in-process (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff"))
+          "type: git_handoff\ntask: BL-9001\n")
+    (let [result (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
+      (assert= "post-land-repoint! (BL-1773): a pending parcel naming the landed ticket does not block"
+               :repointed (:action result))
+      (assert= "post-land-repoint! (BL-1773): the branch tip now equals origin/main"
+               origin-main (:out (sh! root "git" "rev-parse" "HEAD"))))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [in-process (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    ;; Same shape as the landed ticket's own parcel above, but with no
+    ;; landed-task-ticket-id in view (an old caller, a hand-run repoint) -
+    ;; every pending file still blocks, unchanged.
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff"))
+          "type: git_handoff\ntask: BL-9001\n")
+    (let [result (land-step-lib/post-land-repoint! {:root root})]
+      (assert= "post-land-repoint! (BL-1773): with no landed ticket in view, the same parcel still blocks"
+               :skipped (:action result))
+      (assert= "post-land-repoint! (BL-1773): names the reason"
+               "a parcel in its in_process" (:reason result)))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [in-process (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    ;; A pending git_handoff naming a DIFFERENT ticket still blocks.
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff"))
+          "type: git_handoff\ntask: BL-9002\n")
+    (let [result (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
+      (assert= "post-land-repoint! (BL-1773): a pending parcel naming a different ticket still blocks"
+               :skipped (:action result))
+      (assert= "post-land-repoint! (BL-1773): names the reason"
+               "a parcel in its in_process" (:reason result)))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [in-process (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    ;; A pending note naming no ticket at all still blocks.
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff"))
+          "type: note\nmessage: hello\n")
+    (let [result (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
+      (assert= "post-land-repoint! (BL-1773): a pending note naming no ticket still blocks"
+               :skipped (:action result))
+      (assert= "post-land-repoint! (BL-1773): names the reason"
+               "a parcel in its in_process" (:reason result)))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [in-process (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    ;; The landed ticket's own parcel PLUS a second, unrelated one - the
+    ;; second file still blocks even though the first would not on its own.
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff"))
+          "type: git_handoff\ntask: BL-9001\n")
+    (spit (str (fs/path in-process "01_y_from_c_to_b_for_b.handoff"))
+          "type: note\nmessage: hello\n")
+    (let [result (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
+      (assert= "post-land-repoint! (BL-1773): a second pending parcel beside the landed one's own still blocks"
+               :skipped (:action result))
+      (assert= "post-land-repoint! (BL-1773): names the reason"
+               "a parcel in its in_process" (:reason result)))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [in-process (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    ;; TWO copies of what would each, alone, be the landed ticket's own
+    ;; parcel - the scope is narrow enough that a second file blocks even
+    ;; when it too names the landed ticket (an unexpected duplicate, never
+    ;; treated as "the same one parcel twice").
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff"))
+          "type: git_handoff\ntask: BL-9001\n")
+    (spit (str (fs/path in-process "01_y_from_c_to_b_for_b.handoff"))
+          "type: git_handoff\ntask: BL-9001\n")
+    (let [result (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
+      (assert= "post-land-repoint! (BL-1773): TWO copies of the landed ticket's own parcel still block"
+               :skipped (:action result))
+      (assert= "post-land-repoint! (BL-1773): names the reason"
+               "a parcel in its in_process" (:reason result)))))
+
+;; ── BL-1773 (amended 2026-09-26, QA spec gap 003254): the landed parcel's
+;; own registered sidecars are part of it ─────────────────────────────────
+
+(with-fixture [root]
+  (exclude-swarmforge! root)
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))
+        in-process (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    ;; The landed ticket's own parcel PLUS handoffd's claim-progress
+    ;; sidecar for that SAME file - QA's own in_process shape at land time.
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff"))
+          "type: git_handoff\ntask: BL-9001\n")
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff.claim-progress.json"))
+          "{}\n")
+    (let [result (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
+      (assert= "post-land-repoint! (BL-1773 amended): the landed parcel's own claim-progress sidecar does not block"
+               :repointed (:action result))
+      (assert= "post-land-repoint! (BL-1773 amended): the branch tip now equals origin/main"
+               origin-main (:out (sh! root "git" "rev-parse" "HEAD"))))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [in-process (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    ;; A claim-progress sidecar named for a DIFFERENT file - another
+    ;; parcel's, or an orphan - still blocks even beside the landed
+    ;; ticket's own parcel.
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff"))
+          "type: git_handoff\ntask: BL-9001\n")
+    (spit (str (fs/path in-process "01_y_from_c_to_b_for_b.handoff.claim-progress.json"))
+          "{}\n")
+    (let [result (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
+      (assert= "post-land-repoint! (BL-1773 amended): a sidecar named for a different parcel still blocks"
+               :skipped (:action result))
+      (assert= "post-land-repoint! (BL-1773 amended): names the reason"
                "a parcel in its in_process" (:reason result)))))
 
 ;; ── BL-1467 hardening: classify-repoint-candidate's "every path bookkeeping"
