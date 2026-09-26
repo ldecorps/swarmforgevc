@@ -1,0 +1,176 @@
+id: BL-1778
+title: "A driver seat's give-up (BL-1715) reverts only the attempt's own commits, the first-parent non-merge commits after its post-merge head, never the claim's merge of main or of the received commit and never a commit those merges brought in, so the seat's tree after a give-up is its post-merge tree and its next forward deletes nothing downstream"
+milestone: M8
+type: defect
+severity: medium
+# medium: latent. It fires only after a real give-up, which needs a stage
+# with a driver seat beside a Claude seat (BL-1702's mixed pack, not live),
+# and BL-1702 now depends on this ticket. When it fires it deletes content
+# downstream (the BL-490/BL-1348 revert-a-merge shape), so it is not low.
+epic: local-llm-swarm
+priority: 0
+direction: queue-jump
+depends_on: [BL-1715]
+# BL-1715 builds give-up! and is landing at QA (note 003266); this
+# corrects it. BL-1702 (the mixed pack) depends on this ticket.
+mutation_cost: low
+# low: one Babashka function and its docstrings (no mutation/CRAP/DRY
+# wired, BL-472), one replaced property test, one feature over BL-1715's
+# fixture, a scenario retired from BL-1715's feature, two doc edits.
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1778-a-give-up-reverts-only-the-attempts-own-commits.feature
+
+retires:
+  - specs/features/BL-1715-a-driver-seat-that-fails-a-parcel-hands-it-to-its-stages-claude-seat.feature
+  - specs/pipeline/steps/bl1715DriverSeatGiveUpSteps.js
+  - extension/test/bl1715DriverSeatGiveUp.property.test.js
+  - docs/how-to/BL-1697-local-parcel-driver.md
+
+# Handler pin only (BL-233, BL-1371). The consumer, give-up! in
+# local_parcel_driver_lib.bb, exists before the fix, so an anchor there
+# matches before and after and gates nothing (BL-1235); the feature drives
+# the real give-up over fixture repos, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1778GiveUpKeepsClaimMergesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Approved at mint under the queue-jump convention (STEERING.md: minted
+  children of the local-Ollama remaining slices land queue-jump and
+  approved), the same basis as BL-1715, which it corrects. The human's
+  choice in BL-1715 ("Hand it to Claude coder") is unchanged. FIRM: a
+  give-up reverts only the commits the attempt itself made after the
+  claim's merges, by git revert and never reset. It never reverts a merge
+  commit and never reverts a commit reachable from the post-merge head.
+  FIRM: after a give-up the seat's tree equals its tree at the post-merge
+  head. This replaces BL-1715's FIRM wording "its next parcel starts on
+  its pre-claim tree", which was the specifier's own phrase, not the
+  human's.
+
+invariants:
+  - "A give-up reverts exactly the attempt's own first-parent non-merge commits after the post-merge head, newest first, and reverts no merge commit and no commit reachable from the post-merge head."
+  - "After a give-up, merging the seat's branch into any branch that already holds the claim's main and received commit changes no file."
+
+description: |
+  ## What is wanted
+
+  QA found this while approving BL-1715 (note 003266, evidence
+  d6a2e0244f). `start-ticket-parcel!` reads `pre-claim-head` BEFORE its
+  optional `Merge main` and the `merge <sender> <commit>`, and `give-up!`
+  reverts everything since that head. The specifier checked the code on
+  the QA branch at mint. The defect is wider than the note says:
+  `commit-shas-since` is `git log <pre-claim>..HEAD` with no
+  `--first-parent`. So besides reverting the two merge commits with
+  `-m 1`, it also reverts, one by one, every commit those merges brought
+  in: main's commits, and the sender's commits when the merge
+  fast-forwards. A reverted merge makes git treat its content as merged
+  and removed, so the seat's next claim does not get it back, and its
+  next forward carries the reverts downstream, where a merge deletes
+  that content (BL-490/BL-1348).
+
+  1. **Revert only the attempt's own work.** A give-up reverts the
+     first-parent, non-merge commits after the post-merge head (already
+     persisted in the driver state as `postMergeHead` since BL-1698's
+     resumable merge), newest first, with `git revert`. It never resets,
+     never reverts a merge commit, and never reverts anything reachable
+     from the post-merge head. A fast-forwarded received commit is part
+     of the post-merge head, so it is kept.
+  2. **The tree after a give-up is the post-merge tree.** Main's content
+     and the received commit's content stay in the seat's branch, exactly
+     as after any ordinary claim. The seat's next forward then carries
+     only net-zero commit/revert pairs of its own work.
+  3. **Outcome row unchanged.** One `given-up` row per give-up (BL-1715
+     requirement 4). It moves here from BL-1715's retired scenario 03,
+     which asserted the pre-claim tree.
+  4. **Retire what pinned the old contract.** In BL-1715's feature, retire
+     scenario 03 ("the local seat's tree after the give-up matches its
+     tree before the claim"): retire it, never reword it. Remove its two
+     scoped handlers from `bl1715DriverSeatGiveUpSteps.js`; no other
+     scenario uses them (grep every `.feature` first). Replace the
+     tree-half property in `bl1715DriverSeatGiveUp.property.test.js` (it
+     asserts the exact pre-claim tree across chains that include merges,
+     which pins the defect) with one that covers invariants 1 and 2 over
+     generated claims (no main merge or a main merge; the received commit
+     merged as a merge commit or as a fast-forward) and generated
+     attempt chains.
+
+  ## How (direction, not mandate)
+  - `git rev-list --first-parent --no-merges <postMergeHead>..HEAD`
+    names the attempt's own commits. A merge the attempt itself made
+    mid-attempt keeps its content: it is main or side content, not the
+    attempt's work.
+  - `preClaimHead` may stay in the state for the outcome row or go; the
+    coder's call. Rename `revert-to-pre-claim!` if its name now misleads.
+  - Build the fixture for scenario 01's fast-forward row so the received
+    commit really is ahead of the seat's head. In BL-1715's fixture the
+    claim merge brought no change, which is why its scenario 03 passed on
+    the defect.
+
+  ## Scope
+  - `swarmforge/scripts/local_parcel_driver_lib.bb` (the revert
+    function, `give-up!`, and their docstrings).
+  - The feature, `specs/pipeline/steps/bl1778GiveUpKeepsClaimMergesSteps.js`,
+    and its registration.
+  - The `retires:` paths: BL-1715's feature (scenario 03), its step file
+    (the two orphaned handlers), its property test (the tree half), and
+    BL-1697's how-to (the give-up paragraph, near its line 131).
+  - `docs/diagrams/handoff-flow.mmd`: the give-up comment (lines 44-45)
+    and the DGIVEUP node say "pre-claim". This is a registered diagram
+    whose change-trigger fires, so the edit is part of this parcel.
+
+  ## Not in scope
+  - A `git revert` that exits non-zero. Once only the attempt's own
+    first-parent commits are reverted, a conflict needs a commit that is
+    not the attempt's own. If one is ever seen, that is a new ticket.
+  - Which tickets the local seat claims, the never-again rule, and the
+    requeue (BL-1715, unchanged).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1778-a-give-up-reverts-only-the-attempts-own-commits.feature`:
+     all ok (5 of 5: three outline rows, 02, 03).
+  2. The BL-1715 feature: all ok, and scenario 03 is gone (4 of 4). The
+     BL-1697 and BL-1698 features are also all ok, since they share the
+     driver lib.
+  3. The replaced property in `extension/test/bl1715DriverSeatGiveUp.property.test.js`
+     is green in `npm run test:properties`, and its generator reaches
+     both a main merge and a fast-forwarded received commit (the test
+     asserts this reach).
+  4. `git diff main...HEAD --name-only` names only the Scope files, the
+     feature, the handler, docs and evidence.
+  The live test remains BL-1702's canary, the operator's act.
+
+source: |
+  QA note 003266 (2026-09-26 10:04Z), verbatim: "BL-1715 give-up revert
+  -m 1 of merges ships downstream; see d6a2e0244f". QA's evidence
+  d6a2e0244f, "Observation, not a defect of this parcel", ends: "It fires
+  only after a real give-up, which needs the BL-1702 mixed pack (not
+  live), so this is a follow-up for the specifier before BL-1702
+  promotes, not a hold on this parcel."
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) from QA note
+  003266, the same pass. The specifier read the code on swarmforge-QA
+  at mint (local_parcel_driver_lib.bb: start-ticket-parcel! reads
+  pre-claim-head at its first let, and commit-shas-since is a plain
+  `git log <since>..HEAD`). That code widened the finding from QA's two
+  merge commits to every commit the merges brought in. BL-1702's
+  depends_on gains BL-1778 in the same commit. The cause is the
+  specifier's own FIRM wording in BL-1715 ("so its next parcel starts on
+  its pre-claim tree"), which the coder built literally. A FIRM line that
+  names a tree must name the right base.
+  IR-DRY: four possible-synonym findings, all kept. "the driver finishes"
+  vs "the driver has finished" is action vs setup (scenario 02's action
+  is the downstream merge). The other three are the outline's
+  `<claim merge>` step against its own concrete values in scenarios
+  02/03, one handler regex.
+  Freshness: deprecate-check was run after the last edit.
+
+  INVEST: Independent (depends only on BL-1715 landing), Negotiable (the
+  rev-list form and the function name are direction), Valuable (the
+  mixed pack's give-up stops shipping deletions downstream), Estimable
+  (one function over persisted state), Small (three scenarios, two
+  invariants), Testable (fixture repos driven through the real give-up,
+  plus one property).

@@ -6,7 +6,7 @@ status: todo
 epic: local-llm-swarm
 priority: 0
 direction: queue-jump
-depends_on: [BL-1698, BL-1699, BL-1700, BL-1701, BL-1715]
+depends_on: [BL-1698, BL-1699, BL-1700, BL-1701, BL-1715, BL-1778]
 mutation_cost: low
 # low (for the recommended branch): one pack conf, one small launch-path
 # check, a runbook; the Gherkin mutation gate runs static roster and gate
