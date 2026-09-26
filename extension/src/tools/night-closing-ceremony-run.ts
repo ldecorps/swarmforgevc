@@ -139,60 +139,44 @@ function briefingSent(target: string, dayKey: string): boolean {
 // Hotfix 2026-09-16: `rotate_to_role.sh documenter` is the resident-invoked
 // rotation entry (handoff_lib.bb's respawn-as!, BL-805) - it REFUSES
 // (nonzero exit) when the resident holds a real, undrained in_process
-// parcel, exactly the normal case while the ceremony fires mid-work. The
-// old fallback (a plain note to coordinator) is inert: coordinator cannot
-// respawn a pane it does not own, so documenter never got a live session
-// and the briefing was silently never written (observed live 2026-09-15:
-// "rotate-documenter" -> "briefing-missing" -> "swarm-stopped" in one
-// ceremony run, no chase-rotate/consult-spawn event for documenter that
-// whole night). The real fallback: spawn documenter's OWN ephemeral
-// session via consult_spawn_cli.bb - never touches the resident, and
-// tears itself down via the already-certified consult-teardown-sweep!
-// once documenter goes idle with nothing left pending. BL-1752
-// (2026-09-26) removed handoffd.bb's own automatic use of this same
-// mechanism on chase's departing-mid-parcel refusal ("mono-router = one
-// resident"); this on-demand ceremony call is unaffected - it never went
-// through that removed path. Exported
-// separately from buildRealDeps so a test can drive it directly against a
-// fixture without mocking execFileSync.
-export function spawnConsultDocumenter(target: string): void {
-  const cli = path.join(target, 'swarmforge', 'scripts', 'consult_spawn_cli.bb');
-  if (!fs.existsSync(cli)) {
-    // Fixture roots may lack scripts — same degrade-quietly posture as
-    // sendHandoffNote's own missing-script branch.
-    return;
-  }
-  try {
-    execFileSync('bb', [cli, target, 'documenter', 'coordinator'], {
-      cwd: target,
-      stdio: 'pipe',
-    });
-  } catch {
-    // Best-effort: a spawn refusal (no-such-role, no-launch-script, an
-    // already-active marker) is not this caller's decision to escalate -
-    // the CLI's own stdout already named the reason for a human reading
-    // the ceremony's process output.
-  }
-}
-
+// parcel, exactly the normal case while the ceremony fires mid-work.
+//
+// BL-1753 (2026-09-26, the human's ruling B): a refused rotate is retried
+// ONCE with SWARMFORGE_ROTATE_FORCE=1 (handoff_lib.bb's own documented
+// override) instead of spawning documenter's own second session beside
+// the resident (the removed fallback - "mono-router = one resident",
+// same ruling BL-1752 already applied to the chase). The parcel the
+// resident held stays in its own role's in_process untouched - the force
+// override rotates the PANE, never touches that mailbox - and resumes
+// next time that role is played (ready_for_next.sh checks in_process
+// first). If even the forced rotate fails (no session, no launch
+// script), this function does nothing further: BL-1641's own
+// hard-deadline path (ensure-briefing, the loud closing-briefing-missing,
+// night-stop) is the unchanged safety net. No note to coordinator either
+// (dropped, not kept - coordinator cannot respawn a pane it does not own,
+// so the old note was inert whether or not a session followed it, and
+// the forced rotate above either already did the job or BL-1641 will).
 export function rotateDocumenter(target: string): void {
   const rotate = path.join(target, 'swarmforge', 'scripts', 'rotate_to_role.sh');
-  if (fs.existsSync(rotate)) {
+  if (!fs.existsSync(rotate)) {
+    return;
+  }
+  const run = (force: boolean): boolean => {
     try {
       execFileSync('bash', [rotate, 'documenter'], {
         cwd: target,
-        env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' },
+        env: { ...process.env, SWARMFORGE_ROLE: 'coordinator', ...(force ? { SWARMFORGE_ROTATE_FORCE: '1' } : {}) },
         stdio: 'pipe',
       });
-      return;
+      return true;
     } catch {
-      // fall through - the resident refused (mid-parcel, most commonly),
-      // so get documenter its own ephemeral session instead of leaving it
-      // stuck behind an inert note.
+      return false;
     }
+  };
+  if (run(false)) {
+    return;
   }
-  spawnConsultDocumenter(target);
-  sendHandoffNote(target, 'coordinator', 'BL-658: rotate resident to documenter for morning briefing');
+  run(true);
 }
 
 export function sendHandoffNote(target: string, to: string, message: string): void {
@@ -374,7 +358,7 @@ const GIT_PATH_ABSENT_FROM_MAIN_PATTERN = /fatal: path ['"].*['"] does not exist
 // unrecognised) reads as true (main might already have it, so no write
 // happens).
 // Exported separately from buildRealDeps (same precedent as
-// spawnConsultDocumenter above) so a test can drive the fail-open/
+// rotateDocumenter above) so a test can drive the fail-open/
 // fail-closed distinction directly against a real git fixture, without
 // needing a full commit_integrity_cli.bb-writing pipeline just to observe
 // this guard's own decision.

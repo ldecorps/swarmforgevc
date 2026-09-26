@@ -1,146 +1,99 @@
 'use strict';
 
-// Hotfix 2026-09-16: rotateDocumenter's real IO wiring (buildRealDeps' own
-// function, extracted as an exported rotateDocumenter/spawnConsultDocumenter
-// pair) had ZERO test coverage before this - every existing test in this
-// directory injects a FAKE rotateDocumenter to exercise the pure state
-// machine, never the real one. That gap is exactly how the bug shipped:
-// live 2026-09-15, `rotate_to_role.sh documenter` was refused (the resident
-// held a real undrained parcel, BL-805's respawn-as! gate, exit 5 - the
-// normal case while the ceremony fires mid-work), the old fallback sent an
-// inert note to coordinator (which cannot respawn a pane it does not own),
-// and documenter never got a live session - "rotate-documenter" ->
-// "briefing-missing" -> "swarm-stopped" in one ceremony run, nothing wrote
-// the briefing.
+// Hotfix 2026-09-16 (rewritten BL-1753, 2026-09-26): rotateDocumenter's real
+// IO wiring (buildRealDeps' own function) had ZERO test coverage before the
+// hotfix - every existing test in this directory injects a FAKE
+// rotateDocumenter to exercise the pure state machine, never the real one.
+// That gap is exactly how the bug shipped: live 2026-09-15, `rotate_to_role.sh
+// documenter` was refused (the resident held a real undrained parcel,
+// BL-805's respawn-as! gate, exit 5 - the normal case while the ceremony
+// fires mid-work), the old fallback sent an inert note to coordinator (which
+// cannot respawn a pane it does not own), and documenter never got a live
+// session.
 //
-// This test drives the REAL rotateDocumenter/spawnConsultDocumenter against
-// a real fixture: a stub rotate_to_role.sh that always exits 5 (the exact
-// respawn-as! refusal), the REAL consult_spawn_cli.bb, and a fake tmux on
-// PATH - end to end, no mocking of execFileSync itself, same posture as
-// test_consult_spawn_cli.sh's own fixture on the bb side.
+// BL-1753 (the human's ruling B, 2026-09-25 - "mono-router = one resident"):
+// the fallback is no longer a second session beside the resident
+// (spawnConsultDocumenter, deleted) - a refused rotate is retried ONCE with
+// SWARMFORGE_ROTATE_FORCE=1 instead. This test drives the REAL
+// rotateDocumenter against a stub rotate_to_role.sh that mirrors
+// handoff_lib.bb's real refuse-unless-forced contract (exit 5 unless the
+// force env var is "1"), logging every invocation's role and force flag so
+// the retry sequence itself - not just the final outcome - is observable.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { rotateDocumenter, spawnConsultDocumenter } = require('../out/tools/night-closing-ceremony-run');
+const { rotateDocumenter } = require('../out/tools/night-closing-ceremony-run');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 
-function makeFixture() {
+function makeFixture(rotateScript) {
   const root = mkTmpDir('ncc-rotate-fallback-');
-  const docWt = path.join(root, 'wt-documenter');
-  fs.mkdirSync(path.join(docWt, '.swarmforge', 'handoffs', 'inbox', 'new'), { recursive: true });
-  fs.mkdirSync(path.join(docWt, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
-  fs.mkdirSync(path.join(root, '.swarmforge', 'launch'), { recursive: true });
-  fs.mkdirSync(path.join(root, '.swarmforge', 'daemon', 'consult'), { recursive: true });
-
-  fs.writeFileSync(
-    path.join(root, '.swarmforge', 'roles.tsv'),
-    `documenter\tdocumenter\t${docWt}\tswarmforge-documenter\tDocumenter\tclaude\ttask\n`
-  );
-  fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), path.join(root, 'fake.sock'));
-  fs.writeFileSync(path.join(root, 'fake.sock'), '');
-  fs.writeFileSync(path.join(root, '.swarmforge', 'launch', 'documenter.sh'), '#!/bin/sh\nexit 0\n', {
+  fs.mkdirSync(path.join(root, 'swarmforge', 'scripts'), { recursive: true });
+  const rotateLog = path.join(root, 'rotate-calls.log');
+  fs.writeFileSync(rotateLog, '');
+  fs.writeFileSync(path.join(root, 'swarmforge', 'scripts', 'rotate_to_role.sh'), rotateScript(rotateLog), {
     mode: 0o755,
   });
+  return { root, rotateLog };
+}
 
-  // The REAL consult_spawn_cli.bb, copied in alongside its DERIVED .bb
-  // dependency closure (BL-1038) - never the whole live scripts directory,
-  // which grows with every unrelated script the repo ever gains - same
-  // "confirm the real wiring" posture as importing the real compiled
-  // night-closing-ceremony-run.js above. rotate_to_role.sh is deliberately
-  // NOT part of this - it is a .sh file, written fresh below as this
-  // fixture's own stub.
-  copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), ['consult_spawn_cli.bb']);
-
-  // A stub rotate_to_role.sh that always exits 5 - the exact respawn-as!
-  // :refuse exit code (handoff_lib.bb) for a resident with a real,
-  // undrained in_process parcel and a different target role.
-  fs.writeFileSync(path.join(root, 'swarmforge', 'scripts', 'rotate_to_role.sh'), '#!/bin/sh\nexit 5\n', {
-    mode: 0o755,
-  });
-
-  const fakeBin = path.join(root, 'bin');
-  fs.mkdirSync(fakeBin, { recursive: true });
-  const tmuxLog = path.join(root, 'tmux-calls.log');
-  const tmuxStateDir = path.join(root, 'tmux-state');
-  fs.mkdirSync(tmuxStateDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(fakeBin, 'tmux'),
-    `#!/usr/bin/env bash
-args=("$@")
-if [[ "\${args[0]:-}" == "-S" ]]; then
-  sub="\${args[2]:-}"
-  case "$sub" in
-    has-session)
-      name="\${args[4]:-}"
-      [[ -f "${tmuxStateDir}/$name.exists" ]] && exit 0
-      exit 1
-      ;;
-    new-session)
-      printf '%s\\n' "\${args[*]}" >> "${tmuxLog}"
-      name="\${args[5]:-}"
-      touch "${tmuxStateDir}/$name.exists"
-      exit 0
-      ;;
-    *)
-      printf '%s\\n' "\${args[*]}" >> "${tmuxLog}"
-      exit 0
-      ;;
-  esac
+// Every stub also logs SWARMFORGE_ROLE (BL-1753 hardener pass, 2026-09-26:
+// closes a Stryker Survived gap - the 'coordinator' literal in
+// rotateDocumenter's own env construction had no assertion anywhere) so
+// every call's actor identity is observable, not just role/force.
+//
+// Mirrors handoff_lib.bb's rotate-force-override? contract exactly: refuses
+// (exit 5, BL-805's respawn-as! code) unless SWARMFORGE_ROTATE_FORCE is "1".
+const REFUSE_UNLESS_FORCED = (rotateLog) => `#!/bin/sh
+printf 'role=%s force=%s actor=%s\\n' "$1" "\${SWARMFORGE_ROTATE_FORCE:-}" "\${SWARMFORGE_ROLE:-}" >> "${rotateLog}"
+if [ "\${SWARMFORGE_ROTATE_FORCE:-}" = "1" ]; then
+  exit 0
 fi
-echo "unexpected tmux invocation: $*" >&2
-exit 1
-`,
-    { mode: 0o755 }
-  );
-  fs.writeFileSync(tmuxLog, '');
+exit 5
+`;
 
-  return { root, tmuxLog, fakeBin };
-}
+const ALWAYS_SUCCEEDS = (rotateLog) => `#!/bin/sh
+printf 'role=%s force=%s actor=%s\\n' "$1" "\${SWARMFORGE_ROTATE_FORCE:-}" "\${SWARMFORGE_ROLE:-}" >> "${rotateLog}"
+exit 0
+`;
 
-function withFakeTmuxOnPath(fakeBin, fn) {
-  const prevPath = process.env.PATH;
-  process.env.PATH = `${fakeBin}:${prevPath}`;
-  try {
-    return fn();
-  } finally {
-    process.env.PATH = prevPath;
-  }
-}
+const ALWAYS_REFUSES = (rotateLog) => `#!/bin/sh
+printf 'role=%s force=%s actor=%s\\n' "$1" "\${SWARMFORGE_ROTATE_FORCE:-}" "\${SWARMFORGE_ROLE:-}" >> "${rotateLog}"
+exit 5
+`;
 
-test('a refused rotation spawns documenter its own ephemeral session', () => {
-  const { root, tmuxLog, fakeBin } = makeFixture();
-  withFakeTmuxOnPath(fakeBin, () => {
-    rotateDocumenter(root);
-  });
-  const marker = path.join(root, '.swarmforge', 'daemon', 'consult', 'documenter.json');
-  assert.ok(fs.existsSync(marker), 'expected a consult marker for documenter after a refused rotation');
-  const markerBody = JSON.parse(fs.readFileSync(marker, 'utf8'));
-  assert.equal(markerBody.role, 'documenter');
-  assert.equal(markerBody.requested_by, 'coordinator');
-  const calls = fs.readFileSync(tmuxLog, 'utf8');
-  assert.match(calls, /new-session/, 'expected a real new-session tmux call, not a silent no-op');
-  assert.doesNotMatch(calls, /respawn-pane/, 'never a create-then-respawn sequence');
-});
-
-test('a successful direct rotation never triggers a consult spawn', () => {
-  const { root, tmuxLog } = makeFixture();
-  fs.writeFileSync(path.join(root, 'swarmforge', 'scripts', 'rotate_to_role.sh'), '#!/bin/sh\nexit 0\n', {
-    mode: 0o755,
-  });
+test('a refused rotation is retried once with SWARMFORGE_ROTATE_FORCE=1, never a second session', () => {
+  const { root, rotateLog } = makeFixture(REFUSE_UNLESS_FORCED);
   rotateDocumenter(root);
-  const marker = path.join(root, '.swarmforge', 'daemon', 'consult', 'documenter.json');
-  assert.ok(!fs.existsSync(marker), 'no consult marker when the direct rotation already succeeded');
-  assert.equal(fs.readFileSync(tmuxLog, 'utf8'), '', 'no tmux calls at all on the happy path');
+  const calls = fs.readFileSync(rotateLog, 'utf8').trim().split('\n');
+  assert.deepEqual(
+    calls,
+    ['role=documenter force= actor=coordinator', 'role=documenter force=1 actor=coordinator'],
+    'expected exactly one plain call then one forced retry, both acting as coordinator'
+  );
+  assert.ok(!fs.existsSync(path.join(root, '.swarmforge', 'daemon', 'consult', 'documenter.json')), 'no consult marker is ever written');
 });
 
-test('spawnConsultDocumenter is independently exercised, not only reachable via rotateDocumenter', () => {
-  const { root, tmuxLog, fakeBin } = makeFixture();
-  withFakeTmuxOnPath(fakeBin, () => {
-    spawnConsultDocumenter(root);
-  });
-  const marker = path.join(root, '.swarmforge', 'daemon', 'consult', 'documenter.json');
-  assert.ok(fs.existsSync(marker), 'spawnConsultDocumenter alone writes the consult marker');
-  assert.match(fs.readFileSync(tmuxLog, 'utf8'), /new-session/, 'spawnConsultDocumenter alone calls tmux');
+test('a successful direct rotation is never retried with force', () => {
+  const { root, rotateLog } = makeFixture(ALWAYS_SUCCEEDS);
+  rotateDocumenter(root);
+  const calls = fs.readFileSync(rotateLog, 'utf8').trim().split('\n');
+  assert.deepEqual(calls, ['role=documenter force= actor=coordinator'], 'expected exactly one plain call, no retry');
 });
+
+test('a rotate refused even under force does nothing further (BL-1641 is the safety net)', () => {
+  const { root, rotateLog } = makeFixture(ALWAYS_REFUSES);
+  assert.doesNotThrow(() => rotateDocumenter(root));
+  const calls = fs.readFileSync(rotateLog, 'utf8').trim().split('\n');
+  assert.deepEqual(
+    calls,
+    ['role=documenter force= actor=coordinator', 'role=documenter force=1 actor=coordinator'],
+    'expected the plain call and exactly one forced retry, nothing more'
+  );
+});
+
+// The missing-rotate_to_role.sh branch is deliberately NOT a fourth test
+// here: BL-1593's own frozen acceptance gate
+// (bl1593CeremonyFallbackTestTmpDirSteps.js scenario 04) asserts this
+// file's own `npx vitest run` output literally contains "3 passed" -
+// covered instead in the sibling file below, which BL-1593 does not pin.
