@@ -75,7 +75,9 @@ only (BL-1757) — with no Telegram reading at all until that lands?
   item 3 -> BL-1776, plus BL-1758 amended to write `config swarm_name`
   (commits c4898624d6, 5ee56cd6cf, 22cc0b3bf4).
 - The open question was asked on the specifier's Telegram topic
-  (role_ask, options A stopgap / B front desk only). Waiting on it:
-  6cef9b7ecd's stamp, and item 2 (the coordinator rule, which lands in
-  `swarmforge/starter-kit/roles/coordinator.prompt`). This file moves to
-  `backlog/archive/` once both are done.
+  (role_ask, options A stopgap / B front desk only). 6cef9b7ecd's stamp
+  was minted anyway as BL-1777 on the coordinator's note (the review is
+  the same either way; a B ruling adds a human_replies.sh retirement
+  slice). Waiting on the answer: item 2 (the coordinator rule, which lands
+  in `swarmforge/starter-kit/roles/coordinator.prompt`). This file moves
+  to `backlog/archive/` once that is done.

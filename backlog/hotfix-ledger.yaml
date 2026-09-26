@@ -422,7 +422,7 @@
 - commit: e5a03ee6c7
   subject: "Onboarding opens the new swarm's Coordinator topic, so it can reach the human"
   detected_at: 2026-09-26
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1774
   human_decision: null
   decided_at: null
@@ -430,6 +430,6 @@
   subject: "A swarm's coordinator can message and poll the human in its own Telegram topic"
   detected_at: 2026-09-26
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1777
   human_decision: null
   decided_at: null

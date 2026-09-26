@@ -1,0 +1,156 @@
+id: BL-1777
+title: "Swarm stamp-off: hotfix 6cef9b7ecd - the engine ships notify_human.sh (a message, or a poll for a multiple-choice ruling, to the swarm's Coordinator topic) and human_replies.sh (the principal's replies and poll votes there, --peek, refuses while a front desk runs), both taking bot credentials only from the swarm's own fleet file - review-only certification (BL-848) of what landed on 2026-09-26"
+milestone: M8
+type: defect
+severity: medium
+# medium: the behaviour is live on main and running on gpu-bargain-hunter;
+# what is open is the review the constitution owes a hotfix (BL-848). Not
+# high: nothing is broken while the review waits.
+status: todo
+epic: onboarding-target-repo
+priority: 3
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: review-only; bash + inline node, no mutation/CRAP/DRY wired
+# (BL-472). One step handler drives the real scripts through the
+# TELEGRAM_API_BASE / SWARMFORGE_FLEET_HOME seams the hotfix's own test uses.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1777-a-swarms-coordinator-messages-and-polls-the-human-in-its-own-topic.feature
+
+# A review parcel adds no production call site. The handler entry is the
+# BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1777CoordinatorNotifyAndRepliesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Stamp-off of an operator hotfix you authorised on 2026-09-26. What needs
+  sign-off is the DISPOSITION only - that reviewing the landed diff (BL-848
+  posture) rather than re-implementing it is right. FIRM: the parcel
+  changes no production file, only evidence, the feature's step handler
+  (plus lib/ helpers) and tests; a confirmed finding from the probes in
+  review goal 3 is a narrow follow-up via note to the specifier, never an
+  in-parcel rewrite; the parcel never writes human_decision into
+  backlog/hotfix-ledger.yaml. Separate from this sign-off: your answer on
+  the specifier topic (keep the human_replies.sh stopgap, or front desk
+  only) decides whether human_replies.sh stays; see notes.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, the feature, its step handler (plus lib/ helpers) or a test file; notify_human.sh and human_replies.sh are read, never edited."
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This is that gate: a REVIEW ticket - confirm or refute, and open narrow
+  follow-ups for anything found.
+
+  ## The failure it fixed (from the commit message)
+
+  A newly onboarded swarm has no front desk, so its coordinator had no way
+  to reach the human. gpu-bargain-hunter's coordinator sat blocked on a
+  human-only decision, with the request visible only in its tmux pane
+  (2026-09-26).
+
+  ## What landed (files to review)
+
+  - `swarmforge/scripts/notify_human.sh`: posts to the Coordinator topic
+    (`role-topic-map.json`, opened by onboarding since e5a03ee6c7); `--poll`
+    sends a non-anonymous poll (question <= 300 chars, 2-10 options of
+    <= 100) and keeps the option texts by poll id in
+    `.swarmforge/operator/human-polls.json`.
+  - `swarmforge/scripts/human_replies.sh`: prints the principal's new
+    messages in that topic and their poll votes, marks them read through
+    `human-replies-offset.json`; `--peek` marks nothing; exits 3 while
+    `.swarmforge/operator/front-desk-supervisor.pid` is alive.
+  - Both read the bot token and chat only from
+    `~/.swarmforge/fleet/<swarm_name>/telegram.json` (swarm name from
+    `.swarmforge/swarm-identity`), never the env - the same ~/.zshenv
+    leak BL-1775 fixes at the launch boundary.
+  - `swarmforge/scripts/test/test_notify_human_and_replies.sh` (standing
+    lane, 16 checks) and its `suite-manifest.tsv` row.
+
+  ## Review goals
+
+  1. Scenarios 01-05 green against the real scripts and a fake Bot API.
+  2. `bash swarmforge/scripts/test/test_notify_human_and_replies.sh`: ALL
+     PASS on the parcel commit (re-run; do not rewrite unless a finding
+     says the suite is wrong).
+  3. PROBE, do not fix - each confirmed finding is one note to the
+     specifier:
+     a. The front-desk guard is a pid-file liveness check. During a
+        front-desk restart (stale pid), a run acknowledges every pending
+        update through the offset. Does that lose the human's messages
+        outside the Coordinator topic, or Approve taps, that the restarted
+        front desk would have read? Answer from the Bot API's documented
+        getUpdates behaviour (offset confirmation, allowed_updates, which
+        telegramClient.ts:645 already pins for the front desk) plus one
+        fake-API run.
+     b. With no `.swarmforge/swarm-identity`, both scripts fall back to the
+        swarm name `primary`. Run from the primary root with its front
+        desk down, is that the behaviour wanted, or should the primary
+        refuse?
+     c. `human-polls.json` and the offset file are written with a plain
+        `writeFileSync`, not an atomic write. Is a torn write reachable
+        (two coordinators, a kill mid-write), and what does the next read
+        do with it?
+
+  ## How (direction, not mandate)
+
+  - Drive the scripts as subprocesses from a mkdtemp swarm root with
+    `SWARMFORGE_FLEET_HOME` and `TELEGRAM_API_BASE` pointing at a local
+    fake server, as the hotfix's own shell test does (BL-1390: never the
+    live `.swarmforge/operator/`, never a real token).
+
+constraints: >
+  Fixture roots and homes are mkdtemp directories (BL-1390). No real bot
+  token and no network. The parcel does not edit either script.
+
+out_of_scope: |
+  Fixing the launch-boundary leak (BL-1775), the Coordinator topic itself
+  (BL-1774), the starter kit's coordinator rule that teaches these scripts
+  (BL-1758 notes, specifier-owned prose), retiring human_replies.sh (only
+  if the human rules B, see notes), and writing human_decision into the
+  hotfix ledger.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1777-a-swarms-coordinator-messages-and-polls-the-human-in-its-own-topic.feature`:
+     seven cases ok (01, 02, 03 x3, 04, 05). Record the duration.
+  2. `bash swarmforge/scripts/test/test_notify_human_and_replies.sh`: ALL PASS.
+  3. Read the architect's and hardener's evidence for review goal 3's
+     three probe answers; every confirmed finding names its follow-up
+     note.
+  4. `git diff main...HEAD --name-only` names only evidence, the feature's
+     handler (plus lib/ helpers) and test files.
+
+source: |
+  backlog/INTAKE-second-swarm-telegram-line-to-the-human-20260926.md
+  (operator via Claude Code, commits a5cb9d29fb and 85e42786db), which
+  quotes the human verbatim (Article 5.3): "gbh swarm needs me but it's
+  not surfacing anything on telegram. Onboarding should at a minimum
+  create a topic for the coordinator to use" and "can you fix the
+  onboarding process to not do the same mistake next time?"
+  Hotfix 6cef9b7ecd (Hotfix-Certification: pending, ledger 619590679f).
+  Coordinator note 012256 (2026-09-26): "hotfix 6cef9b7ecd has no stamp
+  ticket - mint review ticket".
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) on the
+  coordinator's note, while the human's answer to the intake's open
+  question (A: keep the human_replies.sh stopgap until a target's front
+  desk runs; B: front desk only) was still pending. The review is the
+  same either way: both scripts are live now and run on
+  gpu-bargain-hunter. If the human rules B, the specifier mints the
+  retirement of human_replies.sh as its own slice and amends this ticket
+  (while paused) to review notify_human.sh only; if A, nothing here
+  changes. Sibling tickets from the same intake: BL-1774, BL-1775,
+  BL-1776.
+
+  INVEST: Independent (review of landed code), Negotiable (handler shape
+  is direction), Valuable (the hotfix gets its gate; three live-risk
+  probes answered), Estimable (two scripts, a fake API the hotfix's test
+  already has), Small, Testable (fixture root, fleet home and fake API).
