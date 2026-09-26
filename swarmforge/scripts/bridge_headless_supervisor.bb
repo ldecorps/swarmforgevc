@@ -38,7 +38,13 @@
 (def bridge-log-file (fs/path op-dir "bridge-headless.log"))
 (def token-file (fs/path op-dir "bridge-token"))
 
-(def bridge-entrypoint (fs/path project-root "extension" "out" "tools" "start-bridge-headless.js"))
+;; BRIDGE_ENTRYPOINT (set by start_bridge_headless.sh) lets a project with no
+;; extension/ build of its own (an onboarded project) fall back to the
+;; primary swarm's compiled bridge, which is parameterized entirely by the
+;; project-root arg it's launched with.
+(def bridge-entrypoint
+  (or (System/getenv "BRIDGE_ENTRYPOINT")
+      (str (fs/path project-root "extension" "out" "tools" "start-bridge-headless.js"))))
 
 (defn env-long [name default]
   (or (some-> (System/getenv name) parse-long) default))

@@ -7,6 +7,14 @@
 # Env: BRIDGE_TOKEN from .swarmforge/operator/bridge-token (auto-provisioned).
 #      Let's Talk audio + CURSOR_API_KEY from .swarmforge/swarm.env when present.
 #   BRIDGE_HEADLESS_LAUNCH_DRYRUN=1    print command, start nothing
+#
+# An onboarded project (no extension/ build of its own) still gets its live
+# spy screen: when <project-root>/extension/out/tools/start-bridge-headless.js
+# is missing, this falls back to the same file under BRIDGE_EXTENSION_HOST_ROOT
+# (default: the primary swarmforgevc checkout, the only host with a compiled
+# extension/ today). That entrypoint is parameterized entirely by the
+# <project-root> arg it's launched with, so the primary's build serves any
+# project's own panes/mode - no per-project extension build needed.
 set -euo pipefail
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -19,11 +27,16 @@ fi
 
 
 ROOT="${1:?usage: start_bridge_headless.sh <project-root> [port]}"
-PORT="${2:-8765}"
+PORT_ARG="${2:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OP_DIR="$ROOT/.swarmforge/operator"
 SUPERVISOR_BB="$SCRIPT_DIR/bridge_headless_supervisor.bb"
 ENTRYPOINT="$ROOT/extension/out/tools/start-bridge-headless.js"
+BRIDGE_EXTENSION_HOST_ROOT="${BRIDGE_EXTENSION_HOST_ROOT:-/home/carillon/swarmforgevc}"
+if [[ ! -f "$ENTRYPOINT" && -f "$BRIDGE_EXTENSION_HOST_ROOT/extension/out/tools/start-bridge-headless.js" ]]; then
+  ENTRYPOINT="$BRIDGE_EXTENSION_HOST_ROOT/extension/out/tools/start-bridge-headless.js"
+fi
+export BRIDGE_ENTRYPOINT="$ENTRYPOINT"
 TOKEN_FILE="$OP_DIR/bridge-token"
 PID_FILE="$OP_DIR/bridge-headless-supervisor.pid"
 LOG="$OP_DIR/bridge-headless-supervisor.log"
@@ -36,6 +49,12 @@ if [[ -f "$SWARM_ENV" ]]; then
   # shellcheck disable=SC1090
   source "$SWARM_ENV"
 fi
+
+# An explicit CLI port always wins; otherwise a project picks its own port
+# via BRIDGE_HEADLESS_PORT in its own swarm.env (multiple onboarded projects
+# share this host and must not collide on the default 8765) - the shared
+# swarmforge.sh launcher calls this with no port arg for exactly that reason.
+PORT="${PORT_ARG:-${BRIDGE_HEADLESS_PORT:-8765}}"
 
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/cursor_ripgrep_env.sh"

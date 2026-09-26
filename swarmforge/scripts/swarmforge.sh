@@ -2564,6 +2564,21 @@ start_ancillary_services() {
     echo -e "${YELLOW}Telegram front desk skipped (set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_PRINCIPAL_USER_ID to enable).${RESET}"
     echo -e "${YELLOW}Then run: bash swarmforge/scripts/launch_front_desk.sh \"$WORKING_DIR\"  (or './swarm ensure').${RESET}"
   fi
+
+  # Mini App live spy screen (mono-router or full-grid, auto-picked by the
+  # bridge itself from the pack's own role count - no mode flag here). Front
+  # desk (above) already owns this bridge when it started one; the launcher
+  # detects that and re-arms rather than double-starting. A project with no
+  # port of its own set defaults to 8765; two swarms sharing a host must set
+  # a distinct BRIDGE_HEADLESS_PORT in their own .swarmforge/swarm.env.
+  if [[ "${SWARMFORGE_SKIP_BRIDGE:-}" == "1" ]]; then
+    echo -e "${YELLOW}Skipping Mini App bridge (SWARMFORGE_SKIP_BRIDGE=1).${RESET}"
+  else
+    echo -e "${CYAN}Starting Mini App live spy bridge...${RESET}"
+    if ! bash "$SCRIPT_DIR/start_bridge_headless.sh" "$WORKING_DIR"; then
+      echo -e "${YELLOW}Mini App bridge failed to start; run './swarm ensure' after fixing the cause.${RESET}"
+    fi
+  fi
 }
 
 # BL-089: guarded so a test can `source` this file (e.g. to exercise
