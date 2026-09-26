@@ -1,0 +1,132 @@
+id: BL-1774
+title: "Swarm stamp-off: hotfix e5a03ee6c7 - provision-onboarding-telegram-channel.js also opens a Coordinator forum topic and records it as coordinator in the target's role-topic-map.json, so a freshly onboarded swarm's coordinator can reach the human before any front desk runs there - review-only certification (BL-848) of what landed on 2026-09-26"
+milestone: M8
+type: defect
+severity: medium
+# medium: the behaviour is live on main; what is open is the review the
+# constitution owes a hotfix (BL-848). Not high: nothing is broken while
+# the review waits.
+status: todo
+epic: onboarding-target-repo
+priority: 3
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: review-only; one step handler drives the exported
+# ensureCoordinatorTopic with the postFn seam the hotfix's own unit tests
+# already use. No production edit.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1774-onboarding-opens-the-new-swarms-coordinator-topic.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired (main() calls ensureCoordinatorTopic after the group is
+# detected). The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1774OnboardingCoordinatorTopicSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Stamp-off of an operator hotfix you authorised on 2026-09-26. What needs
+  sign-off is the DISPOSITION only - that reviewing the landed diff (BL-848
+  posture) rather than re-implementing it is right. FIRM: the parcel
+  changes no production file, only evidence, the feature's step handler
+  (plus lib/ helpers) and tests; a confirmed finding (review goal 3 is the
+  one to watch) is a narrow follow-up via note to the specifier, never an
+  in-parcel rewrite; the parcel never writes human_decision into
+  backlog/hotfix-ledger.yaml - you record certify or waive after this
+  reaches done.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, the feature, its step handler (plus lib/ helpers) or a test file; provision-onboarding-telegram-channel.ts and the tutorial are read, never edited."
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This is that gate: a REVIEW ticket - confirm or refute, and open narrow
+  follow-ups for anything found.
+
+  ## The failure it fixed (from the commit message)
+
+  A freshly onboarded swarm got only the contract-negotiation topic. With
+  no front desk yet, its coordinator had nowhere to surface a request:
+  gpu-bargain-hunter's coordinator sat blocked on a human-only action
+  (2026-09-26), with the ask visible only in its own tmux pane.
+
+  ## What landed (files to review)
+
+  - `extension/src/tools/provision-onboarding-telegram-channel.ts`:
+    `ensureCoordinatorTopic` opens a "Coordinator" forum topic and records
+    it as `coordinator` in `<target>/.swarmforge/operator/role-topic-map.json`;
+    idempotent (an existing entry is kept, other roles' entries survive);
+    `main` calls it only once the group is detected and prints
+    `coordinatorTopicId` or `error`.
+  - `extension/test/provisionOnboardingTelegramChannelCli.test.js`: two
+    new cases (opens and records; keeps an existing topic).
+  - `docs/tutorials/Onboarding-New-Project.md`: the Coordinator topic
+    paragraph, and `<swarm-name>` must equal the target's
+    `config swarm_name` (BL-1776 makes the provisioner enforce that).
+
+  ## Review goals
+
+  1. Scenarios 01-02 green against the real exported
+     `ensureCoordinatorTopic` with a fake Bot API (the `postFn` seam).
+  2. The two unit cases above pass on the parcel commit; re-run, do not
+     rewrite unless a finding says they are wrong.
+  3. PROBE, do not fix: `readRoleTopicMap` returns `{}` for a map it
+     cannot parse, and the write that follows replaces the file. Does a
+     corrupt `role-topic-map.json` lose every other role's topic? If so,
+     that is a follow-up note to the specifier (unreadable is not empty,
+     BL-1773's fail-closed posture), not an edit here.
+
+  ## How (direction, not mandate)
+
+  - Drive the compiled `extension/out/tools/provision-onboarding-telegram-channel.js`
+    export in-process with a stubbed `postFn` (the hotfix's own unit
+    tests show the shape); fixture targets under mkdtemp (BL-1390), never
+    a real token or the live `.swarmforge/operator/`.
+
+constraints: >
+  Fixture targets are mkdtemp directories (BL-1390). No real bot token and
+  no network. The parcel does not edit the provisioner or the tutorial.
+
+out_of_scope: |
+  Enforcing the swarm name (BL-1776), the second swarm's credential leak
+  (BL-1775), the engine's notify_human.sh / human_replies.sh (hotfix
+  6cef9b7ecd, its own stamp), and writing human_decision into the hotfix
+  ledger.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1774-onboarding-opens-the-new-swarms-coordinator-topic.feature`:
+     three cases ok (01 x2 rows, 02). Record the duration.
+  2. `cd extension && npx vitest run test/provisionOnboardingTelegramChannelCli.test.js`:
+     all pass.
+  3. Read the hardener's and architect's evidence for review goal 3's
+     probe result; a confirmed loss must name its follow-up note.
+  4. `git diff main...HEAD --name-only` names only evidence, the feature's
+     handler (plus lib/ helpers) and test files.
+
+source: |
+  backlog/INTAKE-second-swarm-telegram-line-to-the-human-20260926.md
+  (operator via Claude Code, commits a5cb9d29fb and 85e42786db), which
+  quotes the human verbatim (Article 5.3): "gbh swarm needs me but it's
+  not surfacing anything on telegram. Onboarding should at a minimum
+  create a topic for the coordinator to use" and "can you fix the
+  onboarding process to not do the same mistake next time?"
+  Hotfix e5a03ee6c7 (Hotfix-Certification: pending, ledger 17c759242c).
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat). 1:N split of
+  the intake above: hotfix e5a03ee6c7's stamp -> BL-1774; the
+  cross-swarm credential leak (intake item 1) -> BL-1775; the fleet dir
+  keyed by the target's swarm_name (intake item 3) -> BL-1776 plus a
+  one-line amendment to BL-1758 (the installer writes swarm_name). Hotfix
+  6cef9b7ecd's stamp and the starter-kit coordinator rule (intake item 2)
+  wait on the human's answer to the intake's open question (stopgap reply
+  path or front desk only), asked the same pass.
+  INVEST: Independent (review of landed code), Negotiable (handler shape
+  is direction), Valuable (the hotfix gets its gate), Estimable (one
+  export, three cases), Small, Testable (fake Bot API).
