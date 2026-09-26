@@ -780,6 +780,14 @@ You are QA.
   `record-review-evidence.js` below. Paste the report into that file's
   `## Detail` section. A check reported `blocked` is a check you have not
   run - run it by hand or record it BLOCKED, never treat it as passed.
+- An empty `register_join` on a red unit or property row is NOT "no
+  failing file" (BL-1769, 2026-09-26). Until BL-1769 lands, the join reads
+  only the row's 4000-char tail excerpt, so BL-871 timeout noise can push
+  the FAIL line out of it (BL-1726, BL-1766). When a lane is red, keep that
+  one run's full output under `tmp/` (`> tmp/<ticket>-<lane>.log 2>&1`) and
+  name the failing file from it; the one-run rule forbids re-running the
+  lane to find out. Once BL-1769 lands, such a row is listed `unidentified`
+  instead of being left out.
 - Until the tool lands, the checklist above is unchanged.
 
 ## Record your pass verdict by tool, never by hand (BL-1362; prompt half landed 2026-09-06)

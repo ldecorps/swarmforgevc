@@ -1,0 +1,179 @@
+id: BL-1769
+title: "qa-gather builds its register join from the 4000-char display excerpt of a red unit or property run, so when the tail is stderr noise (BL-871 onTaskUpdate timeouts) the FAIL line is cut off and the join comes back empty - read as no failing file - which left the red UNIDENTIFIED and its parcel held twice (BL-1726 QA 2026-09-25, BL-1766 QA 2026-09-26): the join reads the whole output, and a red suite it still cannot attribute is listed unidentified, never omitted"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. The register join is the input Article
+# 4.2's approve-or-hold decision reads; an empty join on a red lane leaves
+# a red nobody can own, so the parcel waits on a re-run that the one-run
+# rule forbids in the same pass. Twice in two days. Not critical: the lane
+# exit code still shows red, so no parcel is approved over it.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript under Stryker (qaGather.ts is small and already
+# hardened by BL-1554); one parse-source change and one fail-closed entry.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature
+# The contract is BL-1554's feature with scenarios 07 and 08 below added by
+# this parcel, steps landing in the existing handler in the SAME commit
+# (BL-233). Not a claim of ownership over BL-1554's contract.
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1554QaGatherReportSteps.js::unidentified::scenario 08 step lands with the scenario (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Two scenarios are added to a landed feature file, so this would
+  ordinarily need a tap; it is minted approved under the 2026-09-17
+  operator hotfix (severity defect, no choice posed, no ruling_options).
+  FIRM: the report stays a gather, never a verdict (BL-1554 invariant 1);
+  the checks, their order, and the display excerpt's bound are unchanged;
+  only where the join reads its failing files from changes, plus the
+  unidentified entry.
+
+invariants:
+  - "A unit or property row that ran with a non-zero exit always contributes at least one register_join entry - each failing file it names, or one unidentified entry for that check - whatever the length of its output."
+
+description: |
+  ## What is wrong
+
+  `extension/src/quality/qaGather.ts` `failingFilesFromRow` parses
+  `row.excerpt` for the unit and properties rows. `runChecklist` builds
+  that excerpt as `tailExcerpt(outcome.stdout + outcome.stderr)`, the LAST
+  4000 characters, with stderr appended after stdout. Vitest's `FAIL <file>`
+  lines are on stdout. A red run whose stderr carries the allowlisted BL-871
+  `[vitest-worker]: Timeout calling "onTaskUpdate"` errors pushes them out
+  of the tail. The join then comes back `[]`, which reads as "no failing
+  file". BL-1554's architect bounce D1 moved only the REGISTER parse to raw
+  stdout (the `onRawOutcome` seam); the failing-file parse was left on the
+  excerpt.
+
+  Incidents:
+  - BL-1726 QA, 2026-09-25 (evidence `backlog/evidence/BL-1726-QA-20260925.md`,
+    91d5967fe5): unit exit 1, `register_join: []`; "the first run's failing
+    file is unknown".
+  - BL-1766 QA, 2026-09-26 (QA note 003243; QA evidence
+    `BL-1766-QA-20260926.md` on the QA branch): properties exit 1, "the
+    excerpt holds only 11 allowlisted BL-871 onTaskUpdate timeouts ... So the
+    red is UNIDENTIFIED". The one-run rule forbade re-running the lane to
+    name it, so the parcel waits for an owner nobody can mint.
+
+  ## What is wanted
+  - The unit and properties rows' failing files are parsed from the check's
+    WHOLE output (stdout and stderr, unbounded), never from the
+    display-bounded excerpt. The excerpt itself stays bounded for the human
+    report.
+  - A unit or properties row that ran with a non-zero exit and names no
+    failing file anywhere in its output contributes one `unidentified`
+    join entry naming that check. It is never silently omitted: an
+    unattributable red is still a red on record, and QA reads
+    `unidentified` as "keep this lane's full log", not "nothing failed".
+  - A green row still contributes nothing (unchanged), and the acceptance
+    row's own entry is unchanged.
+  - BL-1554's feature gains, in the parcel and with its steps in the same
+    commit, the two scenarios below. The specifier linted and IR-DRY-checked
+    them on a scratch copy of the feature on 2026-09-26: clean parse. The
+    new IR-DRY findings are reuses of the handler's existing parameterized
+    steps with new values (the design, not duplication), and one "possible
+    synonym" pairing opposite meanings ("names no failing file" vs "naming
+    the failing file"). Nothing to merge.
+
+    ```
+      # BL-1554 qa-gathers-checklist-07 (BL-1769, 2026-09-26)
+      # BL-1726 and BL-1766 QA: the FAIL line sat above the display excerpt's tail.
+      Scenario Outline: a failing file named before a long tail of noise is still joined to the register
+        Given the fake runner answers the <check> check with exit 1, an output naming the failing file extension/test/early.property.test.js, then more stderr than the report's excerpt keeps
+        And the register check answers with a row for extension/test/early.property.test.js that is owned by BL-1553
+        When qa-gather runs for BL-1554-FIX over the fake runner
+        Then the report's register join lists extension/test/early.property.test.js as owned
+
+        Examples:
+          | check      |
+          | unit       |
+          | properties |
+
+      # BL-1554 qa-gathers-checklist-08 (BL-1769, 2026-09-26)
+      Scenario Outline: a red suite whose output names no failing file is reported unidentified, never as an empty join
+        Given the fake runner answers the <check> check with exit 1 and an output that names no failing file
+        When qa-gather runs for BL-1554-FIX over the fake runner
+        Then the report's register join lists the <check> check as unidentified
+
+        Examples:
+          | check      |
+          | unit       |
+          | properties |
+    ```
+
+  ## How (direction, not mandate)
+  - `composeQaGatherReport` already captures the register check's raw
+    stdout through `runChecklist`'s `onRawOutcome`. Capture the unit and
+    properties outcomes the same way (stdout + stderr) and hand
+    `buildRegisterJoin` those texts in place of `row.excerpt`. It is the
+    same seam, never a second `runFn` call (BL-1554's exactly-once
+    invariant).
+  - "More stderr than the report's excerpt keeps" should be built from the
+    exported bound, not a hard-coded 4000, so the fixture tracks the
+    constant.
+  - The entry's shape (e.g. `{ check: 'properties', join: 'unidentified' }`,
+    or a `file` placeholder) is the coder's call; whichever shape is chosen,
+    `RegisterJoinKind` and the report's documented kinds name it.
+  - The invariant's property test can generate outputs of random length
+    with and without a FAIL line at a random offset, and assert the entry
+    count against the exit.
+
+  ## Scope
+  - `extension/src/quality/qaGather.ts`, and `extension/src/metrics/qaGatherAdapter.ts`
+    only if its composition needs the new capture.
+  - `extension/test/qaGather.test.js`, `extension/test/qaGather.property.test.js`.
+  - `specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature`,
+    `specs/pipeline/steps/bl1554QaGatherReportSteps.js`.
+  - Docs that list the join kinds (documenter), and evidence.
+  - The QA.prompt half (below) is the specifier's and is already on main.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature`:
+     all cases ok, including 07 and 08 (two rows each). Record the duration.
+  2. The unit lane (`npm test` from extension/) green, including
+     qaGather.test.js; the property lane green, including
+     qaGather.property.test.js.
+  3. Your own qa-gather run on this parcel: every red unit/properties row
+     (if any) has at least one register_join entry. If both lanes are green,
+     record that step 3 was vacuous this run.
+  4. `git diff main...HEAD --name-only` names only the Scope files and
+     evidence.
+
+source: |
+  QA note to the specifier, priority 50, 2026-09-26 (inbound
+  50_20260926T015618Z_003243_from_QA), verbatim: "qa-gather joins the
+  4000-char tail: lost a red prop file 2x (BL-1726,1766)". QA evidence,
+  verbatim (BL-1766): "the failing file's FAIL line is not in qa-gather's
+  4000-char tail excerpt. The excerpt holds only 11 allowlisted BL-871
+  `onTaskUpdate` timeouts, the property lane writes no JSON report, and
+  the join comes from that excerpt. So the red is UNIDENTIFIED." Parent:
+  BL-1554.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) while
+  completing QA's note, the same pass. The cause was read at mint in
+  qaGather.ts (`runChecklist` line ~180, `failingFilesFromRow` ~245,
+  `composeQaGatherReport` ~335). No open ticket touches qaGather.ts;
+  BL-1714 (paused) mentions qa-gather only as the lane runner it holds a
+  respawn for.
+  QA.prompt half landed by the specifier in the mint commit: the BL-1554
+  section now says an empty join on a red row is not "no failing file"
+  until this lands, and names `unidentified` once it has.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4).
+
+  INVEST: Independent (no open ticket on qaGather.ts), Negotiable (entry
+  shape and capture are direction), Valuable (a red lane always names what
+  it can, and says so when it cannot), Estimable (one parse source, one
+  entry kind), Small (one function family, four scenario rows), Testable
+  (fake runner, as BL-1554's own scenarios).
