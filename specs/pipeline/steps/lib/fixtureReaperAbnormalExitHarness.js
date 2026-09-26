@@ -21,7 +21,24 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const LAUNCHER = path.join(SCRIPTS_DIR, 'launch_front_desk.sh');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out');
-const FAKE_TELEGRAM_ENV = { TELEGRAM_BOT_TOKEN: 'fake-bot-token', TELEGRAM_CHAT_ID: 'fake-chat', TELEGRAM_PRINCIPAL_USER_ID: '111' };
+// BL-1750: SWARMFORGE_FLEET_HOME (front_desk_supervisor.bb, BL-622) defaults
+// to the REAL $HOME when unset - without this override, resolve-telegram-
+// creds reads this host's own genuinely-populated ~/.swarmforge/fleet/,
+// resolving THIS project's real, live-swarm bridge port instead of the
+// BRIDGE_PORT below, and maybe-adopt-or-spawn-bridge! then finds that real
+// port already held by the real bridge and TERM/KILLs it (front-desk-
+// supervisor.bb's free-foreign-pid!) before starting its own - a live
+// production bridge kill on every run, and the exact reason this harness's
+// own waitFor (polling the BRIDGE_PORT below, never the real one the
+// supervisor actually bound) always timed out. `fleet-home` is a fresh
+// subdirectory of this fixture's own throwaway root - same convention
+// bl789MacHostSwitchFreshnessBridgeAdoptSteps.js already uses for the same
+// adopt-or-free code path.
+const FAKE_TELEGRAM_ENV = {
+  TELEGRAM_BOT_TOKEN: 'fake-bot-token',
+  TELEGRAM_CHAT_ID: 'fake-chat',
+  TELEGRAM_PRINCIPAL_USER_ID: '111',
+};
 
 function linkCompiledOut() {
   fs.mkdirSync(path.join(root, 'extension', 'out'), { recursive: true });
@@ -51,7 +68,13 @@ async function main() {
 
   execFileSync('bash', ['-c', `${LAUNCHER} "$1" 2>&1`, '--', root], {
     encoding: 'utf8',
-    env: { ...process.env, ...FAKE_TELEGRAM_ENV, BRIDGE_PORT: port, FRONT_DESK_INTERVAL_MS: '200' },
+    env: {
+      ...process.env,
+      ...FAKE_TELEGRAM_ENV,
+      BRIDGE_PORT: port,
+      FRONT_DESK_INTERVAL_MS: '200',
+      SWARMFORGE_FLEET_HOME: path.join(root, 'fleet-home'),
+    },
   });
 
   const tokenFile = path.join(root, '.swarmforge', 'operator', 'bridge-token');

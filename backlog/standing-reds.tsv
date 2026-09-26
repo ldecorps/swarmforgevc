@@ -32,5 +32,4 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-acceptance	specs/features/BL-458-acceptance-fixture-process-leak.feature	BL-1750	2026-09-25	2 of 6 fail on main: REFUSED project-root (scenario 06, BL-1738 fixes) and fixture bridge never came up (scenario 05); on BL-1738 6887fd5988 still 1 of 6 (scenario 05) (coder note 002136); re-owned from BL-1738 2026-09-25; leaves when BL-1750 lands
 unit	extension/test/briefingDigestLineCli.test.js	BL-1770	2026-09-26	the compiled CLI runs against the real repo and prints both lines: Test timed out in 20000ms (24.7 s) in QA's unit lane on the BL-1766 parcel beside a hardener Stryker run (QA note 003244, evidence b2a4e82530; holds BL-1766); three live-repo history walks measured 11.5/10.5/8.8 s alone at load 15; leaves when BL-1770 lands
