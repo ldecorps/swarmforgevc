@@ -22,7 +22,7 @@ required_wiring: []
 # decides a waiver (prompt prose landed with BL-1782's mint), and the
 # reader's code consumer is BL-1784.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM (from the intake): discharge tracking in the hardening-debt ledger's
   pattern, "until either a tool ships (row discharged, evidence linked ...)
