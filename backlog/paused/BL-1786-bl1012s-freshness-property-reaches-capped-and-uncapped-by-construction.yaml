@@ -1,0 +1,127 @@
+id: BL-1786
+title: "bl1012FreshnessSelfInflictedIncidents reaches its capped/uncapped, inside/outside-grace and restart/grace arms by construction: invariant 1 draws load and cores 40 times and asserts at least 5 uncapped states, but only about 1 draw in 8 is uncapped, so the floor misses about 4 runs in 10 at uniform odds (red in QA's property lane on the BL-1779 parcel, 2026-09-26, 'generator reached only 4 uncapped states'); BL-1583's census misreads the file as no-floor"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (2026-09-05 rule). QA's property
+# lane went red on a file the parcel never touched, and it withholds
+# approval of every parcel whose evidence names it until owned (Article 4.2).
+epic: sampled-reach-floors
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one property test file (property tests are outside the mutation
+# lane); the gherkin mutation re-runs a two-scenario source/census feature.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1786-bl1012s-freshness-property-reaches-capped-and-uncapped-by-construction.feature
+
+human_approval: approved
+approval_context: >
+  FIRM: the file's properties reach every arm they assert reached by
+  construction (runsPerCell plus assertReachFloor from helpers/reachFloors,
+  the recipe BL-1583's sweeps applied), with no floor, budget, timeout or
+  per-case assertion loosened. Mechanical, the same shape as BL-1760,
+  BL-1762 and BL-1763. There is no choice to rule on.
+
+invariants:
+  - "No reach floor, draw budget, timeout or tolerance in the file is lowered, seeded or retried; every arm asserted reached before the change is asserted reached after it, and every per-case assertion (ceiling bound, factor floor, base floor, restart at every contention, grace suppression, record fields) is unchanged."
+
+required_wiring: []
+# Honest empty (BL-1235): a test-only change; the census CLI and the
+# helpers it must call already exist.
+
+description: |
+  ## What is wrong
+
+  QA note 003291 (2026-09-26 14:54Z), verbatim: "unowned-red
+  bl1012FreshnessSelfInflictedIncidents prop; ev BL-1779-QA-20260926". From
+  that evidence (on QA's branch): `npm run test:properties` exit 1 on
+  `test/bl1012FreshnessSelfInflictedIncidents.property.test.js > property
+  (BL-1012 invariant 1)` with `AssertionError: generator reached only 4
+  uncapped states`. The file was last touched 2026-09-04 (BL-1399).
+
+  Measured at mint from the file and `daemon_log_freshness_check.sh`'s
+  `contention_factor` (load_int / cores_int, floored at 1). A state is
+  uncapped when 120 x factor <= 600, so factor <= 5.
+  - Invariant 1 (`loadArb` 0..400, `coresArb` 1..16, 40 runs): at uniform
+    odds 12.7% of draws are uncapped. P(fewer than 5 of 40) = 0.41, and
+    P(fewer than 5 capped) = 3e-28. fast-check's bias toward small integers
+    lifts the uncapped share, which is why the file mostly passed.
+  - Invariant 2 (elapsed 1..900, inside-grace below 300, 40 runs): P(fewer
+    than 5 inside) = 6.8e-4.
+  - Invariant 3 (a 50/50 `fc.oneof`, 30 runs, floor 3): P = 4.3e-7.
+  The fourth property (BL-1399) asserts no reach floor.
+
+  BL-1583's census (`sampled_reach_floor_census_cli.bb`) reads the file as
+  `no-floor 10`. Its `known-phrases` list carries "the generator reached",
+  and these asserts say "generator reached only". The budget 10 comes from
+  the floorless BL-1399 property. The same wording hides four more files
+  (the epic tracker's classifier slice now lists them). That fix is not in
+  this ticket.
+
+  ## What is wanted
+
+  Invariants 1, 2 and 3 iterate their arms by construction:
+  - invariant 1: capped and uncapped (load, cores) cells;
+  - invariant 2: elapsed inside and outside the grace window;
+  - invariant 3: the restart record and the grace record.
+  Each draws per cell through `runsPerCell`, and each keeps its floors
+  asserted through `assertReachFloor` (`extension/test/helpers/reachFloors.js`,
+  BL-1062's doctrine), at no fewer total draws than today (40, 40, 30).
+  Every per-case assertion stays word for word. The BL-1399 property is
+  untouched.
+
+  How (direction, not mandate): BL-1760's bl1074 and BL-1763's bl1517 are
+  the nearest precedents. A cell generator can constrain `load` from
+  `cores` (for example `fc.integer({min: 0, max: 5 * cores + cores - 1})`
+  for uncapped), so the per-case asserts still see a real (load, cores)
+  pair.
+
+  ## Scope
+  - `extension/test/bl1012FreshnessSelfInflictedIncidents.property.test.js`.
+  - The feature file and its step handler `bl1786Bl1012ReachFloorsSteps`
+    (`bl1763Bl1517ReachFloorsSteps.js` is the template).
+  - The standing-red register row, retired by the land (BL-1631).
+
+  ## Not in scope
+  - The census classifier's phrase gap and the four other files it hides.
+    They belong to the classifier blind-spot slice on the BL-1583 tracker.
+  - `daemon_log_freshness_check.sh`: nothing is wrong with the code the
+    test exercises.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1786-bl1012s-freshness-property-reaches-capped-and-uncapped-by-construction.feature`:
+     2 of 2.
+  2. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1012FreshnessSelfInflictedIncidents.property.test.js`:
+     green; its duration is recorded next to the evidence's before figure
+     (the file spawns /bin/sh once per draw, so draws cost real time).
+  3. The register row for the file names BL-1786 on the parcel commit.
+  4. `git diff main...HEAD --name-only` names only the test file, the
+     step handler, its registration and evidence.
+  5. After the land: REGISTER_ROW_RETIRED for
+     `extension/test/bl1012FreshnessSelfInflictedIncidents.property.test.js`.
+
+source: |
+  QA note 003291 (2026-09-26 14:54Z), verbatim: "unowned-red
+  bl1012FreshnessSelfInflictedIncidents prop; ev BL-1779-QA-20260926".
+  Evidence: `backlog/evidence/BL-1779-QA-20260926.md` "Detail" (on QA's
+  branch at mint).
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) from QA note
+  003291, the same pass. The register row naming this ticket landed in the
+  same commit, and the holder note was sent to QA (BL-1779 is the parcel
+  whose QA pass surfaced the red; QA bounced it for D1-D3 as well). Miss
+  probabilities were computed at mint by exact binomial over the uniform
+  (load, cores) grid, not sampled.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Census for the phrase gap:
+  `git grep -l -i 'generator reached only' -- 'extension/test/*.js'`
+  names 5 files, and the census CLI reads all 5 as no-floor.
+  INVEST: Independent (no unbuilt dependency; no open ticket touches the
+  file). Negotiable (the cell shapes are the coder's). Valuable (a
+  standing red cleared and the class's recipe applied). Estimable (the
+  BL-1763 recipe on one file). Small (2 scenarios, 1 invariant). Testable
+  (source and census checks, with QA's green lane run).
