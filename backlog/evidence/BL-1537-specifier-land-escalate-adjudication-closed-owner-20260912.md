@@ -528,3 +528,21 @@ ed1f2865c2, and `abandoned_commits: [ed1f2865c2]` is on the ticket.
 `--push` printed `LAND_REPOINT_SKIPPED an uncommitted change`.
 
 By QA.
+
+## Instances - BL-1766 and BL-1749 lands, condition (g) under the BL-1768 interim (QA, 2026-09-26)
+
+Both land-step runs escalated on the same stray a225d85d8b after ~25-minute
+walks. Both were landed as hand-built tip-pure commits from their own paths
+plus the retirement of their own register row, published with
+`land_main_publish.sh <QA worktree> --push`, with approvals recorded and
+`abandoned_commits` set:
+- BL-1766: b4ee396c61 (approved source a79425491b). This land came after
+  an Article 4.2 hold whose re-run on 05e41332f1 was green.
+- BL-1749: facf292c58 (approved source 456edf9a65).
+Both re-points skipped (`a parcel in its in_process`). The first BL-1766
+publish hit `LAND_LOCK_TIMEOUT` on a stale 0-byte lock FILE in the QA
+worktree's `.swarmforge/` (a regular file, not the lock directory; the third
+such file after 09-02 and 09-14). It was moved aside to
+`tmp/stray-land-main-publish-lock-file-20260926.bak`, and the retry published.
+
+By QA.
