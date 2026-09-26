@@ -202,6 +202,15 @@ notes: |
   header and generator change with it: reach the landed parcel's own
   sidecar (proceeds) and a sidecar named for another file (blocks).
 
+  Confirmed live 2026-09-26 09:15Z (QA note 003263): the first re-point
+  from QA's worktree fired (924a360b95 -> 7225607287). The BL-1767
+  land-approval source 924a360b95 left the QA branch, and is_qa_ancestor.sh
+  approves the replay 0043a19bc9 by ancestry (exit 0). This is the
+  mint-time check above, now seen live. On the way it prints "not
+  approved: ... source ... not itself approved" to stderr for every replay
+  landed before a re-point. Every caller reads only the exit code, so the
+  verdict is right and the line is noise. It was left unticketed.
+
 assigned_to: coder
 bounce_count: 1
 bounce_history:
