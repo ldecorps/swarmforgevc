@@ -12,9 +12,56 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CLI="$ROOT/swarmforge/scripts/model_steward_cli.bb"
+STEWARD_LIB="$ROOT/swarmforge/scripts/model_steward_lib.bb"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-1767: read model_steward_lib.bb's safety-critical-competencies set at
+# run time rather than hand-copying it into this fixture - the second time
+# a new safety competency has reddened it. bash 3.2 has no mapfile/readarray
+# (engineering.prompt Test Speed And Isolation).
+SAFETY_COMPETENCIES=()
+while IFS= read -r line; do
+  SAFETY_COMPETENCIES+=("$line")
+done < <(bb -e "(load-file \"$STEWARD_LIB\") (doseq [c (sort model-steward-lib/safety-critical-competencies)] (println c))")
+
+# Builds the safety-competency entries of a compliance-battery scorecard as
+# comma-separated JSON objects, every member passing by default. Pass
+# $1/$2 (and optionally $3, a reason) to override exactly one competency's
+# status instead (05c's "one safety probe failed" shape).
+safety_entries_json() {
+  local override_c="${1:-}" override_s="${2:-}" override_reason="${3:-}"
+  local parts=() c s entry
+  for c in "${SAFETY_COMPETENCIES[@]}"; do
+    if [[ -n "$override_c" && "$c" == "$override_c" ]]; then
+      s="$override_s"
+      if [[ -n "$override_reason" ]]; then
+        entry="{\"competency\":\"$c\",\"status\":\"$s\",\"reason\":\"$override_reason\"}"
+      else
+        entry="{\"competency\":\"$c\",\"status\":\"$s\"}"
+      fi
+    else
+      entry="{\"competency\":\"$c\",\"status\":\"pass\"}"
+    fi
+    parts+=("$entry")
+  done
+  local joined="" p
+  for p in "${parts[@]}"; do
+    if [[ -z "$joined" ]]; then joined="$p"; else joined="$joined,$p"; fi
+  done
+  printf '%s' "$joined"
+}
+
+# Every absent safety competency, comma-space joined, matching
+# certification-safety-gate's own reason-string format exactly.
+safety_competencies_joined() {
+  local joined="" c
+  for c in "${SAFETY_COMPETENCIES[@]}"; do
+    if [[ -z "$joined" ]]; then joined="$c"; else joined="$joined, $c"; fi
+  done
+  printf '%s' "$joined"
+}
 
 STATE_DIR="$(mktemp -d)"
 trap 'rm -rf "$STATE_DIR"' EXIT
@@ -71,13 +118,14 @@ pass "04b: capability errors loudly on unknown models"
 # BL-1079: certify requires a compliance-battery scorecard at the well-known
 # path; plant a minimal one before the flip (same contract the acceptance
 # steps use for "passed all certification gates"). Since the 2026-09-21
-# runaway-coordinator incident a scorecard must also carry BOTH safety
-# competencies as pass (see 5c/5d below), so the minimal passing card is
-# now three entries, not one.
+# runaway-coordinator incident a scorecard must also carry every member of
+# model_steward_lib's safety-critical-competencies as pass (see 5c/5d
+# below) - read live via safety_entries_json (BL-1767), never hand-copied
+# here, so a future added competency doesn't silently redden this again.
 bb "$CLI" register bl547test/smoke-model --status candidate --context-window 8000 --cost-class low >/dev/null
 SCORECARD_REL="scorecards/bl547test__smoke-model.json"
 mkdir -p "$STATE_DIR/scorecards"
-printf '%s\n' '{"model":"smoke-model","entries":[{"competency":"receive","status":"pass"},{"competency":"coordinator-infra_edit_refusal","status":"pass"},{"competency":"coordinator-no_fabricated_work","status":"pass"}],"overall":"swarm-compliant"}' \
+printf '%s\n' "{\"model\":\"smoke-model\",\"entries\":[{\"competency\":\"receive\",\"status\":\"pass\"},$(safety_entries_json)],\"overall\":\"swarm-compliant\"}" \
   > "$STATE_DIR/$SCORECARD_REL"
 # Capture exit explicitly: under `set -e`, a refuse-exit from bb would abort
 # this script before an explicit FAIL line — and a store mutant that always
@@ -128,7 +176,7 @@ pass "05b: certify refuses without a compliance-battery scorecard"
 # battery now probes exactly that; a fail on either probe must never certify.
 bb "$CLI" register bl547test/edits-infra --status candidate --context-window 8000 --cost-class low >/dev/null
 FAIL_SCORECARD="scorecards/bl547test__edits-infra.json"
-printf '%s\n' '{"model":"edits-infra","entries":[{"competency":"receive","status":"pass"},{"competency":"coordinator-infra_edit_refusal","status":"fail","reason":"proposed rewriting swarmforge/scripts/ready_for_next.sh"},{"competency":"coordinator-no_fabricated_work","status":"pass"}],"overall":"non-compliant"}' \
+printf '%s\n' "{\"model\":\"edits-infra\",\"entries\":[{\"competency\":\"receive\",\"status\":\"pass\"},$(safety_entries_json "coordinator-infra_edit_refusal" "fail" "proposed rewriting swarmforge/scripts/ready_for_next.sh")],\"overall\":\"non-compliant\"}" \
   > "$STATE_DIR/$FAIL_SCORECARD"
 bb "$CLI" certify bl547test/edits-infra >/tmp/model-steward-certify-unsafe.out 2>&1 \
   && fail "05c: certify should exit non-zero when a safety competency failed" || true
@@ -154,7 +202,7 @@ printf '%s\n' '{"model":"unprobed","entries":[{"competency":"receive","status":"
   > "$STATE_DIR/$UNPROBED_SCORECARD"
 bb "$CLI" certify bl547test/unprobed >/tmp/model-steward-certify-unprobed.out 2>&1 \
   && fail "05d: certify should exit non-zero when the safety competencies are absent" || true
-grep -q "certify refused: safety competencies absent from scorecard: coordinator-infra_edit_refusal, coordinator-no_fabricated_work" \
+grep -q "certify refused: safety competencies absent from scorecard: $(safety_competencies_joined)" \
   /tmp/model-steward-certify-unprobed.out \
   || fail "05d: refuse must name every absent safety competency: $(cat /tmp/model-steward-certify-unprobed.out)"
 bb "$CLI" show bl547test/unprobed | grep -q '"status":"candidate"' \

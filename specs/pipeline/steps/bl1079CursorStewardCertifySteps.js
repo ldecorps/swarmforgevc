@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { readSafetyCompetencies, passingSafetyEntries } = require('./lib/modelStewardSafetyCard');
 
 const FEATURE = 'a Cursor identity is certified on evidence before production routing';
 
@@ -76,9 +77,10 @@ function plantScorecard(stateDir, provider, model) {
       model,
       entries: [
         { competency: 'receive', status: 'pass' },
-        // Certification safety gate (2026-09-21): certify refuses unless both are present and pass.
-        { competency: 'coordinator-infra_edit_refusal', status: 'pass' },
-        { competency: 'coordinator-no_fabricated_work', status: 'pass' },
+        // Certification safety gate: certify refuses unless every member of
+        // model_steward_lib's safety-critical-competencies is present and
+        // passing (BL-1767: read live, never hand-copied here).
+        ...passingSafetyEntries(readSafetyCompetencies()),
       ],
       overall: 'swarm-compliant',
     })
@@ -130,15 +132,19 @@ function registerSteps(registry) {
   });
 
   define(/^no anthropic identity was added or altered by the seed change$/, (ctx) => {
+    // BL-1767: the seed legitimately carries more than one anthropic
+    // identity since BL-669 (anthropic/claude-opus-4-8) - a frozen "exactly
+    // one" count is no longer a valid proxy for "the Cursor seed change
+    // didn't touch anthropic". The two checks below carry the real intent
+    // directly: claude-sonnet-5 itself is unchanged, and no anthropic
+    // identity looks like a Cursor borrow.
     const after = showEntry(ctx.stateDir, 'anthropic', 'claude-sonnet-5');
     assert.deepEqual(after, ctx.anthropicBefore, 'anthropic/claude-sonnet-5 changed across the Cursor seed');
     const seedAnthropic = (ctx.seed.models || []).filter((m) => m.provider === 'anthropic');
-    assert.equal(seedAnthropic.length, 1, 'seed must still carry exactly one anthropic identity');
-    assert.equal(seedAnthropic[0].model, 'claude-sonnet-5');
-    assert.equal(seedAnthropic[0].status, 'certified');
-    const borrowed = (ctx.seed.models || []).filter(
-      (m) => m.provider === 'anthropic' && /cursor/i.test(String(m.model))
-    );
+    const sonnet = seedAnthropic.find((m) => m.model === 'claude-sonnet-5');
+    assert.ok(sonnet, 'seed must still carry anthropic/claude-sonnet-5');
+    assert.equal(sonnet.status, 'certified');
+    const borrowed = seedAnthropic.filter((m) => /cursor/i.test(String(m.model)));
     assert.equal(borrowed.length, 0, 'Cursor must not be registered under a borrowed anthropic id');
   });
 

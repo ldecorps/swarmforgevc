@@ -10,6 +10,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { readSafetyCompetencies, passingSafetyEntries } = require('./lib/modelStewardSafetyCard');
 
 const FEATURE = 'Model Steward evaluate ingests captured benchmark evidence into the registry';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -73,6 +74,12 @@ function registerSteps(registrySteps) {
         { competency: 'protocol-compliance', status: 'pass' },
         { competency: 'tool-usage', status: 'pass' },
         { competency: 'autonomy', status: 'pass' },
+        // Certification safety gate: certify (which evaluate's own
+        // certification pass invokes) refuses unless every member of
+        // model_steward_lib's safety-critical-competencies is present and
+        // passing (BL-1767: read live, never hand-copied here - this card
+        // carried none at all before).
+        ...passingSafetyEntries(readSafetyCompetencies()),
       ],
       overall: 'swarm-compliant',
     });
@@ -218,6 +225,24 @@ function registerSteps(registrySteps) {
   });
 
   scoped(/^"winner-model" is currently certified with a prior passing gate$/, (ctx) => {
+    // BL-1767: evaluate's own clean-gates auto-certify does NOT read the
+    // ingested recruiter scorecard (ctx.scorecardPath - role/capability
+    // gates only) for its safety check; model_steward_cli.bb's
+    // registry-after-evaluate reads the SAME well-known compliance-battery
+    // path `certify` does (its own comment: "the recruiter scorecard it
+    // just ingested carries role gates, not the compliance-battery safety
+    // probe, so read the well-known battery scorecard here"). Plant that
+    // separate file, or evaluate leaves status at candidate with "missing
+    // compliance-battery scorecard" on stderr.
+    const complianceScorecardRel = `scorecards/${PROVIDER}__${MODEL}.json`;
+    writeJson(path.join(ctx.stateDir, complianceScorecardRel), {
+      model: MODEL,
+      entries: [
+        { competency: 'receive', status: 'pass' },
+        ...passingSafetyEntries(readSafetyCompetencies()),
+      ],
+      overall: 'swarm-compliant',
+    });
     cli(ctx.stateDir, [
       'evaluate',
       `${PROVIDER}/${MODEL}`,

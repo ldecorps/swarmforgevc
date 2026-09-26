@@ -19,6 +19,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { readSafetyCompetencies, passingSafetyEntries } = require('./lib/modelStewardSafetyCard');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -256,9 +257,10 @@ function registerSteps(registry) {
         model: ctx.model,
         entries: [
           { competency: 'receive', status: 'pass' },
-          // Certification safety gate (2026-09-21): certify refuses unless both are present and pass.
-          { competency: 'coordinator-infra_edit_refusal', status: 'pass' },
-          { competency: 'coordinator-no_fabricated_work', status: 'pass' },
+          // Certification safety gate: certify refuses unless every member
+          // of model_steward_lib's safety-critical-competencies is present
+          // and passing (BL-1767: read live, never hand-copied here).
+          ...passingSafetyEntries(readSafetyCompetencies()),
         ],
         overall: 'swarm-compliant'
       })
@@ -308,9 +310,10 @@ function registerSteps(registry) {
         model: ctx.model,
         entries: [
           { competency: 'receive', status: 'pass' },
-          // Certification safety gate (2026-09-21): certify refuses unless both are present and pass.
-          { competency: 'coordinator-infra_edit_refusal', status: 'pass' },
-          { competency: 'coordinator-no_fabricated_work', status: 'pass' },
+          // Certification safety gate: certify refuses unless every member
+          // of model_steward_lib's safety-critical-competencies is present
+          // and passing (BL-1767: read live, never hand-copied here).
+          ...passingSafetyEntries(readSafetyCompetencies()),
         ],
         overall: 'swarm-compliant'
       })

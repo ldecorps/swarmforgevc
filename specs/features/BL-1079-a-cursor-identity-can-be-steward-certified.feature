@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=908e874587ec165fbf81ad908afe0530e5657361355ce1c561378278a834d73f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-26T06:52:11.398891989Z","feature_name":"a Cursor identity is certified on evidence before production routing","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1079-a-cursor-identity-can-be-steward-certified.feature","background_hash":"72cfa24941f2f79c9b63c8f2b9df2048f74cba48a93b39515959d9b20ba9baff","implementation_hash":"unknown","scenarios":[{"index":2,"name":"certify decides on compliance-battery evidence","scenario_hash":"929810e8d04aa544290cc773f7d12793ad4b9e9a803f1dd5b0be7dee0005e4db","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-26T06:52:11.398891989Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a Cursor identity is certified on evidence before production routing
 
   BL-1079: the Model Steward already owns the certification gate, and BL-525
