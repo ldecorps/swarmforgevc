@@ -116,7 +116,9 @@ notes: |
   written for it yet; QA's evidence re-runs the lane on resume with the
   full log kept.
 
-  The unit register row was added in the mint commit.
+  The unit register row was added in the mint commit (ed6df73f16), and
+  the holder note went to QA the same pass (outbox 001950: "BL-1766:
+  briefingDigestLineCli owned by BL-1770 (ed6df73f16); rerun prop lane").
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
 
