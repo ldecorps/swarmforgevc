@@ -26,6 +26,14 @@ pane. The human never saw it.
   - fleet dir renamed `gpu-bargain-hunter` → `GpuBargainHunter`.
   - Stopgap until BL-1757's front desk runs there.
 
+- **6cef9b7ecd** (ledger 619590679f, needs a stamp ticket): the engine now
+  ships `swarmforge/scripts/notify_human.sh` (message, or `--poll` for a
+  multiple-choice ruling, at the human's ask) and `human_replies.sh`
+  (messages + poll votes, `--peek`, refuses while a front desk runs). Both read
+  creds from `~/.swarmforge/fleet/<swarm_name>/telegram.json` only.
+  `test_notify_human_and_replies.sh` covers this (16 checks, fake Bot API).
+  GBH now runs these engine copies (its 20950f6).
+
 ## Still wanted — the specifier to mint (check BL-1755..1759 first)
 
 1. **Cross-swarm credential leak.** Every agent and daemon of a second swarm
@@ -40,9 +48,13 @@ pane. The human never saw it.
    - Wanted: a non-primary swarm's launch scripts export its own fleet creds
      AFTER the shell profile is sourced, or env senders resolve through
      `fleet_telegram_creds_lib` the way the front desk does.
-2. **Starter kit (BL-1758)** should ship the outbound + inbound
-   coordinator-to-human line, or its successor. Until the front desk runs,
-   that line is the only way a new swarm's coordinator can reach the human.
+2. **Starter kit (BL-1758)**: the scripts already ship with the engine. What
+   the kit must add is the coordinator.prompt rule, which is what makes a new
+   coordinator use them. See GBH's `swarmforge/roles/coordinator.prompt`
+   (notify when blocked; for multiple choice, send the context and then
+   `--poll`; read `human_replies.sh` on every wake while a question is open).
+   Until a front desk runs, that line is the only way a new swarm's
+   coordinator can reach the human.
 3. **Fleet dir naming.** The fleet dir must be keyed by the target's
    `swarm_name`. GBH's was keyed by its repo slug because `swarm_name` was set
    after provisioning.
