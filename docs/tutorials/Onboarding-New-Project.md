@@ -263,6 +263,20 @@ single-swarm setup) - a successful run also writes
 at launch, keyed by swarm rather than by whatever shell launched it.
 `[bridge-port]` defaults to `8765` when omitted.
 
+Pass exactly the target's `config swarm_name` (from the pack it launches with)
+as `<swarm-name>`. The front desk looks its credentials up under that name, so
+a different spelling (a repo slug such as `gpu-bargain-hunter` for a swarm
+named `GpuBargainHunter`) leaves it without Telegram at all.
+
+Once the group is detected, the same run also opens a **Coordinator** topic
+and records it as `coordinator` in the target's
+`.swarmforge/operator/role-topic-map.json`. That gives the new swarm's
+coordinator somewhere to reach you from its first launch, whether or not a
+front desk runs there yet. Re-running the step keeps an existing coordinator
+topic rather than opening a second one. The printed outcome carries
+`coordinatorTopicId`, or `error` if Telegram refused (for example, when the bot
+lacks the right to manage topics).
+
 Run it and it prints the exact steps plus a `t.me/<bot>?startgroup=true`
 add-to-group link:
 

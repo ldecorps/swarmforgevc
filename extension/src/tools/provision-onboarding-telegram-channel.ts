@@ -134,6 +134,51 @@ export function buildAdapters(
   };
 }
 
+export const COORDINATOR_TOPIC_NAME = 'Coordinator';
+
+function roleTopicMapPath(targetRepoPath: string): string {
+  return path.join(operatorDir(targetRepoPath), 'role-topic-map.json');
+}
+
+function readRoleTopicMap(targetRepoPath: string): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(roleTopicMapPath(targetRepoPath), 'utf8'));
+    return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export interface CoordinatorTopicOutcome {
+  coordinatorTopicId?: number;
+  error?: string;
+}
+
+// 2026-09-26: a freshly onboarded swarm got only the negotiation topic, so its
+// coordinator had nowhere to reach the human - gpu-bargain-hunter's
+// coordinator sat blocked on a human-only land with the request visible only
+// in its own tmux pane. Opens the coordinator's standing topic in the same
+// group and records it in the target's role-topic-map.json, the map role
+// asks and the coordinator activity feed already read. Idempotent: an existing
+// coordinator entry is kept, never replaced, and other roles' entries survive.
+export async function ensureCoordinatorTopic(
+  targetRepoPath: string,
+  botToken: string,
+  chatId: string,
+  postFn?: TelegramPostFn
+): Promise<CoordinatorTopicOutcome> {
+  const map = readRoleTopicMap(targetRepoPath);
+  if (typeof map.coordinator === 'number') {
+    return { coordinatorTopicId: map.coordinator };
+  }
+  const topic = await createForumTopic(botToken, chatId, COORDINATOR_TOPIC_NAME, postFn);
+  if (!topic.success || topic.messageThreadId === undefined) {
+    return { error: topic.error ?? 'failed to open the coordinator topic' };
+  }
+  atomicWrite(roleTopicMapPath(targetRepoPath), JSON.stringify({ ...map, coordinator: topic.messageThreadId }));
+  return { coordinatorTopicId: topic.messageThreadId };
+}
+
 export const main = makeArgsGuardedMain(
   parseArgs,
   'Usage: node provision-onboarding-telegram-channel.js <target-repo-path> <bot-token> <bot-username> <host-secrets-file-path> <swarm-name> [bridge-port]\n',
@@ -142,7 +187,11 @@ export const main = makeArgsGuardedMain(
       botUsername,
       buildAdapters(targetRepoPath, botToken, hostSecretsFilePath, swarmName, bridgePort)
     );
-    printJsonToStdout(outcome);
+    const coordinator =
+      outcome.negotiationTopicId !== undefined && outcome.chatId !== undefined
+        ? await ensureCoordinatorTopic(targetRepoPath, botToken, outcome.chatId)
+        : {};
+    printJsonToStdout({ ...outcome, ...coordinator });
   }
 );
 

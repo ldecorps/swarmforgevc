@@ -4,7 +4,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
-const { main, parseArgs, buildAdapters, readProvisioningOffset, writeProvisioningOffset } = require('../out/tools/provision-onboarding-telegram-channel');
+const { main, parseArgs, buildAdapters, readProvisioningOffset, writeProvisioningOffset, ensureCoordinatorTopic } = require('../out/tools/provision-onboarding-telegram-channel');
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'provision-onboarding-telegram-channel.js');
 
@@ -269,4 +269,58 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
     assert.notEqual(err.status, 0);
     assert.match(err.stderr, /Usage: node provision-onboarding-telegram-channel\.js/);
   }
+});
+
+// ── the coordinator's own topic (2026-09-26: gpu-bargain-hunter's coordinator
+// had no way to reach the human after onboarding) ───────────────────────────
+
+function roleTopicMap(targetRepoPath) {
+  return JSON.parse(fs.readFileSync(path.join(targetRepoPath, '.swarmforge', 'operator', 'role-topic-map.json'), 'utf8'));
+}
+
+test('ensureCoordinatorTopic opens a Coordinator topic and records it in the target role-topic-map', async () => {
+  const targetRepoPath = mkTmpDir('provision-coordinator-topic-');
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push(JSON.parse(body));
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 77 } } };
+  };
+  const outcome = await ensureCoordinatorTopic(targetRepoPath, 'good-token', '-100123', postFn);
+  assert.deepEqual(outcome, { coordinatorTopicId: 77 });
+  assert.deepEqual(calls, [{ chat_id: '-100123', name: 'Coordinator' }]);
+  assert.deepEqual(roleTopicMap(targetRepoPath), { coordinator: 77 });
+});
+
+test('ensureCoordinatorTopic keeps an existing coordinator topic and never opens a second one', async () => {
+  const targetRepoPath = mkTmpDir('provision-coordinator-topic-kept-');
+  const opDir = path.join(targetRepoPath, '.swarmforge', 'operator');
+  fs.mkdirSync(opDir, { recursive: true });
+  fs.writeFileSync(path.join(opDir, 'role-topic-map.json'), JSON.stringify({ coordinator: 5, QA: 9 }));
+  let called = false;
+  const outcome = await ensureCoordinatorTopic(targetRepoPath, 'good-token', '-100123', async () => {
+    called = true;
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 99 } } };
+  });
+  assert.deepEqual(outcome, { coordinatorTopicId: 5 });
+  assert.equal(called, false);
+  assert.deepEqual(roleTopicMap(targetRepoPath), { coordinator: 5, QA: 9 });
+});
+
+test('ensureCoordinatorTopic adds the coordinator beside other roles already in the map', async () => {
+  const targetRepoPath = mkTmpDir('provision-coordinator-topic-merge-');
+  const opDir = path.join(targetRepoPath, '.swarmforge', 'operator');
+  fs.mkdirSync(opDir, { recursive: true });
+  fs.writeFileSync(path.join(opDir, 'role-topic-map.json'), JSON.stringify({ QA: 9 }));
+  const postFn = async () => ({ ok: true, status: 200, json: { ok: true, result: { message_thread_id: 12 } } });
+  await ensureCoordinatorTopic(targetRepoPath, 'good-token', '-100123', postFn);
+  assert.deepEqual(roleTopicMap(targetRepoPath), { QA: 9, coordinator: 12 });
+});
+
+test('ensureCoordinatorTopic reports a failed topic open and writes no map', async () => {
+  const targetRepoPath = mkTmpDir('provision-coordinator-topic-fail-');
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Bad Request: not enough rights' } });
+  const outcome = await ensureCoordinatorTopic(targetRepoPath, 'good-token', '-100123', postFn);
+  assert.equal(outcome.coordinatorTopicId, undefined);
+  assert.match(outcome.error, /not enough rights/);
+  assert.equal(fs.existsSync(path.join(targetRepoPath, '.swarmforge', 'operator', 'role-topic-map.json')), false);
 });
