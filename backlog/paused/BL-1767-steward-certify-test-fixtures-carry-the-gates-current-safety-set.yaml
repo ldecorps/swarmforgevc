@@ -135,7 +135,9 @@ notes: |
   running each hit once.
   BL-1707 (paused) is the owed review of hotfix 7ba57573ff. This fallout
   is that hotfix's, so its review records it as already owned here.
-  The four register rows were added in the mint commit.
+  The four register rows were added in the mint commit (2f174a24ab), and
+  the holder note went to QA the same pass (outbox 001944: "BL-1700:
+  test_model_steward_cli.sh owned by BL-1767 (2f174a24ab) - hold cleared").
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
 
