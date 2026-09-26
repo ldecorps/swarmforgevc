@@ -240,10 +240,13 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a host on which no liveness facility can be reached$/,
     (ctx) => {
-      // /proc is already absent on this project's own macOS dev/CI host -
-      // only lsof needs forcing unavailable to reproduce "neither facility
-      // reachable" (proc_fd_scan_lib.bb's SWARMFORGE_LSOF_BIN override).
+      // BL-1749: /proc is absent on this project's own macOS dev/CI host,
+      // but a real /proc exists on Linux, so both facilities must be
+      // forced unavailable here regardless of host - lsof via
+      // SWARMFORGE_LSOF_BIN and procfs via SWARMFORGE_PROC_DIR (both read
+      // by proc_fd_scan_lib.bb).
       ctx.env.SWARMFORGE_LSOF_BIN = '/nonexistent/path/to/lsof-bl877-acceptance';
+      ctx.env.SWARMFORGE_PROC_DIR = '/nonexistent/path/to/proc-bl877-acceptance';
     },
     FEATURE_NAME
   );
