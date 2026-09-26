@@ -25,7 +25,7 @@ required_wiring: []
 # and the reader's first code consumer is BL-1784's throttle signal, the
 # named wiring slice, which pins emit-throttle-recommendation.ts itself.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM (from the intake): a register in the standing-reds /
   hardening-debt-ledger idiom, with keyed rows, a mechanical count and
