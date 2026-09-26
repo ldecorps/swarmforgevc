@@ -145,9 +145,13 @@ notes: |
   branch's base.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
+  Operator-ambulanced 2026-09-26: promoted past the depth cap
+  (--queue-jump ALLOW) so engage can run; ambulance does not auto-promote.
 
   INVEST: Independent (no open ticket edits the guard; file-sharing
   siblings are sequenced by orthogonality), Negotiable (header parsing is
   direction), Valuable (the hotfix's intent actually takes effect),
   Estimable (one guard), Small, Testable (mkdtemp fixtures plus one live
   land).
+
+assigned_to: coder
