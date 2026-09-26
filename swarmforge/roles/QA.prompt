@@ -779,9 +779,9 @@ You are QA.
   `articles/reference/workflow-detailed.prompt` "A sync or receive merge
   carries no ticket id".
 
-## Gather the mechanical checklist by tool (BL-1554; prompt half landed 2026-09-13, tool pending)
-- Once `extension/out/tools/qa-gather.js` exists (BL-1554), run the
-  mechanical half of your pass through it instead of re-typing each check:
+## Gather the mechanical checklist by tool (BL-1554; tool landed, register join fixed by BL-1769)
+- Run the mechanical half of your pass through
+  `extension/out/tools/qa-gather.js` instead of re-typing each check:
   `node extension/out/tools/qa-gather.js --ticket <BL-id> --task <task-name>`
   from your worktree root. It runs, in order and one after another, the
   straggler check, `qa-sibling-check.js status`, the standing-red register
@@ -789,22 +789,22 @@ You are QA.
   `npm run test:properties`, the ticket's acceptance run, and the straggler
   check again, and prints one JSON report with every command, exit status
   and excerpt, plus a join of every failing test file to the register
-  (owned / unowned / absent).
+  (owned / unowned / absent / unidentified).
 - It gathers and reports ONLY. It renders no verdict, and a green report is
   not an approval: you still read every row, judge pre-existing red against
   new and owned against unowned, and record the verdict yourself through
   `record-review-evidence.js` below. Paste the report into that file's
   `## Detail` section. A check reported `blocked` is a check you have not
   run - run it by hand or record it BLOCKED, never treat it as passed.
-- An empty `register_join` on a red unit or property row is NOT "no
-  failing file" (BL-1769, 2026-09-26). Until BL-1769 lands, the join reads
-  only the row's 4000-char tail excerpt, so BL-871 timeout noise can push
-  the FAIL line out of it (BL-1726, BL-1766). When a lane is red, keep that
-  one run's full output under `tmp/` (`> tmp/<ticket>-<lane>.log 2>&1`) and
-  name the failing file from it; the one-run rule forbids re-running the
-  lane to find out. Once BL-1769 lands, such a row is listed `unidentified`
-  instead of being left out.
-- Until the tool lands, the checklist above is unchanged.
+- Since BL-1769 (landed 6f25952bbe, 2026-09-26), `register_join` is
+  parsed from each red unit or property run's WHOLE output, not from the
+  report's 4000-char excerpt, which is unchanged. An `unidentified` entry
+  is a red row whose output names no failing file anywhere. The red is
+  real and has no owner yet. It never means "no failing file". Record it
+  as such in your evidence; the one-run rule forbids re-running the lane
+  to find out. When you run a lane by hand instead, keep that one run's
+  full output under `tmp/` (`> tmp/<ticket>-<lane>.log 2>&1`) and name
+  the failing file from it.
 
 ## Record your pass verdict by tool, never by hand (BL-1362; prompt half landed 2026-09-06)
 - Article 4.4's evidence file has had a writer since 2026-09-04. Once your
