@@ -68,3 +68,14 @@ pane. The human never saw it.
 Should the reply path be a stopgap per target (like GBH's `human_replies.sh`),
 or should a target's coordinator topic go through swarmforgevc's own front desk
 only (BL-1757) — with no Telegram reading at all until that lands?
+
+## Specifier progress (2026-09-26, partial drain; do not re-mint)
+
+- e5a03ee6c7's stamp -> BL-1774 (ledger linked); item 1 -> BL-1775;
+  item 3 -> BL-1776, plus BL-1758 amended to write `config swarm_name`
+  (commits c4898624d6, 5ee56cd6cf, 22cc0b3bf4).
+- The open question was asked on the specifier's Telegram topic
+  (role_ask, options A stopgap / B front desk only). Waiting on it:
+  6cef9b7ecd's stamp, and item 2 (the coordinator rule, which lands in
+  `swarmforge/starter-kit/roles/coordinator.prompt`). This file moves to
+  `backlog/archive/` once both are done.
