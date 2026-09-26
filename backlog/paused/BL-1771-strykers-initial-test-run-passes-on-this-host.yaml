@@ -1,0 +1,170 @@
+id: BL-1771
+title: "Stryker's initial test run still fails on this host after BL-1761 - bl1418RoleEnumerationClassification.test.js reads six extension/src files through a root two parents up (.stryker-tmp/ in a sandbox, ENOENT), and activePoolFreshnessAudit.test.js, ruled a Stryker-only red to be left out of the mutation run on 2026-09-02, was never actually left out - so no TypeScript parcel can be mutation-tested: bl1418 resolves extension sources from the extension root it runs in, and the default Stryker run excludes exactly the one ruled file"
+milestone: M8
+type: defect
+severity: high
+# high: a broken quality gate. With BL-1761 fixed, these two files are the
+# whole remaining failure set of the dry run (hardener BL-1761 evidence,
+# 2026-09-26), so every hardener mutation run still falls back to the
+# degraded posture. Not critical: nothing is lost.
+status: todo
+epic: code-quality-gates
+priority: 2
+direction: hardender-found
+depends_on: [BL-1761]
+# BL-1761 (active, hardener pass done 2026-09-26) carries the other half of the
+# dry-run fix (recordTestDuration.js and confirmPoleAloneOutcomeShapes.test.js);
+# this ticket's dry-run evidence can only come out green once it lands.
+mutation_cost: medium
+# medium: test code and Stryker/vitest config only, but the hardener's
+# gate here IS a real Stryker dry run (~9 min on this host).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1771-strykers-initial-test-run-passes-on-this-host.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1771StrykerInitialRunSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity high
+  defect, no choice posed, no ruling_options). New feature file. FIRM:
+  bl1418 is fixed by resolution (extension paths from the extension root,
+  repo-root siblings left on their existing walk-up), never by skipping or
+  sandbox-detecting it, and never with git rev-parse --show-toplevel
+  (hardener.prompt BL-1066). activePoolFreshnessAudit.test.js is excluded
+  from the mutation run ONLY, as ruled 2026-09-02; it keeps running in the
+  unit lane.
+
+invariants:
+  - "An extension/ path that a unit test reads resolves inside whatever extension root the test is running from - the real checkout or a Stryker sandbox - and never through a directory above it."
+
+description: |
+  ## What is wrong
+
+  Hardener note 001542 and the BL-1761 hardener evidence
+  (`backlog/evidence/BL-1761-hardender-20260926.md`, on the hardener branch
+  at 9f4e9e4e6d). After BL-1761's own site was fixed, four live dry runs
+  (02:57-03:14) failed on two other files. With both temporarily excluded
+  for verification only, the run was clean. So these two are the whole
+  remaining set:
+
+  1. `extension/test/bl1418RoleEnumerationClassification.test.js`:
+     `REPO_ROOT = path.join(__dirname, '..', '..')`, then
+     `read('extension/src/...')` for six sources (roleTopicMapStore.ts,
+     topicIcon.ts, rolePack.ts, swarmMetrics.ts, qaBounce.ts,
+     pipelineReviewOracle.ts). In a sandbox, `REPO_ROOT` is `.stryker-tmp/`,
+     which has no `extension/` child: `ENOENT ...
+     .stryker-tmp/extension/src/concierge/roleTopicMapStore.ts`. Its three
+     `swarmforge/scripts/*.bb` reads are the correct repo-root-sibling case
+     (`ensureStrykerSandboxSiblingLinks` plants `.stryker-tmp/swarmforge`)
+     and must not move.
+  2. `extension/test/activePoolFreshnessAudit.test.js`: the 2026-09-02
+     resolution in hardener.prompt ("`git rev-parse --show-toplevel` is the
+     WRONG repair") keeps its `../..` walk-up, loud inside Stryker, "with
+     the file excluded from the mutation run". The file's own comment says
+     "exclude this file when running Stryker". Nothing does:
+     `extension/stryker.config.json` runs `vitest.config.mjs`, whose
+     `test.exclude` does not name it.
+
+  Mint census (specifier, 2026-09-26):
+  - 275 files under `extension/test` and `extension/src` use
+    `path.join|resolve(__dirname, '..', '..')`. 80 of them are
+    non-property unit tests, which Stryker's initial run loads.
+  - Only 7 of those 80 also carry an `extension/` path literal
+    (`for f in $(grep -rlE "path\.(join|resolve)\(__dirname, *'\.\.', *'\.\.'" test | grep -v property); do grep -qE "['\"\`]extension/" $f && echo $f; done`
+    from `extension/`).
+  - The two above, plus BL-1761's own file, are the ones the dry run
+    fails. The other four pass in the sandbox (the hardener's verification
+    run).
+
+  ## What is wanted
+  - bl1418's `extension/` reads resolve from the extension root the test
+    runs in, and its repo-root-sibling reads stay on the walk-up. All
+    existing assertions are unchanged.
+  - The default Stryker run (`extension/stryker.config.json`) selects every
+    unit-lane test file except `extension/test/activePoolFreshnessAudit.test.js`,
+    which still runs in the unit lane. Its in-file comment then states
+    where the exclusion lives.
+  - The hardener's evidence records one `npx stryker run --dryRunOnly` on
+    the default config at the parcel commit (BL-1761 landed first) whose
+    initial test run has zero failed tests, quoting that line. This is the
+    ticket's real gate, and it is the hardener's to run.
+
+  ## How (direction, not mandate)
+  - Scenario 01 can compare the two configs' resolved include and exclude
+    sets over `extension/test` (import both config modules and glob). No
+    vitest collection is needed.
+  - Scenario 02: build the sandbox under mkdtemp OUTSIDE the repository.
+    Then a repair that escapes to the real checkout
+    (`git rev-parse --show-toplevel`, an absolute repo path) cannot pass,
+    because nothing above the sandbox is a checkout. The sandbox holds the
+    test file, the extension sources it reads (copied or symlinked),
+    `node_modules` and a vitest config; its parent holds a `swarmforge`
+    link. Run one vitest child: seconds, inside the BL-1358 ceiling.
+    BL-1761's `bl1761ConfirmPoleAloneSandboxSteps.js` (landing first) is
+    the pattern.
+  - A dedicated `vitest.stryker.config.mjs` extending `vitest.config.mjs`
+    is one way to scope the exclusion to Stryker; the per-ticket
+    `vitest.bl*.stryker.config.mjs` files select their own subsets and are
+    out of scope.
+
+  ## Scope
+  - `extension/test/bl1418RoleEnumerationClassification.test.js`, and a
+    `test/helpers/` module if the resolution is shared.
+  - `extension/test/activePoolFreshnessAudit.test.js` (comment only).
+  - `extension/stryker.config.json`, and a Stryker-only vitest config if
+    chosen. `extension/vitest.config.mjs` only if the unit lane's selection
+    is untouched.
+  - The feature, `specs/pipeline/steps/bl1771StrykerInitialRunSteps.js`,
+    `specs/pipeline/steps/index.js`, and evidence.
+  - The other 273 walk-up files are out of scope. They are safe or
+    property-only per the census, and any the next dry run names is its
+    own ticket.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). QA starts no
+  mutation run (QA note 003092 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1771-strykers-initial-test-run-passes-on-this-host.feature`:
+     2 scenarios ok. Record the duration.
+  2. The unit lane green, including bl1418RoleEnumerationClassification
+     and activePoolFreshnessAudit (the latter is excluded from Stryker only).
+  3. READ the hardener's committed evidence: it quotes one default-config
+     `--dryRunOnly` run on this parcel's commit whose initial test run has
+     zero failed tests. Absent or failed means bounce to the hardener.
+  4. `git diff main...HEAD --name-only` names only the Scope files and
+     evidence.
+
+source: |
+  Hardener note to the specifier, priority 00, 2026-09-26 (inbound
+  00_20260926T022024Z_001542_from_hardender), verbatim: "BL-1761 census: 2
+  more BL-1066 Stryker reds, see BL-1761 hardener evidence". Hardener
+  evidence, verbatim: "Its comment says to \"exclude this file when running
+  Stryker\" but no such exclusion is actually wired into `vitest.config.mjs`
+  or `stryker.config.json` - this is a real, separate gap"; and "Recommend
+  a specifier-owned follow-up ticket to audit/fix these systematically
+  rather than whack-a-mole one per Stryker run". Parents: BL-1761,
+  BL-1066, BL-1418.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) while
+  completing the hardener's note, the same pass. The systematic audit the
+  hardener recommends was scoped at mint by census rather than minted
+  whole. Only 7 of 80 non-property walk-up tests reach an `extension/` path
+  at all, and the verification run names exactly two failing, so this
+  ticket fixes those two and gates on a clean dry run. A recurrence guard
+  over the census would need data-flow matching with an allowlist (the
+  other four carry `extension/` as data). It is not minted; the next dry
+  run is the detector.
+  Not registered in backlog/standing-reds.tsv: a Stryker-sandbox-only red
+  is not a lane red on main (BL-1761 precedent).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4), held by depends_on until
+  BL-1761 lands.
+
+  INVEST: Independent once BL-1761 lands (depends_on), Negotiable (config
+  shape and resolution helper are direction), Valuable (mutation testing
+  works again on this host), Estimable (two files and one config),
+  Small, Testable (two cheap scenarios, plus the hardener's dry run as
+  evidence).
