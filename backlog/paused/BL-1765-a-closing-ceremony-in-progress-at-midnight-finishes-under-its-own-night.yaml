@@ -24,7 +24,7 @@ acceptance: specs/features/BL-1765-a-closing-ceremony-in-progress-at-midnight-fi
 required_wiring:
   - 'specs/pipeline/steps/bl1765CeremonyCrossesMidnightSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   New feature file and a behaviour change in the live ceremony runner.
   FIRM: the bound. A night in progress keeps the day it started under only
