@@ -1,12 +1,10 @@
 Feature: BL-1772 The --push publish re-points the QA branch after a land
 
-  BL-1438 wired post-land-repoint! into land_main_publish.sh --land only.
-  QA's standing recipe is --decide-only, a hand-built tip-pure commit, and
-  a publish of that SHA - never --land - so the re-point never runs. The
-  QA branch then keeps every review merge, the land walk ranges over them
-  (BL-1461: origin/main..tip, the cost bound is the re-point), and every
-  land pays about twenty minutes (about 2700 branch-only commits on
-  2026-09-26, recorded on BL-1768 and left out of that ticket's scope).
+  Stamp-off of hotfix db4da5c573 (BL-848). BL-1438 had wired
+  post-land-repoint! into land_main_publish.sh --land only. QA's standing
+  recipe is --decide-only, a hand-built tip-pure commit, and a publish of
+  that SHA - never --land - so the re-point never ran. The hotfix makes
+  --push invoke the same verb, and points the QA recipe at --push.
 
   This feature is that land_main_publish.sh --push, after it has printed
   LAND_PUBLISHED, invokes the same re-point verb --land already runs,
