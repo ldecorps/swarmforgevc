@@ -69,6 +69,36 @@ The record lives at `.swarmforge/ollama/serve.json` (`owner`: `external` or
 server the swarm did not start is never stopped by the swarm (it may be
 serving something else, like the Local Agent chat).
 
+### Ollama is stopped by the swarm (BL-1704)
+
+Both `stop_ancillary_services.sh` (the full-stack stop) and
+`kill_all_swarm.sh` (the endless-loop hard stop and the closing
+ceremony's sleep path both call this) source `ollama_ancillary_lib.sh`
+and call `ollama_ancillary_stop_swarm_owned` once, reading the same
+`serve.json` record the launch wrote:
+
+- **`swarm-owned`, pid alive, still `ollama serve`.** Stops the server's
+  runner children first (direct children whose command line reads like
+  `ollama runner` or `llama-server` — `pgrep -P`, never a host-wide
+  pattern sweep, BL-1385/1390), then the server itself: TERM, a bounded
+  wait, then KILL if it hasn't gone. The record is removed. The invariant:
+  a pid is signalled only after its **live** command line is confirmed
+  still `ollama serve` (or a runner child of that pid) — never from the
+  record alone, so a pid recycled by an unrelated process is never
+  touched.
+- **`external`.** Signals nothing; the stop log names the server by
+  **endpoint only** — an external record carries no pid to name.
+- **`swarm-owned`, but the pid is gone or no longer `ollama serve`.**
+  Signals nothing; clears the stale record; the stop log says which.
+  Two distinct cases share this outcome: the pid is gone, or it now
+  belongs to a different command line.
+- **No record.** Nothing, silently — a Claude-only pack never had one.
+
+A stop-side failure (a runner or the server outliving TERM **and** KILL)
+is logged and never fatal to the stop path itself — both call sites guard
+the call with `|| true`, the same posture the launch-time probe already
+had (BL-1727).
+
 `swarm.env` keys (all optional; the defaults reproduce the previous
 hand-run shape — bare `ollama serve`, native context length):
 
@@ -81,9 +111,10 @@ hand-run shape — bare `ollama serve`, native context length):
 | `SWARMFORGE_OLLAMA_POLL_INTERVAL_SECONDS` | how often the wait re-probes | `1` |
 
 Restarting a crashed server mid-shift is not covered here — this is a
-launch-time gate only. Stopping a swarm-owned server (BL-1704) and
-reaping ghost runners / detached run clients (BL-1705) are separate,
-not-yet-documented tickets from the same intake.
+launch-time gate only. Stopping a swarm-owned server is documented above
+("Ollama is stopped by the swarm (BL-1704)"); reaping ghost runners and
+detached run clients (BL-1705, narrowed by BL-1726) is documented in
+`docs/reference/Specification.MD`'s BL-1705/BL-1726 entries.
 
 ## Repair
 

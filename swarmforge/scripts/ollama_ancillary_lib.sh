@@ -139,6 +139,115 @@ ollama_ancillary_stop_pid() {
   return 1
 }
 
+# ── BL-1704: the stop side, using BL-1703's own record ──────────────────
+
+# One fixed-format field out of ollama_ancillary_write_record's own JSON
+# shape - never a general JSON parser, matched to that exact writer.
+ollama_ancillary_read_record_field() {
+  local record_path="$1"
+  local field="$2"
+  case "$field" in
+    pid)
+      sed -n 's/^  "pid": \([0-9]*\),\{0,1\}$/\1/p' "$record_path"
+      ;;
+    *)
+      sed -n "s/^  \"$field\": \"\\(.*\\)\",\\{0,1\\}\$/\\1/p" "$record_path"
+      ;;
+  esac
+}
+
+# POSIX `ps -o args=` - the full command line, identical shape on stock
+# macOS ps and Linux procps. Empty when the pid is gone.
+ollama_ancillary_pid_cmdline() {
+  local pid="$1"
+  ps -o args= -p "$pid" 2>/dev/null | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+# True only when PID is alive AND its live command line still reads like
+# `ollama serve` - never assumed from the record alone (BL-1704's own
+# invariant: a pid that now belongs to something else is never signalled).
+ollama_ancillary_pid_is_ollama_serve() {
+  local pid="$1"
+  [ -n "$pid" ] || return 1
+  ollama_ancillary_pid_alive "$pid" || return 1
+  case "$(ollama_ancillary_pid_cmdline "$pid")" in
+    *ollama*serve*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Direct children of SERVER_PID (pgrep -P, never a host-wide pattern sweep
+# - BL-1385/1390) whose command line reads like ollama's own model runner
+# (`ollama runner` or `llama-server`). One pid per line on stdout.
+ollama_ancillary_runner_children() {
+  local server_pid="$1"
+  local child
+  pgrep -P "$server_pid" 2>/dev/null | while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    case "$(ollama_ancillary_pid_cmdline "$child")" in
+      *llama-server*) printf '%s\n' "$child" ;;
+      *"ollama runner"*) printf '%s\n' "$child" ;;
+    esac
+  done
+}
+
+# The whole stop contract for one root (BL-1704), called once from each
+# stop path. Idempotent (a no-op with no record); never signals a pid the
+# record does not name as swarm-owned, and never signals one whose live
+# command line has drifted away from ollama serve. The record is removed
+# in every case except "no record" (nothing to remove). Every outcome logs
+# one line to stderr naming what happened, so the stop log always says why.
+ollama_ancillary_stop_swarm_owned() {
+  local state_dir="$1"
+  local record_path
+  record_path="$(ollama_ancillary_record_path "$state_dir")"
+
+  [ -f "$record_path" ] || return 0
+
+  local owner pid endpoint
+  owner="$(ollama_ancillary_read_record_field "$record_path" "owner")"
+  pid="$(ollama_ancillary_read_record_field "$record_path" "pid")"
+  endpoint="$(ollama_ancillary_read_record_field "$record_path" "endpoint")"
+
+  if [ "$owner" != "swarm-owned" ]; then
+    echo "ollama-ancillary: leaving an external ollama server running at $endpoint" >&2
+    return 0
+  fi
+
+  if ! ollama_ancillary_pid_is_ollama_serve "$pid"; then
+    # BL-1704 QA D1: ollama_ancillary_pid_is_ollama_serve folds "pid gone"
+    # and "pid alive but recycled by something else" into one false - the
+    # stop log must tell them apart (requirement 3's "the stop log says
+    # which"), so split on liveness here rather than in that predicate.
+    if ollama_ancillary_pid_alive "$pid"; then
+      echo "ollama-ancillary: recorded swarm-owned ollama server (pid $pid) now belongs to $(ollama_ancillary_pid_cmdline "$pid") - clearing the stale record, nothing signalled" >&2
+    else
+      echo "ollama-ancillary: recorded swarm-owned ollama server (pid ${pid:-unknown}) is gone - clearing the stale record, nothing signalled" >&2
+    fi
+    rm -f "$record_path"
+    return 0
+  fi
+
+  local runner runner_result=0
+  while IFS= read -r runner; do
+    [ -n "$runner" ] || continue
+    ollama_ancillary_stop_pid "$runner" || runner_result=1
+  done <<EOF
+$(ollama_ancillary_runner_children "$pid")
+EOF
+
+  ollama_ancillary_stop_pid "$pid"
+  local server_result=$?
+  rm -f "$record_path"
+
+  if [ "$server_result" -eq 0 ] && [ "$runner_result" -eq 0 ]; then
+    echo "ollama-ancillary: stopped swarm-owned ollama server (pid $pid) and its runner children" >&2
+    return 0
+  fi
+  echo "ollama-ancillary: ollama server (pid $pid) or a runner child did not stop cleanly" >&2
+  return 1
+}
+
 # The whole start-and-probe contract for one launch (BL-1703 invariant: no
 # seat of a pack using the local endpoint starts unless this returns 0).
 #

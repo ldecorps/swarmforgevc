@@ -13,10 +13,16 @@
 # cheap and side-effect-free when babysitterd is not running. Every other
 # ancillary (operator, front desk, onboarder) is still untouched here — the
 # full-stack path for those is ./stop-swarm.sh via stop_ancillary_services.sh.
+#
+# BL-1704: ollama gets the same exception as babysitterd, for the same
+# reason - the endless-loop hard stop and the ceremony sleep path both
+# invoke THIS name, and an 11GB model runner left behind by either is
+# exactly the ghost this ticket exists to prevent.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/babysitterd_census_lib.sh"
+source "$SCRIPT_DIR/ollama_ancillary_lib.sh"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'HELP'
@@ -60,6 +66,7 @@ if ROOT="$(cd "$ROOT_ARG" 2>/dev/null && pwd)"; then
   # one tracked pidfile — a babysitterd of another root is untouched.
   babysitterd_census_signal "$ROOT"
   signal_pid_file "$ROOT/.swarmforge/babysitterd/babysitterd.pid"
+  ollama_ancillary_stop_swarm_owned "$ROOT/.swarmforge" || true
 fi
 
 echo "kill_all_swarm.sh: pipeline-only shim (+ babysitterd pidfile) → kill_pipeline_swarm.sh (prefer that name; full stack: ./stop-swarm.sh)" >&2

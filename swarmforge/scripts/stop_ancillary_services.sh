@@ -35,6 +35,7 @@ source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 source "$SCRIPT_DIR/lifecycle_matrix.sh"
 source "$SCRIPT_DIR/tunnel_ownership_lib.sh"
 source "$SCRIPT_DIR/babysitterd_census_lib.sh"
+source "$SCRIPT_DIR/ollama_ancillary_lib.sh"
 
 # Sets the globals every stop_* function below reads: ROOT, OP_DIR, BB_DIR,
 # LEGACY_BB_DIR. Callers that source this file (finish_shift_lib.sh) must
@@ -250,6 +251,18 @@ stop_ancillary_services_main() {
   while IFS= read -r component; do
     stop_ancillary_component "$component"
   done < <(lifecycle_matrix_stop_set stop-swarm)
+  # BL-1704: not a lifecycle_matrix component - ollama is started directly
+  # by the launch path (swarmforge.sh), not by any of the components
+  # above, so its stop sits beside them rather than inside that dispatch.
+  # `|| true` (architect bounce D1, 2026-09-25): a swarm-owned server or
+  # runner child that survives TERM+KILL is a real, documented failure
+  # return of this function - under this file's own run-directly
+  # `set -euo pipefail`, an unguarded call here would abort the whole
+  # function right at this line, silently skipping the "done" log below
+  # and everything a caller further down might still expect to run.
+  # Matches kill_all_swarm.sh's own call and this file's own
+  # ollama_ancillary_ensure_ready_for_launch precedent (BL-1727).
+  ollama_ancillary_stop_swarm_owned "$ROOT/.swarmforge" || true
   log "stop_ancillary_services done"
 }
 
