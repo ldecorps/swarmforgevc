@@ -23,7 +23,7 @@ acceptance: specs/features/BL-1776-the-provisioner-keys-fleet-creds-only-by-a-sw
 required_wiring:
   - 'specs/pipeline/steps/bl1776ProvisionerDeclaredSwarmNameSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Intake item 3 offered two fixes: onboarding writes swarm_name into the
   target before provisioning, or the provisioner reads it from the target
