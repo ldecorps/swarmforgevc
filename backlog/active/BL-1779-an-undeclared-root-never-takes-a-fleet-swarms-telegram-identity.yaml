@@ -187,3 +187,5 @@ notes: |
   five handlers, a bounded census), Small (three scenarios, one
   invariant), Testable (creds CLI over fixture fleet homes, and the live
   pid check in QA's step 2).
+
+assigned_to: coder
