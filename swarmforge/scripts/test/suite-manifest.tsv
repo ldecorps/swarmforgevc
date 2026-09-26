@@ -323,6 +323,8 @@ test_handoffd_closing_context_clear_wiring.sh	standing
 test_handoffd_cooldown_sweep_wiring.sh	standing		
 test_handoffd_dead_letter_notify_wiring.sh	standing
 test_handoffd_driver_seat_injection_skip.sh	standing
+test_handoffd_ollama_crash_restart_sweep_wiring.sh	standing
+test_handoffd_ollama_restart_alert_text.sh	standing
 test_handoffd_startup_restores_driver_spec_writable.sh	standing
 test_handoffd_expedite_park_reversal_wiring.sh	standing		
 test_handoffd_flow_watchdog_wiring.sh	standing		

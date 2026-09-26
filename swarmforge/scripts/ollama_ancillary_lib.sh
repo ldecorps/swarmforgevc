@@ -176,6 +176,45 @@ ollama_ancillary_pid_is_ollama_serve() {
   esac
 }
 
+# BL-1711 QA D1: an external record (BL-1703 writes one with NO pid) has
+# no single pid to check liveness against, so the crash-restart sweep's
+# usual "is the recorded pid still ollama serve" check is always false for
+# it - the only remaining signal, an unanswering endpoint, is exactly what
+# a live server loading a large model on CPU also looks like. This is the
+# pid-less equivalent, scoped to the recorded endpoint's own port: true
+# when something is listening there, false once it is gone - never a
+# signal, and never used to target anything, only to decide crash-vs-not
+# for a record this sweep cannot pin to one pid.
+#
+# BL-1711 QA D1 (2nd pass, 2026-09-26): the first cut piped to `grep -Eq`,
+# which matched grep's OWN argv line, always true regardless of any real
+# server. A host-wide `ps` text scan fixed for that self-match is STILL a
+# host-wide pattern sweep - the exact shape ollama_ancillary_runner_children
+# below already avoids for pids (BL-1385/1390) - so on any host already
+# running an unrelated `ollama serve` (a second local-llm-swarm pack, or
+# this very host's own swarm-owned one) it is a false positive for THIS
+# record's own external process, which QA's own defect text named as a
+# real, not hypothetical, gap ("e.g. a second swarm"). A bare TCP connect
+# to the recorded endpoint's own port scopes the check to the ONE process
+# this record actually names, matching what ollama_ancillary_probe below
+# already keys off of - bash's own /dev/tcp, no curl round-trip, since a
+# server mid-load that has bound its port but is not yet answering still
+# counts as alive here (ollama_ancillary_probe is the separate, later
+# check for "is it actually answering"). Bash-only (like the
+# ${BASH_SOURCE[0]} use below) - this function is reached only via
+# ollama_ancillary_restart_cli.sh, never swarmforge.sh's own zsh sourcing.
+ollama_ancillary_any_ollama_serve_alive() {
+  local endpoint="$1"
+  local hostport="${endpoint#*://}"
+  hostport="${hostport%%/*}"
+  local host="${hostport%%:*}"
+  local port="${hostport##*:}"
+  [ -n "$host" ] && [ -n "$port" ] || return 1
+  { exec 3<>"/dev/tcp/$host/$port"; } 2>/dev/null || return 1
+  exec 3>&- 3<&-
+  return 0
+}
+
 # Direct children of SERVER_PID (pgrep -P, never a host-wide pattern sweep
 # - BL-1385/1390) whose command line reads like ollama's own model runner
 # (`ollama runner` or `llama-server`). One pid per line on stdout.
@@ -305,5 +344,173 @@ ollama_ancillary_ensure_ready_for_launch() {
   # already reports ITS OWN failure unconditionally next.
   ollama_ancillary_stop_pid "$started_pid" || true
   echo "ollama-ancillary: local-model endpoint $url never answered within ${wait_seconds}s (server log: $log_path)" >&2
+  return 1
+}
+
+# ── BL-1711: restart a crashed ollama server while a local pack depends
+# on it ──────────────────────────────────────────────────────────────────
+#
+# handoffd.bb (the always-on poll loop) shells to this once per sweep
+# tick, never re-implementing the start in bb, so start (BL-1703) and
+# restart can never drift. State that must survive a handoffd restart
+# lives beside the record, under the same ollama/ directory:
+#   silence-since  - epoch seconds of the first probe that found the
+#                    recorded pid gone/not-ollama-serve AND the endpoint
+#                    silent; removed the moment either condition clears.
+#   restarts.log   - one epoch-seconds timestamp per line, appended on
+#                    every restart attempt (success or failure to come
+#                    back up); the bound counts lines within the window.
+: "${OLLAMA_ANCILLARY_CRASH_CONFIRM_SECONDS:=10}"
+: "${OLLAMA_ANCILLARY_RESTART_WINDOW_SECONDS:=1800}"
+: "${OLLAMA_ANCILLARY_RESTART_MAX_IN_WINDOW:=3}"
+
+ollama_ancillary_silence_marker_path() {
+  printf '%s/ollama/silence-since\n' "$1"
+}
+
+ollama_ancillary_restart_log_path() {
+  printf '%s/ollama/restarts.log\n' "$1"
+}
+
+# Count of restart-log lines (epoch seconds) within the last WINDOW_SECONDS
+# of now. No log, or an unreadable one, counts as zero - never an error
+# (a fresh state_dir has no restart history yet).
+ollama_ancillary_restarts_in_window() {
+  local log_path="$1" window_seconds="$2" now cutoff count ts
+  now="$(date +%s)"
+  cutoff=$((now - window_seconds))
+  count=0
+  [ -f "$log_path" ] || { printf '%s\n' "$count"; return 0; }
+  while IFS= read -r ts; do
+    [ -n "$ts" ] || continue
+    if [ "$ts" -ge "$cutoff" ] 2>/dev/null; then
+      count=$((count + 1))
+    fi
+  done < "$log_path"
+  printf '%s\n' "$count"
+}
+
+# The whole crash-restart contract for one root (BL-1711), called once per
+# handoffd sweep tick. Idempotent (a no-op with no record). Prints exactly
+# ONE line to stdout when something alert-worthy happened this tick -
+# "RESTARTED <old-pid> <new-pid> <log-path>" or
+# "ESCALATED <count> <window-seconds> <log-path>" - the caller (handoffd)
+# reads this to decide whether to raise its own alert; every other outcome
+# (still alive, first missed probe, unconfirmed, no record) prints nothing
+# on stdout, only a stderr log line.
+#
+# Args: project-root binary models-dir context-length wait-seconds
+#       poll-interval-seconds log-path
+ollama_ancillary_restart_if_crashed() {
+  local project_root="$1" binary="$2" models_dir="$3" context_length="$4"
+  local wait_seconds="$5" poll_interval="$6" log_path="$7"
+  local state_dir="$project_root/.swarmforge"
+  local record_path marker_path restart_log
+  record_path="$(ollama_ancillary_record_path "$state_dir")"
+  marker_path="$(ollama_ancillary_silence_marker_path "$state_dir")"
+  restart_log="$(ollama_ancillary_restart_log_path "$state_dir")"
+
+  [ -f "$record_path" ] || return 0
+
+  local pid endpoint
+  pid="$(ollama_ancillary_read_record_field "$record_path" "pid")"
+  endpoint="$(ollama_ancillary_read_record_field "$record_path" "endpoint")"
+
+  # Invariant: never signal a live ollama serve process - checked here
+  # only to decide crash-vs-not, this function never calls stop_pid on it.
+  # BL-1711 QA D1: an external record carries no pid (BL-1703 writes
+  # "pid": null for one), so there is nothing for
+  # ollama_ancillary_pid_is_ollama_serve to check - fall back to "is the
+  # recorded endpoint's own port open" for that case, the only way to
+  # establish "process gone" without a pid to pin it to.
+  if [ -n "$pid" ]; then
+    if ollama_ancillary_pid_is_ollama_serve "$pid"; then
+      rm -f "$marker_path"
+      return 0
+    fi
+  elif ollama_ancillary_any_ollama_serve_alive "$endpoint"; then
+    rm -f "$marker_path"
+    return 0
+  fi
+
+  # The recorded pid is gone or no longer ollama serve. A live-but-silent
+  # server is never killed and gets no restart - so an ANSWERING endpoint
+  # (even under a changed pid) means this is not a crash.
+  if ollama_ancillary_probe "$endpoint"; then
+    rm -f "$marker_path"
+    return 0
+  fi
+
+  local now
+  now="$(date +%s)"
+  if [ ! -f "$marker_path" ]; then
+    # First missed probe - one missed probe changes nothing.
+    mkdir -p "$(dirname "$marker_path")"
+    printf '%s\n' "$now" > "$marker_path"
+    echo "ollama-ancillary: ollama endpoint $endpoint unreachable (pid ${pid:-unknown} gone) - starting confirmation window" >&2
+    return 0
+  fi
+
+  local since elapsed
+  since="$(cat "$marker_path" 2>/dev/null || echo "$now")"
+  elapsed=$((now - since))
+  if [ "$elapsed" -lt "$OLLAMA_ANCILLARY_CRASH_CONFIRM_SECONDS" ]; then
+    return 0
+  fi
+
+  # Confirmed crash. Restart bound: at most N restarts in the window.
+  local count
+  count="$(ollama_ancillary_restarts_in_window "$restart_log" "$OLLAMA_ANCILLARY_RESTART_WINDOW_SECONDS")"
+  if [ "$count" -ge "$OLLAMA_ANCILLARY_RESTART_MAX_IN_WINDOW" ]; then
+    echo "ollama-ancillary: restart bound reached ($count in ${OLLAMA_ANCILLARY_RESTART_WINDOW_SECONDS}s) - not restarting, server log: $log_path" >&2
+    printf 'ESCALATED %s %s %s\n' "$count" "$OLLAMA_ANCILLARY_RESTART_WINDOW_SECONDS" "$log_path"
+    return 0
+  fi
+
+  local old_pid="${pid:-unknown}"
+  # BL-1705's own ghost classification, run once before starting the new
+  # server - the dead server's orphaned runners (an 11GB one, typically)
+  # would otherwise starve the replacement of memory. Best-effort: a
+  # sweep failure never blocks the restart itself.
+  #
+  # This file's own directory, resolved HERE rather than at source time:
+  # this function is reached only via ollama_ancillary_restart_cli.sh
+  # (bash), never by swarmforge.sh's own zsh sourcing (that caller only
+  # ever reaches ollama_ancillary_ensure_ready_for_launch) - a top-level
+  # ${BASH_SOURCE[0]} reference at source time errored under zsh's own
+  # `set -u` on every single launch, ollama or not (bash array syntax zsh
+  # does not share, despite this file's own no-arrays constraint above),
+  # and computed the wrong directory there besides. Scoped to a function
+  # only bash ever calls, ${BASH_SOURCE[0]} is exactly right, every time.
+  local lib_dir
+  lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  bb "$lib_dir/orphan_janitor_sweep_cli.bb" "$project_root" >/dev/null 2>&1 || true
+  local new_pid
+  new_pid="$(ollama_ancillary_start_server "$binary" "$models_dir" "$context_length" "$log_path")"
+  mkdir -p "$(dirname "$restart_log")"
+  printf '%s\n' "$now" >> "$restart_log"
+  rm -f "$marker_path"
+
+  local started_at
+  started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  local elapsed2=0
+  while [ "$elapsed2" -lt "$wait_seconds" ]; do
+    if ollama_ancillary_probe "$endpoint"; then
+      ollama_ancillary_write_record "$record_path" "swarm-owned" "$new_pid" "$started_at" "$endpoint"
+      echo "ollama-ancillary: restarted crashed ollama server (old pid $old_pid -> new pid $new_pid), server log: $log_path" >&2
+      printf 'RESTARTED %s %s %s\n' "$old_pid" "$new_pid" "$log_path"
+      return 0
+    fi
+    sleep "$poll_interval"
+    elapsed2=$((elapsed2 + poll_interval))
+  done
+
+  ollama_ancillary_stop_pid "$new_pid" || true
+  echo "ollama-ancillary: restart of crashed ollama server failed - new pid $new_pid never answered within ${wait_seconds}s, server log: $log_path" >&2
+  # BL-1711 QA D2: a single restart attempt whose new server never came up
+  # is not "restarts exhausted" - give it its own token so the alert text
+  # (handoffd.bb) can tell the two apart instead of both reading
+  # "ESCALATED".
+  printf 'RESTART_FAILED %s %s %s\n' "$old_pid" "$new_pid" "$log_path"
   return 1
 }

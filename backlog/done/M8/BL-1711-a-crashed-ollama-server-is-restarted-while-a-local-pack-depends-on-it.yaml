@@ -149,3 +149,8 @@ notes: |
   scenarios, one invariant), Testable (stand-in binary, endpoint, runner).
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-25, by: QA, blamed: coder, class: behavior, commit: be45dd7039, evidence: backlog/evidence/BL-1711-QA-20260925.md }
+  - { at: 2026-09-26, by: QA, blamed: coder, class: behavior, commit: 987b190df5, evidence: backlog/evidence/BL-1711-QA-20260926.md }
+abandoned_commits: [14d91003d0, fa0767cb5b, 08c5797a72, 02ae9b4b88, 8cb8912945, 4d8b10af88, 323006ff01, 92f52b03b3, a0b976f627, 249d39e5dd, 85a60cdd3c, 16ce9448e9, 0c32a213a8, c892b4bc10, 21e75b6777]
