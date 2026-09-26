@@ -31,7 +31,7 @@ invariants:
 required_wiring:
   - "swarmforge/scripts/land_step_cli.bb::LAND_STRAY_DEFERRED::the CLI QA runs, and land_main_publish.sh --land runs for it, prints each deferral"
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM: the landing ticket's own land never waits on content that is not
   the landing ticket's. FIRM: a deferred stray is never landed, never
