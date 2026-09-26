@@ -39,7 +39,7 @@ approval_context: >
   landed ticket in view, any in-process parcel still blocks.
 
 invariants:
-  - "The re-point never resets a tree while any parcel in its in_process names no ticket or names a ticket other than the one just landed."
+  - "The re-point never resets a tree whose in_process holds anything beyond ONE git_handoff naming the landed ticket plus that same file's handoff_lib-registered sidecars."
 
 description: |
   ## What is wrong
@@ -74,12 +74,22 @@ description: |
     already passed by both `run_land` and `run_push`), a parcel in
     in_process that is a `git_handoff` whose `task:` names that ticket
     (the same `extract-ticket-id` the classifier uses) does not block.
+  - That parcel's own sidecars do not block either: a file named
+    `<that parcel's file name><suffix>` for a suffix in handoff_lib's
+    registry (`sidecar-suffixes`, handoff_lib.bb ~line 263: today
+    `.nudge`, `.chase.json`, `.claim-progress.json`,
+    `.batch-claim-progress.json`). handoffd's claim-progress sidecar
+    (`claim_progress_lib.bb`) sits beside the parcel at every QA land,
+    because QA commits evidence before it lands (amended 2026-09-26,
+    QA note 003254, evidence 6f146f85de).
   - Any other in-process file still blocks with the same reason, exactly
     as today:
     - a parcel naming another ticket;
     - a note, or a file naming no ticket;
     - an unreadable file;
-    - a second file beside the landed one.
+    - a second parcel beside the landed one;
+    - a sidecar named for any file other than the landed parcel's own
+      (another parcel's, or an orphan whose parcel is gone).
   - With no landed ticket in view (an old caller, a hand-run `repoint`),
     any in-process parcel still blocks.
   - After a proceed, the rest of the re-point is unchanged: dirty-tree
@@ -93,6 +103,10 @@ description: |
   - Read each in-process file's header lines (plain `field: value`, the
     handoff draft format) for `type:` and `task:`; any read or parse
     failure counts as blocking (fail-closed, as the guard already is).
+  - Reuse handoff_lib's `sidecar-suffixes`; never restate the list in
+    land_step_lib.bb, where a copy would drift the day a fifth sidecar
+    kind is registered. Load handoff_lib, or move the def into a leaf lib
+    that both load; that choice is the coder's.
   - The feature's fixture: a mkdtemp origin plus a clone standing in for
     the QA worktree (BL-1390), driving `land_step_cli.bb repoint <root>
     <task>` (the verb run_push calls).
@@ -111,7 +125,10 @@ qa_e2e_procedure: |
   2. `node specs/pipeline/cli.js specs/features/BL-1438-the-publish-re-points-the-qa-branch-after-a-land.feature`:
      all ok (its in_process row still skips).
   3. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
-  4. After landing, THIS parcel's own land, published from `<qa-worktree>`
+  4. Before the land, list `.worktrees/QA/.swarmforge/handoffs/inbox/in_process`
+     and quote it in your evidence. It normally holds the parcel and its
+     `.claim-progress.json` sidecar. After landing, THIS parcel's own land,
+     published from `<qa-worktree>`
      with the landed code, prints `LAND_REPOINTED` or
      `LAND_REPOINT_SKIPPED` naming an uncommitted change, never "a parcel
      in its in_process". Record which. A dirty-tree skip is BL-1772's
@@ -154,4 +171,38 @@ notes: |
   Estimable (one guard), Small, Testable (mkdtemp fixtures plus one live
   land).
 
+  AMENDED 2026-09-26 by the specifier (spec gap, mine), QA note 003254,
+  QA evidence 6f146f85de. The build (coder 0746ebf423, documenter tip
+  eb919fd684) was correct against the spec as minted: the blocking list
+  said "a second file beside the landed one", and nothing in the ticket
+  considered the landed parcel's own claim-progress sidecar. QA's
+  read-only probe of the parcel's predicate on the real QA in_process
+  returned false with the sidecar and true without it, so the re-point
+  would still skip on every land. Changed: What is wanted (sidecars of the
+  landed parcel are part of it; any other sidecar still blocks), the
+  invariant (restated over files, not parcels), How (reuse the registry),
+  qa_e2e step 4 (quote the real in_process before the land). The bounce
+  is charged to the specifier (record-bounce, evidence
+  backlog/evidence/BL-1773-bounce-20260926.md), never to the coder.
+  The parcel is past the coder, so the feature file on main is NOT edited
+  (BL-1385); the coder adds this text to the feature inside the parcel.
+  Scenario 03, appended after scenario 02:
+
+    # BL-1773 the-landed-parcels-own-sidecar-does-not-block-the-re-point-03
+    Scenario: the re-point proceeds when the landed ticket's parcel carries its own claim-progress sidecar
+      Given the worktree's in_process holds a git_handoff whose task names the landed ticket
+      And the worktree's in_process holds that parcel's claim-progress sidecar
+      When the post-land re-point runs for the landed ticket
+      Then it prints LAND_REPOINTED and the branch tip equals origin/main
+
+  And one new Examples row for scenario 02 (parcel column):
+    | the landed ticket's git_handoff and a claim-progress sidecar named for a different parcel |
+  Scenario 02's existing row "the landed ticket's git_handoff and a second
+  parcel" stays. The property test quotes the invariant verbatim, so its
+  header and generator change with it: reach the landed parcel's own
+  sidecar (proceeds) and a sidecar named for another file (blocks).
+
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-26, by: specifier, blamed: specifier, class: spec-gap, commit: eb919fd684, evidence: backlog/evidence/BL-1773-bounce-20260926.md }
