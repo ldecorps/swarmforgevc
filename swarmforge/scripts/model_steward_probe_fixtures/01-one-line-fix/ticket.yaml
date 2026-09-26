@@ -1,0 +1,11 @@
+id: BL-90001
+title: "greet() says Hello with an exclamation mark"
+type: feature
+priority: 10
+description: |
+  greet(name) in greet.js returns "Hi <name>". It must return
+  "Hello, <name>!" instead.
+
+  ## Scope
+  - `greet.js`
+acceptance: accept.test.js

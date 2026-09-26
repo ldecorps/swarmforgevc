@@ -1,0 +1,11 @@
+id: BL-90001
+title: "mathx.js gains a cube() function"
+type: feature
+priority: 10
+description: |
+  mathx.js has square(x) but no cube(x). Add cube(x) returning x ** 3
+  and export it alongside square.
+
+  ## Scope
+  - `mathx.js`
+acceptance: accept.test.js

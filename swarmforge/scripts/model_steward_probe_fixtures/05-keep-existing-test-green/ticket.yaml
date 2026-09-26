@@ -1,0 +1,13 @@
+id: BL-90001
+title: "triple() is fixed without breaking double()"
+type: feature
+priority: 10
+description: |
+  util.js's triple(x) currently returns x * 2 (a copy-paste of double).
+  It must return x * 3. double(x) already works and is covered by its
+  own passing assertion in accept.test.js - the fix must not change
+  double's behavior.
+
+  ## Scope
+  - `util.js`
+acceptance: accept.test.js

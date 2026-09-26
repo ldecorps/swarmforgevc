@@ -34,6 +34,7 @@
 (load-file (str (fs/path scripts-dir "model_steward_trial_lib.bb")))
 (load-file (str (fs/path scripts-dir "model_factory_store.bb")))
 (load-file (str (fs/path scripts-dir "node_tool_bringup_lib.bb")))
+(load-file (str (fs/path scripts-dir "model_steward_coder_probe_lib.bb")))
 
 (defn cli-args []
   (let [raw (vec *command-line-args*)]
@@ -111,6 +112,7 @@
   (println "  trial go-live <provider>/<model> --role <role>")
   (println "  trial status [--role <role>]")
   (println "  trial assess --role <role> [--now <iso>]")
+  (println "  probe <model> [--scenario <id>]... [--endpoint-url <url>] [--evidence-dir <dir>]")
   (System/exit 1))
 
 (defn run-status []
@@ -539,6 +541,44 @@
           (do (doseq [gap (:missing checklist)] (println (str "MISSING " gap)))
               (trial-die! (model-steward-trial-lib/go-live-refusal checklist))))))))
 
+(defn run-probe
+  "BL-1700: `probe <model> [--scenario <id>]... [--endpoint-url <url>]
+   [--evidence-dir <dir>]` - the steward CLI's dispatch anchor for
+   model-steward-coder-probe-lib/probe! (BL-1235 consumer anchor)."
+  [rest-args]
+  (when (empty? rest-args) (usage))
+  (let [model (first rest-args)
+        flags (vec (rest rest-args))
+        endpoint-url (or (opt-value flags "--endpoint-url") "http://127.0.0.1:11434/v1")
+        evidence-dir (opt-value flags "--evidence-dir")
+        ;; Test-only escape hatch (BL-1700 acceptance): a scripted stand-in
+        ;; in place of a real aider seat, so the acceptance suite never
+        ;; spawns a real model. Never documented for operator use.
+        stand-in (opt-value flags "--stand-in")
+        fix-turns-limit (when-let [v (opt-value flags "--fix-turns-limit")] (Long/parseLong v))
+        max-ticks (when-let [v (opt-value flags "--max-ticks")] (Long/parseLong v))
+        wall-clock-seconds (when-let [v (opt-value flags "--wall-clock-seconds")] (Long/parseLong v))
+        scenarios (loop [fs flags acc []]
+                    (if (empty? fs)
+                      acc
+                      (if (= "--scenario" (first fs))
+                        (recur (nthrest fs 2) (conj acc (second fs)))
+                        (recur (rest fs) acc))))
+        fixture-ids-to-run (if (seq scenarios) scenarios model-steward-coder-probe-lib/fixture-ids)
+        result (model-steward-coder-probe-lib/probe!
+                (cond-> {:model model :endpoint-url endpoint-url
+                         :fixture-ids-to-run fixture-ids-to-run :evidence-dir evidence-dir}
+                  stand-in (assoc :stand-in-mode stand-in)
+                  fix-turns-limit (assoc :fix-turns-limit fix-turns-limit)
+                  max-ticks (assoc :max-ticks max-ticks)
+                  wall-clock-seconds (assoc :wall-clock-seconds wall-clock-seconds)))]
+    (if-not (:endpointOk? result)
+      (do (binding [*out* *err*]
+            (println (str "probe: endpoint " (:endpointUrl result) " did not answer")))
+          (System/exit 1))
+      (do (println (json/generate-string result))
+          (System/exit (if (= "pass" (:verdict (:summary result))) 0 1))))))
+
 (defn run-trial [rest-args]
   (case (first rest-args)
     "nominate" (run-trial-nominate (vec (rest rest-args)))
@@ -563,4 +603,5 @@
     "adapter" (run-adapter rest-args)
     "eligible" (run-eligible rest-args)
     "trial" (run-trial rest-args)
+    "probe" (run-probe rest-args)
     (usage)))

@@ -1,0 +1,12 @@
+id: BL-90001
+title: "shapes.js computes area and perimeter correctly"
+type: feature
+priority: 10
+description: |
+  shapes.js's area(w, h) currently returns w + h instead of w * h, and
+  perimeter(w, h) currently returns w * h instead of 2 * (w + h). Fix
+  both functions.
+
+  ## Scope
+  - `shapes.js`
+acceptance: accept.test.js

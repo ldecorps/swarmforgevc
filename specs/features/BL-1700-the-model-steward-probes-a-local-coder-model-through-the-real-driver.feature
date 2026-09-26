@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=69a711524e957e0b29a5a1b8d3f8dadb0f672f25e7f07c52d1d4a47b89e9b7d0
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-26T03:16:55.294925607Z","feature_name":"BL-1700 the model steward probes a local coder model through the real driver","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1700-the-model-steward-probes-a-local-coder-model-through-the-real-driver.feature","background_hash":"a0d5940e18ad0bb9317cd05c7f7108a11d32c543d5516069c14f6f5b0aba0c13","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the summary applies the four-of-five coder bar","scenario_hash":"d4251230d492fa30ee4fc61ebba9b051f1a1cb07c16055dd187979b5df264b29","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-26T03:16:55.294925607Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1700 the model steward probes a local coder model through the real driver
 
   Whether a local model can do the coder's job is only measurable with

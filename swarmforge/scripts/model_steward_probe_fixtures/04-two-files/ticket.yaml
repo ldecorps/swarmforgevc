@@ -1,0 +1,13 @@
+id: BL-90001
+title: "the limit raises to 10 and the boundary check is inclusive"
+type: feature
+priority: 10
+description: |
+  config.js's MAX is 5; it must be 10. limiter.js's withinLimit(n)
+  currently returns `n < config.MAX` (exclusive); it must be
+  `n <= config.MAX` (inclusive). Both files need the change.
+
+  ## Scope
+  - `config.js`
+  - `limiter.js`
+acceptance: accept.test.js
