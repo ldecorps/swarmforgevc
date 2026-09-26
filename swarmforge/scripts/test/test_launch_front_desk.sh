@@ -169,6 +169,49 @@ DRY="$(FRONT_DESK_LAUNCH_DRYRUN=1 bash "$LAUNCHER" "$F" 2>&1)"
 check "no park flag: dry-run launches normally"              '[[ "$DRY" == *"DRYRUN bridge cmd:"* ]]'
 rm -rf "$F"
 
+# ── 8. BL-1757: a configured tooling root resolves compiled entrypoints
+#      there instead of the target's own (missing) build; the served root
+#      argument passed to the bridge/bot always still names the target ────
+TOOL="$(mktemp -d)"; register_tmp_dir "$TOOL"
+mkdir -p "$TOOL/extension/out/tools"
+printf '' > "$TOOL/extension/out/tools/start-bridge-headless.js"
+printf '' > "$TOOL/extension/out/tools/telegram-front-desk-bot.js"
+
+F="$(mktemp -d)"; register_tmp_dir "$F"
+mkdir -p "$F/swarmforge" "$F/.swarmforge/operator"
+printf 'config tooling_root %s\n' "$TOOL" > "$F/swarmforge/swarmforge.conf"
+DRY="$(FRONT_DESK_LAUNCH_DRYRUN=1 bash "$LAUNCHER" "$F" 2>&1)"
+check "8: a configured tooling root resolves the bridge entrypoint under it" \
+  '[[ "$DRY" == *"$TOOL/extension/out/tools/start-bridge-headless.js"* ]]'
+check "8: a configured tooling root resolves the bot entrypoint under it" \
+  '[[ "$DRY" == *"$TOOL/extension/out/tools/telegram-front-desk-bot.js"* ]]'
+check "8: the served project root argument still names the target, never the tooling root" \
+  '[[ "$DRY" == *"http://127.0.0.1:8765 $F"* ]]'
+rm -rf "$F"
+
+# ── 9. BL-1757: no tooling_root line resolves exactly as today (invariant 1) ─
+F="$(make_fixture)"
+DRY="$(FRONT_DESK_LAUNCH_DRYRUN=1 bash "$LAUNCHER" "$F" 2>&1)"
+check "9: no tooling_root line: bridge entrypoint resolves under the target's own build" \
+  '[[ "$DRY" == *"$F/extension/out/tools/start-bridge-headless.js"* ]]'
+rm -rf "$F"
+
+# ── 10. BL-1757: neither the tooling root nor the target has the compiled
+#       entrypoint - refuses naming both paths, starts nothing (scenario 04) ─
+TOOL2="$(mktemp -d)"; register_tmp_dir "$TOOL2"
+F="$(mktemp -d)"; register_tmp_dir "$F"
+mkdir -p "$F/swarmforge" "$F/.swarmforge/operator" "$F/extension/out/tools"
+printf 'config tooling_root %s\n' "$TOOL2" > "$F/swarmforge/swarmforge.conf"
+OUT="$(TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=y TELEGRAM_PRINCIPAL_USER_ID=1 bash "$LAUNCHER" "$F" 2>&1)" && rc=0 || rc=$?
+check "10: neither place has the entrypoint: launch refuses (non-zero)" '[[ "$rc" -ne 0 ]]'
+check "10: the refusal names the tooling root's own path" \
+  '[[ "$OUT" == *"$TOOL2/extension/out/tools/start-bridge-headless.js"* ]]'
+check "10: the refusal names the target's own path too" \
+  '[[ "$OUT" == *"$F/extension/out/tools/start-bridge-headless.js"* ]]'
+check "10: nothing is started (no supervisor pid file)" \
+  '[[ ! -f "$F/.swarmforge/operator/front-desk-supervisor.pid" ]]'
+rm -rf "$F"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "launch_front_desk smoke: ALL CHECKS PASSED"
 else

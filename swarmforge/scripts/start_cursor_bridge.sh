@@ -24,7 +24,14 @@ ROOT="$(cd "${1:?usage: start_cursor_bridge.sh <project-root>}" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OP_DIR="$ROOT/.swarmforge/operator"
 SUPERVISOR_BB="$SCRIPT_DIR/cursor_bridge_supervisor.bb"
-ENTRYPOINT="$ROOT/extension/out/tools/telegram-cursor-bridge.js"
+# shellcheck source=tooling_root_lib.sh
+source "$SCRIPT_DIR/tooling_root_lib.sh"
+# BL-1757: SWARMFORGE_TOOLING_ROOT read directly when the launching
+# swarmforge.sh process exported it; tooling_root_resolve's own fallback
+# (a relaunch that did not inherit it) re-checks the same var before
+# reading the target's own pack conf.
+TOOLING_ROOT_RESOLVED="${SWARMFORGE_TOOLING_ROOT:-$(tooling_root_resolve "$ROOT")}"
+ENTRYPOINT="$(tooling_root_preferred_entrypoint "$TOOLING_ROOT_RESOLVED" "$ROOT" "tools/telegram-cursor-bridge.js")"
 PID_FILE="$OP_DIR/cursor-bridge-supervisor.pid"
 LOG="$OP_DIR/cursor-bridge-supervisor.log"
 PID_WAIT_ATTEMPTS="${PID_WAIT_ATTEMPTS:-60}"
@@ -80,8 +87,7 @@ fi
 : "${TELEGRAM_CHAT_ID:?TELEGRAM_CHAT_ID is not set}"
 : "${TELEGRAM_PRINCIPAL_USER_ID:?TELEGRAM_PRINCIPAL_USER_ID is not set}"
 
-if [[ ! -f "$ENTRYPOINT" ]]; then
-  echo "start_cursor_bridge: entrypoint not found: $ENTRYPOINT (run npm run compile in extension/)" >&2
+if ! ENTRYPOINT="$(tooling_root_require_entrypoint "$TOOLING_ROOT_RESOLVED" "$ROOT" "tools/telegram-cursor-bridge.js" "start_cursor_bridge: entrypoint not found")"; then
   exit 1
 fi
 

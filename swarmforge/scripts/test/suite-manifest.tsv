@@ -516,8 +516,9 @@ test_sync_worktree_scripts_never_clobbers.sh	standing
 test_ticket_close_guard.sh	standing		
 test_ticket_deletion_guard.sh	standing		
 test_tmp_cleanup_lib.sh	standing		
-test_tool_miss_heal_hook_wiring.sh	standing		
-test_tunnel_ownership_lib.sh	standing		
+test_tool_miss_heal_hook_wiring.sh	standing
+test_tooling_root_config.sh	standing
+test_tunnel_ownership_lib.sh	standing
 test_unpark_front_desk.sh	standing		
 test_upstream_drift_check_cli.sh	standing
 test_verify_lanes.sh	standing

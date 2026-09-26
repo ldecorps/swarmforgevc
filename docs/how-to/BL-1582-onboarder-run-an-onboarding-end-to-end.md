@@ -84,6 +84,18 @@ restate it. What shipped and where the code lives (including
 `extension/src/tools/onboarder-reconcile.ts`, the reconcile poll-loop and
 heartbeat writer) is `docs/explanation/BL-643-non-pipeline-agents-as-a-class.md`.
 
+**Tooling root (BL-1757):** the target's own Telegram front desk
+(`launch_front_desk.sh`) and Cursor Remote bridge (`start_cursor_bridge.sh`)
+read their compiled node entrypoints from the target's own
+`extension/out/tools/` - a target that builds no extension of its own
+(every target but swarmforgevc, until it does) has nothing there and its
+launch refuses. Add `config tooling_root <absolute-path-to-swarmforgevc>` to
+the target's `swarmforge/swarmforge.conf` before launching its front desk to
+have it read the compiled entrypoints from that swarmforgevc checkout
+instead - the served project root stays the target either way. BL-1758
+writes this line for a NEW target automatically; until it lands, add it by
+hand once the target's own conf exists.
+
 ## 4. Inspect and resume
 
 Each target's state is a JSON file under `.swarmforge/onboarding/`, keyed by

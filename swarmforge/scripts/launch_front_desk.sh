@@ -47,8 +47,15 @@ LOG="$OP_DIR/front-desk-supervisor.log"
 BRIDGE_PORT="${BRIDGE_PORT:-8765}"
 PID_WAIT_ATTEMPTS="${PID_WAIT_ATTEMPTS:-60}"
 
-BRIDGE_ENTRYPOINT="$ROOT/extension/out/tools/start-bridge-headless.js"
-BOT_ENTRYPOINT="$ROOT/extension/out/tools/telegram-front-desk-bot.js"
+# shellcheck source=tooling_root_lib.sh
+source "$SCRIPT_DIR/tooling_root_lib.sh"
+# BL-1757: SWARMFORGE_TOOLING_ROOT read directly when the launching
+# swarmforge.sh process exported it; tooling_root_resolve's own fallback
+# (a relaunch that did not inherit it) re-checks the same var before
+# reading the target's own pack conf.
+TOOLING_ROOT_RESOLVED="${SWARMFORGE_TOOLING_ROOT:-$(tooling_root_resolve "$ROOT")}"
+BRIDGE_ENTRYPOINT="$(tooling_root_preferred_entrypoint "$TOOLING_ROOT_RESOLVED" "$ROOT" "tools/start-bridge-headless.js")"
+BOT_ENTRYPOINT="$(tooling_root_preferred_entrypoint "$TOOLING_ROOT_RESOLVED" "$ROOT" "tools/telegram-front-desk-bot.js")"
 
 mkdir -p "$OP_DIR"
 
@@ -96,12 +103,10 @@ fi
 # either process, so fail loudly and clearly now rather than spawning
 # `node <missing-file>` and leaving the supervisor to loop through its own
 # bounded-restart cap against a failure that will never self-resolve.
-if [[ ! -f "$BRIDGE_ENTRYPOINT" ]]; then
-  echo "launch_front_desk: bridge entrypoint not found: $BRIDGE_ENTRYPOINT (run npm run compile in extension/)" >&2
+if ! BRIDGE_ENTRYPOINT="$(tooling_root_require_entrypoint "$TOOLING_ROOT_RESOLVED" "$ROOT" "tools/start-bridge-headless.js" "launch_front_desk: bridge entrypoint not found")"; then
   exit 1
 fi
-if [[ ! -f "$BOT_ENTRYPOINT" ]]; then
-  echo "launch_front_desk: bot entrypoint not found: $BOT_ENTRYPOINT (run npm run compile in extension/)" >&2
+if ! BOT_ENTRYPOINT="$(tooling_root_require_entrypoint "$TOOLING_ROOT_RESOLVED" "$ROOT" "tools/telegram-front-desk-bot.js" "launch_front_desk: bot entrypoint not found")"; then
   exit 1
 fi
 

@@ -319,6 +319,17 @@ ROTATION_MODE=""
 # every aider launch line (any role); absent, no flag (aider's own
 # default applies). Empty string means "no flag", never a stray one.
 AIDER_TIMEOUT_SECONDS=""
+# BL-1757: `config tooling_root <absolute-path>` names the swarmforgevc
+# checkout that builds the compiled extension/out this target's own Telegram
+# front desk and Cursor Remote bridge launchers read their node entrypoints
+# from - a target with no tooling root builds none of its own. Exported (not
+# just assigned) so launch_front_desk.sh/start_cursor_bridge.sh, invoked as
+# separate `bash` subprocesses, inherit it; a relaunch that does not
+# inherit this shell's environment falls back to reading the target's own
+# swarmforge.conf directly (tooling_root_lib.sh). Empty means "no tooling
+# root configured" - every existing pack conf with no such line resolves
+# exactly as before this ticket.
+export SWARMFORGE_TOOLING_ROOT=""
 if [[ "${SWARMFORGE_REMOTE_CONTROL:-}" == "0" ]]; then
   REMOTE_CONTROL_DEFAULT=0
 fi
@@ -860,6 +871,13 @@ parse_config() {
             exit 1
           fi
           AIDER_TIMEOUT_SECONDS="${fields[3]}"
+          ;;
+        tooling_root)
+          if [[ -z "${fields[3]:-}" || "${fields[3]}" != /* ]]; then
+            error_msg "Invalid config line $line_no: tooling_root requires an absolute path"
+            exit 1
+          fi
+          SWARMFORGE_TOOLING_ROOT="${fields[3]}"
           ;;
       esac
       continue
