@@ -1,0 +1,121 @@
+id: BL-1781
+title: "test_front_desk_giveup_one_email_per_episode.sh, the fifth front-desk supervisor fixture BL-1279 never enrolled, still hand-lists seven .bb files and dies at load (red in the standing suite) - it derives its copy set with copy_bb_closure, runs the BL-1279 load guard, and gives its supervisor a fleet home and bridge port of its own so that, once it loads, its --check-once can never free the live bridge's port"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (2026-09-05 rule), and fixing it
+# carelessly re-arms a live hazard. Once this test loads, --check-once runs
+# BL-789's adopt-or-free on the default port 8765 under the real HOME, and
+# that frees the live front-desk bridge (BL-1779, BL-1780).
+epic: code-quality-gates
+priority: 8
+depends_on: []
+mutation_cost: low
+# low: one shell test (no mutation/CRAP/DRY lane) and two Examples rows in
+# BL-1279's feature; the gherkin mutation re-runs that feature.
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# BL-1251 pattern: the contract this satisfies is BL-1279's feature, which
+# gains this file as one Examples row in scenario 01 (and in scenario 03,
+# see below). Pointing here is not a claim of ownership over BL-1279's
+# contract, and it earns the BL-1276 task-scope exemption for the path.
+acceptance: specs/features/BL-1279-front-desk-fixtures-derive-their-bb-closure.feature
+
+human_approval: approved
+approval_context: >
+  FIRM: the giveup fixture copies front_desk_supervisor.bb's derived
+  load-file closure (copy_bb_closure) and runs assert_bb_closure_present
+  before its first check, exactly as BL-1279's four fixtures do. FIRM: the
+  supervisor it starts runs with SWARMFORGE_FLEET_HOME and BRIDGE_PORT
+  inside or owned by its own fixture, both in the same commit as the
+  closure fix. A version that loads without them frees the live bridge.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  Coder note 002188 (2026-09-26 13:12Z), found during BL-1779's census
+  run: "unowned-red test_front_desk_giveup*.sh missing lib in cp list".
+  Verified at mint by reading the files. The test's `make_fixture` copies
+  seven .bb files by hand (line 17). `front_desk_supervisor.bb` load-files
+  `daemon_log_freshness_pulse_lib.bb` (line 98) and
+  `self_heal_telemetry_lib.bb` (line 104), and `process_table_lib.bb`
+  load-files `daemon_cycle_guard_lib.bb`, none of them copied, so every
+  `check_once` dies at load. This is BL-1279's exact defect. BL-1279
+  enrolled four fixtures by an Examples table naming
+  `test_front_desk_supervisor_*`; this one's name did not match, so it
+  was never enrolled. It is in `suite-manifest.tsv` as `standing`.
+
+  Dying at load is also what keeps it harmless today. `check_once` passes
+  fake TELEGRAM_* but neither `SWARMFORGE_FLEET_HOME` nor `BRIDGE_PORT`.
+  Once it loads, it resolves the host's primary creds file (port 8765)
+  under the real HOME. Before BL-1779 lands, and even after it (the
+  default port is still 8765), BL-789's adopt-or-free then frees the
+  live front-desk bridge before spawning its stub.
+
+  ## What is wanted
+  1. `make_fixture` derives the copy set with `copy_bb_closure` and runs
+     `assert_bb_closure_present`, BL-1279's pattern (see
+     `test_front_desk_supervisor_tick.sh` ~30-40).
+  2. `check_once` passes `SWARMFORGE_FLEET_HOME` inside the fixture root
+     and a `BRIDGE_PORT` of its own (the per-pid port convention its
+     siblings use), in the same commit as item 1.
+  3. BL-1279's feature gains this file as one Examples row in scenario 01
+     (the static closure check). It also gets a row in scenario 03 (the
+     test passes) only if the whole BL-1279 feature, run once with the
+     row, stays comfortably inside the 300 s per-mutant ceiling (the
+     2026-09-14 rule). Otherwise its green run is QA's step 1 and the
+     ticket's register row discharge. Record the measured feature time in
+     the evidence either way.
+  **Never run this test on this host before items 1 and 2 are both in
+  the checkout.**
+
+  ## Scope
+  - `swarmforge/scripts/test/test_front_desk_giveup_one_email_per_episode.sh`.
+  - `specs/features/BL-1279-front-desk-fixtures-derive-their-bb-closure.feature`
+    (Examples rows only) and its step handler only if a row needs it.
+
+  ## Not in scope
+  - The other census files (BL-1779 runs them). The supervisor's
+    resolution and adopt-or-free rules (BL-1779, BL-1780).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_front_desk_giveup_one_email_per_episode.sh`:
+     exit 0, no FAIL line. Before and after, the live bridge's pid on 8765
+     (`lsof -ti tcp:8765 -sTCP:LISTEN`) is unchanged.
+  2. `node specs/pipeline/cli.js specs/features/BL-1279-front-desk-fixtures-derive-their-bb-closure.feature`:
+     all ok, including the new row(s).
+  3. The register row naming this ticket is present on the parcel commit
+     and is gone after the land (BL-1631).
+
+source: |
+  Coder note 002188 (2026-09-26 13:12Z), verbatim: "unowned-red
+  test_front_desk_giveup*.sh missing lib in cp list". Raised during
+  BL-1779's census run (BL-1779 item 3: a red with another cause is a note
+  to the specifier).
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) from coder note
+  002188, the same pass. The register row naming this ticket landed in the
+  same commit, and the holder note was sent. The test was NOT run at mint:
+  its load failure was read from the files, and a loading copy would hit
+  the live bridge. BL-1279's own feature narrative criticized "WHICH
+  fixtures are guarded hand-enumerated in an Examples table", and its
+  scenario 01 Examples table then missed this fifth file by name pattern.
+  Census at mint:
+  `git grep -l 'front_desk_supervisor.bb' -- 'swarmforge/scripts/test/*.sh' | xargs grep -L copy_bb_closure`
+  names 5 files, and only this one copies the supervisor into a fixture
+  (`grep -c 'cp .*front_desk_supervisor\.bb'`). The other four drive it
+  from the source tree.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Freshness: deprecate-check was run after the last edit.
+
+  INVEST: Independent (the file is in no open ticket's scope; BL-1779
+  only runs it), Negotiable (the port convention is the coder's), Valuable
+  (a standing red cleared without re-arming the live-bridge kill),
+  Estimable (the BL-1279 recipe applied to one more file), Small (one test
+  file, one or two Examples rows), Testable (the test itself, BL-1279's
+  feature, and the live-pid check).
