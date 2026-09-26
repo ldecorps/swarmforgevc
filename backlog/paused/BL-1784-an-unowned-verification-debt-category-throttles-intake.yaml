@@ -24,7 +24,7 @@ required_wiring:
 # anchors the CONSUMER's call, not the declaration (BL-1235): the function
 # is declared in a new module and matches here only if the emitter calls it.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM (the intake): an unowned category gates promotion "the way the
   standing-red register throttles on an unowned row", and the prompt rule
