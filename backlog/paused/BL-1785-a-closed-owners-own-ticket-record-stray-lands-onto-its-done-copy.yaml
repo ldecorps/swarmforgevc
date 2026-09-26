@@ -1,0 +1,157 @@
+id: BL-1785
+title: "QA's post-land bookkeeping on a ticket's file (abandoned_commits: recorded on the backlog/active/ copy after the land, e1a80051f4 for BL-1757 at 15:34:27, closed 15:35:28) leaves the pre-close copy on QA's tip, and the next land escalates on BL-1546's closed-owner refusal after a 20-40 min walk (BL-1768's own land, 2026-09-26): a closed-owner stray whose every path is pure evidence/docs or the owner's OWN ticket file under backlog/active/ or backlog/paused/ lands by cherry-pick, which git's rename detection carries onto origin/main's backlog/done/ copy, and BL-1546 refuses anything wider exactly as before"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading the swarm's integration point. Every land
+# whose tip carries a closed ticket's pre-close record escalates to a hand
+# build, and QA writes such a record on an ordinary land (BL-1757's is on
+# QA's tip now, so the next land hits it). Same class as BL-1768 (high).
+epic: swarm-reliability
+priority: 9
+depends_on: []
+mutation_cost: low
+# low: one predicate widened in land_step_lib.bb (Babashka: no
+# mutation/CRAP/DRY lane) plus its runner cases; the gherkin mutation
+# re-runs a four-row feature on BL-1650's fixture shape (BL-1650's
+# eleven rows ran in 9.0 s).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1785-a-closed-owners-own-ticket-record-stray-lands-onto-its-done-copy.feature
+
+human_approval: approved
+approval_context: >
+  FIRM: a closed owner's record edit is never dropped silently and never
+  landed back under backlog/active/ or backlog/paused/. It reaches the
+  done copy, is reported already landed or superseded on an existing
+  ground, or the land escalates naming it. FIRM: BL-1546's refusal is
+  unchanged for a stray touching any path that is neither pure
+  evidence/docs nor the stray owner's own ticket file. Dropping the record
+  was considered and rejected: ticket-abandoned-commits unions every copy
+  of a ticket to disclaim its stray commits, so a lost abandoned_commits
+  line stops disclaiming them.
+
+invariants:
+  - "A replay never carries a ticket file, for a ticket closed on origin/main, anywhere but backlog/done/."
+  - "A closed owner's record edit is never dropped silently: it is on the replay's done copy, reported already landed, reported superseded with its ground, or the land escalates naming it."
+  - "BL-1546's refusal is unchanged for a stray touching any path that is neither pure evidence/docs nor the stray owner's own ticket file."
+
+required_wiring: []
+# Honest empty (BL-1235): the change is inside land-plan's existing stray
+# selection, whose live caller (land_step_cli.bb) already exists; there is
+# no new symbol for a consumer to call.
+
+description: |
+  ## What is wrong
+
+  QA note 003287 (2026-09-26 14:19Z), verbatim: "New BL-1546 shape: QA
+  closed-ticket bookkeeping; ev BL-1768-QA-20260926". Evidence item 3 of
+  `backlog/evidence/BL-1768-QA-20260926.md`: `land_step_cli.bb BL-1768 <QA
+  tip>` ran 39m26s and exited LAND_ESCALATE on the BL-1546 closed-owner
+  guard ("backlog/active/BL-1769-...yaml's only owner(s) BL-1769 are
+  closed on origin/main ... never decided silently"). The path was QA's
+  own abandoned_commits bookkeeping for a ticket closed during the walk,
+  and BL-1768 was built by hand.
+
+  Verified at mint on the live QA tip (db6754fdbd). QA landed BL-1757 at
+  15:27:52 (c62a642801). QA then committed e1a80051f4 "BL-1757: record
+  abandoned_commits for the tip-pure land" at 15:34:27, adding
+  `abandoned_commits: [fb6e6d2794]` to the backlog/active/ copy. The
+  coordinator closed BL-1757 at 15:35:28 (d532d1e476), moving the file to
+  backlog/done/M8/. `git diff origin/main <QA tip>` now shows that active
+  path as added, so the next land from QA's tip refuses on it.
+
+  The record cannot simply be dropped. `ticket-abandoned-commits`
+  (land_step_lib.bb) unions `abandoned_commits:` across every worktree and
+  origin/main copy of a ticket, done included, to disclaim that ticket's
+  stray commits. Once QA's branch re-points and the done copy lacks the
+  line, fb6e6d2794 stops being disclaimed.
+
+  ## What is wanted
+
+  1. `closed-owner-pure-evidence-stray?` (BL-1650) also accepts a stray
+     whose paths are pure evidence/docs **or** the stray owner's OWN ticket
+     file (`backlog/active/<owner>-*.yaml` or
+     `backlog/paused/<owner>-*.yaml`, owner = the sibling its subject
+     leads with). Any other path still fails the whole stray, including
+     another ticket's file, any `backlog/*.tsv` or `backlog/*.yaml` register,
+     code and specs.
+  2. Such a stray takes BL-1650's existing path. It is cherry-picked with
+     `-x`, keeping its own author and subject, onto the replay branch ahead
+     of the parcel's own replay. The empty-patch outcome reports ALREADY_LANDED,
+     and a conflict tries BL-1670/BL-1768's superseded grounds and
+     otherwise escalates by name. Measured at mint in a scratch worktree
+     off origin/main: `git cherry-pick -n -x e1a80051f4` exits 0 and
+     modifies only `backlog/done/M8/BL-1757-...yaml`, adding the line.
+     git's rename detection already does the carrying.
+  3. After the stray cherry-picks, the replay tree carries no ticket file
+     for a closed ticket outside backlog/done/ (invariant 1). If rename
+     detection ever fails and the pick would re-create the active path,
+     that is a refusal naming the stray, never a land.
+
+  How (direction, not mandate): widen `pure-evidence-or-docs-paths?`'s
+  caller rather than the predicate itself. The predicate's docstring
+  states BL-1650's invariant 1 ("never ... any backlog/{paused,active,done,hold}
+  ticket file"), and an evidence-only question should keep its own answer.
+  Reuse `ticket-file-name?` for the owner's-own-file test. Update the
+  BL-1241 how-to's stray section (BL-1768 last touched it) in the same
+  parcel.
+
+  ## Scope
+  - `swarmforge/scripts/land_step_lib.bb` and
+    `swarmforge/scripts/test/land_step_lib_test_runner.bb`.
+  - The feature file and its step handler
+    `bl1785ClosedOwnerRecordStraySteps` (BL-1650's
+    `bl1650LandStepPureEvidenceStraySteps.js` fixture helpers are the
+    template).
+  - The BL-1241 how-to (documenter).
+
+  ## Not in scope
+  - When or where QA records abandoned_commits (QA.prompt). Recording it
+    before the tip-pure build, so the land carries it, would avoid the
+    stray for QA's own record, but not the role-branch record diffs
+    BL-1768's evidence also counts ("29 other closed-ticket record diffs
+    merged in from role branches"). The land step is the one place that
+    sees both.
+  - Untagged or multi-ticket commits touching a closed ticket's file:
+    BL-1315/BL-1544 decide those, unchanged.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1785-a-closed-owners-own-ticket-record-stray-lands-onto-its-done-copy.feature`:
+     all ok. Also run the BL-1650 and BL-1546 features: all ok (invariant 3).
+  2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
+  3. This parcel's own land is the live check. If QA's tip still carries
+     e1a80051f4, or any later closed-ticket record commit, the land output
+     prints LAND_STRAY_EVIDENCE_LANDED or _ALREADY_LANDED naming it, and no
+     BL-1546 refusal names a backlog/active/ or backlog/paused/ ticket file.
+     After publish, `git show origin/main:backlog/done/M8/BL-1757-a-targets-front-desk-starts-from-the-tooling-roots-compiled-tools.yaml | grep abandoned_commits`
+     shows fb6e6d2794 (if that stray was on the tip). Record which strays
+     the land printed.
+
+source: |
+  QA note 003287 (2026-09-26 14:19Z), verbatim: "New BL-1546 shape: QA
+  closed-ticket bookkeeping; ev BL-1768-QA-20260926". Evidence:
+  `backlog/evidence/BL-1768-QA-20260926.md` item 3.
+
+notes: |
+  Minted 2026-09-26 by the specifier (claude-opus-5-5 seat) from QA note
+  003287, the same pass. Live case measured on QA's tip db6754fdbd, with a
+  scratch-worktree cherry-pick probe (removed afterwards).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Sibling check (BL-1006): no BL-1546 or BL-1650 scenario uses a ticket
+  file as its "wider" path (BL-1546 uses a shared doc, and BL-1650's
+  scenario 02 uses swarmforge/scripts/). No boundary assertion needs
+  retiring.
+  Verification debt (BL-1782): this removes one recurring cause of the
+  land-path-ownership hand builds (it is what stopped BL-1768's own land),
+  but it does not declare `verification_category`. BL-1711's pre-trust
+  grep was on a land that did not escalate, so the category needs a wider
+  owner.
+  INVEST: Independent (no unbuilt dependency). Negotiable (the How is
+  direction; the token reuse is the coder's call so long as the line names
+  the stray). Valuable (a whole class of land escalations stops). Estimable
+  (one predicate's caller widened on BL-1650's existing path; the probe
+  shows git already carries the edit). Small (4 scenario rows, 3
+  invariants). Testable (fixture repository with its own origin, BL-1650's
+  shape).
