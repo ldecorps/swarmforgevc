@@ -172,3 +172,13 @@ notes: |
   intake. Intake item 2 (the kit's coordinator rule for notify_human.sh /
   human_replies.sh) lands in swarmforge/starter-kit/roles/coordinator.prompt
   once the human answers the intake's open question.
+  KIT COORDINATOR RULE LANDED 2026-09-26 (BL-798, specifier-owned prose)
+  in the commit that carries this note, after the human answered A ("A -
+  keep the stopgap until the target front desk runs (recommended)"). It is
+  a new "Reaching the human" section. It covers notify_human.sh when
+  blocked, a plain message with each option's pros, cons and the
+  recommendation before a --poll, and human_replies.sh on every wake
+  while a question is open and no front desk runs. It also says that
+  human_replies.sh refuses once a front desk runs, which is expected. It
+  is adapted from gpu-bargain-hunter's own coordinator.prompt. No
+  scenario here pins prompt text, so nothing built changes.

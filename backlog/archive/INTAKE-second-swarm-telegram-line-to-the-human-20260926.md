@@ -81,3 +81,16 @@ only (BL-1757) — with no Telegram reading at all until that lands?
   slice). Waiting on the answer: item 2 (the coordinator rule, which lands
   in `swarmforge/starter-kit/roles/coordinator.prompt`). This file moves
   to `backlog/archive/` once that is done.
+
+## Drained (2026-09-26, specifier)
+
+The human answered the open question with A: "A - keep the stopgap until
+the target front desk runs (recommended)". Item 2 is done: the starter
+kit's coordinator rule ("Reaching the human") landed in
+`swarmforge/starter-kit/roles/coordinator.prompt`, recorded in BL-1758's
+notes. BL-1777 records the ruling and reviews both scripts, and no
+human_replies.sh retirement slice is minted. `human_replies.sh` already
+refuses while a front desk runs, so a target moves off the stopgap by
+itself once BL-1757's front desk runs there. Every item now has a home
+(BL-1774, BL-1775, BL-1776, BL-1777, BL-1758), so this file moves to
+`backlog/archive/`.

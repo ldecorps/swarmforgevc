@@ -29,6 +29,27 @@ that needs your attention: a handoff another role sent you, or nothing
 - When something is genuinely ambiguous or needs a human decision you
   cannot make, ask — don't guess and don't silently drop it.
 
+## Reaching the human
+- Nobody watches your pane. A request that exists only there is never
+  seen. Whenever you are blocked on the human (a question, a ruling, or
+  an action you may not take yourself), tell them on Telegram:
+  `swarmforge/scripts/notify_human.sh "<what you need, why, and what it unblocks>"`.
+  It posts to this swarm's own Coordinator topic. Send it once per new
+  blocker, not on every idle tick.
+- For a multiple-choice ruling, first send each option with its pros
+  and cons and your recommendation as a plain message. Then ask with a
+  poll: `swarmforge/scripts/notify_human.sh --poll "<short question>" "<option>" "<option>" ...`
+  (question at most 300 characters, 2-10 options of at most 100).
+- The human answers in that same topic. Until this swarm has a running
+  front desk, run `swarmforge/scripts/human_replies.sh` at the start of
+  every wake while a question to them is open, and act on what it
+  prints. Each message is printed only once, so record what you act on
+  in your own notes. A poll vote arrives as
+  `POLL ANSWER: <question> -> <option>`.
+- Once a front desk runs for this swarm, replies reach you through it,
+  and `human_replies.sh` refuses to run so that two pollers never share
+  one bot. That refusal is expected, not a fault.
+
 ## What you never do
 You never implement project code, never bypass a quality gate to keep
 things moving, and never promote a ticket past a cap or an unapproved

@@ -34,9 +34,9 @@ approval_context: >
   (plus lib/ helpers) and tests; a confirmed finding from the probes in
   review goal 3 is a narrow follow-up via note to the specifier, never an
   in-parcel rewrite; the parcel never writes human_decision into
-  backlog/hotfix-ledger.yaml. Separate from this sign-off: your answer on
-  the specifier topic (keep the human_replies.sh stopgap, or front desk
-  only) decides whether human_replies.sh stays; see notes.
+  backlog/hotfix-ledger.yaml. You ruled A on the specifier topic on
+  2026-09-26: the human_replies.sh stopgap stays until a target's front
+  desk runs, so both scripts are reviewed.
 
 invariants:
   - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, the feature, its step handler (plus lib/ helpers) or a test file; notify_human.sh and human_replies.sh are read, never edited."
@@ -112,9 +112,9 @@ constraints: >
 out_of_scope: |
   Fixing the launch-boundary leak (BL-1775), the Coordinator topic itself
   (BL-1774), the starter kit's coordinator rule that teaches these scripts
-  (BL-1758 notes, specifier-owned prose), retiring human_replies.sh (only
-  if the human rules B, see notes), and writing human_decision into the
-  hotfix ledger.
+  (BL-1758 notes, specifier-owned prose), retiring human_replies.sh (the
+  human ruled A on 2026-09-26: it stays), and writing human_decision into
+  the hotfix ledger.
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
@@ -149,6 +149,11 @@ notes: |
   (while paused) to review notify_human.sh only; if A, nothing here
   changes. Sibling tickets from the same intake: BL-1774, BL-1775,
   BL-1776.
+  RULED 2026-09-26: the human answered A ("A - keep the stopgap until
+  the target front desk runs (recommended)"). Nothing in the review
+  changes, and no retirement slice is minted. The starter kit's
+  coordinator rule teaching both scripts landed in
+  swarmforge/starter-kit/roles/coordinator.prompt (see BL-1758 notes).
 
   INVEST: Independent (review of landed code), Negotiable (handler shape
   is direction), Valuable (the hotfix gets its gate; three live-risk
