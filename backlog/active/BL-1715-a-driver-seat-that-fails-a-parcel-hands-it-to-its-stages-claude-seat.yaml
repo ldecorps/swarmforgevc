@@ -131,3 +131,5 @@ notes: |
   amend BL-1702 in the same commit. IR-DRY: one remaining possible-synonym
   (the two-seat Background vs scenario 04's "the Claude seat is removed")
   is setup vs modification, kept.
+
+assigned_to: coder
