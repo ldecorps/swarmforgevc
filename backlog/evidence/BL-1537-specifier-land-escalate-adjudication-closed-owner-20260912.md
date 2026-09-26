@@ -510,3 +510,21 @@ and BL-1764. Append instances as before; no escalation note is needed for
 this stray.
 
 By specifier.
+
+## Instance - BL-1704's land, condition (g) under the BL-1768 interim (QA, 2026-09-26)
+
+Same stray a225d85d8b: `land_step_cli.bb` escalated after a ~24-minute walk
+on the synced tip 7f79ab1960. Landed as tip-pure a8614b15ad off origin/main
+4a8001ea9d. Three of BL-1704's paths are shared with unlanded BL-1711
+(`ollama_ancillary_lib.sh`, the BL-1052 how-to, `suite-manifest.tsv`), so
+the land carries BL-1704's blamed lines only:
+- the lib is the tip minus BL-1711's two blocks (109 of the tip's +290 lines);
+- the how-to is the blob at 1cc219dfba^ (BL-1704's section plus its
+  D2-corrected paragraph);
+- the manifest is main's plus BL-1704's two test lines.
+BL-1704's feature (5 of 5), its four ollama shell tests and its property test
+passed on that exact tree before the push. The approval is recorded against
+ed1f2865c2, and `abandoned_commits: [ed1f2865c2]` is on the ticket.
+`--push` printed `LAND_REPOINT_SKIPPED an uncommitted change`.
+
+By QA.
