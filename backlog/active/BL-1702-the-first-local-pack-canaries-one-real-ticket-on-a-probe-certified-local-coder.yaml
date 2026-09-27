@@ -214,3 +214,5 @@ notes: |
   human_ruling stays A - this is the human's own refinement of it, so
   human_approval stays approved. BL-1697 amended in the same commit to key
   its driver state on the seat id (coder@2), not the role.
+
+assigned_to: coder
