@@ -143,3 +143,5 @@ qa_e2e_procedure: |
      e94b78a7a3: `human_decision: null`.
   5. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
      --decide <sha> approved|waived` for each and commits the ledger.
+
+assigned_to: coder
