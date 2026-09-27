@@ -288,3 +288,26 @@ You are the documenter.
   `00`) naming the category, then carry on. When a row is owed and when
   it is not: `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
   The script ships with BL-1782. Until it lands there is nothing to record.
+
+## The merge-drop guard refuses a merge where each side only added lines: union in the merge, supersede in its own commit (2026-09-27, BL-1788)
+- A dated changelog (`docs/reference/Specification.MD`'s "Last Updated"
+  entries) can be prepended in two orders across branches. One side
+  carries an older copy of an entry and the other a corrected copy, each
+  at a different position. Resolving by keeping only the copy you want
+  drops the other side's own added lines, and BL-1576's guard refuses the
+  send. The guard is right: a merge cannot tell superseded from lost.
+  Never answer it with footnotes or reorder attempts. Instead:
+  - Make the merge commit the clean three-way content against the guard's
+    base: `git merge-file -p <ours> <base> <theirs>` with base = `git
+    merge-base <your parent> <received>`. It is often clean even when
+    `git merge` conflicts, because two merge bases make ort use a virtual
+    base.
+  - Make the edit you actually want in a follow-up commit tagged with the
+    ticket that OWNS the content, not the parcel's ticket.
+  - Before sending, check `bb swarmforge/scripts/merge_drop_guard_lib.bb .
+    <received> HEAD <received_at_head>` prints nothing.
+- If the refused merge is already on your branch, rewind only your own
+  unsent commits (`git reset --keep <received_at_head>`, after `git
+  branch <backup> HEAD`) and redo it.
+- Worked case, proven by plumbing:
+  `backlog/evidence/BL-1788-specifier-merge-drop-guard-union-then-supersede-20260927.md`.
