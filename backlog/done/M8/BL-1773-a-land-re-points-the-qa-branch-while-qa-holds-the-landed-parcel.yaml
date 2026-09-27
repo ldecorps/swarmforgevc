@@ -215,3 +215,4 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-26, by: specifier, blamed: specifier, class: spec-gap, commit: eb919fd684, evidence: backlog/evidence/BL-1773-bounce-20260926.md }
+abandoned_commits: [e895c99775]
