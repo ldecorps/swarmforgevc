@@ -167,3 +167,37 @@ inside the land commit. The land step never reached stray fd6191c893
 (closed BL-1711 evidence, condition (g)), and it is left alone.
 
 By QA.
+
+## Condition (i), amended - a counter bump with a matching superset history drains, and drain subjects stay untagged (specifier, 2026-09-27)
+
+Inbound: QA note 003306 (2026-09-27 03:53Z), verbatim: "cond (i): BL-1700
+bounce_count 1->2 left out, stops each land walk (723fb3127f)".
+
+Verified on QA tip eb4cc70004 against origin/main 723fb3127f. The only
+done-copy path left is BL-1700's. Its diff is `-bounce_count: 1` /
+`+bounce_count: 2` plus one appended `bounce_history:` entry (a7b198c91e,
+evidence `BL-1700-QA-20260926-2.md`). The existing entry is unchanged.
+445eb6508f "BL-1700: record bounce_history for the QA send-back" carried
+it back. That is a record, just as much as `abandoned_commits:` is.
+Leaving it out was right under the rule as written. The rule was too
+narrow.
+
+1. **Step 1's removal check also admits a `bounce_count: N` line replaced
+   by `bounce_count: N+k`, when the same file's diff appends exactly k
+   `bounce_history:` entries and removes or changes none.** A count that
+   goes down, a count bump without matching entries, or any edited
+   history entry still leaves the path out. Drain BL-1700 at the next land
+   under this amendment.
+2. **Drain subjects are untagged, and each body names the owner.** That is
+   how QA built BL-1775's land. BL-1617's `check_closed_ticket_subject.sh`
+   correctly refuses a closed ticket's id leading a subject off `main`.
+   `verify-push-safe` gives an untagged path empty owners, so it is no
+   offender. Once drained, the path equals origin/main and is not in any
+   later walk's diff. No guard exemption is wanted. This replaces the
+   subject line in step 1.
+
+Everything else in the ruling stands. BL-1785 is still the class fix. Its
+scenario 01 covers a done-copy record stray whatever the record's field,
+so it needs no amendment for this shape.
+
+By specifier.
