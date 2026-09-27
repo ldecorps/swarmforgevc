@@ -169,19 +169,39 @@
 ;; host: `fes` and `primary` subdirectories already exist for other
 ;; fleet-console purposes).
 (def swarm-name (swarm-identity-lib/own-swarm-name project-root))
+;; BL-1779: nil for a root whose own swarm-identity declares no swarm_name
+;; at all (every un-launched mkdtemp fixture - every REAL launch has
+;; already persisted swarm-identity by the time this supervisor starts,
+;; swarmforge.sh writes it before it launches the front desk). Gates the
+;; fleet-creds-file read and the primary-root record write below; every
+;; other use of swarm-name in this file (env-fallback eligibility,
+;; conflicting-swarm, refusal messages) is unaffected and keeps
+;; own-swarm-name's "primary" default exactly as before this ticket.
+(def declared-swarm-name (swarm-identity-lib/declared-swarm-name project-root))
 (def fleet-home-dir (or (System/getenv "SWARMFORGE_FLEET_HOME") (System/getProperty "user.home")))
 ;; BL-622: bootstraps the durable primary-root record on this swarm's first
 ;; primary launch (a no-op once a record exists, or for a non-primary
 ;; swarm-name) - must run BEFORE resolve-telegram-creds below so the very
 ;; first primary launch ever still resolves via env fallback in the same
-;; tick it records itself as primary.
-(fleet-telegram-creds-lib/ensure-primary-root-recorded! fleet-home-dir project-root swarm-name)
+;; tick it records itself as primary. BL-1779: never called at all for an
+;; undeclared root - it must never claim the primary-root record just
+;; because own-swarm-name defaults an undeclared identity to "primary".
+(when declared-swarm-name
+  (fleet-telegram-creds-lib/ensure-primary-root-recorded! fleet-home-dir project-root swarm-name))
 (def resolved-telegram-creds
-  (fleet-telegram-creds-lib/resolve-telegram-creds
-   fleet-home-dir project-root swarm-name
-   {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
-    "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
-   (env-long "BRIDGE_PORT" 8765)))
+  (if declared-swarm-name
+    (fleet-telegram-creds-lib/resolve-telegram-creds
+     fleet-home-dir project-root swarm-name
+     {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
+      "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
+     (env-long "BRIDGE_PORT" 8765))
+    ;; BL-1779: never reads ANY fleet creds file for an undeclared root -
+    ;; resolution goes only through BL-622's env-fallback-allowed? rule.
+    (fleet-telegram-creds-lib/resolve-telegram-creds-undeclared
+     fleet-home-dir project-root
+     {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
+      "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
+     (env-long "BRIDGE_PORT" 8765))))
 (def bridge-port (:bridge-port resolved-telegram-creds))
 ;; BL-622 scenario 05: a second, independent hazard - THIS swarm's resolved
 ;; token (however it got resolved) already belongs to another fleet swarm's

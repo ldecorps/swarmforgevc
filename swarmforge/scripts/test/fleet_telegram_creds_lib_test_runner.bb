@@ -18,6 +18,10 @@
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
+(defn assert-true [msg expr]
+  (when-not expr
+    (swap! failures conj (str "FAIL: " msg))))
+
 (def created-temp-dirs (atom []))
 (.addShutdownHook (Runtime/getRuntime)
                    (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
@@ -204,6 +208,43 @@
   (write-creds-file! home "fes" {:botToken "fes-own-token" :chatId "fes-chat" :bridgePort 9001})
   (assert= "BL-622: a swarm's own creds file never conflicts with itself"
            nil (fleet-telegram-creds-lib/conflicting-swarm home "fes" "fes-own-token")))
+
+;; ── BL-1779: an undeclared root never reads a fleet creds file ─────────────
+;; resolve-telegram-creds-undeclared must never touch read-fleet-creds at
+;; all - proven here by writing a REAL "primary" creds file (the exact
+;; shape this host's own live ~/.swarmforge/fleet/primary/telegram.json
+;; takes) and confirming it is never the source of the resolved value,
+;; regardless of the outcome (env-allowed or refused).
+
+(let [home (mk-tmp-dir)
+      root (mk-tmp-dir)]
+  (write-creds-file! home "primary" {:botToken "primary-token" :chatId "primary-chat" :bridgePort 18765})
+  ;; Bootstrap window: no primary-root record recorded yet.
+  (let [resolved (fleet-telegram-creds-lib/resolve-telegram-creds-undeclared
+                   home root {"TELEGRAM_BOT_TOKEN" "env-token" "TELEGRAM_CHAT_ID" "env-chat"} 18999)]
+    (assert= "BL-1779: an undeclared root never reads the primary creds file's token"
+             "env-token" (:bot-token resolved))
+    (assert= "BL-1779: an undeclared root never reads the primary creds file's chat id"
+             "env-chat" (:chat-id resolved))
+    (assert= "BL-1779: an undeclared root never reads the primary creds file's bridge port"
+             18999 (:bridge-port resolved))
+    (assert= "BL-1779: bootstrap window (no record yet) still allows env fallback"
+             false (:refused? resolved))))
+
+(let [home (mk-tmp-dir)
+      root (mk-tmp-dir)
+      other-root (mk-tmp-dir)]
+  (write-creds-file! home "primary" {:botToken "primary-token" :chatId "primary-chat" :bridgePort 18765})
+  (fs/create-dirs (fs/path home ".swarmforge" "fleet" "primary"))
+  (spit (str (fs/path home ".swarmforge" "fleet" "primary" "root")) other-root)
+  (let [resolved (fleet-telegram-creds-lib/resolve-telegram-creds-undeclared
+                   home root {"TELEGRAM_BOT_TOKEN" "env-token" "TELEGRAM_CHAT_ID" "env-chat"} 18999)]
+    (assert= "BL-1779: a recorded (mismatched) primary root refuses an undeclared root, never the primary's own token"
+             nil (:bot-token resolved))
+    (assert= "BL-1779: the refusal is loud (refused? true), never a silent nil that looks unconfigured"
+             true (:refused? resolved))
+    (assert-true "BL-1779: the refusal reason names the undeclared root's own kinder message"
+                 (str/includes? (or (:reason resolved) "") "swarm identity"))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

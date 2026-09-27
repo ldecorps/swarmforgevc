@@ -83,6 +83,22 @@ See `docs/tutorials/Onboarding-New-Project.md` for the full one-bot-per-
 target rationale and prerequisites (BotFather, a Topics-enabled group, and
 adding the bot as an admin).
 
+**Before the first real launch (BL-1779):** a target root has no
+`.swarmforge/swarm-identity` file yet — `swarmforge.sh` only writes one
+during a real `./swarm` launch, right before it starts the front desk.
+Until then the root is *undeclared*, and an undeclared root never reads
+ANY fleet creds file and never records itself as the primary root, even
+though it would otherwise default to the primary's own name for other
+purposes. This closes the failure mode a raw test fixture (no
+`swarm-identity` file, by construction) used to hit: it borrowed the
+primary's live bot token and bridge port under the real `$HOME`, spawning
+a second `getUpdates` poller on the human's bot and freeing the live
+bridge's port. An undeclared root's front desk resolves only through the
+same environment fallback BL-622 already defines — refused when a
+primary record names another root, and the ambient environment otherwise,
+including before any root has been recorded at all (the bootstrap
+window, e.g. this very first real launch on a fresh host).
+
 To check what creds a given checkout would actually resolve to, without
 launching anything:
 

@@ -19,6 +19,18 @@ fail=0
 note() { printf '%s\n' "$*"; }
 check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi; }
 
+# BL-1779 QA bounce D3: case 02 resolves real ambient creds and reaches a
+# real spawn - decide-bridge-port-action's port-free runs before its own
+# stub entrypoint would ever bind anything, so a missing BRIDGE_PORT here
+# frees the LIVE front desk's own listening port (8765) exactly as D1/D2
+# in the fleet-creds/liveness/tick files. Cases 01/05 refuse before
+# reaching that code at all (front_desk_supervisor.bb's own launch gate
+# exits ahead of tick!/maybe-adopt-or-spawn-bridge!) but get the same
+# isolation anyway, defense in depth - the same reasoning already applied
+# to bl622OnboardingTelegramTokenSeparationSteps.js's own refusal
+# scenarios (05/06).
+BRIDGE_PORT_FOR_TEST=$((20000 + ($$ % 10000)))
+
 make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
@@ -76,6 +88,7 @@ write_swarm_identity "$D1" "secondary"
 set +e
 BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=primary-token-leaked-into-shell TELEGRAM_CHAT_ID=primary-chat-leaked-into-shell \
   TELEGRAM_PRINCIPAL_USER_ID=1 SWARMFORGE_FLEET_HOME="$FLEET_HOME_1" \
+  BRIDGE_PORT="$BRIDGE_PORT_FOR_TEST" \
   bb "$D1/front_desk_supervisor.bb" "$D1" --check-once >/dev/null 2>&1
 rc=$?
 set -e
@@ -97,6 +110,7 @@ printf '%s' "$D2" > "$FLEET_HOME_2/.swarmforge/fleet/primary/root"
 
 BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=recorded-primary-token TELEGRAM_CHAT_ID=recorded-primary-chat \
   TELEGRAM_PRINCIPAL_USER_ID=1 SWARMFORGE_FLEET_HOME="$FLEET_HOME_2" \
+  BRIDGE_PORT="$BRIDGE_PORT_FOR_TEST" \
   bb "$D2/front_desk_supervisor.bb" "$D2" --check-once >/dev/null 2>&1 || true
 # Poll rather than a fixed sleep - the bot child process writes
 # received-env.json asynchronously after the supervisor's own --check-once
@@ -120,6 +134,7 @@ write_fleet_creds "$FLEET_HOME_5" "fes2" "shared-token" "fes2-chat" 9002
 
 set +e
 BRIDGE_TOKEN=fake-token TELEGRAM_PRINCIPAL_USER_ID=1 SWARMFORGE_FLEET_HOME="$FLEET_HOME_5" \
+  BRIDGE_PORT="$BRIDGE_PORT_FOR_TEST" \
   bb "$D5/front_desk_supervisor.bb" "$D5" --check-once >/dev/null 2>&1
 rc5=$?
 set -e

@@ -118,6 +118,43 @@
        "<target-repo-path> <bot-token> <bot-username> <host-secrets-file-path> "
        swarm-name " [bridge-port]"))
 
+;; BL-1779: an undeclared project root (its own .swarmforge/swarm-identity
+;; is absent or names no swarm_name - every un-launched mkdtemp fixture)
+;; that says to launch once or provision a name, kinder than
+;; refusal-message's generic per-swarm line since there IS no swarm name
+;; yet to provision against.
+(defn undeclared-root-refusal-message []
+  (str "front desk refused: this project root has not declared a swarm "
+       "identity yet (.swarmforge/swarm-identity is absent or names no "
+       "swarm_name) - the ambient environment token is reserved for the "
+       "recorded primary root and will not be borrowed here. Launch this "
+       "swarm once (./swarm) to persist its identity, or provision it its "
+       "own bot: node extension/out/tools/provision-onboarding-telegram-channel.js "
+       "<target-repo-path> <bot-token> <bot-username> <host-secrets-file-path> "
+       "<swarm-name> [bridge-port]"))
+
+(defn- env-fallback-or-refuse
+  "Shared tail of resolve-telegram-creds and resolve-telegram-creds-
+   undeclared: once a caller has decided NOT to use a fleet creds file
+   (either none exists, or - BL-1779 - the root has no declared identity
+   so none is even looked up), both resolve the SAME way: env fallback
+   when env-fallback-allowed? (BL-622) holds, otherwise a loud refusal.
+   refusal-msg is a caller-supplied string so an undeclared root gets its
+   own kinder wording (undeclared-root-refusal-message) while a declared
+   but unprovisioned swarm keeps refusal-message's per-swarm wording."
+  [home-dir project-root swarm-name env default-bridge-port refusal-msg]
+  (if (env-fallback-allowed? home-dir project-root swarm-name)
+    {:bot-token (get env "TELEGRAM_BOT_TOKEN")
+     :chat-id (get env "TELEGRAM_CHAT_ID")
+     :bridge-port default-bridge-port
+     :refused? false
+     :reason nil}
+    {:bot-token nil
+     :chat-id nil
+     :bridge-port default-bridge-port
+     :refused? true
+     :reason refusal-msg}))
+
 (defn resolve-telegram-creds
   "Resolves {:bot-token :chat-id :bridge-port :refused? :reason} for
    swarm-name launched from project-root.
@@ -137,7 +174,11 @@
    `default-bridge-port` is the value already resolved from BRIDGE_PORT
    env (or its own hardcoded default) - the creds file's own bridgePort
    overrides it only when present; every other case keeps today's
-   behavior unchanged."
+   behavior unchanged.
+
+   Callers only ever pass a DECLARED swarm-name here (BL-1779) - an
+   undeclared root calls resolve-telegram-creds-undeclared instead, which
+   never reaches read-fleet-creds at all."
   [home-dir project-root swarm-name env default-bridge-port]
   (if-let [creds (read-fleet-creds home-dir swarm-name)]
     {:bot-token (:botToken creds)
@@ -145,17 +186,25 @@
      :bridge-port (or (:bridgePort creds) default-bridge-port)
      :refused? false
      :reason nil}
-    (if (env-fallback-allowed? home-dir project-root swarm-name)
-      {:bot-token (get env "TELEGRAM_BOT_TOKEN")
-       :chat-id (get env "TELEGRAM_CHAT_ID")
-       :bridge-port default-bridge-port
-       :refused? false
-       :reason nil}
-      {:bot-token nil
-       :chat-id nil
-       :bridge-port default-bridge-port
-       :refused? true
-       :reason (refusal-message swarm-name)})))
+    (env-fallback-or-refuse home-dir project-root swarm-name env default-bridge-port
+                            (refusal-message swarm-name))))
+
+(defn resolve-telegram-creds-undeclared
+  "BL-1779: resolves creds for a project root whose OWN swarm-identity
+   declares no swarm_name at all. Never calls read-fleet-creds - own-swarm-
+   name's convenient \"primary\" default must not let an undeclared root
+   (every un-launched mkdtemp fixture) read the REAL primary's fleet creds
+   file, which on a host that has actually launched a primary swarm holds
+   its live bot token and bridge port (BL-622's incident class: a fixture
+   front desk becomes a second getUpdates poller on the human's bot).
+   Resolution goes only through env-fallback-allowed? (BL-622, unchanged) -
+   using the primary swarm name only for that comparison, exactly the
+   value an undeclared root's env-fallback eligibility already used before
+   this ticket, so a HEALTHY primary's own launch is completely unaffected
+   and only the CREDS-FILE channel closes for an undeclared root."
+  [home-dir project-root env default-bridge-port]
+  (env-fallback-or-refuse home-dir project-root default-primary-swarm-name env default-bridge-port
+                          (undeclared-root-refusal-message)))
 
 ;; ── BL-622: cross-swarm token-uniqueness guard (scenario 05) ───────────
 

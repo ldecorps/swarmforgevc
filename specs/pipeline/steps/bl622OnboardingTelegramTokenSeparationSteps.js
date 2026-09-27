@@ -30,6 +30,15 @@ const SUPERVISOR = path.join(SWARM_SCRIPTS, 'front_desk_supervisor.bb');
 const LAUNCH_FRONT_DESK = path.join(SWARM_SCRIPTS, 'launch_front_desk.sh');
 const DOCS_ROOT = path.join(REPO_ROOT, 'docs');
 
+// BL-1779 QA D2: every call site below starts the REAL front_desk_
+// supervisor.bb/launch_front_desk.sh, whose bridge defaults to the live
+// port 8765 absent its own BRIDGE_PORT - isolating SWARMFORGE_FLEET_HOME
+// alone is not enough (frontDeskHeadlessLauncherSteps.js's own -04
+// scenario pattern).
+function freePort() {
+  return 21000 + Math.floor(Math.random() * 9000);
+}
+
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
@@ -186,10 +195,12 @@ function registerSteps(registry) {
 
   registry.define(/^a swarm launches as swarm name "([^"]+)"$/, (ctx, swarmName) => {
     assert.equal(swarmName, 'primary', 'internal test setup: scenario 03 is the primary-bootstrap case');
+    ctx.port = freePort();
     ctx.launchResult = spawnSyncToFile('bb', [SUPERVISOR, ctx.projectRoot, '--check-once'], {
       ...process.env,
       SWARMFORGE_FLEET_HOME: ctx.fleetHome,
       BRIDGE_TOKEN: 'fake-token',
+      BRIDGE_PORT: String(ctx.port),
       TELEGRAM_BOT_TOKEN: 'primary-env-token',
       TELEGRAM_CHAT_ID: 'primary-env-chat',
       TELEGRAM_PRINCIPAL_USER_ID: '1',
@@ -237,6 +248,7 @@ function registerSteps(registry) {
       ...process.env,
       SWARMFORGE_FLEET_HOME: ctx.fleetHome,
       BRIDGE_TOKEN: 'fake-token',
+      BRIDGE_PORT: String(freePort()),
       TELEGRAM_PRINCIPAL_USER_ID: '1',
     });
   });
@@ -267,6 +279,7 @@ function registerSteps(registry) {
     ctx.ensureResult = spawnSyncToFile('bash', [LAUNCH_FRONT_DESK, ctx.projectRoot], {
       ...process.env,
       SWARMFORGE_FLEET_HOME: ctx.fleetHome,
+      BRIDGE_PORT: String(freePort()),
       TELEGRAM_PRINCIPAL_USER_ID: '1',
     });
   });

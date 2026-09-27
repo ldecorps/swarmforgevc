@@ -12,6 +12,7 @@ severity: high
 epic: swarm-reliability
 priority: 5
 depends_on: []
+abandoned_commits: [7ed698fcb7, 469536f410, 1d451f7916, 54486b50c4]
 mutation_cost: medium
 # medium: Babashka lib (no mutation/CRAP/DRY wired, BL-472) plus up to
 # five step-handler env edits and a census run of 36 test files, each
@@ -203,3 +204,7 @@ notes: |
   pid check in QA's step 2).
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-26, by: QA, blamed: coder, class: behavior, commit: 8b136572e0, evidence: backlog/evidence/BL-1779-QA-20260926.md }
+  - { at: 2026-09-27, by: QA, blamed: coder, class: behavior, commit: 379dd2eda7, evidence: backlog/evidence/BL-1779-QA-20260927.md }

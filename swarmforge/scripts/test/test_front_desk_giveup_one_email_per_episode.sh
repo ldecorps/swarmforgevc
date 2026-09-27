@@ -10,6 +10,11 @@ fail=0
 note() { printf '%s\n' "$*"; }
 check() { if eval "$2"; then note "PASS: $1"; else note "FAIL: $1"; fail=1; fi; }
 
+# BL-1779 QA bounce D2: never the live port 8765 - pid-derived so a
+# concurrent run of this same suite in another worktree does not collide
+# with this one either (mirrors test_build_freshness_cli.sh's own export).
+BRIDGE_PORT_FOR_TEST=$((20000 + ($$ % 10000)))
+
 make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
@@ -45,7 +50,19 @@ EOF
 }
 
 check_once() {
+  # BL-1779: this fixture root declares no swarm identity (undeclared),
+  # and without its own isolated fleet home it would resolve creds from
+  # the REAL $HOME - the exact live-bridge-kill/token-leak hazard this
+  # ticket closes. BL-1779 QA bounce D2: SWARMFORGE_FLEET_HOME alone left
+  # the bridge PORT unisolated - with no fleet creds file, decide-bridge-
+  # port-action still defaulted to BRIDGE_PORT's own 8765, the LIVE front
+  # desk's own listening port. BRIDGE_PORT_FOR_TEST (file-scope, pid-derived)
+  # closes that the same way. This file itself currently dies at load
+  # (BL-1781); the fix lands now so it does not ALSO hit the live bridge
+  # the moment that load defect is fixed.
   BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=y TELEGRAM_PRINCIPAL_USER_ID=1 \
+    SWARMFORGE_FLEET_HOME="$1/fleet-home" \
+    BRIDGE_PORT="$BRIDGE_PORT_FOR_TEST" \
     FRONT_DESK_MAX_ATTEMPTS="${FRONT_DESK_MAX_ATTEMPTS:-3}" \
     FRONT_DESK_BACKOFF_BASE_MS="${FRONT_DESK_BACKOFF_BASE_MS:-10}" \
     FRONT_DESK_BACKOFF_MAX_MS="${FRONT_DESK_BACKOFF_MAX_MS:-40}" \

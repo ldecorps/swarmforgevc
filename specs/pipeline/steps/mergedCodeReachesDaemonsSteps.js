@@ -115,10 +115,16 @@ const FIXTURE_BRIDGE_PORT = 20000 + (process.pid % 10000);
 // whatever TELEGRAM_* it's given) would hand a fixture-spawned bot process
 // the REAL production credentials. Every subprocess this file spawns must
 // build its env from THIS, never from process.env directly.
-function fixtureEnv(extra) {
+// BL-1779: SWARMFORGE_FLEET_HOME always points inside the fixture root -
+// this file's fixture root declares no swarm identity of its own
+// (undeclared), and without an isolated fleet home it would resolve creds
+// through the REAL primary's own fleet state on this host (BL-622's
+// incident class).
+function fixtureEnv(target, extra) {
   return {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
+    SWARMFORGE_FLEET_HOME: path.join(target, 'fleet-home'),
     TELEGRAM_BOT_TOKEN: 'bl328-fixture-fake-bot-token',
     TELEGRAM_CHAT_ID: 'bl328-fixture-fake-chat-id',
     TELEGRAM_PRINCIPAL_USER_ID: 'bl328-fixture-fake-user-id',
@@ -229,7 +235,7 @@ async function startRealFrontDeskBridge(ctx) {
 
   const result = spawnSync('bash', [path.join(SWARMFORGE_SCRIPTS, 'launch_front_desk.sh'), ctx.target], {
     encoding: 'utf8',
-    env: fixtureEnv(),
+    env: fixtureEnv(ctx.target),
   });
   if (result.status !== 0) {
     throw new Error(`launch_front_desk.sh failed: ${result.stderr}`);
@@ -402,7 +408,7 @@ function registerSteps(registry) {
     fs.chmodSync(path.join(fakeBin, 'npm'), 0o755);
     const result = spawnSync('bb', [CLI, ctx.target, 'sync'], {
       encoding: 'utf8',
-      env: fixtureEnv({ PATH: `${fakeBin}:${process.env.PATH}` }),
+      env: fixtureEnv(ctx.target, { PATH: `${fakeBin}:${process.env.PATH}` }),
     });
     fs.rmSync(fakeBin, { recursive: true, force: true });
     if (result.status !== 0) {

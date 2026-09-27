@@ -15,6 +15,11 @@ const { execFileSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'build_freshness_cli.bb');
+// BL-1779 (self-audit pass 2): a sync can reach restart-front-desk-group!
+// -> launch_front_desk.sh, whose bridge defaults to the live port 8765
+// absent its own BRIDGE_PORT - SWARMFORGE_FLEET_HOME alone isolates
+// creds resolution, never the port a real bridge actually binds.
+const FIXTURE_BRIDGE_PORT = 20000 + (process.pid % 10000);
 
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -221,8 +226,17 @@ function registerSteps(registry) {
         // whatever TELEGRAM_* it's handed, and this box exports the real
         // production bot credentials (self-hosting). See
         // mergedCodeReachesDaemonsSteps.js's fixtureEnv() for the same
-        // hazard and treatment.
-        env: { PATH: `${ctx.fakeBin}:${process.env.PATH}`, HOME: process.env.HOME },
+        // hazard and treatment. BL-1779: SWARMFORGE_FLEET_HOME also always
+        // points inside the fixture root - this fixture declares no swarm
+        // identity of its own (undeclared), and without an isolated fleet
+        // home it would resolve creds through the REAL primary's own
+        // fleet state on this host.
+        env: {
+          PATH: `${ctx.fakeBin}:${process.env.PATH}`,
+          HOME: process.env.HOME,
+          SWARMFORGE_FLEET_HOME: path.join(ctx.root, 'fleet-home'),
+          BRIDGE_PORT: String(FIXTURE_BRIDGE_PORT),
+        },
       });
       return { exitCode: 0, stdout, stderr: '' };
     } catch (err) {

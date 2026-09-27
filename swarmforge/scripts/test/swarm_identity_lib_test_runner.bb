@@ -98,6 +98,26 @@
   (assert-contains "message mentions recovery" msg "start-swarm-anthropic")
   (assert-contains "message mentions --pack" msg "--pack openrouter-anthropic-mono-router"))
 
+;; ── BL-1779: declared-swarm-name - nil when undeclared, never defaulted ────
+(let [root (str (fs/create-temp-dir {:prefix "sfvc-declared-swarm-name-"}))]
+  (try
+    (assert= "declared-swarm-name: absent swarm-identity file -> nil (undeclared)"
+             nil (swarm-identity-lib/declared-swarm-name root))
+    (assert= "own-swarm-name still defaults to primary for the same undeclared root"
+             "primary" (swarm-identity-lib/own-swarm-name root))
+    (fs/create-dirs (fs/path root ".swarmforge"))
+    (spit (str (fs/path root ".swarmforge" "swarm-identity")) "swarm_mode\tautonomous\n")
+    (assert= "declared-swarm-name: file present but no swarm_name key -> still nil"
+             nil (swarm-identity-lib/declared-swarm-name root))
+    (spit (str (fs/path root ".swarmforge" "swarm-identity")) "swarm_name\tfes\nswarm_mode\tautonomous\n")
+    (assert= "declared-swarm-name: an explicit swarm_name is returned verbatim"
+             "fes" (swarm-identity-lib/declared-swarm-name root))
+    (spit (str (fs/path root ".swarmforge" "swarm-identity")) "swarm_name\tprimary\nswarm_mode\tautonomous\n")
+    (assert= "declared-swarm-name: an explicitly declared \"primary\" is still returned, not defaulted"
+             "primary" (swarm-identity-lib/declared-swarm-name root))
+    (finally
+      (fs/delete-tree root))))
+
 (if (empty? @failures)
   (println "swarm_identity_lib_test_runner: ok")
   (do (doseq [f @failures] (println f))

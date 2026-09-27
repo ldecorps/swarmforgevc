@@ -40,6 +40,25 @@
 (defn own-swarm-name [project-root]
   (get (read-swarm-identity project-root) "swarm_name" default-swarm-name))
 
+(defn declared-swarm-name
+  "BL-1779: the swarm_name THIS root's own .swarmforge/swarm-identity file
+   explicitly declares, or nil when the file is absent or carries no
+   swarm_name key - never defaulted to \"primary\" the way own-swarm-name
+   is for every other caller. Used only at the fleet-creds and primary-
+   record call sites: a root that has never declared an identity (every
+   un-launched mkdtemp fixture) must not be treated as the primary swarm
+   just because that is own-swarm-name's convenient default everywhere
+   else."
+  [project-root]
+  (let [file (identity-file project-root)]
+    (when (fs/exists? file)
+      (get (into {}
+                 (for [line (str/split-lines (slurp (str file)))
+                       :when (not (str/blank? line))
+                       :let [[k v] (str/split line #"\t" 2)]]
+                   [k (or v "")]))
+           "swarm_name"))))
+
 (defn ticket-swarm-field
   "The ticket YAML file's top-level `swarm:` value, or nil when absent (an
    absent field means the primary swarm, per BL-090's backward-compat

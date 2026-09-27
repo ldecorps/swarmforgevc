@@ -27,6 +27,52 @@ operator-facing note. No extension command, setting, or UI change; no
 diagram edit.)
 Prior entry —
 
+**Last Updated:** September 27, 2026 (BL-1779: a project root whose own
+`.swarmforge/swarm-identity` declares no `swarm_name` — every un-launched
+mkdtemp test fixture, by construction — is now *undeclared*, and an
+undeclared root never reads any fleet creds file and is never recorded as
+the primary root, even though `swarm_identity_lib.bb`'s `own-swarm-name`
+still defaults such a root to `"primary"` for other callers.
+`swarm_identity_lib.bb` gains `declared-swarm-name` (nil unless the file
+exists and names a `swarm_name`, never defaulted). `fleet_telegram_creds_lib.bb`
+gains `resolve-telegram-creds-undeclared`, which resolves only through
+BL-622's existing `env-fallback-allowed?` rule — refused when a primary
+record names another root, and the ambient environment otherwise,
+including before any root has been recorded (the bootstrap window) — with
+its own refusal wording naming the undeclared cause.
+`front_desk_supervisor.bb` and `fleet_telegram_creds_cli.bb`
+dispatch to it whenever the root is undeclared, and skip
+`ensure-primary-root-recorded!` entirely for such a root. Before this fix,
+a fixture root under the real `$HOME` (no `SWARMFORGE_FLEET_HOME` override)
+resolved the primary's live bot token and bridge port 8765 by falling
+through the same default `own-swarm-name` used, so a fixture front desk
+could spawn a second `getUpdates` poller on the human's real bot (BL-622's
+incident class) and free the live bridge's port (BL-789's `:free`); this
+host's own `~/.swarmforge/fleet/primary/root` already named a fixture tmp
+root as a result. Five front-desk-launching step handlers
+(`bl629SyncQaApprovalGateSteps`, `frontDeskSurvivesRebootSteps`,
+`mergedCodeReachesDaemonsSteps`, `frontDeskHeadlessLauncherSteps`, and
+`bl404LaunchFrontDeskHonorsParkedFlagSteps`, which never reached a real
+spawn) plus several bb runner test scripts now give any front desk they
+start an isolated `SWARMFORGE_FLEET_HOME` and its own `BRIDGE_PORT`
+(never the live default 8765) — a QA bounce (evidence
+`backlog/evidence/BL-1779-QA-20260926.md`) found three handlers isolating
+the fleet home but not the port, plus a real race in a step file's own
+`launchFrontDesk` helper that fetched before the fixture bridge had
+finished binding; both are fixed. A second QA bounce (evidence
+`backlog/evidence/BL-1779-QA-20260927.md`) found the SAME port gap in
+five `swarmforge/scripts/test/test_front_desk_supervisor_*.sh` shell
+tests — isolating `SWARMFORGE_FLEET_HOME` never stopped
+`decide-bridge-port-action` from freeing the live 8765 holder before
+spawning each fixture's own stub bridge; each now pins its own
+`BRIDGE_PORT` too. A healthy bridge of
+another DECLARED root on the same port is still freed by BL-789's `:free`
+— BL-1780 owns that separate guard. Acceptance:
+`specs/features/BL-1779-an-undeclared-root-never-takes-a-fleet-swarms-telegram-identity.feature`.
+See `docs/how-to/BL-439-fes-second-swarm-bringup.md` for the operator-facing
+note. No extension command, setting, or UI change; no diagram edit.)
+Prior entry —
+
 **Last Updated:** September 26, 2026 (BL-1769: `qa-gather`'s unit/property
 `register_join` entries are now parsed from each check's WHOLE captured
 output (stdout + stderr, unbounded), never from the report's 4000-char

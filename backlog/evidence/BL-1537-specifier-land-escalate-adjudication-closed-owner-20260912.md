@@ -639,3 +639,21 @@ instance ride inside the land commit, following condition (i)'s step 3
 reasoning.
 
 By QA.
+
+## Instance - BL-1779's land, condition (g) (QA, 2026-09-27)
+
+`land_main_publish.sh <QA worktree> --land BL-1779 54486b50c4` walked
+05:19-~06:00Z and printed `LAND_ESCALATE` with `ENTANGLED_SIBLING` BL-1671,
+1711, 1715, 1717, 1767 and 1772, on the same stray as BL-1701's land:
+`could not cherry-pick stray evidence commit fd6191c893` (closed BL-1711's
+land record follow-up). Nothing new: the BL-1787 class, condition (g) until
+BL-1787 lands. The stray is left alone.
+
+Landed per (g): tip-pure off origin/main, holding BL-1779's 40 own paths
+from QA tip 54486b50c4. The three shared paths (BL-439 how-to,
+Specification.MD, test_build_freshness_cli.sh) change vs main only by lines
+blamed to BL-1779's own commits. The BL-351 register row BL-1779 owns is
+retired in the same commit. `abandoned_commits: [.., 54486b50c4]` and this
+instance ride inside the land commit.
+
+By QA.

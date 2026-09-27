@@ -17,6 +17,11 @@ fail=0
 note() { printf '%s\n' "$*"; }
 check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi; }
 
+# BL-1779 QA bounce D2: never the live port 8765 - pid-derived so a
+# concurrent run of this same suite in another worktree does not collide
+# with this one either (mirrors test_build_freshness_cli.sh's own export).
+BRIDGE_PORT_FOR_TEST=$((20000 + ($$ % 10000)))
+
 # BL-1285: an extra delay before every supervisor check, so the property
 # "no verdict depends on elapsed wall-clock time" can be gated by injection
 # rather than by loading the host. Zero by default; the acceptance drives it.
@@ -111,7 +116,17 @@ check_once() {
   # property "no verdict depends on elapsed wall-clock time" can be proven by
   # injection rather than by loading the host.
   maybe_delay
+  # BL-1779: this fixture root declares no swarm identity (undeclared),
+  # and without its own isolated fleet home it would resolve creds from
+  # the REAL $HOME - the exact live-bridge-kill/token-leak hazard this
+  # ticket closes. BL-1779 QA bounce D2: SWARMFORGE_FLEET_HOME alone left
+  # the bridge PORT unisolated - with no fleet creds file, decide-bridge-
+  # port-action still defaulted to BRIDGE_PORT's own 8765, the LIVE front
+  # desk's own listening port. BRIDGE_PORT_FOR_TEST (file-scope, pid-derived)
+  # closes that the same way.
   BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=y TELEGRAM_PRINCIPAL_USER_ID=1 \
+    SWARMFORGE_FLEET_HOME="$1/fleet-home" \
+    BRIDGE_PORT="$BRIDGE_PORT_FOR_TEST" \
     FRONT_DESK_MAX_ATTEMPTS="${FRONT_DESK_MAX_ATTEMPTS:-3}" \
     FRONT_DESK_BACKOFF_BASE_MS="${FRONT_DESK_BACKOFF_BASE_MS:-10}" \
     FRONT_DESK_BACKOFF_MAX_MS="${FRONT_DESK_BACKOFF_MAX_MS:-40}" \

@@ -49,10 +49,17 @@ function nextPort() {
   return 30000 + (process.pid % 5000) + portCounter * 7;
 }
 
-function fixtureEnv(port, extra) {
+// BL-1779: SWARMFORGE_FLEET_HOME always points inside the fixture root
+// itself, never the real HOME - this file's fixture root declares no
+// swarm identity of its own (undeclared), and without an isolated fleet
+// home it would resolve creds through the REAL primary's own fleet state
+// on this host (BL-622's incident class: a fixture front desk becomes a
+// second getUpdates poller / frees the live bridge's port).
+function fixtureEnv(root, port, extra) {
   return {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
+    SWARMFORGE_FLEET_HOME: path.join(root, 'fleet-home'),
     TELEGRAM_BOT_TOKEN: 'bl351-fixture-fake-bot-token',
     TELEGRAM_CHAT_ID: 'bl351-fixture-fake-chat-id',
     TELEGRAM_PRINCIPAL_USER_ID: 'bl351-fixture-fake-user-id',
@@ -90,6 +97,9 @@ function pidFile(root) {
 }
 function statusFile(root) {
   return path.join(opDir(root), 'front-desk-supervisor.status.json');
+}
+function logFile(root) {
+  return path.join(opDir(root), 'front-desk-supervisor.log');
 }
 
 // Kills the REAL bridge+bot children AND the front_desk_supervisor.bb
@@ -155,11 +165,22 @@ function alive(pid) {
 // systemd unit's ExecStart (boot / Restart=always) and an operator's
 // `systemctl start` after installing the unit would run.
 async function launchFrontDesk(root, port) {
-  const result = spawnSync('bash', [LAUNCH_FRONT_DESK, root], { encoding: 'utf8', env: fixtureEnv(port) });
+  const result = spawnSync('bash', [LAUNCH_FRONT_DESK, root], { encoding: 'utf8', env: fixtureEnv(root, port) });
   if (result.status !== 0) {
     throw new Error(`launch_front_desk.sh failed: ${result.stdout}\n${result.stderr}`);
   }
   await waitFor(5000, () => fs.existsSync(statusFile(root)));
+  // BL-1779 QA D3: the status file exists as soon as the supervisor has
+  // STARTED the bridge child process - real work (several failed
+  // ensure*Topic Telegram calls against the fixture's own fake token)
+  // still runs before the bridge server actually binds its port, so a
+  // fetch fired the moment the status file appears can race a bridge
+  // that has not bound yet. Wait for the bridge's own "listening" line,
+  // named to THIS port, in its real log - never a fixed sleep.
+  await waitFor(5000, () => {
+    const text = fs.existsSync(logFile(root)) ? fs.readFileSync(logFile(root), 'utf8') : '';
+    return text.includes(`BRIDGE_LISTENING port=${port}`);
+  });
   return result;
 }
 

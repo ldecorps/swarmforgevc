@@ -65,7 +65,11 @@ function launch(root, port, env = {}) {
     // stopFrontDesk below) takes effect quickly rather than lingering up
     // to the real (2s) production default across the whole test run.
     encoding: 'utf8',
-    env: { ...process.env, ...FAKE_TELEGRAM_ENV, BRIDGE_PORT: String(port), FRONT_DESK_INTERVAL_MS: '200', ...env },
+    // BL-1779: SWARMFORGE_FLEET_HOME always points inside the fixture
+    // root - this fixture declares no swarm identity of its own
+    // (undeclared), and without an isolated fleet home it would resolve
+    // creds through the REAL primary's own fleet state on this host.
+    env: { ...process.env, ...FAKE_TELEGRAM_ENV, SWARMFORGE_FLEET_HOME: path.join(root, 'fleet-home'), BRIDGE_PORT: String(port), FRONT_DESK_INTERVAL_MS: '200', ...env },
   });
 }
 
@@ -232,7 +236,13 @@ function registerSteps(registry) {
     // A bot that always crashes on start - this scenario is about the
     // SUPERVISOR's own reaction, not about a healthy process.
     fs.writeFileSync(path.join(ctx.root, 'extension', 'out', 'tools', 'telegram-front-desk-bot.js'), 'process.exit(1);\n');
-    ctx.env = { ...process.env, BRIDGE_TOKEN: 'fake', ...FAKE_TELEGRAM_ENV, FRONT_DESK_MAX_ATTEMPTS: '2', FRONT_DESK_BACKOFF_BASE_MS: '10', FRONT_DESK_BACKOFF_MAX_MS: '20' };
+    // BL-1779 QA D1: this crash scenario supervises a bridge that, absent
+    // its own BRIDGE_PORT, defaults to the live port 8765 - so this
+    // fixture's own crash/respawn cycle can adopt-or-free the LIVE
+    // desk's bridge port right out from under it (BL-789's own
+    // adopt-or-free `:free`). An isolated port, same as the -04 scenario.
+    ctx.port = freePort();
+    ctx.env = { ...process.env, BRIDGE_TOKEN: 'fake', ...FAKE_TELEGRAM_ENV, SWARMFORGE_FLEET_HOME: path.join(ctx.root, 'fleet-home'), BRIDGE_PORT: String(ctx.port), FRONT_DESK_MAX_ATTEMPTS: '2', FRONT_DESK_BACKOFF_BASE_MS: '10', FRONT_DESK_BACKOFF_MAX_MS: '20' };
     checkOnce(ctx.root, ctx.env);
   });
 

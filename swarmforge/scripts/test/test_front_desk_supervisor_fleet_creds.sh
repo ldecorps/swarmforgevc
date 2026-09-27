@@ -97,8 +97,13 @@ FLEET_HOME_2="$(mktemp -d)"; register_tmp_dir "$FLEET_HOME_2"
 write_swarm_identity "$D2" "primary"
 # Deliberately no fleet creds file written for "primary" under FLEET_HOME_2.
 
+# BL-1779 QA bounce D1: with no creds file (unlike case 01's own 9001),
+# decide-bridge-port-action's default falls through to BRIDGE_PORT's own
+# default of 8765 - the LIVE front desk's own listening port. A free high
+# port here, never 8765, keeps this fixture off the live bridge.
 BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=env-primary-token TELEGRAM_CHAT_ID=env-primary-chat \
   TELEGRAM_PRINCIPAL_USER_ID=1 SWARMFORGE_FLEET_HOME="$FLEET_HOME_2" \
+  BRIDGE_PORT=$((20000 + ($$ % 10000))) \
   bb "$D2/front_desk_supervisor.bb" "$D2" --check-once >/dev/null 2>&1 || true
 sleep 0.3
 
@@ -107,6 +112,36 @@ check "02: the primary swarm with no creds file falls back to the env token" \
   "echo '$ENV2' | grep -q 'env-primary-token'"
 check "02: the primary swarm with no creds file falls back to the env chat id" \
   "echo '$ENV2' | grep -q 'env-primary-chat'"
+
+# ── BL-1779: a fixture root that declares NO swarm identity at all never
+#    reads the fleet home's "primary" creds file - even though own-swarm-
+#    name defaults an undeclared root's NAME to "primary" for other
+#    purposes, real fleet creds must never be borrowed this way (the exact
+#    hazard: a fixture front desk spawns with the human's real bot token
+#    and frees the live bridge's port, BL-622's incident class). D3
+#    deliberately has NO write_swarm_identity call at all. ───────────────
+D3="$(make_fixture)"
+FLEET_HOME_3="$(mktemp -d)"; register_tmp_dir "$FLEET_HOME_3"
+write_fleet_creds "$FLEET_HOME_3" "primary" "primary-real-token-should-never-be-used" "primary-real-chat" 18765
+
+# BL-1779 QA bounce D1: an undeclared root reads no fleet creds file at all
+# (resolve-telegram-creds-undeclared), so its own bridge-port default is
+# also BRIDGE_PORT's 8765 fallback - the LIVE front desk's own listening
+# port. A free high port here, never 8765 and distinct from case 02's
+# own, keeps this fixture off the live bridge.
+BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=undeclared-env-token TELEGRAM_CHAT_ID=undeclared-env-chat \
+  TELEGRAM_PRINCIPAL_USER_ID=1 SWARMFORGE_FLEET_HOME="$FLEET_HOME_3" \
+  BRIDGE_PORT=$((30000 + ($$ % 10000))) \
+  bb "$D3/front_desk_supervisor.bb" "$D3" --check-once >/dev/null 2>&1 || true
+sleep 0.3
+
+ENV3="$(received_env "$D3")"
+check "BL-1779: an undeclared root never receives the fleet home's real primary token" \
+  "! echo '$ENV3' | grep -q 'primary-real-token-should-never-be-used'"
+check "BL-1779: an undeclared root resolves via env fallback instead (bootstrap window, no record yet)" \
+  "echo '$ENV3' | grep -q 'undeclared-env-token'"
+check "BL-1779: an undeclared root's front desk never records itself as the primary root" \
+  "[[ ! -f '$FLEET_HOME_3/.swarmforge/fleet/primary/root' ]]"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "front_desk_supervisor fleet creds wiring (BL-436): ALL CHECKS PASSED"

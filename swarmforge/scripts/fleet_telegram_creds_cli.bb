@@ -45,13 +45,21 @@
 (defn -main [args]
   (let [project-root (first args)]
     (when (nil? project-root) (usage))
-    (let [swarm-name (swarm-identity-lib/own-swarm-name project-root)
+    ;; BL-1779: a root whose own swarm-identity declares no swarm_name at
+    ;; all never resolves through the fleet creds file - the same gate
+    ;; front_desk_supervisor.bb applies at its own real launch path. This
+    ;; CLI reports the SAME answer that path would give, never a rosier one.
+    (let [declared-name (swarm-identity-lib/declared-swarm-name project-root)
+          swarm-name (swarm-identity-lib/own-swarm-name project-root)
           fleet-home-dir (or (System/getenv "SWARMFORGE_FLEET_HOME") (System/getProperty "user.home"))
-          resolved (fleet-telegram-creds-lib/resolve-telegram-creds
-                    fleet-home-dir project-root swarm-name
-                    {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
-                     "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
-                    (env-long "BRIDGE_PORT" 8765))]
+          env {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
+               "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
+          default-bridge-port (env-long "BRIDGE_PORT" 8765)
+          resolved (if declared-name
+                     (fleet-telegram-creds-lib/resolve-telegram-creds
+                      fleet-home-dir project-root swarm-name env default-bridge-port)
+                     (fleet-telegram-creds-lib/resolve-telegram-creds-undeclared
+                      fleet-home-dir project-root env default-bridge-port))]
       (println (json/generate-string {:swarmName swarm-name
                                        :botToken (:bot-token resolved)
                                        :chatId (:chat-id resolved)

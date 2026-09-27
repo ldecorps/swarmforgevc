@@ -5,6 +5,13 @@
 # isolated fixture roots - never the live swarm's own state. Mirrors
 # test_role_lifecycle_cli.sh's own fixture rigor (real spawn/kill, no mocks
 # of the mechanism under test).
+#
+# BL-1779: every `sync` call below gets its own SWARMFORGE_FLEET_HOME
+# (derived from the fixture $ROOT) - `sync` can reach
+# restart-front-desk-group! -> launch_front_desk.sh, and this fixture's
+# $ROOT declares no swarm identity of its own (undeclared). Without an
+# isolated fleet home it would resolve creds through this host's REAL
+# primary fleet state (BL-622's incident class).
 
 set -uo pipefail
 
@@ -137,7 +144,7 @@ setInterval(() => {}, 1000);
 EOF
 echo "$OLD_SHA" > "$ROOT/extension/out/BUILD_SHA"
 export TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x TELEGRAM_PRINCIPAL_USER_ID=x
-bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
+SWARMFORGE_FLEET_HOME="$ROOT/fleet-home" bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
 wait_for 5 test -f "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" || fail "02 setup: front-desk group did not start"
 wait_for_front_desk_ready "$ROOT" || fail "02 setup: front-desk group did not publish build_sha for bridge and bot"
 OLD_SUP_PID="$(cat "$ROOT/.swarmforge/operator/front-desk-supervisor.pid")"
@@ -163,7 +170,7 @@ exit 0
 EOF
 chmod +x "$FAKE_BIN/npm"
 # No human action from here: one coordinator-invoked CLI call closes the loop.
-PATH="$FAKE_BIN:$PATH" bb "$CLI" "$ROOT" sync >/dev/null
+SWARMFORGE_FLEET_HOME="$ROOT/fleet-home" PATH="$FAKE_BIN:$PATH" bb "$CLI" "$ROOT" sync >/dev/null
 SYNC_EXIT=$?
 rm -rf "$FAKE_BIN"
 
@@ -230,7 +237,7 @@ echo "$(git -C "$ROOT_DIR" rev-parse main 2>/dev/null)" > "out/BUILD_SHA"
 exit 0
 NPMEOF
 chmod +x "$FAKE_BIN_04/npm"
-PATH="$FAKE_BIN_04:$PATH" bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
+SWARMFORGE_FLEET_HOME="$ROOT/fleet-home" PATH="$FAKE_BIN_04:$PATH" bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
 wait_for 5 test -f "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" || fail "04/07 setup: front-desk group did not start"
 wait_for_front_desk_ready "$ROOT" || fail "04/07 setup: front-desk group did not publish build_sha for bridge and bot"
 
@@ -286,7 +293,7 @@ cat > "$FAKE_BIN_08/npm" <<'NPMEOF'
 exit 1
 NPMEOF
 chmod +x "$FAKE_BIN_08/npm"
-PATH="$FAKE_BIN_08:$PATH" bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
+SWARMFORGE_FLEET_HOME="$ROOT/fleet-home" PATH="$FAKE_BIN_08:$PATH" bash "$LAUNCH_FRONT_DESK" "$ROOT" >/dev/null
 wait_for 5 test -f "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" || fail "08 setup: front-desk group did not start"
 wait_for_front_desk_ready "$ROOT" || fail "08 setup: front-desk group did not publish build_sha for bridge and bot"
 
@@ -402,7 +409,7 @@ echo "$NEW_SHA" > "$ROOT/extension/out/BUILD_SHA"
 exit 0
 EOF
 chmod +x "$FAKE_BIN_RC/npm"
-PATH="$FAKE_BIN_RC:$PATH" bb "$CLI" "$ROOT" sync >/dev/null
+SWARMFORGE_FLEET_HOME="$ROOT/fleet-home" PATH="$FAKE_BIN_RC:$PATH" bb "$CLI" "$ROOT" sync >/dev/null
 SYNC_EXIT_RC=$?
 rm -rf "$FAKE_BIN_RC"
 check_recompile_01() {
@@ -454,7 +461,7 @@ chmod +x "$FAKE_BIN_OP/npm"
 # too, the respawned process falls through to a genuine /proc-wide scan for
 # SwarmForge-* remote-control processes on this self-hosting box, exactly
 # the live-agent-killing hazard BL-486 exists to prevent.
-SYNC_OUT="$(PATH="$FAKE_BIN_OP:$PATH" OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" bb "$CLI" "$ROOT" sync)"
+SYNC_OUT="$(SWARMFORGE_FLEET_HOME="$ROOT/fleet-home" PATH="$FAKE_BIN_OP:$PATH" OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" bb "$CLI" "$ROOT" sync)"
 SYNC_EXIT=$?
 rm -rf "$FAKE_BIN_OP"
 REPORT_AFTER="$(bb "$CLI" "$ROOT" report)"
@@ -517,7 +524,7 @@ ERR_FILE_04="$(mktemp)"
 # fails fast here (1ms bound), but restart-operator-group! already spawned
 # the real replacement operator_runtime.bb BEFORE that wait, detached, so it
 # keeps running (and reaching its first tick!) after this CLI call returns.
-PATH="$FAKE_BIN_OP4:$PATH" OPERATOR_SKIP_LAUNCH=1 BUILD_FRESHNESS_OPERATOR_SETTLE_TIMEOUT_MS=1 SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" bb "$CLI" "$ROOT" sync >/dev/null 2>"$ERR_FILE_04"
+SWARMFORGE_FLEET_HOME="$ROOT/fleet-home" PATH="$FAKE_BIN_OP4:$PATH" OPERATOR_SKIP_LAUNCH=1 BUILD_FRESHNESS_OPERATOR_SETTLE_TIMEOUT_MS=1 SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" bb "$CLI" "$ROOT" sync >/dev/null 2>"$ERR_FILE_04"
 SYNC_EXIT_04=$?
 SYNC_ERR_04="$(cat "$ERR_FILE_04")"
 rm -f "$ERR_FILE_04"
@@ -574,7 +581,7 @@ exit 0
 EOF
 chmod +x "$FAKE_BIN_629/npm"
 SYNC_ERR_629="$(mktemp)"
-PATH="$FAKE_BIN_629:$PATH" bb "$CLI" "$ROOT" sync >/dev/null 2>"$SYNC_ERR_629"
+SWARMFORGE_FLEET_HOME="$ROOT/fleet-home" PATH="$FAKE_BIN_629:$PATH" bb "$CLI" "$ROOT" sync >/dev/null 2>"$SYNC_ERR_629"
 SYNC_EXIT_629=$?
 rm -rf "$FAKE_BIN_629"
 check_629_sync_refuses() {
@@ -630,7 +637,7 @@ else
 fi
 
 SYNC_ERR_LANDING="$(mktemp)"
-bb "$CLI" "$ROOT" sync >/dev/null 2>"$SYNC_ERR_LANDING"
+SWARMFORGE_FLEET_HOME="$ROOT/fleet-home" bb "$CLI" "$ROOT" sync >/dev/null 2>"$SYNC_ERR_LANDING"
 SYNC_EXIT_LANDING=$?
 if [[ "$SYNC_EXIT_LANDING" -eq 0 ]]; then
   pass "BL-629 landing-merge gate: sync proceeds without refusal after a routine QA landing"
