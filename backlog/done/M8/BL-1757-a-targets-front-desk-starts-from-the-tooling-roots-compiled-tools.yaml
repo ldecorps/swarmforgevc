@@ -125,3 +125,5 @@ notes: |
   Expedite lane by severity (Article 3.2.4).
 
 assigned_to: coder
+
+abandoned_commits: [fb6e6d2794]
