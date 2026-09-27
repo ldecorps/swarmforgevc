@@ -1,4 +1,8 @@
 id: BL-1719
+abandoned_commits: [f4c65e9d53]
+# BL-1241: hand-built tip-pure land 349245a2aa off origin/main at 2026-09-24T15:45:56Z;
+# mapping recorded 349245a2aa <- a320dd86d5 (BL-1334). qa_e2e step 3's census
+# runs once the master checkout's daemons carry this land.
 title: "Phantom 'You have new handoff mail' wakes: handoff-lib/wake-session remaps a wake whose recipient has no tmux session to the mono-router resident (the first non-coordinator roles.tsv row) in EVERY pack, so after the operator dropped the coder@2 seat on 2026-09-24 (fe664164b0) each wake for coder@2 was typed into the specifier's pane (4 empty wakes, 09:49:41-11:26:53Z) while coder@2's own parcels woke nowhere; inject-traffic.log carries 30 such cross-pane wakes since 2026-09-13; outside a rotation-router pack a wake for a missing session is skipped and logged, on both delivery paths"
 milestone: M8
 type: defect
