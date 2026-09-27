@@ -1,4 +1,7 @@
 id: BL-1718
+abandoned_commits: [8e9f2c88d3]
+# BL-1241: hand-built tip-pure land 72c02978c2 off origin/main; mapping
+# recorded 72c02978c2 <- 352105b2a4 (BL-1334); register row retired.
 title: "extension/test/stepHandlerModuleLoadBudget.test.js is red under host load (QA, BL-1696's parcel b9410ccd73, load about 10, 2026-09-24): bl709BubbleItsOwnTelegramTopicSteps.js measured 530 ms (fastest of three) against the 400 ms budget because it and bl725RenameCursorRemoteTopicToHostSteps.js - the only 2 of the 13 handlers that mention it - require extension/out/tools/telegramCursorBridgeLive (211 modules, about 230 ms quiet) at module scope; both move the require inside their steps, and the guard's non-vacuity case stops counting a timing violation the host load can add to its fixture (417 ms)"
 milestone: M8
 type: defect
