@@ -32,6 +32,7 @@ const KNOWN_FIXTURES = [
   'swarmforge/scripts/test/test_front_desk_supervisor_tick.sh',
   'swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh',
   'swarmforge/scripts/test/test_front_desk_supervisor_fleet_creds.sh',
+  'swarmforge/scripts/test/test_front_desk_giveup_one_email_per_episode.sh',
 ];
 
 function knownFixture(file) {

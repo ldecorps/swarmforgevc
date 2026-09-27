@@ -3,6 +3,8 @@
 
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_closure_copy.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_fixture_load_guard.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -19,8 +21,19 @@ make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/operator" "$d/extension/out/tools"
-  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/process_table_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" \
-     "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" "$d/"
+  # BL-1781: the copy set is DERIVED from front_desk_supervisor.bb's
+  # transitive load-file closure, never hand-listed (BL-1279's own fix for
+  # the sibling fixtures, never enrolled here because this file's name
+  # didn't match BL-1279's Examples pattern). The hand list this replaces
+  # named seven of ten load-files and died at load on every run
+  # (daemon_log_freshness_pulse_lib.bb, self_heal_telemetry_lib.bb,
+  # daemon_cycle_guard_lib.bb missing) - which is also what kept it
+  # harmless: a version that loads without BRIDGE_PORT/SWARMFORGE_FLEET_HOME
+  # (both already fixed here, BL-1779) frees the live bridge the moment it
+  # can run at all.
+  copy_bb_closure "$SRC" "$d" front_desk_supervisor.bb \
+    || { printf 'FAIL - %s\n' "could not derive front_desk_supervisor.bb's load-file closure" >&2; exit 1; }
+  assert_bb_closure_present "$SRC" "$d" front_desk_supervisor.bb
   cat > "$d/extension/out/tools/start-bridge-headless.js" <<'EOF'
 setInterval(() => {}, 1000);
 EOF

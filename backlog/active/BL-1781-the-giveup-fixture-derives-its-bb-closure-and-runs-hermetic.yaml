@@ -10,6 +10,7 @@ severity: high
 epic: code-quality-gates
 priority: 8
 depends_on: []
+abandoned_commits: [01452d95ad]
 mutation_cost: low
 # low: one shell test (no mutation/CRAP/DRY lane) and two Examples rows in
 # BL-1279's feature; the gherkin mutation re-runs that feature.

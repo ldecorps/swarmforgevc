@@ -49,6 +49,7 @@ Feature: The front-desk supervisor fixtures derive their bb closure instead of h
       | swarmforge/scripts/test/test_front_desk_supervisor_tick.sh          |
       | swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh      |
       | swarmforge/scripts/test/test_front_desk_supervisor_fleet_creds.sh   |
+      | swarmforge/scripts/test/test_front_desk_giveup_one_email_per_episode.sh |
 
   # BL-1279 front-desk-fixtures-derive-their-bb-closure-02
   Scenario: the copy set is derived, so a new load-file edge upstream is picked up with no edit
@@ -67,6 +68,7 @@ Feature: The front-desk supervisor fixtures derive their bb closure instead of h
       | swarmforge/scripts/test/test_front_desk_supervisor_tick.sh          |
       | swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh      |
       | swarmforge/scripts/test/test_front_desk_supervisor_fleet_creds.sh   |
+      | swarmforge/scripts/test/test_front_desk_giveup_one_email_per_episode.sh |
 
   # BL-1279 front-desk-fixtures-derive-their-bb-closure-04
   Scenario: a fixture whose subprocess dies at load time reports no passed checks

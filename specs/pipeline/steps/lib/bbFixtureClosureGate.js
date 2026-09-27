@@ -72,6 +72,14 @@ const FIXTURES = {
     entry: 'front_desk_supervisor.bb',
     kind: 'shell-copy',
   },
+  // BL-1781: the fifth front-desk supervisor fixture, never enrolled at
+  // BL-1279 because its name (test_front_desk_giveup_*) did not match the
+  // Examples table's own naming pattern. Hand-listed seven of the ten
+  // closure members and died at load on every run.
+  'swarmforge/scripts/test/test_front_desk_giveup_one_email_per_episode.sh': {
+    entry: 'front_desk_supervisor.bb',
+    kind: 'shell-copy',
+  },
   'swarmforge/scripts/test/lib/operator_runtime_sandbox.sh': {
     entry: 'operator_runtime.bb',
     // Sourced and RUN into a scratch dir; the files that land are the answer.

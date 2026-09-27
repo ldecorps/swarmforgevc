@@ -657,3 +657,17 @@ retired in the same commit. `abandoned_commits: [.., 54486b50c4]` and this
 instance ride inside the land commit.
 
 By QA.
+
+## Instance - BL-1781's land, condition (g) (QA, 2026-09-27)
+
+`land_main_publish.sh <QA worktree> --land BL-1781 01452d95ad` walked
+~06:16-07:0xZ and escalated on the same stray fd6191c893 (closed BL-1711's
+land record follow-up), `ENTANGLED_SIBLING` BL-1671, 1711, 1715, 1717, 1767,
+1772. Nothing new: the BL-1787 class, condition (g). Stray left alone.
+Landed tip-pure off origin/main with BL-1781's 10 own paths from 01452d95ad
+(the shared giveup test's BL-1779 lines are already on main, so its diff is
+BL-1781's alone), its register row retired, `abandoned_commits:
+[01452d95ad]` and this instance in the land commit. Every land will keep
+paying a ~45-minute walk on this stray until BL-1787 lands.
+
+By QA.
