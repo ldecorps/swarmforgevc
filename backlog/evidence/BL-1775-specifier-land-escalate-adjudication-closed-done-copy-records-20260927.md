@@ -140,3 +140,30 @@ BL-1701's lines stay off main. The ticket's `abandoned_commits:
 [f637a1dbf7]` and this instance ride inside the land commit.
 
 By QA.
+
+## Instance - BL-1770's land under condition (i) (QA, 2026-09-27)
+
+`land_step_cli.bb BL-1770 e82b4605b4...` (QA tip synced to origin/main
+add6626a48) walked 03:06-03:50Z. It printed `LAND_ESCALATE` on BL-1546's
+closed-owner refusal for
+`backlog/done/BL-1700-the-model-steward-probes-a-local-coder-model-through-the-real-driver.yaml`.
+BL-1701's land re-point replayed that record onto the QA branch (445eb6508f
+"BL-1700: record bounce_history for the QA send-back").
+
+It was the only done-copy path, and it is LEFT OUT under step 1's removal
+check. Its diff replaces `bounce_count: 1` with `bounce_count: 2` and adds
+the matching second `bounce_history:` entry (commit a7b198c91e). The rule
+allows only blank lines, `assigned_to:`, or a superset `abandoned_commits:`
+list to be removed. A count bump is not on that list, so this path is not
+drained. It stays on the QA branch and will stop the next land's walk the
+same way until the removal rule admits a `bounce_count:` increase that
+comes with a superset `bounce_history:`, or BL-1785 lands.
+
+BL-1770 landed tip-pure off origin/main add6626a48 with its own 9 paths
+(both modified test files carry only BL-1770's lines). Its unit row in
+`backlog/standing-reds.tsv` and its pole row in `backlog/suite-poles.tsv`
+are retired, and `abandoned_commits: [e82b4605b4]` and this instance ride
+inside the land commit. The land step never reached stray fd6191c893
+(closed BL-1711 evidence, condition (g)), and it is left alone.
+
+By QA.

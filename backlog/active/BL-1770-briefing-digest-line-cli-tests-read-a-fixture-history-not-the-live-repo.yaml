@@ -139,3 +139,6 @@ notes: |
   Testable (the file's own run, BL-363's feature).
 
 assigned_to: coder
+abandoned_commits: [e82b4605b4]
+# Condition (i) land: tip-pure off origin/main add6626a48; land approval
+# recorded against QA commit e82b4605b4. Register rows retired in this commit.
