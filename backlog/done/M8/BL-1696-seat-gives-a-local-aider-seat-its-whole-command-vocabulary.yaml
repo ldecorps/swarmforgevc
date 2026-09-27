@@ -1,4 +1,7 @@
 id: BL-1696
+abandoned_commits: [43945dd0de]
+# BL-1241: hand-built tip-pure land bbb7abe701 off origin/main, BL-1712
+# entangled paths excluded; mapping recorded bbb7abe701 <- 5abb3154e8 (BL-1334).
 title: "`seat` gives a local aider seat its whole command vocabulary: a short verb with fixed arguments for each step a parcel needs (next, done, ask, merge, test, handoff, note), each verb runs exactly one pipeline script or git subcommand, the verbs are allow-listed per role, and any malformed argument is refused before anything runs"
 milestone: M8
 type: feature
