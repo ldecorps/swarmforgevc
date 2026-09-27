@@ -1,0 +1,168 @@
+id: BL-1788
+title: "BL-363's in-process CLI guard is red on main in two of its five scenarios (coder note 002194, 2026-09-27), each red for weeks because nothing runs the whole acceptance suite: scenario 02 finds two node spawns in fleetConsoleCli.test.js (BL-437 added an env-default CLI spawn, 2026-07-15) and in telegramFrontDeskBotCli.test.js (BL-1620 added a node probe subprocess, 2026-09-18); scenario 04's handler looks for a git init in negotiateOnboardingContractCli's beforeAll, and BL-1039 (2026-08-22) replaced that with the shared seeded-repo copy. The two extra spawns move in-process and scenario 04's proof accepts the seeded-fixture build, with no check loosened"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (2026-09-05 rule). It sits in the
+# qa_e2e_procedure of an in-flight parcel (BL-1770 step 2), and QA
+# withholds approval of any parcel whose evidence names an unowned red
+# (Article 4.2).
+epic: unit-suite-speed
+priority: 8
+depends_on: []
+mutation_cost: low
+# low: three test files and one step handler, no production change; the
+# gherkin mutation re-runs a five-scenario feature whose steps read source.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A red-owner chore (BL-1251): the pointer names the feature this ticket
+# turns green again, the contract it must satisfy unweakened. It is not a
+# claim of ownership over BL-363's contract.
+acceptance: specs/features/BL-363-clis-tested-in-process.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: no production
+  behaviour change; scenario 02 keeps counting every node subprocess
+  spawn in each of the 29 owned files and keeps demanding exactly one;
+  scenario 04 keeps failing on a per-test fixture build. There is no
+  choice to rule on.
+
+invariants:
+  - "No check in clisTestedInProcessSteps.js is loosened: scenario 02 still counts every node subprocess spawn (execFileSync, spawnSync or spawn of 'node') in each of the 29 owned files and fails on any count but one, and scenario 04 still fails when the fixture file's beforeAll builds no fixture or when any test body runs a git init of its own."
+  - "Every assertion the two converted tests made before is made after, word for word: the rendered swarm count and name for the SWARMFORGE_FLEET_DIR default, and the default runHandoff's command, argument count, argument order and draft-path shape."
+
+required_wiring: []
+# Honest empty (BL-1235): test files and a step handler only; the
+# handler is already registered and the feature already runs.
+
+description: |
+  ## What is wrong
+
+  Coder note 002194 (2026-09-27 00:35Z), verbatim: "unowned-red:
+  BL-363.feature D2/D4: fleetConsole/telegramFD spawns; negotOB init".
+  From its evidence (`backlog/evidence/unowned-red-bl363-fleetconsole-telegramfd-negotiateonboarding-coder-20260927.md`,
+  on the coder's branch at b6c2116802), found while running BL-1770's
+  qa_e2e step 2. Both reds reproduce on `main` at 40f71431cd:
+
+  - Scenario 02 "Each CLI keeps exactly one end-to-end spawn": `found
+    violations: fleetConsoleCli=2, telegramFrontDeskBotCli=2`.
+    - `fleetConsoleCli.test.js:110`, BL-437 (942dd58109, 2026-07-15):
+      "the compiled CLI defaults to the SWARMFORGE_FLEET_DIR env var" spawns
+      the CLI a second time. The file already has an in-process `runCli`
+      (argv and stdout stubbed, `main()` awaited).
+    - `telegramFrontDeskBotCli.test.js:2571`, BL-1620 (b2dbead3d7,
+      2026-09-18): `runDefaultRunHandoffProbe` writes a probe script and
+      runs it under `node`. The probe patches `child_process.execFile`
+      before requiring the compiled module, because the module captures
+      `promisify(execFile)` when it loads. The comment there explains why
+      it avoided a real `bb`. Logic that only a subprocess reaches is
+      invisible to in-process coverage and to Stryker's per-test coverage,
+      which is exactly the hazard BL-363's narrative names. So the matcher
+      is right to count it.
+  - Scenario 04 "A test needing a repository fixture builds it once": the
+    handler wants `git ... 'init'` inside the beforeAll of
+    `negotiateOnboardingContractCli.test.js`. BL-1039 (5deb04b175,
+    2026-08-22) replaced that with `copySeededRepoInto(PREPARED_ROOT)` from
+    `helpers/sharedRepoFixture.js`, which seeds one git template per
+    process and hands out copies. The file now does less per-test work
+    than the scenario asks for, and the handler's proof is out of date.
+    The comment above that beforeAll still says "real `git init`/`git
+    config`".
+
+  Scenarios 01, 03 and 05 pass.
+
+  ## What is wanted
+  - `fleetConsoleCli.test.js`: the SWARMFORGE_FLEET_DIR default is proven
+    in-process, with the env var stubbed and restored in a finally. The one
+    `runCliSubprocess` smoke test stays.
+  - `telegramFrontDeskBotCli.test.js`: the BL-1620 default-runHandoff test
+    runs in-process, with no `node` probe. The file keeps its one CLI
+    smoke spawn (line 387's helper) and every assertion listed in
+    invariant 2.
+  - `clisTestedInProcessSteps.js` scenario 04: the beforeAll counts as
+    building the fixture once when it builds through the shared seeded
+    repository (`copySeededRepoInto`) or runs a git init itself. A test
+    body that runs its own git init still fails the scenario.
+  - The stale comment above negotiateOnboardingContractCli's beforeAll
+    says what the beforeAll now does.
+  - `node specs/pipeline/cli.js specs/features/BL-363-clis-tested-in-process.feature`
+    passes 5 of 5.
+
+  ## How (direction, not mandate)
+  - telegramFD: patch `require('child_process').execFile`, then do a fresh
+    require of `out/tools/telegram-front-desk-bot.js` (drop its
+    `require.cache` entry first). Put back the original `execFile` and the
+    original cache entry in a finally, so later tests see the module every
+    other test loaded. Another option is a small injectable seam for the
+    module's execFile capture, if it does not change behaviour. Either way,
+    the default arrow stays the thing under test.
+  - Scenario 04: the handler can accept either build form in the
+    beforeAll body, and keep refusing a git init in any test body.
+    Non-vacuity: a copy of the source with the beforeAll's build removed,
+    or with a git init in one test body, must still go red.
+
+  ## Scope
+  - `extension/test/fleetConsoleCli.test.js`,
+    `extension/test/telegramFrontDeskBotCli.test.js`,
+    `extension/test/negotiateOnboardingContractCli.test.js` (the comment
+    only), `specs/pipeline/steps/clisTestedInProcessSteps.js`. Plus
+    evidence.
+  - The standing-red register row names this ticket; the land retires it
+    (BL-1631).
+
+  ## Not in scope
+  - `extension/test/briefingDigestLineCli.test.js` (BL-1770, in flight;
+    it is the handler's representative file for scenarios 01 and 03).
+  - The fact that no role runs the whole acceptance suite, which is how
+    these reds lasted 9 to 74 days. See notes.
+  - Any production file.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-363-clis-tested-in-process.feature`:
+     5 of 5.
+  2. From `extension/`: `npx vitest run test/fleetConsoleCli.test.js
+     test/telegramFrontDeskBotCli.test.js test/negotiateOnboardingContractCli.test.js`:
+     every test passes. Record telegramFrontDeskBotCli's duration (a
+     BL-1620 pole file): it must not grow.
+  3. `grep -cE "(execFileSync|spawnSync|spawn)\(\s*'node'" extension/test/fleetConsoleCli.test.js extension/test/telegramFrontDeskBotCli.test.js`:
+     1 each.
+  4. The acceptance register row for
+     `specs/features/BL-363-clis-tested-in-process.feature` names BL-1788
+     on the parcel commit.
+  5. `git diff main...HEAD --name-only` names only the Scope files and
+     evidence.
+  6. After the land: REGISTER_ROW_RETIRED for
+     `specs/features/BL-363-clis-tested-in-process.feature`.
+
+source: |
+  Coder note 002194 (2026-09-27 00:35Z), verbatim: "unowned-red:
+  BL-363.feature D2/D4: fleetConsole/telegramFD spawns; negotOB init".
+  Evidence: `backlog/evidence/unowned-red-bl363-fleetconsole-telegramfd-negotiateonboarding-coder-20260927.md`
+  (coder's branch, b6c2116802).
+
+notes: |
+  Minted 2026-09-27 by the specifier (claude-opus-5-5 seat) from coder note
+  002194, the same pass. The register row naming this ticket landed in the
+  mint commit. Both reds were reproduced read-only at mint by loading the
+  step handler with a stub registry, and blame dated each cause (BL-437
+  2026-07-15, BL-1039 2026-08-22, BL-1620 2026-09-18).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  The specifier's own miss: BL-1770's mint (2026-09-26) wrote "all ok" for
+  this feature in its qa_e2e step 2 without running it. The mint commit
+  amends that step to expect today's result, and the holder (architect)
+  was sent a note.
+  Pattern for the lean pass: one red lasted 74 days, and it surfaced only
+  because a ticket's QA procedure happened to name the feature. No lane
+  runs every feature. Several features are unsafe to run in bulk until
+  BL-1779 lands (they can free the live bridge on 8765). So the whole-suite
+  question is a process ticket for later, not part of this one.
+  INVEST: Independent (no open ticket touches these four files; BL-1770
+  touches only briefingDigestLineCli.test.js). Negotiable (the in-process
+  seams are direction). Valuable (a standing red cleared, and BL-363's
+  guard gates all 29 files again). Estimable (two test conversions and one
+  handler branch). Small (one sitting). Testable (the feature, the files'
+  own run, a grep).

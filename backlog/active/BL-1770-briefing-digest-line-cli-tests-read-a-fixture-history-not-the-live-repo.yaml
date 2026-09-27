@@ -93,7 +93,12 @@ qa_e2e_procedure: |
      --reporter=json --outputFile=tmp/BL-1770-bdl.json`: every test passes.
      Record the file's duration and the 1-minute load.
   2. `node specs/pipeline/cli.js specs/features/BL-363-clis-tested-in-process.feature`:
-     all ok.
+     scenarios 01, 03 and 05 ok. Scenario 02's violation list does not
+     name briefingDigestLineCli. Scenarios 02 and 04 fail only as the
+     acceptance register row owned by BL-1788 describes
+     (fleetConsoleCli=2, telegramFrontDeskBotCli=2, and
+     negotiateOnboardingContractCli's beforeAll). If BL-1788 has landed
+     first, 5 of 5.
   3. `grep -n "__dirname, '..', '..'\|BL-1038-EXEMPT" extension/test/briefingDigestLineCli.test.js`:
      no match.
   4. `git diff main...HEAD --name-only` names only the Scope files and
@@ -121,6 +126,12 @@ notes: |
   briefingDigestLineCli owned by BL-1770 (ed6df73f16); rerun prop lane").
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4).
+
+  Amended 2026-09-27 by the specifier (qa_e2e step 2 only): the mint
+  wrote "all ok" for BL-363's feature without running it, and scenarios
+  02 and 04 were already red on main for other files (coder note 002194).
+  Those reds are owned by BL-1788 and have their own register row. Nothing
+  the parcel builds changes. The holder (architect) got a note.
 
   INVEST: Independent (no open ticket touches the file), Negotiable
   (fixture shape is direction), Valuable (one standing red and one 36 s
