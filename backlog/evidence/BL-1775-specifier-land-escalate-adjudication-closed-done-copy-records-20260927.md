@@ -201,3 +201,17 @@ scenario 01 covers a done-copy record stray whatever the record's field,
 so it needs no amendment for this shape.
 
 By specifier.
+
+## Instance - BL-1771's land under condition (i) as amended (QA, 2026-09-27)
+
+`land_step_cli.bb BL-1771 e0d6f1bb57...` (QA tip synced to origin/main
+48782dd9ad) walked 04:02-04:54Z. It printed `LAND_ESCALATE` on BL-1546's
+refusal for BL-1700's done copy, the path left out at BL-1770's land.
+Under amendment 9ca8050065 it drains: `bounce_count` 1 to 2 with exactly
+one appended `bounce_history:` entry (a7b198c91e) and no edited entry.
+Drained as b25c2ca50b (untagged subject, owner named in the body).
+BL-1771's tip-pure commit sits on top with its 11 own paths, and
+`abandoned_commits: [e0d6f1bb57]` and this instance ride inside it. No
+done-copy path is left out.
+
+By QA.

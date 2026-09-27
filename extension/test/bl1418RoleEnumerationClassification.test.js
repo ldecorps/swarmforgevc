@@ -14,10 +14,25 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const REPO_ROOT = path.join(__dirname, '..', '..');
+// BL-1771: ROOT_DIR is the extension root this test itself runs from - a
+// real checkout's extension/ or a Stryker sandbox standing in for one
+// (BL-1066: the sandbox dir IS the extension root, never a child of one).
+// A leading "extension/" segment in relPath is the repo root's OWN name
+// for that same root, so it resolves against ROOT_DIR with the prefix
+// stripped, never against REPO_ROOT_DIR one level further up - the same
+// convention recordTestDuration.js's resolveConfirmedFile already
+// established (BL-1761/BL-1633). The three swarmforge/scripts/*.bb reads
+// below carry no such prefix and keep resolving against REPO_ROOT_DIR,
+// unchanged.
+const ROOT_DIR = path.join(__dirname, '..');
+const REPO_ROOT_DIR = path.join(ROOT_DIR, '..');
+const EXTENSION_PREFIX = 'extension/';
 
 function read(relPath) {
-  return fs.readFileSync(path.join(REPO_ROOT, relPath), 'utf8');
+  if (relPath.startsWith(EXTENSION_PREFIX)) {
+    return fs.readFileSync(path.join(ROOT_DIR, relPath.slice(EXTENSION_PREFIX.length)), 'utf8');
+  }
+  return fs.readFileSync(path.join(REPO_ROOT_DIR, relPath), 'utf8');
 }
 
 // ── SWARM-ROLES lists: the whole roster, art-director included ─────────

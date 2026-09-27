@@ -272,7 +272,11 @@ test('checkFreshnessViaCli runs the real built CLI and returns its stdout', () =
   // sandbox dir IS the extension root). Left at the original `../..`
   // walk-up, which is CORRECT outside Stryker and fails loud (not silently)
   // inside it — a standing, known Stryker-only red, not a defect to route
-  // around; exclude this file when running Stryker rather than "fixing" it.
+  // around; BL-1771 wires the actual exclusion into
+  // vitest.stryker.config.mjs's own `test.exclude` (stryker.config.json's
+  // `vitest.configFile`), so the default Stryker run skips this file
+  // while it keeps running in the unit lane (vitest.config.mjs itself is
+  // unchanged).
   const root = path.join(__dirname, '..', '..');
   const raw = checkFreshnessViaCli(root, 'BL-999999-nonexistent');
   assert.ok(raw.length > 0, 'expected the real CLI to produce output');

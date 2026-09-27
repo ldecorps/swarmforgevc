@@ -170,3 +170,6 @@ notes: |
   evidence).
 
 assigned_to: coder
+abandoned_commits: [e0d6f1bb57]
+# Condition (i) land: tip-pure off origin/main 48782dd9ad above the BL-1700
+# drain; land approval recorded against QA commit e0d6f1bb57.
