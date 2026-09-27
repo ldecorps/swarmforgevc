@@ -36,7 +36,7 @@ required_wiring:
   - 'swarmforge/scripts/babysitter_check.bb::agent-lifecycle::the live sweep gatherer owns every fs read (the sweep lib stays pure), so it must read the store'
   - 'specs/pipeline/steps/bl1789AgentLifecycleRecordSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   New feature file, no choice asked. FIRM: every launch records its
   agent's start and exit, and the session-missing CRIT names the newest
