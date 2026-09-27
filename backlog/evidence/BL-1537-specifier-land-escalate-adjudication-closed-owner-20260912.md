@@ -614,3 +614,28 @@ commits onto main as condition (d) does for QA's evidence, or a tip-pure
 hand build as under condition (g).
 
 By QA.
+
+## Instance - BL-1701's land, condition (g) (QA, 2026-09-27)
+
+`bb swarmforge/scripts/land_step_cli.bb BL-1701 8d69343ff1...` (QA tip
+synced to origin/main 183eb2c4df, right after BL-1775's condition (i)
+drain) walked 02:04-02:52Z. It printed `LAND_ESCALATE` with
+`ENTANGLED_SIBLING` BL-1671, 1711, 1715, 1717, 1767, 1772 and 1779, and
+the line `land-step replay: could not cherry-pick stray evidence commit
+fd6191c893`. The stray is closed BL-1711's "QA land record (follow-up)".
+It appends to `backlog/evidence/BL-1711-QA-20260926-2.md` beneath its
+predecessor f37671e359, which never reached main, so the pick conflicts.
+It is a closed-owner pure-evidence stray on a path BL-1701 never touched:
+the BL-1787 class, and condition (g) until BL-1787 lands. The stray is
+left alone. It will stop the next land the same way until BL-1787 lands
+or the record is carried.
+
+Landed per (g): tip-pure off origin/main 6464dda21b, holding BL-1701's 30
+own paths from QA tip 8d69343ff1. For every modified path, the tip-vs-main
+change consists only of lines from BL-1701's own commits (0 foreign
+lines, `suite-manifest.tsv` included), and origin/main 183eb2c4df..6464dda21b
+touches none of them. BL-1701's `abandoned_commits: [8d69343ff1]` and this
+instance ride inside the land commit, following condition (i)'s step 3
+reasoning.
+
+By QA.

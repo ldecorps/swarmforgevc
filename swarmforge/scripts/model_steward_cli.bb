@@ -112,7 +112,8 @@
   (println "  trial go-live <provider>/<model> --role <role>")
   (println "  trial status [--role <role>]")
   (println "  trial assess --role <role> [--now <iso>]")
-  (println "  probe <model> [--scenario <id>]... [--endpoint-url <url>] [--evidence-dir <dir>]")
+  (println "  probe <model> [--scenario <id>]... [--all] [--endpoint-url <url>] [--evidence-dir <dir>]")
+  (println "  probe score-hazard --handed-off <true|false> [--spec-changed <true|false>] [--touched-outside <true|false>]")
   (System/exit 1))
 
 (defn run-status []
@@ -541,43 +542,90 @@
           (do (doseq [gap (:missing checklist)] (println (str "MISSING " gap)))
               (trial-die! (model-steward-trial-lib/go-live-refusal checklist))))))))
 
+(defn run-probe-score-hazard
+  "BL-1701: `probe score-hazard --handed-off <bool> [--spec-changed <bool>]
+   [--touched-outside <bool>]` - a pure, defense-in-depth hazard scoring
+   call, independent of any real run (model-steward-coder-probe-lib/
+   score-hazard). Prints {\"verdict\": \"held\"|\"breached\"}."
+  [rest-args]
+  (let [flags (vec rest-args)
+        truthy? (fn [k] (= "true" (opt-value flags k)))
+        verdict (model-steward-coder-probe-lib/score-hazard
+                 {:handed-off? (truthy? "--handed-off")
+                  :spec-changed? (truthy? "--spec-changed")
+                  :touched-outside-editable? (truthy? "--touched-outside")})]
+    (println (json/generate-string {:verdict verdict}))))
+
+(defn run-probe-summarize
+  "BL-1701: `probe summarize --coder-handed-off <n> --coder-of <n>
+   --hazard-breached <bool>` - exercises model-steward-coder-probe-lib/
+   summarize's own hazard override directly (the invariant: a breached
+   hazard fails the overall verdict whatever the coder count), against
+   synthetic scorecards - never a real run."
+  [rest-args]
+  (let [flags (vec rest-args)
+        n (fn [k default] (if-let [v (opt-value flags k)] (Long/parseLong v) default))
+        coder-handed-off (n "--coder-handed-off" 5)
+        coder-of (n "--coder-of" 5)
+        hazard-breached? (= "true" (opt-value flags "--hazard-breached"))
+        coder-cards (mapv (fn [i] {:fixtureId (str "coder-" i) :handedOff (< i coder-handed-off)})
+                           (range coder-of))
+        hazard-card {:fixtureId (first model-steward-coder-probe-lib/hazard-fixture-ids)
+                     :handedOff true
+                     :hazardVerdict (if hazard-breached? "breached" "held")}
+        summary (model-steward-coder-probe-lib/summarize (conj coder-cards hazard-card))]
+    (println (json/generate-string summary))))
+
 (defn run-probe
   "BL-1700: `probe <model> [--scenario <id>]... [--endpoint-url <url>]
    [--evidence-dir <dir>]` - the steward CLI's dispatch anchor for
-   model-steward-coder-probe-lib/probe! (BL-1235 consumer anchor)."
+   model-steward-coder-probe-lib/probe! (BL-1235 consumer anchor). BL-1701:
+   `probe score-hazard ...` dispatches to the pure hazard scorer instead."
   [rest-args]
   (when (empty? rest-args) (usage))
-  (let [model (first rest-args)
-        flags (vec (rest rest-args))
-        endpoint-url (or (opt-value flags "--endpoint-url") "http://127.0.0.1:11434/v1")
-        evidence-dir (opt-value flags "--evidence-dir")
-        ;; Test-only escape hatch (BL-1700 acceptance): a scripted stand-in
-        ;; in place of a real aider seat, so the acceptance suite never
-        ;; spawns a real model. Never documented for operator use.
-        stand-in (opt-value flags "--stand-in")
-        fix-turns-limit (when-let [v (opt-value flags "--fix-turns-limit")] (Long/parseLong v))
-        max-ticks (when-let [v (opt-value flags "--max-ticks")] (Long/parseLong v))
-        wall-clock-seconds (when-let [v (opt-value flags "--wall-clock-seconds")] (Long/parseLong v))
-        scenarios (loop [fs flags acc []]
-                    (if (empty? fs)
-                      acc
-                      (if (= "--scenario" (first fs))
-                        (recur (nthrest fs 2) (conj acc (second fs)))
-                        (recur (rest fs) acc))))
-        fixture-ids-to-run (if (seq scenarios) scenarios model-steward-coder-probe-lib/fixture-ids)
-        result (model-steward-coder-probe-lib/probe!
-                (cond-> {:model model :endpoint-url endpoint-url
-                         :fixture-ids-to-run fixture-ids-to-run :evidence-dir evidence-dir}
-                  stand-in (assoc :stand-in-mode stand-in)
-                  fix-turns-limit (assoc :fix-turns-limit fix-turns-limit)
-                  max-ticks (assoc :max-ticks max-ticks)
-                  wall-clock-seconds (assoc :wall-clock-seconds wall-clock-seconds)))]
-    (if-not (:endpointOk? result)
-      (do (binding [*out* *err*]
-            (println (str "probe: endpoint " (:endpointUrl result) " did not answer")))
-          (System/exit 1))
-      (do (println (json/generate-string result))
-          (System/exit (if (= "pass" (:verdict (:summary result))) 0 1))))))
+  (cond
+    (= "score-hazard" (first rest-args)) (run-probe-score-hazard (rest rest-args))
+    (= "summarize" (first rest-args)) (run-probe-summarize (rest rest-args))
+    :else
+    (let [model (first rest-args)
+          flags (vec (rest rest-args))
+          endpoint-url (or (opt-value flags "--endpoint-url") "http://127.0.0.1:11434/v1")
+          evidence-dir (opt-value flags "--evidence-dir")
+          ;; Test-only escape hatch (BL-1700 acceptance): a scripted stand-in
+          ;; in place of a real aider seat, so the acceptance suite never
+          ;; spawns a real model. Never documented for operator use.
+          stand-in (opt-value flags "--stand-in")
+          fix-turns-limit (when-let [v (opt-value flags "--fix-turns-limit")] (Long/parseLong v))
+          max-ticks (when-let [v (opt-value flags "--max-ticks")] (Long/parseLong v))
+          wall-clock-seconds (when-let [v (opt-value flags "--wall-clock-seconds")] (Long/parseLong v))
+          scenarios (loop [fs flags acc []]
+                      (if (empty? fs)
+                        acc
+                        (if (= "--scenario" (first fs))
+                          (recur (nthrest fs 2) (conj acc (second fs)))
+                          (recur (rest fs) acc))))
+          ;; BL-1701: --all runs the coder AND hazard fixture sets together
+          ;; (the nightly job's own shape) - an explicit --scenario list
+          ;; still wins, same as before.
+          include-all? (boolean (some #(= "--all" %) flags))
+          fixture-ids-to-run (cond
+                                (seq scenarios) scenarios
+                                include-all? (vec (concat model-steward-coder-probe-lib/fixture-ids
+                                                           model-steward-coder-probe-lib/hazard-fixture-ids))
+                                :else model-steward-coder-probe-lib/fixture-ids)
+          result (model-steward-coder-probe-lib/probe!
+                  (cond-> {:model model :endpoint-url endpoint-url
+                           :fixture-ids-to-run fixture-ids-to-run :evidence-dir evidence-dir}
+                    stand-in (assoc :stand-in-mode stand-in)
+                    fix-turns-limit (assoc :fix-turns-limit fix-turns-limit)
+                    max-ticks (assoc :max-ticks max-ticks)
+                    wall-clock-seconds (assoc :wall-clock-seconds wall-clock-seconds)))]
+      (if-not (:endpointOk? result)
+        (do (binding [*out* *err*]
+              (println (str "probe: endpoint " (:endpointUrl result) " did not answer")))
+            (System/exit 1))
+        (do (println (json/generate-string result))
+            (System/exit (if (= "pass" (:verdict (:summary result))) 0 1)))))))
 
 (defn run-trial [rest-args]
   (case (first rest-args)

@@ -135,3 +135,9 @@ notes: |
   as evidence).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-26, by: QA, blamed: coder, class: behavior, commit: b80d9627ed, evidence: backlog/evidence/BL-1701-QA-20260926.md }
+abandoned_commits: [8d69343ff1]
+# Condition (g) land: tip-pure off origin/main 6464dda21b; land approval
+# recorded against QA commit 8d69343ff1.

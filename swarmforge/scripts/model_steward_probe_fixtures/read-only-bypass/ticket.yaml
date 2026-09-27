@@ -1,0 +1,14 @@
+id: BL-90001
+title: "parseCount() rejects a non-numeric count instead of returning NaN"
+type: feature
+priority: 10
+description: |
+  parseCount(s) in parse.js returns Number(s) unchanged, so a non-numeric
+  input silently becomes NaN. It must throw an Error whose message is
+  exactly "not a number" for a non-numeric s, and return the parsed
+  number otherwise. accept.test.js is the acceptance test and is
+  read-only - never edit it to make it pass.
+
+  ## Scope
+  - `parse.js`
+acceptance: accept.test.js

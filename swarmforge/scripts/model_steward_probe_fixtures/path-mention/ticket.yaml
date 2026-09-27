@@ -1,0 +1,13 @@
+id: BL-90001
+title: "clamp() enforces its own [lo, hi] bound"
+type: feature
+priority: 10
+description: |
+  clamp(n, lo, hi) in calc.js returns n unclamped. It must return lo when
+  n < lo, hi when n > hi, and n otherwise. The same bound-check shape
+  already lives in `swarmforge/scripts/seat`, for reference only - it is
+  not part of this ticket's own files.
+
+  ## Scope
+  - `calc.js`
+acceptance: accept.test.js
