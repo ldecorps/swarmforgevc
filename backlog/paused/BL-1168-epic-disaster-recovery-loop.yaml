@@ -7,7 +7,7 @@ epic: disaster-recovery-loop
 priority: 4
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-1169, BL-1170, BL-1171]
+decomposes_into: [BL-1169, BL-1170, BL-1171, BL-1789]
 mutation_cost: high
 human_approval: approved
 approval_context: >
@@ -39,6 +39,7 @@ description: |
 remaining_slices:
   - "Auto-enqueue soft postmortem after disaster-class clear (optional trigger in BL-1170 notes)."
   - "Operator queue consumption when 100+ BABYSITTER_ESCALATION events pile up — separate if BL-1169 insufficient."
+  - "Remedy for a role agent ending its own session (supervise the agent in the launch script, tmux remain-on-exit, or no operator escalation for a vanish babysitterd already repaired) - mint with ruling_options once BL-1789 lifecycle records cover the next few pane-<role> vanishes."
 
 invariants:
   - "Auto-repair never swallows the CRIT — same posture as BL-1017."

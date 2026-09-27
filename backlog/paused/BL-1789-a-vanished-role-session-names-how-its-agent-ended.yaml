@@ -1,0 +1,230 @@
+id: BL-1789
+title: "A vanished role session names how its agent ended - every generated launch script records its agent's start and exit (status and time) in .swarmforge/agent-lifecycle/<role>.jsonl, and babysitterd's session-missing CRIT appends the role's newest entry: the exit it recorded, a start with no exit after it, or that no entry was readable; key, severity, repair and the existing message prefix unchanged"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, recurring fault in a health signal. The CRIT fires
+# correctly but carries no cause. On 2026-09-27 that let the coordinator
+# tell the human 7 hardender pane deaths were OOM kills (they were not),
+# and it costs the operator a forensic wake-up per vanish. Contained:
+# babysitterd recreates the session in the same sweep and no parcel has
+# been lost. Not high: nothing is down, and the human has already been
+# corrected.
+status: todo
+epic: disaster-recovery-loop
+priority: 15
+direction: operator-found
+depends_on: []
+mutation_cost: low
+# low: shell in the launch-script generator plus a Babashka reader and
+# one message branch. Neither language has a mutation/CRAP/DRY lane
+# (engineering "Startup Tools"). The Gherkin mutation re-runs 8 rows: two
+# generate-and-run launch scripts (test_resume_on_start.sh does the same
+# in seconds) and bb calls on fixture records.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1789-a-vanished-role-session-names-how-its-agent-ended.feature
+
+invariants:
+  - "A generated launch script exits with its agent's own status and runs its post-agent cleanup block in exactly the cases it runs today; the lifecycle record never changes what the script does or returns, including when the record cannot be written."
+  - "The pane-<role> finding keeps its key, its CRIT severity, its repair intent and its literal message prefix 'swarmforge-<role>: tmux session missing'; lifecycle detail is only ever appended after that prefix."
+  - "The CRIT names an exit status only when the role's newest readable lifecycle entry is that exit; a newer start, an absent record or an unreadable record is reported as exactly that, never as a cause."
+
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::agent-lifecycle::write_role_launch_script is the one generator every launch re-executes (BL-323), so the record path belongs in what it writes'
+  - 'swarmforge/scripts/babysitter_check.bb::agent-lifecycle::the live sweep gatherer owns every fs read (the sweep lib stays pure), so it must read the store'
+  - 'specs/pipeline/steps/bl1789AgentLifecycleRecordSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  New feature file, no choice asked. FIRM: every launch records its
+  agent's start and exit, and the session-missing CRIT names the newest
+  record. That includes what reaches the operator, because the ESCALATED
+  line carries the CRIT message verbatim. FIRM: the CRIT keeps its text
+  as a prefix, its key, its severity and its repair, so waives, dedup,
+  and BL-1017's and BL-804's features keep matching. Deliberately NOT
+  decided here: whether to supervise the agent inside the launch script,
+  turn tmux remain-on-exit on, or stop escalating a vanish babysitterd
+  already repaired. Each of those assumes these are clean agent exits.
+  Nobody has shown that yet, and this ticket is what shows it. BL-1017
+  made "a repair never swallows its alert" a deliberate rule. The remedy
+  is parked on the BL-1168 epic, to be minted with ruling_options once
+  the records exist.
+
+description: |
+  ## Why
+
+  `.swarmforge/launch/<role>.sh` ends on the agent's own command (for a
+  claude seat, `claude ... "<first message>"`). No loop supervises it,
+  and the swarm's tmux server has `remain-on-exit off`. So whenever the
+  agent ends, the script returns, the pane exits and tmux destroys the
+  role's whole session. babysitterd's next sweep reports
+  `CRIT [pane-<role>] swarmforge-<role>: tmux session missing`, recreates
+  the session in the same tick (`REPAIR [repaired]`, BL-1017), and
+  escalates the CRIT to the operator.
+
+  Nothing anywhere records HOW the agent ended: a clean exit, a crash
+  status, a signal (137 = SIGKILL, what an OOM kill looks like from the
+  shell), or no exit at all because the pane was killed from outside
+  (tmux `kill-session`, a relaunch). Every reader of the CRIT has to
+  guess, and on 2026-09-27 both guesses went wrong or unproven:
+  - The coordinator told the human that the repeated hardender deaths were
+    OOM kills from local-LLM memory pressure. dmesg says otherwise. The
+    victim in every OOM event on this host is `llama-server`, and the
+    last one was 00:24:21Z, 6h37m before the death babysitterd found at
+    07:01:21Z.
+  - The operator's correction (`.swarmforge/operator/NOTE-hardender-not-oom.md`)
+    calls them clean agent exits: an end-of-turn exit or an `/rc`
+    disconnect. That is a hypothesis. An interactive claude session does
+    not normally exit when a turn ends, and nothing recorded the exit
+    status that would settle it.
+  babysitterd logged 7 `pane-hardender` CRITs from 2026-09-25 to
+  2026-09-27 (`.swarmforge/babysitterd/babysitterd.log`). Each one woke
+  the operator for ps, dmesg and pane forensics that a single recorded
+  line would have made unnecessary. The human's standing direction is to
+  replace ad hoc LLM judgment with a deterministic tool wherever one fits,
+  and this is such a case.
+
+  ## What is wanted
+
+  1. `write_role_launch_script` (`swarmforge/scripts/swarmforge.sh`)
+     makes every generated launch script append one entry to
+     `.swarmforge/agent-lifecycle/<role>.jsonl` under the swarm's state
+     dir. It writes a start entry before the agent runs and an exit entry
+     after the agent returns, carrying the agent's exit status. Both
+     entries carry a UTC timestamp. This wraps `launch_body` whatever the
+     agent kind, including the multi-line aider body.
+  2. The script's behaviour is otherwise unchanged (invariant 1). Today
+     it runs under `set -euo pipefail`, so a non-zero agent status aborts
+     the script before the cleanup-owner block runs. Capturing the status
+     so it can be recorded must keep exactly that: the script exits with
+     the agent's own status, and the cleanup block runs only when it runs
+     today. The record is best-effort. A record that cannot be written
+     never fails, delays or alters the launch (scenario 02).
+  3. babysitterd's live sweep gatherer (`babysitter_check.bb`) reads each
+     role's newest lifecycle entry. `check-live-session`
+     (`babysitterd_sweep_lib.bb`) appends it to the missing-session
+     message after the existing text. It stays pure and receives the
+     entry as data, the way it already receives the repair budget. It
+     appends one of three things:
+     - the newest entry is an exit: its status and time (scenario 03);
+     - the newest entry is a start: its time, and that no exit was
+       recorded after it (scenario 04);
+     - there is no record, or it cannot be parsed: that no lifecycle entry
+       was readable. It never guesses a cause (scenario 05).
+     The key, the severity, the `:repair` intent and the
+     `swarmforge-<role>: tmux session missing` prefix are unchanged
+     (invariant 2). The finding is computed before the same sweep's repair
+     relaunches the role, so the new launch's start entry never masks the
+     exit that caused the vanish.
+
+  How (direction, not mandate): plain shell in the generated script
+  (`mkdir -p`, `date -u +%Y-%m-%dT%H:%M:%SZ`, one `printf` per entry with
+  `2>/dev/null || true`), with the agent status captured by
+  `<launch_body> || agent_status=$?`. The cleanup-owner block in the same
+  function (`exit_code=$?`) then needs that captured status, so a status-0
+  exit still reaches it and a non-zero one still does not. For scenario 02,
+  use an env seam for the record's location (engineering: never chmod to
+  simulate a failure). `test_resume_on_start.sh` already shows how to
+  source the real `swarmforge.sh`, generate a real launch script and run
+  it with a stub agent under `zsh -f`, and the handler can reuse that
+  shape.
+
+  ## Scope
+  - `swarmforge/scripts/swarmforge.sh` (`write_role_launch_script`).
+  - `swarmforge/scripts/babysitter_check.bb` (the gatherer) and
+    `swarmforge/scripts/babysitterd_sweep_lib.bb` (`check-live-session`).
+  - Unit cases in `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
+    (the three message branches) and a shell test beside
+    `test_resume_on_start.sh` for the launch script, including a
+    multi-line body and the cleanup-owner branch.
+  - The feature file, its handler `bl1789AgentLifecycleRecordSteps` and
+    its `specs/pipeline/steps/index.js` registration.
+  - Documenter: the babysitterd reference or how-to page that explains
+    `tmux session missing` gains the appended detail and what each of its
+    three forms means.
+
+  ## Not in scope
+  - Any remedy for the exits themselves: a supervising loop in the launch
+    script, `remain-on-exit on`, or not escalating a repaired vanish. The
+    remedy is chosen from this ticket's records (see approval_context and
+    the BL-1168 epic's remaining_slices).
+  - The `proc-<role>` half-launch CRIT (pane alive, agent gone). It could
+    carry the same detail later. A claude seat's pane dies with its agent,
+    so the missing-session CRIT is the one that fires today.
+  - The legacy operator copy `.swarmforge/operator/babysitter_check.sh`
+    and the second swarm's own scripts copy.
+  - Launch scripts already on disk. The record starts with the first
+    launch after this lands, because launch scripts are regenerated at
+    `./swarm` launch time and not by babysitterd's single-role repair.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1789-a-vanished-role-session-names-how-its-agent-ended.feature`:
+     all ok (01 x2, 02, 03 x2, 04, 05 x2).
+  2. `node specs/pipeline/cli.js specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature`
+     and the BL-804 feature file: all ok. They match the message prefix
+     that invariant 2 keeps.
+  3. `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`:
+     ALL PASS. `bash swarmforge/scripts/test/test_resume_on_start.sh`
+     and the new launch-script shell test: PASS.
+  4. On the parcel commit, `git grep -n agent-lifecycle -- swarmforge/scripts`
+     names swarmforge.sh and babysitter_check.bb (test files may also
+     appear).
+  5. After the land and the next `./swarm` launch, read-only:
+     `ls .swarmforge/agent-lifecycle/` lists a file per launched role,
+     each starting with a start entry. At the next `pane-<role>` CRIT in
+     `.swarmforge/babysitterd/babysitterd.log`, record the appended detail.
+     A day with no such CRIT still passes this step.
+
+source: |
+  Coordinator note 012755 (2026-09-27T07:07Z): "Ticket gap: hardender.sh
+  unsupervised, remain-on-exit off; see operator note". The note is
+  `.swarmforge/operator/NOTE-hardender-not-oom.md`, written 2026-09-27T07:05Z
+  by the operator. Its closing ask, quoted verbatim:
+  "The real gap is ticket-worthy: an unsupervised launch script plus
+  `remain-on-exit off` means **any** clean agent exit reads as a pane death,
+  papered over by a babysitterd REPAIR that still burns an operator
+  wake-up. Minting and routing that is yours, not mine."
+  Evidence read at mint: `.swarmforge/launch/hardender.sh`,
+  `write_role_launch_script` in swarmforge.sh, the pane-hardender lines of
+  babysitterd.log from 09-25 to 09-27, check-live-session and its caller
+  in babysitter_check.bb, BL-1017's description, and handoffd's
+  consult-teardown path and logs.
+
+notes: |
+  Minted 2026-09-27 by the specifier (claude-opus-5-5 seat).
+  Premise check at mint:
+  - The operator note says hardender's queue is "permanently empty".
+    babysitterd.log shows it holding in_process parcels on 2026-09-26
+    (02:00Z, 11:56Z, 16:25Z). So "the role most often idle" is a
+    tendency, not a proof of clean exits.
+  - handoffd's consult-teardown sweep can `kill-session` a quiet role
+    that holds a consult marker. That would be a no-exit vanish, not an
+    agent exit. The rotated handoffd logs covering 2026-09-27 03:54Z to
+    07:05Z show no consult-teardown of any role, and the consult dir is
+    empty, so it did not cause the 07:01Z death. It is one of the
+    outside-kill causes the "no exit recorded" branch will name.
+  - The 06:00:54Z CRIT was one of 8 in the relaunch burst (a no-exit
+    vanish). The 07:01:21Z one was a singleton.
+  Remedy parked: BL-1168's remaining_slices gains the remedy line. Once
+  this ticket's records have covered the next few pane-<role> vanishes,
+  the specifier mints the remedy with ruling_options, since supervising,
+  remain-on-exit and escalation policy are a real choice.
+  The existing features match the message with includes(): BL-804's
+  steps (`bl804BabysitterMonoRouterTopologyAwarenessSteps.js` lines
+  286/311) and BL-1017's (`bl1017BabysitterdRecreatesVanishedStandingSessionSteps.js`
+  line 140). An appended suffix keeps them green, and invariant 2 keeps
+  it that way.
+  The anchor literal `agent-lifecycle` did not appear anywhere in the repo
+  at mint (git grep empty), so both production anchors are unmatched until
+  the parcel writes them. Both anchors sit in the live producer
+  (swarmforge.sh) and the live consumer (babysitter_check.bb, which
+  babysitter_check.sh execs every sweep), not in a lib.
+  INVEST: Independent (no unbuilt sibling). Negotiable (the How is
+  direction; only the store's name is fixed, by the wiring anchors).
+  Valuable (a vanish names its own cause in the operator's escalation).
+  Estimable (two scripts and one lib branch). Small (8 rows, one
+  sitting). Testable (a real generated script with a stub agent, and
+  pure-lib message branches on fixture records).
