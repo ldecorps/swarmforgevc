@@ -1,4 +1,7 @@
 id: BL-1716
+abandoned_commits: [7d3fb82220]
+# BL-1241: hand-built tip-pure land ad512073ca off origin/main; mapping
+# recorded ad512073ca <- c64ca107f7 (BL-1334); test_bl1366 register row retired.
 title: "swarmforge/scripts/test/test_bl1366_land_is_one_command.sh is red on main - a land killed mid-replay leaves its land-replay worktree and scratch branch behind (replay!'s cleanup runs on every exit path it reaches, and a SIGTERM reaches none), so the next land of the same ticket and commit fails `worktree add -b`, escalates as 'specifier adjudication needed' without git's reason, and only the attempt after it succeeds; the replay clears a scratch whose run is dead before creating its own, never touches one a live run owns, and a create failure carries git's own error"
 milestone: M8
 type: defect
