@@ -1,4 +1,8 @@
 id: BL-1695
+abandoned_commits: [d71276404f]
+# BL-1241: hand-built tip-pure land a2083e0f47 off origin/main (specifier ruling
+# 7b4230e2d6); own paths byte-identical to reviewed tip 91688f020c; mapping
+# recorded (BL-1334).
 title: "extension/test/bl1538Bl1028RunnerFixtureClosureInvariants.property.test.js invariant 2 went red in QA's one property-lane run for BL-1688 (2026-09-22 12:08 local, load 8-11, counterexample slice_size_envelope_gate_lib.bb, assertion text not recorded) while it is green alone in 0.9 s and was green in the same lane 90 minutes earlier: each of its eight closure-member iterations copies the ENTIRE swarmforge/scripts tree (496 files, 16 MB) into a scratch root and spawns bb twice - about 130 MB of copying and sixteen bb starts per run, the fixture-spawning shape BL-1579 owned - and none of its three assertions records the cause it failed on; the fixture copies only the closure plus the runner, every assertion in the file names the member and the reason, and the red is reproduced once under lane load with its text before the mechanism is called anything"
 milestone: M8
 type: defect
