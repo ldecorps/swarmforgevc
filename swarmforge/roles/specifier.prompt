@@ -1079,6 +1079,21 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   with the error; its YAML was left alone because QA had already
   approved it and the land was in flight.
 
+## A procedure step that runs a feature the ticket does not own states its result as measured at mint (BL-1788, 2026-09-27)
+- A chore ticket that points `acceptance:` at another ticket's feature
+  (the BL-1251 shape), or whose `qa_e2e_procedure` runs one, inherits
+  whatever that feature does on `main` today. No lane runs every feature,
+  so "all ok" is a guess until you measure it. At mint, run it read-only
+  (load the step handler with a stub registry, or `node
+  specs/pipeline/cli.js <feature>` when its handlers are safe to run on
+  this host) and write the step as the result you saw, e.g. "01, 03, 05
+  ok; 02 and 04 red as the register row owned by BL-NNNN describes". A red
+  scenario with no register row is an unowned red: mint its owner in the
+  same pass.
+- BL-1770's mint wrote "all ok" for BL-363's feature, which had been red
+  for 74 days. The coder found it mid-parcel (note 002194), and the step
+  needed an in-flight amendment.
+
 ## An unowned verification-debt category is minted or waived the same pass (2026-09-26, BL-1782)
 - The verification-debt ledger (`backlog/verification-debt-ledger.yaml`,
   BL-1782..BL-1784) counts the checks roles make by hand. A category at
