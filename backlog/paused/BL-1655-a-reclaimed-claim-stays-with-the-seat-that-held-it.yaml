@@ -12,7 +12,7 @@ severity: high
 # incident of the two-seat coder stage since 2026-09-17 (BL-1604, BL-1610,
 # BL-1601 via BL-1616, BL-1652). Not critical: the swarm stayed up and the
 # reviewed lineage was untouched.
-status: blocked
+status: todo
 blocked_notes: |
   Coordinator hold 2026-09-20: this parcel touches chase_sweep_lib.bb, the
   same file as active ticket BL-1649 (Concurrent Work Orthogonality). The
@@ -21,6 +21,7 @@ blocked_notes: |
   twice and reverted both times (the priority-order picker has no
   file-level orthogonality awareness). Unblock (set status: todo) once
   BL-1649 reaches backlog/done/.
+  [2026-09-27] coordinator: BL-1649 is in backlog/done/ - unblocked.
 epic: multi-seat-stages
 priority: 9
 direction: swarm-reported
