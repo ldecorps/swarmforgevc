@@ -179,3 +179,5 @@ notes: |
   shows git already carries the edit). Small (5 scenario rows, 3
   invariants). Testable (fixture repository with its own origin, BL-1650's
   shape).
+
+assigned_to: coder
