@@ -110,3 +110,10 @@ notes: |
   Small (three scenarios, one invariant), Testable (stand-in processes).
 
 assigned_to: coder
+bounce_count: 4
+bounce_history:
+  - { at: 2026-09-25, by: architect, blamed: coder, class: behavior, commit: d274c8ff02, evidence: backlog/evidence/BL-1704-architect-20260925.md }
+  - { at: 2026-09-25, by: QA, blamed: coder, class: behavior, commit: c5898b541c, evidence: backlog/evidence/BL-1704-QA-20260925.md }
+  - { at: 2026-09-25, by: QA, blamed: documenter, class: behavior, commit: b9541a9791, evidence: backlog/evidence/BL-1704-QA-20260925-2.md }
+  - { at: 2026-09-25, by: QA, blamed: coder, class: acceptance, commit: f8a6bc55f2, evidence: backlog/evidence/BL-1704-QA-20260926.md }
+abandoned_commits: [ed1f2865c2]
