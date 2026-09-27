@@ -1,4 +1,9 @@
 id: BL-1687
+abandoned_commits: [e9dcd8b2e9]
+# BL-1241: entangled tip (BL-1671, BL-1693, BL-1695 unlanded). land_step_cli
+# LAND_REPLAY 35ef2dbcd2 carried BL-1693's bl538 pager-steps hunks; QA
+# restored that file to origin/main in aa41de4286 and landed it. Own paths
+# byte-identical to reviewed tip e9dcd8b2e9; mapping recorded (BL-1334).
 title: "seventeen more step handlers load extension/out/bridge/bridgeServer (the whole bridge graph, 286 modules) when required alone - sixteen via require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer')) at module scope and bl709 via a require inside a module-scope object literal, none visible to BL-1685's literal-substring census or to a ^const grep - so stepHandlerModuleLoadBudget reads bl1634RejectedManifestOffersNoPageFromItSteps.js at 693-734 ms alone today and charges it the full graph every run once BL-1685's twelve go lazy; each of the seventeen requires bridgeServer inside the step that starts a bridge, and the census is the loader probe itself, never a text grep"
 milestone: M8
 type: defect
