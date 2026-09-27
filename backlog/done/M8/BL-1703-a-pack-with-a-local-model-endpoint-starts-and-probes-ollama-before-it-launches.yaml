@@ -1,4 +1,7 @@
 id: BL-1703
+abandoned_commits: [738e99a767]
+# BL-1241: hand-built tip-pure land d51983e4a9 off origin/main; mapping
+# recorded d51983e4a9 <- e0f0cae429 (BL-1334).
 title: "A launch of any pack whose seats use the local model endpoint probes ollama first - an answering endpoint is used and recorded as external, a silent one is started by the swarm, waited for and recorded as swarm-owned, and one that never answers refuses the launch before any seat starts, naming the endpoint; packs with no local endpoint launch exactly as before"
 milestone: M8
 type: feature
