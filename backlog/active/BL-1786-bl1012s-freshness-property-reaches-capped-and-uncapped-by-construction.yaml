@@ -125,3 +125,5 @@ notes: |
   standing red cleared and the class's recipe applied). Estimable (the
   BL-1763 recipe on one file). Small (2 scenarios, 1 invariant). Testable
   (source and census checks, with QA's green lane run).
+
+assigned_to: coder
