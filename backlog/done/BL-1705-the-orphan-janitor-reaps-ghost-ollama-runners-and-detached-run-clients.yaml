@@ -1,4 +1,7 @@
 id: BL-1705
+abandoned_commits: [5df4f9cb77]
+# BL-1241: hand-built tip-pure land ca2a683e48 off origin/main; mapping
+# recorded ca2a683e48 <- 7128732fe6 (BL-1334).
 title: "The orphan janitor reaps ghost ollama processes - a model runner (llama-server or ollama runner) whose parent is no longer a live ollama serve, and a detached `ollama run` client older than a grace period - while never touching a runner a live server owns, however large, nor the server itself"
 milestone: M8
 type: feature
