@@ -1,4 +1,8 @@
 id: BL-1712
+abandoned_commits: [4a3a137212]
+# BL-1241: hand-built tip-pure land e730910e59 off origin/main; mapping
+# recorded e730910e59 <- 346f9ce226 (BL-1334). Post-land: register unowned [],
+# BL-1436 feature 6/6.
 title: "extension/test/pricingTable.test.js and BL-1436's landed feature are red on main since the specifier seat moved to claude-opus-5-5 (db5d1313e4, 2026-09-24) with no PRICING_TABLE row - every turn of that seat costs nothing in the ledger and briefing; the table prices claude-opus-5-5 at the reference's input $4, output $20 and cache read $0.20 per million tokens with the source recorded, cache creation left unset, the display-name map names it, and both register rows leave in the same land"
 milestone: M8
 type: defect
