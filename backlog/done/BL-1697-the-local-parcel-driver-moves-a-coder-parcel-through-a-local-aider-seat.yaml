@@ -1,4 +1,7 @@
 id: BL-1697
+abandoned_commits: [89d5a46c3a]
+# BL-1241: hand-built tip-pure land 72f2038039 off origin/main; mapping
+# recorded 72f2038039 <- 80266a7f3f (BL-1334).
 title: "The local parcel driver in handoffd moves a coder git_handoff parcel through a local aider seat deterministically - serve, merge, chat set with the spec read-only and physically unwritable, one instruction, then a gate that hands off only on a red-to-green acceptance run, a model commit touching only the files it was given and a byte-identical spec, and otherwise raises one question naming the condition that failed; handoffd's own wakes, chase pokes and resume banners stop reaching a driver seat"
 milestone: M8
 type: feature
