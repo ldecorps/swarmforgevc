@@ -1,4 +1,7 @@
 id: BL-1723
+abandoned_commits: [b3fb514b0a]
+# BL-1241: hand-built tip-pure land 99b5e02385 off origin/main; mapping
+# recorded 99b5e02385 <- e33ff5e8b2 (BL-1334); BL-849 register row retired.
 title: "specs/features/BL-849-swarm-stamp-darwin-orphan-janitor-hotfix.feature scenario 03 row 2 is red on main (7 pass / 1 fail, coder note 002118): orphan_janitor_lib.bb's disposable-root-re accepts bl<number>- fixture roots only under Darwin's /var/folders/.../T/, never under Linux /tmp, so the Linux host's janitor is blind to ancillaries left under /tmp/bl<N>-* roots - the shape 852 fixture sites in the step handlers and tests create; the Linux branch accepts the same bl<number>- family"
 milestone: M8
 type: defect
