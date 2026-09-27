@@ -348,6 +348,16 @@ You are QA.
            BL-1537 log already names that sha (then append this land to it).
            A deferred stray's owner may still print `ENTANGLED_SIBLING`: that
            line is the stray, not a sibling to chase.
+         - **Until BL-1785 lands, a closed owner's done-copy record stray is
+           drained inside the land (condition (i)).** When the escalate is
+           BL-1546's closed-owner refusal on a `backlog/done/` path, build
+           per `backlog/evidence/BL-1775-specifier-land-escalate-adjudication-closed-done-copy-records-20260927.md`:
+           one drain commit per closed ticket beneath the parcel's tip-pure
+           commit, one `--push`, and append the instance there (no new
+           note). On any hand-built land, write that land's own records
+           (`abandoned_commits:`, land comments) inside the land commit,
+           never after the publish. A record written after the publish is
+           the next land's stray.
       4. **A STRUCTURAL cause is escalated ONCE per class, not once per
          ticket.** Some `LAND_ESCALATE` causes are not ticket-specific: the
          same blocker will refuse every ticket that shares it. Before sending,

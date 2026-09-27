@@ -1,5 +1,5 @@
 id: BL-1785
-title: "QA's post-land bookkeeping on a ticket's file (abandoned_commits: recorded on the backlog/active/ copy after the land, e1a80051f4 for BL-1757 at 15:34:27, closed 15:35:28) leaves the pre-close copy on QA's tip, and the next land escalates on BL-1546's closed-owner refusal after a 20-40 min walk (BL-1768's own land, 2026-09-26): a closed-owner stray whose every path is pure evidence/docs or the owner's OWN ticket file under backlog/active/ or backlog/paused/ lands by cherry-pick, which git's rename detection carries onto origin/main's backlog/done/ copy, and BL-1546 refuses anything wider exactly as before"
+title: "QA's post-land bookkeeping on a ticket's file (abandoned_commits: recorded on the backlog/active/ copy after the land, e1a80051f4 for BL-1757 at 15:34:27, closed 15:35:28) leaves the pre-close copy on QA's tip, and the next land escalates on BL-1546's closed-owner refusal after a 20-40 min walk (BL-1768's own land, 2026-09-26): a closed-owner stray whose every path is pure evidence/docs or the owner's OWN ticket file under backlog/active/ or backlog/paused/ lands by cherry-pick (an active or paused copy's edit carried onto origin/main's backlog/done/ copy by git's rename detection, a done-copy edit applied directly: widened 2026-09-27 after QA's records on 37 closed tickets' done copies stopped BL-1775's land), and BL-1546 refuses anything wider exactly as before"
 milestone: M8
 type: defect
 severity: high
@@ -67,12 +67,26 @@ description: |
   stray commits. Once QA's branch re-points and the done copy lacks the
   line, fb6e6d2794 stops being disclaimed.
 
+  Widened 2026-09-27 (QA note 003298, evidence afc041b69a on QA's
+  branch): QA's post-land records are also written straight onto a
+  closed ticket's DONE copy. 660f382056 "BL-1682: record abandoned_commits
+  for the tip-pure land" (2026-09-24) touches only
+  `backlog/done/BL-1682-...yaml`. On 2026-09-27 the QA tip differed from
+  origin/main on 37 done copies. Every difference is a record
+  (`abandoned_commits:`, `bounce_history:`, land comments), and every role
+  branch carries them back, so BL-1775's land escalated after a
+  ~45-minute walk. As first minted, item 1 accepted only the active and
+  paused copies. Condition (i) in
+  `backlog/evidence/BL-1775-specifier-land-escalate-adjudication-closed-done-copy-records-20260927.md`
+  drains the current set by hand until this ticket lands.
+
   ## What is wanted
 
   1. `closed-owner-pure-evidence-stray?` (BL-1650) also accepts a stray
      whose paths are pure evidence/docs **or** the stray owner's OWN ticket
-     file (`backlog/active/<owner>-*.yaml` or
-     `backlog/paused/<owner>-*.yaml`, owner = the sibling its subject
+     file (`backlog/active/<owner>-*.yaml`,
+     `backlog/paused/<owner>-*.yaml`, or its done copy
+     `backlog/done/**/<owner>-*.yaml`; owner = the sibling its subject
      leads with). Any other path still fails the whole stray, including
      another ticket's file, any `backlog/*.tsv` or `backlog/*.yaml` register,
      code and specs.
@@ -124,7 +138,8 @@ qa_e2e_procedure: |
   3. This parcel's own land is the live check. If QA's tip still carries
      e1a80051f4, or any later closed-ticket record commit, the land output
      prints LAND_STRAY_EVIDENCE_LANDED or _ALREADY_LANDED naming it, and no
-     BL-1546 refusal names a backlog/active/ or backlog/paused/ ticket file.
+     BL-1546 refusal names a backlog/active/, backlog/paused/ or
+     backlog/done/ ticket file of the stray's owner.
      After publish, `git show origin/main:backlog/done/M8/BL-1757-a-targets-front-desk-starts-from-the-tooling-roots-compiled-tools.yaml | grep abandoned_commits`
      shows fb6e6d2794 (if that stray was on the tip). Record which strays
      the land printed.
@@ -148,10 +163,19 @@ notes: |
   but it does not declare `verification_category`. BL-1711's pre-trust
   grep was on a land that did not escalate, so the category needs a wider
   owner.
+  Amended 2026-09-27 by the specifier from QA note 003298, before
+  promotion (no holder). Item 1 now also accepts the done copy, and
+  scenario 01 is an outline over where the record sits (backlog/active/,
+  backlog/done/M8/). Nothing else changed. The approval stands: the
+  widening is the same class and the same predicate, and there is still
+  no choice to rule on. IR-DRY at amendment: 5 medium findings. The 3
+  from mint remain, and the 2 new ones pair the outline's templated Given
+  with scenario 02's literal backlog/active/ Given (one step definition,
+  kept as is).
   INVEST: Independent (no unbuilt dependency). Negotiable (the How is
   direction; the token reuse is the coder's call so long as the line names
   the stray). Valuable (a whole class of land escalations stops). Estimable
   (one predicate's caller widened on BL-1650's existing path; the probe
-  shows git already carries the edit). Small (4 scenario rows, 3
+  shows git already carries the edit). Small (5 scenario rows, 3
   invariants). Testable (fixture repository with its own origin, BL-1650's
   shape).

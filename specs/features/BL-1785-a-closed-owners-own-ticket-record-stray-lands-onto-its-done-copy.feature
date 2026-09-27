@@ -13,10 +13,14 @@ Feature: BL-1785 A closed owner's own ticket-record stray lands onto its done co
   a ticket to disclaim that ticket's stray commits, so a lost line stops
   disclaiming them. BL-1650 already lands a closed owner's pure-evidence
   stray by cherry-pick. This feature widens the stray's allowed paths by
-  exactly one: the owner's OWN ticket file under backlog/active/ or
-  backlog/paused/. git's rename detection carries the edit onto
-  origin/main's backlog/done/ copy. BL-1546's refusal is unchanged for
-  anything wider. Every scenario runs against a fixture repository under
+  exactly one: the owner's OWN ticket file, wherever it sits. An edit to
+  its backlog/active/ or backlog/paused/ copy is carried onto origin/main's
+  backlog/done/ copy by git's rename detection, and an edit made straight
+  onto the done copy applies there directly. The second shape stopped
+  BL-1775's land on 2026-09-27: QA's post-land records sat on 37 closed
+  tickets' done copies (660f382056 for BL-1682 the oldest), and every role
+  branch carried them back. BL-1546's refusal is unchanged for anything
+  wider. Every scenario runs against a fixture repository under
   mkdtemp with its own origin (BL-1390).
 
   Background:
@@ -24,13 +28,18 @@ Feature: BL-1785 A closed owner's own ticket-record stray lands onto its done co
     And a sibling ticket whose file origin/main has moved from backlog/active/ to backlog/done/M8/
 
   # BL-1785 a-closed-owners-record-edit-lands-onto-its-done-copy-01
-  Scenario: a closed owner's own record edit lands onto its done copy
-    Given a commit on a role branch, whose subject leads with the sibling's id, adding "abandoned_commits: [abcdef1234]" to the sibling's backlog/active/ file
+  Scenario Outline: a closed owner's own record edit lands onto its done copy
+    Given a commit on a role branch, whose subject leads with the sibling's id, adding "abandoned_commits: [abcdef1234]" to the sibling's <record copy> file
     And the landing ticket's own commit is on the same role branch
     When the land step runs for the landing ticket at the tip
     Then it exits LAND_REPLAY and prints LAND_STRAY_EVIDENCE_LANDED naming the stray's own commit
     And the replay branch's tip carries "abandoned_commits: [abcdef1234]" exactly once in the sibling's backlog/done/M8/ file
     And the replay branch's tip has no file for the sibling under backlog/active/ or backlog/paused/
+
+    Examples:
+      | record copy      |
+      | backlog/active/  |
+      | backlog/done/M8/ |
 
   # BL-1785 a-record-edit-the-done-copy-already-carries-is-not-landed-twice-02
   Scenario: a record edit the done copy already carries is reported already landed
