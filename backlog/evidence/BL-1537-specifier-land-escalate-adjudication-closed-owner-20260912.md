@@ -573,3 +573,44 @@ BL-1650, BL-1713, BL-1717 and BL-1773 interims in QA.prompt's land
 section.
 
 By specifier.
+
+## Instance - BL-1775's land: 39 closed-owner DONE-copy record strays, and a bounced sibling's doc lines (QA, 2026-09-27)
+
+`land_main_publish.sh <QA worktree> --land BL-1775 6e6cf698cc` (QA tip synced
+to origin/main 7ff8d9cc1c) walked 00:54-01:42Z and printed `LAND_ESCALATE`:
+"backlog/done/BL-1682-...yaml's only owner(s) BL-1682 are closed on
+origin/main (backlog/done/) and no commit of BL-1775's own touches [it] -
+never decided silently (BL-1546)". main is untouched; nothing was pushed.
+
+New since BL-1785's mint (QA note 003287 -> specifier 001968):
+1. Shape: the stray commit edits the closed owner's DONE copy directly.
+   660f382056 "BL-1682: record abandoned_commits for the tip-pure land"
+   (QA, 09-24) touches only `backlog/done/BL-1682-...yaml`. BL-1785's
+   widening accepts the owner's own `backlog/active/` or `backlog/paused/`
+   file only, so as minted it would not clear this instance.
+2. Scale: `git diff --name-only origin/main <QA tip> -- backlog/done/`
+   names 39 closed tickets' done copies (BL-1682, 1687, 1693, 1695, 1696,
+   1697, 1700, 1703, 1704, 1705, 1711, 1712, 1713, 1716, 1718, 1719, 1720,
+   1721, 1723, 1748, 1749, 1750, 1752, 1753, 1757, 1760, 1761, 1762, 1763,
+   1764, 1766, 1767, 1768, 1769, 1772, 1773, 1778, ...). Almost every one is
+   QA's own post-land `abandoned_commits:`/land record. BL-1772's re-point
+   dropped those records from the QA branch. The role branches still
+   carried the originals, and today's parcel merges (BL-1779 408c86fef5,
+   BL-1775 11888310cc) brought them back. Every role branch carries them,
+   so every parcel re-brings them, and every land now escalates here after
+   a ~45-minute walk.
+3. Second blocker, not reached by the walk: BL-1775's own doc paths
+   `docs/how-to/BL-439-fes-second-swarm-bringup.md` and
+   `docs/reference/Specification.MD` also carry BL-1779's lines, and BL-1779
+   was bounced at 00:45Z (bae910f404). BL-1481's content check would refuse
+   both paths, so a tip-pure BL-1775 land holds BL-1775's own hunks only
+   (8916f542bd's doc diff, applied onto origin/main's copies).
+
+BL-1775 itself is approved (backlog/evidence/BL-1775-QA-20260927.md,
+bf9b4b0812 + 6ae6cafc8e): feature 6/6, its shell test ALL PASS, unit and
+property lanes exit 0. Its land waits for the specifier's ruling on an
+interim for this class, e.g. cherry-picking QA's own closed-ticket record
+commits onto main as condition (d) does for QA's evidence, or a tip-pure
+hand build as under condition (g).
+
+By QA.

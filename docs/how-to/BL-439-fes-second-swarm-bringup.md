@@ -91,6 +91,29 @@ swarmforge/scripts/fleet_telegram_creds_cli.bb <project-root>
 # {"swarmName":"fes","botToken":"...","chatId":"...","bridgePort":...,"refused":false,"reason":null}
 ```
 
+## 2a. Every other process, not just the front desk (BL-1775)
+
+The front desk was never the only place the primary's token could leak in.
+`swarmforge.sh` and every role launch script it writes are zsh, and zsh
+sources `~/.zshenv` on every invocation — including a non-interactive pane
+respawn. If that file exports the primary's `TELEGRAM_BOT_TOKEN`/
+`TELEGRAM_CHAT_ID` (a common host setup), a second swarm's handoffd,
+coordinator, and every role pane picked it back up after launch, even
+though the front desk itself correctly resolved its own creds. Verified by
+hash on a live second swarm before the fix: its handoffd and coordinator
+panes both carried the primary's token and chat id.
+
+`swarmforge.sh` now evals `swarm_telegram_env_cli.bb <root> <swarm-name>`
+once, right after workspace prep and before any daemon starts, and each
+generated role launch script evals the same CLI again right after its
+zsh shebang has already sourced the profile — so `~/.zshenv` can no
+longer win. For the recorded primary root, the CLI prints nothing (ambient
+environment stands). For any other swarm, its own
+`~/.swarmforge/fleet/<swarm-name>/telegram.json` wins wholesale, or, absent
+one, both variables are unset — never silently inherited. This reuses
+`fleet_telegram_creds_lib`'s existing BL-436/BL-622 resolution rules; there
+is no second copy of them.
+
 ## 3. E2E verification procedure (QA runs this against a live bring-up)
 
 1. Follow steps 1–2 above to launch FES as a `mono-rotate` swarm from the

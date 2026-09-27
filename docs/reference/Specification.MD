@@ -1,5 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 27, 2026 (BL-1775: a non-primary swarm's
+launcher and every role launch script now apply that swarm's own Telegram
+identity AFTER the zsh shell profile has run, closing a leak the front
+desk's own creds isolation (BL-436/BL-622) never covered. `~/.zshenv`
+exports the primary's `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` on every zsh
+invocation, and `swarmforge.sh` and every generated
+`.swarmforge/launch/<role>.sh` are zsh — so a second swarm's handoffd,
+coordinator, and every role pane carried the primary's token and chat id
+back in after launch, even though its front desk resolved correctly.
+Verified by hash on a live second swarm before the fix. New
+`swarmforge/scripts/swarm_telegram_env_cli.bb` prints `export`/`unset`
+lines over the existing `fleet_telegram_creds_lib` (no second copy of its
+rules): nothing for the recorded primary root, the swarm's own fleet creds
+file wins wholesale for any other swarm, or both variables are unset with
+no creds file. `swarmforge.sh` evals it once early, and
+`write_role_launch_script`'s template evals it again right after the
+shebang's own profile sourcing, so `~/.zshenv` can no longer win — applied
+fresh on every launch and every respawn, never baked in once. The
+recorded primary root's environment is unchanged. Out of scope: daemon
+restarts that bypass `swarmforge.sh` (cron, babysitterd resurrection) and
+the 20 existing `TELEGRAM_*` readers themselves. Acceptance:
+`specs/features/BL-1775-a-second-swarm-never-runs-with-the-primarys-telegram-identity.feature`.
+See `docs/how-to/BL-439-fes-second-swarm-bringup.md` §2a for the
+operator-facing note. No extension command, setting, or UI change; no
+diagram edit.)
+Prior entry —
+
 **Last Updated:** September 26, 2026 (BL-1769: `qa-gather`'s unit/property
 `register_join` entries are now parsed from each check's WHOLE captured
 output (stdout + stderr, unbounded), never from the report's 4000-char

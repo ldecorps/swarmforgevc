@@ -509,8 +509,9 @@ test_swarm_launcher_mutation_cost_prepass.sh	standing
 test_swarm_outlives_launcher.sh	standing		
 test_swarm_socket_not_in_tmp.sh	excluded	2026-08-23	live-only: drives kill_all_swarm.sh against a real tmux socket; safe only from a detached host shell with env -u TMUX (2026-08-22 session wipe)
 test_swarm_status_bubble_tunnel_row.sh	standing		
-test_swarm_status_operator_runtime.sh	standing		
-test_swarmforge_pack_export.sh	standing		
+test_swarm_status_operator_runtime.sh	standing
+test_swarm_telegram_env_cli.sh	standing
+test_swarmforge_pack_export.sh	standing
 test_swarmforge_pid_guard.sh	standing		
 test_sync_worktree_scripts_never_clobbers.sh	standing		
 test_ticket_close_guard.sh	standing		

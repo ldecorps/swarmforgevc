@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=15fa619b94baddfca02b4199cc156fd4d2bea76975020080c884160f10902440
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-27T00:15:33.449003429Z","feature_name":"BL-1775 A second swarm never runs with the primary's Telegram identity","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1775-a-second-swarm-never-runs-with-the-primarys-telegram-identity.feature","background_hash":"f92df931525b6cec9043d1999da72c16c89d0ea566268a2de9d6383824839fe4","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a second swarm's processes see its own Telegram identity or none, never the primary's","scenario_hash":"412255330a3a48b0d6ede03f41be9030d7fbe37c978ef54d28d600cff57fcde6","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-09-27T00:15:33.449003429Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1775 A second swarm never runs with the primary's Telegram identity
 
   zsh sources ~/.zshenv for every invocation, and on this host that file

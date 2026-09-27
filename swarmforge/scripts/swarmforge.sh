@@ -1301,6 +1301,25 @@ prepare_workspace() {
   write_swarm_identity_file
 }
 
+# BL-1775: applies THIS launcher shell's own Telegram identity - the
+# recorded primary root's ambient environment is left exactly as
+# ~/.zshenv put it (swarm_telegram_env_cli.bb prints nothing for it);
+# every other swarm gets its own fleet creds file (export) or neither
+# variable at all (unset), never the primary's, whatever shell profile
+# started this launch. Everything forked from this shell afterward
+# (create_role_session, start_handoff_daemon, start_ancillary_services)
+# inherits the corrected environment - the SAME resolver each generated
+# role launch script also applies for itself (write_role_launch_script,
+# below), since a role's own pane is a fresh zsh process that re-sources
+# ~/.zshenv on its own.
+apply_swarm_telegram_identity() {
+  local env_lines
+  env_lines="$(bb "$SCRIPT_DIR/swarm_telegram_env_cli.bb" "$WORKING_DIR" "$SWARM_NAME")"
+  if [[ -n "$env_lines" ]]; then
+    eval "$env_lines"
+  fi
+}
+
 write_tmux_env_file() {
   local tmux_value
   tmux_value="$(tmux -S "$TMUX_SOCKET" display-message -p '#{socket_path},#{pid},#{pane_id}')"
@@ -2267,6 +2286,13 @@ export SWARMFORGE_ROTATION='$(rotation_signal)'
 export SWARMFORGE_ROLE_WORKTREE='$role_worktree'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
+# BL-1775: applies this pane's own Telegram identity AFTER zsh has already
+# sourced ~/.zshenv above (the shebang's own zsh startup, before this
+# script's body runs at all) - the SAME resolver apply_swarm_telegram_
+# identity uses for the launcher shell itself, called fresh on every
+# execution of this generated script (initial launch and every respawn),
+# never a value baked in once at write time.
+eval "\$(bb '$role_script_dir/swarm_telegram_env_cli.bb' '$WORKING_DIR' '$SWARM_NAME')"
 ${resume_check}
 ${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${qwen_guard}${bai_guard}${local_model_guard}${launch_body}
 LAUNCH
@@ -2630,6 +2656,7 @@ check_primacy
 check_backend_dependencies
 check_cursor_seat_admission
 prepare_workspace
+apply_swarm_telegram_identity
 prepare_worktrees
 prepare_handoff_dirs
 choose_cleanup_owner

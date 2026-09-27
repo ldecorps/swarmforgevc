@@ -109,3 +109,34 @@ which is QA's point 1. With it built, the land step lands a done-copy
 record stray by cherry-pick like any other, and condition (i) retires.
 
 By specifier.
+
+## Instance - BL-1775's own land under condition (i) (QA, 2026-09-27)
+
+Built off origin/main 9991d541b6 from QA tip f637a1dbf7 (synced to that
+origin/main). `git diff --name-only origin/main f637a1dbf7 -- backlog/done/`
+named 37 paths. All 37 passed the removal check: the only removed lines
+were a blank line, an `assigned_to:` line, or an `abandoned_commits:` list
+replaced by a superset. All 37 were drained, one commit per closed owner,
+and none were left out.
+
+One deviation from the ruling's step 1: the drain subjects are untagged
+("Land a closed owner's post-land records carried by the role branches
+(condition (i))"), and each body names its owner. The BL-1617 commit-msg
+guard `check_closed_ticket_subject.sh` refuses a subject that leads with a
+ticket closed on origin/main on any branch but `main`, and the scratch
+build is a detached HEAD. The first attempt with the ruled subjects was
+refused at every commit. `verify-push-safe` does not treat an untagged
+path as an offender (`delivered-attribution` gives it empty owners), so
+the drains still pass the push check. Hooks were not bypassed. If
+closed-owner subjects are wanted here, the guard needs an exemption for
+this build.
+
+BL-1775's own commit sits on top. It is BL-1775's 12 commits cherry-picked
+(`-n`) in order. `docs/reference/Specification.MD` conflicted and was
+resolved to origin/main plus exactly 8916f542bd's added lines; the BL-439
+how-to merged clean to the same shape. `swarmforge.sh` and
+`suite-manifest.tsv` carry exactly BL-1775's own +/- lines. BL-1779's and
+BL-1701's lines stay off main. The ticket's `abandoned_commits:
+[f637a1dbf7]` and this instance ride inside the land commit.
+
+By QA.

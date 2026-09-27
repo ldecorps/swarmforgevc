@@ -162,3 +162,6 @@ notes: |
   fixture HOME).
 
 assigned_to: coder
+abandoned_commits: [f637a1dbf7]
+# Condition (i) land: tip-pure off origin/main 9991d541b6 beneath 37
+# drain commits; land approval recorded against QA commit f637a1dbf7.
