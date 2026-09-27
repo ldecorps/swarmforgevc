@@ -164,5 +164,6 @@ notes: |
   band), Small (five scenarios, two invariants; hazards split off),
   Testable (stand-in aider for the lane; one real-model scorecard as
   evidence).
-
-assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-26, by: QA, blamed: coder, class: behavior, commit: ba2210db18, evidence: backlog/evidence/BL-1700-QA-20260926.md }
