@@ -77,3 +77,9 @@ notes: |
   Expedite lane by severity (Article 3.2.4).
 
 assigned_to: coder
+abandoned_commits: [d993128030, f620ebc293, 456edf9a65]
+# d993128030 (BL-1749: force SWARMFORGE_PROC_DIR unreachable too, not just
+# lsof) was the coder's first attempt at this fix; f620ebc293 reverted it
+# on the same branch before the real fix (3c37458ca7, an ancestor of every
+# forwarded tip) landed. Neither is on this lineage; both are deliberately
+# dropped, not stranded.
