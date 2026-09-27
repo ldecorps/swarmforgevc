@@ -1,4 +1,7 @@
 id: BL-1720
+abandoned_commits: [6783b122b4]
+# BL-1241: hand-built tip-pure land 27f7f35578 off origin/main; mapping
+# recorded 27f7f35578 <- 830d440943 (BL-1334).
 title: "A seat dropped mid-shift does not stay dropped: on 2026-09-24 the coordinator killed swarmforge-coder@2 and dropped its window from the pack (fe664164b0, 09:49Z), babysitterd resurrected it from the start-time roles.tsv at 09:53Z, and after the master roles.tsv was edited by hand (09:55Z) sessions.tsv and all eight worktree roles.tsv copies still listed coder@2 - so cleaner and architect kept addressing reverse-hop copies to it (three BL-1703 copies stranded in its inbox) and each one's wake landed in the specifier's pane (BL-1719); one retire operation takes a seat out of every roster copy, and nothing resurrects or addresses it afterwards"
 milestone: M8
 type: defect
