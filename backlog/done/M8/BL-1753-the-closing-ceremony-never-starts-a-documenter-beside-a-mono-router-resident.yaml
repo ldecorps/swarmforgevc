@@ -162,3 +162,5 @@ notes: |
   BL-1549 to this ticket; human_decision stays null.
 
 assigned_to: coder
+
+abandoned_commits: [bfdb43f0cd]
