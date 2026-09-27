@@ -1,4 +1,8 @@
 id: BL-1693
+abandoned_commits: [ef856984e8]
+# BL-1241: hand-built tip-pure land f4b72c88a4 off origin/main (specifier ruling
+# 7b4230e2d6); own paths byte-identical to reviewed tip 91688f020c; mapping
+# recorded (BL-1334).
 title: "specs/features/BL-538-console-paused-ticket-pager.feature is 5/8 on main with two causes and no owner: scenarios 07 and 08 (Approve) were added on 2026-07-22 by b5c1b97a12 ('Add Approve action to the paused-ticket pager Mini App', no ticket, POST /paused-pager/approve plus unit tests, no step handler) so 'Given a paused ticket with human_approval pending is shown on the pager' has never matched a handler; scenario 06's confirmed Expedite gets 409 instead of 200 because BL-1083 (2026-08-23) made the pager's promotion consult <target>/swarmforge/scripts/promotion_gates_cli.bb and bl538ConsolePausedTicketPagerSteps.js's mkdtemp fixture stages no such CLI and no approval, so the gate refuses 'could not be consulted ... refusing rather than promoting ungated'; the handler gains the Approve steps against the real route and stages the real gates CLI and a gate-passing ticket for Expedite, the way BL-1425's own handler does"
 milestone: M8
 type: defect
