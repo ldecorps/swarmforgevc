@@ -123,3 +123,4 @@ notes: |
   Ledger link: bb hotfix_ledger_update.bb --link db4da5c573 BL-1772.
 
 assigned_to: coder
+abandoned_commits: [199d4e072f]
