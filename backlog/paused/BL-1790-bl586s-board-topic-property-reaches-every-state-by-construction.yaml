@@ -1,0 +1,149 @@
+id: BL-1790
+title: "bl586PipelineBoardTopicIdentity reaches its board-bound, crossed and unmapped states by construction: invariant 1 draws a topic map and a stored id 100 times and asserts at least 5 already-board-bound states, but only about 1 draw in 9 is board-bound at uniform odds, so the floor misses about 1 run in 65 (red in QA's property lane on the BL-1707 parcel, 2026-09-27, 'generator reached only 3 already-board-bound states', holding that parcel under Article 4.2); BL-1583's census misreads the file as no-floor"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (2026-09-05 rule). QA's property
+# lane went red on a file the BL-1707 parcel never touched, and QA holds
+# that parcel (Article 4.2, qa-holds/BL-1707.json) until the red is owned.
+epic: sampled-reach-floors
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one property test file (property tests are outside the mutation
+# lane); the gherkin mutation re-runs a two-scenario source/census feature
+# whose census step is one bb run (BL-1763's ran in seconds).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1790-bl586s-board-topic-property-reaches-every-state-by-construction.feature
+
+human_approval: approved
+approval_context: >
+  FIRM: the file's two properties reach every arm they assert reached by
+  construction (runsPerCell plus assertReachFloor from helpers/reachFloors,
+  the recipe BL-1583's sweeps applied), with no floor, budget, timeout or
+  per-case assertion loosened. Mechanical, the same shape as BL-1760,
+  BL-1762, BL-1763 and BL-1786. There is no choice to rule on.
+
+invariants:
+  - "No reach floor, draw budget, timeout or tolerance in the file is lowered, seeded or retried; every arm asserted reached before the change is asserted reached after it, and every per-case assertion (never posting into another subject's topic, reuse-never-create under a durable record, create with nothing durable, never re-establishing onto another subject's topic) is unchanged."
+
+required_wiring: []
+# Honest empty (BL-1235): a test-only change; the census CLI and the
+# helpers it must call already exist, and the runner fails closed on a
+# missing step handler (BL-233).
+
+description: |
+  ## What is wrong
+
+  QA note 003313 (2026-09-27 07:13Z), verbatim: "unowned-red bl586 reach
+  floor 3<5 holds BL-1707; evidence fd1ab96de0". From that evidence (on
+  QA's branch): `npm run test:properties` exit 1 on
+  `test/bl586PipelineBoardTopicIdentity.property.test.js > property (BL-586
+  invariant 1)` with `AssertionError: generator reached only 3
+  already-board-bound states` (line 125, `reach.boardBound >= 5`). The
+  BL-1707 parcel (849fd723ca) touches no extension/test file; QA wrote
+  `.swarmforge/qa-holds/BL-1707.json` and waits.
+
+  Measured at mint from the file, by exact binomial over the generator's
+  uniform odds (fast-check's biases move the figures but not the shape):
+  - Invariant 1 (default 100 runs): `topicMapArb` carries a board binding
+    with `fc.option(..., { freq: 2 })`, so about half the time; `storedIdArb`
+    draws one of the map's own keys with weight 4 of 5, and that key is the
+    board's for 1 of n+1 keys with n uniform on 1..6. P(board-bound) is
+    about 0.106 per draw, so P(fewer than 5 of 100) is about 0.015.
+    P(crossed below 50) is 1.7e-5 and P(unmapped below 5) is 3.7e-6.
+  - Invariant 2 (`INVARIANT_2_RUNS` = 1000): map-bound about 1/2, usable
+    standing record 1/6, crossed standing record 1/4, nothing durable 1/12.
+    The loosest floor (nothing durable, 25) misses with P about 2.8e-15.
+  So the red is invariant 1's board-bound floor, sampled; invariant 2 only
+  looks safe because its budget is ten times larger, and it samples too.
+
+  BL-1583's census (`sampled_reach_floor_census_cli.bb`) reads the file as
+  `no-floor unresolved`: its `known-phrases` carries "the generator
+  reached" and these asserts say "generator reached only" (the phrase gap
+  BL-1786 recorded on the BL-1583 tracker), and the budget is unresolved
+  because invariant 1 uses fast-check's default and invariant 2 a
+  file-level const. That classifier fix is not in this ticket.
+
+  ## What is wanted
+
+  Both properties iterate their arms by construction:
+  - invariant 1: already-board-bound, crossed and unmapped stored ids;
+  - invariant 2: map-bound, usable standing record, crossed standing
+    record and nothing durable.
+  Each draws per cell through `runsPerCell`, and each keeps its floors
+  asserted through `assertReachFloor` (`extension/test/helpers/reachFloors.js`,
+  BL-1062's doctrine), at no fewer total draws than today (100 and 1000)
+  and with every floor value unchanged (50/5/5 and 100/50/80/25). Every
+  per-case assertion stays word for word, including the map-binding stub
+  in `adaptersOver` and the derived-from-the-map id generators the file's
+  own comments explain (the collision-by-construction idea is the point of
+  the file; the cells make it total instead of weighted).
+
+  How (direction, not mandate): BL-1786's bl1012 (in flight) and
+  BL-1763's bl1517 are the nearest precedents. For invariant 1, three arm
+  cells (a map with a board binding and the board key as stored id; a map
+  and one of its other-subject keys; a map and an id it says nothing
+  about) over a budget of 150 give 50 draws per cell, which meets the
+  crossed floor of 50 without lowering it; raising the draw count is
+  allowed, lowering a floor is not. For invariant 2, four arm cells over
+  1000 give 250 each. A cell generator can build the map and then pick the
+  id from it, so the per-case asserts still see a real (map, id) pair.
+
+  ## Scope
+  - `extension/test/bl586PipelineBoardTopicIdentity.property.test.js`.
+  - The feature file and its step handler `bl1790Bl586ReachFloorsSteps`
+    (`bl1763Bl1517ReachFloorsSteps.js` is the template), registered in
+    `specs/pipeline/steps/index.js` in the same commit as the feature
+    (BL-233: a feature with no handler reds every other parcel's gate).
+  - The standing-red register row naming BL-1790, retired by the land
+    (BL-1631). A parcel never edits `backlog/standing-reds.tsv`.
+
+  ## Not in scope
+  - The census classifier's phrase gap and budget resolution. They belong
+    to the classifier blind-spot slice on the BL-1583 tracker.
+  - `pipelineBoardSync.ts` and `telegramTopicDecisions.ts`: nothing is
+    wrong with the code the test exercises; both properties held on every
+    draw that ran.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1790-bl586s-board-topic-property-reaches-every-state-by-construction.feature`:
+     2 of 2. Measured at mint: scenario 02's census step is the same bb run
+     BL-1763's handler makes; on 2026-09-28 it completed inside the 120 s
+     the mint gave it and printed the bl586 row as `no-floor unresolved`,
+     the pre-fix reading.
+  2. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl586PipelineBoardTopicIdentity.property.test.js`:
+     green (the file is in-process only, no spawns; expect seconds).
+  3. The register row for the file is present on the parcel commit and
+     names BL-1790 as owner (the land removes it, never the parcel).
+  4. `git diff main...HEAD --name-only` names only the test file, the
+     step handler, its registration and evidence.
+  5. After the land: REGISTER_ROW_RETIRED for
+     `extension/test/bl586PipelineBoardTopicIdentity.property.test.js`,
+     and `.swarmforge/qa-holds/BL-1707.json` may resume (QA's own step).
+
+source: |
+  QA note 003313 (2026-09-27 07:13Z), verbatim: "unowned-red bl586 reach
+  floor 3<5 holds BL-1707; evidence fd1ab96de0". Evidence:
+  `backlog/evidence/BL-1707-QA-unowned-red-hold-20260927.md` at fd1ab96de0
+  (on QA's branch at mint).
+
+notes: |
+  Minted 2026-09-28 by the specifier (claude-fable-5-1 seat) from QA note
+  003313, in the 2026-09-27 closing-ceremony pass. The register row naming
+  this owner landed in the same commit, and the holder note was sent to QA
+  (BL-1707 is the parcel QA holds on the red). Miss probabilities were
+  computed at mint by exact binomial over the generator's uniform odds, not
+  sampled. Added to BL-1583's decomposes_into in the same commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Orthogonality: BL-1786 (active) edits bl1012's file and its own handler;
+  no open ticket touches bl586's file (grep of paused/ and active/,
+  2026-09-28).
+  INVEST: Independent (no unbuilt dependency). Negotiable (the cell shapes
+  and the budget above 100 are the coder's). Valuable (a standing red
+  cleared, a held parcel released, the class's recipe applied). Estimable
+  (the BL-1763 recipe on one in-process file). Small (2 scenarios, 1
+  invariant). Testable (source and census checks, with QA's green lane
+  run).
