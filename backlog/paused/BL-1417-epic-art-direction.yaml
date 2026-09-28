@@ -7,7 +7,7 @@ epic: art-direction
 priority: 30
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-1418, BL-1419, BL-1442, BL-1444]
+decomposes_into: [BL-1418, BL-1419, BL-1442, BL-1444, BL-1792]
 remaining_slices: |
   - BL-1418 (filed 2026-09-05): onboard the Art Director seat - role lists,
     topic icon, worktree, mailbox, launch; seat shape by human ruling.
@@ -21,6 +21,9 @@ remaining_slices: |
     lane guard (docs/design/ plus its own evidence). Human ruling B,
     2026-09-06, verbatim: "B: QA lands on AD note (recommended)". Prose
     halves landed with the mint; the guard is the parcel.
+  - BL-1792 (filed 2026-09-28): the second brief - a headless
+    closing-ceremony briefing's git activity renders one list item per
+    commit instead of one 17k-char paragraph. Brief lands via BL-1444.
   - Unfiled, from the role's own first pass once seated: Telegram message
     layouts (pipeline board, approval asks, alerts), the static PWA, the live
     console / Mini App screens, rendered docs. Each arrives as a design brief

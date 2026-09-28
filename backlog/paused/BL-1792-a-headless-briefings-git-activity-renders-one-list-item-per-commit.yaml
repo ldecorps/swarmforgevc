@@ -1,0 +1,181 @@
+id: BL-1792
+title: "A headless closing-ceremony briefing's Recent git activity is one 17,316-character paragraph in the sent email: the composer emits bare lines with no list marker, CommonMark folds them into a single <p>, and a phone reader cannot see where one commit ends; the composer emits one Markdown list item per entry (Art Director brief 2026-09-28)"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, contained defect in a human-facing artifact. Every
+# headless-composed briefing (several nights a week per docs/briefings/.sent.json,
+# most recently 2026-09-26 and 2026-09-27) ships unreadable on the phone; no
+# safety signal is broken and no data is lost. Not a standing red.
+epic: art-direction
+priority: 8
+depends_on: []
+mutation_cost: low
+# low: Babashka has no mutation/CRAP/DRY wired (BL-472); the change is one
+# formatting helper in banked_briefing_lib.bb. The gherkin mutation runs the
+# composer and the markdown renderer in-process through a bb harness; the
+# render of the real 30-line 2026-09-27 file measured under 1 s at mint in
+# one bb call, and the sibling BL-308 feature (same harness family) runs in
+# 4 s, far inside the 300 s per-mutant ceiling.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1792-a-headless-briefings-git-activity-renders-one-list-item-per-commit.feature
+
+human_approval: pending
+approval_context: >
+  FIRM: the fix is in how compose-banked-briefing formats its line-per-entry
+  sections (the brief's own constraint), not in markdown-to-html-lib or
+  briefing_email_lib.bb, which already render a "- " list correctly
+  (BL-1419). FIRM: the empty-section fallback lines and the ordinary
+  coordinator/documenter-composed briefing path are unchanged. FIRM: the
+  brief's "at minimum a hard line break" alternative is NOT taken; the
+  list form is chosen because it is what the renderer already handles.
+  There is no choice to rule on; review the feature file.
+
+invariants:
+  - "The composer's output is still plain Markdown the existing send path reads unchanged: no HTML, no <style>, no new file is written; markdown_to_html_lib.bb and briefing_email_lib.bb are absent from the parcel diff."
+
+required_wiring: []
+# Honest empty (BL-1235): the only live consumers of compose-banked-briefing
+# (handoffd.bb's compose-and-write-banked-briefing! and
+# compose_banked_briefing_cli.bb) already call it and would match before and
+# after the fix, so an anchor there gates nothing. The step handler
+# registration is satisfied by the parcel's own diff. The runner fails closed
+# on a missing handler (BL-233).
+
+description: |
+  ## What is wrong
+
+  Art Director brief, 2026-09-28
+  (`docs/design/briefs/2026-09-28-headless-briefing-wall-of-text.md`, on
+  `swarmforge-art-director` at `3d8d7563c7`; lands on `main` through the
+  BL-1444 path, QA on the art director's note, not with this parcel).
+  Reviewed on the real send path (`render-markdown-to-html` then
+  `render-briefing-html`) over the real 2026-09-27 briefing at ~390 px:
+
+  > the composer emits each git log line as its own line of plain text
+  > with no leading `- ` bullet marker and no blank line between entries
+  > [...] CommonMark collapses consecutive non-blank lines with no bullet
+  > syntax into a single paragraph, so the rendered email's "Recent git
+  > activity" section is not a list at all - it is one unbroken `<p>` of
+  > ~30 commit messages run together with single spaces [...] On a ~390px
+  > phone mail client this is an unreadable wall of text.
+
+  Measured at mint (2026-09-28) by rendering `docs/briefings/2026-09-27.md`
+  through `markdown-to-html-lib/render-markdown-to-html`: 5 `<p>` elements,
+  0 `<li>` elements, longest paragraph 17,316 characters. The "Backlog
+  counts" section folds the same way: `<p>active: 7 paused: 118 done: 903</p>`.
+  The brief scopes the git section; the counts are the same helper and
+  the same fix.
+
+  Cause: `compose-banked-briefing` (`swarmforge/scripts/banked_briefing_lib.bb`)
+  joins `git-activity-lines` and `daemon-health-lines` through
+  `lines-or-fallback` as bare lines, and writes the three count lines
+  bare too. `markdown_to_html_lib.bb` treats a line as a list item only
+  when it starts with `- ` (`list-item-line?`), so bare consecutive lines
+  become one paragraph run. Both live callers (`handoffd.bb`
+  `compose-and-write-banked-briefing!`, `compose_banked_briefing_cli.bb`)
+  pass already-formatted strings and are not the site of the defect.
+
+  ## What is wanted
+
+  Intended result, from the brief: "each git log line in a headless-
+  composed briefing appears as its own visually separated line in the
+  sent email - either a real Markdown list (`- <line>` per commit, one
+  `<li>` per commit, consistent with the existing bulleted-list handling
+  and the BL-1442 bold-ticket-id rule) or, at minimum, a hard line break
+  the renderer preserves per source line."
+
+  - Every line-per-entry section the composer emits (Recent git activity,
+    Backlog counts, Daemon health) is a Markdown list: one `- ` item per
+    entry, so the existing list renderer yields one `<li>` per commit and
+    per count. Scenarios 01-03.
+  - An empty section still prints its fallback line (scenario 04);
+    whether the fallback is itself a list item is the coder's call, the
+    scenario asserts only that the text is present.
+  - Nothing outside the composer changes (invariant).
+
+  How (direction, not mandate): prefix each entry with `- ` inside
+  `lines-or-fallback` (or a sibling helper applied at the three sites);
+  the count lines can go through the same helper as a three-element
+  vector. `banked_briefing_test_runner.bb` and the BL-308 handler only
+  substring-match the lines, so they stay green; extend the runner with
+  the list-item assertion rather than leaving it to the feature alone.
+
+  Note on BL-1442: a git activity item opens with the commit id, not a
+  ticket id, so the bold-leading-id rule will not fire on these items.
+  That is correct and not in scope; the brief's "consistent with" is met
+  by the items being real `<li>` elements.
+
+  ## Scope
+  - `swarmforge/scripts/banked_briefing_lib.bb` (the composer only).
+  - `swarmforge/scripts/test/banked_briefing_test_runner.bb` (new
+    assertions).
+  - The feature file and its step handler
+    `bl1792HeadlessBriefingListItemsSteps`, registered in
+    `specs/pipeline/steps/index.js` in the same commit as the feature
+    (BL-233). The handler drives the real composer and the real renderer
+    through a bb harness, the same drive as
+    `bl1442BriefingListItemLeadingIdBoldSteps` (`briefing_email_harness.bb`)
+    and `bankedBriefingHeadlessSteps`; a new harness under
+    `swarmforge/scripts/test/` is fine if the existing ones do not expose
+    the composer's inputs.
+  - `docs/design/artifact-inventory.md` row 1: the documenter records the
+    follow-up the same way the BL-1442 entry is recorded, once the brief
+    is on `main`.
+
+  ## Not in scope
+  - `markdown_to_html_lib.bb`, `briefing_email_lib.bb`: they render lists
+    correctly today (BL-1419).
+  - The ordinary coordinator/documenter-composed briefing (prose with
+    headers; the brief spot-checked 2026-09-20 and it is unaffected).
+  - Why two headless briefings shipped with no art-director sign-off: the
+    art director recorded that in its own evidence (tip 7052ebcc42).
+  - Landing the brief itself: BL-1444's path (art director notes QA).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1792-a-headless-briefings-git-activity-renders-one-list-item-per-commit.feature`:
+     5 of 5 (four scenarios, the outline has two rows).
+  2. `bb swarmforge/scripts/test/banked_briefing_test_runner.bb`: passes,
+     and its output names the new list-item assertion.
+  3. `node specs/pipeline/cli.js specs/features/BL-308-banked-mode-headless-briefing.feature`
+     and `specs/features/BL-1641-a-ceremony-at-its-briefing-deadline-produces-a-briefing-before-the-stop.feature`:
+     measured at mint on main 2026-09-28: BL-308 8 of 8 in 4 s, BL-1641
+     4 of 4 in 15 s. Expect the same on the parcel; record both verdicts.
+  4. Surface check, the brief's own test: `bb
+     swarmforge/scripts/compose_banked_briefing_cli.bb <scratch-root>
+     2026-09-28` on a scratch clone with 30 commits, render the file
+     through `markdown-to-html-lib/render-markdown-to-html`, and confirm
+     30 `<li>` elements and no `<p>` longer than one commit line. Attach
+     the rendered HTML to the evidence; the art director answers QA's
+     sign-off note with LGTM or a defect list (Article 1.10).
+  5. `git diff main...HEAD --name-only` names only banked_briefing_lib.bb,
+     its test runner, the feature, the handler, its registration, any new
+     harness, the inventory row and evidence; markdown_to_html_lib.bb and
+     briefing_email_lib.bb are absent.
+
+source: |
+  Art-director note 000007 (2026-09-28 09:48Z), verbatim: "brief
+  docs/design/briefs/2026-09-28-headless-briefing-wall-of-text.md". The
+  brief is on `swarmforge-art-director` at 3d8d7563c7 (content commit
+  7052ebcc42); its intended-result sentence is quoted verbatim in the
+  description and the feature narrative.
+
+notes: |
+  Minted 2026-09-28 by the specifier (claude-fable-5-1 seat) from the art
+  director's brief note 000007, the same pass. The render measurement
+  (5 <p>, 0 <li>, longest 17,316 chars; counts folded) was taken at mint
+  by rendering docs/briefings/2026-09-27.md through the real
+  markdown-to-html-lib, not read from the brief. Added to BL-1417
+  decomposes_into in the same commit; the brief itself is not on main yet
+  (BL-1444 path), so the description quotes what the coder needs.
+  Step 3 measured at mint on main (2026-09-28, SWARMFORGE_FLEET_HOME set
+  to a scratch dir): BL-308 8 of 8 in 4 s, BL-1641 4 of 4 in 15 s.
+  Orthogonality: no open ticket touches banked_briefing_lib.bb (grep of
+  paused/ and active/, 2026-09-28).
+  INVEST: Independent (no unbuilt dependency; the brief lands separately).
+  Negotiable (helper shape is the coder call). Valuable (every headless
+  briefing readable on a phone). Estimable (one helper, three call sites).
+  Small (4 scenarios, 1 invariant). Testable (composer plus renderer,
+  in-process through bb, seconds).
