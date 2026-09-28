@@ -149,6 +149,9 @@ qa_e2e_procedure: |
      and naming real commands.
   5. `git diff main...HEAD --name-only` names only the Scope files, docs
      and evidence.
+  6. `bash swarmforge/scripts/test/test_aider_seat_launch_config.sh` on the
+     parcel commit: ALL PASS (amendment 2026-09-28; see notes). Red here
+     routes to the coder, not to a spec gap.
 
 source: |
   Human, verbatim (via Claude Code, 2026-09-24, refining ruling A):
@@ -214,5 +217,27 @@ notes: |
   human_ruling stays A - this is the human's own refinement of it, so
   human_approval stays approved. BL-1697 amended in the same commit to key
   its driver state on the seat id (coder@2), not the role.
+
+  Amended 2026-09-28 (specifier) on coder note 002205 ("BL-1702 gate reds
+  test_aider_seat_launch_config.sh - see evidence", BL-1708 coder evidence
+  cross-ticket finding): the parcel wires local_coder_probe_gate into
+  parse_config, and the gate refuses every launch of a pack with a driver
+  seat that has no passing probe summary - invariant 3, FIRM, unchanged.
+  swarmforge/scripts/test/test_aider_seat_launch_config.sh stages
+  `window coder aider coder --model openai/qwen2.5-coder:latest` with no
+  probe evidence, so on the parcel tree it is refused ("local coder probe
+  gate refused this launch: refuse coder qwen2.5-coder:latest no probe
+  summary") while it is ALL PASS on main (measured 2026-09-28). Nothing in
+  the spec changes; this makes explicit what BL-1164 (changed-path unit
+  test gate) already requires: a parcel that changes swarmforge.sh keeps
+  its standing tests green. Supplying a passing summary to that fixture
+  through LOCAL_CODER_PROBE_EVIDENCE_DIR (the isolation the parcel's own
+  acceptance fixture already uses) is IN this parcel, owner coder; qa_e2e
+  step 6 added. Any other standing shell test that stages an aider coder
+  seat without evidence gets the same isolation in the same parcel. BL-1708
+  (behind this parcel) has its qa_e2e step 3 blocked on the same test until
+  this lands. The BL-1702 parcel itself was last seen at the documenter's
+  branch tip (18326f3b13, review pass 2026-09-27 07:59Z) with no
+  git_handoff to QA on file at the time of this amendment.
 
 assigned_to: coder

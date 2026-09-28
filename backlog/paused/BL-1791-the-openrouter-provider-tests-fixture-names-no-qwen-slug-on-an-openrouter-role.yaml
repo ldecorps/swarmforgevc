@@ -1,0 +1,141 @@
+id: BL-1791
+title: "test_openrouter_provider_support.sh is red on main since 4ed88430b2 (2026-09-01, 27 days unnoticed): its fixture stages the cleaner on --model qwen/qwen3-32b and case 03 lists the cleaner for OpenRouter, but the launch-script writer checks the qwen-cloud host sniff before role_uses_openrouter (BL-1328's ruled precedence), so the cleaner's script takes the Token Plan branch and 'cleaner should be OpenRouter' fails; the fixture stops pairing a qwen slug with an OpenRouter role, the precedence is untouched"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (2026-09-05 rule). Surfaced by the
+# BL-1708 coder probe (coder note 002206) and the coordinator (note 012772);
+# no register row, no open ticket, and QA approves nothing whose evidence
+# names it until owned (Article 4.2).
+epic: code-quality-gates
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one shell test fixture (no mutation/CRAP/DRY wired for shell, BL-472);
+# the gherkin mutation re-runs a source check and one 0.6 s shell run
+# (measured on main 2026-09-28), far inside the 300 s per-mutant ceiling.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1791-the-openrouter-provider-tests-fixture-names-no-qwen-slug-on-an-openrouter-role.feature
+
+human_approval: approved
+approval_context: >
+  FIRM: swarmforge.sh is not edited; the qwen-cloud-before-OpenRouter
+  precedence at the launch-script site stays exactly as BL-1328 documented
+  it under the human's BL-1324 ruling. FIRM: every assertion the test makes
+  today is kept (first-party unset guard when the list is empty, Anthropic
+  Skin URL and env-referenced token for listed roles, first-party for
+  unlisted, the key never on disk, the membership outline). Only the
+  fixture's model slugs change. There is no choice to rule on.
+
+invariants:
+  - "swarmforge/scripts/swarmforge.sh is unchanged in the parcel diff: the fix lives in the test fixture, and the BL-1328 precedence asymmetry is neither reconciled nor pinned here."
+
+required_wiring: []
+# Honest empty (BL-1235): a test-fixture change; the runner fails closed on
+# a missing step handler (BL-233).
+
+description: |
+  ## What is wrong
+
+  Coder note 002206 (2026-09-27 07:14Z), verbatim: "unowned-red:
+  test_openrouter_provider_support.sh - see BL-1708 evidence". Coordinator
+  note 012772 (2026-09-28 08:00Z), verbatim: "unowned-red
+  test_openrouter_provider_support.sh - BL-1708 probe, see evidence". The
+  BL-1708 coder evidence (goal 5, on the coder branch) ran the test once
+  and got `FAIL: 03: cleaner should be OpenRouter`.
+
+  Measured at mint on main (2026-09-28): the same failure, 0.6 s per run.
+  Bisected by exporting `swarmforge/scripts` at each commit and running the
+  test from the export: red at 4ed88430b2 (2026-09-01, the hotfix that
+  put the bob mono-router on Token Plan and added
+  `extra_cli_targets_qwen_cloud`), red at d7025811 (09-03) and f86be42f
+  (09-09, BL-1328); the 08-29 exports printed no verdict line. So the red
+  is 27 days old.
+
+  Cause, read from `write_role_launch_script` (swarmforge.sh around line
+  2186): for a claude agent the billing guard checks
+  `extra_cli_targets_qwen_cloud "$extra_cli"` (any `--model qwen*`) BEFORE
+  `role_uses_openrouter "$role"`, and BL-1328's comment says this order is
+  deliberate ("the human's BL-1324 ruling asked for exactly this") and
+  that "no live pack combines the two today, which is the only reason this
+  is dormant rather than broken". The test's fixture conf is that
+  combination: `window cleaner claude cleaner --model qwen/qwen3-32b`, and
+  case 03 sets `SWARMFORGE_OPENROUTER_ROLES="coder cleaner"`. The
+  cleaner's launch script therefore carries the Token Plan remap, not
+  `openrouter.ai`.
+
+  The evidence's own reading ("command not found:
+  terminal_backend_can_open_sessions ... unrelated to anything this parcel
+  touches") names a line the test prints on every run, green or red:
+  `test_aider_seat_launch_config.sh` prints it and passes ALL PASS. It is
+  noise from sourcing swarmforge.sh without a terminal adapter, not the
+  failure.
+
+  ## What is wanted
+
+  The fixture conf pairs no `--model qwen*` slug with any role, so an
+  OpenRouter-listed role reaches the `role_uses_openrouter` branch, and
+  the test is green on main. Every existing assertion stays word for word.
+
+  How (direction, not mandate): replace the cleaner's slug with a non-qwen,
+  non-glm OpenRouter slug in the same shape as the others (for example
+  `mistralai/mistral-large`); the `--model` value is inert for what the test
+  asserts. Leave the coder, architect and documenter lines alone unless a
+  case needs them.
+
+  ## Scope
+  - `swarmforge/scripts/test/test_openrouter_provider_support.sh` (fixture
+    conf only).
+  - The feature file and its step handler `bl1791OpenrouterFixtureSteps`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature (BL-233).
+  - The standing-red register row naming BL-1791, retired by the land
+    (BL-1631). A parcel never edits `backlog/standing-reds.tsv`.
+
+  ## Not in scope
+  - The BL-1328 precedence asymmetry: whoever first wants a live
+    OpenRouter role on a qwen slug decides it, per the comment at the site.
+  - The `terminal_backend_can_open_sessions` noise line.
+  - Why a 27-day red went unseen: BL-1625 (the shell manifest as one
+    recorded lane) owns that; this ticket is one more row of its evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1791-the-openrouter-provider-tests-fixture-names-no-qwen-slug-on-an-openrouter-role.feature`:
+     2 of 2 (measured at mint: the shell run is 0.6 s on main).
+  2. `bash swarmforge/scripts/test/test_openrouter_provider_support.sh`:
+     ALL PASS, exit 0.
+  3. `bash swarmforge/scripts/test/test_aider_seat_launch_config.sh` and
+     `bash swarmforge/scripts/test/test_alternate_runtime_launch.sh`:
+     ALL PASS on main at mint (2026-09-28, the first measured; the second
+     is the pattern the fixture mirrors, run it and record the verdict).
+  4. The register row for the file is present on the parcel commit and
+     names BL-1791 as owner (the land removes it, never the parcel).
+  5. `git diff main...HEAD --name-only` names only the test file, the step
+     handler, its registration and evidence; swarmforge.sh is absent.
+  6. After the land: REGISTER_ROW_RETIRED for
+     `swarmforge/scripts/test/test_openrouter_provider_support.sh`.
+
+source: |
+  Coder note 002206 (2026-09-27 07:14Z), verbatim: "unowned-red:
+  test_openrouter_provider_support.sh - see BL-1708 evidence".
+  Coordinator note 012772 (2026-09-28 08:00Z), verbatim: "unowned-red
+  test_openrouter_provider_support.sh - BL-1708 probe, see evidence".
+  Evidence: `backlog/evidence/BL-1708-coder-20260927.md` goal 5 (coder
+  branch at mint).
+
+notes: |
+  Minted 2026-09-28 by the specifier (claude-fable-5-1 seat) from coder
+  note 002206 and coordinator note 012772, the same pass. The register
+  row naming this owner landed in the same commit. The bisect and the
+  0.6 s timing were run at mint from exported trees, not read from
+  evidence. Added to BL-541 decomposes_into in the same commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Orthogonality: no open ticket touches the test file (grep of paused/ and
+  active/, 2026-09-28); BL-1702 (active) edits swarmforge.sh, which this
+  ticket does not.
+  INVEST: Independent (no unbuilt dependency). Negotiable (the slug is the
+  coder call). Valuable (a 27-day standing red cleared and the register
+  throttle kept low). Estimable (one fixture line). Small (2 scenarios, 1
+  invariant). Testable (a source check and a 0.6 s shell run).
