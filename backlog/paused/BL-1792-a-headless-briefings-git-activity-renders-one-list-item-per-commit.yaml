@@ -21,7 +21,7 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1792-a-headless-briefings-git-activity-renders-one-list-item-per-commit.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM: the fix is in how compose-banked-briefing formats its line-per-entry
   sections (the brief's own constraint), not in markdown-to-html-lib or
