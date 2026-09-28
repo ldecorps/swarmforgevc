@@ -18,26 +18,39 @@
 (def qwen-host-re #"(?i)(token-plan\.[a-z0-9-]+\.maas\.aliyuncs\.com|dashscope\.aliyuncs\.com)")
 (def bai-host-re #"(?i)api\.b\.ai")
 
+;; Hotfix 2026-09-28: every generated .swarmforge/launch/<role>.sh carries an
+;; `if [[ "${SWARMFORGE_USE_<X>:-}" == "1" ... ]]; then ... fi` block naming
+;; each cloud host, whatever the pack. Those hosts only apply when the flag is
+;; set, so matching them made every seat read as Cerebras/Perplexity/b.ai and
+;; a respawn rewired local-Ollama seats to the cloud.
+(def flag-guarded-block-re
+  #"(?ms)^[ \t]*if \[\[ \"\$\{SWARMFORGE_USE_[A-Z_]+:-\}\" == \"1\".*?^[ \t]*fi\b")
+
+(defn active-launch-cli
+  "The launch CLI with flag-guarded provider blocks removed."
+  [launch-cli]
+  (when (string? launch-cli)
+    (str/replace launch-cli flag-guarded-block-re "")))
+
+(defn- launch-cli-matches? [host-re launch-cli]
+  (boolean (some->> (active-launch-cli launch-cli) (re-find host-re))))
+
 (defn launch-cli-implies-perplexity?
   "True when the role's extra CLI / launch body targets Perplexity's OpenAI-compat host."
   [launch-cli]
-  (boolean (and (string? launch-cli)
-                (re-find perplexity-host-re launch-cli))))
+  (launch-cli-matches? perplexity-host-re launch-cli))
 
 (defn launch-cli-implies-cerebras?
   [launch-cli]
-  (boolean (and (string? launch-cli)
-                (re-find cerebras-host-re launch-cli))))
+  (launch-cli-matches? cerebras-host-re launch-cli))
 
 (defn launch-cli-implies-qwen?
   [launch-cli]
-  (boolean (and (string? launch-cli)
-                (re-find qwen-host-re launch-cli))))
+  (launch-cli-matches? qwen-host-re launch-cli))
 
 (defn launch-cli-implies-bai?
   [launch-cli]
-  (boolean (and (string? launch-cli)
-                (re-find bai-host-re launch-cli))))
+  (launch-cli-matches? bai-host-re launch-cli))
 
 (defn openai-key-family
   "Coarse family for an OPENAI_API_KEY value. Never logs the key."

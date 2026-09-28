@@ -136,6 +136,51 @@
   (assert-true "a correctly-authenticated b.ai pane is never a false-positive mismatch"
                (not (provider-compat-lib/compat-mismatch? resolved "bai-secret"))))
 
+;; ── dormant flag-guarded blocks in a generated launch script ────────────────
+;; Every .swarmforge/launch/<role>.sh carries these blocks whatever the pack;
+;; they only fire when the flag is set, so their hosts are not targeting.
+(def dormant-guard-blocks
+  (str "if [[ \"${SWARMFORGE_USE_CEREBRAS:-}\" == \"1\" && -n \"${CEREBRAS_API_KEY:-}\" ]]; then\n"
+       "  export OPENAI_API_KEY=\"$CEREBRAS_API_KEY\"\n"
+       "  export OPENAI_API_BASE=\"${OPENAI_API_BASE:-https://api.cerebras.ai/v1}\"\n"
+       "  export OPENAI_BASE_URL=\"${OPENAI_BASE_URL:-https://api.cerebras.ai/v1}\"\n"
+       "fi\n"
+       "if [[ \"${SWARMFORGE_USE_PERPLEXITY:-}\" == \"1\" && -n \"${PERPLEXITY_API_KEY:-}\" ]]; then\n"
+       "  export OPENAI_API_KEY=\"$PERPLEXITY_API_KEY\"\n"
+       "  export OPENAI_API_BASE=\"${OPENAI_API_BASE:-https://api.perplexity.ai}\"\n"
+       "  export OPENAI_BASE_URL=\"${OPENAI_BASE_URL:-https://api.perplexity.ai}\"\n"
+       "fi\n"
+       "qwen_guard_map_if_flagged\n"
+       "if [[ \"${SWARMFORGE_USE_BAI:-}\" == \"1\" && -n \"${B_AI_API_KEY:-}\" ]]; then\n"
+       "  export OPENAI_API_KEY=\"$B_AI_API_KEY\"\n"
+       "  export OPENAI_API_BASE=https://api.b.ai/v1\n"
+       "  export OPENAI_BASE_URL=https://api.b.ai/v1\n"
+       "fi\n"))
+
+(def ollama-launch-script
+  (str dormant-guard-blocks
+       "aider --model openai/qwen2.5-coder:latest --openai-api-base http://127.0.0.1:11434/v1\n"))
+
+(assert-true "dormant blocks alone do not imply perplexity"
+             (not (provider-compat-lib/launch-cli-implies-perplexity? ollama-launch-script)))
+(assert-true "dormant blocks alone do not imply cerebras"
+             (not (provider-compat-lib/launch-cli-implies-cerebras? ollama-launch-script)))
+(assert-true "dormant blocks alone do not imply b.ai"
+             (not (provider-compat-lib/launch-cli-implies-bai? ollama-launch-script)))
+(assert-true "a real perplexity window line still implies perplexity beside dormant blocks"
+             (provider-compat-lib/launch-cli-implies-perplexity?
+              (str dormant-guard-blocks
+                   "aider --model openai/sonar-pro --openai-api-base https://api.perplexity.ai\n")))
+(assert= "respawn of an ollama seat with cloud keys in env stays passthrough"
+         :openai
+         (:provider (provider-compat-lib/resolve-openai-compat
+                     {:cerebras-api-key "csk-secret"
+                      :perplexity-api-key "pplx-secret"
+                      :launch-cli ollama-launch-script})))
+(assert-true "the explicit flag still forces a remap past stripped blocks"
+             (provider-compat-lib/must-remap-to-cerebras?
+              {:use-cerebras "1" :launch-cli ollama-launch-script}))
+
 ;; ── auth error text ─────────────────────────────────────────────────────────
 (assert-true "AuthenticationError classified"
              (provider-compat-lib/provider-auth-error-text?
@@ -149,4 +194,4 @@
     (doseq [f @failures] (println f)))
   (System/exit 1))
 
-(println (str "provider_compat_lib_test_runner: " 31 " assertions ok"))
+(println (str "provider_compat_lib_test_runner: " 37 " assertions ok"))
