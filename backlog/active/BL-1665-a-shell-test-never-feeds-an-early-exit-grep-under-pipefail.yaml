@@ -131,3 +131,5 @@ notes: |
   16.7 s. A shell register row naming this ticket was added in the same
   commit. human_approval is unchanged (approved on 2026-09-20); the
   re-class changes ordering only (Article 3.2.4).
+
+assigned_to: coder
