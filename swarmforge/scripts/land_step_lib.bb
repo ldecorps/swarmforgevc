@@ -116,9 +116,40 @@
   (let [res (git! root "rev-parse" "-q" "--verify" "origin/main^{commit}")]
     (when (zero? (:exit res)) (str/trim (:out res)))))
 
+;; BL-1806: when land-plan (or entangled-siblings) has preloaded the
+;; candidate range, commit-subject / merge-commit? answer from this table
+;; instead of spawning once per commit. nil = cold path (standalone
+;; callers, commits outside the preloaded range).
+(def ^:dynamic *commit-meta* nil)
+
+(defn- range-commit-meta
+  "One batched `git log` over `base..commit` (and optionally excluding
+   `exclude-also`): {sha {:subject s :parent-count n}}. Same commit set
+   `ancestry-commits` walks - never `--first-parent`. BL-1806: the
+   land-plan cost floor when re-point has already slipped and the tip is
+   fat with merge history."
+  ([root base commit] (range-commit-meta root base commit nil))
+  ([root base commit exclude-also]
+   (let [args (cond-> ["log" "--format=%H%x00%P%x00%s" commit (str "^" base)]
+                (and exclude-also (not= exclude-also base)) (conj (str "^" exclude-also)))
+         res (apply git! root args)]
+     (when (zero? (:exit res))
+       (into {}
+             (keep (fn [line]
+                     (when-not (str/blank? line)
+                       (let [[sha parents subject] (str/split line #"\x00" 3)
+                             parent-count (if (or (nil? parents) (str/blank? parents))
+                                            0
+                                            (count (str/split parents #"\s+")))]
+                         [sha {:subject (or subject "")
+                               :parent-count parent-count}])))
+                   (str/split-lines (:out res))))))))
+
 (defn- commit-subject [root commit]
-  (let [res (git! root "log" "-1" "--format=%s" commit)]
-    (when (zero? (:exit res)) (str/trim (:out res)))))
+  (if-let [m (get *commit-meta* commit)]
+    (:subject m)
+    (let [res (git! root "log" "-1" "--format=%s" commit)]
+      (when (zero? (:exit res)) (str/trim (:out res))))))
 
 (defn commit-ticket-id
   "The ticket id this commit's own subject names (pipeline-stage-lib's
@@ -129,7 +160,6 @@
   [root commit]
   (when-let [subject (commit-subject root commit)]
     (pipeline-stage-lib/extract-ticket-id subject)))
-
 ;; ── BL-1544: a subject that leads with a ticket id vs. one that merely
 ;; mentions one first ──────────────────────────────────────────────────────
 ;;
@@ -312,10 +342,11 @@
           :else (recur rest-lines cur in-hunk? acc))))))
 
 (defn- merge-commit? [root commit]
-  (let [res (git! root "rev-list" "--no-walk" "--parents" "-1" commit)]
-    (and (zero? (:exit res))
-         (> (count (str/split (str/trim (:out res)) #"\s+")) 2))))
-
+  (if-let [m (get *commit-meta* commit)]
+    (> (:parent-count m) 1)
+    (let [res (git! root "rev-list" "--no-walk" "--parents" "-1" commit)]
+      (and (zero? (:exit res))
+           (> (count (str/split (str/trim (:out res)) #"\s+")) 2)))))
 (defn- commit-line-changes
   "{path {:added #{} :removed #{}}} for one commit's own first-parent diff -
    the SAME view `own-commit-changed-paths :delivered` attributes paths by, so
@@ -619,41 +650,49 @@
            candidates (ancestry-commits root walk-base commit origin-main)]
        (if (nil? candidates)
          {:entangled nil :warning (str "land-step: could not read the commit range " walk-base ".." commit)}
-         (let [siblings (->> candidates
-                             (keep #(commit-ticket-id root %))
-                             (remove #(= % task-ticket-id))
-                             distinct
-                             ;; BL-1650 item 0: a sibling every one of whose
-                             ;; own candidate commits is listed in its OWN
-                             ;; ticket's abandoned_commits is not entangled
-                             ;; at all - never printed ENTANGLED_SIBLING,
-                             ;; never scored, exactly as if it had no
-                             ;; candidate commit here.
-                             (remove (fn [sid]
-                                       (let [own (filter #(= sid (commit-ticket-id root %)) candidates)
-                                             abandoned (ticket-abandoned-commits root sid origin-main)]
-                                         (and (seq own)
-                                              (every? #(abandoned-commit-sha? % abandoned) own)))))
-                             set)
-               ;; BL-1389: the verdicts carry the path each rests on, so the
-               ;; report can say WHY a sibling reads landed instead of leaving
-               ;; a human to diff the tip for it.
-               verdicts (landed-sibling-verdicts root commit origin-main candidates siblings
-                                                 nil lines-fn extra-paths-fn)
-               landed (->> verdicts (keep (fn [[s v]] (when (:landed? v) s))) set)]
-           ;; :entangled stays the FULL set - it is what land-plan decides on,
-           ;; and BL-1272 invariant 2 keeps that decision unchanged. :landed and
-           ;; :unlanded are the reporting split: a sibling's original commit is
-           ;; still an ancestor after its replay lands, and may carry content
-           ;; the replay deliberately excluded, so landing as cited would
-           ;; resurrect exactly what the replay severed.
-           {:entangled siblings
-            :landed landed
-            :unlanded (into #{} (remove landed siblings))
-            ;; BL-1389 invariant 3: {sibling deciding-path} for the landed ones.
-            :landed-paths (into {} (for [[s v] verdicts :when (:landed? v)]
-                                     [s (:deciding-path v)]))
-            :warning nil}))))))
+         ;; BL-1806: standalone callers get the same one-shot metadata
+         ;; preload land-plan already binds; nested under land-plan the
+         ;; outer *commit-meta* is reused.
+         (let [meta (or *commit-meta*
+                        (range-commit-meta root walk-base commit origin-main))
+               run (fn []
+                     (let [siblings (->> candidates
+                                         (keep #(commit-ticket-id root %))
+                                         (remove #(= % task-ticket-id))
+                                         distinct
+                                         ;; BL-1650 item 0: a sibling every one of whose
+                                         ;; own candidate commits is listed in its OWN
+                                         ;; ticket's abandoned_commits is not entangled
+                                         ;; at all - never printed ENTANGLED_SIBLING,
+                                         ;; never scored, exactly as if it had no
+                                         ;; candidate commit here.
+                                         (remove (fn [sid]
+                                                   (let [own (filter #(= sid (commit-ticket-id root %)) candidates)
+                                                         abandoned (ticket-abandoned-commits root sid origin-main)]
+                                                     (and (seq own)
+                                                          (every? #(abandoned-commit-sha? % abandoned) own)))))
+                                         set)
+                           ;; BL-1389: the verdicts carry the path each rests on, so the
+                           ;; report can say WHY a sibling reads landed instead of leaving
+                           ;; a human to diff the tip for it.
+                           verdicts (landed-sibling-verdicts root commit origin-main candidates siblings
+                                                             nil lines-fn extra-paths-fn)
+                           landed (->> verdicts (keep (fn [[s v]] (when (:landed? v) s))) set)]
+                       ;; :entangled stays the FULL set - it is what land-plan decides on,
+                       ;; and BL-1272 invariant 2 keeps that decision unchanged. :landed and
+                       ;; :unlanded are the reporting split: a sibling's original commit is
+                       ;; still an ancestor after its replay lands, and may carry content
+                       ;; the replay deliberately excluded, so landing as cited would
+                       ;; resurrect exactly what the replay severed.
+                       {:entangled siblings
+                        :landed landed
+                        :unlanded (into #{} (remove landed siblings))
+                        ;; BL-1389 invariant 3: {sibling deciding-path} for the landed ones.
+                        :landed-paths (into {} (for [[s v] verdicts :when (:landed? v)]
+                                                 [s (:deciding-path v)]))
+                        :warning nil}))]
+           (binding [*commit-meta* (or meta {})]
+             (run))))))))
 
 
 ;; ── BL-1375: is an unlanded sibling APPROVED, or is it withheld? ─────────
@@ -2965,7 +3004,15 @@
    keeps that range short (163 commits on 2026-09-07) by construction, so
    the wide walk this restores is cheap again. `:base` therefore never
    decides a verdict here; it is accepted only so an existing call site
-   need not change shape."
+   need not change shape.
+
+   BL-1806: that cost BOUND (re-point) is not a cost FLOOR. When the tip
+   re-fattens through merge history (live 2026-09-29: 4139 full vs 11
+   first-parent), a land-plan that still spawns once per candidate for
+   subject/parents spends tens of minutes before printing a verdict. This
+   function preloads the candidate range's metadata once (`*commit-meta*`)
+   so `commit-subject` / `merge-commit?` answer from memory; the candidate
+   SET stays the full ancestry (BL-1461 / BL-1308 stand)."
   [{:keys [root commit task-ticket-id] :as opts}]
   (if-not task-ticket-id
     {:action :escalate :reason "land-step: task name names no ticket id"}
@@ -2985,7 +3032,12 @@
           ;; ({} from sibling-own-line-changes, never nil) instead of their
           ;; real one.
           candidates (when origin-main (ancestry-commits root origin-main commit))
-          ;; One read of each sibling's own diffs, shared by the landed/unlanded
+          ;; BL-1806: one batched metadata pass over the candidate range.
+          meta (or *commit-meta*
+                   (when (and origin-main candidates)
+                     (range-commit-meta root origin-main commit)))]
+      (binding [*commit-meta* (or meta {})]
+        (let [;; One read of each sibling's own diffs, shared by the landed/unlanded
           ;; split and by the per-path exclusion below. Each is every commit
           ;; that sibling authored in range, so asking twice doubles the
           ;; slowest part of the land step.
@@ -3158,7 +3210,7 @@
                            :commit (:commit replay-result) :branch (:branch replay-result)
                            :restored-registry-rows (:restored-registry-rows replay-result)
                            :retired-registry-rows (:retired-registry-rows replay-result)
-                           :stray-landed (:stray-landed replay-result)})))))))))))))
+                           :stray-landed (:stray-landed replay-result)})))))))))))))))
 
 ;; ── BL-1432 option 1: re-point the QA branch after a successful land ─────
 ;; QA's branch keeps every review merge and every merge-of-main as its own
