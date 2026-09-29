@@ -2,10 +2,11 @@ id: BL-1665
 title: "125 of the 408 shell tests under swarmforge/scripts/test set pipefail and pipe multi-line output into grep -q (732 sites), so any assertion whose needle sits on an early line fails under load when the producer dies of SIGPIPE - test_merge_deletion_guard.sh case 02 on 2026-09-20, BL-1660's race in the test lane: every such pipe consumes its whole input, and a guard in the commit chain refuses a new one"
 milestone: M8
 type: defect
-severity: medium
-# medium: a real, contained flake source across the shell lane (no
-# deterministic red on main; one sighting with a recorded status, in a
-# file BL-1664 owns); not a safety signal, not throttling the register.
+severity: high
+# high since 2026-09-29: it owns a registered standing red
+# (test_ready_for_next_rotate_home.sh, hardener note 001586), and a ticket
+# that owns a red is high (2026-09-05 register amendment). Was medium: a
+# contained flake source with one sighting in a file BL-1664 owns.
 status: todo
 epic: code-quality-gates
 priority: 7
@@ -120,3 +121,13 @@ notes: |
   one mechanical codemod over 124 files, verified by one shell-lane run;
   the guard makes the class unrepeatable. IR-DRY at mint: scenarios 01-03
   share the staged-test Given by design.
+  2026-09-29: re-classed medium -> high by the specifier. The hardener's
+  note 001586 (BL-1805 pass, evidence 44d87cf19f) reported
+  test_ready_for_next_rotate_home.sh failing intermittently on non-QA
+  scenarios with varying assertion numbers at host load 13-32, clean 4 of
+  4 at lower load with and without BL-1805's change. That file is this
+  ticket's second-heaviest site (37, census above), and the shape is the
+  one this ticket fixes. One run at mint of the row (load 19): passed,
+  16.7 s. A shell register row naming this ticket was added in the same
+  commit. human_approval is unchanged (approved on 2026-09-20); the
+  re-class changes ordering only (Article 3.2.4).
