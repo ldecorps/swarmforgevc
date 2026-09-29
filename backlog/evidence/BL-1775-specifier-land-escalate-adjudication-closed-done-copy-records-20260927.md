@@ -231,3 +231,16 @@ commit. Entangled siblings named by the step: BL-1671, BL-1711, BL-1715,
 BL-1717, BL-1767, BL-1772. Condition (i) retires with this land.
 
 By QA.
+
+## Instance - BL-1786's land (QA, 2026-09-29)
+
+Same escalate as BL-1785's land, on the same stray fa79e88fa7, even with
+BL-1785 now on origin/main (the stray's content is already there; nothing
+to drain). BL-1786 hand-built tip-pure off origin/main: its 8 own paths
+byte-identical to approved tip 794864c1c6, its standing-red row retired,
+`abandoned_commits: [794864c1c6]` and this instance inside the land
+commit. Siblings named: BL-1671, BL-1711, BL-1715, BL-1717, BL-1767,
+BL-1772. New: BL-1785 did not clear this shape - an already-landed stray
+still fails the cherry-pick.
+
+By QA.
