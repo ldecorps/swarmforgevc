@@ -240,4 +240,14 @@ notes: |
   branch tip (18326f3b13, review pass 2026-09-27 07:59Z) with no
   git_handoff to QA on file at the time of this amendment.
 
+  2026-09-29 19:34Z coordinator: dropped-parcel nudge fired. Not a routing
+  drop - QA's latest bounce tip (9ed0781761, "record bounce_history for the
+  QA send-back", 3 defects: D1/D2 coder LOCAL_CODER_PROBE_EVIDENCE_DIR
+  fixture isolation, D3 documenter runbook rollback gap, bounced to coder
+  per Article 4.4 earliest-role) is already a merged ancestor of coder's
+  worktree HEAD (fd231d1470, verified via merge-base --is-ancestor). Coder
+  inbox has no live parcel because there is nothing new to merge; a
+  git_handoff here would no-op. Per Article 1.9 not resending - the fix is
+  domain work owed by coder on its next turn.
+
 assigned_to: coder
