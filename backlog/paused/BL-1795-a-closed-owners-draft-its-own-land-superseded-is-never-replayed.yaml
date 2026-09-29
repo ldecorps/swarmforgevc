@@ -174,3 +174,18 @@ notes: |
   an existing reader, BL-1785's fixtures as the template). Small (3
   scenarios, 3 cases, 2 invariants). Testable (fixture repos through the
   real CLI, plus the read-only incident probe).
+  2026-09-29 (second sighting, QA note 003366): closed BL-1698's pre-land
+  documenter draft 8238de1a89 escalated BL-1790's land, and QA hand-built
+  it as 14d98aef4c. QA's commit body calls it "BL-1794 class", but the
+  shape is this ticket's: 8238de1a89 is an ancestor of dd5737a4d1, the one
+  entry in BL-1698's abandoned_commits, and BL-1698 landed as c59085c631.
+  Measured by the specifier on origin/main 0364ad02a1: `git merge-tree
+  --write-tree --merge-base 8238de1a89^ origin/main 8238de1a89` exits 1,
+  conflicting on all three of its paths (docs/diagrams/handoff-flow.mmd,
+  docs/how-to/BL-1697-local-parcel-driver.md, docs/index.md), which later
+  tickets (BL-1715, BL-1778) edited. The same stray was left alone under
+  condition (g) at BL-1806's land an hour earlier (023f1d1f0d, QA note
+  003358). It stays armed for every land until this ticket lands. It is
+  a second, independent incident probe for the evidence beside BL-1779's
+  368d1569e5.
+
