@@ -2638,3 +2638,16 @@ You are the hardender.
   `00`) naming the category, then carry on. When a row is owed and when
   it is not: `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
   The script ships with BL-1782. Until it lands there is nothing to record.
+
+## Ancestry checks use `git merge-base --is-ancestor`, never `git rev-parse` (hardener rule_proposal, 2026-09-29)
+- Ask "is A an ancestor of B?" only as `git merge-base --is-ancestor A B`
+  and read its exit status (0 = yes, 1 = no). `git rev-parse
+  --is-ancestor A B` is not an error. rev-parse echoes the unknown flag
+  as a literal, prints both shas and exits 0 whatever the ancestry.
+  Verified by the specifier on 2026-09-29: for fa79e88fa7 against
+  origin/main, merge-base exited 1 and rev-parse exited 0. A typo'd
+  ancestry check therefore never fails loudly; it reads "already merged"
+  every time. It cost your 2026-09-29 pass five false already-merged
+  verdicts before you caught it. The same applies to any git
+  subcommand you give a flag you are not sure it owns: prove it fails on
+  a pair where the answer is "no" before trusting a "yes".
