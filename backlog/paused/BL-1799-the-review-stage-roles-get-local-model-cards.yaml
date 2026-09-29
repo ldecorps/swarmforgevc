@@ -17,7 +17,7 @@ acceptance: specs/features/BL-1799-the-review-stage-roles-get-local-model-cards.
 required_wiring:
   - 'specs/pipeline/steps/bl1799ReviewStageLocalModelCardsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file needs a tap. No choice is posed. FIRM - four cards
   only (cleaner, architect, hardender, documenter), each under BL-1798's
