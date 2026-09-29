@@ -1,0 +1,121 @@
+id: BL-1808
+title: "Two subprocess-heavy property files time out at the property lane's 20 s default in a full-lane run and declare no timeout of their own - bl1445StaffingGateWiringTestDecidesOverrideInvariants invariant 1 (8 real wiring-test runs, 8.1 s alone) and bl1715DriverSeatGiveUp's revert-attempt-commits! property (60 git-fixture draws, 17.8 s alone) (QA, BL-1806's pass, evidence 1db06f92) - every test in both files fits the lane under contention with its assertions, draw counts and reach floors unchanged"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); an unowned red blocks QA approval (Article 4.2).
+status: todo
+epic: unit-suite-speed
+priority: 7
+direction: swarm-reported
+depends_on: []
+# BL-1596 (paused) sweeps bare per-test timeout literals; neither file
+# carries one (grep at mint found none), so it touches neither file and is
+# not a dependency. BL-1619 records lane duration; no file overlap.
+mutation_cost: low
+# low: two test files; no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file chore with no scenarios of its own (BL-1251): the pointer names
+# the feature BL-1715 itself declared, which must still resolve (4 of 4 ok on
+# main at mint). It is not a claim of ownership over BL-1715's contract.
+acceptance: specs/features/BL-1715-a-driver-seat-that-fails-a-parcel-hands-it-to-its-stages-claude-seat.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: every assertion in
+  both files stays; no numRuns reduced, no reach floor lowered, no retry,
+  no seed pinned. FIRM: bl1445 invariant 1 still runs the REAL
+  test_pack_staffing_gate_wiring.sh as a child process for each of its 8
+  pane combinations. FIRM: any per-test budget goes through the lane
+  helper (propertyLaneTimeoutMs) or SUBPROCESS_HEAVY_TIMEOUT_MS, never a
+  bare numeric literal (BL-1596's class).
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA note 003353, evidence 1db06f92 (BL-1806's review pass, ONE full
+  `npm run test:properties` run on 0e31ce3adf, exit 1):
+  - `bl1445StaffingGateWiringTestDecidesOverrideInvariants.property.test.js`
+    > "BL-1445/BL-654 invariant 1: the wiring test decides
+    PACK_STAFFING_SKIP_GATE and MODEL_STEWARD_STATE_DIR itself, never
+    inheriting either from the pane": `Error: Test timed out in 20000ms.`
+  - `bl1715DriverSeatGiveUp.property.test.js` > "invariants 1 and 2:
+    revert-attempt-commits! reverts only the attempt, keeping the
+    post-merge tree, over generated claim shapes and attempt chains":
+    `Error: Test timed out in 20000ms.`
+  Neither file was touched by BL-1806. Only closed tickets name either
+  file (BL-1445, BL-1587, BL-1715, BL-1778), so both were unowned.
+
+  ## Measured at mint (2026-09-29, main 6468594733, load 13-14)
+
+  Both files together, alone (`npx vitest run --config
+  vitest.properties.config.mjs <the two files>`): green, 36.6 s, 5 forks.
+  Per test:
+  - bl1445 invariant 1: 8069 ms. It runs the real wiring test 8 times in
+    sequence (4 pane gate values x 2 state-dir shapes, an exhaustive
+    sweep, not sampling). One run of the wiring test alone: 0.86 s.
+    Invariant 2 (static text check): 3 ms.
+  - bl1715 "invariants 1 and 2: revert-attempt-commits!": 17758 ms, 89%
+    of the ceiling with only two files in the run. `numRuns: 60`, and
+    every draw builds a fresh git fixture (init, commits, merges, up to 4
+    attempt commits) and runs one `bb` process.
+  - bl1715 "invariant 1b: given-up-task-names-in is seat-specific":
+    9719 ms (30 draws x 3 `bb` processes). Not red yet; it is half the
+    ceiling alone and the same shape, so it is in scope.
+  - bl1715 "invariant 1b: worked-task-names-in never attributes":
+    4945 ms; "invariant 1a": 3139 ms; the rest under 300 ms.
+  Neither file declares a per-test timeout, so every test runs under
+  `vitest.properties.config.mjs`'s `testTimeout: 20000`. In the full lane
+  (5 forks contending, load ~14) 2-3x the solo time is enough to kill
+  them. Same class as BL-1745 (bl1670/bl1108/bl1565), BL-1588, BL-1592,
+  BL-1606.
+
+  ## What is wanted
+  - Every test in both files completes inside the full property lane
+    under contention. How (direction, not mandate): either cut the
+    process count (the BL-1663/BL-1564 shape: decide many draws in one
+    `bb` process through the lib, keeping one real per-draw wiring case),
+    or declare a per-test budget through `propertyLaneTimeoutMs(<base>)`,
+    with the base taken from a quiet-host measurement plus stated
+    headroom. For bl1445 invariant 1 only the budget route (or running
+    the 8 real child processes concurrently) keeps the real script per
+    combination. Say in the evidence which was chosen for each test and
+    why, with the before/after durations.
+  - Assertions, generators, `numRuns`, the exhaustive 4x2 sweep and
+    `assertReachFloor` calls stay as they are.
+
+  ## Scope
+  - `extension/test/bl1445StaffingGateWiringTestDecidesOverrideInvariants.property.test.js`,
+    `extension/test/bl1715DriverSeatGiveUp.property.test.js` (and a
+    helper beside them if one is needed), plus evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1445StaffingGateWiringTestDecidesOverrideInvariants.property.test.js test/bl1715DriverSeatGiveUp.property.test.js --reporter=verbose`:
+     green; record each test's duration and the 1-minute load. At mint
+     (load ~14): 36.6 s total, slowest 17758 ms.
+  2. QA's ordinary full property run on this parcel: neither file appears
+     among the failures.
+  3. `node specs/pipeline/cli.js specs/features/BL-1715-a-driver-seat-that-fails-a-parcel-hands-it-to-its-stages-claude-seat.feature`:
+     4 of 4 ok (as measured on main at mint, 12.3 s).
+     `node specs/pipeline/cli.js specs/features/BL-1445-the-staffing-gate-wiring-test-decides-the-override-itself.feature`:
+     4 of 4 ok (as measured on main at mint, 9.1 s).
+  4. `git diff main...HEAD --name-only` names only the two test files, a
+     helper if any, and evidence.
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's two property
+     rows (bl1445, bl1715).
+
+notes: |
+  Minted 2026-09-29 by the specifier from QA's unowned-red note 003353
+  (BL-1806's pass, evidence 1db06f92). Register rows for both files added
+  in the mint commit; both files and both features measured at mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). BL-1806 was bounced to the
+  coder on D1/D2, not held on this red; a note naming this owner was sent
+  to QA so BL-1806's next pass reads the reds as owned.
