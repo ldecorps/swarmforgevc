@@ -789,22 +789,57 @@
    (and (seq paths)
         (every? (fn [p] (some #(str/starts-with? p %) stray-pure-evidence-prefixes)) paths))))
 
+;; BL-1785: widens closed-owner-pure-evidence-stray?'s own CALLER, never
+;; pure-evidence-or-docs-paths? itself (its docstring states BL-1650's
+;; invariant 1 - an evidence-only question keeps its own answer). QA's
+;; post-land bookkeeping (`abandoned_commits:`, `bounce_history:`, a land
+;; comment) lands on a closed sibling's OWN ticket file - its
+;; backlog/active/ or backlog/paused/ copy (later moved to backlog/done/
+;; by the close, carried onto that done copy by git's own rename detection
+;; when this stray is cherry-picked ahead of a replay branch built off
+;; origin/main), or straight onto the done copy already. Any OTHER ticket's
+;; file, a backlog/*.tsv or backlog/*.yaml register, or any code/specs
+;; path still fails the whole stray - reuses `ticket-file-name?`'s own
+;; exact <id>[-<slug>].yaml match so a wider or narrower id never answers
+;; for `sibling`.
+(defn- owners-own-ticket-file-path?
+  [sibling path]
+  (let [segments (str/split path #"/")]
+    (and (= "backlog" (first segments))
+         (contains? #{"active" "paused" "done"} (second segments))
+         (ticket-file-name? sibling (last segments)))))
+
+(defn- evidence-docs-or-owners-ticket-file-paths?
+  "Pure over a path list, BL-1785's widening of pure-evidence-or-docs-paths?
+   for one caller: every one of `paths` is either pure evidence/docs
+   (`pure-evidence-or-docs-paths?`'s own allowlist) or `sibling`'s own
+   ticket file wherever it sits. At least one path required, same as
+   pure-evidence-or-docs-paths?."
+  [sibling paths]
+  (boolean
+   (and (seq paths)
+        (every? (fn [p]
+                  (or (some #(str/starts-with? p %) stray-pure-evidence-prefixes)
+                      (owners-own-ticket-file-path? sibling p)))
+                paths))))
+
 (defn closed-owner-pure-evidence-stray?
-  "BL-1650 item 1. `{:sha commit :paths [...]}` when `commit` is a stray
-   this land step may cherry-pick and land itself without escalation: its
-   own subject names a sibling ticket (never `task-ticket-id` itself) that
-   is CLOSED on origin/main (`closed-on-main?`), and every path its own
-   :delivered diff touches is pure evidence/documentation
-   (`pure-evidence-or-docs-paths?`). nil otherwise, or when the sibling's
-   closed state or the commit's own diff could not be read - fail-closed,
-   the same posture `closed-on-main?` and BL-1546's refusal already take
-   for every case this one narrows."
+  "BL-1650 item 1, widened by BL-1785 item 1. `{:sha commit :paths [...]}`
+   when `commit` is a stray this land step may cherry-pick and land itself
+   without escalation: its own subject names a sibling ticket (never
+   `task-ticket-id` itself) that is CLOSED on origin/main
+   (`closed-on-main?`), and every path its own :delivered diff touches is
+   either pure evidence/documentation or the sibling's own ticket file
+   (`evidence-docs-or-owners-ticket-file-paths?`). nil otherwise, or when
+   the sibling's closed state or the commit's own diff could not be read -
+   fail-closed, the same posture `closed-on-main?` and BL-1546's refusal
+   already take for every case this one narrows."
   [root origin-main commit task-ticket-id]
   (when-let [sibling (commit-ticket-id root commit)]
     (when-not (= sibling task-ticket-id)
       (when (true? (closed-on-main? root origin-main sibling))
         (when-let [paths (task-scope-gate-lib/own-commit-changed-paths root commit :delivered)]
-          (when (pure-evidence-or-docs-paths? paths)
+          (when (evidence-docs-or-owners-ticket-file-paths? sibling paths)
             {:sha commit :sibling sibling :paths paths}))))))
 
 (defn stray-evidence-commits

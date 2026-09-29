@@ -215,3 +215,19 @@ BL-1771's tip-pure commit sits on top with its 11 own paths, and
 done-copy path is left out.
 
 By QA.
+
+## Instance - BL-1785's own land (QA, 2026-09-29)
+
+`land_main_publish.sh --land BL-1785 986dcdb1fd` (QA tip synced to
+origin/main afbef6d51e) printed `LAND_ESCALATE`: it could not cherry-pick
+stray fa79e88fa7 ("BL-1711: QA land record", closed BL-1711's done copy
+plus evidence). `git diff --name-only origin/main 986dcdb1fd --
+backlog/done/` is empty, so there was nothing to drain; the stray's
+content is already on main. BL-1785's commit is hand-built tip-pure off
+origin/main: d406393a35, 72a5771187, 5e8d868843 cherry-picked plus its six
+evidence files, byte-identical per path to the approved tip.
+`abandoned_commits: [986dcdb1fd]` and this instance ride inside the land
+commit. Entangled siblings named by the step: BL-1671, BL-1711, BL-1715,
+BL-1717, BL-1767, BL-1772. Condition (i) retires with this land.
+
+By QA.

@@ -3685,6 +3685,92 @@ RESOLVED BY THIS TICKET
                  (land-step-lib/closed-owner-pure-evidence-stray?
                   root still-open-origin-main stray "BL-9001"))))))
 
+;; ── BL-1785 item 1: evidence-docs-or-owners-ticket-file-paths? ───────────
+
+(assert-true "evidence-docs-or-owners-ticket-file-paths?: the sibling's own backlog/active/ file"
+             (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+              "BL-9787" ["backlog/active/BL-9787-fixture.yaml"]))
+(assert-true "evidence-docs-or-owners-ticket-file-paths?: the sibling's own backlog/done/ copy, nested by milestone"
+             (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+              "BL-9787" ["backlog/done/M8/BL-9787-fixture.yaml"]))
+(assert-true "evidence-docs-or-owners-ticket-file-paths?: the sibling's own backlog/paused/ copy"
+             (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+              "BL-9787" ["backlog/paused/BL-9787-fixture.yaml"]))
+(assert-true "evidence-docs-or-owners-ticket-file-paths?: pure evidence still qualifies, unchanged"
+             (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+              "BL-9787" ["backlog/evidence/BL-9787-x-20260919.md"]))
+(assert-true "evidence-docs-or-owners-ticket-file-paths?: the owner's file and pure evidence together"
+             (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+              "BL-9787" ["backlog/active/BL-9787-fixture.yaml" "backlog/evidence/BL-9787-x.md"]))
+(assert-false "evidence-docs-or-owners-ticket-file-paths?: ANOTHER ticket's file never qualifies"
+              (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+               "BL-9787" ["backlog/active/BL-9786-another-ticket.yaml"]))
+(assert-false "evidence-docs-or-owners-ticket-file-paths?: BL-90020's file never answers for BL-9002 (exact-match reuse of ticket-file-name?)"
+              (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+               "BL-9002" ["backlog/active/BL-90020-x.yaml"]))
+(assert-false "evidence-docs-or-owners-ticket-file-paths?: the owner's file plus a code path outside the allowlist fails the whole set"
+              (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+               "BL-9787" ["backlog/active/BL-9787-fixture.yaml" "swarmforge/scripts/x.bb"]))
+(assert-false "evidence-docs-or-owners-ticket-file-paths?: a backlog register (tsv) is never the owner's own ticket file"
+              (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+               "BL-9787" ["backlog/standing-reds.tsv"]))
+(assert-false "evidence-docs-or-owners-ticket-file-paths?: empty is never a reason to land anything"
+              (land-step-lib/evidence-docs-or-owners-ticket-file-paths? "BL-9787" []))
+;; A held sibling's file is NOT one of the three locations the ticket's own
+;; FIRM names (backlog/active/, backlog/paused/, backlog/done/) - a sibling
+;; sitting in backlog/hold/ is under a deliberate human hold (Article 3.1:
+;; "Never auto-promote from here"), so a stray editing it must still
+;; escalate, never self-land. Hand-mutating the allowlist to also accept
+;; "hold" left every other test green (nothing else names a hold path), so
+;; this is the one case that actually discriminates that widening.
+(assert-false "evidence-docs-or-owners-ticket-file-paths?: a sibling's file under backlog/hold/ is never treated as its own ticket file (human-held, not one of the three named locations)"
+              (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+               "BL-9787" ["backlog/hold/BL-9787-fixture.yaml"]))
+;; The "backlog" root segment matters, not just the "active"/"paused"/
+;; "done" middle segment plus a matching basename - a path shaped like
+;; <anything>/active/<owner file> outside backlog/ must never qualify.
+(assert-false "evidence-docs-or-owners-ticket-file-paths?: a same-shaped path OUTSIDE backlog/ never qualifies, even with a matching basename"
+              (land-step-lib/evidence-docs-or-owners-ticket-file-paths?
+               "BL-9787" ["swarmforge/active/BL-9787-fixture.yaml"]))
+
+;; ── BL-1785 item 1: closed-owner-pure-evidence-stray?, widened ──────────
+
+(with-fixture [root]
+  ;; The sibling's OWN done copy: a stray whose subject leads with the
+  ;; sibling's id and whose only path is the sibling's own already-closed
+  ;; ticket file (edited straight on the done copy, the second shape
+  ;; BL-1785 widens for - QA's post-land record landing directly there).
+  (mark-origin-main-here! root)
+  (commit! root "backlog/done/BL-9787-x.yaml" "id: BL-9787\nstatus: done\n" "BL-9787: closed")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role")
+    (commit! root "backlog/done/BL-9787-x.yaml" "id: BL-9787\nstatus: done\nabandoned_commits: [abcdef1234]\n"
+             "BL-9787: record abandoned_commits for the tip-pure land")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))
+          found (land-step-lib/closed-owner-pure-evidence-stray? root origin-main stray "BL-9001")]
+      (assert-true "closed-owner-pure-evidence-stray? (BL-1785): a closed sibling's own record edit on its done copy is a stray"
+                   (some? found))
+      (assert= "closed-owner-pure-evidence-stray? (BL-1785): names the stray's own sha, sibling and paths"
+               {:sha stray :sibling "BL-9787" :paths ["backlog/done/BL-9787-x.yaml"]}
+               found))))
+
+(with-fixture [root]
+  ;; The same shape, but the record edit ALSO touches code outside the
+  ;; allowlist in the same commit - BL-1546's refusal must still stand,
+  ;; even though the ticket-file half of the edit would qualify alone.
+  (mark-origin-main-here! root)
+  (commit! root "backlog/done/BL-9787-x.yaml" "id: BL-9787\nstatus: done\n" "BL-9787: closed")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role")
+    (spit (str (fs/path root "backlog" "done" "BL-9787-x.yaml")) "id: BL-9787\nstatus: done\nabandoned_commits: [abcdef1234]\n")
+    (commit! root "swarmforge/scripts/x.bb" "(ns x)\n" "BL-9787: record plus a wider edit riding the same commit")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (assert= "closed-owner-pure-evidence-stray? (BL-1785): the owner's own record plus a wider code edit is never self-landable"
+               nil
+               (land-step-lib/closed-owner-pure-evidence-stray? root origin-main stray "BL-9001")))))
+
 ;; ── BL-1650 items 1-2: land-plan end to end - a closed-owner pure-evidence
 ;; stray lands on the replay branch itself, and is reported LANDED_SIBLING,
 ;; never ENTANGLED_SIBLING ────────────────────────────────────────────────
@@ -3708,10 +3794,17 @@ RESOLVED BY THIS TICKET
         (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
           (assert= "BL-1650 items 1-2: a closed-owner pure-evidence stray still lets the land replay through"
                    :replay (:action plan))
-          (assert-true "BL-1650 items 1-2: the stray is named in :stray-landed"
-                       (= 1 (count (:stray-landed plan))))
-          (assert= "BL-1650 items 1-2: the stray's own sha is recorded"
-                   stray (:sha (first (:stray-landed plan))))
+          ;; BL-1785: this fixture's OWN "closed on this branch too" commit
+          ;; (added purely so the role branch's local view also shows BL-9002
+          ;; done) touches backlog/done/BL-9002-x.yaml - the sibling's own
+          ;; ticket file, which BL-1785's widening now ALSO recognizes and
+          ;; lands as a stray in its own right, exactly as its invariant 2
+          ;; requires ("never dropped silently"). Two strays now, not one;
+          ;; the evidence stray's own sha is still among them.
+          (assert-true "BL-1650 items 1-2 (BL-1785): both the evidence stray and the sibling's own ticket-file record land"
+                       (= 2 (count (:stray-landed plan))))
+          (assert-true "BL-1650 items 1-2: the stray's own sha is recorded"
+                       (some #(= stray (:sha %)) (:stray-landed plan)))
           (assert-false "BL-1650 items 1-2: the sibling is never reported ENTANGLED_SIBLING once its stray lands"
                         (contains? (:unlanded plan) "BL-9002"))
           (assert-true "BL-1650 items 1-2: the sibling is reported LANDED_SIBLING"
@@ -3813,17 +3906,25 @@ RESOLVED BY THIS TICKET
         (let [main-tip (:out (sh! root "git" "rev-parse" "HEAD"))]
           (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
           (sh! root "git" "checkout" "-q" "role")
-          (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+          (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})
+                ;; BL-1785: this fixture's own "closed on this branch too"
+                ;; commit ALSO now qualifies as a stray (the sibling's own
+                ;; ticket file), and origin/main's own "closed on main"
+                ;; commit gives it the identical already-applied shape - two
+                ;; strays land now, not one; find the EVIDENCE stray this
+                ;; test is actually about by its own sha rather than
+                ;; assuming it is first.
+                evidence-stray (first (filter #(= stray (:sha %)) (:stray-landed plan)))]
             (assert= "BL-1650 D1: an already-applied stray still lets the land replay through, never escalates"
                      :replay (:action plan))
+            (assert-true "BL-1650 D1 (BL-1785): both the evidence stray and the sibling's own ticket-file record land, both already-applied"
+                         (= 2 (count (:stray-landed plan))))
             (assert-true "BL-1650 D1: the already-applied stray is still named in :stray-landed"
-                         (= 1 (count (:stray-landed plan))))
-            (assert= "BL-1650 D1: the already-applied stray's own source sha is recorded"
-                     stray (:sha (first (:stray-landed plan))))
+                         (some? evidence-stray))
             (assert-true "BL-1650 D1: the stray is flagged already-applied, never a fresh land"
-                         (true? (:already-applied? (first (:stray-landed plan)))))
+                         (true? (:already-applied? evidence-stray)))
             (assert= "BL-1650 D1: the recorded landed-sha is where the content already lived (origin/main's own tip), not a new commit"
-                     main-tip (:landed-sha (first (:stray-landed plan))))
+                     main-tip (:landed-sha evidence-stray))
             (assert-true "BL-1650 D1: the sibling is still reported LANDED_SIBLING"
                          (contains? (:landed plan) "BL-9002"))
             (sh! root "git" "worktree" "remove" "-f"

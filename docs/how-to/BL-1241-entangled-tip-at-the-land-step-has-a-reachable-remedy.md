@@ -65,6 +65,29 @@ land_step_cli.bb <task-name> <commit> [repo-root]
   touching any path outside that narrow allowlist — still refuses exactly as
   BL-1546 already does, by name, never decided silently.
 
+  **The allowlist also covers a closed sibling's OWN ticket file, wherever
+  it sits (BL-1785, 2026-09-27).** QA's own post-land bookkeeping
+  (`abandoned_commits:`, `bounce_history:`, a land comment) routinely lands
+  on a closed ticket's `backlog/active/` or `backlog/paused/` copy just
+  before the coordinator's close moves it to `backlog/done/` — or straight
+  onto the done copy already, once QA writes such a record after a ticket
+  has closed. Left out of the allowlist, that ordinary sequence turned an
+  everyday land into a `LAND_ESCALATE` on BL-1546's closed-owner refusal
+  (a ~20-40 minute hand-build walk; BL-1768's own land hit this). This
+  widening touches only the CALLER `closed-owner-pure-evidence-stray?`
+  uses (`evidence-docs-or-owners-ticket-file-paths?`), never
+  `pure-evidence-or-docs-paths?` itself, whose own docstring still states
+  BL-1650's invariant 1 unchanged. The extra path a stray may now touch is
+  exactly ONE file: the stray's own sibling's ticket YAML, matched by
+  `ticket-file-name?`'s exact `<id>[-<slug>].yaml` shape under
+  `backlog/active/`, `backlog/paused/` or `backlog/done/` — never another
+  ticket's file, a `backlog/*.tsv`/`backlog/*.yaml` register, or any
+  code/specs path, which still fail the whole stray exactly as before.
+  Git's own rename detection carries an active-or-paused-copy edit onto
+  `origin/main`'s done copy automatically once the cherry-pick lands ahead
+  of a replay built off `origin/main`; a replay never carries a ticket file
+  for a ticket closed on `origin/main` anywhere but `backlog/done/`.
+
   **An already-applied stray lands as `LAND_STRAY_EVIDENCE_ALREADY_LANDED`,
   never an escalation (BL-1650 QA bounce, 2026-09-20).** `git cherry-pick -x`
   itself returns nonzero for a genuine content conflict AND for the

@@ -61,5 +61,5 @@ Feature: BL-1785 A closed owner's own ticket-record stray lands onto its done co
 
     Examples:
       | other path                                 |
-      | swarmforge/scripts/bl9785_fixture_lib.bb   |
+      | android/bl9785_fixture.txt                 |
       | backlog/active/BL-9786-another-ticket.yaml |
