@@ -3176,6 +3176,48 @@
           (str (java.time.Instant/now) " " entry "\n")
           :append true)))
 
+;; ── Deferred re-point when post-land-repoint! skips ──────────────────────
+;; BL-1432's cost bound for the land walk is "re-point after every
+;; LAND_PUBLISHED so origin/main..tip stays small". A skip used to be
+;; fire-and-forget: five tip-pure lands on 2026-09-29 all printed
+;; LAND_REPOINT_SKIPPED (an uncommitted change — untracked __pycache__/),
+;; never retried, and swarmforge-QA grew to 4020 commits / ~1hr land-plans.
+;; Arming a pending record on every skip, and retrying once the tree is
+;; clean (try-pending-land-repoint!), restores the cost bound without
+;; weakening the clean-tree guard itself.
+
+(defn- pending-land-repoint-path [root]
+  (str (fs/path root ".swarmforge" "daemon" "pending-land-repoint.json")))
+
+(defn arm-pending-land-repoint!
+  "Record that a post-land re-point was skipped and must be retried.
+   Overwrites any prior pending record (the newest land's ticket wins)."
+  [root {:keys [landed-task-ticket-id reason old-tip]}]
+  (let [path (pending-land-repoint-path root)]
+    (fs/create-dirs (fs/parent path))
+    (spit path (json/generate-string
+                {:landed-task-ticket-id landed-task-ticket-id
+                 :reason reason
+                 :old-tip old-tip
+                 :armed-at-ms (System/currentTimeMillis)}))
+    path))
+
+(defn clear-pending-land-repoint!
+  "Drop the pending re-point record after a successful re-point (or an
+   explicit operator clear). No-op when absent."
+  [root]
+  (let [path (pending-land-repoint-path root)]
+    (when (fs/exists? path) (fs/delete path))
+    nil))
+
+(defn read-pending-land-repoint
+  "The pending re-point record, or nil when absent/unreadable."
+  [root]
+  (let [path (pending-land-repoint-path root)]
+    (when (fs/exists? path)
+      (try (json/parse-string (slurp path) true)
+           (catch Exception _ nil)))))
+
 ;; ── BL-1467: the re-point keeps QA's bookkeeping for OTHER tickets ───────
 ;;
 ;; The reset above moves the branch/worktree to origin/main; anything
@@ -3328,6 +3370,12 @@
    second git_handoff beside the landed one's own - still blocks exactly
    as before.
 
+   Every skip ALSO arms `.swarmforge/daemon/pending-land-repoint.json` so
+   try-pending-land-repoint! (done_with_current / ready_for_next idle
+   boundaries) can retry once the tree is clean - a skip must never be the
+   last word, or the land walk's cost bound dies (2026-09-29). A successful
+   re-point clears that pending file.
+
    Every commit reachable from `old-tip` and not from `origin-main` is
    enumerated BEFORE the reset and classified: a commit whose own subject
    is a revert/reapply, a merge, names no ticket, or names the landed
@@ -3354,11 +3402,21 @@
         old-tip (str/trim (:out (git! root "rev-parse" "HEAD")))
         status (git! root "status" "--porcelain")
         pending (when (fs/exists? in-process-dir)
-                  (remove #(str/starts-with? (fs/file-name %) ".") (fs/list-dir in-process-dir)))]
+                  (remove #(str/starts-with? (fs/file-name %) ".") (fs/list-dir in-process-dir)))
+        ;; Every skip arms a pending retry; every success clears it. The
+        ;; helper returns the same map log-repoint! already recorded.
+        finish! (fn [r]
+                  (if (= :repointed (:action r))
+                    (clear-pending-land-repoint! root)
+                    (arm-pending-land-repoint!
+                     root {:landed-task-ticket-id landed-task-ticket-id
+                           :reason (:reason r)
+                           :old-tip (or (:old-tip r) old-tip)}))
+                  r)]
     (cond
       (not (zero? (:exit status)))
       (let [r {:action :skipped :reason "land-step: could not read worktree status"}]
-        (log-repoint! root r) r)
+        (log-repoint! root r) (finish! r))
 
       ;; BL-1421's own ruling, same shape: in-process is checked BEFORE
       ;; dirty - an in_process parcel's own mailbox file is untracked, which
@@ -3368,23 +3426,23 @@
       ;; registered sidecars no longer counts here.
       (and (seq pending) (not (only-landed-tickets-own-pending? pending landed-task-ticket-id)))
       (let [r {:action :skipped :reason "a parcel in its in_process" :old-tip old-tip}]
-        (log-repoint! root r) r)
+        (log-repoint! root r) (finish! r))
 
       (not (str/blank? (:out status)))
       (let [r {:action :skipped :reason "an uncommitted change" :old-tip old-tip}]
-        (log-repoint! root r) r)
+        (log-repoint! root r) (finish! r))
 
       :else
       (let [origin-main (origin-main-sha root)]
         (if-not origin-main
           (let [r {:action :skipped :reason "land-step: origin/main could not be resolved" :old-tip old-tip}]
-            (log-repoint! root r) r)
+            (log-repoint! root r) (finish! r))
           (let [candidates (ancestry-commits root origin-main old-tip)]
             (if (nil? candidates)
               (let [r {:action :skipped
                        :reason (str "land-step: could not read " old-tip "'s own local-only history against " origin-main)
                        :old-tip old-tip}]
-                (log-repoint! root r) r)
+                (log-repoint! root r) (finish! r))
               ;; Oldest first: `ancestry-commits` (rev-list) answers
               ;; newest-first, and a cherry-pick replay must apply in
               ;; authored order.
@@ -3393,7 +3451,7 @@
                     reset-res (git! root "reset" "--hard" origin-main)]
                 (if-not (zero? (:exit reset-res))
                   (let [r {:action :skipped :reason "land-step: branch re-point failed" :old-tip old-tip}]
-                    (log-repoint! root r) r)
+                    (log-repoint! root r) (finish! r))
                   (let [kept (atom [])
                         dropped (atom (into [] (comp (filter #(= :drop (:disposition %)))
                                                      (map #(select-keys % [:sha :subject :reason])))
@@ -3415,4 +3473,15 @@
                     (let [new-tip (str/trim (:out (git! root "rev-parse" "HEAD")))
                           r {:action :repointed :old-tip old-tip :new-tip new-tip
                              :kept @kept :dropped @dropped}]
-                      (log-repoint! root r) r)))))))))))
+                      (log-repoint! root r) (finish! r))))))))))))
+
+(defn try-pending-land-repoint!
+  "If a pending re-point is armed, run post-land-repoint! again with the
+   stored landed-task-ticket-id. Returns nil when nothing was pending;
+   otherwise the post-land-repoint! result (:repointed clears the pending
+   file via finish!; :skipped re-arms it for the next idle boundary)."
+  [root]
+  (when-let [pending (read-pending-land-repoint root)]
+    (post-land-repoint!
+     {:root root
+      :landed-task-ticket-id (:landed-task-ticket-id pending)})))

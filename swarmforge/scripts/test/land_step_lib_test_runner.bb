@@ -2394,15 +2394,43 @@ RESOLVED BY THIS TICKET
         (assert-includes "post-land-repoint!: logs the new tip" log origin-main)))))
 
 (with-fixture [root]
+  (exclude-swarmforge! root)
   (mark-origin-main-here! root)
   (spit (str (fs/path root "dirty.txt")) "uncommitted\n")
-  (let [result (land-step-lib/post-land-repoint! {:root root})]
+  (let [result (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
     (assert= "post-land-repoint!: an uncommitted change is never repointed"
              :skipped (:action result))
     (assert= "post-land-repoint!: names the reason"
              "an uncommitted change" (:reason result))
-    (let [log (slurp (str (fs/path root ".swarmforge" "daemon" "land-repoint.log")))]
-      (assert-includes "post-land-repoint!: logs the skip reason" log "an uncommitted change"))))
+    (let [log (slurp (str (fs/path root ".swarmforge" "daemon" "land-repoint.log")))
+          pending (land-step-lib/read-pending-land-repoint root)]
+      (assert-includes "post-land-repoint!: logs the skip reason" log "an uncommitted change")
+      (assert= "post-land-repoint!: a skip arms the deferred retry"
+               "BL-9001" (:landed-task-ticket-id pending))
+      (assert= "post-land-repoint!: pending names the skip reason"
+               "an uncommitted change" (:reason pending)))))
+
+;; Deferred retry: once the tree is clean, try-pending-land-repoint! finishes
+;; the re-point a prior skip armed.
+(with-fixture [root]
+  (exclude-swarmforge! root)
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+    ;; Advance the tip so there is something to re-point away from.
+    (spit (str (fs/path root "ahead.txt")) "ahead\n")
+    (sh! root "git" "add" "ahead.txt")
+    (sh! root "git" "commit" "-m" "BL-9001: ahead of origin/main")
+    (spit (str (fs/path root "dirty.txt")) "uncommitted\n")
+    (let [skip (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
+      (assert= "try-pending setup: dirty tip skips" :skipped (:action skip)))
+    (fs/delete (str (fs/path root "dirty.txt")))
+    (let [result (land-step-lib/try-pending-land-repoint! root)]
+      (assert= "try-pending-land-repoint!: retries a prior skip once the tree is clean"
+               :repointed (:action result))
+      (assert= "try-pending-land-repoint!: the branch tip now equals origin/main"
+               origin-main (:out (sh! root "git" "rev-parse" "HEAD")))
+      (assert= "try-pending-land-repoint!: success clears the pending file"
+               nil (land-step-lib/read-pending-land-repoint root)))))
 
 (with-fixture [root]
   (mark-origin-main-here! root)

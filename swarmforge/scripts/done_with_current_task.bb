@@ -318,6 +318,23 @@
         (println "COMPLETED:" (str target-file))
         (record-lean-ledger! target-file)
         (record-effort-adapt-for! target-file)
+        ;; After a land whose re-point skipped (dirty tree / transient
+        ;; in_process), the cost-bound deferred retry fires here - the
+        ;; parcel just left in_process, so BL-1773's guard is clear and a
+        ;; previously-armed pending-land-repoint.json can finally run.
+        ;; QA only: other roles have no pending file and print IDLE.
+        (when (= "QA" (handoff-lib/current-role))
+          (try
+            (let [root (str (handoff-lib/worktree-root))
+                  out (:out (process/shell
+                             {:out :string :err :string :continue true}
+                             "bb" (str (fs/path script-dir "land_step_cli.bb"))
+                             "try-repoint" root))]
+              (when (and out (not (str/blank? out)))
+                (print out)
+                (when-not (str/ends-with? out "\n") (println))))
+            (catch Exception e
+              (println (str "LAND_REPOINT_RETRY_FAILED " (.getMessage e))))))
         ;; After completing the current task, immediately ask for the next
         ;; one, marking this call as an idle-boundary so ready_for_next_task
         ;; can consider any configured idle clear behavior.

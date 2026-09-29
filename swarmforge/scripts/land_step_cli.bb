@@ -101,7 +101,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "land_step_lib.bb")))
 
-(def usage-text "Usage: land_step_cli.bb <task-name> <commit> [repo-root]\n   or: land_step_cli.bb repoint <repo-root> [landed-task-name]\n   or: land_step_cli.bb verify-push <commit> [repo-root]")
+(def usage-text "Usage: land_step_cli.bb <task-name> <commit> [repo-root]\n   or: land_step_cli.bb repoint <repo-root> [landed-task-name]\n   or: land_step_cli.bb try-repoint <repo-root>\n   or: land_step_cli.bb verify-push <commit> [repo-root]")
 
 (defn- verify-push-verb [commit repo-root-arg]
   (when (str/blank? commit)
@@ -122,6 +122,27 @@
         (if safe?
           (do (println (str "LAND_PUBLISH_OK " canonical)) (System/exit 0))
           (do (println (str "LAND_PUBLISH_REFUSED " reason)) (System/exit 1)))))))
+
+(defn- try-repoint-verb [repo-root-arg]
+  (when (str/blank? repo-root-arg)
+    (binding [*out* *err*] (println usage-text))
+    (System/exit 2))
+  (let [root (str (fs/canonicalize repo-root-arg))
+        common (let [res (process/sh ["git" "-C" root "rev-parse" "--git-common-dir"])]
+                 (when (zero? (:exit res)) (str/trim (:out res))))]
+    (when-not common
+      (binding [*out* *err*] (println (str "Cannot read repo root as a git repository: " root)))
+      (System/exit 2))
+    (let [result (land-step-lib/try-pending-land-repoint! root)]
+      (cond
+        (nil? result)
+        (do (println "LAND_REPOINT_IDLE no pending re-point") (System/exit 0))
+        (= :repointed (:action result))
+        (do (println (str "LAND_REPOINTED " (:old-tip result) " " (:new-tip result)))
+            (System/exit 0))
+        :else
+        (do (println (str "LAND_REPOINT_SKIPPED " (:reason result)))
+            (System/exit 0))))))
 
 (defn- repoint-verb [repo-root-arg landed-task-name]
   (when (str/blank? repo-root-arg)
@@ -340,6 +361,7 @@
 (defn -main [& args]
   (cond
     (= "repoint" (first args)) (repoint-verb (second args) (nth args 2 nil))
+    (= "try-repoint" (first args)) (try-repoint-verb (second args))
     (= "verify-push" (first args)) (verify-push-verb (second args) (nth args 2 nil))
     :else (main-land args)))
 
