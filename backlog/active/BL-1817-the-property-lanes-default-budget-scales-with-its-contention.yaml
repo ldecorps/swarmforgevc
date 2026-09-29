@@ -127,3 +127,5 @@ notes: |
   base is 120000 ms (UNIT_LANE_BUDGET_CEILING_MS), so this ticket pins the
   lane default's cap at 60000 ms to keep the recommendation's 3x bound.
   Expedite lane by severity (Article 3.2.4).
+
+assigned_to: coder
