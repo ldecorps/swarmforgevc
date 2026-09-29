@@ -2,25 +2,28 @@
 
 (ns ready-for-next-task
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.java.shell :as sh]
             [clojure.string :as str]))
 
-(load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "branch_claim_guard_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "swarm_identity_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "mono_router_rows_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "seat_affinity_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "seat_difficulty_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "pipeline_stage_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "idle_clear_fullness_cli.bb")))
-(load-file (str (fs/path (fs/parent *file*) "qa_hold_lib.bb")))
+(def script-dir (fs/parent *file*))
+
+(load-file (str (fs/path script-dir "handoff_lib.bb")))
+(load-file (str (fs/path script-dir "branch_claim_guard_lib.bb")))
+(load-file (str (fs/path script-dir "swarm_identity_lib.bb")))
+(load-file (str (fs/path script-dir "backlog_depth_lib.bb")))
+(load-file (str (fs/path script-dir "mono_router_lib.bb")))
+(load-file (str (fs/path script-dir "mono_router_rows_lib.bb")))
+(load-file (str (fs/path script-dir "seat_affinity_lib.bb")))
+(load-file (str (fs/path script-dir "seat_difficulty_lib.bb")))
+(load-file (str (fs/path script-dir "pipeline_stage_lib.bb")))
+(load-file (str (fs/path script-dir "idle_clear_fullness_cli.bb")))
+(load-file (str (fs/path script-dir "qa_hold_lib.bb")))
 ;; BL-1185/BL-1608: Work notes attribute mutation_cost via the same
 ;; task-name parse supersede_lib already uses (task: header, else Work
 ;; BL-… in the message) - restored after BL-1167's land (ccc63d8cfd,
 ;; 2026-08-27) silently reverted it (BL-571 class).
-(load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
+(load-file (str (fs/path script-dir "supersede_lib.bb")))
 ;; BL-1614: the claim-time merge-main-first hint - same Work-note message
 ;; parser BL-1422's gate uses (work-note-evidence-lib), same main-side ref
 ;; resolution done_with_current_task.bb's gate uses
@@ -29,8 +32,8 @@
 ;; lib, task/batch having no common require point below handoff_lib.bb
 ;; (see apply-effort-for-task!'s own sibling comment above for the same
 ;; posture on a different pair of duplicated readers).
-(load-file (str (fs/path (fs/parent *file*) "work_note_evidence_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "landed_ticket_lib.bb")))
+(load-file (str (fs/path script-dir "work_note_evidence_lib.bb")))
+(load-file (str (fs/path script-dir "landed_ticket_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -335,6 +338,26 @@
                       (qa-hold-lib/open-ticket-ids-for root))]
           (println line))))))
 
+;; BL-1805: a skipped post-land re-point is retried at the top of every QA
+;; ready_for_next turn (beside the hold-status print), not only from
+;; done_with_current. Mirrors that file's try-repoint block. Relies on
+;; post-land-repoint!'s own BL-1773 in_process guard - with a parcel in
+;; QA's in_process the call re-arms or skips and moves nothing. A failed
+;; retry never blocks the turn.
+(defn- try-pending-land-repoint-if-qa! []
+  (when (= "QA" (handoff-lib/current-role))
+    (try
+      (let [root (str (handoff-lib/worktree-root))
+            out (:out (process/shell
+                       {:out :string :err :string :continue true}
+                       "bb" (str (fs/path script-dir "land_step_cli.bb"))
+                       "try-repoint" root))]
+        (when (and out (not (str/blank? out)))
+          (print out)
+          (when-not (str/ends-with? out "\n") (println))))
+      (catch Exception e
+        (println (str "LAND_REPOINT_RETRY_FAILED " (.getMessage e)))))))
+
 ;; ── BL-1614: claim-time merge-main-first hint ──────────────────────────────
 ;; Same main-side fact done_with_current_task.bb's Work-note gate reads
 ;; (landed-ticket-lib/declaration-refs' own ahead-of-the-two ref, BL-992) -
@@ -387,6 +410,7 @@
 
 (defn -main []
   (print-qa-hold-status-if-any!)
+  (try-pending-land-repoint-if-qa!)
   ;; BL-983: a seat CLAIMS from its STAGE's queue (the stage-named row's
   ;; new/ - for a bare seat this IS its own new/, byte-identical path) into
   ;; its OWN in_process/completed/abandoned, so task-mode single-claim

@@ -3371,10 +3371,10 @@
    as before.
 
    Every skip ALSO arms `.swarmforge/daemon/pending-land-repoint.json` so
-   try-pending-land-repoint! (done_with_current / ready_for_next idle
-   boundaries) can retry once the tree is clean - a skip must never be the
-   last word, or the land walk's cost bound dies (2026-09-29). A successful
-   re-point clears that pending file.
+   try-pending-land-repoint! (done_with_current after a QA completion, and
+   every QA ready_for_next turn) can retry once the tree is clean - a skip
+   must never be the last word, or the land walk's cost bound dies
+   (2026-09-29). A successful re-point clears that pending file.
 
    Every commit reachable from `old-tip` and not from `origin-main` is
    enumerated BEFORE the reset and classified: a commit whose own subject

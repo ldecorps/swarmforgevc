@@ -1,0 +1,144 @@
+id: BL-1806
+title: "A land-plan over a fat QA tip finishes in seconds, not tens of minutes"
+milestone: M8
+type: defect
+severity: high
+# high: every land on a fat tip monopolises QA for tens of minutes to an
+# hour (BL-1793's land-plan was still running past 32 min on 2026-09-29
+# with swarmforge-QA at 4139 commits ahead of origin/main; BL-1803's
+# stamp cites ~4020 / hour-scale). Lands still succeed eventually, but
+# the swarm's publish cadence collapses until the tip is short again.
+# Not critical: nothing is wrong with the landed content.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka in land_step_lib.bb (no mutation/CRAP/DRY wired, BL-472);
+# the candidate SET stays the full origin/main..commit ancestry (BL-1461,
+# BL-1308); only the per-commit IO that walks it gets cheaper.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1806-a-land-plan-over-a-fat-qa-tip-finishes-fast.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1806LandPlanOverFatQaTipFinishesFastSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Operator asked for a ticket to fasten QA lands after a live land walk
+  on BL-1793 spent 32+ minutes with no verdict. A new feature file needs
+  a tap. No choice is posed. FIRM - the candidate set stays the full
+  origin/main..commit ancestry (BL-1461 and BL-1308 stand; this ticket
+  never re-bounds the walk to the parcel's last hop). FIRM - a tip whose
+  full ancestry is thousands of commits and whose first-parent ancestry
+  is tens must still finish land-plan in seconds on a fixture, with the
+  same LAND_CLEAN / LAND_REPLAY / escalate verdict a tip-pure equivalent
+  would print. Re-point reliability (BL-1773, BL-1803, BL-1805) stays
+  the cost BOUND that keeps live tips short; this ticket is the cost
+  FLOOR when that bound has already slipped.
+
+invariants:
+  - "land-plan over origin/main..commit still considers every commit in the full ancestry (never --first-parent alone, never parcel-own-base alone); a sibling absorbed before the parcel's last hop still forces LAND_REPLAY exactly as BL-1461 requires."
+  - "On a fixture whose full ancestry is at least one thousand commits and whose first-parent ancestry is under twenty, land-plan returns a verdict in under ten seconds of wall clock."
+
+description: |
+  ## What
+
+  BL-1461 restored the land step's candidate walk to the FULL
+  `origin/main..<cited>` ancestry so a sibling absorbed before the
+  parcel's last hop can never read as LAND_CLEAN. That walk is correct.
+  Its cost bound was supposed to be BL-1438's post-land re-point, which
+  keeps `origin/main..QA` short "by construction" (land_step_lib.bb
+  land-plan docstring, BL-1461 paragraph).
+
+  When re-point lags - dirty-tree skips, an in_process guard, a seat
+  woken without completing - the tip re-fattens through merge history.
+  Measured on the live checkout 2026-09-29T14:53Z:
+
+  - `git rev-list --count origin/main..swarmforge-QA` → **4139**
+  - `git rev-list --count --first-parent origin/main..swarmforge-QA` → **11**
+
+  BL-1793's land cited that tip; the land-plan had no verdict at 32
+  minutes and was still in `land_step_cli` past an hour. BL-1803's own
+  stamp already names "~4020 commits / hour-scale land-plans". Re-point
+  reliability tickets (BL-1773, hotfix 4183cd29ca / BL-1803, BL-1805)
+  shrink the tip again; they do not make a fat tip cheap to plan over.
+  There is no open ticket whose sole ask is the cost floor.
+
+  The expensive work is per-commit process spawns over that full set
+  (`commit-subject` / `commit-ticket-id` / `merge-commit?` /
+  `sibling-own-line-changes` → `git log -1 -p` per attributed non-merge).
+  Most of the 4k commits are merges (about 2.8k on the tip that drove
+  BL-1793); the first-parent line is eleven commits. Detection must
+  still SEE the merges (BL-1308); it does not need one shell per merge
+  to do it.
+
+  ## What is wanted
+
+  1. `land-plan` (and the CLI that prints its verdict) finishes in
+     under ten seconds on a fixture whose full ancestry is ≥1000 commits
+     and whose first-parent ancestry is <20, with the same verdict a
+     tip-pure equivalent of that parcel would print.
+  2. BL-1461's detection stays: a sibling absorbed before the parcel's
+     last hop still forces LAND_REPLAY; the candidate set is still the
+     full `origin/main..commit` ancestry (never `--first-parent` alone,
+     never `parcel-own-base` alone).
+  3. No production change to post-land-repoint!, try-repoint, or the
+     ready_for_next / done_with_current retry path - those are the bound,
+     this is the floor.
+
+  ## Regression (measure at mint on the live tip, then on the parcel)
+
+  - `git rev-list --count origin/main..swarmforge-QA` and the
+    `--first-parent` twin, recorded in evidence (the 4139 / 11 pair
+    above is the mint baseline).
+  - `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
+  - BL-1461 / BL-1773 features still green if already on main.
+
+  ## How (direction, not mandate)
+
+  - One batched metadata pass over the candidate set (e.g. a single
+    `git rev-list` / `git log --format` that yields sha, parents, and
+    subject) so `merge-commit?` and `commit-ticket-id` stop spawning
+    once per commit; keep `git log -1 -p` only for attributed non-merge
+    commits that `sibling-own-line-changes` already scores.
+  - Or an equivalent memoised / preloaded table threaded through
+    `entangled-siblings` and `stray-evidence-commits` so the walk's IO
+    scales with ticket-attributed non-merges, not with merge-DAG size.
+  - Do NOT re-introduce BL-1432's parcel-base bound on the candidate
+    walk. Do NOT answer LAND_CLEAN by walking `--first-parent` alone.
+
+constraints: >
+  Fixtures under mkdtemp with their own bare origin (BL-1390); never the
+  live QA worktree. The ten-second floor is wall clock on the fixture
+  machine the feature runs on, not a live tip. A fat-tip fixture may
+  synthesise merge commits; it must not clone the live swarmforge-QA
+  history into the suite.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1806-a-land-plan-over-a-fat-qa-tip-finishes-fast.feature`:
+     cases ok, including the timed fat-tip scenario.
+  2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
+  3. `git diff main...HEAD --name-only` names only `land_step_lib.bb`
+     (and optionally `land_step_cli.bb` if a progress line is added), the
+     feature, its handler (plus lib/) and evidence.
+
+source: |
+  Operator session 2026-09-29: QA land on BL-1793 reported "land walk is
+  32 minutes in" with no verdict; tip measured 4139 full / 11
+  first-parent ahead of origin/main. BL-1805 covers re-point retry at
+  every QA turn (the bound); this ticket is the floor when the bound
+  has already slipped.
+
+notes: |
+  Minted 2026-09-29 by Cursor at operator request after the BL-1793 land
+  duration complaint. Complementary to BL-1805 (approved, in active) -
+  Independent: BL-1805 edits ready_for_next only; this edits the land
+  walk's IO. Negotiable How. Valuable: restores publish cadence when
+  re-point has lagged. Estimable: one batched metadata preload or
+  equivalent. Small: 2-3 scenarios, 2 invariants. Testable: synthesised
+  fat-tip fixture through the real land-plan / CLI.

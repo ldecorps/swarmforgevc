@@ -1,5 +1,5 @@
 id: BL-1805
-title: "A skipped post-land re-point is retried only from QA's done_with_current, although land_step_lib's docstring promises the ready_for_next idle boundary too (BL-1803 probe 3a): a retry that skips again at completion, or a QA seat woken, chased or respawned without completing, starts the next land walk on a QA branch that never re-pointed; QA's ready_for_next now retries the pending re-point at the top of every turn, never while a parcel is in QA's in_process, and no other role's turn attempts it"
+title: "QA's ready_for_next retries a pending land re-point every turn"
 milestone: M8
 type: defect
 severity: medium
@@ -124,3 +124,5 @@ notes: |
   bound holds between completions). Estimable (one call mirroring an
   existing block). Small (3 scenarios, 1 invariant). Testable (fixture
   origin and QA worktree through the real script).
+
+assigned_to: coder
