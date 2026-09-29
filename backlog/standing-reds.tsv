@@ -32,7 +32,6 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-property	extension/test/bl586PipelineBoardTopicIdentity.property.test.js	BL-1790	2026-09-27	invariant 1 'generator reached only 3 already-board-bound states' in QA's property lane on the BL-1707 parcel (QA note 003313, evidence fd1ab96de0): a sampled floor of 5 board-bound of 100 draws where ~1 draw in 9 is board-bound, P(miss) ~0.015 at uniform odds; census misreads it no-floor (phrase gap); leaves when BL-1790 lands
 shell	swarmforge/scripts/test/test_openrouter_provider_support.sh	BL-1791	2026-09-27	case 03 cleaner should be OpenRouter: fixture cleaner on --model qwen/qwen3-32b takes the qwen-cloud branch ahead of role_uses_openrouter (BL-1328 precedence) since 4ed88430b2 (2026-09-01); seen by the BL-1708 coder probe (note 002206); leaves when BL-1791 lands
 shell	swarmforge/scripts/test/test_ollama_ancillary_launch_gate.sh	BL-1797	2026-09-29	scenario 01 never answered within 5s: zsh -c sources ~/.zshenv, which puts ~/.local/bin (a real ollama since 2026-09-28) ahead of the fixture stub; not load (QA note 003343, BL-1702-QA D2)
 property	extension/test/bl1445StaffingGateWiringTestDecidesOverrideInvariants.property.test.js	BL-1808	2026-09-29	invariant 1 timed out in 20000ms in QA's full property lane on the BL-1806 parcel (QA note 003353, evidence 1db06f92); 8 sequential real wiring-test runs, 8.1 s alone at load 14, no per-test timeout; leaves when BL-1808 lands
