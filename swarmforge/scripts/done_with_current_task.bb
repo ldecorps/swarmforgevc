@@ -322,8 +322,11 @@
         ;; in_process), the cost-bound deferred retry fires here - the
         ;; parcel just left in_process, so BL-1773's guard is clear and a
         ;; previously-armed pending-land-repoint.json can finally run.
-        ;; QA only: other roles have no pending file and print IDLE.
-        (when (= "QA" (handoff-lib/current-role))
+        ;; QA (or a QA@N seat) only, decided through the same shared
+        ;; helper forward-gate!/qa-hold-gate! already use (BL-1642
+        ;; invariant 3, BL-1809) - never a literal role-name comparison:
+        ;; other roles have no pending file and print IDLE.
+        (when (forward-evidence-lib/qa-stage?)
           (try
             (let [root (str (handoff-lib/worktree-root))
                   out (:out (process/shell
