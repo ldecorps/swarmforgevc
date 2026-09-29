@@ -160,6 +160,7 @@
   [root commit]
   (when-let [subject (commit-subject root commit)]
     (pipeline-stage-lib/extract-ticket-id subject)))
+
 ;; ── BL-1544: a subject that leads with a ticket id vs. one that merely
 ;; mentions one first ──────────────────────────────────────────────────────
 ;;
@@ -347,6 +348,7 @@
     (let [res (git! root "rev-list" "--no-walk" "--parents" "-1" commit)]
       (and (zero? (:exit res))
            (> (count (str/split (str/trim (:out res)) #"\s+")) 2)))))
+
 (defn- commit-line-changes
   "{path {:added #{} :removed #{}}} for one commit's own first-parent diff -
    the SAME view `own-commit-changed-paths :delivered` attributes paths by, so

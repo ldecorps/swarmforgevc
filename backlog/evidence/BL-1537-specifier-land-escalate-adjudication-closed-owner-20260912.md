@@ -701,3 +701,43 @@ register row. `abandoned_commits: [091864e6a8]` and this instance ride
 inside the land commit.
 
 By QA.
+
+## Instance - BL-1793's land, condition (g) (QA, 2026-09-29)
+
+`land_main_publish.sh --land BL-1793 406a47131a` printed `LAND_ESCALATE`
+(ENTANGLED_SIBLING BL-1671, BL-1702, BL-1711, BL-1715, BL-1717, BL-1754,
+BL-1767, BL-1772; `could not cherry-pick stray evidence commit fa79e88fa7`,
+BL-1711's QA land record, already relayed to the specifier). Hand-built
+tip-pure dcbb555e77 off origin/main from BL-1793's 9 own paths, with
+`abandoned_commits: [406a47131a]` inside the land commit; published via
+`--push`; land approval recorded, `is_qa_ancestor.sh` exit 0.
+
+## Instance - BL-1806's land, condition (g) (QA, 2026-09-29)
+
+`land_main_publish.sh <QA worktree> --land BL-1806 44c634169d` (run from
+origin/main's exported copy of the tools, since this parcel changes the
+land step; QA tip synced to origin/main 9dcf92c283) walked 19:01-19:07Z -
+six minutes on a 4904-commit tip, BL-1806's own preload at work - and
+printed `LAND_ESCALATE` with `ENTANGLED_SIBLING` BL-1651, 1671, 1702, 1711,
+1715, 1717, 1754, 1767, 1772, 1790, 1791, 1794, 1802, 1803 and 1805, and
+`land-step replay: could not cherry-pick stray evidence commit
+8238de1a89`. That stray is closed BL-1698's documenter commit "document
+driver restart-resume, hold release, and mail handling" (2026-09-25):
+`docs/diagrams/handoff-flow.mmd`, `docs/how-to/BL-1697-local-parcel-driver.md`
+and `docs/index.md`, all rewritten on main since by BL-1698's own land
+c59085c631 and by BL-1715, BL-1778 and BL-1700. None of grounds (a)-(c)
+held, none of its paths is BL-1806's: condition (g), superseded, left
+alone. New sha for this class (not fa79e88fa7/fd6191c893).
+
+Landed per (g): tip-pure off origin/main 9dcf92c283 holding BL-1806's 19
+own paths from QA tip 44c634169d. On the two shared land-step files only
+BL-1806's own hunks ride (land_step_lib.bb: the cleaner's two blank lines
+from 1d2323fab8; land_step_lib_test_runner.bb: the hardener's
+*commit-meta* tests from d0035d8e2e); BL-1794's unlanded ground (d) and its
+test stay off. The BL-1241 how-to diff is BL-1806's lines only. BL-1806
+owns no register row. `abandoned_commits: [44c634169d]` and this instance
+ride inside the land commit. So does the BL-1793 instance above: it was
+appended after BL-1793's publish (68e435282b) and never reached main, and
+it lands here so it cannot become the next land's stray.
+
+By QA.

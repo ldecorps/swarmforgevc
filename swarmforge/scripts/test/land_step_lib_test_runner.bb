@@ -4381,6 +4381,43 @@ RESOLVED BY THIS TICKET
         (assert= "BL-1717: BL-9002 rides as a named passenger, never silently"
                  #{"BL-9002"} (:passengers result))))))
 
+;; ── BL-1806: *commit-meta* preload is consulted BEFORE live git ──────────
+;; land-plan's batched git-log feeds commit-subject and merge-commit? from
+;; a preloaded table so a fat tip's per-commit spawns collapse to one shell
+;; call over the whole range. Proven here by making the cached answer
+;; DISAGREE with the commit's real, live content - if either function fell
+;; through to the cold git path instead of reading the table, these would
+;; report the commit's real answer, not the fabricated one.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own.txt" "own line\n" "BL-9002: the sibling's own real work")
+  (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (binding [land-step-lib/*commit-meta* {sha {:subject "BL-9099: a fabricated subject"
+                                                 :parent-count 0}}]
+      (assert= "BL-1806: commit-ticket-id reads the preloaded subject, not the commit's real one"
+               "BL-9099" (land-step-lib/commit-ticket-id root sha)))))
+
+;; merge-commit? reads the preloaded :parent-count the same way -
+;; sibling-own-line-changes drops a candidate it believes is a merge before
+;; ever reading its diff, so a real single-parent commit falsely marked
+;; :parent-count 2 in the table contributes no lines, exactly as a real
+;; merge would be excluded (sibling-own-line-changes' own "a merge authors
+;; no lines of its own" rule, tested above against a real merge - this is
+;; the same rule tricked by a cached lie about a commit that is not one).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "sib line\n" "BL-9002: sibling's own real work")
+  (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))
+        candidates [sha]
+        live (land-step-lib/sibling-own-line-changes root candidates "BL-9002")]
+    (assert-true "BL-1806 control: without a cache override this real non-merge commit's lines count"
+                 (contains? (get-in live ["shared.txt" :added]) "sib line"))
+    (binding [land-step-lib/*commit-meta* {sha {:subject "BL-9002: sibling's own real work"
+                                                 :parent-count 2}}]
+      (let [cached (land-step-lib/sibling-own-line-changes root candidates "BL-9002")]
+        (assert= "BL-1806: merge-commit? trusts the preloaded parent-count over the commit's real (single) parent, so a cache-marked merge contributes no lines"
+                 nil (get-in cached ["shared.txt" :added]))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))

@@ -971,7 +971,10 @@ BL-1432's original motive for narrowing — avoiding a walk over the QA
 branch's forever-growing, never-landed history (1839 commits measured
 2026-09-05) — is met a different way now: BL-1438's post-land re-point
 keeps that range short (163 commits on 2026-09-07) by construction, so the
-wide walk this restores costs about what the bounded one did.
+wide walk this restores costs about what the bounded one did. When
+re-point lags, the tip re-fattens and that cost claim no longer holds —
+see BL-1806 below, which adds the cost FLOOR this bound alone does not
+guarantee.
 
 Acceptance:
 `specs/features/BL-1461-the-land-step-never-calls-a-tip-clean-over-an-unlanded-sibling.feature`.
@@ -1650,3 +1653,45 @@ handling changes; this is `own-paths`' exclusion test only.
 
 Acceptance:
 `specs/features/BL-1717-a-landed-co-owner-never-shields-an-unlanded-siblings-lines.feature`.
+
+## A fat tip's land-plan finishes in seconds, not tens of minutes (BL-1806)
+
+BL-1461 (above) restored the candidate walk to the full
+`origin-main..commit` ancestry so a pre-hop sibling can never read as
+`LAND_CLEAN`, and pinned the cost of that wide walk on BL-1438's
+post-land re-point keeping the range short "by construction". When
+re-point lags — a dirty-tree skip, an in_process guard, a seat woken
+without completing (BL-1773 / BL-1803 / BL-1805 each chase this) — the
+tip re-fattens through merge history instead: live on 2026-09-29,
+`git rev-list --count origin/main..swarmforge-QA` read **4139** while the
+`--first-parent` twin read **11**. `land_step_cli.bb`'s BL-1793 land had
+no verdict past 32 minutes on that tip. The expensive part was never the
+candidate SET — it is the per-commit process spawns the walk made to
+answer `commit-subject` / `merge-commit?` for each of a few thousand
+commits, most of them merges, one `git log -1`-shaped call apiece.
+
+`land_step_lib.bb` now takes one batched `git log --format=%H%x00%P%x00%s
+base..commit` pass over the candidate range (`range-commit-meta`) before
+walking it, and binds the result to a dynamic `*commit-meta*` table for
+the walk's duration. `commit-subject` and `merge-commit?` each check that
+table first and fall back to their own single-commit `git!` call only on
+a miss — the cold path standalone callers (anything outside `land-plan`
+or `entangled-siblings`, or a commit the preload didn't cover) still use
+unconditionally, so nothing outside this range depends on the table
+existing. `land-plan` preloads once at its own top level; nested calls
+through `entangled-siblings` see `*commit-meta*` already bound and reuse
+it rather than preloading twice.
+
+The candidate SET does not change — still `origin-main..commit`, never
+`--first-parent` alone, never bounded back to `parcel-own-base` (BL-1432
+stays reverted, BL-1461's invariant is unaffected) — so a sibling absorbed
+before the parcel's last hop still forces `LAND_REPLAY` exactly as before,
+on a fixture with ≥1000 full-ancestry commits and <20 first-parent
+commits just as it would on a tip-pure equivalent. Only the per-commit IO
+inside that same walk stops scaling with merge-DAG size. This is a cost
+FLOOR, not a replacement for the re-point BOUND above: a land whose
+re-point keeps firing stays cheap regardless, and this ticket only
+matters once that bound has already slipped.
+
+Acceptance:
+`specs/features/BL-1806-a-land-plan-over-a-fat-qa-tip-finishes-fast.feature`.

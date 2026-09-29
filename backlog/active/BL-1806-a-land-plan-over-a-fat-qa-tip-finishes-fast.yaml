@@ -144,3 +144,8 @@ notes: |
   fat-tip fixture through the real land-plan / CLI.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-29, by: QA, blamed: coder, class: invariant-unencoded, commit: 1db06f9238, evidence: backlog/evidence/BL-1806-QA-20260929.md }
+  - { at: 2026-09-29, by: QA, blamed: documenter, class: behavior, commit: a5029613e3, evidence: backlog/evidence/BL-1806-QA-20260929-2.md }
+abandoned_commits: [44c634169d]
