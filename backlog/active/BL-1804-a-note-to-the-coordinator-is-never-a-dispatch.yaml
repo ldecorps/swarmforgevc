@@ -144,3 +144,5 @@ notes: |
   stop being silenced by the sweep's own nudge). Estimable (one predicate
   guard, one dedup like open-slot's). Small (3 scenarios, 5 cases, 2
   invariants). Testable (fixture mailboxes and the real router).
+
+assigned_to: coder
