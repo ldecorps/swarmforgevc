@@ -793,6 +793,30 @@
                       (:items (pre-qa-gate-lib/read-abandoned-commits content)))))
           sources)))
 
+;; ── BL-1795: a stray whose own owner's abandoned_commits: already ─────────
+;; accounts for it is never replayed, clean-apply or conflict alike ────────
+
+(defn ancestor-of-owner-abandoned?
+  "True when `sha` is an ancestor of any commit `owner`'s own
+   `abandoned_commits:` names - the owner's own tip-pure land already
+   accounted for this content via a DIFFERENT approved tip: the lines
+   reached origin/main through that tip, or a later commit of the owner's
+   rewrote or removed them before review. Cherry-picking `sha` here would
+   either silently re-add dropped lines (a removed draft applies clean, no
+   conflict to catch it) or conflict with the owner's own later rewrite
+   for no reason - both already resolved by the owner's own land.
+
+   Reads `ticket-abandoned-commits` (never a second reader). An entry
+   `git merge-base --is-ancestor` cannot resolve (ambiguous or unknown
+   10-hex prefix) answers non-zero and is simply skipped, never counted as
+   a match - fail-closed to today's handling, same posture every other
+   caller of this ticket's abandoned-commits record already takes."
+  [root origin-main sha owner]
+  (let [abandoned (ticket-abandoned-commits root owner origin-main)]
+    (boolean
+     (some (fn [entry] (zero? (:exit (git! root "merge-base" "--is-ancestor" sha entry))))
+           abandoned))))
+
 (defn- closed-on-main?
   "BL-1546. A positive finding: `ticket-id`'s file is found under
    backlog/done/ on `origin-main` and under no other backlog folder there -
@@ -2743,6 +2767,14 @@
                 stray-landed (atom [])]
             (doseq [{:keys [sha sibling paths]} stray-commits]
               (when-not @stray-failure
+                ;; BL-1795: checked BEFORE the pick is even attempted - a
+                ;; removed draft applies CLEAN (no conflict for stray-
+                ;; superseded-verdict below to ever see), so the only place
+                ;; that can catch it is here, ahead of every other ground.
+                (if (ancestor-of-owner-abandoned? root origin-main sha sibling)
+                  (swap! stray-landed conj
+                         {:sha sha :sibling sibling :paths paths
+                          :superseded? true :reason "ancestor-of-owner-abandoned"})
                 (let [cp (git! scratch "cherry-pick" "-x" sha)]
                   (cond
                     (zero? (:exit cp))
@@ -2774,7 +2806,7 @@
                                {:sha sha :sibling sibling :paths paths
                                 :superseded? true :reason (:reason superseded)})
                         (reset! stray-failure
-                                (str "land-step replay: could not cherry-pick stray evidence commit " sha))))))))
+                                (str "land-step replay: could not cherry-pick stray evidence commit " sha)))))))))
           (if @stray-failure
             (do (cleanup!)
                 (drop-branch!)

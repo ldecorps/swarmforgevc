@@ -4461,6 +4461,65 @@ RESOLVED BY THIS TICKET
         (assert= "BL-1806: merge-commit? trusts the preloaded parent-count over the commit's real (single) parent, so a cache-marked merge contributes no lines"
                  nil (get-in cached ["shared.txt" :added]))))))
 
+;; ── BL-1795: ancestor-of-owner-abandoned? ──────────────────────────────
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "docs/x.md" "base\n" "BL-9787: pre-land draft")
+  (let [draft (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "docs/x.md" "rewritten\n" "BL-9787: rewrites the draft before landing")
+    (let [approved (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/active/BL-9787-sib.yaml"
+               (str "id: BL-9787\nabandoned_commits: [" approved "]\n")
+               "BL-9787: closed, records the approved tip")
+      (assert-true "BL-1795: a draft commit that IS an ancestor of the owner's own abandoned commit reads true"
+                   (land-step-lib/ancestor-of-owner-abandoned? root (:out (sh! root "git" "rev-parse" "origin/main")) draft "BL-9787"))
+      (assert-true "BL-1795: the abandoned commit itself is trivially its own ancestor"
+                   (land-step-lib/ancestor-of-owner-abandoned? root (:out (sh! root "git" "rev-parse" "origin/main")) approved "BL-9787")))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "docs/x.md" "base\n" "BL-9787: pre-land draft")
+    (let [draft (:out (sh! root "git" "rev-parse" "HEAD"))]
+      ;; Branches OFF the seed, never off draft, so the two lines are
+      ;; genuinely unrelated (neither an ancestor of the other) - a linear
+      ;; continuation on top of draft would make it trivially its own
+      ;; ancestor and prove nothing.
+      (sh! root "git" "checkout" "-q" "-b" "other" seed)
+      (commit! root "docs/y.md" "unrelated\n" "BL-9787: unrelated later work, not an ancestor of the draft")
+      (let [unrelated (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "checkout" "-q" "main")
+        (commit! root "backlog/active/BL-9787-sib.yaml"
+                 (str "id: BL-9787\nabandoned_commits: [" unrelated "]\n")
+                 "BL-9787: closed, records an unrelated abandoned commit")
+        (assert-false "BL-1795: a draft that is NOT an ancestor of the owner's recorded abandoned commit reads false"
+                      (land-step-lib/ancestor-of-owner-abandoned? root (:out (sh! root "git" "rev-parse" "origin/main")) draft "BL-9787"))))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "docs/x.md" "base\n" "BL-9787: pre-land draft")
+  (let [draft (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "docs/x.md" "rewritten\n" "BL-9787: rewrites the draft before landing")
+    (let [approved (:out (sh! root "git" "rev-parse" "HEAD"))]
+      ;; A garbage/unresolvable entry alongside a real, matching one - the
+      ;; unresolvable entry is skipped (never counted as a match, never a
+      ;; crash), and the real entry still decides the answer (invariant 1's
+      ;; own "unresolvable entry is skipped" clause).
+      (commit! root "backlog/active/BL-9787-sib.yaml"
+               (str "id: BL-9787\nabandoned_commits: [0000000000, " approved "]\n")
+               "BL-9787: closed, records a garbage entry plus the real approved tip")
+      (assert-true "BL-1795: an unresolvable entry is skipped; a later real entry still matches"
+                   (land-step-lib/ancestor-of-owner-abandoned? root (:out (sh! root "git" "rev-parse" "origin/main")) draft "BL-9787")))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "docs/x.md" "base\n" "BL-9787: pre-land draft")
+  (let [draft (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "backlog/active/BL-9787-sib.yaml" "id: BL-9787\nabandoned_commits: []\n" "BL-9787: closed, no abandoned commits recorded")
+    (assert-false "BL-1795: no abandoned_commits entries at all reads false (fail closed to today's handling)"
+                  (land-step-lib/ancestor-of-owner-abandoned? root (:out (sh! root "git" "rev-parse" "origin/main")) draft "BL-9787"))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
