@@ -671,3 +671,33 @@ BL-1781's alone), its register row retired, `abandoned_commits:
 paying a ~45-minute walk on this stray until BL-1787 lands.
 
 By QA.
+
+## Instance - BL-1655's land, condition (g) (QA, 2026-09-29)
+
+`land_main_publish.sh <QA worktree> --land BL-1655 091864e6a8` (QA tip
+synced to origin/main c24afe2529) walked 08:05-09:24Z and printed
+`LAND_ESCALATE` with `ENTANGLED_SIBLING` BL-1671, 1711, 1715, 1717, 1767
+and 1772, and `land-step replay: could not cherry-pick stray evidence
+commit 368d1569e5`. That stray is closed BL-1779's documenter commit
+"document the undeclared-root fleet-identity rule in Specification.MD"
+(2026-09-26): an older copy of BL-1779's changelog entry. BL-1779's own
+land carries the current (September 27) entry on origin/main, and BL-1779's
+later commits dropped the superseded copy, so the pick conflicts: condition
+(g), superseded. The stray is left alone and nothing of it lands.
+
+What is new: `docs/reference/Specification.MD` is ALSO one of BL-1655's own
+paths, so BL-1787's deferral (paths the landing ticket never touched) would
+not cover this stray, and BL-1794 (fa79e88fa7's content-subset ground)
+does not name it. Every land that writes a Specification.MD changelog
+entry can meet it.
+
+Landed per (g): tip-pure off origin/main bc33ea7a28, holding BL-1655's 21
+own paths byte-identical to QA tip 091864e6a8. On each shared path
+(Specification.MD, handoff-protocol.md, the BL-648 and BL-1004 how-tos,
+chase_sweep_lib.bb, flow_watchdog_lib.bb, handoff_lib.bb,
+ready_for_next_task.bb, swarm_handoff.bb) the tip-vs-main change is
+BL-1655's own lines only; none of the stray's lines ride. BL-1655 owns no
+register row. `abandoned_commits: [091864e6a8]` and this instance ride
+inside the land commit.
+
+By QA.

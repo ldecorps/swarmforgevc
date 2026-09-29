@@ -499,6 +499,7 @@ dequeued_at
 completed_at
 received_at_head
 from_seat
+held_by_seat
 ```
 
 Validation errors should be explicit enough for an agent to repair the draft.
@@ -3307,6 +3308,7 @@ dequeued_at
 completed_at
 received_at_head
 from_seat
+held_by_seat
 ```
 
 Lifecycle ownership:
@@ -3328,6 +3330,15 @@ Lifecycle ownership:
   to a roles.tsv row, else into its stage's — see "Seat Forward Filing"
   below. Agents never write this header; a draft supplying it is refused
   like any other reserved header.
+- `orphan_claim_sweep_lib.bb`'s `reclaim-file!` writes `held_by_seat`
+  (BL-1655) — the seat whose dead-session claim is being re-delivered to
+  its stage's `inbox/new/` at relaunch, and refreshes `enqueued_at` to the
+  reclaim moment alongside it (the age source `rework-claim-decision` and
+  `deferral-hold?` already read). `ready_for_next_task.bb`'s claim loop
+  reads it to defer a sibling seat's poll to the seat that held the claim,
+  until the same cross-seat claim deadline BL-1004 uses, and drops the
+  header the moment any seat claims the item — it never outlives a claim.
+  Agents never write this header.
 
 ## Daemon Shutdown
 

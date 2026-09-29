@@ -205,6 +205,32 @@
     (assert-true "permissive cleanup: the batch dir survives because it is not truly empty"
                  (fs/exists? batch-dir))))
 
+;; ── BL-1655: the reclaimed file records the seat that held it, and a
+;;    fresh enqueued_at (the age source the cross-seat claim decision
+;;    reads is time-since-RECLAIM, never the original delivery) ──────────
+(let [root (mk-tmp-dir)
+      coder-wt (str (fs/path root "coder-worktree"))
+      coder (role-info "coder" coder-wt)
+      in-process (handoff-lib/mailbox-dir coder :in_process)
+      logged (atom [])]
+  (write-handoff! in-process "10_20260101T000000Z_000001_from_a_to_coder_for_coder.handoff")
+  (let [_ (orphan-claim-sweep-lib/sweep!
+           {:roles [coder]
+            :session-alive? (fn [_] false)
+            :resumed-role nil
+            :log! (fn [line] (swap! logged conj line))})
+        target (fs/path (handoff-lib/mailbox-dir coder :new)
+                        "10_20260101T000000Z_000001_from_a_to_coder_for_coder.handoff")]
+    (assert= "BL-1655: the reclaimed file records the seat that held it"
+             "coder"
+             (handoff-lib/header-field target "held_by_seat"))
+    (assert-true "BL-1655: enqueued_at is refreshed to the reclaim moment, not left at its original (absent) value"
+                 (some? (handoff-lib/header-field target "enqueued_at")))
+    (assert-false "BL-1655: the refreshed enqueued_at is not the fixture's own stale created_at value"
+                  (= "2026-07-01T00:00:00Z" (handoff-lib/header-field target "enqueued_at")))
+    (assert-true "BL-1655: the reclaim line names the held-by seat"
+                 (some #(str/includes? % "role=coder") @logged))))
+
 ;; ── a role with nothing in in_process is simply absent from the results ──
 (let [root (mk-tmp-dir)
       documenter-wt (str (fs/path root "documenter-worktree"))

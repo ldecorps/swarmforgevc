@@ -60,29 +60,42 @@
 (defn rework-claim-decision
   "Pure: may THIS seat claim this stage-queue candidate now?
      {:action :claim}                          - not subject to deferral
-     {:action :defer :task t}                  - a sibling seat worked t;
-                                                 leave it in the queue
-     {:action :claim-cross-seat :task t}       - a sibling worked t but the
-                                                 deadline passed (or no age
-                                                 is readable): claim, and
-                                                 say so out loud
-   Only a git_handoff is a rework candidate (nothing else carries a task
-   identity). Self-affinity wins over sibling-affinity: a seat that worked
-   the task itself holds the history and claims. Age source is the first
-   PARSEABLE of enqueued_at then created_at (enqueued_at answers 'how long
-   has this sat in THIS mailbox' - a redelivered parcel is fresh here even
-   when created long ago; same ordering as mono-router-lib/note-aged?).
-   File mtime is never consulted (worktree hot-sync touches files)."
-  [{:keys [type task sibling-tasks my-tasks enqueued-at created-at now-ms deadline-ms]}]
-  (if (or (not= type "git_handoff")
-          (str/blank? (str task))
-          (contains? (set my-tasks) task)
-          (not (contains? (set sibling-tasks) task)))
-    {:action :claim}
-    (let [age-source (or (parse-instant-ms enqueued-at) (parse-instant-ms created-at))]
-      (if (and age-source (< (- now-ms age-source) deadline-ms))
-        {:action :defer :task task}
-        {:action :claim-cross-seat :task task}))))
+     {:action :defer :task t}                  - a sibling seat worked t,
+                                                 or held a claim this item
+                                                 was reclaimed from; leave
+                                                 it in the queue
+     {:action :claim-cross-seat :task t}       - as above but the deadline
+                                                 passed (or no age is
+                                                 readable): claim, and say
+                                                 so out loud
+   Two independent deferral candidates, either sufficient on its own:
+     - a git_handoff whose task a SIBLING seat has worked (self-affinity
+       wins: a seat that worked the task itself holds the history and
+       claims at once);
+     - BL-1655: ANY type reclaimed (held-by-seat non-blank) from a seat
+       other than my-seat (self-affinity wins here too: the seat that held
+       the claim - whose worktree holds the half-built work - claims its
+       own reclaim at once, whatever the task or sibling-tasks say).
+   Age source is the first PARSEABLE of enqueued_at then created_at
+   (enqueued_at answers 'how long has this sat in THIS mailbox' - a
+   redelivered parcel is fresh here even when created long ago, and
+   reclaim-file! stamps exactly that fresh value at the reclaim moment;
+   same ordering as mono-router-lib/note-aged?). File mtime is never
+   consulted (worktree hot-sync touches files)."
+  [{:keys [type task sibling-tasks my-tasks enqueued-at created-at now-ms deadline-ms
+           held-by-seat my-seat]}]
+  (let [reclaimed-elsewhere? (and (not (str/blank? (str held-by-seat)))
+                                   (not= (str held-by-seat) (str my-seat)))
+        rework-candidate? (and (= type "git_handoff")
+                                (not (str/blank? (str task)))
+                                (not (contains? (set my-tasks) task))
+                                (contains? (set sibling-tasks) task))]
+    (if (or reclaimed-elsewhere? rework-candidate?)
+      (let [age-source (or (parse-instant-ms enqueued-at) (parse-instant-ms created-at))]
+        (if (and age-source (< (- now-ms age-source) deadline-ms))
+          {:action :defer :task task}
+          {:action :claim-cross-seat :task task}))
+      {:action :claim})))
 
 (defn deferral-hold?
   "Pure: is this scanned stage-queue parcel inside its DESIGNED cross-seat
@@ -103,13 +116,22 @@
    never mtime - and every release is fail-OPEN: unreadable age and at/past
    deadline both un-hold, mirroring the claim path's own :claim-cross-seat
    polarity (invariant 1: nothing waits, and nothing is muted, forever).
+   BL-1655: also holds for ANY type reclaimed (held-by-seat non-blank) on a
+   stage with more than one seat - the sweep's stall alarm is exactly as
+   false there as it is for a sibling rework, and per invariant 3's own
+   'a stage with one seat never defers', a single-seat stage's
+   seat-worked-task-sets has exactly one entry so this branch is
+   structurally false there too, no extra check needed.
+
    Returns a bare boolean - no seat identity escapes (invariant 2)."
-  [{:keys [type task seat-worked-task-sets enqueued-at created-at now-ms deadline-ms]}]
+  [{:keys [type task seat-worked-task-sets enqueued-at created-at now-ms deadline-ms held-by-seat]}]
   (boolean
-   (and (= type "git_handoff")
-        (not (str/blank? (str task)))
-        (some #(contains? % task) seat-worked-task-sets)
-        (some #(not (contains? % task)) seat-worked-task-sets)
+   (and (or (and (not (str/blank? (str held-by-seat)))
+                 (> (count seat-worked-task-sets) 1))
+            (and (= type "git_handoff")
+                 (not (str/blank? (str task)))
+                 (some #(contains? % task) seat-worked-task-sets)
+                 (some #(not (contains? % task)) seat-worked-task-sets)))
         (let [age-source (or (parse-instant-ms enqueued-at) (parse-instant-ms created-at))]
           (and age-source (< (- now-ms age-source) deadline-ms))))))
 
@@ -137,3 +159,30 @@
   (str "CROSS_SEAT_CLAIM: this seat did not build " basename " (task " task
        "); the cross-seat deadline passed, so it claims the rework - merge"
        " the parcel commit FIRST, then work."))
+
+;; BL-1655: the reclaim-flavored twins of the two lines above - same
+;; invariant 2 (never render a seat id), different wording, since "was
+;; worked by another seat" is the rework story, not the reclaim one, and a
+;; reclaimed NOTE has no task to name.
+
+(defn reclaimed-deferral-line
+  "The out-loud diagnostic for a reclaimed item left to the seat that held
+   it: printed by the claim path beside the other SKIPPED lines; the
+   parcel stays untouched in the stage queue, exactly like an ambulance
+   hold."
+  [{:keys [basename]}]
+  (str "DEFERRED reclaimed-claim: " basename
+       " was reclaimed from another seat of this stage at relaunch;"
+       " leaving it in the stage queue for that seat until the cross-seat"
+       " deadline."))
+
+(defn reclaimed-cross-seat-claim-line
+  "The out-loud diagnostic for a cross-seat claim of a reclaimed item past
+   the deadline: the seat that held it never came back for it, so any
+   seat of the stage may pick it up - out loud, same polarity as
+   cross-seat-claim-line."
+  [{:keys [basename]}]
+  (str "CROSS_SEAT_CLAIM: " basename
+       " was reclaimed from another seat of this stage; the cross-seat"
+       " deadline passed, so this seat claims it - merge the parcel commit"
+       " FIRST if it is a git_handoff, then work."))

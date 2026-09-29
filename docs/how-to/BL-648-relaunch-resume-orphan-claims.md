@@ -40,7 +40,14 @@ session is created:
    to the role being resumed in step 1 is left untouched — that role will
    pick its own claim back up via `ready_for_next.sh`. Every other stranded
    claim is moved back to that role's `inbox/new/`, at its original
-   priority, so normal dispatch delivers it again.
+   priority, so normal dispatch delivers it again — stamped with the
+   specific **seat** that held it (`held_by_seat`, e.g. `coder@2`, never
+   just the shared stage name) and a refreshed `enqueued_at`, so a
+   multi-seat stage's shared queue defers the reclaimed item to that seat
+   instead of letting whichever sibling polls first race it away (BL-1655;
+   see
+   [BL-1004's cross-seat deferral how-to](./BL-1004-cross-seat-rework-claim-deferral.md#a-reclaimed-claim-defers-to-the-seat-that-held-it-bl-1655)
+   for the claim-side mechanics). A single-seat stage sees no difference.
 
 Neither step can abort the launch: a resolution failure (unreadable marker,
 empty `roles.tsv`, an unexpected error) degrades to "boot at home" / "skip

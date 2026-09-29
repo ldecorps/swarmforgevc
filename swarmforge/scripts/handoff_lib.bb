@@ -245,6 +245,31 @@
     (spit (str tmp) (str (str/join "\n" result) "\n"))
     (fs/move tmp file {:replace-existing true})))
 
+(defn remove-header!
+  "BL-1655: drops field's header line, if present, before the first blank
+   line (the header block) - never touching the body, and a no-op when the
+   header is absent, so every caller may call it unconditionally. Mirrors
+   set-header!'s own temp-file-then-move write, so a reader never observes
+   a partially-written file."
+  [file field]
+  (let [lines (str/split-lines (slurp (str file)))
+        prefix (str field ": ")
+        tmp (fs/create-temp-file {:dir (fs/parent file) :prefix ".headers."})
+        result (loop [remaining lines out [] done? false]
+                 (if-let [line (first remaining)]
+                   (cond
+                     (and (not done?) (str/blank? line))
+                     (recur (next remaining) (conj out line) true)
+
+                     (and (not done?) (str/starts-with? line prefix))
+                     (recur (next remaining) out done?)
+
+                     :else
+                     (recur (next remaining) (conj out line) done?))
+                   out))]
+    (spit (str tmp) (str (str/join "\n" result) "\n"))
+    (fs/move tmp file {:replace-existing true})))
+
 (defn fail! [status & lines]
   (binding [*out* *err*]
     (doseq [line lines]

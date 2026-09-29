@@ -680,7 +680,10 @@
    :to (handoff-lib/header-field file-path "to")
    :task (handoff-lib/header-field file-path "task")
    :enqueued-at (handoff-lib/header-field file-path "enqueued_at")
-   :created-at (handoff-lib/header-field file-path "created_at")})
+   :created-at (handoff-lib/header-field file-path "created_at")
+   ;; BL-1655: nil for a file that was never reclaimed - reclaim-file! is
+   ;; the only writer.
+   :held-by-seat (handoff-lib/header-field file-path "held_by_seat")})
 
 (defn scan-mailbox-dir [dir]
   (vec (map parcel-record (list-handoff-files dir))))
@@ -858,7 +861,8 @@
       :enqueued-at (:enqueued-at parcel)
       :created-at (:created-at parcel)
       :now-ms now-ms
-      :deadline-ms deadline-ms})
+      :deadline-ms deadline-ms
+      :held-by-seat (:held-by-seat parcel)})
     (catch Exception _ false)))
 
 ;; ── impure sweep application ─────────────────────────────────────────────────

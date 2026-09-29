@@ -487,6 +487,13 @@
                 pack-conf            (mono-router-conf-text)
                 deadline-ms          (seat-affinity-lib/parse-cross-seat-claim-deadline-ms pack-conf)
                 now-ms               (System/currentTimeMillis)
+                my-seat              (handoff-lib/current-role)
+                ;; BL-1655: a reclaimed file's held_by_seat header travels
+                ;; with it into the decision (nil for a file that was never
+                ;; reclaimed - reclaim-file! is the only writer) so the
+                ;; same claim-loop pass that already defers a sibling's
+                ;; rework also defers to the seat a relaunch reclaim
+                ;; belonged to, of ANY parcel type.
                 decided              (mapv (fn [f]
                                              [f (seat-affinity-lib/rework-claim-decision
                                                  {:type (handoff-lib/header-field f "type")
@@ -496,7 +503,9 @@
                                                   :enqueued-at (handoff-lib/header-field f "enqueued_at")
                                                   :created-at (handoff-lib/header-field f "created_at")
                                                   :now-ms now-ms
-                                                  :deadline-ms deadline-ms})])
+                                                  :deadline-ms deadline-ms
+                                                  :held-by-seat (handoff-lib/header-field f "held_by_seat")
+                                                  :my-seat my-seat})])
                                            dequeueable)
                 sibling-seat-ids     (mapv :role (handoff-lib/stage-sibling-seats))
                 deferred             (filterv #(= :defer (:action (second %))) decided)
@@ -518,10 +527,16 @@
                                           (remove (fn [[f _]] (contains? given-up-tasks (claim-task-name f))))
                                           vec)]
             (doseq [[f decision] deferred]
-              (println (seat-affinity-lib/deferral-line
-                        {:basename (fs/file-name f)
-                         :task (:task decision)
-                         :sibling-seats sibling-seat-ids})))
+              ;; BL-1655: a reclaimed item's deferral line names no seat
+              ;; either, but describes "reclaimed from" rather than "worked
+              ;; by" - held_by_seat's mere presence on the file, whatever
+              ;; task/sibling-tasks say, is what decides which line is true.
+              (println (if (not (str/blank? (str (handoff-lib/header-field f "held_by_seat"))))
+                         (seat-affinity-lib/reclaimed-deferral-line {:basename (fs/file-name f)})
+                         (seat-affinity-lib/deferral-line
+                          {:basename (fs/file-name f)
+                           :task (:task decision)
+                           :sibling-seats sibling-seat-ids}))))
             (if (empty? claimable)
               (report-no-task-or-rotate!)
               ;; BL-983: two idle seats can race for the same stage-queue
@@ -555,12 +570,25 @@
                         ;; BL-1004 invariant 1's out-loud half: a cross-seat
                         ;; claim past the deadline says the seat did not
                         ;; build this parcel, so it merges the parcel
-                        ;; commit FIRST, then works.
+                        ;; commit FIRST, then works. BL-1655: a reclaimed
+                        ;; item's own cross-seat line, when this claim was
+                        ;; the reclaim-based kind rather than the rework
+                        ;; kind - read from target-file (source-file no
+                        ;; longer exists post-move; the content is
+                        ;; identical either way).
                         (when (= :claim-cross-seat (:action decision))
-                          (println (seat-affinity-lib/cross-seat-claim-line
-                                    {:basename (fs/file-name source-file)
-                                     :task (:task decision)
-                                     :sibling-seats sibling-seat-ids})))
+                          (println (if (not (str/blank? (str (handoff-lib/header-field target-file "held_by_seat"))))
+                                     (seat-affinity-lib/reclaimed-cross-seat-claim-line
+                                      {:basename (fs/file-name source-file)})
+                                     (seat-affinity-lib/cross-seat-claim-line
+                                      {:basename (fs/file-name source-file)
+                                       :task (:task decision)
+                                       :sibling-seats sibling-seat-ids}))))
+                        ;; BL-1655: "gone once claimed" - a no-op when the
+                        ;; header was never present, so every claim (self-
+                        ;; affinity, cross-seat, or an ordinary never-
+                        ;; reclaimed parcel) may call this unconditionally.
+                        (handoff-lib/remove-header! target-file "held_by_seat")
                         ;; BL-1615 D1: same origin-aware requeue target as
                         ;; the resume path above.
                         (enforce-branch-claim-guard! target-file in-process-dir

@@ -627,7 +627,9 @@
       :enqueued-at (handoff-lib/header-field file-path "enqueued_at")
       :created-at (handoff-lib/header-field file-path "created_at")
       :now-ms now-ms
-      :deadline-ms (:deadline-ms deferral-ctx)})
+      :deadline-ms (:deadline-ms deferral-ctx)
+      ;; BL-1655: nil for a file that was never reclaimed.
+      :held-by-seat (handoff-lib/header-field file-path "held_by_seat")})
     (catch Exception _ false)))
 
 ;; BL-1652: an optional adapter is read via when-let and defaults to nil/

@@ -1,5 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 27, 2026 (BL-1655: a reclaimed claim now stays
+with the seat that held it. The relaunch orphan-claim sweep
+(`orphan_claim_sweep_lib.bb`'s `reclaim-file!`) re-delivers a dead
+session's claimed handoff into its role's `new/` — on a multi-seat stage
+that `new/` IS the shared stage queue — but carried no seat identity, so
+whichever sibling seat polled first claimed it even though the ORIGINAL
+seat's worktree held the half-built work; this built BL-1652 twice on
+2026-09-20 after a relaunch raced the sweep. `reclaim-file!` now stamps
+the re-delivered file with a tool-reserved `held_by_seat` header (the
+specific seat row, never the shared stage name) and refreshes
+`enqueued_at` to the reclaim moment. `seat_affinity_lib.bb`'s
+`rework-claim-decision` gains a second, independent deferral candidate
+alongside its existing sibling-rework one: any item (a `note` as much as
+a `git_handoff`) reclaimed from a seat other than the claiming seat
+defers/cross-seat-claims on the identical BL-1004 age/deadline
+arithmetic — the holder claims immediately (self-affinity wins
+unconditionally), a sibling defers inside the deadline and cross-seat-
+claims past it, out loud, with the same no-seat-id property preserved via
+two new line renderers. `deferral-hold?` (consulted by
+`flow_watchdog_lib.bb` and `chase_sweep_lib.bb` so the stall sweeps don't
+alarm on a designed wait) holds a reclaimed item the same way on any
+multi-seat stage; a single-seat stage is structurally unaffected.
+`held_by_seat` is dropped unconditionally the moment any seat successfully
+claims the item. No change to which directory the sweep re-delivers into,
+to the reclaim decision itself, or to the deadline's source. Acceptance:
+`specs/features/BL-1655-a-reclaimed-claim-stays-with-the-seat-that-held-it.feature`.
+How-to: `docs/how-to/BL-1004-cross-seat-rework-claim-deferral.md` and
+`docs/how-to/BL-648-relaunch-resume-orphan-claims.md`. No extension
+command, setting, or UI change; no diagram edit.)
+Prior entry —
+
 **Last Updated:** September 27, 2026 (BL-1775: a non-primary swarm's
 launcher and every role launch script now apply that swarm's own Telegram
 identity AFTER the zsh shell profile has run, closing a leak the front

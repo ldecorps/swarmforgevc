@@ -802,6 +802,52 @@
   (assert= "worked-task-names-in: the union of git_handoff and Work-note attribution in one directory"
            #{"BL-9001" "BL-9002"} (handoff-lib/worked-task-names-in dir)))
 
+;; ── BL-1655: remove-header! ──────────────────────────────────────────────
+(let [dir (mk-tmp-dir)
+      file (fs/path dir "10_x.handoff")]
+  (write-handoff! dir "10_x.handoff"
+                   (str "id: x\nfrom: coder\nto: cleaner\npriority: 50\n"
+                        "type: git_handoff\nheld_by_seat: coder\ntask: BL-9001\n\npayload\n"))
+  (handoff-lib/remove-header! file "held_by_seat")
+  (assert= "remove-header!: the removed header no longer reads back"
+           nil (handoff-lib/header-field file "held_by_seat"))
+  (assert= "remove-header!: an unrelated header before it survives"
+           "x" (handoff-lib/header-field file "id"))
+  (assert= "remove-header!: an unrelated header after it survives"
+           "BL-9001" (handoff-lib/header-field file "task"))
+  (assert= "remove-header!: the body is untouched"
+           "payload\n" (handoff-lib/body file)))
+
+(let [dir (mk-tmp-dir)
+      file (fs/path dir "10_y.handoff")]
+  (write-handoff! dir "10_y.handoff"
+                   (str "id: y\nfrom: coder\nto: cleaner\npriority: 50\n"
+                        "type: git_handoff\ntask: BL-9002\n\npayload\n"))
+  (handoff-lib/remove-header! file "held_by_seat")
+  (assert= "remove-header!: a no-op when the header was never present"
+           "BL-9002" (handoff-lib/header-field file "task")))
+
+;; The prior test's own "body is untouched" assertion cannot discriminate
+;; a mutant that drops the header/body boundary check entirely (removing
+;; the `done?` guard so the scan strips ANY line starting with the field's
+;; prefix, wherever it sits) - its body ("payload\n") never contains a
+;; matching line, so that mutant survives it silently. A body line that
+;; itself starts with the field's own prefix is the only fixture that
+;; actually exercises the boundary - remove-header!'s own docstring states
+;; "never touching the body" as an invariant, so this is what proves it.
+(let [dir (mk-tmp-dir)
+      file (fs/path dir "10_z.handoff")]
+  (write-handoff! dir "10_z.handoff"
+                   (str "id: z\nfrom: coder\nto: cleaner\npriority: 50\n"
+                        "type: git_handoff\nheld_by_seat: coder\ntask: BL-9003\n\n"
+                        "held_by_seat: this line is BODY TEXT, not a header - never removed\n"))
+  (handoff-lib/remove-header! file "held_by_seat")
+  (assert= "remove-header!: the header is dropped"
+           nil (handoff-lib/header-field file "held_by_seat"))
+  (assert= "remove-header!: a body line sharing the field's own prefix survives untouched (the header/body boundary, not a text match, decides)"
+           "held_by_seat: this line is BODY TEXT, not a header - never removed\n"
+           (handoff-lib/body file)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")

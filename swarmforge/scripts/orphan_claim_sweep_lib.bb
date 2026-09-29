@@ -56,6 +56,18 @@
       (fs/create-dirs new-dir)
       (fs/move claim-file target {:replace-existing false})
       (handoff-lib/remove-sidecars-of! claim-file)
+      ;; BL-1655: the re-delivered file carries the seat that held it, so a
+      ;; sibling seat's next poll can defer to it instead of racing it for
+      ;; the half-built work sitting in its own worktree - stamped here,
+      ;; where role-info and the target path both already are, and dropped
+      ;; again the moment ANY seat claims the item (ready_for_next_task.bb).
+      ;; enqueued_at is refreshed to the reclaim moment for the SAME reason
+      ;; a redelivered rework already reads fresh here (rework-claim-
+      ;; decision's own doc): this move IS a fresh delivery into new/, so
+      ;; the age the claim decision measures is time-since-reclaim, never
+      ;; the original, possibly much older, delivery.
+      (handoff-lib/set-header! target "held_by_seat" (:role role-info))
+      (handoff-lib/set-header! target "enqueued_at" (handoff-lib/timestamp))
       (log! (reclaim-line (:role role-info) (str claim-file) (str target)))
       (str target)
       (catch Exception e

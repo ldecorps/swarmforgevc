@@ -63,7 +63,11 @@
 ;; beside from: which keeps the STAGE name) reserved so no draft can forge
 ;; it - it is daemon/tool-stamped audit metadata a filer trusts, never
 ;; agent-authored.
-(def reserved-fields #{"id" "from" "from_seat" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped" "non-forwarding" "received_at_head"})
+;; BL-1655: held_by_seat (the seat a relaunch reclaim's claim belonged to,
+;; stamped by orphan_claim_sweep_lib.bb/reclaim-file! and read/dropped by
+;; ready_for_next_task.bb's claim loop) is the same class of tool-stamped
+;; audit metadata - reserved so no draft can forge self-affinity.
+(def reserved-fields #{"id" "from" "from_seat" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped" "non-forwarding" "received_at_head" "held_by_seat"})
 (def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "wake" "rejection_reason" "reroute_reason" "scope" "body" "rationale"})
 (def allowed-types #{"awake" "git_handoff" "note" "rule_proposal"})
 (def valid-scope-pattern #"constitution|engineering|project|role:[a-zA-Z][a-zA-Z0-9]*")

@@ -77,6 +77,36 @@ empty, so every decision is `:claim` and the seat's own mailboxes are never
 even consulted. This is structural, not a special case: the seven
 single-seat stages behave exactly as they did before this ticket.
 
+## A reclaimed claim defers to the seat that held it (BL-1655)
+
+The relaunch orphan-claim sweep (`docs/how-to/BL-648-relaunch-resume-orphan-claims.md`)
+re-delivers a dead session's claimed handoff back into its role's `new/` —
+on a multi-seat stage, that `new/` IS the shared stage queue. Before this
+ticket, the re-delivered file carried no seat identity, so whichever
+sibling seat polled first claimed it — even though the ORIGINAL seat's
+worktree held the half-built work. This built one ticket twice on
+2026-09-20 (BL-1652, via `coder@2`) after a relaunch raced the sweep.
+
+`reclaim-file!` now stamps the re-delivered file with a `held_by_seat`
+header (the specific seat row, e.g. `coder@2`, never the shared stage
+name) and refreshes its `enqueued_at` to the reclaim moment — the same
+"fresh here" semantics a bounce already gets. `rework-claim-decision`
+gains a second, independent deferral candidate alongside the existing
+sibling-rework one: **any** item (a `note` as much as a `git_handoff`)
+reclaimed from a seat other than the claiming seat defers/cross-seat-claims
+on the identical age/deadline arithmetic described above — the seat that
+held it claims immediately (self-affinity wins unconditionally, whatever
+its age); a sibling defers inside the deadline and cross-seat-claims past
+it, out loud, with the same no-seat-id property (`reclaimed-deferral-line`
+/ `reclaimed-cross-seat-claim-line`). `held_by_seat` is tool-stamped
+audit metadata (`swarm_handoff.bb`'s `reserved-fields`, documented in
+`swarmforge/handoff-protocol.md`) and is dropped, unconditionally, the
+moment any seat successfully claims the item — "gone once claimed."
+`deferral-hold?` holds a reclaimed item the same way for the stall sweeps
+below, on any stage with more than one seat; a single-seat stage's
+sibling set is structurally empty, so it never defers, exactly like the
+rework case above.
+
 ## The stall sweeps know about the wait
 
 A parcel sitting in a stage queue mid-deferral looks, from the outside,
@@ -111,6 +141,9 @@ bb swarmforge/scripts/test/bl1004_seat_affinity_property_runner.bb
 bb swarmforge/scripts/test/flow_watchdog_test_runner.bb
 bash swarmforge/scripts/test/test_chase_sweep.sh
 node specs/pipeline/cli.js specs/features/BL-1004-a-rework-is-claimed-only-by-a-seat-that-can-work-it-safely.feature
+bb swarmforge/scripts/test/orphan_claim_sweep_lib_test_runner.bb
+bb swarmforge/scripts/test/bl1655_seat_affinity_property_runner.bb
+node specs/pipeline/cli.js specs/features/BL-1655-a-reclaimed-claim-stays-with-the-seat-that-held-it.feature
 ```
 
 ## What this does not do
