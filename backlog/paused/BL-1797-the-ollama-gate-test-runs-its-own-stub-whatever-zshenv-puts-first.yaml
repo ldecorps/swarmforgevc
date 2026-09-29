@@ -141,6 +141,10 @@ notes: |
   as the register row (standing-red amendment 2026-09-05). QA's reading
   of the cause (host load) was checked and replaced by the measured one
   (the ~/.zshenv PATH escape).
+  Holder note sent the same pass (10:42Z): to QA "BL-1702:
+  test_ollama_ancillary_launch_gate.sh owned by BL-1797 (e7c16f9ed2)".
+  To the coder holding BL-1702, a note that D2's isolation alone leaves
+  the test red on this host, and that the red is this ticket's.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   INVEST: Independent (orthogonal-only to BL-1702). Negotiable (the How
   is direction). Valuable (clears a standing red and closes a fail-open
