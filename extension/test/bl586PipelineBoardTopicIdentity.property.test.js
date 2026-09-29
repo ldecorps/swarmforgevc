@@ -5,6 +5,7 @@ const {
   PIPELINE_BOARD_SUBJECT_ID,
   decideEnsurePipelineBoardTopicAction,
 } = require('../out/tools/telegramTopicDecisions');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 // BL-586, declared invariants (coder-authored per the Invariants section of
 // coder.prompt / BL-654). Runs ONLY via `npm run test:properties`
@@ -22,45 +23,41 @@ const {
 // binding, and a collision drawn from two independent integer generators is
 // astronomically rare - the property would pass hundreds of runs against the
 // live defect. So the stored id here is DERIVED FROM the generated map's own
-// keys, making every pair a collision candidate by construction. The floor
-// assertions below then prove the generator actually reached the interesting
-// states rather than hoping it did.
+// keys, making every pair a collision candidate by construction.
+//
+// BL-1790: at UNIFORM odds over the original (map, storedId) draw, the
+// already-board-bound arm of invariant 1 was reached only about 1 draw in 9
+// (a board binding present about half the time x a 4-in-5 own-key draw x a
+// 1-in-2-to-1-in-7 chance that key is the board's), so its floor of 5 missed
+// about 1 run in 65 - the 2026-09-27 red QA held BL-1707 on (evidence
+// fd1ab96de0: "generator reached only 3 already-board-bound states"). Every
+// arm of both invariants below is now reached BY CONSTRUCTION, one cell per
+// arm (runsPerCell/assertReachFloor, helpers/reachFloors - the BL-1760/
+// BL-1763/BL-1786 recipe), instead of hoping a uniform draw lands on the
+// rare side.
 
 const SUBJECTS = ['SUP-5', 'SUP-7', 'APPROVALS', 'OPERATOR', 'BACKLOG', 'CONTROL', 'RECERT', 'BABYSITTER'];
 
 const topicIdArb = fc.integer({ min: 1, max: 40000 });
 
-// A topic map with a handful of other-subject bindings and, sometimes, a
-// PIPELINE_BOARD binding of its own.
-const topicMapArb = fc
-  .tuple(
-    fc.uniqueArray(fc.tuple(topicIdArb, fc.constantFrom(...SUBJECTS)), { minLength: 1, maxLength: 6, selector: (e) => e[0] }),
-    // freq 2 = a board binding present about half the time. The default
-    // (1 in 5 nil) let the already-bound case swallow ~80% of runs, starving
-    // the standing-record branches these properties exist to reach.
-    fc.option(topicIdArb, { nil: undefined, freq: 2 })
-  )
-  .map(([entries, boardTopicId]) => {
-    const map = {};
-    for (const [id, subject] of entries) {
-      map[String(id)] = subject;
-    }
-    if (boardTopicId !== undefined) {
-      map[String(boardTopicId)] = PIPELINE_BOARD_SUBJECT_ID;
-    }
-    return map;
-  });
+// A handful of other-subject bindings - the shared building block every cell
+// arbitrary below draws from, so every cell still exercises the SAME shaped
+// map the original topicMapArb did (never empty, ids unique).
+const entriesArb = fc.uniqueArray(fc.tuple(topicIdArb, fc.constantFrom(...SUBJECTS)), {
+  minLength: 1,
+  maxLength: 6,
+  selector: (e) => e[0],
+});
 
-// The stored tick-state id, derived from the map so a crossing is reached by
-// construction rather than by luck: mostly one of the map's OWN keys (the
-// 1634=SUP-7 / 14647=SUP-5 shape), occasionally an id the map says nothing
-// about (the ordinary healthy case, which must keep working).
-function storedIdArb(map) {
-  const keys = Object.keys(map).map(Number);
-  return fc.oneof(
-    { weight: 4, arbitrary: fc.constantFrom(...keys) },
-    { weight: 1, arbitrary: topicIdArb.filter((id) => map[String(id)] === undefined) }
-  );
+function buildMap(entries, boardTopicId) {
+  const map = {};
+  for (const [id, subject] of entries) {
+    map[String(id)] = subject;
+  }
+  if (boardTopicId !== undefined) {
+    map[String(boardTopicId)] = PIPELINE_BOARD_SUBJECT_ID;
+  }
+  return map;
 }
 
 const ENSURED_TOPIC_ID = 6795;
@@ -89,13 +86,36 @@ function adaptersOver(topicMap, posted) {
   };
 }
 
+// BL-1790: (map, storedId) reaches already-board-bound, crossed and unmapped
+// BY CONSTRUCTION - each cell forces its own state instead of leaving it to
+// the shared arbitrary's odds.
+const boardBoundCellArb = fc
+  .tuple(entriesArb, topicIdArb)
+  .map(([entries, boardTopicId]) => ({ map: buildMap(entries, boardTopicId), storedId: boardTopicId }));
+
+const crossedCellArb = entriesArb.chain((entries) =>
+  fc
+    .constantFrom(...entries.map(([id]) => id))
+    .map((storedId) => ({ map: buildMap(entries, undefined), storedId }))
+);
+
+const unmappedCellArb = fc
+  .tuple(entriesArb, fc.option(topicIdArb, { nil: undefined, freq: 2 }))
+  .chain(([entries, boardTopicId]) => {
+    const map = buildMap(entries, boardTopicId);
+    return topicIdArb
+      .filter((id) => map[String(id)] === undefined)
+      .map((storedId) => ({ map, storedId }));
+  });
+
 test('property (BL-586 invariant 1): for any topic map and any stored id, the board only ever posts into a topic the map does not attribute to another subject', async () => {
   const reach = { crossed: 0, boardBound: 0, unmapped: 0 };
+  const CELL_ARBS = [boardBoundCellArb, crossedCellArb, unmappedCellArb];
+  const PER_CELL_RUNS = runsPerCell(150, CELL_ARBS.length);
 
-  await fc.assert(
-    fc.asyncProperty(
-      topicMapArb.chain((map) => storedIdArb(map).map((storedId) => ({ map, storedId }))),
-      async ({ map, storedId }) => {
+  for (const cellArb of CELL_ARBS) {
+    await fc.assert(
+      fc.asyncProperty(cellArb, async ({ map, storedId }) => {
         const subject = map[String(storedId)];
         if (subject === undefined) {
           reach.unmapped += 1;
@@ -115,35 +135,46 @@ test('property (BL-586 invariant 1): for any topic map and any stored id, the bo
             `posted into ${topicId}, which the map attributes to ${postedSubject} (stored id was ${storedId})`
           );
         }
-      }
-    )
-  );
+      }),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
 
   // Reachability floor: a property that never generated a crossing would be
   // vacuously green against the very defect it exists to catch.
-  assert.ok(reach.crossed >= 50, `generator reached only ${reach.crossed} crossed states`);
-  assert.ok(reach.boardBound >= 5, `generator reached only ${reach.boardBound} already-board-bound states`);
-  assert.ok(reach.unmapped >= 5, `generator reached only ${reach.unmapped} unmapped states`);
+  assertReachFloor(reach, ['crossed'], 50, 'BL-586 invariant 1 state');
+  assertReachFloor(reach, ['boardBound', 'unmapped'], 5, 'BL-586 invariant 1 state');
 });
 
 // The standing record's OWN id, derived from the map for the same
-// collision-by-construction reason as storedIdArb above. A standing record
-// can itself be crossed - the 2026-07-23 repair cleared tick state while a
-// running bridge still held the crossed id, and any writer could persist one
-// - so "still durably known" has to be told apart from "still durably
-// REMEMBERED, but now someone else's". Drawing this independently of the map
-// would never construct that state at all: with ~7 bindings out of 40000 ids
-// the collision arrives roughly once in a thousand runs, so the property
-// would report a comfortable green while never once exercising the branch it
-// exists to pin.
-function standingIdArb(map) {
-  const keys = Object.keys(map).map(Number);
-  return fc.oneof(
-    { weight: 3, arbitrary: fc.constantFrom(...keys) },
-    { weight: 2, arbitrary: topicIdArb.filter((id) => map[String(id)] === undefined) },
-    { weight: 1, arbitrary: fc.constant(undefined) }
-  );
-}
+// collision-by-construction reason as the invariant 1 cells above. A
+// standing record can itself be crossed - the 2026-07-23 repair cleared
+// tick state while a running bridge still held the crossed id, and any
+// writer could persist one - so "still durably known" has to be told apart
+// from "still durably REMEMBERED, but now someone else's".
+//
+// BL-1790: (map, standingId) reaches map-bound, usable-standing,
+// crossed-standing and nothing-durable BY CONSTRUCTION.
+const mapBindingCellArb = fc
+  .tuple(entriesArb, topicIdArb, fc.option(topicIdArb, { nil: undefined, freq: 2 }))
+  .map(([entries, boardTopicId, standingId]) => ({ map: buildMap(entries, boardTopicId), standingId }));
+
+const standingUsableCellArb = entriesArb.chain((entries) => {
+  const map = buildMap(entries, undefined);
+  return topicIdArb
+    .filter((id) => map[String(id)] === undefined)
+    .map((standingId) => ({ map, standingId }));
+});
+
+const standingCrossedCellArb = entriesArb.chain((entries) => {
+  const map = buildMap(entries, undefined);
+  return fc.constantFrom(...entries.map(([id]) => id)).map((standingId) => ({ map, standingId }));
+});
+
+const nothingDurableCellArb = entriesArb.map((entries) => ({
+  map: buildMap(entries, undefined),
+  standingId: undefined,
+}));
 
 // numRuns is pinned rather than left at the default so the reachability
 // floors below are a real assertion about the generator's shape and not a
@@ -152,11 +183,12 @@ const INVARIANT_2_RUNS = 1000;
 
 test('property (BL-586 invariant 2): whenever the board topic is still durably known AND still the board\'s, re-establishing identity reuses it and never creates', () => {
   const reach = { mapBinding: 0, standingUsable: 0, standingCrossed: 0, nothingDurable: 0 };
+  const CELL_ARBS = [mapBindingCellArb, standingUsableCellArb, standingCrossedCellArb, nothingDurableCellArb];
+  const PER_CELL_RUNS = runsPerCell(INVARIANT_2_RUNS, CELL_ARBS.length);
 
-  fc.assert(
-    fc.property(
-      topicMapArb.chain((map) => standingIdArb(map).map((standingId) => ({ map, standingId }))),
-      ({ map, standingId }) => {
+  for (const cellArb of CELL_ARBS) {
+    fc.assert(
+      fc.property(cellArb, ({ map, standingId }) => {
         const mapBoundKey = Object.keys(map).find((key) => map[key] === PIPELINE_BOARD_SUBJECT_ID);
         const standingSubject = standingId === undefined ? undefined : map[String(standingId)];
         // A remembered id the map now attributes to ANOTHER subject is not a
@@ -196,17 +228,16 @@ test('property (BL-586 invariant 2): whenever the board topic is still durably k
             `re-established identity onto ${decision.topicId}, which the map attributes to ${reusedSubject}`
           );
         }
-      }
-    ),
-    { numRuns: INVARIANT_2_RUNS }
-  );
+      }),
+      { numRuns: PER_CELL_RUNS }
+    );
+  }
 
   // Reachability floors. standingCrossed is the one that matters most: it is
-  // the state the previous generator could not construct, and the state in
-  // which a naive "remembered id wins" rebind would put the board straight
-  // back into SUP-5.
-  assert.ok(reach.mapBinding >= 100, `generator reached only ${reach.mapBinding} map-bound states`);
-  assert.ok(reach.standingUsable >= 50, `generator reached only ${reach.standingUsable} usable-standing-record states`);
-  assert.ok(reach.standingCrossed >= 80, `generator reached only ${reach.standingCrossed} crossed-standing-record states`);
-  assert.ok(reach.nothingDurable >= 25, `generator reached only ${reach.nothingDurable} nothing-durable states`);
+  // the state a naive "remembered id wins" rebind would put the board
+  // straight back into SUP-5.
+  assertReachFloor(reach, ['mapBinding'], 100, 'BL-586 invariant 2 state');
+  assertReachFloor(reach, ['standingUsable'], 50, 'BL-586 invariant 2 state');
+  assertReachFloor(reach, ['standingCrossed'], 80, 'BL-586 invariant 2 state');
+  assertReachFloor(reach, ['nothingDurable'], 25, 'BL-586 invariant 2 state');
 });
