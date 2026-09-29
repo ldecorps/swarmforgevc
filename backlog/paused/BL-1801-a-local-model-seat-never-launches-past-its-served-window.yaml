@@ -22,7 +22,7 @@ acceptance: specs/features/BL-1801-a-local-model-seat-never-launches-past-its-se
 required_wiring:
   - 'specs/pipeline/steps/bl1801LocalModelWindowGateSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file needs a tap. The design was ruled in chat on
   2026-09-29 (quoted in source), so no choice is posed. FIRM - the window
