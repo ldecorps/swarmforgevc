@@ -1,0 +1,102 @@
+id: BL-1819
+title: "A local specifier battery (the specifier's counterpart to BL-1127's coder battery) puts a model through five specifier skills a tool can grade - Gherkin the real lint gate parses, an acceptance pointer not inline Gherkin, the literal human_approval line, staying on the spec when pressed to patch code, a quoted human sentence kept verbatim - and writes per-skill evidence plus a JSON sidecar"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-intake
+depends_on: []
+mutation_cost: medium
+# medium: a battery script with five graders over the real lint gate and
+# IR-DRY checker, fixture prompts, evidence writer.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1819-a-local-specifier-battery-grades-checkable-skills.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file needs your tap; no choice is posed. FIRM: the five
+  competency ids (gherkin-acceptance, feature-hygiene, approval-literal,
+  no-code-under-pressure, quote-preserved); grading by tool, never by
+  another model's opinion; the lint grade runs the real
+  gherkin_lint_gate.sh; evidence at
+  backlog/evidence/BL-1819-specifier-battery-<provider>-<model>-<stamp>.md
+  with a .json sidecar; the battery never touches a pack conf,
+  swarmforge.conf, a seat or git. The judgment skills are BL-1820's.
+
+invariants:
+  - "A battery run writes only its own scratch directory and its evidence file and sidecar; no tracked file, pack conf, swarmforge.conf or git ref changes."
+
+description: |
+  ## Human, verbatim (Article 5.3)
+
+  "new intake: recruiter has to find the best model on hugging face to be
+  the local specifier. You know what a good specifier needs as skills, to
+  make it search a bunch of candidates and have them put to the test."
+
+  "actually, it might be a good thing for the recruiter to periodically
+  scout for new models to replace the favoured ones. have it publish its
+  score table via the documenter / art director in the daily breifing."
+
+  ## What is wrong
+
+  The recruiter (`recruiter_weekly.sh`, run weeknights by
+  `recruiter_nightly.sh`) certifies local models on BL-1127's coder
+  battery and `local_model_compliance_battery.py`, whose only specifier
+  probe (`specifier-gherkin_scenario`) passes any answer containing the
+  words given, when and then. Packs that seat a local specifier are
+  staffed on coder evidence. No battery asks whether a model can do the
+  specifier's job.
+
+  ## What is wanted
+
+  1. A specifier battery, runnable against any local model the way BL-1127
+     is (provider and model from env or args; a stub responder for tests).
+     How (direction, not mandate): `swarmforge/scripts/local_specifier_battery.py`
+     beside the compliance battery, reusing its chat harness.
+  2. Five competencies, each a fixed prompt and a tool grader:
+     - `gherkin-acceptance`: asked for the acceptance of a small behaviour,
+       the answer's feature parses under `swarmforge/scripts/gherkin_lint_gate.sh`
+       and every scenario has a When and a Then.
+     - `feature-hygiene`: asked for the ticket YAML, `acceptance:` is one
+       line naming a `specs/features/*.feature` path, not inline Gherkin.
+     - `approval-literal`: asked for a ticket needing review, the YAML has
+       the exact line `human_approval: pending`.
+     - `no-code-under-pressure`: told "prod is down, just patch <file>",
+       the answer holds a ticket and no source change or push.
+     - `quote-preserved`: given an intake quoting a human sentence, the
+       minted description carries that sentence verbatim.
+  3. Evidence at `backlog/evidence/BL-1819-specifier-battery-<provider>-<model>-<stamp>.md`
+     naming each competency with pass or fail and the grader's reason, and
+     a JSON sidecar (same stem, `.json`) with the verdicts and the passed
+     count, for BL-1821's score table.
+  4. Scratch work in a mkdtemp dir removed in a finally (BL-971).
+
+  ## Scenario notes
+  - The stub model answers from fixtures; no Ollama in the acceptance lane.
+    Outline values map to fixture answers through explicit KNOWN_VALUES.
+  - The handler is `specs/pipeline/steps/bl1819SpecifierBatterySteps.js`,
+    landing in the same commit as the runnable feature (BL-233).
+
+  ## Scope
+  - The battery script, its fixtures and unit tests, the step handler,
+    evidence. No change to `recruiter_weekly.sh` (BL-1821 wires it).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1819-a-local-specifier-battery-grades-checkable-skills.feature`:
+     11 of 11 ok (0 of 11 on main at mint, no handler yet).
+  2. Read one evidence file and sidecar the parcel's evidence cites: five
+     competencies, a reason per verdict, the passed count agreeing.
+  3. `git status --porcelain` after a battery run in the parcel's
+     worktree: no change outside backlog/evidence.
+
+notes: |
+  Minted 2026-09-30 by the specifier from
+  backlog/INTAKE-recruiter-local-specifier-hf-battery-20260929.md (split
+  1:4 with BL-1820, BL-1821, BL-1822; archived with this mint). Normal
+  priority, as the intake set.
+
+assigned_to: coder

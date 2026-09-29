@@ -1,0 +1,107 @@
+id: BL-1821
+title: "Once a week the recruiter scouts a batch of up to N unseen Hugging Face candidates for the local specifier seat, batteries each with the specifier battery, re-batteries the model the steward currently favours for specifier, and keeps a score table (.swarmforge/recruiter/score-table.json) whose recommend line names a challenger only when it passes more than the incumbent - an offer, never a staffing change"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-intake
+depends_on: [BL-1819]
+# BL-1819 is the battery and the JSON sidecar this scout reads. BL-1820's
+# competencies join the same sidecar whenever they land; the table ranks on
+# whatever the battery reports.
+mutation_cost: medium
+# medium: a batch mode in recruiter_hf_discover.py, a scout loop, the
+# score-table writer and its ranking.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1821-the-recruiter-scouts-a-batch-of-specifier-candidates.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file needs your tap; no choice is posed. FIRM: the batch
+  size N is operator-tunable (default 3); the scout runs once a week from
+  the existing weeknight recruiter hook, not nightly (each pull is gigabytes);
+  the incumbent is the steward's top certified local recommendation for
+  specifier (model_steward_cli.bb role-matrix specifier), when there is
+  one; the table is runtime state under .swarmforge/recruiter/, never
+  committed; the scout never edits a pack conf, swarmforge.conf or a seat
+  and never commits. A better challenger is an offer.
+
+invariants:
+  - "A scout run never changes a pack conf, swarmforge.conf, a seat assignment or a git ref; its writes are the score table, its report, the recruiter's seen list and the battery's own evidence."
+
+description: |
+  ## Human, verbatim (Article 5.3)
+
+  "new intake: recruiter has to find the best model on hugging face to be
+  the local specifier. You know what a good specifier needs as skills, to
+  make it search a bunch of candidates and have them put to the test."
+
+  "actually, it might be a good thing for the recruiter to periodically
+  scout for new models to replace the favoured ones. have it publish its
+  score table via the documenter / art director in the daily breifing."
+
+  ## What is wrong
+
+  `recruiter_hf_discover.py` prints ONE candidate (`{"candidate": ...}`)
+  from the top SCAN_LIMIT GGUF repos by downloads, filtered by trusted
+  orgs, size, Q4_K_M and novelty (`.swarmforge/recruiter/seen.jsonl`).
+  `recruiter_weekly.sh` pulls it, runs the coder battery and the
+  compliance battery, certifies, and reports once. It never batteries for
+  specifier, never re-tests a favoured model, and keeps no standing table.
+
+  ## What is wanted
+
+  1. Discovery returns up to N candidates under the same rules (a batch
+     flag on `recruiter_hf_discover.py`; the single-pick output stays for
+     the weekly coder path).
+  2. A specifier scout (direction: a script beside `recruiter_weekly.sh`,
+     called weekly from the weeknight hook) pulls each candidate into
+     Ollama, runs BL-1819's battery on it, and runs the same battery on the
+     incumbent (the steward's top certified `local/*` for specifier from
+     `role-matrix specifier`; none means no incumbent row).
+  3. `.swarmforge/recruiter/score-table.json`: one row per model
+     batteried, with role, model or alias, Hugging Face id if any, battery
+     stamp and evidence path, passed and total, incumbent flag, and the
+     run's `updated_at`. Rows from the same model's older runs are
+     replaced, not duplicated. One recommend line per role: the best
+     challenger when it passes MORE competencies than the incumbent (ties
+     keep the incumbent), else "keep the incumbent".
+  4. A ranked report beside the weekly one
+     (`backlog/evidence/recruiter-specifier-scout-<stamp>.md`, uncommitted,
+     as the weekly report is) and one Operator Telegram line through the
+     existing outbox.
+  5. Nothing here seats anything. Staffing a local specifier on the table
+     (a pack staffing gate like `local_coder_battery_staffing_gate.sh`) is
+     a follow-on, not minted: it becomes due when a local specifier seat is
+     the next staffing goal.
+
+  ## Scenario notes
+  - The Hugging Face listing, the puller and the battery are stubs; no
+    network or Ollama in the acceptance lane. Fixture roots are mkdtemp
+    (BL-1390).
+  - The handler is `specs/pipeline/steps/bl1821SpecifierScoutSteps.js`,
+    landing in the same commit as the runnable feature (BL-233).
+
+  ## Scope
+  - `swarmforge/scripts/recruiter_hf_discover.py`, a scout script beside
+    `recruiter_weekly.sh`, the weekly call in `recruiter_nightly.sh`, their
+    tests, the step handler, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1821-the-recruiter-scouts-a-batch-of-specifier-candidates.feature`:
+     6 of 6 ok (0 of 6 on main at mint, no handler yet).
+  2. Run the discovery batch flag once against the live listing, read-only
+     (no pull): up to N candidates printed, none already in seen.jsonl.
+  3. `git diff main...HEAD --name-only` names no pack conf and no
+     `swarmforge.conf`.
+
+notes: |
+  Minted 2026-09-30 by the specifier from
+  backlog/INTAKE-recruiter-local-specifier-hf-battery-20260929.md (split
+  1:4, archived with this mint). Normal priority. The intake's optional
+  4th slice (a staffing gate for a local specifier seat, and the same
+  cadence for coder) is recorded here and not minted.

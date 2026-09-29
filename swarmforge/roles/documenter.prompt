@@ -135,6 +135,13 @@ You are the documenter.
   "coordinator-owned": that reading (BL-099's ticket text, `extension.ts`'s
   comment, the `Daily briefing due: compose ...` nudge) is retired by the
   ruling; BL-1458 retires the code half.
+- **Model scout section (BL-1822).** Until BL-1822 lands, the briefing has
+  no Model scout section. Once it has landed, run
+  `bb swarmforge/scripts/recruiter_score_table_cli.bb <project-root>
+  --briefing` and paste its output verbatim as the Model scout section: it
+  renders the recruiter's score table, or its one-line empty state. Never
+  write, rank or round those numbers yourself; the recruiter and the
+  steward own them, and the Art Director owns how the section reads.
 - Before composing, `git fetch origin` and check
   `git cat-file -e origin/main:docs/briefings/<date>.md`. If the day's
   briefing already exists, note the coordinator `briefing <date> already on

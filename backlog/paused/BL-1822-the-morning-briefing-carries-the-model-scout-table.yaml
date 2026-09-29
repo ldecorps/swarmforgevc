@@ -1,0 +1,86 @@
+id: BL-1822
+title: "A tool renders the morning briefing's Model scout section from the recruiter's score table - rows best first with passed/total and the incumbent flag, then the recommend line, or one empty-state line - so the documenter pastes it and never invents or re-ranks a number; the Art Director signs off how it reads"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-intake
+depends_on: [BL-1821]
+# BL-1821 writes .swarmforge/recruiter/score-table.json, the only input.
+mutation_cost: low
+# low: one small CLI over a JSON file and its rendering.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1822-the-morning-briefing-carries-the-model-scout-table.feature
+
+# No required_wiring: the only consumer is the documenter, through
+# documenter.prompt prose the specifier landed on main at mint; an anchor on
+# that prose would be satisfied by construction and gate nothing (BL-1235).
+
+human_approval: pending
+approval_context: >
+  A new feature file needs your tap; no choice is posed. FIRM: the tool is
+  bb swarmforge/scripts/recruiter_score_table_cli.bb <project-root>
+  --briefing, reading .swarmforge/recruiter/score-table.json; the two
+  empty-state lines are the feature's literals; "since the previous
+  briefing" compares the table's updated_at with the previous briefing's
+  date; the documenter pastes the output verbatim (documenter.prompt line
+  landed at mint); the Art Director answers QA's sign-off note on this
+  artifact parcel (Article 1.10).
+
+invariants: []
+
+description: |
+  ## Human, verbatim (Article 5.3)
+
+  "actually, it might be a good thing for the recruiter to periodically
+  scout for new models to replace the favoured ones. have it publish its
+  score table via the documenter / art director in the daily breifing."
+
+  ## What is wanted
+
+  1. `bb swarmforge/scripts/recruiter_score_table_cli.bb <project-root>
+     --briefing` prints the Model scout section:
+     - when the table's `updated_at` is after the previous briefing
+       (`docs/briefings/<date>.md`, the latest before today): the rows,
+       highest passed count first, each naming the model, passed out of
+       total, and "incumbent" when flagged, then the recommend line;
+     - when it is not: "Model scout: no new scout since the previous
+       briefing.";
+     - when no table exists: "Model scout: no scout has run yet."
+  2. The documenter's morning-briefing duty already carries the paste
+     instruction (`swarmforge/roles/documenter.prompt`, "Model scout
+     section (BL-1822)", landed by the specifier at mint and marked "Until
+     BL-1822 lands"). QA's retire check sees the marker once this lands.
+  3. How the section reads on a phone and in the email (list vs table,
+     line length) follows `docs/design/system.md`'s daily briefing rules;
+     the Art Director answers QA's sign-off note on this parcel with LGTM
+     or a defect list. The numbers are never the Art Director's.
+
+  ## Scenario notes
+  - Fixture roots are mkdtemp with a fixture score table and fixture
+    briefings (BL-1390).
+  - The handler is `specs/pipeline/steps/bl1822ModelScoutSectionSteps.js`,
+    landing in the same commit as the runnable feature (BL-233).
+
+  ## Scope
+  - The CLI (and a lib beside it), its unit test, the step handler,
+    evidence. The documenter.prompt line is the specifier's and already
+    landed.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1822-the-morning-briefing-carries-the-model-scout-table.feature`:
+     3 of 3 ok (0 of 3 on main at mint, no handler yet).
+  2. Run the CLI against this host: with no score table yet it prints
+     "Model scout: no scout has run yet."
+  3. Send the Art Director the sign-off note for this artifact parcel and
+     record its answer.
+
+notes: |
+  Minted 2026-09-30 by the specifier from
+  backlog/INTAKE-recruiter-local-specifier-hf-battery-20260929.md (split
+  1:4, archived with this mint). Normal priority. The documenter.prompt
+  paste instruction landed in the mint commit (BL-798).
