@@ -42,7 +42,7 @@ write_conf() {
   cat > "$root/swarmforge/swarmforge.conf" <<'CONF'
 config active_backlog_max_depth -1
 window coder claude coder --model deepseek/deepseek-chat
-window cleaner claude cleaner --model qwen/qwen3-32b
+window cleaner claude cleaner --model mistralai/mistral-large
 window architect claude architect --model google/gemini-2.5-pro
 window documenter claude documenter --model deepseek/deepseek-chat
 CONF
@@ -109,7 +109,13 @@ rm -rf "$ROOT3"
 # ── 04: model flag from conf still reaches the claude launch line ────────
 ROOT4="$(mk_root)"
 write_conf "$ROOT4"
-SWARMFORGE_OPENROUTER_ROLES="documenter" OPENROUTER_API_KEY=x zsh -c "
+# MODEL_FACTORY_STATE_DIR: isolates resolve_role_model's own runtime overlay
+# read from this repo's real .swarmforge/model-factory/ (whatever role
+# worktree happens to run this test), same pattern
+# test_pack_staffing_gate.sh's own MODEL_STEWARD_STATE_DIR isolation uses
+# for the sibling state store - never this repo's real assignment.json,
+# which can pin a role to a model the fixture's own conf never named.
+SWARMFORGE_OPENROUTER_ROLES="documenter" OPENROUTER_API_KEY=x MODEL_FACTORY_STATE_DIR="$ROOT4/.swarmforge/model-factory" zsh -c "
   source '$SWARMFORGE_SH' '$ROOT4'
   parse_config
   $index_of_role_snippet

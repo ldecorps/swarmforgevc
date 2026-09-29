@@ -141,3 +141,6 @@ notes: |
   invariant). Testable (a source check and a 0.6 s shell run).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-29, by: cleaner, blamed: coder, class: acceptance, commit: 7af4d84173, evidence: backlog/evidence/BL-1791-bounce-20260929.md }
