@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=eaf3b63065542637d1318e5a3b1bd1f2f30bc329582754183a8bf5b3c80b5a70
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-29T10:08:34.020687901Z","feature_name":"BL-1793 swarm stamp - a respawn keeps a local seat local (hotfix cb8d502fec)","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1793-swarm-stamp-a-respawn-keeps-a-local-seat-local.feature","background_hash":"b3107546042ebfbe2d9d2a0481bce074816056b48bd85897ffc8796bae814c05","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a respawned seat whose window line names no cloud host keeps its own endpoint","scenario_hash":"fc31e1d1d2c3a91385f97e0fe4bf40dbd3418630b6ff66787bf8f82e5e1a20d7","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-29T10:08:34.020687901Z"},{"index":1,"name":"a respawned seat whose window line names a cloud host is still remapped to that host","scenario_hash":"88688aad0a2d23b467452a035be7101d29b9bd89361c5d46bf461d2f0de77d6f","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-09-29T10:08:34.020687901Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1793 swarm stamp - a respawn keeps a local seat local (hotfix cb8d502fec)
 
   Review-only certification (BL-848) of operator hotfix cb8d502fec, live

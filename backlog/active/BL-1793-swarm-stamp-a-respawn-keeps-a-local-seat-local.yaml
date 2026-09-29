@@ -1,5 +1,5 @@
 id: BL-1793
-title: "Swarm stamp-off: a respawn keeps a local-Ollama seat local — certify hotfix cb8d502fec"
+title: "Swarm stamp-off: hotfix cb8d502fec - a respawn (swarm ensure, handoffd auth-observe, babysitterd) no longer rewires a local-Ollama seat to Cerebras or Perplexity, because provider_compat_lib's launch-cli-implies-* predicates strip the dormant SWARMFORGE_USE-guarded blocks every generated launch script carries before matching a cloud host - review-only certification (BL-848) of what landed on 2026-09-28"
 milestone: M8
 type: defect
 severity: medium
@@ -213,3 +213,4 @@ notes: |
   explicit env).
 
 assigned_to: coder
+abandoned_commits: [406a47131a]
