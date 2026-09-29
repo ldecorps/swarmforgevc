@@ -1,0 +1,137 @@
+id: BL-1815
+title: "Before the model steward moves a role's seat from a Claude agent to a local-model agent (either trial boundary), the outgoing Claude seat writes a knowledge brief of at most 2000 characters that becomes the BL-1177 payload's continuitySummary and is kept at .swarmforge/agent-memory/<role>/; an owed brief that is missing, empty or over budget refuses the move, and every other agent pair crosses a trial boundary exactly as before"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+# medium: a bb decision (owed or not) and a bounded wait in the steward, one
+# TS CLI flag, payload persistence; the pane request reuses an existing lib.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1815-a-claude-seat-briefs-its-local-model-successor.feature
+
+required_wiring:
+  - 'swarmforge/scripts/model_steward_cli.bb::--summary-file::the live trial boundary (transfer-memory!) hands the brief to trial-boundary-memory.js'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the human's standing directive in
+  backlog/STEERING.md (2026-09-29, Claude to local knowledge transfer):
+  "could we imagine that the claude agent does a knowledge transfert?" /
+  "yes please, and have it priorize as part of the local llm collection";
+  approved at mint when no ruling choice is posed. FIRM: owed only for a
+  claude to local-model move; every other pair, aider included, behaves
+  exactly as today. FIRM: fail closed - no usable brief, no move. FIRM:
+  the payload stays BL-1177 schema 1, never a vendor session blob. FIRM:
+  the brief budget is 2000 characters. FIRM: trial-boundary-memory.js
+  takes the brief as --summary-file <path>.
+
+invariants:
+  - "A trial boundary that moves a seat from the claude agent to the local-model agent never completes without a persisted schema-1 payload whose continuitySummary is the outgoing seat's non-empty brief of at most 2000 characters; every failure to get one leaves the seat where it was."
+
+description: |
+  ## Human, verbatim (Article 5.3)
+
+  "could we imagine that the claude agent does a knowledge transfert?"
+  "yes please, and have it priorize as part of the local llm collection"
+
+  ## What is wrong
+
+  BL-1176 built a portable memory payload (BL-1177) and wired
+  capture/inject into same-role model switches (BL-1178). Verified at
+  mint (main 7d124ad08d):
+  - Capture fills `continuitySummary` from a `transcriptSummary` the
+    caller passes, and no live caller passes one:
+    `buildOutgoingCaptureState` defaults it to `''`, and
+    `trial-boundary-memory.js` defaults `--summary` to `''`.
+  - `inject` only validates. Nothing is written to disk, so the incoming
+    seat never sees even a good summary (BL-1816 owns that half).
+  - Only two production paths run the transfer:
+    `backendSwitch.switchRoleModel` (the panel's Claude-to-Claude model
+    dropdown) and `model_steward_cli.bb`'s `transfer-memory!` at
+    `trial nominate` (trial-start) and `trial assess` (trial-end).
+    `agentMemoryVendorAdapters.transferMemoryAcrossVendors` (BL-1179's
+    matrix) has no caller. The steward trial is therefore the one live
+    path on which a Claude seat can hand its role to a local-model seat,
+    and this ticket wires it.
+  - Pack cold-swaps (`cold_swap_day_shift_to_ollama_qwen.sh`:
+    `kill_all_swarm` then relaunch on a local pack) run no transfer at
+    all. Extending the brief to them is a question put to the human on
+    2026-09-29, not this ticket's scope.
+
+  ## What is wanted
+
+  1. At either trial boundary, `transfer-memory!` knows the outgoing and
+     incoming seats' agents (`model-factory-lib/resolve-launch-agent` on
+     each seat's provider). A brief is owed exactly when the outgoing
+     agent is `claude` and the incoming agent is `local-model`.
+  2. When owed, the steward asks the live outgoing seat for a brief and
+     waits for it, with a bound the parcel states and records (never
+     unbounded; the seat may be mid-parcel). The brief covers the open
+     parcels and their state, decisions already taken, landmines, and
+     "do next / don't redo", in at most 2000 characters (about 500 tokens:
+     it must fit beside BL-1798's 8192-character card in an 8k window).
+     How (direction, not mandate): type the request into the seat's pane
+     through the existing injection lib (`handoff_inject_lib.bb`, with
+     BL-1719's nil-session guard), the request text itself carrying the
+     whole instruction (what to cover, the path, the limit), so no role
+     prompt needs a new convention. The brief path is
+     `.swarmforge/agent-memory/<role>/brief.md`.
+  3. The brief reaches `trial-boundary-memory.js` as `--summary-file
+     <path>` and becomes `continuitySummary`. The CLI persists the
+     schema-1 payload at `.swarmforge/agent-memory/<role>/payload.json`,
+     with `capturedAt` (ISO-8601) inside `handoffPack` so BL-1816 can
+     judge freshness without a schema change.
+  4. An owed brief that never arrives within the bound, is empty after
+     trimming, or is over 2000 characters refuses the move through the
+     existing `trial-die!` path, naming the reason ("no brief", "empty
+     brief", "over 2000"); the seat is not written.
+  5. Every other pair, and every step that crosses no boundary, runs
+     exactly as today: no request, no wait, no new refusal. Aider
+     continuity claims (BL-1179) are out of scope here.
+
+  ## Scenario notes
+  - The fixture drives the real `transfer-memory!` path with a stub pane
+    (no tmux) and a stub memory tool where the scenario is about the
+    steward's decision; scenario 02 runs the real `trial-boundary-memory.js`
+    so the persisted payload is the real one. Fixture roots are mkdtemp
+    (BL-1390).
+  - The handler is `specs/pipeline/steps/bl1815ClaudeSeatBriefSteps.js`,
+    landing in the same commit as the runnable feature (BL-233).
+  - IR-DRY at mint: 3 possible-synonym findings, all one step pattern with
+    different quoted values (IR-DRY does not normalize quoted literals,
+    BL-959); no change.
+
+  ## Scope
+  - `swarmforge/scripts/model_steward_cli.bb` (and a lib beside it if the
+    decision and the wait want one), `extension/src/tools/trial-boundary-memory.ts`,
+    `extension/src/tools/agentMemoryHotSwap.ts` or `agentMemoryTransfer.ts`
+    only for the persisted payload, their tests, the step handler,
+    evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1815-a-claude-seat-briefs-its-local-model-successor.feature`:
+     8 of 8 ok (0 of 8 on main at mint, no handler yet).
+  2. Read the parcel's evidence for the wait bound and its reason.
+  3. In a mkdtemp fixture, never the live steward: arm a trial from a
+     claude seat to a local-model seat with the stub pane answering, and
+     read `.swarmforge/agent-memory/coder/payload.json` in the fixture:
+     schemaVersion 1, the brief as continuitySummary, capturedAt present.
+  4. `git diff main...HEAD --name-only` names no `swarmforge/roles/` file
+     and no `.swarmforge/` path.
+
+notes: |
+  Minted 2026-09-29 by the specifier from
+  backlog/INTAKE-claude-knowledge-transfer-to-local-model-20260929.md
+  (intake slice 1, archived with this mint), under the human's standing
+  directive in backlog/STEERING.md; queue-jump in the local-LLM
+  collection, approved at mint (no ruling choice posed).
+  The intake read the BL-1178 hot-swap path as able to respawn a seat as
+  local-model. It cannot: the panel switch is Claude-only. The steward
+  trial is the live seam, so this ticket wires it.

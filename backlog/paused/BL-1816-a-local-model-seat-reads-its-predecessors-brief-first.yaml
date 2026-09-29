@@ -1,0 +1,104 @@
+id: BL-1816
+title: "A local-model seat's composed prompt carries one line pointing at its role's knowledge brief (kept by BL-1815 at .swarmforge/agent-memory/<role>/) while the brief is at most 24 hours old, telling the seat to read it before its first ready_for_next.sh; the card stays within BL-1798's 8192 characters and every other agent composes exactly as before"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 3
+direction: queue-jump
+depends_on: [BL-1815]
+# BL-1815 is the writer of .swarmforge/agent-memory/<role>/payload.json and
+# pins its layout; this slice is its only reader, so it lands second.
+mutation_cost: low
+# low: one pointer line and a freshness check in the local-model
+# composition; BL-1798's overlay pointer is the template.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1816-a-local-model-seat-reads-its-predecessors-brief-first.feature
+
+required_wiring:
+  - 'swarmforge/scripts/prompt_engine_lib.bb::knowledge-brief-pointer::the local-model composition every seat launch runs (swarmforge.sh compose) calls it'
+
+human_approval: approved
+approval_context: >
+  Minted approved under the human's standing directive in
+  backlog/STEERING.md (2026-09-29, Claude to local knowledge transfer):
+  "could we imagine that the claude agent does a knowledge transfert?" /
+  "yes please, and have it priorize as part of the local llm collection";
+  approved at mint when no ruling choice is posed. FIRM: a pointer line,
+  never the brief inlined (BL-1798's overlay discipline and 8192-character
+  budget). FIRM: fresh means captured at most 24 hours ago. FIRM: no other
+  agent's composition changes. FIRM: the pointer is built by a function
+  named knowledge-brief-pointer in prompt_engine_lib.bb (the wiring
+  anchor).
+
+invariants: []
+
+description: |
+  ## Human, verbatim (Article 5.3)
+
+  "could we imagine that the claude agent does a knowledge transfert?"
+  "yes please, and have it priorize as part of the local llm collection"
+
+  ## What is wrong
+
+  BL-1815 keeps the outgoing Claude seat's brief at
+  `.swarmforge/agent-memory/<role>/brief.md`, with the schema-1 payload
+  beside it (`payload.json`, `capturedAt` in `handoffPack`). Nothing puts
+  it in front of the incoming seat. A local-model seat is launched with
+  "Read and obey every instruction in '<prompt_file>'", and that file is
+  composed by `prompt_engine_cli.bb compose local-model <role>`
+  (`swarmforge.sh`, BL-1798); the composition knows nothing of the brief.
+
+  ## What is wanted
+
+  1. When a local-model prompt is composed for a role whose payload is
+     fresh (capturedAt at most 24 hours before compose time), the
+     composition carries exactly one line naming the brief file and
+     telling the seat to read it before its first
+     `./swarmforge/scripts/ready_for_next.sh`. The line is built by
+     `knowledge-brief-pointer` in `prompt_engine_lib.bb`, the same way
+     `local-compact-bootstrap-text` appends the overlay pointer today.
+     It applies to both local-model compositions, the compact card and
+     the generic text a role without a card still gets (BL-1798 item 4).
+  2. The composed compact prompt stays at most 8192 characters with the
+     pointer in it.
+  3. A stale payload (over 24 hours), an absent one, or one with no
+     capturedAt yields no pointer. The pointer re-appears on every
+     local-model compose while the brief is fresh, so a local seat that
+     restarts the same day is told again; that is intended.
+  4. Every other agent (claude, aider, and the rest) composes byte-for-byte
+     as it would with no brief kept.
+
+  ## Scenario notes
+  - The fixture writes the payload the way BL-1815 does (schema 1,
+    `handoffPack.capturedAt`) and fixes the compose clock; no live
+    `.swarmforge/` is read. Fixture roots are mkdtemp (BL-1390).
+  - The handler is `specs/pipeline/steps/bl1816LocalSeatBriefPointerSteps.js`,
+    landing in the same commit as the runnable feature (BL-233).
+  - IR-DRY at mint: 2 findings, both one step pattern with different
+    values ("captured N hours ago", the composed agent); no change.
+
+  ## Scope
+  - `swarmforge/scripts/prompt_engine_lib.bb` (and `prompt_engine_cli.bb`
+    only if the compose clock or root must be passed in), its test runner,
+    the step handler, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1816-a-local-model-seat-reads-its-predecessors-brief-first.feature`:
+     4 of 4 ok (0 of 4 on main at mint, no handler yet).
+  2. `node specs/pipeline/cli.js specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature`:
+     8 of 8 ok, as measured on main at mint (the card is unchanged with no brief kept).
+  3. In a mkdtemp fixture with a fresh payload for coder, run
+     `bb swarmforge/scripts/prompt_engine_cli.bb compose local-model coder`
+     against it: one pointer line, total at most 8192 characters.
+  4. `git diff main...HEAD --name-only` names no `swarmforge/roles/` file.
+
+notes: |
+  Minted 2026-09-29 by the specifier from
+  backlog/INTAKE-claude-knowledge-transfer-to-local-model-20260929.md
+  (intake slice 2, archived with this mint), under the human's standing
+  directive in backlog/STEERING.md; queue-jump in the local-LLM
+  collection, approved at mint (no ruling choice posed).

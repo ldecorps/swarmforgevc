@@ -49,6 +49,37 @@ Until the human declares one of those as the cycle direction, no Direction-lane
 gate is in force. That does **not** mean the human has said nothing about
 product surfaces — see the standing freeze below.
 
+## Standing human directive (2026-09-29, via Cursor) — Claude→local knowledge transfer is queue-jump in the local-LLM collection
+
+**Human, verbatim (Cursor):** "could we imagine that the claude agent does a
+knowledge transfert?" / "yes please, and have it priorize as part of the
+local llm collection"
+
+**Intake:** `backlog/INTAKE-claude-knowledge-transfer-to-local-model-20260929.md`
+
+**Effect:**
+
+- Mint as child(ren) of epic BL-1125 (`local-llm-swarm`), `direction:
+  queue-jump`, ranked with the other local-LLM JumpQ work (compact cards
+  BL-1798–1801 and the standing "local models are now the priority"
+  preference) — ahead of ordinary paused work, not ahead of Article 3.2.4
+  expedited defects.
+- Intent: on same-role Claude → `local-model` swap, outgoing Claude writes a
+  real knowledge brief into BL-1177's portable payload; incoming local seat
+  gets that brief on first turn. Aider stays unsupported (BL-1179).
+- Add minted ids to BL-1125 `decomposes_into` when filed.
+- `human_approval: approved` at mint when the slice poses no ruling choice
+  (human asked for it by name and asked to prioritize); genuine forks still
+  go `pending` with `ruling_options`.
+
+**Minted 2026-09-29 by the specifier:** BL-1815 (outgoing Claude seat writes
+a brief of at most 2000 characters at a steward trial boundary; fail closed)
+and BL-1816 (the local-model composition points at a fresh brief;
+depends_on BL-1815), queue-jump priorities 2 and 3, both approved. The live
+seam is the model steward's trial boundary: the BL-1178 panel switch is
+Claude-to-Claude only. Whether pack cold-swaps to a local pack should also
+collect briefs is a question put to the human, not yet minted.
+
 ## Standing human directive (2026-09-29, via Cursor) — mint Bob-upstream's three suggested slices now
 
 **Human, verbatim (Cursor):** "ok have specifier work on the 3 suggested items"
