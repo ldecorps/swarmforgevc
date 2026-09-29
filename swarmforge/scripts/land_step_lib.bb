@@ -971,6 +971,30 @@
   (when-let [changes (rev-range-line-changes root origin-main sha paths)]
     (every? (fn [p] (empty? (:added (get changes p)))) paths)))
 
+;; BL-1794: a stray whose lines an EARLIER stray in the SAME replay already
+;; landed conflicts here even though origin-main itself does not carry them
+;; yet - ground (a) alone, measured only against origin-main, cannot see
+;; that. Ground (d) is ground (a)'s same test, measured against the
+;; scratch/replay branch's own current HEAD instead: ANY content a prior
+;; cherry-pick already placed on this replay's own branch also counts as
+;; nothing left to land. The scratch branch is a linked worktree of `root`
+;; sharing the same object store, so `root`'s own git process can read a
+;; diff between the scratch HEAD sha and `sha` without touching the scratch
+;; worktree's files - called strictly BEFORE the caller's cherry-pick
+;; --abort, same as every other ground here, so the conflict-marked tree
+;; is never disturbed first.
+(defn stray-content-subset-of-replay-head?
+  "Ground (d). `sha`'s own post-image at `paths`, diffed FROM the replay
+   branch's CURRENT HEAD (not origin-main), adds no line - covers a stray
+   whose content an earlier cherry-pick in THIS SAME replay already placed
+   there. nil (an unreadable scratch HEAD or diff) fails closed - never
+   superseded on missing evidence."
+  [root scratch sha paths]
+  (let [head (str/trim (:out (git! scratch "rev-parse" "HEAD")))]
+    (when-not (str/blank? head)
+      (when-let [changes (rev-range-line-changes root head sha paths)]
+        (every? (fn [p] (empty? (:added (get changes p)))) paths)))))
+
 (defn- conflict-marker-ours-blocks
   "Pure. The 'ours' (HEAD-side) line blocks a conflict-marked file's own
    text carries between each `<<<<<<< ` and its matching `=======` -
@@ -1161,6 +1185,12 @@
    (a) content-subset: `stray-content-subset-of-origin-main?` - the reason
        is a fixed, self-explanatory tag (no single sha decides this one;
        it is a property of the whole diff).
+   (d) content-subset-of-replay-head (BL-1794): ground (a)'s same test,
+       measured against the scratch/replay branch's own current HEAD
+       instead of origin-main - covers a stray an EARLIER stray in this
+       SAME replay already landed, before origin-main itself carries it.
+       Checked right after (a) and before (b): another fixed, self-
+       explanatory tag.
    (b) rewritten-by-owner: every HEAD-side conflicting line across `paths`
        was last written by a commit on origin/main whose own subject
        names EXACTLY `owner` - the reason names those commits' own short
@@ -1181,6 +1211,9 @@
   (cond
     (stray-content-subset-of-origin-main? root origin-main sha paths)
     {:reason "content-subset-of-origin-main"}
+
+    (stray-content-subset-of-replay-head? root scratch sha paths)
+    {:reason "content-subset-of-replay-head"}
 
     :else
     (let [shas (into #{}

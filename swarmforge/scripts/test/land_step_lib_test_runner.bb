@@ -4286,6 +4286,49 @@ RESOLVED BY THIS TICKET
                  nil verdict)
         (sh! root "git" "cherry-pick" "--abort")))))
 
+;; ── BL-1794 ground (d) fold isolation: stray-content-subset-of-replay-head?
+;; must read FROM the scratch/replay branch's OWN current HEAD, never from
+;; origin-main, and must fold `every?` over `paths` the same way ground (a)
+;; does. Path A's addition is one an EARLIER stray already landed onto
+;; scratch (so it is a subset of scratch HEAD, though NOT of origin-main -
+;; the exact distinction the ground exists to make); path B's addition is
+;; one nothing on scratch carries yet. A two-path stray must be reported
+;; subset only when BOTH paths qualify, never when just the already-landed
+;; one does.
+(with-fixture [root]
+  (commit! root "backlog/evidence/BL-9003-a.md" "a\nb\n" "seed origin content A")
+  (commit! root "backlog/evidence/BL-9003-b.md" "x\ny\n" "seed origin content B")
+  (mark-origin-main-here! root)
+  ;; scratch: an earlier stray in this same replay already added "c" to A -
+  ;; landed on the replay branch, but origin-main above does not carry it.
+  (sh! root "git" "checkout" "-q" "-b" "scratch")
+  (commit! root "backlog/evidence/BL-9003-a.md" "a\nb\nc\n" "earlier stray in this replay lands c onto A")
+  ;; role: the stray under test, off the origin-main baseline (never saw
+  ;; scratch's own commit) - touches BOTH paths. A's post-image matches
+  ;; what scratch already carries (a genuine subset of scratch HEAD); B's
+  ;; adds a line nothing on scratch carries yet.
+  (sh! root "git" "checkout" "-q" "-b" "role" "main")
+  (commit! root "backlog/evidence/BL-9003-a.md" "a\nb\nc\n" "role: same content A as the earlier stray")
+  (commit! root "backlog/evidence/BL-9003-b.md" "x\ny\nz\n" "role: B gains a line scratch does not carry")
+  (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+    ;; `scratch` param = `root` itself, checked out back onto the scratch
+    ;; branch - the same "root doubles as scratch" convention the ground
+    ;; (b) test above already uses, since `git!` reads whatever is
+    ;; currently checked out in that directory.
+    (sh! root "git" "checkout" "-q" "scratch")
+    (assert-false "BL-1794 ground (d) fold: a two-path stray where only one path is a content subset of scratch HEAD is NOT reported subset overall"
+                  (boolean (land-step-lib/stray-content-subset-of-replay-head?
+                            root root stray
+                            ["backlog/evidence/BL-9003-a.md" "backlog/evidence/BL-9003-b.md"])))
+    (assert-true "BL-1794 ground (d) fold sanity: the single genuinely-subset-of-scratch-HEAD path alone IS reported subset"
+                 (boolean (land-step-lib/stray-content-subset-of-replay-head?
+                           root root stray
+                           ["backlog/evidence/BL-9003-a.md"])))
+    (assert-false "BL-1794 ground (d) vs ground (a): path A's content is NOT a subset of origin-main (only of scratch HEAD) - proves the ground reads scratch, not origin-main"
+                  (boolean (land-step-lib/stray-content-subset-of-origin-main?
+                            root "refs/remotes/origin/main" stray
+                            ["backlog/evidence/BL-9003-a.md"])))))
+
 ;; ── BL-1678 hardening: verify-push-safe's parent-count check, isolated ──
 ;; from its own two sibling guards (the ticket-tagged-subject check, the
 ;; path-attribution check). Every existing fixture that builds a "merge
