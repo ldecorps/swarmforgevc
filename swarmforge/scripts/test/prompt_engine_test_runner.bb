@@ -296,6 +296,108 @@
          "aider-editor"
          (:adapter-id (:metadata (prompt-engine-lib/compose "coordinator" {:agent "aider" :two-pack? true}))))
 
+;; ── BL-1798: :local-compact style - a local-model seat's compact card ──────
+
+(assert= "fragment-source-path resolves the shared loop-card path"
+         "swarmforge/roles/local-model/loop.note"
+         (prompt-engine-lib/fragment-source-path "local-loop" {}))
+(assert= "fragment-source-path resolves a role's own card path"
+         "swarmforge/roles/local-model/coder.note"
+         (prompt-engine-lib/fragment-source-path "local-role-card" {:role "coder"}))
+(assert= "fragment-source-path resolves no role-card path for a blank role"
+         nil
+         (prompt-engine-lib/fragment-source-path "local-role-card" {:role ""}))
+(assert-true "local-loop and local-role-card are registered fragment names"
+             (and (contains? prompt-engine-lib/fragment-names "local-loop")
+                  (contains? prompt-engine-lib/fragment-names "local-role-card")))
+
+(assert= "local-model-role-card-path matches fragment-source-path"
+         (prompt-engine-lib/fragment-source-path "local-role-card" {:role "coder"})
+         (prompt-engine-lib/local-model-role-card-path "coder"))
+
+;; local-model-has-role-card? is a real filesystem check (this ticket's own
+;; two shipped notes vs a role with none) - real files, not a stub, are the
+;; correct fixture here: the predicate's whole job is "does this exact repo
+;; path exist", which a stub cannot meaningfully fake without re-deriving
+;; the same path logic under test.
+(assert-true "local-model-has-role-card? is true for coder (this ticket ships its card)"
+             (prompt-engine-lib/local-model-has-role-card? "coder"))
+(assert-true "local-model-has-role-card? is false for a role with no card (operator)"
+             (not (prompt-engine-lib/local-model-has-role-card? "operator")))
+(assert-true "local-model-has-role-card? is false for a blank role"
+             (not (prompt-engine-lib/local-model-has-role-card? "")))
+
+;; local-compact-bootstrap-text itself, over STUBBED fragment content (never
+;; the real note files) - isolates the function's own shape (loop then role
+;; card, one-line overlay pointers) from what the notes happen to say today.
+(let [stub-fn (fn [name _req]
+                (case name
+                  "local-loop" "LOOP_CARD_V1"
+                  "local-role-card" "ROLE_CARD_V1"
+                  nil))
+      cache (atom (prompt-engine-lib/empty-fragment-cache))]
+  (assert= "local-compact-bootstrap-text: loop card then role card, no pack/overlay"
+           "LOOP_CARD_V1\nROLE_CARD_V1"
+           (prompt-engine-lib/local-compact-bootstrap-text "coder" false false "" cache stub-fn))
+  (assert-true "local-compact-bootstrap-text: two-pack appears as a one-line pointer, never inlined"
+               (let [text (prompt-engine-lib/local-compact-bootstrap-text "coder" true false "" cache stub-fn)]
+                 (and (str/includes? text "swarmforge/packs/two-pack.prompt")
+                      ;; the real file's own heading - present only if inlined, never in a one-line pointer
+                      (not (str/includes? text "# Two-pack overlay")))))
+  (assert-true "local-compact-bootstrap-text: overlay appears as a one-line pointer naming its path, never inlined"
+               (let [text (prompt-engine-lib/local-compact-bootstrap-text
+                           "coder" false true "swarmforge/packs/mono-router.prompt" cache stub-fn)]
+                 (and (str/includes? text "swarmforge/packs/mono-router.prompt")
+                      ;; the real file's own heading - present only if inlined, never in a one-line pointer
+                      (not (str/includes? text "one resident agent, a model tailored to each stage"))))))
+
+;; compose dispatch, real files: local-model/coder gets the real compact card.
+(let [result (prompt-engine-lib/compose "coder" {:agent "local-model"})]
+  (assert= "compose metadata style for local-model/coder" :local-compact (:bootstrap-text-style (:metadata result)))
+  (assert-true "local-model/coder composed text is at most 8192 characters"
+               (<= (count (:system-prompt result)) 8192))
+  (assert-true "local-model/coder composed text names the loop script trio"
+               (every? #(str/includes? (:system-prompt result) %)
+                       ["ready_for_next.sh" "done_with_current.sh" "swarm_handoff.sh"]))
+  (assert-true "local-model/coder composed text points at the full role prompt and constitution"
+               (and (str/includes? (:system-prompt result) "swarmforge/roles/coder.prompt")
+                    (str/includes? (:system-prompt result) "swarmforge/constitution.prompt")))
+  (assert-true "local-model/coder composed text never inlines the generic stable prefix"
+               (not (str/includes? (:system-prompt result) "# SwarmForge Constitution"))))
+
+;; compose dispatch: a role with no card falls back to EXACTLY today's
+;; generic composition - never a truncated or partial mix (invariant 2).
+(assert= "local-model/operator (no card) equals claude/operator (generic) byte-for-byte"
+         (:system-prompt (prompt-engine-lib/compose "operator" {:agent "claude"}))
+         (:system-prompt (prompt-engine-lib/compose "operator" {:agent "local-model"})))
+(assert= "local-model/operator metadata style is still :local-compact (the AGENT's style; the ROLE has no card)"
+         :local-compact
+         (:bootstrap-text-style (:metadata (prompt-engine-lib/compose "operator" {:agent "local-model"}))))
+
+;; invariant 1: every OTHER agent's own style and composed text are exactly
+;; what they were before this ticket - only local-model's capabilities entry
+;; changed, so this is a direct capabilities-table assertion plus a text
+;; spot-check per agent.
+(doseq [[agent expected-style] [["claude" :generic] ["codex" :generic] ["gemini" :generic]
+                                 ["cursor" :generic] ["copilot" :generic] ["vibe" :generic]
+                                 ["grok" :generic] ["aider" :aider] ["mock" :mock]]]
+  (assert= (str "capabilities style unchanged for " agent)
+           expected-style
+           (:bootstrap-text-style (prompt-engine-lib/capabilities agent))))
+(assert= "claude/coder composed text is unaffected (matches the ticket's own mint measurement)"
+         58371
+         (count (:system-prompt (prompt-engine-lib/compose "coder" {:agent "claude"}))))
+
+;; BL-574 Slice 2: local-loop/local-role-card go through the SAME
+;; content-hash cache as "role" - a cache hit never re-reads.
+(let [read-count (atom 0)
+      spy-fn (fn [name _req] (swap! read-count inc) (str "CONTENT-" name))
+      cache (atom (prompt-engine-lib/empty-fragment-cache))
+      first-read (prompt-engine-lib/read-fragment! cache "local-role-card" {:role "coder"} :content-fn spy-fn)
+      second-read (prompt-engine-lib/read-fragment! cache "local-role-card" {:role "coder"} :content-fn spy-fn)]
+  (assert= "local-role-card cache miss then hit: content-fn called exactly once" 1 @read-count)
+  (assert= "local-role-card cache hit returns the same content as the original read" first-read second-read))
+
 ;; ── report ──────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")

@@ -141,9 +141,12 @@
    ;; BL-1052: on-host seat against a downloaded model served on loopback
    ;; (BL-1082). Same execute-capable shape as vibe/gemini — never aider's
    ;; file-editor shape, even when the model catalog overlaps.
+   ;; BL-1798: :local-compact, not :generic - a small local model cannot
+   ;; digest the full constitution/PIPELINE/role-prompt composition (58k+
+   ;; characters for the coder alone); see local-compact-bootstrap-text.
    "local-model" {:wake-style :chat-message
                   :bootstrap-style :embedded
-                  :bootstrap-text-style :generic
+                  :bootstrap-text-style :local-compact
                   :startup-delay-ms 3000}
    "mock"    {:wake-style :mock
               :bootstrap-style :mock
@@ -240,9 +243,12 @@
 ;; are request-independent aggregates (constitution-text/pipeline-text
 ;; above); "role"/"pack-overlay" are single files resolved per request;
 ;; "tool-instructions" is registered as a known name with no content source
-;; yet (Slice 3 / not part of today's compose output).
+;; yet (Slice 3 / not part of today's compose output). "local-loop"/
+;; "local-role-card" (BL-1798) are the :local-compact style's own two
+;; per-request fragments - see local-compact-bootstrap-text below.
 (def fragment-names
-  #{"constitution" "pipeline" "role" "pack-overlay" "tool-instructions"})
+  #{"constitution" "pipeline" "role" "pack-overlay" "tool-instructions"
+    "local-loop" "local-role-card"})
 
 (defn fragment-source-path
   "Repo-relative source path for a per-request fragment, or nil when the
@@ -253,6 +259,8 @@
   (case fragment-name
     "role" (when-not (str/blank? role) (str "swarmforge/roles/" role ".prompt"))
     "pack-overlay" (when-not (str/blank? overlay-prompt) overlay-prompt)
+    "local-loop" "swarmforge/roles/local-model/loop.note"
+    "local-role-card" (when-not (str/blank? role) (str "swarmforge/roles/local-model/" role ".note"))
     nil))
 
 (defn fragment-content-uncached
@@ -450,6 +458,49 @@
 (defn mock-bootstrap-text [role]
   (str "MOCK_BOOTSTRAP_TEXT role=" role))
 
+;; ── BL-1798: :local-compact - a small local model's own compact card ──────
+;; A local-model seat cannot digest the generic style's full constitution +
+;; PIPELINE + role prompt (58k+ characters for the coder alone; Ollama
+;; silently drops what overflows its context window). Unlike :aider (which
+;; only orients the model - its actual role note is loaded separately by
+;; the launch script via --read), THIS style embeds the two note files
+;; directly in compose's own output, through read-fragment! exactly like
+;; the generic builder's "role" fragment, so the same content-hash cache
+;; applies across repeat composes.
+(defn local-model-role-card-path
+  "The repo-relative path a local-model role's own card would live at, or
+   nil for a blank role - never a guess at whether the file actually
+   exists (that is local-model-has-role-card?'s job)."
+  [role]
+  (fragment-source-path "local-role-card" {:role role}))
+
+(defn local-model-has-role-card?
+  "True only when THIS role has its own swarmforge/roles/local-model/<role>.note
+   on disk. compose's dispatch (below) uses this to choose ONE of two whole
+   shapes - the compact card or today's generic composition - never a
+   partial mix of the two (BL-1798 invariant 2): a role with no card (e.g.
+   \"operator\" in this slice) must compose exactly as it did before this
+   ticket, not a compact card built from missing content."
+  [role]
+  (boolean (some-> (local-model-role-card-path role) repo-file fs/exists?)))
+
+(defn local-compact-bootstrap-text
+  "The loop card, then the role's own card, both read through
+   read-fragment! (BL-574 Slice 2's cache applies here exactly as it does
+   for the generic builder's \"role\" fragment). A two-pack/overlay flag
+   appears only as a ONE-LINE POINTER to the overlay file (What is wanted
+   item 5) - inlining either would blow the budget this style exists to
+   keep. Caller (compose) only reaches this function when
+   local-model-has-role-card? already confirmed the role card exists."
+  [role two-pack? overlay? overlay-prompt fragment-cache-atom content-fn]
+  (str (read-fragment! fragment-cache-atom "local-loop" {} :content-fn content-fn)
+       "\n"
+       (read-fragment! fragment-cache-atom "local-role-card" {:role role} :content-fn content-fn)
+       (when two-pack?
+         "\nThis pack has no specifier: see swarmforge/packs/two-pack.prompt for the overlay.\n")
+       (when overlay?
+         (str "\nA swarm-profile overlay applies: see " overlay-prompt " for it.\n"))))
+
 ;; ── compose: the single entry point ────────────────────────────────────────
 ;; compose(role, context) -> {:system-prompt :stable-prefix :metadata}.
 ;; context keys (all optional unless noted):
@@ -499,6 +550,12 @@
         body (case style
                :aider (aider-bootstrap-text role two-pack?)
                :mock (mock-bootstrap-text role)
+               :local-compact
+               (if (local-model-has-role-card? role)
+                 (local-compact-bootstrap-text role two-pack? overlay? overlay-prompt
+                                                fragment-cache-atom fragment-content-fn)
+                 (generic-bootstrap-text role draft two-pack? overlay? overlay-prompt
+                                         fragment-cache-atom fragment-content-fn))
                (generic-bootstrap-text role draft two-pack? overlay? overlay-prompt
                                        fragment-cache-atom fragment-content-fn))
         system-prompt (if (str/blank? task-injection)

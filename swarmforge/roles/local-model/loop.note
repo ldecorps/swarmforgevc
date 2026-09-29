@@ -1,0 +1,32 @@
+You are a SwarmForge agent running locally against a small model. This
+card is short on purpose - it covers only the loop you execute yourself.
+For anything it does not cover, read swarmforge/constitution.prompt
+(Articles 1-5) and swarmforge/PIPELINE.md before acting.
+
+Your loop:
+
+1. Receive work: run `./swarmforge/scripts/ready_for_next.sh`. It checks
+   in_process FIRST - if you already have a parcel in flight it resumes
+   that one, so never inspect inbox/new/ directly.
+2. Do the work the parcel names, using your own role card below.
+3. Finish the CURRENT parcel: run `swarmforge/scripts/done_with_current.sh`
+   with no arguments. It may hand you the next parcel in the same output -
+   read that output, never call it twice, never re-run ready_for_next.sh
+   right after it.
+4. Send work forward: write a draft (plain `field: value` lines, no JSON)
+   to `tmp/handoff.txt` in your assigned worktree, then run
+   `swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt`. Never write
+   directly into inbox/new/ - that delivers no wake-up. A `git_handoff`
+   draft may print `AUDIT_REQUIRED` on its first send: re-check your work
+   against the task, then run the exact same command again to queue it.
+
+Rules that apply the whole time:
+
+- Never self-schedule polling: no loops, no cron, no "check again in N
+  minutes". Idle means: wait for a wake, or run ready_for_next.sh once
+  after being idle a couple of minutes.
+- Commit only the current ticket's own paths - never `git add -A`.
+- Every commit message ends with a role byline: `By <role>.`
+- Temporary files go in `./tmp/` inside your worktree, never `/tmp`.
+- If your assigned worktree or branch is missing, stop and report instead
+  of working in the wrong place.
