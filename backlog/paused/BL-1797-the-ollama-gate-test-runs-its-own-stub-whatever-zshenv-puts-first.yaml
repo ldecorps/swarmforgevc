@@ -1,0 +1,148 @@
+id: BL-1797
+title: "test_ollama_ancillary_launch_gate.sh is red on main because its PATH-prepended ollama stub loses to the host's real binary: zsh -c sources ~/.zshenv, which puts ~/.local/bin (a real ollama since 2026-09-28 19:26) first, so scenario 01 starts the real server, which fails to bind 11434 and never answers ('never answered within 5s'), and scenario 02's stub-never-ran check passes vacuously; the test names its stub through SWARMFORGE_OLLAMA_BINARY, and an acceptance scenario proves a decoy zshenv cannot swap it"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main at first sighting (standing-red amendment
+# 2026-09-05). Not load: reproduced deterministically, twice at mint.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: a shell test fixture edit plus one acceptance handler; no mutation
+# lane for shell (BL-472).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1797-the-ollama-gate-test-runs-its-own-stub-whatever-zshenv-puts-first.feature
+
+# The handler entry is the BL-233 in-parcel pin. The test file is the one
+# the register row names; its fix is proven by the acceptance run, not by
+# a wiring anchor the parcel would satisfy by construction (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1797OllamaGateStubSurvivesZshenvSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Auto-approved high-severity defect (2026-09-17 carve-out); no choice is
+  posed. FIRM - the fix is in the test fixture only: swarmforge.sh's
+  "${SWARMFORGE_OLLAMA_BINARY:-ollama}" is right for real launches and is
+  not changed; nothing edits ~/.zshenv; the parcel never edits
+  backlog/standing-reds.tsv (the land retires the row).
+
+invariants:
+  - "Each scenario of test_ollama_ancillary_launch_gate.sh launches the stub it wrote, named through SWARMFORGE_OLLAMA_BINARY's absolute path, never a binary that PATH order under zsh -c selects."
+
+description: |
+  ## Why
+
+  `swarmforge.sh`'s `ensure_ollama_ancillary_for_launch` starts
+  `"${SWARMFORGE_OLLAMA_BINARY:-ollama}"`. The test stubs `ollama` by
+  running `PATH="$ROOT/bin:$PATH" zsh -c "source swarmforge.sh ...;
+  parse_config; ensure_ollama_ancillary_for_launch"`. zsh sources
+  `~/.zshenv` for every `zsh -c`, even non-interactive ones. This host's
+  `~/.zshenv` line 7 is `export PATH="$HOME/.local/bin:$PATH"`, and
+  `~/.local/bin/ollama` has been a symlink to a real ollama since
+  2026-09-28 19:26. So:
+  - Scenario 01 runs the real `ollama serve`. It fails to bind
+    127.0.0.1:11434, where the live server listens (its serve.log reads
+    `Error: listen tcp 127.0.0.1:11434: bind: address already in use`),
+    the fixture port never answers, and the gate refuses the launch.
+  - Scenario 02 checks that the stub never ran for a Claude-only pack.
+    The stub CANNOT run, so the check passes whatever the gate does (fail
+    open).
+
+  QA reported the red as "seen once under host load" (BL-1702-QA D2).
+  Measured at mint on origin/main ac3a132e69, it is deterministic:
+  - Red twice (5.4 s and a by-hand repro). No stub marker was written,
+    and serve.log held the real binary's bind error. Load was 20 on 20
+    cores, but a cold `node` listen took 41 ms, so it is not slowness.
+  - The same by-hand scenario 01 with `SWARMFORGE_OLLAMA_BINARY` set to
+    the stub's absolute path: exit 0 in 1.2 s, the stub ran, and the
+    record reads `swarm-owned`.
+  - The acceptance shape below, with `ZDOTDIR` pointed at a fixture whose
+    `.zshenv` puts a decoy `ollama` first: the test exits 1 and the decoy
+    ran once (5.2 s).
+
+  Census at mint: `grep -l bin/ollama` over `swarmforge/scripts/test`,
+  `specs/pipeline/steps` and `extension/test` finds two files. Only this
+  test drives `zsh -c` (`orphan_janitor_lib_test_runner.bb` has no
+  `zsh -c`).
+
+  ## What is wanted
+
+  1. Both scenarios of `test_ollama_ancillary_launch_gate.sh` pass their
+     stub's absolute path as `SWARMFORGE_OLLAMA_BINARY` to the `zsh -c`
+     launch. PATH may stay as it is.
+  2. An acceptance scenario runs the test with `ZDOTDIR` set to a fixture
+     directory whose `.zshenv` prepends a decoy `ollama` that records it
+     ran and exits 1. The test must print ALL PASS and exit 0, and the
+     decoy must never have run.
+
+  ## Overlap with BL-1702 (active at mint)
+
+  BL-1702's QA bounce D2 has the coder add `LOCAL_CODER_PROBE_EVIDENCE_DIR`
+  isolation to this same test's scenario 01. That fix alone leaves the
+  test red on this host (scenario 01 then reaches the ancillary and fails
+  on the real binary). That red is this ticket's and is registered to it.
+  Both edit one file, so the orthogonality rule runs this ticket after
+  BL-1702 lands. The edits sit on different lines of the same `zsh -c`
+  env prefix.
+
+  ## Not in scope
+
+  - `swarmforge.sh`, `ollama_ancillary_lib.sh`, `~/.zshenv`, and the probe
+    gate BL-1702 adds.
+  - The register row. The land retires it (BL-1631). A parcel never edits
+    `backlog/standing-reds.tsv`.
+
+  ## How (direction, not mandate)
+
+  - Handler `bl1797OllamaGateStubSurvivesZshenvSteps.js`, landing in the
+    SAME commit as the feature (BL-233): mkdtemp a ZDOTDIR fixture (path
+    under 100 chars), write `.zshenv` and the decoy, run
+    `bash swarmforge/scripts/test/test_ollama_ancillary_launch_gate.sh`
+    with `ZDOTDIR` set and `SWARMFORGE_OLLAMA_BINARY` unset, and remove
+    the fixture in a `finally` (BL-971).
+
+constraints: >
+  Fixture directories under mkdtemp (BL-1390). The test and the handler
+  never touch the real ~/.zshenv, never bind 11434, and never start the
+  real ollama.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1797-the-ollama-gate-test-runs-its-own-stub-whatever-zshenv-puts-first.feature`:
+     1 case ok. Measured at mint on main ac3a132e69: the same run by hand
+     exits 1 with the decoy run once.
+  2. `bash swarmforge/scripts/test/test_ollama_ancillary_launch_gate.sh`
+     on this host (real ~/.zshenv): ALL PASS. Measured at mint on main:
+     exit 1 ("never answered within 5s").
+  3. The register row for `test_ollama_ancillary_launch_gate.sh` is
+     present on the parcel commit and names BL-1797 as owner.
+  4. `git diff main...HEAD --name-only` names only the test file, the
+     feature, its handler and evidence.
+  5. After the land: REGISTER_ROW_RETIRED for
+     `swarmforge/scripts/test/test_ollama_ancillary_launch_gate.sh`.
+
+source: |
+  QA note 003343 (2026-09-29 10:35Z), verbatim: "unowned-red
+  test_ollama_ancillary_launch_gate.sh on main; see BL-1702-QA D2". The
+  evidence is on swarmforge-QA:
+  backlog/evidence/BL-1702-QA-20260929.md, D2 ("on origin/main ac3a132e69
+  this test is red for another reason, seen once under host load
+  (endpoint http://127.0.0.1:37567/v1 never answered within 5s): not this
+  parcel's, sent to the specifier as unowned").
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat) the same pass
+  as the register row (standing-red amendment 2026-09-05). QA's reading
+  of the cause (host load) was checked and replaced by the measured one
+  (the ~/.zshenv PATH escape).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  INVEST: Independent (orthogonal-only to BL-1702). Negotiable (the How
+  is direction). Valuable (clears a standing red and closes a fail-open
+  check). Estimable (one env var per scenario, one handler). Small (1
+  scenario). Testable (a decoy ZDOTDIR, host-independent).
