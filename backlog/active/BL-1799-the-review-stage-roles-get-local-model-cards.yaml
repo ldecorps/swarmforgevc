@@ -98,3 +98,5 @@ notes: |
   usable on a small local window). Estimable (four notes, one handler
   reusing BL-1798's). Small (1 outline, 4 cases). Testable (through the
   real CLI).
+
+assigned_to: coder
