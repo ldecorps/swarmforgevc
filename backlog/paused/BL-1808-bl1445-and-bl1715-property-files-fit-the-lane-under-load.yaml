@@ -1,5 +1,5 @@
 id: BL-1808
-title: "Two subprocess-heavy property files time out at the property lane's 20 s default in a full-lane run and declare no timeout of their own - bl1445StaffingGateWiringTestDecidesOverrideInvariants invariant 1 (8 real wiring-test runs, 8.1 s alone) and bl1715DriverSeatGiveUp's revert-attempt-commits! property (60 git-fixture draws, 17.8 s alone) (QA, BL-1806's pass, evidence 1db06f92) - every test in both files fits the lane under contention with its assertions, draw counts and reach floors unchanged"
+title: "Four subprocess-heavy property files time out at the property lane's 20 s default in a full-lane run and declare no timeout of their own - bl1445StaffingGateWiringTestDecidesOverrideInvariants invariant 1 (8 real wiring-test runs, 8.1 s alone) and bl1715DriverSeatGiveUp's revert-attempt-commits! property (60 git-fixture draws, 17.8 s alone) (QA, BL-1806's pass, evidence 1db06f92); bl1642QaNoteEvidenceInvariants invariants 1 and 2 (8.5 s alone) and bl1324ClaudeSeatQwenCloudContextWindowInvariants (invariant 3 6.8 s alone) (QA, BL-1790's pass, evidence 596cc1a8) - every test in the four files fits the lane under contention with its assertions, draw counts and reach floors unchanged"
 milestone: M8
 type: defect
 severity: high
@@ -76,6 +76,29 @@ description: |
   them. Same class as BL-1745 (bl1670/bl1108/bl1565), BL-1588, BL-1592,
   BL-1606.
 
+  ## Consolidated 2026-09-29: bl1642 and bl1324 (QA note 003359)
+
+  QA's full property run on BL-1790's parcel e177599d02 (evidence
+  596cc1a8) found two more files red, neither touched by that parcel, and
+  holds BL-1790 on them (Article 4.2):
+  - `bl1642QaNoteEvidenceInvariants.property.test.js` > "property (BL-1642
+    invariants 1 & 2): note evidence completes a QA forward, never another
+    role's, and both kinds obey the same since/ticket-match rule":
+    `Error: Test timed out in 20000ms.` (file 23.2 s in the lane).
+  - `bl1324ClaudeSeatQwenCloudContextWindowInvariants.property.test.js`:
+    vitest recorded the file `failed: true` at 22690 ms, but QA's excerpt
+    did not reach its FAIL block, so the failing test and message were
+    not captured. The coder's first run of the file in the lane must
+    capture them and record them in the evidence.
+  Measured at mint (both files together, alone, 2 forks, load 13-17):
+  green, 9.7 s. bl1642 invariants 1 & 2: 8458 ms (12 draws through `bb`);
+  bl1642 invariant 3: 952 ms. bl1324 invariant 3 (qwen seat remap, 8 + 8
+  draws, each a `zsh -f` sourcing swarmforge.sh to write a launch script):
+  6830 ms, the likely red; invariant 1 (git history walk from the hotfix):
+  1259 ms; invariant 2: 61 ms. Neither file declares a timeout. Same
+  shape as the two files above, so this ticket owns all four rather than
+  minting one per file (BL-680 N:1; it was paused and unclaimed).
+
   ## What is wanted
   - Every test in both files completes inside the full property lane
     under contention. How (direction, not mandate): either cut the
@@ -92,24 +115,34 @@ description: |
 
   ## Scope
   - `extension/test/bl1445StaffingGateWiringTestDecidesOverrideInvariants.property.test.js`,
-    `extension/test/bl1715DriverSeatGiveUp.property.test.js` (and a
-    helper beside them if one is needed), plus evidence.
+    `extension/test/bl1715DriverSeatGiveUp.property.test.js`,
+    `extension/test/bl1642QaNoteEvidenceInvariants.property.test.js`,
+    `extension/test/bl1324ClaudeSeatQwenCloudContextWindowInvariants.property.test.js`
+    (and a helper beside them if one is needed), plus evidence.
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
-  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1445StaffingGateWiringTestDecidesOverrideInvariants.property.test.js test/bl1715DriverSeatGiveUp.property.test.js --reporter=verbose`:
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1445StaffingGateWiringTestDecidesOverrideInvariants.property.test.js test/bl1715DriverSeatGiveUp.property.test.js test/bl1642QaNoteEvidenceInvariants.property.test.js test/bl1324ClaudeSeatQwenCloudContextWindowInvariants.property.test.js --reporter=verbose`:
      green; record each test's duration and the 1-minute load. At mint
-     (load ~14): 36.6 s total, slowest 17758 ms.
-  2. QA's ordinary full property run on this parcel: neither file appears
-     among the failures.
-  3. `node specs/pipeline/cli.js specs/features/BL-1715-a-driver-seat-that-fails-a-parcel-hands-it-to-its-stages-claude-seat.feature`:
-     4 of 4 ok (as measured on main at mint, 12.3 s).
+     (load ~14): bl1445+bl1715 36.6 s, slowest 17758 ms; bl1642+bl1324
+     9.7 s, slowest 8458 ms.
+  2. QA's ordinary full property run on this parcel: none of the four
+     files appears among the failures.
+  3. Features, as measured on main at mint:
+     `node specs/pipeline/cli.js specs/features/BL-1715-a-driver-seat-that-fails-a-parcel-hands-it-to-its-stages-claude-seat.feature`:
+     4 of 4 ok (12.3 s).
      `node specs/pipeline/cli.js specs/features/BL-1445-the-staffing-gate-wiring-test-decides-the-override-itself.feature`:
-     4 of 4 ok (as measured on main at mint, 9.1 s).
-  4. `git diff main...HEAD --name-only` names only the two test files, a
+     4 of 4 ok (9.1 s).
+     `node specs/pipeline/cli.js specs/features/BL-1324-claude-seat-qwen-cloud-context-window.feature`:
+     10 of 10 ok (10.7 s).
+     `node specs/pipeline/cli.js specs/features/BL-1642-qa-approval-completes-on-note-evidence.feature`:
+     8 of 9 ok; scenario 9 ("one shared seat-stage helper") red as the
+     acceptance register row owned by BL-1809 describes. It goes green
+     only when BL-1809 lands and is not this ticket's to fix.
+  4. `git diff main...HEAD --name-only` names only the four test files, a
      helper if any, and evidence.
-  5. After landing: REGISTER_ROW_RETIRED for this ticket's two property
-     rows (bl1445, bl1715).
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's four property
+     rows (bl1445, bl1715, bl1642, bl1324).
 
 notes: |
   Minted 2026-09-29 by the specifier from QA's unowned-red note 003353
@@ -119,3 +152,16 @@ notes: |
   Expedite lane by severity (Article 3.2.4). BL-1806 was bounced to the
   coder on D1/D2, not held on this red; a note naming this owner was sent
   to QA so BL-1806's next pass reads the reds as owned.
+  2026-09-29: consolidated with QA's unowned-red note 003359 (bl1642 and
+  bl1324, holding BL-1790, evidence 596cc1a8). Two register rows were
+  added here, both files and both of their features measured at mint, and
+  QA got a holder note naming BL-1790. The acceptance pointer is unchanged
+  (BL-1715's feature). Measuring BL-1642's feature found scenario 9 red
+  on main (hotfix 4183cd29ca's literal "QA" in done_with_current_task.bb),
+  a different class, minted as BL-1809 in the same commit.
+  Lane pattern, recorded for BL-1619 (the property lane's recorder, and
+  the pole register it feeds): four files crossed 20 s in two QA runs on
+  one day at host load 13-17, after BL-1745 took three on 2026-09-25.
+  BL-1745's census counted 112 property files that spawn a subprocess and
+  declare no timeout. If a third run this week adds more, the per-file
+  owner model is the wrong unit and a lane-level ticket is due.

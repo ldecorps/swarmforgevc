@@ -1,0 +1,104 @@
+id: BL-1809
+title: "done_with_current's pending land re-point retry (hotfix 4183cd29ca) decides QA-ness by comparing the role name to the literal \"QA\", which turns BL-1642 scenario 9 (\"one shared seat-stage helper\") red on main and skips the retry on a QA@N seat - the retry asks forward-evidence-lib/qa-stage? like the forward gate and the hold gate in the same file"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment). The acceptance lane has carried it since the hotfix
+# landed at 13:40 on 2026-09-29.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+# BL-1803 (active, the stamp-off for hotfix 4183cd29ca, at QA) is review
+# only: its constraints bar the parcel from editing
+# done_with_current_task.bb, so it cannot own this. BL-1805 (active, at
+# the coder) edits ready_for_next_task.bb only. Neither touches this
+# ticket's file, so neither is a dependency.
+mutation_cost: low
+# low: one expression in one Babashka file; no Stryker target (bb has no
+# mutation lane, engineering.prompt Startup Tools).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A defect with no scenarios of its own (BL-1251): the pointer names the
+# feature BL-1642 declared, whose scenario 9 is the contract this ticket
+# restores (8 of 9 ok on main at mint). It is not a claim of ownership over
+# BL-1642's contract.
+acceptance: specs/features/BL-1642-qa-approval-completes-on-note-evidence.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: BL-1642 scenario 9
+  and its step are not edited or retired; the code changes to meet them.
+  FIRM: a seat whose role is exactly QA still runs the retry, so BL-1803's
+  feature stays green.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  Found by the specifier at mint of BL-1808's consolidation (measuring the
+  features its QA procedure runs, 2026-09-27 rule).
+  `node specs/pipeline/cli.js specs/features/BL-1642-qa-approval-completes-on-note-evidence.feature`
+  on main 8f1fe9064a: 8 of 9 ok. Scenario 9, "the forward gate and the
+  hold gate decide QA-ness through one shared seat-stage helper", fails
+  at "And neither gate compares the raw role name to the literal "QA"":
+  `done_with_current_task.bb must not compare current-role to the literal "QA"`.
+
+  The line is `swarmforge/scripts/done_with_current_task.bb:326`,
+  `(when (= "QA" (handoff-lib/current-role))`, added by operator hotfix
+  4183cd29ca ("a skipped post-land re-point is retried once the tree is
+  clean", 2026-09-29 13:40). The same file already decides QA-ness through
+  `(forward-evidence-lib/qa-stage?)` at lines 230 and 251. qa-stage?
+  recognises a bare QA row and every QA@N seat (BL-1642 invariant 3), so
+  besides the red, a QA@N seat never retries a pending re-point.
+  No register row owned the red, so it was unowned.
+
+  ## What is wanted
+  - BL-1642's feature is 9 of 9 ok: the pending re-point retry in
+    done_with_current_task.bb decides QA-ness through the shared helper.
+    How (direction, not mandate): `(forward-evidence-lib/qa-stage?)` in
+    place of the literal comparison.
+  - The retry's behaviour for a seat whose role is exactly `QA` is
+    unchanged, and every other role still skips it.
+
+  ## Scope
+  - `swarmforge/scripts/done_with_current_task.bb`, plus evidence.
+
+  ## Out of scope, recorded
+  `ready_for_next_task.bb` carries the same literal twice: line 331
+  (BL-1566, 2026-09-14) and line 348 (ea921eed7d, BL-1805's retry, landed
+  on main 2026-09-29 15:55). No scenario inspects that file, so neither
+  is red, and BL-1805 is active on it (Article 3.2.3). They are left for
+  a follow-up after BL-1805 lands, if a QA@N seat is ever staffed.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1642-qa-approval-completes-on-note-evidence.feature`:
+     9 of 9 ok (8 of 9 on main at mint, scenario 9 red).
+  2. `node specs/pipeline/cli.js specs/features/BL-1803-swarm-stamp-deferred-land-repoint-on-clean-tree.feature`:
+     at mint on main this is 0 of 3, every scenario failing for want of
+     its step handlers, which ride BL-1803's own parcel (at QA). If
+     BL-1803 has landed by this pass: 3 of 3 ok on the parcel commit (the
+     retry still fires for role QA). If it has not: record 0 of 3 for that
+     reason and do not treat it as this parcel's red.
+  3. `grep -n '(= "QA" (handoff-lib/current-role))' swarmforge/scripts/done_with_current_task.bb`:
+     no match.
+  4. `git diff main...HEAD --name-only` names only
+     `swarmforge/scripts/done_with_current_task.bb` and evidence.
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's acceptance row
+     (BL-1642's feature).
+
+notes: |
+  Minted 2026-09-29 by the specifier while consolidating QA's unowned-red
+  note 003359 into BL-1808: measuring BL-1642's feature for BL-1808's
+  procedure found scenario 9 red with no register row. Register row added
+  in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). A follow-up of hotfix
+  4183cd29ca, whose stamp BL-1803 is at QA; a note naming this owner was
+  sent to QA.
