@@ -1,0 +1,178 @@
+id: BL-1798
+title: "A local-model seat starts from a compact card, not the full constitution, pipeline and role prompt: the prompt factory (prompt_engine_lib compose) gives the local-model agent a local-compact bootstrap text style made of a shared loop card plus the role's own card (the coder's in this slice), at most 8192 characters and pointing at where the full text lives; a role with no card composes exactly as today, and every other agent composes byte-identically"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-directive
+depends_on: []
+mutation_cost: low
+# low: Babashka (prompt_engine_lib.bb, no mutation/CRAP/DRY wired, BL-472)
+# plus two short prose files. The handler drives prompt_engine_cli.bb.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
+
+# swarmforge.sh:1551 already calls `prompt_engine_cli.bb compose <agent>
+# <stage>` for every seat, so a style dispatched inside compose reaches the
+# live launch path. The acceptance drives that CLI. The handler entry is the
+# BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1798LocalModelCompactCardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file needs a tap. No choice is posed. FIRM - only the
+  local-model agent changes style; every other agent (claude and aider
+  included) composes byte-identically; no swarmforge/roles/*.prompt and no
+  constitution article is edited; a card points at the full role prompt
+  and the constitution and never restates Article text in its own words;
+  8192 characters is the budget for the composed card. This is slice 1 of
+  3 from the intake: the other roles' cards are BL-1799 and BL-1800, and
+  the check against a pack's declared window is a remaining slice on the
+  BL-1125 epic.
+
+invariants:
+  - "Every agent other than local-model composes byte-identically to before this change, for every role, pack flag and overlay."
+  - "A local-model seat's composed prompt is either the loop card plus its role's card within 8192 characters, or, for a role with no card, exactly today's generic composition - never a truncated or partial mix of the two."
+
+description: |
+  ## Human directive (Article 5.3, verbatim)
+
+  "Intake for a new llm ticket: have prompt factory review all roles prompt
+  to make them smaller for local llms to digest."
+
+  ## What is wrong
+
+  A `local-model` seat (the qwen agentic CLI, `qwen --auth-type openai -y`,
+  against a loopback model) is launched with "Read and obey every
+  instruction in '<prompt_file>'". `swarmforge.sh:1551` writes that file
+  with `prompt_engine_cli.bb compose local-model <role>`, and
+  `provider-capabilities` maps local-model to `:bootstrap-text-style
+  :generic`: the whole constitution, PIPELINE and role prompt. Measured at
+  mint (2026-09-29, main 20fcfb5d6d), composed characters per role for
+  local-model:
+
+  | role | chars | about tokens (chars/4) |
+  |---|---|---|
+  | coder | 58,371 | 14.6k |
+  | cleaner | 60,808 | 15.2k |
+  | architect | 68,858 | 17.2k |
+  | documenter | 64,737 | 16.2k |
+  | QA | 107,712 | 26.9k |
+  | coordinator | 108,940 | 27.2k |
+  | specifier | 120,442 | 30.1k |
+  | hardender | 231,796 | 57.9k |
+
+  `swarmforge/packs/ista-iq3s-coder.Modelfile` pins num_ctx 32768 "because
+  the coder bootstrap alone blew 8k", and Ollama drops what overflows
+  (`backlog/evidence/aider-seat-context-budget-20260923.md`). Aider seats
+  already start from a short note (BL-1699, `swarmforge/roles/aider/*.note`,
+  290-401 bytes). Local-model seats got no such pass.
+
+  ## What is wanted
+
+  1. `provider-capabilities` maps `local-model` to a new
+     `:bootstrap-text-style :local-compact`. `compose` dispatches it to a
+     text builder that emits a shared loop card and then the role's card.
+     No other agent's entry changes.
+  2. Two new prose files, written in this parcel the way BL-1699's parcel
+     wrote the aider coder note:
+     - `swarmforge/roles/local-model/loop.note` is the role loop a local
+       seat EXECUTES itself (unlike aider, the qwen CLI runs commands). It
+       covers receiving work with `./swarmforge/scripts/ready_for_next.sh`,
+       finishing with `swarmforge/scripts/done_with_current.sh`, and
+       sending with `swarmforge/scripts/swarm_handoff.sh` on a draft. It
+       names the draft path, forbids self-scheduled polling, and commits
+       only the ticket's own paths.
+     - `swarmforge/roles/local-model/coder.note` holds the coder's duties
+       from `swarmforge/roles/coder.prompt`, distilled.
+     Both cards say where the full text lives (`swarmforge/constitution.prompt`,
+     `swarmforge/PIPELINE.md`, `swarmforge/roles/<role>.prompt`) and to read
+     the relevant section before acting on anything the card does not cover.
+  3. The composed local-compact prompt (loop card + role card + any
+     overlay pointer) is at most 8192 characters, about 2k tokens: a
+     quarter of the 32k window the ista IQ3 coder serves, and room to spare
+     in an 8k one.
+  4. A role with no `swarmforge/roles/local-model/<role>.note` composes the
+     generic text exactly as today. This is what lets the other roles'
+     cards (BL-1799, BL-1800) land one slice at a time.
+  5. A two-pack flag or an overlay prompt appears in the compact
+     composition as a one-line pointer to the overlay file, never inlined.
+  6. `compose-metadata` reports `local-compact` for a local-model seat
+     (scenario 03), so a launch's `<prompt_file>.metadata.json` shows which
+     style the seat got.
+
+  ## Scenario notes
+
+  - Scenario 02 uses `operator` as a role no card covers.
+    `swarmforge/roles/operator.prompt` exists, and neither BL-1799 nor
+    BL-1800 gives it a card. A later ticket that does must retire
+    scenario 02 (BL-1006).
+  - Measured at mint: `prompt_engine_cli.bb compose-metadata local-model
+    coder 0 ""` prints `"bootstrap-text-style":"generic"`. Scenario 03's
+    local-model row is red on main, and its other rows are green.
+
+  ## How (direction, not mandate)
+
+  - The text builder reads the two notes through `read-fragment!` like the
+    generic builder reads the role prompt, so the fragment cache applies.
+  - Handler `bl1798LocalModelCompactCardSteps.js`, landing in the SAME
+    commit as the feature (BL-233): shell `bb
+    swarmforge/scripts/prompt_engine_cli.bb compose|compose-metadata
+    <agent> <role> 0 ""`. For scenario 02, compare against the generic
+    builder's output for the same role.
+  - The launch sentence in `swarmforge.sh`'s local-model branch ("...
+    (constitution, pipeline, role, pack)") may stay. Rewording it is
+    optional and must not touch any other agent's branch.
+
+constraints: >
+  No swarmforge/roles/*.prompt, constitution article or PIPELINE.md edit.
+  No other agent's composed text changes by a byte. The cards point at
+  Article duties and never restate or reinterpret Article text (intake
+  FIRM constraint).
+
+out_of_scope: |
+  Cards for cleaner, architect, hardender, documenter (BL-1799) and for
+  QA, coordinator, specifier (BL-1800). The per-pack window check against
+  a declared num_ctx (remaining slice on BL-1125). Aider notes (BL-1699),
+  the parcel driver (BL-1696..1698), probes (BL-1700).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature`:
+     8 cases ok (01, 02, 03 x6).
+  2. `bb swarmforge/scripts/prompt_engine_cli.bb compose local-model coder 0 "" | wc -c`
+     prints at most 8192. The measured size on main at mint was 58,371.
+  3. `bb swarmforge/scripts/prompt_engine_cli.bb compose claude coder 0 ""`
+     is byte-identical between main and the parcel commit (sha256 of both
+     outputs). Repeat for `aider coder` and `claude QA`.
+  4. Read the two cards. Neither restates an Article in its own words,
+     and both name where the full text lives.
+  5. `git diff main...HEAD --name-only` names only `prompt_engine_lib.bb`,
+     its test runner, the two notes, the feature, its handler (plus lib/)
+     and evidence.
+
+source: |
+  backlog/INTAKE-prompt-factory-local-llm-compact-role-prompts-20260929.md
+  (also delivered as .swarmforge/operator/INTAKE-prompt-factory-local-llm-compact-role-prompts-20260929.md,
+  byte-identical). Human via Cursor / Claude Code, 2026-09-29 ~10:40 BST,
+  quoted verbatim above. The human asked the specifier to mint it in the
+  specifier's session ("Mint this"). The intake is split 1:N into
+  BL-1798 (this, factory dispatch and the coder card), BL-1799 (review
+  stage cards), BL-1800 (QA, coordinator and specifier cards) and one
+  remaining slice on BL-1125 (window check against the declared num_ctx).
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat).
+  IR-DRY: three findings accepted, all call sites of one parameterized When
+  step.
+  INVEST: Independent (nothing unbuilt is needed; card-less roles keep
+  today's text). Negotiable (the How is direction; the budget, the style
+  name and the note paths are fixed because the siblings build on them).
+  Valuable (the live local coder seat's first prompt goes from 58k
+  characters to under 8k). Estimable (one style branch, two notes).
+  Small (3 scenarios, 8 cases, 2 invariants). Testable (through the real
+  CLI).

@@ -1,0 +1,100 @@
+id: BL-1799
+title: "The review-stage roles get local-model cards: cleaner, architect, hardender and documenter each get swarmforge/roles/local-model/<role>.note, so a local-model seat in those roles composes BL-1798's compact card (at most 8192 characters, naming the stage it forwards to) instead of 60-232 thousand characters of generic text"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-directive
+depends_on: [BL-1798]
+mutation_cost: low
+# low: four prose files; no code changes unless a card exposes a builder gap.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1799-the-review-stage-roles-get-local-model-cards.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1799ReviewStageLocalModelCardsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file needs a tap. No choice is posed. FIRM - four cards
+  only (cleaner, architect, hardender, documenter), each under BL-1798's
+  8192-character budget; no swarmforge/roles/*.prompt and no constitution
+  article edited; a card points at the full role prompt for anything it
+  does not cover and never restates Article text in its own words.
+
+invariants:
+  - "Each card, composed with BL-1798's loop card, stays within 8192 characters and names its role's full prompt file as the place to read before acting on anything the card does not cover."
+
+description: |
+  ## Human directive (Article 5.3, verbatim)
+
+  "Intake for a new llm ticket: have prompt factory review all roles prompt
+  to make them smaller for local llms to digest."
+
+  ## What
+
+  Slice 2 of the intake's split (BL-1798 slice 1, BL-1800 slice 3). After
+  BL-1798, a local-model role without `swarmforge/roles/local-model/<role>.note`
+  still composes the generic text. Measured at mint (2026-09-29): cleaner
+  60,808 characters, architect 68,858, hardender 231,796 and documenter
+  64,737. `swarmforge/packs/local-model-mono-router.conf` staffs every one
+  of them on `qwen2.5-coder:7b-instruct`.
+
+  ## What is wanted
+
+  1. `swarmforge/roles/local-model/{cleaner,architect,hardender,documenter}.note`:
+     each role's duties from its `swarmforge/roles/<role>.prompt`, distilled.
+     Each one says:
+     - what the stage owns and does not own;
+     - receive mode (cleaner and hardender are batch roles);
+     - the gate it must pass before forwarding;
+     - where it forwards and where a defect goes back (Article 4.3
+       ownership routing, pointed at, not restated);
+     - to read the full role prompt before acting on anything the card
+       does not cover.
+  2. Each composes, with BL-1798's loop card, within 8192 characters.
+  3. Hardender's card cannot carry 188 KB of incident rules. It names the
+     gate (tests, mutation, CRAP, per engineering rules; Babashka and
+     shell record the degraded fallback) and points at the full prompt for
+     the rules.
+
+  ## How (direction, not mandate)
+
+  - Handler `bl1799ReviewStageLocalModelCardsSteps.js` (same commit as
+    the feature, BL-233) can reuse BL-1798's handler helpers from
+    `specs/pipeline/steps/lib/`.
+  - The forward targets come from `swarmforge/PIPELINE.md`'s notify chain.
+
+constraints: >
+  No swarmforge/roles/*.prompt, constitution article or PIPELINE.md edit.
+  The cards never restate or reinterpret Article text.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1799-the-review-stage-roles-get-local-model-cards.feature`:
+     4 cases ok.
+  2. `node specs/pipeline/cli.js specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature`:
+     8 ok (unchanged by this slice).
+  3. Read the four cards against their full prompts. Each names what it
+     owns, its gate, its forward target and where the full text lives, and
+     none restates an Article.
+  4. `git diff main...HEAD --name-only` names only the four notes, the
+     feature, its handler (plus lib/) and evidence.
+
+source: |
+  backlog/archive/INTAKE-prompt-factory-local-llm-compact-role-prompts-20260929.md
+  (human, 2026-09-29 ~10:40 BST, quoted verbatim above), split 1:N at
+  mint: BL-1798, BL-1799 (this), BL-1800, plus a remaining slice on BL-1125.
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat).
+  depends_on BL-1798 because the style, budget and note path this slice
+  fills are BL-1798's; the promotion gate holds it until BL-1798 is done.
+  INVEST: Independent once BL-1798 lands. Negotiable (the card wording is
+  the coder's, reviewed by the chain). Valuable (four more roles become
+  usable on a small local window). Estimable (four notes, one handler
+  reusing BL-1798's). Small (1 outline, 4 cases). Testable (through the
+  real CLI).

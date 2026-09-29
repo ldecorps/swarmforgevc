@@ -6,11 +6,12 @@ type: epic
 epic: local-llm-swarm
 priority: 0
 depends_on: []
-decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143, BL-1682, BL-1696, BL-1697, BL-1698, BL-1699, BL-1700, BL-1701, BL-1702, BL-1703, BL-1704, BL-1705, BL-1706, BL-1707, BL-1708, BL-1711, BL-1744, BL-1752, BL-1753, BL-1754, BL-1715, BL-1767, BL-1778, BL-1793, BL-1796, BL-1797]
+decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143, BL-1682, BL-1696, BL-1697, BL-1698, BL-1699, BL-1700, BL-1701, BL-1702, BL-1703, BL-1704, BL-1705, BL-1706, BL-1707, BL-1708, BL-1711, BL-1744, BL-1752, BL-1753, BL-1754, BL-1715, BL-1767, BL-1778, BL-1793, BL-1796, BL-1797, BL-1798, BL-1799, BL-1800]
 remaining_slices:
   - "Successor slices of the BL-1702 pack-shape ruling, minted by the specifier once the human rules - B needs deterministic coordinator rows as daemon behaviour, driver review-stage roles and an Article 4.1 amendment; C needs the compact coordinator card wired read-only, a command relay with an allow-list, relay-hazard probes and lifecycle rows in the probe; A needs none"
   - "The seat coordinator verbs deferred from BL-1696 (main-sync, ff-main, freshness, close, promote, stage-sync), only if the BL-1702 ruling keeps an LLM coordinator"
   - "Arm A of the human's 2026-09-23 specifier A/B test - a local model drafting specs from the pinned corpus (.swarmforge/operator/benchmark-corpus-specifier-ab-20260923/) in a sandbox, never the live backlog, scored against backlog/evidence/specifier-ab-20260923-arm-claude-opus-5-5-20260924.md; waits on the GPU and on the human confirming it is still wanted"
+  - "Prompt-factory window check (intake INTAKE-prompt-factory-local-llm-compact-role-prompts-20260929, success criterion: a local seat first-turn prompt fits a bounded window the pack/metadata declare) - a launch refuses or warns when a local-model seat composed prompt plus the CLI own overhead exceeds the num_ctx its model serves; needs a ruling on the window source (Modelfile num_ctx, ollama show, or pack metadata) and on refuse-vs-warn before it is Estimable; after BL-1798..BL-1800"
 
 source: |
   Human focus 2026-08-25: make Ollama + Qwen robust; best local swarm model;
@@ -32,6 +33,7 @@ notes: |
     BL-1752; BL-1549 (swarm-reliability) retired into BL-1752/BL-1753.
   - [2026-09-24] specifier: queue-jump intake INTAKE-local-aider-seats-20260924 (human, 2026-09-23 ~23:05 BST, "qjump it. The priority is now to introduce local models.") minted as BL-1696 (seat vocabulary), BL-1697 (driver core), BL-1698 (driver resume/hold/mail), BL-1699 (aider launch and bootstrap), BL-1700 (steward coder probe), BL-1701 (probe hazards and nightly) - all approved at mint - and BL-1702 (first local pack canary, pending the pack-shape ruling that absorbs the intake's L4 and the superseded INTAKE-aider-coordinator-card). The ollama ancillary ask (INTAKE-operator-question-1790153120168) minted as BL-1703/BL-1704/BL-1705, pending review.
   - [2026-09-22] specifier consolidation sweep: BL-1682 (paused, epic local-llm-swarm, minted 2026-09-21) added to decomposes_into; the tracker stays open for it.
+  - [2026-09-29] specifier: intake INTAKE-prompt-factory-local-llm-compact-role-prompts-20260929 (human, "Intake for a new llm ticket: have prompt factory review all roles prompt to make them smaller for local llms to digest.") split 1:N into BL-1798 (local-compact style, loop card, coder card), BL-1799 (cleaner/architect/hardender/documenter cards), BL-1800 (QA/coordinator/specifier cards, 8-role census) and a remaining slice (window check vs declared num_ctx, needs a ruling).
   - [2026-08-25T19:14Z] specifier: re-link decomposes_into after rematch drops.
   UMBRELLA / tracking item (type: epic), NOT directly promotable — coordinator
   promotes CHILD slices. Children carry epic: local-llm-swarm.

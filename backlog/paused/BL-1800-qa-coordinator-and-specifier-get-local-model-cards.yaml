@@ -1,0 +1,113 @@
+id: BL-1800
+title: "QA, coordinator and specifier get local-model cards: each gets swarmforge/roles/local-model/<role>.note, so every role local-model-mono-router.conf staffs (8, pinned) composes BL-1798's compact card within 8192 characters instead of 108-120 thousand characters of generic text, and a local specifier refuses deprecator judgment and escalates it"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-directive
+depends_on: [BL-1798]
+mutation_cost: low
+# low: three prose files and one census step; no code changes unless a
+# card exposes a builder gap.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1800-qa-coordinator-and-specifier-get-local-model-cards.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1800GatekeepingLocalModelCardsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file needs a tap. No choice is posed. FIRM - three cards
+  (QA, coordinator, specifier) under BL-1798's 8192-character budget; no
+  swarmforge/roles/*.prompt and no constitution article edited; a card
+  points at the full role prompt and never restates Article text in its
+  own words; a local specifier refuses deprecator adjudication (Article
+  3.6 requires a hard-tier multi-document reasoner) and escalates it.
+
+invariants:
+  - "Every role local-model-mono-router.conf staffs composes the local-compact style within 8192 characters, and each card names its role's full prompt file as the place to read before acting on anything the card does not cover."
+
+description: |
+  ## Human directive (Article 5.3, verbatim)
+
+  "Intake for a new llm ticket: have prompt factory review all roles prompt
+  to make them smaller for local llms to digest."
+
+  ## What
+
+  Slice 3 of the intake's split (BL-1798 slice 1, BL-1799 slice 2).
+  Measured at mint (2026-09-29): a local-model QA composes 107,712
+  characters, coordinator 108,940 and specifier 120,442.
+  `swarmforge/packs/local-model-mono-router.conf` staffs all three on
+  `qwen2.5-coder:7b-instruct`, the coordinator through `config
+  coordinator_agent local-model`.
+
+  ## What is wanted
+
+  1. `swarmforge/roles/local-model/{QA,coordinator,specifier}.note`, each
+     distilled from its `swarmforge/roles/<role>.prompt`. Each names what
+     the role owns and does not own, and points at the full role prompt
+     for everything else. The load-bearing lines each card must carry are
+     pointed at, not restated:
+     - QA: it lands the approved commit on main and bounces to the owning
+       role (Article 1.8/4.3), and never starts a mutation run.
+     - Coordinator: its pane never exits (BL-107), promote then route in
+       the same turn, and no git merge or push (BL-247).
+     - Specifier: it writes specs and prompts only, `human_approval:
+       pending` is literal, and it REFUSES deprecator adjudication
+       (Article 3.6: hard-tier multi-document reasoner only) and escalates
+       it (scenario 02).
+  2. Each composes, with BL-1798's loop card, within 8192 characters.
+  3. Scenario 03 pins the census so the "every role" check cannot go
+     green on a short list (BL-1445). The census is counted at mint as
+     `grep -c '^window' swarmforge/packs/local-model-mono-router.conf` = 7
+     (coder, specifier, cleaner, architect, hardender, documenter, QA),
+     plus `config coordinator_agent local-model` = 1, for 8. The step
+     derives the roles from the pack file, and asserts exactly 8 with
+     coordinator among them.
+
+  ## How (direction, not mandate)
+
+  - Handler `bl1800GatekeepingLocalModelCardsSteps.js` (same commit as
+    the feature, BL-233) can reuse BL-1798's handler helpers from
+    `specs/pipeline/steps/lib/`. Scenario 03 reads the window lines and
+    `coordinator_agent` from the pack file, then composes each role
+    through `prompt_engine_cli.bb`.
+
+constraints: >
+  No swarmforge/roles/*.prompt, constitution article or PIPELINE.md edit.
+  The cards never restate or reinterpret Article text.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1800-qa-coordinator-and-specifier-get-local-model-cards.feature`:
+     5 cases ok (01 x3, 02, 03).
+  2. `node specs/pipeline/cli.js` on BL-1798's and BL-1799's features:
+     8 ok and 4 ok.
+  3. Read the three cards against their full prompts: each carries the
+     load-bearing lines listed in item 1 as pointers, and none restates an
+     Article.
+  4. `git diff main...HEAD --name-only` names only the three notes, the
+     feature, its handler (plus lib/) and evidence.
+
+source: |
+  backlog/archive/INTAKE-prompt-factory-local-llm-compact-role-prompts-20260929.md
+  (human, 2026-09-29 ~10:40 BST, quoted verbatim above), split 1:N at
+  mint: BL-1798, BL-1799, BL-1800 (this), plus a remaining slice on BL-1125.
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat).
+  depends_on BL-1798 (the style, budget and note path). Independent of
+  BL-1799: either can land first once BL-1798 is done.
+  IR-DRY: four findings accepted. One is the parameterized compose step.
+  Two pair the whole-pack census step with the single-role step, which
+  compose a different set. One pairs the census Then with the single-role
+  size Then, which checks style and size for each role.
+  INVEST: Independent once BL-1798 lands. Negotiable (the card wording is
+  the coder's). Valuable (the all-local pack's every role fits a small
+  window). Estimable (three notes, one census step). Small (3 scenarios,
+  5 cases, 1 invariant). Testable (through the real CLI and the real
+  pack file).
