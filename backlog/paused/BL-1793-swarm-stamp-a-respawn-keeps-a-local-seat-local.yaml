@@ -26,7 +26,7 @@ acceptance: specs/features/BL-1793-swarm-stamp-a-respawn-keeps-a-local-seat-loca
 required_wiring:
   - 'specs/pipeline/steps/bl1793SwarmStampRespawnKeepsLocalSeatLocalSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Stamp-off of an operator hotfix landed on 2026-09-28. A new feature
   file is authored here, so it needs a tap. No choice is posed. What needs
