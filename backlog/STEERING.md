@@ -49,6 +49,40 @@ Until the human declares one of those as the cycle direction, no Direction-lane
 gate is in force. That does **not** mean the human has said nothing about
 product surfaces — see the standing freeze below.
 
+## Standing human directive (2026-09-29, via Cursor) — mint Bob-upstream's three suggested slices now
+
+**Human, verbatim (Cursor):** "ok have specifier work on the 3 suggested items"
+
+**Intake:** `backlog/INTAKE-upstream-bob-swarm-ideas-20260929.md` (drift survey
+of `unclebob/swarm-forge`; no common ancestor — reimplement, never merge).
+
+**Effect — specifier mint next (do not wait for ordinary intake drain):**
+
+1. **Prompt adopt A+B** — constitution / cleaner: (A) IO-near modules must not
+   reimplement a domain answer already owned by a higher module; (B) refine
+   BL-485 — split when a file mixes jobs, not to chase the 100-site count.
+2. **APS step-data-table validation** — BL-959-shaped dual-run against APS
+   `codex/bb-tools-equivalence` tip `27e99156` (parser keeps step `|` tables;
+   mutator mutates cells). Report only; pin bump stays human.
+3. **Podium-agent fit note** (upstream's `lieutenant` / `platoon`) —
+   one-page compare to Baton's podium (BL-242); record defer/build in
+   `docs/upstream-deviations.md` without code. No install of upstream's
+   podium agent or ensemble experiments (`squad`).
+
+Mint as ordinary INVEST slices (approve as needed). Do **not** bounce the live
+swarm or advance `upstream-watch.json` SHAs in the same land as adopts —
+advancing the watch baseline is a separate human commit after disposition.
+
+**Minted 2026-09-29 by the specifier:** epic BL-1810 (`upstream-drift-adoption`)
+with BL-1811 (item 1; row A's prose landed at mint, row B already covered),
+BL-1812 (item 2) and BL-1813 (item 3, plus the log entry for every survey
+row). **Vocabulary:** the human, verbatim, during that mint: "can you adopt
+the orchestra lexical terms instead of army jargon", "refer to baton epic".
+Specs use Baton's orchestra lexicon (BL-242, `docs/branding/icon-system.md`):
+player = agent, section = role, conductor = coordinator, ensemble = pack,
+orchestra = fleet, podium = the layer above conductors. Upstream's army
+terms appear only as quoted upstream branch or file names.
+
 ## Standing human directive (2026-09-29, via Cursor) — local-model compact cards + window gate are queue-jump
 
 **Human, verbatim (Cursor):** after confirming local Qwen on aider cannot

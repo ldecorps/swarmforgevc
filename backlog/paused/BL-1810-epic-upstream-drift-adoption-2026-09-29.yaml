@@ -1,0 +1,56 @@
+id: BL-1810
+title: "EPIC - Upstream drift adoption, 2026-09-29 survey of unclebob/swarm-forge and APS: the domain-answer rule, the APS step-data-table candidate, and the podium-agent fit note against Baton (do not promote directly; tracks children)"
+milestone: M8
+status: todo
+type: epic
+epic: upstream-drift-adoption
+priority: 20
+direction: human-requested
+depends_on: []
+decomposes_into: [BL-1811, BL-1812, BL-1813]
+remaining_slices: []
+
+source: |
+  backlog/INTAKE-upstream-bob-swarm-ideas-20260929.md (archived to
+  backlog/archive/ in this mint). Human, verbatim (via Cursor, 2026-09-29
+  ~23:04 BST): "also, do the diff with bob's upstream swarm and see if
+  there are any good ideas to implement for us"
+  Human, verbatim (via Cursor, backlog/STEERING.md standing directive
+  2026-09-29): "ok have specifier work on the 3 suggested items"
+  Human, verbatim (Claude Code, 2026-09-29, during this mint): "can you
+  adopt the orchestra lexical terms instead of army jargon" and "refer to
+  baton epic".
+
+notes: |
+  UMBRELLA/tracking item, not a directly-promotable slice. Its children
+  are the intake's three recommended slices:
+    - BL-1811 - rows A+B: IO-near code calls the module that owns a
+      domain answer (upstream d1e401a, ADOPTED, prose landed at mint);
+      split on mixed jobs, never to chase the count (upstream cc8d63b,
+      ALREADY COVERED by cleaner.prompt's BL-485 section).
+    - BL-1812 - row C: APS codex/bb-tools-equivalence at 27e9915678
+      (step data tables) measured against our pin with BL-959's harness.
+      Report only; the pin bump stays a human commit.
+    - BL-1813 - row D and the log entry: a one-page fit note comparing
+      upstream's podium agent (its `lieutenant`) with Baton (BL-242), and
+      the 2026-09-29 docs/upstream-deviations.md entry recording rows A-G.
+  Rows E (upstream's pack HTML cockpit: skip, mine selectively), F
+  (upstream's `squad`/`sprint-module-squad` ensemble experiments: defer)
+  and G (adversaries branch, docs only: skip) get no ticket; BL-1813
+  records them.
+
+  Vocabulary (human ruling during this mint, "refer to baton epic"): this
+  epic and its children use the Baton orchestra lexicon (BL-242,
+  docs/branding/icon-system.md): a player is an agent, a section is a
+  role, a conductor is a coordinator, an ensemble is a pack, a swarm is a
+  conductor with an ensemble, an orchestra is a fleet, and the podium is
+  the console layer that talks to conductors. Upstream's army terms
+  (lieutenant, platoon, squad) appear only as quoted upstream branch or
+  file names, for traceability.
+
+  Firm constraints from the intake: no upstream-watch.json SHA is
+  advanced by any child (advancing the watch baseline is a separate human
+  commit after the disposition lands); nothing here installs or runs
+  upstream's podium agent or ensemble experiments against the live swarm;
+  this fork shares no git ancestor with upstream, so every adoption is a
+  manual reimplementation.

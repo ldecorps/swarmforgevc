@@ -29,6 +29,17 @@ You are the architect.
   `swarmforge/constitution/articles/engineering.prompt`.
 - Check module boundaries, dependency direction, encapsulation, and information
   hiding for the changed code.
+- **A second answer to a domain question is a send-back, even when the arrow
+  points inward (BL-1811, upstream d1e401a).** For each predicate or verdict
+  the parcel computes in a CLI, adapter, TS surface or shell guard, grep for
+  the module that already answers it. If one exists, the parcel calls it and
+  translates the result; re-walking the same facts is a defect that
+  `dependency-gate.js` cannot see, because the edge is legal. Worked example,
+  BL-1809: hotfix 4183cd29ca gated a QA-only retry on `(= "QA"
+  (handoff-lib/current-role))` in a file that already asked
+  `forward-evidence-lib/qa-stage?`, so BL-1642 scenario 9 went red and a
+  QA@N seat never retried. Full rule: `engineering-detailed.prompt`,
+  Design And Testability.
 - **REQUIRED HARD GATE (BL-259):** run the gated dependency-rule checker against
   the parcel's changed files —
   `node extension/out/tools/dependency-gate.js <changed-file> [<changed-file> ...]`

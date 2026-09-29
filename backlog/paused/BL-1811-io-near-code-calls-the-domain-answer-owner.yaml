@@ -1,0 +1,106 @@
+id: BL-1811
+title: "IO-near code calls the module that owns a domain answer and never re-derives it (upstream d1e401a, adopted): the rule is on every boot, in the architect's review order and in the cleaner's architecture rules, and upstream's companion refinement (cc8d63b, never split a one-job module to chase the mutation-site count) is confirmed already covered by the cleaner's BL-485 section - a feature keeps both in place through later trims"
+milestone: M8
+type: chore
+status: todo
+epic: upstream-drift-adoption
+priority: 20
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: one read-only acceptance step handler plus evidence; the prose is
+# the specifier's and already landed. No production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1811-io-near-code-calls-the-domain-answer-owner.feature
+
+human_approval: approved
+approval_context: >
+  Minted approved under the human's standing directive in
+  backlog/STEERING.md (2026-09-29): "ok have specifier work on the 3
+  suggested items", "Mint as ordinary INVEST slices (approve as needed)".
+  No choice is posed. FIRM: the rule text is the specifier's and is
+  already on main; the parcel adds the step handler that pins it and
+  changes no prompt or constitution file (a stage that finds the prose
+  wrong sends the specifier a note). FIRM: row B needs no prose change,
+  only the attribution line the mint added.
+
+invariants: []
+
+description: |
+  ## What / why
+
+  Row A of the 2026-09-29 upstream drift survey (epic BL-1810).
+  Upstream unclebob/swarm-forge d1e401a (2026-09-02) added, verbatim:
+  "IO-near modules must not reimplement a domain question. If a
+  high-level module already answers it, call that module and translate
+  the result. Walking the same facts again is a defect even when the
+  dependency arrow already points inward."
+
+  The intake's challenge was to name local defects this rule would have
+  prevented, or skip the row. Two, both verified at mint:
+  - BL-1809 (minted today): hotfix 4183cd29ca gated done_with_current's
+    re-point retry on `(= "QA" (handoff-lib/current-role))` in a file
+    that already asks `forward-evidence-lib/qa-stage?` for the same
+    answer. BL-1642 scenario 9 is red on main, and a QA@N seat never
+    retries. `dependency-gate.js` could not see it; the edge is legal.
+  - BL-146: chase/nudge decisions lived in both `inboxChaser.ts` and
+    `chase_sweep_lib.bb`, and the TS copy kept its tests green after the
+    daemon became the only live path.
+  Our existing rules (thin CLI `main()`, BL-897's mirrored-constant test,
+  "never a second reader" in individual tickets) cover parts of this but
+  never state it, so the row is adopted.
+
+  Row B: upstream cc8d63b refined its 100-site rule to "Split a source
+  file when it has more than one job. Do not split a one-job module to
+  chase a mutation-site count." Our cleaner.prompt BL-485 section already
+  says a split is made "ONLY when the split ALSO improves structure",
+  "never a mechanical line-count chop just to duck the count". Already
+  covered: the mint adds only an attribution line naming cc8d63b.
+
+  ## Prose landed by the specifier at mint (BL-798)
+
+  In the commit that adds this file:
+  - `swarmforge/constitution/articles/engineering.prompt`, Design And
+    Testability: one index line, "IO-near code calls the module that
+    owns a domain answer; never re-derives it (BL-1811)." The boot
+    prefix measures 43974/44000 after it: 26 characters of headroom.
+  - `swarmforge/constitution/articles/reference/engineering-detailed.prompt`,
+    end of Design And Testability: the full rule with upstream's wording
+    and both incidents.
+  - `swarmforge/roles/architect.prompt`, Review Order: a send-back bullet
+    with BL-1809 as the worked example.
+  - `swarmforge/roles/cleaner.prompt`, Architecture Rules: the rule, and
+    the limit on collapsing a second derivation in a cleanup pass (only
+    when both answers agree on every input; otherwise note the
+    specifier). BL-485 section: the cc8d63b attribution.
+  Role prompts reach a seat on its next prompt build or respawn; nothing
+  in this ticket restarts a seat.
+
+  ## What the parcel builds
+
+  The step handler for the feature, `specs/pipeline/steps/bl1811DomainAnswerRuleSteps.js`,
+  landing in the same commit that makes the feature runnable (BL-233).
+  It reads the four files from the repository and checks the literals the
+  scenarios name. The feature is 0 of 4 on main at mint for want of that
+  handler. Every literal is on one physical line in its file, verified at
+  mint.
+
+  ## Scope
+  - `specs/pipeline/steps/bl1811DomainAnswerRuleSteps.js` and evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1811-io-near-code-calls-the-domain-answer-owner.feature`:
+     4 of 4 ok (0 of 4 on main at mint, no handler yet).
+  2. `swarmforge/scripts/boot_prefix_budget_gate.sh`: ok (43974/44000 at mint).
+  3. `git diff main...HEAD --name-only` names only the step handler and
+     evidence: no prompt or constitution file.
+
+notes: |
+  Minted 2026-09-29 by the specifier from the upstream drift survey
+  intake (row A, and row B confirmed covered), under the human's standing
+  directive in backlog/STEERING.md, verbatim: "ok have specifier work on
+  the 3 suggested items". human_approval is approved on that directive's
+  "approve as needed"; no choice is posed.

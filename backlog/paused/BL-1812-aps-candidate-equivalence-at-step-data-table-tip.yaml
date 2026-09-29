@@ -1,0 +1,116 @@
+id: BL-1812
+title: "APS candidate equivalence run at codex/bb-tools-equivalence 27e9915678 (step data tables kept in the IR and mutated like example cells) against our pin accaa33d, with BL-959's harness taking the candidate commit as an input: a committed report a human pin-bump decision can read, pin untouched"
+milestone: M8
+type: chore
+status: todo
+epic: upstream-drift-adoption
+priority: 20
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: a thin shell boundary and its handler; the comparator and runner
+# are BL-959's and already tested. The evidence run is long, not the code.
+slice_size_envelope: medium
+# medium: one parameterization, one corpus addition, one long measured run
+# and a report; BL-959 did the same shape in one parcel.
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1812-aps-candidate-equivalence-at-step-data-table-tip.feature
+
+human_approval: approved
+approval_context: >
+  Minted approved under the human's standing directive in
+  backlog/STEERING.md (2026-09-29): "ok have specifier work on the 3
+  suggested items", "Mint as ordinary INVEST slices (approve as needed)".
+  No choice is posed. FIRM: report only. The swarmforge.lock.json pin,
+  swarmforge/vendor/aps/ and upstream-watch.json are read-only here; a
+  bump is a human commit after reading the report (BL-959 discipline).
+  FIRM: the candidate never feeds a live gate.
+
+invariants: []
+
+description: |
+  ## What / why
+
+  Row C of the 2026-09-29 upstream drift survey (epic BL-1810). BL-959
+  measured APS codex/bb-tools-equivalence at 1001283af against our pin
+  accaa33d and recommended bump-with-shims (`--do-not-infer` at the two
+  parser call sites); the pin was never bumped and is still accaa33d.
+  The branch tip is now 27e9915678 (`git ls-remote`, 2026-09-29), two
+  commits past BL-959's candidate, still a fast-forward of our pin:
+  - 5758904 "Keep and mutate Gherkin step data tables": the parser no
+    longer drops `|` rows after steps; they are stored on the step in the
+    JSON IR, orphan and mismatched rows are parse errors, and the mutator
+    changes table cells with the same rules as example values. Touches
+    gherkin.clj, mutation.clj, cli/gherkin_parser.clj, the parser and
+    mutator specs.
+  - 27e9915 "Remove the step data table bug report": docs only.
+
+  Census at mint (python scan of `specs/features/*.feature`, a `|` line
+  following a step line rather than an Examples header): 1444 feature
+  files, ONE carries step data tables, `BL-244-swarm-is-a-composite-node.feature`
+  (4 rows). BL-959's corpus was 604 files. Scenario 02 pins BL-244 in the
+  step-table set so a matcher blind to the idiom cannot pass on an empty
+  find (BL-1445).
+
+  Local consumers of the parser IR the report must cover:
+  `specs/pipeline/runnerAdapter.js`, `specs/pipeline/scripts/run_acceptance.sh`,
+  `specs/pipeline/scripts/run_gherkin_mutation.sh`,
+  `specs/pipeline/gherkinMutationOutcome.js`, `specs/pipeline/mutationWorker.js`,
+  `swarmforge/scripts/gherkin_lint_gate.sh` and the IR-DRY checker. The
+  open question for each is what a step that now carries a table does to
+  it (ignored, broken, or new behaviour), BL-244's handler first.
+
+  ## What is wanted
+
+  1. `swarmforge/scripts/aps_equivalence_run.sh` takes the candidate
+     commit as an input instead of its single constant, and keeps its
+     clone-and-verify refusal: a checkout whose HEAD is not the requested
+     commit stops the run before either toolchain runs, naming both
+     commits (scenario 01). How (direction, not mandate): an argument or
+     an env var beside `APS_EQUIVALENCE_CANDIDATE_DIR`, with 1001283af
+     kept reachable so BL-959's run stays reproducible.
+  2. The mutation-site enumeration corpus includes every live feature
+     that carries a step data table (scenario 02), so the mutator change
+     is measured on our own features, not only on BL-959's fixture.
+  3. One committed report, `backlog/evidence/BL-1812-aps-equivalence-report.md`,
+     from a full run at 27e9915678, with BL-959's four sections:
+     per-commit classification of the two new commits (and whether any of
+     BL-959's seven changed classification); the verdict matrix over
+     today's corpus, run bare and with BL-959's `--do-not-infer` shim;
+     the per-consumer compatibility check above; and a recommendation
+     (bump, do-not-bump, bump-with-shims). Record the wall time of each
+     run; the corpus is 2.4x BL-959's.
+
+  ## Constraints
+  - BL-959's two invariants still bind the harness: pinned surfaces are
+    read-only, and a missing result is INCOMPLETE with a non-zero exit.
+    BL-959's feature and tests stay green.
+  - Never reimplement an APS command (engineering.prompt).
+  - The candidate is cloned to a throwaway directory, never into
+    `swarmforge/vendor/aps/`.
+
+  ## Scope
+  - `swarmforge/scripts/aps_equivalence_run.sh`, the bb runner/CLI beside
+    it only if the corpus change needs it, the step handler
+    `specs/pipeline/steps/bl1812ApsCandidateTipSteps.js` (same commit as
+    the runnable feature, BL-233), the report, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, network available, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1812-aps-candidate-equivalence-at-step-data-table-tip.feature`:
+     3 of 3 ok (0 of 3 on main at mint, no handler yet).
+  2. `node specs/pipeline/cli.js specs/features/BL-959-aps-candidate-toolchain-equivalence.feature`:
+     3 of 3 ok (measured on main at mint).
+  3. `backlog/evidence/BL-1812-aps-equivalence-report.md` exists, names
+     candidate 27e9915678, and has the four sections and both wall times.
+  4. `git diff main...HEAD --name-only` names none of
+     `swarmforge.lock.json`, `swarmforge/vendor/aps/`, `upstream-watch.json`.
+
+notes: |
+  Minted 2026-09-29 by the specifier from the upstream drift survey
+  intake (row C), under the human's standing directive in
+  backlog/STEERING.md, verbatim: "ok have specifier work on the 3
+  suggested items". human_approval is approved on that directive's
+  "approve as needed"; no choice is posed. The candidate SHA was read
+  with `git ls-remote` at mint: 27e9915678a70c4552370d05c3d2077b884f470c.

@@ -27,6 +27,7 @@
   in-process with stubbed `process.cwd`/`argv`/`os.homedir` (never
   `process.chdir()` under mutation) — inject side effects (`postFn` seams),
   not `*_FORCE_RESULT` env bypasses.
+- IO-near code calls the module that owns a domain answer; never re-derives it (BL-1811).
 - Detailed rules with incident evidence (thin-wrapper coverage, mutation
   seams, wiring contracts, Vitest isolation) live in
   **engineering-detailed.prompt** — read on demand, not on every boot.

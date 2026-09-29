@@ -1,0 +1,119 @@
+id: BL-1813
+title: "A one-page fit note measures upstream's podium agent (one agent coordinating several ensembles across projects, its `lieutenant`/`project-manager` branches) against Baton (BL-242: the podium is a console that talks to conductors), records the decision as deferred with its two revisit triggers, and the 2026-09-29 upstream deviations entry records a disposition for every survey row A-G - docs only, no code, no install"
+milestone: M8
+type: chore
+status: todo
+epic: upstream-drift-adoption
+priority: 20
+direction: human-requested
+depends_on: []
+# BL-1811 and BL-1812 need not land first: the entry names them by id,
+# and BL-1811's prose is already on main.
+mutation_cost: low
+# low: two docs and one read-only step handler; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1813-upstream-podium-agent-fit-note-against-baton.feature
+
+human_approval: approved
+approval_context: >
+  Minted approved under the human's standing directive in
+  backlog/STEERING.md (2026-09-29): "ok have specifier work on the 3
+  suggested items", "Mint as ordinary INVEST slices (approve as needed)".
+  FIRM: the decision is DEFER, as the survey recommended; the note is the
+  evidence for it, not a vote. If the comparison finds a named local pain
+  that only a podium agent solves, the documenter sends the specifier a
+  note for a new intake instead of changing the decision. FIRM: Baton's
+  orchestra lexicon throughout (human, during this mint: "can you adopt
+  the orchestra lexical terms instead of army jargon", "refer to baton
+  epic"). FIRM: upstream-watch.json is not touched.
+
+invariants: []
+
+description: |
+  ## What / why
+
+  Row D of the 2026-09-29 upstream drift survey (epic BL-1810), plus the
+  log entry the intake's disposition asks for.
+
+  Upstream is building a layer above its packs: one agent on the podium
+  that coordinates several ensembles across projects, with a projects
+  dashboard. Upstream calls these a lieutenant, squads and a platoon.
+  Here they are named in Baton's orchestra terms (BL-242,
+  docs/branding/icon-system.md): a player is an agent, a section is a
+  role, a conductor is a coordinator, an ensemble is a pack, a swarm is a
+  conductor with an ensemble, an orchestra is a fleet, and the podium is
+  the layer above conductors. Upstream's army terms appear only as quoted
+  branch or file names.
+
+  Baton's answer to the same question is a console on the podium that
+  talks to conductors, never to players (BL-242, BL-246 fleet console,
+  BL-1009 one pipeline grid across swarms), with the operator's control
+  plane on Telegram and Bubble. Upstream's answer puts an agent there.
+
+  ## What is wanted
+
+  1. `docs/explanation/upstream-podium-agent-vs-baton.md`, about one page:
+     what upstream's podium agent does and how it is wired; what Baton does
+     for the same need today; where they differ (an agent vs a console on
+     the podium; per-project packs vs our fleet of swarms; the operator
+     surface); and the decision, DEFER, with both revisit triggers from
+     the survey: (a) we want a true multi-repository forge product, AND
+     (b) Telegram and Bubble cannot cover the operator control plane.
+     Linked from `docs/index.md`, Explanation section.
+  2. A `2026-09-29` entry in `docs/upstream-deviations.md`, same table
+     shape as the 2026-08-19 entry, one row per survey row:
+     - A, domain-answer rule (upstream d1e401a): adopted, BL-1811.
+     - B, split on mixed jobs, never to chase the count (upstream
+       cc8d63b): already covered by the cleaner's BL-485 section.
+     - C, APS codex/bb-tools-equivalence at 27e9915678: validation run,
+       BL-1812; its report carries the recommendation; the pin bump stays
+       a human commit.
+     - D, upstream's podium agent (`lieutenant`, `project-manager`):
+       deferred, BL-1813, linking the fit note.
+     - E, upstream's pack HTML cockpit (Attention, heat): skipped
+       wholesale; its "retry a rejected handoff as an audit" and
+       "per-document review" disciplines may be mined later, only with a
+       named defect.
+     - F, upstream's ensemble experiments (`squad`,
+       `sprint-module-squad`): deferred, confirming the 2026-08-19
+       entry's triggers.
+     - G, `adversaries` branch: skipped (documentation commits only
+       since BL-478's skip).
+     The entry states that no upstream-watch.json SHA moves with it.
+
+  ## Sources (read from a fresh clone; the intake's /tmp survey clone is disposable)
+  - `unclebob/swarm-forge` branch `project-manager` @ 2cc1795f:
+    `swarmforge/roles/lieutenant.prompt`, `platoon-brainstorm.md`,
+    `project-board.md`, `README.md`.
+  - Branch `lieutenant` @ 2365394 (2026-09-07): `README.md`,
+    `AGENTS.md`, `card-depth.md`.
+  - Our side: backlog/done/BL-242-baton-fleet-composite-epic.yaml,
+    backlog/done/BL-246-fleet-console-composite-of-swarms.yaml,
+    docs/how-to/BL-1009-one-unified-pipeline-grid-across-swarms.md,
+    docs/branding/icon-system.md.
+  - The intake's full survey table (archived to backlog/archive/ with
+    this mint).
+
+  ## Scope
+  - The two docs above, `docs/index.md`, the step handler
+    `specs/pipeline/steps/bl1813UpstreamDispositionSteps.js` (same commit
+    as the runnable feature, BL-233), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1813-upstream-podium-agent-fit-note-against-baton.feature`:
+     8 of 8 ok (0 of 8 on main at mint, no handler yet).
+  2. Read the fit note: about one page, orchestra terms throughout, army
+     terms only as quoted upstream names, DEFER with both triggers.
+  3. `git diff main...HEAD --name-only` names no `upstream-watch.json`
+     and no file under `swarmforge/`.
+
+notes: |
+  Minted 2026-09-29 by the specifier from the upstream drift survey
+  intake (row D and the log entry), under the human's standing directive
+  in backlog/STEERING.md, verbatim: "ok have specifier work on the 3
+  suggested items". human_approval is approved on that directive's
+  "approve as needed"; no choice is posed. Vocabulary per the human's
+  ruling during this mint (see approval_context).

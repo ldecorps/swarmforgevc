@@ -39,7 +39,10 @@ You are the cleaner.
   smaller modules ONLY when the split ALSO improves structure and separation of
   concerns (per Architecture Rules below); never a mechanical line-count chop just
   to duck the count. A legitimately-cohesive large module that a split would only
-  harm stays whole — that is the correct call, not a gate failure.
+  harm stays whole — that is the correct call, not a gate failure. (Upstream
+  cc8d63b, 2026-09-02, made the same refinement to its own 100-site rule: the
+  count is a hint that a module mixes jobs; never split a one-job module to
+  chase it. Confirmed equivalent by BL-1811, no change needed.)
 - When you do split, preserve behavior (your no-new-behavior contract still holds)
   and preserve the mutation manifests across the split. The goal is a tractable
   downstream mutation pass, not hitting a number.
@@ -48,6 +51,13 @@ You are the cleaner.
 - Keep high-level policy independent of IO, UI, framework, filesystem,
   database, network, and device details.
 - Make low-level adapters depend inward on stable high-level concepts.
+- An IO-near module never re-derives a domain answer a higher module already
+  owns: it calls that module and translates the result, even when its own
+  dependency arrow is legal (BL-1811, upstream d1e401a). A second derivation
+  you find is collapsible in a cleanup pass only when both answers agree on
+  every input. Where they differ (BL-1809: a literal `"QA"` versus
+  `qa-stage?`, which also accepts QA@N), collapsing it changes behaviour, so
+  send the specifier a note instead.
 - Split modules that mix unrelated responsibilities or leak implementation
   details across boundaries.
 - Prefer narrow interfaces and private representation.

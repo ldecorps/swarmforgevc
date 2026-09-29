@@ -336,6 +336,29 @@ not as the several separate edits that produced it).
   real adapter's CLI-failure branch dark. (BL-511's `telegram-bridge-cost-briefing-line` shipped with
   zero such coverage, the same gap as its `qa-bounce` / `suboptimality-verdict` /
   `standing-rule-violations` siblings; proposed by the hardender 2026-07-18 scoped `engineering`.)
+- **IO-near code calls the module that owns a domain answer; it never
+  re-derives it (BL-1811, adopted from upstream unclebob/swarm-forge
+  d1e401a, 2026-09-29).** Upstream's wording, verbatim:
+  "IO-near modules must not reimplement a domain question. If a high-level
+  module already answers it, call that module and translate the result.
+  Walking the same facts again is a defect even when the dependency arrow
+  already points inward." Here the IO-near side is every CLI, adapter, TS surface, shell
+  guard and hotfix line; the owners are the bb libs and TS cores that
+  already decide the question. Before writing a predicate or verdict (is
+  this seat the QA stage? is this ticket closed? who owns this path?),
+  grep for the module that answers it and call it. A second derivation
+  agrees with the owner on today's inputs and drifts on the first input
+  nobody tested; `dependency-gate.js` stays green because the arrow is
+  legal. Where a call across the TS/bb boundary is truly impossible, the
+  fallback is BL-897's mirrored-constant test, never a silent copy.
+  Incidents: BL-1809 (2026-09-29) - hotfix 4183cd29ca gated
+  done_with_current's re-point retry on `(= "QA"
+  (handoff-lib/current-role))` while `forward-evidence-lib/qa-stage?`
+  answered the same question higher up the same file; BL-1642
+  scenario 9 went red on main and a QA@N seat never retried. BL-146 - the
+  chase/nudge decisions lived in both `inboxChaser.ts` and
+  `chase_sweep_lib.bb`, and the TS copy kept its tests green long after
+  the daemon became the only live path.
 
 ## Test Speed And Isolation
 - Strive to keep the unit suite running in seconds. Speed is a correctness
