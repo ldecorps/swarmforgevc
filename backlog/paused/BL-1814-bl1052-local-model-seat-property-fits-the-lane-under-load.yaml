@@ -1,0 +1,93 @@
+id: BL-1814
+title: "bl1052LocalModelSeat's one property test (a single bb property runner, 80 + 16 draws, 9.6 s alone) times out at the property lane's 20 s default in a full-lane run because only its child spawn declares a timeout (QA, BL-1795's pass, evidence b882b377c6) - it fits the lane under contention the way BL-1808's four files do, draw counts and assertions unchanged"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting is high (2026-09-05
+# register amendment); it holds BL-1795 at QA (Article 4.2).
+status: todo
+epic: unit-suite-speed
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test file; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file chore with no scenarios of its own (BL-1251): the pointer names
+# the feature BL-1052 declared, which must still resolve (9 of 9 ok on main
+# at mint). It is not a claim of ownership over BL-1052's contract.
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: PROPERTY_RUNS and
+  PROPERTY_LAUNCH_RUNS defaults, the runner and every assertion stay; no
+  retry, no seed pinned. FIRM: the per-test budget goes through the lane
+  helper (propertyLaneTimeoutMs), never a bare numeric literal (BL-1596's
+  class).
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA note 003419, evidence b882b377c6 (BL-1795's pass, full property
+  lane on f3f4f29b70):
+  `test/bl1052LocalModelSeat.property.test.js > BL-1052/BL-654:
+  local-model seat invariants hold (bb property runner)`:
+  `Error: Test timed out in 20000ms.` No register row and no open ticket
+  (only closed BL-1052, BL-1081 and BL-1486 name the file), so it is
+  unowned and holds BL-1795.
+
+  The test spawns `bb swarmforge/scripts/test/bl1052_local_model_seat_property_runner.bb`
+  once, with `PROPERTY_RUNS=80` and `PROPERTY_LAUNCH_RUNS=16`. The child
+  spawn carries `timeout: 180000`, but the vitest test declares none, so
+  it runs under `vitest.properties.config.mjs`'s `testTimeout: 20000` and
+  vitest kills it first.
+
+  Measured at mint (2026-09-29, main 7d124ad08d, alone, load ~16): green,
+  9611 ms. Under full-lane contention 2-3x that crosses 20 s.
+
+  ## What is wanted
+  - The test completes inside the full property lane under contention.
+    How (direction, not mandate): BL-1808's shape (landed 453077f16d), a
+    per-test budget through `propertyLaneTimeoutMs(<base>)` with the base
+    taken from a quiet-host measurement plus stated headroom, never below
+    today's 20 s. Say in the evidence which base and why.
+
+  ## Scope
+  - `extension/test/bl1052LocalModelSeat.property.test.js`, plus evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1052LocalModelSeat.property.test.js --reporter=verbose`:
+     green; record the duration and the 1-minute load. At mint: 9611 ms
+     at load ~16.
+  2. QA's ordinary full property run on this parcel: the file does not
+     appear among the failures.
+  3. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`:
+     9 of 9 ok (as measured on main at mint, 18.2 s).
+  4. `git diff main...HEAD --name-only` names only the test file and
+     evidence.
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's property row.
+
+notes: |
+  Minted 2026-09-29 by the specifier from QA's unowned-red note 003419
+  (holding BL-1795, evidence b882b377c6). Register row added in the mint
+  commit; the file and BL-1052's feature measured at mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1795.
+  Lane pattern (BL-1808's notes named this trigger): this is the third QA
+  run on 2026-09-29 to find a new 20 s property timeout, after BL-1745's
+  three on 09-25. Census at mint: 470 property files, 197 spawn a
+  subprocess, 124 of those declare no per-test budget (python scan for
+  spawnSync/execFileSync/execSync/spawn/exec calls, and for
+  propertyLaneTimeoutMs, SUBPROCESS_HEAVY_TIMEOUT_MS or a 4+ digit third
+  argument). Whether to keep one owner per red, sweep all 124 with a
+  guard, or make the lane default load-scaled (which reverses BL-932
+  invariant 1, "never a lane-wide raise") is a choice for the human; the
+  specifier raised it on 2026-09-29.
