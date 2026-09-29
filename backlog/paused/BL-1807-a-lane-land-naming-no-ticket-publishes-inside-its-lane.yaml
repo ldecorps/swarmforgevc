@@ -24,7 +24,10 @@ acceptance: specs/features/BL-1807-a-lane-land-naming-no-ticket-publishes-inside
 required_wiring:
   - 'specs/pipeline/steps/bl1807LaneLandNamingNoTicketPublishesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - the publish gate accepts a lane land that names no ticket when every path it pushes is inside its lane (recommended)
+ruling_provenance: tapped
 approval_context: >
   A new feature file needs a tap, and one choice is posed. FIRM - human
   rulings B (2026-09-06, BL-1444) and A (2026-09-07, BL-1459) stand: QA
