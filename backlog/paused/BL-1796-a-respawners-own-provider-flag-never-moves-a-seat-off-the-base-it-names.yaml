@@ -1,0 +1,177 @@
+id: BL-1796
+title: "A respawn forces the respawning daemon's own SWARMFORGE_USE provider flag onto every seat it respawns, whatever base the seat's own launch script names: a daemon started by start-swarm-glm.sh (SWARMFORGE_USE_BAI=1) or start-swarm-qwen.sh (SWARMFORGE_USE_QWEN=1) moves a local Ollama seat to that cloud provider and a seat on another cloud host to the flagged one (BL-1793 probe 3a); a seat whose launch script names an OpenAI base keeps it, and the flag path stays only for seats that name none"
+milestone: M8
+type: defect
+severity: medium
+# medium: latent, with the same outcome as the cb8d502fec hotfix when it
+# fires (repo content sent to a cloud provider the seat never named).
+# Measured at mint: no live daemon carries a SWARMFORGE_USE_*=1 flag (flag
+# names read from /proc/<pid>/environ, never values), so nothing is
+# degraded today. It fires on the first respawn by a daemon launched from
+# the glm or qwen starter, or from a shell with a flag exported, of any
+# seat on another provider.
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one condition in provider_respawn_env_lib.bb (Babashka, no
+# mutation/CRAP/DRY wired, BL-472). The handler drives the real
+# launch-script generator and provider-respawn-env-args, about 1 s for all
+# cases (the BL-1793 harness).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1796-a-respawners-own-provider-flag-never-moves-a-seat-off-the-base-it-names.feature
+
+# The fix sits inside provider-respawn-env-args, which swarm_ensure.bb:254,
+# handoffd.bb:1439 and babysitter_check.bb:1109 already call. The handler
+# entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1796RespawnerFlagNeverMovesANamedBaseSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file needs a tap. No choice is posed. FIRM - a seat whose
+  own launch script names an OpenAI base keeps it on respawn, whatever
+  SWARMFORGE_USE flag the respawning daemon carries. A seat that names no
+  base keeps today's flag path, which BL-1495's b.ai respawn scenario and
+  the auth-observe wiring test rely on. The fix is in
+  provider_respawn_env_lib.bb only, and the launchers, provider_compat_lib
+  and the hotfix's test are untouched. The narrower rule was chosen over
+  ignoring the respawner's flag everywhere, because the wider one would
+  turn BL-1495 scenario 03 and test_handoffd_auth_observe_wiring.sh 02 red
+  for no seat that needs it.
+
+invariants:
+  - "A seat whose own active launch CLI names an OpenAI-compatible base (an --openai-api-base argument, or an OPENAI_API_BASE export outside every SWARMFORGE_USE-guarded block) is respawned onto that base's provider, or onto no cloud provider for a local base, never onto a provider named only by a flag in the respawning process's environment."
+  - "A seat whose launch script names no base, or that has no launch script, gets exactly the respawn environment it gets today."
+
+description: |
+  ## What
+
+  `provider_respawn_env_lib.bb`'s `provider-respawn-env-args` reads
+  `SWARMFORGE_USE_CEREBRAS`, `_PERPLEXITY`, `_QWEN` and `_BAI` with
+  `System/getenv`, from the respawning process: `swarm ensure`, handoffd's
+  auth-observe path or babysitterd. Any of them set to 1 forces that
+  provider onto the seat, however the seat's own launch script is wired.
+  Hotfix cb8d502fec kept this path on purpose when it stopped dormant
+  guard blocks reading as targeting. The BL-1793 review (coder evidence
+  `backlog/evidence/bl1793-swarm-stamp-review-cb8d502fec.md`, probe 3a)
+  found who sets such a flag for the daemons: `start-swarm-glm.sh`
+  exports `SWARMFORGE_USE_BAI=1`, and `start-swarm-qwen.sh` exports
+  `SWARMFORGE_USE_QWEN=1`.
+
+  Measured at mint (origin/main 173ce3e46f): real launch scripts from
+  `write_role_launch_script`, and `provider-respawn-env-args` run with
+  every provider key plus one flag in the calling environment.
+  - A local Ollama aider seat comes back remapped to the flagged provider
+    under every one of the four flags.
+  - A `local-model` seat does too. Its own unguarded local export runs
+    last at launch and keeps its base local, but the respawn env still
+    names the cloud base and flag.
+  - A b.ai seat under the Qwen flag comes back on Qwen, and a Perplexity
+    seat under the Cerebras flag comes back on Cerebras.
+  - A Qwen seat under the b.ai flag, and a Cerebras seat under the
+    Perplexity flag, keep their own host but also carry the other flag.
+  - A Claude seat (no base) takes the flag. That is harmless, because
+    Claude Code ignores OPENAI_*.
+
+  ## What is wanted
+
+  1. When the seat's active launch CLI (`provider-compat-lib/active-launch-cli`,
+     which already strips the dormant guard blocks) names an
+     OpenAI-compatible base, the respawn env comes from that base alone.
+     A cloud host is resolved exactly as `launch-cli-implies-*?` resolves
+     it today, a local base gets no cloud provider, and no
+     `SWARMFORGE_USE_*` flag from the respawning process is applied or
+     forwarded.
+  2. A seat whose launch script names no base, or that has no launch
+     script, keeps today's behaviour byte for byte. That covers BL-1495
+     scenario 03 (no launch script, flag in the respawning process, b.ai
+     env expected) and `test_handoffd_auth_observe_wiring.sh` 02 (no
+     launch script, Cerebras flag forwarded).
+  3. Provider keys are still passed through as today (`-e
+     CEREBRAS_API_KEY=...` and the rest). Only the flag and the OPENAI_*
+     remap change.
+
+  ## Not in scope
+
+  - The launchers themselves. Every launcher's `unset` list omits
+    `SWARMFORGE_USE_BAI`, and glm/qwen export their flag to the whole tree.
+    Observed at mint and left alone: this fix makes a respawn immune to
+    either.
+  - `provider_compat_lib.bb` and its test runner. The hotfix's "explicit
+    flag still forces a remap" assertion tests that lib's predicate,
+    which this ticket does not change.
+  - Launch-time behaviour. A flag present when a seat first starts is the
+    launcher's business.
+
+  ## How (direction, not mandate)
+
+  - In `provider-respawn-env-args`: compute whether the active launch CLI
+    names a base. The `--openai-api-base <url>` argument is the aider
+    shape. An `OPENAI_API_BASE=` export outside a flag-guarded block is
+    the local-model shape, and also the b.ai/Perplexity host-targeting
+    guards' shape. When it does, pass `:use-*` false into
+    `resolve-openai-compat` and skip the `SWARMFORGE_USE_*` `-e` forwards.
+  - Handler: reuse the BL-1793 harness (`zsh -c "source swarmforge.sh
+    <root>; parse_config; write_role_launch_script <idx>"`, fixture root
+    path under 100 chars, PACK_STAFFING_SKIP_GATE=1, an explicit env with
+    fake keys only). Window lines: `aider coder --model
+    openai/qwen2.5-coder:latest --openai-api-base
+    http://127.0.0.1:11434/v1 --no-gitignore`, `local-model coder --model
+    ista-iq3s-coder:latest`, `claude coder`, and aider lines with
+    `--openai-api-base <host>`. Name the handler
+    `bl1796RespawnerFlagNeverMovesANamedBaseSteps.js` and land it in the
+    SAME commit as the feature (BL-233).
+
+constraints: >
+  Fixture roots are mkdtemp directories (BL-1390) with paths short enough
+  for the generator's socket check. No real provider key and no network.
+  Never read a live daemon's environment values in a test.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1796-a-respawners-own-provider-flag-never-moves-a-seat-off-the-base-it-names.feature`:
+     10 cases ok (01 x5, 02 x4, 03). Measured at mint by hand on main
+     173ce3e46f: all of 01 and 02 red, and 03 green (the path kept).
+  2. Regression, one run each:
+     - `node specs/pipeline/cli.js specs/features/BL-1495-a-b-ai-gateway-seat-launches-respawns-and-authenticates.feature`:
+       7 ok (measured at mint: 7 of 7 in 6 s).
+     - `bash swarmforge/scripts/test/test_handoffd_auth_observe_wiring.sh`:
+       3 PASS (measured at mint, 2 s).
+     - `bb swarmforge/scripts/test/provider_compat_lib_test_runner.bb`:
+       "37 assertions ok".
+     - `bash swarmforge/scripts/test/test_swarm_ensure.sh`: ALL PASS
+       (measured at mint, 104 s).
+     - If BL-1793 has landed, its feature gives 6 ok.
+  3. `git diff main...HEAD --name-only` names only
+     `provider_respawn_env_lib.bb`, a test for it, the feature, its handler
+     (plus lib/) and evidence.
+
+source: |
+  Coder note 002213 (2026-09-29 09:52Z), verbatim: "BL-1793 probe 3a:
+  respawner env forces provider flag onto every seat - evidence". The
+  evidence: `backlog/evidence/bl1793-swarm-stamp-review-cb8d502fec.md` on
+  swarmforge-coder (dde7e4655c), section "3a - the respawner's own flag".
+  BL-1793's review goal 3a asked for exactly this finding as a note to the
+  specifier.
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat). The measured
+  shape is wider than the coder's note. The flag also moves a seat that
+  names a DIFFERENT cloud host, not only a local one. The narrower rule
+  (a named base wins, and the flag stays for seats with none) was chosen
+  after checking the two existing contracts that assert the flag path.
+  Neither fixture writes a launch script, so both stay green.
+  IR-DRY: five findings accepted. Three are one parameterized step used
+  with a placeholder and with a literal (the seat Given, the flag Given,
+  the remap Then). Two pair the seat-kind Given with the aider-host Given,
+  which build different fixtures.
+  INVEST: Independent (BL-1793 is the review that found it; nothing
+  waits on it). Negotiable (the How is direction). Valuable (closes the
+  respawn-time egress path cb8d502fec left open). Estimable (one
+  condition, the BL-1793 harness). Small (3 scenarios, 10 cases, 2
+  invariants). Testable (real generator plus real lib, explicit env).
