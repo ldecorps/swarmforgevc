@@ -1,0 +1,213 @@
+id: BL-1793
+title: "Swarm stamp-off: hotfix cb8d502fec - a respawn (swarm ensure, handoffd auth-observe, babysitterd) no longer rewires a local-Ollama seat to Cerebras or Perplexity, because provider_compat_lib's launch-cli-implies-* predicates strip the dormant SWARMFORGE_USE-guarded blocks every generated launch script carries before matching a cloud host - review-only certification (BL-848) of what landed on 2026-09-28"
+milestone: M8
+type: defect
+severity: medium
+# medium: the fix is live on main and the respawn path it closed is shut;
+# what is open is the review the constitution owes a hotfix (BL-848) and
+# three probes of paths the hotfix left open. Not high: nothing is broken
+# while the review waits.
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: review-only; Babashka and bash, no mutation/CRAP/DRY wired (BL-472).
+# The handler drives the real launch-script generator and the real
+# provider-respawn-env-args in subprocesses, about 1 s for all six cases.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1793-swarm-stamp-a-respawn-keeps-a-local-seat-local.feature
+
+# A review parcel adds no production call site. The handler entry is the
+# BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1793SwarmStampRespawnKeepsLocalSeatLocalSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Stamp-off of an operator hotfix landed on 2026-09-28. A new feature
+  file is authored here, so it needs a tap. No choice is posed. What needs
+  sign-off is the DISPOSITION only - reviewing the landed diff (BL-848
+  posture) rather than re-implementing it, at medium severity. FIRM - the
+  parcel changes no production file, only evidence, the feature, its step
+  handler (plus lib/ helpers) and new test files; each confirmed finding
+  from the probes in review goal 3 is a narrow follow-up via note to the
+  specifier, never an in-parcel rewrite; the parcel never writes
+  human_decision into backlog/hotfix-ledger.yaml.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, the feature, its step handler (plus lib/ helpers) or a new test file; provider_compat_lib.bb, provider_respawn_env_lib.bb, swarmforge.sh and provider_compat_lib_test_runner.bb are read, never edited."
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This is that gate: a REVIEW ticket. Confirm or refute what landed, and
+  open narrow follow-ups for anything found.
+
+  ## The failure it fixed (from the commit message)
+
+  Every generated `.swarmforge/launch/<role>.sh` carries dormant
+  `if [[ "${SWARMFORGE_USE_<X>:-}" == "1" ... ]]; then ... fi` blocks
+  naming api.cerebras.ai, api.perplexity.ai and api.b.ai, whatever the
+  pack. `provider_compat_lib`'s `launch-cli-implies-*?` regex-matched the
+  whole script, so every seat read as targeting those hosts, and
+  `provider_respawn_env_lib` forced a cloud provider onto any respawned
+  seat. Observed live 2026-09-28 on ollama-ista-iq3s-mono-router: a coder
+  seat respawned by `./swarm ensure` came up with
+  SWARMFORGE_USE_PERPLEXITY=1 and OPENAI_BASE_URL=https://api.perplexity.ai
+  and was caught idle before any request went out.
+
+  ## What landed (files to review)
+
+  - `swarmforge/scripts/provider_compat_lib.bb`: `flag-guarded-block-re`,
+    `active-launch-cli` (the script with flag-guarded blocks removed) and
+    `launch-cli-matches?`, which all four `launch-cli-implies-*?`
+    predicates now go through.
+  - `swarmforge/scripts/test/provider_compat_lib_test_runner.bb`: six
+    assertions over a hand-written copy of the dormant blocks (37 total).
+
+  ## Review goals
+
+  1. Scenarios 01-02 green against the real generator and the real
+     `provider-respawn-env-args`. Scenario 01 is also the agreement check
+     the hotfix's own test lacks (BL-897): that test copies the guard
+     text by hand, while this feature takes it from `swarmforge.sh`.
+  2. The three lanes the commit cites pass on the parcel commit, one run
+     each: `provider_compat_lib_test_runner.bb`,
+     `test_handoffd_auth_observe_wiring.sh`, `test_swarm_ensure.sh`.
+  3. PROBE, do not fix. Each confirmed finding is one note to the
+     specifier:
+     a. The respawner's own flag. `provider-respawn-env-args` still reads
+        SWARMFORGE_USE_* from the RESPAWNING process's environment and
+        forces that provider onto every seat it respawns, whatever the
+        seat's pack (the hotfix kept this on purpose). Can handoffd,
+        babysitterd or `swarm ensure` start with such a flag set: a
+        `start-swarm-*.sh` launcher, ~/.zshenv, or a switch from a cloud
+        pack to a local one without a daemon restart? swarmforge.sh's
+        2026-09-09 b.ai guard comment records a coordinator respawned
+        with SWARMFORGE_USE_CEREBRAS=1 "from the respawner". Say whether
+        that was this dormant-block bug or the respawner's own env.
+        Answer from the launchers plus one fixture run with the flag set
+        over a local-Ollama launch script.
+     b. The regex ends a guarded block at the first line-start `fi`. A
+        guard holding a nested `if ... fi` would leave its tail, possibly
+        a host, in the active text. Does any guard the generator writes
+        nest today (swarmforge.sh around lines 2126-2185)? Measured at
+        mint: a script for a line naming no cloud host carries 3 guarded
+        blocks, all stripped, with no SWARMFORGE_USE reference left in
+        the active text. A line naming Perplexity or b.ai carries 2,
+        because that provider's targeting guard is not flag-guarded and
+        stays active by design. Latent or reachable?
+     c. Seats on a cloud provider through a flag only. Before the hotfix,
+        every script read as Cerebras-targeting, so a respawn re-flagged
+        a seat whose window line names no host (Cerebras only, and by
+        accident). Now the flag must come from the respawner's env.
+        Census the packs and `start-swarm-*.sh` launchers for any seat
+        that runs on a cloud provider only through a launcher-set
+        SWARMFORGE_USE flag. For each one, does it come back wired after
+        a respawn from each of the three callers (swarm_ensure.bb:254,
+        handoffd.bb:1439, babysitter_check.bb:1109)?
+  4. Record, do not review: the live end-to-end proof. The fix's real
+     test is the first ensure-respawn of an Ollama seat after
+     2026-09-28T22:11Z. If one has happened on this host by review time,
+     record that seat's SWARMFORGE_USE_*, OPENAI_API_BASE and
+     OPENAI_BASE_URL values from `/proc/<pid>/environ` in evidence (never
+     a key value). If none has, say so.
+
+  ## Scenario notes for the coder
+
+  - Generate each launch script the way
+    `test_aider_seat_launch_config.sh` does: `zsh -c "source
+    swarmforge.sh <root>; parse_config; write_role_launch_script <idx>"`
+    over a one-line `swarmforge.conf`, with PACK_STAFFING_SKIP_GATE=1.
+    Do not edit that test.
+  - Window lines. Local Ollama aider: `window coder aider coder --model
+    openai/qwen2.5-coder:latest --openai-api-base
+    http://127.0.0.1:11434/v1 --no-gitignore`. Claude: `window coder
+    claude coder`. Scenario 02: an aider line with `--openai-api-base
+    <host>`.
+  - Compute the respawn env by running `bb` on
+    `provider-respawn-env-args <state-dir> coder` in a subprocess whose
+    env is built explicitly, never inherited: fake keys only
+    (`csk-x`, `pplx-x`, `bai-x`, `sk-sp-x`; the ~/.zshenv hazard) and no
+    SWARMFORGE_USE_* in scenario 01 or 02.
+  - Keep the fixture root path short. The generator resolves a tmux socket
+    under it and refuses a path over 100 chars: at mint, a root under the
+    session scratchpad (140 chars) made it write no launch script at all.
+    `fs.mkdtempSync(os.tmpdir())` is short enough; remove it in a
+    `finally` (BL-971).
+  - Validate `<seat>`, `<host>` and `<flag>` against explicit KNOWN_VALUES.
+  - Do NOT assert the ledger row's `human_decision` in a scenario (red the
+    day the human certifies, BL-1006); it is a QA step.
+  - The step handler is `bl1793SwarmStampRespawnKeepsLocalSeatLocalSteps.js`,
+    landing in the SAME commit as the feature (BL-233).
+
+  ## How (direction, not mandate)
+
+  - One Node step handler spawning zsh and bb, as the BL-1708 handler
+    does for the same generator.
+
+constraints: >
+  Fixture roots are mkdtemp directories (BL-1390). No real provider key,
+  no network, no live `.swarmforge/`. Reading a live seat's
+  `/proc/<pid>/environ` for goal 4 is read-only and records flags and
+  bases, never key values. The parcel does not edit the hotfix's files.
+
+out_of_scope: |
+  Changing the respawner's explicit-flag behaviour (probe 3a finds, the
+  specifier mints), hardening the regex against nested guards (probe 3b),
+  any pack or launcher change (probe 3c), and writing human_decision into
+  the hotfix ledger.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     its handler (plus lib/) and new test files (invariant).
+  2. `node specs/pipeline/cli.js specs/features/BL-1793-swarm-stamp-a-respawn-keeps-a-local-seat-local.feature`:
+     six cases ok (01 x2, 02 x4). Measured at mint on main c24afe2529:
+     the real generator plus provider-respawn-env-args, run by hand for
+     the six window lines, gave exactly these results in about 1 s. The
+     pre-hotfix lib (cb8d502fec^) resolved all six to Cerebras, so 01 x2
+     and the Perplexity, b.ai and Qwen rows of 02 are red there.
+  3. `bb swarmforge/scripts/test/provider_compat_lib_test_runner.bb`:
+     "37 assertions ok" (measured at mint, under 1 s).
+  4. `bash swarmforge/scripts/test/test_handoffd_auth_observe_wiring.sh`:
+     3 PASS (measured at mint, 2 s). `bash
+     swarmforge/scripts/test/test_swarm_ensure.sh`: ALL PASS (measured at
+     mint, 104 s).
+  5. The evidence answers goal 3's three probes and records goal 4; every
+     confirmed finding names its follow-up note.
+  6. `backlog/hotfix-ledger.yaml` row cb8d502fec: `human_decision: null`.
+  7. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide cb8d502fec approved|waived` and commits the ledger.
+
+source: |
+  backlog/hotfix-ledger.yaml row cb8d502fec (detected 2026-09-28, state
+  pending, stamp_ticket null). Surfaced by the coordinator's note "hotfix
+  cb8d502fec has no stamp ticket - mint review ticket" (inbound
+  00_20260929T074528Z_012834). Hotfix cb8d502fec
+  (Hotfix-Certification: pending). From the commit message, verbatim:
+  "litellm reads OPENAI_BASE_URL before aider's --openai-api-base flag,
+  so the seat's first turn would have sent repo content to Perplexity
+  with a model tag it cannot serve."
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat) on the
+  coordinator's note. Grepped cb8d502fec across backlog/paused, active,
+  done and hold before minting: no stamp exists. The ledger row was on
+  disk but uncommitted, written by operator_runtime's sweep. The mint
+  commit links it (`hotfix_ledger_update.bb --link`) and commits the
+  ledger. That commit also carries the same sweep's derived `state:`
+  re-render for eight other rows (decide-entry-state from ticket
+  location; no human_decision touched). Minted pending: medium is outside
+  the 2026-09-17 auto-approval carve-out.
+
+  INVEST: Independent (review of landed code), Negotiable (handler shape
+  is direction), Valuable (the hotfix gets its gate; three open paths
+  probed), Estimable (two outlines, six cases, the generator harness
+  BL-1708 already uses), Small, Testable (fixture roots, fake keys,
+  explicit env).

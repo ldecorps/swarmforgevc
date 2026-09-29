@@ -310,7 +310,7 @@
 - commit: 5bdf93beed
   subject: "Mono-router: spawn an ephemeral consult session instead of stranding a departing role's mail"
   detected_at: 2026-09-12
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1752
   human_decision: null
   decided_at: null
@@ -338,7 +338,7 @@
 - commit: a27d082c2d
   subject: "Night-closing-ceremony: documenter gets an ephemeral session when rotate is refused, so the morning briefing actually gets written"
   detected_at: 2026-09-16
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1753
   human_decision: null
   decided_at: null
@@ -359,28 +359,28 @@
 - commit: 7d109d3b2e
   subject: "Hotfix: never consult-spawn a competing session on a single-inference-slot pack"
   detected_at: 2026-09-23
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1752
   human_decision: null
   decided_at: null
 - commit: 22a2a9fc7f
   subject: "Fix self-contradictory fallback in the in-process-resume STOP banner"
   detected_at: 2026-09-23
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1707
   human_decision: null
   decided_at: null
 - commit: 7ba57573ff
   subject: "Add coder-stop_banner_compliance and coder-tool_capability_denial safety competencies"
   detected_at: 2026-09-23
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1707
   human_decision: null
   decided_at: null
 - commit: e94b78a7a3
   subject: "Withdraw coder-tool_capability_denial from the certification gate"
   detected_at: 2026-09-23
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1707
   human_decision: null
   decided_at: null
@@ -415,7 +415,7 @@
 - commit: db4da5c573
   subject: "BL-1772: --push re-points the QA branch after LAND_PUBLISHED"
   detected_at: 2026-09-26
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1772
   human_decision: null
   decided_at: null
@@ -429,7 +429,14 @@
 - commit: 6cef9b7ecd
   subject: "A swarm's coordinator can message and poll the human in its own Telegram topic"
   detected_at: 2026-09-26
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1777
+  human_decision: null
+  decided_at: null
+- commit: cb8d502fec
+  subject: "Hotfix: a respawn no longer rewires a local-Ollama seat to Cerebras/Perplexity"
+  detected_at: 2026-09-28
+  state: pending
+  stamp_ticket: BL-1793
   human_decision: null
   decided_at: null
