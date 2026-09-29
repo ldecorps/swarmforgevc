@@ -114,13 +114,23 @@ function registerSteps(registry) {
     if (!/beforeAll\(/.test(ctx.fixtureSource)) {
       throw new Error(`expected ${ctx.fixtureFile}.test.js to build its git fixture once in a beforeAll, not per test`);
     }
-    // The beforeAll block itself, not each test(), is where `git init`
-    // must live - split on beforeAll(...) and confirm every test(...)
-    // body has zero 'git init' calls of its own.
+    // The beforeAll block itself, not each test(), is where the fixture
+    // must be built - split on beforeAll(...) and confirm every test(...)
+    // body has zero 'git init' calls of its own. BL-1788: BL-1039 gave
+    // negotiateOnboardingContractCli (and any other fixture file) a
+    // second legitimate way to build once - copySeededRepoInto, which
+    // seeds a real `git init` at most ONCE PER PROCESS and hands every
+    // caller a cheap filesystem copy - so a literal `git ... init` in the
+    // beforeAll is no longer the only proof of "built once"; a call to
+    // the shared helper is equally valid.
     const afterBeforeAll = ctx.fixtureSource.slice(ctx.fixtureSource.indexOf('beforeAll('));
     const beforeAllBody = afterBeforeAll.slice(0, afterBeforeAll.indexOf('\n});') + 4);
-    if (!/git.*['"]init['"]/.test(beforeAllBody)) {
-      throw new Error(`expected the beforeAll block in ${ctx.fixtureFile}.test.js to run git init once`);
+    const buildsOwnGitRepo = /git.*['"]init['"]/.test(beforeAllBody);
+    const buildsThroughSharedSeededRepo = /copySeededRepoInto\(/.test(beforeAllBody);
+    if (!buildsOwnGitRepo && !buildsThroughSharedSeededRepo) {
+      throw new Error(
+        `expected the beforeAll block in ${ctx.fixtureFile}.test.js to run git init once, or to build through the shared seeded-repo fixture (copySeededRepoInto)`
+      );
     }
     const testBodies = ctx.fixtureSource.split(/\btest\(/).slice(1);
     const perTestGitInit = testBodies.filter((body) => /git.*['"]init['"]/.test(body.split(/\n}\);/)[0]));

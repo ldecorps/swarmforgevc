@@ -103,12 +103,24 @@ test('the compiled CLI runs standalone as a subprocess and lists two independent
   assert.equal(rendered.health.live_panes, 4);
 });
 
-test('the compiled CLI defaults to the SWARMFORGE_FLEET_DIR env var when no rendezvous-dir argument is given', () => {
+// BL-1788: runs main() in-process (mirrors runCli's own seam above) rather
+// than a second node subprocess spawn - BL-363's guard caps this file at
+// one (the smoke test above already locks the compiled CLI's own real
+// argv/require.main wiring). The env var is stubbed and restored in a
+// finally so envRestoreGuardSetup.js's own leak check stays honest.
+test('the compiled CLI defaults to the SWARMFORGE_FLEET_DIR env var when no rendezvous-dir argument is given', async () => {
   const rendezvousDir = mkTmp();
   publishStatus(rendezvousDir, 'alpha', fixtureDoc('alpha'));
 
-  const output = execFileSync('node', [CLI_PATH], { encoding: 'utf8', env: { ...process.env, SWARMFORGE_FLEET_DIR: rendezvousDir } });
-  const rendered = JSON.parse(output);
+  const previousEnv = process.env.SWARMFORGE_FLEET_DIR;
+  process.env.SWARMFORGE_FLEET_DIR = rendezvousDir;
+  let rendered;
+  try {
+    rendered = await runCli();
+  } finally {
+    if (previousEnv === undefined) delete process.env.SWARMFORGE_FLEET_DIR;
+    else process.env.SWARMFORGE_FLEET_DIR = previousEnv;
+  }
 
   assert.equal(rendered.swarms.length, 1);
   assert.equal(rendered.swarms[0].identity.name, 'alpha');

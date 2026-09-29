@@ -2539,44 +2539,55 @@ function readDraftNote(draftPath) {
 // refused) to 12-14s - ABOVE the register's 1.5x (10.5s) refusal
 // threshold, turning `npm test`'s own exit code from 0 to 1. Reverted.
 //
-// Instead: an isolated NODE subprocess (no Babashka, no bb - a bare `node`
-// process starts in tens of ms, not ~1.3s) that monkey-patches
-// `child_process.execFile` BEFORE requiring the compiled module, so the
+// A second attempt (BL-1620) proved it with an isolated NODE subprocess (no
+// Babashka, no bb) that monkey-patched `child_process.execFile` before
+// requiring the compiled module fresh in that separate process, so the
 // module-scope `execFileAsync = promisify(execFile)` capture (out/tools/
-// telegram-front-desk-bot.js) captures the fake instead of the real
-// syscall. This proves the default arrow's own argument ORDER and SHAPE
-// (cli, then draftPath, in that order) without ever touching a real bb
-// process or the fork-pool contention that made the first attempt too
-// costly.
-function runDefaultRunHandoffProbe(root, text) {
-  const probeDir = mkTmpDir('sfvc-bl1620-default-probe-');
-  const probeScript = path.join(probeDir, 'probe.js');
-  const modulePath = path.join(__dirname, '..', 'out', 'tools', 'telegram-front-desk-bot.js');
-  fs.writeFileSync(
-    probeScript,
-    `
-    const cp = require('child_process');
-    const calls = [];
-    cp.execFile = (...args) => {
-      calls.push(args.slice(0, -1));
-      const cb = args[args.length - 1];
-      cb(null, '', '');
-    };
-    const { enqueueRoleAnswerNote } = require(${JSON.stringify(modulePath)});
-    enqueueRoleAnswerNote(${JSON.stringify(root)}, 'specifier', ${JSON.stringify(text)}).then((ok) => {
-      process.stdout.write(JSON.stringify({ ok, calls }));
-    });
-    `
-  );
-  const output = execFileSync('node', [probeScript], { encoding: 'utf8' });
-  fs.rmSync(probeDir, { recursive: true, force: true });
-  return JSON.parse(output);
+// telegram-front-desk-bot.js) captured the fake instead of the real
+// syscall - avoiding the bb cost, but BL-363's own guard counts ANY `node`
+// subprocess this file spawns, and it caught this one too (fleetConsoleCli's
+// own env-default test hit the identical shape). BL-1788: the same patch-
+// then-fresh-require technique run IN this same process instead - patch
+// `child_process.execFile`, delete this module's own require.cache entry,
+// require it fresh (which re-runs its top-level `execFileAsync =
+// promisify(execFile)` against the now-patched execFile), call the real
+// enqueueRoleAnswerNote, then in a finally put back BOTH the original
+// execFile and the original cache entry (never `delete` it if one already
+// existed) - so every other test in this same file (isolate:false shares
+// this worker's require cache across the whole file) keeps seeing the
+// SAME already-loaded, real-execFile-bound module instance the top-level
+// require at the head of this file destructured from.
+async function runDefaultRunHandoffInProcess(root, text) {
+  const cp = require('node:child_process');
+  const modulePath = require.resolve('../out/tools/telegram-front-desk-bot');
+  const originalExecFile = cp.execFile;
+  const hadCacheEntry = Object.prototype.hasOwnProperty.call(require.cache, modulePath);
+  const originalCacheEntry = require.cache[modulePath];
+  const calls = [];
+  cp.execFile = (...args) => {
+    calls.push(args.slice(0, -1));
+    const cb = args[args.length - 1];
+    cb(null, '', '');
+  };
+  delete require.cache[modulePath];
+  try {
+    const { enqueueRoleAnswerNote } = require(modulePath);
+    const ok = await enqueueRoleAnswerNote(root, 'specifier', text);
+    return { ok, calls };
+  } finally {
+    cp.execFile = originalExecFile;
+    if (hadCacheEntry) {
+      require.cache[modulePath] = originalCacheEntry;
+    } else {
+      delete require.cache[modulePath];
+    }
+  }
 }
 
-test('BL-1620: enqueueRoleAnswerNote with no runHandoff argument falls back to a call shaped exactly like the real bb invocation (cli, then draftPath, in order)', () => {
+test('BL-1620: enqueueRoleAnswerNote with no runHandoff argument falls back to a call shaped exactly like the real bb invocation (cli, then draftPath, in order)', async () => {
   const root = swarmHandoffFixture();
 
-  const { ok, calls } = runDefaultRunHandoffProbe(root, 'sample answer default-path');
+  const { ok, calls } = await runDefaultRunHandoffInProcess(root, 'sample answer default-path');
 
   assert.equal(ok, true);
   assert.equal(calls.length, 1, `expected exactly one execFile call, got: ${JSON.stringify(calls)}`);

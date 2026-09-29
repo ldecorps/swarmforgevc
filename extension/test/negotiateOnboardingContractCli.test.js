@@ -82,11 +82,14 @@ function runCliSubprocess(argv) {
 }
 
 // The git-repo + already-proposed-contract fixture is IDENTICAL for every
-// test in this file - built ONCE here (real `git init`/`git config` +
-// one real propose-CLI run, each genuinely expensive as a subprocess),
-// then each test takes a cheap `fs.cpSync` copy of it instead of
-// re-running git init/config/propose per test (23 tests x 4 processes
-// each, before this change).
+// test in this file - built ONCE here per real git repository (BL-1039's
+// shared seeded template: `copySeededRepoInto` seeds one real `git
+// init`/`git config` repo AT MOST ONCE PER PROCESS and hands this beforeAll
+// a cheap filesystem copy of it, never a fresh git init of its own) plus
+// one real propose-CLI run against that copy, then each test takes a cheap
+// `fs.cpSync` copy of THIS beforeAll's own prepared root instead of
+// re-running propose per test (23 tests x 4 processes each, before this
+// change).
 let PREPARED_ROOT;
 
 beforeAll(async () => {
