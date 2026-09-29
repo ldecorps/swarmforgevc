@@ -250,4 +250,13 @@ notes: |
   git_handoff here would no-op. Per Article 1.9 not resending - the fix is
   domain work owed by coder on its next turn.
 
+  2026-09-29 21:08Z coordinator: dropped-parcel nudge fired again, and this
+  time real - QA re-bounced once more (e36f7de8a6, 22:04:38+0100, same 3
+  defects, D1/D2 coder, D3 documenter, Article 4.4 earliest-role coder),
+  unmerged into coder's worktree. Sent git_handoff (task
+  BL-1702-mixed-local-coder-probe-gate, priority 00, commit e36f7de8a6).
+  First two send attempts looped on AUDIT_REQUIRED despite an identical
+  draft (transient, self-cleared); third attempt queued and delivered
+  (013232, confirmed in coder's inbox/new).
+
 assigned_to: coder
