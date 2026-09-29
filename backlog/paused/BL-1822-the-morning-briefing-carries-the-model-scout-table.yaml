@@ -19,7 +19,7 @@ acceptance: specs/features/BL-1822-the-morning-briefing-carries-the-model-scout-
 # documenter.prompt prose the specifier landed on main at mint; an anchor on
 # that prose would be satisfied by construction and gate nothing (BL-1235).
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file needs your tap; no choice is posed. FIRM: the tool is
   bb swarmforge/scripts/recruiter_score_table_cli.bb <project-root>
