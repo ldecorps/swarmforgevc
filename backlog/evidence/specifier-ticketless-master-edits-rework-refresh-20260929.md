@@ -15,6 +15,11 @@ and `loadRoleWorktreesOrEmpty`. `suboptimality-verdict-line.ts` (BL-431)
 and `emit-throttle-recommendation.ts` (BL-432) now refresh BL-430's signal
 before they diagnose, instead of reading whatever snapshot is on disk.
 
+**Ruled A by the human (2026-09-29):** "A - mine/operator: I will land it
+as a hotfix". No ticket is minted from this diff, and the master files
+stay as they are until the hotfix lands. The hotfix-certification sweep
+will ask for its stamp.
+
 The specifier copied the diff here and left the master files untouched.
 This copy is so that no decision about them loses the work. Base:
 HEAD 173ce3e46f.
