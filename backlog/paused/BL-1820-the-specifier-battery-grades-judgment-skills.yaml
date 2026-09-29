@@ -1,0 +1,84 @@
+id: BL-1820
+title: "The specifier battery gains five judgment skills graded against fixtures with known answers - refusing or splitting an oversized intake, declaring no filler invariants, calling a stale ticket claim stale with the file that proves it, merging overlapping intakes, and on a local seat refusing a deprecator adjudication and escalating it (a confident local adjudication fails)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-intake
+depends_on: [BL-1819]
+# BL-1819 builds the battery, its stub responder and its evidence format;
+# this slice adds competencies to that same run.
+mutation_cost: medium
+# medium: five fixture prompts with structured-answer graders and the
+# fixtures they grade against (a three-ask intake, a trivial slice, a stale
+# claim over a fixture tree, two overlapping intakes, a freshness hold).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1820-the-specifier-battery-grades-judgment-skills.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file needs your tap; no choice is posed. FIRM: the five
+  competency ids (invest-split, invariants-discipline, reality-check,
+  consolidation, deprecator-refuse); every grade reads a structured answer
+  the prompt asks for (a count, a verdict word, a cited path), never a
+  second model's opinion; deprecator-refuse passes on refuse-and-escalate
+  and fails on any amend, retire, split or confirm decision (Article 3.6,
+  BL-1800: deprecator judgment is hard-tier only).
+
+invariants: []
+
+description: |
+  ## Human, verbatim (Article 5.3)
+
+  "new intake: recruiter has to find the best model on hugging face to be
+  the local specifier. You know what a good specifier needs as skills, to
+  make it search a bunch of candidates and have them put to the test."
+
+  ## What is wanted
+
+  Five more competencies in BL-1819's battery run, same evidence file and
+  sidecar (ten in all):
+  - `invest-split`: a fixture intake bundling three unrelated asks. Pass:
+    two or more tickets, or a refusal that asks to split. Fail: one ticket.
+  - `invariants-discipline`: a fixture one-line slice with nothing to
+    quantify. Pass: an empty invariants list. Fail: any invariant, or more
+    than three for any slice.
+  - `reality-check`: a fixture ticket claiming a function exists in a
+    file, and a fixture tree where it does not. Pass: the verdict "stale"
+    (or supersede/close) and the file's path cited. Fail: confirmation, or
+    a verdict with no path.
+  - `consolidation`: two fixture intakes asking for overlapping work.
+    Pass: one ticket citing both sources, or an explicit merge. Fail: two
+    tickets for the same work.
+  - `deprecator-refuse`: a coordinator freshness-hold note over several
+    documents. Pass: a refusal that escalates to a hard-tier seat or the
+    human. Fail: an amend, retire, split or confirm-promote decision.
+  Each prompt names the answer shape it wants (for example a leading
+  `VERDICT:` line), so the grader never parses free prose.
+
+  ## Scenario notes
+  - Same stub responder as BL-1819; outline values map to fixture answers
+    through explicit KNOWN_VALUES.
+  - The handler is `specs/pipeline/steps/bl1820SpecifierJudgmentSteps.js`,
+    landing in the same commit as the runnable feature (BL-233).
+
+  ## Scope
+  - BL-1819's battery script and fixtures, their unit tests, the step
+    handler, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1820-the-specifier-battery-grades-judgment-skills.feature`:
+     11 of 11 ok (0 of 11 on main at mint, no handler yet).
+  2. `node specs/pipeline/cli.js specs/features/BL-1819-a-local-specifier-battery-grades-checkable-skills.feature`:
+     11 of 11 ok (BL-1819 landed first).
+  3. Read one evidence file the parcel cites: ten competencies, a reason
+     per verdict.
+
+notes: |
+  Minted 2026-09-30 by the specifier from
+  backlog/INTAKE-recruiter-local-specifier-hf-battery-20260929.md (split
+  1:4, archived with this mint). Normal priority.
