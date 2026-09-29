@@ -97,8 +97,8 @@ description: |
     (`bl1763Bl1517ReachFloorsSteps.js` is the template), registered in
     `specs/pipeline/steps/index.js` in the same commit as the feature
     (BL-233: a feature with no handler reds every other parcel's gate).
-  - The standing-red register row naming BL-1790, retired by the land
-    (BL-1631). A parcel never edits `backlog/standing-reds.tsv`.
+  - The standing-red register row naming BL-1790. The land removes that
+    row (BL-1631); a parcel never edits `backlog/standing-reds.tsv`.
 
   ## Not in scope
   - The census classifier's phrase gap and budget resolution. They belong
