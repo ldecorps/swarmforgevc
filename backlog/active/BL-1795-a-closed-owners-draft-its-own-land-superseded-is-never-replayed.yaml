@@ -9,7 +9,7 @@ severity: high
 # hand-built. Same class and severity as BL-1785 and BL-1794.
 status: todo
 epic: swarm-reliability
-priority: 10
+priority: 0
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
