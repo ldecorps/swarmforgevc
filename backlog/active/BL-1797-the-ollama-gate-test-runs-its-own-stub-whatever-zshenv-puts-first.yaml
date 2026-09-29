@@ -150,3 +150,5 @@ notes: |
   is direction). Valuable (clears a standing red and closes a fail-open
   check). Estimable (one env var per scenario, one handler). Small (1
   scenario). Testable (a decoy ZDOTDIR, host-independent).
+
+assigned_to: coder
