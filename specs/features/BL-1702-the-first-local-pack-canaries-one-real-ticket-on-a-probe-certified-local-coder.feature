@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-27T06:53:40.809014157Z","feature_name":"BL-1702 the first local pack canaries one real ticket on a probe-certified local coder","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1702-the-first-local-pack-canaries-one-real-ticket-on-a-probe-certified-local-coder.feature","background_hash":"adec1f1044e83c30f5e29d00b1284034dffeac487d86ec7498dc91b2a2e538aa","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1702 the first local pack canaries one real ticket on a probe-certified local coder
 
   Ruled A, a mixed pack, and refined by the human on 2026-09-24: the

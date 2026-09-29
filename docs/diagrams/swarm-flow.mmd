@@ -85,6 +85,15 @@
 %% an unworkable ticket held its slot indefinitely. One coordinator note
 %% per park; the ticket re-enters promotion by the ordinary rules once its
 %% condition clears. See docs/how-to/BL-1479-parked-active-sweep.md.
+%% BL-1702 (2026-09-27): the mixed-local-coder pack (operator-launched,
+%% never full-forge.conf) adds a second coder seat, coder@2, staffed by a
+%% local model under the BL-1697 local parcel driver — the driver types
+%% every instruction and gates the handoff itself, so coder@2 forwards to
+%% cleaner exactly like the Claude coder. A parcel coder@2 cannot finish
+%% within its fix-turn limit is given up (BL-1715) back to the ordinary
+%% coder queue for the Claude coder seat to claim. This seat exists only
+%% in the mixed-local-coder pack; every other pack is untouched. See
+%% docs/how-to/BL-1702-mixed-local-coder-pack-runbook.md.
 flowchart LR
   ROOT["backlog/ root\n(human raw intake)"]
   COORD(("coordinator\n(master, intake/routing +\nbacklog bookkeeping only,\nnever commits code,\nno git merge/push)"))
@@ -94,6 +103,7 @@ flowchart LR
   DONE["backlog/done/"]
 
   CODER["coder\n(.worktrees/coder, task)"]
+  CODER2(("coder@2\n(local model, driven by\nBL-1697 local parcel driver,\nmixed-local-coder pack only)"))
   CLEANER["cleaner\n(.worktrees/cleaner, BATCH)"]
   ARCHITECT["architect\n(.worktrees/architect, task)"]
   HARDENER["hardender\n(.worktrees/hardender, BATCH)"]
@@ -113,6 +123,9 @@ flowchart LR
   SPEC -->|git_handoff\npriority 00| CODER
 
   CODER -->|git_handoff| CLEANER
+  SPEC -.->|git_handoff priority 00\n(mixed-local-coder pack only,\nmutation_cost: low tickets)| CODER2
+  CODER2 -.->|git_handoff (driver-gated:\nred check, one instruction,\nfour-part gate)| CLEANER
+  CODER2 -.->|give-up at fix-turn limit\n(BL-1715): fresh git_handoff\ninto coder's shared queue| CODER
   CLEANER -->|git_handoff\n(batch of queued items)| ARCHITECT
   ARCHITECT -->|git_handoff| HARDENER
   HARDENER -->|git_handoff\n(batch)| DOCUMENTER
@@ -151,7 +164,7 @@ flowchart LR
   classDef backlog fill:#57606a,color:#fff,stroke:#32383f;
   classDef target fill:#2ea043,color:#fff,stroke:#116329;
   class COORD,ARTDIR coordinator;
-  class SPEC,CODER,ARCHITECT,DOCUMENTER,QA chain;
+  class SPEC,CODER,CODER2,ARCHITECT,DOCUMENTER,QA chain;
   class CLEANER,HARDENER batch;
   class ROOT,PAUSED,ACTIVE,DONE backlog;
   class MAIN target;

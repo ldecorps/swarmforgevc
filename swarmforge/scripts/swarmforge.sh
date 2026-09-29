@@ -647,6 +647,39 @@ pack_staffing_gate() {
   esac
 }
 
+# BL-1702: refuses to launch a pack whose driver seat (BL-1697's own
+# driver-seat? - agent capability + role, never a raw "aider" string) has
+# no PASSING steward probe summary for its declared local model. Checked
+# ONCE per launch for the WHOLE pack (never per window line like
+# pack_staffing_gate above) - local_coder_probe_gate_cli.bb re-reads
+# CONFIG_FILE itself and finds every driver seat in it; a pack with none is
+# a silent no-op. Evidence (backlog/evidence/local-coder-probe-*.md, BL-1700)
+# is anchored to THIS SwarmForge checkout, same reasoning as
+# pack_staffing_gate's own swarmforge_root above, never WORKING_DIR.
+#
+# FIRM (ticket invariant): PACK_STAFFING_SKIP_GATE=1 does NOT skip this -
+# unlike pack_staffing_gate above, this function reads no override env var
+# at all, so there is no code path here PACK_STAFFING_SKIP_GATE could take.
+# LOCAL_CODER_PROBE_EVIDENCE_DIR overrides the evidence dir (test isolation
+# only, same shape as pack_staffing_gate's MODEL_STEWARD_STATE_DIR) - unset
+# in every real launch.
+local_coder_probe_gate() {
+  local swarmforge_root="${SCRIPT_DIR:h:h}"
+  local -a evidence_dir_flag
+  evidence_dir_flag=()
+  if [[ -n "${LOCAL_CODER_PROBE_EVIDENCE_DIR:-}" ]]; then
+    evidence_dir_flag=(--evidence-dir "$LOCAL_CODER_PROBE_EVIDENCE_DIR")
+  fi
+
+  local out rc=0
+  out="$(bb "$SCRIPT_DIR/local_coder_probe_gate_cli.bb" "$swarmforge_root" "$CONFIG_FILE" "${evidence_dir_flag[@]}" 2>&1)" || rc=$?
+
+  if (( rc != 0 )); then
+    error_msg "local coder probe gate refused this launch: $out"
+    exit 1
+  fi
+}
+
 # BL-1052 / BL-1082: OpenAI-compatible base URL for a seat staffed by a
 # downloaded model on this host. Overridable; never a cloud vendor host.
 DEFAULT_LOCAL_MODEL_ENDPOINT_URL="http://127.0.0.1:11434/v1"
@@ -1013,6 +1046,11 @@ parse_config() {
     error_msg "No windows defined in $CONFIG_FILE"
     exit 1
   fi
+
+  # BL-1702: once per launch, for the WHOLE pack - after every window line
+  # is known, before any window/pane is ever spawned (that happens after
+  # parse_config returns).
+  local_coder_probe_gate
 
   # BL-982: parcels address the STAGE, and stage-addressed lookups resolve
   # the seat whose id IS the stage name - so a stage declaring any @-seat

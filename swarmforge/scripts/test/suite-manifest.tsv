@@ -125,6 +125,7 @@ land_step_lib_test_runner.bb	standing
 landed_but_open_test_runner.bb	standing		
 launch_contract_test_runner.bb	standing		
 llm_cost_ledger_lib_test_runner.bb	standing		
+local_coder_probe_gate_lib_test_runner.bb	standing		
 loop_detect_lib_test_runner.bb	standing		
 mailbox_intake_dedup_test_runner.bb	standing		
 markdown_to_html_test_runner.bb	standing		
@@ -377,6 +378,7 @@ test_launch_resident_spy_tunnel_operator_root_refusal.sh	standing
 test_lean_ledger_bb_wiring.sh	standing		
 test_lifecycle_script_scope.sh	excluded	2026-08-23	live-only: invokes kill_all_swarm.sh for real; safe only from a detached host shell with env -u TMUX (2026-08-22 session wipe)
 test_local_coder_battery.sh	standing		
+test_local_coder_probe_gate_wiring.sh	standing		
 test_local_model_seat.sh	standing		
 test_mailbox_intake_idempotent.sh	standing		
 test_mailbox_only_delivery.sh	standing		

@@ -50,6 +50,23 @@ free_port() {
 PORT="$(free_port)"
 URL="http://127.0.0.1:$PORT/v1"
 
+# BL-1702: scenario 01's aider coder seat is now subject to
+# local_coder_probe_gate (parse_config calls it before ensure_ollama_
+# ancillary_for_launch can ever run). A passing summary for its model
+# (qwen2.5-coder:latest) is supplied through LOCAL_CODER_PROBE_EVIDENCE_DIR
+# - the same isolation test_local_coder_probe_gate_wiring.sh already uses
+# - so this file's own concern (the ancillary's detection logic) stays
+# independent of that gate's decision. The gate itself is unchanged (FIRM
+# invariant). Scenario 02's Claude-only pack has no driver seat at all, so
+# it is never gated and needs no evidence.
+PROBE_EVIDENCE="$(mktemp -d)"
+register_tmp_dir "$PROBE_EVIDENCE"
+cat > "$PROBE_EVIDENCE/local-coder-probe-qwen2.5-coder-latest-2026-09-27T00-00-00Z.md" <<'MD'
+# local coder probe: qwen2.5-coder:latest
+
+handed off 4 of 5 - verdict pass
+MD
+
 # ── 01: an aider seat naming the endpoint on its own window line ────────
 ROOT1="$(mk_root)"
 MARKER1="$ROOT1/ollama-invoked"
@@ -61,6 +78,7 @@ EOF
 PATH="$ROOT1/bin:$PATH" OLLAMA_FIXTURE_PORT="$PORT" \
   SWARMFORGE_LOCAL_MODEL_ENDPOINT_URL="$URL" \
   SWARMFORGE_OLLAMA_WAIT_SECONDS=5 SWARMFORGE_OLLAMA_POLL_INTERVAL_SECONDS=1 \
+  LOCAL_CODER_PROBE_EVIDENCE_DIR="$PROBE_EVIDENCE" \
   zsh -c "source '$SWARMFORGE_SH' '$ROOT1'; parse_config; ensure_ollama_ancillary_for_launch" \
   || fail "01: ensure_ollama_ancillary_for_launch refused an aider+ollama pack it should have started"
 

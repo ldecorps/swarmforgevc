@@ -260,3 +260,12 @@ notes: |
   (013232, confirmed in coder's inbox/new).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-29, by: QA, blamed: coder, class: unit, commit: b3e1176143, evidence: backlog/evidence/BL-1702-QA-20260929.md }
+abandoned_commits: [3d42c6f805, 6439cbb81c, 9ed6f0a7be, 9b0afe7f39, 233f47c65e, 2273092548, 14693ecfbf]
+# Stranded duplicate fork of this branch's earlier pipeline pass (cleaner
+# and architect evidence dated 2026-09-27, hardender/documenter the same
+# day, QA's 3-defect pass and its bounce_history record 2026-09-29).
+# Diffed byte-identical against the un-suffixed/dated evidence files and
+# the bounce_history entry already on this branch - nothing to recover.

@@ -24,6 +24,23 @@ SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
+# BL-1702: every aider coder seat this file launches is now subject to
+# local_coder_probe_gate (parse_config calls it before any window can
+# staff). A passing summary for the ONE model this file's aider coder
+# windows all use (qwen2.5-coder:latest) is supplied through
+# LOCAL_CODER_PROBE_EVIDENCE_DIR - the same isolation
+# test_local_coder_probe_gate_wiring.sh already uses - so this file's own
+# concern (aider seat launch-line shape) stays independent of that gate's
+# decision. The gate itself is unchanged (FIRM invariant).
+PROBE_EVIDENCE="$(mktemp -d)"
+register_tmp_dir "$PROBE_EVIDENCE"
+cat > "$PROBE_EVIDENCE/local-coder-probe-qwen2.5-coder-latest-2026-09-27T00-00-00Z.md" <<'MD'
+# local coder probe: qwen2.5-coder:latest
+
+handed off 4 of 5 - verdict pass
+MD
+export LOCAL_CODER_PROBE_EVIDENCE_DIR="$PROBE_EVIDENCE"
+
 index_of_role_snippet='
 index_of_role() {
   local target="$1" i
