@@ -1,0 +1,181 @@
+id: BL-1794
+title: "A closed owner's stray whose lines an earlier stray in the same replay already landed conflicts on the land step's scratch branch, and every superseded ground compares against origin/main only, so the whole land escalates (closed BL-1711's record fa79e88fa7 forced hand builds of BL-1785's and BL-1786's lands on 2026-09-29 and arms every land after them): the step records such a stray LAND_STRAY_SUPERSEDED with the reason content-subset-of-replay-head and goes on to build the landing ticket's own commit"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading the delivery path. Every QA land since
+# BL-1785 walks 20-45 min, escalates on this stray and is hand-built
+# (BL-1785 and BL-1786 on 2026-09-29, per the adjudication evidence below).
+# Same class and severity as BL-1785.
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one ground in land_step_lib.bb (Babashka, no mutation/CRAP/DRY
+# wired, BL-472). Fixture repos driven through land_step_cli.bb as BL-1785's
+# feature does (10 s for its 5 cases at mint).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1794-a-stray-an-earlier-stray-in-the-same-replay-already-landed-is-superseded.feature
+
+# The acceptance drives the real land_step_cli.bb, which reaches the new
+# ground through replay!'s existing call to stray-superseded-verdict. The
+# handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1794ReplayHeadSupersededStraySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Auto-approved high-severity defect (2026-09-17 carve-out); no choice is
+  posed. FIRM - the new ground is a superseded ground only: a stray adding
+  any line the replay branch lacks still escalates by name; nothing about
+  what lands changes; BL-1546, BL-1785 and BL-1787's refusals for wider
+  strays are untouched.
+
+invariants:
+  - "A stray is recorded superseded on the replay-head ground only when, at every path it touches, its own post-image adds no line that the replay branch's HEAD lacks at that moment; any such added line keeps today's LAND_ESCALATE naming the stray."
+  - "The ground never changes what lands: after a stray is recorded superseded this way, the replay branch's tree is byte-identical to its tree before that cherry-pick attempt."
+
+description: |
+  ## Why
+
+  The land step (`land_step_lib.bb` `replay!`) cherry-picks every closed
+  owner's stray onto a scratch branch off origin/main, oldest first in
+  the candidate order, before the landing ticket's own commit. BL-1785
+  widened the stray set to a closed owner's own ticket-record edits. A
+  post-land record reaches the role branches as several commits carrying
+  the same change: the original, copies re-applied by merge-ups and
+  re-points, and a follow-up that appends after it. Once one copy and the
+  follow-up have landed on the scratch branch, a later copy conflicts on
+  lines the scratch branch already carries. `stray-superseded-verdict`'s
+  grounds (a) to (c) all measure against origin/main, never against the
+  scratch branch built so far. Ground (b) also requires the HEAD-side
+  lines to be written by commits ON origin/main, and here they were
+  written by the replay's own earlier cherry-pick. So no ground holds, and
+  the replay aborts with `could not cherry-pick stray evidence commit
+  <sha>`.
+
+  Reproduced at mint in an isolated clone (git clone under mkdtemp,
+  `rev-parse --git-common-dir` checked), off origin/main c24afe2529:
+  - `fa79e88fa7` alone cherry-picks cleanly (exit 0). Its done-copy
+    hunk is already on main, and its evidence append is not.
+  - Cherry-picking `f37671e359` ("BL-1711: QA land record", the SAME
+    patch-id 552af80d0b as fa79e88fa7), then `fd6191c893` (the
+    follow-up), then `fa79e88fa7` gives exit 1, CONFLICT (content) in
+    `backlog/evidence/BL-1711-QA-20260926-2.md`. The escalated parcel tips
+    carry all of them, in that order: f37671e359 and fd6191c893 at
+    positions 1118-1119 of `git rev-list --reverse --no-merges
+    origin/main..986dcdb1fd`, fa79e88fa7 at 1190.
+  - `d61cb0d081`, a copy carrying the evidence append alone (a different
+    patch-id), conflicts the same way after f37671e359 and fd6191c893. So
+    de-duplicating by patch-id would not be enough.
+
+  ## What is wanted
+
+  1. A superseded ground over the replay branch itself. On a real
+     cherry-pick conflict, and before the abort, the stray is superseded
+     when its own post-image, at every path it touches, adds no line
+     relative to the scratch branch's current HEAD. That is ground (a)'s
+     test, measured from the replay head instead of origin/main. Reason:
+     `content-subset-of-replay-head`.
+  2. `land_step_cli.bb` prints it on the existing line,
+     `LAND_STRAY_SUPERSEDED <sha> <paths> content-subset-of-replay-head`,
+     and the verdict (LAND_REPLAY, exit 0) is unchanged. The stray is
+     never added to the landed set and never printed LANDED_SIBLING
+     (BL-1272).
+  3. Everything else stays as it is. The existing grounds, their order
+     and their reasons are unchanged. The completeness (BL-1447) and
+     registry-row (BL-1604) checks and the land-approval record run
+     exactly as today. A replay where no earlier stray landed has its
+     scratch HEAD at origin/main, so there ground (a) already decides
+     everything the new ground would.
+
+  ## Not in scope
+
+  - Deferring strays the land step cannot land at all (BL-1787, paused;
+    it never defers ticket-record strays). BL-1787 and this ticket both
+    edit `land_step_lib.bb`, so the orthogonality rule keeps them from
+    being active together. Either order works. The replay-head ground is
+    one more ground inside the verdict, and BL-1787 adds a deferral only
+    after every ground has failed.
+  - Stopping merge-ups and re-points from multiplying record copies on
+    the role branches.
+  - Landing closed BL-1711's remaining records by hand.
+
+  ## How (direction, not mandate)
+
+  - The scratch worktree is a linked worktree of `root`, so its HEAD
+    commit is readable from `root`. `rev-range-line-changes` from the
+    scratch HEAD sha to the stray sha over its paths is the same
+    measurement ground (a) makes. Check it after (a) and before (b).
+  - Fixtures follow BL-1785's handler: a mkdtemp repo with its own
+    origin, the second copy made on another branch and merged after the
+    follow-up so it comes later in the candidate order. Name the handler
+    `bl1794ReplayHeadSupersededStraySteps.js` and land it in the SAME
+    commit as the feature (BL-233).
+
+constraints: >
+  Fixture roots are mkdtemp directories with their own origin (BL-1390).
+  The step never publishes, pushes or edits a role branch; QA's land
+  procedure is unchanged.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1794-a-stray-an-earlier-stray-in-the-same-replay-already-landed-is-superseded.feature`:
+     3 cases ok (01 x2, 02).
+  2. Regression, same lib: `node specs/pipeline/cli.js
+     specs/features/BL-1785-a-closed-owners-own-ticket-record-stray-lands-onto-its-done-copy.feature`
+     gives 5 ok (measured at mint on main c24afe2529: 5 of 5 in 10 s).
+     `node specs/pipeline/cli.js
+     specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature`
+     gives 11 ok (measured at mint: 11 of 11 in 15 s), or 9 if BL-1787
+     has landed first and retired scenario 08's two rows.
+  3. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS
+     (measured at mint: 48 s).
+  4. In-process probe of the real incident, in an isolated clone (git
+     clone under mkdtemp; `git rev-parse --git-common-dir` prints `.git`
+     before any mutating command). Check out origin/main on a scratch
+     branch, then cherry-pick `f37671e359` and `fd6191c893` (both exit 0
+     at mint). Cherry-picking `fa79e88fa7` then conflicts on
+     `backlog/evidence/BL-1711-QA-20260926-2.md` (exit 1 at mint). With
+     the conflict still in place, the parcel's `stray-superseded-verdict`
+     returns reason `content-subset-of-replay-head` for fa79e88fa7. Repeat
+     for `d61cb0d081`. Skip this step and say so if those commits have
+     reached origin/main by then.
+  5. `git diff main...HEAD --name-only` names only `land_step_lib.bb`,
+     `land_step_cli.bb` if the print needed a change, the lib's test
+     runner, the feature, its handler (plus lib/) and evidence.
+  6. After the land: QA's next land does not escalate on fa79e88fa7 or
+     d61cb0d081, and prints LAND_STRAY_SUPERSEDED naming them if the
+     replay reaches them. Record that in that land's evidence.
+
+source: |
+  QA note relayed by the coordinator, verbatim (the specifier was absent
+  from roles.tsv that launch): "relay specifier: stray fa79e88fa7 still
+  escalates every land post-BL-1785". Relay record:
+  backlog/evidence/coordinator-relay-stray-fa79e88fa7-post-BL-1785-20260929.md
+  (263523b296). The instances:
+  backlog/evidence/BL-1775-specifier-land-escalate-adjudication-closed-done-copy-records-20260927.md,
+  sections "Instance - BL-1785's own land" and "Instance - BL-1786's
+  land" (QA, 2026-09-29), including QA's line "New: BL-1785 did not clear
+  this shape - an already-landed stray still fails the cherry-pick."
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat) from the
+  relay record. The note itself never reached the specifier's inbox. QA's
+  instances read the stray's content as "already on main". At mint, only
+  its done-copy hunk was. Its evidence append was not, and fa79e88fa7
+  cherry-picks cleanly onto origin/main on its own. The conflict needs an
+  earlier copy (f37671e359) and the follow-up (fd6191c893) landed first
+  in the same replay. Repro commands are in the description.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  INVEST: Independent (BL-1650, BL-1670, BL-1768 and BL-1785 are in
+  done/; BL-1787 is orthogonal-only). Negotiable (the How is direction;
+  only the reason literal and the existing line are fixed). Valuable
+  (removes the escalate behind every land since BL-1785). Estimable (one
+  ground beside ground (a), BL-1785's fixtures as the template). Small
+  (2 scenarios, 3 cases, 2 invariants). Testable (fixture repos through
+  the real CLI, plus the in-clone probe).
