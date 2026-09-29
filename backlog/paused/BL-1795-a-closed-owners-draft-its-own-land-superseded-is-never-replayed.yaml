@@ -1,0 +1,176 @@
+id: BL-1795
+title: "The land step treats a closed owner's pre-land draft as a stray even when its owner's own tip-pure land already accounted for it (the draft is an ancestor of an approved tip the owner's abandoned_commits names): a rewritten draft conflicts and escalates the whole land (closed BL-1779's 368d1569e5 forced BL-1655's hand build on 2026-09-29, on a Specification.MD path BL-1655 also edits, outside BL-1787 and BL-1794), and a removed draft would re-add dropped lines; the step records such a stray LAND_STRAY_SUPERSEDED with the reason ancestor-of-owner-abandoned and never cherry-picks it"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading the delivery path. Every land that edits a
+# file a closed owner drafted and rewrote before its land (Specification.MD's
+# changelog stack is the common one) walks 20-45 min, escalates and is
+# hand-built. Same class and severity as BL-1785 and BL-1794.
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one pre-pick check in land_step_lib.bb (Babashka, no mutation/CRAP/DRY
+# wired, BL-472). Fixture repos driven through land_step_cli.bb as BL-1785's
+# feature does (10 s for its 5 cases at mint).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1795-a-closed-owners-draft-its-own-land-superseded-is-never-replayed.feature
+
+# The acceptance drives the real land_step_cli.bb. The handler entry is the
+# BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1795OwnerLandSupersededStraySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Auto-approved high-severity defect (2026-09-17 carve-out); no choice is
+  posed. FIRM - the new check only ever skips a stray that is an ancestor
+  of a commit its own closed owner's abandoned_commits names; any other
+  closed-owner commit keeps today's handling; nothing about what lands
+  changes; BL-1546's refusal and BL-1787's deferral are untouched.
+
+invariants:
+  - "A stray is recorded superseded on the owner-land ground only when it is an ancestor of a commit that its own closed owner's abandoned_commits names; any other closed-owner commit keeps today's handling."
+  - "The ground never changes what lands: a stray superseded this way is never cherry-picked, and the replay branch's tree is byte-identical to its tree before the stray was considered."
+
+description: |
+  ## Why
+
+  After a tip-pure land, QA records the approved tip the land was built
+  from under the owner's `abandoned_commits:`. Every commit of the owner's
+  in that tip's ancestry is then accounted for. Its lines reached
+  origin/main through the tip, or a later commit of the owner's rewrote or
+  removed them before review. The land step's stray loop (`replay!`)
+  never consults that record. The record is read today only to disclaim a
+  sibling from entanglement (BL-1650 item 0, `ticket-abandoned-commits`),
+  so the loop cherry-picks the owner's pre-land drafts as strays:
+  - A draft the owner later rewrote conflicts with the landed copy. No
+    ground holds: (a) fails because the draft adds lines main lacks, and
+    (b) and (c) fail because the HEAD side of the conflict holds other
+    tickets' lines. The whole land escalates.
+  - A draft the owner later removed applies cleanly and re-adds the
+    dropped lines to main. It is masked only when the path is also the
+    landing ticket's own, because the own-path write then takes the tip's
+    whole file.
+
+  Measured at mint on origin/main efa194def1:
+  - `git merge-tree --write-tree --merge-base 368d1569e5^ origin/main
+    368d1569e5` exits 1 (conflict) on `docs/reference/Specification.MD`.
+  - `ticket-abandoned-commits` for BL-1779 at origin/main returns
+    7ed698fcb7, 469536f410, 1d451f7916, 54486b50c4, and 368d1569e5 is an
+    ancestor of all four. BL-1779 landed tip-pure as c1f01df1ae.
+  - Closed BL-1711's post-land records fa79e88fa7, d61cb0d081 and
+    fd6191c893 are NOT ancestors of any BL-1711 abandoned commit. That
+    shape is BL-1794's, and this ground does not cover it.
+
+  ## What is wanted
+
+  1. Before a stray's cherry-pick is attempted, the stray is recorded
+     superseded, never picked, when it is an ancestor of any commit its
+     own owner's `abandoned_commits:` names. Read that list with the
+     existing `ticket-abandoned-commits` (never a second reader). Reason:
+     `ancestor-of-owner-abandoned`. The check runs before the pick
+     because the clean-apply shape must never land.
+  2. `land_step_cli.bb` prints it on the existing
+     `LAND_STRAY_SUPERSEDED <sha> <paths> <reason>` line. The verdict
+     (LAND_REPLAY, exit 0) is unchanged. The stray is never added to the
+     landed set and never printed LANDED_SIBLING (BL-1272).
+  3. The stray's paths stay in `stray-paths` exactly as a superseded
+     stray's do today. So the own-paths exclusion applies only where the
+     landing ticket is not an owner (the existing `(not (contains?
+     owners task-ticket-id))` guard), and a path the landing ticket
+     co-owns, like Specification.MD for BL-1655, stays in its own-paths.
+  4. Everything else stays as it is: the existing grounds, BL-1447's
+     completeness check, BL-1604's registry rows and the land-approval
+     record.
+
+  ## Not in scope
+
+  - A closed owner's post-land record copies (BL-1794, active at mint).
+    BL-1794 and BL-1795 both edit the stray handling in
+    `land_step_lib.bb`, so the orthogonality rule keeps them from being
+    active together. Whichever lands second re-runs the other's feature
+    in its evidence.
+  - Deferring strays on paths the landing ticket never touches (BL-1787,
+    paused), which also edits `land_step_lib.bb`.
+  - Recording abandoned_commits for a land that never wrote them.
+
+  ## How (direction, not mandate)
+
+  - `git merge-base --is-ancestor <stray> <abandoned>` for each entry.
+    Entries are 10-hex prefixes, which git resolves when unambiguous; an
+    unresolvable entry is skipped, never counted as a match (fail closed
+    to today's handling).
+  - The check can sit in `land-plan` beside the `stray-tip-already-landed?`
+    split, or at the top of `replay!`'s loop. The printed line must come
+    out the same way either way.
+  - Fixtures follow BL-1785's handler: a mkdtemp repo with its own origin,
+    the sibling closed on origin/main with its done copy naming the
+    approved tip. Name the handler `bl1795OwnerLandSupersededStraySteps.js`
+    and land it in the SAME commit as the feature (BL-233).
+
+constraints: >
+  Fixture roots are mkdtemp directories with their own origin (BL-1390).
+  The step never publishes, pushes or edits a role branch; QA's land
+  procedure is unchanged.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1795-a-closed-owners-draft-its-own-land-superseded-is-never-replayed.feature`:
+     3 cases ok (01, 02, 03).
+  2. Regression, same lib: `node specs/pipeline/cli.js
+     specs/features/BL-1785-a-closed-owners-own-ticket-record-stray-lands-onto-its-done-copy.feature`
+     gives 5 ok (measured at mint on main c24afe2529: 5 of 5 in 10 s).
+     `node specs/pipeline/cli.js
+     specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature`
+     gives 11 ok (measured at mint: 11 of 11 in 15 s), or 9 if BL-1787
+     has landed first and retired scenario 08's two rows. If BL-1794 has
+     landed, its feature gives all ok too.
+  3. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS
+     (measured at mint: 48 s).
+  4. In-process probe of the real incident, read-only against the live
+     repo: `git merge-base --is-ancestor 368d1569e5 <each BL-1779
+     abandoned commit>` exits 0 for all four (measured at mint). The
+     parcel's check, called with BL-1779 as owner, returns
+     `ancestor-of-owner-abandoned` for 368d1569e5 and nil for
+     fa79e88fa7 with BL-1711 as owner.
+  5. `git diff main...HEAD --name-only` names only `land_step_lib.bb`,
+     `land_step_cli.bb` if the print needed a change, the lib's test
+     runner, the feature, its handler (plus lib/) and evidence.
+  6. After the land: QA's next land does not escalate on 368d1569e5, and
+     prints LAND_STRAY_SUPERSEDED naming it if the replay reaches it.
+     Record that in that land's evidence.
+
+source: |
+  QA note 003341 (2026-09-29 09:27Z), verbatim: "new stray 368d1569e5 on
+  landed ticket's own path; outside BL-1787+BL-1794". The instance:
+  backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md,
+  section "Instance - BL-1655's land, condition (g) (QA, 2026-09-29)",
+  which records the escalate and BL-1655's hand-built land dea0cdf000.
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat). I first
+  began folding this shape into BL-1794 while that ticket was paused. The
+  coordinator promoted BL-1794 at 10:30 mid-edit, so the fold was
+  withdrawn uncommitted: an active ticket is never consolidated. This
+  ticket stands on its own. It is independent of BL-1794, and only the
+  shared file orders them.
+  IR-DRY: two possible-synonym findings are accepted. The draft Given is
+  one step with quoted parameters ("shared"/"sibling-only",
+  "rewrites"/"removes"). The two landing-commit Givens are different
+  setups, one editing the shared file and one never touching the
+  sibling's file.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  INVEST: Independent (BL-1650, BL-1670, BL-1768 and BL-1785 are in
+  done/; BL-1794 and BL-1787 are orthogonal-only). Negotiable (the How is
+  direction; only the reason literal and the existing line are fixed).
+  Valuable (removes the escalate behind BL-1655's land, and stops a
+  removed draft from being re-added). Estimable (one ancestry check over
+  an existing reader, BL-1785's fixtures as the template). Small (3
+  scenarios, 3 cases, 2 invariants). Testable (fixture repos through the
+  real CLI, plus the read-only incident probe).
