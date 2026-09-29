@@ -88,6 +88,14 @@
   (master-main-reconcile-lib/ahead-count-via-rev-list
    {:sh! (fn [] (sh root "git" "rev-list" "--left-right" "--count" "origin/main...main"))}))
 
+;; BL-1802: this checkout's own current branch - mirrors handoffd.bb's own
+;; master-main-current-branch!. main's ahead-count above is a repo-wide
+;; ref, so it reads 0 even when THIS checkout is on some other branch; a
+;; reset must never fire there.
+(defn- local-current-branch! [root]
+  (master-main-reconcile-lib/current-branch-via-symbolic-ref
+   {:sh! (fn [] (sh root "git" "symbolic-ref" "--short" "-q" "HEAD"))}))
+
 (defn- rematch-onto-origin! [root]
   ;; BL-1138: rematch bookkeeping onto origin/main — reset, never conflicted absorb.
   ;; BL-1198: attempt a push first — only reset when that push is rejected.
@@ -99,7 +107,8 @@
    {:push! (fn [] (push-onto-origin! root))
     :reset! (fn []
               (master-main-reconcile-lib/refuse-reset-if-local-ahead!
-               {:ahead-count! (fn [] (local-ahead-count! root))
+               {:current-branch! (fn [] (local-current-branch! root))
+                :ahead-count! (fn [] (local-ahead-count! root))
                 :raw-reset! (fn [] (reset-onto-origin! root))}))}))
 
 (defn- real-adapters [root daemon-dir]

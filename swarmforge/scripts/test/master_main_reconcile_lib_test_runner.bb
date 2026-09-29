@@ -1294,6 +1294,86 @@
 (let [msg (master-main-reconcile-lib/surface-message {:behind 123456789 :reason :local-ahead-refused})]
   (assert-true "bl1310: the note still fits when `behind` is long" (<= (count msg) 80)))
 
+;; ── BL-1802: a reset to origin/main only ever moves main ─────────────────
+;; main's ahead-count is a repo-wide ref, so it authorises a reset even in a
+;; checkout on some other branch. current-branch-authorizes-reset? is the
+;; pure predicate deciding whether the checkout itself is eligible at all -
+;; same direct-unit-test treatment reset-authorized-by-ahead-count? gets
+;; above, since this is the same category of "never treat an undeterminable
+;; reading as safe" decision.
+
+(assert-true "bl1802: a checkout on main authorises a reset"
+             (master-main-reconcile-lib/current-branch-authorizes-reset? "main"))
+(assert-is-false "bl1802: a checkout on any other branch refuses"
+              (master-main-reconcile-lib/current-branch-authorizes-reset? "swarmforge-QA"))
+(assert-is-false "bl1802: an undeterminable (nil) branch refuses - never treated as main"
+              (master-main-reconcile-lib/current-branch-authorizes-reset? nil))
+(assert-is-false "bl1802: an empty string is not main either"
+              (master-main-reconcile-lib/current-branch-authorizes-reset? ""))
+
+;; current-branch-via-symbolic-ref: the adapter parse, in isolation from any
+;; real git process - a non-zero exit (detached HEAD, unreadable ref) and a
+;; blank stdout on a zero exit both read as nil, never a guessed name.
+(assert= "bl1802: symbolic-ref parse trims a clean branch name"
+         "swarmforge-QA"
+         (master-main-reconcile-lib/current-branch-via-symbolic-ref
+          {:sh! (fn [] {:exit 0 :out "swarmforge-QA\n"})}))
+(assert= "bl1802: symbolic-ref parse: non-zero exit (detached HEAD) is nil"
+         nil
+         (master-main-reconcile-lib/current-branch-via-symbolic-ref
+          {:sh! (fn [] {:exit 1 :out ""})}))
+(assert= "bl1802: symbolic-ref parse: zero exit with blank output is nil, never empty-string-as-branch"
+         nil
+         (master-main-reconcile-lib/current-branch-via-symbolic-ref
+          {:sh! (fn [] {:exit 0 :out "\n"})}))
+
+;; refuse-reset-if-local-ahead!'s own composition: the branch check must run
+;; BEFORE the ahead-count read (invariant: "checked BEFORE the ahead-count
+;; read"), and raw-reset! must never run when it fails - proven here by a
+;; spy on :ahead-count! itself, not just on the final outcome, so a mutant
+;; that swaps the check order or drops the short-circuit is caught even if
+;; it happened to still return the right :outcome key by coincidence.
+(let [ahead-count-calls (atom 0)
+      reset-calls (atom 0)
+      result (master-main-reconcile-lib/refuse-reset-if-local-ahead!
+              {:current-branch! (fn [] "swarmforge-QA")
+               :ahead-count! (fn [] (swap! ahead-count-calls inc) 0)
+               :raw-reset! (fn [] (swap! reset-calls inc) {:success true})})]
+  (assert= "bl1802: off-main refuses with :not-on-main-refused" :not-on-main-refused (:outcome result))
+  (assert= "bl1802: off-main refusal names the checkout's own branch" "swarmforge-QA" (:branch result))
+  (assert= "bl1802: off-main never reads the ahead-count at all - checked first, short-circuits" 0 @ahead-count-calls)
+  (assert= "bl1802: off-main never calls raw-reset!" 0 @reset-calls))
+
+;; No :current-branch! adapter at all (a caller not yet updated) fails
+;; closed exactly the same as an explicit nil - BL-1802 invariant 1's
+;; "absent entirely ... failing closed" clause, proven as its own case
+;; rather than assumed to follow from the nil case above.
+(let [reset-calls (atom 0)
+      result (master-main-reconcile-lib/refuse-reset-if-local-ahead!
+              {:ahead-count! (fn [] 0)
+               :raw-reset! (fn [] (swap! reset-calls inc) {:success true})})]
+  (assert= "bl1802: a caller with no :current-branch! adapter refuses, never bypasses"
+           :not-on-main-refused (:outcome result))
+  (assert= "bl1802: a caller with no :current-branch! adapter never calls raw-reset!" 0 @reset-calls))
+
+;; On main, with ahead=0, behaviour is unchanged: raw-reset! runs and its
+;; result passes through verbatim (BL-1802 invariant 2).
+(assert= "bl1802: on main with ahead=0, raw-reset!'s own result passes through unchanged"
+         {:success true :moved "here"}
+         (master-main-reconcile-lib/refuse-reset-if-local-ahead!
+          {:current-branch! (fn [] "main")
+           :ahead-count! (fn [] 0)
+           :raw-reset! (fn [] {:success true :moved "here"})}))
+
+;; On main but local-ahead, BL-1310's own refusal still fires - the branch
+;; check does not swallow or shadow it.
+(assert= "bl1802: on main but local-ahead, BL-1310's refusal still fires unchanged"
+         :local-ahead-refused
+         (:outcome (master-main-reconcile-lib/refuse-reset-if-local-ahead!
+                    {:current-branch! (fn [] "main")
+                     :ahead-count! (fn [] 2)
+                     :raw-reset! (fn [] {:success true})})))
+
 ;; ── hotfix redundant-overlap: blocking-overlap + :redundant-paths! ───────
 ;; A dirty path the incoming merge would change, whose dirty content is
 ;; ALREADY byte-identical to origin/main's version (a stale pre-land

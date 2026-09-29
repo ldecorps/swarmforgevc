@@ -137,7 +137,15 @@
                                                   {:success (zero? (:exit r)) :error (:err r)}))
                                        :reset! (fn []
                                                  (master-main-reconcile-lib/refuse-reset-if-local-ahead!
-                                                  {:ahead-count!
+                                                  {:current-branch!
+                                                   ;; BL-1802: this checkout's own branch - main's
+                                                   ;; ahead-count below is a repo-wide ref, so it
+                                                   ;; reads 0 even when this checkout is on some
+                                                   ;; other branch; a reset must never fire there.
+                                                   (fn []
+                                                     (master-main-reconcile-lib/current-branch-via-symbolic-ref
+                                                      {:sh! (fn [] (sh root "git" "symbolic-ref" "--short" "-q" "HEAD"))}))
+                                                   :ahead-count!
                                                    ;; Parse shared via master_main_reconcile_lib.bb's
                                                    ;; ahead-count-via-rev-list - see its header.
                                                    (fn []

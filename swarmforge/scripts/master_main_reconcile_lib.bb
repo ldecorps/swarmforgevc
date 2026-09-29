@@ -1316,27 +1316,63 @@
 ;; computed, which could have staled by the time the reset would fire) and
 ;; only calls :raw-reset! when reset-authorized-by-ahead-count? says so;
 ;; otherwise returns a refuse outcome without touching anything.
+;; ── BL-1802: the reset's authority is also limited to a checkout ON main ──
+;; main's ahead-count is a REPO-WIDE ref - every linked worktree reads the
+;; SAME `origin/main...main` count, whatever branch that worktree is
+;; actually checked out on. `refuse-reset-if-local-ahead!` below ran
+;; `git reset --hard origin/main` in whatever checkout it was given the
+;; moment main's count read 0, which discards THAT CHECKOUT's own unlanded
+;; commits when it is on some other branch - swarmforge-QA lost its own
+;; merge this way at 12:05:28Z on 2026-09-29, inside its own pre-commit
+;; property run (QA note 003346). A reset onto origin/main can only ever
+;; be about main; authorizing it from a branch that is not main is the
+;; same category of error reset-authorized-by-ahead-count? already refuses
+;; for an undeterminable ahead-count - nil (detached, or unreadable) must
+;; never read as "safe to reset" here either (invariant 1).
+(defn current-branch-authorizes-reset?
+  [branch]
+  (= "main" branch))
+
 (defn refuse-reset-if-local-ahead!
   "adapters:
+     :current-branch! (fn [] -> string-or-nil) - the checkout's OWN current
+             branch, read fresh right before the reset would fire; nil for
+             a detached HEAD or an unreadable branch (never treated as
+             main). Absent entirely (a caller not yet updated) is
+             equivalent to nil, failing closed rather than silently
+             bypassing this check (BL-1802 invariant 1).
      :ahead-count! (fn [] -> int-or-nil) - local main's CURRENT ahead-count
              against origin/main, read fresh right before the reset would
              fire; nil when it could not be determined (never treated as 0).
      :raw-reset!   (fn [] -> map) - the EXISTING reset-to-origin adapter,
-             called ONLY when reset-authorized-by-ahead-count? authorizes
-             it; its return value is passed through completely unchanged.
-   Returns raw-reset!'s own result verbatim when authorized; else
+             called ONLY when the checkout is on main AND
+             reset-authorized-by-ahead-count? authorizes it; its return
+             value is passed through completely unchanged.
+   Returns raw-reset!'s own result verbatim when authorized;
+   {:success false :outcome :not-on-main-refused :branch <name-or-nil>
+    :error <message naming this ticket>} when the checkout is not on main
+   (checked BEFORE the ahead-count read - a reset onto origin/main is never
+   about any other branch, whatever main's own count is); else
    {:success false :outcome :local-ahead-refused :ahead <n-or-nil>
-    :error <message naming this ticket>} without ever calling raw-reset!."
-  [{:keys [ahead-count! raw-reset!]}]
-  (let [ahead (ahead-count!)]
-    (if (reset-authorized-by-ahead-count? ahead)
-      (raw-reset!)
+    :error <message naming BL-1310>} - neither path ever calls raw-reset!."
+  [{:keys [current-branch! ahead-count! raw-reset!]}]
+  (let [branch (when current-branch! (current-branch!))]
+    (if-not (current-branch-authorizes-reset? branch)
       {:success false
-       :outcome :local-ahead-refused
-       :ahead ahead
-       :error (str "BL-1310: local main ahead of origin/main by "
-                   (if ahead ahead "an undeterminable count")
-                   " - refusing to discard local-ahead commits")})))
+       :outcome :not-on-main-refused
+       :branch branch
+       :error (str "BL-1802: checkout is on "
+                   (if branch (str "\"" branch "\"") "no readable branch")
+                   ", not main - a reset to origin/main only ever moves main")}
+      (let [ahead (ahead-count!)]
+        (if (reset-authorized-by-ahead-count? ahead)
+          (raw-reset!)
+          {:success false
+           :outcome :local-ahead-refused
+           :ahead ahead
+           :error (str "BL-1310: local main ahead of origin/main by "
+                       (if ahead ahead "an undeterminable count")
+                       " - refusing to discard local-ahead commits")})))))
 
 ;; ── BL-1310 cleanup: bl1198RematchPushFirstCli.bb and bl1288PushFailure-
 ;; ClassificationCli.bb (the acceptance drivers the architect's bounce had
@@ -1344,20 +1380,39 @@
 ;; identical real-git :ahead-count!/:raw-reset! adapter pair - sharing it
 ;; here removes that second copy the same way the three production call
 ;; sites' ahead-count parse was shared above.
+;; BL-1802: the checkout's own current branch, via `git symbolic-ref
+;; --short -q HEAD` - a non-zero exit (detached HEAD, or an unreadable
+;; ref) reads as nil, never a guessed branch name. Shared here for the
+;; same reason ahead-count-via-rev-list is shared above: one parse, not a
+;; copy at every call site.
+(defn current-branch-via-symbolic-ref
+  "adapters: :sh! (fn [] -> {:exit int :out string}) - runs `git
+     symbolic-ref --short -q HEAD` (or an equivalent fixture) in the
+     target repo. Returns the branch name, trimmed, or nil on a non-zero
+     exit (detached HEAD or an unreadable ref)."
+  [{:keys [sh!]}]
+  (let [{:keys [exit out]} (sh!)]
+    (when (zero? exit)
+      (let [branch (str/trim (or out ""))]
+        (when-not (str/blank? branch) branch)))))
+
 (defn real-git-reset-adapters
   "adapters:
      :sh!              (fn [& args] -> {:exit int :out string :err string}) -
              runs a git command in the target repo (or an equivalent
-             fixture); called FRESH for both the ahead-count read and the
-             reset itself, per refuse-reset-if-local-ahead!'s own freshness
-             requirement.
+             fixture); called FRESH for the branch read, the ahead-count
+             read and the reset itself, per refuse-reset-if-local-ahead!'s
+             own freshness requirement.
      :reset-attempted? (atom bool) - set true only when :raw-reset! actually
              runs `git reset --hard origin/main`, for the caller's own
              reporting.
-   Returns the :ahead-count!/:raw-reset! pair refuse-reset-if-local-ahead!
-   expects."
+   Returns the :current-branch!/:ahead-count!/:raw-reset! triple
+   refuse-reset-if-local-ahead! expects."
   [{:keys [sh! reset-attempted?]}]
-  {:ahead-count! (fn []
+  {:current-branch! (fn []
+                       (current-branch-via-symbolic-ref
+                        {:sh! (fn [] (sh! "git" "symbolic-ref" "--short" "-q" "HEAD"))}))
+   :ahead-count! (fn []
                    (ahead-count-via-rev-list
                     {:sh! (fn [] (sh! "git" "rev-list" "--left-right" "--count" "origin/main...main"))}))
    :raw-reset! (fn []

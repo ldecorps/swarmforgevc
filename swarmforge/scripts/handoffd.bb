@@ -4373,6 +4373,17 @@
                  ["git" "rev-list" "--left-right" "--count" "origin/main...main"]
                  {:dir (str project-root)}))}))
 
+;; BL-1802: this checkout's own current branch, read FRESH right before a
+;; reset would fire - main's ahead-count above is a repo-wide ref, so it
+;; reads 0 even when THIS checkout is on some other branch; a reset must
+;; never fire there. Parse shared via master_main_reconcile_lib.bb's
+;; current-branch-via-symbolic-ref - see its header.
+(defn- master-main-current-branch! []
+  (master-main-reconcile-lib/current-branch-via-symbolic-ref
+   {:sh! (fn [] (daemon-cycle-guard-lib/sh!
+                 ["git" "symbolic-ref" "--short" "-q" "HEAD"]
+                 {:dir (str project-root)}))}))
+
 ;; BL-1310 required_wiring CONSUMER anchor: wraps the raw `git reset --hard
 ;; origin/main` adapter so it only ever runs when local main is genuinely
 ;; not ahead of origin/main - the human ruling's "never discard local-ahead
@@ -4385,8 +4396,11 @@
 (defn- refuse-reset-if-local-ahead! [raw-reset!]
   (fn []
     (let [result (master-main-reconcile-lib/refuse-reset-if-local-ahead!
-                  {:ahead-count! master-main-local-ahead-count!
+                  {:current-branch! master-main-current-branch!
+                   :ahead-count! master-main-local-ahead-count!
                    :raw-reset! raw-reset!})]
+      (when (= :not-on-main-refused (:outcome result))
+        (log! "master-main-reconcile" "not-on-main-refused" (str "branch=" (or (:branch result) "undeterminable"))))
       (when (= :local-ahead-refused (:outcome result))
         (log! "master-main-reconcile" "local-ahead-refused" (str "ahead=" (or (:ahead result) "undeterminable"))))
       result)))
