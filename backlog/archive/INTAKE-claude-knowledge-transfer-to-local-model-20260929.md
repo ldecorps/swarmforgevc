@@ -113,7 +113,8 @@ seat as local-model: `backendSwitch.switchRoleModel` is the panel's
 Claude-to-Claude dropdown, and `transferMemoryAcrossVendors` has no
 caller. The live seam is the model steward's trial boundary
 (`model_steward_cli.bb` `transfer-memory!`), which BL-1815 wires. Pack
-cold-swaps to a local pack run no transfer at all. Whether they should
-collect briefs too was put to the human on 2026-09-29.
+cold-swaps to a local pack run no transfer at all. Asked whether they
+should collect briefs too, the human ruled, verbatim (2026-09-29): "no
+need, a swarm should drain it's agents anyway before exiting."
 
 Both human sentences above survive verbatim in BL-1815 and BL-1816.

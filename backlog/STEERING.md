@@ -77,8 +77,9 @@ a brief of at most 2000 characters at a steward trial boundary; fail closed)
 and BL-1816 (the local-model composition points at a fresh brief;
 depends_on BL-1815), queue-jump priorities 2 and 3, both approved. The live
 seam is the model steward's trial boundary: the BL-1178 panel switch is
-Claude-to-Claude only. Whether pack cold-swaps to a local pack should also
-collect briefs is a question put to the human, not yet minted.
+Claude-to-Claude only. Pack cold-swaps to a local pack collect no brief:
+the human ruled, verbatim, "no need, a swarm should drain it's agents anyway
+before exiting." (2026-09-29).
 
 ## Standing human directive (2026-09-29, via Cursor) — mint Bob-upstream's three suggested slices now
 

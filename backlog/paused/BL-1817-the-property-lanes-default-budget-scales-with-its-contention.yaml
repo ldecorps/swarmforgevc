@@ -1,0 +1,129 @@
+id: BL-1817
+title: "The property lane's suite-wide default per-test budget scales with the lane's own contention (forks and 1-minute load, the per-test helper's factor) from a 20000 ms base, never below it and never above 60000 ms, so the 124 subprocess-spawning property files that declare no timeout stop timing out one by one in full-lane runs; BL-932's 'never a lane-wide raise' is overturned by the human and its three asserting scenarios are retired"
+milestone: M8
+type: defect
+severity: high
+# high: a broken health signal. The property lane's fixed 20000 ms default
+# produced eight unowned reds in five days (BL-1745 x3, BL-1808 x4,
+# BL-1814), each holding an unrelated parcel at QA (Article 4.2).
+status: todo
+epic: unit-suite-speed
+priority: 5
+direction: human-requested
+depends_on: []
+# BL-1814 (active, bl1052's per-test budget) touches a test file only; it
+# can land before or after this one. BL-1596 (paused) sweeps bare per-test
+# timeout literals in test files and is unaffected.
+mutation_cost: low
+# low: one exported resolver beside propertyLaneTimeoutMs, one config line,
+# retirements; the contention math is BL-1579/BL-1588/BL-1606's and tested.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1817-the-property-lanes-default-budget-scales-with-its-contention.feature
+
+required_wiring:
+  - 'extension/vitest.properties.config.mjs::propertyLaneDefaultTimeoutMs::the live property lane config takes its testTimeout from the resolver'
+
+human_approval: approved
+approval_context: >
+  The human ruled in chat on 2026-09-29, choosing between keeping one
+  owner per red, sweeping the 124 unbudgeted files with a guard, and a
+  load-scaled lane default; the specifier recommended the load-scaled
+  default and the human answered, verbatim, "I follow your reco". FIRM: base
+  20000 ms, floor 20000 ms, cap 60000 ms (3x the base, PROPERTY_LANE_MAX_GROWTH,
+  as the recommendation stated). FIRM: the factor is the per-test helper's
+  own (propertyLaneContentionFactor), never a second derivation (BL-1811).
+  FIRM: the resolver is exported as propertyLaneDefaultTimeoutMs (the wiring
+  anchor). FIRM: the scenarios listed under Retirements are retired, never
+  reworded.
+
+invariants:
+  - "For every fork count and 1-minute load, the property lane's default per-test budget is at least 20000 ms and at most 60000 ms, and it equals 20000 ms whenever the contention factor is at most 1."
+
+description: |
+  ## Human, verbatim (Article 5.3)
+
+  "I follow your reco" (2026-09-29, answering the specifier's lane-level
+  question put after BL-1814's mint).
+
+  ## What is wrong
+
+  `extension/vitest.properties.config.mjs` sets `testTimeout: 20000`, a
+  constant BL-932 invariant 1 fixed on purpose ("The fix is per-test
+  headroom, never a lane-wide raise"). A test that declares no budget runs
+  under it whatever the lane's load. Census at mint (python scan of
+  `extension/test/*.property.test.js`): 470 property files, 197 spawn a
+  subprocess (spawnSync, execFileSync, execSync, spawn, exec), 124 of them
+  declare no per-test budget (no propertyLaneTimeoutMs, no
+  SUBPROCESS_HEAVY_TIMEOUT_MS, no 4+ digit third argument). Eight have gone
+  red in full-lane QA runs since 2026-09-25, each at a solo time of 5-18 s
+  and each minted one owner at a time (BL-1745, BL-1808, BL-1814).
+
+  ## What is wanted
+
+  1. `extension/test/helpers/propertyLaneContentionBudget.js` exports
+     `propertyLaneDefaultTimeoutMs`, resolving the lane default from the
+     SAME contention factor `propertyLaneTimeoutMs` uses
+     (`propertyLaneContentionFactor`: the larger of load/4 and forks/4),
+     a 20000 ms base, and a 60000 ms cap: `min(60000, round(20000 *
+     max(1, factor)))`, which is the existing `effectiveBudgetMs` with
+     that ceiling. Scenario 01's rows were computed with that function at
+     mint.
+  2. `vitest.properties.config.mjs` sets `testTimeout` from it, using the
+     fork count it already resolves (`resolveLaneForks`) and publishes to
+     the workers before any fork spawns, and the host's 1-minute load at
+     config time. A lone explicit file on a quiet host (load under 4) keeps
+     exactly 20000 ms.
+  3. Per-test budgets a file declares (propertyLaneTimeoutMs,
+     SUBPROCESS_HEAVY_TIMEOUT_MS, a literal) are untouched and still
+     override the default.
+
+  ## Retirements (retire, never reword; census by `grep -rln testTimeout`
+  over extension/test and specs/pipeline/steps, kept to the files that
+  read vitest.properties.config.mjs and assert its literal)
+  - `specs/features/BL-932-subprocess-heavy-property-tests-share-one-declared-timeout.feature`
+    scenario 04 "the lane-wide default is left alone", and its Then
+    step's handler in `bl932SharedHeavyTimeoutSteps.js`. The Background
+    ("the property lane config declares its own suite-wide default
+    timeout") stays true; its handler must read the new form instead of
+    requiring a numeric literal.
+  - `specs/features/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.feature`
+    scenario 05 "the property lane is not scaled", and its handler steps.
+  - `specs/features/BL-1107-property-lane-verdict-turns-on-host-load-not-code.feature`
+    Background step "the property lane's per-test budget is 20 seconds"
+    (false once the default scales); its scenarios stay.
+  - `extension/test/bl932SharedHeavyTimeoutInvariants.property.test.js`
+    invariant 1's "still declares its suite-wide default at 20000ms" half.
+    Its "the unit lane carries no trace" half still holds and stays.
+  Measured on main at mint: BL-932 5 of 5, BL-1007 11 of 11, BL-1107 5 of
+  5. Generator noise lines reading `testTimeout: 20000,` in
+  bl868/bl871 property tests are fixtures, not assertions on the config,
+  and stay.
+
+  ## Scope
+  - `extension/vitest.properties.config.mjs`,
+    `extension/test/helpers/propertyLaneContentionBudget.js` and its unit
+    test, the retirements above, the step handler
+    `specs/pipeline/steps/bl1817LaneDefaultBudgetSteps.js` (same commit as
+    the runnable feature, BL-233), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1817-the-property-lanes-default-budget-scales-with-its-contention.feature`:
+     5 of 5 ok (0 of 5 on main at mint, no handler yet).
+  2. The retired-from features: BL-932 4 of 4, BL-1007 10 of 10, BL-1107
+     5 of 5 (5 of 5, 11 of 11 and 5 of 5 on main at mint).
+  3. QA's ordinary full property run on this parcel: record the resolved
+     default the config printed or the evidence states, and whether any
+     file failed on "Test timed out in 20000ms" (expected none).
+  4. `git diff main...HEAD --name-only` names only the files under Scope.
+
+notes: |
+  Minted 2026-09-29 by the specifier on the human's ruling in chat,
+  verbatim "I follow your reco" (see approval_context). The recommendation
+  as put to the human said a hung test "takes up to about 3x longer to
+  fail during a full run"; the per-test helper's own ceiling for a 20000 ms
+  base is 120000 ms (UNIT_LANE_BUDGET_CEILING_MS), so this ticket pins the
+  lane default's cap at 60000 ms to keep the recommendation's 3x bound.
+  Expedite lane by severity (Article 3.2.4).
