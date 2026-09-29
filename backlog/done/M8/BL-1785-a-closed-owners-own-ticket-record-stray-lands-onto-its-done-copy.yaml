@@ -172,6 +172,13 @@ notes: |
   from mint remain, and the 2 new ones pair the outline's templated Given
   with scenario 02's literal backlog/active/ Given (one step definition,
   kept as is).
+  2026-09-29 (coordinator, relayed from QA note 003330): BL-1785 landed
+  094252ceaa. QA.prompt's interim condition (i) named this ticket as its
+  "until it lands" retirement marker — the specifier should retire that
+  dead interim prose now. Relayed via a coordinator self-note (not a direct
+  handoff) because `specifier` was absent from `roles.tsv` this launch,
+  blocking direct routing — see
+  coordinator-specifier-missing-from-roles-tsv-blocks-routing-0929 memory.
   INVEST: Independent (no unbuilt dependency). Negotiable (the How is
   direction; the token reuse is the coder's call so long as the line names
   the stray). Valuable (a whole class of land escalations stops). Estimable
