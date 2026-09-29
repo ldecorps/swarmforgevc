@@ -81,3 +81,19 @@ ticket, both which seat holds it and roughly how long it has been there
   `X` today; possibly `pipelineGridLive.ts` consumers.
 - Confirm whether `asOf` updates on every stage enter (including NS /
   not-yet-held) before baking it into the cell.
+
+## Specifier disposition (2026-09-29)
+
+Minted 1:1 as **BL-1818** (epic `pipeline-board`, BL-540), human_approval
+pending with ruling_options. The human's sentence above survives verbatim
+in BL-1818.
+
+- Width fork: settled without a ruling. Folding the one-space separator
+  into 3-character cells keeps every line at 27-29 characters for 3-5
+  digit ids, and the header reads as before.
+- Clock: the stage map's `asOf` is the parcel's `enqueued_at`, i.e. when
+  it reached the stage, so no second store is needed. A ticket with no
+  parcel keeps its X.
+- Refresh: the one ruling asked. Today the board is deleted and reposted
+  on any content change, so minute-level dwell needs a rule. Recommended:
+  edit in place for dwell-only changes.

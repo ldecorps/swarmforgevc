@@ -1,0 +1,124 @@
+id: BL-1818
+title: "The pipeline board's grid cell shows how long the seat has held each active ticket (0m, 45m, 12h, 3d from the stage map's as-of) instead of a fixed X, in 3-character cells that absorb the separator so the header and the 30-character phone budget hold - and a ruling on how a dwell-only change refreshes the board"
+milestone: M8
+type: feature
+status: todo
+epic: pipeline-board
+priority: 20
+direction: human-intake
+depends_on: []
+mutation_cost: medium
+# medium: the matrix mark and cell width in pipelineBoard.ts, plus (ruling
+# A) a second sync path in pipelineBoardSync.ts; Stryker targets both.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1818-the-pipeline-board-cell-shows-how-long-the-seat-has-held-it.feature
+
+human_approval: pending
+approval_context: >
+  One choice: how the Telegram board refreshes when only a dwell value
+  changed (no stage moved). Today any content change deletes the board
+  message and posts a fresh one (BL-462), checked on a ~30 s tick, so dwell
+  minutes counted as content would repost about once a minute. FIRM, not
+  asked: the cell format (coarsest unit, 0m under a minute, 3 characters at
+  most), the clock (the stage map's asOf, which is the parcel's enqueued_at),
+  a held ticket with no asOf keeps X, and 3-character cells that absorb the
+  one-space separator (width 27-29 at 3-5 digit ids, header unchanged).
+  Scenario 04 is written for ruling A; ruling B or C amends it before
+  promotion.
+
+ruling_options:
+  - A - a dwell-only change edits the posted board in place, and a stage change still deletes and reposts (recommended)
+  - B - dwell counts as board content, so the board deletes and reposts whenever a dwell value changes
+  - C - dwell is shown as of the last repost only, so a board with no stage change keeps its old dwell values
+
+ruling_tradeoffs:
+  - Pros - minute-accurate dwell with no new post and no notification, and a real stage change still moves the board to the bottom of its topic. Cons - the sync gains a second path (an edit beside delete-and-repost) and must handle an edit Telegram refuses. Recommended because a stalled board is where dwell matters most, and A keeps it current without flooding the topic.
+  - Pros - no new sync path, the existing change gate only sees more content. Cons - while any ticket has been at its stage under an hour the board is deleted and reposted about once a minute, flooding the topic and its notifications.
+  - Pros - no new sync path and no extra posts. Cons - a board with no stage change for hours keeps the dwell from its last repost, so the multi-hour stall the intake is about reads as minutes.
+
+invariants:
+  - "Every grid line the board renders is at most 30 characters and every stage cell is exactly 3 characters wide, whatever dwell values and display id widths up to 5 characters the rows carry."
+
+description: |
+  ## Human, verbatim (Article 5.3)
+
+  "new intake: instead of an X, can the grid show the number of minutes
+  (or hours) the ticket has been with the seat"
+
+  ## What is wrong
+
+  `renderGridMatrixLines` in `extension/src/concierge/pipelineBoard.ts`
+  marks an active ticket's stage with `X` (`column === row.column ? 'X' :
+  '.'`). It says where, not how long, and the live board has had most rows
+  parked under QA. Verified at mint (main 552cd95b84):
+  - Each row already carries its stage map entry (`stageEntry`, BL-1451),
+    whose `asOf` is written by `pipeline_stage_cli.bb`'s `as-of-for`: the
+    parcel's `enqueued_at` header (then `created_at`, then file mtime),
+    i.e. when the parcel reached that stage. A ticket with no parcel (not
+    started) has no entry and no `asOf`.
+  - `formatHeldForLabel` already renders dwell as `Nm`/`Nh`/`Nd` for the
+    HELD list; its under-a-minute form "just now" is too wide for a cell.
+  - Stage cells are 2 wide with one NBSP between them: the id gutter
+    (3-5) + 8x2 + 7 = 26-28 against `PIPELINE_BOARD_GRID_MAX_WIDTH` 30.
+    Widening cells to 3 and keeping the separators is 34, over budget.
+    Folding the separator into a 3-wide cell is 27-29, and the header row
+    still reads "NS SP CO CL AR HD DC QA".
+  - The Telegram sync (`pipelineBoardSync.ts`, BL-462) change-gates on a
+    content signature and, on any change, deletes the posted message and
+    posts a new one; hence the ruling.
+
+  ## What is wanted
+
+  1. The occupied cell shows the time since `stageEntry.asOf` in the
+     coarsest unit, at most 3 characters: under a minute "0m", then "Nm"
+     to 59m, "Nh" to 23h, "Nd" (99d at most). Reuse the held-list
+     arithmetic rather than a second derivation (BL-1811). Empty cells stay
+     "."; a row with no `asOf` keeps "X".
+  2. Stage cells become 3 wide with no separator; the header and the
+     width budget hold (scenario 03, and the invariant).
+  3. The refresh follows the ruling. For A: the signature splits into the
+     board's structure (rows, stages, lists) and its dwell values; a tick
+     whose structure is unchanged but whose dwell changed edits the posted
+     message in place; a structure change still deletes and reposts; an
+     unchanged tick is still a no-op.
+  4. The live bridge grid (`pipelineGridLive.ts`,
+     `renderPipelineBoardGridOnly`) shares the renderer and shows dwell
+     too; it already refreshes every 2 s, so it needs no refresh rule.
+
+  ## Retirements (retire, never reword; census by grepping
+  specs/features for scenarios asserting the "X" mark)
+  - `specs/features/BL-979-pipeline-board-ticket-rows-and-epic-separators.feature`
+    scenario 01 (its third Then asserts "X"); its header and one-row
+    assertions are re-covered by this ticket's scenario 03 and 01.
+  - `specs/features/BL-585-pipeline-board-ticket-column-matrix.feature`
+    scenario 02 (asserts "X" under the holding stage).
+  Measured on main at mint: BL-979 10 of 10, BL-585 8 of 8. Unit tests in
+  `pipelineBoard.test.js`, `bl979PipelineBoardTicketRows.test.js` and
+  `pilotAcceptanceGate.test.js` that assert "X" move with the behaviour.
+
+  ## Scope
+  - `extension/src/concierge/pipelineBoard.ts`,
+    `extension/src/concierge/pipelineBoardSync.ts` (ruling A), their unit
+    tests, the retirements above, the step handler
+    `specs/pipeline/steps/bl1818BoardCellDwellSteps.js` (same commit as the
+    runnable feature, BL-233), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1818-the-pipeline-board-cell-shows-how-long-the-seat-has-held-it.feature`:
+     9 of 9 ok (0 of 9 on main at mint, no handler yet).
+  2. BL-979 9 of 9 and BL-585 7 of 7 after the retirements (10 of 10 and
+     8 of 8 on main at mint).
+  3. Render the board once from the live stage map in-process (no Telegram
+     send) and read the grid: dwell in every occupied cell that has an
+     arrival, X otherwise, every line at most 30 characters.
+
+notes: |
+  Minted 2026-09-29 by the specifier from
+  backlog/INTAKE-pipeline-board-grid-seat-dwell-20260929.md (archived with
+  this mint). The intake's width fork is settled without a ruling
+  (separator folded into the cell; the glance layout does not change);
+  its refresh concern is the one ruling asked. Pending with
+  ruling_options; normal priority, as the intake set.
