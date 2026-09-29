@@ -4,6 +4,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 // BL-1642's three declared invariants:
 //
@@ -143,7 +144,11 @@ test('property (BL-1642 invariants 1 & 2): note evidence completes a QA forward,
   } finally {
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
-});
+// BL-1808: 40 draws through real bb subprocesses measured 6346-8458ms
+// solo (2026-09-29; QA note 003359, evidence 596cc1a8: file 23.2s in the
+// full lane). base=20000 is ~2-3x the highest solo reading;
+// propertyLaneTimeoutMs scales it further under real measured load.
+}, propertyLaneTimeoutMs(20000));
 
 // ── Invariant 3: qa-stage? recognizes every QA seat shape, and only QA ──
 

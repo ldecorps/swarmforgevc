@@ -41,6 +41,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const WIRING_TEST = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'test_pack_staffing_gate_wiring.sh');
@@ -110,7 +111,12 @@ test('BL-1445/BL-654 invariant 1: the wiring test decides PACK_STAFFING_SKIP_GAT
   // hits exactly once per combination that produces it. Migrated the manual
   // assert.ok checks to the shared helper for consistency; no loop change.
   assertReachFloor(reach, ['unset', 'one', 'zero', 'garbage', 'staleStateDir', 'freshStateDir'], 1, 'gate-wiring-case');
-});
+// BL-1808: 8 real child-process runs of the wiring script in sequence
+// measured 8069-10747ms solo (2026-09-29); the property lane's default
+// 20000ms testTimeout reds this under full-lane contention (QA note
+// 003353, evidence 1db06f92). base=20000 is ~2x the highest solo reading;
+// propertyLaneTimeoutMs scales it further under real measured load.
+}, propertyLaneTimeoutMs(20000));
 
 // invariant 2 is static (a property of the source text, not of any
 // generated input): non-vacuous in the ordinary sense (fails if a second

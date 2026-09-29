@@ -32,6 +32,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SWARMFORGE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarmforge.sh');
@@ -348,5 +349,12 @@ describe('BL-1324 stamp-off invariants', () => {
       }),
       { numRuns: 8 }
     );
-  });
+  // BL-1808: two zsh-subprocess batches (120+120 samples, one process
+  // each) plus 8+8 individual launch-script builds (one zsh process
+  // each) measured 6830-9473ms solo (2026-09-29; QA note 003359, evidence
+  // 596cc1a8: vitest recorded failed:true at 22690ms without capturing
+  // which assertion). base=30000 gives extra margin over process-heavy,
+  // higher-variance runs; propertyLaneTimeoutMs scales it further under
+  // real measured load.
+  }, propertyLaneTimeoutMs(30000));
 });

@@ -46,6 +46,7 @@ const fc = require('fast-check');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const LIB = path.join(__dirname, '..', '..', 'swarmforge', 'scripts', 'local_parcel_driver_lib.bb');
 const HANDOFF_LIB = path.join(__dirname, '..', '..', 'swarmforge', 'scripts', 'handoff_lib.bb');
@@ -196,7 +197,11 @@ test('invariant 1b: given-up-task-names-in is seat-specific - a sibling reading 
     }),
     { numRuns: 30 }
   );
-});
+// BL-1808: 30 draws x 3 bb processes measured 6542-9719ms solo
+// (2026-09-29); flagged in scope alongside the two already-red tests
+// below (half the property lane's default 20000ms ceiling alone). base=
+// 20000 is ~2-3x the highest solo reading.
+}, propertyLaneTimeoutMs(20000));
 
 test('non-vacuous: worked-task-names-in DOES attribute a plain git_handoff with no outcome header (proves the exclusion is outcome-specific, not "always empty")', () => {
   const root = mkTmpDir(FIXTURE_PREFIX);
@@ -342,7 +347,13 @@ test('invariants 1 and 2: revert-attempt-commits! reverts only the attempt, keep
     { numRuns: 60 }
   );
   assertReachFloor(reach, CLAIM_SHAPE_CELLS, CLAIM_SHAPE_FLOOR, 'claim shape');
-});
+// BL-1808: 60 draws, each building a fresh git fixture (init, commits,
+// merges, up to 4 attempt commits) plus one bb process, measured
+// 12385-28840ms solo (2026-09-29; QA note 003353, evidence 1db06f92:
+// 17758ms, 89% of the lane's default 20000ms ceiling with only two files
+// in the run). base=45000 keeps margin over the highest observed solo
+// reading; propertyLaneTimeoutMs scales it further under real load.
+}, propertyLaneTimeoutMs(45000));
 
 test('a merge the attempt itself made mid-attempt keeps its content - excluded from revert by --no-merges, never the attempt\'s own work', () => {
   const root = mkTmpDir(FIXTURE_PREFIX);
