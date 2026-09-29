@@ -161,3 +161,5 @@ notes: |
   by a reconcile path again). Estimable (one gate, four adapters, one
   fixture fix). Small (4 scenarios, 5 cases, 2 invariants). Testable
   (fixture origin, clone and worktree through the real lib).
+
+assigned_to: coder
