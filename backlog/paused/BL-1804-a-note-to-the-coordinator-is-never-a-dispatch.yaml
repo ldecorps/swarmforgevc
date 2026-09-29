@@ -1,0 +1,146 @@
+id: BL-1804
+title: "The sweep's own 'Work <id> active unassigned - assign_to and route it.' nudge to the coordinator counts as a dispatch trail, so dispatch_trail_cli answers DISPATCHED for a ticket nobody routed, route_backlog_to_coder.sh refuses to route it without --force, and the dispatch-gap sweep goes quiet about it (BL-1803, 2026-09-29): a note addressed to the coordinator is never a dispatch, and the nudge is deduplicated against its own unread copy"
+milestone: M8
+type: defect
+severity: high
+# high: a broken health signal. The nudge that reports an unrouted ticket
+# marks it as dispatched, so if the coordinator misses the nudge, the
+# dispatch-gap sweep never flags the starved ticket - BL-1223's own failure
+# through a different door.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one predicate and one dedup in chase_sweep_lib.bb (Babashka, no
+# mutation/CRAP/DRY wired, BL-472); fixtures reuse BL-1223's handler shape.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1804-a-note-to-the-coordinator-is-never-a-dispatch.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1804CoordinatorNoteIsNotADispatchSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Auto-approved high-severity defect (2026-09-17 carve-out); no choice is
+  posed. FIRM - the rule keys on the handoff's to: header, never on which
+  mailbox the file sits in (BL-1223's own fixture keeps a to: coder note in
+  the coordinator's sent/); git_handoff task: trails and Work/Spec notes to
+  working roles count exactly as today; the router and the sweep keep one
+  shared predicate (BL-1097 invariant 2).
+
+invariants:
+  - "A handoff whose to: is the coordinator never counts as a dispatch of the ticket it names, whatever its message says; every other trail counts exactly as before."
+  - "At most one unassigned-active nudge per ticket is pending (new or in_process) in the coordinator's inbox at any time."
+
+description: |
+  ## What happened
+
+  Coordinator note 012997 (2026-09-29 12:43Z), verbatim: "dispatch_trail
+  false-DISPATCHED: my Work-BL nudge text hit BL-1223 pattern". The
+  mailboxes show:
+  - 12:41:32Z: `from: coordinator to: coordinator message: Work BL-1803
+    active unassigned - assign_to and route it.` This is the
+    unassigned-active sweep's nudge (`chase_sweep_lib.bb`
+    `unassigned-active-note-message`, drafted `to: coordinator`).
+  - 12:43:29Z: `from: coordinator to: coder message: Work BL-1803: merge
+    main first, then read backlog/active`, the route.
+  Between the two, `dispatch_trail_cli.bb <root> dispatched BL-1803`
+  answers DISPATCHED. `route_backlog_to_coder.sh` exits 3 on DISPATCHED
+  ("already has a dispatch trail - NOT routing") unless it gets `--force`.
+
+  ## Why
+
+  `dispatch-trail-ticket-id` counts a note's `message:` when it matches
+  `spec-work-ticket-id-pattern` (verb-first `Work|Spec <id>`), and reads
+  nothing else of the handoff. The unassigned-active nudge was written in
+  that form on purpose (BL-1223, its docstring: "so the next sweep still
+  treats the nudge itself as a trail (no spam)"), so the anti-spam marker
+  IS a dispatch. `dispatch-trail-dirs` scans every role's mailbox, the
+  coordinator's included.
+
+  Measured at mint: a fixture mailbox holding only that nudge gives
+  `collect-dispatched-ticket-ids` = `#{BL-9999}` and
+  `ticket-dispatched-in?` = true. The dispatch-gap auto-route note
+  (`dispatch-gap-draft-lines`) is addressed to the ticket's assignee, so it
+  is a real dispatch and unaffected.
+
+  ## What is wanted
+
+  1. `dispatch-trail-ticket-id` returns nil for a handoff whose `to:` is
+     `coordinator`, before any message match. A missing `to:` keeps
+     today's reading. The router (`dispatch_trail_cli.bb`) and the sweep
+     share the predicate, so both change together (BL-1097 invariant 2).
+  2. The unassigned-active sweep stops using the dispatch trail to avoid
+     repeating itself. It suppresses a nudge while its own nudge for that
+     id sits pending (`new` or `in_process`) in the coordinator's mailbox,
+     the way `open-slot-nudge-pending?` already works for the open-slot
+     nudge. The production caller passes the pending dirs
+     (`live-mail-trail-dirs` covers `new`/`in_process`), never
+     `completed`. A nudge the coordinator read without routing is
+     therefore sent again on a later sweep while the ticket stays
+     unassigned: loud, not silent. Rate-limit that repeat with the
+     open-slot nudge's existing cooldown mechanism.
+  3. `dispatch_gap_test_runner.bb`'s assertion "unassigned-active-items
+     does not re-nudge once a trail exists" pins behaviour this ticket
+     keeps (no second nudge while one is pending). Its premise changes
+     from "trail" to "pending nudge". Update that assertion in the parcel
+     and keep what it guards.
+
+  ## Existing contracts that stay green (measured at mint, main 8e2ca464bb)
+
+  - `specs/features/BL-1223-only-a-dispatch-counts-as-a-dispatch-trail.feature`:
+    6 of 6 in 12 s. Its scenario 01 row 2 note sits in the coordinator's
+    `sent/` with `to: coder`, so a `to:`-keyed rule leaves it DISPATCHED.
+  - `bl1097_router_dispatch_trail_test_runner.bb`: ALL PASS.
+  - `dispatch_gap_test_runner.bb`: ALL PASS (see item 3).
+  - `test_chase_sweep.sh`: ALL PASS in 4 s.
+
+  ## How (direction, not mandate)
+
+  - Read `to:` with the same `read-header-field` the trail already uses
+    for `task`/`message` (`dispatch-trail-headers`).
+  - Handler `bl1804CoordinatorNoteIsNotADispatchSteps.js`, landing in the
+    SAME commit as the feature (BL-233), reusing BL-1223's fixture root and
+    real `route_backlog_to_coder.sh` run (its scenario 03 shape).
+
+constraints: >
+  Fixture roots under mkdtemp (BL-1390). No change to what a git_handoff or
+  a Work/Spec note addressed to a working role proves.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1804-a-note-to-the-coordinator-is-never-a-dispatch.feature`:
+     5 cases ok (01 x3, 02, 03).
+  2. Regression, one run each:
+     - `node specs/pipeline/cli.js specs/features/BL-1223-only-a-dispatch-counts-as-a-dispatch-trail.feature`:
+       6 ok (6 of 6 in 12 s at mint).
+     - `bb swarmforge/scripts/test/bl1097_router_dispatch_trail_test_runner.bb`
+       and `bb swarmforge/scripts/test/dispatch_gap_test_runner.bb`: ALL PASS.
+     - `bash swarmforge/scripts/test/test_chase_sweep.sh`: ALL PASS.
+  3. Read the parcel's change to `dispatch_gap_test_runner.bb`. The
+     re-nudge assertion still asserts no second nudge while one is
+     pending.
+  4. `git diff main...HEAD --name-only` names only `chase_sweep_lib.bb`,
+     the two runners it tests through, `handoffd.bb` if the pending-dirs
+     argument is threaded there, the feature, its handler (plus lib/) and
+     evidence.
+
+source: |
+  Coordinator note 012997 (2026-09-29 12:43Z), verbatim: "dispatch_trail
+  false-DISPATCHED: my Work-BL nudge text hit BL-1223 pattern". Mailbox
+  evidence:
+  `.swarmforge/handoffs/coordinator/*/00_20260929T124132Z_012991_from_coordinator_to_coordinator*.handoff`
+  and `10_20260929T124329Z_012996_from_coordinator_to_coder.handoff`.
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  INVEST: Independent (BL-1223 is in done/). Negotiable (the How is
+  direction). Valuable (the dispatch-gap health signal and the router
+  stop being silenced by the sweep's own nudge). Estimable (one predicate
+  guard, one dedup like open-slot's). Small (3 scenarios, 5 cases, 2
+  invariants). Testable (fixture mailboxes and the real router).
