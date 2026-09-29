@@ -179,3 +179,5 @@ notes: |
   ground beside ground (a), BL-1785's fixtures as the template). Small
   (2 scenarios, 3 cases, 2 invariants). Testable (fixture repos through
   the real CLI, plus the in-clone probe).
+
+assigned_to: coder
