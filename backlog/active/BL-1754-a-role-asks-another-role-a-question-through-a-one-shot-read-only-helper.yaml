@@ -140,4 +140,18 @@ notes: |
   role is a `note` and waits for it." The same commit brought the boot
   prefix back under budget (44954 -> 43884/44000).
 
+  2026-09-29 15:xxZ coordinator: dropped-parcel nudge fired twice (14:18Z,
+  15:05Z). Not a routing drop - QA's bounce tip (052e0cd9b3, "record
+  bounce_history for the QA send-back") is already a fully-merged ancestor
+  of coder's HEAD (verified via merge-base --is-ancestor). No newer BL-1754
+  commit exists anywhere to cite. The D1 defect QA found
+  (backlog/evidence/BL-1754-QA-20260929.md: peer_question.bb -main leaks
+  its run-dir on the timed-out and failed exit branches, System/exit called
+  before/around the cleanup finally) is still unfixed in
+  swarmforge/scripts/peer_question.bb on coder's branch. Coder spent this
+  window on newly-promoted BL-1805/BL-1806 instead. Re-sending a
+  git_handoff here would only no-op again (nothing new to merge), so per
+  Article 1.9 I am not resending; the fix itself is domain work owed by
+  coder on its next turn. Leaving this note as the durable block reason.
+
 assigned_to: coder
