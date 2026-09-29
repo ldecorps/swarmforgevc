@@ -1,0 +1,126 @@
+id: BL-1805
+title: "A skipped post-land re-point is retried only from QA's done_with_current, although land_step_lib's docstring promises the ready_for_next idle boundary too (BL-1803 probe 3a): a retry that skips again at completion, or a QA seat woken, chased or respawned without completing, starts the next land walk on a QA branch that never re-pointed; QA's ready_for_next now retries the pending re-point at the top of every turn, never while a parcel is in QA's in_process, and no other role's turn attempts it"
+milestone: M8
+type: defect
+severity: medium
+# medium: done_with_current still retries after every QA completion, so the
+# gap opens only when that retry also skips (tree still dirty) or QA runs a
+# turn without completing. Not high: hotfix 4183cd29ca already ignores
+# __pycache__/, the main source of skips.
+status: todo
+epic: swarm-reliability
+priority: 15
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one QA-only call in ready_for_next_task.bb (Babashka, no
+# mutation/CRAP/DRY wired, BL-472); fixtures reuse the land_step_lib runner's
+# re-point shape.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1805-every-qa-turn-retries-a-pending-land-repoint.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1805QaTurnRetriesPendingRepointSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file needs a tap. No choice is posed. FIRM - the retry is
+  QA-only, runs at the top of every QA ready_for_next turn beside BL-1566's
+  hold-status print, and goes through the same land_step_cli try-repoint
+  the hotfix added. It relies on the re-point's own BL-1773 guard to do
+  nothing while a parcel is in QA's in_process. done_with_current's retry
+  is unchanged, and the land step's re-point logic is not touched.
+
+invariants:
+  - "A pending land re-point is attempted at the start of every QA ready_for_next turn, never while a parcel is in QA's in_process, and no other role's turn attempts it."
+
+description: |
+  ## What
+
+  Hotfix 4183cd29ca (2026-09-29 13:40, stamped by BL-1803) arms
+  `.swarmforge/daemon/pending-land-repoint.json` on every skipped
+  post-land re-point. It retries through `land_step_cli.bb try-repoint`
+  (`try-pending-land-repoint!`), called from `done_with_current_task.bb`
+  for QA only. The `post-land-repoint!` docstring in
+  `land_step_lib.bb` (around line 3374) says the retry runs at "done_with_current
+  / ready_for_next idle boundaries". `ready_for_next_task.bb` has no such
+  call (grep for `try-repoint` and `land_step_cli`: none, measured at mint
+  on main 00fc3a1a56).
+
+  The coder confirmed this as BL-1803's probe 3a, verbatim: "BL-1803 probe
+  3a: idle boundary never calls try-repoint, only done_with_current"
+  (note 002220, 2026-09-29 12:52Z).
+
+  The gap: when the completion-time retry skips again (tree still dirty
+  at that moment), or QA runs a turn without completing (woken, chased,
+  respawned), the next parcel's land walk starts on a QA branch that never
+  re-pointed. That is the growth the hotfix was written against
+  (swarmforge-QA at about 4,020 commits, hour-scale land plans).
+
+  ## What is wanted
+
+  1. At the top of every QA `ready_for_next` turn, where
+     `print-qa-hold-status-if-any!` (BL-1566) already runs "before
+     in_process resume, before NO_TASK", call
+     `land_step_cli.bb try-repoint <root>` and print its output when
+     non-blank, the same way `done_with_current_task.bb` does.
+  2. Rely on the re-point's own BL-1773 in_process guard. With a parcel in
+     QA's `in_process` the call re-arms or skips and moves nothing, and
+     the turn then resumes that parcel exactly as today.
+  3. No other role calls it.
+  4. After this lands, the docstring's "ready_for_next idle boundaries"
+     is true. Leave it, or tighten it to "every QA ready_for_next turn".
+
+  ## Regression (measured at mint, main 00fc3a1a56, one run each)
+
+  - `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS
+    (73 s).
+  - `bash swarmforge/scripts/test/test_ready_for_next_no_promotion.sh`:
+    ALL PASS (3 s).
+  - `bash swarmforge/scripts/test/test_ready_for_next_rotate_home.sh`: ALL
+    CHECKS PASSED (15 s).
+
+  ## How (direction, not mandate)
+
+  - Mirror `done_with_current_task.bb`'s own hotfix block: a `process/shell`
+    of `land_step_cli.bb try-repoint`, `:continue true`, inside a `try` so
+    a failed retry never blocks the turn.
+  - Handler `bl1805QaTurnRetriesPendingRepointSteps.js`, landing in the
+    SAME commit as the feature (BL-233). Fixture: a bare origin, a clone
+    and a QA linked worktree ahead of origin/main under mkdtemp, with
+    `pending-land-repoint.json` armed and a roles file naming QA and
+    coder. Run `ready_for_next_task.bb` with `SWARMFORGE_ROLE` set per
+    scenario.
+
+constraints: >
+  Fixtures under mkdtemp with their own bare origin (BL-1390); never the live
+  QA worktree. A failed or skipped retry never blocks or delays the turn's
+  normal output.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1805-every-qa-turn-retries-a-pending-land-repoint.feature`:
+     3 cases ok.
+  2. The three regression lanes above: ALL PASS.
+  3. If BL-1803 has landed, its feature gives all ok.
+  4. `git diff main...HEAD --name-only` names only `ready_for_next_task.bb`,
+     optionally `land_step_lib.bb` (docstring only), a test for the call,
+     the feature, its handler (plus lib/) and evidence.
+
+source: |
+  Coder note 002220 (2026-09-29 12:52Z), BL-1803 review goal 3a, quoted
+  above. BL-1803 is the stamp-off of hotfix 4183cd29ca.
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat). BL-1803's
+  review goals route each confirmed probe finding to the specifier as a
+  narrow follow-up, and this is 3a's.
+  IR-DRY: two findings accepted, both single parameterized steps (the role
+  that runs ready_for_next; the re-point state).
+  INVEST: Independent (BL-1803 is review-only and edits no production
+  file). Negotiable (the How is direction). Valuable (the re-point cost
+  bound holds between completions). Estimable (one call mirroring an
+  existing block). Small (3 scenarios, 1 invariant). Testable (fixture
+  origin and QA worktree through the real script).
