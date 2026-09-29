@@ -1,0 +1,163 @@
+id: BL-1802
+title: "The reset to origin/main moves whatever branch its checkout is on: refuse-reset-if-local-ahead! authorises it from main's ahead count, so in a linked worktree on another branch it resets that branch and discards its unlanded commits (swarmforge-QA lost d861769a5b at 12:05:28Z on 2026-09-29, inside QA's pre-commit property run); the gate now also refuses unless the checkout is on main, refuses a caller that gives it no branch reading, and the property fixture that reached the live QA worktree is found and fixed"
+milestone: M8
+type: defect
+severity: high
+# high: silent loss of an integration branch's unlanded work (QA's merges and
+# bounce records), recoverable only from the reflog. The BL-1124 guard caught
+# it this time; any role running the property lane in its own worktree is
+# exposed the same way.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one gate in master_main_reconcile_lib.bb plus one adapter at each of
+# four call sites (Babashka, no mutation/CRAP/DRY wired, BL-472). Fixture repos
+# driven through the real lib, the shape BL-1310's handler already uses.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1802-a-reset-to-origin-main-only-ever-moves-main.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1802ResetOnlyMovesMainSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Auto-approved high-severity defect (2026-09-17 carve-out); no choice is
+  posed. FIRM - a reset to origin/main moves only main; a checkout on any
+  other branch, detached, or with an unreadable branch is refused and
+  nothing moves; a caller that supplies no branch reading is refused (fail
+  closed, so an un-updated caller cannot bypass it); on main, behaviour is
+  unchanged, BL-1310's ahead-count refusal included.
+
+invariants:
+  - "A reset to origin/main only ever moves the branch main: in a checkout on any other branch, detached, or whose branch cannot be read, the gate refuses and nothing moves."
+  - "In a checkout on main the gate behaves exactly as before this change, including BL-1310's refusal when main is ahead of origin/main."
+
+description: |
+  ## What happened
+
+  QA's note 003346 (2026-09-29 12:12Z): "swarmforge-QA reset to
+  origin/main 12:05:28Z in property guard run; see reflog". The reflog of
+  `swarmforge-QA`:
+  - `d861769a5b` (12:59:56 BST, QA's merge) went to `c16b8942e2`
+    (13:05:28 BST, "reset: moving to origin/main"). `c16b8942e2` was
+    origin/main then.
+  - QA merged `d861769a5b` back at 13:09:40.
+  `.worktrees/QA/tmp/BL-1754-restore-commit.log` shows where it ran: QA's
+  restore commit fired `check_property_suite_drift.sh` (the pre-commit
+  property lane, BL-570). Its BL-1124 canary reported `before: ...
+  refs/heads/swarmforge-QA d861769a5b` and `after: ...
+  refs/heads/swarmforge-QA c16b8942e2`, and refused the commit.
+
+  ## Why a reset can move a branch that is not main
+
+  Every executing `git reset --hard origin/main` in production code goes
+  through `master-main-reconcile-lib/refuse-reset-if-local-ahead!`:
+  - `handoffd.bb:4416` (wrapped at 4387)
+  - `swarm_heal.bb:148` (wrapped at 139)
+  - `post_hotfix_merge_origin.bb:80` (wrapped at 101)
+  - `master_main_reconcile_lib.bb:1365` (`real-git-reset-adapters`)
+
+  The gate authorises the reset from `git rev-list --left-right --count
+  origin/main...main`, which is MAIN's ahead count. `main` is a ref every
+  linked worktree shares. In a checkout on another branch that count is
+  about main, while the reset moves the checkout's own branch.
+
+  Measured at mint in a fixture: a bare origin, a clone on main equal to
+  origin/main, and a linked worktree on `swarmforge-QA` holding one extra
+  commit. Calling `refuse-reset-if-local-ahead!` with
+  `real-git-reset-adapters` in that worktree returned `{:success true}`,
+  and `swarmforge-QA` moved from `bf0a068` to `ebc0e68` (origin/main). The
+  extra commit is gone from the branch.
+
+  The census of executing sites is exactly those 4 (`grep -rn -E
+  "reset.{0,30}origin/main" swarmforge/scripts extension/src`, minus
+  comments and `test/`, at mint on main 29215c7d4e).
+
+  ## What is wanted
+
+  1. `refuse-reset-if-local-ahead!` gains a branch check that runs before
+     the ahead count, through a new adapter such as `:current-branch!`
+     (fn [] -> branch name or nil).
+     - It authorises the reset only when the checkout is on `main`.
+     - Any other branch, a detached HEAD or nil returns `{:success false
+       :outcome :not-on-main-refused :branch <name-or-nil> :error ...}`
+       without calling `:raw-reset!`.
+     - A call with no `:current-branch!` adapter is refused the same way,
+       failing closed, so a caller not updated cannot bypass the check.
+  2. `real-git-reset-adapters` supplies the adapter, and so do the three
+     other callers, each reading the branch of the same root its reset
+     would run in.
+  3. Find the fixture that reached the live QA worktree. With item 1 in
+     place its reset is refused, so it now fails or reports the refusal.
+     Run the property suite once in the parcel's worktree, name the test
+     in evidence, and fix its root: a mkdtemp `git init`/`git clone`,
+     proven by `rev-parse --git-common-dir` before any mutating command
+     (BL-1390). Candidates at mint, the property tests reaching the
+     reconcile paths: `bl1135Bl1131ResidualLiveLandInvariants`,
+     `bl1185WorkNoteMissingTaskHeader`,
+     `bl1236ReconcileConflictPredictionInvariants`,
+     `bl1288OnlyRejectionDiscardsInvariants` (stubs its pushes) and
+     `bl1309LandDecideEntanglementInvariants`, plus any test that loads
+     `handoffd.bb`'s rematch sweep. If the suite goes green with nothing
+     refused, say so in evidence rather than guess.
+
+  ## Scenario notes
+
+  - Scenario 04 derives its census from the reset command, and pins both
+    the count (4) and one member (`handoffd.bb`), so a matcher blind to
+    one call form cannot pass on a smaller set (BL-1445).
+  - Existing contracts that must stay green: BL-1310 (4 of 4 in 8 s at
+    mint), BL-1198 (2 of 2 in 6 s) and BL-1288 (5 of 5 in 8 s). Their
+    fixtures create the clone with `init -b main` (read at mint), so the
+    branch check leaves them unchanged.
+
+  ## How (direction, not mandate)
+
+  - `git symbolic-ref --short -q HEAD` in the reset's own root. Exit
+    non-zero means detached, which reads as nil.
+  - Handler `bl1802ResetOnlyMovesMainSteps.js` in the SAME commit as the
+    feature (BL-233), reusing BL-1310's handler fixture helpers.
+
+constraints: >
+  Fixtures under mkdtemp with their own bare origin (BL-1390); never the
+  live repository. No change to when a reset on main is authorised.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1802-a-reset-to-origin-main-only-ever-moves-main.feature`:
+     5 cases ok (01 x2, 02, 03, 04).
+  2. Regression. `node specs/pipeline/cli.js` on
+     BL-1310-reconcile-never-discards-a-commit-it-cannot-name.feature (4
+     ok), BL-1198-main-rematch-reset-must-attempt-push-before-discarding-local-ahead-commits.feature
+     (2 ok) and BL-1288-only-a-rejected-push-authorises-discarding-local-commits.feature
+     (5 ok). `bb swarmforge/scripts/test/master_main_reconcile_lib_test_runner.bb`:
+     ALL TESTS PASS. All four measured at mint on main.
+  3. The evidence names the property test that reached the live checkout
+     and its fixed root, or records that none was refused.
+  4. QA's own property lane on the parcel commit: the BL-1124 canary
+     reports `swarmforge-QA` unmoved.
+  5. `git diff main...HEAD --name-only` names only the lib, the three
+     callers, the lib's test runner, the fixed property test, the feature,
+     its handler (plus lib/) and evidence.
+
+source: |
+  QA note 003346 (2026-09-29 12:12Z), verbatim: "swarmforge-QA reset to
+  origin/main 12:05:28Z in property guard run; see reflog". Evidence:
+  `git reflog show swarmforge-QA`; `.worktrees/QA/tmp/BL-1754-restore-commit.log`
+  (the BL-1124 canary's before/after lines).
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  IR-DRY: one finding accepted. The two reset steps run in different
+  checkouts.
+  INVEST: Independent. Negotiable (the How is direction; the outcome name
+  is fixed by the scenarios). Valuable (no role's branch can be reset away
+  by a reconcile path again). Estimable (one gate, four adapters, one
+  fixture fix). Small (4 scenarios, 5 cases, 2 invariants). Testable
+  (fixture origin, clone and worktree through the real lib).
