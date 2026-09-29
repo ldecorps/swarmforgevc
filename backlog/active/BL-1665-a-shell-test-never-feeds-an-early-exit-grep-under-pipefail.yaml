@@ -28,7 +28,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1665-a-shell-test-never-feeds-an-early-exit-grep-under-pipefail.feature
 
 required_wiring:
-  - 'swarmforge/git-hooks/pre-commit::run_guard check_shell_test_early_exit_pipe.sh::the guard is reached from the shared chain like every other content guard'
+  - 'swarmforge/scripts/run_commit_guards.sh::run_guard check_shell_test_early_exit_pipe.sh::the pre-commit hook execs this shared chain (BL-1252), where every content guard runs'
   - 'specs/pipeline/steps/bl1665ShellTestEarlyExitPipeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
 human_approval: approved
@@ -131,5 +131,12 @@ notes: |
   16.7 s. A shell register row naming this ticket was added in the same
   commit. human_approval is unchanged (approved on 2026-09-20); the
   re-class changes ordering only (Article 3.2.4).
+  2026-09-30: required_wiring entry 1 amended by the specifier (documenter
+  note 001567). It named swarmforge/git-hooks/pre-commit, but that hook has
+  exec'd swarmforge/scripts/run_commit_guards.sh since BL-1252, and the
+  guards are called there. The parcel wired the guard correctly
+  (run_commit_guards.sh:109), and the mint's anchor was wrong. Nothing the
+  parcel builds changes. The holder was told to merge main and re-read,
+  since the gate reads required_wiring from the sender's checkout.
 
 assigned_to: coder
