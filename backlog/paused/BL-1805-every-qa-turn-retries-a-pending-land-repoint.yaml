@@ -24,7 +24,7 @@ acceptance: specs/features/BL-1805-every-qa-turn-retries-a-pending-land-repoint.
 required_wiring:
   - 'specs/pipeline/steps/bl1805QaTurnRetriesPendingRepointSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file needs a tap. No choice is posed. FIRM - the retry is
   QA-only, runs at the top of every QA ready_for_next turn beside BL-1566's
