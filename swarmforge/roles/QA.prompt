@@ -461,6 +461,15 @@ You are QA.
        tip-pure landing commit off `origin/main` holding only the lane
        paths step 2 passed, and `land_main_publish.sh <qa-worktree> --push
        <landing-sha>` - never `HEAD:main` and never a raw `git push`.
+       **Until BL-1807 lands, `--push` refuses a landing commit whose own
+       subject names no ticket** (BL-1678's backstop). Subject the
+       tip-pure landing commit `Land art-director tip <sha> (BL-1444
+       lane)`: the lane's own closed ticket then owns every lane path and
+       the backstop passes (measured 2026-09-29 on tip 3d8d7563c7 - the
+       bare subject prints `LAND_PUBLISH_REFUSED ... names no ticket`,
+       the suffixed one `LAND_PUBLISH_OK`). The documenter's briefing
+       below uses `(BL-1459 lane)` the same way. The suffix is only the
+       interim: once BL-1807 lands, drop it.
     5. Note the art director `landed art-director tip <sha>` (priority
        `50`), then `done_with_current.sh`. Nothing goes to the coordinator.
 

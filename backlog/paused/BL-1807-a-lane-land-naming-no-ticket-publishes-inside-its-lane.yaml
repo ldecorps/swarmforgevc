@@ -1,0 +1,164 @@
+id: BL-1807
+title: "A lane land that names no ticket publishes when every path it pushes is inside its lane"
+milestone: M8
+type: defect
+severity: medium
+# medium: BL-1678's publish backstop refuses the no-ticket landing subject
+# QA.prompt prescribes for the Art Director's tip (BL-1444) and the
+# documenter's briefing (BL-1459), so neither lane can publish as written.
+# Contained, not high: the same pass lands a QA.prompt interim (a
+# "(BL-1444 lane)" subject suffix, measured to pass the backstop), and the
+# refused tip carries a brief the specifier already minted as BL-1792.
+status: todo
+epic: art-direction
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka in land_step_lib.bb (no mutation/CRAP/DRY wired, BL-472).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1807-a-lane-land-naming-no-ticket-publishes-inside-its-lane.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1807LaneLandNamingNoTicketPublishesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file needs a tap, and one choice is posed. FIRM - human
+  rulings B (2026-09-06, BL-1444) and A (2026-09-07, BL-1459) stand: QA
+  lands the Art Director's tip and the documenter's briefing on their
+  notes, behind their lane guards. FIRM - BL-1678's backstop still refuses
+  a merge commit and every other ticketless push. The choice is how a
+  lane land gets past that backstop for good - teach the gate the lane
+  land (this ticket), or keep naming the lane's own ticket in the subject
+  as the interim already does, and retire this ticket.
+
+ruling_options:
+  - A - the publish gate accepts a lane land that names no ticket when every path it pushes is inside its lane (recommended)
+  - B - no code, every lane land names its lane ticket (BL-1444 or BL-1459) in its subject as the interim does, and this ticket retires
+
+ruling_tradeoffs:
+  - Pros - ruling B's no-ticket land works as written, and the publish step itself checks the exact commit being pushed against the lane, so a hand-built landing commit that picked up a stray path is refused at push. Cons - one more branch in verify-push-safe, and a lane definition it must share with two shell guards. Recommended because BL-1678 exists to catch a hand-built push, and every lane land is hand-built.
+  - Pros - no code and no pipeline pass, the interim is already measured to pass the backstop. Cons - two closed tickets keep being named by new lands, and the backstop then passes ANY path in that commit as the lane ticket's own, so the lane is enforced only by QA picking the right paths by hand at step 4.
+
+invariants:
+  - "The publish step passes a commit whose own subject names no ticket only when that subject declares a lane land and every path the commit changes against origin/main is inside that lane; every other ticketless commit is refused exactly as before, and a merge commit is refused whatever its subject."
+  - "For every path, the publish step and the lane's own tip guard (check_art_director_tip.sh, check_documenter_briefing_tip.sh) give the same answer on whether it is inside the lane - one definition both read, or a test pinning both to the same answer (BL-897)."
+
+description: |
+  ## What
+
+  QA lands two lanes with no ticket, on a role's note:
+
+  - the Art Director's tip (human ruling B, 2026-09-06, BL-1444) -
+    subject `Land art-director tip <sha>`, lane `docs/design/` plus
+    `backlog/evidence/*art-director*`;
+  - the documenter's briefing (human ruling A, 2026-09-07, BL-1459) -
+    subject `Land documenter briefing <sha>`, lane one date's
+    `docs/briefings/<date>.md` and optional same-date `.json`.
+
+  QA.prompt's step 4 for both publishes a tip-pure landing commit with
+  `land_main_publish.sh <qa-worktree> --push <landing-sha>`. BL-1678
+  (landed 2026-09-21) made `--push` run `verify-push-safe`
+  (land_step_lib.bb), which refuses any commit whose own subject names
+  no ticket. The two collide. The last lane land before BL-1678 was
+  b4cce6448c (2026-09-20); the first after it, Art Director tip
+  3d8d7563c7 (the BL-1792 brief), was refused on 2026-09-29 (QA note
+  003350, art-director note 000010).
+
+  Measured at mint in a scratch clone of main, one tip-pure commit off
+  origin/main holding the tip's three lane paths:
+
+  - subject `Land art-director tip 3d8d7563c7` ->
+    `LAND_PUBLISH_REFUSED ... names no ticket in its own subject`
+  - subject `Land art-director tip 3d8d7563c7 (BL-1444 lane)` ->
+    `LAND_PUBLISH_OK`
+
+  ## What is wanted
+
+  1. `verify-push-safe` (and so `land_step_cli.bb verify-push` and
+     `land_main_publish.sh --push`) passes a single-parent commit whose
+     subject is a lane land - `Land art-director tip <10-hex>` or
+     `Land documenter briefing <10-hex>` - when every path it changes
+     against origin/main is inside that subject's lane.
+  2. The same lane land carrying any path outside its lane is refused,
+     naming that path.
+  3. Every other ticketless commit is refused exactly as today, and a
+     merge commit is refused whatever its subject.
+  4. The documenter retires QA.prompt's interim (below) in the same
+     parcel; QA's `<id> landed <sha>` note to the specifier is the
+     retire trigger if it is still there.
+
+  ## Interim (landed with this mint, specifier-owned prose)
+
+  QA.prompt, "Landing the Art Director's tip", step 4: until BL-1807
+  lands, the landing commit's subject carries `(BL-1444 lane)` (the
+  documenter's briefing `(BL-1459 lane)`), which the backstop attributes
+  to a closed ticket and passes. Remove it when this lands.
+
+  ## How (direction, not mandate)
+
+  - A lane-land branch inside `verify-push-safe`, taken only when
+    `commit-ticket-id` is nil and the subject matches one of the two
+    shapes; merge and origin/main checks stay ahead of it.
+  - Read the lane from the definition the two guards already use (their
+    `--print-lane` output, or a shared predicate), never a second
+    hand-copied list; if a copy is unavoidable, a test pins both to the
+    same answer (BL-897).
+  - The documenter lane's "at most one landed briefing per date" stays
+    the tip guard's job at QA's step 2; the backstop checks lane
+    membership only.
+
+constraints: >
+  Fixtures under mkdtemp with their own bare origin (BL-1390); never the
+  live checkout or the QA worktree. No change to land-plan, --land, or
+  the two tip guards' own verdicts.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1807-a-lane-land-naming-no-ticket-publishes-inside-its-lane.feature`:
+     every case ok.
+  2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS
+     (measured at mint on main f7b4511f26: ALL PASS, 37 s).
+  3. Read-only live probe: `git clone --no-checkout` main into
+     `./tmp/`, prove `git rev-parse --git-common-dir` is the clone's own,
+     build one commit off origin/main holding
+     `docs/design/briefs/2026-09-28-headless-briefing-wall-of-text.md`,
+     `docs/design/artifact-inventory.md` and
+     `backlog/evidence/BL-1419-art-director-20260928.md` from 3d8d7563c7
+     with subject `Land art-director tip 3d8d7563c7`, and run
+     `bb swarmforge/scripts/land_step_cli.bb verify-push <sha> <clone>`:
+     `LAND_PUBLISH_OK` (at mint: `LAND_PUBLISH_REFUSED ... names no
+     ticket`). Amend it to also carry `start-swarm.sh`: refused naming
+     that path. Remove the clone.
+  4. `grep -n 'Until BL-1807 lands' swarmforge/roles/QA.prompt` on the
+     parcel commit: no match.
+  5. `git diff main...HEAD --name-only` names only land_step_lib.bb (and
+     land_step_cli.bb or the two lane guards if the lane is shared that
+     way), QA.prompt, the feature, its handler (plus lib/), docs and
+     evidence.
+
+source: |
+  Art Director note 000010 (2026-09-29T16:22Z), "publish gate refuses
+  ticketless subject on art-director tip 3d8d7563c7", and QA note 003350
+  (16:21Z), "AD tip 3d8d7563c7: --push refuses ticketless land subject
+  (BL-1678 gate)". Both reached the specifier while ambulance BL-1806
+  was engaged; the QA copy was held, the Art Director's was served.
+
+notes: |
+  Minted 2026-09-29 by specifier from the two notes in source.
+  Interim prose (QA.prompt step 4, "Until BL-1807 lands") landed in this
+  ticket's own mint commit (`git log --grep 'BL-1807: mint'`).
+  INVEST - Independent: touches verify-push-safe only; BL-1806 (active,
+  ambulance) edits land-plan's walk, not the push backstop. Negotiable:
+  How is direction. Valuable: two human-ruled landing paths publish as
+  written. Estimable/Small: one branch, four scenarios. Testable:
+  fixture commits through the real CLI.
+  IR-DRY: three residual possible-synonym findings are one step template
+  ("... that changes only <paths>") served by one handler pattern -
+  reviewed, kept.
+  Hand check: the mint's gate probe ran by hand in a scratch clone. No
+  verification-debt row written - the ledger is BL-1782's (paused, not
+  landed), so there is no file to record it in yet.
