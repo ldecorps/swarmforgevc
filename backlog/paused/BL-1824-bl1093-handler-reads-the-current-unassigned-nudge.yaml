@@ -1,0 +1,75 @@
+id: BL-1824
+title: "BL-1093's acceptance handler looks for a coordinator nudge whose message starts with the ticket id, but BL-1223 (6797c580fa, 2026-08-29) prefixed the unassigned-active nudge with \"Work \", so scenario 01's four rows are red on main - the handler recognises the nudge the sweep actually sends, and BL-1093's feature is 8 of 8 again"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting (2026-09-05 register
+# amendment); red on main since 2026-08-29 with no owner.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+# BL-1804 (active) edits chase_sweep_lib.bb's dispatch-trail predicate and
+# keeps the nudge text; this ticket edits only BL-1093's step handler.
+mutation_cost: low
+# low: one regular expression in one step handler; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-handler fix with no scenarios of its own (BL-1251): the pointer names
+# the feature BL-1093 declared, whose scenario 01 this restores (4 of 8 on
+# main at mint). It is not a claim of ownership over BL-1093's contract.
+acceptance: specs/features/BL-1093-an-active-ticket-with-no-real-assignee-strands-between-two-sweeps.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: the feature file and
+  chase_sweep_lib.bb are not edited; the handler follows the message the
+  sweep sends today. FIRM: the handler still requires the nudge to be
+  addressed to the coordinator and to name the ticket.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  Coder note 002232: `specs/features/BL-1093-an-active-ticket-with-no-real-assignee-strands-between-two-sweeps.feature`
+  is 4 of 8 on main, with no register row. Measured at mint (main
+  b8d6aa6b31): scenario 01's four rows fail at "Then the coordinator is
+  nudged about the ticket" with `expected coordinator unassigned nudge
+  for BL-1093, got: UNASSIGNED-NUDGED BL-1093 exit= 0`. The sweep DID
+  nudge. `specs/pipeline/steps/bl1093NobodyAssigneeSteps.js:123` matches
+  `message: ${TICKET} active unassigned`, while `chase_sweep_lib.bb:1254`
+  sends `Work <id> active unassigned - assign_to and route it.` since
+  BL-1223 (6797c580fa, 2026-08-29), which updated its own runner
+  (`dispatch_gap_test_runner.bb:312`, green at mint) and not this
+  handler. Scenarios 02-05 pass.
+
+  ## What is wanted
+  - BL-1093's scenario 01 recognises the nudge the sweep actually sends,
+    still requiring `to: coordinator` and the ticket id. How (direction,
+    not mandate): match the id and "active unassigned" in the message line
+    rather than a hard-coded start of message, so the next wording change
+    does not red it (BL-1811: the sweep owns the text).
+
+  ## Scope
+  - `specs/pipeline/steps/bl1093NobodyAssigneeSteps.js`, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1093-an-active-ticket-with-no-real-assignee-strands-between-two-sweeps.feature`:
+     8 of 8 ok (4 of 8 on main at mint).
+  2. `bb swarmforge/scripts/test/dispatch_gap_test_runner.bb`: ALL PASS
+     (as at mint).
+  3. `git diff main...HEAD --name-only` names only the handler and
+     evidence.
+  4. After landing: REGISTER_ROW_RETIRED for this ticket's acceptance row.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the coder's unowned-red note
+  002232. Register row added in the mint commit; the feature and the
+  runner measured at mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to the coder.
