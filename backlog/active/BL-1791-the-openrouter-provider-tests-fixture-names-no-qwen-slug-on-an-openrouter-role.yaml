@@ -139,3 +139,5 @@ notes: |
   coder call). Valuable (a 27-day standing red cleared and the register
   throttle kept low). Estimable (one fixture line). Small (2 scenarios, 1
   invariant). Testable (a source check and a 0.6 s shell run).
+
+assigned_to: coder
