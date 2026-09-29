@@ -139,3 +139,5 @@ notes: |
   read-only, then exits (until it lands, send a `note`). Work for that
   role is a `note` and waits for it." The same commit brought the boot
   prefix back under budget (44954 -> 43884/44000).
+
+assigned_to: coder
