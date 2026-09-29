@@ -1,0 +1,181 @@
+id: BL-1801
+title: "A local-model seat never launches past the window Ollama serves it: after Ollama is ready and before any pane starts, the launch estimates each local-model seat's first turn (composed prompt plus the qwen CLI's recorded overhead, 3 characters a token) against the num_ctx Ollama reports for the seat's model, or the context length the swarm started it with; it refuses when the known window cannot hold the first turn, warns when the first turn takes more than half the window or the window is unknown, and SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1 turns a refusal into a warning"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-directive
+depends_on: [BL-1798, BL-1799, BL-1800]
+mutation_cost: low
+# low: Babashka lib + CLI and one shell call site (no mutation/CRAP/DRY
+# wired, BL-472). The handler runs a fake Ollama (node http) and the CLI.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1801-a-local-model-seat-never-launches-past-its-served-window.feature
+
+# The handler entry is the BL-233 in-parcel pin. A call-site anchor in
+# swarmforge.sh would be satisfied by the function's own definition, so it
+# gates nothing (BL-1235). QA step 3 checks the call's position in the
+# launch sequence by reading it instead.
+required_wiring:
+  - 'specs/pipeline/steps/bl1801LocalModelWindowGateSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file needs a tap. The design was ruled in chat on
+  2026-09-29 (quoted in source), so no choice is posed. FIRM - the window
+  source is the running Ollama (/api/show num_ctx, else the context length
+  the swarm started it with, else unknown). Known and cannot hold the
+  first turn: refuse before any pane starts. More than half the window:
+  warn. Unknown: warn, never refuse. SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1
+  turns a refusal into a warning, and PACK_STAFFING_SKIP_GATE does not.
+  Only local-model seats are checked. It lands after the three card
+  tickets.
+
+invariants:
+  - "The launch never starts a local-model seat whose known served window is smaller than its estimated first turn, unless SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1 is set, and then it says so."
+  - "A pack with no local-model seat is checked for nothing and asks Ollama nothing; a window the check cannot learn never causes a refusal."
+
+description: |
+  ## Human ruling (2026-09-29, in the specifier's chat, verbatim)
+
+  The specifier offered a recommendation with pros and cons for both open
+  choices on the prompt-factory intake's window check. The human replied:
+  "Window source: what makes more sense? I don't have a strong opinion."
+  and "Overbudget; same, don't have a strong opinion. What are the pros
+  and cons?". After the pros and cons, the reply was "Go".
+
+  The intake's own sentence (Article 5.3): "Intake for a new llm ticket:
+  have prompt factory review all roles prompt to make them smaller for
+  local llms to digest."
+
+  ## Why
+
+  Ollama silently drops what overflows the window it serves, and the seat
+  then looks "bad at tools"
+  (`backlog/evidence/aider-seat-context-budget-20260923.md`). BL-1798 to
+  BL-1800 shrink each local-model seat's first prompt to a card of at most
+  8192 characters. Nothing yet checks the card, plus the CLI's own
+  overhead, against the window the model is actually served with. This is
+  the intake's success criterion: "a local IQ3 (or similar) seat's
+  first-turn prompt fits a bounded window the pack/metadata declare".
+
+  Measured at mint (2026-09-29):
+  - `curl 127.0.0.1:11434/api/show -d '{"model":"ista-iq3s-coder:latest"}'`
+    returns parameters containing `num_ctx 32768`, and the same for
+    `qwen2.5-coder:latest`.
+  - `qwen` 0.22.2 is at `~/.npm-global/bin/qwen`.
+  - `swarmforge.sh` runs `ensure_ollama_ancillary_for_launch` (line 2654)
+    right after `parse_config` and before any session starts. When the
+    swarm starts Ollama itself, it exports `SWARMFORGE_OLLAMA_CONTEXT_LENGTH`
+    as `OLLAMA_CONTEXT_LENGTH` (`ollama_ancillary_lib.sh` 85-87).
+
+  ## What is wanted
+
+  1. A check that runs right after `ensure_ollama_ancillary_for_launch`,
+     for each seat whose agent is `local-model`:
+     - Compose the seat's prompt exactly as the launch will
+       (`prompt_engine_cli.bb compose`).
+     - Estimate its first turn as ceil((composed characters + recorded CLI
+       overhead characters) / 3) tokens.
+     - Read the window from the running Ollama's `/api/show` for the
+       seat's model (the `num_ctx` parameter). If none is set, use the
+       context length the swarm started Ollama with. Otherwise the window
+       is unknown.
+  2. The outcome for each seat:
+     - Known window, estimate fits in half of it: silent.
+     - Known window, more than half: warn, naming the seat, the model,
+       the window and the estimate.
+     - Known window, larger than the window: refuse the launch before any
+       pane starts, with the same facts and the override named.
+     - Unknown window: warn.
+     - `SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1` turns a refusal into a warning
+       that says the override let an over-window seat start.
+       `PACK_STAFFING_SKIP_GATE` has no effect here. Nearly every shell
+       test sets it, so honouring it would switch the check off in every
+       test.
+  3. The recorded CLI overhead: measure qwen 0.22.2's own system prompt
+     and tool definitions once. Point the CLI at a fake OpenAI-compatible
+     endpoint that logs the first request body, and count the characters
+     it adds beyond the prompt file. Record that number as a constant in
+     the check's lib, with the measurement in evidence (CLI version, date,
+     method). Re-measure when the CLI version changes.
+  4. A pack with no `local-model` seat does nothing: no compose and no
+     request to Ollama.
+
+  ## Scenario notes
+
+  - Every scenario uses a fake Ollama (node http, mkdtemp state) and
+    fixture prompt files. The recorded overhead is injected as 3000 in
+    the scenarios, so they do not depend on the measured constant. The
+    decision takes the overhead as an input and the launch passes the
+    recorded constant.
+  - The outcome phrases in the scenarios are KNOWN_VALUES the handler
+    maps to exit status and message checks.
+
+  ## Not in scope
+
+  - Respawns. `swarm ensure`, babysitterd and handoffd relaunch a seat
+    from the prompt file checked at launch, so the gap is only a window
+    that changes between launch and respawn. That is recorded as a
+    BL-1125 remaining slice.
+  - Aider seats (their window lives in `.aider.model.metadata.json`,
+    BL-1699/BL-1708) and every non-local agent.
+
+  ## How (direction, not mandate)
+
+  - A pure decision function (window, estimate, override, known?) ->
+    outcome, a CLI wrapper that gathers the facts, and one call in
+    `swarmforge.sh` after `ensure_ollama_ancillary_for_launch`.
+  - The Ollama native API lives at the local endpoint's host without the
+    `/v1` suffix (`local_model_endpoint_url` returns the OpenAI-compatible
+    base).
+  - Handler `bl1801LocalModelWindowGateSteps.js`, landing in the SAME
+    commit as the feature (BL-233). It drives the function the launch
+    calls (`zsh -c "source swarmforge.sh <root>; parse_config; <check>"`,
+    the BL-1703 test's shape), with `SWARMFORGE_OLLAMA_BINARY` and the
+    endpoint pointed at fixtures. It never relies on PATH order under
+    zsh -c (BL-1797).
+
+constraints: >
+  Fixture roots under mkdtemp (BL-1390) with paths under 100 chars; a fake
+  Ollama on a free port, never 11434; no real model load. The check reads
+  Ollama and never writes to it.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1801-a-local-model-seat-never-launches-past-its-served-window.feature`:
+     7 cases ok (01 x3, 02, 03, 04, 05).
+  2. The evidence records the measured qwen CLI overhead (version,
+     method, characters) and the constant in the lib equals it.
+  3. Read `swarmforge.sh`'s launch sequence: the check is called once,
+     right after `ensure_ollama_ancillary_for_launch` and before any
+     session starts.
+  4. Read-only against the live Ollama: the check's CLI for
+     `ista-iq3s-coder:latest` reports window 32768 from `/api/show`.
+  5. `git diff main...HEAD --name-only` names only the check's lib, CLI and
+     test runner, `swarmforge.sh`, the feature, its handler (plus lib/)
+     and evidence.
+
+source: |
+  backlog/archive/INTAKE-prompt-factory-local-llm-compact-role-prompts-20260929.md
+  success criterion (intent item 4), held as a BL-1125 remaining slice at
+  the BL-1798..BL-1800 mint pending two rulings. The human ruled both in
+  the specifier's chat on 2026-09-29 (quoted above) and said "Go".
+
+notes: |
+  Minted 2026-09-29 by the specifier (claude-opus-5-5 seat).
+  depends_on BL-1798, BL-1799 and BL-1800. Before the cards land, the
+  all-local pack's hardender composes 231,796 characters (about 77k
+  tokens at 3 a token), so this gate would refuse that pack's launch
+  outright.
+  IR-DRY: eight findings accepted. All are call sites of four
+  parameterized steps (window, first turn, context length, outcome).
+  INVEST: Independent once the cards land. Negotiable (the How is
+  direction; the thresholds, window source, override name and estimator
+  are fixed by the ruling and the scenarios). Valuable (the intake's own
+  success criterion). Estimable (one decision, one CLI, one call site,
+  one measurement). Small (5 scenarios, 7 cases, 2 invariants). Testable
+  (fake Ollama, injected overhead).
