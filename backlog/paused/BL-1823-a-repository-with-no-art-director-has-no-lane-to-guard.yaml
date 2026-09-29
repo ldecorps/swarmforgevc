@@ -1,0 +1,121 @@
+id: BL-1823
+title: "The art-director tip guard refuses every merge in a repository with no art director, because with no roles.tsv row it falls back to the swarmforge-art-director convention and fails closed on that missing branch (BL-1657) - BL-925's feature is 0 of 8 and test_pipeline_code_on_main_guard.sh's provenance-01a red on main since 2026-09-20; the guard passes when the roster names no art director and the convention branch does not exist, and refuses or judges exactly as before otherwise"
+milestone: M8
+type: defect
+severity: high
+# high: two standing reds at first registered sighting (2026-09-05 register
+# amendment), and a live-shape fault: any target repository without an art
+# director (the second swarm on this host, a greenfield onboarding) refuses
+# every merge once its scripts carry BL-1657.
+status: todo
+epic: art-direction
+priority: 7
+direction: swarm-reported
+depends_on: []
+# BL-1665 (active) edits test_pipeline_code_on_main_guard.sh's grep -q
+# sites; this ticket changes the guard only and no test fixture, so the two
+# never touch one file.
+mutation_cost: low
+# low: one branch in check_art_director_tip.sh's hook mode, and its shell
+# test cases; bash has no mutation lane (engineering.prompt).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1823-a-repository-with-no-art-director-has-no-lane-to-guard.feature
+
+human_approval: approved
+approval_context: >
+  Minted approved under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options). FIRM: the pass applies only when BOTH the roster names no
+  art-director row AND the swarmforge-art-director convention branch does
+  not exist. FIRM: BL-1657's fail-closed stays for every ref it resolves
+  from a roster row or --branch: an unreadable or unresolvable art-director
+  row still refuses, naming it. FIRM: an existing art-director branch is
+  still judged by the lane rule. FIRM: no test fixture is changed to add an
+  art director; the red tests are right to expect a repository with no
+  art director to merge.
+
+invariants:
+  - "The hook-mode guard lets a merge through without judging the art-director lane only when roles.tsv has no art-director row and no swarmforge-art-director branch exists; in every other state it resolves a ref and judges it, or refuses naming why."
+
+description: |
+  ## What is wrong
+
+  The architect's BL-1665 pass (note 002870, evidence
+  `backlog/evidence/BL-1665-architect-unowned-red-test-pipeline-code-on-main-guard-20260930.md`,
+  2b64f779d3) found `swarmforge/scripts/test/test_pipeline_code_on_main_guard.sh`
+  case `BL-925 provenance-01a` red on main, not caused by BL-1665:
+  `Merge refused: check_art_director_tip.sh's resolved art-director branch
+  swarmforge-art-director (from the swarmforge-<seat> convention (no
+  roles.tsv row for art-director)) does not exist.`
+
+  Cause, verified at mint (main 1176034b94): BL-1657 (85e9483069, landed
+  2026-09-20) made `check_art_director_tip.sh`'s hook mode refuse whenever
+  its resolved branch does not exist. `resolve_art_director_ref` falls back
+  to the `swarmforge-art-director` convention when roles.tsv has no
+  art-director row, so a repository with no art director at all refuses
+  every merge that reaches the pre-merge-commit chain. BL-1657's own
+  approval made fail-closed FIRM for "a ref it cannot resolve"; the
+  convention fallback in a repository with no art director resolves a
+  name for a lane that does not exist, which that FIRM did not have in mind.
+
+  Census at mint (one run each, 2026-09-30):
+  - Shell: the 17 tests under `swarmforge/scripts/test` that reference
+    git-hooks, pre-merge-commit, hooksPath or check_art_director_tip. Only
+    `test_pipeline_code_on_main_guard.sh` is red (1 case, the message
+    above).
+  - Acceptance: the 8 features whose handlers merge through the hook chain.
+    `BL-925-reconcile-merge-of-qa-published-tip-completes.feature` is 0 of
+    8, every scenario refused with the same message; BL-1295 3/3, BL-1459
+    12/12, BL-1671 4/4, BL-632 11/11, BL-1657 4/4, BL-1297 6/6, BL-1444
+    13/13.
+  - Property: the 5 files that merge through the hooks, 12 of 12.
+  - Live shape: `/home/carillon/gpu-bargain-hunter` has
+    `core.hooksPath swarmforge/git-hooks`, its pre-merge-commit runs this
+    guard, its roster has no art-director row and it has no
+    swarmforge-art-director branch. Its vendored guard predates BL-1657, so
+    its merges pass today; refreshing its scripts would refuse them all.
+    This repository has the branch, so it is unaffected.
+
+  ## What is wanted
+
+  1. In hook mode, when `resolve_art_director_ref` answered from the
+     convention fallback (no roles.tsv art-director row) and that branch
+     does not exist, the guard exits 0: there is no art-director lane to
+     guard. How (direction, not mandate): let the resolver report the
+     source it used, as it already prints it, and branch on that rather
+     than re-deriving "no row" (BL-1811).
+  2. Unchanged: a roster row whose worktree cannot be resolved refuses;
+     an existing art-director branch is judged by the lane rule (scenario
+     03); direct mode with `--branch` refuses a ref that does not exist.
+  3. `test_bl1444_art_director_tip_guard.sh` gains the no-art-director
+     case beside its three sources.
+
+  ## Scope
+  - `swarmforge/scripts/check_art_director_tip.sh`,
+    `swarmforge/scripts/test/test_bl1444_art_director_tip_guard.sh`, the
+    step handler `specs/pipeline/steps/bl1823NoArtDirectorNoLaneSteps.js`
+    (same commit as the runnable feature, BL-233), evidence. No other test
+    fixture changes.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1823-a-repository-with-no-art-director-has-no-lane-to-guard.feature`:
+     3 of 3 ok (0 of 3 on main at mint, no handler yet).
+  2. `bash swarmforge/scripts/test/test_pipeline_code_on_main_guard.sh`:
+     ALL CHECKS PASSED (provenance-01a red on main at mint).
+  3. `node specs/pipeline/cli.js specs/features/BL-925-reconcile-merge-of-qa-published-tip-completes.feature`:
+     8 of 8 ok (0 of 8 on main at mint).
+  4. `node specs/pipeline/cli.js specs/features/BL-1657-the-art-director-tip-guard-resolves-its-branch-from-the-roster.feature`
+     4 of 4 and `...BL-1444-the-art-directors-tip-lands-on-main-by-qa.feature`
+     13 of 13 (as measured on main at mint).
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's shell row and
+     acceptance row.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the architect's unowned-red note
+  002870 (raised in BL-1665's pass; BL-1665 was not held on it). Register
+  rows for both reds added in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to the
+  architect; QA told, since BL-1665 touches the red shell test.

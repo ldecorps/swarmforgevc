@@ -7,7 +7,7 @@ epic: art-direction
 priority: 30
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-1418, BL-1419, BL-1442, BL-1444, BL-1792, BL-1807]
+decomposes_into: [BL-1418, BL-1419, BL-1442, BL-1444, BL-1792, BL-1807, BL-1823]
 remaining_slices: |
   - BL-1418 (filed 2026-09-05): onboard the Art Director seat - role lists,
     topic icon, worktree, mailbox, launch; seat shape by human ruling.
