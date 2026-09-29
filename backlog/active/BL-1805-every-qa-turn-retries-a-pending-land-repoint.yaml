@@ -126,3 +126,9 @@ notes: |
   origin and QA worktree through the real script).
 
 assigned_to: coder
+abandoned_commits: [c3e63efe7a]
+# c3e63efe7a: "BL-1805: cleaner review pass evidence (NONE)" - a duplicate
+# fork of 53169d93b7 (identical content, same file, same timestamp), never
+# an ancestor of the lineage this parcel builds on. No content differs
+# from 53169d93b7, already in this branch's history; deliberately dropped
+# per the pre_qa_gate ancestry check, not reverted (nothing to revert).
