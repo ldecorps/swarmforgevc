@@ -15,7 +15,10 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1818-the-pipeline-board-cell-shows-how-long-the-seat-has-held-it.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - a dwell-only change edits the posted board in place, and a stage change still deletes and reposts (recommended)
+ruling_provenance: tapped
 approval_context: >
   One choice: how the Telegram board refreshes when only a dwell value
   changed (no stage moved). Today any content change deletes the board
