@@ -90,8 +90,8 @@ description: |
   - The feature file and its step handler `bl1791OpenrouterFixtureSteps`,
     registered in `specs/pipeline/steps/index.js` in the same commit as
     the feature (BL-233).
-  - The standing-red register row naming BL-1791, retired by the land
-    (BL-1631). A parcel never edits `backlog/standing-reds.tsv`.
+  - The standing-red register row naming BL-1791. The land removes that
+    row (BL-1631); a parcel never edits `backlog/standing-reds.tsv`.
 
   ## Not in scope
   - The BL-1328 precedence asymmetry: whoever first wants a live
