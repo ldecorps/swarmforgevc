@@ -154,4 +154,11 @@ notes: |
   Article 1.9 I am not resending; the fix itself is domain work owed by
   coder on its next turn. Leaving this note as the durable block reason.
 
+  2026-09-29 19:18Z coordinator: same dropped-parcel nudge fired again, but
+  this time it was real - QA re-verified and re-bounced (b9a71e370d,
+  20:17:42+0100, same D1 run-dir-leak defect, evidence still names coder),
+  and that tip was NOT an ancestor of coder's worktree HEAD (a7c61fa086) or
+  of coder's inbox. Sent a fresh git_handoff (priority 00, task BL-1754...,
+  commit b9a71e370d) to coder so it can merge and take the D1 fix.
+
 assigned_to: coder
