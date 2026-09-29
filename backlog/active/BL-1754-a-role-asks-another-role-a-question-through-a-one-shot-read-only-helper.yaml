@@ -162,3 +162,13 @@ notes: |
   commit b9a71e370d) to coder so it can merge and take the D1 fix.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-29, by: QA, blamed: coder, class: behavior, commit: 4f729861ee, evidence: backlog/evidence/BL-1754-QA-20260929.md }
+abandoned_commits: [8fc2d51c8c, 8739f0134f, 77c560813f, 78480b1d41, 763917b310, 76f04474fc, 5b3a26744e]
+# First pipeline pass's evidence/bounce chain, forked off QA's branch
+# before b80e280be9's standard revert (Article 2.3.2) of this then-buggy
+# parcel. Content is identical to what this branch already carries under
+# the un-suffixed BL-1754-*-20260929.md evidence files and the current
+# bounce_history entry above (diffed, byte-identical) - a stranded
+# duplicate fork, nothing to recover.

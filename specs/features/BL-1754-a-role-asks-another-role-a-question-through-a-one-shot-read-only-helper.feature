@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=4cfe6f3c8ba0fd7e71df546db7d03ceb36a833acbd480e5885f1c63f400e8b85
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-29T09:40:58.548287651Z","feature_name":"BL-1754 A role asks another role a question through a one-shot read-only helper","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1754-a-role-asks-another-role-a-question-through-a-one-shot-read-only-helper.feature","background_hash":"e7fba9e6eef8cad9a96b3d9f7e440693b2bb4a7a90baaa554dc46ceaa90254fa","implementation_hash":"unknown","scenarios":[{"index":3,"name":"a target seat whose provider has no one-shot read-only mode is refused by name","scenario_hash":"d9331421e5afc26d78948a787cba006821b783b541a1454bc6839bf3f636505e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-29T09:40:58.548287651Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1754 A role asks another role a question through a one-shot read-only helper
 
   The human, 2026-09-25: "an agent can spin an ephemeral other agent if it

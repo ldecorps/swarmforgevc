@@ -79,6 +79,21 @@ function sweepStaleTmpDirs({ prefix, dir = os.tmpdir(), isPidAlive = defaultIsPi
   return removed;
 }
 
+// BL-1754: a read-only sibling of sweepStaleTmpDirs for a caller that only
+// wants to KNOW what a bare-prefix leak left behind (no owning-pid segment
+// to key a sweep on - a CLI written in another language, e.g. Babashka's
+// own fs/create-temp-dir, names its dirs `<prefix><random>`, not
+// `<prefix><pid>-...`), never remove it itself. `dir` defaults to the real
+// os.tmpdir() the same way sweepStaleTmpDirs does, as a PARAMETER rather
+// than a literal `readdirSync(os.tmpdir())` call, so this stays outside
+// BL-1623's blind-sweep pattern - the guard (blindTmpDirSweepGuard.test.js)
+// only scans `*.property.test.js` files directly, never this helper module,
+// which is exactly why a caller uses this instead of listing os.tmpdir()
+// inline in its own property-test file.
+function listTmpDirNames(prefix, dir = os.tmpdir()) {
+  return new Set(fs.readdirSync(dir).filter((name) => name.startsWith(prefix)));
+}
+
 // Creates a real mkdtemp dir under os.tmpdir() with the given prefix
 // (preserves every existing naming convention - sfvc-/relay-/negotiate-/etc -
 // callers pass their own prefix unchanged) and records it for the next
@@ -196,5 +211,6 @@ module.exports = {
   sweepSharedTmpDirs,
   REMOVE_RETRY_ATTEMPTS,
   sweepStaleTmpDirs,
+  listTmpDirNames,
   defaultIsPidAlive,
 };

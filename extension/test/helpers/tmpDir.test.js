@@ -1,6 +1,14 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { mkTmpDir, mkSharedTmpDir, sweepPendingTmpDirs, sweepSharedTmpDirs, REMOVE_RETRY_ATTEMPTS } = require('./tmpDir');
+const path = require('node:path');
+const {
+  mkTmpDir,
+  mkSharedTmpDir,
+  sweepPendingTmpDirs,
+  sweepSharedTmpDirs,
+  REMOVE_RETRY_ATTEMPTS,
+  listTmpDirNames,
+} = require('./tmpDir');
 
 function enotempty() {
   const err = new Error('ENOTEMPTY: directory not empty');
@@ -227,4 +235,31 @@ test('sweepPendingTmpDirs never removes a directory only mkSharedTmpDir register
 
   sweepSharedTmpDirs();
   assert.equal(fs.existsSync(shared), false);
+});
+
+// ── BL-1754: listTmpDirNames (a read-only sibling of sweepStaleTmpDirs) ───
+// Always scoped to a PRIVATE fixture dir via the `dir` parameter, never the
+// real shared os.tmpdir() - this file's own stated rule above (no /tmp
+// LISTING assertions) is about the shared system dir specifically; a
+// listing scoped to a dir this test itself created and owns exclusively
+// carries none of that flakiness.
+
+test('listTmpDirNames returns only the entries matching the given prefix', () => {
+  const dir = mkTmpDir('sfvc-tmpdir-helper-list-scope-');
+  fs.mkdirSync(path.join(dir, 'bl1754-peer-question-aaa'));
+  fs.mkdirSync(path.join(dir, 'bl1754-peer-question-bbb'));
+  fs.mkdirSync(path.join(dir, 'unrelated-entry'));
+
+  const names = listTmpDirNames('bl1754-peer-question-', dir);
+
+  assert.deepEqual(names, new Set(['bl1754-peer-question-aaa', 'bl1754-peer-question-bbb']));
+  sweepPendingTmpDirs();
+});
+
+test('listTmpDirNames returns an empty set when nothing matches the prefix', () => {
+  const dir = mkTmpDir('sfvc-tmpdir-helper-list-empty-');
+  fs.mkdirSync(path.join(dir, 'unrelated-entry'));
+
+  assert.deepEqual(listTmpDirNames('bl1754-peer-question-', dir), new Set());
+  sweepPendingTmpDirs();
 });

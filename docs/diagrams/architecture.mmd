@@ -462,6 +462,7 @@ flowchart TB
     IDENTITY["swarm-identity (BL-313: the conf this launch\nactually loaded; BL-966: read at the master checkout\nfrom any worktree via git rev-parse --git-common-dir)"]
     ACPDIR["acp/<role>.json (BL-1081: structured seat\nsnapshot — stop reason, idle, permission;\nvibe spike seat only today)"]
     OLLAMASTATE["ollama/serve.json (BL-1703: launch-time\nancillary record — owner (external |\nswarm-owned), pid, startedAt, endpoint;\nread by BL-1704's stop path)"]
+    PEERQUESTIONS["peer-questions/ (BL-1754: one-shot\nread-only role-to-role question/answer\nrecords; never a claimed parcel)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
 
