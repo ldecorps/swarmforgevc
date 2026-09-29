@@ -91,3 +91,5 @@ notes: |
   guard, or make the lane default load-scaled (which reverses BL-932
   invariant 1, "never a lane-wide raise") is a choice for the human; the
   specifier raised it on 2026-09-29.
+
+assigned_to: coder
