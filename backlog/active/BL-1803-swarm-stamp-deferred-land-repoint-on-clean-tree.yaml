@@ -1,0 +1,138 @@
+id: BL-1803
+title: "Swarm stamp-off: hotfix 4183cd29ca - a skipped post-land re-point arms pending-land-repoint.json and is retried from done_with_current (QA) via land_step_cli try-repoint once the tree is clean, and __pycache__/ is gitignored so untracked bytecode can no longer block every re-point - review-only certification (BL-848) of what landed on 2026-09-29"
+milestone: M8
+type: defect
+severity: medium
+# medium: the cost bound is restored on main; what is open is the review
+# the constitution owes a hotfix (BL-848). Not high: lands still succeed;
+# only the QA tip's growth rate was broken while the re-point skipped.
+status: todo
+epic: swarm-reliability
+priority: 0
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: review-only; Babashka fixtures already land with the hotfix's
+# land_step_lib_test_runner.bb cases; the parcel adds a feature + handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1803-swarm-stamp-deferred-land-repoint-on-clean-tree.feature
+
+# A review parcel adds no production call site. The handler entry is the
+# BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1803SwarmStampDeferredLandRepointOnCleanTreeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Stamp-off of an operator hotfix landed on 2026-09-29. Operator asked
+  Cursor to commit the process fix and have the swarm stamp it off. A new
+  feature file is authored here, so it needs a tap. No choice is posed.
+  What needs sign-off is the DISPOSITION only - reviewing the landed diff
+  (BL-848 posture) rather than re-implementing it, at medium severity.
+  FIRM - the parcel changes no production file, only evidence, the
+  feature, its step handler (plus lib/ helpers) and new test files; each
+  confirmed finding from the probes in review goal 3 is a narrow
+  follow-up via note to the specifier, never an in-parcel rewrite; the
+  parcel never writes human_decision into backlog/hotfix-ledger.yaml.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, the feature, its step handler (plus lib/ helpers) or a new test file; land_step_lib.bb, land_step_cli.bb, done_with_current_task.bb and .gitignore are read, never edited."
+  - "A skipped re-point still never fails the land that printed LAND_PUBLISHED: arming the pending file and the deferred retry are additive, never a new failure path on the publish."
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This is that gate: a REVIEW ticket. Confirm or refute what landed, and
+  open narrow follow-ups for anything found.
+
+  ## The failure it fixed (from the commit message)
+
+  Untracked `__pycache__/` made every tip-pure land print
+  `LAND_REPOINT_SKIPPED (an uncommitted change)`, so `swarmforge-QA`
+  never re-pointed and grew to ~4020 commits / hour-scale land-plans
+  (observed 2026-09-29). A skip used to be fire-and-forget: nothing
+  retried once the tree was clean.
+
+  ## What landed (files to review)
+
+  - `.gitignore`: `__pycache__/` and `*.py[cod]` so bytecode never dirties
+    `git status --porcelain` again.
+  - `swarmforge/scripts/land_step_lib.bb`: every `post-land-repoint!` skip
+    arms `.swarmforge/daemon/pending-land-repoint.json`; every successful
+    re-point clears it; `try-pending-land-repoint!` retries with the
+    stored landed-task-ticket-id.
+  - `swarmforge/scripts/land_step_cli.bb`: `try-repoint <repo-root>` verb
+    (`LAND_REPOINT_IDLE` / `LAND_REPOINTED` / `LAND_REPOINT_SKIPPED`).
+  - `swarmforge/scripts/done_with_current_task.bb`: after QA completes a
+    parcel, shells `try-repoint` so a prior skip can finish once
+    in_process is clear.
+  - `swarmforge/scripts/test/land_step_lib_test_runner.bb`: skip arms the
+    pending file; clean-tree retry re-points and clears it.
+
+  ## Review goals
+
+  1. Scenarios 01-03 green against the real `post-land-repoint!` /
+     `try-pending-land-repoint!` / `land_step_cli.bb try-repoint` against
+     fixture repositories (mkdtemp, never the live checkout).
+  2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` passes on
+     the parcel commit (already landed with the hotfix; re-run, do not
+     rewrite unless a finding says the suite is wrong).
+  3. PROBE, do not fix. Each confirmed finding is one note to the
+     specifier:
+     a. `ready_for_next_task.bb` idle boundary does not call
+        `try-repoint` — only `done_with_current`. Is a QA seat that
+        idles without completing (wake / chase / respawn) enough to
+        leave a pending file stranded until the next completion?
+     b. A skip with `landed-task-ticket-id` nil (caller omitted it) still
+        arms a pending record. Does `try-pending` then re-point under a
+        weaker BL-1773 in_process guard than the land that armed it?
+     c. After gitignore lands, does any other standing untracked path
+        (evidence drafts, local_agent outputs, `.qwen/`) still dirty the
+        QA worktree often enough that re-point keeps skipping in practice?
+  4. Record, do not review: whether `swarmforge-QA` tip at review time is
+     close to `origin/main` (rev-list count), as evidence the cost bound
+     is holding after the hotfix.
+
+  ## Scenario notes for the coder
+
+  - Drive the real helpers / CLI against mkdtemp fixture repos with
+    `.swarmforge/` gitignored (same shape as `exclude-swarmforge!` in
+    `land_step_lib_test_runner.bb`). Never the live checkout.
+  - Scenario 01: dirty tip → skip + pending armed with the landed ticket.
+  - Scenario 02: pending armed, tree cleaned → `try-repoint` prints
+    `LAND_REPOINTED` and tip equals origin/main; pending file gone.
+  - Scenario 03: no pending file → `try-repoint` prints
+    `LAND_REPOINT_IDLE` and exits 0.
+
+constraints: >
+  Fixture repositories are mkdtemp git init roots (BL-1390). The parcel
+  does not edit land_step_lib.bb, land_step_cli.bb, done_with_current_task.bb
+  or .gitignore.
+
+out_of_scope: |
+  Re-implementing the re-point, re-bounding the land walk (BL-1461),
+  hand-resetting the live QA branch, and writing human_decision into the
+  hotfix ledger.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1803-swarm-stamp-deferred-land-repoint-on-clean-tree.feature`:
+     three cases ok. Record the duration.
+  2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: pass.
+  3. `git diff main...HEAD --name-only` names only evidence, the feature,
+     its handler, and test files under swarmforge/scripts/test/.
+
+source: |
+  Operator, 2026-09-29: "Commit and have swarm stampoff" after Cursor
+  fixed the process (gitignore + deferred re-point) that left
+  swarmforge-QA at ~4020 commits. Hotfix 4183cd29ca
+  (Hotfix-Certification: pending). Parents: BL-1432, BL-1438, BL-1461,
+  BL-1772, BL-1773, BL-848.
+
+notes: |
+  Minted 2026-09-29 as the stamp-off of Cursor hotfix 4183cd29ca.
+  AUTO-APPROVED under operator request in session (severity defect, no
+  ruling_options) — disposition only.
