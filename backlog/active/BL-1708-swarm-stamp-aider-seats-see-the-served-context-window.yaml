@@ -130,3 +130,4 @@ qa_e2e_procedure: |
      --decide <sha> approved|waived` for each and commits the ledger.
 
 assigned_to: coder
+abandoned_commits: [d709c3388f]

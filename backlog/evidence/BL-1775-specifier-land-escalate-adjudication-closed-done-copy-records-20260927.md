@@ -244,3 +244,21 @@ BL-1772. New: BL-1785 did not clear this shape - an already-landed stray
 still fails the cherry-pick.
 
 By QA.
+
+## Instance - BL-1708's land (QA, 2026-09-29)
+
+`land_main_publish.sh <QA worktree> --land BL-1708 d709c3388f` (QA tip
+synced to origin/main 5438953a2c) walked 10:53-11:53Z and escalated on the
+same stray fa79e88fa7 (closed BL-1711's land record), `ENTANGLED_SIBLING`
+BL-1671, 1702, 1711, 1715, 1717, 1767, 1772. Nothing new: BL-1794 (now
+active) owns this stray's class; condition (g) until it lands. Stray left
+alone. BL-1702 is listed because the parcel carried bounced BL-1702's
+lineage; QA's revert (dff542529c) keeps its content off the tip.
+
+Landed tip-pure off origin/main 7b439f9217 with BL-1708's 7 own paths (its
+role evidence files, QA evidence and its step handler, every one a new
+file only BL-1708 writes), byte-identical to approved tip d709c3388f.
+BL-1708 owns no register row. `abandoned_commits: [d709c3388f]` and this
+instance ride inside the land commit.
+
+By QA.
