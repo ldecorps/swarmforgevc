@@ -4,8 +4,8 @@ milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
-priority: 20
-direction: human-directive
+priority: 1
+direction: queue-jump
 depends_on: [BL-1798]
 mutation_cost: low
 # low: four prose files; no code changes unless a card exposes a builder gap.

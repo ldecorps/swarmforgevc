@@ -4,8 +4,8 @@ milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
-priority: 20
-direction: human-directive
+priority: 2
+direction: queue-jump
 depends_on: [BL-1798, BL-1799, BL-1800]
 mutation_cost: low
 # low: Babashka lib + CLI and one shell call site (no mutation/CRAP/DRY

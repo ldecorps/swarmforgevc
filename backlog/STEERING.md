@@ -49,6 +49,23 @@ Until the human declares one of those as the cycle direction, no Direction-lane
 gate is in force. That does **not** mean the human has said nothing about
 product surfaces — see the standing freeze below.
 
+## Standing human directive (2026-09-29, via Cursor) — local-model compact cards + window gate are queue-jump
+
+**Human, verbatim (Cursor):** after confirming local Qwen on aider cannot
+execute shell / advance tickets, and that the agentic path is `local-model`
+(`qwen --auth-type openai -y`): "Prioritize those." — meaning BL-1798,
+BL-1799, BL-1800, BL-1801 (compact cards + served-window refuse).
+
+**Effect:**
+
+- Those four children of epic BL-1125 are `direction: queue-jump` with JumpQ
+  pull order BL-1798 (priority 0), BL-1799 + BL-1800 (1), BL-1801 (2);
+  `depends_on` still binds 1799/1800 → 1798 and 1801 → all three.
+- Promote the first ready one past the depth cap when the human asks
+  (caller-declared `--queue-jump`); do not wait for ordinary open slots.
+- This is the prompt-fit unblock for agentic local Qwen seats; keep aider
+  packs for battery/driver work, not for expecting `ready_for_next.sh`.
+
 ## Standing human directive (2026-09-23 ~23:05 BST, via Claude Code) — local models are now the priority; the local-seat parcel driver (INTAKE-local-aider-seats-20260924) is queue-jump
 
 **Human, verbatim:** "When you are done with your experimentation, write the

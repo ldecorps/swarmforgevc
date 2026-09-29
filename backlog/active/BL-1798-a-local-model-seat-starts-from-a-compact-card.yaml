@@ -4,8 +4,8 @@ milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
-priority: 20
-direction: human-directive
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 # low: Babashka (prompt_engine_lib.bb, no mutation/CRAP/DRY wired, BL-472)
@@ -176,3 +176,5 @@ notes: |
   characters to under 8k). Estimable (one style branch, two notes).
   Small (3 scenarios, 8 cases, 2 invariants). Testable (through the real
   CLI).
+
+assigned_to: coder

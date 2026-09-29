@@ -35,6 +35,7 @@ notes: |
   - [2026-09-22] specifier consolidation sweep: BL-1682 (paused, epic local-llm-swarm, minted 2026-09-21) added to decomposes_into; the tracker stays open for it.
   - [2026-09-29] specifier: intake INTAKE-prompt-factory-local-llm-compact-role-prompts-20260929 (human, "Intake for a new llm ticket: have prompt factory review all roles prompt to make them smaller for local llms to digest.") split 1:N into BL-1798 (local-compact style, loop card, coder card), BL-1799 (cleaner/architect/hardender/documenter cards), BL-1800 (QA/coordinator/specifier cards, 8-role census) and a remaining slice (window check vs declared num_ctx, needs a ruling).
   - [2026-09-29] specifier: the prompt-factory window-check remaining slice minted as BL-1801 after the human ruled in chat ("Window source: what makes more sense? I don't have a strong opinion." / "Overbudget; same, don't have a strong opinion. What are the pros and cons?" / "Go"): running Ollama as window source; refuse when known and the first turn does not fit, warn over half or when unknown; override SWARMFORGE_LOCAL_WINDOW_OVERRIDE. Respawn parity kept as a remaining slice.
+  - [2026-09-29] human (Cursor): "Prioritize those" — JumpQ BL-1798/1799/1800/1801 (compact cards + window gate) so agentic local-model / qwen CLI seats can fit first-turn prompts; pull order 0 / 1 / 1 / 2.
   - [2026-08-25T19:14Z] specifier: re-link decomposes_into after rematch drops.
   UMBRELLA / tracking item (type: epic), NOT directly promotable — coordinator
   promotes CHILD slices. Children carry epic: local-llm-swarm.
