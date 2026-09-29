@@ -165,3 +165,5 @@ notes: |
   BL-1745's census counted 112 property files that spawn a subprocess and
   declare no timeout. If a third run this week adds more, the per-file
   owner model is the wrong unit and a lane-level ticket is due.
+
+assigned_to: coder
