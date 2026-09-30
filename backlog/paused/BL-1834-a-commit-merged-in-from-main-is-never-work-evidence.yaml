@@ -1,0 +1,124 @@
+id: BL-1834
+title: "The Work-note gate counts every ticket-naming commit on the role's HEAD since the note was created, so the coordinator's own 'Promote <id>' and 'BL topic record for <id>' commits, made seconds after the dispatch and merged in from main, read as the role's work - on 2026-09-30 the coder completed the Work notes for BL-1830, BL-1833 and BL-1816 back to back with nothing built and went idle, stranding three active tickets (coordinator note 013867) - a commit reachable from main is never a role's work evidence"
+milestone: M8
+type: defect
+severity: high
+# high: dispatched work is dropped silently. The gate built to stop
+# exactly this (BL-1422) waves it through, and the completed Work notes
+# still read as a dispatch trail, so nothing re-routes. Three active
+# tickets stranded in one drain, one of them a high defect (BL-1833).
+status: todo
+epic: swarm-reliability
+priority: 2
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one git-log read in done_with_current_task.bb and one step handler.
+# bb has no mutation lane wired (engineering.prompt).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1834-a-commit-merged-in-from-main-is-never-work-evidence.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. FIRM: a commit reachable from
+  main or origin/main is never work evidence for a Work note, however its
+  subject reads. FIRM: the window still opens at the note's created_at
+  (BL-1645), and a git_handoff this seat sent naming the ticket still
+  counts, as today. FIRM: --no-work "<reason>" is still the way out.
+
+invariants:
+  - "A commit reachable from main or origin/main never counts as a role's work evidence for a Work note."
+  - "Work on the role's own branch, and git_handoffs the seat sent, count exactly as BL-1645 counts them today (window opens at the note's created_at)."
+
+description: |
+  ## What happened
+
+  Coordinator note 013867 (2026-09-30 10:18Z): "coder Work-note dispatch
+  auto-completes with 0 output x3". From the coder's mailbox and session
+  transcript (1d4daf68):
+  - The coordinator routed `Work BL-1830` (created 08:02:12Z),
+    `Work BL-1833` (08:33:52Z) and `Work BL-1816` (09:05:31Z) while the
+    coder was busy on BL-1821's bounce. They queued behind it.
+  - At 09:30:36-09:31:36Z the coder drained its queue. For each Work note
+    it checked that main was merged, listed `backlog/active/`, ran
+    `done_with_current.sh`, and was served the next item in the same
+    output. It completed all three in 10 to 26 seconds each, reached
+    NO_TASK, and idled. Nothing was built, and no git_handoff was sent.
+  - BL-1422's gate should have refused each completion with
+    WORK_NOT_EVIDENCED. It did not refuse.
+
+  ## Why
+
+  `done_with_current_task.bb` `git-log-names-ticket-since?` runs
+  `git log --since=<window> --format=%s HEAD` and accepts any subject whose
+  ticket id (`pipeline-stage-lib/extract-ticket-id`) matches. The window
+  opens at the note's `created_at` (BL-1645). The coordinator's routing
+  writes a "Promote <id>: paused → active for coder" commit and a
+  "BL topic record for <id>" commit on main within seconds of the Work
+  note. The topic records landed after each note's created_at: 08:02:19Z,
+  08:34:27Z and 09:06:01Z. The coder merged main, so those commits were
+  on its HEAD. Measured at mint: `extract-ticket-id` returns the id for
+  both subjects. Before BL-1645 the window opened at dequeue (09:30Z),
+  after those commits, so this began when the window moved.
+
+  ## What is wanted
+
+  1. A commit reachable from `main` or `origin/main` is not work evidence
+     for a Work note, whatever its subject, whether it arrived by a
+     fast-forward or a merge commit (scenario 01).
+  2. A ticket-naming commit on the role's own branch, i.e. not reachable
+     from either ref, still completes the note (scenario 02). So does a
+     git_handoff the seat sent, as today.
+  3. Nothing else about the gate changes: the refusal text, `--no-work`,
+     WORK_ACTIVE_ON_MAIN (BL-1614), and the created_at window (BL-1645).
+
+  ## How (direction, not mandate)
+
+  - `git log <window> HEAD --not main origin/main` (whichever of the two
+    refs resolve) keeps the read inside `git-log-names-ticket-since?`.
+    `landed-ticket-lib/declaration-refs` already resolves the pair.
+  - Step handler `specs/pipeline/steps/bl1834MainCommitIsNotWorkEvidenceSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). BL-1422's handler
+    (`bl1422WorkNoteNotCompletedWithoutWorkSteps.js`) already builds a
+    fixture mailbox and worktree; reuse it rather than writing a second
+    one. Every fixture repository is created by `git init` under mkdtemp
+    and proven with `rev-parse --git-common-dir` before any git command
+    changes it (BL-1390).
+
+  ## Scope
+
+  `swarmforge/scripts/done_with_current_task.bb` (the commit-evidence
+  read) and its bb test, the step handler and its registration,
+  evidence. Not the forward gate, the batch helper, or the router.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1834-a-commit-merged-in-from-main-is-never-work-evidence.feature`:
+     4 of 4 ok (3 outline rows plus scenario 02). Measured 0 on main at
+     mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-1422-a-work-note-is-not-completed-without-work.feature`:
+     6 of 6 ok;
+     `node specs/pipeline/cli.js specs/features/BL-1645-completion-evidence-window-opens-at-the-inbounds-creation.feature`:
+     6 of 6 ok;
+     `node specs/pipeline/cli.js specs/features/BL-1609-a-forwarding-parcel-is-not-completed-with-nothing-sent.feature`:
+     8 of 8 ok. All three measured on main a32c9cb5e1 at mint.
+  3. In-process probe on a mkdtemp scratch repo, never the live checkout:
+     a Work note for BL-9001, then main gains "BL topic record for BL-9001"
+     after the note's created_at and the role fast-forwards to it.
+     `done_with_current.sh` prints WORK_NOT_EVIDENCED and leaves the note
+     in in_process.
+
+notes: |
+  Minted 2026-09-30 by the specifier from coordinator note 013867. Traced
+  the same pass from the coder's completed mailbox and session transcript
+  1d4daf68 (09:30:36-09:31:36Z). The regression entered with BL-1645's
+  window change; BL-1422's scenario 01 already says "no commit naming
+  BL-9001 on the role's branch", and this ticket makes the code match
+  those words. Stranded by this defect at mint: BL-1830, BL-1833 and
+  BL-1816 (active, nothing in flight). The coordinator re-routes them.
+  The interim coder.prompt paragraph ("Until BL-1834 lands") landed on
+  main in the same commit as this ticket.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

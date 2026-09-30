@@ -145,6 +145,16 @@ You are the coder.
   always a route. BL-1614 makes the claim print MERGE_MAIN_FIRST and the
   completion refuse the stale reason.
 
+## Until BL-1834 lands: complete a Work note only after its git_handoff is sent (2026-09-30)
+- `done_with_current.sh` serves the next queued item in the same output.
+  If you complete a Work note before building, the ticket is dropped. On
+  2026-09-30 the coder completed the Work notes for BL-1830, BL-1833 and
+  BL-1816 back to back, built nothing, and went idle. The Work-note gate
+  should refuse that. Until BL-1834 lands it does not: it reads the
+  coordinator's "Promote <id>" and "BL topic record for <id>" commits,
+  merged in from main, as your work. On a Work note: merge main, read the
+  ticket, build it, send the git_handoff, and only then complete the note.
+
 ## A sync or receive merge subject names no ticket (2026-09-05, BL-1212)
 - When you merge `main` into your worktree, or merge a received parcel,
   the subject is `Merge main <sha> into <role>.` or `Merge <role> <sha>
