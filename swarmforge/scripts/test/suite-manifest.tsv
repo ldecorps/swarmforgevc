@@ -126,6 +126,7 @@ landed_but_open_test_runner.bb	standing
 launch_contract_test_runner.bb	standing		
 llm_cost_ledger_lib_test_runner.bb	standing		
 local_coder_probe_gate_lib_test_runner.bb	standing		
+local_model_window_gate_lib_test_runner.bb	standing		
 loop_detect_lib_test_runner.bb	standing		
 mailbox_intake_dedup_test_runner.bb	standing		
 markdown_to_html_test_runner.bb	standing		
@@ -381,6 +382,7 @@ test_local_coder_battery.sh	standing
 test_local_coder_probe_gate_wiring.sh	standing		
 test_local_specifier_battery.sh	standing		
 test_local_model_seat.sh	standing		
+test_local_model_window_gate_cli.sh	standing		
 test_mailbox_intake_idempotent.sh	standing		
 test_mailbox_only_delivery.sh	standing		
 test_merge_deletion_guard.sh	standing		
@@ -450,6 +452,8 @@ test_ready_for_next_rotate_home.sh	standing
 test_recover_miniapp_bridge.sh	standing
 test_record_land_approval_cli.sh	standing
 test_recruiter_nightly_steward_probe.sh	standing
+test_recruiter_nightly_specifier_scout.sh	standing
+test_recruiter_specifier_scout.sh	standing
 test_redo_from.sh	standing		
 test_reexpedite_from_wip.sh	standing		
 test_reference_freshness_guard.sh	standing		

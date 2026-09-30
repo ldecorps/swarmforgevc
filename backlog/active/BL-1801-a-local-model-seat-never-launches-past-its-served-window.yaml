@@ -181,3 +181,6 @@ notes: |
   (fake Ollama, injected overhead).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-30, by: architect, blamed: coder, class: behavior, commit: 16c9ed4753, evidence: backlog/evidence/BL-1801-architect-bounce-20260930.md }

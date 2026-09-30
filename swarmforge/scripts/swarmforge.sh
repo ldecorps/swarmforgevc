@@ -762,6 +762,54 @@ ensure_ollama_ancillary_for_launch() {
   fi
 }
 
+# BL-1801: qwen 0.22.2's own recorded system-prompt/tool-definition
+# overhead beyond whatever prompt file it is told to read (measurement
+# method and evidence: backlog/evidence/BL-1801-coder-20260930.md).
+# Measured live (a fake OpenAI-compat endpoint on loopback, captured
+# request body): 103,081 characters (tools schema 65,630 + system/
+# system-reminder messages 37,451, marker text excluded). Rounded up to
+# a safe round number. Re-measure and update this constant when the
+# qwen CLI version changes.
+DEFAULT_LOCAL_MODEL_CLI_OVERHEAD_CHARS=105000
+
+# BL-1801: after Ollama is ready and before any pane starts, estimate
+# each local-model seat's first turn (its composed prompt, exactly as
+# write_agent_instruction_file will produce it, plus the CLI's own
+# recorded overhead, at 3 characters a token) against the window Ollama
+# actually serves that seat's model - refusing the launch when a KNOWN
+# window cannot hold it, warning when it is more than half the window or
+# the window cannot be learned at all, never refusing on an unknown
+# window. A pack with no local-model seat asks Ollama nothing.
+check_local_model_seat_windows() {
+  local i model parts j prompt_tmp rc=0
+  local -a parts_arr
+  for (( i = 1; i <= ${#AGENTS[@]}; i++ )); do
+    [[ "${AGENTS[$i]}" == "local-model" ]] || continue
+    model=""
+    parts_arr=(${=EXTRA_CLI_ARGS[$i]:-})
+    for (( j = 1; j <= ${#parts_arr[@]}; j++ )); do
+      if [[ "${parts_arr[j]}" == "--model" ]]; then
+        model="${parts_arr[j+1]:-}"
+        break
+      fi
+    done
+    prompt_tmp="$(mktemp)"
+    bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose local-model "${ROLES[$i]}" 0 "" ${model:+--model "$model"} > "$prompt_tmp" 2>/dev/null
+    if ! bb "$SCRIPT_DIR/local_model_window_gate_cli.bb" check \
+        --role "${ROLES[$i]}" \
+        --model "$model" \
+        --prompt-file "$prompt_tmp" \
+        --endpoint-url "$(local_model_endpoint_url)" \
+        --context-length "${SWARMFORGE_OLLAMA_CONTEXT_LENGTH:-}" \
+        --overhead-chars "${SWARMFORGE_LOCAL_MODEL_CLI_OVERHEAD_CHARS:-$DEFAULT_LOCAL_MODEL_CLI_OVERHEAD_CHARS}" \
+        --override "${SWARMFORGE_LOCAL_WINDOW_OVERRIDE:-0}"; then
+      rc=1
+    fi
+    rm -f "$prompt_tmp"
+  done
+  return $rc
+}
+
 
 # OpenRouter: a claude-harness role is OpenRouter-backed when its name appears
 # in the space-separated SWARMFORGE_OPENROUTER_ROLES env list. Env-gated on
@@ -2690,6 +2738,7 @@ ensure_commit_size_guard
 check_launch_pack_guard
 parse_config
 ensure_ollama_ancillary_for_launch
+check_local_model_seat_windows || { error_msg "local-model window check refused the launch (see above)."; exit 1; }
 check_primacy
 check_backend_dependencies
 check_cursor_seat_admission
