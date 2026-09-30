@@ -85,6 +85,12 @@ fi
 
 # shellcheck disable=SC1090
 source "$HOME/.zshenv" 2>/dev/null || true
+# A loopback OpenAI base is local Ollama. ~/.zshenv may have just loaded a
+# cloud key; that key is the wrong credential for 127.0.0.1:11434.
+if [[ "${OPENAI_API_BASE:-}" == *127.0.0.1* || "${OPENAI_API_BASE:-}" == *localhost* ]]; then
+  export OPENAI_API_KEY="${OLLAMA_API_KEY:-ollama}"
+  export OLLAMA_API_KEY="${OLLAMA_API_KEY:-ollama}"
+fi
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 for tool in tmux bb; do
@@ -283,7 +289,18 @@ LAUNCH_ARGS=("$TARGET")
 if [[ -n "$PACK" ]]; then
   LAUNCH_ARGS+=(--pack "$PACK")
 fi
-nohup env SWARMFORGE_TERMINAL=none "$TARGET/swarm" "${LAUNCH_ARGS[@]}" >> "$TARGET/.swarmforge/start-swarm-launch.log" 2>&1 &
+# Forward BL-1318 escape hatch explicitly: a bare `env VAR=…` keeps the
+# caller's environment, but provider start wrappers have lost
+# PACK_STAFFING_SKIP_GATE across the nohup boundary in practice — pin it.
+nohup env SWARMFORGE_TERMINAL=none \
+  PACK_STAFFING_SKIP_GATE="${PACK_STAFFING_SKIP_GATE:-}" \
+  SWARMFORGE_PACK="${SWARMFORGE_PACK:-}" \
+  SWARMFORGE_OLLAMA_CONTEXT_LENGTH="${SWARMFORGE_OLLAMA_CONTEXT_LENGTH:-}" \
+  OPENAI_API_BASE="${OPENAI_API_BASE:-}" \
+  OPENAI_BASE_URL="${OPENAI_BASE_URL:-}" \
+  OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+  OLLAMA_API_KEY="${OLLAMA_API_KEY:-}" \
+  "$TARGET/swarm" "${LAUNCH_ARGS[@]}" >> "$TARGET/.swarmforge/start-swarm-launch.log" 2>&1 &
 LAUNCH_PID=$!
 disown
 

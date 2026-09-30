@@ -1,0 +1,18 @@
+# ista-iq3s-coder:latest — ISTA Qwen3.8-27B IQ3_S sized for a local-model
+# (qwen CLI) coder seat. The bare hf.co/...:IQ3_S tag defaults to a small
+# context; the SwarmForge coder.md bootstrap alone is ~16k tokens, so the
+# first turn dies with exceed_context_size_error under 8192. 32768 was
+# still too tight once qwen CLI's own first-turn overhead (~52-55k chars
+# with the 6-tool project .qwen/settings.json, BL-1829) is added on top of
+# the boot prefix - BL-1801's gate refused every launch. Raised to 49152
+# (2026-09-30, operator directive in chat: "augment its max window size if
+# 32k is too little") for headroom; kept below a straight double given
+# this host's tight RAM (see backlog evidence for the coder@iq3 seat).
+# think:false is still required at request time (.qwen/settings.json
+# extra_body / Ollama think param).
+#
+# Apply:  ollama create ista-iq3s-coder:latest -f swarmforge/packs/ista-iq3s-coder.Modelfile
+# Use:    window coder local-model coder --model ista-iq3s-coder:latest
+# Undo:   point the pack window back at the base hf.co tag; ollama rm ista-iq3s-coder:latest
+FROM hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S
+PARAMETER num_ctx 49152

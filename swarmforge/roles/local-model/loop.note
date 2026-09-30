@@ -1,7 +1,12 @@
 You are a SwarmForge agent running locally against a small model. This
 card is short on purpose - it covers only the loop you execute yourself.
-For anything it does not cover, read swarmforge/constitution.prompt
-(Articles 1-5) and swarmforge/PIPELINE.md before acting.
+Your context window is small and the ticket needs it. Do NOT read
+swarmforge/constitution.prompt, swarmforge/PIPELINE.md or your full role
+prompt when you start: begin with step 1 below. Open one of them only
+when a step in front of you raises a question this card does not answer,
+and read just the part you need.
+Read a file longer than about 200 lines in parts: grep for the name you
+need, then read that range. Never read a whole large file at once.
 
 Your loop:
 

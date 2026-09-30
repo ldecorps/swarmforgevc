@@ -803,7 +803,11 @@ check_local_model_seat_windows() {
       fi
     done
     prompt_tmp="$(mktemp)"
-    bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose local-model "${ROLES[$i]}" 0 "" ${model:+--model "$model"} > "$prompt_tmp" 2>/dev/null
+    # Compose the STAGE prompt, the same argument write_agent_instruction_file
+    # passes. A seat id such as coder@iq3 is not a role the prompt factory
+    # knows, so composing the seat id emits the full constitution and the
+    # gate refuses a 32k window the compact card actually fits.
+    bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose local-model "${STAGES[$i]}" 0 "" ${model:+--model "$model"} > "$prompt_tmp" 2>/dev/null
     if ! bb "$SCRIPT_DIR/local_model_window_gate_cli.bb" check \
         --role "${ROLES[$i]}" \
         --model "$model" \
@@ -2227,9 +2231,12 @@ RESUMECHECK
       # what makes it EXECUTE shell commands unattended. Model id comes from
       # the window line; OPENAI_* endpoint/key arrive via the local_model_guard
       # / tmux -e (BL-130), never written as secret values here.
+      # BL-1001: --seat-tier stays on the window line for the claim filter and
+      # is stripped here — qwen exits on the unknown flag.
       #
       # Prompt by PATH, not $(cat ...): same MAX_ARG_STRLEN trap as codex/gemini.
-      launch_body="qwen --auth-type openai -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
+      local qwen_cli="$(swarm_only_strip_seat_tier "$extra_cli")"
+      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
       ;;
     *)
       # BL-1080: same Unsupported agent wording + how-to pointer as validate_agent.
