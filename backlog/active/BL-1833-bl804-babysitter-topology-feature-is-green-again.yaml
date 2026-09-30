@@ -113,3 +113,5 @@ notes: |
   feature "all ok"; that holds once this ticket lands, and BL-1789's
   notes now say so.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+assigned_to: coder
