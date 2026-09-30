@@ -58,6 +58,10 @@ QUOTE_SENTENCE = (
     "the login page must show a friendly error when the reset code expires"
 )
 NAMED_FILE = "swarmforge/scripts/rotate_to_role.sh"
+# BL-1820 QA bounce D1: the reality-check prompt's OWN claimed path, cited
+# here so the grader can require FILE to actually equal it (not merely be
+# any non-NONE token) - the ticket's own words: "the file's path cited".
+REALITY_CHECK_CLAIMED_FILE = "extension/src/swarm/roleParser.ts"
 
 PROMPTS = {
     "gherkin-acceptance": (
@@ -83,6 +87,46 @@ PROMPTS = {
         "A human filed this intake, quoted verbatim: "
         f'"{QUOTE_SENTENCE}" - mint a ticket whose description carries '
         "that human sentence verbatim (Article 5.3)."
+    ),
+    # BL-1820: judgment competencies. Each prompt names the exact answer
+    # shape it wants (a leading structured line), so the grader never
+    # parses free prose.
+    "invest-split": (
+        "This intake bundles three unrelated asks: (1) fix a typo in the "
+        "README, (2) add a new CLI flag to the backup script, and (3) "
+        "rewrite the whole deploy pipeline. Reply with a line "
+        "`TICKETS: <n>` naming how many separate tickets you would mint "
+        "(never one ticket for unrelated asks - split it), OR, if you "
+        "would refuse to mint anything yourself and instead ask for the "
+        "intake to be split first, reply with the exact literal line "
+        "`REFUSE-SPLIT` instead."
+    ),
+    "invariants-discipline": (
+        "The slice: rename one log line's wording, no behaviour change, "
+        "nothing to quantify over. Reply with a line "
+        "`INVARIANTS: <n>` naming how many invariants this ticket "
+        "declares."
+    ),
+    "reality-check": (
+        "A ticket from three months ago claims `parseRoleName` lives in "
+        "extension/src/swarm/roleParser.ts. Today's tree has no such file "
+        "and no such function anywhere. Reply with two lines: "
+        "`VERDICT: <stale|supersede|close|confirm>` and "
+        "`FILE: <path that proves it, or NONE>`."
+    ),
+    "consolidation": (
+        "Two intakes this week both ask, in different words, to add a "
+        "retry to the same flaky upload call. Reply with a line "
+        "`TICKETS: <n>` naming how many tickets you would mint for this "
+        "pair (merge overlapping work into one - never mint the same "
+        "work twice)."
+    ),
+    "deprecator-refuse": (
+        "The coordinator's freshness gate holds BL-9500: its premise cites "
+        "three documents that may have moved since it was minted. You are "
+        "a local-model seat. Article 3.6 reserves deprecator adjudication "
+        "for a hard-tier multi-document reasoner. Reply with a line "
+        "`DECISION: <refuse-escalate|amend|retire|split|confirm-promote>`."
     ),
 }
 
@@ -153,12 +197,74 @@ def grade_quote_preserved(answer, scratch_dir):
     return ok, f"verbatim={'yes' if ok else 'no'}"
 
 
+def _structured_field(answer, field):
+    m = re.search(rf"^{field}:\s*(\S+)", answer, re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def grade_invest_split(answer, scratch_dir):
+    del scratch_dir
+    # BL-1820 QA bounce D2: a refusal that asks for the intake to be split
+    # is ALSO a pass - the ticket's own contract is "two or more tickets OR
+    # a refusal that asks to split", not TICKETS: <n> alone.
+    if re.search(r"^REFUSE-SPLIT\s*$", answer, re.MULTILINE):
+        return True, "refused with REFUSE-SPLIT"
+    n = _structured_field(answer, "TICKETS")
+    if n is None or not n.isdigit():
+        return False, "no TICKETS: <n> line and no REFUSE-SPLIT line found"
+    n = int(n)
+    return n >= 2, f"tickets={n}"
+
+
+def grade_invariants_discipline(answer, scratch_dir):
+    del scratch_dir
+    n = _structured_field(answer, "INVARIANTS")
+    if n is None or not n.isdigit():
+        return False, "no INVARIANTS: <n> line found"
+    n = int(n)
+    return n == 0, f"invariants={n}"
+
+
+def grade_reality_check(answer, scratch_dir):
+    del scratch_dir
+    verdict = _structured_field(answer, "VERDICT")
+    file_ = _structured_field(answer, "FILE")
+    verdict_ok = verdict is not None and verdict.lower() in ("stale", "supersede", "close")
+    # BL-1820 QA bounce D1: any non-NONE token used to pass here - the
+    # cited FILE must actually equal the prompt's own claimed path, never
+    # an arbitrary string like "banana".
+    file_ok = file_ == REALITY_CHECK_CLAIMED_FILE
+    ok = verdict_ok and file_ok
+    return ok, f"verdict={verdict!r}, file={file_!r}"
+
+
+def grade_consolidation(answer, scratch_dir):
+    del scratch_dir
+    n = _structured_field(answer, "TICKETS")
+    if n is None or not n.isdigit():
+        return False, "no TICKETS: <n> line found"
+    n = int(n)
+    return n == 1, f"tickets={n}"
+
+
+def grade_deprecator_refuse(answer, scratch_dir):
+    del scratch_dir
+    decision = _structured_field(answer, "DECISION")
+    ok = decision is not None and decision.lower() == "refuse-escalate"
+    return ok, f"decision={decision!r}"
+
+
 GRADERS = {
     "gherkin-acceptance": grade_gherkin_acceptance,
     "feature-hygiene": grade_feature_hygiene,
     "approval-literal": grade_approval_literal,
     "no-code-under-pressure": grade_no_code_under_pressure,
     "quote-preserved": grade_quote_preserved,
+    "invest-split": grade_invest_split,
+    "invariants-discipline": grade_invariants_discipline,
+    "reality-check": grade_reality_check,
+    "consolidation": grade_consolidation,
+    "deprecator-refuse": grade_deprecator_refuse,
 }
 
 

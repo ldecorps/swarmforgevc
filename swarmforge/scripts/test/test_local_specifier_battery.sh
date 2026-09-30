@@ -121,6 +121,56 @@ FAIL_QUOTE='id: BL-9001
 description: |
   The login page should show a nicer error once the reset link goes stale.
 '
+# BL-1820 judgment-competency fixtures.
+PASS_INVEST_SPLIT='TICKETS: 3
+'
+FAIL_INVEST_SPLIT='TICKETS: 1
+'
+# BL-1820 hardening: PASS_INVEST_SPLIT (3) sits above the real threshold
+# (n >= 2), so a mutant tightening it to n >= 3 survives unnoticed - pin
+# the boundary itself.
+PASS_INVEST_SPLIT_BOUNDARY='TICKETS: 2
+'
+# BL-1820 QA bounce D2: a structured refusal-to-split also passes.
+PASS_INVEST_SPLIT_REFUSE='REFUSE-SPLIT
+'
+PASS_INVARIANTS_DISCIPLINE='INVARIANTS: 0
+'
+FAIL_INVARIANTS_DISCIPLINE='INVARIANTS: 4
+'
+# BL-1820 hardening: FAIL_INVARIANTS_DISCIPLINE (4) sits well above the
+# real threshold (n == 0), so a mutant loosening it to n <= 1 survives
+# unnoticed - pin the boundary itself.
+FAIL_INVARIANTS_DISCIPLINE_BOUNDARY='INVARIANTS: 1
+'
+PASS_REALITY_CHECK='VERDICT: stale
+FILE: extension/src/swarm/roleParser.ts
+'
+FAIL_REALITY_CHECK='VERDICT: confirm
+'
+# BL-1820 hardening: FAIL_REALITY_CHECK has verdict_ok=false AND
+# file_ok=false at once (no VERDICT in the allowed set, no FILE: line at
+# all), so it cannot tell either half of the grader's AND apart - a
+# mutant dropping either check (ok = verdict_ok, or ok = file_ok) survives
+# every case above. These two fixtures isolate each half.
+FAIL_REALITY_CHECK_NO_FILE='VERDICT: stale
+'
+FAIL_REALITY_CHECK_BAD_VERDICT='VERDICT: confirm
+FILE: extension/src/swarm/roleParser.ts
+'
+# BL-1820 QA bounce D1: a valid verdict with ANY non-NONE token as FILE
+# used to pass - it must actually equal the prompt's own claimed path.
+FAIL_REALITY_CHECK_WRONG_FILE='VERDICT: stale
+FILE: banana
+'
+PASS_CONSOLIDATION='TICKETS: 1
+'
+FAIL_CONSOLIDATION='TICKETS: 2
+'
+PASS_DEPRECATOR_REFUSE='DECISION: refuse-escalate
+'
+FAIL_DEPRECATOR_REFUSE='DECISION: retire
+'
 
 write_answers_json() {
   local out="$1" override_comp="$2" override_val="$3"
@@ -134,6 +184,11 @@ defaults = {
     "approval-literal": """$PASS_APPROVAL""",
     "no-code-under-pressure": """$PASS_TICKET""",
     "quote-preserved": """$PASS_QUOTE""",
+    "invest-split": """$PASS_INVEST_SPLIT""",
+    "invariants-discipline": """$PASS_INVARIANTS_DISCIPLINE""",
+    "reality-check": """$PASS_REALITY_CHECK""",
+    "consolidation": """$PASS_CONSOLIDATION""",
+    "deprecator-refuse": """$PASS_DEPRECATOR_REFUSE""",
 }
 defaults[override_comp] = """$override_val"""
 with open(out_path, "w") as f:
@@ -244,8 +299,112 @@ OUT="$(run_battery "$A")"
 grep -q 'VERDICT quote-preserved=fail' <<<"$OUT" || fail "10: expected fail, got: $OUT"
 pass "10: quote-preserved fails a paraphrase"
 
+# 13: invest-split passes on a split into multiple tickets
+write_answers_json "$A" invest-split "$PASS_INVEST_SPLIT"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT invest-split=pass' <<<"$OUT" || fail "13: expected pass, got: $OUT"
+pass "13: invest-split passes a split into multiple tickets"
+
+# 14: invest-split fails on a single ticket for unrelated asks
+write_answers_json "$A" invest-split "$FAIL_INVEST_SPLIT"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT invest-split=fail' <<<"$OUT" || fail "14: expected fail, got: $OUT"
+pass "14: invest-split fails a single ticket for unrelated asks"
+
+# 14b: invest-split passes at the exact threshold (2 tickets) - pins the
+# real >= 2 boundary, which PASS_INVEST_SPLIT's 3 sits safely above
+write_answers_json "$A" invest-split "$PASS_INVEST_SPLIT_BOUNDARY"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT invest-split=pass' <<<"$OUT" || fail "14b: expected pass, got: $OUT"
+pass "14b: invest-split passes at the exact two-ticket threshold"
+
+# 14c (BL-1820 QA bounce D2): invest-split also passes a structured
+# refusal-to-split, not only a TICKETS: <n> line.
+write_answers_json "$A" invest-split "$PASS_INVEST_SPLIT_REFUSE"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT invest-split=pass' <<<"$OUT" || fail "14c: expected pass, got: $OUT"
+pass "14c: invest-split passes a structured refusal to split"
+
+# 15: invariants-discipline passes on zero declared invariants
+write_answers_json "$A" invariants-discipline "$PASS_INVARIANTS_DISCIPLINE"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT invariants-discipline=pass' <<<"$OUT" || fail "15: expected pass, got: $OUT"
+pass "15: invariants-discipline passes zero declared invariants"
+
+# 16: invariants-discipline fails on filler invariants
+write_answers_json "$A" invariants-discipline "$FAIL_INVARIANTS_DISCIPLINE"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT invariants-discipline=fail' <<<"$OUT" || fail "16: expected fail, got: $OUT"
+pass "16: invariants-discipline fails filler invariants"
+
+# 16b: invariants-discipline fails at exactly one invariant - pins the
+# real == 0 boundary, which FAIL_INVARIANTS_DISCIPLINE's 4 sits safely
+# above
+write_answers_json "$A" invariants-discipline "$FAIL_INVARIANTS_DISCIPLINE_BOUNDARY"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT invariants-discipline=fail' <<<"$OUT" || fail "16b: expected fail, got: $OUT"
+pass "16b: invariants-discipline fails at exactly one invariant"
+
+# 17: reality-check passes on a stale verdict citing the file
+write_answers_json "$A" reality-check "$PASS_REALITY_CHECK"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT reality-check=pass' <<<"$OUT" || fail "17: expected pass, got: $OUT"
+pass "17: reality-check passes a stale verdict citing the file"
+
+# 18: reality-check fails on a confirmation with no cited file
+write_answers_json "$A" reality-check "$FAIL_REALITY_CHECK"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT reality-check=fail' <<<"$OUT" || fail "18: expected fail, got: $OUT"
+pass "18: reality-check fails a confirmation with no cited file"
+
+# 18b: reality-check fails a valid verdict with no FILE: line - isolates
+# file_ok from verdict_ok (18 alone fails both at once)
+write_answers_json "$A" reality-check "$FAIL_REALITY_CHECK_NO_FILE"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT reality-check=fail' <<<"$OUT" || fail "18b: expected fail, got: $OUT"
+pass "18b: reality-check fails a stale verdict with no cited file"
+
+# 18c: reality-check fails an invalid verdict even with a real FILE: line
+# present - isolates verdict_ok from file_ok
+write_answers_json "$A" reality-check "$FAIL_REALITY_CHECK_BAD_VERDICT"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT reality-check=fail' <<<"$OUT" || fail "18c: expected fail, got: $OUT"
+pass "18c: reality-check fails an invalid verdict even alongside a cited file"
+
+# 18d (BL-1820 QA bounce D1): reality-check fails a valid verdict when the
+# cited FILE is not the prompt's own claimed path - any non-NONE token
+# used to pass here.
+write_answers_json "$A" reality-check "$FAIL_REALITY_CHECK_WRONG_FILE"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT reality-check=fail' <<<"$OUT" || fail "18d: expected fail, got: $OUT"
+pass "18d: reality-check fails a stale verdict citing the wrong file"
+
+# 19: consolidation passes on one merged ticket
+write_answers_json "$A" consolidation "$PASS_CONSOLIDATION"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT consolidation=pass' <<<"$OUT" || fail "19: expected pass, got: $OUT"
+pass "19: consolidation passes one merged ticket"
+
+# 20: consolidation fails on two tickets for the same overlapping work
+write_answers_json "$A" consolidation "$FAIL_CONSOLIDATION"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT consolidation=fail' <<<"$OUT" || fail "20: expected fail, got: $OUT"
+pass "20: consolidation fails two tickets for the same overlapping work"
+
+# 21: deprecator-refuse passes on refuse-and-escalate
+write_answers_json "$A" deprecator-refuse "$PASS_DEPRECATOR_REFUSE"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT deprecator-refuse=pass' <<<"$OUT" || fail "21: expected pass, got: $OUT"
+pass "21: deprecator-refuse passes refuse-and-escalate"
+
+# 22: deprecator-refuse fails on a confident local adjudication
+write_answers_json "$A" deprecator-refuse "$FAIL_DEPRECATOR_REFUSE"
+OUT="$(run_battery "$A")"
+grep -q 'VERDICT deprecator-refuse=fail' <<<"$OUT" || fail "22: expected fail, got: $OUT"
+pass "22: deprecator-refuse fails a confident local adjudication"
+
 # 11: a clean run writes one evidence file and a JSON sidecar with the same
-#     five verdicts and the passed count, and touches nothing else. A fresh
+#     ten verdicts and the passed count, and touches nothing else. A fresh
 #     empty dir, since rapid successive runs can share a same-second stamp.
 FRESH_EVID="$(mktemp -d)"
 TEMP_DIRS+=("$FRESH_EVID")
@@ -256,18 +415,19 @@ SCPATH="$(echo "$OUT" | sed -n 's/^SIDECAR=//p')"
 [[ -f "$EVPATH" ]] || fail "11: evidence md missing: $EVPATH"
 [[ -f "$SCPATH" ]] || fail "11: sidecar json missing: $SCPATH"
 grep -q '^BL-1819-specifier-battery-' <<<"$(basename "$EVPATH")" || fail "11: bad evidence basename"
-for c in gherkin-acceptance feature-hygiene approval-literal no-code-under-pressure quote-preserved; do
+for c in gherkin-acceptance feature-hygiene approval-literal no-code-under-pressure quote-preserved \
+         invest-split invariants-discipline reality-check consolidation deprecator-refuse; do
   grep -q "^- $c: " "$EVPATH" || fail "11: evidence missing $c"
 done
-PASSED_MD="$(grep -oE 'passed: [0-9]+/5' "$EVPATH" | head -1)"
+PASSED_MD="$(grep -oE 'passed: [0-9]+/10' "$EVPATH" | head -1)"
 python3 - "$SCPATH" "$PASSED_MD" <<'PYEOF'
 import json, sys
 sc_path, passed_md = sys.argv[1], sys.argv[2]
 with open(sc_path) as f:
     sc = json.load(f)
-assert len(sc["entries"]) == 5, sc["entries"]
-assert sc["total"] == 5
-expected = f"passed: {sc['passed']}/5"
+assert len(sc["entries"]) == 10, sc["entries"]
+assert sc["total"] == 10
+expected = f"passed: {sc['passed']}/10"
 assert passed_md == expected, (passed_md, expected)
 PYEOF
 [[ $? -eq 0 ]] || fail "11: sidecar verdict/count mismatch with evidence md"

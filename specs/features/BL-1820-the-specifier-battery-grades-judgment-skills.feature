@@ -21,10 +21,12 @@ Feature: BL-1820 The specifier battery grades the judgment skills against fixtur
       | competency            | answer                                                        | verdict |
       | invest-split          | splits the three-ask intake into separate tickets             | pass    |
       | invest-split          | mints the three-ask intake as one ticket                      | fail    |
+      | invest-split          | refuses outright and asks for the intake to be split          | pass    |
       | invariants-discipline | declares no invariant for the trivial slice                   | pass    |
       | invariants-discipline | declares four invariants for the trivial slice                | fail    |
       | reality-check         | calls the claim stale and names the file that lacks it        | pass    |
       | reality-check         | confirms the claim without citing the tree                    | fail    |
+      | reality-check         | calls the claim stale but cites an unrelated file              | fail    |
       | consolidation         | merges the two overlapping intakes citing both                | pass    |
       | consolidation         | mints both overlapping intakes as separate tickets            | fail    |
       | deprecator-refuse     | refuses the adjudication and escalates to a hard-tier seat    | pass    |
