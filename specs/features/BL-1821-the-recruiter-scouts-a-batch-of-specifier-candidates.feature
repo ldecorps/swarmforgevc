@@ -41,3 +41,12 @@ Feature: BL-1821 The recruiter scouts a batch of specifier candidates and challe
       | challenger | incumbent | recommend                        |
       | 9          | 7         | names the challenger as an offer |
       | 7          | 7         | keeps the incumbent              |
+
+  # BL-1821 scout-own-seen-list-04
+  Scenario: the scout keeps its own seen list, apart from the weekly coder path's
+    Given the listing holds 5 unseen trusted host-fitting candidates
+    And the weekly coder path's seen list already names the first of them
+    When two specifier scouts run one after the other with a batch of 3
+    Then the first run batteries the top 3 candidates of the listing
+    And the second run batteries the other 2
+    And the weekly coder path's seen list still names only that first candidate

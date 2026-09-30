@@ -31,7 +31,7 @@ approval_context: >
   and never commits. A better challenger is an offer.
 
 invariants:
-  - "A scout run never changes a pack conf, swarmforge.conf, a seat assignment or a git ref; its writes are the score table, its report, the recruiter's seen list and the battery's own evidence."
+  - "A scout run never changes a pack conf, swarmforge.conf, a seat assignment or a git ref; its writes are the score table, its report, the scout's own seen list (never the weekly coder path's seen.jsonl) and the battery's own evidence."
 
 description: |
   ## Human, verbatim (Article 5.3)
@@ -78,6 +78,13 @@ description: |
      (a pack staffing gate like `local_coder_battery_staffing_gate.sh`) is
      a follow-on, not minted: it becomes due when a local specifier seat is
      the next staffing goal.
+  6. Novelty is per role. The scout keeps its own seen list,
+     `.swarmforge/recruiter/seen-specifier.jsonl`, and marks each
+     candidate there before pulling it (the same mark-before-pull as
+     `recruiter_weekly.sh`, so a failing pull is not retried every week).
+     Its batch skips only models on that list. The weekly coder path's
+     `seen.jsonl` neither limits the scout nor is written by it, so each
+     role's recruiter batteries every new model once (scenario 04).
 
   ## Scenario notes
   - The Hugging Face listing, the puller and the battery are stubs; no
@@ -94,13 +101,25 @@ description: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1821-the-recruiter-scouts-a-batch-of-specifier-candidates.feature`:
-     6 of 6 ok (0 of 6 on main at mint, no handler yet).
+     7 of 7 ok (0 of 7 on main at the 2026-09-30 amendment, no handler on
+     main yet).
   2. Run the discovery batch flag once against the live listing, read-only
-     (no pull): up to N candidates printed, none already in seen.jsonl.
+     (no pull), as the scout calls it: up to N candidates printed, none
+     already in `.swarmforge/recruiter/seen-specifier.jsonl`, and no two
+     sharing one Ollama alias (D1 of QA pass 2).
   3. `git diff main...HEAD --name-only` names no pack conf and no
      `swarmforge.conf`.
 
 notes: |
+  2026-09-30 specifier ruling on QA spec-gap D2 (note 003572, evidence
+  ac6052db4a; send-back record backlog/evidence/BL-1821-bounce-20260930.md):
+  the scout keeps its OWN seen list, seen-specifier.jsonl, marked before
+  each pull. It never reads or writes the weekly coder path's seen.jsonl.
+  "No marking" re-batteries the same top N forever, and "shared" lets
+  only one role ever test a model. Added: invariant wording, "What is
+  wanted" item 6, scenario 04 (its handler lands in the rebuild parcel,
+  BL-233), and procedure steps 1-2. The documenter's how-to line follows
+  this ruling in the same parcel.
   Minted 2026-09-30 by the specifier from
   backlog/INTAKE-recruiter-local-specifier-hf-battery-20260929.md (split
   1:4, archived with this mint). Normal priority. The intake's optional
