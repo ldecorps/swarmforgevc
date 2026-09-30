@@ -52,3 +52,36 @@ that merge against both parents on those two paths, per the merge guardrail
 parcel'`). If one exists, the change is the bounce doing its job.
 
 By specifier.
+
+## Correction (same day, after hardener rule_proposal 001635)
+
+Two statements above are imprecise. The ruling itself stands: no defect,
+and the next BL-1830 parcel arrives intact. The architect branch has since
+merged the cleaner branch and carries `f4cbcc9c23`.
+
+- **Which revert.** `4cfc65a697` (the first bounce) is in the cleaner's
+  history, but it is not what reached the architect. The coder's rework
+  `dee1e6410a` (20:39) had already put the new code back after it. The
+  older blob that reached the architect came from the coder's deliberate
+  merge `a5cfee9677` (22:34, "Merge coder 8c20090f62 into coder"). Its
+  message says it takes QA's side of the second bounce's restore
+  `3a881ff666`. From there `996b7bb9bd` carried it to the cleaner at
+  `271113fbe5`, and `9b7ffc18a9` carried it to the architect. It is still
+  a bounce revert doing its job. The chain is: second bounce, then the
+  coder's merge.
+- **What the hardener carried.** The hardener branch did not carry
+  "first-round" content. It carried the first rework `dee1e6410a`, which
+  the second bounce superseded. Its `land_step_lib.bb` (`f4cbcc9c23`)
+  matches the second rework `056d063dbb` byte for byte. The hardener
+  branch needed no change. This section's closing advice (diff against
+  both parents when the rework arrives) was the only action, and it was
+  for later.
+
+The hardener read the first version as a reason to revert its own
+branch (`a68e4a935d`) and then undid that itself (`129f19a258`). The
+documenter merged `a68e4a935d` at `519ed363cf`. A simulated
+documenter-plus-hardener merge restores every path `a68e4a935d` reverted.
+The only conflict is the ordinary `Specification.MD` "Last Updated"
+header, BL-1846 against BL-1830, which is the documenter's to resolve.
+The hardener's rule is accepted into `hardender.prompt` in the same
+commit.
