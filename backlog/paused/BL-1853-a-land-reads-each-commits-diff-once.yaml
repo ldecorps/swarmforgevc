@@ -1,0 +1,114 @@
+id: BL-1853
+title: "A land reads each commit's diff once - the land plan runs git log -p for every ticket-tagged non-merge commit between origin/main and the cited tip on every land (3696 of 8069 commits on 2026-09-30); a commit's diff never changes, so it is kept by commit id and a land reads only the commits no land has read before, with the same verdict"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. A land took 13 min by the
+# afternoon of 2026-09-30, against 2 to 6 min the evening before. The walk
+# grows with every role-branch merge, so the time keeps rising.
+status: todo
+epic: swarm-reliability
+priority: 1
+depends_on: [BL-1852]
+# Same file as BL-1852 and BL-1830 (land_step_lib.bb). BL-1852 also stops
+# the re-point from giving thousands of commits new ids on every land,
+# which a cache by id cannot hit.
+mutation_cost: medium
+# medium: a content-addressed cache threaded through the land plan's
+# per-commit reads in a 3600-line bb lib; bb has no mutation lane wired.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1853-a-land-reads-each-commits-diff-once.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1853LandDiffCacheSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A defect with no choice posed. FIRM: the land plan's verdict with the
+  cache is the verdict without it. FIRM: a cache entry that is missing,
+  unreadable or written for another commit is read again from git, never
+  taken as an empty diff; a partial read is never scored as whole
+  (sibling-own-line-changes's own posture). FIRM: BL-1461's full-ancestry
+  candidate walk and BL-1806's floor stay as they are.
+
+invariants:
+  - "A cached diff is used only for the exact commit it was read from; a missing, unreadable or mismatched entry is read again from git, never taken as an empty diff."
+  - "A land plan's verdict with the cache equals its verdict without it."
+
+source: |
+  QA note 003614 (2026-09-30 20:19Z), verbatim:
+
+  > land walk now 8069 commits vs 4.2k yday; why + fixes in ev 6aa44a96dc
+
+  Evidence: `backlog/evidence/land-walk-range-regrowth-20260930-QA.md`
+  (commit 6aa44a96dc), cause 1 (role branches never shrink).
+
+description: |
+  ## Why
+
+  A land publishes a tip-pure replay, so no role branch's commits become
+  ancestors of origin/main, and every parcel QA merges brings its whole
+  role-branch lineage into the next walk. At 20:10Z on 2026-09-30:
+  swarmforge-coder 6280, -cleaner 6861, -architect 6859, -hardender 6872,
+  -documenter 6863 commits outside origin/main (QA's evidence). BL-1806
+  made the merges cheap, and its own ticket says the walk's IO then scales
+  with ticket-attributed non-merges. Those are 3696 of the 8069 today, and
+  each costs `commit-line-changes` a `git log -1 -p` on every land. They
+  are the same commits land after land, and a commit's diff is fixed by
+  its id.
+
+  ## What is wanted
+
+  - Every per-commit read in the land plan whose answer depends only on
+    the commit is kept by the commit's full id and reused across lands:
+    at least `commit-line-changes`' first-parent diff, and any other such
+    read the coder finds on the hot path. A land reads from git only the
+    commits no earlier land has read (scenario 01).
+  - A read whose answer depends on origin/main or on another ref is never
+    cached.
+  - A missing, corrupt, or mismatched entry is read again from git
+    (scenario 02, invariant 1). A diff that could not be read is not
+    cached, so it stays nil, never {}.
+
+  ## How (direction, not mandate)
+
+  - A cache every worktree of the repository reaches, since the land runs
+    from QA's worktree and re-points reset it. For example a directory
+    under `git-common-dir`, which `land_step_lib.bb` already resolves
+    (BL-1298). One entry per commit id, holding the id it was read for.
+  - Within one land, the same commit is read at most once whatever number
+    of siblings ask for it.
+  - A property test for invariant 2 fits: random small histories, plan
+    with the cache warm, cold and partly corrupted, same verdict.
+  - Step handler `specs/pipeline/steps/bl1853LandDiffCacheSteps.js`. It
+    counts diff reads through a seam around the git call, never by timing
+    (BL-1658). Fixtures under mkdtemp with their own bare origin
+    (BL-1390); `git fast-import` builds 200 commits in well under a second.
+
+  ## Scope
+
+  The cache in `swarmforge/scripts/land_step_lib.bb` and wherever its
+  per-commit reads live, the bb tests, a property test, the step handler,
+  evidence. Not in scope: shrinking role branches (QA's first direction;
+  it would rewrite branches live roles work on), the re-point's keep rule
+  (BL-1852).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1853-a-land-reads-each-commits-diff-once.feature`:
+     4 of 4 ok (01, three rows of 02). Measured 0 on main at mint: no
+     handler exists yet.
+  2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
+  3. BL-1806's feature still passes: 2 of 2 ok, measured on main
+     da1b908be0 at mint (54 s).
+  After the land (the coordinator's check, not QA's): the first land after
+  it reads the whole walk cold; each later land's walk time, from QA's
+  `tmp/<id>-land.log` as in QA's evidence table, returns to minutes and
+  stops rising with the walk's commit count.
+
+notes: |
+  Minted 2026-09-30 by the specifier from QA note 003614 (source), with
+  BL-1852 (which lands first; see depends_on).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

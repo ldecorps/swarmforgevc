@@ -1,0 +1,125 @@
+id: BL-1852
+title: "A post-land re-point carries only QA's own commits - the re-point re-applied every other-ticket bookkeeping commit reachable from QA's old tip, including evidence that came in through merged parcels, so its kept set grew from 47 to 2299 commits on 2026-09-30 and every land walked them again; it now re-applies the commits QA made on its own line and those an earlier re-point carried for it, and nothing that came in through a merge"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. Land time went from 2-6 min
+# (2026-09-29 evening) to 13 min and past 12 min unfinished (2026-09-30),
+# and the kept set grows on every re-point with no bound.
+status: todo
+epic: swarm-reliability
+priority: 1
+depends_on: [BL-1830]
+# BL-1830 (in flight, at the cleaner) changes land_step_lib.bb too; one
+# change to that file at a time (Concurrent Work Orthogonality).
+mutation_cost: medium
+# medium: the keep rule inside post-land-repoint! in a 3600-line bb lib;
+# bb has no mutation lane wired (engineering.prompt).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1852-a-post-land-re-point-carries-only-qas-own-commits.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1852RepointKeepsOwnLineSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A defect with no choice posed. QA named two directions. The specifier
+  took the second one, narrowing the keep rule, and not the first one,
+  re-pointing role branches. Re-pointing role branches would rewrite
+  branches live roles work on, against Forwarded Commits Carry Their
+  Lineage, and that would be the human's ruling. FIRM: a re-point never
+  drops a commit QA made itself that is not yet on origin/main. FIRM: no
+  change to when a re-point runs or skips (BL-1773, BL-1805).
+
+invariants:
+  - "A re-point never re-applies a commit that reached QA's tip only through a merge."
+  - "A re-point never drops a commit QA made on its own line that is not yet on origin/main, including one an earlier re-point carried forward."
+
+source: |
+  QA note 003614 (2026-09-30 20:19Z), verbatim:
+
+  > land walk now 8069 commits vs 4.2k yday; why + fixes in ev 6aa44a96dc
+
+  Evidence: `backlog/evidence/land-walk-range-regrowth-20260930-QA.md`
+  (commit 6aa44a96dc). QA wrote it because the human asked in the QA
+  pane why lands went from "10 minutes max yesterday evening" back up.
+
+description: |
+  ## Why
+
+  QA's evidence splits the 8069-commit walk of BL-1838's land into the
+  parcel's role-branch lineage (6860) and the re-point's re-applied commits
+  (1203), plus QA's own. This ticket is the second part. The specifier
+  measured it the same pass:
+  - Kept per re-point on 2026-09-30, from
+    `.worktrees/QA/.swarmforge/daemon/land-repoint.log`: 47 at 06:03,
+    1073 at 07:12 (a parcel's lineage absorbed), then 1149, 1214, 1315,
+    1397, 1491, 1593, 1661, and 2299 at 20:00.
+  - For the 20:00 re-point (old tip 8366f69e30, previous new tip
+    87cfc65668): `git rev-list --first-parent --no-merges 87cfc65668..8366f69e30`
+    has 6 commits, all QA's own bookkeeping. `git rev-list --no-merges`
+    over the same range has 2515. The keep rule re-applied 2299 of them.
+  - Each re-application gives a commit a new id, so the next land walks the
+    kept set as new commits, and no cache by commit id (BL-1853) can hit
+    it.
+
+  ## What is wanted
+
+  The post-land re-point re-applies, onto origin/main:
+  - the non-merge commits on QA's old tip's first-parent line since the
+    previous re-point's new tip (QA's own work since then) (scenario 01);
+  - the commits the previous re-point carried as QA's own, again (scenario
+    02). A record written before this change (the 2026-09-30 log shape) is
+    read by the same test: a kept commit was QA's own when its original id
+    lies on that record's old tip's first-parent line;
+  - and, as today, none whose change is already on origin/main (scenario
+    03).
+  A commit that reached QA's tip only through a merge is never re-applied.
+  Its own parcel brings it back when that parcel reaches QA again.
+
+  Each record in `land-repoint.log` marks which kept commits were QA's
+  own, so the next re-point reads the mark rather than re-deriving it.
+
+  ## How (direction, not mandate)
+
+  - Do not identify QA's own commits by the `By QA.` byline. Of the 2515
+    non-merge commits in the 20:00 range, 483 carry it, and they came back
+    through role branches after merge-ups. The first-parent line is what
+    separates them.
+  - When the previous re-point's new tip is not an ancestor of the old tip,
+    or no record exists, fall back to the first-parent line since the old
+    tip's merge-base with origin/main. That is a superset of QA's own work,
+    and it never reaches merged-in lineage.
+  - Step handler `specs/pipeline/steps/bl1852RepointKeepsOwnLineSteps.js`,
+    fixtures under mkdtemp with their own bare origin (BL-1390), discovered
+    from its own file (BL-1371).
+
+  ## Scope
+
+  `post-land-repoint!`'s keep set in `swarmforge/scripts/land_step_lib.bb`,
+  the record's own-line mark, the bb tests, the step handler, evidence.
+  Not in scope: re-pointing role branches (QA's first direction), and the
+  diff cache (BL-1853).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1852-a-post-land-re-point-carries-only-qas-own-commits.feature`:
+     3 of 3 ok. Measured 0 on main at mint: no handler exists yet.
+  2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
+  3. The re-point features still pass, measured on main da1b908be0 at
+     mint: BL-1438 4 of 4 ok (30 s), BL-1773 6 of 6 ok (23 s), BL-1805 3
+     of 3 ok (26 s).
+  After the land (the coordinator's check, not QA's): the next
+  `:repointed` line in `.worktrees/QA/.swarmforge/daemon/land-repoint.log`
+  keeps only QA's own commits, a count near the number QA made since the
+  previous re-point, not thousands. `git rev-list --count
+  origin/main..swarmforge-QA` right after it is that count.
+
+notes: |
+  Minted 2026-09-30 by the specifier from QA note 003614 (source), with
+  BL-1853. Order: BL-1830 lands, then this, then BL-1853, all in
+  land_step_lib.bb. This one goes first because the cache cannot hit
+  commits whose ids change on every re-point.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
