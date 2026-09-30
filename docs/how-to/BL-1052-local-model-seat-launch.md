@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-09-26
+Last Updated: 2026-09-30
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -109,6 +109,31 @@ hand-run shape — bare `ollama serve`, native context length):
 | `SWARMFORGE_OLLAMA_CONTEXT_LENGTH` | `OLLAMA_CONTEXT_LENGTH` for the started server | unset (binary default) |
 | `SWARMFORGE_OLLAMA_WAIT_SECONDS` | bound on how long the launch waits for a newly started server to answer | `30` |
 | `SWARMFORGE_OLLAMA_POLL_INTERVAL_SECONDS` | how often the wait re-probes | `1` |
+
+### The seat's qwen settings carry its served context window (BL-1829, BL-1838)
+
+Each `local-model` seat gets a worktree-local `.qwen/settings.json`
+(`<worktree>/.qwen/settings.json` — never the operator's own
+`~/.qwen/settings.json`), written fresh at every launch. Two things live
+in it:
+
+- **BL-1829's tool scope** — `coreTools`/`excludeTools` restricted to the
+  six tools the seat's loop actually needs, cutting the qwen CLI's own
+  per-turn tool-definition overhead from ~105k characters to ~52-55k so it
+  fits a 32k-token local window at all.
+- **BL-1838's provider entry** (`modelProviders.openai`) — the seat's
+  model gets a `contextWindowSize` set to the window Ollama is actually
+  serving it (read the same way the launch-time window gate already
+  reads it — `local_model_window_gate_lib.bb`'s served-window, never a
+  second parser), falling back to `SWARMFORGE_OLLAMA_CONTEXT_LENGTH` only
+  when Ollama reports no window at all. Before this, the entry lived only
+  in the operator's own `~/.qwen/settings.json`, written once and never
+  updated — a model re-served at a larger `num_ctx` (e.g. a coordinator
+  bump from 32768 to 49152) left the CLI still budgeting to the old,
+  smaller number and crashing well short of the real window
+  ("hard limit" below the true limit). With neither a served window nor a
+  configured context length available, no provider entry is written and
+  one warning line names the seat — never a guessed value.
 
 ### A crashed ollama server is restarted (BL-1711)
 

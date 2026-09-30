@@ -1,9 +1,16 @@
 ;; BL-1801: pure decision for "does a local-model seat's first turn fit
-;; the window Ollama actually serves it". Kept separate from the CLI
-;; (which gathers the facts: the composed prompt, the CLI's own recorded
-;; overhead, and the served window) so the decision itself is testable
-;; with no HTTP call, no subprocess, no filesystem.
-(ns local-model-window-gate-lib)
+;; the window Ollama actually serves it" (estimate-tokens/window-outcome
+;; below - no HTTP call, no subprocess, no filesystem). BL-1838 moved
+;; served-window here from local_model_window_gate_cli.bb: it is this
+;; file's one IO function, kept here rather than duplicated as a second
+;; num_ctx parser, so both the launch-time gate (the CLI) and BL-1838's
+;; qwen provider-entry writer (local_model_qwen_provider_cli.bb) read
+;; Ollama's served window through the exact same code (IO-near code calls
+;; the owner, BL-1811).
+(ns local-model-window-gate-lib
+  (:require [babashka.process :as process]
+            [cheshire.core :as json]
+            [clojure.string :as str]))
 
 ;; Human ruling 2026-09-29 (in chat, quoted in the ticket): three
 ;; characters per token, the same estimator convention BL-1798's own
@@ -15,6 +22,31 @@
   "ceil((composed-chars + overhead-chars) / chars-per-token)."
   [composed-chars overhead-chars]
   (long (Math/ceil (/ (double (+ composed-chars overhead-chars)) chars-per-token))))
+
+;; The native Ollama API (never the OpenAI-compat /v1 suffix a seat's own
+;; launch uses) - local_model_endpoint_url in swarmforge.sh returns the
+;; /v1 base, so this strips it.
+(defn- native-base [endpoint-url]
+  (str/replace endpoint-url #"/v1/?$" ""))
+
+(defn served-window
+  "The num_ctx Ollama reports for `model` via POST /api/show, parsed from
+   the `parameters` field's own text blob (e.g. \"num_ctx    32768\\n...\").
+   nil on any failure (unreachable endpoint, non-2xx, unparseable body, or
+   no num_ctx line) - the caller falls back to the swarm's own context
+   length, never throws."
+  [endpoint-url model]
+  (try
+    (let [{:keys [exit out]} (process/sh "curl" "-sS" "-m" "5"
+                                          (str (native-base endpoint-url) "/api/show")
+                                          "-d" (json/generate-string {:model model}))]
+      (when (zero? exit)
+        (let [body (json/parse-string out true)
+              params (:parameters body)]
+          (when (string? params)
+            (when-let [m (re-find #"(?m)^\s*num_ctx\s+(\d+)" params)]
+              (Long/parseLong (second m)))))))
+    (catch Exception _ nil)))
 
 (defn window-outcome
   "{:window (a positive int, or nil when unknown)

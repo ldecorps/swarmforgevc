@@ -593,3 +593,6 @@ test_bl1688_status_ledger_survives_start.sh	standing
 verification_debt_ledger_lib_test_runner.bb	standing		
 test_verification_debt_ledger_cli.sh	standing
 test_bl1829_local_model_qwen_settings.sh	standing
+local_model_qwen_provider_lib_test_runner.bb	standing
+test_bl1838_qwen_provider_no_known_window.sh	standing
+test_bl1838_qwen_provider_entry_via_launch_script.sh	standing
