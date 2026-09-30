@@ -182,3 +182,5 @@ notes: |
   human_replies.sh refuses once a front desk runs, which is expected. It
   is adapted from gpu-bargain-hunter's own coordinator.prompt. No
   scenario here pins prompt text, so nothing built changes.
+
+assigned_to: coder
