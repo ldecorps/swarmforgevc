@@ -1,0 +1,97 @@
+id: BL-1830
+title: "The land step's tip-pure replay writes every path the landing ticket changed from the reviewed tip, whole, so an unlanded sibling's lines in that same file reach main without their sibling's other files (BL-1801's land e1cb2615de published two BL-1821 rows in suite-manifest.tsv naming test files main lacked; QA dropped them in a86fd40c17) - a shared own path lands only the landing ticket's own changes, or escalates by name"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety property of the land. This time the passenger lines
+# were two manifest rows; the same mechanism publishes an unlanded,
+# unreviewed sibling's CODE whenever it shares a file with the landing
+# ticket. BL-1717 closed the path-level half (paths the landing ticket never
+# touched); this is the line-level half.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1795 (paused) also edits land_step_lib.bb's stray handling; the two are
+# never active together (Article 3.2.3). Whichever lands second re-runs the
+# other's feature in its evidence.
+mutation_cost: medium
+# medium: a per-path build in the replay (origin/main plus the landing
+# ticket's own changes) and its escalation, in land_step_lib.bb.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1830-a-land-never-publishes-a-siblings-lines-in-a-shared-own-path.feature
+
+human_approval: pending
+approval_context: >
+  One choice: what the land does with a path it owns that also carries an
+  unlanded sibling's lines. FIRM, not asked: no unlanded sibling's line
+  ever reaches origin/main through a land (the invariant); a path no
+  unlanded sibling touched lands exactly as today; QA's hand-build remedy
+  is unchanged. Scenarios 01 and 02 are written for ruling A; ruling B
+  rewrites scenario 01 to an escalation before promotion. Not
+  auto-approved: it poses a ruling.
+
+ruling_options:
+  - A - the replay rebuilds a shared own path from origin/main plus only the landing ticket's own commits' changes, and escalates by name when those changes do not apply without the sibling's lines (recommended)
+  - B - the land escalates by name whenever a path it owns also carries an unlanded sibling's lines, with no automatic separation
+
+ruling_tradeoffs:
+  - Pros - the common case (two tickets each adding a row to a shared manifest, index or registry) lands on its own with no hand build, and no unreviewed sibling line reaches main. Cons - a per-path apply step inside the replay, and an own change built on the sibling's lines still escalates. Recommended because shared bookkeeping files are touched by most parcels, so B would turn many ordinary lands into hand builds.
+  - Pros - small, fail-closed, and reuses the existing escalation path with no new apply logic. Cons - every land that shares a manifest, the step index or docs/index.md with an in-flight sibling stops for QA's hand build, which has cost about 45 minutes a land.
+
+invariants:
+  - "A land never publishes to origin/main a line that only an unlanded sibling's commits introduced, in any path, whether or not the landing ticket also changed that path."
+
+description: |
+  ## What is wrong
+
+  QA note 003539: BL-1801's land (e1cb2615de, a tip-pure replay) added
+  four rows to `swarmforge/scripts/test/suite-manifest.tsv`: BL-1801's two
+  (`local_model_window_gate_lib_test_runner.bb`,
+  `test_local_model_window_gate_cli.sh`) and two of BL-1821's
+  (`test_recruiter_nightly_specifier_scout.sh`,
+  `test_recruiter_specifier_scout.sh`), whose files were rightly left out
+  because BL-1821 is unlanded. QA dropped the two rows in a86fd40c17 three
+  minutes later; main is clean at mint (the suite inventory, which does
+  report a row whose file is absent, is ok).
+
+  Cause, from `land_step_lib.bb`'s `own-paths` docstring (main 6716360313):
+  the replay's content is decided per PATH. A path is excluded only on
+  positive attribution to an unlanded sibling and no other id, and never
+  when it is the landing ticket's own path, so a file both tickets changed
+  is written whole from the reviewed tip, sibling lines included. BL-1717
+  fixed the case where the landing ticket never touched the path; it left
+  the own-path case out of scope.
+
+  ## What is wanted
+  1. Per the ruling. For A: for a path the landing ticket changed that an
+     unlanded sibling's commits also changed, the replay writes origin/main's
+     version plus the landing ticket's own commits' changes to that path (a
+     three-way apply), never the tip's whole file; when that does not apply
+     cleanly, the land escalates naming the path and the sibling.
+  2. A path only the landing ticket (and landed tickets) touched is written
+     from the tip exactly as today.
+  3. The land's output names each such rebuilt path, so QA sees it.
+
+  ## Scope
+  - `swarmforge/scripts/land_step_lib.bb` (the replay's per-path content),
+    its runner `land_step_lib_test_runner.bb`, the step handler
+    `specs/pipeline/steps/bl1830SharedOwnPathSteps.js` (same commit as the
+    runnable feature, BL-233), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1830-a-land-never-publishes-a-siblings-lines-in-a-shared-own-path.feature`:
+     3 of 3 ok (0 of 3 on main at mint, no handler yet).
+  2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
+  3. The BL-1717 feature 2 of 2 and the BL-1650 feature 11 of 11 ok (as measured on main at mint).
+  4. The parcel's evidence replays BL-1801's case in a mkdtemp fixture
+     (origin/main before e1cb2615de, the tip it landed from): the manifest
+     carries BL-1801's two rows and neither BL-1821 row.
+
+notes: |
+  Minted 2026-09-30 by the specifier from QA note 003539 (BL-1801 land
+  passenger). Pending, with ruling_options.
