@@ -1,0 +1,169 @@
+id: BL-1835
+title: "The closing ceremony's own control pause holds its 'produce the morning briefing for <day>' note in the documenter's inbox (e9f91d6746, 2026-09-21: a pause holds every queued parcel), so the documenter cannot start the briefing until the pause lifts at the hard deadline - the same moment the ceremony writes the headless dump and stops the swarm - and every morning briefing since 2026-09-23 is the raw dump the human called ugly; the briefing instruction to the documenter is served during a pause, everything else stays held"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. The human's morning briefing,
+# their daily read of the swarm, has been replaced by a raw git-log dump
+# for eight mornings running (2026-09-23..09-30), deterministically: the
+# pause and the deadline end at the same instant. The human raised it
+# (intake below).
+status: todo
+epic: swarm-reliability
+priority: 1
+direction: human-intake
+depends_on: []
+mutation_cost: low
+# low: one exemption in handoff_lib.bb's pause partition plus its bb test
+# and one step handler. bb has no mutation lane wired (engineering.prompt).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1835-the-ceremonys-briefing-note-reaches-the-documenter-through-its-own-pause.feature
+
+# Handler pin (BL-233, BL-1371). No consumer anchor: the live consumers
+# (ready_for_next_task.bb and ready_for_next_batch.bb, through
+# handoff-lib/resolve-dequeueable-candidates) already call the function this
+# ticket changes, so any anchor there matches before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1835CeremonyBriefingPassesItsPauseSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. FIRM: while a control pause is
+  active, the documenter is served the briefing instruction and nothing
+  else in its inbox. FIRM: every other parcel, for every role, stays held
+  exactly as e9f91d6746 holds it (human directive 2026-09-21, "just the
+  seats finish the tickets they are working on... not exhaust their
+  inbox."). The human's ruling on waiting for the documenter before the
+  shift closes is BL-1836, which depends on this ticket.
+
+invariants:
+  - "While a control pause is active, ready_for_next serves a role nothing from its inbox except a briefing instruction addressed to the documenter; every other parcel stays in new/, never moved or quarantined."
+  - "The instruction text every briefing trigger sends is one the pause lets through: one literal across the TypeScript and Babashka senders (BL-897)."
+
+source: |
+  Root intake `backlog/INTAKE-pretty-documenter-shift-briefings-20260930.md`
+  (also `.swarmforge/operator/INTAKE-pretty-documenter-shift-briefings-20260930.md`),
+  the human via Let's Talk, 2026-09-30 ~10:47 BST; drained by the
+  specifier the same day into BL-1835 (this root cause) and BL-1836 (the
+  human's ruling), plus a documenter.prompt amendment landed with this
+  mint. The human's sentences, verbatim (Article 5.3; both tickets carry
+  all of them):
+
+  > Est-ce qu'il y aurait moyen d'avoir le documenteur qui fait des jolis briefs comme c'était le cas, il y a une semaine ou plus avec en intro ce qui s'est passé pendant le shift et puis à la fin un petit, il y a des suggestions pour améliorer le process ce genre de choses, mais parce que là les derniers étaient vraiment moches.
+
+  The preceding turn, recorded in the intake as verbatim:
+
+  > the emails for about a week have been quite ugly; go back to the state of a week ago when it was pretty, with a small intro saying what happened during the shift, a pause, then a bit of ticket detail (opened, closed, and so on).
+
+  The ruling, human via Let's Talk, 2026-09-30 ~10:50 BST:
+
+  > C'est ça le fixe qu'il faut laisser. Il faut attendre que le documentaliste est fini avant de fermer le shift.
+
+description: |
+  ## What happened
+
+  The intake diagnosed the symptom: the ceremony deadline writes the
+  headless dump, then the documenter is forbidden to write a second
+  briefing. Traced at mint, the documenter never had the chance:
+  - 07:10:35Z the daemon's ceremony started; its first action, `freeze`
+    (`nightClosingCeremonyLive.ts` `startFrozen`), writes
+    `.swarmforge/operator/control-pause.json` `{active: true, untilMs:
+    <hard deadline>}` (`night-closing-ceremony-run.ts` `applyFreeze`),
+    here 07:45:00Z.
+  - 07:12:16Z the note `produce the morning briefing for 2026-09-30` was
+    delivered and the documenter's pane woken.
+  - 07:12:20Z the documenter ran `ready_for_next.sh` and got
+    `SKIPPED pause-hold: 00_20260930T071216Z_013791_from_coordinator_to_documenter_for_documenter.handoff`,
+    then NO_TASK (session 33b80500).
+  - 07:45:00Z the pause lifted, and in the same tick the ceremony found
+    no briefing, composed the headless dump (a32c9cb5e1) and stopped the
+    swarm.
+  - 08:00:37Z after the restart the documenter read the note, found the
+    day's briefing on main, and sent `briefing 2026-09-30 already on main`
+    as its prompt says.
+  The pause hold is e9f91d6746 (2026-09-21 18:51, no ticket): an active
+  pause holds a role's whole new/ so a bedtime drain finishes only the
+  ticket in hand. It holds the ceremony's own instruction with it. The last
+  documenter briefing was 2026-09-22; every one from 2026-09-23 is
+  headless. The documenter's notes to the coordinator read
+  `briefing <date> already on main` at ~08:00Z each of those days.
+
+  ## What is wanted
+
+  1. While a control pause is active, the documenter is served the
+     briefing instruction (`produce the morning briefing for <day>`), and
+     any other parcel in its inbox stays held (scenario 01).
+  2. Everything else stays held as today: other parcels to the documenter,
+     the same text addressed to any other role, QA's
+     `land documenter briefing` note (scenario 02). The ceremony lands the
+     documenter's briefing commit itself (BL-1641's
+     `landDocumenterBriefing`), so QA does not need to be woken for it.
+  3. Both triggers' instruction text passes: the ceremony's
+     `briefingInstruction` and the fixed-morning fallback's
+     `briefing-generation-schedule-lib/briefing-instruction` (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - The exemption belongs where the hold is decided:
+    `handoff_lib.bb` `partition-pause-held` /
+    `resolve-dequeueable-candidates`, shared by the task and batch
+    helpers. Build the match from
+    `briefing-generation-schedule-lib/briefing-instruction`'s own prefix
+    rather than a third copy of the literal; the existing BL-897 mirror
+    (`bl1458BriefingTriggerInvariants.property.test.js`) already pins the
+    TypeScript sender to it.
+  - Step handler `specs/pipeline/steps/bl1835CeremonyBriefingPassesItsPauseSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). Every fixture root is created
+    by `git init` under mkdtemp and proven with `rev-parse
+    --git-common-dir` before any git command runs in it (BL-1390). The
+    fixture's control pause is the fixture's own file: `pause-hold-active?`
+    resolves the root from git's common dir, which is how BL-1740's sweep
+    read the live swarm's pause from a test. Never write or read the live
+    `.swarmforge/operator/control-pause.json`.
+
+  ## Scope
+
+  `swarmforge/scripts/handoff_lib.bb` and its bb test, the step handler
+  and its registration, evidence. Not the ceremony, the chase sweep's
+  aging exemption, or handoffd's wake suppression.
+
+out_of_scope: |
+  - Waiting for the documenter before the ceremony stops the swarm (the
+    human's ruling): BL-1836.
+  - handoffd's `outbound-wakes-suppressed?` stops chase nudges while
+    paused, so a documenter that misses the delivery wake is not re-woken
+    during the pause. On 2026-09-30 the delivery wake worked (the
+    documenter ran ready_for_next four seconds later); ticket it only if a
+    ceremony shows the note served late.
+  - The documenter's briefing shape (intro, ticket detail, process
+    suggestions): documenter.prompt, landed by the specifier with this
+    mint.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1835-the-ceremonys-briefing-note-reaches-the-documenter-through-its-own-pause.feature`:
+     6 of 6 ok (scenario 01, three rows of 02, two rows of 03). Measured 0
+     on main at mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-1740-the-chase-sweep-reads-the-pause-from-its-caller.feature`:
+     4 of 4 ok; `node specs/pipeline/cli.js specs/features/BL-1458-every-briefing-trigger-instructs-the-documenter.feature`:
+     6 of 6 ok. Both measured on main d6c27c9b11 at mint.
+  3. In-process probe on a mkdtemp scratch repo, never the live checkout:
+     control pause active, the documenter's new/ holds an ordinary note and
+     `produce the morning briefing for 2026-10-01`. The documenter's
+     `ready_for_next.sh` prints TASK for the briefing note and
+     `SKIPPED pause-hold` for the other.
+  After the land (the specifier's or coordinator's check on the next
+  closing ceremony, not QA's): the documenter's session shows the note
+  served during the pause, and `.swarmforge/daemon/closing-ceremony-state.json`
+  records `briefing-landed-from-documenter`, not
+  `briefing-composed-headless`.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the root intake above, traced
+  the same pass from the documenter's mailbox, its session transcript
+  33b80500, and closing-ceremony-state.json. e9f91d6746 has no ticket and
+  no hotfix-ledger row; this is the first ticket to change its behaviour.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
