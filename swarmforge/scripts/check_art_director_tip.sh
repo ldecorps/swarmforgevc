@@ -259,6 +259,17 @@ fi
 ART_DIRECTOR_REF="${RESOLVED%%$'\t'*}"
 ART_DIRECTOR_SOURCE="${RESOLVED#*$'\t'}"
 if ! git rev-parse -q --verify "${ART_DIRECTOR_REF}^{commit}" >/dev/null 2>&1; then
+  # BL-1823: the convention fallback (no roles.tsv row for art-director)
+  # resolves a NAME for a lane that, in a repository with no art director
+  # at all, was never created - there is nothing to guard, so hook mode
+  # lets the merge through rather than refusing on a branch nobody ever
+  # meant to exist. BL-1657's fail-closed stays for every OTHER source
+  # (a roster row or --branch) - only this specific source/missing-branch
+  # combination passes. Branches on the source resolve_art_director_ref
+  # already reports, never a second "no row" derivation (BL-1811).
+  if [[ "$ART_DIRECTOR_SOURCE" == *"no roles.tsv row for art-director"* ]]; then
+    exit 0
+  fi
   echo "Merge refused: check_art_director_tip.sh's resolved art-director branch $ART_DIRECTOR_REF (from $ART_DIRECTOR_SOURCE) does not exist." >&2
   exit 1
 fi

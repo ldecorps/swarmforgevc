@@ -299,6 +299,32 @@ else
   fail "direct mode: expected a refusal naming the swarmforge-<seat> convention as the source, got rc=$rc: $out"
 fi
 
+# ── 14 (BL-1823). hook mode: a repository with NO art director at all (no
+#       roles.tsv row, no swarmforge-art-director branch) has no lane to
+#       guard, so an ordinary merge into main passes - the convention
+#       fallback resolves a name for a lane that was never created, and
+#       BL-1657's fail-closed was never meant to refuse THAT. This is the
+#       one case in the suite where the convention source resolves AND the
+#       branch is missing under hook mode (case 13 above is the direct-mode
+#       analog, which stays a hard refusal - only hook mode gets this
+#       pass). ─────────────────────────────────────────────────────────
+mk_repo no-art-director-hook-pass
+git_ "$repo" branch -D swarmforge-art-director >/dev/null 2>&1 || true
+write_commit "$repo" main extension/src/ordinary_change.ts
+git_ "$repo" checkout -q -b feature-branch main
+write_commit "$repo" feature-branch extension/src/feature_change.ts
+git_ "$repo" checkout -q -b landing main
+git_ "$repo" merge -q --no-ff --no-commit feature-branch >/dev/null 2>&1
+set +e
+out="$(cd "$repo" && bash "$GUARD" 2>&1)"; rc=$?
+set -e
+git_ "$repo" merge --abort >/dev/null 2>&1 || true
+if [[ $rc -eq 0 ]]; then
+  pass "hook mode: a repository with no art director (no roster row, no convention branch) has no lane to guard"
+else
+  fail "hook mode: expected exit 0 for a repository with no art director, got rc=$rc: $out"
+fi
+
 # ── 9. wiring: joins pre-merge-commit's chain, never run_commit_guards.sh's
 #      (out of scope, BL-1444) ────────────────────────────────────────────
 if grep -q 'run_guard check_art_director_tip\.sh' "$REPO_ROOT/swarmforge/git-hooks/pre-merge-commit"; then
