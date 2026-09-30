@@ -106,3 +106,5 @@ notes: |
   with local llm". Priority 1: it is what lets any 32k local-model seat
   launch at all. BL-1125's decomposes_into owes this id and BL-1827's,
   deferred while the epic file carries the human's uncommitted edit.
+
+assigned_to: coder
