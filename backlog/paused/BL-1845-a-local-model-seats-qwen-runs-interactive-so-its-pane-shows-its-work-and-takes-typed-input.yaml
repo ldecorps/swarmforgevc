@@ -1,0 +1,153 @@
+id: BL-1845
+title: "The swarm launches a local-model seat's qwen with its kickoff prompt as a bare argument, which qwen 0.22.2 reads as --prompt: one headless run - so the coder@iq3 pane shows nothing of qwen's work, has no input box for the human to steer it, and never reads the wakes handoffd types into it (it sees new mail only when relaunched; six qwen runs between 15:36 and 16:14 BST on 2026-09-30); the launch hands qwen the kickoff through -i, so qwen opens interactive with it as the first message"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. The seat's declared wake style
+# (chat-message, BL-1052) cannot reach a headless qwen, the human cannot
+# see or steer it, and it works only by being relaunched.
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+depends_on: []
+# Not BL-1837, which edits the same launch line: it is last in the iq3
+# build order (STEERING), so it builds after this one and merges main first.
+mutation_cost: low
+# low: one line in swarmforge.sh's local-model launch branch (zsh, no
+# mutation wired) plus a step handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1845-a-local-model-seats-qwen-runs-interactive-so-its-pane-shows-its-work-and-takes-typed-input.feature
+
+# Handler pin (BL-233, BL-1371). No consumer anchor: every launch and
+# respawn path already re-executes the script write_role_launch_script
+# writes (BL-323), so an anchor there matches before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1845LocalSeatQwenInteractiveSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file. The human asked for the input box (specifier pane,
+  2026-09-30) and answered "Yed please" to minting this ticket, so there
+  are no ruling_options. FIRM: the kickoff text is unchanged; only how it
+  reaches qwen changes. FIRM: -y stays, so qwen still runs shell commands
+  unattended. Accepted consequence: one qwen session now lasts across the
+  seat's parcels until the pane is respawned, so its history grows across
+  them. qwen's compression (BL-1840) and the window budget (BL-1838)
+  govern that, not this ticket.
+
+invariants:
+  - "Every launch the swarm writes for a local-model seat starts qwen interactive: the kickoff reaches qwen only as the value of its interactive prompt option."
+  - "Every other agent's generated launch script is byte-identical before and after this change."
+
+source: |
+  The human, specifier pane, 2026-09-30 ~16:15 BST, verbatim (Article 5.3):
+
+  > Why is iq3 pane not showing whzt qwen is doing, alsonwhy hasn't it got a steering text input area?
+
+  The specifier answered with the cause below, offered to mint a
+  queue-jump defect or treat it as a hotfix the human directs, and the
+  human replied, verbatim:
+
+  > Yed please
+
+  Read as the first offer: mint it through the pipeline.
+
+description: |
+  ## What happens today
+
+  - `swarmforge/scripts/swarmforge.sh` `write_role_launch_script`, branch
+    `local-model)` (line 2239 at mint), writes
+    `qwen --auth-type openai -y <cli> "<kickoff>"`: the kickoff is a bare
+    argument.
+  - qwen 0.22.2 copies a bare argument into `--prompt` unless `-i` is
+    given, and any `--prompt` makes the session non-interactive
+    (`~/.npm-global/lib/node_modules/@qwen-code/qwen-code/chunks/chunk-BAJKAAOY.js`,
+    around lines 39365-39373 and 39645-39656; its own help text reads
+    "Positional prompt. Defaults to one-shot; use -i/--prompt-interactive
+    for interactive.").
+  - Headless text mode draws no screen and prints only the final answer
+    when the run ends. On 2026-09-30 the coder@iq3 pane showed only the
+    echo of a wake ("You have new handoff mail. If idle, run
+    ready_for_next.sh."), which no process read. The seat picked up work
+    only when relaunched with RESUME-ON-START: qwen chat records
+    2e25c1d9, 3ff18451, 7710ce8a and be97fcfc, each a fresh process,
+    between 15:54 and 16:14 BST.
+
+  ## What is wanted
+
+  1. A local-model seat's launch hands qwen its kickoff as the value of
+     its interactive prompt option, so qwen opens its interactive screen
+     with the kickoff as the first message (scenario 01). The kickoff text
+     is unchanged, including the resume note when the seat's in_process
+     mailbox holds a parcel.
+  2. No prompt reaches qwen through `-p`, `--prompt` or a bare argument
+     (scenario 02).
+  3. Every other agent's launch is unchanged (invariant 2).
+
+  ## How (direction, not mandate)
+
+  - The fix is the one launch line. `-i` and `--prompt-interactive` are
+    the same option.
+  - Step handler `specs/pipeline/steps/bl1845LocalSeatQwenInteractiveSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). Generate the launch script
+    the way `bl1052LocalModelSeatSteps.js` `composeLaunchScript` does,
+    in a mkdtemp fixture (`git init`, `rev-parse --git-common-dir`
+    first, BL-1390). Read the qwen command's arguments with the shell's
+    own quoting rules; a text search for "-i" alone also matches other
+    flags.
+  - Phrase the steps as this feature does, not as BL-1837's feature
+    does: both handlers build the same launch script and must not
+    register the same pattern unscoped (stepRegistry.js, BL-425).
+  - This changes the swarm's own launch path. Route it to the primary
+    coder, not coder@iq3 (STEERING, 2026-09-30).
+
+  ## Scope
+
+  `swarmforge/scripts/swarmforge.sh` (the local-model launch line), the
+  step handler and its registration, evidence; the documenter's pages
+  that describe how a local-model seat starts.
+
+out_of_scope: |
+  - The busy probe (`chase_sweep_lib.bb` `actively-processing?`) matches
+    Claude's status line, not qwen's "(esc to cancel, Ns)", so a wake can
+    be typed into a qwen turn in progress. What qwen does with it is
+    observed in the procedure's live step d. If it misbehaves, that needs
+    its own ticket.
+  - The window budget (BL-1838), compression (BL-1840), thinking left on
+    (BL-1841) and the local-seat health report (BL-1842).
+  - The "@" in the card path (BL-1837): same launch line, builds after.
+  - The `gemini)` branch passes its prompt the same way. No gemini seat is
+    live, and gemini-cli's behaviour was not checked at mint.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1845-a-local-model-seats-qwen-runs-interactive-so-its-pane-shows-its-work-and-takes-typed-input.feature`:
+     2 of 2 ok. Measured 0 at mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js` on the BL-1052, BL-1829 and BL-1801
+     features, which also generate this launch script: 9 of 9, 3 of 3 and
+     7 of 7 ok. Measured the same on main 9108e8ca51 at mint.
+  After the land (the coordinator's or specifier's check at the next swarm
+  launch, not QA's: launch scripts are written when the swarm launches):
+  a. `.swarmforge/launch/coder@iq3.sh` hands the kickoff to qwen through
+     `-i`.
+  b. `tmux capture-pane -p -t 'swarmforge-coder@iq3'` shows qwen's
+     interactive screen: its input box and its tool-call lines.
+  c. After the seat ends a turn, its qwen process is still the same one
+     (`ps -o etime` on it covers more than one turn), with no new
+     RESUME-ON-START chat record.
+  d. A wake handoffd delivers to coder@iq3 is followed by a
+     `ready_for_next.sh` call in qwen's newest chat record under
+     `~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder-iq3/chats/`.
+  e. A line the human types into the pane appears as a user message in
+     that record.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the human's question in the
+  specifier pane, cause read from qwen 0.22.2's own source. STEERING: in
+  the iq3 build order right after BL-1838, ahead of BL-1837, because the
+  pane is where the human watches and steers the rest of the iq3 set.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
