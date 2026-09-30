@@ -4,8 +4,9 @@ milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
-priority: 20
-direction: human-intake
+priority: 12
+direction: queue-jump
+# 2026-09-30 human (Cursor): "Auto-jump any ticket that has to do with local llm"
 depends_on: [BL-1819]
 # BL-1819 is the battery and the JSON sidecar this scout reads. BL-1820's
 # competencies join the same sidecar whenever they land; the table ranks on
@@ -105,3 +106,5 @@ notes: |
   1:4, archived with this mint). Normal priority. The intake's optional
   4th slice (a staffing gate for a local specifier seat, and the same
   cadence for coder) is recorded here and not minted.
+
+assigned_to: coder
