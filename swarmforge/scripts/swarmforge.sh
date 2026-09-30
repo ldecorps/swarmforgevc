@@ -781,6 +781,24 @@ ensure_ollama_ancillary_for_launch() {
 # or when the six-tool/exclude list above changes.
 DEFAULT_LOCAL_MODEL_CLI_OVERHEAD_CHARS=55000
 
+# BL-1838: the --model value inside an EXTRA_CLI_ARGS[i]-shaped string, or
+# empty when absent. Factored out of check_local_model_seat_windows
+# (BL-1801) so write_role_launch_script's provider-entry write (BL-1838)
+# parses a seat's --model the same way instead of a second copy.
+extra_cli_model_flag() {
+  local extra="$1"
+  local -a parts_arr
+  local j
+  parts_arr=(${=extra})
+  for (( j = 1; j <= ${#parts_arr[@]}; j++ )); do
+    if [[ "${parts_arr[j]}" == "--model" ]]; then
+      printf '%s\n' "${parts_arr[j+1]:-}"
+      return 0
+    fi
+  done
+  printf '\n'
+}
+
 # BL-1801: after Ollama is ready and before any pane starts, estimate
 # each local-model seat's first turn (its composed prompt, exactly as
 # write_agent_instruction_file will produce it, plus the CLI's own
@@ -790,18 +808,10 @@ DEFAULT_LOCAL_MODEL_CLI_OVERHEAD_CHARS=55000
 # the window cannot be learned at all, never refusing on an unknown
 # window. A pack with no local-model seat asks Ollama nothing.
 check_local_model_seat_windows() {
-  local i model parts j prompt_tmp rc=0
-  local -a parts_arr
+  local i model prompt_tmp rc=0
   for (( i = 1; i <= ${#AGENTS[@]}; i++ )); do
     [[ "${AGENTS[$i]}" == "local-model" ]] || continue
-    model=""
-    parts_arr=(${=EXTRA_CLI_ARGS[$i]:-})
-    for (( j = 1; j <= ${#parts_arr[@]}; j++ )); do
-      if [[ "${parts_arr[j]}" == "--model" ]]; then
-        model="${parts_arr[j+1]:-}"
-        break
-      fi
-    done
+    model="$(extra_cli_model_flag "${EXTRA_CLI_ARGS[$i]:-}")"
     prompt_tmp="$(mktemp)"
     # Compose the STAGE prompt, the same argument write_agent_instruction_file
     # passes. A seat id such as coder@iq3 is not a role the prompt factory
@@ -2012,8 +2022,21 @@ EOF
 # still 14 tools). Invariant: only ever <worktree>/.qwen, never the
 # operator's own ~/.qwen, and only for a local-model seat - this
 # function's own call site is already scoped to `agent == local-model`.
+#
+# BL-1838: model/endpoint_url/context_length are optional (every existing
+# caller/test passes worktree alone, unchanged). When model and
+# endpoint_url are both given, a provider entry for that model is merged
+# into the SAME file afterward (local_model_qwen_provider_cli.bb), keyed
+# to the window Ollama actually serves it - never a second, drifting copy
+# of that num_ctx read (IO-near code calls the owner, BL-1811). A failure
+# writing the provider entry never aborts the launch; the tool-scoping
+# write above already succeeded either way.
 write_local_model_qwen_settings() {
   local worktree="$1"
+  local model="${2:-}"
+  local endpoint_url="${3:-}"
+  local context_length="${4:-}"
+  local seat_role="${5:-}"
   mkdir -p "$worktree/.qwen"
   cat > "$worktree/.qwen/settings.json" <<'JSON'
 {
@@ -2025,6 +2048,20 @@ write_local_model_qwen_settings() {
   }
 }
 JSON
+  if [[ -n "$model" && -n "$endpoint_url" ]]; then
+    # zsh does not word-split an unquoted ${var:+...} substitution the way
+    # bash does (a conditional two-token flag+value would arrive as ONE
+    # argument) - always pass --context-length/--role, empty when unset,
+    # exactly as check_local_model_seat_windows already passes
+    # --context-length "${SWARMFORGE_OLLAMA_CONTEXT_LENGTH:-}" above; the
+    # CLI treats a blank value as absent (str/blank?).
+    bb "$SCRIPT_DIR/local_model_qwen_provider_cli.bb" write \
+      --settings-file "$worktree/.qwen/settings.json" \
+      --model "$model" \
+      --endpoint-url "$endpoint_url" \
+      --context-length "$context_length" \
+      --role "$seat_role" || true
+  fi
 }
 
 write_role_launch_script() {
@@ -2318,8 +2355,15 @@ export OPENAI_BASE_URL='${lm_url}'
 "
     # BL-1829: written once per launch-script generation, before this seat's
     # pane ever starts, so qwen's own first-request tool schema is already
-    # scoped to the six loop tools by the time it boots.
-    write_local_model_qwen_settings "$role_worktree"
+    # scoped to the six loop tools by the time it boots. BL-1838: also
+    # given this seat's --model, so its qwen provider entry (contextWindowSize)
+    # is budgeted to the window Ollama actually serves that model with,
+    # never a stale value only the operator's own ~/.qwen holds.
+    write_local_model_qwen_settings "$role_worktree" \
+      "$(extra_cli_model_flag "$extra_cli")" \
+      "$lm_url" \
+      "${SWARMFORGE_OLLAMA_CONTEXT_LENGTH:-}" \
+      "$role"
   fi
   if [[ "$agent" == "claude" ]]; then
     # BL-1328 PRECEDENCE ASYMMETRY, documented deliberately rather than

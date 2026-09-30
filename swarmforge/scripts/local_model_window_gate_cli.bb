@@ -15,15 +15,13 @@
 ;; on :refuse, having started nothing.
 (ns local-model-window-gate-cli
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
-            [cheshire.core :as json]
             [clojure.string :as str]))
 
 (def scripts-dir (fs/path (fs/parent (fs/canonicalize *file*))))
+;; BL-1838: served-window (the num_ctx read) moved into the lib itself -
+;; this load-file brings it (and estimate-tokens/window-outcome) into
+;; scope, referenced below as local-model-window-gate-lib/served-window.
 (load-file (str (fs/path scripts-dir "local_model_window_gate_lib.bb")))
-
-(defn- sh! [& args]
-  (apply process/sh args))
 
 (defn cli-args []
   (let [raw (vec *command-line-args*)]
@@ -36,31 +34,6 @@
         idx (.indexOf args k)]
     (when (>= idx 0) (get args (inc idx)))))
 
-;; The native Ollama API (never the OpenAI-compat /v1 suffix the seat's
-;; own launch uses) - local_model_endpoint_url in swarmforge.sh returns
-;; the /v1 base, so this strips it.
-(defn- native-base [endpoint-url]
-  (str/replace endpoint-url #"/v1/?$" ""))
-
-(defn served-window
-  "The num_ctx Ollama reports for `model` via POST /api/show, parsed from
-   the `parameters` field's own text blob (e.g. \"num_ctx    32768\\n...\").
-   nil on any failure (unreachable endpoint, non-2xx, unparseable body, or
-   no num_ctx line) - the caller falls back to the swarm's own context
-   length, never throws."
-  [endpoint-url model]
-  (try
-    (let [{:keys [exit out]} (sh! "curl" "-sS" "-m" "5"
-                                  (str (native-base endpoint-url) "/api/show")
-                                  "-d" (json/generate-string {:model model}))]
-      (when (zero? exit)
-        (let [body (json/parse-string out true)
-              params (:parameters body)]
-          (when (string? params)
-            (when-let [m (re-find #"(?m)^\s*num_ctx\s+(\d+)" params)]
-              (Long/parseLong (second m)))))))
-    (catch Exception _ nil)))
-
 (defn- parse-int [s]
   (when-not (str/blank? (str s))
     (try (Long/parseLong (str/trim (str s))) (catch Exception _ nil))))
@@ -71,7 +44,7 @@
    System/exit) so the CLI's own main below stays a thin wrapper."
   [{:keys [role model prompt-file endpoint-url context-length overhead-chars override?]}]
   (let [composed-chars (count (slurp prompt-file))
-        window (or (served-window endpoint-url model) (parse-int context-length))
+        window (or (local-model-window-gate-lib/served-window endpoint-url model) (parse-int context-length))
         estimate (local-model-window-gate-lib/estimate-tokens composed-chars overhead-chars)]
     (local-model-window-gate-lib/window-outcome
      {:window window :estimate-tokens estimate :override? override? :role role :model model})))
