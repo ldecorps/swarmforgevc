@@ -110,7 +110,16 @@ test('BL-1342/BL-654 invariant 2: a skipped parcel is left as found and re-evalu
   // modify nor forget it.
   let runs = 0;
   fc.assert(
-    fc.property(fc.string({ minLength: 1, maxLength: 40 }).map((s) => s.replace(/[\r\n]/g, ' ')), (body) => {
+    fc.property(
+      fc.string({ minLength: 1, maxLength: 40 })
+        .map((s) => s.replace(/[\r\n]/g, ' '))
+        // BL-1825: a whitespace-only draw is not a body any valid parcel
+        // can carry - handoff_lib.bb's corrupt-handoff? (BL-365) rightly
+        // quarantines it instead of delivering it on the second poll, so
+        // the property fails at random on a rare all-blank draw. Narrow
+        // to bodies that are non-blank after trimming.
+        .filter((s) => s.trim().length > 0),
+      (body) => {
       runs += 1;
       const fx = makeFixture({ unreadable: true });
       try {
