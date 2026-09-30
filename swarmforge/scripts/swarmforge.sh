@@ -762,15 +762,24 @@ ensure_ollama_ancillary_for_launch() {
   fi
 }
 
-# BL-1801: qwen 0.22.2's own recorded system-prompt/tool-definition
-# overhead beyond whatever prompt file it is told to read (measurement
-# method and evidence: backlog/evidence/BL-1801-coder-20260930.md).
-# Measured live (a fake OpenAI-compat endpoint on loopback, captured
-# request body): 103,081 characters (tools schema 65,630 + system/
-# system-reminder messages 37,451, marker text excluded). Rounded up to
-# a safe round number. Re-measure and update this constant when the
-# qwen CLI version changes.
-DEFAULT_LOCAL_MODEL_CLI_OVERHEAD_CHARS=105000
+# BL-1801/BL-1829: qwen 0.22.2's own recorded system-prompt/tool-
+# definition overhead beyond whatever prompt file it is told to read.
+# BL-1801's own measurement (backlog/evidence/BL-1801-coder-20260930.md)
+# was against qwen's UNSCOPED default 28-tool set: 103,081 characters,
+# rounded up to 105,000 - and that alone already exceeded a 32768-token
+# window with no card at all. BL-1829 scopes every local-model seat to
+# the six tools its loop actually uses via a project-level
+# .qwen/settings.json (write_local_model_qwen_settings); re-measured
+# live with that file in place (same fake-OpenAI-compat-endpoint-on-
+# loopback method, under the real operator HOME - what a seat actually
+# runs with): tools schema 14,522 + messages 34,784 (marker text
+# excluded) = 49,306 characters (backlog/evidence/BL-1829-coder-20260930.md).
+# Rounded up to a safe round number, with margin for host-to-host
+# variance in the operator's own ~/.qwen skills/memories (this ticket's
+# own mint measurement, a different host with a clean HOME, read 51,727).
+# Re-measure and update this constant when the qwen CLI version changes,
+# or when the six-tool/exclude list above changes.
+DEFAULT_LOCAL_MODEL_CLI_OVERHEAD_CHARS=55000
 
 # BL-1801: after Ollama is ready and before any pane starts, estimate
 # each local-model seat's first turn (its composed prompt, exactly as
@@ -1986,6 +1995,34 @@ EOF
   echo "$settings_file"
 }
 
+# BL-1829: a local-model seat's own PROJECT-level qwen settings (qwen
+# 0.22.2 reads <cwd>/.qwen/settings.json) - only the six tools its role
+# loop actually uses. Measured at mint: qwen's default 28-tool set costs
+# ~105,000 characters of first-turn overhead before any prompt, over a
+# 32768-token window on its own; the six-tool core plus this exclude list
+# (the 12 tools qwen always keeps on regardless of coreTools) costs
+# ~55,000. Both key forms qwen 0.22.2 reads are written (coreTools/
+# excludeTools AND the nested tools.core/tools.exclude) since which one
+# wins was not worth pinning to a single CLI version. --safe-mode is NOT
+# an alternative: it ignores this settings file entirely (measured:
+# still 14 tools). Invariant: only ever <worktree>/.qwen, never the
+# operator's own ~/.qwen, and only for a local-model seat - this
+# function's own call site is already scoped to `agent == local-model`.
+write_local_model_qwen_settings() {
+  local worktree="$1"
+  mkdir -p "$worktree/.qwen"
+  cat > "$worktree/.qwen/settings.json" <<'JSON'
+{
+  "coreTools": ["run_shell_command", "read_file", "write_file", "edit", "glob", "grep_search"],
+  "excludeTools": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal"],
+  "tools": {
+    "core": ["run_shell_command", "read_file", "write_file", "edit", "glob", "grep_search"],
+    "exclude": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal"]
+  }
+}
+JSON
+}
+
 write_role_launch_script() {
   local index="$1"
   local role="${ROLES[$index]}"
@@ -2268,6 +2305,10 @@ RESUMECHECK
     local_model_guard="export OPENAI_API_BASE='${lm_url}'
 export OPENAI_BASE_URL='${lm_url}'
 "
+    # BL-1829: written once per launch-script generation, before this seat's
+    # pane ever starts, so qwen's own first-request tool schema is already
+    # scoped to the six loop tools by the time it boots.
+    write_local_model_qwen_settings "$role_worktree"
   fi
   if [[ "$agent" == "claude" ]]; then
     # BL-1328 PRECEDENCE ASYMMETRY, documented deliberately rather than

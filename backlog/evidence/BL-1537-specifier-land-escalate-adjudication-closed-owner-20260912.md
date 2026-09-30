@@ -767,3 +767,21 @@ records). BL-1782 owns no register row. `abandoned_commits: [..., 90f80eeb47]`
 and this instance ride inside the land commit.
 
 By QA.
+
+## Instance - BL-1829's land, condition (g) (QA, 2026-09-30)
+
+Same stray and shape as BL-1782's instance above: `land_main_publish.sh
+<QA worktree> --land BL-1829 fea4c437e1` printed `LAND_ESCALATE`
+(`ENTANGLED_SIBLING` BL-1651, BL-1671, BL-1732) and `could not cherry-pick
+stray evidence commit 698a268a8b`. None of its paths is BL-1829's: left
+alone, landed per (g) from QA tip fea4c437e1, BL-1829's own paths only.
+
+Root cause found, and closed in this land: my LAND_REPLAY lands of
+BL-1820 (a2a53313ae), BL-1811 (76768dbf86) and BL-1821 (ef066bd200) today
+never recorded `abandoned_commits: [<cited commit>]`. 698a268a8b is an
+ancestor of ef066bd200, so with that record on main the land step's
+ancestor-of-owner-abandoned ground (BL-1795) supersedes it by itself.
+The three records ride this land as condition (i) drains (see the BL-1775
+file).
+
+By QA.
