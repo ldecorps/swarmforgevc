@@ -1,0 +1,108 @@
+id: BL-1829
+title: "Every local-model seat on a 32768-token window is refused at launch since BL-1801, because the qwen CLI's own first-turn overhead (28 tools and its system prompt, about 105,000 characters) exceeds the window before any card; each local-model seat now carries its own .qwen/settings.json allowing only the six tools its loop uses (measured 51,700-55,000 characters), the gate's recorded overhead follows the new measurement, and a 32k coder seat launches again"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+# medium: a seat-scoped settings writer in the launch path, the recorded
+# overhead constant, .gitignore, the window-gate scenario wiring.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1829-a-local-model-seat-starts-qwen-with-only-its-loop-tools.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file needs your tap; no choice is posed. FIRM, measured at
+  mint (below): the six tools are run_shell_command, read_file, write_file,
+  edit, glob and grep_search; they need BOTH qwen's core list and an
+  exclude list (core alone leaves 18 tools); --safe-mode is NOT used (it
+  ignores the settings file and leaves 14 tools); the settings live in the
+  seat's own working directory (project-level settings, honoured by qwen
+  0.22.2), never in the operator's ~/.qwen, and the seat's HOME is not
+  changed. FIRM: BL-1801's gate logic is unchanged; only its recorded
+  overhead is re-measured.
+
+invariants:
+  - "The launch never writes or reads-and-rewrites the operator's own ~/.qwen; a seat's qwen settings exist only in that seat's working directory, and only for a local-model seat."
+
+description: |
+  ## What is wrong
+
+  QA note 003538: BL-1801 landed (e1cb2615de), and qwen local-model seats
+  on a 32768-token window now refuse at launch. That is the gate working:
+  BL-1801's evidence measured the qwen CLI's first request at 103,081
+  characters and set `DEFAULT_LOCAL_MODEL_CLI_OVERHEAD_CHARS=105000`
+  (`swarmforge.sh:773`), about 35,000 tokens at 3 characters a token, over
+  the window with no card at all. The live pack at mint is cursor-forge,
+  so nothing running is refused today; every local pack on a 32k model
+  is.
+
+  ## Measured at mint (2026-09-30, qwen 0.22.2)
+
+  A loopback fake OpenAI endpoint captured qwen's first request for
+  `qwen --auth-type openai -y -m test -p "MARKER-ONLY"`, HOME set to a
+  clean temp directory (the operator's ~/.qwen untouched):
+  - default: 28 tools, 64,324 + messages 40,671 = 104,995 characters;
+  - `coreTools`/`tools.core` = the six: 18 tools remain (agent, skill,
+    tool_search, send_message and others are always on), 88,638;
+  - core plus `excludeTools`/`tools.exclude` naming the 12 always-on
+    extras (agent, enter_worktree, exit_worktree, get_goal, list_agents,
+    record_artifact, report_findings, send_message, skill, task_stop,
+    tool_search, update_goal): 6 tools, 14,335 + 40,620 = 54,955;
+  - the same settings as a PROJECT-level `.qwen/settings.json` in the
+    working directory (clean HOME): 6 tools, 51,727;
+  - `--safe-mode`: ignores the settings file, 14 tools, 76,878.
+  At 55,000 characters of overhead plus the coder's compact card (at most
+  8,192, BL-1798) the first turn is about 21,100 tokens: under 32,768, and
+  over half of it, so BL-1801 warns and proceeds.
+
+  ## What is wanted
+
+  1. For each local-model seat, the launch writes `.qwen/settings.json`
+     into the seat's working directory (its worktree, or the master
+     checkout for a master-resident role) with the six-tool core list and
+     the exclude list above, in both key forms qwen 0.22.2 reads
+     (`coreTools`/`excludeTools` and `tools.core`/`tools.exclude`). No
+     other agent's seat gets one.
+  2. `.qwen/` is ignored in `.gitignore`, so the file never shows in a
+     role's `git status` or rides a commit.
+  3. The parcel re-measures the overhead with that file in place (BL-1801's
+     fake-endpoint method, under the operator's REAL HOME, since that is
+     what a seat runs with) and sets `DEFAULT_LOCAL_MODEL_CLI_OVERHEAD_CHARS`
+     to the nearest safe round number above it, recording the measurement
+     in the evidence.
+  4. Not in scope, recorded: qwen's own system prompt (about 37,000-40,000
+     characters) is the next largest share; replacing it is a separate
+     question if 32k seats need more working room.
+
+  ## Scope
+  - `swarmforge/scripts/swarmforge.sh` (the local-model launch path near
+    line 2195, and the constant), `.gitignore`, their tests, the step
+    handler `specs/pipeline/steps/bl1829LocalSeatQwenToolsSteps.js` (same
+    commit as the runnable feature, BL-233), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1829-a-local-model-seat-starts-qwen-with-only-its-loop-tools.feature`:
+     3 of 3 ok (0 of 3 on main at mint, no handler yet).
+  2. `node specs/pipeline/cli.js specs/features/BL-1801-a-local-model-seat-never-launches-past-its-served-window.feature`:
+     7 of 7 ok (as measured on main at mint).
+  3. `bb swarmforge/scripts/local_model_window_gate_cli.bb check --role coder --model ista-iq3s-coder:latest --prompt-file <the coder's composed compact card> --endpoint-url http://127.0.0.1:11434/v1`
+     against this host's Ollama: WARN or silent, never REFUSE.
+  4. Read the parcel's evidence for the re-measured overhead and the
+     constant's new value.
+
+notes: |
+  Minted 2026-09-30 by the specifier from QA note 003538 (BL-1801 landed;
+  32k local-model seats refuse). The overhead breakdown was measured at
+  mint in a scratch directory with a loopback fake endpoint; nothing was
+  written outside it. direction: queue-jump under the human's standing
+  directive of 2026-09-30, verbatim: "Auto-jump any ticket that has to do
+  with local llm". Priority 1: it is what lets any 32k local-model seat
+  launch at all. BL-1125's decomposes_into owes this id and BL-1827's,
+  deferred while the epic file carries the human's uncommitted edit.
