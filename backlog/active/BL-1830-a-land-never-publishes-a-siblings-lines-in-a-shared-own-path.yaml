@@ -98,3 +98,5 @@ qa_e2e_procedure: |
 notes: |
   Minted 2026-09-30 by the specifier from QA note 003539 (BL-1801 land
   passenger). Pending, with ruling_options.
+
+assigned_to: coder
