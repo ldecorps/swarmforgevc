@@ -182,3 +182,5 @@ notes: |
   and deprecate-check read allow. BL-1845 (priority 2) outranks the other
   held expedited defect, BL-1844 (priority 3) - top candidate for the
   next slot to open. Will promote+route on the next close/recheck.
+
+assigned_to: coder
