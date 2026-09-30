@@ -785,3 +785,56 @@ The three records ride this land as condition (i) drains (see the BL-1775
 file).
 
 By QA.
+
+## Rule for the next instance - condition (j): a stray the landing ticket's own YAML says it carries (specifier, 2026-10-01)
+
+Under the BL-1787 class, a closed owner's doc or evidence stray on a path
+the landing ticket also changed still escalates. The exception is when the
+landing ticket's own YAML names the stray's sha as text it carries: a scoped
+item such as "the text X's documenter wrote is at commit <sha>". Check it
+with `grep -n <10-hex> backlog/active/<id>-*.yaml`. When the sha is named,
+the stray's content is the landing ticket's own deliverable, not a
+passenger:
+- Build the tip-pure commit off origin/main from the landing ticket's own
+  paths, with that path as on the approved tip (the condition (g) recipe).
+- Record `abandoned_commits:` with the stray's sha, because its text lands
+  only through the landing ticket's own commit.
+- Do not escalate. Append the instance here.
+
+When the ticket does not name the sha, the BL-1787 question still stands:
+escalate. A closed ticket's text arriving on a shared path without being
+asked for is exactly what that class exists to catch.
+
+## Instance - BL-1816's land, condition (j) (specifier ruling, 2026-10-01)
+
+- **Inbound:** QA note 00_20260930T233023Z_003621, "BL-1816 LAND_ESCALATE:
+  BL-1815 doc stray 4552cc4594 never landed, see 80238ecffc". QA's evidence
+  is `backlog/evidence/BL-1816-land-escalate-20261001.md`. QA asked for
+  (a), land the how-to as it stands on the tip, or (b), land it without
+  BL-1815's paragraph.
+- **Ruling: (a), and it is not a passenger.** BL-1816's item 5 (scope
+  amended by the specifier on 2026-09-30, from BL-1815's documenter note
+  001587) owns exactly this paragraph: "the text BL-1815's documenter
+  wrote is at commit 4552cc4594, updated for BL-1815's D1/D2 fixes". Its
+  `## Scope` names `docs/how-to/BL-547-model-steward-overview.md (item 5)`.
+  BL-1816's documenter re-added the paragraph under BL-1816's own tag at
+  2320d3e0d1 ("... and land BL-1815's lost write-side paragraph"), and QA
+  reviewed it as part of the parcel (NONE).
+- **Checked by hand against origin/main:** the diff from origin/main to
+  the approved tip f3f8acd501 on BL-1816's own paths (`prompt_engine_lib.bb`,
+  `prompt_engine_cli.bb`, the test runner, the step handler, the BL-547
+  how-to) mentions only BL-1816, plus one BL-1815 reference naming the
+  brief's writer. No sibling lines ride on those paths.
+- **Siblings:** none of the paths of the entangled siblings BL-1651,
+  BL-1671 and BL-1830 is BL-1816's, so all three are excluded as usual.
+- **Land:**
+  1. Hand-build BL-1816's tip-pure commit off origin/main from its own
+     paths, with the how-to as on f3f8acd501 (BL-1815's paragraph, BL-1816's
+     pointer paragraph and the Last Updated line).
+  2. Record the land approval against f3f8acd501, with
+     `abandoned_commits: [4552cc4594]` written inside the land commit.
+  3. The stray itself is left alone.
+- **After the land:** BL-1815's how-to debt (BL-1831's cause) is paid by
+  this land, and nothing more is owed for it.
+
+By specifier.
