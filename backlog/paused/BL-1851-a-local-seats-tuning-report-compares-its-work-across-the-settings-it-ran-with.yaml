@@ -1,5 +1,5 @@
 id: BL-1851
-title: "A local seat's tuning report compares its work across the settings it ran with - one command groups the seat's qwen sessions by the settings in force at their start (BL-1850's record) and by how Ollama served the model (layers on GPU, KV cache), and prints per group the time to first token, prefill and decode speed, output and thinking tokens, chat compressions and tool-call failures, and what differs between groups"
+title: "A local seat's tuning report compares its work across the settings it ran with - one command groups the seat's qwen requests by the settings in force when each ran (BL-1850's record, including rows written by hand mid-session) and by how Ollama served the model (layers on GPU, KV cache), and prints per group the time to first token, prefill and decode speed, output and thinking tokens, chat compressions and tool-call failures, and what differs between groups"
 milestone: M8
 type: feature
 status: todo
@@ -42,6 +42,10 @@ source: |
   (Recommended)"; "Where should the tuning results show up?" ->
   "Command-line report (Recommended)".
 
+  The human, 2026-09-30 ~20:45Z, specifier pane, verbatim:
+
+  > note that I reduced the card power from 180W to 150W about 15 minutes ago, that might have a negative impact of iq3 performance
+
 description: |
   ## Why
 
@@ -53,21 +57,25 @@ description: |
   running 8,469 tokens at 24 tokens/s, and an earlier load with 8 of 65
   layers on the CPU. What a change of num_ctx, KV
   cache, thinking or compression bought is the difference in these numbers
-  between the sessions before it and after it.
+  between the requests before it and after it.
 
   ## What is wanted
 
   `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <root> --seat <seat> [--since <iso date>]`
-  - Groups the seat's sessions by the settings fingerprint in force at the
-    session's first record: the latest BL-1850 row at or before it, else
-    `unrecorded settings` (scenarios 01, 05). Within a fingerprint, it
-    splits by how Ollama served the model, read from the Ollama log load
-    before the session's first request: layers on the GPU of the total and
-    the KV cache type (scenario 04).
+  - Groups the seat's requests by the settings fingerprint in force when
+    each ran: the latest BL-1850 row at or before the request's time, else
+    `unrecorded settings` (scenarios 01, 05). A session is not the unit: a
+    row written mid-session, as for the GPU power limit the human lowered
+    on 2026-09-30, splits it (scenario 01). Within a fingerprint, it splits
+    by how Ollama served the model, read from the Ollama log load before
+    the request: layers on the GPU of the total and the KV cache type
+    (scenario 04).
   - Per group: sessions and requests; median time to first token; prefill
     speed as input tokens / ttft; decode speed as output tokens /
     (duration - ttft); median output tokens; thinking as a share of output
-    (scenario 02). Chat compressions per session and tokens saved each;
+    (scenario 02). Chat compressions per 10 requests and tokens saved
+    each, each compression and tool call counted in the group in force at
+    its own time;
     tool-call failure rate and the most failing tool; api errors (scenario
     03).
   - Between consecutive groups: the fields that differ, as `<field> <old>
@@ -108,9 +116,9 @@ qa_e2e_procedure: |
      5 of 5 ok. Measured 0 on main at mint: no handler exists yet.
   2. The bb test for the lib: ALL PASS.
   3. Live, read-only: `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <root> --seat coder@iq3`.
-     Sessions from before BL-1850's first row read `unrecorded settings`.
+     Requests from before BL-1850's first row read `unrecorded settings`.
      If `.swarmforge/ollama-serve-operator.log` still holds the 2026-09-30
-     13:27 load (57/65 layers, f16 KV), the sessions after it are served
+     13:27 load (57/65 layers, f16 KV), the requests after it are served
      apart from those after the 13:51 restart (65/65, q8_0). Record the
      printed groups in the evidence.
 
@@ -118,3 +126,8 @@ notes: |
   Minted 2026-09-30 by the specifier with BL-1850, from the human's ask
   and answers in the specifier pane (source). Placed after BL-1842 (its
   reader) in the STEERING iq3 order.
+  Amended 2026-09-30 ~20:50Z by the specifier, still paused, never
+  promoted: requests, not sessions, are grouped by the settings in force
+  when each ran, so a change made mid-session outside the swarm (the
+  human's GPU power limit, 180 W -> 150 W, source) splits the session at
+  the row BL-1850 records for it.

@@ -5,8 +5,10 @@ Feature: BL-1851 A local seat's tuning report compares its work across the setti
   session records carry every request's time to first token, duration,
   tokens and tool calls, and every chat compression; the Ollama log carries
   each model load's layers on the GPU and KV cache type. BL-1850 records
-  the settings each seat start used. This report puts them side by side:
-  sessions grouped by the settings in force when they started, and by how
+  the settings a seat starts with, and any row written by hand after a
+  change made outside the swarm, such as the GPU power limit the human
+  lowered mid-session that evening. This report puts them side by side:
+  requests grouped by the settings in force when each one ran, and by how
   Ollama actually served the model, with each group's numbers and what
   differs between groups, so a settings change can be judged before and
   after from the seat's real work.
@@ -14,13 +16,12 @@ Feature: BL-1851 A local seat's tuning report compares its work across the setti
   Background:
     Given a fixture root holding a settings record, qwen session records and an Ollama log for the seat "coder@iq3"
 
-  # BL-1851 sessions-group-by-the-settings-they-started-with-01
-  Scenario: sessions are grouped by the settings in force at their start
-    Given the settings record changes num_ctx from 32768 to 49152
-    And 3 sessions started under the first settings and 2 under the second
+  # BL-1851 requests-group-by-the-settings-they-ran-under-01
+  Scenario: requests are grouped by the settings in force when each ran, even within one session
+    Given one session's first 12 requests ran before a settings row lowering the GPU power limit from 180 W to 150 W, and its last 8 after it
     When the tuning report runs for "coder@iq3"
-    Then it prints two groups, of 3 sessions and 2 sessions
-    And it names "num_ctx 32768 -> 49152" as the difference between them
+    Then it prints two groups, of 12 requests and 8 requests
+    And it names "GPU power limit 180 W -> 150 W" as the difference between them
 
   # BL-1851 a-group-prints-its-turn-numbers-02
   Scenario: a group prints its time to first token, prefill and decode speed, output and thinking
@@ -35,21 +36,21 @@ Feature: BL-1851 A local seat's tuning report compares its work across the setti
 
   # BL-1851 a-group-prints-its-compressions-and-tool-failures-03
   Scenario: a group prints its chat compressions and tool-call failures
-    Given one group's 2 sessions recorded 4 chat compressions, each from 18000 to 16000 tokens
-    And they recorded 20 tool calls, of which 3 failed, 2 of them "edit"
+    Given one group's 40 requests came with 4 chat compressions, each from 18000 to 16000 tokens
+    And they came with 20 tool calls, of which 3 failed, 2 of them "edit"
     When the tuning report runs for "coder@iq3"
-    Then the group reads 2 compressions per session saving 2000 tokens each
+    Then the group reads 1 compression per 10 requests saving 2000 tokens each
     And the group reads a tool-call failure rate of 15% with "edit" failing most
 
   # BL-1851 how-ollama-served-the-model-splits-a-group-04
-  Scenario: sessions under the same settings are split by how Ollama served the model
-    Given every session started under the same settings
-    And the Ollama log loaded the model with 57 of 65 layers on the GPU and an f16 KV cache before the first session, and with 65 of 65 and a q8_0 KV cache before the second
+  Scenario: requests under the same settings are split by how Ollama served the model
+    Given every request ran under the same settings
+    And the Ollama log loaded the model with 57 of 65 layers on the GPU and an f16 KV cache before the first 5 requests, and with 65 of 65 and a q8_0 KV cache before the other 5
     When the tuning report runs for "coder@iq3"
     Then it prints two groups under those settings, served as "57/65 layers, f16 KV" and "65/65 layers, q8_0 KV"
 
-  # BL-1851 sessions-before-any-record-are-unrecorded-05
-  Scenario: a session that started before the first settings row is grouped as unrecorded
-    Given a session started before the settings record's first row
+  # BL-1851 requests-before-any-record-are-unrecorded-05
+  Scenario: a request made before the first settings row is grouped as unrecorded
+    Given a request ran before the settings record's first row
     When the tuning report runs for "coder@iq3"
-    Then that session is grouped under "unrecorded settings"
+    Then that request is grouped under "unrecorded settings"

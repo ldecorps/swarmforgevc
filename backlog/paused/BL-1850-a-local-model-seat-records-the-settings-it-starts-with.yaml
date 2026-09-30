@@ -1,5 +1,5 @@
 id: BL-1850
-title: "A local-model seat records the settings it starts with - every start of a local-model seat appends one row to .swarmforge/local-agent/seat-settings/<seat>.jsonl with the model's Ollama parameters and version, qwen's provider entry for the model (never a credential), the card's size and sha256, and a fingerprint that changes only when a setting does, so a change in the seat's behaviour can be tied to the setting that changed"
+title: "A local-model seat records the settings it starts with - every start of a local-model seat appends one row to .swarmforge/local-agent/seat-settings/<seat>.jsonl with the model's Ollama parameters and version, qwen's provider entry for the model (never a credential), the card's size and sha256, the GPU's power limit, and a fingerprint that changes only when a setting does, so a change in the seat's behaviour can be tied to the setting that changed"
 milestone: M8
 type: feature
 status: todo
@@ -46,6 +46,10 @@ source: |
   (Recommended)"; "Where should the tuning results show up?" ->
   "Command-line report (Recommended)".
 
+  The human, 2026-09-30 ~20:45Z, specifier pane, verbatim:
+
+  > note that I reduced the card power from 180W to 150W about 15 minutes ago, that might have a negative impact of iq3 performance
+
 description: |
   ## Why
 
@@ -72,7 +76,15 @@ description: |
     list when it carries one, per QA's BL-1838 reading), and any chat
     compression settings, all with credentials dropped (scenario 03);
   - the card: path, bytes, sha256;
+  - the GPU: name, enforced power limit and default power limit, from
+    `nvidia-smi --query-gpu=name,enforced.power.limit,power.default_limit
+    --format=csv,noheader` within 2 seconds, else unknown (a host with no
+    NVIDIA tool, macOS among them) (scenarios 01, 04);
   - `fingerprint`: sha256 of every field above except `at` (scenario 02).
+
+  The same command run by hand appends a row the same way. The how-to
+  says to run it after changing a setting outside the swarm, such as the
+  GPU power limit, so BL-1851 can split the requests before and after.
 
   Every local-model seat's generated launch script runs it before qwen
   starts, `|| true` and bounded, so a start is never held (invariant 1).
@@ -102,7 +114,7 @@ description: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1850-a-local-model-seat-records-the-settings-it-starts-with.feature`:
-     6 of 6 ok (01, three rows of 02, 03, 04). Measured 0 on main at mint:
+     8 of 8 ok (01, four rows of 02, 03, two rows of 04). Measured 0 on main at mint:
      no handler exists yet.
   2. The bb test for the lib, and the new launch-script shell test:
      ALL PASS.
@@ -110,8 +122,9 @@ qa_e2e_procedure: |
      the real endpoint `http://127.0.0.1:11434`, `--model
      ista-iq3s-coder:latest`, `--card .swarmforge/prompts/coder@iq3.md`
      and `--worktree .worktrees/coder-iq3`. The row carries num_ctx 49152,
-     num_predict 4096 and Ollama 0.32.15 (the state at mint), and `grep -ci
-     apikey` on the row finds no value.
+     num_predict 4096, Ollama 0.32.15 and whatever power limit
+     `nvidia-smi` reports at the time (150 W against a 180 W default at
+     amendment), and `grep -ci apikey` on the row finds no value.
   After the land (the coordinator's check, not QA's): a launch script
   runs the new line only once it is regenerated (`./swarm ensure`), so
   after the next coder@iq3 respawn,
@@ -124,3 +137,9 @@ notes: |
   and a row recorded before they land is the baseline the report compares
   them against. Parcel outcomes per settings and the lab A/B are
   remaining slices on BL-1125.
+  Amended 2026-09-30 ~20:50Z by the specifier, still paused, never
+  promoted: the GPU power limit joins the row, and a by-hand run is
+  named, after the human lowered the card from 180 W to 150 W mid-session
+  (source). Measured the same pass from the Ollama log: prefill ~761 ->
+  ~686 tok/s (about -10%), decode about -4 to -10%, 3 requests after.
+  Evidence: `backlog/evidence/iq3-window-vram-census-20260930-specifier.md`.
