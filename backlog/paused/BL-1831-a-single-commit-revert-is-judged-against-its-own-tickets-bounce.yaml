@@ -19,7 +19,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1831-a-single-commit-revert-is-judged-against-its-own-tickets-bounce.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file needs your tap; no choice is posed. FIRM: a merge
   revert keeps today's attribution (second-parent walk, BL-1471's feature
