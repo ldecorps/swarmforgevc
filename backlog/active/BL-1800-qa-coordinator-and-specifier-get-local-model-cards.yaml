@@ -111,3 +111,5 @@ notes: |
   window). Estimable (three notes, one census step). Small (3 scenarios,
   5 cases, 1 invariant). Testable (through the real CLI and the real
   pack file).
+
+assigned_to: coder
