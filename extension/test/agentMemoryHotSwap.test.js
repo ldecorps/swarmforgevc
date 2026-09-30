@@ -5,8 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const {
+  agentMemoryDir,
   attemptSameRoleModelSwitch,
   buildOutgoingCaptureState,
+  persistTrialBoundaryPayload,
   runMemoryTransferForRole,
   runTrialBoundaryMemoryTransfer,
 } = require('../out/tools/agentMemoryHotSwap');
@@ -87,4 +89,45 @@ test('BL-1178: runMemoryTransferForRole round-trips capture and inject', () => {
   });
   assert.equal(result.ok, true);
   assert.equal(result.payload.continuitySummary, 'continuity');
+});
+
+test('BL-1815: agentMemoryDir joins .swarmforge/agent-memory/<role>', () => {
+  assert.equal(agentMemoryDir('/tmp/x', 'coder'), path.join('/tmp/x', '.swarmforge', 'agent-memory', 'coder'));
+});
+
+test('BL-1815: persistTrialBoundaryPayload writes payload.json with capturedAt merged into handoffPack', () => {
+  const root = mkTmpDir('agent-memory-hotswap-persist-');
+  const payload = {
+    kind: 'portable-agent-memory-payload',
+    schemaVersion: 1,
+    role: 'coder',
+    continuitySummary: 'the outgoing brief',
+    openParcelContext: { openParcelIds: ['p1'] },
+  };
+
+  const written = persistTrialBoundaryPayload(root, 'coder', payload, '2026-09-30T00:00:00.000Z');
+
+  assert.equal(written, path.join(agentMemoryDir(root, 'coder'), 'payload.json'));
+  const onDisk = JSON.parse(fs.readFileSync(written, 'utf8'));
+  assert.equal(onDisk.schemaVersion, 1);
+  assert.equal(onDisk.continuitySummary, 'the outgoing brief');
+  assert.equal(onDisk.handoffPack.capturedAt, '2026-09-30T00:00:00.000Z');
+});
+
+test('BL-1815: persistTrialBoundaryPayload preserves an existing handoffPack alongside capturedAt', () => {
+  const root = mkTmpDir('agent-memory-hotswap-persist-');
+  const payload = {
+    kind: 'portable-agent-memory-payload',
+    schemaVersion: 1,
+    role: 'coder',
+    continuitySummary: 'brief',
+    openParcelContext: { openParcelIds: [] },
+    handoffPack: { existing: 'field' },
+  };
+
+  const written = persistTrialBoundaryPayload(root, 'coder', payload, '2026-09-30T00:00:00.000Z');
+
+  const onDisk = JSON.parse(fs.readFileSync(written, 'utf8'));
+  assert.equal(onDisk.handoffPack.existing, 'field');
+  assert.equal(onDisk.handoffPack.capturedAt, '2026-09-30T00:00:00.000Z');
 });

@@ -15,6 +15,8 @@ const {
 
 const ARGS = ['--role', 'coder', '--boundary', 'start', '--target', '/tmp/repo'];
 
+// BL-1815: every stub carries a recording (never real-disk) persistPayload,
+// so none of these tests writes under the fake /tmp/repo target path.
 function stubs({ ok = true, signal = 'inject refused' } = {}) {
   const calls = [];
   return {
@@ -27,9 +29,14 @@ function stubs({ ok = true, signal = 'inject refused' } = {}) {
       transfer: (role, boundary, outgoing) => {
         calls.push({ transferred: { role, boundary, outgoing } });
         return ok
-          ? { ok: true, captured: true, injected: true, payload: {}, injectResult: { ok: true } }
+          ? { ok: true, captured: true, injected: true, payload: { role, continuitySummary: outgoing.transcriptSummary }, injectResult: { ok: true } }
           : { ok: false, captured: true, injected: false, signal };
       },
+      persistPayload: (targetPath, role, payload, capturedAt) => {
+        calls.push({ persisted: { targetPath, role, payload, capturedAt } });
+        return `${targetPath}/.swarmforge/agent-memory/${role}/payload.json`;
+      },
+      now: () => '2026-09-30T00:00:00.000Z',
     },
   };
 }
@@ -49,6 +56,23 @@ describe('BL-1182 trial-boundary-memory bridge', () => {
       parseTrialBoundaryArgs([...ARGS, '--summary', 'mid-parcel']).transcriptSummary,
       'mid-parcel'
     );
+  });
+
+  it('carries an optional --summary-file path through, omitted when absent', () => {
+    assert.equal(parseTrialBoundaryArgs(ARGS).summaryFile, undefined);
+    assert.equal(
+      parseTrialBoundaryArgs([...ARGS, '--summary-file', '/tmp/brief.md']).summaryFile,
+      '/tmp/brief.md'
+    );
+  });
+
+  it('omitting --summary-file keeps the parsed shape identical to before BL-1815', () => {
+    assert.deepEqual(parseTrialBoundaryArgs(ARGS), {
+      role: 'coder',
+      boundary: 'start',
+      targetPath: '/tmp/repo',
+      transcriptSummary: '',
+    });
   });
 
   for (const [missing, argv] of [
@@ -83,6 +107,40 @@ describe('BL-1182 trial-boundary-memory bridge', () => {
     assert.deepEqual(calls[0].built, { targetPath: '/tmp/repo', role: 'coder', transcriptSummary: '' });
     assert.equal(calls[1].transferred.boundary, 'start');
     assert.deepEqual(calls[1].transferred.outgoing.openParcelIds, ['p1']);
+  });
+
+  it('reads --summary-file (trimmed) as the transcript summary in place of --summary', () => {
+    const { calls, deps } = stubs();
+    deps.readSummaryFile = (path) => {
+      calls.push({ readSummaryFile: path });
+      return '  the outgoing seat brief  \n';
+    };
+
+    const args = parseTrialBoundaryArgs([...ARGS, '--summary-file', '/tmp/brief.md']);
+    runTrialBoundaryMemory(args, deps);
+
+    assert.deepEqual(calls[0].readSummaryFile, '/tmp/brief.md');
+    assert.equal(calls[1].built.transcriptSummary, 'the outgoing seat brief');
+  });
+
+  it('persists the payload with capturedAt only after a successful transfer', () => {
+    const { calls, deps } = stubs({ ok: true });
+
+    runTrialBoundaryMemory(parseTrialBoundaryArgs(ARGS), deps);
+
+    const persisted = calls.find((c) => c.persisted).persisted;
+    assert.equal(persisted.targetPath, '/tmp/repo');
+    assert.equal(persisted.role, 'coder');
+    assert.equal(persisted.capturedAt, '2026-09-30T00:00:00.000Z');
+    assert.equal(persisted.payload.role, 'coder');
+  });
+
+  it('never persists a payload when the transfer fails', () => {
+    const { calls, deps } = stubs({ ok: false, signal: 'inject refused' });
+
+    runTrialBoundaryMemory(parseTrialBoundaryArgs(ARGS), deps);
+
+    assert.equal(calls.some((c) => c.persisted), false);
   });
 
   it('reports a failed transfer as not ok, carrying the signal', () => {

@@ -98,6 +98,43 @@ export function runTrialBoundaryMemoryTransfer(
   return runMemoryTransferForRole(role, outgoingState, deps);
 }
 
+/**
+ * BL-1815: the on-disk home for a role's agent-memory artifacts at a trial
+ * boundary - the outgoing seat's knowledge brief (brief.md, written by the
+ * live seat itself, never by this tool) and the persisted portable payload
+ * (payload.json, written below). Kept as one named function so both the
+ * brief path (model_steward_brief_lib.bb's own brief-path mirrors this
+ * exact join) and the payload path agree without restating the segments.
+ */
+export function agentMemoryDir(targetPath: string, role: string): string {
+  return path.join(targetPath, '.swarmforge', 'agent-memory', role);
+}
+
+/**
+ * BL-1815: persists the captured portable payload (BL-1177 schema 1) to
+ * .swarmforge/agent-memory/<role>/payload.json, with `capturedAt`
+ * (ISO-8601) merged into `handoffPack` rather than a schema change - so
+ * BL-1816's own inject-side reader can judge freshness without a new
+ * top-level field. Returns the path written, for a caller that wants to
+ * report it.
+ */
+export function persistTrialBoundaryPayload(
+  targetPath: string,
+  role: string,
+  payload: PortableAgentMemoryPayload,
+  capturedAt: string
+): string {
+  const dir = agentMemoryDir(targetPath, role);
+  fs.mkdirSync(dir, { recursive: true });
+  const withCapturedAt: PortableAgentMemoryPayload = {
+    ...payload,
+    handoffPack: { ...(payload.handoffPack ?? {}), capturedAt },
+  };
+  const filePath = path.join(dir, 'payload.json');
+  fs.writeFileSync(filePath, `${JSON.stringify(withCapturedAt, null, 2)}\n`, 'utf8');
+  return filePath;
+}
+
 export type ModelSwitchWithMemoryResult = RespawnResult & {
   memoryCaptured?: boolean;
   memoryInjected?: boolean;

@@ -35,6 +35,7 @@
 (load-file (str (fs/path scripts-dir "model_factory_store.bb")))
 (load-file (str (fs/path scripts-dir "node_tool_bringup_lib.bb")))
 (load-file (str (fs/path scripts-dir "model_steward_coder_probe_lib.bb")))
+(load-file (str (fs/path scripts-dir "model_steward_brief_lib.bb")))
 
 (defn cli-args []
   (let [raw (vec *command-line-args*)]
@@ -405,30 +406,65 @@
 (defn- memory-tool-path []
   (str (fs/path (model-steward-store/repo-root) "extension" "out" "tools" "trial-boundary-memory.js")))
 
+(defn- transfer-target-root
+  "MODEL_STEWARD_TARGET_ROOT overrides the --target passed to the memory
+   tool (and the root request-brief! polls/injects against) - same seam
+   shape as MODEL_FACTORY_STATE_DIR above, so a fixture can drive the REAL
+   transfer-memory! path against an isolated tree instead of this repo's
+   own .swarmforge/agent-memory/ (BL-1815)."
+  []
+  (or (System/getenv "MODEL_STEWARD_TARGET_ROOT") (str (model-steward-store/repo-root))))
+
+(defn- seat-agent [seat]
+  (when seat (:agent (model-factory-lib/resolve-launch-agent (:provider seat)))))
+
 (defn transfer-memory!
   "Runs BL-1178's capture/inject for one trial boundary, and REFUSES the seat
    move when it fails - an amnesiac seat reported as success is the failure
    BL-1178's own invariant 2 names. `boundary` is nil when the step changes no
    model (a promotion leaves the trial model seated), and then nothing is owed.
 
+   BL-1815: when `outgoing-seat` and `incoming-seat` are given and the move
+   crosses from the claude agent to the local-model agent, a knowledge brief
+   is owed first - requested from the outgoing seat's live pane (skipped
+   silently when none resolves) and waited for on disk; an owed brief that
+   never arrives, is empty, or is over budget refuses the move by the same
+   trial-die! path, naming the reason. Every other pair runs exactly as
+   before: no request, no wait, no new refusal. Omitting the seats (the
+   2-arity form) keeps that same today's-behaviour path for any caller that
+   has no seat agents to offer.
+
    MODEL_STEWARD_MEMORY_TOOL overrides the tool path so the acceptance and the
    shell test can drive a stub instead of a live capture."
-  [boundary role]
-  (when boundary
-    (let [tool (or (System/getenv "MODEL_STEWARD_MEMORY_TOOL") (memory-tool-path))]
-      (when-not (fs/exists? tool)
-        (trial-die! (node-tool-bringup-lib/missing-tool-message "trial-boundary-memory" tool)))
-      (let [{:keys [exit out err]} (process/sh
-                                    ["node" tool
-                                     "--role" role
-                                     "--boundary" (if (= boundary "trial-start") "start" "end")
-                                     "--target" (str (model-steward-store/repo-root))])]
-        (when-not (zero? exit)
-          (trial-die! (str "trial refused: agent-memory transfer failed at " boundary
-                           " for " role " - the seat was NOT moved"
-                           (when-not (str/blank? (str out)) (str " :: " (str/trim (str out))))
-                           (when-not (str/blank? (str err)) (str " :: " (str/trim (str err)))))))
-        {:boundary boundary :role role}))))
+  ([boundary role] (transfer-memory! boundary role nil nil))
+  ([boundary role outgoing-seat incoming-seat]
+   (when boundary
+     (let [tool (or (System/getenv "MODEL_STEWARD_MEMORY_TOOL") (memory-tool-path))]
+       (when-not (fs/exists? tool)
+         (trial-die! (node-tool-bringup-lib/missing-tool-message "trial-boundary-memory" tool)))
+       (let [target (transfer-target-root)
+             owed? (model-steward-brief-lib/brief-owed?
+                    (seat-agent outgoing-seat) (seat-agent incoming-seat))
+             summary-flag
+             (when owed?
+               (println (str "brief requested role=" role))
+               (let [{:keys [ok reason]} (model-steward-brief-lib/request-brief! target role)]
+                 (if-not ok
+                   (trial-die! (str "trial refused: knowledge brief " reason
+                                    " for " role " at " boundary " - the seat was NOT moved"))
+                   ["--summary-file" (model-steward-brief-lib/brief-path target role)])))
+             {:keys [exit out err]} (process/sh
+                                     (into ["node" tool
+                                            "--role" role
+                                            "--boundary" (if (= boundary "trial-start") "start" "end")
+                                            "--target" target]
+                                           (or summary-flag [])))]
+         (when-not (zero? exit)
+           (trial-die! (str "trial refused: agent-memory transfer failed at " boundary
+                            " for " role " - the seat was NOT moved"
+                            (when-not (str/blank? (str out)) (str " :: " (str/trim (str out))))
+                            (when-not (str/blank? (str err)) (str " :: " (str/trim (str err)))))))
+         {:boundary boundary :role role})))))
 
 (defn- write-seat! [role seat]
   (let [dir (factory-state-dir)
@@ -475,7 +511,7 @@
         (transfer-memory! (model-steward-trial-lib/boundary-for
                            :nominate {:from (model-steward-trial-lib/seat-id permanent)
                                       :to (model-steward-trial-lib/seat-id trial)})
-                          role)
+                          role permanent trial)
         (save-trials! (assoc-in trials [:permanent role] permanent))
         (write-seat! role trial)
         (println (str "trial armed role=" role
@@ -510,7 +546,7 @@
         (transfer-memory! (model-steward-trial-lib/boundary-for
                            :assess {:from (model-steward-trial-lib/seat-id armed)
                                     :to (model-steward-trial-lib/seat-id seat)})
-                          role)
+                          role armed seat)
         (save-trials! (assoc-in trials [:permanent role] seat))
         (write-seat! role seat)
         (println (str "trial " (name (:decision outcome))
@@ -627,12 +663,43 @@
         (do (println (json/generate-string result))
             (System/exit (if (= "pass" (:verdict (:summary result))) 0 1)))))))
 
+(defn run-trial-transfer-memory-debug
+  "BL-1815 test seam: calls the real transfer-memory! path directly with
+   caller-given provider/model seats, bypassing nominate/assess/go-live/the
+   registry entirely - so a fixture can drive the real knowledge-brief
+   decision and wait/refuse behaviour without arming a whole trial. Never
+   called by any production path; exists only for the acceptance and shell
+   tests, same posture as the other MODEL_STEWARD_*/--result test seams in
+   this file.
+   Usage: trial transfer-memory-debug --role <role>
+          --boundary trial-start|trial-end
+          --from-provider <p> [--from-model <m>]
+          --to-provider <p> [--to-model <m>]"
+  [rest-args]
+  (let [role (opt-value rest-args "--role")
+        boundary (opt-value rest-args "--boundary")
+        from-provider (opt-value rest-args "--from-provider")
+        to-provider (opt-value rest-args "--to-provider")]
+    (when (or (str/blank? role) (str/blank? boundary)
+              (str/blank? from-provider) (str/blank? to-provider))
+      (trial-die! "trial transfer-memory-debug requires --role, --boundary, --from-provider and --to-provider"))
+    (let [incoming {:provider to-provider :model (or (opt-value rest-args "--to-model") "debug-to-model")}]
+      (transfer-memory! boundary role
+                        {:provider from-provider :model (or (opt-value rest-args "--from-model") "debug-from-model")}
+                        incoming)
+      ;; Only reached when transfer-memory! did NOT refuse (trial-die! exits
+      ;; the process first on refusal) - same order as run-trial-nominate/
+      ;; run-trial-assess: the boundary runs before the seat moves.
+      (write-seat! role incoming)
+      (println (str "transfer-memory-debug ok role=" role " boundary=" boundary)))))
+
 (defn run-trial [rest-args]
   (case (first rest-args)
     "nominate" (run-trial-nominate (vec (rest rest-args)))
     "go-live" (run-trial-go-live (vec (rest rest-args)))
     "status" (run-trial-status (vec (rest rest-args)))
     "assess" (run-trial-assess (vec (rest rest-args)))
+    "transfer-memory-debug" (run-trial-transfer-memory-debug (vec (rest rest-args)))
     (usage)))
 
 (let [args (cli-args)

@@ -16,8 +16,10 @@
  * the seat when this exits non-zero.
  */
 
+import * as fs from 'fs';
 import {
   buildOutgoingCaptureState,
+  persistTrialBoundaryPayload,
   runTrialBoundaryMemoryTransfer,
   TrialBoundary,
 } from './agentMemoryHotSwap';
@@ -27,6 +29,9 @@ export type TrialBoundaryMemoryArgs = {
   boundary: TrialBoundary;
   targetPath: string;
   transcriptSummary: string;
+  /** BL-1815: --summary-file <path>, read and trimmed in place of an
+   *  inline --summary when given (the knowledge-brief path). */
+  summaryFile?: string;
 };
 
 export type TrialBoundaryMemoryReport = {
@@ -58,11 +63,13 @@ export function parseTrialBoundaryArgs(argv: readonly string[]): TrialBoundaryMe
   if (!targetPath) {
     throw new Error('trial-boundary-memory: --target <repo root> is required');
   }
+  const summaryFile = flag('summary-file');
   return {
     role,
     boundary: boundary as TrialBoundary,
     targetPath,
     transcriptSummary: flag('summary') ?? '',
+    ...(summaryFile ? { summaryFile } : {}),
   };
 }
 
@@ -71,12 +78,25 @@ export function runTrialBoundaryMemory(
   deps: {
     buildState?: typeof buildOutgoingCaptureState;
     transfer?: typeof runTrialBoundaryMemoryTransfer;
+    readSummaryFile?: (path: string) => string;
+    persistPayload?: typeof persistTrialBoundaryPayload;
+    now?: () => string;
   } = {}
 ): TrialBoundaryMemoryReport {
   const buildState = deps.buildState ?? buildOutgoingCaptureState;
   const transfer = deps.transfer ?? runTrialBoundaryMemoryTransfer;
-  const outgoing = buildState(args.targetPath, args.role, args.transcriptSummary);
+  const readSummaryFile = deps.readSummaryFile ?? ((p: string) => fs.readFileSync(p, 'utf8'));
+  const persistPayload = deps.persistPayload ?? persistTrialBoundaryPayload;
+  const now = deps.now ?? (() => new Date().toISOString());
+  const transcriptSummary = args.summaryFile ? readSummaryFile(args.summaryFile).trim() : args.transcriptSummary;
+  const outgoing = buildState(args.targetPath, args.role, transcriptSummary);
   const outcome = transfer(args.role, args.boundary, outgoing);
+  if (outcome.ok) {
+    // BL-1815: persisted AFTER a successful transfer only - an amnesiac
+    // transfer must leave no payload.json behind for BL-1816 to read as if
+    // it had succeeded.
+    persistPayload(args.targetPath, args.role, outcome.payload, now());
+  }
   return outcome.ok
     ? { ok: true, role: args.role, boundary: args.boundary, captured: true, injected: true }
     : {

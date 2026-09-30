@@ -138,3 +138,17 @@ notes: |
   trial is the live seam, so this ticket wires it.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: 9ff1a2c751, evidence: backlog/evidence/BL-1815-QA-20260930.md }
+abandoned_commits: [82b1a1a3e6, c28bf99275, 0ff5c6dd36, 4295e29ed3, 234fc09692, 0fafefea6e, 5cfc35cd87, fe261a4ed9, 3acbed4ce2, c93e90b62c, 602d8b256e, 0a9bd4d6ec, 9c8321fd6b, 0ecf997bb6]
+# Two stranded duplicate forks of the post-bounce rebuild's evidence
+# chain (bounce-history record, then QA/documenter/architect/cleaner
+# evidence, then two hardener passes each), neither reachable from this
+# branch. Diffed: bounce-history record, QA/documenter/architect/cleaner
+# evidence and the earlier ("NONE") hardener pass all byte-identical to
+# what this branch already carries; the later ("detail",
+# self-found-and-fixed mutation-gap) hardener pass is ALSO already
+# present on this branch verbatim via the real merged commit
+# (5c54b10c50) - these stranded copies are superseded duplicates, not a
+# different or lost revision. Nothing to recover.

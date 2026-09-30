@@ -1,0 +1,29 @@
+# backlog/verification-debt-ledger.yaml — BL-1782 verification-debt ledger.
+# One row per hand verification: a role checked or classified something
+# by hand because no script decides it yet. Written ONLY by
+# verification_debt_ledger_update.bb --record, committed by the recorder
+# itself - never hand-edited, never a parcel's own commit. Read back with
+# verification_debt_ledger_read.bb, never by parsing this file directly
+# (invariant 3).
+
+- category: land-path-ownership
+  ticket: BL-1711
+  role: QA
+  description: "grepped the branch for the ticket's own paths before trusting the land step's keep/drop (the intake)."
+  detected_at: 2026-09-26
+- category: land-path-ownership
+  ticket: BL-1748
+  role: QA
+  description: "tip-pure lands built by hand under condition (g) after LAND_ESCALATE on stray a225d85d8b (BL-1768's title)."
+  detected_at: 2026-09-26
+- category: land-path-ownership
+  ticket: BL-1764
+  role: QA
+  description: "tip-pure lands built by hand under condition (g) after LAND_ESCALATE on stray a225d85d8b (BL-1768's title)."
+  detected_at: 2026-09-26
+- category: land-path-ownership
+  ticket: BL-1768
+  role: QA
+  description: "built by hand with its own paths only after land_step_cli.bb ran 39m26s and escalated on the BL-1546 closed-owner guard (backlog/evidence/BL-1768-QA-20260926.md item 3)."
+  detected_at: 2026-09-26
+  evidence: backlog/evidence/BL-1768-QA-20260926.md

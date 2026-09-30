@@ -117,3 +117,7 @@ notes: |
   feature or scenario changes.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-30, by: architect, blamed: coder, class: behavior, commit: b71a0a818c, evidence: backlog/evidence/BL-1821-architect-bounce-20260930.md }
+  - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: f0c281d6b9, evidence: backlog/evidence/BL-1821-QA-20260930.md }

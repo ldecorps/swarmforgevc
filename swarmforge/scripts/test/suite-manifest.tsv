@@ -136,6 +136,7 @@ master_main_reconcile_lib_test_runner.bb	standing
 merge_drop_guard_lib_test_runner.bb	standing		
 migrate_gherkin_test_runner.bb	standing		
 model_factory_test_runner.bb	standing
+model_steward_brief_lib_test_runner.bb	standing		
 model_steward_coder_probe_lib_test_runner.bb	standing
 model_steward_test_runner.bb	standing
 model_steward_trial_lib_test_runner.bb	standing		
@@ -392,6 +393,7 @@ test_migrate_gherkin_to_features.sh	standing
 test_migrate_shared_mailbox.sh	standing		
 test_model_factory_cli.sh	standing		
 test_model_factory_runtime_wiring.sh	standing		
+test_model_steward_brief_lib.sh	standing		
 test_model_steward_cli.sh	standing		
 test_model_steward_trial_cli.sh	standing
 test_mutation_cooldown_gate.sh	standing		
