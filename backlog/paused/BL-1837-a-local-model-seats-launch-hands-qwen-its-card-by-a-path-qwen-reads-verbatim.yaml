@@ -9,7 +9,7 @@ severity: medium
 # forbids. Ordered by the human's iq3 directive, not by severity.
 status: todo
 epic: local-llm-swarm
-priority: 1
+priority: 5
 direction: queue-jump
 depends_on: []
 mutation_cost: low
@@ -112,6 +112,7 @@ qa_e2e_procedure: |
   succeeds (`~/.qwen/projects/*coder-iq3/chats/<newest>.jsonl`).
 
 notes: |
+  2026-09-30: priority 1 -> 5, behind BL-1839..BL-1842 in the iq3 build order (STEERING).
   Minted 2026-09-30 by the specifier from coordinator note 013961, under
   the human's iq3 absolute-priority directive (source). Hotfix commits the
   same pass: 2cdb259806, 7f38e5d7fe.

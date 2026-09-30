@@ -1,0 +1,104 @@
+id: BL-1842
+title: "A local-model seat's health is one command away - a report reads the seat's qwen usage and session records and the Ollama server log and prints each session's requests, compressions, errors, output and reasoning tokens, how the model is served (layers on GPU, context, KV cache type, tokens/s) and whether the seat is generating, idle or down, so a role judges a local seat from its measured turns instead of its pane"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 4
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: a Babashka CLI and lib reading three files; bb has no mutation lane
+# wired (engineering.prompt). Fixtures only, no live seat.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1842-a-local-model-seats-health-is-one-command-away.feature
+
+# Handler pin (BL-233, BL-1371). The consumer is a role reading it by hand;
+# coordinator.prompt names the CLI once it lands (specifier, see notes).
+required_wiring:
+  - 'specs/pipeline/steps/bl1842LocalSeatReportSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. FIRM: the report only reads -
+  it never touches a seat, a pane or the Ollama server. FIRM: every number
+  it prints comes from the three records named in the description, never
+  from the pane. Approved by the human's 2026-09-30 directive ("I want the
+  swarm to fully master the utilisation of local models"), a queue-jump
+  request for a plain gate (2026-09-15 ruling).
+
+invariants:
+  - "The local-seat report is read-only: running it changes no file, pane or process."
+
+source: |
+  The human, 2026-09-30, specifier pane, verbatim:
+
+  > Get the swarm to process your iq3 hot fix. It's ptobably not fi ished yet and I want the swarm to fully master the utilisation of local models.
+
+  The misdiagnosis this prevents is recorded in
+  `backlog/evidence/coder-iq3-reliability-20260930-coordinator.md` and
+  corrected in `backlog/evidence/coder-iq3-reliability-20260930-specifier.md`.
+
+description: |
+  ## Why
+
+  The coordinator read coder@iq3 as stuck ("CPU near 0%", the same pane
+  lines, no commits). The seat was generating at 3.5 tokens/s with 8 of
+  65 layers on the CPU; later it was compressing its chat every turn. All
+  of it was on disk, and it took a specifier's hand trace to find.
+
+  ## What is wanted
+
+  `bb swarmforge/scripts/local_seat_report_cli.bb <project-root> --seat <seat>`
+  prints, for the seat's latest session (and `--sessions N` for more):
+  - requests, recorded turns, chat compressions (with tokens before and
+    after), api errors (scenario 01);
+  - total output and reasoning tokens, and the longest request;
+  - from the Ollama log's latest load: layers on GPU out of total,
+    context, KV cache type; latest generation speed (scenario 02);
+  - a state: `generating` (the Ollama log shows generation in the last
+    minute), `idle`, or `down` (no qwen process for the seat's worktree)
+    (scenario 03).
+
+  Sources, as they are on this host on 2026-09-30:
+  - qwen usage: `~/.qwen/usage/token-usage-<yyyy-mm>.jsonl` (sessionId,
+    inputTokens, outputTokens, thoughtsTokens, timestamp);
+  - qwen sessions:
+    `~/.qwen/projects/<cwd with / and . as ->/chats/<session>.jsonl`
+    (`system` rows: `chat_compression`, `ui_telemetry` api errors);
+  - Ollama log: the path the swarm's Ollama start writes, else
+    `.swarmforge/ollama-serve-operator.log` (lines `load_tensors:
+    offloaded N/M layers to GPU`, `llama_kv_cache: size = ... K (q8_0)`,
+    `llama_context: n_ctx`, `slot print_timing: ... tg = X t/s`).
+
+  ## How (direction, not mandate)
+
+  - A pure lib (parse and summarise) plus a thin CLI (engineering: thin
+    main). Paths are arguments with the defaults above, so fixtures never
+    read the operator's `~/.qwen`.
+  - Step handler `specs/pipeline/steps/bl1842LocalSeatReportSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). Fixture files under mkdtemp.
+
+  ## Scope
+
+  The new lib, CLI and bb test, the step handler and its registration,
+  docs, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1842-a-local-model-seats-health-is-one-command-away.feature`:
+     3 of 3 ok. Measured 0 on main at mint: no handler exists yet.
+  2. Live, read-only: `bb swarmforge/scripts/local_seat_report_cli.bb <root> --seat coder@iq3`
+     prints the latest session with its compressions and reasoning tokens,
+     and 65/65 layers on GPU with a q8_0 KV cache (the state since the
+     specifier's 13:50Z restart).
+
+notes: |
+  Minted 2026-09-30 by the specifier under the human's directive (source).
+  coordinator.prompt carries an interim paragraph landed with this mint
+  ("Until BL-1842 lands"): read the three records by hand before judging a
+  local seat stuck. Once this lands, the specifier replaces it with the
+  CLI.

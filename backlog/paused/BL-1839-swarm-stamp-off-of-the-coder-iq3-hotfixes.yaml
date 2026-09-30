@@ -1,0 +1,124 @@
+id: BL-1839
+title: "Swarm stamp-off: hotfixes 2cdb259806, 7f38e5d7fe and 91c208a923 - the coder@iq3 local-model seat launches (window gate measures the stage card, qwen drops --seat-tier, a loopback base gets the Ollama key), fits its window and runs on the GPU (q8_0 KV cache and flash attention by default in the swarm's Ollama start), and starts from its card instead of the whole constitution - review-only certification (BL-848) of what the specifier landed on 2026-09-30 at the human's direction"
+milestone: M8
+type: defect
+severity: medium
+# medium: the fixes are live and working (24.8 tokens/s, the seat starts on
+# its ticket); what is open is the review the constitution owes a hotfix
+# (BL-848) and the probes below. Ordered by the human's directive, not by
+# severity.
+status: todo
+epic: local-llm-swarm
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: review-only; zsh, bash and Babashka, no mutation lane wired (BL-472).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1839-swarm-stamp-off-of-the-coder-iq3-hotfixes.feature
+
+# A review parcel adds no production call site. The handler entry is the
+# BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1839SwarmStampIq3HotfixesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Stamp-off of the specifier's 2026-09-30 hotfixes, approved by the
+  human's directive in the specifier pane ("Get the swarm to process your
+  iq3 hot fix"). No choice is posed. FIRM - review the landed diffs (BL-848
+  posture), never re-implement them; the parcel changes no production file
+  except the smallest test seam start-swarm.sh may need for scenario 03;
+  each confirmed finding from the probes is a note to the specifier, never
+  an in-parcel rewrite; the parcel never writes human_decision into
+  backlog/hotfix-ledger.yaml (the human certifies after QA).
+
+source: |
+  The human, 2026-09-30, specifier pane, verbatim:
+
+  > Take over the in progress hotfix. Make it the swarm absokute priority to make iq3 work.
+
+  and, after the hotfix landed:
+
+  > Get the swarm to process your iq3 hot fix. It's ptobably not fi ished yet and I want the swarm to fully master the utilisation of local models.
+
+  Trace: `backlog/evidence/coder-iq3-reliability-20260930-specifier.md`.
+
+description: |
+  ## What landed (review these diffs)
+
+  - 2cdb259806: start-swarm.sh (a loopback OPENAI_API_BASE takes the
+    Ollama key; the nohup launch forwards PACK_STAFFING_SKIP_GATE,
+    SWARMFORGE_PACK, SWARMFORGE_OLLAMA_CONTEXT_LENGTH and the
+    OPENAI_*/OLLAMA_* endpoint vars); swarmforge.sh (the BL-1801 window
+    gate composes the STAGE, not the seat id; the qwen launch strips
+    `--seat-tier`); full-forge.conf (the coder@iq3 seat line);
+    ista-iq3s-coder.Modelfile (num_ctx 49152); local-model/loop.note (no
+    up-front reads, large files in parts).
+  - 7f38e5d7fe: ollama_ancillary_lib.sh `ollama_ancillary_start_server`
+    defaults OLLAMA_FLASH_ATTENTION=1 and OLLAMA_KV_CACHE_TYPE=q8_0,
+    caller-set values win; Modelfile num_predict 4096; loop.note edit-tool
+    rule.
+  - 91c208a923: the Modelfile comment corrected (num_predict does not cap
+    qwen's replies).
+
+  ## Review goals
+
+  1. Confirm each change does what its commit says. The scenarios pin the
+     behaviours that matter (01-05).
+  2. Probe, and report findings by note to the specifier:
+     a. No credential value lands in a generated launch script, a prompt
+        file or a commit through the new env forwarding (Architecture rule
+        4). Grep a fixture launch for the fixture key values.
+     b. BL-1711's crash restart goes through
+        `ollama_ancillary_start_server`, so a restarted server keeps the
+        two defaults.
+     c. `start-swarm.sh`'s loopback test matches `127.0.0.1` and
+        `localhost` anywhere in the value. Say whether a remote URL that
+        contains either string is a real risk.
+  3. The documenter writes how to serve a local seat: the two Ollama vars,
+     that a hand-started `ollama serve` must pass them, and how to read
+     layers-on-GPU and tokens/s from the server log. Link it from
+     `docs/index.md`.
+
+  ## How (direction, not mandate)
+
+  - Step handler `specs/pipeline/steps/bl1839SwarmStampIq3HotfixesSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). `test_local_model_seat.sh`
+    already drives the launch-script writer and the gate; reuse its
+    fixture shape. Scenario 03 must use a throwaway HOME: the operator's
+    ~/.zshenv re-exports real keys over fixtures. Scenario 04 stubs the
+    ollama binary and records its environment. Fixture roots under
+    mkdtemp, `git init`, `rev-parse --git-common-dir` first (BL-1390).
+
+  ## Scope
+
+  Tests, the step handler and its registration, docs, evidence; the
+  smallest start-swarm.sh test seam if scenario 03 needs one.
+
+out_of_scope: |
+  - The window budget qwen uses: BL-1838. Per-turn compression: BL-1840.
+    Thinking left on: BL-1841. The seat report: BL-1842. The "@" in the
+    card path: BL-1837.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1839-swarm-stamp-off-of-the-coder-iq3-hotfixes.feature`:
+     7 of 7 ok (01, 02, two rows of 03, two rows of 04, 05). Measured 0 on
+     main at mint: no handler exists yet.
+  2. `bash swarmforge/scripts/test/test_local_model_seat.sh`,
+     `test_ollama_ancillary_launch_gate.sh` and
+     `test_handoffd_ollama_crash_restart_sweep_wiring.sh`: ALL PASS (all
+     measured on main 7f38e5d7fe at mint).
+  3. The evidence answers probes 2a-2c.
+  After QA: the human records the certification with
+  `hotfix_ledger_update.bb --decide` for the three commits.
+
+notes: |
+  Minted 2026-09-30 by the specifier under the human's directive (source).
+  Ledger rows for 2cdb259806, 7f38e5d7fe and 91c208a923 were added and
+  linked to this ticket in the mint commit (hotfix_ledger_update.bb
+  --new/--link).

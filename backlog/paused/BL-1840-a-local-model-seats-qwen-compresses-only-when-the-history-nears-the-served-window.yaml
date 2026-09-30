@@ -1,0 +1,103 @@
+id: BL-1840
+title: "A local-model seat's qwen compresses its chat on nearly every turn - coder@iq3 compressed at 12:59, 13:04 and 13:09Z on 2026-09-30, each for token_limit at ~17,500 tokens of a 49152-token window, each saving ~80 tokens, each a hidden 6,000-8,400-token reply of ~5 minutes - so the seat's turns took five minutes; the qwen settings the swarm writes compress only above 80% of the window the seat's model is served with"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the seat spends most of its time
+# on compressions that save nothing, so it cannot finish a simple ticket.
+# The human made a working iq3 the swarm's absolute priority.
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+depends_on: [BL-1838]
+# BL-1838 builds the writer this ticket extends (the seat's model entry in
+# the worktree's .qwen/settings.json).
+mutation_cost: low
+# low: one more key in BL-1838's zsh settings writer plus a handler that
+# runs the pinned qwen against a fake endpoint; no mutation lane for shell.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1840QwenCompressionThresholdSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. FIRM: a local-model seat's qwen
+  does not compress a history below 80% of the window its model is served
+  with. FIRM: the proof runs the qwen the seat runs, against a fake
+  endpoint - a key qwen ignores must fail the scenario (think false was
+  written and ignored for a week, BL-1841).
+
+invariants:
+  - "A local-model seat's qwen never compresses a history below 80% of the window its model is served with."
+
+source: |
+  The human, 2026-09-30, specifier pane, verbatim:
+
+  > Get the swarm to process your iq3 hot fix. It's ptobably not fi ished yet and I want the swarm to fully master the utilisation of local models.
+
+  Measured by the specifier the same afternoon; see
+  `backlog/evidence/coder-iq3-reliability-20260930-specifier.md`
+  (second pass).
+
+description: |
+  ## What happens
+
+  - qwen's session record for coder@iq3 (session 992f20dc) holds three
+    `chat_compression` events at 12:59:17, 13:04:08 and 13:09:24Z, each
+    `triggerReason: token_limit`, e.g. originalTokenCount 17539,
+    newTokenCount 17459.
+  - qwen's usage record shows the matching requests: 8,429, 5,992 and
+    6,739 output tokens (3,060 / 1,243 / 1,764 of them reasoning). The
+    recorded replies between them are 120-500 characters.
+  - At 24 tokens/s that is ~5 minutes per turn, spent on compressions
+    that save ~80 tokens each.
+  - Why it fires at ~17.5k in a 49152 window is part of the work: qwen
+    0.22.2's compression threshold, and the window it believes, are
+    set in its settings (`chatCompression`), and nothing the swarm writes
+    sets them.
+
+  ## What is wanted
+
+  1. The seat's qwen settings compress only above 80% of the served
+     window: 26214 tokens at 32768, 39321 at 49152 (scenario 01).
+  2. Proven against qwen itself: the pinned qwen, run in the seat's
+     worktree with the written settings, sends no compression request
+     for a 20,000-token history at 49152 (scenario 02).
+
+  ## How (direction, not mandate)
+
+  - Extend BL-1838's `write_local_model_qwen_settings`. Find the key in
+    qwen 0.22.2's own settings schema (`qwen --help`, the bundled
+    settings schema), not from memory.
+  - Step handler `specs/pipeline/steps/bl1840QwenCompressionThresholdSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). Scenario 02 runs qwen with a
+    throwaway HOME against a loopback fake OpenAI endpoint that counts
+    requests (BL-1829's method); measure its runtime and state it in
+    the evidence. It must fit the per-mutant ceiling (300 s, BL-1541).
+    Never the live Ollama, never the operator's ~/.qwen.
+
+  ## Scope
+
+  `swarmforge/scripts/swarmforge.sh` (the settings writer), its shell
+  test, the step handler and its registration, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature`:
+     3 of 3 ok (two rows of 01, then 02). Measured 0 on main at mint: no
+     handler exists yet.
+  2. `bash swarmforge/scripts/test/test_bl1829_local_model_qwen_settings.sh`:
+     ALL PASS (measured on main 7f38e5d7fe at mint).
+  After the land (the coordinator's check on the next coder@iq3 session,
+  not QA's): the session's `chat_compression` events, if any, all show
+  originalTokenCount above 39321.
+
+notes: |
+  Minted 2026-09-30 by the specifier under the human's directive (source).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

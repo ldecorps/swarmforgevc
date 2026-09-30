@@ -436,14 +436,35 @@
 - commit: cb8d502fec
   subject: "Hotfix: a respawn no longer rewires a local-Ollama seat to Cerebras/Perplexity"
   detected_at: 2026-09-28
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1793
   human_decision: null
   decided_at: null
 - commit: 4183cd29ca
   subject: "Hotfix: a skipped post-land re-point is retried once the tree is clean"
   detected_at: 2026-09-29
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1803
+  human_decision: null
+  decided_at: null
+- commit: 2cdb259806
+  subject: "Hotfix: the coder@iq3 local-model seat launches and fits its window"
+  detected_at: 2026-09-30
+  state: pending
+  stamp_ticket: BL-1839
+  human_decision: null
+  decided_at: null
+- commit: 7f38e5d7fe
+  subject: "Hotfix: coder@iq3 runs its 49152 window on the GPU and cannot overflow it with one reply"
+  detected_at: 2026-09-30
+  state: pending
+  stamp_ticket: BL-1839
+  human_decision: null
+  decided_at: null
+- commit: 91c208a923
+  subject: "Hotfix: correct the ista-iq3s Modelfile's claim that num_predict caps a coder@iq3 reply"
+  detected_at: 2026-09-30
+  state: pending
+  stamp_ticket: BL-1839
   human_decision: null
   decided_at: null

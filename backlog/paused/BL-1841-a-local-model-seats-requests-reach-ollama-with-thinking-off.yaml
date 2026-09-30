@@ -1,0 +1,95 @@
+id: BL-1841
+title: "A local-model seat's requests reach Ollama with thinking on although its Modelfile and qwen provider entry both say think false - every coder@iq3 request on 2026-09-30 carried reasoning tokens (23 to 3,060 per request) and the Ollama log shows the chat template loaded with thinking = 1; the qwen settings the swarm writes send the thinking-off field this Ollama honours, measured against it"
+milestone: M8
+type: defect
+severity: medium
+# medium: contained - on an ordinary turn the reasoning is 20-50 tokens;
+# the big cost is inside the compressions BL-1840 removes. Ordered by the
+# human's directive, not by severity.
+status: todo
+epic: local-llm-swarm
+priority: 3
+direction: queue-jump
+depends_on: [BL-1838]
+# BL-1838 builds the writer this ticket extends.
+mutation_cost: low
+# low: one field in BL-1838's zsh settings writer, a live measurement, and
+# a handler that captures qwen's request body at a fake endpoint.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1841-a-local-model-seats-requests-reach-ollama-with-thinking-off.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1841LocalSeatThinkingOffSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. FIRM: the field is chosen by
+  measuring the swarm's Ollama, never by documentation or memory - think
+  false was written and ignored. Approved by the human's 2026-09-30
+  directive ("I want the swarm to fully master the utilisation of local
+  models"), a queue-jump request for a plain gate (2026-09-15 ruling).
+
+invariants:
+  - "The thinking-off field a local-model seat sends is the one measured to stop reasoning on the Ollama version the swarm serves."
+
+source: |
+  The human, 2026-09-30, specifier pane, verbatim:
+
+  > Get the swarm to process your iq3 hot fix. It's ptobably not fi ished yet and I want the swarm to fully master the utilisation of local models.
+
+  Measured by the specifier the same afternoon; see
+  `backlog/evidence/coder-iq3-reliability-20260930-specifier.md`
+  (second pass).
+
+description: |
+  ## What happens
+
+  - `~/.qwen/usage/token-usage-2026-09.jsonl`, session 992f20dc: every
+    request has thoughtsTokens > 0 (e.g. 48, 39, 3060, 47, 1243).
+  - `.swarmforge/ollama-serve-operator.log`: "chat template, thinking =
+    1" at load, `<think>` blocks in the output.
+  - The provider entry sends `generationConfig.extra_body.think: false`
+    (master `.qwen/settings.json`, the operator's `~/.qwen/settings.json`),
+    to Ollama 0.32.15's OpenAI-compatible `/v1/chat/completions`.
+
+  ## What is wanted
+
+  1. Measure which request field turns reasoning off for the served
+     model on the swarm's Ollama: `curl` the live
+     `/v1/chat/completions` once per candidate (e.g. top-level `think`,
+     `reasoning_effort`, a `/no_think` prompt suffix), recording
+     reasoning tokens and `<think>` in each answer. Evidence records
+     every candidate's result and the Ollama version.
+  2. The qwen settings the swarm writes for a local-model seat make qwen
+     send the field that worked; proven by capturing qwen's request body
+     at a fake endpoint (scenario 01).
+
+  ## How (direction, not mandate)
+
+  - Extend BL-1838's `write_local_model_qwen_settings`.
+  - Step handler `specs/pipeline/steps/bl1841LocalSeatThinkingOffSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). It runs the pinned qwen with
+    a throwaway HOME against a loopback fake endpoint that records the
+    body (BL-1829's method), and asserts the measured field as a literal.
+    The live measurement is evidence, never an acceptance step.
+
+  ## Scope
+
+  `swarmforge/scripts/swarmforge.sh` (the settings writer), its shell
+  test, the step handler and its registration, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1841-a-local-model-seats-requests-reach-ollama-with-thinking-off.feature`:
+     1 of 1 ok. Measured 0 on main at mint: no handler exists yet.
+  2. Read the evidence's measurement table; one `curl` of the winning
+     field against the live Ollama returns no reasoning.
+  After the land (the coordinator's check on the next coder@iq3 session,
+  not QA's): thoughtsTokens is 0 on the session's requests in
+  `~/.qwen/usage/token-usage-<month>.jsonl`.
+
+notes: |
+  Minted 2026-09-30 by the specifier under the human's directive (source).

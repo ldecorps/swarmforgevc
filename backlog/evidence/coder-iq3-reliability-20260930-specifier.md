@@ -76,3 +76,27 @@ absokute priority to make iq3 work."
   card recomposed and its dead pane respawned with its own start command.
 - Minted BL-1838 (high, priority 0) and BL-1837 (medium, priority 1),
   both queue-jump in epic local-llm-swarm.
+
+## Second pass, 13:15Z: why the seat still took five minutes a turn
+
+After the restart the seat generated at 24.8 tokens/s and started from its
+card, but each visible turn still took about five minutes (12:53:21 →
+12:59:35 → 13:04:25 → 13:09:39Z). Session 992f20dc's records show why.
+
+- **Compression every turn.** Three `chat_compression` events (12:59:17,
+  13:04:08, 13:09:24Z), each `triggerReason: token_limit` at about 17.5k
+  tokens of history in a 49152 window. Each saved about 80 tokens
+  (originalTokenCount 17539 → newTokenCount 17459). Each was one hidden
+  request of 8,429 / 5,992 / 6,739 output tokens. → BL-1840.
+- **Thinking left on.** Every request carries thoughtsTokens (48, 39,
+  3060, 47, 1243, 23, 1764, 46). The Ollama log shows "chat template,
+  thinking = 1" and `<think>` blocks. The provider entry's
+  `extra_body.think: false` is not the field this Ollama honours.
+  → BL-1841.
+- The recorded replies between compressions are 120-500 characters: the
+  seat's own work per turn is small; the compressions cost the minutes.
+
+The human then asked the swarm to process the hotfix and finish it:
+BL-1839 (stamp-off of the three commits), BL-1840, BL-1841, and BL-1842
+(a local-seat health report, so the next reading comes from these records
+rather than a hand trace).
