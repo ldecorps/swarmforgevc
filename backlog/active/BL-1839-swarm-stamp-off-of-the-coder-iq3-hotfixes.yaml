@@ -122,3 +122,5 @@ notes: |
   Ledger rows for 2cdb259806, 7f38e5d7fe and 91c208a923 were added and
   linked to this ticket in the mint commit (hotfix_ledger_update.bb
   --new/--link).
+
+assigned_to: coder
