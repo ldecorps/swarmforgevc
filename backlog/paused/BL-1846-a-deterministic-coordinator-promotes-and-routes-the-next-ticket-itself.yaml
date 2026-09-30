@@ -1,0 +1,179 @@
+id: BL-1846
+title: "A pack that declares config coordinator_mode deterministic has handoffd promote and route the next ticket itself when a slot opens, through the same gated promote_and_route_next.sh a model coordinator runs, instead of dropping an open-slot note for a model to read - the one hop of a mono-router's happy path that still needs a model coordinator"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-intake
+depends_on: []
+mutation_cost: medium
+# medium: Babashka has no mutation lane (engineering Startup Tools), but
+# this changes the live daemon's tick, so it stays off the easy seat
+# (BL-1001).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1846-a-deterministic-coordinator-promotes-and-routes-the-next-ticket-itself.feature
+
+# Consumer anchor (BL-1235): handoffd.bb names the script nowhere at mint
+# (grep -c = 0), so only the live daemon reaching it satisfies this.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::promote_and_route_next::the live daemon is the consumer that runs the gated promotion (BL-1235)'
+  - 'specs/pipeline/steps/bl1846DeterministicCoordinatorPromotesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file, and the specifier's choice among the three shapes
+  the human named in the intake (the intake left the choice to the
+  specifier). Chosen: a deterministic coordinator, the shape the human
+  said they prefer. FIRM: the daemon runs the same gated script a model
+  coordinator runs, so every promotion gate and the Article 3.6
+  freshness check still decide. FIRM: packs that do not declare the new
+  config line are unchanged. Accepted cost: on a deterministic pack a
+  refused promotion reaches the human through the existing operator
+  alert, not a model. Not a queue-jump: the 19:25 addendum keeps the
+  coder@iq3 work first. Tap Q-jump if you want it sooner.
+
+invariants:
+  - "handoffd holds no ranking of its own: every ticket it promotes is chosen and gated by promote_and_route_next.sh, and it never moves a ticket file from paused to active itself."
+  - "A pack whose conf does not declare coordinator_mode deterministic behaves exactly as today: the open-slot note, its cooldown and its escalation are unchanged, and handoffd promotes nothing."
+
+source: |
+  backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md
+  (human via Cursor, 2026-09-30). Verbatim (Article 5.3):
+
+  ~19:05 BST:
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  ~19:16 BST:
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  ~19:25 BST:
+  > Can you get the full swarm to do a night shift, still hard bent on making iq3 working as a coder in the swarm. Also make it read what the local monorouter is doing now, it might be of interest.
+
+description: |
+  ## The human's question, answered
+
+  "When all goes well, the mono router does not need a coordinator does
+  it?" Nearly. On the happy path a model coordinator does one thing
+  that no script does for it yet:
+  - Forward hop: a `git_handoff` goes straight to its recipient, and
+    `mono_router_lib.bb` `forward-rotate-target` rotates the resident
+    there. Already a script.
+  - Close after QA's land: handoffd's landed auto-close (hotfix
+    d9a4d0b888, stamp BL-1506) reads QA's land record and runs
+    `close_ticket.sh` as the coordinator. Already a script.
+  - Next ticket: when the close frees a slot, handoffd's
+    `open-slot-nudge-sweep!` only drops a note on the coordinator, and a
+    model has to read it and run `promote_and_route_next.sh`. That
+    script already carries every gate (promotion_gates: approval,
+    expedite order, depth, hold, depends_on, not_before; the Article 3.6
+    freshness check). This ticket is that hop.
+
+  ## The choice among the human's three shapes
+
+  Chosen: **one daemon that does the coordinator's job** (a
+  deterministic coordinator), the human's stated preference. The
+  resident keeps the human's two moves: "invoke the coordinator to pass
+  the parcel" is `swarm_handoff.sh` plus handoffd, both scripts; "call
+  up an ephemeral second role" is a later slice (BL-1125
+  remaining_slices).
+
+  Why the other two lose on this host:
+  - **No coordinator at all** (routing in the resident's own loop):
+    promotion and close would depend on the weakest seat remembering a
+    step. On 2026-09-30 the local documenter resident spent ~57 minutes
+    failing to send a three-line note. It also cannot act while the
+    resident is stuck or dead, and it adds the coordinator's duties to
+    every role's prompt on a window qwen's own overhead already fills
+    (BL-1829).
+  - **A coordinator that starts only when needed**: every start pays a
+    full prefill of the coordinator card on the one GPU slot, and it
+    needs a new mutex so it never generates beside the resident. The
+    lab measured a 7B coordinator at 0 of 4 on the six-step bookkeeping
+    row (BL-1702's ruling trade-offs), and the iq3 coordinator on
+    2026-09-30 spent ~32 minutes walking `.swarmforge/` for one file.
+    The hop it would start for is the one this ticket scripts.
+
+  Honest cost: no model judgment in coordination on a deterministic
+  pack. A refused promotion, a dropped parcel and a prose note come to
+  the human (this ticket and BL-1847). A standing prose directive such
+  as "only promote X" has no reader. On such a pack the human steers
+  with approval, hold, depends_on, not_before and queue-jump, which the
+  gates already read.
+
+  ## What is wanted
+
+  - A pack conf may declare `config coordinator_mode deterministic`.
+    Absent, blank, or any other value means today's model coordinator.
+  - On a deterministic pack, when `open-slot-nudge-sweep!` would send
+    its open-slot note (same slot, cooldown and ambulance-freeze
+    decision as today), handoffd instead runs
+    `promote_and_route_next.sh` as `SWARMFORGE_ROLE=coordinator` and
+    logs `deterministic-promote <id>` on success or
+    `deterministic-promote-refused <id> <gate reason>` on refusal. No
+    open-slot note is sent to the coordinator. Every attempt, promoted
+    or refused, starts the same cooldown the note starts today, so a
+    refused candidate is not retried on every tick.
+  - A refusal leaves the ticket in `backlog/paused/` and advances the
+    existing BL-798 escalation counter for that candidate. At the
+    threshold the existing operator alert (Telegram OPERATOR topic and
+    email) fires. On a deterministic pack its text names the gate that
+    refused, since no coordinator was nudged.
+  - The promotion commits on `main` through `commit_integrity_cli.bb`,
+    as the script already does, which is the same lock the landed
+    auto-close's close takes.
+
+  How (direction, not mandate): let the script choose, by running it
+  with no ticket id, so the daemon has no ranking of its own (BL-963's
+  one-chain lesson). The config reader belongs beside
+  `coordinator_config_lib.bb`'s other `coordinator_*` readers, and
+  BL-1847 reuses it.
+
+  Handler: `specs/pipeline/steps/bl1846DeterministicCoordinatorPromotesSteps.js`,
+  registered in `specs/pipeline/steps/index.js` in the same commit as
+  any handler change (BL-233). Build every fixture under mkdtemp
+  (BL-1390). No real clock: scenario 03 advances the sweep's cooldown
+  clock through a seam, as BL-963's handler does.
+
+out_of_scope: |
+  - Coordinator mail on a deterministic pack (BL-1847).
+  - Booting no coordinator seat on a deterministic pack: launch, ensure,
+    babysitterd repair and wakes all still assume one (BL-1125
+    remaining_slices; ~15 scripts at mint).
+  - Declaring the mode in any pack conf. The all-local pack
+    `ollama-ista-local-model-mono-router.conf` is the human's
+    untracked file, and it gets the line in the no-seat slice.
+  - The dropped-parcel, unassigned-active and babysitter nudges to the
+    coordinator.
+  - A local ephemeral question seat (BL-1125 remaining_slices).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1846-a-deterministic-coordinator-promotes-and-routes-the-next-ticket-itself.feature`:
+     4 of 4 ok. Measured 0 at mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js` on
+     `specs/features/BL-963-open-slot-nudge-consults-promotion-gate-chain.feature`
+     and `specs/features/BL-1145-open-slot-nudge-skips-epic-trackers.feature`:
+     5 of 5 and 3 of 3 ok. Measured the same on main a38ada4c28 at mint.
+     (BL-1506's feature read 0 of 9 at mint because its handlers are
+     paused BL-1506's own deliverable. It is not a check here.)
+  3. Read the diff: a conf without the line still reaches
+     `nudge-coordinator-open-slot!` unchanged, and nothing in handoffd
+     moves a ticket file itself.
+  After the land (the operator's check at the next deterministic-pack
+  launch, not QA's): after a QA land, `handoffd.log` shows
+  `landed-auto-close` and then `deterministic-promote <id>` within two
+  ticks, and the coder's mailbox gets that ticket's parcel with no
+  coordinator turn in between.
+
+notes: |
+  Minted 2026-09-30 by the specifier from root intake
+  INTAKE-local-monorouter-on-demand-coordinator-20260930 (archived same
+  commit). Sibling BL-1847; remaining slices recorded on BL-1125.
+  Not direction: queue-jump, though the 2026-09-30 "auto-jump any
+  ticket that has to do with local llm" directive would mint it so: the
+  intake's 19:25 addendum says this is to be read and is not a
+  promotion ahead of the coder@iq3 work (BL-1837/BL-1843/BL-1845). The
+  human can Q-jump it.

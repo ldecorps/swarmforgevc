@@ -1,0 +1,145 @@
+id: BL-1847
+title: "On a pack that declares config coordinator_mode deterministic, handoffd relays every parcel that reaches the coordinator's new mail to the human's Telegram OPERATOR topic, one message per tick, then completes it unchanged - so nothing waits for a coordinator model that is not there and nothing is dropped, and the ticket close guard still reads QA's approval"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: human-intake
+depends_on: [BL-1846]
+# BL-1846 adds the coordinator_mode reader this ticket reuses, and both
+# edit handoffd.bb's tick.
+mutation_cost: medium
+# medium: Babashka has no mutation lane, but this changes the live
+# daemon's tick and a mailbox every close reads, so it stays off the
+# easy seat (BL-1001).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1847-a-deterministic-coordinators-mail-is-relayed-to-the-human-and-completed.feature
+
+# Consumer anchor (BL-1235): the name is pinned here at mint and matches
+# only a CALL in handoffd.bb (a defn reads "coordinator-mail-sweep! ["),
+# so a sweep that is defined but never ticked fails the gate.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::(coordinator-mail-sweep!::the live tick loop calls the sweep, not just defines it (BL-1235)'
+  - 'specs/pipeline/steps/bl1847DeterministicCoordinatorMailSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file, the second slice of the deterministic coordinator
+  the specifier chose on BL-1846. FIRM: on a deterministic pack every
+  note roles send the coordinator comes to you in the OPERATOR topic,
+  QA approvals and specifier "ready" notes included. A script cannot
+  tell a routine note from an urgent one without reading prose, so it
+  relays all of them and drops none. Expect a few messages per ticket on
+  a depth-1 pack. FIRM: packs without the config line are unchanged.
+  Not a queue-jump, and it waits for BL-1846.
+
+invariants:
+  - "A coordinator parcel moves to completed only after its relay line is written to the operator outbox; a failed write leaves it in new mail."
+  - "The sweep never edits or deletes a parcel: the file in completed is byte-identical to the one that arrived."
+  - "A pack whose conf does not declare coordinator_mode deterministic keeps its coordinator mailbox exactly as today."
+
+source: |
+  backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md
+  (human via Cursor, 2026-09-30). Verbatim (Article 5.3):
+
+  ~19:05 BST:
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  ~19:16 BST:
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  ~19:25 BST:
+  > Can you get the full swarm to do a night shift, still hard bent on making iq3 working as a coder in the swarm. Also make it read what the local monorouter is doing now, it might be of interest.
+
+description: |
+  ## Why
+
+  BL-1846 records the choice (a deterministic coordinator) and scripts
+  the happy path's last model hop. What a model coordinator still does
+  on a mono-router is read prose. A census of the coordinator's
+  completed mail since 2026-08-15, by sender:
+  - the daemon itself: "BL-N no parcel in flight" (887), open-slot
+    (215), hotfix ledger (189), "closed by handoffd" (52)
+  - QA: approvals in more than ten wordings ("QA-approved BL-N
+    landed", "BL-N approved SHA", "BL-N landed SHA", ...)
+  - specifier: "BL-N ready in paused" in as many wordings
+  - coder and others: "unowned-red", "blocked", "already shipped",
+    "idle NO_TASK"
+  No script can sort that prose without guessing. On a deterministic
+  pack each parcel goes to the human, and none waits for a reader that
+  does not exist. On 2026-09-30 the all-local pack's iq3 coordinator
+  spent ~32 minutes walking `.swarmforge/` for one file while the
+  resident waited.
+
+  ## What is wanted
+
+  - On a pack with `config coordinator_mode deterministic` (BL-1846's
+    reader), a handoffd sweep named `coordinator-mail-sweep!` runs each
+    tick. For every parcel in the coordinator's `inbox/new/` it writes
+    one line: sender, type, ticket id if the parcel names one, the first
+    line of its `message:` (or its `task:`/`commit:` for a
+    `git_handoff`), and the parcel's file name.
+  - The lines of one tick go out as ONE message to the Telegram
+    OPERATOR topic, through the same outbox
+    (`.swarmforge/operator/telegram-reply-outbox.jsonl`, `threadId`
+    `OPERATOR`) the open-slot escalation already writes. No email.
+    Keep a message within Telegram's 4096-character limit: past it, end
+    with "and N more" and relay the rest on the next tick.
+  - Only after that outbox line is written, each relayed parcel moves
+    unchanged to the coordinator's `inbox/completed/`. The ticket close
+    guard (`ticket_close_guard_lib.bb`) reads `completed/`, so a relayed
+    QA approval still authorizes the close.
+  - `inbox/in_process/` is left alone: a parcel a coordinator seat
+    already took (until the no-seat slice lands) is that seat's.
+  - handoffd logs `coordinator-mail-relayed <count>` per tick that
+    relays, and `coordinator-mail-relay-error <detail>` when the outbox
+    write fails.
+
+  How (direction, not mandate): the parcel parsing belongs in a pure lib
+  with the file moves in handoffd, as the other sweeps are built.
+  Handler: `specs/pipeline/steps/bl1847DeterministicCoordinatorMailSteps.js`,
+  registered in `specs/pipeline/steps/index.js` in the same commit.
+  Scenario 04 makes the outbox unwritable through a path seam (a
+  directory where the file should be), never chmod (engineering Test
+  Speed And Isolation). Build every fixture under mkdtemp (BL-1390).
+
+out_of_scope: |
+  - Stopping the daemon's own coordinator notes on a deterministic pack
+    (dropped-parcel, unassigned-active, hotfix ledger). They arrive in
+    the mailbox and are relayed like any other parcel, each already
+    cooldown-limited. Replacing them with direct operator alerts is a
+    later slice if the volume is a nuisance.
+  - Booting no coordinator seat, and babysitterd's pane nudges to it
+    (BL-1125 remaining_slices).
+  - Reading or classifying prose. Any "skip the routine ones" filter is
+    a later ruling, not a guess made here.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1847-a-deterministic-coordinators-mail-is-relayed-to-the-human-and-completed.feature`:
+     5 of 5 ok. Measured 0 at mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js` on BL-1846's feature (4 of 4 ok once
+     BL-1846 lands) and on
+     `specs/features/BL-963-open-slot-nudge-consults-promotion-gate-chain.feature`
+     (5 of 5 ok, measured on main a38ada4c28 at mint).
+  3. Read the diff: the sweep never writes into a parcel file, and it
+     moves a parcel only after the outbox append returned.
+  After the land (the operator's check at the next deterministic-pack
+  launch, not QA's): QA's approval note for a landed ticket appears in
+  the Telegram OPERATOR topic within a tick, the coordinator's
+  `inbox/new/` is empty, and handoffd's landed auto-close still closes
+  that ticket.
+
+notes: |
+  Minted 2026-09-30 by the specifier from root intake
+  INTAKE-local-monorouter-on-demand-coordinator-20260930 (archived same
+  commit), second slice after BL-1846. Not direction: queue-jump, for
+  the reason BL-1846's notes give (the intake's 19:25 addendum).
+  Observation for the local cards (BL-1800), not this ticket: on
+  2026-09-30 the all-local documenter held a coordinator note asking
+  for a briefing that was already on main. The right move was
+  `done_with_current.sh` with no reply. It spent ~57 minutes on a reply
+  whose draft carried the reserved `from:` header.
