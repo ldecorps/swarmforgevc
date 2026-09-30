@@ -75,10 +75,14 @@ cat > "$ROOT1/swarmforge/swarmforge.conf" <<EOF
 window coder aider coder --model openai/qwen2.5-coder:latest --openai-api-base $URL --no-gitignore
 EOF
 
+# BL-1797: the stub's ABSOLUTE path, never PATH order - zsh -c sources
+# ~/.zshenv even non-interactively, and a host whose ~/.zshenv prepends a
+# real ollama onto PATH would otherwise win over "$ROOT1/bin:$PATH" here.
 PATH="$ROOT1/bin:$PATH" OLLAMA_FIXTURE_PORT="$PORT" \
   SWARMFORGE_LOCAL_MODEL_ENDPOINT_URL="$URL" \
   SWARMFORGE_OLLAMA_WAIT_SECONDS=5 SWARMFORGE_OLLAMA_POLL_INTERVAL_SECONDS=1 \
   LOCAL_CODER_PROBE_EVIDENCE_DIR="$PROBE_EVIDENCE" \
+  SWARMFORGE_OLLAMA_BINARY="$ROOT1/bin/ollama" \
   zsh -c "source '$SWARMFORGE_SH' '$ROOT1'; parse_config; ensure_ollama_ancillary_for_launch" \
   || fail "01: ensure_ollama_ancillary_for_launch refused an aider+ollama pack it should have started"
 
@@ -99,6 +103,7 @@ window coder claude coder --model claude-haiku-4-5-20251001 --dangerously-skip-p
 EOF
 
 PATH="$ROOT2/bin:$PATH" OLLAMA_FIXTURE_PORT="$PORT" \
+  SWARMFORGE_OLLAMA_BINARY="$ROOT2/bin/ollama" \
   zsh -c "source '$SWARMFORGE_SH' '$ROOT2'; parse_config; ensure_ollama_ancillary_for_launch" \
   || fail "02: a Claude-only pack must never be refused by the ollama ancillary gate"
 
