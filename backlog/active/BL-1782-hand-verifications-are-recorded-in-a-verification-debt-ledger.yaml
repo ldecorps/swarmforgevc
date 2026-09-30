@@ -200,3 +200,5 @@ notes: |
   read from committed records (the intake, BL-1768's title,
   backlog/evidence/BL-1768-QA-20260926.md). This is a pinned list, not a
   derived population.
+
+assigned_to: coder
