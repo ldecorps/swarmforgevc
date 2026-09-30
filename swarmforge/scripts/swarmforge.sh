@@ -2235,8 +2235,12 @@ RESUMECHECK
       # is stripped here — qwen exits on the unknown flag.
       #
       # Prompt by PATH, not $(cat ...): same MAX_ARG_STRLEN trap as codex/gemini.
+      # BL-1845: the kickoff rides -i (--prompt-interactive). qwen copies a
+      # bare argument into --prompt, and --prompt runs one headless pass: no
+      # screen, no keyboard, so the pane stayed blank, the human could not
+      # steer, and handoffd's typed wakes were never read.
       local qwen_cli="$(swarm_only_strip_seat_tier "$extra_cli")"
-      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
+      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
       ;;
     *)
       # BL-1080: same Unsupported agent wording + how-to pointer as validate_agent.
