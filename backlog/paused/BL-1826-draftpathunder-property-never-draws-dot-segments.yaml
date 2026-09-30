@@ -1,0 +1,81 @@
+id: BL-1826
+title: "draftPathUnder's property draws path segments that may be \"..\" or \".\"; path.join then collapses the fake TMPDIR (or root) to \"/\", so the \"never under TMPDIR\" check fails for a correct draft path (seed -957004781, counterexample [\" \",\" \",\"..\",\" \"]) - the segment generators exclude dot segments, and every assertion stays"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting (2026-09-05 register
+# amendment); it holds BL-1814 at QA (Article 4.2). Intermittent on main.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two generator filters in one property test; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file fix with no scenarios of its own (BL-1251): the pointer names
+# the feature BL-1537 declared (9 of 9 on main at mint). It is not a claim of
+# ownership over BL-1537's contract.
+acceptance: specs/features/BL-1537-every-production-sender-drafts-under-the-root-it-sends-from.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: draftPathUnder is
+  right and is not changed. FIRM: the property's assertions, run count and
+  prefix generator stay; only the root and TMPDIR segment generators stop
+  drawing "." and "..". FIRM: no seed is pinned in the test.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA note 003466, evidence e7c38760dc (BL-1814's pass, holding it):
+  `extension/test/draftPathUnder.property.test.js` > "draftPathUnder
+  property: the draft directory depends only on root, never on TMPDIR
+  (BL-1537 invariant 1)": `Property failed after 67 tests`, seed
+  -957004781, counterexample `[" "," ","..", " "]` (rootSegment, prefix,
+  tmpdirASegment, tmpdirBSegment).
+
+  Verified at mint (main 0d152af4c0) with the counterexample:
+  `path.join('/bl1537-fc-tmpdir-a', '..')` is `/`, so TMPDIR is `/`.
+  `draftPathUnder` returns `/bl1537-fixture-root/ /tmp/ -<pid>-<rand>`,
+  whose dirname IS the expected `<root>/tmp` (the invariant holds), but
+  the assertion `!draftPathA.startsWith(<tmpdir>)` is false for every
+  absolute path once the tmpdir namespace collapses to `/`. A root
+  segment of `..` collapses the fixture root the same way. The segment
+  generators filter `\0` and `/` but not the two dot segments.
+
+  ## What is wanted
+  - The root and both TMPDIR segment generators never draw `.` or `..`,
+    so each namespace stays disjoint as the property's own comment says it
+    must. How (direction, not mandate): extend the existing `.filter`.
+  - The prefix generator (a filename part, never a path segment) and every
+    assertion stay as they are.
+
+  ## Scope
+  - `extension/test/draftPathUnder.property.test.js`, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/draftPathUnder.property.test.js`:
+     green.
+  2. Read the parcel's evidence: the seed -957004781 run from a scratch
+     copy (not committed) passes.
+  3. `node specs/pipeline/cli.js specs/features/BL-1537-every-production-sender-drafts-under-the-root-it-sends-from.feature`:
+     9 of 9 ok (as measured on main at mint).
+  4. `git diff main...HEAD --name-only` names only the test file and
+     evidence.
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's property row.
+
+notes: |
+  Minted 2026-09-30 by the specifier from QA's unowned-red note 003466
+  (holding BL-1814, evidence e7c38760dc). Register row added in the mint
+  commit; the counterexample checked against the compiled draftPathUnder
+  and BL-1537's feature measured at mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1814.
