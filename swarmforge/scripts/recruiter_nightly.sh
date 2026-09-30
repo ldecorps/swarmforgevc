@@ -91,6 +91,23 @@ run_steward_probe() {
   done
 }
 
+# BL-1821: once a week (Monday UTC), run the specifier scout - a batch of
+# unseen candidates plus the incumbent, both batteried for the specifier
+# role. Stands down (like run_steward_probe above) while a local pack's
+# aider seat is live, for the same single-inference-slot reason.
+run_specifier_scout() {
+  if local_pack_aider_live; then
+    log "specifier scout: stood down - a local pack's aider seat is live"
+    return 0
+  fi
+  if [[ "${RECRUITER_SPECIFIER_SCOUT_FORCE:-0}" != "1" && "$(date -u +%u)" != "1" ]]; then
+    log "specifier scout: not Monday UTC, skipping until next week"
+    return 0
+  fi
+  log "specifier scout: running (batch=${RECRUITER_SPECIFIER_BATCH:-3})"
+  bash "${RECRUITER_SPECIFIER_SCOUT_SCRIPT:-$SCRIPT_DIR/recruiter_specifier_scout.sh}" "$ROOT" --batch "${RECRUITER_SPECIFIER_BATCH:-3}" >>"$LOG" 2>&1 || true
+}
+
 # BL-1701: the top-level run wrapped in main(), guarded below, so a test
 # can `source` this file for its function definitions alone (log/
 # local_pack_aider_live/run_steward_probe) and exercise the steward-probe
@@ -137,6 +154,15 @@ main() {
   # BL-1701: after the candidate/battery passes above, never beside them -
   # two llama-server runners on this CPU starve each other.
   run_steward_probe
+
+  # BL-1821: the specifier scout batteries a BATCH of candidates plus the
+  # incumbent - several times the cost of one coder-battery pass - so it
+  # runs once a week (Monday UTC) from this same weeknight hook, never
+  # nightly, and after everything else above (same single-inference-slot
+  # reasoning as run_steward_probe). RECRUITER_SPECIFIER_SCOUT_FORCE=1 is
+  # a test-only seam (never for operator use) that runs it regardless of
+  # the day.
+  run_specifier_scout
 
   exit 0
 }

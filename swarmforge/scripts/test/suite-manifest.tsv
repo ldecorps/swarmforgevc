@@ -455,6 +455,9 @@ test_ready_for_next_rotate_home.sh	standing
 test_recover_miniapp_bridge.sh	standing
 test_record_land_approval_cli.sh	standing
 test_recruiter_nightly_steward_probe.sh	standing
+test_recruiter_hf_discover_batch.sh	standing
+test_recruiter_nightly_specifier_scout.sh	standing
+test_recruiter_specifier_scout.sh	standing
 test_redo_from.sh	standing		
 test_reexpedite_from_wip.sh	standing		
 test_reference_freshness_guard.sh	standing		

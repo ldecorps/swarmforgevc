@@ -136,7 +136,18 @@ notes: |
   feature or scenario changes.
 
 assigned_to: coder
-bounce_count: 2
+abandoned_commits: [ecaa386611, 891655ef7c, e728a135d8, 912429fab5, 33dedcda86, 390c43da44, ebfff04dc3, db67921e27, ac6052db4a, 6ab4e8cbe4, 09de041120, b30ae99710, b572fbbf7a, f30daa0bd8, e6dbdda3cd]
+# 2026-09-30 documenter: pre-QA gate flagged these as stranded on
+# swarmforge-QA across two rounds - review-pass evidence from earlier
+# rounds of this ticket's own bounce/fix cycle, superseded each time the
+# coder's bounce fix and the following cleaner/architect/hardener passes
+# rebuilt the tip. Deliberately not re-merged (their files are gone from
+# the current tree). Second batch (ebfff04dc3..e6dbdda3cd) added after the
+# QA D1/D2 bounce and specifier ruling (seen-specifier.jsonl) triggered
+# another rebuild.
+bounce_count: 4
 bounce_history:
   - { at: 2026-09-30, by: architect, blamed: coder, class: behavior, commit: b71a0a818c, evidence: backlog/evidence/BL-1821-architect-bounce-20260930.md }
   - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: f0c281d6b9, evidence: backlog/evidence/BL-1821-QA-20260930.md }
+  - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: ac6052db4a, evidence: backlog/evidence/BL-1821-QA-20260930-2.md }
+  - { at: 2026-09-30, by: cleaner, blamed: documenter, class: behavior, commit: cf4cd28991, evidence: backlog/evidence/BL-1821-cleaner-bounce-20260930.md }

@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-30T08:43:10.337714303Z","feature_name":"BL-1821 The recruiter scouts a batch of specifier candidates and challenges the incumbent","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1821-the-recruiter-scouts-a-batch-of-specifier-candidates.feature","background_hash":"a87fa1ad7b5519c4f6cd3b8a80e7d13b29c209f1f0b833ed0453786d1ad172ba","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1821 The recruiter scouts a batch of specifier candidates and challenges the incumbent
   The recruiter picks one Hugging Face model per run and batteries it for
   the coder role only. For the specifier seat it now scouts a batch: it

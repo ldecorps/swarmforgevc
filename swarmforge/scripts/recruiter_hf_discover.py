@@ -17,13 +17,23 @@ nothing here can freelance. Judgement is a reviewable rule set:
                     total - CPU-only host, ~13 GB resident ceiling)
   * quant rule      the repo must ship a Q4_K_M .gguf (what `ollama pull
                     hf.co/<org>/<repo>:Q4_K_M` needs)
-  * novelty         not in .swarmforge/recruiter/seen.jsonl, not already a
-                    local/<alias> row in the Model Steward registry
+  * novelty         not in .swarmforge/recruiter/seen.jsonl (or
+                    RECRUITER_SEEN_FILE's own file, for a caller with its
+                    own seen list - BL-1821's specifier scout), not
+                    already a local/<alias> row in the Model Steward
+                    registry
   * ranking         downloads desc, then likes (more stable than trending)
 
-Usage: recruiter_hf_discover.py <project-root>
+Usage: recruiter_hf_discover.py <project-root> [--batch N]
 Prints one JSON object on stdout, or {"candidate": null, "reason": ...}.
 Exit 0 either way; exit 2 only on a hard error (network, malformed files).
+
+BL-1821: --batch N (N >= 1) returns up to N qualifying candidates instead
+of one, as {"candidates": [...], "scanned": ..., "rejected": ...} - for
+the specifier scout, which batteries a batch rather than acquiring a
+single pick. The single-candidate shape above is UNCHANGED when --batch
+is absent (recruiter_weekly.sh's own coder path keeps reading it exactly
+as before).
 """
 import json
 import os
@@ -32,11 +42,24 @@ import sys
 import time
 import requests
 
-ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
+BATCH = 1
+BATCH_GIVEN = False
+_raw = sys.argv[1:]
+if "--batch" in _raw:
+    _i = _raw.index("--batch")
+    BATCH = int(_raw[_i + 1])
+    BATCH_GIVEN = True
+    _raw = _raw[:_i] + _raw[_i + 2:]
+ROOT = _raw[0] if _raw else "."
 HF = "https://huggingface.co"
 MAX_PARAMS_B = float(os.environ.get("RECRUITER_MAX_PARAMS_B", "14"))
 SCAN_LIMIT = int(os.environ.get("RECRUITER_SCAN_LIMIT", "200"))
 QUANT = os.environ.get("RECRUITER_QUANT", "Q4_K_M")
+# BL-1821 spec ruling (note 003572): novelty is per role - a caller with
+# its own seen list (the specifier scout's seen-specifier.jsonl) points
+# this at its own filename instead of the weekly coder path's default,
+# never sharing one role's seen state with another's.
+SEEN_FILENAME = os.environ.get("RECRUITER_SEEN_FILE", "seen.jsonl")
 
 BLOCK = re.compile(
     r"uncensor|abliterat|heretic|crack|ternary|1[-_]?bit|nsfw|roleplay|\brp\b|erp|"
@@ -58,7 +81,7 @@ def trusted_orgs():
 
 
 def seen_ids():
-    p = os.path.join(ROOT, ".swarmforge", "recruiter", "seen.jsonl")
+    p = os.path.join(ROOT, ".swarmforge", "recruiter", SEEN_FILENAME)
     ids = set()
     if os.path.exists(p):
         with open(p) as f:
@@ -117,6 +140,17 @@ def main():
     )
     r.raise_for_status()
     rejected = {}
+    found = []
+    # BL-1821 QA bounce D1 (second pass): two different repos can normalize
+    # to the SAME alias_for() (e.g. two orgs both publishing a
+    # "Llama-3.2-3B-Instruct" repo) - `registered` only catches a collision
+    # with an ALREADY-registered local/<alias>, never one against a
+    # candidate this same batch run already picked. Unchecked, a real run
+    # pulls both under one alias and `ollama cp` silently overwrites it,
+    # collapsing two distinct models into one score-table row. Track this
+    # run's own picks and skip a later duplicate, counted separately from
+    # "registered" so the two causes stay distinguishable in `rejected`.
+    batch_aliases = set()
     for m in r.json():
         hf_id = m.get("id", "")
         org = hf_id.split("/", 1)[0].lower()
@@ -138,27 +172,34 @@ def main():
         if alias in registered:
             rejected.setdefault("registered", 0); rejected["registered"] += 1
             continue
+        if alias in batch_aliases:
+            rejected.setdefault("duplicate-alias", 0); rejected["duplicate-alias"] += 1
+            continue
         qf = has_quant_file(hf_id)
         time.sleep(0.2)
         if not qf:
             rejected.setdefault(f"no-{QUANT}-file", 0); rejected[f"no-{QUANT}-file"] += 1
             continue
-        print(json.dumps({
-            "candidate": {
-                "hf_id": hf_id,
-                "org": org,
-                "params_b": pb,
-                "downloads": m.get("downloads"),
-                "likes": m.get("likes"),
-                "quant": QUANT,
-                "quant_file": qf,
-                "ollama_pull": f"hf.co/{hf_id}:{QUANT}",
-                "alias": f"{alias}:latest",
-                "page": f"{HF}/{hf_id}",
-            },
-            "scanned": SCAN_LIMIT,
-            "rejected": rejected,
-        }, indent=2))
+        batch_aliases.add(alias)
+        found.append({
+            "hf_id": hf_id,
+            "org": org,
+            "params_b": pb,
+            "downloads": m.get("downloads"),
+            "likes": m.get("likes"),
+            "quant": QUANT,
+            "quant_file": qf,
+            "ollama_pull": f"hf.co/{hf_id}:{QUANT}",
+            "alias": f"{alias}:latest",
+            "page": f"{HF}/{hf_id}",
+        })
+        if len(found) >= BATCH:
+            break
+    if BATCH_GIVEN:
+        print(json.dumps({"candidates": found, "scanned": SCAN_LIMIT, "rejected": rejected}, indent=2))
+        return 0
+    if found:
+        print(json.dumps({"candidate": found[0], "scanned": SCAN_LIMIT, "rejected": rejected}, indent=2))
         return 0
     print(json.dumps({"candidate": None,
                       "reason": f"no trusted, in-size, unseen GGUF repo with a {QUANT} file in the top {SCAN_LIMIT} by downloads",
