@@ -117,3 +117,7 @@ notes: |
 
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: a6a9819ed1, evidence: backlog/evidence/BL-1816-QA-20260930.md }
+abandoned_commits: [4552cc4594, f3f8acd501]

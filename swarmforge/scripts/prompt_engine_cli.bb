@@ -6,8 +6,8 @@
 ;; commands as thin wrappers until remaining callers migrate.
 ;;
 ;; Usage:
-;;   prompt_engine_cli.bb compose <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path] [--model <id>] [--deterministic]
-;;   prompt_engine_cli.bb compose-metadata <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path] [--model <id>] [--deterministic]
+;;   prompt_engine_cli.bb compose <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path] [--model <id>] [--deterministic] [--target-root <path>] [--now-ms <epoch>]
+;;   prompt_engine_cli.bb compose-metadata <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path] [--model <id>] [--deterministic] [--target-root <path>] [--now-ms <epoch>]
 ;;   prompt_engine_cli.bb stable-prefix-text
 ;;   prompt_engine_cli.bb stable-bootstrap-prefix
 ;;
@@ -34,8 +34,8 @@
 (defn usage []
   (println "Usage: prompt_engine_cli.bb <command> [args...]")
   (println "Commands:")
-  (println "  compose <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path] [--model <id>] [--deterministic]")
-  (println "  compose-metadata <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path] [--model <id>] [--deterministic]")
+  (println "  compose <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path] [--model <id>] [--deterministic] [--target-root <path>] [--now-ms <epoch>]")
+  (println "  compose-metadata <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path] [--model <id>] [--deterministic] [--target-root <path>] [--now-ms <epoch>]")
   (println "  stable-prefix-text")
   (println "  stable-bootstrap-prefix")
   (System/exit 1))
@@ -52,9 +52,10 @@
   (boolean (some #(= k %) args)))
 
 (defn- strip-flags
-  "Positional args only — drops --model <id> and --deterministic wherever
-   they appear, so either flag may follow the fixed positional prefix in any
-   order (both are optional and independent)."
+  "Positional args only — drops --model <id>, --target-root <path>,
+   --now-ms <epoch> and --deterministic wherever they appear, so any flag
+   may follow the fixed positional prefix in any order (all are optional
+   and independent)."
   [args]
   (loop [xs (vec args) out []]
     (if (empty? xs)
@@ -63,6 +64,8 @@
         (cond
           (= x "--deterministic") (recur (rest xs) out)
           (= x "--model") (recur (drop 2 xs) out)
+          (= x "--target-root") (recur (drop 2 xs) out)
+          (= x "--now-ms") (recur (drop 2 xs) out)
           :else (recur (rest xs) (conj out x)))))))
 
 (defn- compose-result
@@ -73,16 +76,20 @@
   (let [positional (strip-flags rest-args)
         model (flag-value rest-args "--model")
         deterministic? (has-flag? rest-args "--deterministic")
+        target-root (flag-value rest-args "--target-root")
+        now-ms-str (flag-value rest-args "--now-ms")
         agent (nth positional 0 nil)
         role (nth positional 1 nil)]
     (when (or (str/blank? agent) (str/blank? role))
       (usage))
     (prompt-engine-lib/compose
-     role {:agent agent
-           :model model
-           :two-pack? (= "1" (get positional 2 "0"))
-           :overlay-prompt (get positional 3 "")
-           :deterministic? (boolean deterministic?)})))
+     role (cond-> {:agent agent
+                    :model model
+                    :two-pack? (= "1" (get positional 2 "0"))
+                    :overlay-prompt (get positional 3 "")
+                    :deterministic? (boolean deterministic?)}
+            (not (str/blank? target-root)) (assoc :target-root target-root)
+            (not (str/blank? now-ms-str)) (assoc :now-ms (Long/parseLong now-ms-str))))))
 
 (let [args (cli-args)
       cmd (first args)

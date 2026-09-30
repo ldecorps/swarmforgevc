@@ -14,6 +14,7 @@
 ;; and referred to as prompt-engine-lib/foo.
 (ns prompt-engine-lib
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.string :as str])
   (:import [java.security MessageDigest]))
 
@@ -248,7 +249,18 @@
 ;; per-request fragments - see local-compact-bootstrap-text below.
 (def fragment-names
   #{"constitution" "pipeline" "role" "pack-overlay" "tool-instructions"
-    "local-loop" "local-role-card"})
+    "local-loop" "local-role-card" "knowledge-brief-payload"})
+
+;; BL-1816: the same join model_steward_brief_lib.bb's brief-dir/brief-path
+;; use (target-root/.swarmforge/agent-memory/<role>/...) - kept as its own
+;; small helper here rather than load-file'ing that namespace, so
+;; PromptEngine (loaded by every launch) gains no new dependency for two
+;; relative-path strings.
+(defn agent-memory-payload-rel-path [role]
+  (str ".swarmforge/agent-memory/" role "/payload.json"))
+
+(defn agent-memory-brief-rel-path [role]
+  (str ".swarmforge/agent-memory/" role "/brief.md"))
 
 (defn fragment-source-path
   "Repo-relative source path for a per-request fragment, or nil when the
@@ -261,18 +273,28 @@
     "pack-overlay" (when-not (str/blank? overlay-prompt) overlay-prompt)
     "local-loop" "swarmforge/roles/local-model/loop.note"
     "local-role-card" (when-not (str/blank? role) (str "swarmforge/roles/local-model/" role ".note"))
+    "knowledge-brief-payload" (when-not (str/blank? role) (agent-memory-payload-rel-path role))
     nil))
 
 (defn fragment-content-uncached
   "The one place that knows how to PRODUCE each named fragment's content,
    always reading from disk with no cache involvement - the default
    content-fn every cache miss falls back to. request carries whatever the
-   fragment needs to resolve (:role, :overlay-prompt)."
-  [fragment-name request]
+   fragment needs to resolve (:role, :overlay-prompt, :target-root).
+
+   \"knowledge-brief-payload\" is read from :target-root (default repo-root)
+   rather than inline-repo-file-or-note's placeholder-on-missing behaviour:
+   absence is a MEANINGFUL outcome here (no brief kept, BL-1816 item 3), so
+   a missing payload.json yields nil, never a visible placeholder string."
+  [fragment-name {:keys [target-root] :or {target-root repo-root} :as request}]
   (case fragment-name
     "constitution" (constitution-text)
     "pipeline" (pipeline-text)
     "tool-instructions" nil
+    "knowledge-brief-payload"
+    (let [rel (fragment-source-path fragment-name request)]
+      (when (and rel (fs/exists? (repo-file target-root rel)))
+        (slurp-repo target-root rel)))
     (some-> (fragment-source-path fragment-name request) inline-repo-file-or-note)))
 
 (defn empty-fragment-cache [] {})
@@ -484,6 +506,60 @@
   [role]
   (boolean (some-> (local-model-role-card-path role) repo-file fs/exists?)))
 
+;; ── BL-1816: knowledge-brief pointer for a local-model seat ────────────────
+;; BL-1815 keeps the outgoing Claude seat's brief at
+;; .swarmforge/agent-memory/<role>/brief.md, with capturedAt merged into the
+;; persisted payload's handoffPack (agentMemoryHotSwap.ts's
+;; persistTrialBoundaryPayload). A local-model compose points at the brief
+;; with one line, never inlining it (same overlay discipline as
+;; local-compact-bootstrap-text's own pointer lines), only while that
+;; capture is fresh.
+(def knowledge-brief-freshness-hours 24)
+(def knowledge-brief-freshness-window-ms (* knowledge-brief-freshness-hours 3600000))
+
+(defn- parse-instant-ms
+  "Parse an ISO-8601 instant string to epoch millis; nil if unparseable or
+   blank - never throws (payload.json is external, on-disk content)."
+  [s]
+  (when-not (str/blank? (str s))
+    (try (.toEpochMilli (java.time.Instant/parse (str s)))
+         (catch Exception _ nil))))
+
+(defn knowledge-brief-payload-fresh?
+  "True when payload-json-str parses with a handoffPack.capturedAt at most
+   knowledge-brief-freshness-window-ms before now-ms. False for anything
+   else - blank/absent content, unparseable JSON, a missing capturedAt, or
+   a capturedAt older than the window - never throws."
+  [payload-json-str now-ms]
+  (boolean
+   (when-not (str/blank? (str payload-json-str))
+     (try
+       (let [captured-ms (-> (json/parse-string (str payload-json-str) true)
+                              (get-in [:handoffPack :capturedAt])
+                              parse-instant-ms)]
+         (when captured-ms
+           (<= (- now-ms captured-ms) knowledge-brief-freshness-window-ms)))
+       (catch Exception _ false)))))
+
+(defn knowledge-brief-pointer
+  "One line naming role's knowledge brief file and telling the seat to read
+   it before its first ready_for_next.sh, or nil when the payload is stale,
+   absent, or has no capturedAt (BL-1816 item 3: no pointer, not an empty
+   one).
+
+   BL-1816 D1 (QA bounce round 2): the brief is named by target-root, the
+   same root the knowledge-brief-payload fragment was read from - never the
+   bare repo-relative path. A worktree-resident local seat (e.g. coder@iq3
+   at .worktrees/coder-iq3) has a cwd that does not match the master
+   checkout compose read the payload from, so a bare relative path resolves
+   to no file from that seat's own cwd. Naming it via (fs/path target-root
+   ...) makes the pointer resolve correctly from any cwd."
+  [role now-ms payload-json-str target-root]
+  (when (knowledge-brief-payload-fresh? payload-json-str now-ms)
+    (str "Before your first ./" ready-script-rel-path
+         ", read your predecessor's knowledge brief at "
+         (str (fs/path target-root (agent-memory-brief-rel-path role))) ".\n")))
+
 (defn local-compact-bootstrap-text
   "The loop card, then the role's own card, both read through
    read-fragment! (BL-574 Slice 2's cache applies here exactly as it does
@@ -530,18 +606,27 @@
 ;;   :fragment-content-fn   (BL-574 Slice 2) injectable IO seam for cache
 ;;                     misses, default fragment-content-uncached (real
 ;;                     file reads). Tests inject a call-counting stub.
+;;   :target-root      (BL-1816) root the knowledge-brief-payload fragment
+;;                     reads .swarmforge/agent-memory/<role>/payload.json
+;;                     from. Default repo-root; a fixture passes an isolated
+;;                     mkdtemp root so no live .swarmforge/ is ever read.
+;;   :now-ms           (BL-1816) compose-time clock (epoch ms) the
+;;                     knowledge-brief pointer's freshness check reads.
+;;                     Default (System/currentTimeMillis).
 ;; The BL-519 stable prefix is returned as :stable-prefix so callers (cache
 ;; warm, byte-identity checks) never re-derive it by string surgery.
 (defn compose
   [role {:keys [agent model two-pack? overlay-prompt task-injection
                 coordinator-two-pack-note deterministic?
-                fragment-cache fragment-content-fn]
-         :or {agent "claude" overlay-prompt "" fragment-content-fn fragment-content-uncached}}]
+                fragment-cache fragment-content-fn target-root now-ms]
+         :or {agent "claude" overlay-prompt "" fragment-content-fn fragment-content-uncached
+              target-root repo-root}}]
   (let [normalized (normalize-agent agent)
         style (:bootstrap-text-style (capabilities normalized))
         draft (handoff-draft-path normalized)
         two-pack? (boolean two-pack?)
         overlay? (not (str/blank? overlay-prompt))
+        now-ms (or now-ms (System/currentTimeMillis))
         fragment-cache-atom (or fragment-cache (atom (empty-fragment-cache)))
         adapter-id (select-adapter normalized :model model)
         coord-note (or coordinator-two-pack-note
@@ -551,11 +636,16 @@
                :aider (aider-bootstrap-text role two-pack?)
                :mock (mock-bootstrap-text role)
                :local-compact
-               (if (local-model-has-role-card? role)
-                 (local-compact-bootstrap-text role two-pack? overlay? overlay-prompt
-                                                fragment-cache-atom fragment-content-fn)
-                 (generic-bootstrap-text role draft two-pack? overlay? overlay-prompt
-                                         fragment-cache-atom fragment-content-fn))
+               (let [base (if (local-model-has-role-card? role)
+                            (local-compact-bootstrap-text role two-pack? overlay? overlay-prompt
+                                                           fragment-cache-atom fragment-content-fn)
+                            (generic-bootstrap-text role draft two-pack? overlay? overlay-prompt
+                                                    fragment-cache-atom fragment-content-fn))
+                     payload-json (read-fragment! fragment-cache-atom "knowledge-brief-payload"
+                                                   {:role role :target-root target-root}
+                                                   :content-fn fragment-content-fn)
+                     pointer (knowledge-brief-pointer role now-ms payload-json target-root)]
+                 (if pointer (str base "\n" pointer) base))
                (generic-bootstrap-text role draft two-pack? overlay? overlay-prompt
                                        fragment-cache-atom fragment-content-fn))
         system-prompt (if (str/blank? task-injection)

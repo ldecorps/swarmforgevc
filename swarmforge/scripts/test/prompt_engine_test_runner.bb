@@ -398,6 +398,163 @@
   (assert= "local-role-card cache miss then hit: content-fn called exactly once" 1 @read-count)
   (assert= "local-role-card cache hit returns the same content as the original read" first-read second-read))
 
+;; ── BL-1816: knowledge-brief pointer for a local-model seat ─────────────────
+;; fragment-content-uncached's "knowledge-brief-payload" branch is exercised
+;; here against a REAL mkdtemp :target-root with no payload.json on disk at
+;; all (never a stub) - the file-absence guard is its own code path,
+;; distinct from a stubbed/blank/malformed payload STRING (covered above),
+;; and item 3's "an absent one" names exactly this case.
+(def ^:private bl1816-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @bl1816-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+(defn- bl1816-temp-root []
+  (let [d (str (fs/create-temp-dir {:prefix "bl1816-no-payload-"}))]
+    (swap! bl1816-temp-dirs conj d)
+    d))
+
+(let [root (bl1816-temp-root)]
+  (fs/create-dirs (fs/path root ".swarmforge" "agent-memory" "coder"))
+  (spit (str (fs/path root ".swarmforge" "agent-memory" "coder" "brief.md")) "# fixture brief\n")
+  (assert-true "fragment-content-uncached: knowledge-brief-payload is nil when payload.json is absent from disk"
+               (nil? (prompt-engine-lib/fragment-content-uncached
+                      "knowledge-brief-payload" {:role "coder" :target-root root})))
+  (assert-true "compose local-model over a real fixture with no payload.json appends no pointer"
+               (not (str/includes?
+                     (:system-prompt (prompt-engine-lib/compose "coder" {:agent "local-model" :target-root root
+                                                                          :now-ms 1790000000000}))
+                     ".swarmforge/agent-memory/coder/brief.md"))))
+
+(assert= "agent-memory-payload-rel-path for coder"
+         ".swarmforge/agent-memory/coder/payload.json"
+         (prompt-engine-lib/agent-memory-payload-rel-path "coder"))
+(assert= "agent-memory-brief-rel-path for coder"
+         ".swarmforge/agent-memory/coder/brief.md"
+         (prompt-engine-lib/agent-memory-brief-rel-path "coder"))
+
+(defn- iso-ms [ms] (str (java.time.Instant/ofEpochMilli ms)))
+(defn- payload-str [captured-at-ms]
+  (str "{\"handoffPack\":{\"capturedAt\":\"" (iso-ms captured-at-ms) "\"}}"))
+
+(let [now 1790000000000]
+  (assert-true "knowledge-brief-payload-fresh? true at exactly 2 hours old"
+               (prompt-engine-lib/knowledge-brief-payload-fresh?
+                (payload-str (- now (* 2 3600000))) now))
+  (assert-true "knowledge-brief-payload-fresh? true at exactly the 24h boundary"
+               (prompt-engine-lib/knowledge-brief-payload-fresh?
+                (payload-str (- now prompt-engine-lib/knowledge-brief-freshness-window-ms)) now))
+  (assert-true "knowledge-brief-payload-fresh? false one ms past the 24h boundary"
+               (not (prompt-engine-lib/knowledge-brief-payload-fresh?
+                     (payload-str (- now prompt-engine-lib/knowledge-brief-freshness-window-ms 1)) now)))
+  (assert-true "knowledge-brief-payload-fresh? false at 25 hours old"
+               (not (prompt-engine-lib/knowledge-brief-payload-fresh?
+                     (payload-str (- now (* 25 3600000))) now)))
+  (assert-true "knowledge-brief-payload-fresh? false for nil payload"
+               (not (prompt-engine-lib/knowledge-brief-payload-fresh? nil now)))
+  (assert-true "knowledge-brief-payload-fresh? false for blank payload"
+               (not (prompt-engine-lib/knowledge-brief-payload-fresh? "" now)))
+  (assert-true "knowledge-brief-payload-fresh? false for unparseable JSON"
+               (not (prompt-engine-lib/knowledge-brief-payload-fresh? "not json" now)))
+  (assert-true "knowledge-brief-payload-fresh? false with no capturedAt"
+               (not (prompt-engine-lib/knowledge-brief-payload-fresh? "{\"handoffPack\":{}}" now)))
+  (assert-true "knowledge-brief-payload-fresh? false with an unparseable capturedAt"
+               (not (prompt-engine-lib/knowledge-brief-payload-fresh?
+                     "{\"handoffPack\":{\"capturedAt\":\"not-a-date\"}}" now))))
+
+(let [now 1790000000000
+      fresh (payload-str (- now (* 2 3600000)))
+      stale (payload-str (- now (* 25 3600000)))]
+  (assert-true "knowledge-brief-pointer nil when stale"
+               (nil? (prompt-engine-lib/knowledge-brief-pointer "coder" now stale "/fixture/root")))
+  (assert-true "knowledge-brief-pointer nil when payload absent"
+               (nil? (prompt-engine-lib/knowledge-brief-pointer "coder" now nil "/fixture/root")))
+  (let [pointer (prompt-engine-lib/knowledge-brief-pointer "coder" now fresh "/fixture/root")]
+    (assert-true "knowledge-brief-pointer non-nil when fresh" (some? pointer))
+    (assert-true "knowledge-brief-pointer names the brief file"
+                 (str/includes? pointer ".swarmforge/agent-memory/coder/brief.md"))
+    (assert-true "knowledge-brief-pointer names the brief under the given target-root, not a bare relative path (BL-1816 D1)"
+                 (str/includes? pointer "/fixture/root/.swarmforge/agent-memory/coder/brief.md"))
+    (assert-true "knowledge-brief-pointer names ready_for_next.sh"
+                 (str/includes? pointer "ready_for_next.sh"))
+    (assert-true "knowledge-brief-pointer is exactly one line"
+                 (= 1 (count (remove str/blank? (str/split-lines pointer)))))))
+
+;; BL-1816 D1 (QA bounce round 2, evidence BL-1816-QA-20260930.md): the
+;; pointer must name a path that resolves correctly regardless of the
+;; calling process's cwd - the shape of a worktree-resident local seat
+;; (coder@iq3 at .worktrees/coder-iq3, while compose read the payload from
+;; the master checkout target-root). An absolute path (built via
+;; (fs/path target-root ...)) resolves the same from any cwd; the old bare
+;; repo-relative path did not, and this is the fixture that would have
+;; failed against it (named-path was not absolute, and did not start with
+;; root).
+(let [root (bl1816-temp-root)
+      now 1790000000000
+      fresh (payload-str (- now (* 2 3600000)))]
+  (fs/create-dirs (fs/path root ".swarmforge" "agent-memory" "coder"))
+  (spit (str (fs/path root ".swarmforge" "agent-memory" "coder" "brief.md")) "# fixture brief\n")
+  (let [pointer (prompt-engine-lib/knowledge-brief-pointer "coder" now fresh root)
+        named-path (second (re-find #"knowledge brief at (.+)\.\n" pointer))]
+    (assert-true "BL-1816 D1: the named brief path is absolute (resolves the same from any cwd)"
+                 (fs/absolute? named-path))
+    (assert-true "BL-1816 D1: the named path names the real file on disk, independent of the test runner's own cwd"
+                 (fs/exists? named-path))
+    (assert-true "BL-1816 D1: the named path is rooted at target-root, not the repo checkout the runner executes from"
+                 (str/starts-with? named-path root))))
+
+;; compose dispatch: the pointer is appended for local-model when the
+;; knowledge-brief-payload fragment resolves fresh, and the fragment request
+;; carries the :target-root compose itself was given (BL-1816 items 1, 4).
+(let [now 1790000000000
+      fresh (payload-str (- now (* 2 3600000)))
+      seen-requests (atom [])
+      stub-fn (fn [name req]
+                (swap! seen-requests conj [name req])
+                (case name
+                  "local-loop" "LOOP_CARD_V1"
+                  "local-role-card" "ROLE_CARD_V1"
+                  "knowledge-brief-payload" fresh
+                  nil))
+      result (prompt-engine-lib/compose "coder" {:agent "local-model" :target-root "/fixture/root"
+                                                  :now-ms now :fragment-content-fn stub-fn})]
+  (assert-true "compose local-model appends the pointer when the stubbed payload is fresh"
+               (str/includes? (:system-prompt result) "ready_for_next.sh"))
+  (assert-true "compose local-model's knowledge-brief-payload request carries the given :target-root"
+               (some (fn [[name req]] (and (= name "knowledge-brief-payload") (= (:target-root req) "/fixture/root")))
+                     @seen-requests))
+  ;; Position, not just presence: the base compact card comes FIRST, the
+  ;; pointer is appended AFTER it (a hand-mutation swapping the append order
+  ;; - (str pointer "\n" base) instead of (str base "\n" pointer) - changes
+  ;; the composed prompt's observable content but survives every other
+  ;; assertion here and the acceptance feature, since both only check for
+  ;; substring presence, never position). Computes the expected pointer via
+  ;; the same knowledge-brief-pointer the compose dispatch itself calls, so
+  ;; this stays pinned to real content, not a hand-copied string.
+  (assert= "compose local-model appends the pointer AFTER the base card, never before it"
+           (str "LOOP_CARD_V1\nROLE_CARD_V1" "\n" (prompt-engine-lib/knowledge-brief-pointer "coder" now fresh "/fixture/root"))
+           (:system-prompt result)))
+
+;; compose dispatch: no pointer when the stub reports no payload (item 3) -
+;; the base compact card comes through unchanged, with no trailing blank line.
+(let [stub-fn (fn [name _req]
+                (case name
+                  "local-loop" "LOOP_CARD_V1"
+                  "local-role-card" "ROLE_CARD_V1"
+                  "knowledge-brief-payload" nil
+                  nil))
+      result (prompt-engine-lib/compose "coder" {:agent "local-model" :fragment-content-fn stub-fn})]
+  (assert= "compose local-model with no payload composes exactly the base compact card"
+           "LOOP_CARD_V1\nROLE_CARD_V1"
+           (:system-prompt result)))
+
+;; invariant 4: a non-local-model agent's compose never even READS the
+;; knowledge-brief-payload fragment - not merely "composes the same text".
+(let [read-names (atom #{})
+      stub-fn (fn [name _req] (swap! read-names conj name) (str "STUB-" name))
+      result (prompt-engine-lib/compose "coder" {:agent "claude" :fragment-content-fn stub-fn})]
+  (assert-true "compose returns text for claude/coder with the stub installed" (string? (:system-prompt result)))
+  (assert-true "claude/coder compose never reads the knowledge-brief-payload fragment"
+               (not (contains? @read-names "knowledge-brief-payload"))))
+
 ;; ── report ──────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")

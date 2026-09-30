@@ -1,6 +1,6 @@
 # Model Steward: Onboarding, Certification, and Role Recommendations
 
-Last Updated: 2026-08-30
+Last Updated: 2026-09-30
 
 SwarmForge's **Model Steward** maintains the Model Registry, Capability Registry, Role Recommendation Matrix, and Prompt Adapter catalogue — the permanent home for knowledge about each language model the swarm uses.
 
@@ -310,6 +310,44 @@ persisted or the seat moves, so a failed transfer leaves no armed trial to
 assess later and no half-moved seat — refused, not silently reported as a
 success. A promotion owes no boundary transfer at all: the seat already runs
 the trial model, so nothing switches.
+
+**A Claude outgoing seat owes its local-model successor a knowledge brief**
+(BL-1815) — owed exactly when the outgoing seat runs the `claude` agent and
+the incoming seat runs `local-model`; every other pair (aider included)
+transfers exactly as before. The steward clears any stale `brief.md` left
+by an earlier boundary, types the request into the outgoing seat's live
+pane, and polls `.swarmforge/agent-memory/<role>/brief.md` for up to
+`MODEL_STEWARD_BRIEF_WAIT_S` seconds (default 60) — a file is trusted only
+once its content reads back identical on two consecutive polls, since the
+seat's write is still in flight the instant it first appears. The brief
+becomes `continuitySummary` in the schema-1 payload persisted at
+`.swarmforge/agent-memory/<role>/payload.json` (with `capturedAt`). An owed
+brief that never arrives within the wait, is blank after trimming, or
+exceeds 2000 characters refuses the boundary with a named reason ("no
+brief", "empty brief", "over 2000") — the seat is not moved.
+
+**The incoming local-model seat is pointed at that brief, never handed it
+inline** (BL-1816). `prompt_engine_lib.bb`'s `knowledge-brief-pointer`
+checks the persisted payload's `handoffPack.capturedAt`: while it is at
+most 24 hours old, `swarmforge.sh compose`'s local-model composition
+appends one line naming the brief by the same `target-root` compose read
+the payload from (`(fs/path target-root (agent-memory-brief-rel-path
+role))`, resolving to an absolute
+`<target-root>/.swarmforge/agent-memory/<role>/brief.md`) and telling
+the seat to read it before its first
+`ready_for_next.sh`, after the base compact card (never before it — a
+hardener mutation catch, see BL-1816's own evidence). Naming the file by
+`target-root` rather than the bare repo-relative path is a QA round-2
+fix (BL-1816 D1): a worktree-resident local seat (e.g. `coder@iq3` at
+`.worktrees/coder-iq3`) has a cwd that does not match the master checkout
+compose ran against, so a bare relative path resolved to no file from
+that seat's own cwd — the absolute form resolves correctly from any cwd.
+A stale capture (over 24 hours), an absent payload, or one with no
+`capturedAt` yields no pointer at all, never an empty one. The pointer
+applies to both the compact card and the generic text a card-less role
+still gets, and reappears on every compose while the brief stays fresh —
+a local seat restarting the same day is told again, deliberately. Every
+other agent composes byte-for-byte as it would with no brief kept.
 
 ## The go-live gate: no production trial without something that can judge it (BL-1183)
 
