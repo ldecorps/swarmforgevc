@@ -1,0 +1,83 @@
+id: BL-1825
+title: "bl1342CrashloopStampInvariants invariant 2 draws parcel bodies with fc.string, which can be whitespace-only; handoff_lib's corrupt-handoff? rightly quarantines a blank-bodied parcel (BL-365), so the second poll never delivers it and the property fails at random (seed 429610160, counterexample \" \") - the generator draws only valid, non-blank bodies"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting (2026-09-05 register
+# amendment). Intermittent, not deterministic on main: two draws per run,
+# and only a whitespace-only draw fails.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one generator in one property test; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file fix with no scenarios of its own (BL-1251): the pointer names
+# the feature BL-1342 declared (9 of 9 on main at mint). It is not a claim of
+# ownership over BL-1342's contract.
+acceptance: specs/features/BL-1342-swarm-stamp-handoffd-crashloop-hotfix-27d6ab8630.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: the daemon is right
+  and is not changed; a blank-bodied parcel is corrupt by design (BL-365,
+  corrupt-handoff?). FIRM: invariant 2's assertions, numRuns and fixture
+  stay; only the body generator narrows to non-blank bodies. FIRM: no seed
+  is pinned in the test.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  Coder note 002234: `extension/test/bl1342CrashloopStampInvariants.property.test.js`
+  invariant 2 ("a skipped parcel is left as found and re-evaluated later")
+  failed with seed 429610160. Reproduced at mint (main 8ed4575574) by
+  running that test from a scratch copy with the seed pinned: fails
+  deterministically, counterexample `[" "]`, at "the once-skipped parcel
+  was never re-evaluated".
+
+  Cause: the property draws the vanishing parcel's body with
+  `fc.string({ minLength: 1, maxLength: 40 })`, newlines mapped to spaces,
+  so a draw can be whitespace only. The fixture's parcel has no message
+  header, so its body IS the note. `handoff_lib.bb`'s `corrupt-handoff?`
+  treats a blank body as a corrupt handoff (BL-365), and the second poll
+  quarantines it instead of delivering it. The daemon is correct; the
+  generator quantifies over parcels that are not valid. With `numRuns: 2`,
+  the failure shows only on a rare seed, so the red is intermittent.
+
+  ## What is wanted
+  - Invariant 2's generator draws only bodies a valid parcel can carry
+    (non-blank after trimming). How (direction, not mandate): a filter on
+    the existing arbitrary, or a leading non-space character.
+  - Everything else in the property stays: the fixture, the four "left as
+    found" assertions, the re-evaluation assertion, `numRuns: 2`.
+
+  ## Scope
+  - `extension/test/bl1342CrashloopStampInvariants.property.test.js`,
+    evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1342CrashloopStampInvariants.property.test.js`:
+     green (3 of 3).
+  2. Read the parcel's evidence: a seed-429610160 run of invariant 2 from a
+     scratch copy (not committed) passes, and a sample of the new body
+     arbitrary (1000 draws) holds no blank body.
+  3. `node specs/pipeline/cli.js specs/features/BL-1342-swarm-stamp-handoffd-crashloop-hotfix-27d6ab8630.feature`:
+     9 of 9 ok (as measured on main at mint).
+  4. `git diff main...HEAD --name-only` names only the test file and
+     evidence.
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's property row.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the coder's unowned-red note
+  002234. Register row added in the mint commit; the seed reproduced and
+  BL-1342's feature measured at mint.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to the coder.
