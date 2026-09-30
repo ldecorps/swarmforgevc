@@ -24,7 +24,10 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1830-a-land-never-publishes-a-siblings-lines-in-a-shared-own-path.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - the replay rebuilds a shared own path from origin/main plus only the landing ticket's own commits' changes, and escalates by name when those changes do not apply without the sibling's lines (recommended)
+ruling_provenance: tapped
 approval_context: >
   One choice: what the land does with a path it owns that also carries an
   unlanded sibling's lines. FIRM, not asked: no unlanded sibling's line
