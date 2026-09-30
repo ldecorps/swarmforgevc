@@ -4,8 +4,9 @@ milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
-priority: 20
-direction: human-intake
+priority: 13
+direction: queue-jump
+# 2026-09-30 human (Cursor): "Auto-jump any ticket that has to do with local llm"
 depends_on: [BL-1821]
 # BL-1821 writes .swarmforge/recruiter/score-table.json, the only input.
 mutation_cost: low
@@ -84,3 +85,5 @@ notes: |
   backlog/INTAKE-recruiter-local-specifier-hf-battery-20260929.md (split
   1:4, archived with this mint). Normal priority. The documenter.prompt
   paste instruction landed in the mint commit (BL-798).
+
+assigned_to: coder
