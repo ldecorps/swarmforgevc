@@ -1,0 +1,133 @@
+id: BL-1838
+title: "A local-model seat's qwen gives up at the contextWindowSize in the operator's ~/.qwen/settings.json, written once by a launcher that never updates an existing entry - on 2026-09-30 coder@iq3's model was re-served at num_ctx 49152 while that entry still said 32768, and the seat died at 'hard limit: 30852.8' with 16k tokens of window unused; the swarm writes the seat's model entry into the worktree's own .qwen/settings.json with the window its model is served with"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the seat crashed mid-ticket
+# (12:26Z) on a limit nothing in the swarm sets or reads. The human made
+# a working iq3 the swarm's absolute priority the same day.
+status: todo
+epic: local-llm-swarm
+priority: 0
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one writer in swarmforge.sh (zsh, BL-1829's) plus a num_ctx read
+# the window gate already owns; shell/bb have no mutation lane wired.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1838-a-local-model-seats-qwen-budgets-the-window-its-model-is-served-with.feature
+
+# Handler pin (BL-233, BL-1371). No consumer anchor: write_role_launch_script
+# already calls write_local_model_qwen_settings for every local-model seat
+# (BL-1829), so an anchor there matches before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1838QwenBudgetsTheServedWindowSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. FIRM: the seat's qwen budget
+  equals the num_ctx Ollama serves its model with (the window gate's own
+  served-window reading), else the swarm's context length. FIRM: the
+  written settings keep thinking off and BL-1829's six tools. The human's
+  2026-09-30 directive ("Make it the swarm absokute priority to make iq3
+  work") is the queue-jump and the approval.
+
+invariants:
+  - "A local-model seat's qwen context budget equals the window its model is served with, or the swarm's configured context length when Ollama reports none; never a value only the operator's ~/.qwen/settings.json holds."
+
+source: |
+  Coordinator note 013961 (2026-09-30 12:38Z): "Mint local-llm-swarm
+  ticket: coder@iq3 reliability, see evidence file"
+  (`backlog/evidence/coder-iq3-reliability-20260930-coordinator.md`).
+  Traced by the specifier the same pass; findings in
+  `backlog/evidence/coder-iq3-reliability-20260930-specifier.md`.
+  The human, 2026-09-30, in the specifier pane, verbatim:
+
+  > Take over the in progress hotfix. Make it the swarm absokute priority to make iq3 work.
+
+description: |
+  ## What happened
+
+  - The seat crashed at 12:26Z: "Context is too large to send safely
+    after automatic compression. Estimated prompt tokens: 32631; hard
+    limit: 30852.8; compression status:
+    COMPRESSION_FAILED_INFLATED_TOKEN_COUNT."
+  - Ollama was already serving `ista-iq3s-coder:latest` at num_ctx 49152
+    (the coordinator's bump, `ollama ps` CONTEXT 49152). 30852.8 is qwen's
+    own limit from contextWindowSize 32768.
+  - qwen read contextWindowSize from `~/.qwen/settings.json`. The
+    worktree's `.qwen/settings.json`, written by BL-1829's
+    `write_local_model_qwen_settings`, holds only the tool lists. The
+    `start-swarm-ollama-ista-local-model-claude.sh` launcher adds the
+    entry when missing and never updates it; the full-forge launch that
+    staffs coder@iq3 never touches it.
+  - The specifier set the user entry to 49152 by hand as part of the
+    hotfix (2cdb259806); nothing keeps it true.
+
+  ## What is wanted
+
+  1. When the swarm writes a local-model seat's qwen settings, the
+     worktree's `.qwen/settings.json` carries a provider entry for the
+     seat's `--model` whose contextWindowSize is the num_ctx Ollama serves
+     that model with (scenario 01).
+  2. When Ollama reports no num_ctx, the swarm's own context length
+     (`SWARMFORGE_OLLAMA_CONTEXT_LENGTH`) is used (scenario 02). With
+     neither, write no entry and print one warning line naming the seat.
+  3. The entry keeps what the hand-kept one carries: the loopback base
+     URL, `envKey` OLLAMA_API_KEY, `extra_body.think: false`; and the tool
+     lists BL-1829 writes stay exactly as they are (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - The num_ctx reading belongs to `local_model_window_gate_cli.bb`
+    `served-window` (POST /api/show); call it, or move it into
+    `local_model_window_gate_lib.bb` and call it from both, rather than a
+    second parser (IO-near code calls the owner, BL-1811).
+  - The shape to copy is the gitignored master `.qwen/settings.json`'s
+    `ista-iq3s-coder:latest` entry (timeout 600000, streamIdleTimeoutMs,
+    maxRetries 1, samplingParams). Verify on a scratch HOME with a
+    loopback fake endpoint, the way BL-1829 measured its tool lists, that
+    qwen uses the project entry over a user entry for the same id.
+  - Step handler `specs/pipeline/steps/bl1838QwenBudgetsTheServedWindowSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). The served window comes from a
+    fake /api/show; never the live Ollama, never the live `~/.qwen`
+    (throwaway HOME, BL-1829's method). Fixture roots under mkdtemp,
+    `git init`, proven by `rev-parse --git-common-dir` (BL-1390).
+
+  ## Scope
+
+  `swarmforge/scripts/swarmforge.sh` `write_local_model_qwen_settings`
+  and its caller's arguments, the served-window read, the shell test
+  (`test_bl1829_local_model_qwen_settings.sh` or a sibling), the step
+  handler and its registration, evidence.
+
+out_of_scope: |
+  - The launch prompt's "@" path: BL-1837.
+  - Retiring the stand-alone ollama launchers' user-settings upsert: they
+    are untracked operator scripts.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1838-a-local-model-seats-qwen-budgets-the-window-its-model-is-served-with.feature`:
+     4 of 4 ok (two rows of 01, 02, 03). Measured 0 on main at mint: no
+     handler exists yet.
+  2. `bash swarmforge/scripts/test/test_bl1829_local_model_qwen_settings.sh`:
+     ALL PASS (measured on main 7f38e5d7fe at mint).
+  3. In-process probe on a mkdtemp scratch root with a fake /api/show
+     answering num_ctx 49152: call the writer for a seat with
+     `--model ista-iq3s-coder:latest`; the written file's entry reads
+     contextWindowSize 49152 and think false.
+  After the land (the coordinator's check on the next swarm launch, not
+  QA's): `.worktrees/coder-iq3/.qwen/settings.json` carries the entry, and
+  a coder@iq3 session passes 31000 input tokens without a compression
+  error (`~/.qwen/usage/token-usage-<month>.jsonl`).
+
+notes: |
+  Minted 2026-09-30 by the specifier from coordinator note 013961, under
+  the human's iq3 absolute-priority directive (source). Hotfix commits the
+  same pass: 2cdb259806 (the in-progress hotfix taken over), 7f38e5d7fe
+  (KV q8_0 serve, reply cap, card rules).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

@@ -49,6 +49,43 @@ Until the human declares one of those as the cycle direction, no Direction-lane
 gate is in force. That does **not** mean the human has said nothing about
 product surfaces — see the standing freeze below.
 
+## Standing human directive (2026-09-30, specifier pane) — a working coder@iq3 is the swarm's absolute priority
+
+**Human, verbatim (Claude Code, specifier pane):** "Take over the in progress hotfix. Make it the swarm absokute priority to make iq3 work."
+
+**Effect:**
+
+- The in-progress iq3 hotfix is landed (2cdb259806, 7f38e5d7fe); trace in
+  `backlog/evidence/coder-iq3-reliability-20260930-specifier.md`.
+- BL-1838 (qwen budgets the window its model is served with; high) then
+  BL-1837 (the card path carries no "@") go ahead of every other ticket,
+  local-LLM slices included. Promote past the depth cap (caller-declared
+  `--queue-jump`); `depends_on` and hold still apply. Route them to the
+  primary coder, not to coder@iq3: they change the swarm's own launch
+  path.
+- coder@iq3 itself gets simple tickets only (operator rule of the same
+  day): `mutation_cost: low`, one or two files.
+- Retire this section when the human says iq3 works, or retires it.
+
+## Standing human directive (2026-09-30, via Cursor) — every open local-LLM ticket is queue-jump
+
+**Human, verbatim (Cursor):** "Auto-jump any ticket that has to do with local llm"
+
+**Effect:**
+
+- Every open (active/paused) INVEST child of epic BL-1125 (`epic:
+  local-llm-swarm`) is `direction: queue-jump`, ahead of ordinary paused
+  work, not ahead of Article 3.2.4 expedited defects.
+- Already-JumpQ slices keep their prior pull order (compact cards
+  BL-1798–1801, Claude→local brief BL-1815/1816). Newly jumped this
+  directive: BL-1797 (priority 5, already active), BL-1796 (6), then the
+  specifier-battery / recruiter scout chain BL-1819 → BL-1820 → BL-1821 →
+  BL-1822 (priorities 10 / 11 / 12 / 13; `depends_on` unchanged).
+- Promote a ready one past the depth cap when the human asks
+  (caller-declared `--queue-jump`); do not wait for ordinary open slots.
+- New children of BL-1125 mint as `direction: queue-jump` until the human
+  retires this standing preference.
+
 ## Standing human directive (2026-09-29, via Cursor) — Claude→local knowledge transfer is queue-jump in the local-LLM collection
 
 **Human, verbatim (Cursor):** "could we imagine that the claude agent does a

@@ -1,0 +1,117 @@
+id: BL-1837
+title: "qwen reads '@<path>' in a prompt as a file reference and rewrites it, so the local-model launch prompt's card path '.../prompts/coder@iq3.md' reaches the model as '.../prompts/coder @iq3.md' - all three coder@iq3 sessions on 2026-09-30 opened on 'File not found' and a glob - and the same line calls the compact card '(constitution, pipeline, role, pack)'; a local-model seat's launch names its card by a path with no '@' and describes it as its card"
+milestone: M8
+type: defect
+severity: medium
+# medium: contained - the seat recovers by globbing, at two turns per
+# session start and every respawn (5-60 s each on this host), and the
+# generic wording invited the up-front reads the hotfix's card rule now
+# forbids. Ordered by the human's iq3 directive, not by severity.
+status: todo
+epic: local-llm-swarm
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: the local-model branch of write_role_launch_script (zsh) and where
+# its card is written; shell has no mutation lane wired.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1837-a-local-model-seats-launch-hands-qwen-its-card-by-a-path-qwen-reads-verbatim.feature
+
+# Handler pin (BL-233, BL-1371). No consumer anchor: the launch script this
+# ticket changes is written by swarmforge.sh for every seat already.
+required_wiring:
+  - 'specs/pipeline/steps/bl1837LocalSeatCardPathSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. FIRM: no local-model launch
+  prompt contains an "@". FIRM: every other agent's launch line and prompt
+  file path is unchanged. Approved by the human's 2026-09-30 directive
+  ("Make it the swarm absokute priority to make iq3 work"), a queue-jump
+  request for a plain gate (2026-09-15 ruling).
+
+invariants:
+  - "No local-model seat's launch prompt contains an '@' character."
+
+source: |
+  Coordinator note 013961 (2026-09-30 12:38Z): "Mint local-llm-swarm
+  ticket: coder@iq3 reliability, see evidence file"
+  (`backlog/evidence/coder-iq3-reliability-20260930-coordinator.md`).
+  Traced by the specifier the same pass; findings in
+  `backlog/evidence/coder-iq3-reliability-20260930-specifier.md`.
+  The human, 2026-09-30, in the specifier pane, verbatim:
+
+  > Take over the in progress hotfix. Make it the swarm absokute priority to make iq3 work.
+
+description: |
+  ## What happened
+
+  `.swarmforge/launch/coder@iq3.sh` runs
+  `qwen ... "Read and obey every instruction in '/home/.../.swarmforge/prompts/coder@iq3.md' (constitution, pipeline, role, pack). ..."`.
+  In qwen's own record of each session's first user message the path
+  reads `.../prompts/coder @iq3.md`: qwen's "@" file-reference handling
+  rewrote it before the model saw it. Sessions 9f06a797 (12:13Z),
+  6119e423 (12:27Z) and 992f20dc (12:51Z) each called read_file on the
+  spaced path, got "File not found", globbed `.swarmforge/prompts/*`, and
+  only then read the card. The parenthetical describes the generic
+  composition. A local-model seat's file is the compact card (BL-1798),
+  and the first two sessions went on to read the constitution, PIPELINE
+  and coder.prompt.
+
+  ## What is wanted
+
+  1. A local-model seat's launch prompt names a card path with no "@" in
+     it, and that path holds the seat's composed card (scenario 01).
+  2. It does not describe the card as "(constitution, pipeline, role,
+     pack)" (scenario 02).
+  3. Every other agent is unchanged: a Claude seat named `coder@2` still
+     appends `.swarmforge/prompts/coder@2.md` (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - `write_role_launch_script`'s `local-model)` branch in
+    `swarmforge/scripts/swarmforge.sh`. Writing the card under a name with
+    "@" mapped to "-" is one way to do it; escaping the "@" in the
+    prompt is another if qwen passes it through unchanged. Check qwen's
+    recorded first user message on a scratch HOME with a loopback fake
+    endpoint (BL-1829's method), not the argv string.
+  - The babysitter, `swarm_ensure.bb` and the resume path re-execute
+    the launch script (BL-323). Check that nothing else reads
+    `.swarmforge/prompts/<seat>.md` for a local-model seat before
+    renaming it: `grep -rn "prompts/" swarmforge/scripts`.
+  - Step handler `specs/pipeline/steps/bl1837LocalSeatCardPathSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). Drive the launch-script
+    writer the way `test_local_model_seat.sh` does, in a mkdtemp fixture
+    (`git init`, `rev-parse --git-common-dir` first, BL-1390).
+
+  ## Scope
+
+  `swarmforge/scripts/swarmforge.sh` (the local-model launch branch and
+  where its card is written), its shell test, the step handler and its
+  registration, evidence.
+
+out_of_scope: |
+  - The gemini branch passes its prompt path the same way, and gemini
+    shares qwen's "@" handling. No gemini seat carries an "@" in its name
+    today. Ticket that separately if one ever does.
+  - The window budget qwen uses: BL-1838.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1837-a-local-model-seats-launch-hands-qwen-its-card-by-a-path-qwen-reads-verbatim.feature`:
+     3 of 3 ok. Measured 0 on main at mint: no handler exists yet.
+  2. `bash swarmforge/scripts/test/test_local_model_seat.sh` and
+     `bash swarmforge/scripts/test/test_alternate_runtime_launch.sh`:
+     ALL PASS (both measured on main 7f38e5d7fe at mint).
+  After the land (the coordinator's check on the next swarm launch, not
+  QA's): the coder@iq3 session's first read_file names the card path and
+  succeeds (`~/.qwen/projects/*coder-iq3/chats/<newest>.jsonl`).
+
+notes: |
+  Minted 2026-09-30 by the specifier from coordinator note 013961, under
+  the human's iq3 absolute-priority directive (source). Hotfix commits the
+  same pass: 2cdb259806, 7f38e5d7fe.
