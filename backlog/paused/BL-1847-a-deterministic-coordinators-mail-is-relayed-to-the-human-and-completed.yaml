@@ -25,7 +25,7 @@ required_wiring:
   - 'swarmforge/scripts/handoffd.bb::(coordinator-mail-sweep!::the live tick loop calls the sweep, not just defines it (BL-1235)'
   - 'specs/pipeline/steps/bl1847DeterministicCoordinatorMailSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file, the second slice of the deterministic coordinator
   the specifier chose on BL-1846. FIRM: on a deterministic pack every
