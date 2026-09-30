@@ -135,3 +135,5 @@ notes: |
   swarm-reliability high defect). BL-1844 is top-ranked (expedited high
   defect) for the next slot to open; will promote+route on the next
   close/recheck.
+
+assigned_to: coder
