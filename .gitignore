@@ -2,6 +2,10 @@
 .env
 .claude/
 .swarmforge/
+# BL-1829: a local-model seat's own project-level qwen settings (written
+# by write_local_model_qwen_settings) - runtime launch state, per-seat,
+# never a role's own commit.
+.qwen/
 # Python bytecode - untracked __pycache__/ was blocking every post-land
 # QA-branch re-point (LAND_REPOINT_SKIPPED an uncommitted change) and
 # letting origin/main..swarmforge-QA grow without bound (4020 commits by

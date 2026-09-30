@@ -136,7 +136,7 @@ notes: |
   feature or scenario changes.
 
 assigned_to: coder
-abandoned_commits: [ecaa386611, 891655ef7c, e728a135d8, 912429fab5, 33dedcda86, 390c43da44, ebfff04dc3, db67921e27, ac6052db4a, 6ab4e8cbe4, 09de041120, b30ae99710, b572fbbf7a, f30daa0bd8, e6dbdda3cd]
+abandoned_commits: [ecaa386611, 891655ef7c, e728a135d8, 912429fab5, 33dedcda86, 390c43da44, ebfff04dc3, db67921e27, ac6052db4a, 6ab4e8cbe4, 09de041120, b30ae99710, b572fbbf7a, f30daa0bd8, e6dbdda3cd, ef066bd200]
 # 2026-09-30 documenter: pre-QA gate flagged these as stranded on
 # swarmforge-QA across two rounds - review-pass evidence from earlier
 # rounds of this ticket's own bounce/fix cycle, superseded each time the

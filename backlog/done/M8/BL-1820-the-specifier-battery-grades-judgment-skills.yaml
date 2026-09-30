@@ -88,7 +88,7 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: 7d805346f7, evidence: backlog/evidence/BL-1820-QA-20260930.md }
-abandoned_commits: [45c6cb0102, 666e70172d, 819d917621, d9177e0c4b, 484bcf5fa8, fd0ecd213e, 76dc7964d1]
+abandoned_commits: [45c6cb0102, 666e70172d, 819d917621, d9177e0c4b, 484bcf5fa8, fd0ecd213e, 76dc7964d1, a2a53313ae]
 # Stranded duplicate fork of the post-bounce rebuild's evidence chain,
 # not reachable from this branch. Diffed byte-identical to what this
 # branch already carries (the bounce-history record, QA/documenter/

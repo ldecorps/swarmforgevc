@@ -592,3 +592,4 @@ test_bl1641_ceremony_deadline_produces_a_briefing.sh	standing
 test_bl1688_status_ledger_survives_start.sh	standing
 verification_debt_ledger_lib_test_runner.bb	standing		
 test_verification_debt_ledger_cli.sh	standing		
+test_bl1829_local_model_qwen_settings.sh	standing

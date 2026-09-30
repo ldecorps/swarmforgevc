@@ -262,3 +262,17 @@ BL-1708 owns no register row. `abandoned_commits: [d709c3388f]` and this
 instance ride inside the land commit.
 
 By QA.
+
+## Instance - BL-1829's land under condition (i) (QA, 2026-09-30)
+
+Three done-copy paths drained, one commit per closed owner, untagged
+subjects with the owner named in the body, beneath BL-1829's tip-pure
+commit and published by one `--push`: `backlog/done/M8/BL-1820-...yaml`,
+`BL-1811-...yaml` and `BL-1821-...yaml`. Each diff only adds a cited
+commit to `abandoned_commits:` (a superset; BL-1811 gains the field): the
+records QA owed for its own LAND_REPLAY lands of those tickets today and
+wrote after the publish. BL-1821's entry (ef066bd200) is what lets the
+land step supersede stray 698a268a8b (BL-1537 file, BL-1829 instance).
+No path left out.
+
+By QA.
