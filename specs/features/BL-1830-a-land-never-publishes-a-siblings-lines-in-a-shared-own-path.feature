@@ -9,6 +9,8 @@ Feature: BL-1830 A land never publishes an unlanded sibling's lines inside a fil
   own path is now rebuilt from origin/main plus the landing ticket's own
   commits' changes, and a change that cannot apply without the sibling's
   lines escalates by name.
+  BL-1830 takes out BL-1717's scenario 02, in which a shared own path rode
+  whole with the sibling named as a passenger; scenario 01 here covers it.
 
   Background:
     Given a fixture origin/main and a reviewed tip for landing ticket BL-9001
@@ -20,6 +22,7 @@ Feature: BL-1830 A land never publishes an unlanded sibling's lines inside a fil
     When the land step replays BL-9001
     Then the replayed file carries BL-9001's row
     And it carries no row BL-9002 added
+    And the land's report names that file as rebuilt, leaving out BL-9002
 
   # BL-1830 own-change-needing-sibling-lines-escalates-02
   Scenario: an own change that only applies on top of the sibling's lines escalates by name

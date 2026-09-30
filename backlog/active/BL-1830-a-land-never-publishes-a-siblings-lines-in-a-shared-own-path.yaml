@@ -78,6 +78,13 @@ description: |
   2. A path only the landing ticket (and landed tickets) touched is written
      from the tip exactly as today.
   3. The land's output names each such rebuilt path, so QA sees it.
+  4. Retire BL-1717's scenario 02 in its feature (retire, never reword):
+     it asserts that when the landing ticket also changed the path, the
+     unlanded sibling's lines ride whole as a named passenger, which is
+     the behaviour this fix removes. BL-1830's scenario 01 covers the case,
+     including the report line (item 3). Add one narrative line to
+     BL-1717's feature naming BL-1830 as the ticket that took scenario 02
+     out; BL-1717's scenario 01 is untouched.
 
   ## Scope
   - `swarmforge/scripts/land_step_lib.bb` (the replay's per-path content),
@@ -90,12 +97,20 @@ qa_e2e_procedure: |
   1. `node specs/pipeline/cli.js specs/features/BL-1830-a-land-never-publishes-a-siblings-lines-in-a-shared-own-path.feature`:
      3 of 3 ok (0 of 3 on main at mint, no handler yet).
   2. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS.
-  3. The BL-1717 feature 2 of 2 and the BL-1650 feature 11 of 11 ok (as measured on main at mint).
+  3. The BL-1717 feature 1 of 1 ok (2 of 2 on main at mint, before item 4)
+     and the BL-1650 feature 11 of 11 ok (as measured on main at mint).
   4. The parcel's evidence replays BL-1801's case in a mkdtemp fixture
      (origin/main before e1cb2615de, the tip it landed from): the manifest
      carries BL-1801's two rows and neither BL-1821 row.
 
 notes: |
+  Amended 2026-09-30 by the specifier (QA note 003605, BL-1830 bounce
+  03c4feb156): the coder had reworded BL-1717's scenario 02 to the new
+  behaviour. Adjudicated: retire it, never reword (BL-1006); its one
+  unique assertion, the report naming the rebuilt path, moves to
+  BL-1830's scenario 01 as a new And step (What is wanted item 4, qa_e2e
+  step 3). The mint should have scoped this retirement; it did not.
+  Holder note sent to the coder the same pass.
   Minted 2026-09-30 by the specifier from QA note 003539 (BL-1801 land
   passenger). Pending, with ruling_options.
 
