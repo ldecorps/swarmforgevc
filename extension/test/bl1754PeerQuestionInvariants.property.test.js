@@ -37,8 +37,8 @@ function buildFixture(root, provider) {
 // listing the temp dir directly in this file - that shape is exactly what
 // blindTmpDirSweepGuard.test.js refuses inside any `*.property.test.js`
 // file.
-function bl1754RunDirs() {
-  return listTmpDirNames('bl1754-peer-question-');
+function bl1754RunDirs(dir) {
+  return listTmpDirNames('bl1754-peer-question-', dir);
 }
 
 function gitStatusPaths(root) {
@@ -52,7 +52,7 @@ function gitStatusPaths(root) {
   );
 }
 
-function runCli(root, question, extraArgs, env) {
+function runCli(root, question, extraArgs, env, javaTmpDir) {
   const binDir = path.join(root, 'fake-bin');
   // CLAUDE_FAKE_LOG is required by the fake claude script itself (it
   // aborts immediately, before doing anything else, when unset) - every
@@ -63,7 +63,16 @@ function runCli(root, question, extraArgs, env) {
     ...env,
     PATH: `${binDir}:${process.env.PATH}`,
   };
-  const args = [CLI, root, '--from', 'QA', '--to', 'specifier', '--question', question, ...extraArgs];
+  // BL-1827: -Djava.io.tmpdir=<javaTmpDir> ahead of the script on the bb
+  // command line, so THIS call's run-dir lands under a parent no other
+  // concurrent bb process uses - never the shared os.tmpdir() every
+  // concurrent peer_question.bb call (a sibling run of this file, or a
+  // live role's own question) also writes into. Optional: invariant 2's
+  // own call has no interest in where the run-dir lands and omits it.
+  const args = [
+    ...(javaTmpDir ? [`-Djava.io.tmpdir=${javaTmpDir}`] : []),
+    CLI, root, '--from', 'QA', '--to', 'specifier', '--question', question, ...extraArgs,
+  ];
   return spawnSync('bb', args, { encoding: 'utf8', env: fullEnv });
 }
 
@@ -86,7 +95,15 @@ test.each(OUTCOMES)('invariant 1 (%s): the only filesystem change is a new recor
         buildFixture(root, provider);
 
         const before = gitStatusPaths(root);
-        const runDirsBefore = bl1754RunDirs();
+
+        // BL-1827: this call's own temp parent, used ONLY as
+        // -Djava.io.tmpdir for this one bb invocation - never the shared
+        // os.tmpdir() a concurrent creator (another run of this file, or a
+        // live role's own peer question) also writes into. Fresh per call,
+        // so there is nothing to snapshot beforehand: any
+        // bl1754-peer-question-* entry found under it afterward was made by
+        // THIS call and this call alone.
+        const javaTmpDir = mkTmpDir('bl1754-run-parent-');
 
         const env = {};
         const extraArgs = [];
@@ -98,36 +115,40 @@ test.each(OUTCOMES)('invariant 1 (%s): the only filesystem change is a new recor
           env.CLAUDE_FAKE_EXIT = '1';
         }
 
-        runCli(root, question, extraArgs, env);
+        try {
+          runCli(root, question, extraArgs, env, javaTmpDir);
 
-        const after = gitStatusPaths(root);
-        // claude-calls.log is written by the FAKE claude harness itself
-        // (this test's own recording mechanism), never by peer_question.bb -
-        // excluded from "added", the same way the fixture's own pre-existing
-        // files are excluded by being in `before` already.
-        const added = [...after].filter((p) => !before.has(p) && p !== 'claude-calls.log');
-        const removed = [...before].filter((p) => !after.has(p));
+          const after = gitStatusPaths(root);
+          // claude-calls.log is written by the FAKE claude harness itself
+          // (this test's own recording mechanism), never by peer_question.bb -
+          // excluded from "added", the same way the fixture's own pre-existing
+          // files are excluded by being in `before` already.
+          const added = [...after].filter((p) => !before.has(p) && p !== 'claude-calls.log');
+          const removed = [...before].filter((p) => !after.has(p));
 
-        assert.deepEqual(removed, [], `outcome=${outcome}: expected nothing to disappear from git status, got: ${JSON.stringify(removed)}`);
-        for (const p of added) {
-          assert.ok(
-            p.startsWith('.swarmforge/peer-questions/'),
-            `outcome=${outcome}: expected every new path to be under .swarmforge/peer-questions/, got: ${p}`
+          assert.deepEqual(removed, [], `outcome=${outcome}: expected nothing to disappear from git status, got: ${JSON.stringify(removed)}`);
+          for (const p of added) {
+            assert.ok(
+              p.startsWith('.swarmforge/peer-questions/'),
+              `outcome=${outcome}: expected every new path to be under .swarmforge/peer-questions/, got: ${p}`
+            );
+          }
+
+          // BL-1754 D1: the run-dir (prompt.md/answer.txt/stderr.log) lives
+          // under java.io.tmpdir, outside the fixture root, so it is
+          // invisible to the git-status diff above. Every outcome -
+          // answered, refused, timed-out, failed - must leave zero
+          // bl1754-peer-question-* entries under THIS call's own temp
+          // parent once the CLI has returned.
+          const leakedRunDirs = bl1754RunDirs(javaTmpDir);
+          assert.deepEqual(
+            [...leakedRunDirs],
+            [],
+            `outcome=${outcome}: expected no leaked run-dir under this call's own temp parent, got: ${JSON.stringify([...leakedRunDirs])}`
           );
+        } finally {
+          fs.rmSync(javaTmpDir, { recursive: true, force: true });
         }
-
-        // BL-1754 D1: the run-dir (prompt.md/answer.txt/stderr.log) lives
-        // under os.tmpdir(), outside the fixture root, so it is invisible to
-        // the git-status diff above. Every outcome - answered, refused,
-        // timed-out, failed - must leave zero new bl1754-peer-question-*
-        // entries there once the CLI has returned.
-        const runDirsAfter = bl1754RunDirs();
-        const leakedRunDirs = [...runDirsAfter].filter((d) => !runDirsBefore.has(d));
-        assert.deepEqual(
-          leakedRunDirs,
-          [],
-          `outcome=${outcome}: expected no leaked run-dir under os.tmpdir(), got: ${JSON.stringify(leakedRunDirs)}`
-        );
       }
     ),
     { numRuns: 5 }
