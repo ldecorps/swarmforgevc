@@ -8,7 +8,8 @@ severity: high
 status: todo
 epic: local-llm-swarm
 priority: 5
-direction: swarm-reported
+direction: queue-jump
+# 2026-09-30 human (Cursor): "Auto-jump any ticket that has to do with local llm"
 depends_on: []
 mutation_cost: low
 # low: a shell test fixture edit plus one acceptance handler; no mutation
