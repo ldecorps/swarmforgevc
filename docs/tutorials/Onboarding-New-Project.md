@@ -73,7 +73,11 @@ phase through a target repo ready to launch:
   - Another **`proceed`** posts the exact `./swarm <path> --pack mono-router`
     command for the target host and states plainly that the human runs it
     there; the Onboarder never claims to have launched or observed a swarm it
-    cannot reach, even if you ask it directly.
+    cannot reach, even if you ask it directly. A target with no
+    `swarmforge/` tree at all needs the starter kit installed first
+    (`swarmforge/scripts/install_starter_kit.bb <target-path> <swarm-name>`,
+    run from a swarmforgevc checkout - BL-1758); the wrapper itself no
+    longer fetches anything on a target with no engine.
   - A final **`proceed`** once the swarm is actually running marks the target
     **done** with a completion summary, and the same Onboarding topic is
     reused for the next target's repo URL rather than closed. With more than

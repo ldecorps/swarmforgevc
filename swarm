@@ -2,28 +2,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MAIN_BRANCH="${SWARMFORGE_SCRIPTS_BRANCH:-main}"
-ARCHIVE_URL="${SWARMFORGE_SCRIPTS_URL:-https://github.com/unclebob/swarm-forge/archive/refs/heads/${MAIN_BRANCH}.tar.gz}"
-TMP_DIR=""
 
-cleanup() {
-  if [[ -n "$TMP_DIR" ]]; then
-    rm -rf "$TMP_DIR"
-  fi
-}
-trap cleanup EXIT
-
-if [[ ! -d "$SCRIPT_DIR/swarmforge/scripts" || ! -d "$SCRIPT_DIR/swarmforge/scripts/shared-articles" ]]; then
-  TMP_DIR="$(mktemp -d)"
-  mkdir -p "$SCRIPT_DIR/swarmforge"
-  curl -L "$ARCHIVE_URL" | tar -xz --strip-components=1 -C "$TMP_DIR"
-  if [[ ! -d "$SCRIPT_DIR/swarmforge/scripts" ]]; then
-    cp -R "$TMP_DIR/swarmforge/scripts" "$SCRIPT_DIR/swarmforge/scripts"
-  fi
-  if [[ -d "$TMP_DIR/swarmforge/constitution/articles" ]]; then
-    mkdir -p "$SCRIPT_DIR/swarmforge/scripts/shared-articles"
-    cp -R "$TMP_DIR/swarmforge/constitution/articles/." "$SCRIPT_DIR/swarmforge/scripts/shared-articles/"
-  fi
+# BL-1758 (ruling A): this wrapper never fetches an upstream floating
+# branch head - that engine rejects this project's own config vocabulary
+# and ships no packs and no pipeline role prompts. A target with no
+# swarmforge/scripts at all (this checkout always has its own) needs the
+# starter kit, installed from a swarmforgevc checkout via
+# swarmforge/scripts/install_starter_kit.bb - never fetched, never
+# downloaded here.
+if [[ ! -d "$SCRIPT_DIR/swarmforge/scripts" ]]; then
+  echo "swarm: no swarmforge/scripts here. Install the starter kit first:" >&2
+  echo "  <swarmforgevc-checkout>/swarmforge/scripts/install_starter_kit.bb '$SCRIPT_DIR' <swarm-name>" >&2
+  exit 1
 fi
 
 # Estimate mutation_cost for paused backlog items if not set

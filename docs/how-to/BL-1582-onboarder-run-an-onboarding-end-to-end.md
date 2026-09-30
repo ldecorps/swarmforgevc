@@ -122,7 +122,22 @@ it again by hand (section 2) is the manual recovery.
 
 ## 6. Launch handoff and stop
 
-At `ready-to-launch`, the Onboarder posts the exact launch command
+At `ready-to-launch`, if the target has no `swarmforge/` tree at all (a
+greenfield repo with nothing but a README), install the starter kit
+first (BL-1758) - the swarm wrapper no longer fetches anything, so a
+target with no engine cannot launch without this step:
+
+```
+<swarmforgevc-checkout>/swarmforge/scripts/install_starter_kit.bb <target-path> <swarm-name>
+```
+
+This copies the checkout's own engine, git-hooks, handoff protocol,
+generic constitution, the mono-router pack and a generic role-prompt set
+into the target, and writes `swarmforge/swarmforge.conf` naming the
+checkout and the swarm name. It refuses, untouched, if the target
+already has a `swarmforge/` tree.
+
+The Onboarder then posts the exact launch command
 (`./swarm <path> --pack mono-router`) and says: "You run this - I cannot
 launch or observe the target host myself. Post \"proceed\" once it has
 launched." **The human runs that command themselves, on the target host —
