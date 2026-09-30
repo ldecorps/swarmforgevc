@@ -6,7 +6,7 @@ type: epic
 epic: local-llm-swarm
 priority: 0
 depends_on: []
-decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143, BL-1682, BL-1696, BL-1697, BL-1698, BL-1699, BL-1700, BL-1701, BL-1702, BL-1703, BL-1704, BL-1705, BL-1706, BL-1707, BL-1708, BL-1711, BL-1744, BL-1752, BL-1753, BL-1754, BL-1715, BL-1767, BL-1778, BL-1793, BL-1796, BL-1797, BL-1798, BL-1799, BL-1800, BL-1801, BL-1815, BL-1816, BL-1819, BL-1820, BL-1821, BL-1822, BL-1837, BL-1838, BL-1839, BL-1840, BL-1841, BL-1842]
+decomposes_into: [BL-1126, BL-1127, BL-1140, BL-1142, BL-1143, BL-1682, BL-1696, BL-1697, BL-1698, BL-1699, BL-1700, BL-1701, BL-1702, BL-1703, BL-1704, BL-1705, BL-1706, BL-1707, BL-1708, BL-1711, BL-1744, BL-1752, BL-1753, BL-1754, BL-1715, BL-1767, BL-1778, BL-1793, BL-1796, BL-1797, BL-1798, BL-1799, BL-1800, BL-1801, BL-1815, BL-1816, BL-1819, BL-1820, BL-1821, BL-1822, BL-1837, BL-1838, BL-1839, BL-1840, BL-1841, BL-1842, BL-1844]
 remaining_slices:
   - "Successor slices of the BL-1702 pack-shape ruling, minted by the specifier once the human rules - B needs deterministic coordinator rows as daemon behaviour, driver review-stage roles and an Article 4.1 amendment; C needs the compact coordinator card wired read-only, a command relay with an allow-list, relay-hazard probes and lifecycle rows in the probe; A needs none"
   - "The seat coordinator verbs deferred from BL-1696 (main-sync, ff-main, freshness, close, promote, stage-sync), only if the BL-1702 ruling keeps an LLM coordinator"
@@ -23,6 +23,7 @@ source: |
   backlog/INTAKE-prioritize-local-ollama-remaining-20260825.md.
 
 notes: |
+  - [2026-09-30] specifier: minted BL-1844 (owner of the prompt_engine_test_runner.bb standing red, coder note 002269 while on BL-1816: the claude/coder check pinned BL-1798's 58371-character mint measurement); queue-jump per the human's local-llm directive.
   - [2026-09-30] specifier: human, specifier pane, verbatim: "Get the swarm to process your iq3 hot fix. It's ptobably not fi ished yet and I want the swarm to fully master the utilisation of local models." Minted BL-1839 (stamp-off of 2cdb259806/7f38e5d7fe/91c208a923), BL-1840 (qwen compresses every turn, high), BL-1841 (thinking left on), BL-1842 (local-seat health report); order in STEERING.
   - [2026-09-30] specifier: human, specifier pane, verbatim: "Take over the in progress hotfix. Make it the swarm absokute priority to make iq3 work." Hotfix landed (2cdb259806, 7f38e5d7fe); BL-1838 (qwen budgets the served window, high, pri 0) and BL-1837 (no "@" in the card path, pri 1) minted queue-jump. See STEERING and backlog/evidence/coder-iq3-reliability-20260930-specifier.md.
   - [2026-09-30] human (Cursor): "Auto-jump any ticket that has to do with local llm" — every open INVEST child of this epic is now `direction: queue-jump`. Newly jumped: BL-1797 (pri 5), BL-1796 (6), BL-1819/1820/1821/1822 (10–13). Prior JumpQ (1798–1801, 1815–1816) unchanged. See STEERING standing directive 2026-09-30.

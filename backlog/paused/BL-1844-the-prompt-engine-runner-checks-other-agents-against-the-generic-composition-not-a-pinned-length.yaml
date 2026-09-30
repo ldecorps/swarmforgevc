@@ -1,0 +1,128 @@
+id: BL-1844
+title: "prompt_engine_test_runner.bb pins claude/coder's composed prompt at 58371 characters, BL-1798's mint measurement, so every later edit to coder.prompt or a boot-inlined article turns it red - it has read 59135 on main since two specifier prompt edits (BL-1811 +90, BL-1834 +674); the check proves BL-1798 invariant 1 by comparing claude/coder with the generic composition of the files as they are, never a pinned length"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main at first sighting (2026-09-05 register
+# amendment); its register row lands in this mint. It is the runner's only
+# failure, so it also hides any real regression in the prompt factory.
+status: todo
+epic: local-llm-swarm
+priority: 3
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one assertion in one Babashka test runner; no production code.
+# Babashka has no mutation/CRAP/DRY wired (engineering Startup Tools).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file fix with no scenarios of its own (BL-1251, BL-1827 precedent):
+# the pointer names the feature BL-1798 declared (8 of 8 on main d2ca359bab
+# at mint). It is not a claim of ownership over BL-1798's contract.
+acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: only the test runner
+  changes; the prompt factory's code is not touched. FIRM: the check still
+  fails when any agent other than local-model composes the coder prompt
+  differently from the generic composition; only the pinned length goes.
+
+invariants:
+  - "No assertion in prompt_engine_test_runner.bb compares a composed prompt's length to an integer literal; ceilings such as <= 8192 stay."
+
+source: |
+  Coder note 002269 (priority 00, to specifier and coordinator,
+  2026-09-30 14:41Z), raised while working BL-1816: "unowned-red:
+  prompt_engine_test_runner.bb byte-count stale; BL-1816 evidence".
+  Evidence (coder worktree, uncommitted at mint):
+  backlog/evidence/BL-1816-coder-unowned-red-prompt-engine-test-runner-20260930.md.
+  The coder reproduced the failure with BL-1816's two changed files put
+  back to HEAD; the specifier reproduced it on main d2ca359bab.
+
+description: |
+  ## What is wrong
+
+  - `swarmforge/scripts/test/prompt_engine_test_runner.bb` lines 387-389
+    assert that `(count (:system-prompt (prompt-engine-lib/compose "coder"
+    {:agent "claude"})))` is 58371, "the ticket's own mint measurement"
+    (BL-1798, cb53e962d9). The check backs BL-1798 invariant 1: "Every
+    agent other than local-model composes byte-identically to before this
+    change, for every role, pack flag and overlay."
+  - The generic composition inlines the constitution, PIPELINE.md and
+    swarmforge/roles/coder.prompt as they are today, so a pinned length
+    breaks on every ordinary prompt edit. Two specifier mints edited them
+    after the pin: 7d124ad08d (BL-1811, engineering.prompt, +90) and
+    5eb758df3b (BL-1834, coder.prompt, +674). 58371 + 764 = 59135, the
+    value on main now.
+  - Measured on main d2ca359bab at mint: `bb
+    swarmforge/scripts/test/prompt_engine_test_runner.bb` ends "1
+    FAILURES" (this check only: expected 58371, actual 59135), in under a
+    second.
+
+  ## What is wanted
+
+  1. The claude/coder check derives its expected text from the files the
+     generic path reads now. It fails when a non-local-model agent's coder
+     composition differs from the generic composition, and passes after
+     any edit to those files.
+  2. The runner reports zero failures on the parcel tree.
+  3. The evidence shows both directions, run once each: the new check
+     passes with the coder role fragment grown by a padding string, and
+     fails when the expected and actual texts are made to differ (for
+     example the local-model card composed in claude's place). Neither
+     run writes to a live prompt file.
+
+  ## How (direction, not mandate)
+
+  - `compose` varies by agent only through `capabilities`. Measured at
+    mint: claude/coder and codex/coder compose byte-identically (59135 =
+    59135). The expected text can come from `generic-bootstrap-text` called
+    with claude's draft path, from every `:generic` agent composing
+    identically, or both. Pick what fails when a non-local-model agent's
+    text changes.
+  - Grow the role fragment through compose's `:fragment-content-fn` seam
+    (coder.prompt plus padding), never by writing to a prompt file; a test
+    never mutates the live repository (BL-1390).
+  - The hardener records the Babashka degraded fallback: no mutation, CRAP
+    or DRY runs on this file (engineering Startup Tools).
+
+  ## Scope
+
+  `swarmforge/scripts/test/prompt_engine_test_runner.bb`; evidence.
+
+out_of_scope: |
+  - BL-1798's feature narrative says "58,371 characters for the coder ...
+    measured 2026-09-29". It is a dated measurement, not a false present.
+    Leave it.
+  - BL-1816's work in prompt_engine_lib.bb and prompt_engine_cli.bb. If
+    BL-1816's parcel also edits this runner, the coordinator keeps the two
+    apart (Concurrent Work Orthogonality).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bb swarmforge/scripts/test/prompt_engine_test_runner.bb`: zero
+     failures. Measured on main d2ca359bab at mint: "1 FAILURES", this
+     check only (expected 58371, actual 59135).
+  2. `node specs/pipeline/cli.js specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature`:
+     8 of 8 ok. Measured 8 of 8 on main d2ca359bab at mint.
+  3. `grep -n 'count (:system-prompt' swarmforge/scripts/test/prompt_engine_test_runner.bb`:
+     every hit is inside a `<=` or `<` ceiling. At mint there were 2 hits:
+     line 358 (`<= 8192`) and line 389 (this check).
+  4. The evidence carries both runs from "What is wanted" item 3.
+  5. The register row naming BL-1844 is present and owned at the parcel
+     commit; after the land it is gone (BL-1631).
+
+notes: |
+  Minted 2026-09-30 by the specifier from coder note 002269, the same pass
+  as the register row (2026-09-05 amendment). The red was caused by the
+  specifier's own prompt edits: nothing runs this runner on a specifier
+  commit, so the pinned length went unnoticed for a day. With this ticket
+  landed, prompt edits no longer break this runner.
+  direction: queue-jump per the human's 2026-09-30 directive ("Auto-jump
+  any ticket that has to do with local llm"); the Article 3.2.4 expedite
+  lane orders it anyway.
+  Holder note sent to the coder (BL-1816) the same pass (BL-1566 rule).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
