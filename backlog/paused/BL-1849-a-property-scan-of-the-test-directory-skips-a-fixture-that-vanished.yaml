@@ -1,0 +1,144 @@
+id: BL-1849
+title: "A property scan of the test directory skips a fixture that vanished - bl1061's tunnel-binding guard (red on 2026-09-30 with ENOENT on a bl868 lane fixture removed between its listing and its stat), bl932's declarer scan and bl1280's call-site scan read extension/test through BL-1443's shared tolerant walk, so a sibling test's transient fixture can no longer fail them"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane (2026-09-05 rule: high
+# at first sighting). It held QA's approval of BL-1838 until this row landed.
+status: todo
+epic: code-quality-gates
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: test code only (three property files and one helper); no src change,
+# no mutation target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1849-a-property-scan-of-the-test-directory-skips-a-fixture-that-vanished.feature
+
+# Call anchors in the three pre-existing property files, each the scan's
+# live consumer (BL-1235). walkFilesTolerant is defined only in
+# extension/test/helpers/tolerantTreeWalk.js, so its anchors can only match a
+# call. findProductionTunnelBindings is named here at mint so the pattern is
+# a literal (BL-874); the step handler requires it, so it lives in a helper.
+required_wiring:
+  - 'extension/test/bl1061TunnelFixtureIsolation.property.test.js::findProductionTunnelBindings(::invariant 2 scans through the tolerant finder'
+  - 'extension/test/bl932SharedHeavyTimeoutInvariants.property.test.js::walkFilesTolerant(::the declarer scan reads through the shared tolerant walk'
+  - 'extension/test/bl1280MkdtempMigrationInvariants.property.test.js::walkFilesTolerant(::the call-site scan reads through the shared tolerant walk'
+  - 'specs/pipeline/steps/bl1849PropertyScanSkipsVanishedFixtureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A defect with no choice posed. FIRM: the fix is to read through BL-1443's
+  shared walk, the one tolerance the property lane already has; no new
+  catch-all. Only ENOENT on a content read is skipped, and every other read
+  or listing error still fails the guard. FIRM: what each guard asserts does
+  not change. A binding of a production tunnel name is still reported.
+
+invariants:
+  - "A file that vanishes between a property-lane listing of extension/test and its read is skipped; no other read or listing error is swallowed."
+
+source: |
+  QA note 003612 (2026-09-30 19:51Z), verbatim:
+
+  > unowned-red bl1061TunnelFixture inv2 ENOENT race holds BL-1838 (ev d5726c9861)
+
+  Evidence: `backlog/evidence/BL-1838-QA-unowned-red-hold-20260930.md`
+  (commit d5726c9861), including the verbatim failure:
+  `ENOENT: no such file or directory, stat '.../extension/test/bl868-fixture-11637-1yyx5u0myft-2.property.test.js'`
+  at bl1061TunnelFixtureIsolation.property.test.js:239.
+
+description: |
+  ## Why
+
+  bl1061's invariant 2 runs `readdirSync(__dirname)`, then `statSync` and
+  `readFileSync` on each `.js` entry. bl868's lane writes
+  `bl868-fixture-<pid>-<rand>-<n>.property.test.js` into that directory
+  and removes it when its spawned vitest returns. When that happens between
+  the listing and the stat, the guard throws ENOENT (QA's evidence). The
+  three files are green alone on main d60e9e8e60 (15 tests, 4 s), so this
+  is a race and not a finding.
+
+  BL-1443 fixed this class once: `extension/test/helpers/tolerantTreeWalk.js`
+  skips a file that vanishes before its read, and its invariant says every
+  property-lane walk uses it. Its census scenario only matched
+  `function walk(`, so scans under other names never moved onto it.
+
+  ## Census at mint (the population this ticket fixes)
+
+  The census covers property files, and helpers a property file calls on
+  the live tree, that list the live `extension/test` and read or stat a
+  listed entry that can be a `*.property.test.js` without ENOENT tolerance.
+  Found with
+  `grep -nE "readdirSync\(" extension/test/*.property.test.js extension/test/helpers/*.js`,
+  then reading each hit. Three:
+  1. `bl1061TunnelFixtureIsolation.property.test.js` invariant 2 (flat;
+     `statSync` + `readFileSync`). Red.
+  2. `bl932SharedHeavyTimeoutInvariants.property.test.js`, the "exactly one
+     file declares the shared constant" test (flat over `TEST_DIR` and
+     `helpers/`; `readFileSync`). Same race, not yet seen red.
+  3. `bl1280MkdtempMigrationInvariants.property.test.js`,
+     `mkTmpDirCallSites` (recursive; `readFileSync`). Same race, not yet
+     seen red.
+  Excluded after reading: `helpers/rawMkdtempGuard.js` and
+  `helpers/stepHandlerTmpRootFinder.js` already skip ENOENT.
+  `helpers/liveRepoDerivationGuard.js` and `helpers/repoCreationGuard.js`
+  drop `*.property.test.js` before they stat. `bl1677` runs
+  `helpers/blindTmpDirSweepFinder.js` on mkdtemp roots only; its live-tree
+  caller is `blindTmpDirSweepGuard.test.js`, in the unit lane, which does not
+  run beside bl868's fixtures. Scans of `swarmforge/scripts` or `backlog/`
+  are not the directory bl868 writes into.
+
+  ## What is wanted
+
+  - bl1061's invariant-2 scan becomes `findProductionTunnelBindings(dir,
+    { fsImpl })` in a helper under `extension/test/helpers/`. It reads
+    through `walkFilesTolerant` and returns the same offender strings the
+    test asserts today. The test calls it on `__dirname` (scenarios 01, 02).
+  - bl932's and bl1280's scans read through `walkFilesTolerant`, and each
+    keeps the population it has today.
+
+  ## How (direction, not mandate)
+
+  - `walkFilesTolerant` is recursive. A scan that is flat today may stay
+    flat through `excludeDirs`, or become recursive where that only widens
+    the guard (bl1061: a binding under `helpers/` should be reported too).
+    Keep `fixtures/` out wherever it is out today. The coder decides and
+    writes the choice in the evidence.
+  - `helpers/fixtureTunnelName.js` already owns `PRODUCTION_TUNNEL_NAMES`
+    and is a natural home for the finder.
+  - The step handler `specs/pipeline/steps/bl1849PropertyScanSkipsVanishedFixtureSteps.js`
+    deletes the fixture from a spy on `readdirSync`, never by timing. That
+    is BL-1443's own handler shape (BL-1390). Its fixtures live under
+    mkdtemp. It is discovered from its own file (BL-1371).
+
+  ## Scope
+
+  The three property files, the helper holding the finder, the step
+  handler, evidence. Not in scope: tightening BL-1443's census matcher; its
+  landed feature is not edited here.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1849-a-property-scan-of-the-test-directory-skips-a-fixture-that-vanished.feature`:
+     2 of 2 ok. Measured 0 on main at mint: no handler exists yet.
+  2. From `extension/`: `npx vitest run --config vitest.properties.config.mjs
+     test/bl1061TunnelFixtureIsolation.property.test.js
+     test/bl932SharedHeavyTimeoutInvariants.property.test.js
+     test/bl1280MkdtempMigrationInvariants.property.test.js`: 3 files, all
+     passed. Measured on main d60e9e8e60 at mint: 15 of 15 passed, 4.0 s. Alone,
+     they were already green, which is why step 1 is the gate for the race.
+  3. The property lane's full run (QA's normal gather): no ENOENT from any
+     of the three files.
+  After the land (the coordinator's check, not QA's): no row in
+  `backlog/standing-reds.tsv` names
+  `extension/test/bl1061TunnelFixtureIsolation.property.test.js`; the land
+  step retires it (BL-1631).
+
+notes: |
+  Minted 2026-09-30 by the specifier from QA note 003612 (source), the same
+  pass as its register row in `backlog/standing-reds.tsv`. QA was told the
+  same pass, naming this mint's commit ("BL-1838: bl1061 property red owned
+  by BL-1849 (...) - resume land"), per the 2026-09-14 BL-1566 rule.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
