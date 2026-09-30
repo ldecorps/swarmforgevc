@@ -1,0 +1,186 @@
+id: BL-1836
+title: "At its hard deadline the closing ceremony composes the headless git-log briefing and commits it, so the documenter finds a briefing on main and writes none - every morning email from 2026-09-23 was that dump; the human ruled to wait for the documenter and, if it has not finished when the swarm must be down, stop without a dump and let it write after the restart - the ceremony lands the documenter's briefing the moment it exists, ends when the day is recorded as sent in the ledger's own {\"sent\": [...]} shape (it read a bare list and never matched), and never writes a briefing itself"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour (the human's morning briefing has
+# been a raw dump for eight days), and this ticket owns a standing red at
+# first sighting: BL-1640's feature, scenarios 01-02, red on main since
+# 2026-09-22 (register rows added in this mint, 2026-09-05 amendment).
+status: todo
+epic: swarm-reliability
+priority: 1
+direction: human-intake
+depends_on: []
+# Not BL-1835: under ruling A the ceremony stops dump-free either way. Until
+# BL-1835 lands, the documenter reads its instruction after the restart and
+# writes the briefing then; after, usually before the stop.
+mutation_cost: medium
+# medium: TypeScript under Stryker - the briefing-phase advance in
+# nightClosingCeremonyLive.ts and the ledger read and deadline action in
+# night-closing-ceremony-run.ts, plus retiring BL-1641's tests.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1836-the-closing-ceremony-waits-for-the-documenters-briefing-and-never-writes-one.feature
+
+# Handler pin (BL-233, BL-1371). No consumer anchor: handoffd's sweep and
+# finish_shift_lib.sh already run night-closing-ceremony-run.js every tick
+# (BL-1640), so an anchor there matches before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1836CeremonyWaitsForTheDocumenterSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+retires:
+  - specs/features/BL-1641-a-ceremony-at-its-briefing-deadline-produces-a-briefing-before-the-stop.feature
+  - specs/pipeline/steps/bl1641CeremonyDeadlineProducesABriefingSteps.js
+  - extension/test/bl1641EnsureBriefingInvariants.property.test.js
+  - swarmforge/scripts/test/test_bl1641_ceremony_deadline_produces_a_briefing.sh
+  - swarmforge/scripts/test/test_bl1640_sleep_runs_ceremony_to_done.sh
+
+human_approval: approved
+approval_context: >
+  A new feature file; the one choice was put to the human and answered
+  (A, 2026-09-30, source), so no ruling_options. FIRM: the ceremony never
+  composes or commits a briefing itself; every briefing it puts on main is
+  the documenter's commit, byte-identical. FIRM: the limit is the existing
+  hard deadline; past it the swarm stops with no briefing written, loud,
+  and the documenter writes it after the restart. FIRM: a briefing already
+  on main, or recorded as sent, ends the ceremony without the missing
+  alarm.
+
+invariants:
+  - "Every briefing the closing ceremony puts on main is the documenter's own commit, byte-identical; the ceremony composes none."
+  - "The ceremony never stops the swarm while a documenter commit adding only the day's briefing exists and is not yet on main."
+  - "The ceremony reads docs/briefings/.sent.json in the shape the email sweep writes (one shape, asserted on both sides, BL-897)."
+
+source: |
+  Root intake `backlog/INTAKE-pretty-documenter-shift-briefings-20260930.md`
+  (also `.swarmforge/operator/INTAKE-pretty-documenter-shift-briefings-20260930.md`),
+  the human via Let's Talk, 2026-09-30 ~10:47 BST; drained by the
+  specifier the same day into BL-1835 (the root cause, 810f0cd0e3), this
+  ticket (the human's ruling), and a documenter.prompt amendment. The
+  human's sentences, verbatim (Article 5.3; BL-1835 carries them too):
+
+  > Est-ce qu'il y aurait moyen d'avoir le documenteur qui fait des jolis briefs comme c'était le cas, il y a une semaine ou plus avec en intro ce qui s'est passé pendant le shift et puis à la fin un petit, il y a des suggestions pour améliorer le process ce genre de choses, mais parce que là les derniers étaient vraiment moches.
+
+  The preceding turn, recorded in the intake as verbatim:
+
+  > the emails for about a week have been quite ugly; go back to the state of a week ago when it was pretty, with a small intro saying what happened during the shift, a pause, then a bit of ticket detail (opened, closed, and so on).
+
+  The ruling, human via Let's Talk, 2026-09-30 ~10:50 BST:
+
+  > C'est ça le fixe qu'il faut laisser. Il faut attendre que le documentaliste est fini avant de fermer le shift.
+
+  The specifier's question (role_ask, 12:36Z): if the documenter still
+  has not finished by the time the swarm must be down before the next
+  shift, what then - A stop anyway, no dump, the documenter writes the
+  briefing right after the restart; B keep waiting, the next shift stays
+  frozen; C send the old headless dump, then stop. The human's answer,
+  typed in the specifier pane ~13:00Z, verbatim:
+
+  > A: stop, no dump, documenter writes after restart (recommended)
+
+description: |
+  ## What happens today
+
+  - `nightClosingCeremonyLive.ts` `advanceBriefing` waits in the briefing
+    phase until `briefingAlreadySent`, else until `hardDeadlineMs`, then
+    emits `ensure-briefing` + `night-stop`.
+  - `night-closing-ceremony-run.ts` `applyEnsureBriefing`: lands the
+    documenter branch's briefing-only commit (`landDocumenterBriefing`),
+    otherwise runs `composeHeadlessBriefing`
+    (`compose_banked_briefing_cli.bb`, first line "Closing ceremony -
+    headless briefing for <day>") and commits it. BL-1641 built both.
+  - `briefingSent` parses `.sent.json` as `string[]`. The sweep writes
+    `{"sent": [...]}` (`briefing_email_lib.bb`), so it never matches in
+    production; every ceremony runs to its deadline.
+  - Result, 2026-09-23..09-30: headless dump at the deadline, stop, and
+    the documenter's "briefing <date> already on main" after the restart.
+
+  ## What is wanted
+
+  1. In the briefing phase, on any tick, a documenter commit that adds
+     only `docs/briefings/<day>.md` and is not on main is landed
+     byte-identical, as BL-1641 lands it today at the deadline (scenario
+     01, both rows). Landing is not the missing alarm.
+  2. The sent check reads the ledger's real shape; a day recorded as sent
+     ends the ceremony with `send-confirmed` (scenario 02).
+  3. At the hard deadline: nothing is composed. With no briefing on main
+     and none on the documenter branch: `briefing-missing`, loud, stop
+     (scenario 03). The documenter's instruction is left where it is, and
+     with no dump on main its "already on main" check does not stop it
+     after the restart. With the briefing already on main: stop, not loud
+     (scenario 04).
+  4. Retire BL-1641's feature scenarios 01-04 (retire, never reword): each
+     asserts either the headless composer or the missing alarm after a
+     briefing exists. Leave the feature file as a scenario-less tombstone
+     whose narrative says BL-1836 retired it, and retire its step handler,
+     property test and shell test. `compose_banked_briefing_cli.bb` and
+     its test lose their only caller: remove them if `grep` still finds no
+     other. `banked_briefing_lib.bb` stays; handoffd's banked mode (BL-308)
+     uses it.
+  5. Fix BL-1640's shell fixture, which owns today's red: `sent_today`
+     writes the wall-clock date (`date +%Y-%m-%d`), while the ceremony
+     runs on a simulated 2026-09-21, so scenarios 01-02 have failed every
+     day since the file landed. Write the simulated day, in the sweep's
+     real `{"sent": [...]}` shape.
+
+  ## How (direction, not mandate)
+
+  - The ledger shape belongs to `briefing_email_lib.bb`
+    (`load-sent-briefings` / `record-briefing-sent!`). Mirror it in the TS read and pin
+    both literals with a test (BL-897).
+  - Step handler `specs/pipeline/steps/bl1836CeremonyWaitsForTheDocumenterSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). BL-1641's handler already
+    builds the git fixture with a main and a documenter branch and drives
+    the run CLI with stand-in deps. Move what you need, then retire it.
+    Fixtures under mkdtemp, `git init`, proven by `rev-parse
+    --git-common-dir` before any git command (BL-1390).
+  - The documenter moves BL-1641's reference/how-to pages that describe
+    the headless composer to `docs/deprecated/` and links them from
+    `docs/index.md` (Article 3.6).
+
+  ## Scope
+
+  `extension/src/quality/nightClosingCeremonyLive.ts`,
+  `extension/src/tools/night-closing-ceremony-run.ts` and their unit
+  tests; the `retires:` paths; `compose_banked_briefing_cli.bb` and
+  `test_compose_banked_briefing_cli.sh` if unreferenced; the step
+  handler and its registration; docs; evidence.
+
+out_of_scope: |
+  - The pause holding the briefing instruction: BL-1835.
+  - The headless composer's list formatting (BL-1792): after this ticket
+    it serves handoffd's banked mode only.
+  - A ceremony crossing midnight: BL-1765 (same files - the coordinator
+    keeps them apart, Concurrent Work Orthogonality).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1836-the-closing-ceremony-waits-for-the-documenters-briefing-and-never-writes-one.feature`:
+     5 of 5 ok (two rows of 01, then 02, 03, 04). Measured 0 on main at
+     mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-1640-a-finish-shift-sleep-runs-the-closing-ceremony-to-done.feature`:
+     6 of 6 ok. Measured on main 91c208a923 at mint: 01 and 02 red, as the
+     register rows owned by this ticket describe; 03-06 ok.
+  3. `node specs/pipeline/cli.js specs/features/BL-1641-a-ceremony-at-its-briefing-deadline-produces-a-briefing-before-the-stop.feature`:
+     no scenarios, no failure. Measured 4 of 4 ok before retirement.
+  4. `node specs/pipeline/cli.js specs/features/BL-1458-every-briefing-trigger-instructs-the-documenter.feature`:
+     6 of 6 ok (measured on main d6c27c9b11 at mint).
+  5. `grep -rn "compose_banked_briefing_cli\|composeHeadlessBriefing" extension/src swarmforge/scripts`:
+     nothing, or only callers the evidence names.
+  6. The register rows naming BL-1836 are present and owned at the parcel
+     commit; after the land they are gone (BL-1631).
+  After the land (the specifier's or coordinator's check on the next
+  closing ceremony, not QA's): `.swarmforge/daemon/closing-ceremony-state.json`
+  has no `briefing-composed-headless`, and the day's briefing on main is a
+  documenter commit ("Compose the ..."), landed before the stop or after
+  the restart.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the root intake above, after the
+  human answered the role_ask in the specifier pane (A). The BL-1640 red
+  was found at mint by measuring the features this ticket's procedure
+  runs (BL-1788 rule); its register rows land in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

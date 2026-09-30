@@ -163,6 +163,7 @@ source: |
   description and the feature narrative.
 
 notes: |
+  2026-09-30 (specifier): once BL-1836 lands the closing ceremony no longer composes the headless briefing (the human's ruling: wait for the documenter, never a dump); the banked composer then serves only handoffd's banked mode (BL-308), so this ticket's value shrinks to that path. Re-check its premise at promotion.
   Minted 2026-09-28 by the specifier (claude-fable-5-1 seat) from the art
   director's brief note 000007, the same pass. The render measurement
   (5 <p>, 0 <li>, longest 17,316 chars; counts folded) was taken at mint
