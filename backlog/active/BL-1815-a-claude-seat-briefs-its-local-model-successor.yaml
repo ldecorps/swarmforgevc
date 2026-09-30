@@ -136,3 +136,5 @@ notes: |
   The intake read the BL-1178 hot-swap path as able to respawn a seat as
   local-model. It cannot: the panel switch is Claude-only. The steward
   trial is the live seam, so this ticket wires it.
+
+assigned_to: coder
