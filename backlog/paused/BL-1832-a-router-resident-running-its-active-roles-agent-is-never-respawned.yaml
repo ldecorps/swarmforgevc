@@ -1,0 +1,164 @@
+id: BL-1832
+title: "On a mixed-agent rotation-router pack babysitterd respawns the resident's home pane whenever the role rotated into it runs a different agent than the home row - the proc-<home> check reads the home role's roles.tsv agent alone and never the resident's active role (2026-09-29 00:00-05:00Z, ISTA pack with coder on aider and QA on claude: a proc-coder 'NO aider process' CRIT plus REPAIR every ten minutes killed QA thirty times mid-land, and BL-1785's land walk never finished) - a router home pane running the home agent or the active role's agent is healthy"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault that kills a working seat on a timer. On 2026-09-29
+# it cost five hours of QA and every land in that window; the operator
+# log recorded each kill as "already self-healed", so nothing surfaced
+# it. Latent on today's all-Claude pack, live again on any mixed-agent
+# router pack - the configuration the local-LLM direction runs.
+status: todo
+epic: local-llm-swarm
+priority: 8
+direction: queue-jump
+# 2026-09-30 human (Cursor): "Auto-jump any ticket that has to do with local llm"
+depends_on: [BL-1833]
+# BL-1833 owns BL-804's two reds, one of them the half-launch CRIT's
+# message text this ticket's check also emits; it lands first so the two
+# never edit the same message, and so step 2 of the procedure below can
+# expect 6 of 6.
+mutation_cost: low
+# low: bb only (no mutation lane wired for bb, engineering.prompt); one
+# pure resolver plus the gatherer's call and one step handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1832-a-router-resident-running-its-active-roles-agent-is-never-respawned.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. FIRM: under rotation router the
+  home pane is healthy when it runs a live process of the home role's
+  agent OR of the agent of the role the resident is active as (both, so a
+  rotation still in progress is never killed). FIRM: a home pane running
+  neither is still a half-launch CRIT with a repair, as today. FIRM: with
+  no honoured active-role marker (standing pack, or an absent or unknown
+  marker, BL-1345 invariant 3) each seat is judged against its own agent
+  alone, as today.
+
+invariants:
+  - "Under rotation router, a home pane holding a live process of the home role's agent or of the agent of the role the resident is active as yields no proc-<home> finding and no repair."
+  - "Where the active-role marker is not honoured (a standing pack, or an absent or unknown marker), every seat is judged against its own roles.tsv agent alone, exactly as today."
+
+required_wiring:
+  - 'swarmforge/scripts/babysitter_check.bb::babysitterd-sweep-lib/seat-expected-agents::the live gatherer asks the pure resolver which agents the home pane may run'
+
+description: |
+  ## What is wrong
+
+  `babysitter_check.bb`'s `gather-role` sets `:expected-process` from the
+  roles.tsv `agent` column of the role whose session it inspects. Under
+  `config rotation router` only the home role's session stands, and the
+  resident runs every other role inside it (BL-804). The sweep resolves
+  `resident-active-role` from the marker in the same pass, but only
+  after `gather-role` has run, and `gather-role` never reads it. So when
+  the home role and the active role use different agents, the pane holds
+  a healthy process of the wrong name. `check-live-session`
+  (`babysitterd_sweep_lib.bb`) then raises the `proc-<home>` half-launch
+  CRIT with an `:ensure-session` repair, and `ensure-role-session!` runs
+  `tmux respawn-pane -k` with the HOME role's launch script. That kills
+  the active role mid-turn.
+
+  Measured 2026-09-30 from the live logs: the human switched to the ISTA
+  mono-router pack (coder on aider, everything else on claude) at
+  20:56Z on 2026-09-28. From 22:00Z to 05:00Z babysitterd logged 60
+  `CRIT [proc-coder] ... NO aider process` findings and a
+  `REPAIR [repaired] swarmforge-coder` every ten minutes (the repair
+  cooldown). Thirty-one QA Claude sessions started between 00:00Z and
+  05:00Z, each about a minute after a repair tick. QA's background
+  `land_main_publish.sh --land` was killed at 02:15:35.804Z and at
+  04:36:56.399Z, the exact timestamps of those two repair ticks. QA was
+  landing BL-1788, BL-1707 and BL-1785 (a 20-40 minute walk each). No
+  land walk ever finished: QA gave up on them and hand-built BL-1788 and
+  BL-1707 at 02:27Z and BL-1785 at 05:38Z. The
+  lifecycle ledger charged this to QA as 1515 chases and 22 respawns on
+  BL-1785. handoffd's respawns in that window were restoring QA after
+  each kill, not killing it: the land was already dead when each one
+  read `lane: false`. On 09-30 there were zero repairs, because the pack
+  is now all-Claude.
+
+  ## What is wanted
+
+  - Under rotation router, the agents the home pane may run are the home
+    role's agent and the agent of the role the resident is active as.
+    A live process of either means the seat is healthy: no half-launch
+    finding and no repair (scenario 01, whose rows cover QA-in-resident,
+    a rotation still in progress, and the resident at home).
+  - A home pane running neither agent is still the half-launch CRIT with
+    its repair (scenario 02).
+  - Where the marker is not honoured (standing pack, or an absent or
+    unknown marker), nothing changes: each seat is judged against its own
+    agent alone (scenarios 03, 04). This is BL-1345's rule and must not
+    regress.
+
+  ## How (direction, not mandate)
+
+  - Put the resolver in `babysitterd_sweep_lib.bb` as a pure function
+    named `seat-expected-agents`. It takes the router flag, the home
+    role, the honoured active role, and the roles-to-agent map, and
+    returns the set of acceptable agent tokens. The `required_wiring`
+    anchor is that literal call from `babysitter_check.bb`, so the live
+    gatherer, not only the lib, has to use it. Code near the I/O asks
+    the module that owns the answer (BL-1811).
+  - `gather-role` currently runs before `resident-active-role` is
+    resolved. Either resolve the resident first, or re-judge the home
+    seat's agent presence once it is known; that choice is yours.
+    `agent-process-line` already finds one agent's marker anywhere under
+    the pane tree (BL-1070), so asking it once per acceptable agent is
+    enough.
+  - Step handler: `specs/pipeline/steps/bl1832RouterResidentActiveAgentSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). Drive the pure decision
+    (BL-1169's posture) or the real `babysitter_check.sh` on a private
+    tmux socket with renamed `exec -a` children (BL-804's posture, where
+    an `aider` child works the same way as its `claude` one). Any fixture
+    root is created under mkdtemp and never touches the live repo
+    (BL-1390).
+
+  ## Scope
+
+  `swarmforge/scripts/babysitterd_sweep_lib.bb`,
+  `swarmforge/scripts/babysitter_check.bb`, their bb tests, the step
+  handler and its registration, evidence. Not the repair executor, the
+  cooldown, or handoffd's chase sweep.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1832-a-router-resident-running-its-active-roles-agent-is-never-respawned.feature`:
+     6 of 6 ok (3 outline rows plus 3 scenarios). Measured 0 on main at
+     mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-804-babysitter-mono-router-topology-awareness.feature`:
+     6 of 6 ok. Measured 4 of 6 on main at mint (2026-09-30); 01 and 04
+     are red as the register row owned by BL-1833 describes, and they go
+     green when BL-1833 lands, which this ticket depends on.
+  3. `node specs/pipeline/cli.js specs/features/BL-1169-babysitter-half-launch-starvation-auto-repair.feature`:
+     4 of 4 ok, and
+     `node specs/pipeline/cli.js specs/features/BL-1345-a-stale-router-marker-does-not-staff-a-standing-pack.feature`:
+     7 of 7 ok (both measured on main at mint).
+  4. In-process probe: load `babysitterd_sweep_lib.bb` with `bb -e` and
+     call `seat-expected-agents` for a router pack with home coder on
+     aider and the resident active as QA on claude. The set holds both
+     "aider" and "claude". The same call on a standing pack holds only
+     the seat's own agent.
+  5. `grep -n 'babysitterd-sweep-lib/seat-expected-agents' swarmforge/scripts/babysitter_check.bb`
+     shows the call in the gatherer path.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the closing-ceremony lean pass
+  for shift 2026-09-29. That packet was never delivered ("Unknown
+  recipient role 'specifier'", the roles.tsv gap of that launch) and was
+  read in this pass alongside 2026-09-30's. Its hypotheses "1747
+  chase(s) in QA" and "Longest dwell: QA" trace mostly to this defect.
+  Evidence: `backlog/evidence/closing-ceremony-lean-pass-2026-09-30.md`.
+  The operator's own supervision note treated the recurring
+  proc-coder CRIT as harmless because it "self-heals": the repair is
+  what kills the rotated-in seat. Post-land observation (not a QA step):
+  on the next mixed-agent router run, babysitterd.log shows no
+  `CRIT [proc-<home>]` while the resident is active as a role on the
+  other agent. BL-1125's decomposes_into owes this id; that is deferred
+  while the epic file carries the human's uncommitted edit (same as
+  BL-1829). BL-1789 (paused) also edits `babysitter_check.bb`'s gatherer.
+  That is not a dependency, but the coordinator's orthogonality rule
+  applies if both are active at once.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

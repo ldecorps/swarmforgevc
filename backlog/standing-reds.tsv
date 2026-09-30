@@ -32,3 +32,4 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
+acceptance	specs/features/BL-804-babysitter-mono-router-topology-awareness.feature	BL-1833	2026-09-30	4 of 6 on main a32c9cb5e1: 01 fixture has no swarmforge-QA ref so pipeline-code-on-main answers UNAVAILABLE (BL-631, 2026-08-19); 04 CRIT reads NO claude  process, marker padding since f02f6ae5b4 (2026-08-23); specifier mint census for BL-1832; leaves when BL-1833 lands

@@ -1,0 +1,115 @@
+id: BL-1833
+title: "BL-804's babysitter topology feature has been red on main since August with no register row - scenario 01's fixture has no swarmforge-QA ref, so BL-631's pipeline-code-on-main check answers UNAVAILABLE and the sweep never prints 'OK all checks green'; scenario 04 expects 'NO claude process' but the half-launch CRIT reads 'NO claude  process' (the argv marker's trailing space, since hotfix f02f6ae5b4 on 2026-08-23, and in 14 live babysitterd lines too) - the fixture resolves a QA ref and the CRIT names its agent without the marker's padding"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red is high at first sighting (2026-09-05 amendment).
+# Found by the specifier measuring this feature at mint for BL-1832
+# (the BL-1788 rule); nothing had run it since at least 2026-08-23.
+status: todo
+epic: disaster-recovery-loop
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one message string in a bb lib and one fixture helper in a step
+# handler. The BL-804 feature file itself is not edited (it carries the
+# hardener's mutation stamp).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-804-babysitter-mono-router-topology-awareness.feature
+# BL-1251 shape: this ticket repairs BL-804's contract and does not own it.
+# The pointer names the file whose 6 of 6 is the discharge.
+
+human_approval: approved
+approval_context: >
+  No new feature file; the acceptance pointer is BL-804's existing
+  feature. No choice is posed. FIRM: BL-804's feature file is not edited.
+  FIRM: the half-launch CRIT names the agent the way an operator reads it
+  ("NO claude process"): the fix is in production text, never a looser
+  assertion. FIRM: the fixture gets a swarmforge-QA ref inside its own
+  mkdtemp git root, never the live repository's (BL-1390).
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  Measured 2026-09-30 on main (a32c9cb5e1) with
+  `node specs/pipeline/cli.js specs/features/BL-804-babysitter-mono-router-topology-awareness.feature`:
+  4 of 6 ok. `backlog/standing-reds.tsv` has no data rows at all, so
+  both reds are unowned.
+
+  1. `babysitter-mono-router-topology-awareness-01` ("dormant-role
+     absence is quiet on a green router sweep") fails at "the sweep
+     reports OK all checks green". The sweep prints
+     `UNAVAILABLE [pipeline-code-on-main] ... the swarmforge-QA ref could
+     not be resolved (fails closed, never reads as clean)`. BL-631
+     (cf2c2ad96a, 2026-08-19) added that check, and it fails closed on a
+     root with no `swarmforge-QA` ref. The handler's fixture root
+     (`bl804BabysitterMonoRouterTopologyAwarenessSteps.js`) has no git
+     repository, so a green sweep is unreachable. The fail-closed
+     behaviour is correct; the fixture is incomplete.
+  2. `babysitter-mono-router-topology-awareness-04` ("a live dormant pane
+     is still fully checked") expects
+     `CRIT [proc-specifier] swarmforge-specifier: pane alive but NO claude process under it`
+     and gets `NO claude  process`, with two spaces.
+     `check-live-session` (`babysitterd_sweep_lib.bb`) builds the text
+     from `:expected-process`. That is the argv substring from
+     `agent-process-marker-lib`, which is `"claude "` with a trailing space
+     so that it does not match `claude-*` binaries. Hotfix f02f6ae5b4
+     (2026-08-23) started using it in the message. The operator sees the
+     same padding: babysitterd.log holds 14 `NO claude  process` lines
+     and none with a single space. `aider` has no padding, which is why
+     the 2026-09-29 lines read correctly.
+
+  ## What is wanted
+
+  - BL-804's feature runs 6 of 6 on the parcel commit, with its feature
+    file untouched.
+  - The half-launch CRIT names the agent without the marker's padding,
+    for every agent (`claude`, `aider`, `cursor-agent`, ...). The
+    process match keeps using the padded marker.
+  - The fixture root for scenario 01 is a `git init` under mkdtemp that
+    carries a `swarmforge-QA` ref, so the pipeline-code-on-main check
+    resolves and finds nothing. Prove it with `rev-parse --git-common-dir`
+    before any git command mutates anything (BL-1390).
+
+  ## How (direction, not mandate)
+
+  - The gatherer already passes `:expected-agent` (the plain token)
+    beside `:expected-process`. Building the message from that token, or
+    trimming the marker, are both fine.
+  - The register row this pass added names this ticket. Leave it alone:
+    a parcel never edits `backlog/standing-reds.tsv` (BL-1663), and the
+    land retires it (BL-1631).
+
+  ## Scope
+
+  `swarmforge/scripts/babysitterd_sweep_lib.bb` (message text) and its bb
+  test, `specs/pipeline/steps/bl804BabysitterMonoRouterTopologyAwarenessSteps.js`
+  (fixture), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-804-babysitter-mono-router-topology-awareness.feature`:
+     6 of 6 ok. Measured 4 of 6 on main at mint: 01 and 04 red as above.
+  2. `node specs/pipeline/cli.js specs/features/BL-1169-babysitter-half-launch-starvation-auto-repair.feature`:
+     4 of 4 ok, and
+     `node specs/pipeline/cli.js specs/features/BL-1345-a-stale-router-marker-does-not-staff-a-standing-pack.feature`:
+     7 of 7 ok (both measured on main at mint).
+  3. `git diff <parcel>^..<parcel> -- specs/features/BL-804-babysitter-mono-router-topology-awareness.feature`
+     is empty.
+  4. The register row for BL-804's feature names BL-1833 on the parcel
+     commit. After the land, `grep BL-804-babysitter backlog/standing-reds.tsv`
+     on `origin/main` prints nothing.
+
+notes: |
+  Minted 2026-09-30 by the specifier during the closing-ceremony lean
+  pass, found by measuring BL-804's feature at mint for BL-1832's
+  procedure (the BL-1788 rule). The register row was added in the same
+  commit. BL-1789 (paused) has a procedure step that calls BL-804's
+  feature "all ok"; that holds once this ticket lands, and BL-1789's
+  notes now say so.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

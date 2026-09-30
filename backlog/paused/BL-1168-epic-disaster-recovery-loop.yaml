@@ -7,7 +7,7 @@ epic: disaster-recovery-loop
 priority: 4
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-1169, BL-1170, BL-1171, BL-1789]
+decomposes_into: [BL-1169, BL-1170, BL-1171, BL-1789, BL-1833]
 mutation_cost: high
 human_approval: approved
 approval_context: >
