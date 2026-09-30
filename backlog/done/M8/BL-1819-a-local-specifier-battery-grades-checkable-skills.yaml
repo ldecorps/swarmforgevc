@@ -4,8 +4,9 @@ milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
-priority: 20
-direction: human-intake
+priority: 10
+direction: queue-jump
+# 2026-09-30 human (Cursor): "Auto-jump any ticket that has to do with local llm"
 depends_on: []
 mutation_cost: medium
 # medium: a battery script with five graders over the real lint gate and
