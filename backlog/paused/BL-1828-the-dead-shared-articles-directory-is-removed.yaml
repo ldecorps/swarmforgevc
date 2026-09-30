@@ -1,0 +1,78 @@
+id: BL-1828
+title: "Once BL-1758 has removed the swarm wrapper's upstream-fetch block, swarmforge/scripts/shared-articles/ (three unused upstream prompts the old block populated) is deleted, so the starter kit stops copying dead prose into every new target, and the two test fixtures that create the directory only to skip that retired download drop it"
+milestone: M8
+type: chore
+status: todo
+epic: onboarding-target-repo
+priority: 30
+direction: specifier-found
+depends_on: [BL-1758]
+# BL-1758 removes the wrapper block that fetches an upstream archive
+# whenever this directory is missing (swarm:16 on main at mint). Deleting
+# the directory first would make every ./swarm launch download an unpinned
+# upstream tarball (Architecture Rule 2), so this lands strictly after it.
+mutation_cost: low
+# low: a directory removal and two fixture lines; no production logic.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A removal with no scenarios of its own (BL-1251): the pointer names
+# BL-1758's feature, the starter-kit contract this removal must keep green
+# (0 of 7 on main at mint only because BL-1758's handlers ride its parcel).
+# It is not a claim of ownership over BL-1758's contract.
+acceptance: specs/features/BL-1758-a-greenfield-target-gets-a-launchable-starter-kit-from-the-local-checkout.feature
+
+human_approval: pending
+approval_context: >
+  A plain cleanup, no choice posed. FIRM: it lands only after BL-1758
+  (depends_on). FIRM: nothing reads the three files (census at mint below);
+  the real swarmforge/constitution/articles/ prompts are untouched.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  Architect note 002926 (BL-1758's pass, evidence
+  `backlog/evidence/BL-1758-architect-note-shared-articles-20260930.md`,
+  c5456a94e2): `swarmforge/scripts/shared-articles/` holds three tracked
+  upstream prompts (engineering, handoffs, workflow; unclebob/swarm-forge
+  boilerplate, 2026-08-28) that only the old `swarm` wrapper's
+  upstream-fetch block wrote. BL-1758 removes that block, and its
+  `install_starter_kit.bb` copies `swarmforge/scripts` wholesale, so the
+  dead directory rides into every new starter-kit target.
+
+  Census at mint (main 42eeeed89e), `grep -rn shared-articles` over
+  sh/bb/ts/js/py/conf/prompt/md outside node_modules, worktrees and
+  evidence: the `swarm` wrapper's fetch block (lines 16-26, BL-1758
+  removes it); two test fixtures that `mkdir` the directory only so that
+  block's download branch is skipped
+  (`swarmforge/scripts/test/test_swarm_launcher_mutation_cost_prepass.sh:28`
+  and its comment at line 13, `specs/pipeline/steps/swarmMutationCostPrepassSteps.js:23`);
+  and the archived greenfield intake. No reader of the three files.
+
+  ## What is wanted
+  1. `git rm -r swarmforge/scripts/shared-articles/`.
+  2. The two fixtures stop creating the directory, and the shell test's
+     comment no longer describes a download branch that no longer exists.
+  3. Nothing else changes.
+
+  ## Scope
+  - `swarmforge/scripts/shared-articles/`, the two fixture files above,
+    evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `git grep -n shared-articles -- ':!backlog'` finds nothing.
+  2. `bash swarmforge/scripts/test/test_swarm_launcher_mutation_cost_prepass.sh`:
+     ALL PASS, and `node specs/pipeline/cli.js specs/features/BL-224-swarm-empty-paused-glob-creates-junk-ticket.feature`
+     (the feature `swarmMutationCostPrepassSteps.js` serves): 3 of 3 ok
+     (both as measured on main at mint).
+  3. `node specs/pipeline/cli.js specs/features/BL-1758-a-greenfield-target-gets-a-launchable-starter-kit-from-the-local-checkout.feature`:
+     7 of 7 ok (BL-1758 landed first).
+  4. `grep -n 'curl\|ARCHIVE_URL' swarm` finds nothing (BL-1758's removal
+     is in place, so no launch can fetch).
+
+notes: |
+  Minted 2026-09-30 by the specifier from the architect's note 002926
+  (BL-1758 pass). Pending a plain approval; normal priority.

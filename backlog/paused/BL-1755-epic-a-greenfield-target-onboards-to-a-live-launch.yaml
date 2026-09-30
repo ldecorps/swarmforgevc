@@ -6,7 +6,7 @@ epic: onboarding-target-repo
 status: todo
 priority: 3
 depends_on: []
-decomposes_into: [BL-1756, BL-1757, BL-1758, BL-1759, BL-1774, BL-1775, BL-1776, BL-1777]
+decomposes_into: [BL-1756, BL-1757, BL-1758, BL-1759, BL-1774, BL-1775, BL-1776, BL-1777, BL-1828]
 remaining_slices:
   - "Every other script that runs a swarmforgevc compiled tool resolves it through BL-1757's tooling root, not $ROOT/extension/out - census 2026-09-25 (git grep extension/out/tools in swarmforge/scripts/*.sh) finish_shift_lib.sh (the ceremony CLI), kill_pipeline_swarm.sh (record-run), promote_and_route_next.sh (deprecate-check, which is skipped when absent, so a foreign target's promotions run with no freshness gate), active_pool_freshness_audit.sh, launch_resident_spy_tunnel.sh, check_feature_handler_registration.sh; mint once BL-1757 lands"
 mutation_cost: high
