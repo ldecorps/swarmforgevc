@@ -22,7 +22,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 # It is not a claim of ownership over BL-1758's contract.
 acceptance: specs/features/BL-1758-a-greenfield-target-gets-a-launchable-starter-kit-from-the-local-checkout.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A plain cleanup, no choice posed. FIRM: it lands only after BL-1758
   (depends_on). FIRM: nothing reads the three files (census at mint below);
