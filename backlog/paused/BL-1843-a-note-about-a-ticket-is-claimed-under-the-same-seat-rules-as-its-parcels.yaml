@@ -1,0 +1,121 @@
+id: BL-1843
+title: "A multi-seat stage's seat filters skip notes - BL-1001's tier filter sees a ticket in a note only when it reads 'Work BL-...', and BL-1004's affinity defers only a git_handoff - so on 2026-09-30 the easy-only local seat coder@iq3 claimed the coordinator's reminders 'BL-1816 still todo ...' and 'BL-1830 still todo ...' (medium) while the primary coder held both tickets; a note that names a ticket, in either wording, is claimed under the tier filter and the affinity rule exactly as a git_handoff for that ticket would be"
+milestone: M8
+type: defect
+severity: medium
+# medium: contained to multi-seat stages, recovered by hand each time - but
+# each misclaim costs the local seat a session (about forty minutes on
+# BL-1816) and puts an easy seat on a medium ticket's work. Ordered by the
+# human's iq3 directive, not by severity.
+status: todo
+epic: multi-seat-stages
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: the claim loop in ready_for_next_task.bb and the pure decisions in
+# seat_affinity_lib.bb / the shared task reader; bb has no mutation lane.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1843-a-note-about-a-ticket-is-claimed-under-the-same-seat-rules-as-its-parcels.feature
+
+# Handler pin (BL-233, BL-1371). No consumer anchor: ready_for_next_task.bb's
+# claim loop already calls both decisions for every candidate (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1843NoteSeatRulesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. FIRM: a note that names a ticket
+  gets BL-1001's tier filter and BL-1004's affinity with the same bounded
+  deadline; a note that names no ticket is claimed as today; a single-seat
+  stage is unchanged. Approved by the human's 2026-09-30 directive ("Make
+  it the swarm absokute priority to make iq3 work"), a queue-jump request
+  for a plain gate (2026-09-15 ruling).
+
+invariants:
+  - "A note that names a ticket is claimed under the same seat rules as a git_handoff for that ticket: the tier filter on its mutation_cost and the sibling affinity with the same bounded deadline."
+  - "A note that names no ticket, and any parcel on a single-seat stage, is claimed exactly as before."
+
+source: |
+  Coordinator note 014024 (2026-09-30 13:47Z): "Mint: stale to:coder
+  reminders misroute to coder@iq3, see evidence"
+  (`backlog/evidence/coder-iq3-stale-generic-reminder-misdelivery-20260930-coordinator.md`,
+  untracked, the coordinator's). Under the human's directive of the same
+  day, verbatim:
+
+  > Take over the in progress hotfix. Make it the swarm absokute priority to make iq3 work.
+
+description: |
+  ## What happened
+
+  - Note 013884 (`to: coder`, "BL-1816 still todo - build+forward BEFORE
+    completing this note", created 10:50Z) sat in the coder stage queue.
+    coder@iq3 dequeued it at 12:15:46Z; the file is now in
+    `.worktrees/coder-iq3/.swarmforge/handoffs/inbox/abandoned/`. BL-1816
+    is low, and the primary coder had completed a Work note for it at
+    09:30Z (BL-1834's incident).
+  - A "BL-1830 still todo ..." reminder went the same way at ~14:42Z while
+    the primary coder was landing BL-1830 commits. BL-1830 is medium and
+    coder@iq3 is `--seat-tier easy`.
+
+  ## Why
+
+  - `ready_for_next_task.bb` `claim-task-name` resolves a note's ticket
+    through `supersede-lib/task-name-from-content`, which reads only
+    `Work BL-...`. "BL-1830 still todo ..." yields nil, so
+    `difficulty-allows-claim?` prices it as no ticket and any seat takes
+    it.
+  - `seat-affinity-lib/rework-claim-decision` makes a candidate only of a
+    `git_handoff` whose task a sibling worked. A note is never deferred.
+
+  ## What is wanted
+
+  1. The easy-only seat leaves a note about a medium ticket in the stage
+     queue, in either wording (scenario 01).
+  2. A note about a ticket the other seat worked waits for that seat
+     (scenario 02), bounded by the same cross-seat deadline as a rework
+     (scenario 03).
+  3. A note naming no ticket is claimed as today (scenario 04), and a
+     single-seat stage never defers.
+  The coordinator.prompt already asks for the `Work <id>:` wording
+  (landed with this mint). This ticket makes the filters hold when the
+  wording slips.
+
+  ## How (direction, not mandate)
+
+  - One reader decides which ticket a note names (BL-1185/BL-1608: the
+    shared reader, never a second parser). If it widens to a leading
+    ticket id, check its other consumer, `worked-task-names-in`: a
+    completed reminder must not count as having worked a ticket unless the
+    seat did (BL-1715 and `--no-work` already exclude declined work).
+  - Step handler `specs/pipeline/steps/bl1843NoteSeatRulesSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). `bl1004ReworkClaimSteps.js`
+    and `bl1001DifficultyAwareSeatRoutingSteps.js` already build a two-seat
+    stage fixture. Reuse them. Fixture roots under mkdtemp, `git init`,
+    `rev-parse --git-common-dir` first (BL-1390).
+
+  ## Scope
+
+  `swarmforge/scripts/ready_for_next_task.bb` (the claim loop),
+  `seat_affinity_lib.bb`, the shared note reader if it changes, their bb
+  tests, the step handler and its registration, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1843-a-note-about-a-ticket-is-claimed-under-the-same-seat-rules-as-its-parcels.feature`:
+     7 of 7 ok (two rows of 01, three of 02, then 03, 04). Measured 0 on
+     main at mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js` on the BL-1004 feature (5 of 5 ok) and
+     the BL-1001 feature (6 of 6 ok). Both measured on main d95c636ea3 at
+     mint.
+  After the land (the coordinator's check, not QA's): no coder@iq3
+  `inbox/abandoned/` entry for a note about a ticket the primary coder
+  holds.
+
+notes: |
+  Minted 2026-09-30 by the specifier from coordinator note 014024, under
+  the human's iq3 directive. coordinator.prompt: ticket notes to a stage
+  lead with `Work <id>:` (landed in the mint commit).

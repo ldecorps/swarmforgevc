@@ -69,9 +69,10 @@ product surfaces — see the standing freeze below.
   your iq3 hot fix. It's ptobably not fi ished yet and I want the swarm to
   fully master the utilisation of local models." Build order for the iq3
   set: BL-1838 (window budget, active) -> BL-1839 (stamp-off of the three
-  hotfix commits) -> BL-1840 (qwen compresses every turn, high) -> BL-1841
-  (thinking left on) -> BL-1842 (the local-seat health report) -> BL-1837
-  (the "@" in the card path).
+  hotfix commits) -> BL-1840 (qwen compresses every turn, high) -> BL-1843
+  (a note about a ticket obeys the seat rules; coordinator note 014024) ->
+  BL-1841 (thinking left on) -> BL-1842 (the local-seat health report) ->
+  BL-1837 (the "@" in the card path).
 - Retire this section when the human says iq3 works, or retires it.
 
 ## Standing human directive (2026-09-30, via Cursor) — every open local-LLM ticket is queue-jump
