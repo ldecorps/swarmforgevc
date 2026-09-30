@@ -16,8 +16,11 @@
 # Undo:   point the pack window back at the base hf.co tag; ollama rm ista-iq3s-coder:latest
 # num_predict 4096 (2026-09-30, specifier, iq3 absolute-priority hotfix):
 # the 12:26Z crash was ONE reply of 9,484 tokens (ollama task 2974) that
-# overflowed the window. 4096 tokens is ~16k characters per reply, ample
-# for an edit; a runaway is cut instead of crashing the session.
+# overflowed qwen's then-32768 budget. CORRECTION, same afternoon: this is
+# only a default for requests that set no max_tokens, and qwen sets one -
+# ollama task 752 generated 8,000+ tokens with it in place. It does NOT cap
+# the seat's replies; the 49152 budget (BL-1838) is what gives a long reply
+# room. Kept as the default for callers that do not set max_tokens.
 # 49152 only fits on the GPU with a q8_0 KV cache (f16 at 49152 is 3 GiB,
 # which pushed 8 of 65 layers to the CPU and cut generation from ~18.5 to
 # ~3.5 tokens/s): serve with OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0.
