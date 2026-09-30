@@ -50,3 +50,8 @@
   role: QA
   description: "replayed BL-1801's real land (origin/main 5e754399e4, tip d1db3d0659) through the parcel's own-paths in a mkdtemp clone to see whether BL-1821's suite-manifest.tsv rows are excluded (qa_e2e step 4; no tool runs a historical land against a changed land step)"
   detected_at: 2026-09-30
+- category: artifact-render-source-review
+  ticket: BL-1732
+  role: art-director
+  description: "judged narrative-select inline-flow and 16px input floor from CSS/HTML source at QA's rendered intake-form.html, no live Telegram/iOS tunnel to confirm actual wrap/zoom behaviour"
+  detected_at: 2026-09-30
