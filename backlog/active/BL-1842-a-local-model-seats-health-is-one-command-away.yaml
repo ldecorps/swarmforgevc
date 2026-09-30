@@ -102,3 +102,5 @@ notes: |
   ("Until BL-1842 lands"): read the three records by hand before judging a
   local seat stuck. Once this lands, the specifier replaces it with the
   CLI.
+
+assigned_to: coder
