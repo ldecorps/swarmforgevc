@@ -119,8 +119,14 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the coordinator is nudged about the ticket$/, (ctx) => {
+    // BL-1824: BL-1223 (6797c580fa) prefixed the sweep's own nudge text with
+    // "Work " ("Work BL-1093 active unassigned - ..."); match the id and
+    // "active unassigned" anywhere in the message rather than requiring
+    // them at its start, so the next wording change the sweep makes to its
+    // own prefix does not red this handler again (BL-1811: the sweep owns
+    // the text).
     const nudges = readOutbox(ctx).filter(
-      (c) => /^to: coordinator$/m.test(c) && new RegExp(`message: ${TICKET} active unassigned`).test(c)
+      (c) => /^to: coordinator$/m.test(c) && new RegExp(`^message:.*\\b${TICKET}\\b.*active unassigned`, 'm').test(c)
     );
     if (nudges.length === 0) {
       throw new Error(`expected coordinator unassigned nudge for ${TICKET}, got: ${ctx.sweepOutput}`);
