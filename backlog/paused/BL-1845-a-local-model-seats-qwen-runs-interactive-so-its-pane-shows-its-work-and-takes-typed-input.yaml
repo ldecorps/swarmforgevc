@@ -151,3 +151,10 @@ notes: |
   the iq3 build order right after BL-1838, ahead of BL-1837, because the
   pane is where the human watches and steers the rest of the iq3 set.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+  2026-09-30 coordinator: not promoted this pass. backlog/active/ is at
+  the effective cap (7/7); Article 3.2.4 expedite ordering is
+  ordering-only and creates no extra slot. Both onboarding-contract-gate
+  and deprecate-check read allow. BL-1845 (priority 2) outranks the other
+  held expedited defect, BL-1844 (priority 3) - top candidate for the
+  next slot to open. Will promote+route on the next close/recheck.
