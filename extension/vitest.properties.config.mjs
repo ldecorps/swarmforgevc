@@ -30,7 +30,7 @@ const {
   resolvePropertyLaneHeapMB,
   resolvePropertyLaneFileHeapCeilingMB,
 } = require('./out/tools/vitest-worker-memory-budget');
-const { FORKS_ENV_KEY, resolveLaneForks } = require('./test/helpers/propertyLaneContentionBudget');
+const { FORKS_ENV_KEY, resolveLaneForks, propertyLaneDefaultTimeoutMs } = require('./test/helpers/propertyLaneContentionBudget');
 const { PROPERTY_LANE_HEAP_CEILING_ENV_KEY } = require('./test/helpers/propertyLaneHeapCeilingEnvKey');
 // BL-935: the SAME single pool-resolution route as vitest.config.mjs - the
 // second required call site named by this ticket's own required_wiring, and
@@ -61,10 +61,12 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
 // 1-minute load average, which lags the lane's own ramp by up to a minute
 // (see propertyLaneContentionBudget.js). Forks are spawned as child
 // processes of this process, so they inherit process.env as set here.
-// BL-932 invariant 1 (bl932SharedHeavyTimeoutInvariants.property.test.js)
-// fixes this config's own suite-wide `testTimeout` at the literal 20000ms
-// below - the budget stays PER-TEST headroom on the fixture-spawning files
-// themselves, never a lane-wide raise here.
+// BL-1817 (human ruling 2026-09-29, overturning BL-932 invariant 1's "never
+// a lane-wide raise"): this config's own suite-wide `testTimeout` below now
+// scales with the SAME contention signal (propertyLaneDefaultTimeoutMs),
+// never below 20000ms and never above 60000ms - a per-file budget
+// (propertyLaneTimeoutMs, SUBPROCESS_HEAVY_TIMEOUT_MS, a literal) still
+// overrides it for the file that declares one.
 //
 // Architect bounce (2026-09-16): WORKER_POOL_SIZE alone is the lane's
 // static pool CEILING, sized from host RAM/cores - identical whether this
@@ -79,6 +81,13 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
 // concurrently (0 explicit files, the full lane's own glob, or >1 named
 // together).
 process.env[FORKS_ENV_KEY] = String(resolveLaneForks(process.argv, WORKER_POOL_SIZE));
+
+// BL-1817: the lane-wide default per-test budget, scaled from the SAME
+// forks signal just published above and the host's 1-minute load at
+// config-load time (propertyLaneContentionFactor's own defaults) - read
+// once here, in the main process, before any fork spawns (forks inherit
+// process.env, never re-run this file).
+const PROPERTY_LANE_DEFAULT_TIMEOUT_MS = propertyLaneDefaultTimeoutMs(20000);
 
 // BL-1651: the per-worker heap cap and the per-file gate ceiling it feeds
 // (propertyLaneHeapGuardSetup.js), derived from memory ACTUALLY FREE at
@@ -104,7 +113,8 @@ const PROPERTY_LANE_WORKER_HEAP_MB = resolvePropertyLaneHeapMB(FREE_RAM_MB, PROP
 // eslint-disable-next-line no-console
 console.log(
   `[property-lane-budget] forks=${PROPERTY_LANE_LANE_FORKS} workerHeapMB=${PROPERTY_LANE_WORKER_HEAP_MB} ` +
-    `fileHeapCeilingMB=${process.env[PROPERTY_LANE_HEAP_CEILING_ENV_KEY]} freeRamMB=${Math.round(FREE_RAM_MB)}`
+    `fileHeapCeilingMB=${process.env[PROPERTY_LANE_HEAP_CEILING_ENV_KEY]} freeRamMB=${Math.round(FREE_RAM_MB)} ` +
+    `defaultTimeoutMs=${PROPERTY_LANE_DEFAULT_TIMEOUT_MS}`
 );
 
 export default defineConfig({
@@ -125,7 +135,7 @@ export default defineConfig({
       './test/helpers/propertyLaneHeapGuardSetup.js',
     ],
     include: ['test/**/*.property.test.js'],
-    testTimeout: 20000,
+    testTimeout: PROPERTY_LANE_DEFAULT_TIMEOUT_MS,
     // BL-871 QA bounce D2 follow-up (2026-08-11): raising per-test timeouts
     // (see bl760/bl787/bl797) stopped tests failing their OWN assertions,
     // but 3 direct `npm run test:properties` runs still exited 1 with

@@ -56,8 +56,3 @@ Feature: subprocess-heavy property tests carry the shared heavy timeout, declare
       | knob                          |
       | inner subprocess timeout      |
       | outer per-test timeout        |
-
-  # BL-932 shared-heavy-timeout-04
-  Scenario: the lane-wide default is left alone
-    When the property lane config is inspected
-    Then its suite-wide default timeout is still 20000 milliseconds

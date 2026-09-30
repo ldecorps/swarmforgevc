@@ -17,7 +17,6 @@ const {
 const TEST_DIR = __dirname;
 const HELPERS_DIR = path.join(TEST_DIR, 'helpers');
 const HELPER_FILE = path.join(HELPERS_DIR, 'subprocessHeavyTimeout.js');
-const PROPERTIES_CONFIG_PATH = path.join(TEST_DIR, '..', 'vitest.properties.config.mjs');
 const UNIT_CONFIG_PATH = path.join(TEST_DIR, '..', 'vitest.config.mjs');
 
 // The full, current set of files required to use (not re-declare) the
@@ -29,11 +28,6 @@ const ADOPTER_FILES = [
   'bl797MutationGateProbeCrashFallback.property.test.js',
   'onboarderLauncherPidGuard.property.test.js',
 ].map((f) => path.join(TEST_DIR, f));
-
-function readTestTimeout(configSource) {
-  const m = /testTimeout\s*:\s*(\d+)/.exec(configSource);
-  return m ? Number(m[1]) : undefined;
-}
 
 // ─── Invariant 2 (the extraction): "The shared heavy-subprocess timeout
 // value is declared exactly once and imported by every user." ───
@@ -95,26 +89,17 @@ test('property: exactly one file across the property lane declares the shared co
   assert.deepEqual(declarers, [HELPER_FILE], `expected the shared helper to be the only declaration of ${CONSTANT_NAME}, found: ${JSON.stringify(declarers)}`);
 });
 
-// ─── Invariant 1: "The property lane's suite-wide testTimeout in
-// vitest.properties.config.mjs is unchanged by this ticket. The fix is
-// per-test headroom, never a lane-wide raise." ───
-test('property: the property lane config still declares its suite-wide default at 20000ms, and the unit lane carries no trace of this fix', () => {
-  const propertiesSource = fs.readFileSync(PROPERTIES_CONFIG_PATH, 'utf8');
-  assert.equal(
-    readTestTimeout(propertiesSource),
-    20000,
-    'expected vitest.properties.config.mjs testTimeout to remain 20000ms - BL-932 fixes per-test headroom, never the lane-wide default'
-  );
+// ─── Invariant 1 (BL-1817 retirement, human ruling 2026-09-29 overturning
+// this invariant's own "never a lane-wide raise" half): the property lane's
+// suite-wide testTimeout in vitest.properties.config.mjs now legitimately
+// scales via propertyLaneDefaultTimeoutMs, so the "still 20000ms" half of
+// this check is retired. The "unit lane carries no trace of the
+// heavy-subprocess CONSTANT_NAME" half is a distinct claim (BL-932's own
+// per-test constant, never the lane-wide default) and still holds. ───
+test('property: the unit lane carries no trace of the heavy-subprocess constant', () => {
   const unitSource = fs.readFileSync(UNIT_CONFIG_PATH, 'utf8');
   assert.ok(
     !unitSource.includes(CONSTANT_NAME),
     "expected the unit lane config to carry no trace of the heavy-subprocess constant - that lane is not this ticket's scope"
   );
-});
-
-test('property: the lane-default reader is non-vacuous - a fabricated lane-wide raise is caught', () => {
-  const mutated = "testTimeout: 240000,\n";
-  assert.notEqual(readTestTimeout(mutated), 20000, 'sanity: the extractor must distinguish a lane-wide raise from the real 20000ms value');
-  const real = fs.readFileSync(PROPERTIES_CONFIG_PATH, 'utf8');
-  assert.equal(readTestTimeout(real), 20000, 'the real config unexpectedly failed the check that the mutated one correctly failed');
 });

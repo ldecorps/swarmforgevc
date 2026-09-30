@@ -126,20 +126,6 @@ function registerSteps(registry) {
     assert.ok(hit, `expected 45000 literal in ${JSON.stringify(ctx.parsed)}`);
   });
 
-  scoped(/^the property lane declares its own budget$/, (ctx) => {
-    const conf = fs.readFileSync(path.join(REPO_ROOT, 'extension', 'vitest.properties.config.mjs'), 'utf8');
-    assert.match(conf, /testTimeout:\s*20000/);
-    assert.doesNotMatch(conf, /contentionBudget/);
-    ctx.propertyConf = conf;
-  });
-
-  scoped(/^the property lane runs under that same recorded contention factor$/, () => {
-    /* observational: config text already excludes the helper */
-  });
-
-  scoped(/^the property lane budget is unchanged$/, (ctx) => {
-    assert.match(ctx.propertyConf, /testTimeout:\s*20000/);
-  });
 }
 
 module.exports = { registerSteps };

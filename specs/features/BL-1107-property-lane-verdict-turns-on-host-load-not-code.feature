@@ -16,9 +16,6 @@ Feature: A property lane verdict turns on the code, not on host load
   are reached. The fix is to cover the space by construction rather than to
   buy more time for sampling it twice.
 
-  Background:
-    Given the property lane's per-test budget is 20 seconds
-
   # BL-1107 verdict-not-load-01
   Scenario: The file passes on a loaded host
     Given the host is under the load of a normal shift

@@ -12,7 +12,6 @@ const { spawnSync } = require('node:child_process');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXTENSION_DIR = path.join(REPO_ROOT, 'extension');
 const PROPERTY_FILE = 'test/bl796NvmNodePathFollowUpAdoptInvariants.property.test.js';
-const LANE_CONFIG = path.join(EXTENSION_DIR, 'vitest.properties.config.mjs');
 const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'operator_path_lib.sh');
 
 const FEATURE = 'A property lane verdict turns on the code, not on host load';
@@ -52,11 +51,6 @@ function writeBrokenLib(dest) {
 
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
-
-  scoped(/^the property lane's per-test budget is 20 seconds$/, () => {
-    const src = fs.readFileSync(LANE_CONFIG, 'utf8');
-    assert.match(src, /testTimeout:\s*20000/, 'lane default testTimeout must still be 20000');
-  });
 
   scoped(/^the host is under the load of a normal shift$/, () => {
     assert.ok(

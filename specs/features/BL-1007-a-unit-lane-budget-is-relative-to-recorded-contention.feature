@@ -47,9 +47,3 @@ Feature: A unit-lane test budget is relative to recorded contention
     Given a unit-lane test file whose source declares an explicit base budget
     When the existing source-parsing timeout guard reads that file
     Then it reports the base budget as a numeric literal
-
-  # BL-1007 unit-lane-contention-budget-05
-  Scenario: the property lane is not scaled
-    Given the property lane declares its own budget
-    When the property lane runs under that same recorded contention factor
-    Then the property lane budget is unchanged

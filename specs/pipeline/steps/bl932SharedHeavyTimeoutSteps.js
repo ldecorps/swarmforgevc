@@ -48,9 +48,22 @@ function knownKnob(value) {
   return KNOWN_KNOBS[value];
 }
 
+// BL-1817: testTimeout is no longer a bare numeric literal - it is resolved
+// from propertyLaneDefaultTimeoutMs (a lane-wide raise the human overturned
+// BL-932 invariant 1's "never" for). A literal is still matched for
+// backward compatibility with any other config shape; the resolver form is
+// resolved to its real number by calling the SAME real function the config
+// calls, never a re-derivation of its arithmetic.
 function readTestTimeout(configSource) {
-  const m = /testTimeout\s*:\s*(\d+)/.exec(configSource);
-  return m ? Number(m[1]) : undefined;
+  const literal = /testTimeout\s*:\s*(\d+)/.exec(configSource);
+  if (literal) {
+    return Number(literal[1]);
+  }
+  if (/testTimeout\s*:\s*PROPERTY_LANE_DEFAULT_TIMEOUT_MS\b/.test(configSource)) {
+    const { propertyLaneDefaultTimeoutMs } = require(path.join(HELPERS_DIR, 'propertyLaneContentionBudget'));
+    return propertyLaneDefaultTimeoutMs(20000);
+  }
+  return undefined;
 }
 
 function registerSteps(registry) {
@@ -171,25 +184,6 @@ function registerSteps(registry) {
     FEATURE_NAME
   );
 
-  // ── shared-heavy-timeout-04 ───────────────────────────────────────────
-  registry.defineScoped(
-    /^the property lane config is inspected$/,
-    (ctx) => {
-      ctx.propertiesConfigSource = fs.readFileSync(PROPERTIES_CONFIG, 'utf8');
-      ctx.laneTestTimeout = readTestTimeout(ctx.propertiesConfigSource);
-    },
-    FEATURE_NAME
-  );
-
-  registry.defineScoped(
-    /^its suite-wide default timeout is still (\d+) milliseconds$/,
-    (ctx, expected) => {
-      if (ctx.laneTestTimeout !== Number(expected)) {
-        throw new Error(`expected the property lane's suite-wide testTimeout to be ${expected}ms, got ${ctx.laneTestTimeout}`);
-      }
-    },
-    FEATURE_NAME
-  );
 }
 
 module.exports = { registerSteps };

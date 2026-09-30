@@ -126,11 +126,29 @@ function propertyLaneTimeoutMs(baseMs, opts = {}) {
   return resolveUnitLaneTimeout(baseMs, { factor: propertyLaneContentionFactor(opts), ceilingMs }).effectiveMs;
 }
 
+// BL-1817 (human ruling 2026-09-29, "I follow your reco", overturning
+// BL-932 invariant 1's "never a lane-wide raise"): the lane's own
+// suite-wide default per-test budget, scaled by the SAME contention factor
+// propertyLaneTimeoutMs uses (never a second derivation, BL-1811) - never
+// below the 20000ms base, never above a 60000ms cap (3x the base, the
+// recommendation's own stated bound). A quiet host (factor at or under 1)
+// keeps exactly the base.
+const PROPERTY_LANE_DEFAULT_CAP_MS = 60000;
+
+function propertyLaneDefaultTimeoutMs(baseMs = 20000, opts = {}) {
+  return resolveUnitLaneTimeout(baseMs, {
+    factor: propertyLaneContentionFactor(opts),
+    ceilingMs: PROPERTY_LANE_DEFAULT_CAP_MS,
+  }).effectiveMs;
+}
+
 module.exports = {
   propertyLaneTimeoutMs,
+  propertyLaneDefaultTimeoutMs,
   propertyLaneContentionFactor,
   QUIET_LOAD_CEILING,
   PROPERTY_LANE_MAX_GROWTH,
+  PROPERTY_LANE_DEFAULT_CAP_MS,
   FORKS_ENV_KEY,
   explicitFileArgCount,
   resolveLaneForks,
