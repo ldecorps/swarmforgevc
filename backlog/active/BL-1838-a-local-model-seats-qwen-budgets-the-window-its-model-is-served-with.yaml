@@ -131,3 +131,5 @@ notes: |
   same pass: 2cdb259806 (the in-progress hotfix taken over), 7f38e5d7fe
   (KV q8_0 serve, reply cap, card rules).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+assigned_to: coder
