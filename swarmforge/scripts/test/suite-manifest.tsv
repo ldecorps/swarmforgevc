@@ -379,6 +379,7 @@ test_lean_ledger_bb_wiring.sh	standing
 test_lifecycle_script_scope.sh	excluded	2026-08-23	live-only: invokes kill_all_swarm.sh for real; safe only from a detached host shell with env -u TMUX (2026-08-22 session wipe)
 test_local_coder_battery.sh	standing		
 test_local_coder_probe_gate_wiring.sh	standing		
+test_local_specifier_battery.sh	standing		
 test_local_model_seat.sh	standing		
 test_mailbox_intake_idempotent.sh	standing		
 test_mailbox_only_delivery.sh	standing		
