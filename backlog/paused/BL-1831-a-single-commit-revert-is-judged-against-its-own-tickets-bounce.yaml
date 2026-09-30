@@ -1,0 +1,80 @@
+id: BL-1831
+title: "check_bounce_revert_scope.sh attributes a single-commit Revert to whichever ticket was bounced most recently anywhere (it has no merge second parent to walk), so it refuses the very revert BL-1576's merge-drop guard prescribes (the documenter's BL-1815 revert was judged as BL-1820 on 2026-09-30) - a single-commit revert is judged against the ticket its reverted commit names, and a ticket with no bounce record is not a bounce revert"
+milestone: M8
+type: defect
+severity: medium
+# medium: two guards give contradicting instructions and a legitimate
+# remedy is refused, but loudly and with a workaround (withdraw the edit),
+# and only when a bounce dropped a role's own earlier addition. Not high:
+# no silent loss, no standing red.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: the attribution branch of one shell guard and its shell test.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1831-a-single-commit-revert-is-judged-against-its-own-tickets-bounce.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file needs your tap; no choice is posed. FIRM: a merge
+  revert keeps today's attribution (second-parent walk, BL-1471's feature
+  green). FIRM: a single-commit revert is attributed through the reverted
+  commit's own subject ticket id, read with the repo's existing
+  commit-ticket-id reading (BL-1544), never a second parser (BL-1811); the
+  "latest bounce overall" fallback is removed for it. FIRM: a ticket with
+  no bounce record means this guard does not judge the revert.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  Documenter note 001587, evidence
+  `backlog/evidence/BL-1815-documenter-spec-gap-20260930.md` (44116f3b2c):
+  a merge of the hardener's inbound silently dropped the documenter's own
+  earlier doc paragraph on BL-1815. The merge-drop guard (BL-1576) refused
+  the plain re-add and named its remedy, a `git revert` of the authoring
+  commit. That revert was refused at commit time by
+  `swarmforge/scripts/check_bounce_revert_scope.sh` (BL-1471), which
+  attributed it to BL-1820 and judged it against BL-1820's bounce.
+
+  Cause, read at mint (main 2af408442f): the guard identifies the bounced
+  ticket from the reverted commit's SECOND parent (lines ~190-206), which
+  only a merge has. For a single commit both lookups are empty, and line
+  209 falls back to `latest_bounce_ticket_overall`: the most recently
+  bounced ticket anywhere, unrelated to the revert.
+
+  ## What is wanted
+  1. For a reverted commit that is not a merge, the ticket is the one its
+     own subject names (the repo's commit-ticket-id reading). If that
+     ticket has a bounce record, the guard judges the revert against it
+     exactly as today (scope and omission-class gates). If it has none, or
+     the subject names no ticket, the guard does not refuse: this is not a
+     bounce revert.
+  2. Merge reverts keep today's attribution (scenario 03; BL-1471 6 of 6).
+  3. `latest_bounce_ticket_overall` no longer decides any revert's ticket.
+
+  ## Scope
+  - `swarmforge/scripts/check_bounce_revert_scope.sh`, its shell test,
+    the step handler
+    `specs/pipeline/steps/bl1831SingleCommitRevertSteps.js` (same commit as
+    the runnable feature, BL-233), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1831-a-single-commit-revert-is-judged-against-its-own-tickets-bounce.feature`:
+     3 of 3 ok (0 of 3 on main at mint, no handler yet).
+  2. `node specs/pipeline/cli.js specs/features/BL-1471-a-bounce-revert-touches-only-the-bounced-tickets-paths.feature`:
+     6 of 6 ok (as measured on main at mint).
+  3. `grep -n latest_bounce_ticket_overall swarmforge/scripts/check_bounce_revert_scope.sh`
+     shows no call deciding a revert's ticket.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the documenter's spec-gap note
+  001587 (item 2). Item 1 of that note (BL-1815's owed doc paragraph) went
+  to BL-1816's scope instead, the same pass. Pending a plain approval.

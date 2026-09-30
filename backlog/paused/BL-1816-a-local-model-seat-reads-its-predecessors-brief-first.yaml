@@ -70,6 +70,13 @@ description: |
      restarts the same day is told again; that is intended.
   4. Every other agent (claude, aider, and the rest) composes byte-for-byte
      as it would with no brief kept.
+  5. Documenter stage, owed from BL-1815 (documenter note 001587): add the
+     paragraph on the Claude-to-local-model knowledge brief to
+     `docs/how-to/BL-547-model-steward-overview.md` (the text BL-1815's
+     documenter wrote is at commit 4552cc4594, updated for BL-1815's D1/D2
+     fixes), beside this ticket's own pointer paragraph. BL-1815 shipped
+     without it because the merge-drop and bounce-revert guards
+     contradicted each other (BL-1831).
 
   ## Scenario notes
   - The fixture writes the payload the way BL-1815 does (schema 1,
@@ -83,7 +90,8 @@ description: |
   ## Scope
   - `swarmforge/scripts/prompt_engine_lib.bb` (and `prompt_engine_cli.bb`
     only if the compose clock or root must be passed in), its test runner,
-    the step handler, evidence.
+    the step handler, `docs/how-to/BL-547-model-steward-overview.md`
+    (item 5), evidence.
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
@@ -102,3 +110,8 @@ notes: |
   (intake slice 2, archived with this mint), under the human's standing
   directive in backlog/STEERING.md; queue-jump in the local-LLM
   collection, approved at mint (no ruling choice posed).
+  2026-09-30: scope amended by the specifier with item 5, the doc
+  paragraph BL-1815's documenter could not land (note 001587). This is
+  documentation only: behaviour and scenarios are unchanged, so the
+  approval stands.
+
