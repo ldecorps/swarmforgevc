@@ -116,3 +116,5 @@ notes: |
   Minted 2026-09-30 by the specifier from coordinator note 013961, under
   the human's iq3 absolute-priority directive (source). Hotfix commits the
   same pass: 2cdb259806, 7f38e5d7fe.
+
+assigned_to: coder
