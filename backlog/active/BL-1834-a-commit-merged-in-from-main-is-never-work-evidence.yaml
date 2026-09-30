@@ -122,3 +122,5 @@ notes: |
   The interim coder.prompt paragraph ("Until BL-1834 lands") landed on
   main in the same commit as this ticket.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+assigned_to: coder
