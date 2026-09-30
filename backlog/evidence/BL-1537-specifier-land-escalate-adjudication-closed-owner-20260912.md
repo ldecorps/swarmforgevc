@@ -741,3 +741,29 @@ appended after BL-1793's publish (68e435282b) and never reached main, and
 it lands here so it cannot become the next land's stray.
 
 By QA.
+
+## Instance - BL-1782's land, condition (g) (QA, 2026-09-30)
+
+`land_main_publish.sh <QA worktree> --land BL-1782 90f80eeb47` walked and
+printed `LAND_ESCALATE` with `ENTANGLED_SIBLING` BL-1651, BL-1671, BL-1732
+and `land-step replay: could not cherry-pick stray evidence commit
+698a268a8b`. That stray is QA's own records-only BL-1821 bounce commit
+(built on BL-1821's parcel 831aa276c5: `backlog/evidence/BL-1821-QA-20260930-2.md`
+and the `bounce_history` line in `backlog/active/BL-1821-...yaml`). BL-1821
+has since landed (6c8b8ffa80) and closed (9323c2a587): the evidence file
+is byte-identical on main and the record moved to
+`backlog/done/M8/BL-1821-...yaml`, which already carries that bounce
+entry, so the cherry-pick conflicts on a path main no longer has:
+superseded, condition (g), left alone. None of its paths is BL-1782's.
+New sha for this class. Cause worth knowing: a records-only bounce commit
+touches the bounced ticket's `backlog/active/` YAML, so once that ticket
+closes, any later parcel carrying the bounce commit in its lineage meets
+this stray.
+
+Landed per (g): tip-pure off origin/main holding BL-1782's own paths from
+QA tip 90f80eeb47 (ledger lib, recorder, reader, their bb tests, step
+handler, how-to, its docs/index.md line, two suite-manifest rows, BL-1782
+records). BL-1782 owns no register row. `abandoned_commits: [..., 90f80eeb47]`
+and this instance ride inside the land commit.
+
+By QA.

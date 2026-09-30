@@ -202,3 +202,13 @@ notes: |
   derived population.
 
 assigned_to: coder
+abandoned_commits: [2fd554dec3, 36f5e03287, 9a92d874a0, a51e2013e6, f146d71313, b02bf905e5, d32d2d7672, 67933465d8, d44d377cd7, b15239a222, 58030709d7, 40d4a0a027, 90f80eeb47]
+# 2026-09-30 documenter: pre-QA gate flagged these as stranded on
+# swarmforge-QA - review-pass evidence from an earlier round of this
+# ticket's own bounce/fix cycle, superseded when the QA bounce and the
+# following coder/cleaner/architect/hardener passes rebuilt the tip.
+# Deliberately not re-merged (their files are gone from the current tree).
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-30, by: hardender, blamed: coder, class: behavior, commit: a169ff8b5e, evidence: backlog/evidence/BL-1782-hardender-bounce-20260930.md }
+  - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: a76135cdf6, evidence: backlog/evidence/BL-1782-QA-20260930.md }
