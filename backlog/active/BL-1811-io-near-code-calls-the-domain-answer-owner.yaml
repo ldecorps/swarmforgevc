@@ -104,3 +104,5 @@ notes: |
   directive in backlog/STEERING.md, verbatim: "ok have specifier work on
   the 3 suggested items". human_approval is approved on that directive's
   "approve as needed"; no choice is posed.
+
+assigned_to: coder
