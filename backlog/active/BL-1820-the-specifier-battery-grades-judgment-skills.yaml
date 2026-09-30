@@ -4,8 +4,9 @@ milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
-priority: 20
-direction: human-intake
+priority: 11
+direction: queue-jump
+# 2026-09-30 human (Cursor): "Auto-jump any ticket that has to do with local llm"
 depends_on: [BL-1819]
 # BL-1819 builds the battery, its stub responder and its evidence format;
 # this slice adds competencies to that same run.
@@ -82,3 +83,5 @@ notes: |
   Minted 2026-09-30 by the specifier from
   backlog/INTAKE-recruiter-local-specifier-hf-battery-20260929.md (split
   1:4, archived with this mint). Normal priority.
+
+assigned_to: coder
