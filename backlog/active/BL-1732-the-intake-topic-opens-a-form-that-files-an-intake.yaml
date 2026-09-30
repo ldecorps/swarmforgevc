@@ -225,3 +225,5 @@ notes: |
   clause: a blank rule leaves no rule section. Both new scenarios reuse
   04's Given. human_approval stays approved: the human asked for this
   change. Still paused, unclaimed, so no holder needs a note.
+
+assigned_to: coder
