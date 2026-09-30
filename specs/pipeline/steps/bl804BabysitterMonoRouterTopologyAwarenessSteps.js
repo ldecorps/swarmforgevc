@@ -20,6 +20,7 @@ const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const CHECK_SH = path.join(SCRIPTS, 'babysitter_check.sh');
 const { track } = require('./lib/fixtureReaper');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { gitifyFixtureRoot } = require('./lib/operatorRuntimeFixtureGitRoot');
 
 const FEATURE = 'BL-804 babysitter health sweep is mono-router topology aware';
 
@@ -58,6 +59,17 @@ function mkFixtureRoot() {
   // babysitter_check.bb's active-ticket-count glob throws on a missing dir
   // (unlike the try/caught mailbox globs) - keep it empty, but present.
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+  // BL-1833: pipeline-code-on-main (BL-631) fails the WHOLE sweep closed
+  // to UNAVAILABLE when swarmforge-QA cannot resolve (invariant 3) - a
+  // bare mkdtemp root has no git repo at all, so "OK all checks green"
+  // was unreachable for scenario 01. gitifyFixtureRoot (BL-1738/BL-1390)
+  // is the shared, already-proven-isolated git-init helper every other
+  // acceptance handler with this same need already uses - never a second
+  // hand-rolled `git init` here. main/origin/main stay absent: the
+  // gather already treats that as "nothing to report from there", never
+  // an ancestry failure.
+  gitifyFixtureRoot(root);
+  execFileSync('git', ['-C', root, 'branch', 'swarmforge-QA']);
   return root;
 }
 

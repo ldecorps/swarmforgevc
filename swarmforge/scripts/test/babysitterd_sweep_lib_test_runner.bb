@@ -218,6 +218,28 @@
                                              :expected-process "cursor-agent"})]
                (and f (= "CRIT" (:severity f))
                     (str/includes? (:message f) "cursor-agent"))))
+;; BL-1833: the gatherer's :expected-process is the MATCHING marker
+;; (agent-process-marker-lib's own trailing-space padding, so "claude "
+;; never matches a "claude-*" binary) - never fit for the message an
+;; operator reads. Before this fix, the message built from the padded
+;; marker directly, reading "NO claude  process" (two spaces) for every
+;; claude seat - confirmed live in 14 babysitterd.log lines.
+(assert-true "half-launch CRIT names the agent WITHOUT the process marker's padding, even when both are given"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? true
+                                             :has-claude-process? false
+                                             :expected-agent "claude"
+                                             :expected-process "claude "})]
+               (and f (= "CRIT" (:severity f))
+                    (str/includes? (:message f) "NO claude process")
+                    (not (str/includes? (:message f) "NO claude  process")))))
+;; :expected-agent absent (a caller that has not adopted it yet) falls
+;; back to :expected-process exactly as before - never a regression for
+;; an existing caller that only ever set the one key.
+(assert-true "half-launch CRIT falls back to expected-process when expected-agent is absent"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? true
+                                             :has-claude-process? false
+                                             :expected-process "cursor-agent"})]
+               (and f (str/includes? (:message f) "NO cursor-agent process"))))
 (assert-nil "Cursor seat alive without --remote-control is not RC-degraded"
             (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? true
                                       :has-remote-control? false :rc-applicable? false}))

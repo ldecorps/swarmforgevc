@@ -100,7 +100,7 @@
   ;;   - process-gather-failed? stays repair-free — that branch is UNAVAILABLE,
   ;;     not a proven absence (BL-802 cry-wolf guard).
   [{:keys [role pane-exists? has-claude-process? process-gather-failed? should-stand?
-           expected-process]
+           expected-process expected-agent]
     :as opts
     :or {should-stand? true}}]
   (cond
@@ -121,7 +121,14 @@
      :message (str "swarmforge-" role ": pane process gather unavailable this sweep (ps failed) — live-process check skipped")}
 
     (not has-claude-process?)
-    (let [proc-name (or expected-process "agent")]
+    ;; BL-1833: the message names the agent the way an operator reads it
+    ;; (:expected-agent, the plain token) - :expected-process is the
+    ;; MATCHING marker (agent-process-marker-lib's own trailing-space
+    ;; padding, so "claude " never matches a "claude-*" binary) and stays
+    ;; the match key only, never surfaced in text. Before this fix, the
+    ;; message built from the padded marker read "NO claude  process"
+    ;; (two spaces) for every claude seat.
+    (let [proc-name (or expected-agent expected-process "agent")]
       (cond-> {:key (str "proc-" role) :severity "CRIT"
                :message (str "swarmforge-" role ": pane alive but NO " proc-name
                              " process under it (half-launch/exit)")}
