@@ -114,7 +114,8 @@ description: |
   4. Retire BL-1641's feature scenarios 01-04 (retire, never reword): each
      asserts either the headless composer or the missing alarm after a
      briefing exists. Leave the feature file as a scenario-less tombstone
-     whose narrative says BL-1836 retired it, and retire its step handler,
+     whose narrative names the ticket that took its scenarios out, and
+     retire its step handler,
      property test and shell test. `compose_banked_briefing_cli.bb` and
      its test lose their only caller: remove them if `grep` still finds no
      other. `banked_briefing_lib.bb` stays; handoffd's banked mode (BL-308)
