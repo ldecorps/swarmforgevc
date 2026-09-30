@@ -1,0 +1,120 @@
+id: BL-1851
+title: "A local seat's tuning report compares its work across the settings it ran with - one command groups the seat's qwen sessions by the settings in force at their start (BL-1850's record) and by how Ollama served the model (layers on GPU, KV cache), and prints per group the time to first token, prefill and decode speed, output and thinking tokens, chat compressions and tool-call failures, and what differs between groups"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 4
+direction: queue-jump
+depends_on: [BL-1842, BL-1850]
+mutation_cost: low
+# low: a bb lib and thin CLI reading three records; bb has no mutation lane
+# wired (engineering.prompt). Fixtures only, no live seat.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1851-a-local-seats-tuning-report-compares-its-work-across-the-settings-it-ran-with.feature
+
+# Handler pin (BL-233, BL-1371). The consumer is a person or role running
+# the command, as for BL-1842.
+required_wiring:
+  - 'specs/pipeline/steps/bl1851SeatTuningReportSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  The human asked for it in the specifier pane (source) and answered both
+  choices put to them there: "Real work, then lab (Recommended)" and
+  "Command-line report (Recommended)". This slice is the report. No choice
+  is left open. FIRM: the report only reads. FIRM: every number comes from
+  the records, and a field a record lacks prints as unknown, never as 0.
+
+invariants:
+  - "The tuning report is read-only: running it changes no file, pane or process."
+  - "Every number the report prints is computed from a record; a field no record carries prints as unknown, never as 0."
+
+source: |
+  The human, 2026-09-30 ~20:15Z, specifier pane, verbatim:
+
+  > can iq3 be instrumented so we canundertand how to better tweak it?
+
+  Answers to the two questions the specifier put in the same pane:
+  "How should iq3 be measured for tuning?" -> "Real work, then lab
+  (Recommended)"; "Where should the tuning results show up?" ->
+  "Command-line report (Recommended)".
+
+description: |
+  ## Why
+
+  The numbers that say whether a settings change helped are already on
+  disk, but in three places with no join. Read by hand on 2026-09-30, the
+  coder@iq3 session `d12c007c` showed 7 chat compressions in 19 requests,
+  each saving about 2k tokens, and its first request waited 52 s for its
+  first token (12,154 input tokens). The Ollama log showed a later reply
+  running 8,469 tokens at 24 tokens/s, and an earlier load with 8 of 65
+  layers on the CPU. What a change of num_ctx, KV
+  cache, thinking or compression bought is the difference in these numbers
+  between the sessions before it and after it.
+
+  ## What is wanted
+
+  `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <root> --seat <seat> [--since <iso date>]`
+  - Groups the seat's sessions by the settings fingerprint in force at the
+    session's first record: the latest BL-1850 row at or before it, else
+    `unrecorded settings` (scenarios 01, 05). Within a fingerprint, it
+    splits by how Ollama served the model, read from the Ollama log load
+    before the session's first request: layers on the GPU of the total and
+    the KV cache type (scenario 04).
+  - Per group: sessions and requests; median time to first token; prefill
+    speed as input tokens / ttft; decode speed as output tokens /
+    (duration - ttft); median output tokens; thinking as a share of output
+    (scenario 02). Chat compressions per session and tokens saved each;
+    tool-call failure rate and the most failing tool; api errors (scenario
+    03).
+  - Between consecutive groups: the fields that differ, as `<field> <old>
+    -> <new>` (scenario 01).
+
+  Sources, as on this host on 2026-09-30: qwen session records
+  `~/.qwen/projects/<cwd with / and . as ->/chats/<session>.jsonl`
+  (`system` rows with subtype `ui_telemetry`, whose `uiEvent` is
+  `qwen-code.api_response` or `qwen-code.tool_call`, and subtype
+  `chat_compression`); BL-1850's
+  `.swarmforge/local-agent/seat-settings/<seat>.jsonl`; the Ollama log
+  (`load_tensors: offloaded N/M layers to GPU`, `llama_kv_cache: size =
+  ... K (<type>)`).
+
+  ## How (direction, not mandate)
+
+  - Read through BL-1842's lib, the seat report this depends on. Do not
+    write a second parser for the same records (BL-1811).
+  - A pure lib (group and summarise) plus thin CLI; paths are arguments
+    with the defaults above so fixtures never read the operator's
+    `~/.qwen`.
+  - Step handler `specs/pipeline/steps/bl1851SeatTuningReportSteps.js`,
+    discovered from its own file (BL-1371), fixtures under mkdtemp.
+  - A how-to under `docs/how-to/` on running a before/after: record,
+    change one setting, let the seat work, read the report.
+
+  ## Scope
+
+  The lib, CLI and bb test, the step handler, the how-to, evidence.
+  Not in scope, and listed as remaining slices on BL-1125: parcel outcomes
+  per settings (claims, forwards, minutes and bounces per parcel; the
+  bounce store records the producing role, not the seat), and the lab A/B
+  (a fixed task set under two settings).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1851-a-local-seats-tuning-report-compares-its-work-across-the-settings-it-ran-with.feature`:
+     5 of 5 ok. Measured 0 on main at mint: no handler exists yet.
+  2. The bb test for the lib: ALL PASS.
+  3. Live, read-only: `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <root> --seat coder@iq3`.
+     Sessions from before BL-1850's first row read `unrecorded settings`.
+     If `.swarmforge/ollama-serve-operator.log` still holds the 2026-09-30
+     13:27 load (57/65 layers, f16 KV), the sessions after it are served
+     apart from those after the 13:51 restart (65/65, q8_0). Record the
+     printed groups in the evidence.
+
+notes: |
+  Minted 2026-09-30 by the specifier with BL-1850, from the human's ask
+  and answers in the specifier pane (source). Placed after BL-1842 (its
+  reader) in the STEERING iq3 order.

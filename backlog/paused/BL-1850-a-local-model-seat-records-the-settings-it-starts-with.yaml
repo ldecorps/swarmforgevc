@@ -1,0 +1,126 @@
+id: BL-1850
+title: "A local-model seat records the settings it starts with - every start of a local-model seat appends one row to .swarmforge/local-agent/seat-settings/<seat>.jsonl with the model's Ollama parameters and version, qwen's provider entry for the model (never a credential), the card's size and sha256, and a fingerprint that changes only when a setting does, so a change in the seat's behaviour can be tied to the setting that changed"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: a bb lib and thin CLI plus one line the launcher writes into a
+# local-model seat's launch script; bb has no mutation lane (engineering.prompt).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1850-a-local-model-seat-records-the-settings-it-starts-with.feature
+
+# The launcher (swarmforge.sh) writes every local-model seat's launch script,
+# and that script runs on every start and respawn (BL-1775's identity line
+# is the same shape). The anchor is the launcher naming the new CLI; the
+# shell test in scope proves the line sits before qwen starts.
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::local_seat_settings_snapshot_cli.bb::a local-model seat launch script records its settings on every start'
+  - 'specs/pipeline/steps/bl1850SeatSettingsRecordSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  The human asked for it in the specifier pane (source) and answered both
+  choices put to them there: "Real work, then lab (Recommended)" and
+  "Command-line report (Recommended)". This slice is the first half of
+  "real work": the record the report (BL-1851) groups by. No choice is
+  left open. FIRM: recording never stops or delays a seat's start by more
+  than 3 seconds. FIRM: no credential value is ever written to the record.
+
+invariants:
+  - "Recording a seat's settings never stops its start: any failure is logged, the seat starts, and the recorder takes at most 3 seconds."
+  - "The settings record never holds a credential value: apiKey and every key naming a token, secret or password are dropped before writing."
+
+source: |
+  The human, 2026-09-30 ~20:15Z, specifier pane, verbatim:
+
+  > can iq3 be instrumented so we canundertand how to better tweak it?
+
+  Answers to the two questions the specifier put in the same pane:
+  "How should iq3 be measured for tuning?" -> "Real work, then lab
+  (Recommended)"; "Where should the tuning results show up?" ->
+  "Command-line report (Recommended)".
+
+description: |
+  ## Why
+
+  The seat's records already say what each request did: qwen's session
+  file carries every `qwen-code.api_response` (ttft_ms, duration_ms,
+  input, output and thinking tokens), every `qwen-code.tool_call` (name,
+  duration, success) and every `chat_compression`. None of it says which
+  settings were in force. On 2026-09-30 the window, the KV cache, the
+  Modelfile's num_predict and the card all changed within a few hours, and
+  the before/after reading had to be rebuilt by hand from timestamps
+  (`backlog/evidence/iq3-window-vram-census-20260930-specifier.md`).
+
+  ## What is wanted
+
+  `bb swarmforge/scripts/local_seat_settings_snapshot_cli.bb <root> --seat <seat> --model <model> --endpoint-url <url> --card <prompt file> --worktree <seat worktree>`
+  appends one JSON row to `.swarmforge/local-agent/seat-settings/<seat>.jsonl`:
+  - `at` (ISO time), `seat`, `model`;
+  - from Ollama: `/api/version`, and `/api/show`'s `parameters` parsed to
+    a map (num_ctx, num_predict, temperature, and whatever else it lists)
+    and `details.quantization_level`. When Ollama does not answer within 2
+    seconds, these are recorded as unknown (scenario 04);
+  - from qwen: its version, the provider entry qwen will use for the
+    model (the seat worktree's `.qwen/settings.json` replaces the user
+    list when it carries one, per QA's BL-1838 reading), and any chat
+    compression settings, all with credentials dropped (scenario 03);
+  - the card: path, bytes, sha256;
+  - `fingerprint`: sha256 of every field above except `at` (scenario 02).
+
+  Every local-model seat's generated launch script runs it before qwen
+  starts, `|| true` and bounded, so a start is never held (invariant 1).
+  How Ollama actually served the model (layers on the GPU, KV cache type,
+  flash attention) is not known at start, because the model loads on the
+  first request. BL-1851 reads it per session from the Ollama log.
+
+  ## How (direction, not mandate)
+
+  - Pure lib (parse /api/show parameters, pick the provider entry,
+    sanitise, fingerprint) plus thin CLI; HTTP and paths are arguments
+    with seams (`--qwen-home`, default `~/.qwen`) so fixtures never read
+    the operator's `~/.qwen` or the live Ollama.
+  - The launch-script line mirrors BL-1775's identity line: written by
+    swarmforge.sh for `local-model` seats only, run on every execution.
+  - Step handler `specs/pipeline/steps/bl1850SeatSettingsRecordSteps.js`,
+    discovered from its own file (BL-1371), fixtures under mkdtemp, a stub
+    HTTP server on an ephemeral port for Ollama.
+
+  ## Scope
+
+  The lib, CLI and bb test; the swarmforge.sh line and a shell test in the
+  shape of `test_bl1838_qwen_provider_entry_via_launch_script.sh` proving
+  a generated local-model launch script runs the snapshot before qwen and
+  a non-local seat's does not; the step handler; docs; evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1850-a-local-model-seat-records-the-settings-it-starts-with.feature`:
+     6 of 6 ok (01, three rows of 02, 03, 04). Measured 0 on main at mint:
+     no handler exists yet.
+  2. The bb test for the lib, and the new launch-script shell test:
+     ALL PASS.
+  3. Live, into a scratch root: run the CLI once with a mkdtemp `<root>`,
+     the real endpoint `http://127.0.0.1:11434`, `--model
+     ista-iq3s-coder:latest`, `--card .swarmforge/prompts/coder@iq3.md`
+     and `--worktree .worktrees/coder-iq3`. The row carries num_ctx 49152,
+     num_predict 4096 and Ollama 0.32.15 (the state at mint), and `grep -ci
+     apikey` on the row finds no value.
+  After the land (the coordinator's check, not QA's): a launch script
+  runs the new line only once it is regenerated (`./swarm ensure`), so
+  after the next coder@iq3 respawn,
+  `.swarmforge/local-agent/seat-settings/coder@iq3.jsonl` has a row.
+
+notes: |
+  Minted 2026-09-30 by the specifier with BL-1851, from the human's ask
+  and answers in the specifier pane (source). Placed before BL-1840 in the
+  STEERING iq3 order: BL-1840 and BL-1841 change compression and thinking,
+  and a row recorded before they land is the baseline the report compares
+  them against. Parcel outcomes per settings and the lab A/B are
+  remaining slices on BL-1125.

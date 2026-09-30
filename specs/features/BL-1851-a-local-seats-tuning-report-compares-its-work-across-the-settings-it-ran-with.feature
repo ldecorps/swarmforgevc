@@ -1,0 +1,55 @@
+Feature: BL-1851 A local seat's tuning report compares its work across the settings it ran with
+
+  The human asked on 2026-09-30 whether coder@iq3 could be instrumented to
+  show how to tweak it. Most of the numbers were already on disk: qwen's
+  session records carry every request's time to first token, duration,
+  tokens and tool calls, and every chat compression; the Ollama log carries
+  each model load's layers on the GPU and KV cache type. BL-1850 records
+  the settings each seat start used. This report puts them side by side:
+  sessions grouped by the settings in force when they started, and by how
+  Ollama actually served the model, with each group's numbers and what
+  differs between groups, so a settings change can be judged before and
+  after from the seat's real work.
+
+  Background:
+    Given a fixture root holding a settings record, qwen session records and an Ollama log for the seat "coder@iq3"
+
+  # BL-1851 sessions-group-by-the-settings-they-started-with-01
+  Scenario: sessions are grouped by the settings in force at their start
+    Given the settings record changes num_ctx from 32768 to 49152
+    And 3 sessions started under the first settings and 2 under the second
+    When the tuning report runs for "coder@iq3"
+    Then it prints two groups, of 3 sessions and 2 sessions
+    And it names "num_ctx 32768 -> 49152" as the difference between them
+
+  # BL-1851 a-group-prints-its-turn-numbers-02
+  Scenario: a group prints its time to first token, prefill and decode speed, output and thinking
+    Given one group's requests recorded these numbers
+      | time to first token ms | duration ms | input tokens | output tokens | thinking tokens |
+      | 10000                  | 30000       | 12000        | 480           | 120             |
+      | 20000                  | 60000       | 16000        | 960           | 240             |
+      | 40000                  | 100000      | 24000        | 1200          | 600             |
+    When the tuning report runs for "coder@iq3"
+    Then the group reads median time to first token 20 s, prefill 800 tokens/s and decode 24 tokens/s
+    And the group reads median output 960 tokens with thinking at 25% of output
+
+  # BL-1851 a-group-prints-its-compressions-and-tool-failures-03
+  Scenario: a group prints its chat compressions and tool-call failures
+    Given one group's 2 sessions recorded 4 chat compressions, each from 18000 to 16000 tokens
+    And they recorded 20 tool calls, of which 3 failed, 2 of them "edit"
+    When the tuning report runs for "coder@iq3"
+    Then the group reads 2 compressions per session saving 2000 tokens each
+    And the group reads a tool-call failure rate of 15% with "edit" failing most
+
+  # BL-1851 how-ollama-served-the-model-splits-a-group-04
+  Scenario: sessions under the same settings are split by how Ollama served the model
+    Given every session started under the same settings
+    And the Ollama log loaded the model with 57 of 65 layers on the GPU and an f16 KV cache before the first session, and with 65 of 65 and a q8_0 KV cache before the second
+    When the tuning report runs for "coder@iq3"
+    Then it prints two groups under those settings, served as "57/65 layers, f16 KV" and "65/65 layers, q8_0 KV"
+
+  # BL-1851 sessions-before-any-record-are-unrecorded-05
+  Scenario: a session that started before the first settings row is grouped as unrecorded
+    Given a session started before the settings record's first row
+    When the tuning report runs for "coder@iq3"
+    Then that session is grouped under "unrecorded settings"
