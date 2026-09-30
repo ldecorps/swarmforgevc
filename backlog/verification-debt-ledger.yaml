@@ -39,3 +39,9 @@
   description: "condition (g) tip-pure hand build after LAND_ESCALATE on stray 698a268a8b (closed BL-1821 records): chose BL-1782's own paths by hand"
   detected_at: 2026-09-30
   evidence: backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
+- category: land-path-ownership
+  ticket: BL-1829
+  role: QA
+  description: "condition (g) tip-pure hand build after LAND_ESCALATE on stray 698a268a8b, with three condition (i) done-copy drains: chose BL-1829's own paths by hand"
+  detected_at: 2026-09-30
+  evidence: backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
