@@ -55,3 +55,9 @@
   role: art-director
   description: "judged narrative-select inline-flow and 16px input floor from CSS/HTML source at QA's rendered intake-form.html, no live Telegram/iOS tunnel to confirm actual wrap/zoom behaviour"
   detected_at: 2026-09-30
+- category: merge-collateral-scope
+  ticket: BL-1816
+  role: specifier
+  description: "hand-traced a criss-cross merge (hardener note 001631) to tell BL-1830's QA bounce revert 4cfc65a697 apart from a silent collateral revert of land_step_lib.bb; merge-tree simulated the next BL-1830 merge"
+  detected_at: 2026-09-30
+  evidence: backlog/evidence/BL-1816-specifier-merge-revert-adjudication-20260930.md
