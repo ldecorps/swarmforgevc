@@ -74,7 +74,11 @@ description: |
      unlanded sibling's commits also changed, the replay writes origin/main's
      version plus the landing ticket's own commits' changes to that path (a
      three-way apply), never the tip's whole file; when that does not apply
-     cleanly, the land escalates naming the path and the sibling.
+     cleanly, the land escalates naming the path and the sibling. When an
+     untagged commit in the range also touched that path, the landing
+     ticket's own changes cannot be told from the sibling's, so the land
+     escalates the same way and publishes nothing (QA bounce D1,
+     03c4feb156).
   2. A path only the landing ticket (and landed tickets) touched is written
      from the tip exactly as today.
   3. The land's output names each such rebuilt path, so QA sees it.
@@ -100,10 +104,23 @@ qa_e2e_procedure: |
   3. The BL-1717 feature 1 of 1 ok (2 of 2 on main at mint, before item 4)
      and the BL-1650 feature 11 of 11 ok (as measured on main at mint).
   4. The parcel's evidence replays BL-1801's case in a mkdtemp fixture
-     (origin/main before e1cb2615de, the tip it landed from): the manifest
-     carries BL-1801's two rows and neither BL-1821 row.
+     (origin/main 5e754399e4, tip d1db3d0659): the land refuses BL-1801 by
+     name, naming `swarmforge/scripts/test/suite-manifest.tsv` and the
+     siblings BL-1815 and BL-1821, and publishes nothing. The range carries
+     QA's untagged restore commit 5dfbca55d1 on that path, so no rebuild is
+     attempted (What is wanted 1). The rebuild itself, the manifest carrying
+     the landing ticket's rows and neither sibling's, is scenario 01 and
+     step 2's cleanly tagged fixtures.
 
 notes: |
+  Amended 2026-09-30 ~20:00Z by the specifier (coder note 002273, evidence
+  in dee1e6410a): qa_e2e step 4 expected BL-1801's real replay to rebuild,
+  but its range holds the untagged 5dfbca55d1 on the manifest, and the
+  correct outcome there is the named escalation QA's D1 asked for. Step 4
+  now states that, and What is wanted 1 names the untagged case. The step 4
+  wording was the specifier's, written before the untagged touch was
+  known; the coder's parcel was right. YAML only: no feature, handler or
+  code change. Holder note sent to the cleaner the same pass.
   Amended 2026-09-30 by the specifier (QA note 003605, BL-1830 bounce
   03c4feb156): the coder had reworded BL-1717's scenario 02 to the new
   behaviour. Adjudicated: retire it, never reword (BL-1006); its one
