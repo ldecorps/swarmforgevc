@@ -14,5 +14,13 @@
 # Apply:  ollama create ista-iq3s-coder:latest -f swarmforge/packs/ista-iq3s-coder.Modelfile
 # Use:    window coder local-model coder --model ista-iq3s-coder:latest
 # Undo:   point the pack window back at the base hf.co tag; ollama rm ista-iq3s-coder:latest
+# num_predict 4096 (2026-09-30, specifier, iq3 absolute-priority hotfix):
+# the 12:26Z crash was ONE reply of 9,484 tokens (ollama task 2974) that
+# overflowed the window. 4096 tokens is ~16k characters per reply, ample
+# for an edit; a runaway is cut instead of crashing the session.
+# 49152 only fits on the GPU with a q8_0 KV cache (f16 at 49152 is 3 GiB,
+# which pushed 8 of 65 layers to the CPU and cut generation from ~18.5 to
+# ~3.5 tokens/s): serve with OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0.
 FROM hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S
 PARAMETER num_ctx 49152
+PARAMETER num_predict 4096

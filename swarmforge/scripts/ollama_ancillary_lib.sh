@@ -86,6 +86,14 @@ ollama_ancillary_start_server() {
     OLLAMA_CONTEXT_LENGTH="$context_length"
     export OLLAMA_CONTEXT_LENGTH
   fi
+  # 2026-09-30 iq3 hotfix: a q8_0 KV cache (which needs flash attention)
+  # halves the cache, so a 49152 window keeps all 65 layers of the ISTA
+  # IQ3_S coder seat on a 16 GiB GPU. With the f16 default, 8 layers
+  # went to the CPU and generation fell from ~18.5 to ~3.5 tokens/s.
+  # Caller-set values win.
+  OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-1}"
+  OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
+  export OLLAMA_FLASH_ATTENTION OLLAMA_KV_CACHE_TYPE
   nohup "$binary" serve >"$log_path" 2>&1 < /dev/null &
   local server_pid=$!
   disown 2>/dev/null || true

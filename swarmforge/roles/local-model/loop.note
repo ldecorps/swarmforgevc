@@ -30,6 +30,9 @@ Rules that apply the whole time:
 - Never self-schedule polling: no loops, no cron, no "check again in N
   minutes". Idle means: wait for a wake, or run ready_for_next.sh once
   after being idle a couple of minutes.
+- Change an existing file with the edit tool, a few lines at a time.
+  Never rewrite a whole existing file: one long reply can overflow your
+  window and end the session.
 - Commit only the current ticket's own paths - never `git add -A`.
 - Every commit message ends with a role byline: `By <role>.`
 - Temporary files go in `./tmp/` inside your worktree, never `/tmp`.
