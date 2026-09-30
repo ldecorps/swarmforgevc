@@ -1,0 +1,97 @@
+id: BL-1827
+title: "bl1754PeerQuestionInvariants invariant 1 diffs bl1754-peer-question-* entries in the shared /tmp before and after its own CLI call, so any concurrent creator (another test run, or a live role asking a peer question now BL-1754 has landed) reads as a leak and fails it at random - each call gets its own temp parent (bb -Djava.io.tmpdir=<per-call dir>) and the leak check reads only that"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first registered sighting (2026-09-05 register
+# amendment); it holds BL-1817 at QA (Article 4.2). Intermittent.
+status: todo
+epic: local-llm-swarm
+priority: 7
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one spawn argument and one directory read in one property test; no
+# production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# A test-file fix with no scenarios of its own (BL-1251): the pointer names
+# the feature BL-1754 declared (6 of 6 on main at mint). It is not a claim of
+# ownership over BL-1754's contract.
+acceptance: specs/features/BL-1754-a-role-asks-another-role-a-question-through-a-one-shot-read-only-helper.feature
+
+human_approval: approved
+approval_context: >
+  No new feature file. Minted approved under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options). FIRM: peer_question.bb is
+  not changed; bb already honours -Djava.io.tmpdir (verified at mint).
+  FIRM: the leak check still requires zero run-dirs left after every
+  outcome (answered, refused, timed-out, failed); only WHERE it looks
+  changes, to a directory no other process uses. FIRM: no shared-/tmp
+  scan by prefix remains in the file (engineering: never diff shared
+  globals; BL-1385/BL-1390).
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA note 003474, evidence 99f021afdd (BL-1817's pass, holding it):
+  `extension/test/bl1754PeerQuestionInvariants.property.test.js` failed in
+  the full property lane; the failure line was not captured, and the file
+  passes alone (8 of 8, 25.7 s).
+
+  Reproduced at mint (main 0a2104f8a0, load 12-13) with three concurrent
+  runs of the file: two of the three failed, at invariant 1 (timed-out,
+  and failed), with `expected no leaked run-dir under os.tmpdir(), got:
+  ["bl1754-peer-question-..."]`. The check (lines ~118-130) snapshots
+  every `bl1754-peer-question-*` entry in `os.tmpdir()` before its CLI
+  call and asserts none is new after it. `peer_question.bb:88` creates its
+  run-dir in `java.io.tmpdir` (`/tmp`; babashka ignores TMPDIR, verified),
+  so a run-dir made by ANY concurrent peer_question call lands in the diff:
+  a sibling run of this file, or a live role's question since BL-1754
+  landed (d9285a11ca, 2026-09-29).
+
+  ## What is wanted
+  - Each CLI call in invariant 1 runs with its own temp parent: a mkdtemp
+    directory passed as `-Djava.io.tmpdir=<dir>` ahead of the script on
+    the `bb` command line (verified at mint: `bb -Djava.io.tmpdir=<dir>`
+    makes `fs/create-temp-dir` create under `<dir>`). After the call, the
+    leak check asserts that directory holds no `bl1754-peer-question-*`
+    entry, then removes it in a finally (BL-971).
+  - The four outcomes, the git-status diff and invariant 2 stay as they
+    are. Invariant 1's failed case took 21.9 s under that contention; the
+    property lane's scaled default (BL-1817) covers its budget, so no
+    per-test timeout is added here.
+
+  ## Scope
+  - `extension/test/bl1754PeerQuestionInvariants.property.test.js`,
+    evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1754PeerQuestionInvariants.property.test.js`:
+     8 of 8.
+  2. The parcel's evidence records three concurrent runs of the file (the
+     mint's reproduction, 2 of 3 red before the fix): all green after it.
+  3. `node specs/pipeline/cli.js specs/features/BL-1754-a-role-asks-another-role-a-question-through-a-one-shot-read-only-helper.feature`:
+     6 of 6 ok (as measured on main at mint).
+  4. `git diff main...HEAD --name-only` names only the test file and
+     evidence.
+  5. After landing: REGISTER_ROW_RETIRED for this ticket's property row.
+
+notes: |
+  Minted 2026-09-30 by the specifier from QA's unowned-red note 003474
+  (holding BL-1817, evidence 99f021afdd). The failure captured at mint by
+  a three-way concurrent run; register row added in the mint commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Expedite lane by severity (Article 3.2.4). Holder note sent to QA naming
+  BL-1817.
+  Minted direction: queue-jump under the human's standing directive of
+  2026-09-30, verbatim: "Auto-jump any ticket that has to do with local
+  llm" (new BL-1125 children mint as queue-jump). BL-1125's
+  decomposes_into was not updated in the mint commit because the epic file
+  carried that directive's uncommitted edit from the human's session; add
+  BL-1827 once that edit is committed.
+
