@@ -16,6 +16,24 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
 
+;; BL-1796: a respawning process's own SWARMFORGE_USE_* flag (set for the
+;; WHOLE daemon process tree by start-swarm-glm.sh/start-swarm-qwen.sh, BL-1793
+;; probe 3a) must never move a seat off the base its OWN launch script names -
+;; a local Ollama seat under a cloud flag, or a seat on one cloud host under
+;; a DIFFERENT cloud flag. provider_compat_lib.bb's must-remap-to-*? predicates
+;; are out of scope (the hotfix's own "explicit flag still forces a remap"
+;; assertion tests them, BL-1793); this checks the SAME active-launch-cli text
+;; those predicates already read, for a base named by --openai-api-base (the
+;; aider CLI-arg shape) or an OPENAI_API_BASE export OUTSIDE every
+;; SWARMFORGE_USE-guarded block (already stripped by active-launch-cli - the
+;; local-model launch guard's own export is unguarded, so it survives).
+(def ^:private openai-base-mention-re
+  #"(?m)(--openai-api-base\s+\S+)|(^[ \t]*export[ \t]+OPENAI_API_BASE=)")
+
+(defn- launch-cli-names-openai-base?
+  [launch-cli]
+  (boolean (some->> (provider-compat-lib/active-launch-cli launch-cli) (re-find openai-base-mention-re))))
+
 (defn provider-respawn-env-args
   "BL-130 pane -e passthrough for ensure/respawn repairs — same keys rotate/chase
    need so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras/Perplexity/Gemini/Qwen/b.ai
@@ -37,10 +55,19 @@
    (let [launch-cli (when role
                       (let [p (fs/path state-dir "launch" (str role ".sh"))]
                         (when (fs/exists? p) (slurp (str p)))))
-         use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
-         use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
-         use-qwen (= "1" (System/getenv "SWARMFORGE_USE_QWEN"))
-         use-bai (= "1" (System/getenv "SWARMFORGE_USE_BAI"))
+         ;; BL-1796: a seat whose own launch script names a base (any base -
+         ;; a known cloud host OR a local one) never takes the respawning
+         ;; process's flag. Forcing every use-* false here still lets the
+         ;; correct cloud provider win below THROUGH launch-cli-implies-*?
+         ;; (which resolve-openai-compat's must-remap-to-*? already checks
+         ;; unconditionally) - only the FLAG-alone path is suppressed. A seat
+         ;; naming no base (or with no launch script at all) keeps today's
+         ;; flag-forwarding behaviour byte for byte.
+         named-base? (launch-cli-names-openai-base? launch-cli)
+         use-cerebras (and (not named-base?) (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS")))
+         use-perplexity (and (not named-base?) (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY")))
+         use-qwen (and (not named-base?) (= "1" (System/getenv "SWARMFORGE_USE_QWEN")))
+         use-bai (and (not named-base?) (= "1" (System/getenv "SWARMFORGE_USE_BAI")))
          cerebras (System/getenv "CEREBRAS_API_KEY")
          perplexity (System/getenv "PERPLEXITY_API_KEY")
          qwen (let [q (System/getenv "QWEN_API_KEY")]
