@@ -85,7 +85,7 @@ run_cli() {
 # 01: no session, no marker -> spawns, writes marker, logs the atomic
 # new-session command (never a create-then-respawn sequence).
 out="$(run_cli)"
-echo "$out" | grep -q '"status":"spawned"' || fail "01: expected spawned status, got: $out"
+echo "$out" | grep '"status":"spawned"' >/dev/null || fail "01: expected spawned status, got: $out"
 [[ -f "$ROOT/.swarmforge/daemon/consult/documenter.json" ]] || fail "01: expected consult marker written"
 grep -q '"requested_by":"coordinator"' "$ROOT/.swarmforge/daemon/consult/documenter.json" || fail "01: marker missing requested_by"
 new_session_calls="$(grep -c 'new-session' "$TMUX_LOG" || true)"
@@ -98,7 +98,7 @@ pass "01: no session, no marker - spawns via one atomic new-session, writes mark
 # even though the CLI is invoked again (idempotent under retry/race).
 : > "$TMUX_LOG"
 out="$(run_cli)"
-echo "$out" | grep -q '"status":"already-exists"' || fail "02: expected already-exists status (session from 01 still live), got: $out"
+echo "$out" | grep '"status":"already-exists"' >/dev/null || fail "02: expected already-exists status (session from 01 still live), got: $out"
 [[ -s "$TMUX_LOG" ]] && fail "02: expected zero new tmux calls on a repeat invocation, got: $(cat "$TMUX_LOG")"
 pass "02: session already live - idempotent no-op, no second spawn"
 
@@ -109,7 +109,7 @@ pass "02: session already live - idempotent no-op, no second spawn"
 rm -f "$TMUX_STATE_DIR/swarmforge-documenter.exists"
 : > "$TMUX_LOG"
 out="$(run_cli)"
-echo "$out" | grep -q '"status":"already-consulting"' || fail "03: expected already-consulting status, got: $out"
+echo "$out" | grep '"status":"already-consulting"' >/dev/null || fail "03: expected already-consulting status, got: $out"
 [[ -s "$TMUX_LOG" ]] && fail "03: expected zero tmux calls when a stale marker is present, got: $(cat "$TMUX_LOG")"
 pass "03: stale marker present, session gone - refuses a second spawn rather than racing"
 

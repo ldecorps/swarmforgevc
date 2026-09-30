@@ -63,8 +63,8 @@ BATCH_INBOX="$BATCH_WT/.swarmforge/handoffs/inbox"
 queue_inbox_task "$BATCH_INBOX/new" "item1" "batchrole"
 
 OUT="$(cd "$BATCH_WT" && SWARMFORGE_ROLE=batchrole bb "$READY_DISPATCH")"
-echo "$OUT" | grep -q '^BATCH:' || fail "01: batch-mode dispatch did not route to ready_for_next_batch.sh (got: $OUT)"
-echo "$OUT" | grep -q '^COUNT: 1$' || fail "01: expected single-item batch"
+echo "$OUT" | grep '^BATCH:' >/dev/null || fail "01: batch-mode dispatch did not route to ready_for_next_batch.sh (got: $OUT)"
+echo "$OUT" | grep '^COUNT: 1$' >/dev/null || fail "01: expected single-item batch"
 pass "01: batch-mode role routes ready_for_next.bb to the batch helper"
 
 # BL-1609: a forwarding git_handoff only leaves in_process once its own
@@ -79,8 +79,8 @@ printf 'id: fwd\nfrom: batchrole\nto: architect\npriority: 50\ntype: git_handoff
   "$COMMIT" "$FWD_CREATED_AT" "$COMMIT" > "$BATCH_WT/.swarmforge/handoffs/outbox/90_fwd.handoff"
 
 OUT="$(cd "$BATCH_WT" && SWARMFORGE_ROLE=batchrole bb "$DONE_DISPATCH")"
-echo "$OUT" | grep -q '^COMPLETED_BATCH:' || fail "02: batch-mode dispatch did not route done_with_current.bb to the batch helper (got: $OUT)"
-echo "$OUT" | grep -q '^NO_TASK$' || fail "02: expected NO_TASK after completing the only queued batch"
+echo "$OUT" | grep '^COMPLETED_BATCH:' >/dev/null || fail "02: batch-mode dispatch did not route done_with_current.bb to the batch helper (got: $OUT)"
+echo "$OUT" | grep '^NO_TASK$' >/dev/null || fail "02: expected NO_TASK after completing the only queued batch"
 pass "02: batch-mode role routes done_with_current.bb to the batch helper"
 
 # ── 3: unmapped receive-mode value is rejected, not silently defaulted ──
@@ -89,7 +89,7 @@ OUT="$(cd "$BATCH_WT" && SWARMFORGE_ROLE=weirdrole bb "$READY_DISPATCH" 2>&1)"
 STATUS=$?
 set -e
 [ "$STATUS" -eq 2 ] || fail "03: expected exit 2 for unmapped receive mode, got $STATUS"
-echo "$OUT" | grep -q 'INVALID_RECEIVE_MODE' || fail "03: expected INVALID_RECEIVE_MODE diagnostic (got: $OUT)"
+echo "$OUT" | grep 'INVALID_RECEIVE_MODE' >/dev/null || fail "03: expected INVALID_RECEIVE_MODE diagnostic (got: $OUT)"
 pass "03: unmapped receive-mode value in roles.tsv is rejected with INVALID_RECEIVE_MODE"
 
 # ── 4: unknown role is rejected, not silently defaulted to task mode ──
@@ -98,7 +98,7 @@ OUT="$(cd "$BATCH_WT" && SWARMFORGE_ROLE=ghostrole bb "$READY_DISPATCH" 2>&1)"
 STATUS=$?
 set -e
 [ "$STATUS" -eq 1 ] || fail "04: expected exit 1 for unknown role, got $STATUS"
-echo "$OUT" | grep -q 'Unknown role: ghostrole' || fail "04: expected Unknown role diagnostic (got: $OUT)"
+echo "$OUT" | grep 'Unknown role: ghostrole' >/dev/null || fail "04: expected Unknown role diagnostic (got: $OUT)"
 pass "04: role absent from roles.tsv is rejected, not silently dispatched"
 
 # ── 5: missing SWARMFORGE_ROLE is rejected ──
@@ -107,7 +107,7 @@ OUT="$(cd "$BATCH_WT" && env -u SWARMFORGE_ROLE bb "$READY_DISPATCH" 2>&1)"
 STATUS=$?
 set -e
 [ "$STATUS" -eq 1 ] || fail "05: expected exit 1 for missing SWARMFORGE_ROLE, got $STATUS"
-echo "$OUT" | grep -q 'Set SWARMFORGE_ROLE' || fail "05: expected Set SWARMFORGE_ROLE diagnostic (got: $OUT)"
+echo "$OUT" | grep 'Set SWARMFORGE_ROLE' >/dev/null || fail "05: expected Set SWARMFORGE_ROLE diagnostic (got: $OUT)"
 pass "05: missing SWARMFORGE_ROLE is rejected before any dispatch"
 
 echo "ALL PASS"

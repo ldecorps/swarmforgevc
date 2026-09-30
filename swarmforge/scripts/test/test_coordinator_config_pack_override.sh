@@ -118,7 +118,7 @@ window coordinator claude master --model x
 window coder claude coder --model x
 CONF
 ERROR_OUTPUT="$(env -u SWARMFORGE_CONFIG zsh -c "source '$SWARMFORGE_SH' '$ROOT4'; parse_config" 2>&1 || true)"
-echo "$ERROR_OUTPUT" | grep -qi "coordinator is reserved infrastructure" \
+echo "$ERROR_OUTPUT" | grep -i "coordinator is reserved infrastructure" >/dev/null \
   || fail "04: expected 'coordinator is reserved infrastructure', got: $ERROR_OUTPUT"
 pass "coordinator-model-04: the coordinator remains rejected as a declarable window line, unchanged from BL-243"
 rm -rf "$ROOT4"

@@ -98,7 +98,7 @@ if [[ -f "$root/backlog/done/M8/BL-9001-first.yaml" ]]; then
 else
   fail "not in backlog/done/M8/: $(ls "$root/backlog/done" 2>/dev/null); err: $(cat "$WORK/$name.close.err")"
 fi
-if g "$root" log -1 --format=%s | grep -q "Close BL-9001: move to done"; then
+if g "$root" log -1 --format=%s | grep "Close BL-9001: move to done" >/dev/null; then
   pass "the move is committed in one step with a generated subject"
 else
   fail "unexpected commit subject: $(g "$root" log -1 --format=%s)"
@@ -162,7 +162,7 @@ if [[ -f "$root/backlog/done/M8/BL-9001-first.yaml" && -f "$root/backlog/done/M8
 else
   fail "a multi-ticket close moved only some: $(ls "$root/backlog/done/M8" 2>/dev/null)"
 fi
-if g "$root" log -1 --format=%s | grep -q "BL-9001" && g "$root" log -1 --format=%s | grep -q "BL-9002"; then
+if g "$root" log -1 --format=%s | grep "BL-9001" >/dev/null && g "$root" log -1 --format=%s | grep "BL-9002" >/dev/null; then
   pass "and the commit subject names EVERY id the approval satisfied"
 else
   fail "the subject does not name both ids: $(g "$root" log -1 --format=%s)"
@@ -207,7 +207,7 @@ if [[ -z "$foreign" && -n "$touched" ]]; then
 else
   fail "the close swept in other paths: $(tr '\n' ' ' <<<"$foreign")"
 fi
-if g "$root" status --porcelain | grep -q "unrelated.txt"; then
+if g "$root" status --porcelain | grep "unrelated.txt" >/dev/null; then
   pass "and the unrelated staged work is still there, untouched"
 else
   fail "the close consumed another writer's staged work"

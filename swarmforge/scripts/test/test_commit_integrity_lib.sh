@@ -15,6 +15,6 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 OUT="$(bb "$RUNNER" 2>&1)" || { echo "$OUT"; fail "commit_integrity_lib_test_runner.bb exited non-zero"; }
 echo "$OUT"
-echo "$OUT" | grep -q "ALL TESTS PASSED" || fail "expected all commit_integrity_lib assertions to pass"
+echo "$OUT" | grep "ALL TESTS PASSED" >/dev/null || fail "expected all commit_integrity_lib assertions to pass"
 
 echo "PASS: commit_integrity_lib (BL-419) - all assertions passed"

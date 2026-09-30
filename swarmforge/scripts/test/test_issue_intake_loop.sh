@@ -50,7 +50,7 @@ grep -q "^issue comment https://github.com/acme/repo/issues/42 --body Specced: \
   || fail "01: expected an issue comment naming the paused path; got: $(cat "$GH_CALLS")"
 grep -q "^issue edit https://github.com/acme/repo/issues/42 --add-label swarm-specced$" "$GH_CALLS" \
   || fail "01: expected the swarm-specced label to be applied; got: $(cat "$GH_CALLS")"
-echo "$OUT" | grep -q "^OK: " || fail "01: expected an OK report; got: $OUT"
+echo "$OUT" | grep "^OK: " >/dev/null || fail "01: expected an OK report; got: $OUT"
 pass "01: draining a GH item comments the issue with the paused path and applies swarm-specced"
 
 # ── issue-loop-02: completion closes the issue with the merge commit ───────
@@ -62,7 +62,7 @@ grep -q "^issue comment https://github.com/acme/repo/issues/42 --body Merged: \`
   || fail "02: expected an issue comment naming the merge commit; got: $(cat "$GH_CALLS")"
 grep -q "^issue close https://github.com/acme/repo/issues/42$" "$GH_CALLS" \
   || fail "02: expected the issue to be closed; got: $(cat "$GH_CALLS")"
-echo "$OUT" | grep -q "^OK: " || fail "02: expected an OK report; got: $OUT"
+echo "$OUT" | grep "^OK: " >/dev/null || fail "02: expected an OK report; got: $OUT"
 pass "02: completion comments the merge commit and closes the issue"
 
 # ── issue-loop-03: missing gh auth never blocks either helper ──────────────
@@ -73,7 +73,7 @@ OUT="$(PATH="$FAKE_BIN:$PATH" bash "$SPECCED" "https://github.com/acme/repo/issu
 RC=$?
 set -e
 [[ "$RC" -eq 0 ]] || fail "03a: issue_specced.sh must exit 0 when gh auth is unavailable; got $RC"
-echo "$OUT" | grep -q "^SKIP: " || fail "03a: expected a SKIP line noting the auth gap; got: $OUT"
+echo "$OUT" | grep "^SKIP: " >/dev/null || fail "03a: expected a SKIP line noting the auth gap; got: $OUT"
 [[ ! -s "$GH_CALLS" ]] || fail "03a: no GitHub-mutating call may be made when auth is unavailable; got: $(cat "$GH_CALLS")"
 pass "03a: issue_specced.sh skips silently (exit 0) when gh auth is unavailable"
 
@@ -84,7 +84,7 @@ OUT="$(PATH="$FAKE_BIN:$PATH" bash "$DONE" "https://github.com/acme/repo/issues/
 RC=$?
 set -e
 [[ "$RC" -eq 0 ]] || fail "03b: issue_done.sh must exit 0 when gh auth is unavailable; got $RC"
-echo "$OUT" | grep -q "^SKIP: " || fail "03b: expected a SKIP line noting the auth gap; got: $OUT"
+echo "$OUT" | grep "^SKIP: " >/dev/null || fail "03b: expected a SKIP line noting the auth gap; got: $OUT"
 [[ ! -s "$GH_CALLS" ]] || fail "03b: no GitHub-mutating call may be made when auth is unavailable; got: $(cat "$GH_CALLS")"
 pass "03b: issue_done.sh skips silently (exit 0) when gh auth is unavailable"
 

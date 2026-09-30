@@ -176,7 +176,7 @@ fi
 # ── the check never starts cron (invariant 3) ─────────────────────────────
 if grep -vE '^[[:space:]]*(#|;)' "$REPO_ROOT/swarmforge/scripts/install_swarmforge_crons.sh" \
      "$REPO_ROOT/swarmforge/scripts/cron_heartbeat_lib.bb" \
-   | grep -qE '(service cron (start|restart)|systemctl (start|restart) cron|/etc/init.d/cron)[^"]*$'; then
+   | grep -E '(service cron (start|restart)|systemctl (start|restart) cron|/etc/init.d/cron)[^"]*$' >/dev/null; then
   fail "something here tries to START cron - that needs root and is the host owner's"
 else
   pass "nothing starts, restarts or configures a cron daemon (invariant 3)"
@@ -191,7 +191,7 @@ etc_mtime_before="$(stat -c %Y /etc/wsl.conf 2>/dev/null || echo none)"
 if grep -vE '^[[:space:]]*(#|;)' \
      "$REPO_ROOT/swarmforge/scripts/install_swarmforge_crons.sh" \
      "$REPO_ROOT/swarmforge/scripts/cron_heartbeat_lib.bb" \
-   | grep -qE '>[[:space:]]*/etc/|tee[[:space:]]+/etc/|sed -i[^|]*/etc/'; then
+   | grep -E '>[[:space:]]*/etc/|tee[[:space:]]+/etc/|sed -i[^|]*/etc/' >/dev/null; then
   fail "something here writes a host configuration file"
 else
   pass "no host configuration file is written by the installer or the decision"

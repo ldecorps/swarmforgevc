@@ -24,7 +24,7 @@ out01="$(bb "$CLI" 2>&1)"
 ec01=$?
 set -e
 [[ "$ec01" != "0" ]] || fail "01: expected a nonzero exit for a bare invocation, got 0"
-echo "$out01" | grep -qi "usage" || fail "01: expected a usage line, got: $out01"
+echo "$out01" | grep -i "usage" >/dev/null || fail "01: expected a usage line, got: $out01"
 pass "01: bare invocation prints usage and exits nonzero"
 
 # 02: a missing --question (project-root/--from/--to present) is ALSO a
@@ -36,7 +36,7 @@ out02="$(bb "$CLI" "$DEST02" --from QA --to specifier 2>&1)"
 ec02=$?
 set -e
 [[ "$ec02" != "0" ]] || fail "02: expected a nonzero exit for a missing --question, got 0"
-echo "$out02" | grep -qi "usage" || fail "02: expected a usage line, got: $out02"
+echo "$out02" | grep -i "usage" >/dev/null || fail "02: expected a usage line, got: $out02"
 pass "02: a missing required flag is a usage refusal, not a crash"
 
 # 03: a normal ask - the fake answers, the CLI prints it on stdout, exits 0,
@@ -67,7 +67,7 @@ out04="$(PATH="$DEST04/fake-bin:$PATH" bb "$CLI" "$DEST04" --from QA --to specif
 ec04=$?
 set -e
 [[ "$ec04" != "0" ]] || fail "04: expected a nonzero exit for an unsupported provider, got 0"
-echo "$out04" | grep -q "aider" || fail "04: expected the refusal to name the provider, got: $out04"
+echo "$out04" | grep "aider" >/dev/null || fail "04: expected the refusal to name the provider, got: $out04"
 [[ ! -s "$CLAUDE_FAKE_LOG" ]] || fail "04: expected claude to never be invoked, got: $(cat "$CLAUDE_FAKE_LOG")"
 unset CLAUDE_FAKE_LOG
 pass "04: an unsupported provider refuses by name, never invokes claude"
@@ -86,7 +86,7 @@ out05="$(PATH="$DEST05/fake-bin:$PATH" bb "$CLI" "$DEST05" --from QA --to specif
 ec05=$?
 set -e
 [[ "$ec05" != "0" ]] || fail "05: expected a nonzero exit on timeout, got 0"
-echo "$out05" | grep -qi "timed out\|timeout" || fail "05: expected the output to say it timed out, got: $out05"
+echo "$out05" | grep -i "timed out\|timeout" >/dev/null || fail "05: expected the output to say it timed out, got: $out05"
 sleep 1
 fake_pid="$(cat "$DEST05/claude.pid" 2>/dev/null || true)"
 [[ -n "$fake_pid" ]] || fail "05: expected the fake to have recorded its own pid"

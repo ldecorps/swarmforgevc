@@ -60,7 +60,7 @@ write_state 999999001 3
 echo "$NEW_PID" > "$OP/runtime.pid"
 : > "$LOG"; : > "$STARTS"
 bb "$SUP" "$ROOT" --check-once >/dev/null 2>&1
-check "01: the log records an adoption naming the new pid" 'grep -q "adopted pid= *$NEW_PID" "$LOG" || grep -q "adopted pid=$NEW_PID" "$LOG"'
+check "01: the log records an adoption naming the new pid" 'grep -q "adopted pid= *$NEW_PID" "$LOG" || grep "adopted pid=$NEW_PID" >/dev/null "$LOG"'
 check "01: nothing is recorded as crashed" '! grep -q " crashed" "$LOG"'
 check "01: no start command is run" '[[ ! -s "$STARTS" ]]'
 check "01: the restart budget is untouched" '[[ "$(attempts_now)" == "3" ]]'
@@ -85,7 +85,7 @@ echo "999999002" > "$OP/runtime.pid"
 : > "$LOG"; : > "$STARTS"
 bb "$SUP" "$ROOT" --check-once >/dev/null 2>&1
 check "03: a pidfile naming the dead tracked pid is a crash" 'grep -qE "crashed|started" "$LOG"'
-check "03: the genuine path still runs the start command" '[[ -s "$STARTS" ]] || grep -q "crashed" "$LOG"'
+check "03: the genuine path still runs the start command" '[[ -s "$STARTS" ]] || grep "crashed" >/dev/null "$LOG"'
 check "03: it is not recorded as an adoption" '! grep -q "adopted" "$LOG"'
 
 # ── 04: no pidfile at all is a crash, not an adoption ──────────────────────

@@ -76,7 +76,7 @@ run_guard() {
   OUT="$(bash "$GUARD" "$1" 2>&1)" || STATUS=$?
 }
 
-names() { printf '%s' "$OUT" | grep -q -- "$1"; }
+names() { printf '%s' "$OUT" | grep -- "$1" >/dev/null; }
 
 # ── 01: every handler registered - allowed through ──────────────────────────
 repo="$(build_repo clean main 1 bl901FixtureSteps)"

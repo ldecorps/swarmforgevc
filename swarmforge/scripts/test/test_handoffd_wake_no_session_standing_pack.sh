@@ -86,7 +86,7 @@ AFTER_PANE_A="$(specifier_pane_text)"
   || fail "01a: nothing should be typed into the specifier's pane, but pane text changed: before=[$BEFORE_PANE] after=[$AFTER_PANE_A]"
 pass "01a: the sender's own send types nothing into the specifier's pane"
 
-echo "$SYNC_OUT" | grep -q "deliver-notify-skip-no-session coder@2 swarmforge-coder@2" \
+echo "$SYNC_OUT" | grep "deliver-notify-skip-no-session coder@2 swarmforge-coder@2" >/dev/null \
   || fail "01a: expected a skip logged naming coder@2's missing session (swarmforge-coder@2), got: $SYNC_OUT"
 pass "01a: the sender's own send logs the skip naming coder@2's missing session"
 
@@ -136,9 +136,9 @@ AFTER_PANE_D="$(specifier_pane_text)"
 [[ "$AFTER_PANE_D" == "$BEFORE_PANE" ]] \
   || fail "01d: context-clear should type nothing into the specifier's pane, but pane text changed: [$AFTER_PANE_D]"
 pass "01d: context-clear (both /clear and the startup re-read) types nothing into the specifier's pane"
-echo "$CLEAR_OUT" | grep -q "INJECT_CLEAR: :no-session" \
+echo "$CLEAR_OUT" | grep "INJECT_CLEAR: :no-session" >/dev/null \
   || fail "01d: expected the /clear inject to report :no-session, got: $CLEAR_OUT"
-echo "$CLEAR_OUT" | grep -q "INJECT_STARTUP_REREAD: :no-session" \
+echo "$CLEAR_OUT" | grep "INJECT_STARTUP_REREAD: :no-session" >/dev/null \
   || fail "01d: expected the startup re-read inject to report :no-session, got: $CLEAR_OUT"
 pass "01d: both context-clear injectors report :no-session, naming nothing to send"
 
@@ -148,9 +148,9 @@ AFTER_PANE_E="$(specifier_pane_text)"
 [[ "$AFTER_PANE_E" == "$BEFORE_PANE" ]] \
   || fail "01e: the babysitter nudge should type nothing into the specifier's pane, but pane text changed: [$AFTER_PANE_E]"
 pass "01e: the babysitter's own nudge types nothing into the specifier's pane"
-echo "$NUDGE_OUT" | grep -q ":status :no-session" \
+echo "$NUDGE_OUT" | grep ":status :no-session" >/dev/null \
   || fail "01e: expected the babysitter nudge to report :no-session, got: $NUDGE_OUT"
-echo "$NUDGE_OUT" | grep -q "coder@2" \
+echo "$NUDGE_OUT" | grep "coder@2" >/dev/null \
   || fail "01e: expected the babysitter nudge's own detail to name coder@2, got: $NUDGE_OUT"
 pass "01e: the babysitter's own nudge reports :no-session, naming coder@2's missing session"
 

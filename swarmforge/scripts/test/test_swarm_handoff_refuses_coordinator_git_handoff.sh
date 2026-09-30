@@ -74,11 +74,11 @@ out1="$(run_send QA "$DRAFT1" 2>&1)"
 rc1=$?
 set -e
 [[ "$rc1" -ne 0 ]] || fail "coordinator-alone: expected non-zero exit, got $rc1: $out1"
-echo "$out1" | grep -q "type: note" \
+echo "$out1" | grep "type: note" >/dev/null \
   || fail "coordinator-alone: missing close-note-type in message: $out1"
-echo "$out1" | grep -q "QA-approved <task> landed <sha> - bookkeep to done" \
+echo "$out1" | grep "QA-approved <task> landed <sha> - bookkeep to done" >/dev/null \
   || fail "coordinator-alone: missing close-note-shape in message: $out1"
-echo "$out1" | grep -q "AUDIT_REQUIRED" \
+echo "$out1" | grep "AUDIT_REQUIRED" >/dev/null \
   && fail "coordinator-alone: AUDIT_REQUIRED printed - refusal ran too late: $out1"
 empty_dir "$COORD_INBOX_NEW" \
   || fail "coordinator-alone: coordinator inbox/new is not empty: $(ls -A "$COORD_INBOX_NEW")"
@@ -100,7 +100,7 @@ out2="$(run_send QA "$DRAFT2" 2>&1)"
 rc2=$?
 set -e
 [[ "$rc2" -ne 0 ]] || fail "coordinator-among-others: expected non-zero exit, got $rc2: $out2"
-echo "$out2" | grep -q "AUDIT_REQUIRED" \
+echo "$out2" | grep "AUDIT_REQUIRED" >/dev/null \
   && fail "coordinator-among-others: AUDIT_REQUIRED printed: $out2"
 empty_dir "$COORD_INBOX_NEW" \
   || fail "coordinator-among-others: coordinator inbox/new is not empty: $(ls -A "$COORD_INBOX_NEW")"
@@ -124,14 +124,14 @@ EOF
 set +e
 out3a="$(run_send QA "$DRAFT3" 2>&1)"
 set -e
-echo "$out3a" | grep -q "coordinator holds no code worktree" \
+echo "$out3a" | grep "coordinator holds no code worktree" >/dev/null \
   && fail "architect-only (call 1): wrongly refused by the coordinator guard: $out3a"
 
 set +e
 out3b="$(run_send QA "$DRAFT3" 2>&1)"
 rc3b=$?
 set -e
-echo "$out3b" | grep -q "coordinator holds no code worktree" \
+echo "$out3b" | grep "coordinator holds no code worktree" >/dev/null \
   && fail "architect-only (call 2): wrongly refused by the coordinator guard: $out3b"
 [[ "$rc3b" -eq 0 ]] || fail "architect-only (call 2): expected the send to queue, got exit $rc3b: $out3b"
 [[ -f "$DRAFT3" ]] && fail "architect-only (call 2): draft was not consumed - send did not go through: $out3b"
@@ -150,7 +150,7 @@ set +e
 out4="$(run_send QA "$DRAFT4" 2>&1)"
 rc4=$?
 set -e
-echo "$out4" | grep -q "coordinator holds no code worktree" \
+echo "$out4" | grep "coordinator holds no code worktree" >/dev/null \
   && fail "note-to-coordinator: wrongly refused by the git_handoff guard: $out4"
 [[ "$rc4" -eq 0 ]] || fail "note-to-coordinator: expected exit 0, got $rc4: $out4"
 [[ -f "$DRAFT4" ]] && fail "note-to-coordinator: draft was not consumed - send did not go through: $out4"

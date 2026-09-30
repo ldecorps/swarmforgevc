@@ -107,10 +107,10 @@ run_ready() {  # sets OUT, ERR, RC
 drop_handoff "$INBOX/in_process" "resume1" "BL-000-demo" "git_handoff"
 run_ready
 [[ $RC -ne 0 ]] || fail "02: expected a refusal, rc=0 out=$OUT"
-echo "$OUT" | grep -q "^TASK:" && fail "02: no task may print on a refused turn: $OUT"
-echo "$ERR" | grep -q "STALE_REFERENCE_ELABORATION" \
+echo "$OUT" | grep "^TASK:" >/dev/null && fail "02: no task may print on a refused turn: $OUT"
+echo "$ERR" | grep "STALE_REFERENCE_ELABORATION" >/dev/null \
   || fail "02: expected a staleness report, got: $ERR"
-echo "$ERR" | grep -q "$REF_REL" \
+echo "$ERR" | grep "$REF_REL" >/dev/null \
   || fail "02: the report must name the stale file, got: $ERR"
 [[ -f "$INBOX/in_process/00_resume1.handoff" ]] \
   || fail "02: the claim must be left exactly where it was (this guard never touches mailbox state)"
@@ -122,7 +122,7 @@ rm -f "$INBOX/in_process"/*.handoff
 drop_handoff "$INBOX/new" "queued1" "BL-000-demo" "git_handoff"
 run_ready
 [[ $RC -ne 0 ]] || fail "02-dequeue: expected a refusal, rc=0 out=$OUT"
-echo "$ERR" | grep -q "STALE_REFERENCE_ELABORATION" \
+echo "$ERR" | grep "STALE_REFERENCE_ELABORATION" >/dev/null \
   || fail "02-dequeue: expected a staleness report, got: $ERR"
 [[ -f "$INBOX/new/00_queued1.handoff" && ! -e "$INBOX/in_process/00_queued1.handoff" ]] \
   || fail "02-dequeue: a refused turn must never dequeue - the candidate stays in new/"
@@ -148,9 +148,9 @@ run_ready
 # signals: no STALE_REFERENCE_ELABORATION marker (the guard's own refusal
 # signature), and INVALID_RECEIVE_MODE (dispatch's closed-failure path,
 # reached only once the guard has handed the turn onward).
-echo "$ERR" | grep -q "STALE_REFERENCE_ELABORATION" \
+echo "$ERR" | grep "STALE_REFERENCE_ELABORATION" >/dev/null \
   && fail "01: a fresh worktree must never be refused by the guard, got: $ERR"
-echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
+echo "$ERR" | grep "INVALID_RECEIVE_MODE" >/dev/null \
   || fail "01: expected control to reach dispatch after the guard passed through, got rc=$RC err=$ERR"
 pass "01: a role that has merged the amendment is never refused by the guard, and the turn is handed to dispatch"
 
@@ -225,9 +225,9 @@ set -e
 ERR2="$(cat "$ROOT2/stderr.txt")"
 
 [[ $RC2 -ne 0 ]] || fail "02-origin-ahead: expected a refusal, rc=0 out=$OUT2"
-echo "$ERR2" | grep -q "STALE_REFERENCE_ELABORATION" \
+echo "$ERR2" | grep "STALE_REFERENCE_ELABORATION" >/dev/null \
   || fail "02-origin-ahead: expected a staleness report even though the worktree matches local main, got: $ERR2"
-echo "$ERR2" | grep -q "$REF_REL" \
+echo "$ERR2" | grep "$REF_REL" >/dev/null \
   || fail "02-origin-ahead: the report must name the stale file, got: $ERR2"
 pass "02: a worktree byte-identical to local main but stale relative to a further-ahead origin/main still refuses (D2)"
 

@@ -70,7 +70,7 @@ ERR="$(env -u XDG_RUNTIME_DIR bb "$RESOLVE" "$DEEP_ROOT" 12345 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "04: expected a non-zero exit when the deep path overruns the limit with no XDG_RUNTIME_DIR fallback; got: $ERR"
-echo "$ERR" | grep -qi "unix-socket path limit" \
+echo "$ERR" | grep -i "unix-socket path limit" >/dev/null \
   || fail "04: expected a CLEAR diagnostic naming the unix-socket path limit, never an opaque errno; got: $ERR"
 pass "04b: with no usable fallback, a deep project root fails loudly naming the OS socket-path limit - never a blind bind or an opaque errno"
 

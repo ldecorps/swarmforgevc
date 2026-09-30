@@ -12,6 +12,6 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 OUT="$(bb "$RUNNER" 2>&1)" || { echo "$OUT"; fail "fleet_telegram_creds_lib_test_runner.bb exited non-zero"; }
 echo "$OUT"
-echo "$OUT" | grep -q "ALL TESTS PASSED" || fail "expected all fleet_telegram_creds_lib assertions to pass"
+echo "$OUT" | grep "ALL TESTS PASSED" >/dev/null || fail "expected all fleet_telegram_creds_lib assertions to pass"
 
 echo "PASS: fleet_telegram_creds_lib (BL-436) - all assertions passed"

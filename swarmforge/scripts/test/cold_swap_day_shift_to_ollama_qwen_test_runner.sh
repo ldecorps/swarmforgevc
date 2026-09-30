@@ -60,7 +60,7 @@ OUT01="$(bash "$ROOT/swarmforge/scripts/cold_swap_day_shift_to_ollama_qwen.sh" "
   || fail "01: wrong day_shift_pack"
 ls "$ROOT/backlog/evidence"/BL-1143-cold-swap-*.md >/dev/null \
   || fail "01: evidence missing"
-echo "$OUT01" | grep -q 'VERIFY OK' || fail "01: expected VERIFY OK"
+echo "$OUT01" | grep 'VERIFY OK' >/dev/null || fail "01: expected VERIFY OK"
 pass "01: verify sets day_shift_pack + evidence"
 
 # ── 02: execute uses kill/start seams; never names qwen-forge ─────────────
@@ -73,7 +73,7 @@ OUT02="$(
 )" || fail "02: execute failed: $OUT02"
 grep -q KILL "$KILL_LOG" || fail "02: kill seam not called"
 grep -q START "$START_LOG" || fail "02: start seam not called"
-echo "$OUT02" | grep -qi qwen-forge && fail "02: must not thrash qwen-forge"
+echo "$OUT02" | grep -i qwen-forge >/dev/null && fail "02: must not thrash qwen-forge"
 EV="$(ls -1 "$ROOT/backlog/evidence"/BL-1143-cold-swap-*.md | sort | tail -1)"
 grep -q 'qwen_forge: not launched' "$EV" || fail "02: evidence must deny qwen-forge"
 pass "02: execute kill+start seams; no qwen-forge"
@@ -88,7 +88,7 @@ pass "03: how-to present"
 rm -f "$ROOT/backlog/evidence"/BL-1127-coder-battery-*.md
 OUT04="$(bash "$ROOT/swarmforge/scripts/cold_swap_day_shift_to_ollama_qwen.sh" "$ROOT" --verify 2>&1)" \
   || fail "04: verify without battery must still pass (no-winner-yet): $OUT04"
-echo "$OUT04" | grep -qE 'OUTCOME=no-winner-yet|VERIFY OK' \
+echo "$OUT04" | grep -E 'OUTCOME=no-winner-yet|VERIFY OK' >/dev/null \
   || fail "04: expected no-winner-yet or VERIFY OK: $OUT04"
 pass "04: no-winner-yet align path allowed"
 

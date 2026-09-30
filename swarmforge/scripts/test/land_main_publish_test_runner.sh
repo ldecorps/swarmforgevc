@@ -31,7 +31,7 @@ grep -q 'bb "\$(cat' "$CLI" \
 OUT01="$(bash "$CLI" "$ROOT" --decide-only 2>&1)" || fail "01: decide-only failed: $OUT01"
 [[ "$OUT01" == \{* ]] || fail "01: expected EDN map output, got: $OUT01"
 [[ "$OUT01" != *"user=>"* ]] || fail "01: REPL leak in output"
-echo "$OUT01" | grep -q ':purity-action :push' \
+echo "$OUT01" | grep ':purity-action :push' >/dev/null \
   || fail "01: tip contains origin should yield :push, got: $OUT01"
 pass "01 decide-only EDN + tip-pure :push"
 
@@ -39,7 +39,7 @@ pass "01 decide-only EDN + tip-pure :push"
 bash "$CLI" "$ROOT" --acquire-lock >/dev/null
 OUT02="$(LAND_PEER_HOLDS_LOCK=1 bash "$CLI" "$ROOT" --decide-only 2>&1)" \
   || fail "02: decide-only with lock failed: $OUT02"
-echo "$OUT02" | grep -q ':wait-land-lock' \
+echo "$OUT02" | grep ':wait-land-lock' >/dev/null \
   || fail "02: peer lock should wait, got: $OUT02"
 bash "$CLI" "$ROOT" --release-lock >/dev/null
 pass "02 lock dir + peer → wait-land-lock"
@@ -48,7 +48,7 @@ pass "02 lock dir + peer → wait-land-lock"
 bash "$CLI" "$ROOT" --acquire-lock >/dev/null
 OUT02B="$(bash "$CLI" "$ROOT" --decide-only 2>&1)" \
   || fail "02b: decide-only with held lock failed: $OUT02B"
-echo "$OUT02B" | grep -q ':lock-admission :rematch-once-at-edge' \
+echo "$OUT02B" | grep ':lock-admission :rematch-once-at-edge' >/dev/null \
   || fail "02b: held lock should rematch-once-at-edge, got: $OUT02B"
 bash "$CLI" "$ROOT" --release-lock >/dev/null
 pass "02b held lock → rematch-once-at-edge"
@@ -57,7 +57,7 @@ pass "02b held lock → rematch-once-at-edge"
 SHA="$(git -C "$ROOT" rev-parse HEAD)"
 OUT03="$(LAND_GATE_ORIGIN_SHA=0000000000000000000000000000000000000000 \
   bash "$CLI" "$ROOT" --decide-only 2>&1)" || fail "03: decide-only failed: $OUT03"
-echo "$OUT03" | grep -q ':origin-advanced-since-gate true' \
+echo "$OUT03" | grep ':origin-advanced-since-gate true' >/dev/null \
   || fail "03: expected origin-advanced-since-gate true, got: $OUT03"
 [[ -n "$SHA" ]] || fail "03: missing HEAD sha"
 pass "03 origin-advanced-since-gate wiring"

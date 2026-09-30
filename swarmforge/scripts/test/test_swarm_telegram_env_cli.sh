@@ -34,9 +34,9 @@ mkdir -p "$FLEET_HOME/.swarmforge/fleet/second"
 printf '{"botToken":"second-token","chatId":"-1002"}' > "$FLEET_HOME/.swarmforge/fleet/second/telegram.json"
 OUT="$(SWARMFORGE_FLEET_HOME="$FLEET_HOME" bb "$CLI" /some/second/root second)"
 check "2: a non-primary swarm with creds prints an export for the token" \
-  "printf '%s' \"\$OUT\" | grep -q \"export TELEGRAM_BOT_TOKEN='second-token'\""
+  "printf '%s' \"\$OUT\" | grep \"export TELEGRAM_BOT_TOKEN='second-token'\" >/dev/null"
 check "2: a non-primary swarm with creds prints an export for the chat id" \
-  "printf '%s' \"\$OUT\" | grep -q \"export TELEGRAM_CHAT_ID='-1002'\""
+  "printf '%s' \"\$OUT\" | grep \"export TELEGRAM_CHAT_ID='-1002'\" >/dev/null"
 # HOME is pinned to an empty scratch dir (no .zshenv of its own) for every
 # eval below - never left unset. Without a HOME override, zsh still
 # resolves $HOME from the real passwd entry and sources the REAL
@@ -49,9 +49,9 @@ EVAL_HOME="$(mktemp -d)"
 register_tmp_dir "$EVAL_HOME"
 EVAL_RESULT="$(env -i HOME="$EVAL_HOME" PATH="$PATH" zsh -c "$OUT"'; echo "TOKEN=${TELEGRAM_BOT_TOKEN:-}"; echo "CHAT=${TELEGRAM_CHAT_ID:-}"')"
 check "2: eval-ing the printed lines under a real zsh actually sets TELEGRAM_BOT_TOKEN" \
-  "printf '%s' \"\$EVAL_RESULT\" | grep -q '^TOKEN=second-token\$'"
+  "printf '%s' \"\$EVAL_RESULT\" | grep '^TOKEN=second-token\$' >/dev/null"
 check "2: eval-ing the printed lines under a real zsh actually sets TELEGRAM_CHAT_ID" \
-  "printf '%s' \"\$EVAL_RESULT\" | grep -q '^CHAT=-1002\$'"
+  "printf '%s' \"\$EVAL_RESULT\" | grep '^CHAT=-1002\$' >/dev/null"
 
 # ── 2b: a token/chat containing a shell-hazardous embedded single quote -
 # round-tripped through a REAL zsh eval, not just checked for the raw
@@ -79,9 +79,9 @@ EVAL_HOME3="$(mktemp -d)"
 register_tmp_dir "$EVAL_HOME3"
 EVAL_RESULT="$(env -i HOME="$EVAL_HOME3" PATH="$PATH" TELEGRAM_BOT_TOKEN=primary-token TELEGRAM_CHAT_ID=-1001 zsh -c "$OUT"'; echo "TOKEN=${TELEGRAM_BOT_TOKEN:-<unset>}"; echo "CHAT=${TELEGRAM_CHAT_ID:-<unset>}"')"
 check "3: eval-ing the unset line clears an already-exported primary token" \
-  "printf '%s' \"\$EVAL_RESULT\" | grep -q '^TOKEN=<unset>\$'"
+  "printf '%s' \"\$EVAL_RESULT\" | grep '^TOKEN=<unset>\$' >/dev/null"
 check "3: eval-ing the unset line clears an already-exported primary chat id" \
-  "printf '%s' \"\$EVAL_RESULT\" | grep -q '^CHAT=<unset>\$'"
+  "printf '%s' \"\$EVAL_RESULT\" | grep '^CHAT=<unset>\$' >/dev/null"
 
 if [ "$fail" -eq 0 ]; then
   echo "ALL PASS"

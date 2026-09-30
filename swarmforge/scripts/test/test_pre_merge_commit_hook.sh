@@ -87,7 +87,7 @@ run_hook() {
 }
 
 ran()   { [ -f "$RAN/$1" ]; }
-names() { printf '%s' "$OUT" | grep -q -- "$1"; }
+names() { printf '%s' "$OUT" | grep -- "$1" >/dev/null; }
 
 # ── case 01: the merge path reaches EVERY derived guard, not just the ───────
 #    legacy one.
@@ -173,7 +173,7 @@ cp "$HOOK" "$LONELY/git-hooks/pre-merge-commit"
 cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$LONELY/scripts/" 2>/dev/null || true
 OUT="$(cd "$REPO" && bash "$LONELY/git-hooks/pre-merge-commit" 2>&1)" && STATUS=0 || STATUS=$?
 [ "$STATUS" -ne 0 ] || fail "09: a hook whose guard chain could not be loaded allowed the merge: $OUT"
-printf '%s' "$OUT" | grep -q "commit_guard_chain_lib.sh" \
+printf '%s' "$OUT" | grep "commit_guard_chain_lib.sh" >/dev/null \
   || fail "09: the refusal does not say which file could not be loaded: $OUT"
 pass "09 an unloadable guard chain refuses the merge instead of skipping every guard"
 

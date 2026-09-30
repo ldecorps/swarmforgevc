@@ -73,7 +73,7 @@ set -e
 if [[ "$rc1" -ne 1 ]]; then
   fail "non-forwarding in batch dir: expected exit 1, got $rc1: $out1"
 fi
-if ! echo "$out1" | grep -q "Current inbound handoff is non-forwarding"; then
+if ! echo "$out1" | grep "Current inbound handoff is non-forwarding" >/dev/null; then
   fail "non-forwarding in batch dir: missing refusal message: $out1"
 fi
 pass "a non-forwarding inbound inside a batch dir blocks the forward"

@@ -100,6 +100,13 @@ run_guard check_constitution_doc_citations.sh
 # caught too. Judges only this commit's own staged additions, never the
 # tree (BL-1423: pre-existing drift is not this commit's fault).
 run_guard check_test_file_registration.sh
+# BL-1665: a staged shell test under swarmforge/scripts/test that sets
+# pipefail and pipes a captured output into an early-exit `grep -q` is
+# refused here - the same flake shape that turned a present needle into a
+# spurious failure under load (test_merge_deletion_guard.sh case 02,
+# 2026-09-20). A git index read, same cost class as the other cheap-tier
+# guards.
+run_guard check_shell_test_early_exit_pipe.sh
 
 if guard_chain_has_refusal; then
   report_refusals

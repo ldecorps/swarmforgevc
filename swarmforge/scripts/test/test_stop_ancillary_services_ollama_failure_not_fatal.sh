@@ -34,7 +34,7 @@ RC=$?
 [[ "$RC" -eq 0 ]] || fail "expected stop_ancillary_services_main to exit 0 despite the ollama stop failing, got rc=$RC: $OUT"
 pass "stop_ancillary_services_main exits 0 even when the ollama stop call fails"
 
-echo "$OUT" | grep -q "stop_ancillary_services done" \
+echo "$OUT" | grep "stop_ancillary_services done" >/dev/null \
   || fail "expected the \"done\" log line to be reached, got: $OUT"
 pass "the \"done\" log line is reached - the ollama stop failure did not abort the function"
 

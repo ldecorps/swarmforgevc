@@ -48,7 +48,7 @@ PANE_PID="$(tmux -S "$SOCK" list-panes -a -F '#{pane_pid}' | head -1)"
 tmux -S "$SOCK" send-keys -t fixture-role 'sleep 300 & disown; echo READY' Enter
 READY=0
 for _ in $(seq 1 30); do
-  if tmux -S "$SOCK" capture-pane -p -t fixture-role | grep -q READY; then
+  if tmux -S "$SOCK" capture-pane -p -t fixture-role | grep READY >/dev/null; then
     READY=1
     break
   fi

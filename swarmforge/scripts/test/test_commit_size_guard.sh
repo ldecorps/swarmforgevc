@@ -46,8 +46,8 @@ OUT="$(cd "$ROOT" && bash "$GUARD" 1 2>&1)"
 STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 ]] || fail "02: expected the guard to reject a file over the threshold"
-echo "$OUT" | grep -q "oversized.bin" || fail "02: error must name the offending file, got: $OUT"
-echo "$OUT" | grep -qi "MB" || fail "02: error must state a size, got: $OUT"
+echo "$OUT" | grep "oversized.bin" >/dev/null || fail "02: error must name the offending file, got: $OUT"
+echo "$OUT" | grep -i "MB" >/dev/null || fail "02: error must state a size, got: $OUT"
 pass "02: an oversized staged file is rejected, naming the file and its size"
 
 git -C "$ROOT" reset -q oversized.bin
@@ -95,7 +95,7 @@ OUT4="$(cd "$ROOT" && git -c user.email=test@test -c user.name=test commit -q -m
 STATUS4=$?
 set -e
 [[ "$STATUS4" -ne 0 ]] || fail "04: expected the real git commit to be blocked by the installed pre-commit hook"
-echo "$OUT4" | grep -q "blob.bin" || fail "04: hook output must name the offending file, got: $OUT4"
+echo "$OUT4" | grep "blob.bin" >/dev/null || fail "04: hook output must name the offending file, got: $OUT4"
 pass "04: an installed pre-commit hook (core.hooksPath) blocks a real git commit introducing an oversized file"
 
 # ── 5: with the hook installed, an ordinary commit still succeeds ─────────

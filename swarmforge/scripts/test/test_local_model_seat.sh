@@ -177,7 +177,7 @@ REFUSAL6="$(
 RC6=$?
 set -e
 [[ "$RC6" -ne 0 ]] || fail "06: launch_role should refuse when the endpoint is not ready"
-echo "$REFUSAL6" | grep -qE '127\.0\.0\.1:11434' \
+echo "$REFUSAL6" | grep -E '127\.0\.0\.1:11434' >/dev/null \
   || fail "06: refusal must name the endpoint that was not ready, got: $REFUSAL6"
 [[ -s "$LOG6" ]] && grep -q 'respawn-pane' "$LOG6" \
   && fail "06: refused launch must not respawn a pane"
@@ -229,11 +229,11 @@ SCRUB="$(bb -e "
                     (harness-env-scrub-lib/config-backends conf)))]
     (println v)))
 ")"
-echo "$SCRUB" | grep -qx "MISTRAL_API_KEY" \
+echo "$SCRUB" | grep -x "MISTRAL_API_KEY" >/dev/null \
   || fail "10: a local-model-only configuration must scrub MISTRAL_API_KEY, got: $SCRUB"
-echo "$SCRUB" | grep -qx "QWEN_API_KEY" \
+echo "$SCRUB" | grep -x "QWEN_API_KEY" >/dev/null \
   || fail "10: a local-model-only configuration must scrub QWEN_API_KEY, got: $SCRUB"
-echo "$SCRUB" | grep -qx "OPENAI_API_KEY" \
+echo "$SCRUB" | grep -x "OPENAI_API_KEY" >/dev/null \
   && fail "10: a local-model seat may read OPENAI_API_KEY for the OpenAI-compat client - scrubbing it would cut credentials"
 pass "10: a local-model configuration keeps OPENAI_API_KEY and scrubs cloud keys"
 

@@ -76,7 +76,7 @@ out1="$(run_send 2>&1)"
 rc1=$?
 set -e
 [[ "$rc1" -eq 1 ]] || fail "lone non-forwarding inbound: expected exit 1, got $rc1: $out1"
-echo "$out1" | grep -q "Current inbound handoff is non-forwarding" \
+echo "$out1" | grep "Current inbound handoff is non-forwarding" >/dev/null \
   || fail "lone non-forwarding inbound: missing refusal message: $out1"
 pass "a lone non-forwarding inbound blocks the forward"
 
@@ -102,7 +102,7 @@ out2="$(run_send 2>&1)"
 rc2=$?
 set -e
 [[ "$rc2" -eq 1 ]] || fail "mixed in_process (non-forwarding + ordinary): expected exit 1, got $rc2: $out2"
-echo "$out2" | grep -q "Current inbound handoff is non-forwarding" \
+echo "$out2" | grep "Current inbound handoff is non-forwarding" >/dev/null \
   || fail "mixed in_process: missing refusal message: $out2"
 pass "a non-forwarding inbound still blocks alongside an ordinary forwardable inbound"
 
@@ -138,9 +138,9 @@ outbox_count() { find "$OUTBOX" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -
 set +e
 out3a="$(run_send_queue 2>&1)"
 set -e
-echo "$out3a" | grep -q "Current inbound handoff is non-forwarding" \
+echo "$out3a" | grep "Current inbound handoff is non-forwarding" >/dev/null \
   && fail "ordinary-only in_process (call 1): send wrongly refused: $out3a"
-echo "$out3a" | grep -q "AUDIT_REQUIRED" \
+echo "$out3a" | grep "AUDIT_REQUIRED" >/dev/null \
   || fail "ordinary-only in_process (call 1): expected the audit challenge: $out3a"
 [[ "$(outbox_count)" == "0" ]] || fail "ordinary-only in_process (call 1): the audit challenge call queued a handoff"
 
@@ -148,10 +148,10 @@ set +e
 out3b="$(run_send_queue 2>&1)"
 rc3b=$?
 set -e
-echo "$out3b" | grep -q "Current inbound handoff is non-forwarding" \
+echo "$out3b" | grep "Current inbound handoff is non-forwarding" >/dev/null \
   && fail "ordinary-only in_process (call 2): send wrongly refused: $out3b"
 [[ "$rc3b" -eq 0 ]] || fail "ordinary-only in_process (call 2): expected exit 0, got $rc3b: $out3b"
-echo "$out3b" | grep -q "HANDOFF QUEUED (mailbox only, no tmux inject):" \
+echo "$out3b" | grep "HANDOFF QUEUED (mailbox only, no tmux inject):" >/dev/null \
   || fail "ordinary-only in_process (call 2): missing mailbox-only queue message: $out3b"
 [[ "$(outbox_count)" == "1" ]] || fail "ordinary-only in_process (call 2): handoff did not land in the outbox"
 pass "an ordinary (non-marked) inbound alone does not block the forward"

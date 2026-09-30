@@ -100,11 +100,11 @@ printf 'from: coordinator\nto: coder\npriority: 20\ntype: note\ntask: BL-999\nde
   > "$CODER_WT1/.swarmforge/handoffs/inbox/in_process/00_orphaned.handoff"
 
 CLAUDE_ARG1="$(run_launch_script_capture_claude_arg "$ROOT1")"
-echo "$CLAUDE_ARG1" | grep -q "RESUME-ON-START" \
+echo "$CLAUDE_ARG1" | grep "RESUME-ON-START" >/dev/null \
   || fail "01: expected the replacement agent's first message to include an explicit resume instruction, got: $CLAUDE_ARG1"
 pass "01: a parcel orphaned by a killed agent is resumed - the replacement agent's own first message tells it to, unprompted"
 
-echo "$CLAUDE_ARG1" | grep -q "ready_for_next.sh" \
+echo "$CLAUDE_ARG1" | grep "ready_for_next.sh" >/dev/null \
   || fail "01: expected the resume instruction to name ready_for_next.sh"
 pass "01: it does not report that there is no work - it is told to run ready_for_next.sh immediately"
 
@@ -150,7 +150,7 @@ coder	coder	$CODER_WT4	swarmforge-coder	Coder	claude	task
 TSV
 
 CLAUDE_ARG4="$(run_launch_script_capture_claude_arg "$ROOT4")"
-echo "$CLAUDE_ARG4" | grep -q "RESUME-ON-START" \
+echo "$CLAUDE_ARG4" | grep "RESUME-ON-START" >/dev/null \
   && fail "04: expected NO resume note for a genuinely empty in_process queue, got: $CLAUDE_ARG4"
 pass "04: an idle role with a genuinely empty inbox still reports no work - no fabricated resume"
 
@@ -169,7 +169,7 @@ printf 'from: cleaner\nto: coder\npriority: 50\ntype: note\n\nbatched item\n' \
   > "$CODER_WT5/.swarmforge/handoffs/inbox/in_process/batch_20260101T000000Z_1/00_item.handoff"
 
 CLAUDE_ARG5="$(run_launch_script_capture_claude_arg "$ROOT5")"
-echo "$CLAUDE_ARG5" | grep -q "RESUME-ON-START" \
+echo "$CLAUDE_ARG5" | grep "RESUME-ON-START" >/dev/null \
   || fail "05: expected an orphaned BATCH claim to also be resumed, got: $CLAUDE_ARG5"
 pass "05: an orphaned batch claim (not just a single task) is also resumed on relaunch"
 

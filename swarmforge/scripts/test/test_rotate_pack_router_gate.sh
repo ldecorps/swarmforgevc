@@ -103,8 +103,8 @@ OUT="$(run_rotate coder 2>&1)"
 STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 ]] || fail "01: expected nonzero exit, got 0 (output: $OUT)"
-echo "$OUT" | grep -qi "does not rotate" || fail "01: refusal must name the pack, not the misleading old text, got: $OUT"
-echo "$OUT" | grep -qvi "is this swarm a mono-router" || fail "01: must not fall through to the old misleading no-launch-script text"
+echo "$OUT" | grep -i "does not rotate" >/dev/null || fail "01: refusal must name the pack, not the misleading old text, got: $OUT"
+echo "$OUT" | grep -vi "is this swarm a mono-router" >/dev/null || fail "01: must not fall through to the old misleading no-launch-script text"
 [[ -z "$(cat "$TMUX_LOG")" ]] || fail "01: no tmux command may run on refusal, log: $(cat "$TMUX_LOG")"
 [[ "$(cat "$MARKER_FILE")" == "$MARKER_BEFORE" ]] \
   || fail "01: active-role marker must be byte-identical to before the refused run"
@@ -137,8 +137,8 @@ rm -f "$ROOT/.swarmforge/swarm-identity"
 remove_conf
 : > "$TMUX_LOG"
 OUT="$(run_rotate_via_daemon_path)"
-echo "$OUT" | grep -q ':ok false' || fail "03: expected a refused result map, got: $OUT"
-echo "$OUT" | grep -q 'not-a-rotation-router' || fail "03: expected the pack reason, got: $OUT"
+echo "$OUT" | grep ':ok false' >/dev/null || fail "03: expected a refused result map, got: $OUT"
+echo "$OUT" | grep 'not-a-rotation-router' >/dev/null || fail "03: expected the pack reason, got: $OUT"
 [[ -z "$(cat "$TMUX_LOG")" ]] || fail "03: no tmux command may run, log: $(cat "$TMUX_LOG")"
 pass "03: the daemon-path caller gets a refusal result map naming the pack, never an exception or exit"
 
@@ -151,7 +151,7 @@ OUT="$(cd "$SPEC_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROTATE_FORCE=1 bash "$
 STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 ]] || fail "04: expected the force override to still refuse, got exit 0 (output: $OUT)"
-echo "$OUT" | grep -qi "does not rotate" || fail "04: force override must still refuse for the pack reason, got: $OUT"
+echo "$OUT" | grep -i "does not rotate" >/dev/null || fail "04: force override must still refuse for the pack reason, got: $OUT"
 [[ -z "$(cat "$TMUX_LOG")" ]] || fail "04: no tmux command may run even with the force override set, log: $(cat "$TMUX_LOG")"
 pass "04: SWARMFORGE_ROTATE_FORCE=1 does not unlock the pack gate"
 

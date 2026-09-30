@@ -96,9 +96,9 @@ for ARG in --help -h now; do
   STATUS=$?
   set -e
   [[ "$STATUS" -ne 0 ]] || fail "01 ($ARG): expected non-zero, got 0; out=$OUT"
-  echo "$OUT" | grep -qi 'no argument' || fail "01 ($ARG): expected no-argument usage text; got: $OUT"
-  echo "$OUT" | grep -q 'COMPLETED_BATCH:' && fail "01 ($ARG): completion ran; got: $OUT"
-  echo "$OUT" | grep -q 'NO_TASK' && fail "01 ($ARG): ready_for_next chained; got: $OUT"
+  echo "$OUT" | grep -i 'no argument' >/dev/null || fail "01 ($ARG): expected no-argument usage text; got: $OUT"
+  echo "$OUT" | grep 'COMPLETED_BATCH:' >/dev/null && fail "01 ($ARG): completion ran; got: $OUT"
+  echo "$OUT" | grep 'NO_TASK' >/dev/null && fail "01 ($ARG): ready_for_next chained; got: $OUT"
   assert_batch_untouched "01 ($ARG)"
   pass "01: batch mode rejects '$ARG' with no side effects"
 done
@@ -110,7 +110,7 @@ OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole "$DONE_TASK" --help 2>&1)"
 STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 ]] || fail "02: expected non-zero, got 0; out=$OUT"
-echo "$OUT" | grep -qi 'no argument' || fail "02: expected no-argument usage text; got: $OUT"
+echo "$OUT" | grep -i 'no argument' >/dev/null || fail "02: expected no-argument usage text; got: $OUT"
 [[ -f "$TASK_WT/.swarmforge/handoffs/inbox/in_process/50_t.handoff" ]] \
   || fail "02: handoff left in_process"
 pass "02: task mode rejects --help with no side effects"
@@ -118,7 +118,7 @@ pass "02: task mode rejects --help with no side effects"
 # ── 03: argumentless batch invocation still completes ──────────────────────
 setup_batch
 OUT="$(cd "$BATCH_WT" && SWARMFORGE_ROLE=batchrole "$DONE_BATCH" 2>&1)"
-echo "$OUT" | grep -q 'COMPLETED_BATCH:' || fail "03: expected COMPLETED_BATCH; got: $OUT"
+echo "$OUT" | grep 'COMPLETED_BATCH:' >/dev/null || fail "03: expected COMPLETED_BATCH; got: $OUT"
 [[ -d "$BATCH_WT/.swarmforge/handoffs/inbox/completed/batch_20260825T000000Z" ]] \
   || fail "03: completed batch dir missing"
 grep -q '^completed_at:' \
@@ -141,7 +141,7 @@ run_bad_no_work() {
   STATUS=$?
   set -e
   [[ "$STATUS" -ne 0 ]] || fail "04 ($*): expected non-zero, got 0; out=$OUT"
-  echo "$OUT" | grep -qi 'no argument' || fail "04 ($*): expected no-argument usage text; got: $OUT"
+  echo "$OUT" | grep -i 'no argument' >/dev/null || fail "04 ($*): expected no-argument usage text; got: $OUT"
   [[ -f "$TASK_WT/.swarmforge/handoffs/inbox/in_process/50_t.handoff" ]] \
     || fail "04 ($*): handoff left in_process"
   pass "04: task mode rejects bad --no-work shape '$*' with no side effects"
@@ -156,7 +156,7 @@ run_bad_no_work --no-work x extra
 #    proves refuse-unexpected-args! itself lets the shape through. ────────
 setup_task
 OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole "$DONE_TASK" --no-work "not a work note anyway" 2>&1)"
-echo "$OUT" | grep -q 'COMPLETED:' || fail "05: expected COMPLETED, got: $OUT"
+echo "$OUT" | grep 'COMPLETED:' >/dev/null || fail "05: expected COMPLETED, got: $OUT"
 pass "05: --no-work \"<reason>\" is accepted at the argv layer and completes"
 
 # ── 06: BL-1609's own exception, --no-op, mirrors 04/05 at the argv layer.
@@ -178,7 +178,7 @@ run_bad_no_op() {
   STATUS=$?
   set -e
   [[ "$STATUS" -ne 0 ]] || fail "06 ($*): expected non-zero, got 0; out=$OUT"
-  echo "$OUT" | grep -qi 'no argument' || fail "06 ($*): expected no-argument usage text; got: $OUT"
+  echo "$OUT" | grep -i 'no argument' >/dev/null || fail "06 ($*): expected no-argument usage text; got: $OUT"
   [[ -f "$TASK_WT/.swarmforge/handoffs/inbox/in_process/50_t.handoff" ]] \
     || fail "06 ($*): handoff left in_process"
   pass "06: task mode rejects bad --no-op shape '$*' with no side effects"
@@ -191,7 +191,7 @@ setup_task
 rm -rf "$TASK_WT/.swarmforge/handoffs/inbox/completed"
 mkdir -p "$TASK_WT/.swarmforge/handoffs/inbox/completed"
 OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole "$DONE_TASK" --no-op "not a forwarding parcel anyway" 2>&1)"
-echo "$OUT" | grep -q 'COMPLETED:' || fail "07: expected COMPLETED, got: $OUT"
+echo "$OUT" | grep 'COMPLETED:' >/dev/null || fail "07: expected COMPLETED, got: $OUT"
 pass "07: --no-op \"<reason>\" is accepted at the argv layer and completes"
 
 echo "ALL PASS: done_with_current arg rejection (BL-652)"

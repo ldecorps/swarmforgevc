@@ -24,30 +24,30 @@ export MODEL_STEWARD_STATE_DIR="$STEWARD_DIR"
 export MODEL_FACTORY_STATE_DIR="$FACTORY_DIR"
 
 # ── 1: pure model_factory_lib tests (bb) ────────────────────────────────────
-bb "$SCRIPT_DIR/model_factory_test_runner.bb" | grep -q "^ALL PASS$" \
+bb "$SCRIPT_DIR/model_factory_test_runner.bb" | grep "^ALL PASS$" >/dev/null \
   || fail "01: model_factory_test_runner.bb did not report ALL PASS"
 
 pass "01: model_factory_lib pure tests"
 
 # ── 1b: BL-1079 provider→agent token vs launcher allow-list (literals) ─────
-bb "$SCRIPT_DIR/bl1079_provider_agent_allowlist_property_runner.bb" | grep -q "^ALL PASS$" \
+bb "$SCRIPT_DIR/bl1079_provider_agent_allowlist_property_runner.bb" | grep "^ALL PASS$" >/dev/null \
   || fail "01b: bl1079_provider_agent_allowlist_property_runner.bb did not report ALL PASS"
 
 pass "01b: BL-1079 cursor agent token appears in launcher allow-list"
 
 # ── 1c: BL-1079 invariant 2 — Cursor gate over status×override / escape ───
-bb "$SCRIPT_DIR/bl1079_cursor_certification_gate_property_runner.bb" | grep -q "^ALL PASS$" \
+bb "$SCRIPT_DIR/bl1079_cursor_certification_gate_property_runner.bb" | grep "^ALL PASS$" >/dev/null \
   || fail "01c: bl1079_cursor_certification_gate_property_runner.bb did not report ALL PASS"
 
 pass "01c: BL-1079 Cursor certification gate property (status×override / escape)"
 
 # ── 1d: BL-1053 local provider -> local-model seat routing ─────────────────
-bb "$SCRIPT_DIR/bl1053_local_provider_routing_test_runner.bb" | grep -q "ALL PASS" \
+bb "$SCRIPT_DIR/bl1053_local_provider_routing_test_runner.bb" | grep "ALL PASS" >/dev/null \
   || fail "01d: bl1053_local_provider_routing_test_runner.bb did not report ALL PASS"
 
 pass "01d: BL-1053 local provider routing unit tests"
 
-bb "$SCRIPT_DIR/bl1053_provider_routing_property_runner.bb" | grep -q "ALL PROPERTIES HELD" \
+bb "$SCRIPT_DIR/bl1053_provider_routing_property_runner.bb" | grep "ALL PROPERTIES HELD" >/dev/null \
   || fail "01e: bl1053_provider_routing_property_runner.bb did not report ALL PROPERTIES HELD"
 
 pass "01e: BL-1053 local provider routing properties"

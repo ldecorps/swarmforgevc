@@ -103,10 +103,10 @@ RC4=$?
 set -e
 check "04: start still completes despite crontab being unavailable" '[[ "$RC4" -eq 0 ]]'
 check "04: the failure is specifically crontab's absence, not some other missing tool" \
-  'printf "%s" "$OUT4" | grep -q "no crontab command"'
-check "04: start output carries a WARN" 'printf "%s" "$OUT4" | grep -q "WARN"'
+  'printf "%s" "$OUT4" | grep "no crontab command" >/dev/null'
+check "04: start output carries a WARN" 'printf "%s" "$OUT4" | grep "WARN" >/dev/null'
 check "04: WARN names the freshness watchdog as unwatched" \
-  'printf "%s" "$OUT4" | grep -q "freshness watchdog"'
+  'printf "%s" "$OUT4" | grep "freshness watchdog" >/dev/null'
 pass "04: a host with no crontab still completes the swarm start, loudly"
 
 # ── 05: the checker named in the installed line actually runs and its own log grows ─
@@ -116,7 +116,7 @@ pass "04: a host with no crontab still completes the swarm start, loudly"
 # against this fixture root. The proof is the log growing, not the crontab
 # line's text.
 LINE_A="$(grep -F "FRESHNESS_ROOT=$ROOT_A " "$STORE")"
-check "05: the installed line names the real checker script" "printf '%s' \"\$LINE_A\" | grep -qF \"$CHECKER\""
+check "05: the installed line names the real checker script" "printf '%s' \"\$LINE_A\" | grep -F \"$CHECKER\" >/dev/null"
 LOG_FILE="$ROOT_A/.swarmforge/daemon/freshness-check.cron.log"
 check "05: no log yet before the checker has ever run" '[[ ! -f "$LOG_FILE" ]]'
 

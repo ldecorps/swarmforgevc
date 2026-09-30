@@ -65,10 +65,10 @@ printf '{"pid":%s,"created_at_ms":%s}' "$DEAD_PID" "$(now_ms)" > "$LOCK1/owner.j
 printf 'human_approval: approved\n' > "$ROOT1/ticket.yaml"
 
 OUT1="$(bb "$CLI" "$ROOT1" --message "Approve BL-1497-fixture-01" --path ticket.yaml)"
-echo "$OUT1" | grep -q '"success":true' || fail "scenario 01: expected success:true, got: $OUT1"
-echo "$OUT1" | grep -q '"reaped-lock":{' || fail "scenario 01: expected a reaped-lock field, got: $OUT1"
-echo "$OUT1" | grep -q '"pid":'"$DEAD_PID" || fail "scenario 01: expected reaped-lock naming dead pid $DEAD_PID, got: $OUT1"
-echo "$OUT1" | grep -q '"reason":"dead-owner"' || fail "scenario 01: expected reaped-lock reason dead-owner, got: $OUT1"
+echo "$OUT1" | grep '"success":true' >/dev/null || fail "scenario 01: expected success:true, got: $OUT1"
+echo "$OUT1" | grep '"reaped-lock":{' >/dev/null || fail "scenario 01: expected a reaped-lock field, got: $OUT1"
+echo "$OUT1" | grep '"pid":'"$DEAD_PID" >/dev/null || fail "scenario 01: expected reaped-lock naming dead pid $DEAD_PID, got: $OUT1"
+echo "$OUT1" | grep '"reason":"dead-owner"' >/dev/null || fail "scenario 01: expected reaped-lock reason dead-owner, got: $OUT1"
 [[ ! -d "$LOCK1" ]] || fail "scenario 01: expected the lock directory absent after the commit lands"
 pass "scenario 01: a lock whose recorded owner is dead is reaped and the commit lands"
 
@@ -96,7 +96,7 @@ OUT2="$(bb "$CLI" "$ROOT2" --message "Approve BL-1497-fixture-02" --path ticket.
 CODE2=$?
 set -e
 [[ "$CODE2" -ne 0 ]] || fail "scenario 02: expected a non-zero exit (lock-timeout), got 0: $OUT2"
-echo "$OUT2" | grep -q 'lock-timeout' || fail "scenario 02: expected reason lock-timeout, got: $OUT2"
+echo "$OUT2" | grep 'lock-timeout' >/dev/null || fail "scenario 02: expected reason lock-timeout, got: $OUT2"
 [[ -d "$LOCK2" ]] || fail "scenario 02: expected the lock directory to still exist afterward"
 grep -q "\"pid\":$LIVE_PID" "$LOCK2/owner.json" || fail "scenario 02: expected the lock to still name the live pid $LIVE_PID afterward"
 pass "scenario 02: a lock whose recorded owner is alive is never reaped"
@@ -119,8 +119,8 @@ portable_touch_relative 6 minutes "$LOCK3A"
 printf 'human_approval: approved\n' > "$ROOT3A/ticket.yaml"
 
 OUT3A="$(bb "$CLI" "$ROOT3A" --message "Approve BL-1497-fixture-03a" --path ticket.yaml)"
-echo "$OUT3A" | grep -q '"success":true' || fail "scenario 03 (past): expected success:true, got: $OUT3A"
-echo "$OUT3A" | grep -q '"reason":"record-less-past-bound"' || fail "scenario 03 (past): expected reaped-lock reason record-less-past-bound, got: $OUT3A"
+echo "$OUT3A" | grep '"success":true' >/dev/null || fail "scenario 03 (past): expected success:true, got: $OUT3A"
+echo "$OUT3A" | grep '"reason":"record-less-past-bound"' >/dev/null || fail "scenario 03 (past): expected reaped-lock reason record-less-past-bound, got: $OUT3A"
 [[ ! -d "$LOCK3A" ]] || fail "scenario 03 (past): expected the lock directory absent after the commit lands"
 pass "scenario 03 (past the age bound): a record-less lock is reaped and the commit lands"
 
@@ -143,7 +143,7 @@ OUT3B="$(bb "$CLI" "$ROOT3B" --message "Approve BL-1497-fixture-03b" --path tick
 CODE3B=$?
 set -e
 [[ "$CODE3B" -ne 0 ]] || fail "scenario 03 (within): expected a non-zero exit (lock-timeout), got 0: $OUT3B"
-echo "$OUT3B" | grep -q 'lock-timeout' || fail "scenario 03 (within): expected reason lock-timeout, got: $OUT3B"
+echo "$OUT3B" | grep 'lock-timeout' >/dev/null || fail "scenario 03 (within): expected reason lock-timeout, got: $OUT3B"
 [[ -d "$LOCK3B" ]] || fail "scenario 03 (within): expected the lock directory to still exist afterward"
 [[ ! -e "$LOCK3B/owner.json" ]] || fail "scenario 03 (within): fixture plants no owner record - a real one appearing means something else raced this fixture"
 pass "scenario 03 (within the age bound): a record-less lock is never reaped"

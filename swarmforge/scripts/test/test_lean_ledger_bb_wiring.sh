@@ -136,9 +136,9 @@ mk_done_fixture
 MARKER="$ROOT/marker-a1"
 fake_cli_happy "$ROOT/extension/out/tools/lean-ledger-record.js" "$MARKER"
 OUT="$(run_done_with_current "$WT" "$FAKE_BIN" "$DONE_TASK_COPY")" || fail "A1: done_with_current_task.bb exited non-zero: $OUT"
-echo "$OUT" | grep -q '^COMPLETED:' || fail "A1: expected COMPLETED, got: $OUT"
+echo "$OUT" | grep '^COMPLETED:' >/dev/null || fail "A1: expected COMPLETED, got: $OUT"
 [[ -f "$MARKER" ]] || fail "A1: expected the fake lean-ledger-record CLI to have been invoked"
-echo "$OUT" | grep -q "lean-ledger-record-warn" && fail "A1: unexpected warn on the happy path, got: $OUT"
+echo "$OUT" | grep "lean-ledger-record-warn" >/dev/null && fail "A1: unexpected warn on the happy path, got: $OUT"
 pass "A1: done_with_current_task.bb invokes the lean-ledger CLI on completion, no warning on exit 0"
 
 # ── A2: non-zero exit — warns to stderr, completion still succeeds ─────────
@@ -146,17 +146,17 @@ mk_done_fixture
 MARKER="$ROOT/marker-a2"
 fake_cli_nonzero "$ROOT/extension/out/tools/lean-ledger-record.js" "$MARKER"
 OUT="$(run_done_with_current "$WT" "$FAKE_BIN" "$DONE_TASK_COPY")" || fail "A2: done_with_current_task.bb exited non-zero: $OUT"
-echo "$OUT" | grep -q '^COMPLETED:' || fail "A2: expected COMPLETED despite ledger failure, got: $OUT"
+echo "$OUT" | grep '^COMPLETED:' >/dev/null || fail "A2: expected COMPLETED despite ledger failure, got: $OUT"
 [[ -f "$MARKER" ]] || fail "A2: expected the fake lean-ledger-record CLI to have been invoked"
-echo "$OUT" | grep -q "lean-ledger-record-warn: BL-819 " || fail "A2: expected a lean-ledger-record-warn line naming BL-819, got: $OUT"
-echo "$OUT" | grep -q "lean-ledger-compose-boom" || fail "A2: expected the CLI's stderr text surfaced in the warn, got: $OUT"
+echo "$OUT" | grep "lean-ledger-record-warn: BL-819 " >/dev/null || fail "A2: expected a lean-ledger-record-warn line naming BL-819, got: $OUT"
+echo "$OUT" | grep "lean-ledger-compose-boom" >/dev/null || fail "A2: expected the CLI's stderr text surfaced in the warn, got: $OUT"
 pass "A2: done_with_current_task.bb warns on non-zero CLI exit but completion still succeeds"
 
 # ── A3: CLI absent — silent skip, no warning at all ─────────────────────────
 mk_done_fixture
 OUT="$(run_done_with_current "$WT" "$FAKE_BIN" "$DONE_TASK_COPY")" || fail "A3: done_with_current_task.bb exited non-zero: $OUT"
-echo "$OUT" | grep -q '^COMPLETED:' || fail "A3: expected COMPLETED, got: $OUT"
-echo "$OUT" | grep -qi "lean-ledger" && fail "A3: expected total silence when the CLI is absent, got: $OUT"
+echo "$OUT" | grep '^COMPLETED:' >/dev/null || fail "A3: expected COMPLETED, got: $OUT"
+echo "$OUT" | grep -i "lean-ledger" >/dev/null && fail "A3: expected total silence when the CLI is absent, got: $OUT"
 pass "A3: done_with_current_task.bb skips silently when lean-ledger-record.js is absent"
 
 # ============================================================================
@@ -201,9 +201,9 @@ ROOT="$(mk_close_fixture BL-819)"
 MARKER="$ROOT/marker-b1"
 fake_cli_happy "$ROOT/extension/out/tools/lean-ledger-record.js" "$MARKER"
 OUT="$(run_close_commit "$ROOT" BL-819)" || fail "B1: commit_integrity_cli.bb exited non-zero: $OUT"
-echo "$OUT" | grep -q '"success":true' || fail "B1: expected success:true, got: $OUT"
+echo "$OUT" | grep '"success":true' >/dev/null || fail "B1: expected success:true, got: $OUT"
 [[ -f "$MARKER" ]] || fail "B1: expected the fake lean-ledger-record CLI to have been invoked"
-echo "$OUT" | grep -q "lean-ledger-record-warn" && fail "B1: unexpected warn on the happy path, got: $OUT"
+echo "$OUT" | grep "lean-ledger-record-warn" >/dev/null && fail "B1: unexpected warn on the happy path, got: $OUT"
 pass "B1: commit_integrity_cli.bb invokes the lean-ledger CLI on close, no warning on exit 0"
 
 # ── B2: non-zero exit — warns, close commit still succeeds ─────────────────
@@ -211,17 +211,17 @@ ROOT="$(mk_close_fixture BL-819)"
 MARKER="$ROOT/marker-b2"
 fake_cli_nonzero "$ROOT/extension/out/tools/lean-ledger-record.js" "$MARKER"
 OUT="$(run_close_commit "$ROOT" BL-819)" || fail "B2: commit_integrity_cli.bb exited non-zero: $OUT"
-echo "$OUT" | grep -q '"success":true' || fail "B2: expected success:true despite ledger failure, got: $OUT"
+echo "$OUT" | grep '"success":true' >/dev/null || fail "B2: expected success:true despite ledger failure, got: $OUT"
 [[ -f "$MARKER" ]] || fail "B2: expected the fake lean-ledger-record CLI to have been invoked"
-echo "$OUT" | grep -q "lean-ledger-record-warn: BL-819 " || fail "B2: expected a lean-ledger-record-warn line naming BL-819, got: $OUT"
-echo "$OUT" | grep -q "lean-ledger-compose-boom" || fail "B2: expected the CLI's stderr text surfaced in the warn, got: $OUT"
+echo "$OUT" | grep "lean-ledger-record-warn: BL-819 " >/dev/null || fail "B2: expected a lean-ledger-record-warn line naming BL-819, got: $OUT"
+echo "$OUT" | grep "lean-ledger-compose-boom" >/dev/null || fail "B2: expected the CLI's stderr text surfaced in the warn, got: $OUT"
 pass "B2: commit_integrity_cli.bb warns on non-zero CLI exit but the close commit still succeeds"
 
 # ── B3: CLI absent — silent skip, no warning at all ─────────────────────────
 ROOT="$(mk_close_fixture BL-819)"
 OUT="$(run_close_commit "$ROOT" BL-819)" || fail "B3: commit_integrity_cli.bb exited non-zero: $OUT"
-echo "$OUT" | grep -q '"success":true' || fail "B3: expected success:true, got: $OUT"
-echo "$OUT" | grep -qi "lean-ledger" && fail "B3: expected total silence when the CLI is absent, got: $OUT"
+echo "$OUT" | grep '"success":true' >/dev/null || fail "B3: expected success:true, got: $OUT"
+echo "$OUT" | grep -i "lean-ledger" >/dev/null && fail "B3: expected total silence when the CLI is absent, got: $OUT"
 pass "B3: commit_integrity_cli.bb skips silently when lean-ledger-record.js is absent"
 
 echo "ALL PASS: lean ledger .bb wiring (done_with_current_task.bb + commit_integrity_cli.bb)"

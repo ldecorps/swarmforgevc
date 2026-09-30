@@ -82,7 +82,7 @@ RESULT1="$(commit_marker "$BRIEFINGS1")"
 pass "01: commit-sent-marker! reports ok on a clean commit"
 
 STAT1="$(git -C "$REPO1" show --stat -1 --format="" HEAD)"
-echo "$STAT1" | grep -q "docs/briefings/.sent.json" || fail "01: expected the commit to touch docs/briefings/.sent.json, got: $STAT1"
+echo "$STAT1" | grep "docs/briefings/.sent.json" >/dev/null || fail "01: expected the commit to touch docs/briefings/.sent.json, got: $STAT1"
 [[ "$(echo "$STAT1" | grep -c "|")" -eq 1 ]] || fail "01: expected the commit to touch EXACTLY one file, got: $STAT1"
 pass "01: the commit touches exactly the marker path, nothing else"
 
@@ -100,8 +100,8 @@ record_sent "$BRIEFINGS2" "2026-08-17.md"
 RESULT3="$(commit_marker "$BRIEFINGS2")"
 [[ "$RESULT3" == '{:ok true}' ]] || fail "03: expected {:ok true}, got: $RESULT3"
 STAT3="$(git -C "$REPO2" show --stat -1 --format="" HEAD)"
-echo "$STAT3" | grep -q "README.md" && fail "03: the unrelated README.md edit must not be in the marker's commit; got: $STAT3"
-git -C "$REPO2" status --porcelain | grep -q "README.md" || fail "03: the unrelated README.md edit must remain uncommitted/dirty in the working tree"
+echo "$STAT3" | grep "README.md" >/dev/null && fail "03: the unrelated README.md edit must not be in the marker's commit; got: $STAT3"
+git -C "$REPO2" status --porcelain | grep "README.md" >/dev/null || fail "03: the unrelated README.md edit must remain uncommitted/dirty in the working tree"
 pass "03: only the marker is committed; an unrelated modified file stays uncommitted (BL-506)"
 
 # ── 04: cross-host - a real pull propagates the durable record, preventing

@@ -23,7 +23,7 @@ trap 'rm -rf "$ROOT"' EXIT
 
 printf 'human_approval: approved\n' > "$ROOT/ticket.yaml"
 OUT="$(bb "$CLI" "$ROOT" --message "Approve BL-000" --path ticket.yaml)"
-echo "$OUT" | grep -q '"success":true' || fail "expected success:true, got: $OUT"
+echo "$OUT" | grep '"success":true' >/dev/null || fail "expected success:true, got: $OUT"
 
 SHA="$(echo "$OUT" | grep -oE '"sha":"[^"]+"' | sed -E 's/"sha":"([^"]+)"/\1/')"
 [[ -n "$SHA" ]] || fail "expected a non-empty sha in the CLI output, got: $OUT"
@@ -42,11 +42,11 @@ trap 'rm -rf "$ROOT2"' EXIT
 printf 'a\n' > "$ROOT2/a.txt"
 printf 'b\n' > "$ROOT2/b.txt"
 OUT2="$(bb "$CLI" "$ROOT2" --message "add a and b" --path a.txt --path b.txt)"
-echo "$OUT2" | grep -q '"success":true' || fail "expected success:true for a two-path commit, got: $OUT2"
+echo "$OUT2" | grep '"success":true' >/dev/null || fail "expected success:true for a two-path commit, got: $OUT2"
 SHA2="$(echo "$OUT2" | grep -oE '"sha":"[^"]+"' | sed -E 's/"sha":"([^"]+)"/\1/')"
 STAT="$(git -C "$ROOT2" show --stat --format= "$SHA2")"
-echo "$STAT" | grep -q "a.txt" || fail "expected the commit to include a.txt"
-echo "$STAT" | grep -q "b.txt" || fail "expected the commit to include b.txt"
+echo "$STAT" | grep "a.txt" >/dev/null || fail "expected the commit to include a.txt"
+echo "$STAT" | grep "b.txt" >/dev/null || fail "expected the commit to include b.txt"
 pass "commit_integrity_cli commits multiple --path flags together"
 rm -rf "$ROOT2"
 trap - EXIT
@@ -131,8 +131,8 @@ OUT6="$(bb "$CLI" "$ROOT6" \
   --path backlog/active/BL-857-a.yaml --path backlog/done/BL-857-a.yaml \
   --path backlog/active/BL-849-b.yaml --path backlog/done/BL-849-b.yaml 2>&1)" \
   || fail "multi-ticket close with a QA note naming both should succeed; got: $OUT6"
-echo "$OUT6" | grep -q '"success":true' || fail "expected success JSON for multi-ticket close; got: $OUT6"
-echo "$OUT6" | grep -q '"closed-ticket-ids":\["BL-857","BL-849"\]' \
+echo "$OUT6" | grep '"success":true' >/dev/null || fail "expected success JSON for multi-ticket close; got: $OUT6"
+echo "$OUT6" | grep '"closed-ticket-ids":\["BL-857","BL-849"\]' >/dev/null \
   || fail "expected closed-ticket-ids to name BOTH tickets, not just the first; got: $OUT6"
 test ! -f "$ROOT6/architect/.swarmforge/handoffs/inbox/new/20_bl857.handoff" \
   || fail "BL-857's in-flight handoff should be abandoned on close"
@@ -173,8 +173,8 @@ OUT7="$(bb "$CLI" "$ROOT7" \
 CODE7=$?
 set -e
 [[ "$CODE7" -ne 0 ]] || fail "expected non-zero exit when only one of two tickets is QA-approved, got 0: $OUT7"
-echo "$OUT7" | grep -q "CLOSE BLOCKED for BL-849" || fail "expected the block to name BL-849 (the unapproved ticket); got: $OUT7"
-echo "$OUT7" | grep -q "BL-857" && fail "expected the block to NOT name BL-857 (the already-approved ticket); got: $OUT7"
+echo "$OUT7" | grep "CLOSE BLOCKED for BL-849" >/dev/null || fail "expected the block to name BL-849 (the unapproved ticket); got: $OUT7"
+echo "$OUT7" | grep "BL-857" >/dev/null && fail "expected the block to NOT name BL-857 (the already-approved ticket); got: $OUT7"
 pass "commit_integrity_cli: a partially-approved multi-ticket close blocks and names only the unapproved ticket"
 rm -rf "$ROOT7"
 trap - EXIT

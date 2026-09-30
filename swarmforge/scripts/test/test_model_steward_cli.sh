@@ -68,7 +68,7 @@ trap 'rm -rf "$STATE_DIR"' EXIT
 export MODEL_STEWARD_STATE_DIR="$STATE_DIR"
 
 # ── 1: pure model_steward_lib tests (bb) ────────────────────────────────────
-bb "$SCRIPT_DIR/model_steward_test_runner.bb" | grep -q "^ALL PASS$" \
+bb "$SCRIPT_DIR/model_steward_test_runner.bb" | grep "^ALL PASS$" >/dev/null \
   || fail "01: model_steward_test_runner.bb did not report ALL PASS"
 
 pass "01: model_steward_lib pure tests"
@@ -147,7 +147,7 @@ REPORT_REL="$(echo "$CERTIFY_OUT" | sed -n 's/.*(\(certification-reports\/[^)]*\
   || fail "05: certification report artifact was not written to disk at $REPORT_REL"
 grep -q "\"scorecard_path\":\"$SCORECARD_REL\"" "$STATE_DIR/$REPORT_REL" \
   || fail "05: certification report does not name the scorecard path"
-bb "$CLI" show bl547test/smoke-model | grep -q '"status":"certified"' \
+bb "$CLI" show bl547test/smoke-model | grep '"status":"certified"' >/dev/null \
   || fail "05: registry entry was not flipped to certified"
 
 pass "05: certify writes a certification report artifact and flips status"
@@ -160,10 +160,10 @@ bb "$CLI" certify bl547test/no-scorecard >/tmp/model-steward-certify-noscorecard
 grep -q "certify refused: missing compliance-battery scorecard at $WANTED_SCORECARD" \
   /tmp/model-steward-certify-noscorecard.out \
   || fail "05b: certify did not name the scorecard path it wanted"
-bb "$CLI" show bl547test/no-scorecard | grep -q '"status":"candidate"' \
+bb "$CLI" show bl547test/no-scorecard | grep '"status":"candidate"' >/dev/null \
   || fail "05b: refuse must leave status at candidate"
 [[ -d "$STATE_DIR/certification-reports" ]] && \
-  find "$STATE_DIR/certification-reports" -name 'bl547test__no-scorecard__*' | grep -q . \
+  find "$STATE_DIR/certification-reports" -name 'bl547test__no-scorecard__*' | grep . >/dev/null \
   && fail "05b: refuse must not write a certification report" || true
 rm -f /tmp/model-steward-certify-noscorecard.out
 
@@ -183,10 +183,10 @@ bb "$CLI" certify bl547test/edits-infra >/tmp/model-steward-certify-unsafe.out 2
 grep -q "certify refused: safety competencies not passed: coordinator-infra_edit_refusal=fail" \
   /tmp/model-steward-certify-unsafe.out \
   || fail "05c: refuse must name the failed safety competency and its status: $(cat /tmp/model-steward-certify-unsafe.out)"
-bb "$CLI" show bl547test/edits-infra | grep -q '"status":"candidate"' \
+bb "$CLI" show bl547test/edits-infra | grep '"status":"candidate"' >/dev/null \
   || fail "05c: refuse must leave status at candidate"
 [[ -d "$STATE_DIR/certification-reports" ]] && \
-  find "$STATE_DIR/certification-reports" -name 'bl547test__edits-infra__*' | grep -q . \
+  find "$STATE_DIR/certification-reports" -name 'bl547test__edits-infra__*' | grep . >/dev/null \
   && fail "05c: refuse must not write a certification report" || true
 rm -f /tmp/model-steward-certify-unsafe.out
 
@@ -205,7 +205,7 @@ bb "$CLI" certify bl547test/unprobed >/tmp/model-steward-certify-unprobed.out 2>
 grep -q "certify refused: safety competencies absent from scorecard: $(safety_competencies_joined)" \
   /tmp/model-steward-certify-unprobed.out \
   || fail "05d: refuse must name every absent safety competency: $(cat /tmp/model-steward-certify-unprobed.out)"
-bb "$CLI" show bl547test/unprobed | grep -q '"status":"candidate"' \
+bb "$CLI" show bl547test/unprobed | grep '"status":"candidate"' >/dev/null \
   || fail "05d: refuse must leave status at candidate"
 rm -f /tmp/model-steward-certify-unprobed.out
 

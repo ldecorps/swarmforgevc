@@ -167,7 +167,7 @@ if [[ "$LIVE_ORIGIN_BEFORE" == "$(git -C "$REPO_ROOT" config --get remote.origin
 else
   fail "the suite changed the live origin URL"
 fi
-if git -C "$REPO_ROOT" remote -v 2>/dev/null | grep -q "$WORK"; then
+if git -C "$REPO_ROOT" remote -v 2>/dev/null | grep "$WORK" >/dev/null; then
   fail "a live remote now points into this suite's fixture directory"
 else
   pass "no live remote points into the fixture directory"

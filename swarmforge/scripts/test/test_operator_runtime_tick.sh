@@ -144,8 +144,8 @@ OUT5="$(tick "$F")"
 check "BL-281: a pending telegram wake launches"                '[[ "$OUT5" == *"\"launched?\":true"* ]]'
 check "BL-281: reply-context file is written"                   '[[ -f "$F/.swarmforge/operator/telegram-reply-context.json" ]]'
 check "BL-281: reply-context names the dispatched thread"       '[[ "$(jget "$F/.swarmforge/operator/telegram-reply-context.json" ":thread-id")" == SUP-1 ]]'
-check "BL-281: reply-context carries SUP-1's transcript"        'jget "$F/.swarmforge/operator/telegram-reply-context.json" ":transcript" | grep -q "about A"'
-check "BL-281: reply-context does NOT carry SUP-2's transcript" '! (jget "$F/.swarmforge/operator/telegram-reply-context.json" ":transcript" | grep -q "about B")'
+check "BL-281: reply-context carries SUP-1's transcript"        'jget "$F/.swarmforge/operator/telegram-reply-context.json" ":transcript" | grep "about A" >/dev/null'
+check "BL-281: reply-context does NOT carry SUP-2's transcript" '! (jget "$F/.swarmforge/operator/telegram-reply-context.json" ":transcript" | grep "about B" >/dev/null)'
 check "BL-281: SUP-1's event is in the inflight batch"          'grep -q "SUP-1" "$F/.swarmforge/operator/events.inflight.jsonl"'
 check "BL-281: SUP-2's event is DEFERRED back to events.jsonl, not dropped" \
   'grep -q "SUP-2" "$F/.swarmforge/operator/events.jsonl"'

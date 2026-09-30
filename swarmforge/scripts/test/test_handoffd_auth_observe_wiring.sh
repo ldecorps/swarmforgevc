@@ -81,13 +81,13 @@ pass "01: the real daemon's chase sweep observed the auth-class pane and issued 
 
 # ── 02: the respawn carried provider-compat env args (real machinery, not
 #    a bare respawn) ─────────────────────────────────────────────────────
-grep "respawn-pane" "$TMUX_LOG" | grep -q "CEREBRAS_API_KEY=fake-cerebras-key-for-wiring-test" \
+grep "respawn-pane" "$TMUX_LOG" | grep "CEREBRAS_API_KEY=fake-cerebras-key-for-wiring-test" >/dev/null \
   || fail "02: respawn-pane call did not carry the configured provider-compat env (CEREBRAS_API_KEY) - not the real provider-respawn-env-args machinery"
-grep "respawn-pane" "$TMUX_LOG" | grep -q "SWARMFORGE_USE_CEREBRAS=1" \
+grep "respawn-pane" "$TMUX_LOG" | grep "SWARMFORGE_USE_CEREBRAS=1" >/dev/null \
   || fail "02: respawn-pane call missing SWARMFORGE_USE_CEREBRAS=1"
 pass "02: the respawn was issued with real provider-compat env args (swarm_ensure.bb's own machinery, reused)"
 
 # ── 03: respawn-pane force-relaunches the role's own persisted launch script ─
-grep "respawn-pane" "$TMUX_LOG" | grep -q -- "-k" \
+grep "respawn-pane" "$TMUX_LOG" | grep -- "-k" >/dev/null \
   || fail "03: respawn-pane call missing -k (force kill+relaunch)"
 pass "03: the respawn force-relaunches the role's session (respawn-pane -k)"

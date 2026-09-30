@@ -154,7 +154,7 @@ if [[ "$(g "$root" rev-parse main)" == "$(g "$root" rev-parse origin/main)" ]]; 
 else
   fail "origin/main does not equal local main"
 fi
-if log_of "$root" | grep -q "pushed"; then
+if log_of "$root" | grep "pushed" >/dev/null; then
   pass "the push is logged by the hook"
 else
   fail "the hook logged no push: $(log_of "$root")"
@@ -191,12 +191,12 @@ if [[ "$before_origin" == "$after_origin" ]]; then
 else
   fail "the hook pushed while diverged - origin moved from $before_origin to $after_origin"
 fi
-if log_of "$root" | grep -q "diverged"; then
+if log_of "$root" | grep "diverged" >/dev/null; then
   pass "the hook logs diverged"
 else
   fail "the hook did not log diverged: $(log_of "$root")"
 fi
-if g "$root" log -1 --format=%s | grep -q "fixture commit b.txt"; then
+if g "$root" log -1 --format=%s | grep "fixture commit b.txt" >/dev/null; then
   pass "the commit is intact on local main"
 else
   fail "the commit was disturbed"
@@ -245,12 +245,12 @@ if (( elapsed <= bound + 10 )); then
 else
   fail "the commit took ${elapsed}s, past the ${bound}s bound"
 fi
-if g "$root" log -1 --format=%s | grep -q "fixture commit d.txt"; then
+if g "$root" log -1 --format=%s | grep "fixture commit d.txt" >/dev/null; then
   pass "the commit completes and is intact with origin unreachable"
 else
   fail "the commit did not complete with origin unreachable"
 fi
-if log_of "$root" | grep -qE "fetch-failed|push-failed|counts-unknown"; then
+if log_of "$root" | grep -E "fetch-failed|push-failed|counts-unknown" >/dev/null; then
   pass "the hook logs that the push was not attempted"
 else
   fail "the hook logged nothing for an unreachable origin: $(log_of "$root")"
@@ -264,7 +264,7 @@ fi
 # broad check above passes either way. A truly unreachable origin must
 # refuse BEFORE ever shelling a push - confirmed live, unmutated code logs
 # "fetch-failed" specifically here, never "push-failed".
-if log_of "$root" | tail -1 | grep -q "fetch-failed\|counts-unknown"; then
+if log_of "$root" | tail -1 | grep "fetch-failed\|counts-unknown" >/dev/null; then
   pass "the push was refused before ever being attempted (fetch-failed/counts-unknown, not push-failed)"
 else
   fail "the hook attempted a push against an unreachable origin instead of refusing first: $(log_of "$root" | tail -1)"
@@ -280,7 +280,7 @@ if [[ "$(g "$root" rev-parse main)" == "$(g "$root" rev-parse origin/main)" ]]; 
 else
   fail "origin/main lags after two quick commits: $(counts "$root")"
 fi
-if log_of "$root" | grep -q -- "--force"; then
+if log_of "$root" | grep -- "--force" >/dev/null; then
   fail "a push used --force"
 else
   pass "no push used force"
@@ -327,7 +327,7 @@ else
 fi
 
 # The hook shells no push of its own - the one adapter is push_sweep_lib.bb's.
-if grep -v '^[[:space:]]*#' "$HOOKS_DIR/post-commit" | grep -q "git push"; then
+if grep -v '^[[:space:]]*#' "$HOOKS_DIR/post-commit" | grep "git push" >/dev/null; then
   fail "the hook shells its own git push instead of using the one adapter"
 else
   pass "the hook contains no git push of its own (BL-1198)"

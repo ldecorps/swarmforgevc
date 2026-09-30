@@ -70,7 +70,7 @@ SELF_ROOTING="$(self_rooting_scripts)"
 [ -n "$SELF_ROOTING" ] || fail "derivation broke: no self-rooting script found in $REAL_SCRIPTS_DIR"
 
 is_self_rooting() {
-  printf '%s\n' "$SELF_ROOTING" | grep -qxF "$1"
+  printf '%s\n' "$SELF_ROOTING" | grep -xF "$1" >/dev/null
 }
 
 # ── step 1b: close that set over sibling process invocations ─────────────
@@ -167,7 +167,7 @@ offences_in() {
     # and neither may be swept in, so the variable has to appear in COMMAND
     # position: at the start of a command, after any env assignments and an
     # optional `bb`. `grep -q "..." "$VAR"` is an argument, not a command.
-    if code_only "$test_file" | grep -qE "$(execution_re "$var")" 2>/dev/null; then
+    if code_only "$test_file" | grep -E "$(execution_re " >/dev/null$var")" 2>/dev/null; then
       echo "$(basename "$test_file"):\$$var -> $script"
     fi
   done <<EOF

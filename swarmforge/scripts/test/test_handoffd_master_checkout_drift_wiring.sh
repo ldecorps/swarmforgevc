@@ -142,7 +142,7 @@ pass "01: OPERATOR outbox carries one \"MASTER CHECKOUT DRIFT RESTORED: swarmfor
 
 # ── 02: the drifted file was actually restored to main's content ───────────
 STATUS_AFTER="$(git -C "$ROOT" status --porcelain=v1 -uall)"
-if echo "$STATUS_AFTER" | grep -q "handoffd_supervisor.bb"; then
+if echo "$STATUS_AFTER" | grep "handoffd_supervisor.bb" >/dev/null; then
   fail "02: the drifted file still shows as modified after the daemon's repair"
 fi
 DISK_CONTENT="$(cat "$ROOT/swarmforge/scripts/handoffd_supervisor.bb")"
@@ -175,7 +175,7 @@ pass "03: no \"MASTER CHECKOUT DRIFT:\" warning line was written for the restore
 AUDIT_LOG="$ROOT/.swarmforge/daemon/daemon-start-audit.log"
 [[ -f "$AUDIT_LOG" ]] || fail "05: $AUDIT_LOG does not exist - the deferred bounce never reached the launcher"
 grep -q "start_handoff_daemon invoked root=$ROOT" "$AUDIT_LOG" || fail "05: no invocation line naming $ROOT in $AUDIT_LOG"
-grep "start_handoff_daemon invoked root=$ROOT" "$AUDIT_LOG" | grep -q "SKIP_DAEMON=1" || fail "05: the invocation line does not read SKIP_DAEMON=1"
+grep "start_handoff_daemon invoked root=$ROOT" "$AUDIT_LOG" | grep "SKIP_DAEMON=1" >/dev/null || fail "05: the invocation line does not read SKIP_DAEMON=1"
 pass "05: $AUDIT_LOG names $ROOT under SKIP_DAEMON=1, the deferred bounce's own re-invocation, with nothing started (PID1 was this test's only daemon)"
 
 echo "fixture root: $ROOT"
@@ -210,7 +210,7 @@ assert "swarmforge/scripts/handoffd_supervisor.bb" in text, f"alarm text missing
 assert "not the code" in text, f"alarm text missing the stakes statement: {text!r}"
 PY
 STATUS2="$(git -C "$ROOT2" status --porcelain=v1 -uall)"
-echo "$STATUS2" | grep -q "handoffd_supervisor.bb" || fail "04: the drifted file no longer shows as modified - the in-flight commit-guard did not hold"
+echo "$STATUS2" | grep "handoffd_supervisor.bb" >/dev/null || fail "04: the drifted file no longer shows as modified - the in-flight commit-guard did not hold"
 pass "04: with \".git/index.lock\" present, the daemon warned the running code is not the landed code and left swarmforge/scripts/handoffd_supervisor.bb modified"
 
 echo "fixture root: $ROOT2"

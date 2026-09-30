@@ -83,7 +83,7 @@ OUT01="$(commit_as "" 2>&1)"
 STATUS01=$?
 set -e
 [[ "$STATUS01" -ne 0 ]] || fail "01: expected refusal for non-QA commit touching extension/src/ on main"
-echo "$OUT01" | grep -q "extension/src/thing.ts" || fail "01: message must name the offending path, got: $OUT01"
+echo "$OUT01" | grep "extension/src/thing.ts" >/dev/null || fail "01: message must name the offending path, got: $OUT01"
 pass "01: a non-QA commit touching pipeline code on main is refused"
 git -C "$ROOT" reset -q extension/src/thing.ts
 rm -f "$ROOT/extension/src/thing.ts"
@@ -126,7 +126,7 @@ OUT05="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c use
 STATUS05=$?
 set -e
 [[ "$STATUS05" -ne 0 ]] || fail "05: expected the --no-ff merge to be refused"
-echo "$OUT05" | grep -q "extension/src/feature.ts" || fail "05: merge refusal must name the offending path, got: $OUT05"
+echo "$OUT05" | grep "extension/src/feature.ts" >/dev/null || fail "05: merge refusal must name the offending path, got: $OUT05"
 pass "05: a --no-ff merge of pipeline code into main is refused by pre-merge-commit"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 
@@ -164,8 +164,8 @@ OUT07="$(commit_as "" 2>&1)"
 STATUS07=$?
 set -e
 [[ "$STATUS07" -ne 0 ]] || fail "07: expected refusal for specs/pipeline/steps/ on main"
-echo "$OUT07" | grep -qi "worktree" || fail "07: refusal message must state committing in your own worktree as the remedy, got: $OUT07"
-echo "$OUT07" | grep -qi "hand" || fail "07: refusal message must state handing off through the pipeline as the remedy, got: $OUT07"
+echo "$OUT07" | grep -i "worktree" >/dev/null || fail "07: refusal message must state committing in your own worktree as the remedy, got: $OUT07"
+echo "$OUT07" | grep -i "hand" >/dev/null || fail "07: refusal message must state handing off through the pipeline as the remedy, got: $OUT07"
 pass "07: the refusal message states the remedy"
 git -C "$ROOT" reset -q specs/pipeline/steps/thing.js
 rm -f "$ROOT/specs/pipeline/steps/thing.js"
@@ -239,7 +239,7 @@ OUT925B="$(commit_as "" 2>&1)"
 STATUS925B=$?
 set -e
 [[ "$STATUS925B" -ne 0 ]] || fail "BL-925 provenance-01b: expected freshly-authored pipeline content with no merge in progress to be refused"
-echo "$OUT925B" | grep -q "extension/src/fresh.ts" || fail "BL-925 provenance-01b: refusal must name the offending path, got: $OUT925B"
+echo "$OUT925B" | grep "extension/src/fresh.ts" >/dev/null || fail "BL-925 provenance-01b: refusal must name the offending path, got: $OUT925B"
 git -C "$ROOT" reset -q extension/src/fresh.ts
 rm -f "$ROOT/extension/src/fresh.ts"
 pass "BL-925 provenance-01b: newly-authored pipeline content with no merge in progress is still refused"
@@ -259,7 +259,7 @@ OUT925C="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c u
 STATUS925C=$?
 set -e
 [[ "$STATUS925C" -ne 0 ]] || fail "BL-925 provenance-01c: expected an edit riding the merge's coat-tails to be refused"
-echo "$OUT925C" | grep -q "extension/src/published.ts" || fail "BL-925 provenance-01c: refusal must name the offending path, got: $OUT925C"
+echo "$OUT925C" | grep "extension/src/published.ts" >/dev/null || fail "BL-925 provenance-01c: refusal must name the offending path, got: $OUT925C"
 (cd "$ROOT" && git merge --abort 2>/dev/null) || true
 pass "BL-925 provenance-01c: an edit staged on top of the merge (content differs from the published parent) is still refused"
 
@@ -330,7 +330,7 @@ OUT925G="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c u
 STATUS925G=$?
 set -e
 [[ "$STATUS925G" -ne 0 ]] || fail "BL-925 unpublished-tip-is-not-waved-through-05: expected a merge of a non-QA-ancestor pipeline-code tip to be refused"
-echo "$OUT925G" | grep -q "extension/src/unpublished.ts" || fail "BL-925 unpublished-tip-is-not-waved-through-05: refusal must name the offending path, got: $OUT925G"
+echo "$OUT925G" | grep "extension/src/unpublished.ts" >/dev/null || fail "BL-925 unpublished-tip-is-not-waved-through-05: refusal must name the offending path, got: $OUT925G"
 (cd "$ROOT" && git merge --abort 2>/dev/null) || true
 pass "BL-925 unpublished-tip-is-not-waved-through-05: a merge parent that is NOT an ancestor of swarmforge-QA is refused, naming the offending paths"
 
@@ -361,7 +361,7 @@ OUT925H="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c u
 STATUS925H=$?
 set -e
 [[ "$STATUS925H" -ne 0 ]] || fail "BL-925 descendant-of-qa-tip-is-not-waved-through-06: expected a commit descending from (but not itself an ancestor of) swarmforge-QA to be refused"
-echo "$OUT925H" | grep -q "extension/src/unapproved-descendant.ts" || fail "BL-925 descendant-of-qa-tip-is-not-waved-through-06: refusal must name the offending path, got: $OUT925H"
+echo "$OUT925H" | grep "extension/src/unapproved-descendant.ts" >/dev/null || fail "BL-925 descendant-of-qa-tip-is-not-waved-through-06: refusal must name the offending path, got: $OUT925H"
 (cd "$ROOT" && git merge --abort 2>/dev/null) || true
 git -C "$ROOT" branch -D unapproved-descendant >/dev/null 2>&1 || true
 pass "BL-925 descendant-of-qa-tip-is-not-waved-through-06: a commit built on top of the published tip, but not itself QA-approved, is still refused"
@@ -371,9 +371,9 @@ reset_bl925_fixture
 # ── extra: --list-paths surface, for a future consumer to read the same
 #           QA-exclusive set instead of hand-copying the literals ─────────
 LIST_OUT="$(bash "$GUARD" --list-paths)"
-echo "$LIST_OUT" | grep -qx "extension/src/" || fail "list-paths: expected extension/src/ in output"
-echo "$LIST_OUT" | grep -qx "extension/test/" || fail "list-paths: expected extension/test/ in output"
-echo "$LIST_OUT" | grep -qx "specs/pipeline/steps/" || fail "list-paths: expected specs/pipeline/steps/ in output"
+echo "$LIST_OUT" | grep -x "extension/src/" >/dev/null || fail "list-paths: expected extension/src/ in output"
+echo "$LIST_OUT" | grep -x "extension/test/" >/dev/null || fail "list-paths: expected extension/test/ in output"
+echo "$LIST_OUT" | grep -x "specs/pipeline/steps/" >/dev/null || fail "list-paths: expected specs/pipeline/steps/ in output"
 pass "extra: --list-paths publishes the QA-exclusive path set for external consumers"
 
 # ── BL-925 invariant 2: one definition of "QA-approved tip", not two ──────
@@ -423,7 +423,7 @@ OUT1096A="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c 
 STATUS1096A=$?
 set -e
 [[ "$STATUS1096A" -eq 0 ]] || fail "BL-1096 multi-hop-import-completes-01: expected merge when tip is bookkeeping but paths are QA-published, got: $OUT1096A"
-echo "$OUT1096A" | grep -qi "refused\|pipeline code" && fail "BL-1096 multi-hop-import-completes-01: refusal leaked into a successful merge: $OUT1096A"
+echo "$OUT1096A" | grep -i "refused\|pipeline code" >/dev/null && fail "BL-1096 multi-hop-import-completes-01: refusal leaked into a successful merge: $OUT1096A"
 [[ -f "$ROOT/extension/src/published.ts" ]] || fail "BL-1096 multi-hop-import-completes-01: published pipeline file missing after merge"
 pass "BL-1096 multi-hop-import-completes-01: the join completes when the incoming tip is not itself a QA landing"
 
@@ -461,9 +461,9 @@ OUT1096MIX="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -
 STATUS1096MIX=$?
 set -e
 [[ "$STATUS1096MIX" -ne 0 ]] || fail "BL-1096 per-path never-published: expected refusal when one path is unpublished"
-echo "$OUT1096MIX" | grep -q "extension/src/unpublished-sibling.ts" || fail "BL-1096 per-path never-published: must name unpublished path, got: $OUT1096MIX"
-echo "$OUT1096MIX" | grep -q "extension/src/published.ts" && fail "BL-1096 per-path never-published: must NOT name the QA-published sibling, got: $OUT1096MIX"
-echo "$OUT1096MIX" | grep -q "specs/pipeline/steps/published.js" && fail "BL-1096 per-path never-published: must NOT name the QA-published step sibling, got: $OUT1096MIX"
+echo "$OUT1096MIX" | grep "extension/src/unpublished-sibling.ts" >/dev/null || fail "BL-1096 per-path never-published: must name unpublished path, got: $OUT1096MIX"
+echo "$OUT1096MIX" | grep "extension/src/published.ts" >/dev/null && fail "BL-1096 per-path never-published: must NOT name the QA-published sibling, got: $OUT1096MIX"
+echo "$OUT1096MIX" | grep "specs/pipeline/steps/published.js" >/dev/null && fail "BL-1096 per-path never-published: must NOT name the QA-published step sibling, got: $OUT1096MIX"
 (cd "$ROOT" && git merge --abort 2>/dev/null) || true
 pass "BL-1096 per-path: last touched by a commit QA never published → refused"
 
@@ -480,7 +480,7 @@ OUT1096BOUNCE="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@tes
 STATUS1096BOUNCE=$?
 set -e
 [[ "$STATUS1096BOUNCE" -ne 0 ]] || fail "BL-1096 per-path bounced: expected refusal when path anchor is bounced"
-echo "$OUT1096BOUNCE" | grep -Eq "extension/src/published\.ts|specs/pipeline/steps/published\.js" \
+echo "$OUT1096BOUNCE" | grep -E "extension/src/published\.ts|specs/pipeline/steps/published\.js" >/dev/null \
   || fail "BL-1096 per-path bounced: must name a bounced pipeline path, got: $OUT1096BOUNCE"
 (cd "$ROOT" && git merge --abort 2>/dev/null) || true
 rm -rf "$ROOT/.swarmforge/bounces"
@@ -499,8 +499,8 @@ OUT1096ABSENT="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@tes
 STATUS1096ABSENT=$?
 set -e
 [[ "$STATUS1096ABSENT" -ne 0 ]] || fail "BL-1096 per-path absent: expected refusal for path with no incoming history"
-echo "$OUT1096ABSENT" | grep -q "specs/pipeline/steps/local-only.js" || fail "BL-1096 per-path absent: must name the local-only path, got: $OUT1096ABSENT"
-echo "$OUT1096ABSENT" | grep -q "extension/src/published.ts" && fail "BL-1096 per-path absent: must NOT name imported paths, got: $OUT1096ABSENT"
+echo "$OUT1096ABSENT" | grep "specs/pipeline/steps/local-only.js" >/dev/null || fail "BL-1096 per-path absent: must name the local-only path, got: $OUT1096ABSENT"
+echo "$OUT1096ABSENT" | grep "extension/src/published.ts" >/dev/null && fail "BL-1096 per-path absent: must NOT name imported paths, got: $OUT1096ABSENT"
 (cd "$ROOT" && git merge --abort 2>/dev/null) || true
 pass "BL-1096 per-path: absent from the incoming side's history → refused"
 
@@ -532,8 +532,8 @@ OUT1096EDIT="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test 
 STATUS1096EDIT=$?
 set -e
 [[ "$STATUS1096EDIT" -ne 0 ]] || fail "BL-1096 fresh-edit-03: expected refusal for edit on top of multi-hop import"
-echo "$OUT1096EDIT" | grep -q "extension/src/published.ts" || fail "BL-1096 fresh-edit-03: must name the edited path, got: $OUT1096EDIT"
-echo "$OUT1096EDIT" | grep -q "specs/pipeline/steps/published.js" && fail "BL-1096 fresh-edit-03: must NOT name the untouched import, got: $OUT1096EDIT"
+echo "$OUT1096EDIT" | grep "extension/src/published.ts" >/dev/null || fail "BL-1096 fresh-edit-03: must name the edited path, got: $OUT1096EDIT"
+echo "$OUT1096EDIT" | grep "specs/pipeline/steps/published.js" >/dev/null && fail "BL-1096 fresh-edit-03: must NOT name the untouched import, got: $OUT1096EDIT"
 (cd "$ROOT" && git merge --abort 2>/dev/null) || true
 pass "BL-1096 fresh-edit-still-refused-03: the edited path is refused and the imported paths are not"
 

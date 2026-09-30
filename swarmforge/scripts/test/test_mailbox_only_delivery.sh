@@ -65,9 +65,9 @@ outbox_count="$(find "$ROOT/.swarmforge/handoffs/coordinator/outbox" -maxdepth 1
 
 SWARMFORGE_MAILBOX_ONLY=1 PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" --poll-once
 
-find "$ROOT/.swarmforge/handoffs/coder/inbox/new" -name '*_for_coder.handoff' -print -quit | grep -q . \
+find "$ROOT/.swarmforge/handoffs/coder/inbox/new" -name '*_for_coder.handoff' -print -quit | grep . >/dev/null \
   || fail "parcel missing from coder inbox/new"
-find "$ROOT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -quit | grep -q . \
+find "$ROOT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -quit | grep . >/dev/null \
   || fail "outbox parcel not archived to sent/"
 ! grep -q -- '-l' "$CALL_LOG" 2>/dev/null || fail "mailbox-only must not call tmux literal send-keys"
 grep -q "delivered-mailbox-only" "$ROOT/.swarmforge/daemon/handoffd.log" || fail "daemon must log delivered-mailbox-only"

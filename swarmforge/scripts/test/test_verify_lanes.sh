@@ -147,7 +147,7 @@ OUT="$(PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=gardener bash "$VERIFY_LANES" --pl
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "05: expected a non-zero exit for an unknown role, got 0"
-echo "$OUT" | grep -qi "unknown role 'gardener'" || fail "05: expected the refusal to name gardener, got: $OUT"
+echo "$OUT" | grep -i "unknown role 'gardener'" >/dev/null || fail "05: expected the refusal to name gardener, got: $OUT"
 pass "05: an unknown role is refused, naming it"
 
 # ── 06: an @-seat maps to its stage ─────────────────────────────────────────
@@ -166,7 +166,7 @@ NPM_INVOCATIONS="$(cat "$NPM_LOG")"
 [[ "$NPM_INVOCATIONS" == $'run compile\ntest' ]] \
   || fail "07: expected exactly [run compile, test], got: $NPM_INVOCATIONS"
 [[ ! -f "$RA_LOG" ]] || fail "07: run_acceptance.sh must never have run (acceptance-own never reached)"
-echo "$OUT" | grep -q "FAILED at lane 'unit'" || fail "07: expected the verdict to name the failed lane, got: $OUT"
+echo "$OUT" | grep "FAILED at lane 'unit'" >/dev/null || fail "07: expected the verdict to name the failed lane, got: $OUT"
 pass "07: the run stops at the first failed lane and names it"
 rm -f "$FAIL_ARG_FILE"
 

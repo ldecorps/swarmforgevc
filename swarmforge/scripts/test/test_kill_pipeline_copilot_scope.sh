@@ -28,7 +28,7 @@ cat > "$PSF" <<EOF
  3333 copilot -C $ROOT/.worktrees/coder --name SwarmForge coder
 EOF
 out="$(SWARMFORGE_COPILOT_PS_FILE="$PSF" copilot_pids_for_root "$ROOT" || true)"
-echo "$out" | grep -qx '3333' || fail "02: expected pid 3333, got: $out"
+echo "$out" | grep -x '3333' >/dev/null || fail "02: expected pid 3333, got: $out"
 pass "02: same-root copilot argv is matched"
 
 # 03: missing SwarmForge marker — no match
@@ -45,7 +45,7 @@ FIX_PID=$!
 sleep 0.2
 if kill -0 "$FIX_PID" 2>/dev/null; then
   live="$(copilot_pids_for_root "$ROOT" || true)"
-  echo "$live" | grep -qx "$FIX_PID" && fail "04: foreign fixture must not be matched for ROOT"
+  echo "$live" | grep -x "$FIX_PID" >/dev/null && fail "04: foreign fixture must not be matched for ROOT"
   kill -0 "$FIX_PID" 2>/dev/null || fail "04: foreign fixture died unexpectedly"
   kill "$FIX_PID" 2>/dev/null || true
   wait "$FIX_PID" 2>/dev/null || true

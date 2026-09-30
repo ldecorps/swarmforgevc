@@ -73,13 +73,13 @@ queue_inbox_task() {
 TASK_INBOX="$TASK_WT/.swarmforge/handoffs/inbox"
 queue_inbox_task "$TASK_INBOX/new" "item1" "taskrole"
 OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole bb "$TASK_DISPATCH")"
-echo "$OUT" | grep -q "^TASK:" || fail "dispatch-unchanged-01 (task): expected the task-mode helper's own output (got: $OUT)"
+echo "$OUT" | grep "^TASK:" >/dev/null || fail "dispatch-unchanged-01 (task): expected the task-mode helper's own output (got: $OUT)"
 pass "dispatch-unchanged-01: task-mode role still execs ready_for_next_task.sh"
 
 BATCH_INBOX="$BATCH_WT/.swarmforge/handoffs/inbox"
 queue_inbox_task "$BATCH_INBOX/new" "item2" "batchrole"
 OUT="$(cd "$BATCH_WT" && SWARMFORGE_ROLE=batchrole bb "$BATCH_DISPATCH")"
-echo "$OUT" | grep -q '^BATCH:' || fail "dispatch-unchanged-01 (batch): expected the batch-mode helper's own output (got: $OUT)"
+echo "$OUT" | grep '^BATCH:' >/dev/null || fail "dispatch-unchanged-01 (batch): expected the batch-mode helper's own output (got: $OUT)"
 pass "dispatch-unchanged-01: batch-mode role still execs ready_for_next_batch.sh"
 
 # ── no-helper-promotion-02 ────────────────────────────────────────────────

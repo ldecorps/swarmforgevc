@@ -74,7 +74,7 @@ OUT3="$(zsh -c "source '$SWARMFORGE_SH' '$ROOT3'; parse_config" 2>&1)"
 STATUS3=$?
 set -e
 [[ "$STATUS3" -ne 0 ]] || fail "03: expected launch to fail when a coordinator window is declared"
-echo "$OUT3" | grep -qi "coordinator is reserved infrastructure" || fail "03: error must report coordinator as reserved infrastructure, got: $OUT3"
+echo "$OUT3" | grep -i "coordinator is reserved infrastructure" >/dev/null || fail "03: error must report coordinator as reserved infrastructure, got: $OUT3"
 pass "03: a coordinator window is rejected at parse time, even in a secondary-mode conf"
 
 # ── 4: secondary mode with no primary name is rejected ─────────────────────
@@ -88,7 +88,7 @@ OUT4="$(zsh -c "source '$SWARMFORGE_SH' '$ROOT4'; parse_config" 2>&1)"
 STATUS4=$?
 set -e
 [[ "$STATUS4" -ne 0 ]] || fail "04: expected launch to fail when secondary mode names no primary"
-echo "$OUT4" | grep -qi "primary" || fail "04: error must mention the missing primary name, got: $OUT4"
+echo "$OUT4" | grep -i "primary" >/dev/null || fail "04: error must mention the missing primary name, got: $OUT4"
 pass "04: secondary mode with no primary name is rejected at parse time"
 
 # ── 5: an invalid swarm_mode value is rejected ──────────────────────────────
@@ -135,7 +135,7 @@ OUT8="$(zsh -c "source '$SWARMFORGE_SH' '$ROOT8'; parse_config; check_primacy" 2
 STATUS8=$?
 set -e
 [[ "$STATUS8" -ne 0 ]] || fail "08: expected the autonomous launch to be refused when the marker names a different swarm"
-echo "$OUT8" | grep -q "primary" || fail "08: error must name the current primary, got: $OUT8"
+echo "$OUT8" | grep "primary" >/dev/null || fail "08: error must name the current primary, got: $OUT8"
 pass "08: an autonomous launch is refused when the committed marker names a different swarm"
 
 # ── 9: a secondary-mode launch is never gated by the primacy marker ────────

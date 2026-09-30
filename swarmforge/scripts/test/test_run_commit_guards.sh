@@ -106,7 +106,7 @@ run_runner() {
 }
 
 ran()     { [ -f "$RAN/$1" ]; }
-names()   { printf '%s' "$OUT" | grep -q -- "$1"; }
+names()   { printf '%s' "$OUT" | grep -- "$1" >/dev/null; }
 
 # ── case 01: nothing violates - allowed, and EVERY derived guard ran ────────
 reset_fixture

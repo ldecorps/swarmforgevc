@@ -153,7 +153,7 @@ EOF
   OUT="$(cd "$ROOT" && SWARMFORGE_ROLE=coordinator SWARMFORGE_SKIP_DAEMON=1 bb "$SWARM_HANDOFF" "$DRAFT" 2>&1)" && STATUS=0 || STATUS=$?
 
   [[ "$STATUS" == "2" ]] || fail "05: expected exit 2 (HANDOFF INVALID) for a git_handoff carrying wake: defer, got $STATUS:\n$OUT"
-  echo "$OUT" | grep -qE "Header 'wake' is refused as an unknown header" \
+  echo "$OUT" | grep -E "Header 'wake' is refused as an unknown header" >/dev/null \
     || fail "05: expected the wake header refused as unknown, got:\n$OUT"
   pass "05: the field is note-only - a git_handoff draft carrying wake: defer is refused as an unknown header"
 }
@@ -171,7 +171,7 @@ scenario_05
 PROPERTY_RUNNER="$SCRIPT_DIR/bl1494_deferred_note_no_wake_property_runner.bb"
 PROPERTY_OUT="$(bb "$PROPERTY_RUNNER")" \
   || fail "bl1494_deferred_note_no_wake_property_runner.bb exited non-zero"
-echo "$PROPERTY_OUT" | grep -q "^ALL PROPERTIES HOLD$" \
+echo "$PROPERTY_OUT" | grep "^ALL PROPERTIES HOLD$" >/dev/null \
   || fail "expected ALL PROPERTIES HOLD from bl1494_deferred_note_no_wake_property_runner.bb, got:
 $PROPERTY_OUT"
 pass "bl1494_deferred_note_no_wake_property_runner.bb (BL-654 invariants 1 and 2)"

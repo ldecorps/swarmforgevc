@@ -146,7 +146,7 @@ OUT="$(run_rotate cleaner 2>&1)"
 STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 ]] || fail "01: expected nonzero exit, got 0 (output: $OUT)"
-echo "$OUT" | grep -qi "done_with_current.sh" || fail "01: refusal must name done_with_current.sh, got: $OUT"
+echo "$OUT" | grep -i "done_with_current.sh" >/dev/null || fail "01: refusal must name done_with_current.sh, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "01: pane must NOT be respawned on refusal, log: $(cat "$TMUX_LOG")"
 grep -q "^coder$" "$ROOT/.swarmforge/mono-router-active-role" \
   || fail "01: active-role marker must be untouched by a refused rotation"
@@ -180,7 +180,7 @@ OUT="$(cd "$CODER_WT" && PATH="$FAKE_BIN:$PATH" bb -e "
 (load-file \"$HANDOFF_LIB\")
 (println (handoff-lib/rotate-resident-to! \"cleaner\"))
 ")"
-echo "$OUT" | grep -q ":ok true" || fail "04: expected rotate-resident-to! to succeed despite a stuck parcel, got: $OUT"
+echo "$OUT" | grep ":ok true" >/dev/null || fail "04: expected rotate-resident-to! to succeed despite a stuck parcel, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" || fail "04: daemon-path rotate must still respawn despite a stuck parcel, log: $(cat "$TMUX_LOG")"
 pass "04: daemon-initiated rotation is never gated on a stuck parcel"
 rm -f "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
@@ -191,8 +191,8 @@ queue_stuck_parcel stuck5
 : > "$TMUX_LOG"
 OUT="$(cd "$CODER_WT" && PATH="$FAKE_BIN:$PATH" LIVE_ROLE="$LIVE_ROLE" SWARMFORGE_ROTATE_FORCE=1 bash "$ROTATE_SH" cleaner 2>&1)"
 grep -q "respawn-pane" "$TMUX_LOG" || fail "05: force override must still rotate, log: $(cat "$TMUX_LOG")"
-echo "$OUT" | grep -qi "WARNING" || fail "05: force override must warn loudly, got: $OUT"
-echo "$OUT" | grep -q "stuck5" || fail "05: warning must name the stuck parcel left behind, got: $OUT"
+echo "$OUT" | grep -i "WARNING" >/dev/null || fail "05: force override must warn loudly, got: $OUT"
+echo "$OUT" | grep "stuck5" >/dev/null || fail "05: warning must name the stuck parcel left behind, got: $OUT"
 pass "05: an explicit force override rotates anyway with a loud warning naming the stuck parcel"
 
 # ── 06/07/08: fail-open when the departing role cannot be determined ───────
@@ -301,8 +301,8 @@ STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 ]] || fail "11: expected nonzero exit (refused), got 0 (output: $OUT)"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "11: pane must NOT be respawned on refusal, log: $(cat "$TMUX_LOG")"
-echo "$OUT" | grep -q "stuck11b" || fail "11: refusal must name the LIVE role's own parcel (coder/stuck11b), got: $OUT"
-echo "$OUT" | grep -q "stuck11a" && fail "11: refusal must NOT name the marker role's parcel (cleaner/stuck11a), got: $OUT"
+echo "$OUT" | grep "stuck11b" >/dev/null || fail "11: refusal must name the LIVE role's own parcel (coder/stuck11b), got: $OUT"
+echo "$OUT" | grep "stuck11a" >/dev/null && fail "11: refusal must NOT name the marker role's parcel (cleaner/stuck11a), got: $OUT"
 pass "11: diverged marker refuses on the LIVE role's own parcel, never the marker role's"
 rm -f "$CLEAN_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff \
       "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff

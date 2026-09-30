@@ -181,9 +181,9 @@ rm -f "$PIDFILE"
 kill -0 "$FIRST_PID" 2>/dev/null || fail "03: original process died after pidfile rm"
 # The incident: ./swarm status said DOWN while the process was alive.
 STATUS_BEFORE="$(bb "$SRC/swarm_status.bb" "$ROOT" 2>/dev/null || true)"
-printf '%s\n' "$STATUS_BEFORE" | grep -E "babysitterd" | grep -q "UP" \
+printf '%s\n' "$STATUS_BEFORE" | grep -E "babysitterd" | grep "UP" >/dev/null \
   || fail "03b: swarm status with missing pidfile must still show babysitterd UP; got: $STATUS_BEFORE"
-printf '%s\n' "$STATUS_BEFORE" | grep -E "babysitterd" | grep -q "adopted-live" \
+printf '%s\n' "$STATUS_BEFORE" | grep -E "babysitterd" | grep "adopted-live" >/dev/null \
   || fail "03b: swarm status should tag adopted-live when pidfile is missing; got: $STATUS_BEFORE"
 OUT3="$(bash "$START" "$ROOT")"
 grep -qi "already running" <<< "$OUT3" || fail "03: expected adopt/already-running; got: $OUT3"

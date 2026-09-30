@@ -52,7 +52,7 @@ check "01: that commit is reachable from a branch, not dangling" \
 check "01: no working tree is left carrying it as an uncommitted change" \
   '[[ -z "$(git -C "$R" status --porcelain -- seat.ts)" ]]'
 check "01: and only THEN is the source released" \
-  '! git -C "$R" stash list | grep -q "orphaned BL-981 fix"'
+  '! git -C "$R" stash list | grep "orphaned BL-981 fix" >/dev/null'
 note "PASS: 01"
 
 # ── 02: interrupted before the commit, the source survives ────────────────
@@ -61,7 +61,7 @@ note "PASS: 01"
 R2="$(make_repo)"
 git -C "$R2" stash apply -q 'stash@{0}'
 check "02: the source copy is still present when no commit was made" \
-  'git -C "$R2" stash list | grep -q "orphaned BL-981 fix"'
+  'git -C "$R2" stash list | grep "orphaned BL-981 fix" >/dev/null'
 check "02: and the work is still recoverable from it without the worktree copy" \
   '[[ "$(git -C "$R2" stash show -p "stash@{0}" | grep -c "the reviewed-sound fix")" -ge 1 ]]'
 note "PASS: 02"
@@ -76,7 +76,7 @@ check "03: a source that cannot be applied REFUSES rather than committing" \
   'grep -q "REFUSE" <<< "$OUT3"'
 check "03: and nothing was committed" '[[ "$(git -C "$R3" rev-list --count HEAD)" -eq 1 ]]'
 check "03: and the real source is untouched" \
-  'git -C "$R3" stash list | grep -q "orphaned BL-981 fix"'
+  'git -C "$R3" stash list | grep "orphaned BL-981 fix" >/dev/null'
 note "PASS: 03"
 
 # ── 04: the owner of the touched worktree is told ─────────────────────────
@@ -102,7 +102,7 @@ printf 'my own work\n' > "$R5/mine.ts"
 git -C "$R5" add mine.ts
 git -C "$R5" commit -qm "my own ticket"
 check "05: an ordinary commit leaves the stash untouched" \
-  'git -C "$R5" stash list | grep -q "orphaned BL-981 fix"'
+  'git -C "$R5" stash list | grep "orphaned BL-981 fix" >/dev/null'
 check "05: and produces no rescue note" '[[ ! -f "$R5/tmp/rescue-note.txt" ]]'
 note "PASS: 05"
 
@@ -123,7 +123,7 @@ OUT6="$(bb "$CLI" "$R6" --stash 'stash@{0}' --role coder --reason 'BL-981 seat-f
 check "D1a: only the stash's own file is rescued, not the tree's other dirt" \
   'grep -q "1 file(s)" <<< "$OUT6"'
 check "D1a: the role's own uncommitted edit is NOT in the rescue commit" \
-  '! git -C "$R6" show --stat --format= HEAD | grep -q "mine.ts"'
+  '! git -C "$R6" show --stat --format= HEAD | grep "mine.ts" >/dev/null'
 check "D1a: and it is still sitting uncommitted where its owner left it" \
   '[[ "$(cat "$R6/mine.ts")" == "my own UNCOMMITTED edit" ]]'
 check "D1a: the rescued file itself did land" \
@@ -140,7 +140,7 @@ printf 'brand new orphaned work
 ' > "$R7/brandnew.ts"
 git -C "$R7" stash push -q -u -m "orphaned untracked fix" -- brandnew.ts
 check "D1b: the fixture really does hold an untracked-only stash" \
-  '[[ ! -e "$R7/brandnew.ts" ]] && git -C "$R7" stash list | grep -q "orphaned untracked fix"'
+  '[[ ! -e "$R7/brandnew.ts" ]] && git -C "$R7" stash list | grep "orphaned untracked fix" >/dev/null'
 OUT7="$(bb "$CLI" "$R7" --stash 'stash@{0}' --role coder --reason 'untracked orphan' 2>&1)"
 check "D1b: an untracked-only stash is rescued, not refused" \
   'grep -q "RESCUED" <<< "$OUT7"'
@@ -153,7 +153,7 @@ check "D1b: and its content is in the commit" \
 check "D1b: no rescued content is left untracked and unaccounted for" \
   '[[ -z "$(git -C "$R7" status --porcelain | grep -v "tmp/")" ]]'
 check "D1b: and only then is the source released" \
-  '! git -C "$R7" stash list | grep -q "orphaned untracked fix"'
+  '! git -C "$R7" stash list | grep "orphaned untracked fix" >/dev/null'
 note "PASS: D1b"
 
 # ── 06: the commit byline names the ROLE the rescue targeted ──────────────
@@ -164,9 +164,9 @@ note "PASS: D1b"
 R8="$(make_repo)"
 bb "$CLI" "$R8" --stash 'stash@{0}' --role hardener --reason 'BL-981 seat-fold stash' > /dev/null 2>&1
 check "06: the commit byline names the targeted role, not a fixed default" \
-  'git -C "$R8" log -1 --format=%B | grep -q "By hardener\."'
+  'git -C "$R8" log -1 --format=%B | grep "By hardener\." >/dev/null'
 check "06: and never the wrong role" \
-  '! git -C "$R8" log -1 --format=%B | grep -q "By coder\."'
+  '! git -C "$R8" log -1 --format=%B | grep "By coder\." >/dev/null'
 note "PASS: 06"
 
 # ── 07 (hardener): orphaned work that IS a deletion still verifies and
@@ -187,9 +187,9 @@ check "07: a deletion-only rescue still reports the source released" \
 check "07: and does not fall back to retaining it as unverified" \
   '! grep -q "not verified" <<< "$OUT9"'
 check "07: the deletion is actually committed" \
-  '[[ ! -e "$R9/seat.ts" ]] && ! git -C "$R9" ls-tree -r HEAD --name-only | grep -q "^seat.ts$"'
+  '[[ ! -e "$R9/seat.ts" ]] && ! git -C "$R9" ls-tree -r HEAD --name-only | grep "^seat.ts$" >/dev/null'
 check "07: and only then is the source released" \
-  '! git -C "$R9" stash list | grep -q "orphaned deletion"'
+  '! git -C "$R9" stash list | grep "orphaned deletion" >/dev/null'
 note "PASS: 07"
 
 if [[ "$fail" -eq 0 ]]; then

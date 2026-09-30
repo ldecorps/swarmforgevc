@@ -32,7 +32,7 @@ OUT="$(bash "$GATE" "$GOOD" "$ROOT")"
 RC=$?
 set -e
 [[ "$RC" -eq 0 ]] || fail "04: expected exit 0 for a well-formed feature file; got $RC"
-echo "$OUT" | grep -q "^OK: " || fail "04: expected an OK line; got: $OUT"
+echo "$OUT" | grep "^OK: " >/dev/null || fail "04: expected an OK line; got: $OUT"
 pass "04: a well-formed feature file passes the lint gate"
 
 # ── lint-gate-03: a malformed feature file fails, reporting the error ──────
@@ -44,11 +44,11 @@ OUT="$(bash "$GATE" "$BAD" "$ROOT" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "03: expected a nonzero exit for a malformed feature file; got 0"
-echo "$OUT" | grep -q "^FAIL: " || fail "03: expected a FAIL line reporting the parse error; got: $OUT"
+echo "$OUT" | grep "^FAIL: " >/dev/null || fail "03: expected a FAIL line reporting the parse error; got: $OUT"
 pass "03: a malformed feature file fails the lint gate and reports the parse error"
 
 # ── the gate works from a relative path too (not just absolute) ────────────
-( cd "$TMP" && bash "$GATE" "good.feature" "$ROOT" ) | grep -q "^OK: " \
+( cd "$TMP" && bash "$GATE" "good.feature" "$ROOT" ) | grep "^OK: " >/dev/null \
   || fail "the gate must resolve a relative feature-file path correctly"
 pass "the gate resolves a relative feature-file path"
 
@@ -58,7 +58,7 @@ OUT="$(bash "$GATE" "$TMP/does-not-exist.feature" "$ROOT" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "expected a nonzero exit for a missing feature file; got 0"
-echo "$OUT" | grep -q "^Error: feature file not found:" \
+echo "$OUT" | grep "^Error: feature file not found:" >/dev/null \
   || fail "expected a clear 'feature file not found' error; got: $OUT"
 pass "a missing feature file fails fast with a clear error"
 
@@ -68,7 +68,7 @@ OUT="$(bash "$GATE" "$GOOD" "$TMP" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "expected a nonzero exit when swarmforge/vendor/aps is missing under the given root; got 0"
-echo "$OUT" | grep -q "^Error: APS tools not vendored - run install_aps_tools.sh first$" \
+echo "$OUT" | grep "^Error: APS tools not vendored - run install_aps_tools.sh first$" >/dev/null \
   || fail "expected the not-vendored error naming the fix; got: $OUT"
 pass "an un-vendored APS toolchain fails fast, naming install_aps_tools.sh as the fix"
 
@@ -95,9 +95,9 @@ OUT="$(bash "$GATE" "$WRAPPED" "$ROOT" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "515-01: expected a nonzero exit for a step wrapped onto a bare 2nd line; got 0"
-echo "$OUT" | grep -q "bare continuation line" \
+echo "$OUT" | grep "bare continuation line" >/dev/null \
   || fail "515-01: expected a FAIL line naming the dropped continuation line; got: $OUT"
-echo "$OUT" | grep -q "events out of <total> total events" \
+echo "$OUT" | grep "events out of <total> total events" >/dev/null \
   || fail "515-01: expected the FAIL line to quote the dropped line text; got: $OUT"
 pass "515-01: a wrapped step's dropped continuation line is rejected, not silently parsed clean"
 
@@ -121,7 +121,7 @@ OUT="$(bash "$GATE" "$PHANTOM_COLUMN" "$ROOT" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "515-02: expected a nonzero exit for a phantom Examples column; got 0"
-echo "$OUT" | grep -q '"unused"' \
+echo "$OUT" | grep '"unused"' >/dev/null \
   || fail "515-02: expected the FAIL line to name the unreferenced column; got: $OUT"
 pass "515-02: an Examples column referenced by no step parameter is rejected"
 
@@ -141,10 +141,10 @@ pass "515-03: every existing specs/features/*.feature still passes the gate"
 LEGACY_FEATURE="$ROOT/specs/features/BL-096-velocity-burndown-metrics.feature"
 [[ -f "$LEGACY_FEATURE" ]] || fail "515-04 setup: expected fixture $LEGACY_FEATURE to exist"
 
-if grep -Ev '^[[:space:]]*($|#)' "$ROOT/swarmforge/scripts/gherkin_lint_gate_legacy_wraps.txt" | grep -q .; then
+if grep -Ev '^[[:space:]]*($|#)' "$ROOT/swarmforge/scripts/gherkin_lint_gate_legacy_wraps.txt" | grep . >/dev/null; then
   fail "520-01: expected gherkin_lint_gate_legacy_wraps.txt to hold no feature-file entries"
 fi
-bash "$GATE" "$LEGACY_FEATURE" "$ROOT" | grep -q "^OK: " \
+bash "$GATE" "$LEGACY_FEATURE" "$ROOT" | grep "^OK: " >/dev/null \
   || fail "520-02: expected formerly-grandfathered BL-096 to pass with no exemption"
 pass "520-01/02: the legacy wrap allowlist is drained and BL-096 passes unconditionally"
 
@@ -155,7 +155,7 @@ OUT="$(bb "$ROOT/swarmforge/scripts/gherkin_lint_gate_cli.bb" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "515-05: expected a nonzero exit for a missing-args CLI invocation; got 0"
-echo "$OUT" | grep -q "^Usage: gherkin_lint_gate_cli.bb " \
+echo "$OUT" | grep "^Usage: gherkin_lint_gate_cli.bb " >/dev/null \
   || fail "515-05: expected a Usage line, not a stacktrace; got: $OUT"
 pass "515-05: the CLI's arg-count guard fails fast with a Usage line, not a crash"
 
@@ -164,7 +164,7 @@ OUT="$(bb "$ROOT/swarmforge/scripts/gherkin_lint_gate_cli.bb" one two three four
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "515-06: expected a nonzero exit for a too-many-args CLI invocation; got 0"
-echo "$OUT" | grep -q "^Usage: gherkin_lint_gate_cli.bb " \
+echo "$OUT" | grep "^Usage: gherkin_lint_gate_cli.bb " >/dev/null \
   || fail "515-06: expected a Usage line, not a stacktrace; got: $OUT"
 pass "515-06: the CLI's arg-count guard rejects too many arguments too"
 

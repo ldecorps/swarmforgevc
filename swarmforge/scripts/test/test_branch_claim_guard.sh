@@ -109,8 +109,8 @@ switch_branch swarmforge-coder
 drop_handoff "$INBOX/in_process" "resume1" "BL-529-ticket-branch-mismatch-guard" "git_handoff"
 run_ready
 [[ $RC -eq 0 ]] || fail "01(swarmforge-coder): expected rc=0, got $RC ($ERR)"
-echo "$OUT" | grep -q "^TASK:" || fail "01(swarmforge-coder): expected the claim to print, got: $OUT"
-echo "$OUT" | grep -q "^TASK_NAME: BL-529-ticket-branch-mismatch-guard$" || fail "01(swarmforge-coder): wrong task name in: $OUT"
+echo "$OUT" | grep "^TASK:" >/dev/null || fail "01(swarmforge-coder): expected the claim to print, got: $OUT"
+echo "$OUT" | grep "^TASK_NAME: BL-529-ticket-branch-mismatch-guard$" >/dev/null || fail "01(swarmforge-coder): wrong task name in: $OUT"
 [[ "$(current_branch)" == "swarmforge-coder" ]] || fail "01(swarmforge-coder): branch moved to $(current_branch)"
 [[ -z "$ERR" ]] || fail "01(swarmforge-coder): a passing guard emits no warning, got: $ERR"
 pass "guard-01: legacy role branch swarmforge-coder passes for claim BL-529"
@@ -120,7 +120,7 @@ reset_case
 switch_branch main
 drop_handoff "$INBOX/in_process" "resume2" "BL-512-some-claim" "git_handoff"
 run_ready
-[[ $RC -eq 0 ]] && echo "$OUT" | grep -q "^TASK:" || fail "01(main): expected the claim to print, rc=$RC out=$OUT err=$ERR"
+[[ $RC -eq 0 ]] && echo "$OUT" | grep "^TASK:" >/dev/null || fail "01(main): expected the claim to print, rc=$RC out=$OUT err=$ERR"
 [[ "$(current_branch)" == "main" ]] || fail "01(main): branch moved to $(current_branch)"
 pass "guard-01: main passes for claim BL-512"
 
@@ -129,7 +129,7 @@ reset_case
 switch_branch BL-529
 drop_handoff "$INBOX/in_process" "resume3" "BL-529-ticket-branch-mismatch-guard" "git_handoff"
 run_ready
-[[ $RC -eq 0 ]] && echo "$OUT" | grep -q "^TASK:" || fail "01(BL-529): expected the claim to print, rc=$RC out=$OUT err=$ERR"
+[[ $RC -eq 0 ]] && echo "$OUT" | grep "^TASK:" >/dev/null || fail "01(BL-529): expected the claim to print, rc=$RC out=$OUT err=$ERR"
 [[ "$(current_branch)" == "BL-529" ]] || fail "01(BL-529): matching ticket branch must stay, on $(current_branch)"
 pass "guard-01: a ticket branch matching the claim passes"
 
@@ -138,7 +138,7 @@ reset_case
 switch_branch BL-526
 drop_note "$INBOX/in_process" "note1"
 run_ready
-[[ $RC -eq 0 ]] && echo "$OUT" | grep -q "^TASK:" || fail "note: expected the note to print, rc=$RC out=$OUT err=$ERR"
+[[ $RC -eq 0 ]] && echo "$OUT" | grep "^TASK:" >/dev/null || fail "note: expected the note to print, rc=$RC out=$OUT err=$ERR"
 [[ "$(current_branch)" == "BL-526" ]] || fail "note: a claim with no ticket must leave the branch alone, on $(current_branch)"
 pass "guard-01: a note handoff (no claim ticket) passes on any branch"
 
@@ -148,9 +148,9 @@ switch_branch BL-526
 drop_handoff "$INBOX/in_process" "resume4" "BL-512-some-claim" "git_handoff"
 run_ready
 [[ $RC -eq 0 ]] || fail "03: auto-correct path must still run the turn, rc=$RC err=$ERR"
-echo "$OUT" | grep -q "^TASK:" || fail "03: expected the claim to print after correction, got: $OUT"
+echo "$OUT" | grep "^TASK:" >/dev/null || fail "03: expected the claim to print after correction, got: $OUT"
 [[ "$(current_branch)" == "primary/coder" ]] || fail "03: expected auto-checkout to primary/coder, on $(current_branch)"
-echo "$ERR" | grep -q 'BRANCH_CLAIM_GUARD: auto-corrected worktree off branch "BL-526" (ticket BL-526) onto "primary/coder" for claim BL-512' \
+echo "$ERR" | grep 'BRANCH_CLAIM_GUARD: auto-corrected worktree off branch "BL-526" (ticket BL-526) onto "primary/coder" for claim BL-512' >/dev/null \
   || fail "03: expected an auto-correct notice naming branch and claim, got: $ERR"
 [[ -f "$INBOX/in_process/00_resume4.handoff" ]] || fail "03: the claim must stay in_process after a correction"
 pass "guard-03: clean mismatch auto-corrects BL-526 -> primary/coder and the turn proceeds"
@@ -173,11 +173,11 @@ git -C "$ROOT" branch -D swarmforge-coder >/dev/null 2>&1 || \
 drop_handoff "$INBOX/in_process" "resume6" "BL-512-some-claim" "git_handoff"
 run_ready
 [[ $RC -ne 0 ]] || fail "03-uncorrectable: expected a refusal, rc=0 out=$OUT"
-echo "$OUT" | grep -q "^TASK:" && fail "03-uncorrectable: no task may print on a refused turn: $OUT"
+echo "$OUT" | grep "^TASK:" >/dev/null && fail "03-uncorrectable: no task may print on a refused turn: $OUT"
 [[ "$(current_branch)" == "BL-526" ]] || fail "03-uncorrectable: the mismatched branch must stay, on $(current_branch)"
 [[ -f "$INBOX/new/00_resume6.handoff" && ! -e "$INBOX/in_process/00_resume6.handoff" ]] \
   || fail "03-uncorrectable: the claim must be requeued to new/"
-echo "$ERR" | grep -q "BRANCH_CLAIM_MISMATCH" || fail "03-uncorrectable: expected a mismatch warning, got: $ERR"
+echo "$ERR" | grep "BRANCH_CLAIM_MISMATCH" >/dev/null || fail "03-uncorrectable: expected a mismatch warning, got: $ERR"
 pass "guard-03: a clean mismatch with no standard branch requeues and refuses"
 
 # ── guard-04: dirty mismatch requeues the claim and refuses the turn ──────
@@ -188,11 +188,11 @@ echo "in-flight edit" >> "$CODER_WT/tracked.txt"
 drop_handoff "$INBOX/in_process" "resume7" "BL-512-some-claim" "git_handoff"
 run_ready
 [[ $RC -ne 0 ]] || fail "04: expected a refusal on a dirty mismatch, rc=0 out=$OUT"
-echo "$OUT" | grep -q "^TASK:" && fail "04: no task may print on a refused turn: $OUT"
+echo "$OUT" | grep "^TASK:" >/dev/null && fail "04: no task may print on a refused turn: $OUT"
 [[ "$(current_branch)" == "BL-526" ]] || fail "04: the dirty mismatched branch must stay, on $(current_branch)"
 [[ -f "$INBOX/new/00_resume7.handoff" && ! -e "$INBOX/in_process/00_resume7.handoff" ]] \
   || fail "04: the in-process claim must be moved back to new/"
-echo "$ERR" | grep -q 'BRANCH_CLAIM_MISMATCH: worktree branch "BL-526" names ticket BL-526 but the in-process claim is BL-512' \
+echo "$ERR" | grep 'BRANCH_CLAIM_MISMATCH: worktree branch "BL-526" names ticket BL-526 but the in-process claim is BL-512' >/dev/null \
   || fail "04: the warning must name the branch and the claim, got: $ERR"
 pass "guard-04: dirty mismatch requeues the claim to new/, refuses, names branch + claim"
 
@@ -214,7 +214,7 @@ reset_case
 switch_branch BL-526
 drop_handoff "$INBOX/new" "queued1" "BL-512-some-claim" "git_handoff"
 run_ready
-[[ $RC -eq 0 ]] && echo "$OUT" | grep -q "^TASK:" || fail "dequeue-clean: rc=$RC out=$OUT err=$ERR"
+[[ $RC -eq 0 ]] && echo "$OUT" | grep "^TASK:" >/dev/null || fail "dequeue-clean: rc=$RC out=$OUT err=$ERR"
 [[ "$(current_branch)" == "primary/coder" ]] || fail "dequeue-clean: expected primary/coder, on $(current_branch)"
 [[ -f "$INBOX/in_process/00_queued1.handoff" ]] || fail "dequeue-clean: the claim must land in_process after correction"
 pass "guard-03: a fresh dequeue on a clean mismatched branch corrects then prints"
@@ -241,8 +241,8 @@ drop_handoff "$INBOX/new" "collide1" "BL-512-some-claim" "git_handoff"
 echo "stale new copy marker" >> "$INBOX/new/00_collide1.handoff"
 run_ready
 [[ $RC -ne 0 ]] || fail "04-collision: expected a refusal, rc=0 out=$OUT"
-echo "$OUT" | grep -q "^TASK:" && fail "04-collision: no task may print on a refused turn: $OUT"
-echo "$ERR" | grep -q "BRANCH_CLAIM_GUARD: cannot requeue" \
+echo "$OUT" | grep "^TASK:" >/dev/null && fail "04-collision: no task may print on a refused turn: $OUT"
+echo "$ERR" | grep "BRANCH_CLAIM_GUARD: cannot requeue" >/dev/null \
   || fail "04-collision: expected the cannot-requeue diagnostic, got: $ERR"
 [[ -f "$INBOX/in_process/00_collide1.handoff" ]] \
   || fail "04-collision: the in-process claim must be left in place when requeue is impossible"
@@ -282,11 +282,11 @@ switch_branch BL-526
 drop_handoff "$INBOX/in_process" "held1" "BL-512-some-claim" "git_handoff"
 run_ready
 [[ $RC -ne 0 ]] || fail "03-checkout-fails: expected a refusal, rc=0 out=$OUT"
-echo "$OUT" | grep -q "^TASK:" && fail "03-checkout-fails: no task may print on a refused turn: $OUT"
+echo "$OUT" | grep "^TASK:" >/dev/null && fail "03-checkout-fails: no task may print on a refused turn: $OUT"
 [[ "$(current_branch)" == "BL-526" ]] || fail "03-checkout-fails: branch moved to $(current_branch)"
 [[ -f "$INBOX/new/00_held1.handoff" && ! -e "$INBOX/in_process/00_held1.handoff" ]] \
   || fail "03-checkout-fails: the claim must be requeued to new/"
-echo "$ERR" | grep -q "no standard branch available to auto-correct onto" \
+echo "$ERR" | grep "no standard branch available to auto-correct onto" >/dev/null \
   || fail "03-checkout-fails: expected the uncorrectable reason, got: $ERR"
 git -C "$ROOT" worktree remove --force "$ROOT/.worktrees/holder-pc"
 git -C "$ROOT" worktree remove --force "$ROOT/.worktrees/holder-sc"

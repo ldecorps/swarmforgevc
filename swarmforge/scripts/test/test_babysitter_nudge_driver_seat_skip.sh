@@ -53,11 +53,11 @@ RESULT="$(PATH="$FAKE_BIN:$PATH" bb -e "
           (babysitter-nudge-lib/nudge-resident! \"$ROOT\" \"cleaner\" \"wake up\")))
 ")"
 
-echo "$RESULT" | grep -q '^SKIP_AIDER_AGENT: coder' \
+echo "$RESULT" | grep '^SKIP_AIDER_AGENT: coder' >/dev/null \
   || fail "01: the coder (aider driver) seat must be skipped by nudge-resident! ($RESULT)"
 pass "01: the coder (driver) seat's aider pane received no typed text from babysitterd's nudge pass"
 
-echo "$RESULT" | grep -q '^NUDGED: cleaner' \
+echo "$RESULT" | grep '^NUDGED: cleaner' >/dev/null \
   || fail "02: the cleaner (non-driver) seat must still be nudged ($RESULT)"
 pass "02: a Claude seat with work still received its wake (babysitterd's own nudge pass unchanged)"
 
@@ -92,7 +92,7 @@ RESULT2="$(PATH="$FAKE_BIN:$PATH" bb -e "
             (babysitter-nudge-lib/nudge-resident! \"$ROOT\" \"localdriver\" \"wake up\"))))
 ")"
 
-echo "$RESULT2" | grep -q '^SKIP_DRIVER_SEAT: localdriver' \
+echo "$RESULT2" | grep '^SKIP_DRIVER_SEAT: localdriver' >/dev/null \
   || fail "05: a driver-capable, non-aider seat must be skipped by driver-seat? (got: $RESULT2)"
 pass "05: a driver-capable seat with a non-aider (:chat-message) wake style is skipped by driver-seat?, not just aider-agent?"
 

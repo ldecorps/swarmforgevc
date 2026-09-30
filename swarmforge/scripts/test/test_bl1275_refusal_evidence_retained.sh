@@ -159,7 +159,7 @@ if [[ -n "$(retained_logs "$R5")" ]]; then
 else
   fail "no log retained in a repo without a .swarmforge/ ignore rule"
 fi
-if git -C "$R5" status --porcelain | grep -q 'swarmforge'; then
+if git -C "$R5" status --porcelain | grep 'swarmforge' >/dev/null; then
   fail "a retained log is visible to git in a repo that does not ignore .swarmforge/"
 else
   pass "a retained log is unstageable even with no outer ignore rule"

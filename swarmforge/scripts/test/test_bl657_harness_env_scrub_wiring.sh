@@ -45,7 +45,7 @@ RESULT_A="$(mktemp)"
 CLAUDE_CODE_CHILD_SESSION=bl657-probe-marker-a env -u SWARMFORGE_CONFIG zsh -c "
   source '$SWARMFORGE_SH' '$ROOT_A'
   create_role_session 'bl657-a' 'BL657 A' ''
-  if tmux -S \"\$TMUX_SOCKET\" show-environment -g 2>/dev/null | grep -q '^CLAUDE_CODE_CHILD_SESSION='; then
+  if tmux -S \"\$TMUX_SOCKET\" show-environment -g 2>/dev/null | grep '^CLAUDE_CODE_CHILD_SESSION=' >/dev/null; then
     echo STILL_PRESENT
   else
     echo SCRUBBED
@@ -69,12 +69,12 @@ CLAUDE_CODE_CHILD_SESSION=bl657-probe-marker-b CLAUDE_CODE_MAX_OUTPUT_TOKENS=409
   source '$SWARMFORGE_SH' '$ROOT_B'
   create_role_session 'bl657-b' 'BL657 B' ''
   ENV_DUMP=\"\$(tmux -S \"\$TMUX_SOCKET\" show-environment -g 2>/dev/null)\"
-  if echo \"\$ENV_DUMP\" | grep -q '^CLAUDE_CODE_CHILD_SESSION='; then
+  if echo \"\$ENV_DUMP\" | grep '^CLAUDE_CODE_CHILD_SESSION=' >/dev/null; then
     echo MARKER_STILL_PRESENT
   else
     echo MARKER_SCRUBBED
   fi
-  if echo \"\$ENV_DUMP\" | grep -q '^CLAUDE_CODE_MAX_OUTPUT_TOKENS=4096\$'; then
+  if echo \"\$ENV_DUMP\" | grep '^CLAUDE_CODE_MAX_OUTPUT_TOKENS=4096\$' >/dev/null; then
     echo PASSTHROUGH_SURVIVED
   else
     echo PASSTHROUGH_LOST

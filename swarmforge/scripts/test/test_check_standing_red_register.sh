@@ -112,7 +112,7 @@ STATUS3=$?
 set -e
 git -C "$ROOT" reset -q --hard coder
 [[ "$STATUS3" -ne 0 ]] || fail "03: expected refusal of a genuinely new, unowned ledger row"
-echo "$OUT3" | grep -q "BL-9999" || fail "03: refusal must name BL-9999, got: $OUT3"
+echo "$OUT3" | grep "BL-9999" >/dev/null || fail "03: refusal must name BL-9999, got: $OUT3"
 pass "03: a genuinely new, unowned ledger row is still refused"
 
 # ── 04: a LINEAR commit adding a register row naming a closed/absent
@@ -126,7 +126,7 @@ STATUS4=$?
 set -e
 git -C "$ROOT" reset -q --hard coder
 [[ "$STATUS4" -ne 0 ]] || fail "04: expected refusal of a new register row naming an absent ticket"
-echo "$OUT4" | grep -q "BL-8888" || fail "04: refusal must name BL-8888, got: $OUT4"
+echo "$OUT4" | grep "BL-8888" >/dev/null || fail "04: refusal must name BL-8888, got: $OUT4"
 pass "04: a genuinely new register row naming a closed/absent ticket is still refused"
 
 # ── 05: a LINEAR commit adding a ledger row for an OPEN ticket by its own
@@ -173,7 +173,7 @@ STATUS6=$?
 set -e
 git -C "$ROOT" merge --abort 2>/dev/null || git -C "$ROOT" reset -q --hard coder
 [[ "$STATUS6" -ne 0 ]] || fail "06: expected refusal of a genuinely new, unowned row added by the merge's own resolution"
-echo "$OUT6" | grep -q "BL-9999" || fail "06: refusal must name BL-9999, got: $OUT6"
+echo "$OUT6" | grep "BL-9999" >/dev/null || fail "06: refusal must name BL-9999, got: $OUT6"
 pass "06: a merge whose own resolution adds a genuinely new, unowned ledger row is still refused"
 
 echo ""

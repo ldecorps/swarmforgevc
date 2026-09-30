@@ -72,9 +72,9 @@ outbox_count="$(find "$ROOT/.swarmforge/handoffs/coordinator/outbox" -maxdepth 1
 
 PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" --poll-once
 
-find "$CODER_WT/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep -q . \
+find "$CODER_WT/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep . >/dev/null \
   || fail "daemon must deliver parcel to coder inbox/new"
-find "$ROOT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -quit | grep -q . \
+find "$ROOT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -quit | grep . >/dev/null \
   || fail "daemon must archive outbox parcel to sent/"
 outbox_after="$(find "$ROOT/.swarmforge/handoffs/coordinator/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$outbox_after" == "0" ]] || fail "outbox must be empty after daemon delivery"

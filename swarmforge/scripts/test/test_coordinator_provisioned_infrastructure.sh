@@ -132,7 +132,7 @@ window coordinator claude master --model x
 window coder claude coder --model x
 CONF
 ERROR_OUTPUT="$(zsh -c "source '$SWARMFORGE_SH' '$ROOT'; parse_config" 2>&1 || true)"
-echo "$ERROR_OUTPUT" | grep -qi "coordinator is reserved infrastructure" \
+echo "$ERROR_OUTPUT" | grep -i "coordinator is reserved infrastructure" >/dev/null \
   || fail "04: expected a 'coordinator is reserved infrastructure' error, got: $ERROR_OUTPUT"
 pass "04: naming coordinator in the conf reports it is reserved infrastructure"
 

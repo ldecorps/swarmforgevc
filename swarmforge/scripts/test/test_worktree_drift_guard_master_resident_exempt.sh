@@ -75,18 +75,18 @@ run_ready() {  # <role> - sets OUT, ERR, RC
 # the coder's first fix still refused.
 echo "specifier drafting a new ticket spec, mid-edit" > "$ROOT/$DRIFT_REL"
 run_ready coordinator
-echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+echo "$ERR" | grep "WORKTREE_DRIFT_DETECTED" >/dev/null \
   && fail "04: coordinator must not be refused for specifier's own legitimate WIP with no parcel anywhere, got: $ERR"
-echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
+echo "$ERR" | grep "INVALID_RECEIVE_MODE" >/dev/null \
   || fail "04: expected control to reach dispatch on the shared master checkout even with no parcel explaining the drift, got rc=$RC err=$ERR"
 pass "04: coordinator's own turn is not false-flagged for specifier's legitimate uncommitted WIP with no dispatched parcel anywhere"
 
 # ── scenario 05: symmetric - specifier's own turn, same unexplained drift,
 # same exemption.
 run_ready specifier
-echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+echo "$ERR" | grep "WORKTREE_DRIFT_DETECTED" >/dev/null \
   && fail "05: specifier must not be refused for the shared master checkout's own drift either, got: $ERR"
-echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
+echo "$ERR" | grep "INVALID_RECEIVE_MODE" >/dev/null \
   || fail "05: expected control to reach dispatch, got rc=$RC err=$ERR"
 pass "05: specifier's own turn is not false-flagged for the same shared-checkout drift"
 
@@ -100,7 +100,7 @@ printf 'coder\tcoder\t%s\tmain\tCoder\tclaude\tguard-boundary-only\n' "$ROOT" \
 mkdir -p "$ROOT/.swarmforge/handoffs/inbox/"{new,in_process,completed}
 run_ready coder
 [[ $RC -ne 0 ]] || fail "06: expected a refusal for a non-master role's own unexplained drift, rc=0 out=$OUT"
-echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+echo "$ERR" | grep "WORKTREE_DRIFT_DETECTED" >/dev/null \
   || fail "06: expected a drift report for a non-master role, got: $ERR"
 pass "06: a non-master role's own worktree keeps full drift detection - only master is exempted"
 

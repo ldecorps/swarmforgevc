@@ -40,19 +40,19 @@ UNIT_TMP="$(mktemp -d)"
 register_tmp_dir "$UNIT_TMP"
 OUT="$(PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" 2>&1)"
 
-echo "$OUT" | grep -q "DRYRUN: sudo mv .* /etc/systemd/system/swarmforge-operator-primary.service" \
+echo "$OUT" | grep "DRYRUN: sudo mv .* /etc/systemd/system/swarmforge-operator-primary.service" >/dev/null \
   || fail "expected the operator unit to be installed under the default 'primary' pack name, got:\n$OUT"
-echo "$OUT" | grep -q "DRYRUN: sudo mv .* /etc/systemd/system/swarmforge-front-desk-primary.service" \
+echo "$OUT" | grep "DRYRUN: sudo mv .* /etc/systemd/system/swarmforge-front-desk-primary.service" >/dev/null \
   || fail "expected the front-desk unit to be installed under the default 'primary' pack name, got:\n$OUT"
 pass "always-on-operator-presence-03/04: defaults to the 'primary' pack name when swarmforge.conf has none"
 
-echo "$OUT" | grep -q "DRYRUN: sudo systemctl enable --now swarmforge-operator-primary.service" \
+echo "$OUT" | grep "DRYRUN: sudo systemctl enable --now swarmforge-operator-primary.service" >/dev/null \
   || fail "expected the operator unit to be enabled --now, got:\n$OUT"
-echo "$OUT" | grep -q "DRYRUN: sudo systemctl enable --now swarmforge-front-desk-primary.service" \
+echo "$OUT" | grep "DRYRUN: sudo systemctl enable --now swarmforge-front-desk-primary.service" >/dev/null \
   || fail "expected the front-desk unit to ALSO be enabled --now (BL-336's own gap: front-desk had no boot unit installed anywhere), got:\n$OUT"
 pass "always-on-operator-presence-04: BOTH the operator unit and the front-desk unit are installed and enabled - not just the operator half"
 
-echo "$OUT" | grep -q "DRYRUN: sudo systemctl daemon-reload" || fail "expected a daemon-reload before enabling"
+echo "$OUT" | grep "DRYRUN: sudo systemctl daemon-reload" >/dev/null || fail "expected a daemon-reload before enabling"
 pass "a daemon-reload runs before the units are enabled"
 rm -rf "$F" "$UNIT_TMP"
 
@@ -78,7 +78,7 @@ cat > "$F/swarmforge/swarmforge.conf" <<'EOF'
 config swarm_name dogfood
 EOF
 OUT="$(PROVISION_PRIMARY_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_PRIMARY_DRYRUN=1 bash "$INSTALLER" "$F" 2>&1)"
-echo "$OUT" | grep -q "swarmforge-operator-dogfood.service" || fail "expected the configured swarm_name (dogfood) to be used instead of the default, got:\n$OUT"
+echo "$OUT" | grep "swarmforge-operator-dogfood.service" >/dev/null || fail "expected the configured swarm_name (dogfood) to be used instead of the default, got:\n$OUT"
 pass "an explicit swarmforge.conf swarm_name overrides the 'primary' default"
 rm -rf "$F" "$UNIT_TMP"
 

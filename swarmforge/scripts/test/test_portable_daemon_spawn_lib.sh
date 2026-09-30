@@ -101,7 +101,7 @@ OUT="$(portable_spawn_daemon_or_fail definitely-not-a-real-interpreter-xyz echo 
 END_S=$(date +%s)
 ELAPSED=$((END_S - START_S))
 [[ "$RC" -ne 0 ]] || fail "scenario 3: expected a nonzero exit when the required interpreter is missing"
-echo "$OUT" | grep -q "definitely-not-a-real-interpreter-xyz" \
+echo "$OUT" | grep "definitely-not-a-real-interpreter-xyz" >/dev/null \
   || fail "scenario 3: expected the failure to name the missing tool, got: $OUT"
 [[ "$ELAPSED" -le 5 ]] \
   || fail "scenario 3: took ${ELAPSED}s to fail - too slow to be a foreground check, looks like it waited out a timeout"

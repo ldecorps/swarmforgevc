@@ -183,7 +183,7 @@ grep -q "role-context-clear-fired coder 00_a.handoff" "$LOG_FILE" \
   || fail "01: expected a clear fired for coder's completion; got: $(cat "$LOG_FILE" 2>/dev/null)"
 pass "context-clear-all-roles-01: a non-coordinator role (coder) is cleared after finishing a task while idle"
 
-grep -c "send-keys -t swarmforge-coder -l /clear" "$CALL_LOG" | grep -q '^1$' \
+grep -c "send-keys -t swarmforge-coder -l /clear" "$CALL_LOG" | grep '^1$' >/dev/null \
   || fail "01: expected exactly one /clear sent to coder's session, got: $(cat "$CALL_LOG" 2>/dev/null)"
 # BL-878: BL-519 replaced the pre-BL-519 "Re-read constitution.prompt"
 # instruction with the launch-kickoff text (closing_context_clear_lib.bb's

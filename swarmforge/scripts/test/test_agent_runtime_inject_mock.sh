@@ -36,7 +36,7 @@ PATH="$FAKE_BIN:$PATH" bb -e "
 
 grep -q -- '-l MOCK_WAKE' "$CALL_LOG" || fail "expected mock wake literal send"
 grep -q -- '-l MOCK_BOOTSTRAP' "$CALL_LOG" || fail "expected mock bootstrap literal send"
-grep -c -- 'C-m' "$CALL_LOG" | grep -qE '^[2-9]' || fail "expected submit keys for wake and bootstrap"
+grep -c -- 'C-m' "$CALL_LOG" | grep -E '^[2-9]' >/dev/null || fail "expected submit keys for wake and bootstrap"
 
 pass "mock agent inject uses facade steps through tmux"
 

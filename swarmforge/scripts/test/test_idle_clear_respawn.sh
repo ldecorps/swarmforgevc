@@ -161,7 +161,7 @@ mkdir -p "$INBOX/new" "$INBOX/in_process" "$INBOX/completed"
 queue_task "$INBOX/in_process" "item1"
 
 OUT="$(cd "$ONROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=onrole bb "$ONROLE_DONE_TASK")"
-echo "$OUT" | grep -q '^NO_TASK$' || fail "01: expected NO_TASK, got: $OUT"
+echo "$OUT" | grep '^NO_TASK$' >/dev/null || fail "01: expected NO_TASK, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" || fail "01: expected a respawn-pane call for the enabled role, log: $(cat "$TMUX_LOG")"
 grep -q "onrole.sh" "$TMUX_LOG" || fail "01: expected the respawn to reference onrole's own launch script"
 pass "01: enabled role clears (respawns) at the idle boundary once queue is empty"
@@ -172,7 +172,7 @@ queue_task "$INBOX/in_process" "item2"
 queue_task "$INBOX/new" "item3"
 
 OUT="$(cd "$ONROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=onrole bb "$ONROLE_DONE_TASK")"
-echo "$OUT" | grep -q '^TASK:' || fail "02: expected the next TASK to be handed out, got: $OUT"
+echo "$OUT" | grep '^TASK:' >/dev/null || fail "02: expected the next TASK to be handed out, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "02: must not clear while queued work remains, log: $(cat "$TMUX_LOG")"
 pass "02: no clear while queued work remains; done helper hands out the next item instead"
 
@@ -183,7 +183,7 @@ rm -f "$INBOX/in_process"/*.handoff
 #       when the role is enabled and the queue is empty ──
 : > "$TMUX_LOG"
 OUT="$(cd "$ONROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=onrole "$READY_TASK")"
-echo "$OUT" | grep -q '^NO_TASK$' || fail "03: expected NO_TASK, got: $OUT"
+echo "$OUT" | grep '^NO_TASK$' >/dev/null || fail "03: expected NO_TASK, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "03: standalone ready_for_next.sh must never clear, log: $(cat "$TMUX_LOG")"
 pass "03: standalone (non-idle-boundary) ready_for_next.sh never triggers a clear"
 
@@ -194,7 +194,7 @@ queue_task "$OFF_INBOX/in_process" "item4"
 
 : > "$TMUX_LOG"
 OUT="$(cd "$OFFROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=offrole bb "$OFFROLE_DONE_TASK")"
-echo "$OUT" | grep -q '^NO_TASK$' || fail "04: expected NO_TASK, got: $OUT"
+echo "$OUT" | grep '^NO_TASK$' >/dev/null || fail "04: expected NO_TASK, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "04: disabled role must never clear, log: $(cat "$TMUX_LOG")"
 pass "04: role without the idle-clear token is untouched at the idle boundary"
 
@@ -206,7 +206,7 @@ queue_batch "$BATCH_ON_INBOX/in_process" "item5"
 
 : > "$TMUX_LOG"
 OUT="$(cd "$BATCHONROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=batchonrole bb "$BATCHONROLE_DONE_BATCH")"
-echo "$OUT" | grep -q '^NO_TASK$' || fail "05: expected NO_TASK, got: $OUT"
+echo "$OUT" | grep '^NO_TASK$' >/dev/null || fail "05: expected NO_TASK, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" || fail "05: expected a respawn-pane call for the enabled batch role, log: $(cat "$TMUX_LOG")"
 grep -q "batchonrole.sh" "$TMUX_LOG" || fail "05: expected the respawn to reference batchonrole's own launch script"
 pass "05: batch-mode enabled role clears (respawns) at the idle boundary via ready_for_next_batch.bb's own gate (BL-1238 required_wiring)"
@@ -219,7 +219,7 @@ queue_batch "$BATCH_OFF_INBOX/in_process" "item6"
 
 : > "$TMUX_LOG"
 OUT="$(cd "$BATCHOFFROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=batchoffrole bb "$BATCHOFFROLE_DONE_BATCH")"
-echo "$OUT" | grep -q '^NO_TASK$' || fail "06: expected NO_TASK, got: $OUT"
+echo "$OUT" | grep '^NO_TASK$' >/dev/null || fail "06: expected NO_TASK, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "06: disabled batch role must never clear, log: $(cat "$TMUX_LOG")"
 pass "06: batch-mode role without the idle-clear token is untouched at the idle boundary"
 

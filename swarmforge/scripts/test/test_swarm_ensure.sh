@@ -170,11 +170,11 @@ trap 'cleanup_daemon; rm -rf "${ROOT:-}"' EXIT
 # ── 01: healthy swarm is a fast no-op, all HEALTHY, exit 0 ──────────────────
 make_fixture
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^extension: HEALTHY$" || fail "01: extension not reported HEALTHY"
-echo "$OUT" | grep -q "^agent:coder: HEALTHY$" || fail "01: agent pane not reported HEALTHY"
-echo "$OUT" | grep -q "^daemon: HEALTHY$" || fail "01: daemon not reported HEALTHY"
-echo "$OUT" | grep -q "^operator: HEALTHY$" || fail "01: operator not reported HEALTHY"
-echo "$OUT" | grep -q "front-desk:" && fail "01: front-desk was checked without Telegram config"
+echo "$OUT" | grep "^extension: HEALTHY$" >/dev/null || fail "01: extension not reported HEALTHY"
+echo "$OUT" | grep "^agent:coder: HEALTHY$" >/dev/null || fail "01: agent pane not reported HEALTHY"
+echo "$OUT" | grep "^daemon: HEALTHY$" >/dev/null || fail "01: daemon not reported HEALTHY"
+echo "$OUT" | grep "^operator: HEALTHY$" >/dev/null || fail "01: operator not reported HEALTHY"
+echo "$OUT" | grep "front-desk:" >/dev/null && fail "01: front-desk was checked without Telegram config"
 [[ "$RC" -eq 0 ]] || fail "01: exit status was $RC, expected 0"
 [[ "$(cat "$ROOT/ext_state")" == "healthy" ]] || fail "01: healthy extension state was changed"
 [[ "$(cat "$ROOT/pane_dead")" == "0" ]] || fail "01: healthy pane state was changed"
@@ -185,7 +185,7 @@ pass "01: healthy swarm is a fast no-op reporting all-HEALTHY with exit 0"
 make_fixture
 echo "unhealthy" > "$ROOT/ext_state"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^extension: FIXED (bounced the extension dev host)$" \
+echo "$OUT" | grep "^extension: FIXED (bounced the extension dev host)$" >/dev/null \
   || fail "02a: extension repair not reported as FIXED naming the action"
 [[ "$(cat "$ROOT/ext_state")" == "healthy" ]] || fail "02a: extension was not actually repaired"
 cleanup_daemon
@@ -210,7 +210,7 @@ exit 0
 EOF
 chmod +x "$FAKE_BIN/tmux"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^agent:coder: FIXED (respawned pane from its persisted launch script)$" \
+echo "$OUT" | grep "^agent:coder: FIXED (respawned pane from its persisted launch script)$" >/dev/null \
   || fail "02b: absent pane repair not reported as FIXED naming the action"
 [[ -s "$ROOT/respawned" ]] || fail "02b: absent pane was not actually respawned"
 cleanup_daemon
@@ -220,7 +220,7 @@ pass "02b: agent pane absent from the tmux session is repaired and reported FIXE
 make_fixture
 echo "1" > "$ROOT/pane_dead"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^agent:coder: FIXED (respawned pane from its persisted launch script)$" \
+echo "$OUT" | grep "^agent:coder: FIXED (respawned pane from its persisted launch script)$" >/dev/null \
   || fail "02c: dead-pane repair not reported as FIXED naming the action"
 [[ "$(cat "$ROOT/pane_dead")" == "0" ]] || fail "02c: dead pane was not actually respawned"
 cleanup_daemon
@@ -230,7 +230,7 @@ pass "02c: agent pane present but its process is dead is repaired and reported F
 make_fixture
 echo "999999" > "$ROOT/.swarmforge/daemon/handoffd.pid"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^daemon: FIXED (restarted the handoff daemon)$" \
+echo "$OUT" | grep "^daemon: FIXED (restarted the handoff daemon)$" >/dev/null \
   || fail "02d: daemon repair not reported as FIXED naming the action"
 NEW_PID="$(cat "$ROOT/.swarmforge/daemon/handoffd.pid")"
 kill -0 "$NEW_PID" 2>/dev/null || fail "02d: daemon repair did not leave a live process behind"
@@ -247,8 +247,8 @@ EOF
 chmod +x "$FAKE_BIN/fake_ext_bounce.sh"
 echo "999999" > "$ROOT/.swarmforge/daemon/handoffd.pid"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^extension: FAILED" || fail "03: extension failure not reported as FAILED"
-echo "$OUT" | grep -q "^daemon: FIXED" || fail "03: daemon check did not still run and repair after extension failed"
+echo "$OUT" | grep "^extension: FAILED" >/dev/null || fail "03: extension failure not reported as FAILED"
+echo "$OUT" | grep "^daemon: FIXED" >/dev/null || fail "03: daemon check did not still run and repair after extension failed"
 [[ "$RC" -ne 0 ]] || fail "03: exit status was 0, expected non-zero after a failed repair"
 cleanup_daemon
 pass "03: one failed repair (extension) does not abort the remaining checks (daemon still repaired); exit status is non-zero"
@@ -260,12 +260,12 @@ rm -f "$ROOT/.swarmforge/tmux-socket"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
 # BL-207: FAILED lines now also name the stable Forge error category
 # (classify-provider-error) alongside the raw reason, never in place of it.
-echo "$OUT" | grep -q "^agent:coder: FAILED \[launch-failed\] (no tmux socket found for this project root)$" \
+echo "$OUT" | grep "^agent:coder: FAILED \[launch-failed\] (no tmux socket found for this project root)$" >/dev/null \
   || fail "04: missing tmux socket did not report agent:coder as FAILED naming the category and reason; got: $OUT"
-echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+echo "$OUT" | grep "^rc:coder: HEALTHY$" >/dev/null \
   || fail "04 (BL-514): missing tmux socket did not still report rc:coder as HEALTHY (no separate rc failure); got: $OUT"
-echo "$OUT" | grep -q "^extension: HEALTHY$" || fail "04: extension check did not still run without a tmux socket"
-echo "$OUT" | grep -q "^daemon: HEALTHY$" || fail "04: daemon check did not still run without a tmux socket"
+echo "$OUT" | grep "^extension: HEALTHY$" >/dev/null || fail "04: extension check did not still run without a tmux socket"
+echo "$OUT" | grep "^daemon: HEALTHY$" >/dev/null || fail "04: daemon check did not still run without a tmux socket"
 [[ "$RC" -ne 0 ]] || fail "04: exit status was 0, expected non-zero when an agent pane could not be checked"
 cleanup_daemon
 pass "04: no tmux socket found reports every configured agent pane as FAILED naming the category and reason, other checks still run"
@@ -274,7 +274,7 @@ pass "04: no tmux socket found reports every configured agent pane as FAILED nam
 make_fixture
 echo "999999" > "$ROOT/.swarmforge/operator/runtime.pid"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^operator: FIXED (restarted the operator runtime)$" \
+echo "$OUT" | grep "^operator: FIXED (restarted the operator runtime)$" >/dev/null \
   || fail "05a: operator repair not reported as FIXED naming the action; got: $OUT"
 NEW_OP_PID="$(cat "$ROOT/.swarmforge/operator/runtime.pid")"
 kill -0 "$NEW_OP_PID" 2>/dev/null || fail "05a: operator repair did not leave a live process behind"
@@ -302,7 +302,7 @@ cat > "$FAKE_BIN/fake_operator_start.sh" <<EOF
 EOF
 chmod +x "$FAKE_BIN/fake_operator_start.sh"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^operator: FIXED (restarted the operator runtime)$" \
+echo "$OUT" | grep "^operator: FIXED (restarted the operator runtime)$" >/dev/null \
   || fail "05a-race: delayed-visibility repair must still be FIXED; got: $OUT"
 cleanup_daemon
 pass "05a-race: a repair visible only after a beat is still reported FIXED"
@@ -314,7 +314,7 @@ export TELEGRAM_CHAT_ID="1"
 export TELEGRAM_PRINCIPAL_USER_ID="2"
 echo "999999" > "$ROOT/.swarmforge/operator/front-desk-supervisor.pid"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^front-desk: FIXED (restarted the Telegram front desk (bridge + bot))$" \
+echo "$OUT" | grep "^front-desk: FIXED (restarted the Telegram front desk (bridge + bot))$" >/dev/null \
   || fail "05b: front-desk repair not reported as FIXED naming the action; got: $OUT"
 NEW_FD_PID="$(cat "$ROOT/.swarmforge/operator/front-desk-supervisor.pid")"
 kill -0 "$NEW_FD_PID" 2>/dev/null || fail "05b: front-desk repair did not leave a live process behind"
@@ -327,7 +327,7 @@ make_fixture
 unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID || true
 echo "999999" > "$ROOT/.swarmforge/operator/front-desk-supervisor.pid"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^front-desk: FIXED" \
+echo "$OUT" | grep "^front-desk: FIXED" >/dev/null \
   || fail "05c: stale front-desk pid file did not trigger repair; got: $OUT"
 cleanup_daemon
 pass "05c: a prior front-desk pid file enables repair even without Telegram env in this shell"
@@ -343,7 +343,7 @@ export TELEGRAM_BOT_TOKEN=""
 export TELEGRAM_CHAT_ID="1"
 export TELEGRAM_PRINCIPAL_USER_ID="2"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "front-desk:" \
+echo "$OUT" | grep "front-desk:" >/dev/null \
   && fail "05d: blank TELEGRAM_BOT_TOKEN was treated as configured; got: $OUT"
 unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID
 cleanup_daemon
@@ -357,7 +357,7 @@ make_fixture
 unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID || true
 export TELEGRAM_BOT_TOKEN="only-one-set"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "front-desk:" \
+echo "$OUT" | grep "front-desk:" >/dev/null \
   && fail "05e: partial Telegram env (bot token only) was treated as configured; got: $OUT"
 unset TELEGRAM_BOT_TOKEN
 cleanup_daemon
@@ -370,7 +370,7 @@ export TELEGRAM_CHAT_ID="1"
 export TELEGRAM_PRINCIPAL_USER_ID="2"
 echo "999999" > "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^cursor-bridge: FIXED (restarted the Cursor Remote bridge)$" \
+echo "$OUT" | grep "^cursor-bridge: FIXED (restarted the Cursor Remote bridge)$" >/dev/null \
   || fail "05f: cursor-bridge repair not reported as FIXED naming the action; got: $OUT"
 NEW_CB_PID="$(cat "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid")"
 kill -0 "$NEW_CB_PID" 2>/dev/null || fail "05f: cursor-bridge repair did not leave a live process behind"
@@ -385,7 +385,7 @@ export TELEGRAM_CHAT_ID="1"
 export TELEGRAM_PRINCIPAL_USER_ID="2"
 echo "999999" > "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^cursor-bridge: FIXED" \
+echo "$OUT" | grep "^cursor-bridge: FIXED" >/dev/null \
   || fail "05g: cursor-bridge repair not reported as FIXED off shared TELEGRAM_BOT_TOKEN; got: $OUT"
 unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID
 cleanup_daemon
@@ -395,7 +395,7 @@ pass "05g: cursor bridge also repairs when only the shared TELEGRAM_BOT_TOKEN is
 make_fixture
 echo "999999" > "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^cursor-bridge: FIXED" \
+echo "$OUT" | grep "^cursor-bridge: FIXED" >/dev/null \
   || fail "05h: stale cursor-bridge pid file did not trigger repair; got: $OUT"
 cleanup_daemon
 pass "05h: a prior cursor-bridge pid file enables repair even without any bridge env in this shell"
@@ -408,7 +408,7 @@ export TELEGRAM_CHAT_ID="1"
 export TELEGRAM_PRINCIPAL_USER_ID="2"
 echo "999999" > "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "cursor-bridge:" \
+echo "$OUT" | grep "cursor-bridge:" >/dev/null \
   && fail "05i: SWARMFORGE_SKIP_CURSOR_BRIDGE=1 did not suppress cursor-bridge; got: $OUT"
 unset SWARMFORGE_SKIP_CURSOR_BRIDGE CURSOR_BRIDGE_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID
 cleanup_daemon
@@ -417,7 +417,7 @@ pass "05i: SWARMFORGE_SKIP_CURSOR_BRIDGE=1 wins even with credentials present an
 # ── 07a: launch-contract HEALTHY when no swarm-identity file exists at all ─
 make_fixture
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^launch-contract: HEALTHY$" \
+echo "$OUT" | grep "^launch-contract: HEALTHY$" >/dev/null \
   || fail "07a: launch-contract not reported HEALTHY with no swarm-identity file; got: $OUT"
 cleanup_daemon
 pass "07a: launch-contract reports HEALTHY when no swarm-identity file exists"
@@ -432,7 +432,7 @@ config coordinator_agent aider
 EOF
 printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/broken-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^launch-contract: FAILED (coordinator_agent is 'aider' but coordinator_model is unset" \
+echo "$OUT" | grep "^launch-contract: FAILED (coordinator_agent is 'aider' but coordinator_model is unset" >/dev/null \
   || fail "07b: launch-contract did not report the missing coordinator_model; got: $OUT"
 [[ "$RC" -ne 0 ]] || fail "07b: exit status was 0, expected non-zero with a broken launch contract"
 cleanup_daemon
@@ -448,7 +448,7 @@ config coordinator_model openai/gpt-oss-120b
 EOF
 printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/compliant-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^launch-contract: HEALTHY$" \
+echo "$OUT" | grep "^launch-contract: HEALTHY$" >/dev/null \
   || fail "07c: launch-contract not reported HEALTHY for a fully-declared pack; got: $OUT"
 [[ "$RC" -eq 0 ]] || fail "07c: exit status was $RC, expected 0 for a fully-declared pack"
 cleanup_daemon
@@ -465,7 +465,7 @@ config coordinator_agent aider
 EOF
 printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/broken-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^agent:coder: FAILED (respawn refused: launch contract broken - fix the pack conf, then rerun ensure)$" \
+echo "$OUT" | grep "^agent:coder: FAILED (respawn refused: launch contract broken - fix the pack conf, then rerun ensure)$" >/dev/null \
   || fail "07d: dead pane under a broken contract was not reported as respawn-refused; got: $OUT"
 [[ "$(cat "$ROOT/pane_dead")" == "1" ]] \
   || fail "07d: dead pane was respawned despite a broken launch contract"
@@ -482,7 +482,7 @@ config coordinator_agent aider
 EOF
 printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/broken-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^agent:coder: HEALTHY$" \
+echo "$OUT" | grep "^agent:coder: HEALTHY$" >/dev/null \
   || fail "07e: an already-healthy pane was disturbed by a broken launch contract; got: $OUT"
 cleanup_daemon
 pass "07e: a broken launch contract leaves an already-healthy agent pane untouched"
@@ -498,7 +498,7 @@ config coordinator_agent aider
 EOF
 printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/no-longer-exists.conf" >> "$ROOT/.swarmforge/swarm-identity"
 if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^launch-contract: FAILED (coordinator_agent is 'aider' but coordinator_model is unset" \
+echo "$OUT" | grep "^launch-contract: FAILED (coordinator_agent is 'aider' but coordinator_model is unset" >/dev/null \
   || fail "07f: a stale persisted conf path did not fall back to the tracked default conf; got: $OUT"
 [[ "$RC" -ne 0 ]] || fail "07f: exit status was 0, expected non-zero"
 cleanup_daemon
@@ -508,8 +508,8 @@ pass "07f: a stale persisted conf path falls back to the tracked default conf in
 make_fixture
 echo "999999" > "$ROOT/.swarmforge/operator/runtime.pid"
 if OUT="$(SWARMFORGE_SKIP_OPERATOR=1 run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "operator:" && fail "06: operator was checked despite SWARMFORGE_SKIP_OPERATOR=1"
-echo "$OUT" | grep -q "^daemon: HEALTHY$" || fail "06: daemon check did not still run"
+echo "$OUT" | grep "operator:" >/dev/null && fail "06: operator was checked despite SWARMFORGE_SKIP_OPERATOR=1"
+echo "$OUT" | grep "^daemon: HEALTHY$" >/dev/null || fail "06: daemon check did not still run"
 [[ "$RC" -eq 0 ]] || fail "06: exit status was $RC, expected 0"
 cleanup_daemon
 pass "06: SWARMFORGE_SKIP_OPERATOR=1 omits the operator component"
@@ -560,8 +560,8 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "expected specifier DORMANT, got: $OUTPUT"
-echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "expected coder HEALTHY"
+echo "$OUTPUT" | grep 'agent:specifier: DORMANT' >/dev/null || fail "expected specifier DORMANT, got: $OUTPUT"
+echo "$OUTPUT" | grep 'agent:coder: HEALTHY' >/dev/null || fail "expected coder HEALTHY"
 if [[ -s "$RESPAWN_LOG" ]]; then fail "dormant role should not be respawned"; fi
 pass "mono-router dormant roles report DORMANT without respawn"
 
@@ -614,8 +614,8 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   SWARMFORGE_SKIP_CURSOR_BRIDGE=1 SWARMFORGE_SKIP_BABYSITTERD=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "BL-571: expected specifier DORMANT under rotation sequential, got: $OUTPUT"
-echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "BL-571: expected coder HEALTHY"
+echo "$OUTPUT" | grep 'agent:specifier: DORMANT' >/dev/null || fail "BL-571: expected specifier DORMANT under rotation sequential, got: $OUTPUT"
+echo "$OUTPUT" | grep 'agent:coder: HEALTHY' >/dev/null || fail "BL-571: expected coder HEALTHY"
 if [[ -s "$RESPAWN_LOG" ]]; then fail "BL-571: sequential-dormant role must not be respawned"; fi
 pass "BL-571: rotation sequential dormant roles report DORMANT without respawn"
 
@@ -669,9 +669,9 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   SWARMFORGE_SKIP_CURSOR_BRIDGE=1 SWARMFORGE_SKIP_BABYSITTERD=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q 'control-plane: FIXED (control-plane-missing: recreating role sessions from persisted launch scripts; tmux server restored)' \
+echo "$OUTPUT" | grep 'control-plane: FIXED (control-plane-missing: recreating role sessions from persisted launch scripts; tmux server restored)' >/dev/null \
   || fail "BL-958: control-plane row not reported FIXED with the lib's decision, got: $OUTPUT"
-echo "$OUTPUT" | grep -q 'agent:coder: FIXED' || fail "BL-958: coder session was not repaired, got: $OUTPUT"
+echo "$OUTPUT" | grep 'agent:coder: FIXED' >/dev/null || fail "BL-958: coder session was not repaired, got: $OUTPUT"
 # BL-1018: a missing session is created WITH its launch command and never
 # respawned into afterward - the create-then-respawn-into-it sequence is the
 # shape that took the whole pack tmux server down on 2026-08-21.
@@ -720,14 +720,14 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   SWARMFORGE_SKIP_CURSOR_BRIDGE=1 SWARMFORGE_SKIP_BABYSITTERD=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q 'control-plane: FAILED' \
+echo "$OUTPUT" | grep 'control-plane: FAILED' >/dev/null \
   || fail "BL-958 D1: control-plane row not FAILED under :halt, got: $OUTPUT"
-echo "$OUTPUT" | grep -q 'no persisted launch scripts to respawn roles from' \
+echo "$OUTPUT" | grep 'no persisted launch scripts to respawn roles from' >/dev/null \
   || fail "BL-958 D1: FAILED row does not name the no-scripts reason, got: $OUTPUT"
-echo "$OUTPUT" | grep -q 'relaunch the swarm' \
+echo "$OUTPUT" | grep 'relaunch the swarm' >/dev/null \
   || fail "BL-958 D1: FAILED row does not surface the escalation next action, got: $OUTPUT"
 [[ -f "$SERVER_MARKER" ]] && fail "BL-958 D1: per-role recreation ran under :halt (tmux new-session restarted the server)"
-echo "$OUTPUT" | grep -q ': FIXED' && fail "BL-958 D1: something was reported repaired under :halt, got: $OUTPUT"
+echo "$OUTPUT" | grep ': FIXED' >/dev/null && fail "BL-958 D1: something was reported repaired under :halt, got: $OUTPUT"
 grep -q '"open"' "$ROOT/.swarmforge/incidents/control-plane.json" \
   || fail "BL-958 D1: the open incident did not remain open under :halt"
 grep -q '"resolved"' "$ROOT/.swarmforge/incidents/control-plane.json" \
@@ -773,9 +773,9 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q '^agent:specifier: FAILED (rotate_to_role would fail: missing launch script for role)$' \
+echo "$OUTPUT" | grep '^agent:specifier: FAILED (rotate_to_role would fail: missing launch script for role)$' >/dev/null \
   || fail "expected specifier FAILED for missing launch script, got: $OUTPUT"
-echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "expected coder HEALTHY"
+echo "$OUTPUT" | grep 'agent:coder: HEALTHY' >/dev/null || fail "expected coder HEALTHY"
 pass "BL-537: mono-router dormant role with no launch script reports FAILED, not DORMANT"
 
 # ---------------------------------------------------------------------------
@@ -818,9 +818,9 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q '^agent:coder: FAILED' \
+echo "$OUTPUT" | grep '^agent:coder: FAILED' >/dev/null \
   || fail "expected coder (resident) FAILED when its session cannot be recreated, got: $OUTPUT"
-echo "$OUTPUT" | grep -q '^agent:specifier: FAILED (rotate_to_role would fail: no live resident session to rotate from)$' \
+echo "$OUTPUT" | grep '^agent:specifier: FAILED (rotate_to_role would fail: no live resident session to rotate from)$' >/dev/null \
   || fail "expected specifier FAILED for no live resident, got: $OUTPUT"
 pass "BL-537: mono-router dormant role reports FAILED when resident cannot be revived, not silently DORMANT"
 
@@ -872,10 +872,10 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q 'DORMANT' && fail "classic pack must not classify any role as DORMANT, got: $OUTPUT"
+echo "$OUTPUT" | grep 'DORMANT' >/dev/null && fail "classic pack must not classify any role as DORMANT, got: $OUTPUT"
 if [[ -s "$KILL_LOG" ]]; then fail "classic half-launch must not kill any healthy session, got: $(cat "$KILL_LOG")"; fi
-echo "$OUTPUT" | grep -q '^agent:coordinator: HEALTHY$' || fail "expected coordinator HEALTHY, got: $OUTPUT"
-echo "$OUTPUT" | grep -q '^agent:cleaner: HEALTHY$' || fail "expected cleaner HEALTHY, got: $OUTPUT"
+echo "$OUTPUT" | grep '^agent:coordinator: HEALTHY$' >/dev/null || fail "expected coordinator HEALTHY, got: $OUTPUT"
+echo "$OUTPUT" | grep '^agent:cleaner: HEALTHY$' >/dev/null || fail "expected cleaner HEALTHY, got: $OUTPUT"
 pass "classic pack with one half-launched session is not treated as mono-router (no kills, no DORMANT)"
 
 # ---------------------------------------------------------------------------
@@ -900,7 +900,7 @@ exit 0
 EOF
 chmod +x "$FAKE_BIN/tmux"
 if OUT="$(OPENROUTER_API_KEY="test-router-key" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^agent:coder: FIXED (respawned pane from its persisted launch script)$" \
+echo "$OUT" | grep "^agent:coder: FIXED (respawned pane from its persisted launch script)$" >/dev/null \
   || fail "08: dead pane repair not reported as FIXED; got: $OUT"
 grep -q -- "-e OPENROUTER_API_KEY=test-router-key" "$RESPAWN_ARGS_LOG" \
   || fail "08: ensure repair did not pass OPENROUTER_API_KEY through to the respawned pane; got: $(cat "$RESPAWN_ARGS_LOG")"
@@ -957,7 +957,7 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 grep -q "^KILL swarmforge-specifier$" "$KILL_LOG" \
   || fail "09a: illicit standing session for a dormant role was never torn down; kill log: $(cat "$KILL_LOG")"
-echo "$OUTPUT" | grep -q "^agent:specifier: FIXED (tore down illicit standing session (mono-router dormant target))$" \
+echo "$OUTPUT" | grep "^agent:specifier: FIXED (tore down illicit standing session (mono-router dormant target))$" >/dev/null \
   || fail "09a: illicit dormant session teardown not reported as FIXED; got: $OUTPUT"
 pass "09a: mono-router illicit standing session for a dormant role is torn down and reported FIXED"
 
@@ -1001,7 +1001,7 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
 RC=$?
 grep -q "^KILL swarmforge-specifier$" "$KILL_LOG" \
   || fail "09b: kill-session was never attempted; kill log: $(cat "$KILL_LOG")"
-echo "$OUTPUT" | grep -q "^agent:specifier: FAILED (could not tear down illicit standing session)$" \
+echo "$OUTPUT" | grep "^agent:specifier: FAILED (could not tear down illicit standing session)$" >/dev/null \
   || fail "09b: a kill-session that leaves the session standing must report FAILED; got: $OUTPUT"
 pass "09b: mono-router illicit session that survives kill-session! is reported FAILED, not silently accepted"
 
@@ -1074,7 +1074,7 @@ grep -q -- 'new-session .*coder\.sh' "$CREATE_LOG" \
   || fail "10: expected the create to carry the resident role's launch script; create log: $(cat "$CREATE_LOG")"
 [[ -s "$RESPAWN_LOG_10" ]] \
   && fail "10 (BL-1018): a fully-vanished session must never be respawned into after create; log: $(cat "$RESPAWN_LOG_10")"
-echo "$OUTPUT" | grep -q "^agent:coder: FIXED (restored mono-router resident pane)$" \
+echo "$OUTPUT" | grep "^agent:coder: FIXED (restored mono-router resident pane)$" >/dev/null \
   || fail "10: a recreated resident session was not reported FIXED; got: $OUTPUT"
 pass "10: mono-router resident session that has vanished entirely is recreated with its launch command, reported FIXED"
 
@@ -1111,7 +1111,7 @@ echo "claude --remote-control SwarmForge-Coder"
 EOF
 chmod +x "$FAKE_BIN/rc_cmdline_1.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_1.sh" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+echo "$OUT" | grep "^rc:coder: HEALTHY$" >/dev/null \
   || fail "RC-1: a matching --remote-control flag was not reported HEALTHY; got: $OUT"
 [[ -s "$RC_RESPAWNS" ]] && fail "RC-1: a healthy RC state triggered an unnecessary respawn"
 [[ "$RC" -eq 0 ]] || fail "RC-1: exit status was $RC, expected 0"
@@ -1150,7 +1150,7 @@ fi
 EOF
 chmod +x "$FAKE_BIN/rc_cmdline_2.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_2.sh" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: FIXED (respawned pane to restore --remote-control flag)$" \
+echo "$OUT" | grep "^rc:coder: FIXED (respawned pane to restore --remote-control flag)$" >/dev/null \
   || fail "RC-2: a degraded RC (flag lost) was not repaired and reported FIXED; got: $OUT"
 [[ -s "$RC_RESPAWNS" ]] || fail "RC-2: rc:coder FIXED was reported without actually respawning the pane"
 cleanup_daemon
@@ -1181,7 +1181,7 @@ echo "claude --remote-control SwarmForge-StillStale"
 EOF
 chmod +x "$FAKE_BIN/rc_cmdline_3.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_3.sh" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: FAILED (respawned pane to restore --remote-control flag)$" \
+echo "$OUT" | grep "^rc:coder: FAILED (respawned pane to restore --remote-control flag)$" >/dev/null \
   || fail "RC-3: a repair that does not restore the flag was not reported FAILED; got: $OUT"
 [[ -s "$RC_RESPAWNS" ]] || fail "RC-3: rc:coder FAILED was reported without ever attempting a repair"
 [[ "$RC" -ne 0 ]] || fail "RC-3: exit status was 0, expected non-zero after an rc FAILED"
@@ -1214,9 +1214,9 @@ exit 1
 EOF
 chmod +x "$FAKE_BIN/rc_cmdline_4.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_4.sh" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+echo "$OUT" | grep "^rc:coder: HEALTHY$" >/dev/null \
   || fail "RC-4: no live claude process (:down) was not left HEALTHY/no-action at the RC level; got: $OUT"
-echo "$OUT" | grep -q "^agent:coder: HEALTHY$" \
+echo "$OUT" | grep "^agent:coder: HEALTHY$" >/dev/null \
   || fail "RC-4: agent:coder pane was disturbed by the RC :down case; got: $OUT"
 [[ -s "$RC_RESPAWNS" ]] && fail "RC-4: RC check respawned a pane on :down - that is agent:<role>'s job, never RC's"
 [[ "$RC" -eq 0 ]] || fail "RC-4: exit status was $RC, expected 0"
@@ -1248,7 +1248,7 @@ echo "claude --remote-control SwarmForge-Coder"
 EOF
 chmod +x "$FAKE_BIN/rc_cmdline_6.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_6.sh" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+echo "$OUT" | grep "^rc:coder: HEALTHY$" >/dev/null \
   || fail "RC-6: a launch script declaring no --remote-control flag was not reported HEALTHY; got: $OUT"
 [[ -e "$RC6_PROBED" ]] \
   && fail "RC-6: the live process was probed despite the launch script declaring no --remote-control flag"
@@ -1270,7 +1270,7 @@ echo "cursor-agent --remote-control should-never-run"
 EOF
 chmod +x "$FAKE_BIN/rc_cmdline_6b.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_6b.sh" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -qE '^rc:coder: OFF \(no Claude /rc; heal via agent:; phone via Cursor Remote\)$' \
+echo "$OUT" | grep -E '^rc:coder: OFF \(no Claude /rc; heal via agent:; phone via Cursor Remote\)$' >/dev/null \
   || fail "RC-6b: Cursor seat without --remote-control was not reported OFF; got: $OUT"
 [[ -e "$RC6B_PROBED" ]] \
   && fail "RC-6b: the live process was probed for a Cursor absent-flag short-circuit"
@@ -1291,7 +1291,7 @@ echo "qwen --remote-control should-never-run"
 EOF
 chmod +x "$FAKE_BIN/rc_cmdline_6c.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_6c.sh" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -qE '^rc:coder: OFF \(no Claude /rc; heal via agent:; phone via Cursor Remote\)$' \
+echo "$OUT" | grep -E '^rc:coder: OFF \(no Claude /rc; heal via agent:; phone via Cursor Remote\)$' >/dev/null \
   || fail "RC-6c: local-model seat without --remote-control was not reported OFF; got: $OUT"
 [[ -e "$RC6C_PROBED" ]] \
   && fail "RC-6c: the live process was probed for a local-model absent-flag short-circuit"
@@ -1352,7 +1352,7 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q "^rc:coder: HEALTHY$" \
+echo "$OUTPUT" | grep "^rc:coder: HEALTHY$" >/dev/null \
   || fail "RC-7: rotated resident's RC was not read against its ACTIVE role's launch script; got: $OUTPUT"
 [[ -s "$RC7_RESPAWNS" ]] \
   && fail "RC-7: rc check forcibly respawned a legitimately-rotated resident; respawns: $(cat "$RC7_RESPAWNS")"
@@ -1422,7 +1422,7 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q "^rc:specifier: HEALTHY$" \
+echo "$OUTPUT" | grep "^rc:specifier: HEALTHY$" >/dev/null \
   || fail "RC-7b: on a standing pack the specifier's RC was read against a stale marker's role instead of its own launch script; got: $OUTPUT"
 [[ -s "$RC7B_RESPAWNS" ]] \
   && fail "RC-7b: a stale mono-router marker made the RC check respawn a correctly-staffed standing pane; respawns: $(cat "$RC7B_RESPAWNS")"
@@ -1486,7 +1486,7 @@ chmod +x "$FAKE_BIN/rc_notify_8.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_8.sh" \
   SWARM_ENSURE_RC_NOTIFY_CMD="$FAKE_BIN/rc_notify_8.sh" \
   run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: FIXED (respawned pane to restore a dead remote-control session - new session: https://claude.ai/code/session_rc8new)$" \
+echo "$OUT" | grep "^rc:coder: FIXED (respawned pane to restore a dead remote-control session - new session: https://claude.ai/code/session_rc8new)$" >/dev/null \
   || fail "RC-8: a persistently session-dead role was not repaired and reported FIXED with the new session url; got: $OUT"
 [[ -s "$RC8_RESPAWNS" ]] || fail "RC-8: session-dead repair never actually respawned the idle pane"
 [[ -s "$RC8_NOTIFY" ]]   || fail "RC-8: session-dead repair never notified the human of the outcome"
@@ -1530,7 +1530,7 @@ chmod +x "$FAKE_BIN/rc_cmdline_9.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_9.sh" \
   SWARM_ENSURE_RC_SESSION_DEAD_WAIT_SECONDS=1 \
   run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: FAILED (agent still busy after 1s wait budget - respawn skipped, not killed (never mid-turn))$" \
+echo "$OUT" | grep "^rc:coder: FAILED (agent still busy after 1s wait budget - respawn skipped, not killed (never mid-turn))$" >/dev/null \
   || fail "RC-9: a persistently-busy session-dead agent was not reported FAILED/unrepaired; got: $OUT"
 [[ -s "$RC9_RESPAWNS" ]] && fail "RC-9: a busy agent must NEVER be respawned mid-turn (invariant 1)"
 [[ "$RC" -ne 0 ]] || fail "RC-9: exit status was 0, expected non-zero after a FAILED session-dead repair"
@@ -1566,7 +1566,7 @@ echo "claude --remote-control SwarmForge-Coder"
 EOF
 chmod +x "$FAKE_BIN/rc_cmdline_10.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_10.sh" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+echo "$OUT" | grep "^rc:coder: HEALTHY$" >/dev/null \
   || fail "RC-10: a single failed-footer observation must not yet be treated as session-dead; got: $OUT"
 [[ -s "$RC10_RESPAWNS" ]] && fail "RC-10: a single failed-footer observation must never trigger a respawn"
 [[ "$RC" -eq 0 ]] || fail "RC-10: exit status was $RC, expected 0"
@@ -1606,7 +1606,7 @@ echo "claude --remote-control SwarmForge-Coder"
 EOF
 chmod +x "$FAKE_BIN/rc_cmdline_11.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_11.sh" run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+echo "$OUT" | grep "^rc:coder: HEALTHY$" >/dev/null \
   || fail "RC-11: a working footer must report HEALTHY even with a stale streak from before a prior repair; got: $OUT"
 [[ -s "$RC11_RESPAWNS" ]] && fail "RC-11: a working footer must never respawn, regardless of a stale streak"
 [[ "$(cat "$ROOT/.swarmforge/rc-footer-streak/coder")" == "0" ]] \
@@ -1657,16 +1657,16 @@ chmod +x "$FAKE_BIN/rc_notify_12.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_12.sh" \
   SWARM_ENSURE_RC_NOTIFY_CMD="$FAKE_BIN/rc_notify_12.sh" \
   run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: FIXED (respawned pane to restore a dead remote-control session (new session address not yet readable))$" \
+echo "$OUT" | grep "^rc:coder: FIXED (respawned pane to restore a dead remote-control session (new session address not yet readable))$" >/dev/null \
   || fail "RC-12: a repair confirming the flag but with no readable URL was not reported FIXED with the not-yet-readable note; got: $OUT"
 [[ -s "$RC12_RESPAWNS" ]] || fail "RC-12: repair never actually respawned the pane"
 [[ -s "$RC12_NOTIFY" ]]   || fail "RC-12: the human was never notified of the repair outcome"
 NOTIFY_LINE="$(cat "$RC12_NOTIFY")"
-echo "$NOTIFY_LINE" | grep -q "^coder|" \
+echo "$NOTIFY_LINE" | grep "^coder|" >/dev/null \
   || fail "RC-12: notify was not called with the correct role; got: $NOTIFY_LINE"
-echo "$NOTIFY_LINE" | grep -q "https://" \
+echo "$NOTIFY_LINE" | grep "https://" >/dev/null \
   && fail "RC-12: notify must never fabricate a session URL when none was readable; got: $NOTIFY_LINE"
-echo "$NOTIFY_LINE" | grep -q "could not be read" \
+echo "$NOTIFY_LINE" | grep "could not be read" >/dev/null \
   || fail "RC-12: notify text must explicitly state the address could not be read; got: $NOTIFY_LINE"
 cleanup_daemon
 pass "RC-12 (BL-898): a repair with no readable new session URL still notifies the human with an explicit not-readable statement, never a fabricated URL"
@@ -1723,7 +1723,7 @@ chmod +x "$FAKE_BIN/rc_notify_13.sh"
 if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_13.sh" \
   SWARM_ENSURE_RC_NOTIFY_CMD="$FAKE_BIN/rc_notify_13.sh" \
   run_ensure)"; then RC=0; else RC=$?; fi
-echo "$OUT" | grep -q "^rc:coder: FAILED (respawned pane but the --remote-control flag was not restored)$" \
+echo "$OUT" | grep "^rc:coder: FAILED (respawned pane but the --remote-control flag was not restored)$" >/dev/null \
   || fail "RC-13: a session-dead respawn that never restores the flag was not reported FAILED; got: $OUT"
 [[ -s "$RC13_RESPAWNS" ]] || fail "RC-13: the repair never actually attempted a respawn"
 [[ -s "$RC13_NOTIFY" ]] \

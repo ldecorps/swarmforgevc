@@ -14,7 +14,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 OUT="$(bb "$RUNNER" 2>&1)" || { echo "$OUT"; fail "ticket_close_guard_lib_test_runner.bb exited non-zero"; }
-echo "$OUT" | grep -q "ALL PASS" || fail "expected ticket_close_guard_lib assertions to pass"
+echo "$OUT" | grep "ALL PASS" >/dev/null || fail "expected ticket_close_guard_lib assertions to pass"
 pass "ticket_close_guard_lib unit tests"
 
 mk_fixture() {
@@ -42,7 +42,7 @@ OUT="$(bb "$CLI" "$ROOT" \
   --message "Close BL-551: move to done" \
   --path backlog/active/BL-551-slug.yaml \
   --path backlog/done/BL-551-slug.yaml 2>&1)" && fail "close without QA approval should exit non-zero"
-echo "$OUT" | grep -q "CLOSE BLOCKED" || fail "expected CLOSE BLOCKED message; got: $OUT"
+echo "$OUT" | grep "CLOSE BLOCKED" >/dev/null || fail "expected CLOSE BLOCKED message; got: $OUT"
 pass "commit_integrity_cli blocks close without QA approval"
 
 # ── close allowed with QA git_handoff + abandons in-flight mail ────────────
@@ -59,7 +59,7 @@ OUT="$(bb "$CLI" "$ROOT" \
   --message "Close BL-551: move to done" \
   --path backlog/active/BL-551-slug.yaml \
   --path backlog/done/BL-551-slug.yaml 2>&1)" || fail "close with QA approval should succeed; got: $OUT"
-echo "$OUT" | grep -q '"success":true' || fail "expected success JSON; got: $OUT"
+echo "$OUT" | grep '"success":true' >/dev/null || fail "expected success JSON; got: $OUT"
 test ! -f "$ROOT/architect/.swarmforge/handoffs/inbox/new/20_arch.handoff" \
   || fail "architect in-flight handoff should be abandoned on close"
 test -f "$ROOT/architect/.swarmforge/handoffs/inbox/abandoned/20_arch.handoff" \
@@ -74,7 +74,7 @@ git -C "$ROOT" commit -q -m "seed done ticket"
 printf 'type: git_handoff\nto: hardender\npriority: 20\ntask: BL-551-slug\ncommit: a1b2c3d4e5\n' > "$ROOT/draft.txt"
 OUT="$(cd "$ROOT" && SWARMFORGE_ROLE=architect SWARMFORGE_SKIP_DAEMON=1 SWARMFORGE_MAILBOX_ONLY=1 \
   bb "$SWARM_HANDOFF" "$ROOT/draft.txt" 2>&1)" && fail "git_handoff for done ticket should fail"
-echo "$OUT" | grep -qi "closed ticket BL-551" || fail "expected closed-ticket error; got: $OUT"
+echo "$OUT" | grep -i "closed ticket BL-551" >/dev/null || fail "expected closed-ticket error; got: $OUT"
 pass "swarm_handoff refuses git_handoff for done ticket"
 
 echo "ALL PASS: ticket close/pipeline guards"

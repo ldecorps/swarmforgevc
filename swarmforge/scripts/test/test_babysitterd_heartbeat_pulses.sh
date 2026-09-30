@@ -165,16 +165,16 @@ pass "04: wedged mute babysitterd still trips stale-heartbeat"
 grep -q 'pulse_heartbeat()' "$DAEMON" || fail "05: pulse_heartbeat helper missing"
 # Helper body is only a printf of a heartbeat line (no git).
 HELPER_BODY="$(awk '/^pulse_heartbeat\(\)/,/^}/' "$DAEMON")"
-printf '%s\n' "$HELPER_BODY" | grep -q 'printf.*heartbeat' \
+printf '%s\n' "$HELPER_BODY" | grep 'printf.*heartbeat' >/dev/null \
   || fail "05: pulse_heartbeat must printf a heartbeat line"
-printf '%s\n' "$HELPER_BODY" | grep -qiE 'git |index|worktree|add |commit' \
+printf '%s\n' "$HELPER_BODY" | grep -iE 'git |index|worktree|add |commit' >/dev/null \
   && fail "05: pulse_heartbeat must not touch git"
 # tick() calls pulse before AND after babysitter_check
 TICK_BODY="$(awk '/^tick\(\)/,/^}/' "$DAEMON")"
 ORDER="$(printf '%s\n' "$TICK_BODY" | grep -nE 'pulse_heartbeat|babysitter_check' | cut -d: -f2-)"
-printf '%s\n' "$ORDER" | head -n1 | grep -q pulse_heartbeat \
+printf '%s\n' "$ORDER" | head -n1 | grep pulse_heartbeat >/dev/null \
   || fail "05: tick must pulse before babysitter_check; order=$ORDER"
-printf '%s\n' "$ORDER" | tail -n1 | grep -q pulse_heartbeat \
+printf '%s\n' "$ORDER" | tail -n1 | grep pulse_heartbeat >/dev/null \
   || fail "05: tick must pulse after babysitter_check; order=$ORDER"
 # Cold-start pulse is a TOP-LEVEL pulse_heartbeat call before `while true`
 # (outside tick/helpers). Counting any pulse_heartbeat line before while is

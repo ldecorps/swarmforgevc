@@ -61,14 +61,14 @@ WT="$ROOT/.worktrees/role"
 (cd "$ROOT" && git show main:swarmforge/scripts/baz.sh) > "$WT/swarmforge/scripts/baz.sh"
 
 RAW_MERGE_OUT="$(cd "$WT" && git merge main --no-edit 2>&1)" && fail "01: expected the RAW git merge to be refused (sanity check on the fixture), it succeeded: $RAW_MERGE_OUT" || true
-echo "$RAW_MERGE_OUT" | grep -q "would be overwritten by merge" \
+echo "$RAW_MERGE_OUT" | grep "would be overwritten by merge" >/dev/null \
   || fail "01: expected the raw merge's own refusal message, got: $RAW_MERGE_OUT"
 pass "01 sanity: the raw git merge is refused by identical untracked copies, reproducing the defect"
 
 OUT="$(bb "$TOOL" "$WT" main 2>&1)" || fail "01: expected the tool to succeed on all-identical collisions, got: $OUT"
-echo "$OUT" | grep -q "cleared (byte-identical to main): swarmforge/scripts/bar.sh" \
+echo "$OUT" | grep "cleared (byte-identical to main): swarmforge/scripts/bar.sh" >/dev/null \
   || fail "01: expected bar.sh reported cleared, got: $OUT"
-echo "$OUT" | grep -q "cleared (byte-identical to main): swarmforge/scripts/baz.sh" \
+echo "$OUT" | grep "cleared (byte-identical to main): swarmforge/scripts/baz.sh" >/dev/null \
   || fail "01: expected baz.sh reported cleared, got: $OUT"
 pass "01: identical untracked copies are cleared and the merge completes with no manual clearing"
 
@@ -92,9 +92,9 @@ echo "echo baz LOCALLY MODIFIED" > "$WT2/swarmforge/scripts/baz.sh"
 BEFORE_HEAD="$(cd "$WT2" && git rev-parse HEAD)"
 
 OUT2="$(bb "$TOOL" "$WT2" main 2>&1)" && fail "03: expected the tool to refuse when a copy differs, it exited 0: $OUT2" || true
-echo "$OUT2" | grep -q "swarmforge/scripts/baz.sh" \
+echo "$OUT2" | grep "swarmforge/scripts/baz.sh" >/dev/null \
   || fail "03: expected the refusal to name baz.sh, got: $OUT2"
-echo "$OUT2" | grep -q "swarmforge/scripts/bar.sh" \
+echo "$OUT2" | grep "swarmforge/scripts/bar.sh" >/dev/null \
   && fail "03: expected the refusal to NOT name bar.sh (it is identical, not the blocker), got: $OUT2" || true
 pass "03: a differing untracked copy refuses the merge rather than overwriting it"
 
@@ -119,8 +119,8 @@ echo "echo bar LOCALLY MODIFIED" > "$WT3/swarmforge/scripts/bar.sh"
 echo "echo baz LOCALLY MODIFIED" > "$WT3/swarmforge/scripts/baz.sh"
 
 OUT3="$(bb "$TOOL" "$WT3" main 2>&1)" && fail "04: expected the tool to refuse, it exited 0: $OUT3" || true
-echo "$OUT3" | grep -q "swarmforge/scripts/bar.sh" || fail "04: expected bar.sh named in the one refusal, got: $OUT3"
-echo "$OUT3" | grep -q "swarmforge/scripts/baz.sh" || fail "04: expected baz.sh named in the SAME refusal (not a second round), got: $OUT3"
+echo "$OUT3" | grep "swarmforge/scripts/bar.sh" >/dev/null || fail "04: expected bar.sh named in the one refusal, got: $OUT3"
+echo "$OUT3" | grep "swarmforge/scripts/baz.sh" >/dev/null || fail "04: expected baz.sh named in the SAME refusal (not a second round), got: $OUT3"
 pass "04: a single refusal names every colliding path at once, no elision, no second discovery round"
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -139,7 +139,7 @@ echo "irreplaceable scratch notes, on no branch" > "$WT4/swarmforge/scripts/my_l
 OUT4="$(bb "$TOOL" "$WT4" main 2>&1)" || fail "05: expected the tool to succeed (the notes file is not a collision), got: $OUT4"
 [[ "$(cat "$WT4/swarmforge/scripts/my_local_notes.txt")" == "irreplaceable scratch notes, on no branch" ]] \
   || fail "05: expected the no-branch-content file to survive untouched"
-echo "$OUT4" | grep -q "my_local_notes.txt" && fail "05: expected the notes file to never even be mentioned - it was never a candidate" || true
+echo "$OUT4" | grep "my_local_notes.txt" >/dev/null && fail "05: expected the notes file to never even be mentioned - it was never a candidate" || true
 pass "05: an untracked file whose content is on no branch is left in place, untouched - invariant 2"
 
 echo "ALL PASS"

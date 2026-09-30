@@ -121,12 +121,12 @@ else
   fail "architect got $(note_count architect) notes"
 fi
 # The human's ruling: told for every reason, WOKEN only for a dirty worktree.
-if daemon_log | grep -q 'post-qa-branch-sweep-told cleaner dirty-worktree woken'; then
+if daemon_log | grep 'post-qa-branch-sweep-told cleaner dirty-worktree woken' >/dev/null; then
   pass "the dirty role is WOKEN - the one reason that does not resolve itself"
 else
   fail "the dirty role was not woken: $(daemon_log | grep post-qa-branch-sweep-told | tail -2)"
 fi
-if daemon_log | grep -q 'post-qa-branch-sweep-told architect divergent-branch deferred'; then
+if daemon_log | grep 'post-qa-branch-sweep-told architect divergent-branch deferred' >/dev/null; then
   pass "the divergent role is told but DEFERRED - its next parcel merges it anyway"
 else
   fail "the divergent role was not deferred: $(daemon_log | grep post-qa-branch-sweep-told | tail -2)"

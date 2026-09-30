@@ -37,7 +37,7 @@ printf 'do not commit\n' > "$ROOT/node_modules/huge.js"
 OUT="$(REEXPEDITE_SKIP_PREFLIGHT=1 bash "$ROOT/swarmforge/scripts/reexpedite_from_wip.sh" "$ROOT" BL-696)"
 
 check "checkpoint commit contains WIP" \
-  'git -C "$ROOT" show --name-only --format= HEAD | grep -qx wip.txt'
+  'git -C "$ROOT" show --name-only --format= HEAD | grep -x wip.txt >/dev/null'
 check "checkpoint excludes root node_modules" \
   '! git -C "$ROOT" ls-files --error-unmatch node_modules/huge.js >/dev/null 2>&1'
 check "expedite wrapper is invoked for the ticket" \

@@ -252,8 +252,8 @@ PANE_PID="$WORKING_PANE_PID"
 queue_hardender_parcel case1a
 : > "$TMUX_LOG"
 OUT="$(run_attempt_rotate specifier 2>&1)"
-echo "$OUT" | grep -q ":ok false" || fail "01a: expected refusal, got: $OUT"
-echo "$OUT" | grep -q "departing-mid-parcel" || fail "01a: expected :reason departing-mid-parcel, got: $OUT"
+echo "$OUT" | grep ":ok false" >/dev/null || fail "01a: expected refusal, got: $OUT"
+echo "$OUT" | grep "departing-mid-parcel" >/dev/null || fail "01a: expected :reason departing-mid-parcel, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "01a: pane must NOT be respawned on refusal, log: $(cat "$TMUX_LOG")"
 TFILE="$(telemetry_file)"
 [[ -n "$TFILE" ]] || fail "01a: expected a chaser telemetry file to exist"
@@ -271,8 +271,8 @@ queue_hardender_parcel case1b
 write_audit_challenge hardender 1000
 : > "$TMUX_LOG"
 OUT="$(run_attempt_rotate specifier 2>&1)"
-echo "$OUT" | grep -q ":ok false" || fail "01b: expected refusal, got: $OUT"
-echo "$OUT" | grep -q "departing-mid-parcel" || fail "01b: expected :reason departing-mid-parcel, got: $OUT"
+echo "$OUT" | grep ":ok false" >/dev/null || fail "01b: expected refusal, got: $OUT"
+echo "$OUT" | grep "departing-mid-parcel" >/dev/null || fail "01b: expected :reason departing-mid-parcel, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "01b: pane must NOT be respawned on refusal, log: $(cat "$TMUX_LOG")"
 TFILE="$(telemetry_file)"
 [[ -n "$TFILE" ]] || fail "01b: expected a chaser telemetry file to exist"
@@ -316,7 +316,7 @@ PANE_PID="$WORKING_PANE_PID"
 queue_hardender_parcel case4
 : > "$TMUX_LOG"
 OUT="$(run_attempt_rotate hardender 2>&1)"
-echo "$OUT" | grep -q "departing-mid-parcel" \
+echo "$OUT" | grep "departing-mid-parcel" >/dev/null \
   && fail "04: rotating into the parcel's own owner must never read as departing-mid-parcel, got: $OUT"
 pass "04: rotating into the role that owns the parcel is never a displacement"
 clear_hardender_parcels
@@ -367,8 +367,8 @@ queue_hardender_parcel case07
 : > "$TMUX_LOG"
 rm -f "$ROOT/.swarmforge/telemetry"/chaser-*.jsonl
 OUT="$(run_attempt_rotate coder 2>&1)"
-echo "$OUT" | grep -q ":ok false" || fail "07: expected refusal, got: $OUT"
-echo "$OUT" | grep -q "departing-mid-parcel" || fail "07: expected :reason departing-mid-parcel, got: $OUT"
+echo "$OUT" | grep ":ok false" >/dev/null || fail "07: expected refusal, got: $OUT"
+echo "$OUT" | grep "departing-mid-parcel" >/dev/null || fail "07: expected :reason departing-mid-parcel, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "07: pane must NOT be respawned on refusal, log: $(cat "$TMUX_LOG")"
 TFILE="$(telemetry_file)"
 [[ -n "$TFILE" ]] || fail "07: expected a chaser telemetry file to exist"
@@ -407,8 +407,8 @@ for case_id in "08a:a git_handoff parcel" "08b:a note from documenter" "08c:a ra
   : > "$TMUX_LOG"
   rm -f "$(consult_marker_for specifier)"
   OUT="$(run_attempt_rotate specifier 2>&1)"
-  echo "$OUT" | grep -q ":ok false" || fail "$marker: expected refusal, got: $OUT"
-  echo "$OUT" | grep -q "departing-mid-parcel" || fail "$marker: expected :reason departing-mid-parcel, got: $OUT"
+  echo "$OUT" | grep ":ok false" >/dev/null || fail "$marker: expected refusal, got: $OUT"
+  echo "$OUT" | grep "departing-mid-parcel" >/dev/null || fail "$marker: expected :reason departing-mid-parcel, got: $OUT"
   grep -q "new-session" "$TMUX_LOG" \
     && fail "$marker: no tmux session may ever be created for a departing-mid-parcel refusal, log: $(cat "$TMUX_LOG")"
   [[ -f "$(consult_marker_for specifier)" ]] \
@@ -462,7 +462,7 @@ SESSION_MISSING="swarmforge-specifier"
 : > "$TMUX_LOG"
 rm -f "$(consult_marker_for specifier)"
 OUT="$(run_attempt_rotate specifier 2>&1)"
-echo "$OUT" | grep -q "departing-mid-parcel" || fail "10: expected :reason departing-mid-parcel, got: $OUT"
+echo "$OUT" | grep "departing-mid-parcel" >/dev/null || fail "10: expected :reason departing-mid-parcel, got: $OUT"
 grep -q "new-session" "$TMUX_LOG" \
   && fail "10: the retired knob's mere presence must not enable a second session, log: $(cat "$TMUX_LOG")"
 pass "10: a pack conf that still carries the single-inference-slot knob launches and chases like one without it"

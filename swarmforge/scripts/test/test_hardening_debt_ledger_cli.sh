@@ -91,7 +91,7 @@ NO_EVIDENCE_EXIT=$?
 set -e
 check "discharge: missing --evidence refuses (nonzero exit)" '[[ "$NO_EVIDENCE_EXIT" -ne 0 ]]'
 check "discharge: a refused discharge leaves BL-917 undischarged" \
-  '! grep -A8 "^- parcel: BL-917$" "$ROOT/backlog/hardening-debt-ledger.yaml" | grep -q discharged_at'
+  '! grep -A8 "^- parcel: BL-917$" "$ROOT/backlog/hardening-debt-ledger.yaml" | grep discharged_at >/dev/null'
 
 # ── --discharge naming no matching row refuses, nothing written ───────────
 set +e
@@ -108,7 +108,7 @@ check "attempt: the row gains attempted_at" '[[ "$(ledger)" == *"attempted_at: 2
 check "attempt: the row gains attempted_blocker" \
   '[[ "$(ledger)" == *"attempted_blocker: \"mutation_cooldown_gate.bb: skip-cooldown\""* ]]'
 check "attempt: the row is NOT discharged (invariant 3)" \
-  '! grep -A10 "^- parcel: BL-917$" "$ROOT/backlog/hardening-debt-ledger.yaml" | grep -q discharged_at'
+  '! grep -A10 "^- parcel: BL-917$" "$ROOT/backlog/hardening-debt-ledger.yaml" | grep discharged_at >/dev/null'
 
 READ_AFTER_ATTEMPT="$(bb "$READ_CLI" "$ROOT")"
 check "read: an attempted row shows attempted_blocker, discharged_at still null" \

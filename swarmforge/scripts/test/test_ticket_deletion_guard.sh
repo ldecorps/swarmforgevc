@@ -57,7 +57,7 @@ OUT2="$(run_guard "$MSG_OMIT" 2>&1)"
 STATUS2=$?
 set -e
 [[ "$STATUS2" -ne 0 ]] || fail "02: expected the guard to refuse a naked deletion whose message omits the ticket id"
-echo "$OUT2" | grep -q "BL-893" || fail "02: refusal must name the ticket id, got: $OUT2"
+echo "$OUT2" | grep "BL-893" >/dev/null || fail "02: refusal must name the ticket id, got: $OUT2"
 pass "02: a naked deletion with the ticket id omitted from the message is refused, naming the ticket"
 
 # ── 3: the same naked deletion, message names the ticket id -> allowed ────
@@ -92,7 +92,7 @@ OUT6="$(run_guard "$MSG_OMIT" 2>&1)"
 STATUS6=$?
 set -e
 [[ "$STATUS6" -ne 0 ]] || fail "06: an untracked copy in the working tree must not excuse a naked staged deletion"
-echo "$OUT6" | grep -q "BL-893" || fail "06: refusal must name the ticket id, got: $OUT6"
+echo "$OUT6" | grep "BL-893" >/dev/null || fail "06: refusal must name the ticket id, got: $OUT6"
 pass "06: an untracked working-tree copy of the deleted ticket does not excuse it"
 
 git -C "$ROOT" reset -q
@@ -154,7 +154,7 @@ OUT8="$(cd "$ROOT" && git -c user.email=test@test -c user.name=test commit -q -m
 STATUS8=$?
 set -e
 [[ "$STATUS8" -ne 0 ]] || fail "08: expected a real git commit to be blocked by the installed pre-commit/commit-msg hooks"
-echo "$OUT8" | grep -q "BL-893" || fail "08: hook output must name the offending ticket id, got: $OUT8"
+echo "$OUT8" | grep "BL-893" >/dev/null || fail "08: hook output must name the offending ticket id, got: $OUT8"
 pass "08: an installed pre-commit+commit-msg hook pair blocks a real git commit that silently deletes a ticket"
 
 # ── 9: with the hooks installed, naming the ticket still allows the commit ─
@@ -171,7 +171,7 @@ OUT10="$(cd "$ROOT" && git -c user.email=test@test -c user.name=test commit -q -
 STATUS10=$?
 set -e
 [[ "$STATUS10" -ne 0 ]] || fail "10: expected the commit-size guard to still block an oversized file"
-echo "$OUT10" | grep -q "blob.bin" || fail "10: size-guard output must name the offending file, got: $OUT10"
+echo "$OUT10" | grep "blob.bin" >/dev/null || fail "10: size-guard output must name the offending file, got: $OUT10"
 pass "10: the pre-existing commit-size guard still runs alongside the new ticket-deletion guard"
 git -C "$ROOT" reset -q
 rm -f "$ROOT/blob.bin"
@@ -192,8 +192,8 @@ OUT11="$(run_guard "$MSG_OMIT" 2>&1)"
 STATUS11=$?
 set -e
 [[ "$STATUS11" -ne 0 ]] || fail "11: expected refusal when one of two naked deletions is left unnamed"
-echo "$OUT11" | grep -q "BL-200" || fail "11: refusal must name the unnamed ticket BL-200, got: $OUT11"
-echo "$OUT11" | grep -q "(BL-100)" && fail "11: refusal must not also flag the already-named ticket BL-100, got: $OUT11"
+echo "$OUT11" | grep "BL-200" >/dev/null || fail "11: refusal must name the unnamed ticket BL-200, got: $OUT11"
+echo "$OUT11" | grep "(BL-100)" >/dev/null && fail "11: refusal must not also flag the already-named ticket BL-100, got: $OUT11"
 pass "11: with two naked deletions, naming only one still refuses and names the unnamed one specifically"
 
 # ── 12 (2+ candidates, allow path): the same two naked deletions, message

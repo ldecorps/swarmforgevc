@@ -88,8 +88,8 @@ pass "05: one generation-scoped atom yields exactly one send across cycles"
 
 # ── 06: alert text names RESEND_API_KEY and the env file path ───────────────
 out="$(run_bb '(println (format-keyless-alert "/fixture/.swarmforge/operator/daemon.env"))')"
-echo "$out" | grep -q "RESEND_API_KEY" || fail "06: alert must name RESEND_API_KEY: $out"
-echo "$out" | grep -q "/fixture/.swarmforge/operator/daemon.env" || fail "06: alert must name the env file path: $out"
+echo "$out" | grep "RESEND_API_KEY" >/dev/null || fail "06: alert must name RESEND_API_KEY: $out"
+echo "$out" | grep "/fixture/.swarmforge/operator/daemon.env" >/dev/null || fail "06: alert must name the env file path: $out"
 pass "06: alert names RESEND_API_KEY and the operator env file path"
 
 echo "ALL PASS"

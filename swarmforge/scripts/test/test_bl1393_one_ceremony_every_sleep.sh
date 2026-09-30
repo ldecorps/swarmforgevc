@@ -96,7 +96,7 @@ fi
 # which is what keeps this ticket from changing the schedule.
 make_root gated
 out="$(run_ceremony "$WORK/gated" --now 1757000000000)"
-if grep -q '"advanced": *false' <<<"$out" || grep -q '"gateMode": *"off"' <<<"$out"; then
+if grep -q '"advanced": *false' <<<"$out" || grep '"gateMode": *"off"' >/dev/null <<<"$out"; then
   pass "without a sleep path the daemon's window still gates the ceremony"
 else
   fail "the window no longer gates the daemon's trigger: $(tail -2 <<<"$out")"

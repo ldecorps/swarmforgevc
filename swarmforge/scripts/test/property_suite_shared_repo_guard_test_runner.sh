@@ -42,7 +42,7 @@ OUT03="$("$RECOVERY" "$ROOT" 2>&1)"
 ST03=$?
 set -e
 [[ "$ST03" -ne 0 ]] || fail "03: ahead tip must refuse recovery, got 0: $OUT03"
-echo "$OUT03" | grep -q 'ahead of origin/main' || fail "03: expected ahead message: $OUT03"
+echo "$OUT03" | grep 'ahead of origin/main' >/dev/null || fail "03: expected ahead message: $OUT03"
 pass "03: recovery refuses reset-to-origin when local is ahead"
 
 # ── 04: refuse live fixture dest ──────────────────────────────────────────
@@ -98,7 +98,7 @@ OUT05="$(cd "$FIX" && env -u SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD bash "$DRIFT" 
 ST05=$?
 set -e
 [[ "$ST05" -ne 0 ]] || fail "05: drift guard must fail canary on bare flip: $OUT05"
-echo "$OUT05" | grep -q 'BL-1124' || fail "05: expected BL-1124 marker: $OUT05"
+echo "$OUT05" | grep 'BL-1124' >/dev/null || fail "05: expected BL-1124 marker: $OUT05"
 rm -rf "$FIX"
 pass "05: property-suite drift guard fails when suite flips core.bare"
 

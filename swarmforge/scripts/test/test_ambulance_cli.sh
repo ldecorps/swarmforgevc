@@ -25,12 +25,12 @@ mk_fixture() {
 ROOT="$(mk_fixture)"
 
 OUT="$(bb "$AMBULANCE_CLI" "$ROOT" status)"
-echo "$OUT" | grep -q '"active":false' || fail "status-01: a fresh fixture must read inactive; got: $OUT"
+echo "$OUT" | grep '"active":false' >/dev/null || fail "status-01: a fresh fixture must read inactive; got: $OUT"
 pass "status-01: no marker -> inactive"
 
 OUT="$(bb "$AMBULANCE_CLI" "$ROOT" engage BL-654)"
-echo "$OUT" | grep -q '"active":true' || fail "engage-01: expected active:true; got: $OUT"
-echo "$OUT" | grep -q '"ticket":"BL-654"' || fail "engage-01: expected ticket BL-654; got: $OUT"
+echo "$OUT" | grep '"active":true' >/dev/null || fail "engage-01: expected active:true; got: $OUT"
+echo "$OUT" | grep '"ticket":"BL-654"' >/dev/null || fail "engage-01: expected ticket BL-654; got: $OUT"
 pass "engage-01: engage writes an active marker naming the ticket"
 
 FIRST_AT_MS="$(bb "$AMBULANCE_CLI" "$ROOT" status | grep -o '"engagedAtMs":[0-9]*')"
@@ -46,12 +46,12 @@ OUT="$(bb "$AMBULANCE_CLI" "$ROOT" engage BL-999 2>&1)"
 STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 ]] || fail "engage-02: engaging a nonexistent ticket must refuse (nonzero exit); got exit 0: $OUT"
-echo "$OUT" | grep -qi "no YAML file" || fail "engage-02: expected a no-file refusal message; got: $OUT"
+echo "$OUT" | grep -i "no YAML file" >/dev/null || fail "engage-02: expected a no-file refusal message; got: $OUT"
 pass "engage-02: engaging a ticket with no backlog file anywhere refuses instead of locking the swarm"
 
 # The refused engage above must not have disturbed the live BL-654 marker.
 OUT="$(bb "$AMBULANCE_CLI" "$ROOT" status)"
-echo "$OUT" | grep -q '"ticket":"BL-654"' || fail "engage-02: a refused engage must leave the existing marker untouched; got: $OUT"
+echo "$OUT" | grep '"ticket":"BL-654"' >/dev/null || fail "engage-02: a refused engage must leave the existing marker untouched; got: $OUT"
 pass "engage-02b: a refused engage leaves the existing marker untouched"
 
 set +e
@@ -62,16 +62,16 @@ set -e
 pass "engage-03: a syntactically invalid ticket id refuses"
 
 OUT="$(bb "$AMBULANCE_CLI" "$ROOT" release)"
-echo "$OUT" | grep -q '"active":false' || fail "release-01: expected active:false; got: $OUT"
+echo "$OUT" | grep '"active":false' >/dev/null || fail "release-01: expected active:false; got: $OUT"
 pass "release-01: release clears an active marker"
 
 OUT="$(bb "$AMBULANCE_CLI" "$ROOT" status)"
-echo "$OUT" | grep -q '"active":false' || fail "release-01b: status after release must read inactive; got: $OUT"
+echo "$OUT" | grep '"active":false' >/dev/null || fail "release-01b: status after release must read inactive; got: $OUT"
 pass "release-01b: status after release reads inactive"
 
 # ambulance-hold-09: a release with no mode set is a true no-op.
 OUT="$(bb "$AMBULANCE_CLI" "$ROOT" release)"
-echo "$OUT" | grep -q '"active":false' || fail "release-02: releasing an already-released marker must still read inactive; got: $OUT"
+echo "$OUT" | grep '"active":false' >/dev/null || fail "release-02: releasing an already-released marker must still read inactive; got: $OUT"
 pass "release-02: releasing with no mode set is a no-op"
 
 rm -rf "$ROOT"

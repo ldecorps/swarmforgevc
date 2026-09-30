@@ -118,7 +118,7 @@ pass "ambulance-hold-01: no parcel was moved to failed, abandoned, or completed"
 release_marker "$ROOT_A"
 for _ in $(seq 1 40); do
   [[ -n "$(find "$CLEANER_INBOX_NEW_A" -maxdepth 1 -name '*.handoff' -newer "$GH_654" 2>/dev/null)" ]] && break
-  find "$CLEANER_INBOX_NEW_A" -maxdepth 1 -name '*.handoff' 2>/dev/null | grep -q "660\|BL-660" && break
+  find "$CLEANER_INBOX_NEW_A" -maxdepth 1 -name '*.handoff' 2>/dev/null | grep "660\|BL-660" >/dev/null && break
   sleep 0.25
 done
 sleep 1

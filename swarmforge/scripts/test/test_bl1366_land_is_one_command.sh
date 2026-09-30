@@ -227,7 +227,7 @@ run_land "$SHA"
 # the coder's BL-1716-spec-gap-shell-test-residual-20260924.md evidence).
 # A genuine fresh publish (some other host/timing truly interrupting the
 # first land mid-flight) still passes too.
-if [[ "$(origin_main)" == "$SHA" ]] || grep -q 'LAND_PUBLISHED' <<<"$(land_out)"; then
+if [[ "$(origin_main)" == "$SHA" ]] || grep 'LAND_PUBLISHED' >/dev/null <<<"$(land_out)"; then
   pass "and a subsequent land succeeds"
 elif grep -q 'nothing to commit' <<<"$(land_out)"; then
   pass "and a repeat land of the already-landed commit correctly finds nothing to commit"
@@ -273,7 +273,7 @@ if [[ "$LIVE_ORIGIN_BEFORE" == "$(git -C "$REPO_ROOT" config --get remote.origin
 else
   fail "the suite changed the live origin URL: '$LIVE_ORIGIN_BEFORE' -> '$(git -C "$REPO_ROOT" config --get remote.origin.url 2>/dev/null)'"
 fi
-if git -C "$REPO_ROOT" remote -v 2>/dev/null | grep -q "$WORK"; then
+if git -C "$REPO_ROOT" remote -v 2>/dev/null | grep "$WORK" >/dev/null; then
   fail "a live remote now points into this suite's fixture directory"
 else
   pass "no live remote points into the fixture directory"

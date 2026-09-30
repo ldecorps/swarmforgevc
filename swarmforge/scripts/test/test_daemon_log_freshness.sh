@@ -238,7 +238,7 @@ check "06: escalation announce invoked" \
 check "06: the escalate durable record names its swarm too, not just the announce" \
   'grep -q "action=escalate" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "swarm=primary" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
 check "06: and states the reason instead of a raw sentinel in the record" \
-  'grep "action=escalate" "$ROOT/.swarmforge/daemon/freshness-incidents.log" | grep -q "reason=stale-heartbeat"'
+  'grep "action=escalate" "$ROOT/.swarmforge/daemon/freshness-incidents.log" | grep "reason=stale-heartbeat" >/dev/null'
 pass "06: cool-off escalates without hammering restarts"
 
 # ── BL-789: SWARMFORGE_SKIP_BABYSITTERD honoured by the real checker ──────
@@ -431,9 +431,9 @@ NO_CRONTAB_RC=$?
 set -e
 check "BL-783: missing crontab command exits non-zero" '[[ "$NO_CRONTAB_RC" -ne 0 ]]'
 check "BL-783: missing crontab command names the root that will not be watched" \
-  "printf '%s' \"\$NO_CRONTAB_OUT\" | grep -qF \"$ROOT\""
+  "printf '%s' \"\$NO_CRONTAB_OUT\" | grep -F \"$ROOT\" >/dev/null"
 check "BL-783: missing crontab command says the watchdog will NOT run" \
-  'printf "%s" "$NO_CRONTAB_OUT" | grep -q "will NOT run"'
+  'printf "%s" "$NO_CRONTAB_OUT" | grep "will NOT run" >/dev/null'
 pass "BL-783: absent crontab command fails loud and names what is unwatched"
 
 # ── hardening (mutation_cost: low): work≠liveness, missing log, record-before-announce, pid guard ─
@@ -851,7 +851,7 @@ check "BL-1011: the grace record names its swarm too, not just the restart/escal
 check "BL-1011: and states the reason instead of a raw sentinel - the log is absent here, by construction" \
   'grep -q "action=grace" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "reason=log-absent" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
 check "BL-1011: the grace record itself contains no raw 999999999, even though its own condition IS the sentinel" \
-  '! (grep "action=grace" "$ROOT/.swarmforge/daemon/freshness-incidents.log" | grep -q "999999999")'
+  '! (grep "action=grace" "$ROOT/.swarmforge/daemon/freshness-incidents.log" | grep "999999999" >/dev/null)'
 
 # qa step 5 - past the grace window the same absent log IS a violation again.
 grace_run 600
@@ -1354,9 +1354,9 @@ printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd
 seed_announce_state "$ROOT" "handoffd" "stale-heartbeat" "$((NOW - 60))" 3 "$((NOW - 60))"
 run_checker_digest "$ROOT" "$NOW" 1800
 check "BL-1414-05a: exactly one message is announced for the new (babysitterd) violation" \
-  'grep -c "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -qx 1'
+  'grep -c "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -x 1 >/dev/null'
 check "BL-1414-05a: the violation message names babysitterd, not handoffd" \
-  'grep "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -q "daemon=babysitterd" && ! grep "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -q "daemon=handoffd"'
+  'grep "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep "daemon=babysitterd" >/dev/null && ! grep "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep "daemon=handoffd" >/dev/null'
 # handoffd is independently fresh in this fixture and was seeded mid-
 # violation, so it also, correctly and separately, recovers on this same
 # tick (BL-1414-04's own mechanic) - not what this scenario is about, but
@@ -1376,7 +1376,7 @@ printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd
 seed_announce_state "$ROOT" "handoffd" "stale-heartbeat" "$((NOW - 60))" 3 "$((NOW - 60))"
 run_checker_digest "$ROOT" "$NOW" 1800
 check "BL-1414-05b: exactly one message is announced for the new (no-heartbeat-line) violation" \
-  'grep -c "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -qx 1'
+  'grep -c "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -x 1 >/dev/null'
 check "BL-1414-05b: it names the new reason, not the pre-existing one" \
   'grep -q "reason=no-heartbeat-line" "$ROOT/announces.log"'
 pass "BL-1414-05b: the same daemon violating for a different reason is its own first announce"

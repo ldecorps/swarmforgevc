@@ -34,9 +34,9 @@ run_status() {  # sets OUT
 echo $$ > "$ROOT/.swarmforge/operator/tunnel.pid"
 echo 99999999 > "$ROOT/.swarmforge/operator/resident-spy-cloudflared.pid"
 run_status
-row_for "$OUT" "vscode-tunnel" | grep -q "^\s*UP" \
+row_for "$OUT" "vscode-tunnel" | grep "^\s*UP" >/dev/null \
   || fail "example1: expected vscode-tunnel UP, got: $(row_for "$OUT" "vscode-tunnel")"
-row_for "$OUT" "bubble-cloudflared" | grep -q "^\s*DOWN" \
+row_for "$OUT" "bubble-cloudflared" | grep "^\s*DOWN" >/dev/null \
   || fail "example1: expected bubble-cloudflared DOWN, got: $(row_for "$OUT" "bubble-cloudflared")"
 pass "example1: editor up / named down renders as two independent, correctly-diverging rows"
 
@@ -44,23 +44,23 @@ pass "example1: editor up / named down renders as two independent, correctly-div
 echo 99999999 > "$ROOT/.swarmforge/operator/tunnel.pid"
 echo $$ > "$ROOT/.swarmforge/operator/resident-spy-cloudflared.pid"
 run_status
-row_for "$OUT" "vscode-tunnel" | grep -q "^\s*DOWN" \
+row_for "$OUT" "vscode-tunnel" | grep "^\s*DOWN" >/dev/null \
   || fail "example2: expected vscode-tunnel DOWN, got: $(row_for "$OUT" "vscode-tunnel")"
-row_for "$OUT" "bubble-cloudflared" | grep -q "^\s*UP" \
+row_for "$OUT" "bubble-cloudflared" | grep "^\s*UP" >/dev/null \
   || fail "example2: expected bubble-cloudflared UP, got: $(row_for "$OUT" "bubble-cloudflared")"
 pass "example2: editor down / named up renders as two independent, correctly-diverging rows"
 
 # ── regression: no cloudflare-tunnel row survives under the old name ─────
-echo "$OUT" | grep -q "cloudflare-tunnel " \
+echo "$OUT" | grep "cloudflare-tunnel " >/dev/null \
   && fail "expected the old ambiguous 'cloudflare-tunnel' row name to be gone entirely"
 pass "the old ambiguous cloudflare-tunnel row name no longer appears anywhere"
 
 # ── constraint: an unconfigured root reports NOT_CONFIGURED, never DOWN ──
 rm -f "$ROOT/.swarmforge/operator/named-tunnel.env" "$ROOT/.swarmforge/operator/resident-spy-cloudflared.pid"
 run_status
-row_for "$OUT" "bubble-cloudflared" | grep -q "NOT_CONFIGURED" \
+row_for "$OUT" "bubble-cloudflared" | grep "NOT_CONFIGURED" >/dev/null \
   || fail "expected bubble-cloudflared NOT_CONFIGURED with no named tunnel configured, got: $(row_for "$OUT" "bubble-cloudflared")"
-row_for "$OUT" "bubble-cloudflared" | grep -q "^\s*DOWN" \
+row_for "$OUT" "bubble-cloudflared" | grep "^\s*DOWN" >/dev/null \
   && fail "an absent named tunnel must never render as DOWN (that reads as a fault that does not exist)"
 pass "an unconfigured root reports bubble-cloudflared as NOT_CONFIGURED, never DOWN"
 

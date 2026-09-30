@@ -107,7 +107,7 @@ config coordinator_agent bogus
 window coder claude coder --model x
 CONF
 ERROR_OUTPUT="$(env -u SWARMFORGE_CONFIG zsh -c "source '$SWARMFORGE_SH' '$ROOT3'; parse_config" 2>&1 || true)"
-echo "$ERROR_OUTPUT" | grep -qi "Unsupported agent 'bogus' for role 'coordinator'" \
+echo "$ERROR_OUTPUT" | grep -i "Unsupported agent 'bogus' for role 'coordinator'" >/dev/null \
   || fail "03: expected the same 'Unsupported agent' error a bogus window-line agent gets, got: $ERROR_OUTPUT"
 pass "coordinator-provider-configurable-03: an unknown coordinator_agent fails launch loudly with the shared allow-list's own error"
 rm -rf "$ROOT3"

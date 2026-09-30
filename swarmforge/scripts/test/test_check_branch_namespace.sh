@@ -40,7 +40,7 @@ pass "01: a worktree outside its swarm's namespace fails fast, naming the expect
 # ── 02: after renaming to the unified scheme, the check passes ─────────────
 git -C "$ROOT" branch -m "swarmforge-coder" "primary/coder"
 OUT="$(bb "$CHECK" "$ROOT")"
-echo "$OUT" | grep -q "^OK: every role worktree branch matches the primary/<role> namespace$" \
+echo "$OUT" | grep "^OK: every role worktree branch matches the primary/<role> namespace$" >/dev/null \
   || fail "02: expected an OK report once every branch matches; got: $OUT"
 pass "02: every role worktree on its unified branch passes silently"
 
@@ -48,7 +48,7 @@ pass "02: every role worktree on its unified branch passes silently"
 git -C "$ROOT" branch -m "primary/coder" "alpha/coder"
 printf 'swarm_name\talpha\nswarm_mode\tautonomous\nswarm_mode_primary\talpha\n' > "$ROOT/.swarmforge/swarm-identity"
 OUT="$(bb "$CHECK" "$ROOT")"
-echo "$OUT" | grep -q "^OK: every role worktree branch matches the alpha/<role> namespace$" \
+echo "$OUT" | grep "^OK: every role worktree branch matches the alpha/<role> namespace$" >/dev/null \
   || fail "03: expected the check to honor a non-default swarm_name; got: $OUT"
 pass "03: a non-default swarm_name namespace is checked, not just the primary default"
 

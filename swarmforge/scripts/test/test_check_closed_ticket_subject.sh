@@ -60,8 +60,8 @@ set +e
 OUT="$(run_guard "$MSG" 2>&1)"; RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "01: expected refusal for a closed-ticket-leading subject"
-echo "$OUT" | grep -q "BL-9601" || fail "01: refusal must name the closed ticket, got: $OUT"
-echo "$OUT" | grep -qi "closed" || fail "01: refusal must say why (closed), got: $OUT"
+echo "$OUT" | grep "BL-9601" >/dev/null || fail "01: refusal must name the closed ticket, got: $OUT"
+echo "$OUT" | grep -i "closed" >/dev/null || fail "01: refusal must say why (closed), got: $OUT"
 pass "01: a subject leading with a closed ticket is refused, naming it"
 
 # ── 02: a subject leading with an open ticket commits ──────────────────────
@@ -98,7 +98,7 @@ set +e
 OUT="$(run_guard "$MSG" 2>&1)"; RC=$?
 set -e
 [[ "$RC" -eq 0 ]] || fail "05: expected an unreadable origin/main to fail OPEN, got rc=$RC: $OUT"
-echo "$OUT" | grep -qi "warning" || fail "05: expected a warning naming the unreadable origin/main, got: $OUT"
+echo "$OUT" | grep -i "warning" >/dev/null || fail "05: expected a warning naming the unreadable origin/main, got: $OUT"
 pass "05: an unreadable origin/main warns and commits"
 
 # ── 06: a subject naming two ids with neither leading is refused as
@@ -112,9 +112,9 @@ set +e
 OUT="$(run_guard "$MSG" 2>&1)"; RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "06: expected refusal for an ambiguous subject"
-echo "$OUT" | grep -q "BL-9606" || fail "06: refusal must name BL-9606, got: $OUT"
-echo "$OUT" | grep -q "BL-9607" || fail "06: refusal must name BL-9607, got: $OUT"
-echo "$OUT" | grep -qi "ambiguous" || fail "06: refusal must say ambiguous, got: $OUT"
+echo "$OUT" | grep "BL-9606" >/dev/null || fail "06: refusal must name BL-9606, got: $OUT"
+echo "$OUT" | grep "BL-9607" >/dev/null || fail "06: refusal must name BL-9607, got: $OUT"
+echo "$OUT" | grep -i "ambiguous" >/dev/null || fail "06: refusal must say ambiguous, got: $OUT"
 pass "06: a subject naming several ids with none leading is refused as ambiguous"
 
 # ── 07: a leading id with no ticket file anywhere on origin/main is refused
@@ -126,8 +126,8 @@ set +e
 OUT="$(run_guard "$MSG" 2>&1)"; RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "07: expected refusal for a leading id with no ticket file anywhere"
-echo "$OUT" | grep -q "BL-9608" || fail "07: refusal must name BL-9608, got: $OUT"
-echo "$OUT" | grep -qi "no ticket file" || fail "07: refusal must say no ticket file, got: $OUT"
+echo "$OUT" | grep "BL-9608" >/dev/null || fail "07: refusal must name BL-9608, got: $OUT"
+echo "$OUT" | grep -i "no ticket file" >/dev/null || fail "07: refusal must say no ticket file, got: $OUT"
 pass "07: a leading id with no ticket file anywhere on origin/main is refused as unknown"
 
 # ── 08: a verb-prefixed leading subject (close/promote/approve, any case)
@@ -140,7 +140,7 @@ set +e
 OUT="$(run_guard "$MSG" 2>&1)"; RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "08: expected refusal for a verb-prefixed closed-leading subject"
-echo "$OUT" | grep -q "BL-9609" || fail "08: refusal must name BL-9609, got: $OUT"
+echo "$OUT" | grep "BL-9609" >/dev/null || fail "08: refusal must name BL-9609, got: $OUT"
 pass "08: a verb-prefixed leading subject is read the same as a bare leading id"
 
 # ── 09: no message-file argument defers (pre-commit-time semantics) ────────
@@ -174,8 +174,8 @@ set +e
 OUT="$(run_guard "$MSG" 2>&1)"; RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "11: expected refusal for a single named-but-not-leading closed id"
-echo "$OUT" | grep -q "BL-9611" || fail "11: refusal must name BL-9611, got: $OUT"
-echo "$OUT" | grep -qi "closed" || fail "11: refusal must say closed, got: $OUT"
+echo "$OUT" | grep "BL-9611" >/dev/null || fail "11: refusal must name BL-9611, got: $OUT"
+echo "$OUT" | grep -i "closed" >/dev/null || fail "11: refusal must say closed, got: $OUT"
 pass "11: a single named-but-not-leading id still resolves and is refused when closed"
 
 # ── 12: a ticket id present under TWO folders on origin/main, only one of

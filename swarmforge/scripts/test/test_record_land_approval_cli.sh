@@ -46,12 +46,12 @@ OUT="$(bb "$CLI" "$ROOT" "$REPLAY_SHA" "$SOURCE_SHA" BL-9009 2>&1)"
 ST=$?
 set -e
 [[ "$ST" -eq 0 ]] || fail "02: expected exit 0, got $ST: $OUT"
-echo "$OUT" | grep -q "LAND_APPROVAL_RECORDED" || fail "02: expected LAND_APPROVAL_RECORDED, got: $OUT"
-echo "$OUT" | grep -q "VERDICT ${REPLAY_SHA:0:10} approved" || fail "02: expected the printed verdict to say approved, got: $OUT"
+echo "$OUT" | grep "LAND_APPROVAL_RECORDED" >/dev/null || fail "02: expected LAND_APPROVAL_RECORDED, got: $OUT"
+echo "$OUT" | grep "VERDICT ${REPLAY_SHA:0:10} approved" >/dev/null || fail "02: expected the printed verdict to say approved, got: $OUT"
 STORE="$(cat "$ROOT"/.swarmforge/land-approvals/*.jsonl)"
-echo "$STORE" | grep -q "\"commit\":\"${REPLAY_SHA:0:10}\"" || fail "02: record missing the replay commit: $STORE"
-echo "$STORE" | grep -q "\"source\":\"${SOURCE_SHA:0:10}\"" || fail "02: record missing the approved source: $STORE"
-echo "$STORE" | grep -q "\"ticket\":\"BL-9009\"" || fail "02: record missing the ticket id: $STORE"
+echo "$STORE" | grep "\"commit\":\"${REPLAY_SHA:0:10}\"" >/dev/null || fail "02: record missing the replay commit: $STORE"
+echo "$STORE" | grep "\"source\":\"${SOURCE_SHA:0:10}\"" >/dev/null || fail "02: record missing the approved source: $STORE"
+echo "$STORE" | grep "\"ticket\":\"BL-9009\"" >/dev/null || fail "02: record missing the ticket id: $STORE"
 set +e
 (cd "$ROOT" && bash "$PREDICATE" "$REPLAY_SHA" >/dev/null 2>&1)
 AFTER_EXIT=$?
@@ -95,9 +95,9 @@ set -e
 # non-zero exit is the verdict, never a refusal to record; QA's land
 # recipe checks this exit code, so it must actually gate).
 [[ "$ST4" -eq 1 ]] || fail "04: expected exit 1 for a not-approved verdict (the line is still written first), got $ST4: $OUT4"
-echo "$OUT4" | grep -q "LAND_APPROVAL_RECORDED" || fail "04: expected a record to be written, got: $OUT4"
-echo "$OUT4" | grep -q "VERDICT ${REPLAY4_SHA:0:10} not approved" || fail "04: expected the printed verdict to say not approved, got: $OUT4"
-echo "$OUT4" | grep -qi "name the reviewed commit on swarmforge-QA" || fail "04: expected the remedy on stderr, got: $OUT4"
+echo "$OUT4" | grep "LAND_APPROVAL_RECORDED" >/dev/null || fail "04: expected a record to be written, got: $OUT4"
+echo "$OUT4" | grep "VERDICT ${REPLAY4_SHA:0:10} not approved" >/dev/null || fail "04: expected the printed verdict to say not approved, got: $OUT4"
+echo "$OUT4" | grep -i "name the reviewed commit on swarmforge-QA" >/dev/null || fail "04: expected the remedy on stderr, got: $OUT4"
 set +e
 (cd "$ROOT4" && bash "$PREDICATE" "$REPLAY4_SHA" >/dev/null 2>&1)
 ST4b=$?
@@ -114,7 +114,7 @@ git -C "$ROOT5" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "han
 REPLAY5_SHA="$(git -C "$ROOT5" rev-parse HEAD)"
 bb "$CLI" "$ROOT5" "$REPLAY5_SHA" "$SOURCE5_SHA" BL-9009 >/dev/null
 OUT5b="$(bb "$CLI" "$ROOT5" "$REPLAY5_SHA" "$SOURCE5_SHA" BL-9009)"
-echo "$OUT5b" | grep -q "LAND_APPROVAL_ALREADY_RECORDED" || fail "05: expected the second call to recognize the duplicate, got: $OUT5b"
+echo "$OUT5b" | grep "LAND_APPROVAL_ALREADY_RECORDED" >/dev/null || fail "05: expected the second call to recognize the duplicate, got: $OUT5b"
 LINES5="$(wc -l < "$ROOT5"/.swarmforge/land-approvals/*.jsonl | tr -d ' ')"
 [[ "$LINES5" -eq 1 ]] || fail "05: expected exactly one line after two identical calls, got $LINES5"
 pass "05: running the CLI twice with the same arguments writes exactly one line"
@@ -137,9 +137,9 @@ OUT6="$(bb "$CLI" "$ROOT6" "$REPLAY6_SHA" "$SOURCE6_SHA" BL-9012 2>&1)"
 ST6=$?
 set -e
 [[ "$ST6" -eq 2 ]] || fail "06: expected exit 2 for an undeterminable verdict (the line is still written first), got $ST6: $OUT6"
-echo "$OUT6" | grep -q "LAND_APPROVAL_RECORDED" || fail "06: expected the write to still succeed before the verdict is judged, got: $OUT6"
-echo "$OUT6" | grep -q "VERDICT ${REPLAY6_SHA:0:10} undeterminable" || fail "06: expected the printed verdict to say undeterminable, got: $OUT6"
-echo "$OUT6" | grep -qi "name the reviewed commit on swarmforge-QA" || fail "06: expected the remedy on stderr, got: $OUT6"
+echo "$OUT6" | grep "LAND_APPROVAL_RECORDED" >/dev/null || fail "06: expected the write to still succeed before the verdict is judged, got: $OUT6"
+echo "$OUT6" | grep "VERDICT ${REPLAY6_SHA:0:10} undeterminable" >/dev/null || fail "06: expected the printed verdict to say undeterminable, got: $OUT6"
+echo "$OUT6" | grep -i "name the reviewed commit on swarmforge-QA" >/dev/null || fail "06: expected the remedy on stderr, got: $OUT6"
 pass "06: an undeterminable verdict (an obstructed store) still writes the line, then exits 2 distinctly from 'not approved'"
 
 echo "ALL PASS"

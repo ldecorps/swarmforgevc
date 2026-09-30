@@ -35,8 +35,8 @@ sed -i 's/^config briefing_morning_time_utc .*/config briefing_morning_time_utc 
 grep -q '^config closure_stop_local ' "$REAL_CONF" || fail "setup: closure_stop_local must remain for ceremony mode"
 
 GATE_OUT="$(node "$GATE_JS" --conf "$REAL_CONF")"
-echo "$GATE_OUT" | tr -d '\n ' | grep -q '"mode":"ceremony"' || fail "gate should report ceremony mode: $GATE_OUT"
-echo "$GATE_OUT" | tr -d '\n ' | grep -q '"consultFixedMorningTrigger":false' || fail "gate must suppress fixed trigger: $GATE_OUT"
+echo "$GATE_OUT" | tr -d '\n ' | grep '"mode":"ceremony"' >/dev/null || fail "gate should report ceremony mode: $GATE_OUT"
+echo "$GATE_OUT" | tr -d '\n ' | grep '"consultFixedMorningTrigger":false' >/dev/null || fail "gate must suppress fixed trigger: $GATE_OUT"
 pass "gate reports ceremony mode and suppresses fixed morning"
 
 SOCK="$ROOT/fake.sock"

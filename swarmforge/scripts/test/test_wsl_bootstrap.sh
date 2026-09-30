@@ -15,9 +15,9 @@ pass() { echo "PASS: $*"; }
 OUT="$( "$BOOTSTRAP" --check-only 2>&1 )" || RC=$?
 RC="${RC:-0}"
 
-echo "$OUT" | grep -q "SwarmForge VC WSL bootstrap" || fail "01: missing banner"
-echo "$OUT" | grep -q "Repo: $REPO_ROOT" || fail "02: repo path not reported"
-echo "$OUT" | grep -q "SWARMFORGE_TERMINAL=none ./swarm" || fail "03: headless start command missing"
-echo "$OUT" | grep -q "swarmforge-coordinator" || fail "04: tmux attach hint missing"
+echo "$OUT" | grep "SwarmForge VC WSL bootstrap" >/dev/null || fail "01: missing banner"
+echo "$OUT" | grep "Repo: $REPO_ROOT" >/dev/null || fail "02: repo path not reported"
+echo "$OUT" | grep "SWARMFORGE_TERMINAL=none ./swarm" >/dev/null || fail "03: headless start command missing"
+echo "$OUT" | grep "swarmforge-coordinator" >/dev/null || fail "04: tmux attach hint missing"
 
 pass "wsl-bootstrap --check-only runs and prints WSL start commands"

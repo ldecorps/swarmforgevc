@@ -25,7 +25,7 @@ while IFS=$'\t' read -r file lane _date _reason; do
   # Strip shell (#) and Babashka (;;) comment lines before matching, or a
   # prose mention of "git diff main" (this file's own header, for one) would
   # misread as the assertion it describes.
-  if grep -vE '^[[:space:]]*(#|;;)' "$path" | grep -qE 'git diff[[:space:]]+(main|origin/main)'; then
+  if grep -vE '^[[:space:]]*(#|;;)' "$path" | grep -E 'git diff[[:space:]]+(main|origin/main)' >/dev/null; then
     offenders+=("$file")
   fi
 done < <(grep -vE '^[[:space:]]*#' "$MANIFEST")

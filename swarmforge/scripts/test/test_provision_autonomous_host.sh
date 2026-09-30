@@ -51,7 +51,7 @@ RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "expected a non-zero exit for the placeholder swarm-name 'autonomous'"
 grep -qi "placeholder" <<< "$OUT" || fail "expected the refusal reason to name the placeholder conflict; got: $OUT"
-echo "$OUT" | grep -q "^\[bootstrap\] 1/7" && fail "autonomous-bootstrap-05: nothing must be installed for a refused name - package-install step 1/7 must never start; got: $OUT"
+echo "$OUT" | grep "^\[bootstrap\] 1/7" >/dev/null && fail "autonomous-bootstrap-05: nothing must be installed for a refused name - package-install step 1/7 must never start; got: $OUT"
 [[ ! -d "$CLONE_TARGET" ]] || fail "autonomous-bootstrap-05: nothing must be cloned for a refused name"
 pass "autonomous-bootstrap-05: a swarm-name that is the placeholder shipped in the pack is refused before any host mutation"
 
@@ -67,7 +67,7 @@ RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "expected a non-zero exit for a swarm-name already claimed by a live swarm"
 grep -qi "already live" <<< "$OUT" || fail "expected the refusal reason to name the live-swarm collision; got: $OUT"
-echo "$OUT" | grep -q "^\[bootstrap\] 1/7" && fail "nothing must be installed for a refused name; got: $OUT"
+echo "$OUT" | grep "^\[bootstrap\] 1/7" >/dev/null && fail "nothing must be installed for a refused name; got: $OUT"
 pass "autonomous-bootstrap-05: a swarm-name already claimed by a live swarm on this host is refused before any host mutation"
 
 # ── autonomous-bootstrap-02/06: a valid name proceeds through every step,
@@ -77,27 +77,27 @@ UNIT_TMP="$(mktemp -d)"; register_tmp_dir "$UNIT_TMP"
 CLONE_TARGET="$FIXTURE"
 OUT="$(PROVISION_AUTONOMOUS_UNIT_TMP_DIR="$UNIT_TMP" PROVISION_AUTONOMOUS_DRYRUN=1 bash "$INSTALLER" acme-vps "$FIXTURE" "$CLONE_TARGET" 2>&1)"
 
-echo "$OUT" | grep -q "^\[bootstrap\] 1/7" || fail "expected the package-install step to run for a valid name; got:\n$OUT"
+echo "$OUT" | grep "^\[bootstrap\] 1/7" >/dev/null || fail "expected the package-install step to run for a valid name; got:\n$OUT"
 pass "a valid swarm-name proceeds past step 0's name check into the bootstrap steps"
 
-echo "$OUT" | grep -qi "DRYRUN: apt-get" || fail "autonomous-bootstrap-06 (package install): expected apt-get to be printed, not run; got:\n$OUT"
+echo "$OUT" | grep -i "DRYRUN: apt-get" >/dev/null || fail "autonomous-bootstrap-06 (package install): expected apt-get to be printed, not run; got:\n$OUT"
 pass "autonomous-bootstrap-06: every package install is printed, never run"
 
-echo "$OUT" | grep -q "DRYRUN: sudo mv .*swarmforge-acme-vps.service" \
+echo "$OUT" | grep "DRYRUN: sudo mv .*swarmforge-acme-vps.service" >/dev/null \
   || fail "autonomous-bootstrap-02: expected the swarm unit to be installed under the given swarm name; got:\n$OUT"
-echo "$OUT" | grep -q "DRYRUN: sudo mv .*swarmforge-operator-acme-vps.service" \
+echo "$OUT" | grep "DRYRUN: sudo mv .*swarmforge-operator-acme-vps.service" >/dev/null \
   || fail "autonomous-bootstrap-02: expected the operator unit to be installed; got:\n$OUT"
-echo "$OUT" | grep -q "DRYRUN: sudo mv .*swarmforge-front-desk-acme-vps.service" \
+echo "$OUT" | grep "DRYRUN: sudo mv .*swarmforge-front-desk-acme-vps.service" >/dev/null \
   || fail "autonomous-bootstrap-02: expected the FRONT-DESK unit to be installed (the secondary path never installs this one - BL-359's own gap); got:\n$OUT"
 pass "autonomous-bootstrap-02: the swarm, operator AND front-desk units are all installed and enabled"
 
-echo "$OUT" | grep -q "DRYRUN: sudo systemctl enable --now swarmforge-operator-acme-vps.service" \
+echo "$OUT" | grep "DRYRUN: sudo systemctl enable --now swarmforge-operator-acme-vps.service" >/dev/null \
   || fail "expected the operator unit to be enabled --now; got:\n$OUT"
-echo "$OUT" | grep -q "DRYRUN: sudo systemctl enable --now swarmforge-front-desk-acme-vps.service" \
+echo "$OUT" | grep "DRYRUN: sudo systemctl enable --now swarmforge-front-desk-acme-vps.service" >/dev/null \
   || fail "expected the front-desk unit to be enabled --now; got:\n$OUT"
-echo "$OUT" | grep -q "DRYRUN: sudo systemctl enable swarmforge-acme-vps.service" \
+echo "$OUT" | grep "DRYRUN: sudo systemctl enable swarmforge-acme-vps.service" >/dev/null \
   || fail "expected the swarm unit to be enabled (not --now - needs claude auth first); got:\n$OUT"
-echo "$OUT" | grep -q "DRYRUN: sudo systemctl enable --now swarmforge-acme-vps.service" \
+echo "$OUT" | grep "DRYRUN: sudo systemctl enable --now swarmforge-acme-vps.service" >/dev/null \
   && fail "the SWARM unit must not be started --now (it needs claude auth in place first)"
 pass "autonomous-bootstrap-06 (unit enable): every enable is printed, never run; the swarm unit is enabled but not started"
 

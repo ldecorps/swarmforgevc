@@ -67,7 +67,7 @@ assert_pid_scan() {
   if [[ "$want_empty" -eq 1 ]]; then
     [[ -z "$out" ]] || fail "seed=$SEED kind=$label pid leak: $out"
   else
-    echo "$out" | grep -qx "$pid" || fail "seed=$SEED kind=$label pid miss: got=$out"
+    echo "$out" | grep -x "$pid" >/dev/null || fail "seed=$SEED kind=$label pid miss: got=$out"
   fi
 }
 

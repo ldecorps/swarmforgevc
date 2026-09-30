@@ -135,7 +135,7 @@ cat > "$ROOT/record_halt_throws_test.bb" <<EOF
   (assert (= "halted" (:state @written)) "expected write-status! to still run after record-halt! throws")
   (println "record-halt-throws-ok"))
 EOF
-bb "$ROOT/record_halt_throws_test.bb" | grep -q "record-halt-throws-ok" \
+bb "$ROOT/record_halt_throws_test.bb" | grep "record-halt-throws-ok" >/dev/null \
   || fail "BL-1491 record-halt-02: a throwing record-halt! must never prevent halt-swarm!/write-status!"
 pass "BL-1491 record-halt-02: a throwing record-halt! never blocks halt-swarm! or the terminal status write"
 
@@ -156,7 +156,7 @@ cat > "$ROOT/record_halt_absent_test.bb" <<EOF
   (assert (true? @halted) "expected halt-swarm! to run when :record-halt! is absent entirely")
   (println "record-halt-absent-ok"))
 EOF
-bb "$ROOT/record_halt_absent_test.bb" | grep -q "record-halt-absent-ok" \
+bb "$ROOT/record_halt_absent_test.bb" | grep "record-halt-absent-ok" >/dev/null \
   || fail "BL-1491 record-halt-03: an absent :record-halt! adapter must default to a no-op, never throw"
 pass "BL-1491 record-halt-03: an absent :record-halt! adapter (older caller/test) is a silent no-op"
 
@@ -175,7 +175,7 @@ cat > "$ROOT/unconfigured_test.bb" <<EOF
   (assert (false? (:success result)) "expected success=false when unconfigured")
   (println "unconfigured-ok"))
 EOF
-bb "$ROOT/unconfigured_test.bb" | grep -q "unconfigured-ok" || fail "05: missing to/api-key must not attempt a real send"
+bb "$ROOT/unconfigured_test.bb" | grep "unconfigured-ok" >/dev/null || fail "05: missing to/api-key must not attempt a real send"
 pass "05: send-alarm-email! reports missing configuration instead of attempting a network call"
 
 # ── BL-215 warn-01: recipient set but key missing warns loudly, once ────────
@@ -196,7 +196,7 @@ cat > "$ROOT/warn_missing_key_test.bb" <<EOF
   (assert (re-find #"RESEND_API_KEY" (first @warnings)) "expected the warning to name RESEND_API_KEY")
   (println "warn-missing-key-ok"))
 EOF
-bb "$ROOT/warn_missing_key_test.bb" | grep -q "warn-missing-key-ok" \
+bb "$ROOT/warn_missing_key_test.bb" | grep "warn-missing-key-ok" >/dev/null \
   || fail "warn-01: expected a distinct missing-key result and a loud warning naming RESEND_API_KEY"
 pass "BL-215 warn-01: recipient set but key missing returns a distinct result and warns loudly"
 
@@ -215,7 +215,7 @@ cat > "$ROOT/warn_no_recipient_test.bb" <<EOF
   (assert (empty? @warnings) "expected no warning when email is intentionally off")
   (println "warn-no-recipient-ok"))
 EOF
-bb "$ROOT/warn_no_recipient_test.bb" | grep -q "warn-no-recipient-ok" \
+bb "$ROOT/warn_no_recipient_test.bb" | grep "warn-no-recipient-ok" >/dev/null \
   || fail "warn-02: a recipient-unset no-op must never log the missing-key warning"
 pass "BL-215 warn-02: no recipient stays a quiet no-op, no missing-key warning"
 
@@ -235,7 +235,7 @@ cat > "$ROOT/warn_fully_configured_test.bb" <<EOF
   (assert (empty? @warnings) "expected no warning when fully configured")
   (println "warn-fully-configured-ok"))
 EOF
-bb "$ROOT/warn_fully_configured_test.bb" | grep -q "warn-fully-configured-ok" \
+bb "$ROOT/warn_fully_configured_test.bb" | grep "warn-fully-configured-ok" >/dev/null \
   || fail "warn-03: a fully-configured send must never log the missing-key warning"
 pass "BL-215 warn-03: fully configured sends normally, no missing-key warning"
 
@@ -256,7 +256,7 @@ cat > "$ROOT/warn_dedup_test.bb" <<EOF
   (assert (= 1 (count @warnings)) (str "expected exactly one warning across 5 calls, got " (count @warnings)))
   (println "warn-dedup-ok"))
 EOF
-bb "$ROOT/warn_dedup_test.bb" | grep -q "warn-dedup-ok" \
+bb "$ROOT/warn_dedup_test.bb" | grep "warn-dedup-ok" >/dev/null \
   || fail "warn-04: expected the missing-key warning deduped across repeated send attempts"
 pass "BL-215 warn-04: the missing-key warning is deduped, not emitted on every send attempt"
 
@@ -274,7 +274,7 @@ cat > "$ROOT/html_threaded_test.bb" <<EOF
   (assert (= "text" (:text @captured)) "expected the text body to still reach post-fn! alongside html")
   (println "html-threaded-ok"))
 EOF
-bb "$ROOT/html_threaded_test.bb" | grep -q "html-threaded-ok" \
+bb "$ROOT/html_threaded_test.bb" | grep "html-threaded-ok" >/dev/null \
   || fail "BL-260 html-01: expected the 7-arg send-alarm-email! form to thread html through to post-fn!"
 pass "BL-260 html-01: the 7-arg send-alarm-email! form threads an html body through to post-fn!"
 
@@ -287,7 +287,7 @@ cat > "$ROOT/html_absent_test.bb" <<EOF
   (assert (not (contains? @captured :html)) "expected no :html key at all when the pre-BL-260 6-arg form is used")
   (println "html-absent-ok"))
 EOF
-bb "$ROOT/html_absent_test.bb" | grep -q "html-absent-ok" \
+bb "$ROOT/html_absent_test.bb" | grep "html-absent-ok" >/dev/null \
   || fail "BL-260 html-02: expected the pre-BL-260 6-arg form to carry no :html key"
 pass "BL-260 html-02: the pre-existing 6-arg form is unaffected - carries no :html key"
 
@@ -304,7 +304,7 @@ cat > "$ROOT/attachments_threaded_test.bb" <<EOF
   (assert (= "<p>diagram</p>" (:html @captured)) "expected the html body to still reach post-fn! alongside attachments")
   (println "attachments-threaded-ok"))
 EOF
-bb "$ROOT/attachments_threaded_test.bb" | grep -q "attachments-threaded-ok" \
+bb "$ROOT/attachments_threaded_test.bb" | grep "attachments-threaded-ok" >/dev/null \
   || fail "BL-286 attachments-01: expected the 8-arg send-alarm-email! form to thread attachments through to post-fn!"
 pass "BL-286 attachments-01: the 8-arg send-alarm-email! form threads attachments through to post-fn!"
 
@@ -317,7 +317,7 @@ cat > "$ROOT/attachments_absent_test.bb" <<EOF
   (assert (not (contains? @captured :attachments)) "expected no :attachments key at all when the pre-BL-286 7-arg form is used")
   (println "attachments-absent-ok"))
 EOF
-bb "$ROOT/attachments_absent_test.bb" | grep -q "attachments-absent-ok" \
+bb "$ROOT/attachments_absent_test.bb" | grep "attachments-absent-ok" >/dev/null \
   || fail "BL-286 attachments-02: expected the pre-BL-286 7-arg form to carry no :attachments key"
 pass "BL-286 attachments-02: the pre-existing 7-arg form is unaffected - carries no :attachments key"
 
@@ -329,7 +329,7 @@ cat > "$ROOT/test_fixture_root_test.bb" <<EOF
 (assert (false? (daemon-alarm-lib/test-fixture-root? "/srv/swarm")) "03: an arbitrary non-temp root must NOT read as a test fixture")
 (println "test-fixture-root-ok")
 EOF
-bb "$ROOT/test_fixture_root_test.bb" | grep -q "test-fixture-root-ok" \
+bb "$ROOT/test_fixture_root_test.bb" | grep "test-fixture-root-ok" >/dev/null \
   || fail "BL-326: test-fixture-root? did not correctly distinguish temp vs real roots"
 pass "BL-326: test-fixture-root? identifies a temp-directory root, and only a temp-directory root"
 
@@ -347,7 +347,7 @@ cat > "$ROOT/suppressed_send_test.bb" <<EOF
   (assert (= :test-fixture-suppressed (:reason result)) "expected :reason :test-fixture-suppressed")
   (println "suppressed-send-ok"))
 EOF
-env RESEND_API_KEY=fake-real-looking-key bb "$ROOT/suppressed_send_test.bb" | grep -q "suppressed-send-ok" \
+env RESEND_API_KEY=fake-real-looking-key bb "$ROOT/suppressed_send_test.bb" | grep "suppressed-send-ok" >/dev/null \
   || fail "BL-326 test-suite-never-emails-02: a fully-configured (real key + real recipient) test-fixture-root send must still be suppressed"
 pass "BL-326 test-suite-never-emails-02: a daemon rooted in a throwaway test directory never sends mail, even with a real key and a real recipient configured"
 
@@ -365,7 +365,7 @@ cat > "$ROOT/real_root_still_sends_test.bb" <<EOF
   (assert (true? @sent) "expected a REAL (non-temp) project root to still attempt a real send")
   (println "real-root-sends-ok"))
 EOF
-env RESEND_API_KEY=fake-key bb "$ROOT/real_root_still_sends_test.bb" | grep -q "real-root-sends-ok" \
+env RESEND_API_KEY=fake-key bb "$ROOT/real_root_still_sends_test.bb" | grep "real-root-sends-ok" >/dev/null \
   || fail "BL-326: a real project root's alarm must still attempt to send - the fail-safe must not suppress everything"
 pass "BL-326: a real (non-temp) project root's alarm still attempts to send - the fail-safe is scoped to test fixtures only"
 
@@ -387,7 +387,7 @@ cat > "$ROOT/suppressed_still_warns_test.bb" <<EOF
   (assert (string? @warned) "expected the loud missing-key warning to still fire for a test-fixture root")
   (println "suppressed-still-warns-ok"))
 EOF
-env -u RESEND_API_KEY bb "$ROOT/suppressed_still_warns_test.bb" | grep -q "suppressed-still-warns-ok" \
+env -u RESEND_API_KEY bb "$ROOT/suppressed_still_warns_test.bb" | grep "suppressed-still-warns-ok" >/dev/null \
   || fail "BL-326 test-suite-never-emails-04: a configured-but-keyless test-fixture-root daemon must still warn loudly (BL-215 behavior preserved)"
 pass "BL-326 test-suite-never-emails-04: a configured-but-keyless daemon still warns loudly even when its root is a test fixture, and does not send an email"
 
@@ -412,7 +412,7 @@ cat > "$ROOT/refuse_tmp_daemon_start_test.bb" <<EOF
   "07: ANY non-blank flag value opts in by design, including \"0\" - never inferred as falsy")
 (println "refuse-tmp-daemon-start-ok")
 EOF
-bb "$ROOT/refuse_tmp_daemon_start_test.bb" | grep -q "refuse-tmp-daemon-start-ok" \
+bb "$ROOT/refuse_tmp_daemon_start_test.bb" | grep "refuse-tmp-daemon-start-ok" >/dev/null \
   || fail "BL-406: refuse-tmp-daemon-start? did not gate correctly on root shape + explicit allow flag"
 pass "BL-406: refuse-tmp-daemon-start? refuses a temp-directory root by default, only allowing it with an explicit opt-in flag, and never refuses a real project root"
 
@@ -430,7 +430,7 @@ cat > "$ROOT/email_send_reason_test.bb" <<EOF
 (assert (= :disabled (daemon-alarm-lib/email-send-reason "" "")) "06: both blank -> :disabled (recipient checked first)")
 (println "email-send-reason-ok")
 EOF
-bb "$ROOT/email_send_reason_test.bb" | grep -q "email-send-reason-ok" \
+bb "$ROOT/email_send_reason_test.bb" | grep "email-send-reason-ok" >/dev/null \
   || fail "BL-902: email-send-reason did not compute the expected verdict for every to/api-key combination"
 pass "BL-902: email-send-reason computes :disabled/:missing-api-key/nil exactly as send-alarm-email!'s own cond always did"
 
@@ -448,7 +448,7 @@ cat > "$ROOT/send_alarm_email_reason_regression_test.bb" <<EOF
     "expected the exact pre-refactor :missing-api-key result shape")
   (println "send-alarm-email-reason-regression-ok"))
 EOF
-bb "$ROOT/send_alarm_email_reason_regression_test.bb" | grep -q "send-alarm-email-reason-regression-ok" \
+bb "$ROOT/send_alarm_email_reason_regression_test.bb" | grep "send-alarm-email-reason-regression-ok" >/dev/null \
   || fail "BL-902: send-alarm-email!'s :disabled/:missing-api-key result shape changed after delegating to email-send-reason"
 pass "BL-902: send-alarm-email!'s own result shape is byte-identical after delegating its cond to email-send-reason"
 
@@ -462,7 +462,7 @@ cat > "$ROOT/configured_email_send_reason_test.bb" <<EOF
     "01: recipient configured, no key in env -> :missing-api-key")
   (println "configured-email-send-reason-missing-key-ok"))
 EOF
-env -u RESEND_API_KEY bb "$ROOT/configured_email_send_reason_test.bb" | grep -q "configured-email-send-reason-missing-key-ok" \
+env -u RESEND_API_KEY bb "$ROOT/configured_email_send_reason_test.bb" | grep "configured-email-send-reason-missing-key-ok" >/dev/null \
   || fail "BL-902: configured-email-send-reason did not report :missing-api-key for a configured-but-keyless conf"
 pass "BL-902 configured-email-send-reason-01: recipient configured, key absent from env -> :missing-api-key, no compose/send"
 
@@ -474,7 +474,7 @@ cat > "$ROOT/configured_email_send_reason_sendable_test.bb" <<EOF
     "expected nil (sendable) when both recipient and key are present")
   (println "configured-email-send-reason-sendable-ok"))
 EOF
-env RESEND_API_KEY=fake-key bb "$ROOT/configured_email_send_reason_sendable_test.bb" | grep -q "configured-email-send-reason-sendable-ok" \
+env RESEND_API_KEY=fake-key bb "$ROOT/configured_email_send_reason_sendable_test.bb" | grep "configured-email-send-reason-sendable-ok" >/dev/null \
   || fail "BL-902: configured-email-send-reason did not report nil (sendable) when fully configured"
 pass "BL-902 configured-email-send-reason-02: fully configured -> nil (sendable)"
 
@@ -485,7 +485,7 @@ cat > "$ROOT/configured_email_send_reason_disabled_test.bb" <<EOF
     "expected :disabled for a conf-file with no notify_email_to at all (or missing entirely)")
   (println "configured-email-send-reason-disabled-ok"))
 EOF
-bb "$ROOT/configured_email_send_reason_disabled_test.bb" | grep -q "configured-email-send-reason-disabled-ok" \
+bb "$ROOT/configured_email_send_reason_disabled_test.bb" | grep "configured-email-send-reason-disabled-ok" >/dev/null \
   || fail "BL-902: configured-email-send-reason did not report :disabled for a missing/no-recipient conf-file"
 pass "BL-902 configured-email-send-reason-03: no notify_email_to configured (conf-file absent) -> :disabled"
 

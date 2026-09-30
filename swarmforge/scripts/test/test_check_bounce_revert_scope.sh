@@ -114,8 +114,8 @@ OUT2="$(run_guard "$MSG" 2>&1)"
 STATUS2=$?
 set -e
 [[ "$STATUS2" -ne 0 ]] || fail "02: expected refusal when the revert also removes another ticket's path"
-echo "$OUT2" | grep -q "bl0002ExamplebSteps.js" || fail "02: refusal must name the other ticket's path, got: $OUT2"
-echo "$OUT2" | grep -q "BL-0002" || fail "02: refusal must name the other ticket BL-0002, got: $OUT2"
+echo "$OUT2" | grep "bl0002ExamplebSteps.js" >/dev/null || fail "02: refusal must name the other ticket's path, got: $OUT2"
+echo "$OUT2" | grep "BL-0002" >/dev/null || fail "02: refusal must name the other ticket BL-0002, got: $OUT2"
 pass "02: a revert that removes a path attributed to another ticket is refused, naming the path and the ticket"
 reset_after_revert
 
@@ -130,7 +130,7 @@ for class in spec-gap invariant-unencoded; do
   STATUS3=$?
   set -e
   [[ "$STATUS3" -ne 0 ]] || fail "03 ($class): expected refusal for an omission-class bounce"
-  echo "$OUT3" | grep -qi "nothing to revert" || fail "03 ($class): refusal must say an omission bounce reverts nothing, got: $OUT3"
+  echo "$OUT3" | grep -i "nothing to revert" >/dev/null || fail "03 ($class): refusal must say an omission bounce reverts nothing, got: $OUT3"
   pass "03 ($class): a revert made for an omission-class bounce is refused as having nothing to revert"
   reset_after_revert
 done
@@ -248,7 +248,7 @@ OUT8="$(run_guard "$MSG" 2>&1)"
 STATUS8=$?
 set -e
 [[ "$STATUS8" -ne 0 ]] || fail "08: expected the store-wide fallback to misidentify BL-9998 (later 'at') and refuse via its omission class"
-echo "$OUT8" | grep -qi "nothing to revert" || fail "08: expected an omission-class refusal from the misidentified ticket, got: $OUT8"
+echo "$OUT8" | grep -i "nothing to revert" >/dev/null || fail "08: expected an omission-class refusal from the misidentified ticket, got: $OUT8"
 pass "08: with no ancestor match and no tagged subject, the guard falls back to the bounce store's single latest-by-at record, even an unrelated ticket's, and judges by ITS class"
 git -C "$ROOT" checkout -q main
 git -C "$ROOT" reset -q --hard "$MERGEH_TIP"
@@ -270,7 +270,7 @@ OUT9="$(run_guard "$MSG" 2>&1)"
 STATUS9=$?
 set -e
 [[ "$STATUS9" -ne 0 ]] || fail "09: expected the omission-class gate to still refuse despite a later correction record"
-echo "$OUT9" | grep -qi "nothing to revert" || fail "09: refusal must still say an omission bounce reverts nothing, got: $OUT9"
+echo "$OUT9" | grep -i "nothing to revert" >/dev/null || fail "09: refusal must still say an omission bounce reverts nothing, got: $OUT9"
 pass "09: a later BL-990 correction record (no failureClass) does not mask the genuine bounce's omission class"
 reset_after_revert
 

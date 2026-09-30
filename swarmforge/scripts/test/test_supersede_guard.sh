@@ -77,8 +77,8 @@ for role in coder hardender QA; do
   drop_parcel "$role" "$SUPERSEDED" "s1-$role"
   run_ready "$role"
   [[ "$RC" -ne 0 ]] || fail "01-$role: expected refusal, rc=0 out=$OUT err=$ERR"
-  echo "$ERR" | grep -q "SUPERSEDED: task $SUPERSEDED" || fail "01-$role: missing task in refusal: $ERR"
-  echo "$ERR" | grep -q "$REASON" || fail "01-$role: missing reason in refusal: $ERR"
+  echo "$ERR" | grep "SUPERSEDED: task $SUPERSEDED" >/dev/null || fail "01-$role: missing task in refusal: $ERR"
+  echo "$ERR" | grep "$REASON" >/dev/null || fail "01-$role: missing reason in refusal: $ERR"
   [[ -f "$ROOT/.worktrees/$role/.swarmforge/handoffs/inbox/new/00_s1-$role.handoff" ]] \
     || fail "01-$role: parcel was moved out of new/"
   [[ ! -f "$ROOT/.worktrees/$role/.swarmforge/handoffs/inbox/in_process/00_s1-$role.handoff" ]] \
@@ -90,8 +90,8 @@ pass "01: every stage refuses a parcel for a superseded task"
 drop_parcel cleaner "BL-1099-unrelated" "s2-cleaner"
 run_ready cleaner
 # guard-boundary-only => INVALID_RECEIVE_MODE after guards pass
-echo "$ERR$OUT" | grep -q "INVALID_RECEIVE_MODE" || fail "02: expected dispatch to run after pass: out=$OUT err=$ERR"
-echo "$ERR" | grep -qv "SUPERSEDED" || fail "02: unrelated refused: $ERR"
+echo "$ERR$OUT" | grep "INVALID_RECEIVE_MODE" >/dev/null || fail "02: expected dispatch to run after pass: out=$OUT err=$ERR"
+echo "$ERR" | grep -v "SUPERSEDED" >/dev/null || fail "02: unrelated refused: $ERR"
 pass "02: a parcel for any other task is unaffected"
 
 # ── 03: refuse is not a bounce (no bounce store write) ─────────────────────
@@ -108,15 +108,15 @@ drop_parcel coder "$SUPERSEDED" "s4-coder"
 rm -f "$ROOT/.swarmforge/superseded/$SUPERSEDED"
 # empty dir may remain — still a readable empty store
 run_ready coder
-echo "$ERR$OUT" | grep -q "INVALID_RECEIVE_MODE" || fail "04: expected pass after clear: out=$OUT err=$ERR"
-echo "$ERR" | grep -qv "SUPERSEDED" || fail "04: still refused after clear: $ERR"
+echo "$ERR$OUT" | grep "INVALID_RECEIVE_MODE" >/dev/null || fail "04: expected pass after clear: out=$OUT err=$ERR"
+echo "$ERR" | grep -v "SUPERSEDED" >/dev/null || fail "04: still refused after clear: $ERR"
 pass "04: clearing the marker by hand restores normal dispatch"
 
 # ── 05: absent vs unreadable ──────────────────────────────────────────────
 rm -rf "$ROOT/.swarmforge/superseded"
 drop_parcel coder "BL-1099-unrelated" "s5a-coder"
 run_ready coder
-echo "$ERR$OUT" | grep -q "INVALID_RECEIVE_MODE" || fail "05-absent: expected pass: $ERR"
+echo "$ERR$OUT" | grep "INVALID_RECEIVE_MODE" >/dev/null || fail "05-absent: expected pass: $ERR"
 pass "05a: absent store is not refused"
 
 # Unreadable: path exists as a FILE instead of a directory
@@ -124,7 +124,7 @@ printf 'not-a-dir\n' > "$ROOT/.swarmforge/superseded"
 drop_parcel coder "BL-1099-unrelated" "s5b-coder"
 run_ready coder
 [[ "$RC" -ne 0 ]] || fail "05-unreadable: expected refusal"
-echo "$ERR" | grep -q "SUPERSEDE_STORE_UNREADABLE" || fail "05-unreadable: missing message: $ERR"
+echo "$ERR" | grep "SUPERSEDE_STORE_UNREADABLE" >/dev/null || fail "05-unreadable: missing message: $ERR"
 pass "05b: unreadable store is refused"
 
 # ── 06: batch mode also refused before assemble ───────────────────────────
@@ -148,9 +148,9 @@ PY
 drop_parcel cleaner "$SUPERSEDED" "s6-cleaner"
 run_ready cleaner
 [[ "$RC" -ne 0 ]] || fail "06: batch role expected refusal"
-echo "$ERR" | grep -q "SUPERSEDED" || fail "06: missing SUPERSEDED: $ERR"
+echo "$ERR" | grep "SUPERSEDED" >/dev/null || fail "06: missing SUPERSEDED: $ERR"
 # Must not have reached batch helper (would print batch assembly noise or INVALID)
-echo "$ERR$OUT" | grep -qv "batch_" || true
+echo "$ERR$OUT" | grep -v "batch_" >/dev/null || true
 pass "06: the guard runs before dispatch chooses task or batch mode"
 
 echo

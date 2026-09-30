@@ -40,7 +40,7 @@ EOF
 chmod +x "$FIXTURE1"
 
 OUT1="$(bash "$FIXTURE1")"
-if echo "$OUT1" | grep -q '^GIT_DIR=\[\]$' && echo "$OUT1" | grep -q '^GIT_WORK_TREE=\[\]$'; then
+if echo "$OUT1" | grep '^GIT_DIR=\[\]$' >/dev/null && echo "$OUT1" | grep '^GIT_WORK_TREE=\[\]$' >/dev/null; then
   pass "01: sourcing the guard unsets an inherited GIT_DIR and GIT_WORK_TREE"
 else
   fail "01: expected both variables cleared, got: $OUT1"
@@ -64,7 +64,7 @@ set +e
 OUT2="$(bash "$FIXTURE2" 2>"$STDERR2")"
 CODE2=$?
 set -e
-if [[ $CODE2 -eq 0 ]] && echo "$OUT2" | grep -q DONE && ! grep -qi "unbound variable" "$STDERR2"; then
+if [[ $CODE2 -eq 0 ]] && echo "$OUT2" | grep DONE >/dev/null && ! grep -qi "unbound variable" "$STDERR2"; then
   pass "02: sourcing with neither variable set exits 0 with no unbound-variable error"
 else
   fail "02: expected a clean exit 0, got code $CODE2, stdout [$OUT2], stderr [$(cat "$STDERR2")]"

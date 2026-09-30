@@ -91,7 +91,7 @@ window coder@fable claude coder-a --model x
 window coder@fable claude coder-b --model x
 CONF
 OUT4="$(run_parse "$ROOT4" 2>&1)" && fail "4: duplicate seat id parsed"
-echo "$OUT4" | grep -q "Duplicate role 'coder@fable'" || fail "4: duplicate not named: $OUT4"
+echo "$OUT4" | grep "Duplicate role 'coder@fable'" >/dev/null || fail "4: duplicate not named: $OUT4"
 pass "4: duplicate seat id refused naming the collision"
 
 # ── 5: shared worktree still refused ──────────────────────────────────────
@@ -101,7 +101,7 @@ window coder claude coder --model x
 window coder@fable claude coder --model x
 CONF
 OUT5="$(run_parse "$ROOT5" 2>&1)" && fail "5: shared worktree parsed"
-echo "$OUT5" | grep -q "Duplicate worktree 'coder'" || fail "5: worktree collision not named: $OUT5"
+echo "$OUT5" | grep "Duplicate worktree 'coder'" >/dev/null || fail "5: worktree collision not named: $OUT5"
 pass "5: shared worktree refused naming the collision"
 
 # ── 6: an @-seat without its stage's bare seat is refused; malformed seat
@@ -112,17 +112,17 @@ window specifier claude master --model x
 window coder@fable claude coder-fable --model x
 CONF
 OUT6="$(run_parse "$ROOT6" 2>&1)" && fail "6: bare-seat-less stage parsed"
-echo "$OUT6" | grep -q "no bare 'coder' seat" || fail "6: missing-bare-seat not named: $OUT6"
+echo "$OUT6" | grep "no bare 'coder' seat" >/dev/null || fail "6: missing-bare-seat not named: $OUT6"
 for bad in 'coder@' '@fable' 'coder@a@b'; do
   ROOTB="$(mk_root)"
   printf 'window %s claude wt-x --model x\n' "$bad" > "$ROOTB/swarmforge/swarmforge.conf"
   OUTB="$(run_parse "$ROOTB" 2>&1)" && fail "6: malformed seat id '$bad' parsed"
-  echo "$OUTB" | grep -q "Invalid seat id" || fail "6: malformed '$bad' not named: $OUTB"
+  echo "$OUTB" | grep "Invalid seat id" >/dev/null || fail "6: malformed '$bad' not named: $OUTB"
 done
 ROOTC="$(mk_root)"
 printf 'window coordinator@extra claude wt-c --model x\n' > "$ROOTC/swarmforge/swarmforge.conf"
 OUTC="$(run_parse "$ROOTC" 2>&1)" && fail "6: coordinator seat parsed"
-echo "$OUTC" | grep -q "coordinator is reserved" || fail "6: coordinator seat not refused: $OUTC"
+echo "$OUTC" | grep "coordinator is reserved" >/dev/null || fail "6: coordinator seat not refused: $OUTC"
 pass "6: bare-seat requirement, malformed seat ids and coordinator seats all refused"
 
 # ── 7: a single-seat pack's roles.tsv is byte-identical to the pre-change

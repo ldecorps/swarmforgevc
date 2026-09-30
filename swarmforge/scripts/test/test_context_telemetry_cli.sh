@@ -21,7 +21,7 @@ trap 'rm -rf "$STATE_DIR"' EXIT
 export CONTEXT_TELEMETRY_STATE_DIR="$STATE_DIR"
 
 # ── 1: pure context_telemetry_lib tests (bb) ────────────────────────────────
-bb "$SCRIPT_DIR/context_telemetry_test_runner.bb" | grep -q "^ALL PASS$" \
+bb "$SCRIPT_DIR/context_telemetry_test_runner.bb" | grep "^ALL PASS$" >/dev/null \
   || fail "01: context_telemetry_test_runner.bb did not report ALL PASS"
 
 pass "01: context_telemetry_lib pure tests"
@@ -50,7 +50,7 @@ bb "$CLI" record --agent coder --role coder --session-id sess-1 --timestamp 2026
   --input-tokens 20000 --output-tokens 500 --context-utilization-pct 90 --provider anthropic --model claude-sonnet-5 \
   --compaction true >/dev/null
 [[ "$(wc -l < "$STATE_DIR/context-events.jsonl")" -eq 2 ]] || fail "04: expected two lines after a second record"
-tail -1 "$STATE_DIR/context-events.jsonl" | grep -q '"compaction":true' \
+tail -1 "$STATE_DIR/context-events.jsonl" | grep '"compaction":true' >/dev/null \
   || fail "04: second recorded event should carry compaction:true"
 
 pass "04: an explicit --compaction true is recorded and persisted"

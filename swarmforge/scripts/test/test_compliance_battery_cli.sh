@@ -93,7 +93,7 @@ EOF
 ) >/dev/null
 
 RESULT="$(bb "$BATTERY" check send-handoff "$ROOT" specifier coder)"
-echo "$RESULT" | grep -q '"status":"pass"' \
+echo "$RESULT" | grep '"status":"pass"' >/dev/null \
   || fail "send-handoff (compliant): expected pass, got: $RESULT"
 pass "send-handoff: a real swarm_handoff.sh sync delivery is recorded pass"
 
@@ -105,9 +105,9 @@ printf 'id: bypass\nfrom: coder\nto: cleaner\npriority: 50\ntype: note\nmessage:
   > "$CLEANER_WT/.swarmforge/handoffs/inbox/new/50_bypass_for_cleaner.handoff"
 
 RESULT="$(bb "$BATTERY" check send-handoff "$ROOT" coder cleaner)"
-echo "$RESULT" | grep -q '"status":"fail"' \
+echo "$RESULT" | grep '"status":"fail"' >/dev/null \
   || fail "send-handoff (violating): expected fail, got: $RESULT"
-echo "$RESULT" | grep -q "bypassed swarm_handoff.sh" \
+echo "$RESULT" | grep "bypassed swarm_handoff.sh" >/dev/null \
   || fail "send-handoff (violating): expected a reason naming the bypass, got: $RESULT"
 pass "send-handoff: a direct inbox/new write (no swarm_handoff.sh) is recorded fail with a reason"
 
@@ -120,38 +120,38 @@ printf 'id: t\nfrom: specifier\nto: coder\npriority: 50\ntype: git_handoff\ntask
 (cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$READY_FOR_NEXT" >/dev/null)
 
 RESULT="$(bb "$BATTERY" check receive "$CODER_WT")"
-echo "$RESULT" | grep -q '"status":"pass"' \
+echo "$RESULT" | grep '"status":"pass"' >/dev/null \
   || fail "receive: expected pass after a real ready_for_next.sh dequeue, got: $RESULT"
 pass "receive: a real ready_for_next.sh dequeue (dequeued_at stamped) is recorded pass"
 
 (cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$DONE_WITH_CURRENT" >/dev/null)
 
 RESULT="$(bb "$BATTERY" check complete "$CODER_WT")"
-echo "$RESULT" | grep -q '"status":"pass"' \
+echo "$RESULT" | grep '"status":"pass"' >/dev/null \
   || fail "complete: expected pass after a real done_with_current.sh completion, got: $RESULT"
 pass "complete: a real done_with_current.sh completion (completed_at stamped) is recorded pass"
 
 # ── gate specifier: real gherkin_lint_gate.sh against a real feature file ─
 RESULT="$(bb "$BATTERY" gate specifier "$REPO_ROOT/specs/features/BL-226-remove-dead-promote-in-ready-for-next.feature" "$REPO_ROOT")"
-echo "$RESULT" | grep -q '"status":"pass"' \
+echo "$RESULT" | grep '"status":"pass"' >/dev/null \
   || fail "gate specifier (clean feature file): expected pass, got: $RESULT"
 pass "gate specifier: a real, lint-clean feature file is recorded pass"
 
 BAD_FEATURE="$ROOT/bad.feature"
 printf 'this is not valid gherkin at all {{{\n' > "$BAD_FEATURE"
 RESULT="$(bb "$BATTERY" gate specifier "$BAD_FEATURE" "$REPO_ROOT")"
-echo "$RESULT" | grep -q '"status":"fail"' \
+echo "$RESULT" | grep '"status":"fail"' >/dev/null \
   || fail "gate specifier (malformed feature file): expected fail, got: $RESULT"
 pass "gate specifier: a malformed feature file is recorded fail"
 
 # ── gate qa: real run_acceptance.sh against a real, passing feature ─────
 RESULT="$(bb "$BATTERY" gate qa "$REPO_ROOT" "$REPO_ROOT/specs/features/BL-226-remove-dead-promote-in-ready-for-next.feature" approve)"
-echo "$RESULT" | grep -q '"status":"pass"' \
+echo "$RESULT" | grep '"status":"pass"' >/dev/null \
   || fail "gate qa (correct approve verdict): expected pass, got: $RESULT"
 pass "gate qa: claiming approve for a real, passing acceptance run is recorded pass"
 
 RESULT="$(bb "$BATTERY" gate qa "$REPO_ROOT" "$REPO_ROOT/specs/features/BL-226-remove-dead-promote-in-ready-for-next.feature" reject)"
-echo "$RESULT" | grep -q '"status":"fail"' \
+echo "$RESULT" | grep '"status":"fail"' >/dev/null \
   || fail "gate qa (wrong reject verdict on a passing run): expected fail, got: $RESULT"
 pass "gate qa: claiming reject for a real, passing acceptance run is recorded fail (wrong verdict)"
 

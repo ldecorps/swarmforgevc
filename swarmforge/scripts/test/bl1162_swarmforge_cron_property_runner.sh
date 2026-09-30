@@ -34,7 +34,7 @@ check "schedule line belongs to root A" "swarmforge_cron_line_belongs_to_root '$
 # of the swarm's markers, was the swarm's to remove. It is not. What the
 # ownership rule owes such a line now is to leave it and SAY so.
 check "orphan operator path does NOT belong to root A" "! swarmforge_cron_line_belongs_to_root '$line_orphan' '$ROOT_A'"
-check "orphan operator path is reported as left in place" "printf '%s\n' '$line_orphan' | swarmforge_cron_report_unmarked '$ROOT_A' | grep -q 'left in place'"
+check "orphan operator path is reported as left in place" "printf '%s\n' '$line_orphan' | swarmforge_cron_report_unmarked '$ROOT_A' | grep 'left in place' >/dev/null"
 check "shift schedule begin belongs to root A" "swarmforge_cron_line_belongs_to_root '$line_shift_begin' '$ROOT_A'"
 check "shift schedule end belongs to root A" "swarmforge_cron_line_belongs_to_root '$line_shift_end' '$ROOT_A'"
 check "sibling line does not belong to root A" "! swarmforge_cron_line_belongs_to_root '$line_sibling' '$ROOT_A'"
@@ -44,9 +44,9 @@ check "root_has_lines detects freshness" "swarmforge_cron_root_has_lines '$ROOT_
 check "root_has_lines false for human only" "! swarmforge_cron_root_has_lines '$ROOT_A' '$line_human'"
 
 filtered="$(printf '%s\n' "$line_fresh" "$line_marker_only" "$line_sched" "$line_sibling" "$line_human" | swarmforge_cron_filter_out_root "$ROOT_A")"
-check "filter keeps sibling freshness" "printf '%s\n' \"\$filtered\" | grep -qF 'FRESHNESS_ROOT=$ROOT_B'"
-check "filter keeps human line" "printf '%s\n' \"\$filtered\" | grep -q 'human backup'"
-check "filter drops root A lines" "! printf '%s\n' \"\$filtered\" | grep -qF '$ROOT_A'"
+check "filter keeps sibling freshness" "printf '%s\n' \"\$filtered\" | grep -F 'FRESHNESS_ROOT=$ROOT_B' >/dev/null"
+check "filter keeps human line" "printf '%s\n' \"\$filtered\" | grep 'human backup' >/dev/null"
+check "filter drops root A lines" "! printf '%s\n' \"\$filtered\" | grep -F '$ROOT_A' >/dev/null"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-1162 swarmforge-cron property: ALL CHECKS PASSED"

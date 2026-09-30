@@ -79,9 +79,9 @@ echo '❯ ' > "$AFTER_STDOUT_FILE"
 grep -q "HANDOFF DELIVERED:" "$ROOT/out.txt" || fail "expected HANDOFF DELIVERED output"
 outbox_count="$(find "$MASTER_WT/.swarmforge/handoffs/coordinator/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$outbox_count" == "0" ]] || fail "outbox must be empty after sync deliver"
-find "$CODER_WT/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep -q . \
+find "$CODER_WT/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep . >/dev/null \
   || fail "parcel missing from coder inbox/new"
-find "$MASTER_WT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -quit | grep -q . \
+find "$MASTER_WT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -quit | grep . >/dev/null \
   || fail "parcel not archived to sender sent/"
 grep -q -- '-l' "$CALL_LOG" || fail "expected literal send-keys wake"
 ! pgrep -f "handoffd.bb.*$ROOT" >/dev/null 2>&1 || fail "handoffd must not be running"
@@ -151,7 +151,7 @@ echo '❯ ' > "$AFTER_STDOUT_FILE2"
 ) > "$ROOT2/out2.txt"
 
 grep -q "HANDOFF DELIVERED:" "$ROOT2/out2.txt" || fail "02: expected HANDOFF DELIVERED output"
-find "$CODER_WT2/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep -q . \
+find "$CODER_WT2/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep . >/dev/null \
   || fail "02: parcel missing from coder inbox/new"
 ! grep -q -- '-l' "$CALL_LOG2" || fail "02: must not send wake literal while pane is busy"
 

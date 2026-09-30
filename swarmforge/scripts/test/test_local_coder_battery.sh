@@ -22,11 +22,11 @@ TEMP_DIRS+=("$EVID")
 
 # 01: --result=pass writes dated artifact under override dir, exit 0
 OUT="$(LOCAL_CODER_BATTERY_EVIDENCE_DIR="$EVID" bash "$BATTERY" --result=pass)"
-echo "$OUT" | grep -q 'RESULT=pass' || fail "01: expected RESULT=pass; got $OUT"
+echo "$OUT" | grep 'RESULT=pass' >/dev/null || fail "01: expected RESULT=pass; got $OUT"
 EVPATH="$(echo "$OUT" | sed -n 's/^EVIDENCE=//p')"
 [[ -f "$EVPATH" ]] || fail "01: evidence missing: $EVPATH"
 [[ "$EVPATH" == "$EVID"/* ]] || fail "01: evidence not under override dir"
-basename "$EVPATH" | grep -q 'BL-1127-coder-battery-' || fail "01: bad basename"
+basename "$EVPATH" | grep 'BL-1127-coder-battery-' >/dev/null || fail "01: bad basename"
 pass "01: --result=pass writes evidence under LOCAL_CODER_BATTERY_EVIDENCE_DIR"
 
 # 02: --result=fail exits nonzero and stays ineligible for staffing
@@ -35,12 +35,12 @@ OUT="$(LOCAL_CODER_BATTERY_EVIDENCE_DIR="$EVID" bash "$BATTERY" --result=fail 2>
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "02: fail must exit nonzero"
-echo "$OUT" | grep -q 'RESULT=fail' || fail "02: expected RESULT=fail"
+echo "$OUT" | grep 'RESULT=fail' >/dev/null || fail "02: expected RESULT=fail"
 pass "02: --result=fail exits nonzero"
 
 # 03: env FORCE_RESULT alias still works (APS compatibility)
 OUT="$(LOCAL_CODER_BATTERY_EVIDENCE_DIR="$EVID" LOCAL_CODER_BATTERY_FORCE_RESULT=pass bash "$BATTERY")"
-echo "$OUT" | grep -q 'RESULT=pass' || fail "03: FORCE_RESULT=pass alias broken"
+echo "$OUT" | grep 'RESULT=pass' >/dev/null || fail "03: FORCE_RESULT=pass alias broken"
 pass "03: LOCAL_CODER_BATTERY_FORCE_RESULT alias still works"
 
 # 04: invalid forced result exits 2

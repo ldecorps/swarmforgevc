@@ -39,7 +39,7 @@ printf 'echo ok\n' > "$R/swarmforge/scripts/test/test_reached.sh"
 printf 'test_reached.sh\tstanding\t\t\n' >> "$R/swarmforge/scripts/test/suite-manifest.tsv"
 track "$R" swarmforge/scripts/test/test_reached.sh swarmforge/scripts/test/suite-manifest.tsv
 OUT="$(bb "$CLI" "$R")"
-echo "$OUT" | grep -q 'shell_test_discovery: ok' || fail "01: expected ok; got: $OUT"
+echo "$OUT" | grep 'shell_test_discovery: ok' >/dev/null || fail "01: expected ok; got: $OUT"
 LABEL="$(bb -e "
 (load-file \"$LIB\")
 (load-file \"$SCRIPT_DIR/suite_inventory_lib.bb\")
@@ -60,7 +60,7 @@ printf 'test_manual.sh\texcluded\t2026-07-30\tneeds a live tmux server\n' \
   >> "$R/swarmforge/scripts/test/suite-manifest.tsv"
 track "$R" swarmforge/scripts/test/test_manual.sh swarmforge/scripts/test/suite-manifest.tsv
 OUT="$(bb "$CLI" "$R")"
-echo "$OUT" | grep -q 'shell_test_discovery: ok' || fail "02: expected ok; got: $OUT"
+echo "$OUT" | grep 'shell_test_discovery: ok' >/dev/null || fail "02: expected ok; got: $OUT"
 LABEL="$(bb -e "
 (load-file \"$LIB\")
 (load-file \"$SCRIPT_DIR/suite_inventory_lib.bb\")
@@ -86,7 +86,7 @@ OUT="$(bb "$CLI" "$R" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "03a: expected non-zero for untracked orphan"
-echo "$OUT" | grep -q 'untracked orphan: test_orphan.sh' \
+echo "$OUT" | grep 'untracked orphan: test_orphan.sh' >/dev/null \
   || fail "03a: missing untracked orphan label; got: $OUT"
 pass "03a: untracked orphan fails loud"
 CLEAN_OUT="$(bb "$CLI" "$R" 2>/dev/null || true)" # still dirty
@@ -110,7 +110,7 @@ OUT="$(bb "$CLI" "$R" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "03b: expected fail"
-echo "$OUT" | grep -q 'unaccounted test: test_orphan.sh' \
+echo "$OUT" | grep 'unaccounted test: test_orphan.sh' >/dev/null \
   || fail "03b: missing unaccounted label; got: $OUT"
 pass "03b: tracked but unlisted fails as unaccounted"
 rm -rf "$R"
@@ -125,7 +125,7 @@ OUT="$(bb "$CLI" "$R" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "03c: expected fail"
-echo "$OUT" | grep -qi 'exclusion missing its reason' \
+echo "$OUT" | grep -i 'exclusion missing its reason' >/dev/null \
   || fail "03c: missing reason label; got: $OUT"
 pass "03c: exclusion missing reason fails loud"
 rm -rf "$R"
@@ -139,7 +139,7 @@ OUT="$(bb "$CLI" "$R" 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "03d: expected fail"
-echo "$OUT" | grep -q 'stale exclusion: test_gone.sh' \
+echo "$OUT" | grep 'stale exclusion: test_gone.sh' >/dev/null \
   || fail "03d: missing stale exclusion; got: $OUT"
 pass "03d: stale exclusion fails loud"
 rm -rf "$R"

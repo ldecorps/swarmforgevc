@@ -61,7 +61,7 @@ OUT2="$(bash "$SMOKE" "$ROOT" 2>&1)"
 STATUS2=$?
 set -e
 [[ "$STATUS2" -ne 0 ]] || fail "02: expected a 4th role in the profile to fail the smoke check"
-echo "$OUT2" | grep -qi "architect\|expected" || fail "02: error should mention the roster mismatch, got: $OUT2"
+echo "$OUT2" | grep -i "architect\|expected" >/dev/null || fail "02: error should mention the roster mismatch, got: $OUT2"
 pass "02: profile roster drift (unexpected extra role) is caught"
 rm -rf "$ROOT"
 
@@ -73,7 +73,7 @@ OUT3="$(bash "$SMOKE" "$ROOT" 2>&1)"
 STATUS3=$?
 set -e
 [[ "$STATUS3" -ne 0 ]] || fail "03: expected SWARMFORGE_SKIP_DAEMON in the profile to fail the smoke check"
-echo "$OUT3" | grep -qi "SKIP_DAEMON" || fail "03: error should mention SWARMFORGE_SKIP_DAEMON, got: $OUT3"
+echo "$OUT3" | grep -i "SKIP_DAEMON" >/dev/null || fail "03: error should mention SWARMFORGE_SKIP_DAEMON, got: $OUT3"
 pass "03: a daemon-skip regression in the profile is caught"
 rm -rf "$ROOT"
 
@@ -87,7 +87,7 @@ OUT4="$(bash "$SMOKE" "$ROOT" 2>&1)"
 STATUS4=$?
 set -e
 [[ "$STATUS4" -ne 0 ]] || fail "04: expected a missing launch config to fail the smoke check"
-echo "$OUT4" | grep -qi "no launch configuration" || fail "04: error should say the config is missing, got: $OUT4"
+echo "$OUT4" | grep -i "no launch configuration" >/dev/null || fail "04: error should say the config is missing, got: $OUT4"
 pass "04: launch.json missing the named configuration is caught"
 rm -rf "$ROOT"
 
@@ -100,7 +100,7 @@ OUT5="$(bash "$SMOKE" "$ROOT" 2>&1)"
 STATUS5=$?
 set -e
 [[ "$STATUS5" -ne 0 ]] || fail "05: expected launch.json pointing at the wrong profile to fail the smoke check"
-echo "$OUT5" | grep -qi "does not point at" || fail "05: error should say the config points elsewhere, got: $OUT5"
+echo "$OUT5" | grep -i "does not point at" >/dev/null || fail "05: error should say the config points elsewhere, got: $OUT5"
 pass "05: launch.json drifted onto the wrong profile path is caught"
 rm -rf "$ROOT"
 
@@ -113,7 +113,7 @@ OUT6="$(bash "$SMOKE" "$ROOT" 2>&1)"
 STATUS6=$?
 set -e
 [[ "$STATUS6" -ne 0 ]] || fail "06: expected a missing profile file to fail the smoke check"
-echo "$OUT6" | grep -qi "profile missing" || fail "06: error should say the profile is missing, got: $OUT6"
+echo "$OUT6" | grep -i "profile missing" >/dev/null || fail "06: error should say the profile is missing, got: $OUT6"
 pass "06: a missing profile file is caught"
 rm -rf "$ROOT"
 
@@ -126,7 +126,7 @@ OUT7="$(bash "$SMOKE" "$ROOT" 2>&1)"
 STATUS7=$?
 set -e
 [[ "$STATUS7" -ne 0 ]] || fail "07: expected a missing launch.json to fail the smoke check"
-echo "$OUT7" | grep -qi "launch.json missing" || fail "07: error should say launch.json is missing, got: $OUT7"
+echo "$OUT7" | grep -i "launch.json missing" >/dev/null || fail "07: error should say launch.json is missing, got: $OUT7"
 pass "07: a missing launch.json is caught"
 rm -rf "$ROOT"
 
@@ -139,7 +139,7 @@ OUT8="$(bash "$SMOKE" "$ROOT" 2>&1)"
 STATUS8=$?
 set -e
 [[ "$STATUS8" -ne 0 ]] || fail "08: expected malformed launch.json to fail the smoke check"
-echo "$OUT8" | grep -qi "not valid JSON" || fail "08: error should say launch.json is not valid JSON, got: $OUT8"
+echo "$OUT8" | grep -i "not valid JSON" >/dev/null || fail "08: error should say launch.json is not valid JSON, got: $OUT8"
 pass "08: malformed JSON in launch.json is caught"
 rm -rf "$ROOT"
 
@@ -161,7 +161,7 @@ OUT9="$(bash "$SMOKE" "$ROOT" 2>&1)"
 STATUS9=$?
 set -e
 [[ "$STATUS9" -ne 0 ]] || fail "09: expected launch.json's own SWARMFORGE_SKIP_DAEMON=1 to fail the smoke check"
-echo "$OUT9" | grep -qi "SKIP_DAEMON=1" || fail "09: error should mention SWARMFORGE_SKIP_DAEMON=1, got: $OUT9"
+echo "$OUT9" | grep -i "SKIP_DAEMON=1" >/dev/null || fail "09: error should mention SWARMFORGE_SKIP_DAEMON=1, got: $OUT9"
 pass "09: SWARMFORGE_SKIP_DAEMON=1 set directly on the launch.json config is caught"
 rm -rf "$ROOT"
 

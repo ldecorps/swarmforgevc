@@ -108,7 +108,7 @@ config rotation nonsense
 window coder claude coder --model x
 CONF
 ERROR_OUTPUT="$(zsh -c "source '$SWARMFORGE_SH' '$ROOT'; parse_config" 2>&1 || true)"
-echo "$ERROR_OUTPUT" | grep -qi "rotation must be 'sequential'" \
+echo "$ERROR_OUTPUT" | grep -i "rotation must be 'sequential'" >/dev/null \
   || fail "02: expected a \"rotation must be 'sequential'\" error, got: $ERROR_OUTPUT"
 pass "02: an invalid 'config rotation' value is rejected rather than silently accepted"
 rm -rf "$ROOT"

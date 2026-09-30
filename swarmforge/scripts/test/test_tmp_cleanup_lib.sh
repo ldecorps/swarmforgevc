@@ -435,11 +435,11 @@ set -e
 
 if [[ $CODE9 -eq 0 ]]; then
   fail "09: sourcing succeeded with an mktemp that refuses every invocation: $OUT9"
-elif echo "$OUT9" | grep -q "REACHED_BODY"; then
+elif echo "$OUT9" | grep "REACHED_BODY" >/dev/null; then
   fail "09: the sourcing script kept running past a registry it could not create: $OUT9"
-elif echo "$OUT9" | grep -qi "unbound variable"; then
+elif echo "$OUT9" | grep -i "unbound variable" >/dev/null; then
   fail "09: the failure surfaced as an unbound-variable error instead of a named one: $OUT9"
-elif ! echo "$OUT9" | grep -qi "tmp-cleanup registry"; then
+elif ! echo "$OUT9" | grep -i "tmp-cleanup registry" >/dev/null; then
   fail "09: the error never names the tmp-cleanup registry as what could not be created: $OUT9"
 else
   pass "09: a registry that cannot be created exits non-zero and names the tmp-cleanup registry"

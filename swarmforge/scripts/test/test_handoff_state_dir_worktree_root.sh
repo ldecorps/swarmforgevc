@@ -172,7 +172,7 @@ DRAFT="$(make_draft "$CODER_WT")"
 [[ -f "$STALE_DIR/50_stale.handoff" ]] || fail "04: stale nested outbox file was moved or deleted"
 [[ "$(find "$STALE_DIR" -name '*.handoff' | wc -l | tr -d ' ')" == "1" ]] \
   || fail "04: new files were written into the stale nested outbox"
-find "$ROOT" -path '*/inbox/new/*stale*' 2>/dev/null | grep -q . \
+find "$ROOT" -path '*/inbox/new/*stale*' 2>/dev/null | grep . >/dev/null \
   && fail "04: stale nested file was delivered to an inbox"
 pass "04: stale nested outbox files are untouched and not re-delivered"
 

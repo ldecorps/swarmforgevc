@@ -122,7 +122,7 @@ pass "01/02: the role worktree reports no uncommitted changes after the sync"
 pass "04: local runtime state (.swarmforge/) is still delivered to every role worktree"
 
 # ── Scenario 05: the sync says what it left to git, never silent ────────
-echo "$SYNC_OUTPUT" | grep -q "left to git (tracked): swarmforge/scripts/foo.bb" \
+echo "$SYNC_OUTPUT" | grep "left to git (tracked): swarmforge/scripts/foo.bb" >/dev/null \
   || fail "05: expected the sync to report leaving the tracked foo.bb to git, got: $SYNC_OUTPUT"
 pass "05: a sync that declines to overwrite a tracked path says so"
 

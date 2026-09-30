@@ -28,9 +28,9 @@ bb "$CLI" "$ROOT" --new abc1234567 "Land emergency fix" 2026-08-01 >/dev/null
 check "new: entry appended" "[[ \"\$(entry_count)\" -eq 1 ]]"
 check "new: commit recorded" '[[ "$(ledger)" == *"commit: abc1234567"* ]]'
 check "new: starts pending" \
-  "grep -A3 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -q 'state: pending'"
+  "grep -A3 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep 'state: pending' >/dev/null"
 check "new: no stamp ticket yet" \
-  "grep -A5 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -q 'stamp_ticket: null'"
+  "grep -A5 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep 'stamp_ticket: null' >/dev/null"
 
 # ── --new on an already-ledgered commit is refused, never silently
 #    duplicated (the ledger is the durable record; a second entry for the
@@ -45,7 +45,7 @@ check "new: duplicate commit does not add a second entry" "[[ \"\$(entry_count)\
 # ── --link: records the stamp-ticket id on an existing entry ───────────────
 bb "$CLI" "$ROOT" --link abc1234567 BL-900 >/dev/null
 check "link: stamp ticket recorded" \
-  "grep -A5 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -q 'stamp_ticket: BL-900'"
+  "grep -A5 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep 'stamp_ticket: BL-900' >/dev/null"
 check "link: still only one entry (in place update, not appended)" "[[ \"\$(entry_count)\" -eq 1 ]]"
 
 # ── --link on a commit with no ledger entry fails loudly, never fabricates
@@ -62,11 +62,11 @@ check "link: unknown commit leaves the ledger untouched" \
 # ── --decide approved: certifies, stamping human_decision + decided_at ─────
 bb "$CLI" "$ROOT" --decide abc1234567 approved 2026-08-08 >/dev/null
 check "decide approved: state -> certified" \
-  "grep -A6 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -q 'state: certified'"
+  "grep -A6 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep 'state: certified' >/dev/null"
 check "decide approved: human_decision recorded" \
-  "grep -A6 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -q 'human_decision: approved'"
+  "grep -A6 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep 'human_decision: approved' >/dev/null"
 check "decide approved: decided_at recorded" \
-  "grep -A6 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -q 'decided_at: 2026-08-08'"
+  "grep -A6 'commit: abc1234567' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep 'decided_at: 2026-08-08' >/dev/null"
 
 # ── --decide waived: a second, independent entry can be waived without ever
 #    being linked to a stamp ticket (a documented-operator-knob waiver never
@@ -75,9 +75,9 @@ check "decide approved: decided_at recorded" \
 bb "$CLI" "$ROOT" --new def7654321 "Documented operator knob" 2026-08-02 >/dev/null
 bb "$CLI" "$ROOT" --decide def7654321 waived 2026-08-08 >/dev/null
 check "decide waived: state -> waived" \
-  "grep -A6 'commit: def7654321' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -q 'state: waived'"
+  "grep -A6 'commit: def7654321' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep 'state: waived' >/dev/null"
 check "decide waived: never touched stamp_ticket (still null)" \
-  "grep -A6 'commit: def7654321' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -q 'stamp_ticket: null'"
+  "grep -A6 'commit: def7654321' \"$ROOT/backlog/hotfix-ledger.yaml\" | grep 'stamp_ticket: null' >/dev/null"
 
 # ── --decide with a malformed decision value is REJECTED, never silently
 #    defaulted to a safe-looking no-op or accepted case-insensitively - a

@@ -95,9 +95,9 @@ printf '2026-08-06T01:00:00Z' > "$HEARTBEAT"
 availability_close_ungraceful_stop "$ROOT" "$HEARTBEAT"
 LINES="$(cat "$(ledger_file "$ROOT" "2026-08")")"
 check "03: a synthetic stop record is appended at the heartbeat's own tick" \
-  'echo "$LINES" | grep -q "\"event\":\"stop\".*\"ts\":\"2026-08-06T01:00:00Z\"\|\"ts\":\"2026-08-06T01:00:00Z\".*\"event\":\"stop\""'
+  'echo "$LINES" | grep "\"event\":\"stop\".*\"ts\":\"2026-08-06T01:00:00Z\"\|\"ts\":\"2026-08-06T01:00:00Z\".*\"event\":\"stop\"" >/dev/null'
 check "03: the synthetic stop is sourced as heartbeat-inferred" \
-  'echo "$LINES" | grep -q "\"event\":\"stop\"" && echo "$LINES" | grep "\"event\":\"stop\"" | grep -q "heartbeat-inferred"'
+  'echo "$LINES" | grep "\"event\":\"stop\"" >/dev/null && echo "$LINES" | grep "\"event\":\"stop\"" | grep "heartbeat-inferred" >/dev/null'
 pass "03: an ungraceful stop is closed at the daemon's last heartbeat"
 
 # ── scenario 04: no heartbeat evidence emits nothing ────────────────────────

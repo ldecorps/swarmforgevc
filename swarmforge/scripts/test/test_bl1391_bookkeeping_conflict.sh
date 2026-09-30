@@ -92,7 +92,7 @@ setup() {
   # The premise, asserted rather than raced: the branch must exist on the
   # remote before anything clones it.
   local waited=0
-  until g "$root" ls-remote --heads "$origin" main 2>/dev/null | grep -q main; do
+  until g "$root" ls-remote --heads "$origin" main 2>/dev/null | grep main >/dev/null; do
     (( waited++ >= 50 )) && { fail "setup($name): origin never published main"; return 1; }
     sleep 0.1
   done
@@ -138,12 +138,12 @@ if grep -q "the specifier appended this" <<<"$body" && grep -q "abandoned_commit
 else
   fail "an addition was lost: $body"
 fi
-if g "$root" log -1 --format=%B 2>/dev/null | grep -q "$TICKET"; then
+if g "$root" log -1 --format=%B 2>/dev/null | grep "$TICKET" >/dev/null; then
   pass "the merge commit body names the resolved path and the strategy"
 else
   fail "the merge body does not name the path: $(g "$root" log -1 --format=%B 2>/dev/null)"
 fi
-if log_of | grep -q "bookkeeping-conflict"; then
+if log_of | grep "bookkeeping-conflict" >/dev/null; then
   pass "the daemon log carries bookkeeping-conflict naming the path"
 else
   fail "no bookkeeping-conflict log line: $(log_of | tail -25)"
@@ -182,12 +182,12 @@ run_tick
 # pre-existing rematch ladder then does with the tree is today's behaviour and
 # out of this ticket's scope, so the claim is read from the resolver's own log
 # rather than from the file, which that ladder may legitimately rewrite.
-if log_of | grep -q "bookkeeping-conflict refused"; then
+if log_of | grep "bookkeeping-conflict refused" >/dev/null; then
   pass "a conflict including a code path is refused by the resolver"
 else
   fail "the resolver did not refuse a conflict containing a code path: $(log_of | grep bookkeeping-conflict | tail -3)"
 fi
-if log_of | grep -q "bookkeeping-conflict resolved"; then
+if log_of | grep "bookkeeping-conflict resolved" >/dev/null; then
   fail "the resolver resolved a conflict that included a code path"
 else
   pass "and nothing was resolved (invariant 1: all or nothing)"
@@ -249,7 +249,7 @@ if merge_head_present; then
 else
   pass "and the refusing guard leaves no merge open"
 fi
-if log_of | grep -q "bookkeeping-conflict refused-by-guards"; then
+if log_of | grep "bookkeeping-conflict refused-by-guards" >/dev/null; then
   pass "the guard refusal is logged as such, not as a resolution"
 else
   fail "no refused-by-guards log line: $(log_of | grep bookkeeping-conflict | tail -3)"

@@ -80,15 +80,15 @@ sleep 0.3
 
 ENV1="$(received_env "$D1")"
 check "01: the fes bot receives its OWN fleet creds token, not the shell's" \
-  "echo '$ENV1' | grep -q 'fes-real-token'"
+  "echo '$ENV1' | grep 'fes-real-token' >/dev/null"
 check "01: the fes bot receives its OWN fleet creds chat id" \
-  "echo '$ENV1' | grep -q 'fes-real-chat'"
+  "echo '$ENV1' | grep 'fes-real-chat' >/dev/null"
 check "03: the fes bot does NOT receive the primary token leaked into the shell" \
-  "! echo '$ENV1' | grep -q 'primary-token-leaked-into-shell'"
+  "! echo '$ENV1' | grep 'primary-token-leaked-into-shell' >/dev/null"
 
 # ── per-swarm-telegram-creds-04: bridge port comes from the creds file ───
 check "04: the bot's bridge URL argv reflects the fleet creds file's bridgePort (9001)" \
-  "echo '$ENV1' | grep -q ':9001'"
+  "echo '$ENV1' | grep ':9001' >/dev/null"
 
 # ── per-swarm-telegram-creds-02: the primary swarm with no creds file
 #    falls back to the environment ────────────────────────────────────────
@@ -109,9 +109,9 @@ sleep 0.3
 
 ENV2="$(received_env "$D2")"
 check "02: the primary swarm with no creds file falls back to the env token" \
-  "echo '$ENV2' | grep -q 'env-primary-token'"
+  "echo '$ENV2' | grep 'env-primary-token' >/dev/null"
 check "02: the primary swarm with no creds file falls back to the env chat id" \
-  "echo '$ENV2' | grep -q 'env-primary-chat'"
+  "echo '$ENV2' | grep 'env-primary-chat' >/dev/null"
 
 # ── BL-1779: a fixture root that declares NO swarm identity at all never
 #    reads the fleet home's "primary" creds file - even though own-swarm-
@@ -137,9 +137,9 @@ sleep 0.3
 
 ENV3="$(received_env "$D3")"
 check "BL-1779: an undeclared root never receives the fleet home's real primary token" \
-  "! echo '$ENV3' | grep -q 'primary-real-token-should-never-be-used'"
+  "! echo '$ENV3' | grep 'primary-real-token-should-never-be-used' >/dev/null"
 check "BL-1779: an undeclared root resolves via env fallback instead (bootstrap window, no record yet)" \
-  "echo '$ENV3' | grep -q 'undeclared-env-token'"
+  "echo '$ENV3' | grep 'undeclared-env-token' >/dev/null"
 check "BL-1779: an undeclared root's front desk never records itself as the primary root" \
   "[[ ! -f '$FLEET_HOME_3/.swarmforge/fleet/primary/root' ]]"
 

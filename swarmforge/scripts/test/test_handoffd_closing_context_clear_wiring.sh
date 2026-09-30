@@ -78,7 +78,7 @@ pass "01: the consolidated daemon fired the closing-context-clear sweep for BL-4
 
 # ── 02: /clear was sent to the coordinator's own tmux session, then the
 #     startup re-read instruction immediately after (in that order) ────────
-grep -c "send-keys -t swarmforge-coordinator -l /clear" "$CALL_LOG" | grep -q '^1$' \
+grep -c "send-keys -t swarmforge-coordinator -l /clear" "$CALL_LOG" | grep '^1$' >/dev/null \
   || fail "02: expected exactly one /clear literal sent to the coordinator's session, got: $(cat "$CALL_LOG" 2>/dev/null)"
 grep -q "send-keys -t swarmforge-coordinator -l Re-read swarmforge/constitution.prompt" "$CALL_LOG" \
   || fail "02: expected the startup re-read instruction sent to the coordinator's session"

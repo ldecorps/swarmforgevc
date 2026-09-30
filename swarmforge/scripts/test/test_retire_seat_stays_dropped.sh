@@ -95,7 +95,7 @@ tmux -S "$SOCK" has-session -t swarmforge-coder@2 2>/dev/null \
   && fail "01: coder@2's tmux session still exists after retirement"
 pass "01: coder@2's session is gone"
 
-echo "$RETIRE_OUT" | grep -q "RETIRED_SEAT_MAILBOX_PARCEL:.*stranded.handoff" \
+echo "$RETIRE_OUT" | grep "RETIRED_SEAT_MAILBOX_PARCEL:.*stranded.handoff" >/dev/null \
   || fail "01: expected the stranded parcel reported, got: $RETIRE_OUT"
 pass "01: the retired seat's stranded mailbox parcel is reported"
 
@@ -104,7 +104,7 @@ pass "01: the retired seat's worktree, branch and mailbox are left in place"
 
 # ── Scenario 02: the babysitter's sweep does not resurrect it ────────────
 SWEEP_OUT="$(bash "$CHECK" "$ROOT" 2>&1 || true)"
-if echo "$SWEEP_OUT" | grep -q "coder@2"; then
+if echo "$SWEEP_OUT" | grep "coder@2" >/dev/null; then
   fail "02: the babysitter sweep still names coder@2: $SWEEP_OUT"
 fi
 pass "02: the babysitter sweep names coder@2 nowhere - no session, no repair, no finding"
@@ -115,7 +115,7 @@ pass "02: no session is created for coder@2"
 
 # ── Scenario 03: a back-all send from architect addresses no copy to it ──
 REVERSE_OUT="$(bb "$PROBE" "$WT_ARCHITECT/.swarmforge/roles.tsv" architect back-all)"
-if echo "$REVERSE_OUT" | grep -qw "coder@2"; then
+if echo "$REVERSE_OUT" | grep -w "coder@2" >/dev/null; then
   fail "03: a back-all send from architect's worktree still addresses coder@2: $REVERSE_OUT"
 fi
 pass "03: no copy of a back-all send from architect's worktree is addressed to coder@2"
@@ -130,7 +130,7 @@ NO_ARGS_OUT="$(bash "$RETIRE" 2>&1)"
 NO_ARGS_STATUS=$?
 set -e
 [[ $NO_ARGS_STATUS -ne 0 ]] || fail "04: expected a non-zero exit with no arguments, got 0"
-echo "$NO_ARGS_OUT" | grep -qi '^Usage:' || fail "04: expected a Usage: line with no arguments, got: $NO_ARGS_OUT"
+echo "$NO_ARGS_OUT" | grep -i '^Usage:' >/dev/null || fail "04: expected a Usage: line with no arguments, got: $NO_ARGS_OUT"
 pass "04: no arguments prints usage and exits non-zero"
 
 ROLES_BEFORE_UNKNOWN="$(cat "$ROOT/.swarmforge/roles.tsv")"
@@ -140,7 +140,7 @@ UNKNOWN_OUT="$(bash "$RETIRE" "$ROOT" nonexistent-seat 2>&1)"
 UNKNOWN_STATUS=$?
 set -e
 [[ $UNKNOWN_STATUS -ne 0 ]] || fail "04: expected a non-zero exit for an unknown seat, got 0"
-echo "$UNKNOWN_OUT" | grep -qi "unknown seat 'nonexistent-seat'" \
+echo "$UNKNOWN_OUT" | grep -i "unknown seat 'nonexistent-seat'" >/dev/null \
   || fail "04: expected the refusal to name the unknown seat, got: $UNKNOWN_OUT"
 pass "04: an unknown seat is refused, naming it"
 

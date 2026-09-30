@@ -61,11 +61,11 @@ RC=$?
 [[ "$RC" -eq 0 ]] || fail "expected kill_all_swarm.sh to exit 0 despite the ollama stop failing, got rc=$RC: $OUT"
 pass "kill_all_swarm.sh exits 0 even when the ollama stop call fails"
 
-echo "$OUT" | grep -q "STUB: ollama stop reporting failure" \
+echo "$OUT" | grep "STUB: ollama stop reporting failure" >/dev/null \
   || fail "expected the ollama stop stub to have been called, got: $OUT"
 pass "the ollama stop call was reached"
 
-echo "$OUT" | grep -q "STUB: kill_pipeline_swarm.sh reached" \
+echo "$OUT" | grep "STUB: kill_pipeline_swarm.sh reached" >/dev/null \
   || fail "expected kill_all_swarm.sh to still exec into kill_pipeline_swarm.sh after the ollama stop failed, got: $OUT"
 pass "kill_all_swarm.sh still execs into kill_pipeline_swarm.sh - the ollama stop failure did not abort it"
 

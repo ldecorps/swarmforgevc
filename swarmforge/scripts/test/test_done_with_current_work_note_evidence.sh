@@ -98,8 +98,8 @@ OUT="$(run_done 2>&1)"
 STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 ]] || fail "01: expected non-zero, got 0; out=$OUT"
-echo "$OUT" | grep -q 'WORK_NOT_EVIDENCED' || fail "01: expected WORK_NOT_EVIDENCED, got: $OUT"
-echo "$OUT" | grep -q 'BL-9001' || fail "01: refusal must name BL-9001, got: $OUT"
+echo "$OUT" | grep 'WORK_NOT_EVIDENCED' >/dev/null || fail "01: expected WORK_NOT_EVIDENCED, got: $OUT"
+echo "$OUT" | grep 'BL-9001' >/dev/null || fail "01: refusal must name BL-9001, got: $OUT"
 [[ -f "$IN_PROCESS/10_work.handoff" ]] || fail "01: Work note must still be in_process"
 ! grep -q '^completed_at:' "$IN_PROCESS/10_work.handoff" || fail "01: completed_at must not be stamped"
 [[ -z "$(find "$COMPLETED" -mindepth 1 2>/dev/null)" ]] || fail "01: nothing should have completed"
@@ -111,7 +111,7 @@ reset_mailbox
 write_work_note BL-9001
 git -C "$TASK_WT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m "BL-9001: did the work"
 OUT="$(run_done 2>&1)"
-echo "$OUT" | grep -q 'COMPLETED:' || fail "02a: expected COMPLETED, got: $OUT"
+echo "$OUT" | grep 'COMPLETED:' >/dev/null || fail "02a: expected COMPLETED, got: $OUT"
 [[ -f "$COMPLETED/10_work.handoff" ]] || fail "02a: expected the Work note in completed/"
 grep -q '^completed_at:' "$COMPLETED/10_work.handoff" || fail "02a: completed_at not stamped"
 ! grep -q '^no_work_reason:' "$COMPLETED/10_work.handoff" || fail "02a: no_work_reason must not appear on a real completion"
@@ -124,7 +124,7 @@ write_work_note BL-9001
 sleep 1
 write_sent_handoff_for BL-9001 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 OUT="$(run_done 2>&1)"
-echo "$OUT" | grep -q 'COMPLETED:' || fail "02b: expected COMPLETED, got: $OUT"
+echo "$OUT" | grep 'COMPLETED:' >/dev/null || fail "02b: expected COMPLETED, got: $OUT"
 [[ -f "$COMPLETED/10_work.handoff" ]] || fail "02b: expected the Work note in completed/"
 pass "02b: a git_handoff naming the ticket since dequeue completes the Work note as today"
 
@@ -140,7 +140,7 @@ write_work_note BL-9001
 sleep 1
 write_outbox_handoff_for BL-9001 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 OUT="$(run_done 2>&1)"
-echo "$OUT" | grep -q 'COMPLETED:' || fail "02c: expected COMPLETED, got: $OUT"
+echo "$OUT" | grep 'COMPLETED:' >/dev/null || fail "02c: expected COMPLETED, got: $OUT"
 [[ -f "$COMPLETED/10_work.handoff" ]] || fail "02c: expected the Work note in completed/"
 pass "02c: a git_handoff naming the ticket still pending in outbox/ also completes the Work note as today"
 
@@ -149,7 +149,7 @@ DEQUEUED_AT="$(fresh_dequeued_at)"
 reset_mailbox
 write_work_note BL-9001
 OUT="$(run_done --no-work "waiting on BL-9000" 2>&1)"
-echo "$OUT" | grep -q 'COMPLETED:' || fail "03: expected COMPLETED, got: $OUT"
+echo "$OUT" | grep 'COMPLETED:' >/dev/null || fail "03: expected COMPLETED, got: $OUT"
 grep -q '^no_work_reason: waiting on BL-9000$' "$COMPLETED/10_work.handoff" \
   || fail "03: expected no_work_reason on the completed file: $(cat "$COMPLETED/10_work.handoff")"
 grep -q '^no_work_at:' "$COMPLETED/10_work.handoff" || fail "03: expected no_work_at on the completed file"
@@ -171,7 +171,7 @@ pass "03b: a blank --no-work reason is refused like any other bad argv"
 reset_mailbox
 write_chase_note 1 abc1234567
 OUT="$(run_done 2>&1)"
-echo "$OUT" | grep -q 'COMPLETED:' || fail "04a: expected COMPLETED, got: $OUT"
+echo "$OUT" | grep 'COMPLETED:' >/dev/null || fail "04a: expected COMPLETED, got: $OUT"
 pass "04a: a non-Work note completes exactly as today"
 
 # 04b retired (BL-1609): "a git_handoff item completes exactly as today, no
@@ -207,7 +207,7 @@ for QUEUED in "$QUEUE_DIR"/*.handoff; do
   STATUS=$?
   set -e
   if [[ "$STATUS" -ne 0 ]]; then
-    echo "$OUT" | grep -q 'WORK_NOT_EVIDENCED' || fail "05: expected the burst to stop with WORK_NOT_EVIDENCED, got: $OUT"
+    echo "$OUT" | grep 'WORK_NOT_EVIDENCED' >/dev/null || fail "05: expected the burst to stop with WORK_NOT_EVIDENCED, got: $OUT"
     break
   fi
   COMPLETED_COUNT=$((COMPLETED_COUNT + 1))

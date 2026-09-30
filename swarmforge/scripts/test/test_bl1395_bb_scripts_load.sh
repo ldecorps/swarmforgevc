@@ -64,7 +64,7 @@ fi
 
 printf '(defn g [] 1)\n(defn f [] (g))\n' > "$root/swarmforge/scripts/bl1395_forward.bb"
 commit_tree "define g first"
-if run_guard | grep -q 'all clean'; then pass "the same file passes once g is defined above f"; else fail "the reordered file still refuses"; fi
+if run_guard | grep 'all clean' >/dev/null; then pass "the same file passes once g is defined above f"; else fail "the reordered file still refuses"; fi
 
 # ── 1c. a call to a function defined nowhere at all ──────────────────────
 make_tree one_c
@@ -215,7 +215,7 @@ probe_seconds=$SECONDS
 # process behind. A pid COUNT is not the observable - the live daemon, the
 # guard's own boot fixtures and other roles all match the same pattern, and
 # counting them made this check report a start that never happened.
-if (( probe_seconds < 90 )) && ! ps -eo args | grep -q '[l]oad-file.*handoffd\.bb'; then
+if (( probe_seconds < 90 )) && ! ps -eo args | grep '[l]oad-file.*handoffd\.bb' >/dev/null; then
   pass "no daemon process starts when handoffd.bb is loaded as a file"
 else
   fail "the load probe left a daemon running (${probe_seconds}s)"

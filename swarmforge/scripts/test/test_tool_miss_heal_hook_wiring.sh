@@ -55,7 +55,7 @@ mkdir -p "$WORKTREE/repo"
 HOOK_JSON="$(printf '{"tool_name":"Bash","tool_input":{"command":"cd %s && git status"}}' "$WORKTREE/repo")"
 RESPONSE="$(echo "$HOOK_JSON" | SWARMFORGE_ROLE_WORKTREE="$WORKTREE/repo" bb "$HOOK")"
 
-if echo "$RESPONSE" | grep -q '"hookEventName":"PreToolUse"'; then
+if echo "$RESPONSE" | grep '"hookEventName":"PreToolUse"' >/dev/null; then
   pass "a Bash call with a known pin returns a PreToolUse hookSpecificOutput"
 else
   fail "expected a PreToolUse hookSpecificOutput, got: $RESPONSE"
@@ -82,7 +82,7 @@ else
   fail "expected the rewritten command to succeed after healing, got exit $ACTUAL_EXIT: $ACTUAL_OUT"
 fi
 
-if echo "$ACTUAL_OUT" | grep -qi "nothing to commit\|On branch\|No commits yet"; then
+if echo "$ACTUAL_OUT" | grep -i "nothing to commit\|On branch\|No commits yet" >/dev/null; then
   pass "the rewritten command's output is the healed git status, not the original wrong-cwd failure"
 else
   fail "expected the healed git status output, got: $ACTUAL_OUT"

@@ -98,9 +98,9 @@ OUT2="$(run_guard "$MSG" 2>&1)"
 STATUS2=$?
 set -e
 [[ "$STATUS2" -ne 0 ]] || fail "02: expected refusal when a retired path re-enters via a one-sided add"
-echo "$OUT2" | grep -q "bl0001ExampleSteps.js" || fail "02: refusal must name the first retired path, got: $OUT2"
-echo "$OUT2" | grep -q "bl0002_example_lib.bb" || fail "02: refusal must name the second retired path, got: $OUT2"
-echo "$OUT2" | grep -q "BL-0001" || fail "02: refusal must name the retiring ticket BL-0001, got: $OUT2"
+echo "$OUT2" | grep "bl0001ExampleSteps.js" >/dev/null || fail "02: refusal must name the first retired path, got: $OUT2"
+echo "$OUT2" | grep "bl0002_example_lib.bb" >/dev/null || fail "02: refusal must name the second retired path, got: $OUT2"
+echo "$OUT2" | grep "BL-0001" >/dev/null || fail "02: refusal must name the retiring ticket BL-0001, got: $OUT2"
 pass "02: a merge re-adding a retired ticket's artefacts is refused, naming each path"
 git -C "$ROOT" merge --abort
 
@@ -190,7 +190,7 @@ OUT7="$(git -C "$ROOT" merge --no-ff -m "merge feature into main" "$FEATURE_TIP"
 STATUS7=$?
 set -e
 [[ "$STATUS7" -ne 0 ]] || fail "07: expected the installed hook to block a real git merge re-adding a retired ticket's artefacts, got: $OUT7"
-echo "$OUT7" | grep -q "bl0001ExampleSteps.js" || fail "07: expected the real hook's refusal to name the retired path, got: $OUT7"
+echo "$OUT7" | grep "bl0001ExampleSteps.js" >/dev/null || fail "07: expected the real hook's refusal to name the retired path, got: $OUT7"
 pass "07: an installed commit-msg hook blocks a real git merge --no-ff that silently re-adds retired artefacts"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 

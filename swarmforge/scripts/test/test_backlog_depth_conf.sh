@@ -56,7 +56,7 @@ run_handoff_capture_stderr() {
 ROOT="$(mk_fixture -1)"
 write_active_items "$ROOT" 5
 OUT="$(run_handoff_capture_stderr "$ROOT")"
-echo "$OUT" | grep -qi "Active backlog depth exceeded" \
+echo "$OUT" | grep -i "Active backlog depth exceeded" >/dev/null \
   && fail "depth-01a: no-limit (-1) with active=5 must not warn; got: $OUT"
 pass "depth-01a: cap=-1, active=5 -> no warning"
 rm -rf "$ROOT"
@@ -64,7 +64,7 @@ rm -rf "$ROOT"
 ROOT="$(mk_fixture 3)"
 write_active_items "$ROOT" 5
 OUT="$(run_handoff_capture_stderr "$ROOT")"
-echo "$OUT" | grep -qi "Active backlog depth exceeded (active=5, max=3)" \
+echo "$OUT" | grep -i "Active backlog depth exceeded (active=5, max=3)" >/dev/null \
   || fail "depth-01b: cap=3, active=5 must warn with the real numbers; got: $OUT"
 pass "depth-01b: cap=3, active=5 -> warning with the real (not silently defaulted) numbers"
 rm -rf "$ROOT"
@@ -72,7 +72,7 @@ rm -rf "$ROOT"
 ROOT="$(mk_fixture 3)"
 write_active_items "$ROOT" 2
 OUT="$(run_handoff_capture_stderr "$ROOT")"
-echo "$OUT" | grep -qi "Active backlog depth exceeded" \
+echo "$OUT" | grep -i "Active backlog depth exceeded" >/dev/null \
   && fail "depth-01c: cap=3, active=2 must not warn; got: $OUT"
 pass "depth-01c: cap=3, active=2 -> no warning"
 rm -rf "$ROOT"
@@ -83,7 +83,7 @@ write_active_items "$ROOT" 1
 [[ -f "$ROOT/backlog/active/.gitkeep" ]] \
   || fail "bl808 setup: fixture must carry .gitkeep (regression guard)"
 OUT="$(run_handoff_capture_stderr "$ROOT")"
-echo "$OUT" | grep -qi "Active backlog depth exceeded" \
+echo "$OUT" | grep -i "Active backlog depth exceeded" >/dev/null \
   && fail "bl808-gitkeep-01: cap=1 with one ticket yaml + .gitkeep must not warn; got: $OUT"
 pass "bl808-gitkeep-01: cap=1, one ticket + .gitkeep -> no warning"
 rm -rf "$ROOT"
@@ -91,7 +91,7 @@ rm -rf "$ROOT"
 ROOT="$(mk_fixture 1)"
 write_active_items "$ROOT" 2
 OUT="$(run_handoff_capture_stderr "$ROOT")"
-echo "$OUT" | grep -qi "Active backlog depth exceeded (active=2, max=1)" \
+echo "$OUT" | grep -i "Active backlog depth exceeded (active=2, max=1)" >/dev/null \
   || fail "bl808-gitkeep-02: genuine overflow must still warn as active=2 (not 3); got: $OUT"
 pass "bl808-gitkeep-02: cap=1, two tickets + .gitkeep -> warning active=2"
 rm -rf "$ROOT"
@@ -111,7 +111,7 @@ ROOT="$(mk_fixture 3)"
   || fail "depth-03 setup: fixture must not have a .swarmforge/swarmforge.conf"
 write_active_items "$ROOT" 4
 OUT="$(run_handoff_capture_stderr "$ROOT")"
-echo "$OUT" | grep -qi "max=3" \
+echo "$OUT" | grep -i "max=3" >/dev/null \
   || fail "depth-03: expected the real tracked cap (3), not the silent default (5); got: $OUT"
 pass "depth-03: the cap comes from the real tracked swarmforge/swarmforge.conf, not a silent default"
 rm -rf "$ROOT"
@@ -131,7 +131,7 @@ OUT="$(run_handoff_capture_stderr "$ROOT")"
 STATUS=$?
 set -e
 [[ "$STATUS" -eq 0 ]] || fail "depth-04: expected no crash with an absent config; got exit $STATUS: $OUT"
-echo "$OUT" | grep -qi "Active backlog depth exceeded" \
+echo "$OUT" | grep -i "Active backlog depth exceeded" >/dev/null \
   && fail "depth-04: an absent config must not produce a spurious over-cap warning (active=3 is under the default cap of 5); got: $OUT"
 pass "depth-04: an absent config degrades gracefully - no crash, no spurious warning"
 rm -rf "$ROOT"
@@ -149,7 +149,7 @@ printf 'swarm_name\tprimary\nswarm_mode\tautonomous\nactive_backlog_max_depth\t1
   "$ROOT/elsewhere/pack.conf" > "$ROOT/.swarmforge/swarm-identity"
 write_active_items "$ROOT" 2
 OUT="$(run_handoff_capture_stderr "$ROOT")"
-echo "$OUT" | grep -qi "Active backlog depth exceeded (active=2, max=1)" \
+echo "$OUT" | grep -i "Active backlog depth exceeded (active=2, max=1)" >/dev/null \
   || fail "depth-cap-override-01: expected the persisted pack's cap (1) enforced, not the default file's -1; got: $OUT"
 pass "depth-cap-override-01: a persisted pack override (max=1) is enforced over the default file's own -1"
 rm -rf "$ROOT"
@@ -162,7 +162,7 @@ ROOT="$(mk_fixture 3)"
   || fail "depth-cap-override-02 setup: fixture must not have a swarm-identity file"
 write_active_items "$ROOT" 5
 OUT="$(run_handoff_capture_stderr "$ROOT")"
-echo "$OUT" | grep -qi "max=3" \
+echo "$OUT" | grep -i "max=3" >/dev/null \
   || fail "depth-cap-override-02: expected the default file's own cap (3) with no persisted override; got: $OUT"
 pass "depth-cap-override-02: no persisted override -> the default tracked config's cap is still enforced"
 rm -rf "$ROOT"
@@ -185,7 +185,7 @@ write_active_items "$ROOT" 2
 write_draft "$ROOT"
 OUT="$(cd "$ROOT/other-role-worktree" && SWARMFORGE_ROLE=coordinator SWARMFORGE_SKIP_DAEMON=1 SWARMFORGE_MAILBOX_ONLY=1 \
   bb "$SWARM_HANDOFF" "$ROOT/draft.txt" 2>&1 1>/dev/null || true)"
-echo "$OUT" | grep -qi "Active backlog depth exceeded (active=2, max=1)" \
+echo "$OUT" | grep -i "Active backlog depth exceeded (active=2, max=1)" >/dev/null \
   || fail "depth-cap-override-relative: expected the pack's cap (1) enforced even from a DIFFERENT cwd than project-root with a RELATIVE persisted path; got: $OUT"
 pass "depth-cap-override-relative: a relative persisted conf path resolves against project-root, not the caller's own cwd"
 rm -rf "$ROOT"

@@ -122,9 +122,9 @@ run_ready() {  # sets OUT, ERR, RC
 
 # ── scenario 03: a clean worktree passes silently ────────────────────────
 run_ready
-echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+echo "$ERR" | grep "WORKTREE_DRIFT_DETECTED" >/dev/null \
   && fail "03: a clean worktree must never be flagged, got: $ERR"
-echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
+echo "$ERR" | grep "INVALID_RECEIVE_MODE" >/dev/null \
   || fail "03: expected control to reach dispatch on a clean worktree, got rc=$RC err=$ERR"
 pass "03: a worktree matching its own HEAD passes without noise"
 
@@ -132,12 +132,12 @@ pass "03: a worktree matching its own HEAD passes without noise"
 echo "DRIFTED: no commit authored this" > "$CODER_WT/$DRIFT_REL"
 run_ready
 [[ $RC -ne 0 ]] || fail "01: expected a refusal, rc=0 out=$OUT"
-echo "$OUT" | grep -q "^TASK:" && fail "01: no task may print on a refused turn: $OUT"
-echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+echo "$OUT" | grep "^TASK:" >/dev/null && fail "01: no task may print on a refused turn: $OUT"
+echo "$ERR" | grep "WORKTREE_DRIFT_DETECTED" >/dev/null \
   || fail "01: expected a drift report, got: $ERR"
-echo "$ERR" | grep -q "$DRIFT_REL" \
+echo "$ERR" | grep "$DRIFT_REL" >/dev/null \
   || fail "01: the report must name the drifted path, got: $ERR"
-echo "$ERR" | grep -qi "stash" \
+echo "$ERR" | grep -i "stash" >/dev/null \
   || fail "01: the report must instruct preserving the drift via stash, got: $ERR"
 [[ "$(cat "$CODER_WT/$DRIFT_REL")" == "DRIFTED: no commit authored this" ]] \
   || fail "01: the guard must never discard the drifted content itself"
@@ -148,9 +148,9 @@ pass "01: tracked drift with no in-progress task is reported, and refuses rather
 # reaches dispatch (proven the same way scenario 03 proves it).
 drop_handoff "$INBOX/in_process" "resume1"
 run_ready
-echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+echo "$ERR" | grep "WORKTREE_DRIFT_DETECTED" >/dev/null \
   && fail "02: a role with an in-progress task must never be flagged for its own WIP, got: $ERR"
-echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
+echo "$ERR" | grep "INVALID_RECEIVE_MODE" >/dev/null \
   || fail "02: expected control to reach dispatch once an in-progress task explains the drift, got rc=$RC err=$ERR"
 [[ "$(cat "$CODER_WT/$DRIFT_REL")" == "DRIFTED: no commit authored this" ]] \
   || fail "02: the guard must never touch the file content either way"
@@ -163,9 +163,9 @@ pass "02: a file the role is legitimately editing for its current (in-progress) 
 echo "DRIFTED: hardender wip" > "$HARDENDER_WT/$DRIFT_REL"
 drop_batch_handoff "$HARDENDER_INBOX/in_process/batch_20260917T000000Z_000001" "hardender1"
 run_ready_hardender
-echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+echo "$ERR" | grep "WORKTREE_DRIFT_DETECTED" >/dev/null \
   && fail "04: a batch role's own uncommitted WIP with a parcel inside its batch_ directory must never be flagged, got: $ERR"
-echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
+echo "$ERR" | grep "INVALID_RECEIVE_MODE" >/dev/null \
   || fail "04: expected control to reach dispatch once the batch parcel explains the drift, got rc=$RC err=$ERR"
 pass "04: a batch role's in_process/batch_.../ parcel is seen by the batch-aware reader and exempts its own drift"
 
@@ -175,7 +175,7 @@ pass "04: a batch role's in_process/batch_.../ parcel is seen by the batch-aware
 rm -f "$HARDENDER_INBOX/in_process/batch_20260917T000000Z_000001/00_hardender1.handoff"
 run_ready_hardender
 [[ $RC -ne 0 ]] || fail "05: expected a refusal, rc=0 out=$OUT"
-echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+echo "$ERR" | grep "WORKTREE_DRIFT_DETECTED" >/dev/null \
   || fail "05: an empty batch_ directory holds nothing, expected a drift report, got: $ERR"
 pass "05: an empty batch_ directory does not count as an in-process parcel"
 
@@ -185,7 +185,7 @@ pass "05: an empty batch_ directory does not count as an in-process parcel"
 rmdir "$HARDENDER_INBOX/in_process/batch_20260917T000000Z_000001"
 run_ready_hardender
 [[ $RC -ne 0 ]] || fail "06: expected a refusal, rc=0 out=$OUT"
-echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+echo "$ERR" | grep "WORKTREE_DRIFT_DETECTED" >/dev/null \
   || fail "06: an empty in_process/ holds nothing, expected a drift report, got: $ERR"
 pass "06: a batch role's in_process/ with no batch_ directory at all is still judged correctly"
 

@@ -76,11 +76,11 @@ run_ancillary_start() {  # sets OUT, ERR, RC
 
 run_ancillary_start
 
-echo "$ERR" | grep -qi "bubble named tunnel" \
+echo "$ERR" | grep -i "bubble named tunnel" >/dev/null \
   || fail "01: expected the report to name the named (Bubble) tunnel specifically, got: $ERR"
-echo "$ERR" | grep -qi "down" \
+echo "$ERR" | grep -i "down" >/dev/null \
   || fail "01: expected the named tunnel to be reported down, got: $ERR"
-echo "$ERR" | grep -qi "vscode" \
+echo "$ERR" | grep -i "vscode" >/dev/null \
   && fail "01: the report must name the named tunnel, never the editor (vscode) tunnel: $ERR"
 [[ "$(cat "$RELAUNCH_COUNT_FILE")" == "2" ]] \
   || fail "01: expected exactly one bounded relaunch attempt after the first liveness check failed (initial launch + one relaunch = 2 total launcher calls), got $(cat "$RELAUNCH_COUNT_FILE")"
@@ -101,7 +101,7 @@ exit 0
 EOF
 chmod +x "$FIXTURE_SCRIPTS/launch_resident_spy_tunnel.sh"
 run_ancillary_start
-echo "$ERR" | grep -qi "bubble named tunnel" \
+echo "$ERR" | grep -i "bubble named tunnel" >/dev/null \
   && fail "regression: a genuinely live named tunnel must never be flagged, got: $ERR"
 [[ "$(cat "$RELAUNCH_COUNT_FILE")" == "1" ]] \
   || fail "regression: expected exactly the one normal launch call, no relaunch, got $(cat "$RELAUNCH_COUNT_FILE")"
@@ -127,7 +127,7 @@ exit 0
 EOF
 chmod +x "$FIXTURE_SCRIPTS/launch_resident_spy_tunnel.sh"
 run_ancillary_start
-echo "$ERR" | grep -qi "bubble named tunnel" \
+echo "$ERR" | grep -i "bubble named tunnel" >/dev/null \
   && fail "regression: an unconfigured root must never be flagged as down, got: $ERR"
 [[ "$(cat "$RELAUNCH_COUNT_FILE")" == "1" ]] \
   || fail "regression: an unconfigured root must never trigger a relaunch attempt, got $(cat "$RELAUNCH_COUNT_FILE")"

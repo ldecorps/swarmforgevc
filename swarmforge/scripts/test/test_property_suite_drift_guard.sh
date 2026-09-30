@@ -62,9 +62,9 @@ OUT01="$(cd "$ROOT" && bash "$GUARD" "${GREEN[@]}" 2>&1)"
 ST01=$?
 set -e
 [[ "$ST01" -eq 0 ]] || fail "01: docs-only must allow, got $ST01: $OUT01"
-echo "$OUT01" | grep -q 'property-suite-guard: skip-paths' \
+echo "$OUT01" | grep 'property-suite-guard: skip-paths' >/dev/null \
   || fail "01: expected skip-paths marker, got: $OUT01"
-echo "$OUT01" | grep -q 'property-suite-guard: run' \
+echo "$OUT01" | grep 'property-suite-guard: run' >/dev/null \
   && fail "01: must not run the suite for docs-only"
 pass "01: docs-only staged path skips the property suite"
 git -C "$ROOT" reset -q HEAD
@@ -77,7 +77,7 @@ OUT02="$(cd "$ROOT" && bash "$GUARD" "${GREEN[@]}" 2>&1)"
 ST02=$?
 set -e
 [[ "$ST02" -eq 0 ]] || fail "02: green suite must allow, got $ST02: $OUT02"
-echo "$OUT02" | grep -q 'property-suite-guard: run' \
+echo "$OUT02" | grep 'property-suite-guard: run' >/dev/null \
   || fail "02: expected run marker, got: $OUT02"
 pass "02: extension/src with green suite allows"
 git -C "$ROOT" reset -q HEAD
@@ -90,7 +90,7 @@ OUT03="$(cd "$ROOT" && bash "$GUARD" "${GREEN[@]}" 2>&1)"
 ST03=$?
 set -e
 [[ "$ST03" -eq 0 ]] || fail "03: property test path must allow when green: $OUT03"
-echo "$OUT03" | grep -q 'property-suite-guard: run' \
+echo "$OUT03" | grep 'property-suite-guard: run' >/dev/null \
   || fail "03: expected run marker, got: $OUT03"
 pass "03: *.property.test.js staged path runs the suite"
 git -C "$ROOT" reset -q HEAD
@@ -103,7 +103,7 @@ OUT04="$(cd "$ROOT" && bash "$GUARD" "${RED[@]}" 2>&1)"
 ST04=$?
 set -e
 [[ "$ST04" -ne 0 ]] || fail "04: red suite must block"
-echo "$OUT04" | grep -q 'pipelineBoard.property.test.js' \
+echo "$OUT04" | grep 'pipelineBoard.property.test.js' >/dev/null \
   || fail "04: must name failing property file, got: $OUT04"
 pass "04: red suite blocks and names the property test file"
 git -C "$ROOT" reset -q HEAD
@@ -116,7 +116,7 @@ OUT05="$(cd "$ROOT" && bash "$GUARD" "${UNAVAIL[@]}" 2>&1)"
 ST05=$?
 set -e
 [[ "$ST05" -eq 0 ]] || fail "05: unavailable must allow, got $ST05: $OUT05"
-echo "$OUT05" | grep -qi 'skipped' \
+echo "$OUT05" | grep -i 'skipped' >/dev/null \
   || fail "05: must warn skipped, got: $OUT05"
 pass "05: unavailable toolchain fails open with skipped warning"
 git -C "$ROOT" reset -q HEAD
@@ -129,7 +129,7 @@ OUT06="$(cd "$ROOT" && SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 bash "$GUARD" "${R
 ST06=$?
 set -e
 [[ "$ST06" -eq 0 ]] || fail "06: override must allow, got $ST06: $OUT06"
-echo "$OUT06" | grep -qi 'overridden' \
+echo "$OUT06" | grep -i 'overridden' >/dev/null \
   || fail "06: must warn overridden, got: $OUT06"
 pass "06: override lets a red suite through with overridden warning"
 git -C "$ROOT" reset -q HEAD
@@ -150,7 +150,7 @@ OUT07CHECK="$(node -e '
   const { propertyGuardIsWired } = require(process.argv[1]);
   process.stdout.write(JSON.stringify(propertyGuardIsWired({ repoRoot: process.argv[2] })));
 ' "$REPO_ROOT/specs/pipeline/steps/lib/bl1409PropertyGuardWiring.js" "$REPO_ROOT" 2>&1)"
-echo "$OUT07CHECK" | grep -q '"wired":true' \
+echo "$OUT07CHECK" | grep '"wired":true' >/dev/null \
   || fail "07: propertyGuardIsWired must report the guard wired against the real repo, got: $OUT07CHECK"
 
 # The behavioural half: hook -> runner -> the guard's own skip-paths decision,
@@ -223,11 +223,11 @@ OUT08="$(cd "$ROOT" && bash "$GUARD" "${RED[@]}" 2>&1)"
 ST08=$?
 set -e
 [[ "$ST08" -eq 0 ]] || fail "08: reconcile import must allow without suite, got $ST08: $OUT08"
-echo "$OUT08" | grep -q 'property-suite-guard: skip-reconcile-import' \
+echo "$OUT08" | grep 'property-suite-guard: skip-reconcile-import' >/dev/null \
   || fail "08: expected skip-reconcile-import marker, got: $OUT08"
-echo "$OUT08" | grep -q 'property-suite-guard: run' \
+echo "$OUT08" | grep 'property-suite-guard: run' >/dev/null \
   && fail "08: must not run the suite for byte-identical import"
-echo "$OUT08" | grep -qi 'overridden' \
+echo "$OUT08" | grep -i 'overridden' >/dev/null \
   && fail "08: must not use recovery override for standing reconcile skip"
 pass "08: MERGE_HEAD byte-identical import skips suite (not env override)"
 git -C "$ROOT" merge --abort >/dev/null 2>&1 || git -C "$ROOT" reset -q --hard HEAD
@@ -243,9 +243,9 @@ OUT09="$(cd "$ROOT" && bash "$GUARD" "${GREEN[@]}" 2>&1)"
 ST09=$?
 set -e
 [[ "$ST09" -eq 0 ]] || fail "09: ordinary green suite must allow: $OUT09"
-echo "$OUT09" | grep -q 'property-suite-guard: run' \
+echo "$OUT09" | grep 'property-suite-guard: run' >/dev/null \
   || fail "09: ordinary commit must run the suite, got: $OUT09"
-echo "$OUT09" | grep -q 'skip-reconcile-import' \
+echo "$OUT09" | grep 'skip-reconcile-import' >/dev/null \
   && fail "09: ordinary commit must not claim reconcile-import skip"
 pass "09: non-reconcile extension/src commit still runs the suite"
 
@@ -255,9 +255,9 @@ OUT10="$(cd "$ROOT" && SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 bash "$GUARD" "${R
 ST10=$?
 set -e
 [[ "$ST10" -eq 0 ]] || fail "10: override must allow"
-echo "$OUT10" | grep -qi 'overridden' \
+echo "$OUT10" | grep -i 'overridden' >/dev/null \
   || fail "10: override path must warn overridden"
-echo "$OUT10" | grep -q 'skip-reconcile-import' \
+echo "$OUT10" | grep 'skip-reconcile-import' >/dev/null \
   && fail "10: override must not print skip-reconcile-import"
 pass "10: SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD remains recovery-only (distinct marker)"
 
@@ -273,9 +273,9 @@ OUT11="$(cd "$ROOT" && bash "$GUARD_COPY_11" "${ALLOWLISTED_RED[@]}" 2>&1)"
 ST11=$?
 set -e
 [[ "$ST11" -eq 0 ]] || fail "11: all-allowlisted reds must allow, got $ST11: $OUT11"
-echo "$OUT11" | grep -q 'allowlisted-standing-reds' \
+echo "$OUT11" | grep 'allowlisted-standing-reds' >/dev/null \
   || fail "11: expected allowlisted-standing-reds marker, got: $OUT11"
-echo "$OUT11" | grep -qi 'overridden' \
+echo "$OUT11" | grep -i 'overridden' >/dev/null \
   && fail "11: must not use SKIP override for allowlisted standing reds"
 pass "11: all-allowlisted standing reds allow commit without SKIP"
 git -C "$ROOT" reset -q HEAD
@@ -293,9 +293,9 @@ OUT12="$(cd "$ROOT" && bash "$GUARD_COPY_12" "${MIXED_RED[@]}" 2>&1)"
 ST12=$?
 set -e
 [[ "$ST12" -ne 0 ]] || fail "12: mixed allowlisted + non-allowlisted must block"
-echo "$OUT12" | grep -q 'pipelineBoard.property.test.js' \
+echo "$OUT12" | grep 'pipelineBoard.property.test.js' >/dev/null \
   || fail "12: must name non-allowlisted file, got: $OUT12"
-echo "$OUT12" | grep -q 'non-allowlisted' \
+echo "$OUT12" | grep 'non-allowlisted' >/dev/null \
   || fail "12: expected non-allowlisted rejection marker, got: $OUT12"
 pass "12: non-allowlisted failure still blocks the commit"
 git -C "$ROOT" reset -q HEAD
@@ -311,7 +311,7 @@ OUT13="$(cd "$ROOT" && bash "$GUARD_COPY_13" "${RED[@]}" 2>&1)"
 ST13=$?
 set -e
 [[ "$ST13" -ne 0 ]] || fail "13: unallowlisted red must still block"
-echo "$OUT13" | grep -q 'pipelineBoard.property.test.js' \
+echo "$OUT13" | grep 'pipelineBoard.property.test.js' >/dev/null \
   || fail "13: must name failing property file, got: $OUT13"
 pass "13: guard still refuses silent unallowlisted reds"
 git -C "$ROOT" reset -q HEAD
@@ -333,7 +333,7 @@ OUT13B="$(cd "$ROOT" && bash "$GUARD_COPY_13B" "${TWO_ALLOWLISTED_RED[@]}" 2>&1)
 ST13B=$?
 set -e
 [[ "$ST13B" -eq 0 ]] || fail "13b: two allowlisted reds together must allow, got $ST13B: $OUT13B"
-echo "$OUT13B" | grep -q 'allowlisted-standing-reds' \
+echo "$OUT13B" | grep 'allowlisted-standing-reds' >/dev/null \
   || fail "13b: expected allowlisted-standing-reds marker, got: $OUT13B"
 pass "13b: two allowlisted standing reds together allow the commit"
 git -C "$ROOT" reset -q HEAD
@@ -355,7 +355,7 @@ OUT13C="$(cd "$ROOT" && bash "$GUARD_COPY_13C" "${FIVE_ALLOWLISTED_RED[@]}" 2>&1
 ST13C=$?
 set -e
 [[ "$ST13C" -eq 0 ]] || fail "13c: five allowlisted reds together must allow, got $ST13C: $OUT13C"
-echo "$OUT13C" | grep -q 'allowlisted-standing-reds' \
+echo "$OUT13C" | grep 'allowlisted-standing-reds' >/dev/null \
   || fail "13c: expected allowlisted-standing-reds marker, got: $OUT13C"
 pass "13c: five allowlisted standing reds together allow the commit"
 git -C "$ROOT" reset -q HEAD
@@ -374,14 +374,14 @@ OUT13D="$(cd "$ROOT" && bash "$GUARD_COPY_13D" "${THREE_MIXED_RED[@]}" 2>&1)"
 ST13D=$?
 set -e
 [[ "$ST13D" -ne 0 ]] || fail "13d: a genuine unlisted red among allowlisted ones must still block"
-echo "$OUT13D" | grep -q 'non-allowlisted files:$' \
+echo "$OUT13D" | grep 'non-allowlisted files:$' >/dev/null \
   || fail "13d: expected the non-allowlisted marker line, got: $OUT13D"
 # The exact unlisted path must appear on its OWN, not glued to a neighbour -
 # this is the assertion scenario 12 could not make (its concatenation bug
 # still contains the substring, since grep -q has no boundary check).
-echo "$OUT13D" | grep -qx 'test/pipelineBoard.property.test.js' \
+echo "$OUT13D" | grep -x 'test/pipelineBoard.property.test.js' >/dev/null \
   || fail "13d: expected the unlisted path alone on its own line, got: $OUT13D"
-echo "$OUT13D" | grep -q 'bl632CommitTimeGuardInvariants.property.test.jstest/pipelineBoard' \
+echo "$OUT13D" | grep 'bl632CommitTimeGuardInvariants.property.test.jstest/pipelineBoard' >/dev/null \
   && fail "13d: the reported path must never be a concatenation of two normalized paths, got: $OUT13D"
 pass "13d: a genuine unlisted red is named alone, never concatenated with an allowlisted neighbour"
 git -C "$ROOT" reset -q HEAD
@@ -435,7 +435,7 @@ set -e
 OUT14="$(cat "$ROOT/../bl1202_out_$$" 2>/dev/null || true)"
 
 [[ "$ST14" -ne 0 ]] || fail "14: a killed guard must exit non-zero, got $ST14: $OUT14"
-echo "$OUT14" | grep -q 'BL-1124: shared repo refs/bare changed' \
+echo "$OUT14" | grep 'BL-1124: shared repo refs/bare changed' >/dev/null \
   || fail "14: expected the canary to still be reported on a killed run, got: $OUT14"
 pass "14: killing the guard mid-run still reports the BL-1124 canary verdict"
 
@@ -501,7 +501,7 @@ set -e
 OUT16="$(cat "$ROOT/../bl1202_out16_$$" 2>/dev/null || true)"
 
 [[ "$ST16" -ne 0 ]] || fail "16: a HUP-killed guard must exit non-zero, got $ST16: $OUT16"
-echo "$OUT16" | grep -q 'BL-1124: shared repo refs/bare changed' \
+echo "$OUT16" | grep 'BL-1124: shared repo refs/bare changed' >/dev/null \
   || fail "16: expected the canary to still be reported on a HUP-killed run, got: $OUT16"
 pass "16: a SIGHUP kill (caught only by the standalone EXIT trap) still reports the BL-1124 canary verdict"
 
@@ -606,7 +606,7 @@ OUT19="$(cd "$ROOT" && bash "$GUARD" "${FLAKY_19[@]}" 2>&1)"
 ST19=$?
 set -e
 [[ "$ST19" -eq 0 ]] || fail "19: a flake that passes alone must allow the commit, got $ST19: $OUT19"
-echo "$OUT19" | grep -q 'flake recorded' \
+echo "$OUT19" | grep 'flake recorded' >/dev/null \
   || fail "19: expected a flake-recorded line, got: $OUT19"
 FLAKE_FILE_19="$ROOT/.swarmforge/property-flakes/$(date -u +%Y-%m).jsonl"
 [[ -f "$FLAKE_FILE_19" ]] || fail "19: expected a flake record file at $FLAKE_FILE_19"
@@ -631,9 +631,9 @@ OUT20="$(cd "$ROOT" && bash "$GUARD" "${ALWAYS_RED_20[@]}" 2>&1)"
 ST20=$?
 set -e
 [[ "$ST20" -ne 0 ]] || fail "20: a red that fails alone too must still refuse"
-echo "$OUT20" | grep -q 'bl1407FakeAlwaysRed.property.test.js' \
+echo "$OUT20" | grep 'bl1407FakeAlwaysRed.property.test.js' >/dev/null \
   || fail "20: must name the file, got: $OUT20"
-echo "$OUT20" | grep -q 'flake recorded' \
+echo "$OUT20" | grep 'flake recorded' >/dev/null \
   && fail "20: must not report a flake for a deterministic regression, got: $OUT20"
 [[ ! -d "$ROOT/.swarmforge/property-flakes" ]] \
   || fail "20: no flake record must be written when the re-run also fails, found: $(ls "$ROOT/.swarmforge/property-flakes" 2>/dev/null)"
@@ -703,7 +703,7 @@ OUT22="$(cd "$ROOT" && SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS=1 bash "$GUARD"
 ST22=$?
 set -e
 [[ "$ST22" -ne 0 ]] || fail "22: a rerun that hangs past the ceiling must still refuse"
-echo "$OUT22" | grep -q 'bl1407FakeHang.property.test.js' \
+echo "$OUT22" | grep 'bl1407FakeHang.property.test.js' >/dev/null \
   || fail "22: must name the hung file, got: $OUT22"
 pass "22: a re-run past the ceiling counts as a failure and the commit is refused"
 git -C "$ROOT" reset -q HEAD
@@ -727,7 +727,7 @@ OUT23="$(cd "$ROOT" && bash "$GUARD" "${MUTATING_RERUN_23[@]}" 2>&1)"
 ST23=$?
 set -e
 [[ "$ST23" -ne 0 ]] || fail "23: a re-run that mutates the shared checkout must refuse"
-echo "$OUT23" | grep -q 'BL-1124' \
+echo "$OUT23" | grep 'BL-1124' >/dev/null \
   || fail "23: expected the BL-1124 canary marker in the refusal, got: $OUT23"
 pass "23: a re-run that mutates the shared checkout is refused citing BL-1124"
 git -C "$ROOT" reset -q HEAD~1 --hard
@@ -821,7 +821,7 @@ set -e
   || fail "25: expected exactly one re-run invocation (the budget-exhausting first file), got: $(cat "$LOG_25")"
 grep -q '^test/bl1407FakeBudgetA.property.test.js$' "$LOG_25" \
   || fail "25: expected the first file's own re-run to be the one invoked, got: $(cat "$LOG_25")"
-echo "$OUT25" | grep -q 'bl1407FakeBudgetB.property.test.js' \
+echo "$OUT25" | grep 'bl1407FakeBudgetB.property.test.js' >/dev/null \
   || fail "25: the second file must still be named in the refusal even though its own re-run never ran, got: $OUT25"
 [[ ! -d "$ROOT/.swarmforge/property-flakes" ]] \
   || fail "25: neither file resolved a flake, no flake record must be written, found: $(ls "$ROOT/.swarmforge/property-flakes" 2>/dev/null)"

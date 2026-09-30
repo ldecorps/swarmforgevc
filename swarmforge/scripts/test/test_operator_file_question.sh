@@ -24,8 +24,8 @@ ROOT="$(git_repo)"
 trap 'rm -rf "$ROOT"' EXIT
 
 OUT="$(bb "$CLI" "$ROOT" --thread SUP-1 --question "why is X broken?")"
-echo "$OUT" | grep -q '"committed":true' || fail "expected committed:true in output, got: $OUT"
-echo "$OUT" | grep -q '"told_human":true' || fail "expected told_human:true in output, got: $OUT"
+echo "$OUT" | grep '"committed":true' >/dev/null || fail "expected committed:true in output, got: $OUT"
+echo "$OUT" | grep '"told_human":true' >/dev/null || fail "expected told_human:true in output, got: $OUT"
 
 FILED_REL="$(echo "$OUT" | grep -oE '"filed":"[^"]+"' | sed -E 's/"filed":"([^"]+)"/\1/')"
 [[ -n "$FILED_REL" ]] || fail "expected a non-empty filed path in output, got: $OUT"
@@ -98,8 +98,8 @@ OUT3="$(bb "$CLI" "$ROOT2" --thread SUP-1 --question "will reply fail?" 2>&1)"
 CODE3=$?
 set -e
 [[ "$CODE3" -eq 0 ]] || fail "expected success (filing/commit are what matter) even when telling the human fails, got exit $CODE3: $OUT3"
-echo "$OUT3" | grep -q '"committed":true' || fail "expected committed:true even when telling the human fails, got: $OUT3"
-echo "$OUT3" | grep -q '"told_human":false' || fail "expected told_human:false when the reply subprocess fails, got: $OUT3"
+echo "$OUT3" | grep '"committed":true' >/dev/null || fail "expected committed:true even when telling the human fails, got: $OUT3"
+echo "$OUT3" | grep '"told_human":false' >/dev/null || fail "expected told_human:false when the reply subprocess fails, got: $OUT3"
 FILED_REL2="$(echo "$OUT3" | grep -oE '"filed":"[^"]+"' | sed -E 's/"filed":"([^"]+)"/\1/')"
 LOG2="$(git -C "$ROOT2" log --oneline -- "$FILED_REL2")"
 [[ -n "$LOG2" ]] || fail "expected the intake to still be committed even though telling the human failed"
@@ -115,7 +115,7 @@ trap 'rm -rf "$ROOT3"' EXIT
 git -C "$ROOT3" remote add origin git@github.com:ldecorps/swarmforgevc.git
 
 OUT4="$(bb "$CLI" "$ROOT3" --thread SUP-1 --question "does the link work?")"
-echo "$OUT4" | grep -q '"committed":true' || fail "expected committed:true, got: $OUT4"
+echo "$OUT4" | grep '"committed":true' >/dev/null || fail "expected committed:true, got: $OUT4"
 FILED_REL3="$(echo "$OUT4" | grep -oE '"filed":"[^"]+"' | sed -E 's/"filed":"([^"]+)"/\1/')"
 SHA3="$(git -C "$ROOT3" rev-parse HEAD)"
 OUTBOX3="$ROOT3/.swarmforge/operator/telegram-reply-outbox.jsonl"
@@ -131,7 +131,7 @@ trap - EXIT
 ROOT4="$(git_repo)"
 trap 'rm -rf "$ROOT4"' EXIT
 OUT5="$(bb "$CLI" "$ROOT4" --thread SUP-1 --question "no origin here")"
-echo "$OUT5" | grep -q '"committed":true' || fail "expected committed:true with no origin configured, got: $OUT5"
+echo "$OUT5" | grep '"committed":true' >/dev/null || fail "expected committed:true with no origin configured, got: $OUT5"
 FILED_REL4="$(echo "$OUT5" | grep -oE '"filed":"[^"]+"' | sed -E 's/"filed":"([^"]+)"/\1/')"
 OUTBOX4="$ROOT4/.swarmforge/operator/telegram-reply-outbox.jsonl"
 grep -q "Filed for the swarm: $FILED_REL4" "$OUTBOX4" || fail "expected the plain-path fallback text, got: $(cat "$OUTBOX4")"

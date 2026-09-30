@@ -27,12 +27,12 @@ trap cleanup EXIT
 export CLAUDE_CODE_CHILD_SESSION=still-poison
 tmux -S "$SOCK" new-session -d -s bl657probe "sleep 30"
 # Confirm poison landed on the server before scrub.
-if ! tmux -S "$SOCK" show-environment -g | grep -q 'CLAUDE_CODE_CHILD_SESSION=still-poison'; then
+if ! tmux -S "$SOCK" show-environment -g | grep 'CLAUDE_CODE_CHILD_SESSION=still-poison' >/dev/null; then
   # Some tmux builds do not copy all client env into global -g; still exercise scrub.
   tmux -S "$SOCK" set-environment -g CLAUDE_CODE_CHILD_SESSION still-poison
 fi
 scrub_tmux_harness_env "$SOCK"
-if tmux -S "$SOCK" show-environment -g 2>/dev/null | grep -q 'CLAUDE_CODE_CHILD_SESSION='; then
+if tmux -S "$SOCK" show-environment -g 2>/dev/null | grep 'CLAUDE_CODE_CHILD_SESSION=' >/dev/null; then
   fail "02: scrub_tmux_harness_env left CLAUDE_CODE_CHILD_SESSION on the server"
 fi
 pass "02: scrub_tmux_harness_env clears markers on a live tmux server"

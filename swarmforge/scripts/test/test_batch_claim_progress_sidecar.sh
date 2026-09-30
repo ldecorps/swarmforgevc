@@ -77,7 +77,7 @@ pass "03: a chase sweep leaves a fresh-progress parcel alone (SILENT, no re-forw
 
 STALE_OUT="$(bb "$CLI" observe "$BATCH_DIR/50_item.handoff" 99999999999999 1000)"
 [[ "$STALE_OUT" == STALE_SUSPECT* ]] || fail "04: stale progress must yield STALE_SUSPECT, got: $STALE_OUT"
-echo "$STALE_OUT" | grep -q "BL-678-demo" || fail "04: suspect line must name the parcel"
+echo "$STALE_OUT" | grep "BL-678-demo" >/dev/null || fail "04: suspect line must name the parcel"
 [[ -f "$BATCH_DIR/50_item.handoff" ]] || fail "04: the parcel must remain claimed in in_process"
 [[ ! -e "$BATCH_NEW/50_item.handoff" ]] || fail "04: the parcel must never be re-delivered to inbox/new even when stale"
 pass "04: a stale-progress parcel is surfaced as suspect (naming the parcel), never silently re-delivered"
