@@ -15,7 +15,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1829-a-local-model-seat-starts-qwen-with-only-its-loop-tools.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file needs your tap; no choice is posed. FIRM, measured at
   mint (below): the six tools are run_shell_command, read_file, write_file,
