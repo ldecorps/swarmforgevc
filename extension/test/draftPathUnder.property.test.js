@@ -19,10 +19,18 @@ test('draftPathUnder property: the draft directory depends only on root, never o
   try {
     fc.assert(
       fc.property(
+        // BL-1826: a root or TMPDIR segment drawn as "." or ".." collapses
+        // that path.join namespace (a ".." segment can even collapse it to
+        // "/"), so the two namespaces the property requires disjoint are no
+        // longer disjoint - a correct draftPathUnder then fails the
+        // "never under TMPDIR" assertion on a namespace that no longer
+        // means what the property thinks it does. Exclude both dot
+        // segments here; the prefix (a filename part, never a path
+        // segment) is unaffected and stays as it was.
+        fc.string({ minLength: 1, maxLength: 24 }).filter((s) => !s.includes('\0') && !s.includes('/') && s !== '.' && s !== '..'),
         fc.string({ minLength: 1, maxLength: 24 }).filter((s) => !s.includes('\0') && !s.includes('/')),
-        fc.string({ minLength: 1, maxLength: 24 }).filter((s) => !s.includes('\0') && !s.includes('/')),
-        fc.string({ minLength: 1, maxLength: 24 }).filter((s) => !s.includes('\0') && !s.includes('/')),
-        fc.string({ minLength: 1, maxLength: 24 }).filter((s) => !s.includes('\0') && !s.includes('/')),
+        fc.string({ minLength: 1, maxLength: 24 }).filter((s) => !s.includes('\0') && !s.includes('/') && s !== '.' && s !== '..'),
+        fc.string({ minLength: 1, maxLength: 24 }).filter((s) => !s.includes('\0') && !s.includes('/') && s !== '.' && s !== '..'),
         (rootSegment, prefix, tmpdirASegment, tmpdirBSegment) => {
           const root = path.join('/bl1537-fixture-root', rootSegment);
           const expectedDraftDir = path.join(root, 'tmp');

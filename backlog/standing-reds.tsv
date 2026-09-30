@@ -32,5 +32,4 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-property	extension/test/draftPathUnder.property.test.js	BL-1826	2026-09-30	intermittent: a '..' root or TMPDIR segment collapses the namespace to '/', so the never-under-TMPDIR startsWith check fails for a correct draft path; seed -957004781, counterexample [' ',' ','..',' '] (QA note 003466, holds BL-1814, evidence e7c38760dc); leaves when BL-1826 lands
 property	extension/test/bl1754PeerQuestionInvariants.property.test.js	BL-1827	2026-09-30	invariant 1 intermittent: its leak check diffs bl1754-peer-question-* in the shared /tmp, so any concurrent peer_question run reads as a leak; 2 of 3 concurrent runs red at mint (QA note 003474, holds BL-1817, evidence 99f021afdd); leaves when BL-1827 lands
