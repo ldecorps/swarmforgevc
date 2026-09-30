@@ -119,3 +119,5 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Expedite lane by severity (Article 3.2.4). Holder note sent to the
   architect; QA told, since BL-1665 touches the red shell test.
+
+assigned_to: coder
