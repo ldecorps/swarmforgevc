@@ -1,0 +1,112 @@
+id: BL-1854
+title: "The daily briefing shows each local seat's telemetry trend - the tuning report's --briefing mode prints, for each local-model seat, one row per day over the last 7 days (requests, time to first token, prefill and decode speed, output, thinking share, compressions per 10 requests, tool-call failure rate) plus the settings changes and spilled model loads in that window, as markdown the documenter pastes verbatim into the briefing's Local LLM section"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: [BL-1851]
+mutation_cost: low
+# low: a rendering mode over BL-1851's bb lib; bb has no mutation lane wired
+# (engineering.prompt). Fixtures only.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1854-the-daily-briefing-shows-each-local-seats-telemetry-trend.feature
+
+# Handler pin (BL-233, BL-1371). The consumer is the documenter's briefing
+# step, which is prose in documenter.prompt, landed by the specifier with
+# this mint (BL-798). The Model scout section (BL-1822) has the same shape.
+required_wiring:
+  - 'specs/pipeline/steps/bl1854LocalSeatBriefingSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  The human asked for it directly (source); under the 2026-09-15 ruling a
+  queue-jump request is the approval for a plain gate, and the 2026-09-30
+  directive makes local-LLM tickets queue-jump. No choice is posed. The
+  specifier's defaults, amendable: a 7-day window, the section after the
+  ticket detail and before "Process suggestions". FIRM: the numbers come
+  from this tool and the documenter pastes them verbatim; the suggestion
+  is the documenter's, written under them.
+
+invariants:
+  - "The briefing section is read-only to produce and the same records always print the same section."
+  - "Every number in the section comes from a record; a field no record carries prints as unknown, never as 0."
+
+source: |
+  The human, 2026-09-30 ~21:00Z, specifier pane, verbatim:
+
+  > tell documenter to add a special local llm section in the daily breifing where telemetry trends are shown, as well as a suggestion as to how to improve its usage as a swarm role
+
+description: |
+  ## Why
+
+  The documenter composes the morning briefing (human ruling A,
+  2026-09-07; shape BL-1835). The human wants a Local LLM section in it:
+  the local seats' telemetry trend, and a suggestion for using the local
+  model better as a swarm role. The suggestion is the documenter's
+  judgment. The numbers must come from a tool: the Model scout section
+  (BL-1822) set that shape, and the human's standing direction is to
+  prefer tools over model judgment. BL-1851's report groups a seat's
+  requests by settings. The briefing needs the same numbers by day.
+
+  ## What is wanted
+
+  `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <project-root> --briefing [--days N]`
+  (default 7) prints a markdown section:
+  - for every local-model seat that made a request in the window, a table
+    with one row per day it made requests. Each row holds requests, median
+    time to first token, median prefill and decode speed, median output
+    tokens, thinking share of output, compressions per 10 requests, and
+    tool-call failure rate, computed as BL-1851 computes them (scenario 01);
+  - under each table, the seat's settings changes in the window, each as
+    `<date> <time> <field> <old> -> <new>` from BL-1850's rows (scenario
+    02), and every model load in the window that put layers outside VRAM,
+    as `<N>/<M> layers on GPU` with its date (scenario 03);
+  - when no local-model seat made a request in the window, the single line
+    `No local-model seat ran in the last <N> days.` (scenario 04).
+  Days are the host's local dates.
+
+  ## How (direction, not mandate)
+
+  - A rendering mode over BL-1851's lib: the same per-request numbers,
+    grouped by date instead of by settings. No second parser (BL-1811).
+  - A `--now` seam so fixtures pin the window; paths are arguments, as in
+    BL-1851, so fixtures never read the operator's `~/.qwen`.
+  - Seats are the ones with a BL-1850 settings record or a qwen session
+    under a seat worktree; name the rule you use in the evidence.
+  - Step handler `specs/pipeline/steps/bl1854LocalSeatBriefingSteps.js`,
+    discovered from its own file (BL-1371), fixtures under mkdtemp.
+  - The Art Director owns how the section reads (Article 1.10). QA's
+    sign-off note on this artifact goes to them.
+
+  ## Scope
+
+  The `--briefing` mode, its bb test, the step handler, docs, evidence.
+  The documenter's side is already on main (notes): its prompt runs this
+  command once this lands. Nothing here edits `documenter.prompt`.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1854-the-daily-briefing-shows-each-local-seats-telemetry-trend.feature`:
+     4 of 4 ok. Measured 0 on main at mint: no handler exists yet.
+  2. BL-1851's bb test and feature still pass (5 of 5 ok).
+  3. Live, read-only: `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <root> --briefing`
+     prints a table for coder@iq3 when it made requests in the last 7
+     days. Paste the output into the evidence and send the Art Director a
+     sign-off note on it.
+  After the land (the coordinator's check, not QA's): the next morning
+  briefing's Local LLM section carries this output verbatim, with the
+  documenter's suggestion under it.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the human's ask (source). The
+  documenter's half was landed with this mint in
+  `swarmforge/roles/documenter.prompt` ("Local LLM section"): its interim
+  ("Until BL-1854 lands") quotes numbers only from committed evidence, and
+  once this lands it runs the command above and pastes the output. When
+  this lands, the specifier removes the interim sentence. The documenter
+  was sent a priority-00 note the same pass. Placed after BL-1851 (its
+  lib) at the end of the STEERING iq3 order.

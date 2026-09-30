@@ -76,7 +76,8 @@ product surfaces — see the standing freeze below.
   compresses every turn, high) -> BL-1848 (the window watch, below) -> BL-1843
   (a note about a ticket obeys the seat rules; coordinator note 014024) ->
   BL-1841 (thinking left on) -> BL-1842 (the local-seat health report) ->
-  BL-1851 (the tuning report, below) -> BL-1837 (the "@" in the card path).
+  BL-1851 (the tuning report, below) -> BL-1854 (the briefing's Local LLM
+  trend, below) -> BL-1837 (the "@" in the card path).
 - **Human, verbatim, 2026-09-30 ~19:20Z (specifier pane):** "Keep an eye
   on iq3  context size (big enough to work, not too big as to outgrow the
   gpu memory". The window stays 49152 (fully in VRAM, 1.6 GB free; largest
@@ -92,6 +93,13 @@ product surfaces — see the standing freeze below.
   BL-1851 groups the seat's sessions by them and by how Ollama served the
   model, and prints each group's numbers. Parcel outcomes per settings and
   the lab A/B are remaining slices on BL-1125.
+- **Human, verbatim, 2026-09-30 ~21:00Z (specifier pane):** "tell
+  documenter to add a special local llm section in the daily breifing
+  where telemetry trends are shown, as well as a suggestion as to how to
+  improve its usage as a swarm role". `documenter.prompt` carries the
+  section from this pass. BL-1854 gives it its numbers (the tuning report's
+  `--briefing` mode); until then the documenter quotes committed evidence
+  only.
 - Retire this section when the human says iq3 works, or retires it.
 
 ## Standing human directive (2026-09-30, via Cursor) — every open local-LLM ticket is queue-jump

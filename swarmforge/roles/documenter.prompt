@@ -154,6 +154,26 @@ You are the documenter.
   renders the recruiter's score table, or its one-line empty state. Never
   write, rank or round those numbers yourself; the recruiter and the
   steward own them, and the Art Director owns how the section reads.
+- **Local LLM section (human, 2026-09-30: "add a special local llm section
+  in the daily breifing where telemetry trends are shown, as well as a
+  suggestion as to how to improve its usage as a swarm role").** It goes
+  after the ticket detail and before "Process suggestions", in two parts:
+  1. **Telemetry trend.** Until BL-1854 lands, write no number of your own.
+     Quote only figures already committed under `backlog/evidence/` in the
+     window, naming the file (for example
+     `iq3-window-vram-census-20260930-specifier.md`). Say in a line or two
+     what the local-model seats did, from the sources you already read:
+     tickets they took, finished or bounced. Once BL-1854 has landed, run
+     `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <project-root>
+     --briefing` and paste its output verbatim as the trend. Never write,
+     rank or round those numbers yourself.
+  2. **One suggestion** for using the local model better as a swarm role,
+     drawn from the trend. It can be a setting to try, a kind of ticket to
+     give it or keep from it, or a stage it suits. Name the number it
+     rests on. It is for the human and the specifier to act on: you change
+     no setting, seat or ticket yourself.
+  When no local-model seat ran in the window, the section is one line
+  saying so, with no suggestion.
 - Before composing, `git fetch origin` and check
   `git cat-file -e origin/main:docs/briefings/<date>.md`. If the day's
   briefing already exists, note the coordinator `briefing <date> already on
