@@ -27,3 +27,9 @@
   description: "built by hand with its own paths only after land_step_cli.bb ran 39m26s and escalated on the BL-1546 closed-owner guard (backlog/evidence/BL-1768-QA-20260926.md item 3)."
   detected_at: 2026-09-26
   evidence: backlog/evidence/BL-1768-QA-20260926.md
+- category: merge-collateral-scope
+  ticket: BL-1821
+  role: coder
+  description: "diffed a reverse-hop/bounce merge from QA's stale branch against both parents to separate the intended bounce-revert scope from collateral drops of unrelated forwarded tickets (BL-1815/BL-1820)"
+  detected_at: 2026-09-30
+  evidence: backlog/evidence/BL-1821-coder-bounce-fix-20260930.md
