@@ -4,8 +4,11 @@ Packets: `.swarmforge/lean/ceremony/2026-09-30.json` (the coordinator's
 note 013790, 07:12Z) and `.swarmforge/lean/ceremony/2026-09-29.json`.
 The 09-29 packet was never delivered: its `deliveryFailure` reads
 "Unknown recipient role 'specifier'", the roles.tsv gap of that launch.
-Neither shift had an outcome recorded. This pass records both:
-2026-09-29 `process_ticket` (BL-1832) and 2026-09-30 `no_change`.
+Neither shift had an outcome recorded. 2026-09-30 is recorded
+`no_change`. For 2026-09-29, the decision is `process_ticket` (BL-1832),
+but the store refused it: "ceremony run for shift 2026-09-29 is already
+failed, refusing to overwrite". A failed delivery is terminal by design,
+so this file is that shift's record.
 
 ## 2026-09-29, read
 
