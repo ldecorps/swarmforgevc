@@ -12,8 +12,9 @@ severity: medium
 # seat on another provider.
 status: todo
 epic: local-llm-swarm
-priority: 20
-direction: swarm-reported
+priority: 6
+direction: queue-jump
+# 2026-09-30 human (Cursor): "Auto-jump any ticket that has to do with local llm"
 depends_on: []
 mutation_cost: low
 # low: one condition in provider_respawn_env_lib.bb (Babashka, no
@@ -175,3 +176,5 @@ notes: |
   respawn-time egress path cb8d502fec left open). Estimable (one
   condition, the BL-1793 harness). Small (3 scenarios, 10 cases, 2
   invariants). Testable (real generator plus real lib, explicit env).
+
+assigned_to: coder
