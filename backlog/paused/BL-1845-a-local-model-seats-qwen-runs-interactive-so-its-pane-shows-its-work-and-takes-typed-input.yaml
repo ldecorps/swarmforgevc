@@ -55,8 +55,25 @@ source: |
 
   Read as the first offer: mint it through the pipeline.
 
+  The human then green-lit a hotfix (coordinator note 014079, 16:24Z,
+  "Human green-lit BL-1845 hotfix now"). While verifying it, an
+  interactive qwen installed its own update (0.22.2 to 0.24.7); the
+  specifier reverted it, and the human ruled, verbatim:
+
+  > What is wrong with auto ipdating to the current version? I think it's ok.
+
+  > Claude cli auto updates, so qwen might as well do it too
+
 description: |
-  ## What happens today
+  ## Status: hotfix c885d0c071 landed the launch line
+
+  Hotfix c885d0c071 (2026-09-30) already passes the kickoff through `-i`.
+  This parcel is its stamp-off: the step handler that makes the feature
+  run, the documenter's pages, evidence, and the pipeline's review of the
+  hotfix. The coder finds the line already changed; review it, do not
+  re-apply it.
+
+  ## What happened before the hotfix
 
   - `swarmforge/scripts/swarmforge.sh` `write_role_launch_script`, branch
     `local-model)` (line 2239 at mint), writes
@@ -112,6 +129,10 @@ description: |
   that describe how a local-model seat starts.
 
 out_of_scope: |
+  - qwen's own auto-update stays on (the human's ruling, source). An
+    interactive qwen installs updates under `~/.qwen/updates/npm/` and
+    runs them from its next launch; the seat runs qwen 0.24.7 from the
+    first relaunch after c885d0c071.
   - The busy probe (`chase_sweep_lib.bb` `actively-processing?`) matches
     Claude's status line, not qwen's "(esc to cancel, Ns)", so a wake can
     be typed into a qwen turn in progress. What qwen does with it is
@@ -150,6 +171,9 @@ notes: |
   specifier pane, cause read from qwen 0.22.2's own source. STEERING: in
   the iq3 build order right after BL-1838, ahead of BL-1837, because the
   pane is where the human watches and steers the rest of the iq3 set.
+  Hotfix c885d0c071 landed the launch line at the human's green light;
+  ledger row added and linked to this ticket (hotfix_ledger_update.bb
+  --new/--link, on disk). This ticket is its stamp.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
 
   2026-09-30 coordinator: not promoted this pass. backlog/active/ is at
