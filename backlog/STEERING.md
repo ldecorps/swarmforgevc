@@ -71,10 +71,19 @@ product surfaces — see the standing freeze below.
   set: BL-1838 (window budget, active) -> BL-1845 (qwen runs
   interactive: its pane shows its work, takes typed input and reads wakes;
   the human's question in the specifier pane) -> BL-1839 (stamp-off of the three
-  hotfix commits) -> BL-1840 (qwen compresses every turn, high) -> BL-1843
+  hotfix commits) -> BL-1840 (qwen compresses every turn, high) -> BL-1848
+  (the window watch, below) -> BL-1843
   (a note about a ticket obeys the seat rules; coordinator note 014024) ->
   BL-1841 (thinking left on) -> BL-1842 (the local-seat health report) ->
   BL-1837 (the "@" in the card path).
+- **Human, verbatim, 2026-09-30 ~19:20Z (specifier pane):** "Keep an eye
+  on iq3  context size (big enough to work, not too big as to outgrow the
+  gpu memory". The window stays 49152 (fully in VRAM, 1.6 GB free; largest
+  request 40602 tokens) until BL-1841 and BL-1840 land and the census in
+  `backlog/evidence/iq3-window-vram-census-20260930-specifier.md` is
+  re-run. BL-1848 makes the watch standing: the babysitter sweep raises a
+  CRIT when a loaded model spills out of VRAM or a request reaches 90% of
+  its served window.
 - Retire this section when the human says iq3 works, or retires it.
 
 ## Standing human directive (2026-09-30, via Cursor) — every open local-LLM ticket is queue-jump

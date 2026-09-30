@@ -1,0 +1,147 @@
+id: BL-1848
+title: "A local model's served window is watched against its work and the GPU - the babysitter sweep raises a CRIT when a model Ollama has loaded sits partly outside VRAM (the window outgrew GPU memory) or when a request in the last hour reached 90% of the window it is served with (the window is too small), naming the model and the numbers"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one pure check and one gatherer in two bb files; bb has no mutation
+# lane wired (engineering.prompt). Fixtures only, no live Ollama.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1848-a-local-models-served-window-is-watched-against-its-work-and-the-gpu.feature
+
+# Call-only anchors (BL-1235): "(check-local-window-fit" matches a call and
+# never the "(defn check-local-window-fit" line, so a check nobody calls
+# does not pass. The check takes every loaded model's facts at once and
+# returns a vector, so assemble-findings calls it directly; a (map ...)
+# over it would not satisfy the first anchor.
+required_wiring:
+  - 'swarmforge/scripts/babysitterd_sweep_lib.bb::(check-local-window-fit::assemble-findings calls the window check with the other checks'
+  - 'swarmforge/scripts/babysitter_check.bb::(gather-local-window-facts::the live sweep snapshot carries the window facts'
+  - 'specs/pipeline/steps/bl1848LocalWindowWatchSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file; no choice is posed. The human asked for this watch
+  directly (source), and under the 2026-09-15 ruling a queue-jump request
+  is the approval for a plain gate; the 2026-09-30 directive makes every
+  local-LLM ticket queue-jump. FIRM: the check only reads. It never
+  changes a window, a Modelfile, qwen's settings, or which models Ollama
+  has loaded. FIRM: the thresholds are 90% of the served window over the
+  last 60 minutes, and any part of a loaded model outside VRAM. The human
+  can amend them through the normal channels.
+
+invariants:
+  - "The window check is read-only: running it changes no file, window, model load, pane or process."
+  - "Gathering the window facts is bounded: a hung or absent Ollama costs one sweep at most 3 seconds and yields no window finding."
+
+source: |
+  The human, 2026-09-30 ~19:20Z, specifier pane, verbatim:
+
+  > Keep an eye on iq3  context size (big enough to work, not too big as to outgrow the gpu memory
+
+  Measured the same pass (read-only) in
+  `backlog/evidence/iq3-window-vram-census-20260930-specifier.md`
+  (section "Re-read 2026-09-30 ~19:20Z").
+
+description: |
+  ## Why
+
+  coder@iq3's model is served at a 49152-token window. On 2026-09-30 it
+  fits both ways: fully in VRAM (1.6 GB of 16 GB free), and the largest
+  request this month (40602 tokens) is 3635 under 90% of the window. But
+  neither limit is watched. The launch window gate (BL-1801) checks the
+  first turn only. BL-1842's report is run by hand. The two ways it broke
+  on 2026-09-30 were both found by hand reads: qwen giving up at a 32768
+  budget, and 8 of 65 layers on the CPU at 3.5 tokens/s. BL-1838,
+  BL-1840 and BL-1841 are all about to change how much of the window a
+  turn uses, so either limit can move in the next few lands.
+
+  ## What is wanted
+
+  A babysitter sweep check, run on every tick, for every model Ollama has
+  loaded:
+  - **Too big for the GPU** (scenario 02): the model's `size_vram` is
+    below its `size` in `GET /api/ps`. CRIT keyed
+    `local-window-vram-<model>`; the message names the model, the MiB in
+    VRAM of the total, and the served context.
+  - **Too small for the work** (scenarios 01, 03): a qwen usage record for
+    that model in the last 60 minutes has input plus output tokens of at
+    least 90% of the model's `context_length` (49152 -> 44237). CRIT keyed
+    `local-window-size-<model>`; the message names the model, the peak,
+    its input and output split, and the served context.
+  - **Nothing to judge** (scenario 04): Ollama not answering, or nothing
+    loaded -> no window finding. A seat being down is another check's job.
+  - The finding travels like every other CRIT (scenario 05): into
+    `assemble-findings`, then the existing coordinator nudge and operator
+    escalation with their 30-minute cooldown per key. Waivable per key
+    through the babysitter waive store.
+
+  Each message ends with a one-clause hint, the way memory-floor does. For
+  VRAM: check that the serving `ollama serve` carries
+  `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` and that no
+  second model is loaded, before lowering num_ctx. Every spill on
+  2026-09-30 was a load without those two settings. For size: the served
+  window is the Modelfile's num_ctx (BL-1838 carries it into qwen), and
+  at q8_0 it costs about 34 KiB of VRAM per token.
+
+  ## How (direction, not mandate)
+
+  - Pure `check-local-window-fit` in `babysitterd_sweep_lib.bb`, beside
+    check 8 (memory-floor). It takes the gathered facts for all loaded
+    models, plus now-ms, and returns a vector of findings (see the
+    required_wiring comment).
+  - `gather-local-window-facts` in `babysitter_check.bb`, called from the
+    snapshot map. `GET <base>/api/ps` with a 2-second timeout. Base is
+    `BABYSITTER_OLLAMA_URL`, default `http://127.0.0.1:11434`. The usage
+    records are `token-usage-<yyyy-mm>.jsonl` under
+    `BABYSITTER_QWEN_USAGE_DIR`, default `~/.qwen/usage`. Read the current
+    month and the previous one, because the look-back hour crosses the
+    month at midnight on the 1st: tonight is 2026-09-30. The env seams
+    exist so fixtures never read the operator's `~/.qwen` or the live
+    Ollama.
+  - If BL-1842's usage reader has landed by the time this is built,
+    call it rather than writing a second one (BL-1811).
+  - Step handler `specs/pipeline/steps/bl1848LocalWindowWatchSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the same commit as
+    the feature's first green run (BL-233). It drives the real bb check
+    through a runner under `swarmforge/scripts/test/`, the way
+    `bl996_classify_pane_runner.bb` does.
+
+  ## Scope
+
+  The check, the gatherer and its snapshot key, the bb unit tests beside
+  `babysitterd_sweep_lib_test_runner.bb`, the runner, the step handler
+  and its registration, docs, evidence. Out of scope: an early warning
+  before a spill (free-VRAM margin), aider seats' request sizes (aider
+  writes no qwen usage record; the VRAM half covers them already), and
+  ever changing the window.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1848-a-local-models-served-window-is-watched-against-its-work-and-the-gpu.feature`:
+     9 of 9 ok (four rows of 01, 02, 03, two rows of 04, 05). Measured 0 on
+     main at mint: no handler exists yet.
+  2. `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`:
+     `ok` (measured on main 92c66dd1fa at mint, 0.4 s), with the new
+     check's cases in it.
+  3. Live, read-only, in-process: call `gather-local-window-facts` and then
+     `check-local-window-fit` against the host's real Ollama and
+     `~/.qwen/usage`. With `ista-iq3s-coder:latest` fully in VRAM and no
+     request over 44236 in the last hour (the state at mint), the result
+     is an empty vector. Record the gathered facts in the evidence.
+  After the land (the coordinator's check, not QA's): `babysitterd.log`
+  shows sweeps with no `local-window-` finding while the model fits.
+
+notes: |
+  Minted 2026-09-30 by the specifier from the human's ask in the
+  specifier pane (source). Placed after BL-1840 in the STEERING iq3 build
+  order: BL-1838, BL-1840 and BL-1841 each move how much of the window a
+  turn uses, and this watch says when one of them pushes it past either
+  limit. The window stays 49152 until BL-1841 and BL-1840 land and the
+  census is re-run (evidence file above).

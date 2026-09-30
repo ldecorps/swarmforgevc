@@ -52,3 +52,14 @@ EOF
 ```
 
 Change `localDate` to the day being measured.
+
+## Re-read 2026-09-30 ~19:20Z (specifier, for BL-1848)
+
+The human, specifier pane: "Keep an eye on iq3  context size (big enough to work, not too big as to outgrow the gpu memory". Read-only, one pass:
+
+- `GET http://127.0.0.1:11434/api/ps`: `ista-iq3s-coder:latest`, `size` 13817463438 = `size_vram` 13817463438, `context_length` 49152. Fully in VRAM.
+- `nvidia-smi`: RTX 5060 Ti, 16311 MiB total, 14428 used, 1625 free.
+- The only listening `ollama serve` (pid 18792, started 13:50) carries `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0`. Its log's last load: `offloaded 65/65 layers to GPU`, KV `1632.00 MiB ( 49152 cells ... q8_0)`. Two other `ollama serve` matches at 20:14:24 were short-lived wrapper processes, gone within seconds, never listening.
+- `~/.qwen/usage/token-usage-2026-09.jsonl`, every `ista-iq3s-coder:latest` record this month (516, all sources; `totalTokens`): p50 21692, p90 28258, p99 32768, max 40602; 5 over 32768, 0 over 40960. 90% of 49152 is 44237, so the largest request so far sits 3635 tokens under it.
+
+Nothing watches either limit between these hand reads: the launch window gate (BL-1801) checks the first turn only, and BL-1842's report is run by hand. BL-1848 puts both checks in the babysitter sweep.
