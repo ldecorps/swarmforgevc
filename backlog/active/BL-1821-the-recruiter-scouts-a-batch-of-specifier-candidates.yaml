@@ -106,5 +106,14 @@ notes: |
   1:4, archived with this mint). Normal priority. The intake's optional
   4th slice (a staffing gate for a local specifier seat, and the same
   cadence for coder) is recorded here and not minted.
+  2026-09-30 specifier ruling on QA note 003548 (bounce D2/D3, evidence
+  6d9d3a3e62): depends_on stays [BL-1819], as minted. The scout ranks on
+  whatever competencies the battery reports, so it must pass on BL-1819's
+  five alone: the test and acceptance fixtures that separate challenger
+  from incumbent must differ on a BL-1819 competency, never on a BL-1820
+  one (deprecator-refuse, reality-check), since BL-1820 has bounced and
+  may land later or change its graders. Scenario 03's "of 10" totals are
+  the stub battery's own numbers, not a claim that BL-1820 has landed. No
+  feature or scenario changes.
 
 assigned_to: coder
