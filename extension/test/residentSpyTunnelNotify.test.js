@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const {
   buildResidentSpyMiniAppUrl,
   buildConsoleMiniAppUrl,
+  buildIntakeFormUrl,
   consoleUrlFromLiveUrl,
   buildBubblePairingDeepLink,
   buildBubblePairingHttpsUrl,
@@ -27,6 +28,13 @@ test('buildConsoleMiniAppUrl appends console path and bearer query', () => {
   assert.equal(
     buildConsoleMiniAppUrl('https://foo.trycloudflare.com/', 'abc123'),
     'https://foo.trycloudflare.com/console?bearer=abc123'
+  );
+});
+
+test('BL-1732: buildIntakeFormUrl appends intake-form path and bearer query', () => {
+  assert.equal(
+    buildIntakeFormUrl('https://foo.trycloudflare.com/', 'abc123'),
+    'https://foo.trycloudflare.com/intake-form?bearer=abc123'
   );
 });
 

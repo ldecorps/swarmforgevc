@@ -79,6 +79,9 @@ import {
 import { computeCatchUpStateLive } from './catchUpLive';
 import { markMessageRead, readCatchUpReadState } from './catchUpReadState';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
+import { getIntakeFormUiHtml } from './intakeFormUiHtml';
+import { readVocabulary, seedVocabularyIfMissing } from './intakeVocabularyStore';
+import { submitIntake, IntakeDraft } from './intakeWriter';
 import { getSpecTreeUiHtml } from './specTreeUiHtml';
 import { computeDocsTree, filterSpecTree } from '../docs/docsTree';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
@@ -178,6 +181,10 @@ const EPIC_REORDER_MOVE_MAX_BODY_BYTES = 4 * 1024;
 const EPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
 // BL-673: topic make-top body ({epicId, topicId}).
 const EPIC_TOPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
+// BL-1732: an intake draft (narrative + scenarios + optional rule/notes +
+// any new vocabulary values) from the /intake-form Mini App - bigger than
+// the other control bodies above (free-text scenarios), still bounded.
+const INTAKE_SUBMIT_MAX_BODY_BYTES = 32 * 1024;
 
 /**
  * BL-709: Let's Talk mirror destination.
@@ -467,6 +474,16 @@ function isEpicReorderStatePath(url: string): boolean {
 // BL-592: live read-only spec tree Mini App shell.
 function isSpecTreePath(url: string): boolean {
   return url === '/spec-tree' || url.startsWith('/spec-tree?');
+}
+
+// BL-1732: the Intake form Mini App shell.
+function isIntakeFormPath(url: string): boolean {
+  return url === '/intake-form' || url.startsWith('/intake-form?');
+}
+
+// BL-1732: JSON state (the shared vocabulary) for the Intake form.
+function isIntakeFormStatePath(url: string): boolean {
+  return url === '/intake-form-state' || url.startsWith('/intake-form-state?');
 }
 
 // BL-592: JSON state for the spec tree Mini App (computeDocsTree output).
@@ -1330,6 +1347,97 @@ function handleEpicReorderMoveRoute(
   });
 }
 
+// BL-1732: the Intake form's submit route, control-scoped (only the
+// principal's own device/control token, same auth posture as every other
+// write route in this table).
+function isIntakeSubmitRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && (url === '/intake-form/submit' || url.startsWith('/intake-form/submit?'));
+}
+
+const INTAKE_NARRATIVE_SLOTS = ['actor', 'action', 'goal'] as const;
+
+// BL-1732 hardener: `newValues`'s shape must be narrowed all the way down
+// to {actor?, action?, goal?: string} - promoteVocabulary (via withValue)
+// indexes the shared vocabulary by whatever key each newValues entry
+// carries with NO validation of its own (it trusts its caller), so an
+// array (typeof 'object', not null - the pre-fix check's own admitted
+// shape) or a plain object with an unrecognized key both reach
+// `vocab[slot].includes(...)` with `vocab[slot]` undefined and throw,
+// uncaught, inside handleIntakeSubmitRoute's `.then(async ...)` with no
+// `.catch` - an unhandled rejection on a live route, reachable by any
+// POST body a malicious or buggy client sends, never only from the
+// form's own well-behaved JS.
+function isIntakeNewValuesShape(value: unknown): value is Partial<Record<'actor' | 'action' | 'goal', string>> {
+  if (value === undefined) {
+    return true;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).every(
+    (key) => (INTAKE_NARRATIVE_SLOTS as readonly string[]).includes(key) && typeof v[key] === 'string'
+  );
+}
+
+// BL-1732 hardener: a required narrative/scenarios field - non-blank
+// string. Extracted, and folded via .every() below rather than inlined
+// as four more `&&` pairs, so isIntakeDraftShape's own complexity (CRAP)
+// stays a handful of top-level decision points, not one per field's
+// `typeof === 'string' && x.trim().length > 0` pair (measured: the
+// original flat &&-chain was complexity=17, CRAP=17.00 - already over
+// threshold before this hardening pass added a further check; this
+// shape brings the caller to complexity=6, at the threshold).
+function isNonBlankStringField(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isOptionalStringField(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+const REQUIRED_INTAKE_STRING_FIELDS = ['actor', 'action', 'goal', 'scenarios'] as const;
+
+function hasRequiredIntakeFields(v: Record<string, unknown>): boolean {
+  return REQUIRED_INTAKE_STRING_FIELDS.every((key) => isNonBlankStringField(v[key]));
+}
+
+function isIntakeDraftShape(value: unknown): value is IntakeDraft {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return (
+    hasRequiredIntakeFields(v) &&
+    isOptionalStringField(v.rule) &&
+    isOptionalStringField(v.notes) &&
+    isIntakeNewValuesShape(v.newValues)
+  );
+}
+
+function handleIntakeSubmitRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry): void {
+  if (!requireControlAuth(req, res, registry)) {
+    return;
+  }
+  readValidatedBody(
+    req,
+    res,
+    INTAKE_SUBMIT_MAX_BODY_BYTES,
+    isIntakeDraftShape,
+    'expected a JSON body of {actor, action, goal, scenarios, rule?, notes?, newValues?}'
+  ).then(async (draft) => {
+    if (!draft) {
+      return;
+    }
+    const result = await submitIntake(targetPath, draft);
+    if (!result.ok) {
+      respondJson(res, 500, { success: false, reason: result.reason });
+      return;
+    }
+    respondJson(res, 200, { success: true, relPath: result.relPath, confirmationText: result.confirmationText });
+  });
+}
+
 // BL-672: the full domination set for "make top priority" - every live
 // (paused + hold) backlog item, epic AND non-epic topic alike (unlike
 // readPausedEpics's epics-only, paused-only scope, approval_context #3) -
@@ -1635,6 +1743,8 @@ const writeRoutes: WriteRoute[] = [
   { matches: isEpicMakeTopRoute, handle: handleEpicMakeTopRoute },
   // BL-673: topic make-top-priority route (scoped to one epic), control-scoped.
   { matches: isEpicReorderTopicMakeTopRoute, handle: handleEpicReorderTopicMakeTopRoute },
+  // BL-1732: Intake form submit route, control-scoped.
+  { matches: isIntakeSubmitRoute, handle: handleIntakeSubmitRoute },
 ];
 
 function requestPath(req: http.IncomingMessage): string {
@@ -1904,6 +2014,7 @@ const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
   isWebUiTicketStripCollapsedPath,
   isOperatorDocsIndexFeedPath,
   isOperatorDocsPageFeedPath,
+  isIntakeFormStatePath,
 ];
 
 function isAuthorizedForRead(authHeader: string | undefined, url: string, registry: DeviceRegistry): boolean {
@@ -2091,6 +2202,17 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // BL-572: epic priority reorder JSON feed for the Mini App.
       matches: isEpicReorderStatePath,
       compute: () => computeEpicReorderState(targetPath),
+    },
+    {
+      // BL-1732: the shared vocabulary for the Intake form's three
+      // narrative dropdowns. Seeds the starter list on first read (never
+      // on write) so a fresh repo's very first form load already offers
+      // it.
+      matches: isIntakeFormStatePath,
+      compute: () => {
+        seedVocabularyIfMissing(targetPath);
+        return { vocabulary: readVocabulary(targetPath) };
+      },
     },
     {
       // BL-592: live spec navigation tree JSON feed for the Mini App.
@@ -2313,6 +2435,10 @@ export function startBridge(
       }
       if (isSpecTreePath(url)) {
         serveMiniAppHtml(res, getSpecTreeUiHtml());
+        return;
+      }
+      if (isIntakeFormPath(url)) {
+        serveMiniAppHtml(res, getIntakeFormUiHtml());
         return;
       }
       if (isContextBudgetPath(url)) {

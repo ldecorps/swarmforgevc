@@ -56,14 +56,16 @@ Prints one JSON object:
     "<category>": {
       "count": 4, "threshold": 3, "over_threshold": true, "owned": false,
       "owners": [], "rows": [ { "category": "...", "ticket": "...", "role": "...",
-                                 "description": "...", "detected_at": "...", "evidence": null } ]
+                                 "description": "...", "detected_at": "..." } ]
     }
   },
   "unowned": ["<category>", ...]
 }
 ```
 
-`owned`/`owners` come from a top-level `verification_category:` line on an
+A row's `evidence` key appears only when the record carried one
+(`--evidence <path>`); an evidence-less row omits the key entirely, never
+`null`. `owned`/`owners` come from a top-level `verification_category:` line on an
 open ticket (`backlog/paused/` or `backlog/active/`) naming the category by
 exact id — a closed ticket or bare prose never owns it, so the mechanism
 fails toward reporting unowned. The threshold is
@@ -79,8 +81,8 @@ backlog/verification-debt-ledger.yaml   the ledger itself
 
 Landed seeded with four `land-path-ownership` rows (all role QA, detected
 2026-09-26 — BL-1711, BL-1748, BL-1764, BL-1768), already at the default
-threshold on arrival. No owner is minted yet; the specifier mints one the
-first time the reader reports the category unowned.
+threshold on arrival. BL-1787 owns the category now (its
+`verification_category: land-path-ownership` line).
 
 ## What is not here yet
 

@@ -26,6 +26,8 @@ const {
   ensureAgentQuestionsTopic,
   ensureBacklogTopic,
   ensureOnboardingTopic,
+  ensureIntakeTopic,
+  resolveLiveIntakeFormUrl,
   handleOnboarderMessage,
   ensureControlTopic,
   ensureResidentSpyTopic,
@@ -1241,6 +1243,110 @@ test('BL-590 slice 1: when no onboarding is in progress, the onboarder tells the
   assert.equal(calls.length, 1);
   assert.match(calls[0].body, /No onboarding is currently in progress/);
   assert.match(calls[0].body, /Post a target GitHub repo URL to start one/);
+});
+
+// ── ensureIntakeTopic (BL-1732, mirrors ensureAgentQuestionsTopic above) ──
+
+test('BL-1732: creates the Intake topic and binds it to the reserved subject when the map has no binding yet', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureIntakeTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['42'], 'INTAKE');
+});
+
+test('BL-1732: the create call names the topic "Intake"', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(7);
+  await ensureIntakeTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.match(calls[0].url, /createForumTopic$/);
+  assert.match(calls[0].body, /"name":"Intake"/);
+});
+
+test('BL-1732: a map that already binds the reserved Intake subject never creates a second topic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'INTAKE' });
+  const { postFn, calls } = fakeCreateOk(999);
+  await ensureIntakeTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(readTopicMapFixture(root), { '42': 'INTAKE' });
+});
+
+test('BL-1732: the Intake topic and the Agent Questions topic bind independently in the SAME map, never colliding', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'AGENT_QUESTIONS' });
+  const { postFn, calls } = fakeCreateOk(55);
+  const topicId = await ensureIntakeTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.equal(topicId, 55);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['55'], 'INTAKE');
+  assert.equal(map['42'], 'AGENT_QUESTIONS');
+});
+
+test('BL-1732: a failed create degrades quietly - never throws, never writes a partial binding', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureIntakeTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, undefined);
+  assert.equal(fs.existsSync(topicMapPath(root)), false);
+});
+
+test('BL-1732: an already-bound Intake topic returns its existing topicId, without calling create', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'INTAKE' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureIntakeTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
+// ── resolveLiveIntakeFormUrl (BL-1732) ────────────────────────────────────
+
+function tunnelNotifyStatePath(root) {
+  return path.join(root, '.swarmforge', 'operator', 'resident-spy-tunnel-notify.json');
+}
+
+function writeTunnelNotifyStateFixture(root, state) {
+  fs.mkdirSync(path.dirname(tunnelNotifyStatePath(root)), { recursive: true });
+  fs.writeFileSync(tunnelNotifyStatePath(root), JSON.stringify(state));
+}
+
+test('BL-1732: resolveLiveIntakeFormUrl builds the intake-form URL from the live tunnel notify state', () => {
+  const root = mkTmpRoot();
+  writeTunnelNotifyStateFixture(root, { liveUrl: 'https://foo.trycloudflare.com/resident-spy?bearer=tok123' });
+  assert.equal(resolveLiveIntakeFormUrl(root), 'https://foo.trycloudflare.com/intake-form?bearer=tok123');
+});
+
+test('BL-1732: resolveLiveIntakeFormUrl reads the token from a "token" query param too, not only "bearer"', () => {
+  const root = mkTmpRoot();
+  writeTunnelNotifyStateFixture(root, { liveUrl: 'https://foo.trycloudflare.com/resident-spy?token=tok123' });
+  assert.equal(resolveLiveIntakeFormUrl(root), 'https://foo.trycloudflare.com/intake-form?bearer=tok123');
+});
+
+test('BL-1732: resolveLiveIntakeFormUrl is undefined when no tunnel-notify state file exists yet', () => {
+  const root = mkTmpRoot();
+  assert.equal(resolveLiveIntakeFormUrl(root), undefined);
+});
+
+test('BL-1732: resolveLiveIntakeFormUrl is undefined when the state file holds no liveUrl', () => {
+  const root = mkTmpRoot();
+  writeTunnelNotifyStateFixture(root, {});
+  assert.equal(resolveLiveIntakeFormUrl(root), undefined);
+});
+
+test('BL-1732: resolveLiveIntakeFormUrl is undefined when liveUrl carries no bearer/token', () => {
+  const root = mkTmpRoot();
+  writeTunnelNotifyStateFixture(root, { liveUrl: 'https://foo.trycloudflare.com/resident-spy' });
+  assert.equal(resolveLiveIntakeFormUrl(root), undefined);
+});
+
+test('BL-1732: resolveLiveIntakeFormUrl is undefined, never throws, on a malformed state file', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.dirname(tunnelNotifyStatePath(root)), { recursive: true });
+  fs.writeFileSync(tunnelNotifyStatePath(root), '{not json');
+  assert.equal(resolveLiveIntakeFormUrl(root), undefined);
 });
 
 // ── ensureControlTopic (BL-423, mirrors ensureAgentQuestionsTopic above) ──

@@ -458,7 +458,7 @@ test_recruiter_nightly_steward_probe.sh	standing
 test_recruiter_hf_discover_batch.sh	standing
 test_recruiter_nightly_specifier_scout.sh	standing
 test_recruiter_specifier_scout.sh	standing
-test_redo_from.sh	standing		
+test_redo_from.sh	standing
 test_reexpedite_from_wip.sh	standing		
 test_reference_freshness_guard.sh	standing		
 test_relaunch_resume_cli.sh	standing		
@@ -591,5 +591,5 @@ test_compose_banked_briefing_cli.sh	standing
 test_bl1641_ceremony_deadline_produces_a_briefing.sh	standing
 test_bl1688_status_ledger_survives_start.sh	standing
 verification_debt_ledger_lib_test_runner.bb	standing		
-test_verification_debt_ledger_cli.sh	standing		
+test_verification_debt_ledger_cli.sh	standing
 test_bl1829_local_model_qwen_settings.sh	standing

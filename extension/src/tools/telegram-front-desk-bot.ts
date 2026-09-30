@@ -129,6 +129,9 @@ import {
   decideEnsureOnboardingTopicAction,
   ONBOARDING_TOPIC_NAME,
   ONBOARDING_SUBJECT_ID,
+  decideEnsureIntakeTopicAction,
+  INTAKE_TOPIC_NAME,
+  INTAKE_SUBJECT_ID,
   SttResult,
   TtsResult,
   SteerDeliveryResult,
@@ -207,6 +210,7 @@ import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHo
 import { appendAvailabilityRecord } from '../metrics/availabilityLedgerStore';
 import { parseRolesTsv, invertTicketStageToRoleHeldTickets, readTicketStageMap } from '../swarm/swarmState';
 import { wrapPipelineBoardHtml } from '../concierge/pipelineBoard';
+import { buildIntakeFormUrl } from '../concierge/residentSpyTunnelNotify';
 import { readTmuxSocket, readSwarmRoles, paneTarget, getPaneBaseIndex, capturePane, sendKeys } from '../swarm/tmuxClient';
 import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
@@ -1028,6 +1032,54 @@ export async function ensureOnboardingTopic(targetPath: string, botToken: string
   topicMap[topicMapKey(created.messageThreadId)] = ONBOARDING_SUBJECT_ID;
   writeTopicMap(targetPath, topicMap);
   return created.messageThreadId;
+}
+
+// BL-1732: the Intake-topic twin of ensureAgentQuestionsTopic above -
+// identical reuse-or-create/idempotent-across-restarts shape, sharing the
+// SAME {topicId: subjectId} map. No rebind history to reconcile (mirrors
+// decideEnsureIntakeTopicAction's own reuse/create-only shape).
+export async function ensureIntakeTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
+  const topicMap = readTopicMap(targetPath);
+  const decision = decideEnsureIntakeTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
+  }
+  const created = await createForumTopic(botToken, chatId, INTAKE_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureIntakeTopic: failed to create the Intake topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return undefined;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = INTAKE_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
+}
+
+// BL-1732: the Intake form's own live-URL resolve - the SAME persisted
+// tunnel state notify-resident-spy-tunnel.ts writes on every rotation
+// (resident-spy-tunnel-notify.json's liveUrl), reusing its base+token to
+// build the /intake-form URL (buildIntakeFormUrl, the one owner of that
+// shape). No file, no liveUrl, or a malformed one all resolve the same way
+// as a down tunnel: undefined, which decideIntakeTopicReply already turns
+// into the "unreachable, and why" reply (scenario 05) - never a crash.
+export function resolveLiveIntakeFormUrl(targetPath: string): string | undefined {
+  const p = path.join(targetPath, '.swarmforge', 'operator', 'resident-spy-tunnel-notify.json');
+  if (!fs.existsSync(p)) {
+    return undefined;
+  }
+  try {
+    const state = JSON.parse(fs.readFileSync(p, 'utf8')) as { liveUrl?: string };
+    if (!state.liveUrl) {
+      return undefined;
+    }
+    const parsed = new URL(state.liveUrl);
+    const token = parsed.searchParams.get('bearer') ?? parsed.searchParams.get('token');
+    if (!token) {
+      return undefined;
+    }
+    return buildIntakeFormUrl(parsed.origin, token);
+  } catch {
+    return undefined;
+  }
 }
 
 // BL-590: the onboarder's whole turn once a message is confirmed to
@@ -2530,7 +2582,8 @@ function buildPollAdapters(
   controlToken: string,
   chatId: string,
   openaiApiKey: string | undefined,
-  scheduleConciergeTick?: () => void
+  scheduleConciergeTick?: () => void,
+  principalUserId?: string
 ): PollAdapters {
   const letsTalkProvider = (
     readSwarmEnvValue(targetPath, 'SWARMFORGE_LETS_TALK_PROVIDER') ||
@@ -2648,6 +2701,12 @@ function buildPollAdapters(
       return Promise.resolve();
     },
     notifyRecertTopic: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
+    notifyIntakeTopic: (topicId, text, buttons) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId, buttons).then((r) => r.success),
+    notifyIntakePrivateChat: (buttons) =>
+      principalUserId
+        ? sendTelegramMessage(botToken, principalUserId, 'File a new intake:', undefined, undefined, undefined, buttons).then((r) => r.success)
+        : Promise.resolve(false),
+    resolveIntakeFormUrl: () => Promise.resolve(resolveLiveIntakeFormUrl(targetPath)),
     getPendingButtonAction: (backlogId) => Promise.resolve(readPendingButtonActions(targetPath)[backlogId]),
     // BL-426 slice 1: absent (openaiApiKey unset) means "voice not wired" -
     // the exact pre-BL-426 behavior, same optional-adapter convention as
@@ -2844,7 +2903,7 @@ async function pollLoop(
   openaiApiKey: string | undefined,
   scheduleConciergeTick: () => void
 ): Promise<void> {
-  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey, scheduleConciergeTick);
+  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey, scheduleConciergeTick, principalUserId);
   const config = loopBackoffConfig(POLL_BACKOFF_CONFIG, targetPath);
   let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: { escalated: false } };
   writeFrontDeskPollHeartbeat(targetPath);
@@ -3860,6 +3919,12 @@ export async function main(): Promise<void> {
   // above (an unbound Onboarding topic must never be reachable by an
   // inbound repo URL or reply).
   await ensureOnboardingTopic(targetPath, botToken, chatId);
+
+  // BL-1732: bind the standing Intake topic BEFORE any loop starts polling
+  // too - same ordering rationale as every other standing topic above (an
+  // unbound Intake topic must never be reachable by an inbound message and
+  // be misrouted as an ordinary support-thread post).
+  await ensureIntakeTopic(targetPath, botToken, chatId);
 
   const conciergeScheduler = createConciergeTickScheduler(targetPath, botToken, chatId);
   const scheduleConciergeTick = () => conciergeScheduler.scheduleDebounced(DEFAULT_CONCIERGE_TICK_DEBOUNCE_MS);

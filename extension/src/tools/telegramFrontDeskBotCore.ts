@@ -89,6 +89,13 @@ import {
   ONBOARDING_TOPIC_NAME,
   EnsureOnboardingTopicAction,
   decideEnsureOnboardingTopicAction,
+  INTAKE_SUBJECT_ID,
+  INTAKE_TOPIC_NAME,
+  EnsureIntakeTopicAction,
+  decideEnsureIntakeTopicAction,
+  decideIntakeTopicReply,
+  buildIntakeTopicButtons,
+  buildIntakePrivateWebAppButtons,
 } from './telegramTopicDecisions';
 
 // BL-607 architect bounce: telegramFrontDeskBotCore was the public barrel for
@@ -152,6 +159,11 @@ export {
   ONBOARDING_TOPIC_NAME,
   EnsureOnboardingTopicAction,
   decideEnsureOnboardingTopicAction,
+  INTAKE_SUBJECT_ID,
+  INTAKE_TOPIC_NAME,
+  EnsureIntakeTopicAction,
+  decideEnsureIntakeTopicAction,
+  decideIntakeTopicReply,
 };
 
 export type BotUpdateDecision =
@@ -187,6 +199,12 @@ export type BotUpdateDecision =
   // topic's own unrecognized variant above); the orchestration layer
   // surfaces it.
   | { action: 'recert-unrecognized'; text: string }
+  // BL-1732: any principal message in the standing Intake topic - unlike
+  // the Approvals/Recert replies above, the text carries no verb to parse;
+  // every message gets the SAME way-in-or-unreachable reply
+  // (decideIntakeTopicReply), resolved at delivery time against whatever
+  // tunnel is live then.
+  | { action: 'intake-topic-reply'; text: string }
   | { action: 'open-default'; text: string }
   | { action: 'open-for-topic'; topicId: number; text: string }
   | { action: 'drop'; reason: 'not-principal' | 'no-text' | 'not-my-chat' | 'media-no-caption' };
@@ -371,6 +389,12 @@ function decideReservedSubjectReplyAction(subjectId: string | undefined, text: s
   }
   if (subjectId === RECERT_SUBJECT_ID) {
     return decideRecertTopicReplyAction(text);
+  }
+  // BL-1732: every principal message in the Intake topic gets the same
+  // way-in-or-unreachable reply - no text to classify, unlike the two
+  // branches above.
+  if (subjectId === INTAKE_SUBJECT_ID) {
+    return { action: 'intake-topic-reply', text };
   }
   return undefined;
 }
@@ -872,6 +896,19 @@ export interface PollAdapters {
   // BL-450: the Recert-topic reply's own surfacing channel - same optional,
   // degrades-to-silent-drop posture as notifyApprovalsTopic above.
   notifyRecertTopic?: (topicId: number | undefined, text: string) => Promise<boolean>;
+  // BL-1732: the Intake topic's own surfacing channel and the tunnel-aware
+  // form-URL resolve, both optional - same degrades-to-silent-drop/no-op
+  // posture as every other optional adapter in this file. A missing
+  // resolveIntakeFormUrl reads as "no tunnel known", the same outcome
+  // decideIntakeTopicReply already gives an explicit undefined.
+  notifyIntakeTopic?: (topicId: number | undefined, text: string, buttons?: InlineKeyboardButton[][]) => Promise<boolean>;
+  resolveIntakeFormUrl?: () => Promise<string | undefined>;
+  // BL-1732 QA bounce D4: the Mini App (web_app) button rides a SEPARATE
+  // message to the principal's own private chat - forum topics reject
+  // web_app buttons (residentSpyTunnelNotify.ts's own finding), so the
+  // topic reply above carries a plain url button instead. Optional, same
+  // degrades-to-silent-drop posture.
+  notifyIntakePrivateChat?: (buttons: InlineKeyboardButton[][]) => Promise<boolean>;
   // BL-410: a Reject/Amend button tap has no reason/note text of its own -
   // it stashes which verb is awaited for this ticket, then the NEXT bare
   // (unverbed) reply in that ticket's topic is read as the reason/note
@@ -1801,6 +1838,26 @@ async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topic
   return 'posted';
 }
 
+// BL-1732: resolves whatever tunnel is live NOW (adapter-injected, so this
+// stays testable without a live cloudflare tunnel) and hands it to the pure
+// decideIntakeTopicReply - a missing/failed resolve degrades to undefined,
+// the SAME "tunnel is down" shape decideIntakeTopicReply already handles
+// (scenario 05), never a crash.
+async function deliverIntakeTopicReply(topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  const formUrl = await adapters.resolveIntakeFormUrl?.();
+  const reply = decideIntakeTopicReply(formUrl);
+  // BL-1732 QA bounce D4: the topic reply carries a plain url button
+  // (forum topics reject web_app); the real Mini App button rides a
+  // SEPARATE message to the principal's own private chat, only when
+  // there is a reachable form to link (never for the unreachable reply).
+  const topicButtons = reply.kind === 'way-in' ? buildIntakeTopicButtons(formUrl!) : undefined;
+  await adapters.notifyIntakeTopic?.(topicId, reply.text, topicButtons);
+  if (reply.kind === 'way-in' && formUrl) {
+    await adapters.notifyIntakePrivateChat?.(buildIntakePrivateWebAppButtons(formUrl));
+  }
+  return 'posted';
+}
+
 // Which reserved standing-topic's own delivery a decision resolves to, if
 // any - collapsed into one dispatch so processMessageUpdate's own branch
 // count does not grow one-for-one with every new reserved subject (the
@@ -1818,6 +1875,9 @@ async function deliverReservedSubjectReply(
   }
   if (isRecertTopicReplyDecision(decision)) {
     return deliverRecertTopicReply(decision, topicId, update, adapters);
+  }
+  if (decision.action === 'intake-topic-reply') {
+    return deliverIntakeTopicReply(topicId, adapters);
   }
   return undefined;
 }

@@ -15,8 +15,8 @@ flowchart TD
   STEER["redirect: inject into that\nrole's live pane as a\nverified nudge"]
   RECEIPT["post delivery receipt\nback into the topic\n(incl. menu_blocked)"]
 
-  RESERVED{"reserved topic?\nAPPROVALS / RECERT /\nAGENT_QUESTIONS / CONTROL"}
-  RESHANDLER["that topic's own handler:\napproval verdict, recert verdict,\npending-question answer, pause"]
+  RESERVED{"reserved topic?\nAPPROVALS / RECERT /\nAGENT_QUESTIONS / CONTROL / INTAKE"}
+  RESHANDLER["that topic's own handler:\napproval verdict, recert verdict,\npending-question answer, pause,\nIntake way-in / unreachable reply"]
 
   VOICE{"voice note in\nthe Concierge topic?"}
   STT["transcribe via whisper-1"]

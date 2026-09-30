@@ -1,6 +1,6 @@
 // Topic and subject resolution logic for the Telegram Front Desk Bot.
 // Pure decisions for ensuring standing topics exist and routing replies to topics.
-import { TelegramUpdate } from '../notify/telegramClient';
+import { TelegramUpdate, InlineKeyboardButton } from '../notify/telegramClient';
 import { SWARM_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
 
 // BL-353: generic getUpdates-offset utility for the poll loop.
@@ -254,4 +254,50 @@ export type EnsureRoleTopicAction = { kind: 'reuse'; topicId: number } | { kind:
 export function decideEnsureRoleTopicAction(roleTopicMap: Record<string, number>, role: string): EnsureRoleTopicAction {
   const existingTopicId = roleTopicMap[role];
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
+// BL-1732: the standing "Intake" forum topic (principal-only) that opens
+// the narrative intake form. Mirrors decideEnsureOperatorTopicAction's
+// reuse/create shape exactly (this subject never needs the Approvals/
+// Pipeline Board topics' rebind branch - no prior standing-topic history
+// to reconcile against).
+export const INTAKE_SUBJECT_ID = 'INTAKE';
+export const INTAKE_TOPIC_NAME = 'Intake';
+
+export type EnsureIntakeTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+export function decideEnsureIntakeTopicAction(topicMap: Record<string, string>): EnsureIntakeTopicAction {
+  const existingTopicId = topicForSubject(topicMap, INTAKE_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
+// Forum topics cannot carry web_app buttons (residentSpyTunnelNotify.ts's
+// own finding) - the way in is a plain url button in the topic (this
+// text), the Mini App button itself living in the principal's private
+// chat. When the tunnel is down there is no reachable form URL to link -
+// the reply says so instead of offering a dead button (scenario 05).
+export type IntakeTopicReply = { kind: 'way-in'; text: string } | { kind: 'unreachable'; text: string };
+
+export function decideIntakeTopicReply(formUrl: string | undefined): IntakeTopicReply {
+  if (!formUrl) {
+    return {
+      kind: 'unreachable',
+      text: 'The Intake form is unreachable right now - the tunnel serving it is down. Try again once it is back up.',
+    };
+  }
+  return { kind: 'way-in', text: `File a new intake: ${formUrl}` };
+}
+
+// BL-1732 QA bounce D4: the topic's own reply names the form URL as plain
+// text with no button - opens outside the Telegram Mini App context. A
+// plain `url:` button in the topic (forum topics reject `web_app:`,
+// residentSpyTunnelNotify.ts's own finding); the real Mini App
+// (`web_app:`) button rides a SEPARATE message to the principal's
+// private chat, where it is allowed.
+export function buildIntakeTopicButtons(formUrl: string): InlineKeyboardButton[][] {
+  return [[{ text: 'Open the intake form', url: formUrl }]];
+}
+
+export function buildIntakePrivateWebAppButtons(formUrl: string): InlineKeyboardButton[][] {
+  return [[{ text: 'Open the intake form', webAppUrl: formUrl }]];
 }

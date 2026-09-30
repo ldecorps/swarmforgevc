@@ -2054,3 +2054,66 @@ test('the served UI bundle manifest names the Live page (BL-775)', async () => {
     assert.equal(typeof livePage.order, 'number');
   });
 });
+
+// BL-1732 hardener: the Intake form's submit route validated `newValues`
+// only as "typeof 'object' and not null" - an array or an object with an
+// unrecognized key both satisfy that and are then handed straight to
+// promoteVocabulary (intakeVocabularyStore.ts), which indexes the shared
+// vocabulary by whatever key each entry carries with no validation of its
+// own and throws (`Cannot read properties of undefined (reading
+// 'includes')`) - an unhandled rejection on a live route (no `.catch` on
+// handleIntakeSubmitRoute's `.then(async ...)`), reachable by any POST
+// body a malicious or buggy client sends, never only the form's own
+// well-behaved JS. These assert the route REFUSES with a clean 400
+// instead, and that legitimate shapes still pass.
+
+function intakeDraftBody(overrides = {}) {
+  return {
+    actor: 'the human',
+    action: 'file a new intake from my phone',
+    goal: 'keep the backlog in one ubiquitous language',
+    scenarios: 'Given a\nWhen b\nThen c',
+    ...overrides,
+  };
+}
+
+async function postIntakeSubmit(target, body) {
+  return withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/intake-form/submit`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        'x-control-token': TOKEN,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, body: await res.json() };
+  });
+}
+
+test('BL-1732: an intake submit with newValues as an ARRAY is refused with 400, never a crash', async () => {
+  const target = mkTmp();
+  const { status, body } = await postIntakeSubmit(target, intakeDraftBody({ newValues: ['a new value'] }));
+  assert.equal(status, 400);
+  assert.equal(body.success, false);
+});
+
+test('BL-1732: an intake submit with an unrecognized newValues KEY is refused with 400, never a crash', async () => {
+  const target = mkTmp();
+  const { status, body } = await postIntakeSubmit(target, intakeDraftBody({ newValues: { notASlot: 'x' } }));
+  assert.equal(status, 400);
+  assert.equal(body.success, false);
+});
+
+test('BL-1732: an intake submit with a non-string newValues VALUE is refused with 400, never a crash', async () => {
+  const target = mkTmp();
+  const { status, body } = await postIntakeSubmit(target, intakeDraftBody({ newValues: { goal: 42 } }));
+  assert.equal(status, 400);
+  assert.equal(body.success, false);
+});
+
+// A recognized-key, string-valued newValues (or none at all) is the
+// well-behaved shape the form's own JS sends - already covered end to end
+// by intakeWriter.test.js's submitIntake tests and acceptance scenario 03
+// (specs/features/BL-1732-...feature), so not repeated here.

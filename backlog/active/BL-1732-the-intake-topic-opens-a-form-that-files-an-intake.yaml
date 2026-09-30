@@ -227,3 +227,20 @@ notes: |
   change. Still paused, unclaimed, so no holder needs a note.
 
 assigned_to: coder
+abandoned_commits: [ffdf5b0960, 1a642ecdc8, 92971cb6f1, 2a931f75fb, 6cd4398953, b56c38e70e, 0529bc9f78, bf55c9e1ce, 9053449ada, 812fa4917c, 37ed40075f, b776d3bfeb, a382ac545a, fbddbe401b, 0bf9b85987, d44489645c, 4b63975a47, e0a6a49c1e, ef7d4871d3, 701a95b04b, e4d6f8e4a0, fda34a68b1, b4130249e2, 0dace52c71, 0a033cbdf6, 47dd07507d, 3bcfb30c1e]
+# 2026-09-30 documenter: pre-QA gate flagged these as stranded on
+# swarmforge-QA - review-pass/bounce evidence from an earlier round of
+# this ticket's own bounce/fix cycle, superseded when the QA bounce (D1-D4,
+# button/overwrite/rollback/vocabulary fixes) and the following
+# coder/cleaner/architect/hardener passes rebuilt the tip. Deliberately
+# not re-merged (their files are gone from the current tree).
+# 2026-09-30 documenter (second forward, same day): same pattern for the
+# NEXT bounce/fix round - the QA-20260930-2 bounce (D1/D2, art-director
+# narrative-select wrap + iOS 16px zoom) and the cleaner/architect/hardener
+# passes that preceded and followed it. Ten more evidence/bounce-record
+# commits, again stranded on swarmforge-QA and superseded by this tip.
+bounce_count: 3
+bounce_history:
+  - { at: 2026-09-30, by: cleaner, blamed: coder, class: behavior, commit: e7b4428c7e, evidence: backlog/evidence/BL-1732-bounce-20260930.md }
+  - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: 7ffba79738, evidence: backlog/evidence/BL-1732-QA-20260930.md }
+  - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: 0272b30251, evidence: backlog/evidence/BL-1732-QA-20260930-2.md }

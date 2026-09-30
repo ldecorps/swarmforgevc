@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c30b22d13add5d35c29a704c6d31420c67b9d2287180885a129c41e42dd12c75
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-30T09:10:18.078441648Z","feature_name":"BL-1732 The Intake topic opens a form that files an intake in the shared vocabulary","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1732-the-intake-topic-opens-a-form-that-files-an-intake.feature","background_hash":"e2f6846325bee941e9ece9c2ec43467b8144a115cd1663d6bfc7cc61565292b6","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each narrative slot offers the shared vocabulary","scenario_hash":"be2e83b3f1ce28bb70aa06d4bb25cb9eae2f67f7f37e56543e0b82d0998f2237","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-30T09:10:18.078441648Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1732 The Intake topic opens a form that files an intake in the shared vocabulary
 
   The human files new intakes from the phone, in one ubiquitous language. A

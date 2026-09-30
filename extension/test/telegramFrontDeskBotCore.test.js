@@ -68,6 +68,9 @@ const {
   decideEnsureOnboardingTopicAction,
   ONBOARDING_SUBJECT_ID,
   decideOnboardingReplyAction,
+  decideEnsureIntakeTopicAction,
+  INTAKE_SUBJECT_ID,
+  decideIntakeTopicReply,
   formatCallbackDiagnosticLine,
   staleApprovalAsksNeedingClose,
   reconcileStaleApprovalAsks,
@@ -647,6 +650,40 @@ test('BL-434: a reply on an ORDINARY SUP-### topic (not the Approvals topic) sti
   const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'approve BL-433' });
   const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 7 ? 'SUP-1' : undefined));
   assert.deepEqual(decision, { action: 'post-existing', subjectId: 'SUP-1', text: 'approve BL-433' });
+});
+
+// ── BL-1732: Intake-topic replies (pure) ──────────────────────────────────
+
+test('BL-1732: decideEnsureIntakeTopicAction reuses the topic already bound to INTAKE_SUBJECT_ID', () => {
+  assert.deepEqual(decideEnsureIntakeTopicAction({ '7': 'SUP-1', '42': INTAKE_SUBJECT_ID }), { kind: 'reuse', topicId: 42 });
+});
+
+test('BL-1732: decideEnsureIntakeTopicAction is reserved-subject-specific - the Recert topic\'s own binding never counts as the Intake topic', () => {
+  assert.deepEqual(decideEnsureIntakeTopicAction({ '42': RECERT_SUBJECT_ID }), { kind: 'create' });
+});
+
+test('BL-1732: any principal message in the Intake topic is an intake-topic-reply decision, whatever its text - no verb to parse', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 950, text: 'anything at all' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 950 ? INTAKE_SUBJECT_ID : undefined));
+  assert.deepEqual(decision, { action: 'intake-topic-reply', text: 'anything at all' });
+});
+
+test('BL-1732: a reply on an ORDINARY SUP-### topic (not the Intake topic) still posts as an ordinary subject post - no regression', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'anything at all' });
+  const decision = decideUpdateAction(update, PRINCIPAL_ID, '1', (topicId) => (topicId === 7 ? 'SUP-1' : undefined));
+  assert.deepEqual(decision, { action: 'post-existing', subjectId: 'SUP-1', text: 'anything at all' });
+});
+
+test('BL-1732: decideIntakeTopicReply names the form URL as the way in when the tunnel is up', () => {
+  const reply = decideIntakeTopicReply('https://tunnel.example/intake-form?bearer=tok');
+  assert.equal(reply.kind, 'way-in');
+  assert.match(reply.text, /https:\/\/tunnel\.example\/intake-form\?bearer=tok/);
+});
+
+test('BL-1732: decideIntakeTopicReply says the form is unreachable, and why, when no tunnel is known', () => {
+  const reply = decideIntakeTopicReply(undefined);
+  assert.equal(reply.kind, 'unreachable');
+  assert.match(reply.text, /unreachable/i);
 });
 
 test('decideUpdateAction called with only 3 args (no backlogForTopic) behaves exactly as before BL-298 - existing callers are unaffected', () => {
@@ -2466,6 +2503,100 @@ test('a Recert-topic reply degrades to a silent drop when notifyRecertTopic is n
     })
   );
   assert.equal(result.dropped, 1);
+});
+
+// ── BL-1732: Intake-topic reply delivery ──────────────────────────────────
+
+function intakePollAdapters(overrides = {}) {
+  return {
+    chatId: '1',
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an Intake-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for an Intake-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 950 ? INTAKE_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Intake-topic reply');
+    },
+    ...overrides,
+  };
+}
+
+test('BL-1732: any principal message in the Intake topic is answered with the way in, when a tunnel is live', async () => {
+  const notified = [];
+  const privateNotified = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    intakePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 950, text: 'hi' })] }),
+      resolveIntakeFormUrl: async () => 'https://tunnel.example/intake-form?bearer=tok',
+      notifyIntakeTopic: async (topicId, text, buttons) => {
+        notified.push({ topicId, text, buttons });
+        return true;
+      },
+      notifyIntakePrivateChat: async (buttons) => {
+        privateNotified.push({ buttons });
+        return true;
+      },
+    })
+  );
+  assert.equal(notified.length, 1);
+  assert.equal(notified[0].topicId, 950);
+  assert.match(notified[0].text, /https:\/\/tunnel\.example\/intake-form\?bearer=tok/);
+  // BL-1732 QA bounce D4: a plain url button in the topic (forum topics
+  // reject web_app buttons), never a web_app one here.
+  assert.deepEqual(notified[0].buttons, [[{ text: 'Open the intake form', url: 'https://tunnel.example/intake-form?bearer=tok' }]]);
+  // The real Mini App (web_app) button rides a SEPARATE message to the
+  // principal's own private chat.
+  assert.equal(privateNotified.length, 1);
+  assert.deepEqual(privateNotified[0].buttons, [[{ text: 'Open the intake form', webAppUrl: 'https://tunnel.example/intake-form?bearer=tok' }]]);
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
+});
+
+test('BL-1732 an-unreachable-form-is-said-05: the topic says the form is unreachable, and why, when resolveIntakeFormUrl finds no tunnel', async () => {
+  const notified = [];
+  const privateNotified = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    intakePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 950, text: 'hi' })] }),
+      resolveIntakeFormUrl: async () => undefined,
+      notifyIntakeTopic: async (topicId, text, buttons) => {
+        notified.push({ topicId, text, buttons });
+        return true;
+      },
+      notifyIntakePrivateChat: async (buttons) => {
+        privateNotified.push({ buttons });
+        return true;
+      },
+    })
+  );
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /unreachable/i);
+  // No dead button, and never a private-chat ping, when there is nothing
+  // reachable to link.
+  assert.equal(notified[0].buttons, undefined);
+  assert.equal(privateNotified.length, 0);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-1732: an Intake-topic reply still counts as posted when notifyIntakeTopic/resolveIntakeFormUrl are not wired (optional-adapter convention)', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    intakePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 950, text: 'hi' })] }),
+      // resolveIntakeFormUrl and notifyIntakeTopic deliberately omitted.
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
 });
 
 test('BL-298 topic-reply-02: a SUP-### subject\'s topic still posts via postToBridge (no regression), never postOperatorContext', async () => {

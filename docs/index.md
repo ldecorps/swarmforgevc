@@ -211,6 +211,7 @@ expects them, and are not migrated or rewritten here.
 - [Coordinator activity Telegram feed](how-to/GH-24-coordinator-activity-telegram-feed.md) — deterministic, zero-token surfacer posts one compact line per coordinator handoff/bookkeeping commit to its own standing topic, two independent cursors, no daemon added (GH-24).
 - [Bubble Host thinking page on phone](how-to/BL-834-bubble-host-thinking-page.md) — watch host activity live from BL-833 feed; working / quiet / unreachable states (BL-834).
 - [Reordering Epic Priority in the Mini App Console](how-to/BL-572-console-epic-priority-reorder.md)
+- [Filing an intake from the Intake Telegram topic](how-to/BL-1732-intake-topic-form.md) — a standing principal-only "Intake" topic opens a Mini App form (narrative dropdowns over a shared vocabulary, Given/When/Then scenarios, an optional rule field, notes); Submit writes an INTAKE file at the backlog root and the topic confirms it with the file's GitHub permalink (BL-1732).
 - [Relaunch Resume and the Orphan-Claim Sweep](how-to/BL-648-relaunch-resume-orphan-claims.md)
 - [Stale mono-router-active-role is not topology on standing packs](how-to/BL-1020-stale-mono-router-marker-is-not-topology.md) — marker honoured only on rotation-router packs; leftovers on full-forge are ignored and reported `BL-1020 STALE` (BL-1020).
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)

@@ -115,3 +115,7 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
 
 assigned_to: coder
+abandoned_commits: [a75f2ff6fe]
+# 2026-09-30 QA: LAND_REPLAY severed descent - the cited QA tip a75f2ff6fe
+# landed as tip-pure replay 985223178b (after one rematch; b7466bf1d3 was
+# the pre-rematch replay, never pushed).

@@ -16,6 +16,15 @@ export function buildConsoleMiniAppUrl(baseUrl: string, token: string): string {
   return `${base}/console?bearer=${encodeURIComponent(token)}`;
 }
 
+// BL-1732: the Intake form's own way-in link, same base+token->URL shape as
+// buildResidentSpyMiniAppUrl/buildConsoleMiniAppUrl above - one owner for
+// "how a bridge route URL is built from the live tunnel", never re-derived
+// at each call site.
+export function buildIntakeFormUrl(baseUrl: string, token: string): string {
+  const base = baseUrl.replace(/\/$/, '');
+  return `${base}/intake-form?bearer=${encodeURIComponent(token)}`;
+}
+
 export function consoleUrlFromLiveUrl(liveUrl: string): string {
   const parsed = new URL(liveUrl);
   parsed.pathname = '/console';

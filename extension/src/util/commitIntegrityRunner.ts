@@ -66,7 +66,10 @@ function commitIntegrityFailureFromError(err: unknown): CommitIntegrityResult {
   return stdout ? { ...parseCommitIntegrityResult(stdout), success: false } : { success: false };
 }
 
-async function runCommitIntegrityDetailed(targetPath: string, relPaths: string[], message: string): Promise<CommitIntegrityResult> {
+// Exported (BL-1732) for a caller that needs the sha/reason, not only
+// success/failure - the Intake form's submit writer, which composes the
+// filed confirmation's GitHub permalink from the returned sha.
+export async function runCommitIntegrityDetailed(targetPath: string, relPaths: string[], message: string): Promise<CommitIntegrityResult> {
   const args = [
     commitIntegrityCliPath(targetPath),
     targetPath,
