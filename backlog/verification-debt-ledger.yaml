@@ -45,3 +45,8 @@
   description: "condition (g) tip-pure hand build after LAND_ESCALATE on stray 698a268a8b, with three condition (i) done-copy drains: chose BL-1829's own paths by hand"
   detected_at: 2026-09-30
   evidence: backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
+- category: land-path-ownership
+  ticket: BL-1830
+  role: QA
+  description: "replayed BL-1801's real land (origin/main 5e754399e4, tip d1db3d0659) through the parcel's own-paths in a mkdtemp clone to see whether BL-1821's suite-manifest.tsv rows are excluded (qa_e2e step 4; no tool runs a historical land against a changed land step)"
+  detected_at: 2026-09-30
