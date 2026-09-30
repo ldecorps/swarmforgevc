@@ -61,3 +61,9 @@
   description: "hand-traced a criss-cross merge (hardener note 001631) to tell BL-1830's QA bounce revert 4cfc65a697 apart from a silent collateral revert of land_step_lib.bb; merge-tree simulated the next BL-1830 merge"
   detected_at: 2026-09-30
   evidence: backlog/evidence/BL-1816-specifier-merge-revert-adjudication-20260930.md
+- category: land-path-ownership
+  ticket: BL-1816
+  role: specifier
+  description: "adjudicated LAND_ESCALATE on closed-owner doc stray 4552cc4594 on BL-1816's own how-to path: grepped BL-1816's YAML for the sha (item 5 carries it) and the origin/main..tip diff of its own paths for sibling lines by hand"
+  detected_at: 2026-10-01
+  evidence: backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
