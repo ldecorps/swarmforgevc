@@ -19,6 +19,7 @@ updating the "Reviewed" column as each one is looked at.
 | Live console / Mini App screens | Live web UI, token-auth, control actions (local-engineering rule 5) | extension webview panels (`extension/src/panel/`) | Run the extension, open the panel in VS Code or the live console | Not yet reviewed |
 | Bubble — Pipeline Board screen | Telegram Mini App, phone-viewable (grid + tap-through detail sheet) | `extension/src/bridge/bubblePipelinePageUiHtml.ts`, `extension/src/bridge/bubblePipelinePage.ts` (BL-831, landed 2026-09-18) | Open the Bubble Pipeline tab from a real Telegram session on a phone | Not yet reviewed |
 | Rendered docs | Markdown rendered on GitHub/an editor, and any generated HTML (e.g. `docs/reference/model-compatibility.md`) | `docs/` tree, `swarmforge/scripts/model_factory_lib.bb` (compat-docs) | Open the rendered page on GitHub or a Markdown previewer | Not yet reviewed |
+| Intake form ("File an intake", Telegram Intake topic) | Telegram Mini App, phone-viewable (BL-1732, epic BL-1731) | `extension/src/bridge/intakeFormUiHtml.ts` | Open the Intake topic's way-in from a real Telegram session on a phone, or the rendered source QA captures at `tmp/bl1732-intake-form.html` | **2026-09-30 — defects found, not signed off** (source review, no live tunnel). See [narrative selects wrap](briefs/2026-09-30-bl1732-intake-form-narrative-selects-wrap.md) (blocking) and [input font-size iOS zoom](briefs/2026-09-30-bl1732-input-font-size-zoom.md) (follow-up); both sent to the specifier. |
 
 ## Out of scope for this inventory
 
