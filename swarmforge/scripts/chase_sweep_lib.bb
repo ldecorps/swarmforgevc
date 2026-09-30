@@ -1032,16 +1032,26 @@
    match a mention-only note also satisfies. Unclassifiable forms answer
    nil (undispatched) rather than guessing - failing loud beats failing
    silent, this module's own stated posture; a second route is visible and
-   recoverable, a starved ticket is neither."
-  [{:keys [task message]}]
-  (if (not (str/blank? task))
-    (extract-ticket-id task)
-    (when message
-      (when-let [[_ prefix digits] (re-find spec-work-ticket-id-pattern message)]
-        (str/upper-case (str prefix "-" digits))))))
+   recoverable, a starved ticket is neither.
+
+   BL-1804: a handoff whose `to:` is `coordinator` never counts, checked
+   BEFORE any task/message match - the router, addressed to itself, is
+   never a dispatch of the ticket it names (the unassigned-active sweep's
+   own anti-spam nudge was the measured case: its verb-first form made the
+   REPORT of a starved ticket read as proof it was routed). A missing `to:`
+   keeps today's reading unchanged."
+  [{:keys [task message to]}]
+  (when-not (= "coordinator" to)
+    (if (not (str/blank? task))
+      (extract-ticket-id task)
+      (when message
+        (when-let [[_ prefix digits] (re-find spec-work-ticket-id-pattern message)]
+          (str/upper-case (str prefix "-" digits)))))))
 
 (defn- dispatch-trail-headers [file-path]
-  {:task (read-header-field file-path "task") :message (read-header-field file-path "message")})
+  {:task (read-header-field file-path "task")
+   :message (read-header-field file-path "message")
+   :to (read-header-field file-path "to")})
 
 (defn collect-dispatched-ticket-ids
   "Scans every given directory path for .handoff files (including one level
@@ -1235,26 +1245,44 @@
          (filter #(and (:id %) (nobody-assigned? (:assigned-to %))))
          vec)))
 
-(defn unassigned-active-items
-  "Unassigned actives that still have no handoff trail anywhere — same
-   decide-dispatch-gaps core as BL-222, different input set."
-  [active-dir scan-dirs]
-  (decide-dispatch-gaps (read-unassigned-active-items active-dir)
-                        (collect-dispatched-ticket-ids scan-dirs)))
-
 (defn unassigned-active-note-message
-  "BL-1223: leads with the router's own verb-first 'Work' marker (matching
-   spec-work-ticket-id-pattern) so the next sweep still treats the nudge
-   itself as a trail (no spam) under the narrowed dispatch predicate - a
-   bare leading id (the pre-BL-1223 form) no longer counts as a dispatch,
-   which would otherwise turn this sweep's own anti-spam mechanism into a
-   spam generator. Coordinator must then assign_to + route; we never set
+  "Leads with the router's own verb-first 'Work' marker (matching
+   spec-work-ticket-id-pattern) purely for readability/consistency with
+   every other routing note - BL-1804 stopped this sweep relying on that
+   form to dedupe against dispatch-trail-ticket-id (a note addressed to the
+   coordinator never counts as a trail at all now, see that fn's docstring),
+   so unassigned-active-nudge-pending? below is the sweep's own anti-spam
+   mechanism instead. Coordinator must then assign_to + route; we never set
    assigned_to from this sweep."
   [item-id]
   (let [msg (str "Work " item-id " active unassigned - assign_to and route it.")]
     (if (<= (count msg) dispatch-gap-note-max-length)
       msg
       (subs msg 0 dispatch-gap-note-max-length))))
+
+(defn unassigned-active-nudge-pending?
+  "BL-1804: true when a prior unassigned-active nudge for item-id already
+   sits in pending-dirs (new/in_process, never completed - a nudge the
+   coordinator has read and acted on must not silence the next one). This
+   replaces dispatch-trail-ticket-id as the sweep's own anti-spam dedupe,
+   now that a to:-coordinator note never counts as a dispatch trail at all
+   (BL-1804 invariant 1) - relying on the trail here would turn every
+   nudge into an unconditional repeat."
+  [pending-dirs item-id]
+  (let [prefix (str "Work " item-id " active unassigned")]
+    (->> pending-dirs
+         (mapcat list-handoff-files-with-batches)
+         (keep #(read-header-field % "message"))
+         (some #(and % (str/starts-with? % prefix)))
+         boolean)))
+
+(defn unassigned-active-items
+  "Unassigned actives with no unassigned-active nudge currently pending
+   (new/in_process) in pending-dirs - BL-1804: dedupe by pending nudge, not
+   by dispatch trail (a to:-coordinator note is never a trail, invariant 1)."
+  [active-dir pending-dirs]
+  (vec (remove #(unassigned-active-nudge-pending? pending-dirs (:id %))
+               (read-unassigned-active-items active-dir))))
 
 (defn unassigned-active-draft-lines
   "Note to the coordinator only — never to coder/specifier. Assignment is
@@ -1791,13 +1819,19 @@
             (let [headers (handoff-headers file)
                   task (get headers "task")
                   msg (get headers "message")
+                  to (get headers "to")
                   ;; BL-1223: :live-ids keeps the BROAD "does this handoff
                   ;; mention this ticket" question unchanged (invariant 3 -
                   ;; live-mail? is correctly broad); :trail narrows to
                   ;; dispatch-trail-ticket-id, the SAME predicate
                   ;; collect-dispatched-ticket-ids/newest-trail-event-ms use.
+                  ;; BL-1804: `to` is threaded through too, so a to:-
+                  ;; coordinator handoff is excluded from :trail here the
+                  ;; same way dispatch-trail-ticket-id excludes it
+                  ;; everywhere else - the single-pass index must not be a
+                  ;; second, silently divergent copy of that predicate.
                   live-id (extract-ticket-id (or task msg))
-                  trail-id (dispatch-trail-ticket-id {:task task :message msg})
+                  trail-id (dispatch-trail-ticket-id {:task task :message msg :to to})
                   acc (if (and live? live-id) (update acc :live-ids conj live-id) acc)]
               (if-not (and trail? trail-id)
                 acc

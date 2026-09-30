@@ -303,7 +303,12 @@
   (write-handoff! coord-new "00_nudge.handoff"
                   {:from "coordinator" :to "coordinator" :type "note"
                    :message (chase-sweep-lib/unassigned-active-note-message "BL-523")})
-  (assert= "unassigned-active-items does not re-nudge once a trail exists"
+  ;; BL-1804: premise changed from "trail" to "pending nudge" - a to:-
+  ;; coordinator note is never a dispatch trail any more (invariant 1), so
+  ;; this dedupe now runs on unassigned-active-nudge-pending? instead;
+  ;; [coord-new] is read as pending-dirs, and the same fixture (a pending
+  ;; nudge for this id) still suppresses a second one.
+  (assert= "unassigned-active-items does not re-nudge while its nudge is still pending"
            []
            (chase-sweep-lib/unassigned-active-items active-dir [coord-new])))
 

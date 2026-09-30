@@ -490,6 +490,7 @@
       :live-role (handoff-lib/resident-live-role socket resident)})))
 
 (declare handoff-wake-with-dedup!)
+(declare coordinator-pending-dirs)
 
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
@@ -2441,7 +2442,8 @@
       (log! "unassigned-active-nudge-error" (:id item) (str (:err result))))))
 
 (defn unassigned-active-nudge-sweep! [roles]
-  (doseq [item (chase-sweep-lib/unassigned-active-items (active-backlog-dir) (dispatch-gap-scan-dirs roles))]
+  (doseq [item (chase-sweep-lib/unassigned-active-items
+                (active-backlog-dir) (or (coordinator-pending-dirs roles) []))]
     (try
       (nudge-coordinator-unassigned! item)
       (catch Exception e
