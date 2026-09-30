@@ -179,3 +179,5 @@ notes: |
   success criterion). Estimable (one decision, one CLI, one call site,
   one measurement). Small (5 scenarios, 7 cases, 2 invariants). Testable
   (fake Ollama, injected overhead).
+
+assigned_to: coder
