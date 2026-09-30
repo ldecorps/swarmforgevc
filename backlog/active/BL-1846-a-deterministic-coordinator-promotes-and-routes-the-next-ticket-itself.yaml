@@ -22,7 +22,7 @@ required_wiring:
   - 'swarmforge/scripts/handoffd.bb::promote_and_route_next::the live daemon is the consumer that runs the gated promotion (BL-1235)'
   - 'specs/pipeline/steps/bl1846DeterministicCoordinatorPromotesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file, and the specifier's choice among the three shapes
   the human named in the intake (the intake left the choice to the
