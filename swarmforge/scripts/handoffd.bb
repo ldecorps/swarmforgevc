@@ -28,6 +28,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_autoclose_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "local_parcel_driver_lib.bb")))
@@ -2487,12 +2488,10 @@
 ;; BL-798: promotion-inaction escalation — reuses the SAME operator alert
 ;; channel send-auth-persist-alert! (BL-536) already established (Telegram
 ;; OPERATOR topic outbox + email via daemon-alarm-lib), notify-only, never
-;; halts the swarm.
-(defn send-open-slot-escalation-alert! [candidate-id nudge-count]
-  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
-        subject (chase-sweep-lib/open-slot-escalation-email-subject candidate-id)
-        tg-text (chase-sweep-lib/open-slot-escalation-telegram-text candidate-id nudge-count)
-        reason (chase-sweep-lib/open-slot-escalation-reason candidate-id nudge-count)]
+;; halts the swarm. BL-1846: the send itself (outbox + email) is shared with
+;; the deterministic-pack variant below - only the text differs.
+(defn- send-open-slot-alert-content! [candidate-id subject reason tg-text]
+  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
     (log! "open-slot-escalation" candidate-id reason)
     (try
       (fs/create-dirs (fs/parent reply-outbox))
@@ -2510,10 +2509,94 @@
       (log! "open-slot-escalation-email" candidate-id)
       (catch Exception e (log! "open-slot-escalation-email-error" (.getMessage e))))))
 
+(defn send-open-slot-escalation-alert! [candidate-id nudge-count]
+  (send-open-slot-alert-content!
+   candidate-id
+   (chase-sweep-lib/open-slot-escalation-email-subject candidate-id)
+   (chase-sweep-lib/open-slot-escalation-reason candidate-id nudge-count)
+   (chase-sweep-lib/open-slot-escalation-telegram-text candidate-id nudge-count)))
+
+;; BL-1846: same channel, naming the gate that refused the last deterministic
+;; promotion attempt - on a deterministic pack no coordinator was ever
+;; nudged to go find out why.
+(defn send-deterministic-open-slot-escalation-alert! [candidate-id nudge-count gate-reason]
+  (send-open-slot-alert-content!
+   candidate-id
+   (chase-sweep-lib/open-slot-escalation-email-subject candidate-id)
+   (chase-sweep-lib/deterministic-open-slot-escalation-reason candidate-id nudge-count gate-reason)
+   (chase-sweep-lib/deterministic-open-slot-escalation-telegram-text candidate-id nudge-count gate-reason)))
+
 (defn- open-slot-escalation-threshold []
   (chase-sweep-lib/parse-open-slot-escalation-threshold
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
+
+;; ── BL-1846: deterministic-coordinator promotion (sibling of the note
+;; above) ────────────────────────────────────────────────────────────────
+;; On a pack declaring `config coordinator_mode deterministic`,
+;; open-slot-nudge-sweep! runs promote_and_route_next.sh itself in place of
+;; nudge-coordinator-open-slot! - the real script, the SAME
+;; promotion_gates/freshness gate chain a model coordinator would trigger,
+;; run with NO ticket id so the daemon holds no ranking of its own (BL-963's
+;; one-chain lesson): whatever it promotes IS the outcome.
+
+(defn- promote-and-route-next-script []
+  (str (fs/path script-dir "promote_and_route_next.sh")))
+
+;; The last deterministic attempt's refusal reason for its candidate id -
+;; read back by the :escalate branch below, which (like the note-based path
+;; it mirrors) makes no attempt of its own on the tick it fires; memory-only
+;; is fine here for the same reason open-slot-escalation-state already is
+;; (a daemon restart mid-sequence just starts counting the candidate over).
+(defonce open-slot-deterministic-last-refusal (atom nil))
+
+(defn- deterministic-last-refusal-reason [candidate-id]
+  (let [{:keys [id reason]} @open-slot-deterministic-last-refusal]
+    (if (= id candidate-id) reason "unknown")))
+
+;; Ground truth for "did this attempt actually promote the candidate",
+;; independent of promote_and_route_next.sh's own exit code: the script
+;; can exit non-zero from a step AFTER the promotion already committed
+;; (route_backlog_to_coder.sh's own post-send inbox check refuses under a
+;; mailbox-only pack with no live tmux pane, even though the routing note
+;; it just queued is genuine and will reach the coder on this same
+;; process's next poll-once! cycle) - reading the script's own text for
+;; that shape would mean matching a growing set of unrelated downstream
+;; failure wordings, where the paused/ directory itself never lies.
+(defn- paused-ticket-still-present? [candidate-id]
+  (boolean (some #(= candidate-id (promotion-gates-lib/read-id (:content %)))
+                 (chase-sweep-lib/read-paused-candidates backlog-paused-dir))))
+
+(defn deterministic-promote-and-route! [candidate]
+  (let [env (merge (into {} (System/getenv))
+                    {"SWARMFORGE_ROLE" "coordinator"
+                     ;; route_backlog_to_coder.sh (run on a successful
+                     ;; promotion) defaults SWARMFORGE_SKIP_DAEMON to 1 for a
+                     ;; human/script caller with no daemon of its own to rely
+                     ;; on, and swarm_handoff.bb then treats a sync delivery
+                     ;; it could not complete immediately (no live tmux pane,
+                     ;; or a mailbox-only pack) as a hard failure under that
+                     ;; default - exiting non-zero even though the PROMOTION
+                     ;; already committed. The caller here is the daemon's
+                     ;; own sweep: a routing note left in outbox/ is picked
+                     ;; up by this SAME process's next poll-once! cycle, so
+                     ;; that default is wrong for this call site and would
+                     ;; otherwise misreport a real promotion as refused below.
+                     "SWARMFORGE_SKIP_DAEMON" "0"})
+        result (daemon-cycle-guard-lib/sh!
+                ["bash" (promote-and-route-next-script) (str project-root)]
+                {:dir (str project-root) :env env})]
+    ;; Every attempt starts the SAME cooldown the note starts today
+    ;; (BL-1846 "What is wanted"), promoted or refused, so a refused
+    ;; candidate is not retried on every tick.
+    (write-open-slot-last-sent! (System/currentTimeMillis))
+    (if (paused-ticket-still-present? (:id candidate))
+      (let [reason (chase-sweep-lib/parse-promotion-refusal-reason (:err result))]
+        (reset! open-slot-deterministic-last-refusal {:id (:id candidate) :reason reason})
+        (log! "deterministic-promote-refused" (:id candidate) reason))
+      (let [id (or (chase-sweep-lib/parse-promoted-ticket-id (:out result)) (:id candidate))]
+        (reset! open-slot-deterministic-last-refusal nil)
+        (log! "deterministic-promote" id)))))
 
 ;; ── BL-1711: restart a crashed ollama server while a local pack depends
 ;; on it - ollama_ancillary_lib.sh (bash) owns the whole decision (crash
@@ -2638,15 +2721,30 @@
         ;; escalate repeated unacted nudges for the SAME candidate rather
         ;; than repeating a ticketless poke forever (invariant 2). BL-963:
         ;; ranked over the gate-eligible set only.
+        ;; BL-1846: the decision itself (fire? which candidate? nudge or
+        ;; escalate?) is UNCHANGED by the pack's coordinator mode - only
+        ;; what :nudge/:escalate DO differs. A successful deterministic
+        ;; attempt removes this candidate from the next tick's eligible set
+        ;; exactly as a human acting on the note would, so the escalation
+        ;; state machine above needs no mode-awareness of its own.
         (let [candidate (chase-sweep-lib/top-open-slot-candidate
                          eligible (promotion-gates-lib/epic-priority-index project-root))
               decision (chase-sweep-lib/decide-open-slot-escalation
                         @open-slot-escalation-state (:id candidate)
-                        (open-slot-escalation-threshold))]
+                        (open-slot-escalation-threshold))
+              conf-text (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+                             (catch Exception _ nil))
+              deterministic? (coordinator-config-lib/deterministic-coordinator? conf-text)]
           (reset! open-slot-escalation-state (:state decision))
           (case (:action decision)
-            :nudge (nudge-coordinator-open-slot! candidate)
-            :escalate (send-open-slot-escalation-alert! (:id candidate) (:count (:state decision)))
+            :nudge (if deterministic?
+                     (deterministic-promote-and-route! candidate)
+                     (nudge-coordinator-open-slot! candidate))
+            :escalate (if deterministic?
+                        (send-deterministic-open-slot-escalation-alert!
+                         (:id candidate) (:count (:state decision))
+                         (deterministic-last-refusal-reason (:id candidate)))
+                        (send-open-slot-escalation-alert! (:id candidate) (:count (:state decision))))
             :none nil))))
     (catch Exception e
       (log! "open-slot-nudge-sweep-error" (.getMessage e)))))

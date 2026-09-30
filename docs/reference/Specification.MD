@@ -1,5 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 30, 2026 (BL-1846: a pack whose
+`swarmforge.conf` declares `config coordinator_mode deterministic` no
+longer needs a model to clear the one hop of the mono-router happy path
+that still read a note — the daemon's `open-slot-nudge-sweep!` now runs
+`promote_and_route_next.sh` itself, as `SWARMFORGE_ROLE=coordinator`, with
+no ticket id so the daemon holds no ranking of its own; whatever the
+script's own `promotion_gates`/Article 3.6 freshness chain promotes is the
+outcome. A successful attempt logs `deterministic-promote <id>` and never
+sends the coordinator an open-slot note at all; a refused candidate logs
+`deterministic-promote-refused <id> <gate reason>`, stays in
+`backlog/paused/`, and starts the same cooldown a note would have started,
+so it is not retried every tick. The decision of whether to act and which
+candidate to name is unchanged (still `chase_sweep_lib.bb`'s
+`decide-open-slot-escalation` over the BL-798/BL-963/BL-1145 gate chain);
+only what the `:nudge`/`:escalate` actions DO differs. Past the
+escalation threshold the operator alert (Telegram OPERATOR topic + email)
+now names the gate that refused the last attempt, since no coordinator
+was ever nudged to find out why. A pack that does not declare the line,
+or declares any other value, behaves exactly as today — the open-slot
+note, its cooldown, and its escalation are unchanged, and the daemon
+promotes nothing itself. Out of scope here: relaying coordinator mail on
+a deterministic pack (BL-1847, sibling) and declaring the line in any
+pack's own conf. Acceptance:
+`specs/features/BL-1846-a-deterministic-coordinator-promotes-and-routes-the-next-ticket-itself.feature`.
+See the updated "Open-slot nudge sweep (BL-798)" section in
+`swarmforge/handoff-protocol.md`. New setting: `config coordinator_mode
+deterministic` in a pack's `swarmforge.conf` (default/any other value:
+today's model coordinator). No new extension command; no node/edge redraw
+in `docs/diagrams/swarm-flow.mmd` — the PAUSED -->|promote| COORD edge
+still reads accurately for a pack that does not declare the mode, so the
+mode's effect is a comment annotation there rather than a topology
+change, the same treatment the diagram already gives BL-1425's queue-jump
+mode note.)
+Prior entry —
+
 **Last Updated:** September 27, 2026 (BL-1655: a reclaimed claim now stays
 with the seat that held it. The relaunch orphan-claim sweep
 (`orphan_claim_sweep_lib.bb`'s `reclaim-file!`) re-delivers a dead

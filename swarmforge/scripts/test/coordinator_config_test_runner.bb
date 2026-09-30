@@ -92,6 +92,44 @@
          "vibe"
          (coordinator-config-lib/coordinator-agent "# a comment\n\nconfig active_backlog_max_depth 3\nconfig coordinator_agent vibe\n"))
 
+;; ── BL-1846: coordinator_mode (deterministic coordinator) ───────────────
+
+(assert= "BL-1846: a declared coordinator_mode deterministic reads deterministic"
+         "deterministic"
+         (coordinator-config-lib/coordinator-mode "config coordinator_mode deterministic"))
+
+(assert= "BL-1846: absent coordinator_mode falls back to the model default"
+         coordinator-config-lib/default-coordinator-mode
+         (coordinator-config-lib/coordinator-mode "config active_backlog_max_depth 3"))
+
+(assert= "BL-1846: nil conf text falls back to the model default"
+         coordinator-config-lib/default-coordinator-mode
+         (coordinator-config-lib/coordinator-mode nil))
+
+(assert= "BL-1846: the default mode is model, not deterministic - unchanged behavior absent the line"
+         "model"
+         coordinator-config-lib/default-coordinator-mode)
+
+(assert= "BL-1846: a pack declaring the literal deterministic value is deterministic-coordinator?"
+         true
+         (coordinator-config-lib/deterministic-coordinator? "config coordinator_mode deterministic"))
+
+(assert= "BL-1846: absent coordinator_mode is NOT deterministic-coordinator?"
+         false
+         (coordinator-config-lib/deterministic-coordinator? "config active_backlog_max_depth 3"))
+
+(assert= "BL-1846: nil conf text is NOT deterministic-coordinator?"
+         false
+         (coordinator-config-lib/deterministic-coordinator? nil))
+
+(assert= "BL-1846: a near-miss/typo value (fail closed to the model coordinator, never a near-match)"
+         false
+         (coordinator-config-lib/deterministic-coordinator? "config coordinator_mode Deterministic"))
+
+(assert= "BL-1846: an unrelated explicit value is NOT deterministic-coordinator?"
+         false
+         (coordinator-config-lib/deterministic-coordinator? "config coordinator_mode model"))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

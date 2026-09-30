@@ -70,3 +70,23 @@
 
 (defn coordinator-agent [conf-text]
   (parse-config-value conf-text "coordinator_agent" default-coordinator-agent))
+
+(def default-coordinator-mode
+  "Absent, blank, or any other value means today's model coordinator - a
+   pack opts into handoffd promoting and routing the next ticket itself
+   (BL-1846) only with the literal value below."
+  "model")
+
+(def deterministic-coordinator-mode-value
+  "The one literal `config coordinator_mode` value that switches a pack to
+   the deterministic path (BL-1846 invariant 2: every other value, including
+   a typo, behaves exactly as today's model coordinator - fail closed to
+   the safer, human-in-the-loop behavior rather than silently matching a
+   near-miss)."
+  "deterministic")
+
+(defn coordinator-mode [conf-text]
+  (parse-config-value conf-text "coordinator_mode" default-coordinator-mode))
+
+(defn deterministic-coordinator? [conf-text]
+  (= deterministic-coordinator-mode-value (coordinator-mode conf-text)))

@@ -2688,6 +2688,50 @@ throttle engaged) — is documented in `swarmforge/roles/coordinator.prompt`,
 not here; it is a coordinator judgment call, never something this sweep
 enforces or promotes on its own.
 
+#### Deterministic-coordinator promotion (BL-1846)
+
+Everything above — the decision of whether to fire, which candidate to
+name, and the escalation counter — is unchanged on every pack. What a
+pack whose `swarmforge.conf` declares `config coordinator_mode
+deterministic` changes is only what the `:nudge`/`:escalate` actions DO
+(`coordinator_config_lib.bb`'s `deterministic-coordinator?`, read fresh
+from the conf file each tick; absent, blank, or any other value — a
+near-miss included — fails closed to today's model-coordinator path):
+
+1. **`:nudge` runs the real script instead of sending a note.**
+   `deterministic-promote-and-route!` shells `promote_and_route_next.sh`
+   with **no ticket id** (so the daemon holds no ranking of its own —
+   whatever the script's own `promotion_gates_lib`/Article 3.6 freshness
+   chain promotes is the outcome) and `SWARMFORGE_ROLE=coordinator`. It
+   also forces `SWARMFORGE_SKIP_DAEMON=0` at this one call site:
+   `route_backlog_to_coder.sh`'s own default of `1` is meant for a
+   human/script caller with no daemon to rely on, and would otherwise
+   make `swarm_handoff.bb` report a hard failure for a routing note this
+   same process's next `poll-once!` cycle will in fact deliver.
+   No open-slot note reaches the coordinator's mailbox at all.
+2. **Ground truth, not the script's exit code.** A promotion can commit
+   and still have a later step in the same script exit non-zero (the
+   `route_backlog_to_coder.sh` post-send check above, under mailbox-only
+   delivery or no live tmux pane). `deterministic-promote-and-route!`
+   therefore checks `backlog/paused/` itself — the candidate's absence
+   there is the only thing that means the promotion happened — rather
+   than trusting the script's exit status or matching its stderr text.
+3. **Same cooldown either way.** Every attempt, promoted or refused,
+   calls the same `write-open-slot-last-sent!` a sent note calls today,
+   so a refused candidate is not retried on every tick.
+4. **`:escalate` names the gate that refused it.** Past the escalation
+   threshold, `send-deterministic-open-slot-escalation-alert!` reuses the
+   BL-798 alert channel (same Telegram OPERATOR topic outbox + email) but
+   its text names the last attempt's refusal reason, since on a
+   deterministic pack no coordinator was ever nudged to go find out why.
+
+A pack that never declares the config line, or declares any value other
+than the literal `deterministic`, is byte-identical to the behavior
+above the `####` heading: the coordinator's own promote/record-cause duty
+in `swarmforge/roles/coordinator.prompt` still applies to it unchanged.
+Acceptance:
+`specs/features/BL-1846-a-deterministic-coordinator-promotes-and-routes-the-next-ticket-itself.feature`.
+
 ### Dropped-parcel nudge sweep (BL-719)
 
 The dispatch-gap sweep above answers exactly one question: **was this

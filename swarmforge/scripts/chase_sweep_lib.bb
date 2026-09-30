@@ -1568,6 +1568,55 @@
   [candidate-id]
   (str "SwarmForge: promotion inaction on " candidate-id " - open slot unfilled"))
 
+;; ── BL-1846: deterministic-coordinator open-slot promotion ─────────────────
+;; On a pack declaring `config coordinator_mode deterministic`, handoffd
+;; attempts promote_and_route_next.sh itself in place of the open-slot note
+;; (handoffd.bb's deterministic-promote-and-route!, which shells the real
+;; script and hands its stdout/stderr to the two parsers below - pure, so
+;; the parsing itself is testable without a subprocess).
+
+(defn parse-promoted-ticket-id
+  "The ticket id promote_and_route_next.sh's own success line names
+   ('Promote+route complete for <ID>'), or nil when absent/no match -
+   never re-derived from any other line, since that is the one line the
+   script prints once the promotion AND the route both succeeded."
+  [stdout]
+  (some-> (re-find #"Promote\+route complete for (\S+)" (or stdout "")) second))
+
+(defn parse-promotion-refusal-reason
+  "The gate reason from promote_and_route_next.sh's own stderr. Every
+   refusal shape the script exits non-zero for prints at least one line
+   starting 'Error: ' (pick_candidate's gate refusal, the deprecator
+   freshness hold, the integrity-commit refusal, 'no eligible paused
+   ticket'); the LAST such line is the most specific one when more than
+   one fires. Falls back to a fixed 'unknown' string, never the raw
+   stderr blob, which may carry unrelated `skip <id> gate=<gate>` noise
+   from candidates other than the one actually refused."
+  [stderr]
+  (or (some->> (re-seq #"(?m)^Error: (.+)$" (or stderr ""))
+               seq
+               last
+               second
+               str/trim
+               not-empty)
+      "unknown"))
+
+(defn deterministic-open-slot-escalation-reason
+  "Sibling of open-slot-escalation-reason above, for a deterministic pack:
+   names the gate that refused the last attempt, since no coordinator was
+   ever nudged to investigate one (BL-1846)."
+  [candidate-id nudge-count gate-reason]
+  (str "Open-slot promotion inaction: '" candidate-id "' has been refused "
+       nudge-count " deterministic promotion attempt(s) with the slot still "
+       "open (BL-798/BL-1846); last refused by: " gate-reason "."))
+
+(defn deterministic-open-slot-escalation-telegram-text
+  "Sibling of open-slot-escalation-telegram-text above, for a deterministic
+   pack."
+  [candidate-id nudge-count gate-reason]
+  (str "⚠️ Open slot unfilled through " nudge-count " deterministic promotion attempt(s) — top candidate `"
+       candidate-id "` refused: " gate-reason "."))
+
 ;; ── BL-719: dropped-parcel coordinator nudge (sibling of BL-222) ───────────
 ;; BL-222's dispatch-gap sweep answers exactly one question: was this ticket
 ;; EVER dispatched. Any trail at all - even a note whose message text merely

@@ -711,6 +711,63 @@
          true
          (str/includes? (chase-sweep-lib/open-slot-escalation-email-subject "BL-1") "BL-1"))
 
+;; ── BL-1846: deterministic-coordinator promotion parsers + alert text ─────
+
+(assert= "parse-promoted-ticket-id: the script's own success line names the id"
+         "BL-1846"
+         (chase-sweep-lib/parse-promoted-ticket-id
+          "Promoted BL-1846-fixture.yaml -> backlog/active/ (assigned_to: coder)\nPromote+route complete for BL-1846\n"))
+
+(assert= "parse-promoted-ticket-id: no match returns nil, never a wrong guess"
+         nil
+         (chase-sweep-lib/parse-promoted-ticket-id "some unrelated output\n"))
+
+(assert= "parse-promoted-ticket-id: nil stdout returns nil"
+         nil
+         (chase-sweep-lib/parse-promoted-ticket-id nil))
+
+(assert= "parse-promotion-refusal-reason: a single Error: line is read verbatim"
+         "no eligible paused ticket"
+         (chase-sweep-lib/parse-promotion-refusal-reason "Error: no eligible paused ticket\n"))
+
+(assert= "parse-promotion-refusal-reason: the freshness-gate reason is read verbatim"
+         "deprecator freshness gate: HOLD for BL-2: stale premise"
+         (chase-sweep-lib/parse-promotion-refusal-reason
+          "Error: deprecator freshness gate: HOLD for BL-2: stale premise\n"))
+
+(assert= "parse-promotion-refusal-reason: skip-gate noise for OTHER candidates is ignored, the LAST Error: line wins"
+         "no eligible paused ticket"
+         (chase-sweep-lib/parse-promotion-refusal-reason
+          "skip BL-9 gate=epic\nskip BL-8 gate=blocked\nError: no eligible paused ticket\n"))
+
+;; BL-1846 hardener: the fixture above carries only ONE real "Error: " line
+;; (skip-gate noise does not match the regex), so it cannot discriminate
+;; `last` from `first` - a mutant swapping them would survive it. This
+;; fixture carries two GENUINELY DISTINCT "Error: " lines so the two reads
+;; disagree, proving the function really selects the LAST one.
+(assert= "parse-promotion-refusal-reason: with TWO real Error: lines, the LAST one wins, not the first"
+         "the second, more specific reason"
+         (chase-sweep-lib/parse-promotion-refusal-reason
+          "Error: the first, less specific reason\nError: the second, more specific reason\n"))
+
+(assert= "parse-promotion-refusal-reason: no Error: line at all degrades to unknown"
+         "unknown"
+         (chase-sweep-lib/parse-promotion-refusal-reason "skip BL-9 gate=epic\n"))
+
+(assert= "parse-promotion-refusal-reason: nil stderr degrades to unknown"
+         "unknown"
+         (chase-sweep-lib/parse-promotion-refusal-reason nil))
+
+(assert= "deterministic-open-slot-escalation-reason names the candidate, the count and the gate reason"
+         true
+         (let [txt (chase-sweep-lib/deterministic-open-slot-escalation-reason "BL-1" 3 "no eligible paused ticket")]
+           (and (str/includes? txt "BL-1") (str/includes? txt "3") (str/includes? txt "no eligible paused ticket"))))
+
+(assert= "deterministic-open-slot-escalation-telegram-text names the candidate and the gate reason"
+         true
+         (let [txt (chase-sweep-lib/deterministic-open-slot-escalation-telegram-text "BL-1" 3 "no eligible paused ticket")]
+           (and (str/includes? txt "BL-1") (str/includes? txt "no eligible paused ticket"))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

@@ -25,6 +25,18 @@
 %% refuse exactly as they refuse any ordinary promotion, and no script
 %% the coordinator or the daemon runs ever declares the mode — the
 %% coordinator's own promotion path stays capped.
+%% BL-1846 (2026-09-30): the PAUSED -->|promote| COORD edge below still
+%% reads accurately for every pack, but on a pack whose swarmforge.conf
+%% declares `config coordinator_mode deterministic`, handoffd's own
+%% open-slot sweep runs the same gated promote_and_route_next.sh itself
+%% (as SWARMFORGE_ROLE=coordinator, no ticket id) instead of dropping an
+%% open-slot note for a model coordinator to act on — the one hop of the
+%% mono-router happy path (forward-rotate and landed auto-close are
+%% already scripts) that used to need a model turn. Every gate above
+%% still runs unchanged; only who runs the script differs. A pack that
+%% does not declare the line, or declares any other value, is unaffected.
+%% See swarmforge/handoff-protocol.md's "Deterministic-coordinator
+%% promotion (BL-1846)" section.
 %% BL-957 (2026-08-20): depends_on joins the refusing gates, between
 %% human_approval and depth (a ticket-property refusal beats a transient
 %% global one). A dependency counts as satisfied only in backlog/done/ —
