@@ -79,3 +79,9 @@
   description: "checked by hand that all six untagged QA restores/reverts touching BL-1842's shared how-to put no line into the approved copy beyond origin/main's, before ruling a condition (k) hand-built land"
   detected_at: 2026-10-01
   evidence: backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
+- category: land-path-ownership
+  ticket: BL-1837
+  role: specifier
+  description: "traced by hand which commits authored BL-1837's shared how-to/Specification.MD lines: the round-2 paragraph is added only by untagged re-add a7b44d559a and BL-1845-tagged 6d6e444468, ruled BL-1837's by content; simulated condition (l) for BL-1845's land"
+  detected_at: 2026-10-01
+  evidence: backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
