@@ -1,0 +1,114 @@
+id: BL-1874
+title: "A failed throttle refresh never leaves an older recommendation in force: when refreshReworkSignal throws, emit-throttle-recommendation publishes no rework recommendation and names the failure, instead of exiting 1 and leaving effective_backlog_depth_cli.bb to read whatever an earlier run wrote - BL-1869's probe c held a stale severe cap of 0 that way"
+milestone: M8
+type: defect
+severity: medium
+# medium: it needs a write failure under .swarmforge/ to fire (a full disk
+# or exhausted inodes - the /tmp seed-template leak, BL-1867, is on the same
+# root filesystem), and in normal running the file on disk is the one the
+# previous promotion just refreshed. When it does fire, though, it can hold
+# intake at a stale cap.
+status: todo
+epic: swarm-self-optimization
+priority: 3
+depends_on: []
+mutation_cost: low
+# low: one error path in emit-throttle-recommendation.ts's main and its
+# tests under Stryker.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one error path in one CLI; nothing to refactor"
+  architect: "the spec fixes the behaviour (no rework recommendation on a failed refresh), and QA checks it and the invariant's property test"
+  documenter: "no living doc describes the throttle CLI's failure path"
+
+acceptance: specs/features/BL-1874-a-failed-throttle-refresh-never-leaves-an-older-recommendation.feature
+
+# Handler pin per BL-233/BL-1371. No consumer anchor: effective_backlog_depth_cli.bb
+# already shells the CLI this ticket changes, so any anchor there matches
+# before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1874ThrottleRefreshFailureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Found by BL-1869's probe c (coder evidence BL-1869-coder-20261001.md).
+  FIRM - when the rework refresh fails, the throttle CLI still writes its
+  recommendation file, with the rework half empty and the failure named,
+  so the effective cap is never decided by an older run's file. FIRM - the
+  standing-red half is computed exactly as today. A new feature file, two
+  scenarios.
+
+invariants:
+  - "After any run of the throttle CLI, the recommendation file on disk was written by that run, whether the rework refresh succeeded or failed."
+
+source: |
+  BL-1869's probe c (coder note 002301, 2026-10-01, evidence
+  backlog/evidence/BL-1869-coder-20261001.md on the BL-1869 parcel). This
+  ticket quotes no new human sentence.
+
+description: |
+  ## What is wrong
+
+  `emit-throttle-recommendation.ts` `main` calls `refreshReworkSignal`
+  (hotfix 51591aab4a) outside any try. Any throw, such as EACCES on
+  `.swarmforge/telemetry`, a full disk or a git failure, exits the CLI 1
+  before it writes. `effective_backlog_depth_cli.bb` logs `throttle-
+  recommendation refresh failed, exit=1` and prints min(configured, the
+  recommendation already on disk). Probe c pre-seeded a severe
+  recommendation with a cap of 0 and made the telemetry write fail. The
+  depth CLI printed 0, and the file was left unchanged, still dated by the
+  earlier run.
+
+  ## What is wanted
+
+  1. When the refresh throws, the CLI still writes its recommendation.
+     The rework half is empty (no rework cap, no severity) and carries a
+     reason naming the failure. The standing-red half is computed as today.
+     The effective cap is then min(configured, standing-red), never an
+     older run's rework cap (scenario 01). The CLI exits 0 in that case,
+     because the publish succeeded. The failure reaches the operator log
+     the way the depth CLI already reports stderr.
+  2. A refresh that succeeds behaves exactly as today (scenario 02).
+
+  ## How (direction, not mandate)
+
+  - Make the write fail through a seam, or with a telemetry path that is
+    a file where a directory must be. Never use chmod: the Engineering
+    Rules forbid it as failure simulation.
+  - Fixtures under mkdtemp, `git init -b main`, proven with `rev-parse
+    --git-common-dir` (BL-1390). Drive the real
+    `effective_backlog_depth_cli.bb` for the When step, the same entry
+    point BL-432's handler uses.
+  - Step handler `specs/pipeline/steps/bl1874ThrottleRefreshFailureSteps.js`,
+    discovered from its own file (BL-1371).
+  - The When step and the first Then repeat BL-432's step text word for
+    word, so register this feature's steps with
+    `registry.defineScoped(pattern, handler, featureName)` (BL-425). The
+    scoped entry then wins for this feature and BL-432's own steps are
+    untouched.
+
+  ## Scope
+
+  `extension/src/tools/emit-throttle-recommendation.ts` and its unit
+  tests, the step handler and evidence.
+
+out_of_scope: |
+  - The rework rate's own counting and walk cost: BL-1873.
+  - The depth CLI's own fallback when the node CLI cannot run at all (no
+    node, a missing out/ file). It already reads the file on disk then.
+    That case is separate and was not probed.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1874-a-failed-throttle-refresh-never-leaves-an-older-recommendation.feature`:
+     2 of 2 ok. Measured 0 at mint: no handler exists yet.
+  2. The BL-432, BL-1429 and BL-966 features: all ok (BL-1429 8/8 and
+     BL-966 4/4 on the hotfix tree per BL-1869's evidence; BL-432 6/6 on
+     BL-1869's parcel).
+  3. `npx vitest run test/emitThrottleRecommendationCli.test.js`: all pass.
+
+notes: |
+  Minted 2026-10-01 by the specifier from coder note 002301 (BL-1869
+  probe c), the same pass. Medium, not auto-approved. Dynamic routing:
+  TypeScript production, so coder, hardender, QA.

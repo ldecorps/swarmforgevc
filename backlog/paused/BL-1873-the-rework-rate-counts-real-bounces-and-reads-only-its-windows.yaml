@@ -1,0 +1,149 @@
+id: BL-1873
+title: "The rework rate counts a ticket as reworked only when it was actually bounced (its bounce_count, or bounce-named evidence), never because every role left pass evidence, and reads only the history its two windows need - on 2026-10-01 195 of 206 window tickets read as reworked, 80% of them on routine pass evidence alone, so the rate sat near 100% in both windows and neither the throttle nor the briefing verdict could ever fire, while each refresh walked the whole backlog history for 12 s at every promotion"
+milestone: M8
+type: defect
+severity: medium
+# medium, not high: the broken input fails OPEN. Read against a 99.5%
+# baseline, a ~95% rate never asks the throttle to lower intake, so nothing
+# was ever blocked, and the standing-red and chase signals still drive
+# Article 3.5. The human also set BL-1870 as the priority on 2026-10-01;
+# this waits behind its slices.
+status: todo
+epic: swarm-self-optimization
+priority: 3
+depends_on: []
+mutation_cost: medium
+# medium: reworkObservatorySource.ts and its tests under Stryker.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix in one source module; nothing to refactor"
+  architect: "the spec fixes the rule (a recorded bounce, never pass evidence), and QA checks it and the property test of the invariant"
+  documenter: "no living doc describes how the rate counts a bounce; BL-430's feature narrative is the description and this ticket extends it"
+
+acceptance: specs/features/BL-430-rework-observatory.feature
+# This pointer does not claim BL-430's contract. It is the contract this
+# ticket must leave green, with scenarios 07 and 08 added (text below) in
+# the same commit as their steps in bl430ReworkObservatorySteps.js
+# (BL-233). No required_wiring: the observatory's live callers (the
+# throttle CLI and the briefing verdict line) already call the function
+# this ticket changes, so any anchor there matches before and after
+# (BL-1235).
+
+human_approval: pending
+approval_context: >
+  Found by BL-1869's probes b and a (coder evidence
+  BL-1869-coder-20261001.md), as BL-1869 said each confirmed probe would
+  be a ticket of its own. FIRM - a closed ticket counts as reworked only on
+  a recorded bounce, either a bounce_count above 0 on its YAML on main or
+  an evidence file whose name says bounce; routine pass evidence never
+  counts. FIRM - the observatory reads only the backlog history inside its
+  two trailing windows (28 days), not the whole history. Two scenarios are
+  added to BL-430's feature, and its five existing scenarios keep their
+  text.
+
+invariants:
+  - "A closed ticket counts as reworked only on a recorded bounce (a bounce_count above 0 on its ticket YAML on main, or an evidence file whose name contains bounce), never on pass evidence alone."
+
+source: |
+  BL-1869's probes (coder note 002301, 2026-10-01, evidence
+  backlog/evidence/BL-1869-coder-20261001.md on the BL-1869 parcel). BL-1869
+  carries the human's words that led to the hotfix those probes reviewed:
+  "do something about those uncomitted changes (basically commit them ?)",
+  then "Land + owned red". This ticket quotes no new human sentence.
+
+description: |
+  ## What is wrong
+
+  `reworkObservatorySource.ts` `evidenceTicketIdSet` counts a closed
+  ticket as bounced when ANY `backlog/evidence/` file names it. Its own
+  comment says "committed QA bounce evidence". Every ticket collects
+  routine pass evidence from each role (`<id>-QA-<date>.md`,
+  `<id>-architect-<date>.md`, ...), so the test reads close to "this
+  ticket had reviews".
+  - Probe b (coder, 2026-10-01, live checkout, trailing 14 days): 195 of
+    206 tickets classified bounced. Only 38 of those have an evidence file
+    whose name says bounce. The other 157 (80.5%) are pass evidence only.
+  - Specifier recount at mint, 208 tickets closed in the trailing 14 days:
+    195 have some evidence, 38 have bounce-named evidence, and 51 carry
+    `bounce_count` above 0 on their ticket YAML. `record-bounce` writes
+    that field at every reviewing role's send-back (BL-608, BL-635). The
+    real rework share is about a quarter.
+  - Probe a: `loadCompletedTicketRecords` walks the whole backlog history
+    on main, 11.4 s of a 12.0 s throttle CLI run over 1671 done records,
+    and that happens at every promotion decision and every briefing.
+
+  ## What is wanted
+
+  1. A closed ticket counts as reworked when its YAML on main carries
+     `bounce_count` above 0, or an evidence file whose name contains
+     `bounce` names it. The live handoff-trail path stays as it is. Pass
+     evidence alone never counts. Add to BL-430's feature, with its steps:
+
+     ```
+     # BL-430 rework-observatory-07 (added by BL-1873: a recorded bounce, never pass evidence)
+     Scenario Outline: only a recorded bounce makes a closed ticket count as reworked
+       Given a ticket closed inside the live window whose record shows <record>
+       When the observatory computes the rework signal
+       Then that ticket <counts> as reworked
+
+       Examples:
+         | record                                               | counts         |
+         | only QA and architect pass evidence                  | does not count |
+         | bounce_count 1 on its ticket YAML                    | does count     |
+         | an evidence file named BL-9001-qa-bounce-20261001.md | does count     |
+
+     # BL-430 rework-observatory-08 (added by BL-1873: only the windows' history is read)
+     Scenario: history older than the baseline window is never read
+       Given a backlog history with 300 commits before the baseline window and 3 inside it
+       When the observatory computes the rework signal
+       Then the history it reads holds only the commits inside its two windows
+     ```
+
+  2. The history walk covers only the two trailing windows (14 + 14
+     days), not the whole history (scenario 08). For scenario 08, count
+     what the walk returns through a seam. Never measure it with a clock.
+
+  ## How (direction, not mandate)
+
+  - Scope the git walk with `--since` at the baseline window's start, and
+    make sure a ticket closed inside the windows still gets its class and
+    close date when it was promoted before them. Read `bounce_count` from
+    the ticket YAML on main through the reader the observatory already
+    uses for the class (`classesByTicket`), never a second YAML parser.
+  - Fixtures under mkdtemp with `git init -b main`, proven with
+    `rev-parse --git-common-dir` (BL-1390). Commit dates relative to the
+    run's own clock. BL-1869's coder evidence records the pitfall to
+    avoid: a `mutation_cost:` on every fixture ticket makes the class look
+    concentrated and turns the throttle escalate-only.
+
+  ## Scope
+
+  `extension/src/metrics/reworkObservatorySource.ts` and its unit tests,
+  `bl430ReworkObservatorySteps.js` and BL-430's feature (scenarios 07 and
+  08 added, 01-06 untouched), and evidence.
+
+out_of_scope: |
+  - What happens when the throttle's refresh fails: BL-1874.
+  - Retuning the throttle's 2x-baseline rule. Measure the corrected rate
+    first. A change to the rule is a ticket of its own.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-430-rework-observatory.feature`:
+     all ok, with 07 (three rows) and 08 added. Measured 6 of 6 ok at mint
+     (BL-1869's coder evidence, on the hotfix tree).
+  2. `node specs/pipeline/cli.js specs/features/BL-432-auto-tune-intake-throttle.feature`:
+     all ok. It rides the same observatory.
+  3. `npx vitest run` on reworkObservatoryCli and the source module's unit
+     file: all pass.
+  4. Read-only on the live checkout: one `node -e` call of
+     `loadCompletedTicketRecords` plus `computeReworkSignal` reports a
+     current rate near the share of window tickets with a recorded bounce
+     (about a quarter at mint), not about 95%. Record its wall time, which
+     should be well under the 11.4 s probe a measured.
+
+notes: |
+  Minted 2026-10-01 by the specifier from coder note 002301 (BL-1869
+  probes a and b), the same pass. Medium, not auto-approved. Dynamic
+  routing: TypeScript production, so coder, hardender, QA.
