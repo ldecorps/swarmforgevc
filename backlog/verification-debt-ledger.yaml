@@ -85,3 +85,8 @@
   description: "traced by hand which commits authored BL-1837's shared how-to/Specification.MD lines: the round-2 paragraph is added only by untagged re-add a7b44d559a and BL-1845-tagged 6d6e444468, ruled BL-1837's by content; simulated condition (l) for BL-1845's land"
   detected_at: 2026-10-01
   evidence: backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
+- category: land-path-ownership
+  ticket: BL-1839
+  role: QA
+  description: "cond (l) hand split: BL-1839 how-to/Spec.MD/manifest vs BL-1845; untagged re-add 405cbd5422 lines all BL-1845's"
+  detected_at: 2026-10-01
