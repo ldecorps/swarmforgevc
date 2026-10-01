@@ -8,6 +8,9 @@
 #   ARCHITECT   | HARDENDER
 #   DOCUMENTER  | QA
 #
+# Any further role in roles.tsv (coder@iq3, art-director, ...) gets an extra tile,
+# so the grid shows the full swarm (tiled, e.g. 3×4 for 10-11 roles).
+#
 # Each tile nests into the live swarmforge-<role> session via attach-swarm
 # (TMUX= cleared so the outer spy server does not steal the client).
 #
@@ -146,11 +149,26 @@ while read -r pane_id; do
   i=$((i + 1))
 done < <(spy list-panes -t "$SPY_SESSION:grid" -F '#{pane_top} #{pane_id}' | sort -n | awk '{print $2}')
 
-# Equalize into a stable 2×4.
+# Extra tiles: every other role the swarm has (coder@iq3, art-director, ...).
+EXTRA_ROLES=()
+if [[ -f "$ROOT/.swarmforge/roles.tsv" ]]; then
+  while IFS=$'\t' read -r role _; do
+    [[ -z "$role" ]] && continue
+    case " ${LEFT_ROLES[*]} ${RIGHT_ROLES[*]} " in *" $role "*) continue ;; esac
+    EXTRA_ROLES+=("$role")
+  done < "$ROOT/.swarmforge/roles.tsv"
+fi
+for role in "${EXTRA_ROLES[@]}"; do
+  spy split-window -t "$SPY_SESSION:grid" -c "$ROOT" "$(pane_cmd "$role")"
+  spy select-layout -t "$SPY_SESSION:grid" tiled
+done
+
+# Equalize into a stable grid.
 spy select-layout -t "$SPY_SESSION:grid" tiled
 
 echo "Spy grid ready: $SPY_SESSION ($SPY_SOCK)"
 echo "Tiles: coordinator|specifier / coder|cleaner / architect|hardender / documenter|QA"
+[[ ${#EXTRA_ROLES[@]} -gt 0 ]] && echo "Extra tiles: ${EXTRA_ROLES[*]}"
 
 if [[ "$DO_ATTACH" -eq 1 ]]; then
   exec tmux -S "$SPY_SOCK" attach-session -t "$SPY_SESSION"
