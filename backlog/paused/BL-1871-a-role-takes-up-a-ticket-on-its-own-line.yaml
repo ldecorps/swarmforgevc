@@ -28,7 +28,7 @@ required_wiring:
   - 'swarmforge/scripts/ready_for_next_task.bb::parcel_line_lib::the claim path must take up a parcel through the new lib'
   - 'specs/pipeline/steps/bl1871ParcelLineTakeUpSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   First slice of BL-1870 (ruling A, tapped 2026-10-01 20:18), and the
   slice that removes the cause. FIRM - a git_handoff is taken up by moving
