@@ -90,3 +90,8 @@
   role: QA
   description: "cond (l) hand split: BL-1839 how-to/Spec.MD/manifest vs BL-1845; untagged re-add 405cbd5422 lines all BL-1845's"
   detected_at: 2026-10-01
+- category: land-path-ownership
+  ticket: BL-1855
+  role: QA
+  description: "cond (l) hand split Spec.MD BL-1855 vs BL-1845; standing-red row retired by hand"
+  detected_at: 2026-10-01
