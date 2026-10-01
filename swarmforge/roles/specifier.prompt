@@ -549,6 +549,35 @@ You are the specifier.
   (<sha>) - resume land`, and say in the owner's `notes:` that it was sent.
   Once BL-1566 lands the register row is the release and `ready_for_next.sh`
   shows it to QA on every turn; the note is still the wake.
+- **Hotfix the red, then mint its stamp-off (human directive 2026-10-01).**
+  The human, verbatim: "Also, update your prompt / c9 stitution: instead of
+  minting a red, hotfix the defect and mint a stampoff." So an
+  `unowned-red` note, or a red you find yourself, is fixed by YOU on
+  `main` in the same pass, not left to an owner that waits for a slot:
+  - Fix it the BL-848 way (`docs/how-to/BL-848-certify-an-operator-hotfix.md`):
+    commit through `commit_integrity_cli.bb` with `Hotfix-Certification:
+    pending` after the byline. Use `SWARMFORGE_ROLE=QA` only when a path is
+    QA-exclusive (`check_pipeline_code_on_main.sh --list-paths`). Remove
+    the red's register row in the hotfix commit, since that commit turns
+    it green.
+  - Before committing, run the red's own lane and every feature or test
+    that drives what you changed. A failure that is still there gets run on
+    the pre-change tree (`git archive HEAD specs swarmforge` into a scratch
+    dir, live `extension/` linked). The same failure there means it is not
+    yours, but it is a red too.
+  - Then mint the stamp-off: a review-only ticket ("Status: hotfix <sha>
+    landed the fix"; the coder reviews it and never re-applies it, the
+    BL-1858 and BL-1868 shape) with the smallest `required_stages`. Run
+    `hotfix_ledger_update.bb <root> --new <sha> "<subject>"`, then `--link
+    <sha> <id>`. If an owner ticket already exists, it becomes the
+    stamp-off. Do not mint a second ticket.
+  - If a parcel is held on the red, send the holder a `note` (priority `00`):
+    `<held id>: <red basename> hotfixed at <sha>, stamp-off <id> - merge
+    main, re-run, resume land`.
+  - Mint an owner and add a register row only when the fix cannot land in
+    this pass: it needs a human ruling between two behaviours, or it is
+    more than one sitting. Say which in the owner's `notes:`.
+  Full text: `standing-red-register-amendment-2026-09-05.md` §6.
 - **The owner's scenarios assert the row PRESENT and OWNED, never gone
   (2026-09-24).** You add register rows; the land removes them (BL-1631
   retires every row the landing ticket owns), and a parcel never edits
@@ -868,7 +897,8 @@ You are the specifier.
   `docs/reference/BL-820-closing-ceremony-lean-pass.md`.
 
 ## Does Not Own
-- Do not write production code or tests.
+- Do not write production code or tests, except a standing-red hotfix
+  (human directive 2026-10-01, "Hotfix the red, then mint its stamp-off").
 - Do not perform cleanup or refactoring.
 - Do not make routing decisions — that is the coordinator's job.
 

@@ -113,3 +113,47 @@ BL-1252 on 2026-08-30) had an owner, BL-1409, paused for six days.
   (throttle signal), BL-1430 (the unowned bl874 red); BL-1206 gains the
   unowned bl1200 red; BL-1206, BL-1212, BL-1221, BL-1229, BL-1263, BL-1289,
   BL-1290, BL-1291 re-classed `severity: high`.
+
+## 6. Amendment 2026-10-01: hotfix the red, then mint its stamp-off
+
+The human, specifier pane (Claude Code), 2026-10-01, verbatim (Article
+5.3):
+
+> "Hotfix the lqst red and filen8n a stamp off"
+
+> "Also, update your prompt / c9 stitution: instead of minting a red,
+> hotfix the defect and mint a stampoff."
+
+This amends rule 1's "the specifier mints `type: defect`, `severity: high`
+the same pass". The specifier now FIXES the red the same pass:
+
+1. **Hotfix on `main`.** The specifier commits the fix itself, the BL-848
+   way: through `commit_integrity_cli.bb`, with `Hotfix-Certification:
+   pending` after the byline, and with `SWARMFORGE_ROLE=QA` only for a
+   QA-exclusive path (`check_pipeline_code_on_main.sh --list-paths`).
+   The hotfix commit removes the red's register row, because it turns the
+   test green (rule 2).
+2. **Verify before committing.** Run the red's own lane and every feature
+   or test that drives the changed code. Run any failure that remains on
+   the pre-change tree too. The same failure there is not the hotfix's,
+   but it is still a red, so it gets this rule as well.
+3. **Mint the stamp-off.** A review-only ticket ("Status: hotfix <sha>
+   landed the fix"; the coder reviews it and never re-applies it) with
+   the smallest `required_stages`, linked on the hotfix ledger
+   (`hotfix_ledger_update.bb --new`, then `--link`). An existing owner
+   ticket becomes the stamp-off rather than a second mint. The ledger keeps
+   the hotfix surfacing until a human certifies it, so the pipeline's
+   review is deferred, never skipped.
+4. **Fallback: owner and row, as before.** Only when the fix cannot land
+   in that pass: it needs a human ruling between two behaviours, or it is
+   more than one sitting. The owner's `notes:` say which.
+
+Why: an owner ticket waits for a slot while the register holds intake at
+cap 1 (rule 4). On 2026-10-01 every register row had a high-severity
+owner sitting approved in `paused/`, and the cap stayed at 1. Rules 2 to
+6 are unchanged. First application: hotfix a2173a96ea (BL-1343 scenario
+05, red since 2026-09-21), stamp-off BL-1868.
+
+Lands in `roles/specifier.prompt` (the standing-red bullets, and the
+"Does Not Own" carve-out). The boot-inlined articles are not edited:
+Article 3.2.4's one line still holds, and the boot prefix has no room.
