@@ -384,9 +384,17 @@
   (assert= (str "capabilities style unchanged for " agent)
            expected-style
            (:bootstrap-text-style (prompt-engine-lib/capabilities agent))))
-(assert= "claude/coder composed text is unaffected (matches the ticket's own mint measurement)"
-         58371
-         (count (:system-prompt (prompt-engine-lib/compose "coder" {:agent "claude"}))))
+;; BL-1844: derive the expected text from the generic path's OWN files as
+;; they are now, never a pinned length - the check still fails whenever a
+;; non-local-model agent's composed coder prompt diverges from the generic
+;; composition (BL-1798 invariant 1), but passes after an ordinary edit to
+;; the constitution, PIPELINE.md or coder.prompt.
+(let [expected (prompt-engine-lib/generic-bootstrap-text
+                "coder" (prompt-engine-lib/handoff-draft-path "claude") false false ""
+                (atom (prompt-engine-lib/empty-fragment-cache)) prompt-engine-lib/fragment-content-uncached)]
+  (assert= "claude/coder composed text equals the generic composition of today's files (BL-1798 invariant 1)"
+           expected
+           (:system-prompt (prompt-engine-lib/compose "coder" {:agent "claude"}))))
 
 ;; BL-574 Slice 2: local-loop/local-role-card go through the SAME
 ;; content-hash cache as "role" - a cache hit never re-reads.
@@ -554,6 +562,27 @@
   (assert-true "compose returns text for claude/coder with the stub installed" (string? (:system-prompt result)))
   (assert-true "claude/coder compose never reads the knowledge-brief-payload fragment"
                (not (contains? @read-names "knowledge-brief-payload"))))
+
+;; BL-1844 D1: a standing self-check, not a one-off hand grep - every
+;; `(count (:system-prompt ...))` in THIS file's own source must sit
+;; directly inside a `<=`/`<` ceiling expression (the comparison style
+;; line 358 uses), never compared for exact equality (a reintroduced
+;; pinned length, this ticket's own root cause). Reruns on every runner
+;; invocation, so a future edit that reintroduces a pinned length fails
+;; here instead of going unnoticed for a day.
+(let [self-source (slurp *file*)
+      code-line? (fn [line] (and (not (str/starts-with? (str/trim line) ";"))
+                                  (not (str/includes? line "BL-1844 D1"))
+                                  (not (str/includes? line "str/includes?"))))
+      count-lines (->> (str/split-lines self-source)
+                        (filter #(str/includes? % "count (:system-prompt"))
+                        (filter code-line?))
+      ceiling-pattern #"\(<=?\s*\(count \(:system-prompt"]
+  (assert-true "BL-1844 D1: at least one (count (:system-prompt ...)) usage exists to self-check"
+               (seq count-lines))
+  (doseq [line count-lines]
+    (assert-true (str "BL-1844 D1: (count (:system-prompt ...)) sits inside a <=/< ceiling, never a pinned-length equality: " (str/trim line))
+                 (re-find ceiling-pattern line))))
 
 ;; ── report ──────────────────────────────────────────────────────────────────
 (if (empty? @failures)

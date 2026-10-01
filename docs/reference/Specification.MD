@@ -1,5 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 1, 2026 (BL-1844: `prompt_engine_test_runner.bb`'s
+claude/coder check pinned the composed prompt's length at BL-1798's mint
+measurement (58371 characters), so it turned red on every later edit to
+`coder.prompt` or a boot-inlined article — two specifier mints (BL-1811
++90, BL-1834 +674) pushed it to 59135 on `main`, a standing red since
+first sighting. The check now derives its expected text from the files
+the generic composition path reads at run time (every `:generic` agent
+composes claude/coder's prompt byte-identically), so it fails only when
+a non-local-model agent's coder composition actually diverges from the
+generic path, and passes after an ordinary prompt edit. The evidence
+runs both directions once each (the coder role fragment grown by a
+padding string still passes; the local-model card composed in claude's
+place still fails), neither writing to a live prompt file. Every
+`(count (:system-prompt ...))` usage in the file now sits inside a
+`<=`/`<` ceiling, never a pinned-length equality — self-checked by a
+new assertion that greps the file's own source. No new extension
+command or setting; no diagram edit — test-infrastructure only.)
+Prior entry —
+
 **Last Updated:** October 1, 2026 (BL-1855: `test_bl982_multi_seat_identity.sh`
 case 7 compared its single-seat `roles.tsv` whole against a pinned
 pre-change script's output, so it failed on every correct tree since
