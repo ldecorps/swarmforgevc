@@ -6,14 +6,17 @@
 # function calls, never the real tmux launch" pattern as
 # test_backlog_depth_pack_override.sh (BL-089 ZSH_EVAL_CONTEXT guard).
 #
-# Case 7 is the byte-identity check for BL-982 invariant 2: a single-seat
-# pack's roles.tsv must be byte-identical between THIS worktree's script
-# and the pre-change script extracted from git HEAD~ (the generative
-# sweep over many confs lives in bl982_multi_seat_identity_property_runner.bb;
-# this is the fixed-conf anchor).
+# Case 7 is the BL-982 invariant 2 anchor (amended by BL-1541, BL-1855):
+# a single-seat pack's roles.tsv rows, PROJECTED onto the pre-change
+# script's first 8 tab-separated columns, must match the pre-change
+# script's own rows (the generative sweep over many confs lives in
+# bl982_multi_seat_identity_property_runner.bb; this is the fixed-conf
+# anchor). lib/bl982_pinned_shape.sh carries the projection so this check
+# and the property runner's check-byte-identity! use the same shape.
 
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bl982_pinned_shape.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
@@ -125,8 +128,9 @@ OUTC="$(run_parse "$ROOTC" 2>&1)" && fail "6: coordinator seat parsed"
 echo "$OUTC" | grep "coordinator is reserved" >/dev/null || fail "6: coordinator seat not refused: $OUTC"
 pass "6: bare-seat requirement, malformed seat ids and coordinator seats all refused"
 
-# ── 7: a single-seat pack's roles.tsv is byte-identical to the pre-change
-#      script's output (BL-982 invariant 2 anchor) ────────────────────────
+# ── 7: a single-seat pack's roles.tsv, projected onto the pre-change
+#      script's first 8 columns, matches the pre-change script's output
+#      (BL-982 invariant 2 anchor, BL-1541/BL-1855's projection) ──────────
 # The pre-change script, pinned by BLOB sha (the exact swarmforge.sh this
 # parcel's merge-base carried - durable, unlike HEAD~N which drifts as the
 # branch grows). It sources SCRIPT_DIR-relative helpers, so it runs from a
@@ -152,7 +156,8 @@ env -u SWARMFORGE_CONFIG XDG_RUNTIME_DIR=/tmp zsh -c "source '$PRE_SH' '$ROOT7B'
 # Normalize the absolute-root difference before diffing.
 sed "s|$ROOT7A|ROOT|g" "$ROOT7A/.swarmforge/roles.tsv" > "$ROOT7A/norm.tsv"
 sed "s|$ROOT7B|ROOT|g" "$ROOT7B/.swarmforge/roles.tsv" > "$ROOT7B/norm.tsv"
-diff "$ROOT7A/norm.tsv" "$ROOT7B/norm.tsv" || fail "7: single-seat roles.tsv changed shape vs pre-change script"
-pass "7: single-seat pack provisions byte-identically to the pre-change script"
+bl982_rows_match_pinned_shape "$ROOT7B/norm.tsv" "$ROOT7A/norm.tsv" \
+  || fail "7: single-seat roles.tsv (projected onto the pre-blob's 8 columns) changed shape vs pre-change script"
+pass "7: single-seat pack provisions byte-identically to the pre-change script, projected onto its first 8 columns"
 
 echo "ALL PASS"

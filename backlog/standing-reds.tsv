@@ -36,4 +36,3 @@ acceptance	specs/features/BL-1640-a-finish-shift-sleep-runs-the-closing-ceremony
 shell	swarmforge/scripts/test/test_bl1640_sleep_runs_ceremony_to_done.sh	BL-1836	2026-09-30	same cause as the BL-1640 acceptance row: sent_today uses date +%Y-%m-%d against a simulated clock
 bb	swarmforge/scripts/test/prompt_engine_test_runner.bb	BL-1844	2026-09-30	claude/coder composed-length check pins 58371 (BL-1798 mint); 59135 on main after prompt edits 7d124ad08d and 5eb758df3b
 property	extension/test/bl1061TunnelFixtureIsolation.property.test.js	BL-1849	2026-09-30	invariant 2 ENOENT: stat of a bl868 lane fixture removed between readdirSync and statSync (QA evidence d5726c9861); green alone
-shell	swarmforge/scripts/test/test_bl982_multi_seat_identity.sh	BL-1855	2026-10-01	case 7 diffs whole roles.tsv rows against pinned blob 2edd9a17ba; 44d2d42591 appended the forward-only column 9 (red since 2026-08-30; hardener evidence 170b74d2d3)
