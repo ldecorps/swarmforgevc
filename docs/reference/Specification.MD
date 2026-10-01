@@ -1,5 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 1, 2026 (BL-1855: `test_bl982_multi_seat_identity.sh`
+case 7 compared its single-seat `roles.tsv` whole against a pinned
+pre-change script's output, so it failed on every correct tree since
+`44d2d42591` (2026-08-30) appended a ninth `roles.tsv` column (the
+reverse-hop propagation mode) the pinned script cannot write — a
+standing red since BL-1541 already fixed the SAME invariant's property-
+runner copy by projecting onto the pinned script's first eight columns
+and BL-1489 fixed the acceptance copy, leaving case 7 the one remaining
+whole-row comparison. Case 7 now sources
+`bl982_rows_match_pinned_shape` (new `swarmforge/scripts/test/lib/bl982_pinned_shape.sh`)
+and compares `cut -f1-8` on the current side against the pinned side
+unprojected, so an appended column never fails it and an inserted,
+reordered, or altered value among the first eight still does — the
+same invariant, the same oracle blob, not re-pinned. Acceptance:
+`specs/features/BL-1855-the-bl982-shell-anchor-compares-the-columns-its-pinned-script-wrote.feature`.
+No new extension command or setting; no diagram edit — test-only.)
+Prior entry —
+
 **Last Updated:** October 1, 2026 (BL-1839: swarm stamp-off (BL-848
 review-only certification) of hotfixes 2cdb259806, 7f38e5d7fe and
 91c208a923, which the specifier landed on 2026-09-30 under the human's
