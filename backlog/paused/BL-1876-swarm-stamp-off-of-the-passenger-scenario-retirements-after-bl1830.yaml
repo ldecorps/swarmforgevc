@@ -1,0 +1,125 @@
+id: BL-1876
+title: "Stamp-off for hotfixes c7ee0fb192 and 6dad026320: seven acceptance scenarios that asserted an unlanded approved sibling rides a land as a passenger (BL-1375 06-07, BL-1465 01-02, BL-1466 02, BL-1389 03) had been red on main since BL-1830's land (17fa16cf56, the human's ruling A: a shared own path is rebuilt without any unlanded sibling's lines); they are retired, BL-1375 01's handler checks the rebuild, and BL-1466 gains scenario 05 for the still-valid half"
+milestone: M8
+type: defect
+severity: high
+# high: the stamp-off of hotfixes that cleared standing reds on main
+# (Article 3.2.4, 2026-09-05), in the land step's acceptance contract,
+# which every land is judged against.
+status: todo
+epic: swarm-reliability
+priority: 2
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: feature files and two step handlers; no production code. The land
+# step's own behaviour is BL-1830's and is unchanged.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "the hotfixes retired scenarios and changed two assertions; nothing to refactor"
+  architect: "no production code or design surface; BL-1830's ruling A fixes the behaviour"
+  hardender: "no production code changes, so nothing to mutate; the Gherkin mutation manifests of BL-1389, BL-1465 and BL-1466 predate the edit and are re-stamped when a hardener next touches them"
+  documenter: "no documented behaviour changes; BL-1830 already documented the rebuild"
+
+acceptance: specs/features/BL-1375-approved-siblings-sharing-a-path-can-land.feature
+# This pointer does not claim BL-1375's contract (the BL-1251 shape). It is
+# the main contract the hotfixes changed, and it must stay green with
+# scenarios 06 and 07 retired. The other three features are in the
+# procedure. No required_wiring: nothing new must be called.
+
+human_approval: approved
+approval_context: >
+  Stamp-off of two hotfixes the human directed ("Yeah so basically hotfix
+  all red and file stamp off instead", 2026-10-01). No choice is posed:
+  BL-1830's ruling A already decided that no unlanded sibling's line
+  rides. FIRM: retired scenarios are retired, never reworded (BL-1006).
+  FIRM: BL-1830's behaviour is not changed by this ticket.
+
+invariants:
+  - "No live acceptance scenario asserts that an unlanded sibling's line rides a land, approved or not."
+
+source: |
+  Found by the specifier on 2026-10-01 while verifying hotfix a2173a96ea
+  (BL-1868): the sweep of every feature whose step handler drives
+  land-plan found BL-1375 01, 06, 07, BL-1465 01, 02 and BL-1466 02 red
+  on the pre-change tree too. Bisected with `git archive <rev> specs
+  swarmforge` into scratch dirs, live `extension/` linked:
+  17fa16cf56~1 gave BL-1375 7/7 and BL-1466 4/4; 17fa16cf56 (BL-1830's
+  land) gave 4/3 and 3/1, and BL-1465 01-02 failed. A census of every
+  feature mentioning a passenger then found BL-1389 03 (5/5 before
+  BL-1830, 4/1 after). No register row named any of them.
+
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim
+  (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  > Yeah so basically hotfix all red and file stamp off instead
+
+description: |
+  ## Status: hotfixes c7ee0fb192 and 6dad026320 landed the fix
+
+  This parcel is their stamp-off: the pipeline's review of what landed.
+  The coder finds the features and handlers already changed. Review them,
+  do not re-apply them.
+
+  ## What the hotfixes changed
+
+  - BL-1375: scenarios 06 and 07 (a passenger through an inconsistent or
+    consistent replayed tree) are retired, and the narrative is
+    re-tensed. Scenario 01's handler (`a land is available for that
+    ticket`, non-tree branch) now asserts BL-1830's rebuild: the shared
+    path appears in `rebuilt` with the sibling in `excluded`, and the
+    sibling is not in `passengers`.
+  - BL-1465: scenarios 01 and 02 are retired; 03 and 04 stand.
+  - BL-1466: scenario 02 is retired. New scenario 05 (`a sibling re-fixed
+    after its bounce no longer blocks the land`) reuses 02's Given and
+    When, and its new Then checks that the bounce state is not blocking,
+    that the plan is `replay`, and that the sibling is not a passenger.
+  - BL-1389: scenario 03 is retired.
+  Each retiring feature's narrative names BL-1876.
+
+  ## What is wanted in this parcel
+
+  - Review each change against BL-1830's ruling and the invariant.
+  - The retired scenarios' step definitions are still registered and
+    unused: BL-1375's tree-consistency Givens and branch, BL-1465's 01-02
+    steps, BL-1466's 02 Then, BL-1389's 03 steps. Remove each one that no
+    other feature uses (grep `specs/features/*.feature` for its pattern
+    first, the step-registry deletion rule), or say in the evidence why it
+    stays.
+  - Re-run the passenger census on the parcel commit (`grep -lis
+    passenger specs/features/*.feature`, 14 files at mint), running each
+    feature. Any other scenario that asserts a passenger riding is raised
+    to the specifier as a note, not folded in.
+  - The property files that mention passengers (`grep -lis passenger
+    extension/test/*.property.test.js`, 7 at mint) are run once each
+    alone. A red is raised the same way.
+  - Evidence: the review, the census table, and any removal.
+
+  ## Scope
+
+  The four features, their step handlers, and evidence.
+
+out_of_scope: |
+  - Removing land_step_lib.bb's passenger machinery (30 mentions at
+    mint), now reachable only where BL-1830's rebuild cannot apply. That
+    is a deprecator question for the specifier, not this review.
+  - Re-stamping the Gherkin mutation manifests.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), from the repo
+  root.
+  1. `node specs/pipeline/cli.js` on BL-1375, BL-1465, BL-1466 and
+     BL-1389's features: 5/5, 2/2, 4/4 and 4/4 ok. Measured on the
+     hotfix tree at mint: the same.
+  2. `node specs/pipeline/cli.js` on BL-1830's and BL-1717's features:
+     3/3 and 1/1 ok. Measured at mint: the same.
+  3. Read the coder's census table and the removals.
+
+notes: |
+  Minted 2026-10-01 by the specifier under the human's directive
+  (source), after both hotfixes landed. The ledger entries for
+  c7ee0fb192 and 6dad026320 are linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
