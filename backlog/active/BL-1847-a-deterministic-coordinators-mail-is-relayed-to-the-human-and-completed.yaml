@@ -143,3 +143,5 @@ notes: |
   for a briefing that was already on main. The right move was
   `done_with_current.sh` with no reply. It spent ~57 minutes on a reply
   whose draft carried the reserved `from:` header.
+
+assigned_to: coder
