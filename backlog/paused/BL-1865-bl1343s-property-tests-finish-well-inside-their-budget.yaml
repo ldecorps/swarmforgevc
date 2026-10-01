@@ -1,0 +1,152 @@
+id: BL-1865
+title: "bl1343's property file went red in QA's full property-lane run for BL-1853 on 2026-10-01 with no register row; alone on origin/main its two tests take 18424 ms and 15558 ms of a 20000 ms base, because each of their 27 draws starts a fresh bb that loads the 4071-line land_step_lib.bb (about 1.0 s per load); this ticket owns the row and makes each test finish alone in under 8000 ms with the same draws and the same assertions"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05). The fourth
+# sighting of the fixture-spawning class (BL-1579, BL-1588, BL-1592); this
+# file already carries the class's budget helper, so the remedy left is
+# its own per-draw cost.
+status: todo
+epic: code-quality-gates
+priority: 4
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test file and at most a test helper; no production code, no
+# Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1865-bl1343s-property-tests-finish-well-inside-their-budget.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1865Bl1343PropertyBudgetSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the test file and land_step_lib.bb
+# already exist, so any pattern on them matches before and after the fix.
+
+human_approval: approved
+approval_context: >
+  Standing-red owner minted the same pass as QA's unowned-red note 003655
+  (2026-10-01). No choice is posed. FIRM: the file keeps 27 draws per test,
+  9 per shape, and every assertion it has today; no draw count reduced, no
+  assertion deleted, no retry, no seed pinned, and no budget raised
+  (propertyLaneTimeoutMs(20000) stays as each test's third argument). FIRM:
+  each draw still gets its answer from the real land_step_lib.bb of the
+  tree under test; the saving comes from loading the lib once per test,
+  never from reusing one draw's answer for another.
+
+invariants:
+  - "Each test in the bl1343 file runs the same 27 draws, 9 per shape, and the same assertions after the change as before, and each keeps propertyLaneTimeoutMs(20000) as its budget."
+  - "Every draw's answer comes from land_step_lib.bb as loaded from the tree under test, evaluated for that draw's own fixture; no draw's answer is cached, stubbed or reused for another draw."
+
+source: |
+  QA's unowned-red note 003655 (2026-10-01T12:38Z), verbatim:
+
+  > unowned-red bl1343ReplayNeverDropsOwnPath prop, BL-1853 lane; ev 7013827ab7
+
+  Evidence `backlog/evidence/BL-1853-QA-20261001.md` (7013827ab7):
+  `npm run test:properties` (ONE run) exit 1, register_join one red file,
+  this one, join `absent`. The gather report keeps only a 4000-character
+  tail, which held only the allowlisted BL-871 heartbeat lines, so the
+  file's own failure line was not captured. Run alone by QA at BL-1853's
+  parcel 1f585af573: 2/2 passed, 11586 ms + 10411 ms.
+
+description: |
+  ## What is wrong
+
+  The file drives the real `swarmforge/scripts/land_step_lib.bb` against
+  a git fixture per draw. It already carries the class remedies:
+  BL-1579's shared seeded repo (no per-draw git init), BL-1343's
+  `propertyLaneTimeoutMs(20000)` budget, and BL-1587's
+  `runsPerCell(27, SHAPES.length)` draws. It is still slow. Measured by
+  the specifier on 2026-10-01, from `extension/`, one run alone on a
+  checkout identical to origin/main for the file, its helpers and the lib:
+  `npx vitest run --config vitest.properties.config.mjs
+  test/bl1343ReplayNeverDropsOwnPathInvariants.property.test.js
+  --reporter=verbose` gave invariant 1 18424 ms and invariant 2 15558 ms,
+  34.36 s in all, at a 1-minute load of 4.00 (the lane's
+  QUIET_LOAD_CEILING is 4). Most of that time is the lib load:
+  `bb -e '(load-file "swarmforge/scripts/land_step_lib.bb")'` took 1.06,
+  1.01 and 1.14 s, against 0.03 s for a bare `bb -e`. `ask` spawns one
+  `bb -e` per question, so every draw reloads the lib. A file that uses
+  80-90% of its base alone goes red as soon as the lane is busy, whatever
+  the scaling. BL-1853 did not cause it: QA's solo times at BL-1853's
+  parcel were lower than main's.
+
+  ## What is wanted
+
+  - Each of the two tests finishes alone in under 8000 ms in the fastest
+    of three runs (scenario 01). The bound is 40% of the 20000 ms base,
+    and it leaves headroom over a quiet-host measurement the parcel
+    records with its load. The coder's evidence records the before and
+    after per-test ms and the 1-minute load of each run.
+  - The draws and assertions are unchanged (scenario 02, invariants 1 and
+    2).
+  - The register row added by this mint is present and owned while this
+    ticket is open, and the land retires it (BL-1631) (scenario 03, holds
+    in both states).
+  - One full property-lane run on the parcel. If bl1343 is red in it, the
+    evidence carries its own failure line verbatim (use a reporter that
+    keeps it, e.g. `--reporter=json --outputFile`), so the class of the
+    2026-10-01 red (timeout or assertion) is on record. An assertion
+    failure is a real land defect, not this ticket's remedy: raise it as
+    a note to the specifier.
+
+  ## How (direction, not mandate)
+
+  - Load the lib once per test, not once per draw. For example, one
+    long-lived `bb` per test that loads `land_step_lib.bb` once and
+    answers each draw's expression over stdin, one JSON line per answer,
+    closed in a `finally`. Each draw still sends its own expression for
+    its own fixture root (invariant 2).
+  - Leave the fixture side alone unless measurement shows it matters:
+    `buildRepo` costs one checkout copy plus a few git spawns per draw.
+  - Scenario 01's handler runs the file three times alone with a JSON
+    reporter and takes each test's fastest duration (the BL-1658 D2
+    rule). About 3 x 10 s after the fix fits the per-mutant ceiling
+    (BL-1541). Scenario 02 is a source-level read in seconds; pin its
+    census with the "exactly 2 tests" step, so a matcher that finds
+    nothing is red, not vacuous (BL-1445).
+  - Step handler `specs/pipeline/steps/bl1865Bl1343PropertyBudgetSteps.js`,
+    discovered from its own file (BL-1371).
+
+constraints: >
+  The bl1343 test file, at most a new test helper under extension/test/,
+  the step handler and evidence; extension/src and swarmforge/scripts
+  unchanged. Never edit backlog/standing-reds.tsv in the parcel: the land
+  retires the row (coder.prompt, BL-1663).
+
+out_of_scope: |
+  - Other fixture-spawning property files (BL-1588 and BL-1592 own their
+    named populations; a new red is a new unowned-red note, BL-1445).
+  - Making land_step_lib.bb itself load faster (a production change with
+    its own risk); this ticket changes how the test calls it.
+  - The QA gather report's 4000-character tail that dropped this file's
+    failure line.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), from `extension/`
+  unless noted.
+  1. `node specs/pipeline/cli.js specs/features/BL-1865-bl1343s-property-tests-finish-well-inside-their-budget.feature`
+     from the repo root: 3 of 3 ok. Measured at mint: no handler exists
+     yet. Read by hand, 02 and 03 hold on main today (2 tests,
+     runsPerCell(27, SHAPES.length), 3 shapes; the row is present and
+     owned), and 01 is red (18424 and 15558 ms alone).
+  2. `npx vitest run --config vitest.properties.config.mjs test/bl1343ReplayNeverDropsOwnPathInvariants.property.test.js --reporter=verbose`
+     once: 2/2 passed, each test under 8000 ms; record the times and
+     `cat /proc/loadavg`.
+  3. `npm run test:properties` once: bl1343 not red. Record any other red
+     with its text and raise it as an unowned-red note; never fold it in.
+  After the land: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+  reports no row for the bl1343 file.
+
+notes: |
+  Minted 2026-10-01 by the specifier from QA's unowned-red note 003655,
+  the same pass, with its register row in the same commit (standing red
+  at first sighting, severity high). The holder (QA, BL-1853's land) is
+  sent "BL-1853: bl1343ReplayNeverDropsOwnPathInvariants owned by
+  BL-1865 (<sha>) - resume land" in the same pass (BL-1566); this line
+  records that it was sent.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
