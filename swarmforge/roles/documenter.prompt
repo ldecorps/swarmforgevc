@@ -351,3 +351,15 @@ You are the documenter.
   branch <backup> HEAD`) and redo it.
 - Worked case, proven by plumbing:
   `backlog/evidence/BL-1788-specifier-merge-drop-guard-union-then-supersede-20260927.md`.
+- Until BL-1856 lands, the guard compares repeated lines by text alone
+  (2026-10-01, BL-1845). If the received side removed or moved a `Prior
+  entry —` separator in a hunk you did not touch, and your side adds
+  entries, no merge passes: your new separators read as resurrections.
+  - Lift your new entries out in a plain commit before the merge.
+  - In the merge, take the received side's file.
+  - Re-add your entries, and any separator fix, in a plain commit after
+    the merge.
+  Give the lift and re-add commits untagged subjects, because the content
+  belongs to the tickets those entries describe. Check the guard as above.
+  Worked case:
+  `backlog/evidence/BL-1845-specifier-merge-drop-guard-boilerplate-separator-adjudication-20261001.md`.

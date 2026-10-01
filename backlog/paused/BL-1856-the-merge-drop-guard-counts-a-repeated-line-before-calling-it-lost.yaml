@@ -1,0 +1,150 @@
+id: BL-1856
+title: "The merge-drop guard counts a repeated line before calling it lost - merge_drop_guard_lib.bb's lines-lost matches a side's removed and added lines by text alone, so Specification.MD's 400-odd identical \"Prior entry —\" separators make any merge that keeps the other side's new entries read as a resurrection (BL-1845's documenter send, 2026-10-01); a line text becomes a finding only when the merge's count of it differs from the side's own count plus the other side's net change of it"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real guard defect, but contained. It holds one parcel at a time,
+# fails closed (it refuses, never lets loss through), and a by-hand recipe
+# exists (backlog/evidence/BL-1845-specifier-merge-drop-guard-boilerplate-separator-adjudication-20261001.md).
+status: todo
+epic: swarm-reliability
+priority: 4
+depends_on: []
+mutation_cost: low
+# low: one pure function and its caller in a bb lib, and two bb runners.
+# bb has no mutation tooling wired (engineering.prompt), so the unit runner
+# is the gate.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1856-the-merge-drop-guard-counts-a-repeated-line-before-calling-it-lost.feature
+
+# No call-site anchor: the change is inside lines-lost and its one caller,
+# findings-for-merge, which swarm_handoff.bb already reaches through
+# findings-for-git-handoff. Any new symbol would be declared and used in the
+# same file, so an anchor on it would gate nothing (BL-1235). The handler
+# anchor is the BL-233 one.
+required_wiring:
+  - 'specs/pipeline/steps/bl1856MergeDropGuardCountsRepeatedLinesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Sign-off on narrowing what BL-1576's guard reports. FIRM: a line text is a
+  finding only when the merge's count of that text differs from the side's
+  own count plus the other side's net change of it. That clears the
+  repeated-separator false positive that held BL-1845. Putting back the one
+  copy a side removed, or dropping one copy a side added, is still found.
+  FIRM: the blind spot this accepts. A merge that puts back a copy this side
+  removed AND deletes an untouched copy of the same text elsewhere keeps the
+  count and is not found. That needs two errors on one repeated line in one
+  resolution, and catching it would need position-aware matching, a larger
+  change. FIRM: no change to which hunks are contested, to excuses, or to
+  the refusal text.
+
+invariants:
+  - "A line text is a lost-line finding only when the merge's count of it differs from the side's own count plus the other side's net change of it; a copy the other side added or removed elsewhere is never one."
+  - "For a line text that occurs once in base, both sides and the merge, findings are exactly what the text-set rule reports today."
+
+source: |
+  Documenter note 001612 (2026-10-01 01:48Z), verbatim:
+
+  > merge_drop_guard false-pos blocks BL-1845 send - see evidence
+
+  Documenter evidence (documenter branch, 3f138711ac):
+  `backlog/evidence/BL-1845-documenter-merge-drop-guard-false-positive-20261001.md`.
+  Specifier adjudication (this commit):
+  `backlog/evidence/BL-1845-specifier-merge-drop-guard-boilerplate-separator-adjudication-20261001.md`.
+
+description: |
+  ## Why
+
+  `lines-lost` (`swarmforge/scripts/merge_drop_guard_lib.bb`) builds
+  `own-removed` and `own-added` as sets of line texts from one side's
+  uncontested hunks. It then reports every `+` line of diff(side, merge) in
+  `own-removed`, and every `-` line in `own-added`. That is exact for a
+  line that appears once. `docs/reference/Specification.MD` ends every
+  changelog entry with the line `Prior entry —`, 402 times at the base of
+  the BL-1845 incident. When one side removes one copy (moving or
+  deduplicating an entry) and the other side adds entries (each with its
+  own copy), every added copy matches the removed text. No resolution that
+  keeps both sides' work can then pass.
+
+  Measured at adjudication:
+  - The guard on BL-1845's refused forward reports received 3 and sender
+    1, all four `Prior entry —`.
+  - A count of every non-blank text in base, both sides and the merge
+    leaves exactly one real discrepancy: the separator the documenter put
+    back where the hardener's dedupe had left none.
+
+  The documenter worked around it by hand with a three-commit recipe. The
+  shape recurs on most documenter merges of this file.
+
+  ## What is wanted
+
+  - For each candidate text the current rule selects, the number of
+    findings is bounded by counts over the whole path, where
+    expected(t) = count(side, t) + count(other, t) - count(base, t), never
+    below 0:
+    - resurrections of t: at most count(merge, t) - expected(t);
+    - drops of t: at most expected(t) - count(merge, t).
+    Blank lines stay excluded, as today.
+  - `findings-for-merge` reads the four blobs of each path it already
+    diffs (base, both parents, merge) and passes their counts.
+  - The rest of the guard is unchanged: contested hunks, excuses, the
+    BL-1610 scan bound, the refusal message.
+
+  ## How (direction, not mandate)
+
+  - Whether `lines-lost` takes the counts as an extra map key or a
+    separate pure function caps its result is the coder's call. Write the
+    choice in the evidence. Keep it pure: it is BL-1576's property target.
+  - `bl1576_merge_drop_guard_property_runner.bb` property 2b checks
+    `lines-lost` against a brute-force text-set oracle. That oracle states
+    the old rule, so rewrite it in this parcel to the count rule, not
+    delete it. Its reach floor must still find a real loss. Keep the five
+    `lines-lost` unit cases in `merge_drop_guard_lib_test_runner.bb` green
+    or adapt them; they use texts that occur once (invariant 2).
+  - The step handler `specs/pipeline/steps/bl1856MergeDropGuardCountsRepeatedLinesSteps.js`
+    builds real git fixtures under mkdtemp (BL-1390), runs the real
+    `findings-between`, and validates `resolution` against explicit
+    KNOWN_VALUES. BL-1576's own handler already builds this kind of
+    fixture. It is discovered from its own file (BL-1371).
+
+  ## Scope
+
+  `merge_drop_guard_lib.bb`, its unit runner, the BL-1576 property runner,
+  the step handler, evidence. Not in scope:
+  - printing the lost lines' text in the refusal (worth a sibling ticket if
+    wanted);
+  - position-aware matching;
+  - BL-1576's, BL-1610's and BL-1683's landed features, whose scenarios
+    use texts that occur once and stand as written.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1856-the-merge-drop-guard-counts-a-repeated-line-before-calling-it-lost.feature`:
+     3 of 3 ok. Measured 0 on main at mint: no handler exists yet.
+  2. `bb swarmforge/scripts/test/merge_drop_guard_lib_test_runner.bb`: ALL PASS.
+     Measured on main at mint: ALL PASS, 3 s.
+  3. `bb swarmforge/scripts/test/bl1576_merge_drop_guard_property_runner.bb`:
+     ALL PROPERTIES HOLD, with 2b on the count oracle. Measured on main at
+     mint: ALL PROPERTIES HOLD (2000 runs) on the set oracle.
+  4. `node specs/pipeline/cli.js` on the BL-1576, BL-1610 and BL-1683
+     features: 11 of 11, 6 of 6, 2 of 2 ok. Measured on main at mint:
+     11/11 (26 s), 6/6 (16 s), 2/2 (6 s). The live 8765 bridge was
+     untouched.
+  5. Replay the incident:
+     `bb swarmforge/scripts/merge_drop_guard_lib.bb . a1a3dccc89 3f138711ac c0c87f2792`
+     prints exactly one finding: `docs/reference/Specification.MD`,
+     received side, 1 line, the separator restored between BL-1830 and
+     BL-1846. Measured on main at mint: two findings, received 3 and
+     sender 1. 3f138711ac is kept alive by the branch
+     `documenter-bl1845-refused-20261001`; if it is gone, say so and skip.
+
+notes: |
+  Minted 2026-10-01 by the specifier from documenter note 001612 (source),
+  in the same pass as the BL-1845 adjudication. Severity medium, so it is
+  not auto-approved; human approval is pending. Not a local-llm-swarm
+  ticket, so under the 2026-09-30 promotion directive it waits in paused.
+  Until it lands, documenter.prompt carries the lift, merge, re-add recipe
+  beside BL-1788's (same commit).
