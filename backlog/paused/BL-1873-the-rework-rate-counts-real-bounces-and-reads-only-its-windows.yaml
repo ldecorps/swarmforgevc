@@ -30,7 +30,7 @@ acceptance: specs/features/BL-430-rework-observatory.feature
 # this ticket changes, so any anchor there matches before and after
 # (BL-1235).
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Found by BL-1869's probes b and a (coder evidence
   BL-1869-coder-20261001.md), as BL-1869 said each confirmed probe would
