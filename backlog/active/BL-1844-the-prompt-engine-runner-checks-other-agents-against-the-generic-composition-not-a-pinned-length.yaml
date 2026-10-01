@@ -137,3 +137,9 @@ notes: |
   close/recheck.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-01, by: architect, blamed: coder, class: invariant-unencoded, commit: 855a4b6f1f, evidence: backlog/evidence/BL-1844-architect-20261001-bounce.md }
+# 2026-10-01 (QA): condition (l) hand-built tip-pure land off origin/main.
+abandoned_commits:
+  - b26f411b66
