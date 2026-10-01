@@ -21,11 +21,19 @@ Feature: Approved siblings sharing a path can land
   wrong. A sibling whose approval state cannot be read is not thereby approved:
   a check that could not run is never scored as "nothing found".
 
-  Approved means approved to be WORKED, not landed. Once an approved sibling
-  stops blocking, its shared-path lines ride into main as a passenger, so the
-  replayed tree must be checked for self-consistency before publish - a
-  require line arriving ahead of its handler file froze every commit on main
-  once already.
+  Approved means approved to be WORKED, not landed. Until BL-1830, once an
+  approved sibling stopped blocking, its shared-path lines rode into main as
+  a passenger, so the replayed tree had to be checked for self-consistency
+  before publish - a require line arriving ahead of its handler file froze
+  every commit on main once already.
+
+  BL-1830 (the human's ruling A, 2026-09-30) rebuilds a shared own path from
+  origin/main plus only the landing ticket's own changes, so no unlanded
+  sibling's line rides, approved or not. Scenarios 06 and 07 asserted a
+  passenger riding through a self-consistent tree; they are retired (never
+  reworded - BL-1006) by the BL-1876 hotfix. Scenario 01 still holds: an
+  approved sibling no longer blocks, and the land rebuilds the shared path
+  without its lines.
 
   Background:
     Given several tickets share one path and none of them has landed
@@ -59,17 +67,3 @@ Feature: Approved siblings sharing a path can land
     Given one sibling sharing the path has no readable approval state
     When the land step decides for another of them
     Then the land is refused naming that sibling
-
-  # BL-1375 approved-siblings-sharing-a-path-can-land-06
-  Scenario: a passenger whose lines leave the replayed tree inconsistent blocks the land
-    Given every sibling sharing the path is approved
-    And one sibling's shared-path lines reference a file that is not on main
-    When the land step decides for another of them
-    Then the land is refused naming that sibling
-
-  # BL-1375 approved-siblings-sharing-a-path-can-land-07
-  Scenario: a passenger rides once the replayed tree is self-consistent
-    Given every sibling sharing the path is approved
-    And every file the shared-path lines reference is on main
-    When the land step decides for one of them
-    Then a land is available for that ticket

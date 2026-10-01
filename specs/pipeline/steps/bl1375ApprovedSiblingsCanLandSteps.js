@@ -315,9 +315,17 @@ function registerSteps(registry) {
         (st.plan['own-paths'] || []).includes(SHARED_PATH),
         `the shared path was not replayed: ${JSON.stringify(st.plan)}`,
       );
+      // BL-1876: BL-1830 rebuilds the shared path from origin/main plus
+      // only the landing ticket's own changes, so the approved sibling no
+      // longer rides as a passenger. Its lines are excluded by name.
+      const rebuilt = (st.plan.rebuilt || {})[SHARED_PATH];
       assert.ok(
-        (st.plan.passengers || []).includes(SUBJECT_SIBLING),
-        `the approved sibling riding on the shared path was not named: ${JSON.stringify(st.plan)}`,
+        rebuilt && (rebuilt.excluded || []).includes(SUBJECT_SIBLING),
+        `the shared path was not rebuilt without the approved sibling's lines: ${JSON.stringify(st.plan)}`,
+      );
+      assert.ok(
+        !(st.plan.passengers || []).includes(SUBJECT_SIBLING),
+        `the approved sibling rode as a passenger: ${JSON.stringify(st.plan)}`,
       );
     }
     cleanup(st);

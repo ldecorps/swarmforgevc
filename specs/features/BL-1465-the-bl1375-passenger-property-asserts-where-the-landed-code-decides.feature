@@ -18,22 +18,13 @@ Feature: BL-1465 BL-1375's passenger property asserts its invariant where the la
   non-allowlisted red, this one file blocked every extension/src commit
   swarm-wide until its allowlist row landed with this ticket.
 
+  BL-1830 (the human's ruling A, 2026-09-30) rebuilds a shared own path
+  without any unlanded sibling's lines, so no passenger rides. Scenarios
+  01 and 02 planned a passenger through land-plan; they are retired (never
+  reworded - BL-1006) by the BL-1876 hotfix. Scenarios 03 and 04 stand.
+
   Background:
     Given a fixture repository with a landing ticket, an approved unlanded passenger sibling sharing a path, and the sibling's own handler path excluded from the replay
-
-  # BL-1465 a-dangling-passenger-line-refuses-inside-the-plan-01
-  Scenario: a dangling passenger line is refused by the plan itself, naming the passenger
-    Given the passenger's registry line reaches for a handler file that is on neither the tip nor main
-    When the land step plans the landing ticket's tip
-    Then the plan's action is escalate
-    And its reason names the passenger and the consistency guard that refused the replayed tree
-
-  # BL-1465 a-resolved-passenger-line-rides-in-a-built-consistent-tip-02
-  Scenario: a resolved passenger line rides, and the plan's built tip is self-consistent
-    Given the passenger's handler file is already on main
-    When the land step plans the landing ticket's tip
-    Then the plan's action is replay carrying the passenger
-    And the built tip-pure commit passes the same consistency guard
 
   # BL-1465 the-property-file-is-green-alone-and-in-the-lane-03
   Scenario: the property file is green alone and in the full lane with both reach floors kept

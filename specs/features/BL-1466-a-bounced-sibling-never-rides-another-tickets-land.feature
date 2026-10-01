@@ -20,6 +20,13 @@ Feature: BL-1466 A bounced sibling never rides another ticket's land until it is
   against a fixture repository under mkdtemp with its own origin and its
   own bounce store (BL-1390).
 
+  BL-1830 (the human's ruling A, 2026-09-30) rebuilds a shared own path
+  without any unlanded sibling's lines, so a re-fixed sibling no longer
+  rides as a passenger. Scenario 02 asserted that it did; it is retired
+  (never reworded - BL-1006) by the BL-1876 hotfix. Scenario 05 keeps its
+  still-valid half: a re-fixed sibling is approved again and does not
+  block the land.
+
   Background:
     Given a fixture repository with an origin, a main branch, a landing ticket, and an approved sibling ticket sharing a path with it
 
@@ -29,12 +36,6 @@ Feature: BL-1466 A bounced sibling never rides another ticket's land until it is
     When the land step plans the landing ticket's tip
     Then the sibling is reported as blocking, naming the bounce and its commit
     And no path the sibling owns rides the replay and the sibling is not a passenger
-
-  # BL-1466 a-sibling-re-fixed-after-its-bounce-is-approved-again-02
-  Scenario: a sibling re-fixed after its bounce is approved again
-    Given the sibling's most recent bounce record is older than a later handoff of the sibling citing a descendant of the bounced commit
-    When the land step plans the landing ticket's tip
-    Then the sibling's approval state is approved and it may ride as a passenger as before
 
   # BL-1466 an-unreadable-bounce-store-blocks-rather-than-passes-03
   Scenario: a bounce store that cannot be read blocks rather than passes
@@ -47,3 +48,9 @@ Feature: BL-1466 A bounced sibling never rides another ticket's land until it is
     Given no bounce record names the sibling
     When the land step plans the landing ticket's tip
     Then the sibling's approval state is exactly what BL-1375 gives it
+
+  # BL-1466 a-re-fixed-sibling-does-not-block-the-land-05
+  Scenario: a sibling re-fixed after its bounce no longer blocks the land
+    Given the sibling's most recent bounce record is older than a later handoff of the sibling citing a descendant of the bounced commit
+    When the land step plans the landing ticket's tip
+    Then the sibling's approval state is approved and it does not block the land

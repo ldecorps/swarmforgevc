@@ -175,6 +175,17 @@ function registerSteps(registry) {
     if (ctx.plan.branch) git(ctx.root, 'branch', '-q', '-D', ctx.plan.branch);
   });
 
+  // BL-1876: scenario 05, the still-valid half of the retired scenario 02.
+  // BL-1830 rebuilds the shared path without the sibling's lines, so the
+  // re-fixed sibling is approved and lets the land through, never a passenger.
+  scoped(/^the sibling's approval state is approved and it does not block the land$/, (ctx) => {
+    const bounce = approvalState(ctx.root, SIBLING, ctx.tip);
+    assert.ok(!bounce || bounce['blocking?'] === false, `expected the re-fixed sibling not to block, got: ${JSON.stringify(bounce)}`);
+    assert.equal(ctx.plan.action, 'replay', `expected the land to go ahead, got: ${JSON.stringify(ctx.plan)}`);
+    assert.ok(!(ctx.plan.passengers || []).includes(SIBLING), `the re-fixed sibling rode as a passenger: ${JSON.stringify(ctx.plan)}`);
+    if (ctx.plan.branch) git(ctx.root, 'branch', '-q', '-D', ctx.plan.branch);
+  });
+
   scoped(/^the sibling's approval state is unreadable and blocking, naming the store$/, (ctx) => {
     const state = approvalState(ctx.root, SIBLING, ctx.tip);
     assert.equal(state.state, 'unreadable', `expected unreadable, got: ${JSON.stringify(state)}`);
