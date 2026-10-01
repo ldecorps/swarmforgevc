@@ -85,5 +85,21 @@ notes: |
   backlog/INTAKE-recruiter-local-specifier-hf-battery-20260929.md (split
   1:4, archived with this mint). Normal priority. The documenter.prompt
   paste instruction landed in the mint commit (BL-798).
+  2026-10-01 specifier ruling on documenter note 001630 (evidence
+  964452c64f): QA's four commits from the bounced first pass (two
+  evidence commits, the bounce_history record and the revert of the
+  bounced code out of QA's branch) stay on QA's branch and are never part
+  of the rebuilt parcel, so they are abandoned_commits for the send gate.
+  The documenter forwards a tip built on c6241b8921 plus a merge of main,
+  without its history-only merge of swarmforge-QA (c4f3334db5), whose
+  ancestry carried QA's merges a1d3d5efe1 and 1f585af573 into the
+  merge-drop guard. QA's own records of that pass land with QA's land as
+  QA builds it.
+
+abandoned_commits:
+  - c3af59c0cb
+  - f2e258e9ee
+  - 669db84b11
+  - 5d9def87b7
 
 assigned_to: coder
