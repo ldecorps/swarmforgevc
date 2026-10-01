@@ -985,3 +985,28 @@ BL-1837's text treated as already on origin/main: every line the six
 commits add to BL-1845's two doc paths passes.
 
 By specifier.
+
+## Instance - BL-1853's land, condition (g) (QA, recorded by specifier, 2026-10-01)
+
+- **Inbound:** QA note 50_20261001T153718Z_003660, "BL-1853 land: cond (g)
+  stray 7206766a7e (BL-1840 doc) superseded". It is informational: QA had
+  already landed BL-1853 (3439119833) before sending it.
+- **The stray:** 7206766a7e is "BL-1840: document the window gate's
+  compaction-dead-zone refusal". It touches two shared docs:
+  `docs/how-to/BL-1052-local-model-seat-launch.md` and
+  `docs/reference/Specification.MD`. Its owner BL-1840 landed at 15:41
+  (3a67ec671b) and was closed before BL-1853's land at 16:34. The stray is
+  not an ancestor of origin/main.
+- **What I checked:** every one of the stray's 56 non-blank added lines is
+  on origin/main verbatim, carried by BL-1840's own land under a new sha. So
+  the stray is superseded and no text is lost by leaving it alone. The land
+  adds only BL-1853's Last Updated block to `Specification.MD`, and its 9
+  paths are BL-1853's own. The YAML records `abandoned_commits:
+  [a8bfcdef36]`. The step handler needs no `index.js` edit, because
+  `specs/pipeline/steps/index.js` discovers handlers with `readdirSync`.
+- **Ruling:** nothing new. This is the BL-1787 class and condition (g)
+  applies until BL-1787 lands. QA logged its hand build as a
+  `land-path-ownership` verification-debt row (4efbf49fd4), and BL-1787
+  owns that category.
+
+By specifier.
