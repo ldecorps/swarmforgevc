@@ -32,7 +32,7 @@ acceptance: specs/features/BL-1874-a-failed-throttle-refresh-never-leaves-an-old
 required_wiring:
   - 'specs/pipeline/steps/bl1874ThrottleRefreshFailureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Found by BL-1869's probe c (coder evidence BL-1869-coder-20261001.md).
   FIRM - when the rework refresh fails, the throttle CLI still writes its
