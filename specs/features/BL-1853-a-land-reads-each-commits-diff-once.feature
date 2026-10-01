@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c0f3401692badecf289b2e02579a32639f2e8f4205a342e82a9ebf500ce6a95d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-01T11:42:21.115924978Z","feature_name":"BL-1853 A land reads each commit's diff once","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1853-a-land-reads-each-commits-diff-once.feature","background_hash":"dafc61f846ed4171efaa9af0dd7e18bc86e1ead6078686417945bd9472088e6a","implementation_hash":"unknown","scenarios":[{"index":1,"name":"an unusable cache entry is read again from git, never taken as an empty diff","scenario_hash":"252f2bfaf631a18c257164ad8706fd016f929eb381d3f39e106b5fc18de1ab6c","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-10-01T11:42:21.115924978Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1853 A land reads each commit's diff once
 
   The land plan walks every commit from origin/main to the cited tip, and

@@ -1871,3 +1871,36 @@ entangled touch from a QA restore that should have been excluded.
 
 Acceptance:
 `specs/features/BL-1857-a-commit-that-lands-no-line-of-its-own-never-blocks-a-shared-path-rebuild.feature`.
+
+## A land reads each commit's own diff once, not once per land (BL-1853)
+
+`commit-line-changes` runs `git log -1 -p` on every ticket-tagged
+non-merge commit the land plan touches, to attribute lines per BL-1481's
+and BL-1830's own-path rules above. A commit's first-parent diff never
+changes once the commit exists, but BL-1852's own fix (above) still
+leaves QA's role branch never shrinking, so the SAME 3696 commits sat in
+range on 2026-09-30 and every one of them was re-read from git on every
+single land that day — a land took 13 minutes by the afternoon against
+2-6 the evening before, and the time kept rising with the walk.
+
+Each commit's diff is now kept by the commit's full id under
+`git-common-dir` (BL-1298 — the one directory every worktree of the
+repository reaches, since the land runs from QA's worktree and a
+re-point resets it): `<git-common-dir>/land-diff-cache/<full-sha>`,
+one file per commit, holding the id it was read for. A land reads a
+commit's diff from git only when no earlier land has already cached it;
+within one land, the same commit is read at most once however many
+siblings ask for it. A cache entry is used only for the exact commit it
+names — missing, unreadable, or written for a different id (a corrupt
+write, a collision) is never taken as an empty diff, it is read again
+from git and the cache is repaired. A diff that could not be read from
+git is never cached as a result, so it stays nil and is read again on
+the next land rather than being frozen as "nothing changed." The cache
+is a speed optimization only: a write failure (unresolvable cache dir,
+unwritable disk, a race with another land) is swallowed, costing only
+the next land the same git read again, never the land's correctness —
+the land plan's verdict with the cache is the same as its verdict
+without it.
+
+Acceptance:
+`specs/features/BL-1853-a-land-reads-each-commits-diff-once.feature`.

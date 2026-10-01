@@ -117,3 +117,7 @@ notes: |
   [2026-10-01] human (Cursor): /jumpq BL-1853 — BL-1852 is in backlog/done/. Queue-jump past the depth cap (active count 5 >= cap 1; orthogonality advisory: swarm-reliability also active on BL-1857) and dispatch to coder.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-01, by: QA, blamed: documenter, class: behavior, commit: d7bfb9c27c, evidence: backlog/evidence/BL-1853-QA-20261001.md }
+abandoned_commits: [a8bfcdef36]

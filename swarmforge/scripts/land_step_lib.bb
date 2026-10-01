@@ -350,15 +350,87 @@
       (and (zero? (:exit res))
            (> (count (str/split (str/trim (:out res)) #"\s+")) 2)))))
 
-(defn- commit-line-changes
-  "{path {:added #{} :removed #{}}} for one commit's own first-parent diff -
-   the SAME view `own-commit-changed-paths :delivered` attributes paths by, so
-   a path the attribution credits to a sibling always has its lines read from
-   the same edge. nil (never {}) when the diff could not be read."
+;; BL-1853: a commit's own first-parent diff never changes once the commit
+;; exists, so it is kept by the commit's full id (git's own %H form, the
+;; only format this file's candidate walks ever emit) under git-common-dir
+;; (BL-1298 - the one directory every worktree of the repository reaches,
+;; since the land runs from QA's worktree and a re-point resets it). A
+;; land that reads the same commit twice reuses the first read.
+(defn diff-cache-dir [root]
+  (when-let [common (git-common-dir root)]
+    (str (fs/path common "land-diff-cache"))))
+
+;; Test-only observability seam (BL-1853's own "How": a seam around the
+;; git call, never timing). nil (the default) means no log is kept. Bound
+;; by a caller, never by production code, which never reads it.
+(def ^:dynamic *diff-read-log* nil)
+
+;; Test-only bypass (BL-1853 approval_context, FIRM: "the land plan's
+;; verdict with the cache is the verdict without it" - this flag is what
+;; lets a caller compare the two without touching the cache files
+;; themselves). false in production; never set outside a test.
+(def ^:dynamic *diff-cache-disabled* false)
+
+(defn- record-diff-read! [commit]
+  (when *diff-read-log*
+    (try (spit *diff-read-log* (str commit "\n") :append true) (catch Exception _ nil))))
+
+(defn- read-diff-cache-entry
+  "The cached diff for `commit`, or nil when the cache directory is
+   unresolvable, the entry is missing, unreadable, corrupt, or was written
+   for a different commit id (BL-1853 invariant 1: a cache entry is used
+   only for the exact commit it was read from - a missing, unreadable or
+   mismatched entry is read again from git below, never taken as an empty
+   diff)."
   [root commit]
+  (when-let [dir (diff-cache-dir root)]
+    (let [path (str (fs/path dir commit))]
+      (when (fs/exists? path)
+        (try
+          (let [entry (edn/read-string (slurp path))]
+            (when (= commit (:commit entry))
+              (:diff entry)))
+          (catch Exception _ nil))))))
+
+(defn- write-diff-cache-entry!
+  "Persists `diff` for `commit`. Never called with a nil diff (a diff that
+   could not be read is never cached, so it stays nil - read again - on
+   every later land, rather than being taken as an empty one). A write
+   failure (unresolvable cache dir, unwritable disk, a race with another
+   land) is swallowed: the cache is a speed optimization, never a
+   correctness dependency, so a failed write just costs the next land the
+   same git read again."
+  [root commit diff]
+  (when-let [dir (diff-cache-dir root)]
+    (try
+      (fs/create-dirs dir)
+      (spit (str (fs/path dir commit)) (pr-str {:commit commit :diff diff}))
+      (catch Exception _ nil))))
+
+(defn- commit-line-changes-uncached [root commit]
+  (record-diff-read! commit)
   (let [res (git! root "log" "-1" "--format=" "-p" "--unified=0" "--first-parent" commit)]
     (when (zero? (:exit res))
       (diff-line-changes (:out res)))))
+
+(defn commit-line-changes
+  "{path {:added #{} :removed #{}}} for one commit's own first-parent diff -
+   the SAME view `own-commit-changed-paths :delivered` attributes paths by, so
+   a path the attribution credits to a sibling always has its lines read from
+   the same edge. nil (never {}) when the diff could not be read.
+
+   BL-1853: kept by commit id across lands (see diff-cache-dir above) -
+   every path below still answers exactly what the uncached read would,
+   including nil."
+  [root commit]
+  (if *diff-cache-disabled*
+    (commit-line-changes-uncached root commit)
+    (if-let [cached (read-diff-cache-entry root commit)]
+      cached
+      (let [diff (commit-line-changes-uncached root commit)]
+        (when (some? diff)
+          (write-diff-cache-entry! root commit diff))
+        diff))))
 
 (defn sibling-own-line-changes
   "The line changes `sibling-id`'s OWN commits among `candidates` made, merged

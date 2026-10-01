@@ -25,6 +25,29 @@ No new extension command or setting; no diagram edit —
 launch-script-internal.)
 Prior entry —
 
+**Last Updated:** October 1, 2026 (BL-1853: a land now reads each
+ticket-tagged commit's own first-parent diff from git at most once,
+ever, instead of once per land. `commit-line-changes`' diff never
+changes once a commit exists, but QA's role branch never shrinking
+(BL-1852) meant the same 3696 commits sat in range on 2026-09-30 and
+were all re-read from git on every single land that day — land time
+rose from 2-6 minutes to 13+ as the walk grew. Each diff is now kept by
+the commit's full id under `git-common-dir` (the one directory every
+worktree reaches), in `<git-common-dir>/land-diff-cache/`; a cache
+entry is used only for the exact commit it names, a missing or
+mismatched entry is read again from git and never taken as an empty
+diff, and a diff that could not be read is never cached as a result. A
+cache write failure costs only the next land the same git read again,
+never the land's correctness — the land plan's verdict with the cache
+equals its verdict without it. How-to:
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+("A land reads each commit's own diff once, not once per land (BL-1853)"
+section). Acceptance:
+`specs/features/BL-1853-a-land-reads-each-commits-diff-once.feature`.
+No new extension command or setting; no diagram edit — swarm-internal
+land-step tooling.)
+Prior entry —
+
 **Last Updated:** October 1, 2026 (BL-1852: a post-land re-point on QA's
 branch now re-applies only QA's own work, never a merged parcel's
 lineage. `post-land-repoint!`'s candidate set was every commit

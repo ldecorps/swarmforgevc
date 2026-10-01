@@ -271,6 +271,127 @@
   (let [plan (land-step-lib/land-plan {:root root :commit "deadbeef" :task-ticket-id nil})]
     (assert= "land-plan: no task ticket id -> :escalate" :escalate (:action plan))))
 
+;; ── BL-1853: commit-line-changes' diff cache ────────────────────────────
+
+(defn- cache-path [root commit]
+  (str (fs/path (land-step-lib/diff-cache-dir root) commit)))
+
+(defn- read-log-lines [path]
+  (vec (remove str/blank? (str/split-lines (slurp path)))))
+
+;; A second read of the same commit never spawns git again.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own.txt" "hello\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        log-path (str (fs/path root "diff-reads.log"))]
+    (binding [land-step-lib/*diff-read-log* log-path]
+      (let [first-read (land-step-lib/commit-line-changes root commit)
+            second-read (land-step-lib/commit-line-changes root commit)]
+        (assert= "BL-1853: a cached read returns the same diff as the first" first-read second-read)))
+    (assert= "BL-1853: the second call never re-read git" [commit] (read-log-lines log-path))
+    (assert-true "BL-1853: a cache entry now exists for the commit" (fs/exists? (cache-path root commit)))))
+
+;; A corrupt cache entry is read again from git, never taken as an empty diff.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own.txt" "hello\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        log-path (str (fs/path root "diff-reads.log"))]
+    (land-step-lib/commit-line-changes root commit) ;; warm
+    (spit (cache-path root commit) "not edn {{{")
+    (binding [land-step-lib/*diff-read-log* log-path]
+      (let [changes (land-step-lib/commit-line-changes root commit)]
+        (assert= "BL-1853: a corrupt cache entry is read again from git"
+                 [commit] (read-log-lines log-path))
+        (assert-true "BL-1853: the real diff is returned despite the corrupt entry"
+                     (contains? changes "own.txt"))))))
+
+;; A cache entry written for a different commit id is never trusted.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own.txt" "hello\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        log-path (str (fs/path root "diff-reads.log"))]
+    (fs/create-dirs (land-step-lib/diff-cache-dir root))
+    (spit (cache-path root commit)
+          (pr-str {:commit "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                   :diff {"bogus.txt" {:added #{"x"}}}}))
+    (binding [land-step-lib/*diff-read-log* log-path]
+      (let [changes (land-step-lib/commit-line-changes root commit)]
+        (assert= "BL-1853: a mismatched cache entry is read again from git"
+                 [commit] (read-log-lines log-path))
+        (assert-true "BL-1853: the real diff is returned, not the mismatched entry's content"
+                     (contains? changes "own.txt"))))))
+
+;; A correctly-tagged entry IS used as-is - proof the cache is actually
+;; consulted, not merely written and ignored.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own.txt" "hello\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (land-step-lib/commit-line-changes root commit) ;; warm
+    (spit (cache-path root commit) (pr-str {:commit commit :diff {"planted.txt" {:added #{"planted-line"}}}}))
+    (assert= "BL-1853: a correctly-tagged cache entry is used as-is, not re-derived"
+             {"planted.txt" {:added #{"planted-line"}}}
+             (land-step-lib/commit-line-changes root commit))))
+
+;; An unreadable commit's diff is nil, and nil is never cached - every
+;; call re-reads git, never falsely treating a read failure as empty.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [bogus "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        log-path (str (fs/path root "diff-reads.log"))]
+    (binding [land-step-lib/*diff-read-log* log-path]
+      (assert= "BL-1853: an unreadable commit's diff is nil"
+               nil (land-step-lib/commit-line-changes root bogus)))
+    (assert-false "BL-1853: an unreadable commit's diff is never cached"
+                  (fs/exists? (cache-path root bogus)))
+    (binding [land-step-lib/*diff-read-log* log-path]
+      (land-step-lib/commit-line-changes root bogus))
+    (assert= "BL-1853: an unreadable commit is read from git every time"
+             [bogus bogus] (read-log-lines log-path))))
+
+;; *diff-cache-disabled* bypasses even a valid, correctly-tagged entry.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own.txt" "hello\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (land-step-lib/commit-line-changes root commit) ;; warm
+    (spit (cache-path root commit) (pr-str {:commit commit :diff {"planted.txt" {:added #{"planted-line"}}}}))
+    (binding [land-step-lib/*diff-cache-disabled* true]
+      (assert-true "BL-1853: the disable flag bypasses even a valid cache entry"
+                   (contains? (land-step-lib/commit-line-changes root commit) "own.txt")))))
+
+;; BL-1853 invariant 2, at the unit level: a land-plan's verdict with the
+;; cache cold (disabled) equals its verdict with the cache warm. Each call
+;; builds its own fresh replay commit (a real object, its own sha/branch),
+;; so :commit/:branch are excluded from the comparison - the invariant is
+;; about the VERDICT (action/entangled/own-paths/...), not byte-identical
+;; replay-build artifacts two independent builds have no reason to share.
+;; The scratch worktree/branch/owner-record a successful replay leaves
+;; behind is reset between the two calls so the second is not refused as
+;; "owned by a live run" (same pid, same run) by the leftover-scratch
+;; guard replay! itself enforces.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        id (str "BL-9001-" (subs commit 0 10))
+        branch (str "land-replay/" id)
+        reset-scratch! (fn []
+                         (sh! root "git" "branch" "-D" branch)
+                         (fs/delete-tree (fs/path (land-step-lib/git-common-dir root) "land-replay-worktrees")
+                                         {:force true}))
+        cold-plan (binding [land-step-lib/*diff-cache-disabled* true]
+                    (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"}))]
+    (reset-scratch!)
+    (let [warm-plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+      (assert= "BL-1853 invariant 2: a land plan's verdict with the cache equals its verdict without it"
+               (dissoc cold-plan :commit :branch)
+               (dissoc warm-plan :commit :branch)))))
+
 ;; ── replay!: builds a real tip-pure commit, never touches the caller's
 ;;    own checkout ─────────────────────────────────────────────────────────
 
