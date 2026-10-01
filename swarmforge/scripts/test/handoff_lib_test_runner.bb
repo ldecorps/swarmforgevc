@@ -848,6 +848,74 @@
            "held_by_seat: this line is BODY TEXT, not a header - never removed\n"
            (handoff-lib/body file)))
 
+;; ── BL-1837 D1: prompt-file-path agrees with swarmforge.sh's
+;;    role_prompt_card_path for a local-model seat ──────────────────────────
+
+(handoff-lib/set-project-root! "/bl1837-prompt-file-path-fixture-root")
+(assert= "prompt-file-path: a local-model seat's '@' maps to '-'"
+         "/bl1837-prompt-file-path-fixture-root/.swarmforge/prompts/coder-iq3.md"
+         (handoff-lib/prompt-file-path "coder@iq3" "local-model"))
+(assert= "prompt-file-path: a claude seat's '@' is unchanged"
+         "/bl1837-prompt-file-path-fixture-root/.swarmforge/prompts/coder@2.md"
+         (handoff-lib/prompt-file-path "coder@2" "claude"))
+(assert= "prompt-file-path: the 1-arity form (agent unknown) stays unmapped"
+         "/bl1837-prompt-file-path-fixture-root/.swarmforge/prompts/coder@iq3.md"
+         (handoff-lib/prompt-file-path "coder@iq3"))
+(handoff-lib/set-project-root! nil)
+
+;; BL-897: this path and swarmforge.sh's role_prompt_card_path are two
+;; readers of the SAME file across the bash/bb boundary; a test asserting
+;; they agree is the constant-across-a-language-boundary rule, not an
+;; incidental nicety - the two drifted exactly this way at mint (D1).
+(let [swarmforge-sh (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "swarmforge.sh"))
+      root (mk-tmp-dir)
+      card-path (fn [role agent]
+                  (let [result (daemon-cycle-guard-lib/sh!
+                                "zsh" "-c"
+                                (str "source '" swarmforge-sh "' '" root "' >/dev/null 2>&1; "
+                                     "role_prompt_card_path '" role "' '" agent "'"))]
+                    (str/trim (:out result))))]
+  (handoff-lib/set-project-root! root)
+  (try
+    (doseq [[role agent] [["coder@iq3" "local-model"]
+                          ["coder@2" "claude"]
+                          ["documenter" "claude"]
+                          ["coder@iq3" "claude"]]]
+      (assert= (str "BL-897 agreement for role=" role " agent=" agent)
+               (card-path role agent)
+               (handoff-lib/prompt-file-path role agent)))
+    (finally (handoff-lib/set-project-root! nil))))
+
+;; ── BL-1837 D1: recompose-role-prompt! for a local-model seat ───────────────
+;; A respawn/rotation of a seat named coder@iq3 must recompose the SAME
+;; card file (prompts/coder-iq3.md) write_agent_instruction_file wrote at
+;; launch - never the pre-fix prompts/coder@iq3.md, which a respawn would
+;; silently recompose forever without ever refreshing what qwen's launch
+;; line actually reads.
+(let [dir (mk-tmp-dir)
+      swarm-dir (fs/path dir ".swarmforge")
+      prompts-dir (fs/path swarm-dir "prompts")]
+  (fs/create-dirs prompts-dir)
+  (spit (str (fs/path swarm-dir "roles.tsv"))
+        (str "coder@iq3\tmaster\t" dir "\tswarmforge-coder@iq3\tCoder (iq3)\tlocal-model\ttask\n"))
+  (spit (str (fs/path prompts-dir "coder-iq3.md")) "stale card\n")
+  (spit (str (fs/path prompts-dir "coder-iq3.md.metadata.json"))
+        (json/generate-string {:agent "local-model" :model "ista-iq3s-coder:latest"
+                                :two-pack? false :overlay-prompt ""}))
+  (handoff-lib/set-project-root! dir)
+  (try
+    (let [result (handoff-lib/recompose-role-prompt!
+                  "coder@iq3"
+                  {:compose-fn (fn [_role _opts] {:system-prompt "fresh card\n"})})]
+      (assert-true "recompose-role-prompt! for a local-model seat: ok"
+                   (:ok result))
+      (assert= "recompose-role-prompt! for a local-model seat: rewrites prompts/coder-iq3.md (the '-' path), not prompts/coder@iq3.md"
+               "fresh card\n"
+               (slurp (str (fs/path prompts-dir "coder-iq3.md"))))
+      (assert-false "recompose-role-prompt! for a local-model seat: never creates the pre-fix '@' path"
+                     (fs/exists? (str (fs/path prompts-dir "coder@iq3.md")))))
+    (finally (handoff-lib/set-project-root! nil))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")

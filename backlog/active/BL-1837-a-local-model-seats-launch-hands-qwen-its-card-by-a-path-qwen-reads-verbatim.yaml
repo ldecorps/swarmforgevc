@@ -118,3 +118,16 @@ notes: |
   same pass: 2cdb259806, 7f38e5d7fe.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-01, by: QA, blamed: coder, class: behavior, commit: 419d3451a2, evidence: backlog/evidence/BL-1837-QA-20261001.md }
+# 2026-10-01 (documenter): pre_qa_gate flagged 12d3b95548 as stranded on
+# swarmforge-QA - an intermediate documenter evidence commit (recording
+# a since-superseded finding) from before the specifier's merge-drop-
+# guard recipe redo (note f3700b91e4), reached QA through a separate
+# path while this branch's own history was rewound to apply the recipe.
+# No functional content; backlog/evidence/BL-1837-documenter-20261001-2.md
+# on the current branch is the authoritative record of this pass.
+abandoned_commits:
+  - 12d3b95548
+  - 36ac5ad1c1

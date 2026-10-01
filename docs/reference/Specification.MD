@@ -37,6 +37,38 @@ seat's health from its records, not its pane" section). No new extension
 command or setting — a standalone CLI; no diagram edit.)
 Prior entry —
 
+**Last Updated:** October 1, 2026 (BL-1837: a local-model seat's launch
+card path never carries an "@" — qwen (and gemini, which shares its
+handling) reads `@<path>` in a prompt as a file reference and rewrites
+it before the model ever sees it, so a seat named `coder@iq3` had its
+kickoff name the compact card (BL-1798) at the bare path
+`.../prompts/coder@iq3.md`, which qwen rewrote to
+`.../prompts/coder @iq3.md` in all three 2026-09-30 sessions — every
+session's first `read_file` failed, globbed `.swarmforge/prompts/*`, and
+only then read the card. `role_prompt_card_path(role, agent)` in
+`swarmforge.sh` is now the single source of truth for a role/agent's
+card path: for agent `local-model` every `@` in the role name maps to
+`-` before joining `$PROMPTS_DIR`; every other agent (a Claude seat named
+`coder@2` included) keeps its path unchanged.
+`write_agent_instruction_file`'s callers and `write_role_launch_script`'s
+own `prompt_file` all compute the path through this one function. The
+local-model kickoff's parenthetical also no longer describes the file as
+"(constitution, pipeline, role, pack)" — the generic composition's own
+wording — saying "(your card)" instead, since a local-model seat's file
+is the compact card, not the generic one. A QA bounce (2026-10-01) found
+a second, bb-side reader of the same path left unmapped:
+`handoff_lib.bb`'s `prompt-file-path`, read by `recompose-role-prompt!`
+on a respawn/rotation, recomposed the dead pre-fix card instead of the
+one the launch script reads — fixed to take the same `(role, agent)`
+shape and apply the identical mapping, with a test asserting the bash
+and bb mappings agree. Acceptance:
+`specs/features/BL-1837-a-local-model-seats-launch-hands-qwen-its-card-by-a-path-qwen-reads-verbatim.feature`.
+How-to: `docs/how-to/BL-1052-local-model-seat-launch.md` (new "A
+local-model seat's card path never carries an '@'" section under
+Launch). No new extension command or setting; no diagram edit — this is
+launch-script-internal.)
+Prior entry —
+
 **Last Updated:** September 30, 2026 (BL-1846: a pack whose
 `swarmforge.conf` declares `config coordinator_mode deterministic` no
 longer needs a model to clear the one hop of the mono-router happy path

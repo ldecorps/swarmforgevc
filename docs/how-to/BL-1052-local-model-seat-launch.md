@@ -44,6 +44,48 @@ Every role window names agent `local-model` and a `--model <id>`. Launch is
 **refused** when the local endpoint health check is not ready — the refusal
 names the endpoint.
 
+### A local-model seat's card path never carries an "@" (BL-1837)
+
+qwen (and gemini, which shares its handling) reads `@<path>` in a prompt
+as a file reference and rewrites it before the model ever sees it. A
+seat named `coder@iq3` had its kickoff name the compact card (BL-1798) at
+the bare path `.../prompts/coder@iq3.md`; qwen's own record of each
+2026-09-30 `coder@iq3` session shows the first user message reading
+`.../prompts/coder @iq3.md` — a space inserted before `@iq3.md` — so
+every session's first `read_file` failed with "File not found", globbed
+`.swarmforge/prompts/*`, and only then read the card (two of three
+sessions went on to also read the constitution, PIPELINE, and the role
+prompt, which the kickoff's own generic wording invited).
+
+`role_prompt_card_path(role, agent)` in `swarmforge.sh` is now the single
+source of truth for where a role/agent's card lives: for agent
+`local-model` it maps every `@` in the role name to `-` before joining
+`$PROMPTS_DIR` (`coder@iq3` → `.../prompts/coder-iq3.md`), and every other
+agent's card path is unchanged (a Claude seat named `coder@2` still gets
+`.../prompts/coder@2.md`). `write_agent_instruction_file`'s callers and
+`write_role_launch_script`'s own `prompt_file` all compute the path
+through this one function, so a future agent's own "@"-sensitivity is a
+one-line change, not several call sites. The local-model kickoff's
+parenthetical also no longer describes the file as "(constitution,
+pipeline, role, pack)" — the generic composition's own wording, not the
+compact card a local-model seat actually gets — saying "(your card)"
+instead.
+
+`handoff_lib.bb`'s `prompt-file-path` (used by `recompose-role-prompt!`
+on a BL-911 idle-boundary respawn or a rotation) is a separate,
+bb-side reader of the same path — a different language than
+`role_prompt_card_path`, so it cannot call through it and must agree
+with it independently instead (a QA bounce, 2026-10-01, caught the first
+pass leaving it unmapped: a respawned `coder@iq3` recomposed the dead
+pre-fix `coder@iq3.md`, not the card the launch script actually reads).
+It now takes the same `(role, agent)` shape and applies the identical
+`@`-to-`-` mapping for agent `local-model` only, with a test asserting
+the bash and bb mappings agree (BL-897's constant-across-a-language-
+boundary rule). `respawn_bootstrap_lib.bb` carries the same unmapped
+shape but is never reached for a local-model seat (its bootstrap style
+is `:embedded`, not the bootstrap-step style that function serves), so
+it is left as-is.
+
 ### Ollama is started by the swarm (BL-1703)
 
 Before any seat starts, the launch path probes the local endpoint for any

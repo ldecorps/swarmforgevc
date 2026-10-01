@@ -1638,6 +1638,28 @@ pack_has_role() {
   return 1
 }
 
+# BL-1837: qwen (and gemini, which shares its handling - out of this
+# ticket's scope, no gemini seat carries "@" today) reads an "@<path>" in
+# a prompt as a file reference and rewrites it before the model ever sees
+# it - the local-model launch's card path ".../prompts/coder@iq3.md"
+# arrived as ".../prompts/coder @iq3.md", so every coder@iq3 session's
+# first read_file failed, globbed the prompts dir, and only then found the
+# card. A local-model seat's card is written under a name with every "@"
+# mapped to "-" instead; every other agent's card path is unchanged. The
+# single source of truth for "where does THIS role/agent's card live" -
+# write_agent_instruction_file's callers and write_role_launch_script's
+# own prompt_file both compute the SAME path through this function, so a
+# future agent's "@"-sensitivity is fixed in one place, not three.
+role_prompt_card_path() {
+  local role="$1"
+  local agent="$2"
+  if [[ "$agent" == "local-model" ]]; then
+    printf '%s/%s.md' "$PROMPTS_DIR" "${role//@/-}"
+  else
+    printf '%s/%s.md' "$PROMPTS_DIR" "$role"
+  fi
+}
+
 write_agent_instruction_file() {
   local role="$1"
   local prompt_file="$2"
@@ -1861,7 +1883,7 @@ generate_dormant_role_launch_artifacts() {
   local index="$1"
   local dormant_resolved_model
   dormant_resolved_model="$(resolve_claude_model_for_index "$index")"
-  write_agent_instruction_file "${ROLES[$index]}" "$PROMPTS_DIR/${ROLES[$index]}.md" "${AGENTS[$index]}" "$dormant_resolved_model" "${STAGES[$index]}"
+  write_agent_instruction_file "${ROLES[$index]}" "$(role_prompt_card_path "${ROLES[$index]}" "${AGENTS[$index]}")" "${AGENTS[$index]}" "$dormant_resolved_model" "${STAGES[$index]}"
   write_role_launch_script "$index" >/dev/null
 }
 
@@ -2071,7 +2093,8 @@ write_role_launch_script() {
   local role_worktree="${WORKTREE_PATHS[$index]}"
   local display="${DISPLAY_NAMES[$index]}"
   local role_script_dir="$role_worktree/swarmforge/scripts"
-  local prompt_file="$PROMPTS_DIR/${role}.md"
+  local prompt_file
+  prompt_file="$(role_prompt_card_path "$role" "$agent")"
   local extra_cli="${EXTRA_CLI_ARGS[$index]}"
   local launch_script="$STATE_DIR/launch/${role}.sh"
   # BL-323: RESUME-ON-START. Every tmux respawn of this role's pane -
@@ -2276,8 +2299,15 @@ RESUMECHECK
       # bare argument into --prompt, and --prompt runs one headless pass: no
       # screen, no keyboard, so the pane stayed blank, the human could not
       # steer, and handoffd's typed wakes were never read.
+      # BL-1837 scenario 02: a local-model seat's composed file is the
+      # compact card (BL-1798), never the generic "(constitution, pipeline,
+      # role, pack)" wording the other agents' full compose produces -
+      # that wording is what invited two of the three 2026-09-30 sessions
+      # to go on and read the constitution/PIPELINE/role prompt up front,
+      # which the compact-card shape and the hotfix's card rule exist to
+      # avoid.
       local qwen_cli="$(swarm_only_strip_seat_tier "$extra_cli")"
-      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
+      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (your card). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
       ;;
     *)
       # BL-1080: same Unsupported agent wording + how-to pointer as validate_agent.
@@ -2577,7 +2607,7 @@ launch_role() {
   # via the same pure resolve_role_model call is cheap and side-effect-free,
   # not fragile cross-subshell state-passing.
   resolved_model="$(resolve_claude_model_for_index "$index")"
-  write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent" "$resolved_model" "${STAGES[$index]}"
+  write_agent_instruction_file "$role" "$(role_prompt_card_path "$role" "$agent")" "$agent" "$resolved_model" "${STAGES[$index]}"
   launch_script="$(write_role_launch_script "$index")"
   launch_script="$(resolve_launch_script_for_role "$index" "$role" "$launch_script")"
 
@@ -2726,7 +2756,7 @@ launch_role() {
   tmux -S "$TMUX_SOCKET" respawn-pane -k "${provider_env_flags[@]}" -t "$(tmux_agent_target_for_session "$session")" "zsh '$launch_script'"
   sleep 0.25
   if agent-runtime-needs-bootstrap "$agent"; then
-    run_agent_bootstrap "$session" "$display" "$role" "$agent" "$PROMPTS_DIR/${role}.md"
+    run_agent_bootstrap "$session" "$display" "$role" "$agent" "$(role_prompt_card_path "$role" "$agent")"
   elif [[ "$agent" == "copilot" ]]; then
     dismiss_copilot_folder_trust "$session"
   fi

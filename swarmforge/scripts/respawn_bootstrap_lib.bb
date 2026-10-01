@@ -31,7 +31,18 @@
 (def metadata-suffix ".metadata.json")
 
 (defn prompt-file-path
-  "The composed prompt the launcher wrote for this role."
+  "The composed prompt the launcher wrote for this role.
+
+   BL-1837 D1: unlike handoff_lib.bb's prompt-file-path, this one is NOT
+   given the '@' -> '-' local-model mapping. It is reachable only through
+   argv-for-role, called from run-respawn-bootstrap!/swarm_ensure.bb to
+   paste a post-launch bootstrap - and bootstrap-steps (agent_runtime_lib.bb)
+   returns no steps at all for an :embedded bootstrap-style agent, which is
+   exactly what local-model is (prompt_engine_lib.bb's provider-capabilities).
+   A wrong path built here is therefore never read: the embedded case never
+   reaches a file read of it. Aligning it anyway would be a second
+   unreachable copy of the mapping to keep in sync for no behaviour change;
+   left unmapped on purpose."
   [state-dir role]
   (str (fs/path state-dir prompts-dir-name (str role ".md"))))
 

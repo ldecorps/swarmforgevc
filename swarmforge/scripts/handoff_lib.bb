@@ -776,9 +776,19 @@
 (defn prompt-file-path
   "The composed system-prompt artifact a role's launch script names by path
    (swarmforge.sh's write_agent_instruction_file writes it; a launch/rotation
-   never assembles prompt text itself)."
-  [role-name]
-  (str (fs/path (target-root) ".swarmforge" "prompts" (str role-name ".md"))))
+   never assembles prompt text itself).
+
+   BL-1837 D1: for a `local-model` agent, swarmforge.sh's
+   role_prompt_card_path maps every '@' in role-name to '-' before writing
+   the card (qwen reads a bare '@' in a prompt as a file reference and
+   rewrites it, so a seat named coder@iq3 must be handed a path with no
+   '@' at all). This is the one other place that path is read, so it must
+   agree exactly - a 2-arity call with agent nil or any other agent keeps
+   the pre-BL-1837 unmapped path."
+  ([role-name] (prompt-file-path role-name nil))
+  ([role-name agent]
+   (let [stem (if (= agent "local-model") (str/replace role-name "@" "-") role-name)]
+     (str (fs/path (target-root) ".swarmforge" "prompts" (str stem ".md"))))))
 
 (defn claude-settings-path
   "The launch-time settings file swarmforge.sh's write_claude_settings_file
@@ -968,7 +978,7 @@
   ([role-name] (recompose-role-prompt! role-name {}))
   ([role-name {:keys [compose-fn] :or {compose-fn prompt-engine-lib/compose}}]
    (try
-     (let [prompt-file (prompt-file-path role-name)
+     (let [prompt-file (prompt-file-path role-name (:agent (load-role-info role-name)))
            metadata-file (str prompt-file ".metadata.json")]
        (if-not (fs/exists? metadata-file)
          {:ok false :reason "no-metadata-sidecar"}
