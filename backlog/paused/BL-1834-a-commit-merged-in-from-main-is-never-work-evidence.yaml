@@ -16,7 +16,12 @@ mutation_cost: low
 # low: one git-log read in done_with_current_task.bb and one step handler.
 # bb has no mutation lane wired (engineering.prompt).
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one decision in one Babashka function changes; nothing to refactor"
+  architect: "the spec and its invariants fix the design, and QA checks them"
+  hardender: "Babashka has no mutation lane wired (BL-472), so the pass would only record the degraded fallback; the coder's bb test is the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1834-a-commit-merged-in-from-main-is-never-work-evidence.feature
 
@@ -122,5 +127,11 @@ notes: |
   The interim coder.prompt paragraph ("Until BL-1834 lands") landed on
   main in the same commit as this ticket.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  2026-10-01 (specifier): required_stages trimmed from the full chain to
+  [coder, qa] at the human's direction (Claude Code, specifier session),
+  verbatim:
+  > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
+  The skip reasons are in stage_skip_reasons. Routing honours them
+  because required_stages_routing_enabled is true (BL-606).
 
 assigned_to: coder

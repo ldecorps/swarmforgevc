@@ -20,7 +20,10 @@ mutation_cost: medium
 # nightClosingCeremonyLive.ts and the ledger read and deadline action in
 # night-closing-ceremony-run.ts, plus retiring BL-1641's tests.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix plus retirements; nothing to refactor"
+  architect: "the human's ruling and the three invariants fix the design, and QA checks them"
 
 acceptance: specs/features/BL-1836-the-closing-ceremony-waits-for-the-documenters-briefing-and-never-writes-one.feature
 
@@ -185,3 +188,9 @@ notes: |
   was found at mint by measuring the features this ticket's procedure
   runs (BL-1788 rule); its register rows land in the mint commit.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  2026-10-01 (specifier): required_stages trimmed from the full chain to
+  [coder, hardender, documenter, qa] at the human's direction (Claude Code, specifier session),
+  verbatim:
+  > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
+  The skip reasons are in stage_skip_reasons. Routing honours them
+  because required_stages_routing_enabled is true (BL-606).

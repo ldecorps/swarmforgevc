@@ -17,7 +17,12 @@ mutation_cost: low
 # low: one exemption in handoff_lib.bb's pause partition plus its bb test
 # and one step handler. bb has no mutation lane wired (engineering.prompt).
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one decision in one Babashka function changes; nothing to refactor"
+  architect: "the spec and its invariants fix the design, and QA checks them"
+  hardender: "Babashka has no mutation lane wired (BL-472), so the pass would only record the degraded fallback; the coder's bb test is the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1835-the-ceremonys-briefing-note-reaches-the-documenter-through-its-own-pause.feature
 
@@ -167,3 +172,9 @@ notes: |
   33b80500, and closing-ceremony-state.json. e9f91d6746 has no ticket and
   no hotfix-ledger row; this is the first ticket to change its behaviour.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  2026-10-01 (specifier): required_stages trimmed from the full chain to
+  [coder, qa] at the human's direction (Claude Code, specifier session),
+  verbatim:
+  > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
+  The skip reasons are in stage_skip_reasons. Routing honours them
+  because required_stages_routing_enabled is true (BL-606).

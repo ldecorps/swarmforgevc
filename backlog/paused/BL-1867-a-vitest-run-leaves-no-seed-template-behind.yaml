@@ -16,7 +16,12 @@ mutation_cost: low
 # low: one test helper under extension/test/helpers/ and its own test;
 # not a Stryker target.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a small test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1867-a-vitest-run-leaves-no-seed-template-behind.feature
 
@@ -152,3 +157,9 @@ notes: |
   (about 18M inodes, expect it to take a while). Until it runs,
   BL-1866's timing measurements read a slow /tmp.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  2026-10-01 (specifier): required_stages trimmed from the full chain to
+  [coder, qa] at the human's direction (Claude Code, specifier session),
+  verbatim:
+  > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
+  The skip reasons are in stage_skip_reasons. Routing honours them
+  because required_stages_routing_enabled is true (BL-606).

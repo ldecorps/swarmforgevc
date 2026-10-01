@@ -16,7 +16,12 @@ mutation_cost: low
 # land_step_lib_test_runner.bb. Babashka has no mutation lane wired, so
 # the unit suite is the gate.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one decision in one Babashka function changes; nothing to refactor"
+  architect: "the spec and its invariants fix the design, and QA checks them"
+  hardender: "Babashka has no mutation lane wired (BL-472), so the pass would only record the degraded fallback; the coder's bb test is the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1343-replay-drops-the-tickets-own-path.feature
 # This pointer does not claim BL-1343's contract. It is the contract this
@@ -104,9 +109,8 @@ description: |
 
 constraints: >
   swarmforge/scripts/land_step_lib.bb (land-plan only),
-  swarmforge/scripts/test/land_step_lib_test_runner.bb, the land-step
-  how-to section if the documenter finds the identical-tip answer
-  undocumented, and evidence. BL-1343's feature and step handler are not
+  swarmforge/scripts/test/land_step_lib_test_runner.bb, and
+  evidence. BL-1343's feature and step handler are not
   edited. Never edit backlog/standing-reds.tsv in the parcel: the land
   retires the row (coder.prompt, BL-1663).
 
@@ -139,3 +143,9 @@ notes: |
   in the same commit. It holds no parcel, so no resume note is owed.
   Found while minting BL-1866 for QA's unowned-red note 003662.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  2026-10-01 (specifier): required_stages trimmed from the full chain to
+  [coder, qa] at the human's direction (Claude Code, specifier session),
+  verbatim:
+  > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
+  The skip reasons are in stage_skip_reasons. Routing honours them
+  because required_stages_routing_enabled is true (BL-606).
