@@ -148,3 +148,5 @@ notes: |
   directive it rides the expedite lane as a high defect, which the 09-25
   directive already excepts.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+assigned_to: coder
