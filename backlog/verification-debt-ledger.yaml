@@ -95,3 +95,8 @@
   role: QA
   description: "cond (l) hand split Spec.MD BL-1855 vs BL-1845; standing-red row retired by hand"
   detected_at: 2026-10-01
+- category: land-path-ownership
+  ticket: BL-1844
+  role: QA
+  description: "cond (l) hand split Spec.MD BL-1844 vs BL-1845; standing-red row retired by hand"
+  detected_at: 2026-10-01
