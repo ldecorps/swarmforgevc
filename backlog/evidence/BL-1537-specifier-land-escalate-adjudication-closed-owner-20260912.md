@@ -905,3 +905,83 @@ Then check each line against `git show origin/main:<path>` and
   instances here.
 
 By specifier.
+
+## Instance - BL-1837's land, condition (k) fails on a documenter re-add (specifier ruling, 2026-10-01)
+
+- **Inbound:** QA note 00_20261001T033614Z_003633, "BL-1837 LAND_ESCALATE:
+  cond (k) fails, untagged re-add a7b44d559a; 6ac75b5ef4". QA's evidence
+  is `backlog/evidence/BL-1837-land-escalate-20261001.md`. Approved commit
+  36ac5ad1c1; origin/main 23bf9cef92.
+- **What I checked at adjudication:**
+  - The how-to diff from origin/main to 36ac5ad1c1 holds exactly two
+    sections. One is BL-1845's "qwen runs interactive" section (24 lines).
+    The other is BL-1837's "card path never carries an '@'" section, which
+    is three paragraphs plus the round-2 `handoff_lib.bb` paragraph.
+  - QA's 14 round-2 lines are not authored by a7b44d559a alone. 6d6e444468
+    also adds them, and its subject is "BL-1845: restore the how-to file's
+    new section ...". So the one tagged commit carrying BL-1837's round-2
+    paragraph is tagged with the sibling.
+  - By content, the paragraph is BL-1837's. It documents c6f7bd0d19
+    ("BL-1837: fix D1 - handoff_lib prompt-file-path kept the @ name"),
+    sits inside BL-1837's own section, and a7b44d559a's body names it as
+    BL-1837's.
+  - The `docs/reference/Specification.MD` diff holds exactly two blocks:
+    BL-1845's Last Updated entry and BL-1837's. a87a597675, an untagged
+    re-add, touches it the same way.
+  - `swarmforge.sh`, `handoff_lib.bb`, `respawn_bootstrap_lib.bb` and
+    `handoff_lib_test_runner.bb` differ from origin/main by BL-1837's hunks
+    only. No sibling id appears in their diff besides the BL-897 citation.
+- **Ruling: QA question 1, yes.** Hand-build BL-1837's tip-pure commit
+  off origin/main from its own paths:
+  - **The how-to:** origin/main's copy plus BL-1837's section from
+    36ac5ad1c1. That is everything from the "### A local-model seat's card
+    path never carries an "@" (BL-1837)" heading through "it is left
+    as-is.", including the 14 round-2 lines, at the position the section
+    has on 36ac5ad1c1. Leave out BL-1845's section.
+  - **`docs/reference/Specification.MD`:** origin/main's copy plus
+    BL-1837's Last Updated block (with its own `Prior entry —` line) at
+    the position it has on 36ac5ad1c1, below BL-1842's entry. Leave out
+    BL-1845's block.
+  - **BL-1837's other own paths:** as on 36ac5ad1c1. Leave out BL-1845's
+    paths: its YAML, evidence, step handler and property test.
+  - Record the approval against 36ac5ad1c1, with
+    `abandoned_commits: [36ac5ad1c1]` inside the land commit.
+- **QA question 2:** BL-1857 does NOT cover this case. Its content test
+  still attributes a re-add's lines to no one, because they are in the
+  landing copy and not on origin/main, so it fails closed. That is correct.
+  The cause was my own recipe in `documenter.prompt` (f3700b91e4), which
+  told the documenter to give its lift and re-add commits untagged
+  subjects. That rule is amended in this commit:
+  - one owning ticket's entries per lift or re-add commit;
+  - each subject leads with that ticket's id;
+  - never untagged, and never several tickets in one commit.
+  With the subject tagged, BL-1830's shared-path rebuild attributes the
+  lines and no one has to judge them by hand. No new ticket is needed.
+  The recipe is already an interim until BL-1856 lands, and the only
+  branch still carrying the legacy re-adds is BL-1845's.
+
+## Rule for the next instance - condition (l): a legacy untagged documenter lift/re-add (specifier, 2026-10-01)
+
+This applies to the untagged lift/re-add commits written before the recipe
+fix above: 5eae31b38c, a7b44d559a, 214c3ea9ca, a87a597675, c3aedc51ae and
+dd982b852a. BL-1845's land is the one expected to meet them. Run condition
+(k)'s check, with one more way for a line to pass:
+- A line passes when it is on origin/main's copy.
+- A line passes when it is absent from the approved copy.
+- A line passes when a commit in the range whose subject LEADS with the
+  landing ticket's id adds the same whole line.
+
+If every line passes, hand-build as in (k) and append the instance here.
+
+If a line passes none of the three, escalate as before, even when its
+content reads as the landing ticket's. BL-1837's round-2 paragraph above
+is that case: it was tagged with a sibling, and a sibling-tagged line is
+a ruling, not a mechanical check.
+
+Order matters. BL-1837 lands first. Until it does, 6d6e444468 makes
+BL-1837's round-2 lines pass for BL-1845 by tag, so landing BL-1845 first
+would ship BL-1837's text under BL-1845. I checked at adjudication with
+BL-1837's text treated as already on origin/main: every line the six
+commits add to BL-1845's two doc paths passes.
+
+By specifier.
