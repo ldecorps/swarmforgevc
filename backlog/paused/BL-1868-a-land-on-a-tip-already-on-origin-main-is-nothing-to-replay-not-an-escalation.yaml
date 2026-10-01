@@ -1,0 +1,141 @@
+id: BL-1868
+title: "BL-1343's scenario 05 has been red on main since BL-1678's land (4823eafa41, 2026-09-21) with no register row: land-plan on a tip already identical to origin/main escalates (today 'origin/main..commit holds no commit credited to <ticket>', before BL-1713 'nothing to commit ... own-paths identical to origin/main') instead of answering that nothing is left to replay; this ticket owns the row and restores the non-refusal"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the acceptance lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05). It also makes
+# QA adjudicate an escalation for a land with nothing to publish.
+status: todo
+epic: swarm-reliability
+priority: 2
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one early return in land-plan plus a unit case in
+# land_step_lib_test_runner.bb. Babashka has no mutation lane wired, so
+# the unit suite is the gate.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1343-replay-drops-the-tickets-own-path.feature
+# This pointer does not claim BL-1343's contract. It is the contract this
+# fix must satisfy: scenario 05 goes green and every other scenario stays
+# green (the BL-1251 shape). It also earns BL-1276's task-scope exemption
+# for that path. The parcel neither edits the feature nor adds a handler.
+# bl1343ReplayDropsTheTicketsOwnPathSteps.js already registers every step.
+# No required_wiring: the handler and land-plan already exist, so any
+# anchor would match before and after the fix (BL-1235).
+
+human_approval: approved
+approval_context: >
+  Standing-red owner minted the same pass the specifier found the red
+  while measuring for BL-1866 (2026-10-01). No choice is posed: BL-1343's
+  scenario 05 states the intended behaviour, and neither BL-1678's ticket
+  nor its land retired it. FIRM: BL-1343's feature and its step handler
+  are not edited. FIRM: BL-1678's and BL-1713's guards are unchanged for
+  every tip that differs from origin/main.
+
+invariants:
+  - "land-plan on a commit equal to origin/main never escalates and never builds a replay commit; it answers that nothing is left to replay."
+  - "For every commit that differs from origin/main, land-plan's answer is exactly what it is on main today (BL-1678's and BL-1713's features stay green)."
+
+source: |
+  Found by the specifier on 2026-10-01 while measuring, for BL-1866's
+  qa_e2e_procedure, the features whose step handlers sweep at
+  registration (the 2026-09-27 rule: a procedure step that runs a feature
+  the ticket does not own states its result as measured at mint).
+  `node specs/pipeline/cli.js specs/features/BL-1343-replay-drops-the-tickets-own-path.feature`
+  on main 4efbf49fd4 gave 5 pass, 1 fail:
+
+  > not ok 5 - An empty replay set on an identical tip is a real answer
+  > ... expected nothing left to replay, got: {"action":"escalate","reason":"land-step: 557bb0c632..557bb0c632 holds no commit credited to BL-9343"}
+
+  No row in backlog/standing-reds.tsv names this feature.
+
+description: |
+  ## What is wrong
+
+  BL-1343's scenario 05 says that when the tip is identical to
+  origin/main, land-plan answers that nothing is left to replay and does
+  not refuse. The handler accepts either `{:action :land}` or an empty
+  path set. The specifier bisected it on 2026-10-01. Each revision was
+  exported with `git archive <rev> specs swarmforge` into a scratch dir,
+  with the live `extension/` linked in, and the feature run there:
+  - 0fee3e80d1 (BL-1670, 09-21 09:51) and 4823eafa41~1: 05 ok.
+  - 4823eafa41 (BL-1678's land, 09-21 15:45): 05 not ok.
+  - 2420ea71ed~1, 2420ea71ed (BL-1713), 958ceac5fa, cd041b61bb,
+    17fa16cf56, bfc95ef977, 3439119833: 05 not ok.
+
+  BL-1678 replaced the bare `{:action :land}` that land-plan returned for
+  a clean tip with a tip-pure replay built from the ticket's own paths.
+  On an identical tip that replay has an empty index, so it escalated
+  with "land-step replay: nothing to commit for <id> - own-paths
+  identical to origin/main". BL-1713 (09-24) later added the
+  `range-credits-ticket?` check ahead of the replay. An empty range
+  credits nothing, so today the escalation reads "<origin/main>..<commit>
+  holds no commit credited to <id>". Neither ticket mentions the
+  identical tip. land-plan's own docstring (around line 2063 of
+  land_step_lib.bb) still says that `paths []` is a real answer when the
+  tip is identical to origin/main. No lane runs BL-1343's feature, so the
+  red went unseen for 10 days.
+
+  ## What is wanted
+
+  - BL-1343's feature passes 6 of 6, with scenario 05 green again
+    (invariant 1).
+  - BL-1678's and BL-1713's features stay 4 of 4. Every tip that differs
+    from origin/main gets the same answer as today (invariant 2).
+  - A unit case in `land_step_lib_test_runner.bb` pins invariant 1:
+    land-plan on a commit equal to origin/main gives no escalate and
+    builds no replay commit.
+  - The coder's evidence says what `land_main_publish.sh` and
+    `land_step_cli.bb` do with that answer, for example a no-op publish
+    or an already-landed skip. Any caller that would then misreport the
+    land is raised as a note to the specifier, not folded in.
+
+  ## How (direction, not mandate)
+
+  - Add an early branch in land-plan, ahead of BL-1713's credited-range
+    check and BL-1678's replay, for `commit` equal to the resolved
+    origin/main. Return the non-refusal answer the BL-1343 handler accepts
+    (`{:action :land}`). Nothing is built, so nothing unapproved can ship
+    (BL-1678's invariant holds trivially).
+
+constraints: >
+  swarmforge/scripts/land_step_lib.bb (land-plan only),
+  swarmforge/scripts/test/land_step_lib_test_runner.bb, the land-step
+  how-to section if the documenter finds the identical-tip answer
+  undocumented, and evidence. BL-1343's feature and step handler are not
+  edited. Never edit backlog/standing-reds.tsv in the parcel: the land
+  retires the row (coder.prompt, BL-1663).
+
+out_of_scope: |
+  - BL-1865 (the bl1343 property file's per-draw lib load). It touches
+    the bl1343 property test, not land_step_lib.bb's land-plan, so the
+    two are independent.
+  - Any lane that runs every feature on main. That this red went unseen
+    for 10 days is the general gap, not this ticket's.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), from the repo
+  root.
+  1. `node specs/pipeline/cli.js specs/features/BL-1343-replay-drops-the-tickets-own-path.feature`:
+     6 of 6 ok. Measured at mint on main 4efbf49fd4: 01, 02, 03, 04 and
+     06 ok; 05 not ok as quoted in source (the red this ticket owns).
+  2. `node specs/pipeline/cli.js` on
+     `specs/features/BL-1678-a-land-never-ships-an-unapproved-forward-that-shares-no-path-with-the-landing-ticket.feature`
+     and on
+     `specs/features/BL-1713-the-land-step-never-blesses-a-commit-carrying-none-of-the-tickets-own-work.feature`:
+     4 of 4 ok each. Measured at mint: 4 of 4 ok each.
+  3. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS,
+     including the new identical-tip case.
+  After the land: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+  reports no row for BL-1343's feature.
+
+notes: |
+  Minted 2026-10-01 by the specifier, the same pass the red was found
+  (unowned red at first sighting, severity high), with its register row
+  in the same commit. It holds no parcel, so no resume note is owed.
+  Found while minting BL-1866 for QA's unowned-red note 003662.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

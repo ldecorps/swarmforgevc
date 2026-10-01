@@ -1,0 +1,188 @@
+id: BL-1866
+title: "bl800's full-registry property test went red in QA's full property-lane run for BL-1822 on 2026-10-01 with no register row; building the full step registry takes 6 to 10 s of its 30000 ms budget alone because 13 step handlers each list /tmp from the top level of registerSteps to sweep stale fixtures, and /tmp holds about 445,000 entries; this ticket owns the row and makes building the full registry list nothing in the temp directory"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05), and it holds
+# BL-1822's land.
+status: todo
+epic: code-quality-gates
+priority: 2
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: 13 step handler files under specs/pipeline/steps/ get the same
+# mechanical move, plus this ticket's own handler; no extension/src, no
+# Stryker target.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1866-building-the-full-step-registry-lists-no-temp-directory.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1866FullRegistryListsNoTempDirSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the 13 handlers and their
+# sweeps already exist, so any pattern on them matches before and after.
+
+human_approval: approved
+approval_context: >
+  Standing-red owner minted the same pass as QA's unowned-red note 003662
+  (2026-10-01). No choice is posed. FIRM: the bl800 test file is not
+  edited. Its assertions, its numRuns (domain.length * 10) and its
+  30000 ms literal budget stay as they are; no retry, no seed pin and no
+  budget raise. FIRM: each of the 13 handlers still sweeps its own
+  prefix's stale fixtures before it creates its first fixture of a
+  process (BL-971). The sweep moves out of registration and is not
+  deleted.
+
+invariants:
+  - "Building the full step registry (requiring specs/pipeline/steps/index.js and calling its registerSteps) lists, creates or removes nothing in /tmp or os.tmpdir()."
+  - "Each of the 13 handlers still removes its own prefix's stale fixtures before it creates its first fixture in a process, and removes nothing its prefix does not name."
+
+source: |
+  QA's unowned-red note 003662 (2026-10-01T15:52Z), verbatim:
+
+  > unowned-red bl800StepRegistryScopingConsistency holds BL-1822, ev 7ca2a87030
+
+  Evidence `backlog/evidence/BL-1822-QA-hold-unowned-red-20261001.md`
+  (7ca2a87030): `npm run test:properties` (ONE run) exit 1, and
+  register_join names this file `absent`. The gather report keeps only a
+  4000-character tail, which held only the allowlisted BL-871 heartbeat
+  lines, so the failing line was not captured. QA ran the file alone at
+  BL-1822's parcel 3f42139c68: 2/2 passed in 6797 ms.
+
+description: |
+  ## What is wrong
+
+  The file's first test builds the full step registry and checks that
+  BL-623's steps resolve to the same handler as under the focused entry
+  point. Its budget is a 30000 ms literal. The specifier measured it on
+  2026-10-01 on main, from `extension/`:
+  - One alone run of `npx vitest run --config vitest.properties.config.mjs
+    test/bl800StepRegistryScopingConsistency.property.test.js
+    --reporter=json` gave test 1 9667 ms and test 2 2 ms, at a load of
+    3.20 / 6.56 / 7.30.
+  - Profiled in plain node:
+    - requiring `steps/index.js` takes 1017 ms and makes no temp-dir call;
+    - `registerSteps` into a fresh registry takes 6150 to 10228 ms
+      (18291 definitions from 1330 handler files);
+    - 480 resolves take 322 ms.
+  - Recording `fs.readdirSync` and `fs.rmSync` during `registerSteps`
+    finds exactly 13 calls, each `readdirSync('/tmp')`. Timed one at a
+    time, these 13 handlers' `registerSteps` take 405 to 516 ms each,
+    5991 ms in all. The other 1317 handlers take 156 ms between them.
+  - The 13 are bl1299ReverseHopMasterResident, bl1306HandoffAuditReroute,
+    bl1320SeatOperatorStep, bl1323MainSyncDeadlockOverlapHintsStamp,
+    bl1327DescentLadderProposal, bl1332SharedPathLineLeak,
+    bl1335ExhaustionOpensFailoverRecord, bl1339LandApprovalSharedRoot,
+    bl1343ReplayDropsTheTicketsOwnPath, bl1352EscalationTransportFault,
+    bl1375ApprovedSiblingsCanLand, bl1536BounceIsNeverStampedMergeOnly
+    and bl1565CoordinatorNeverReceivesGitHandoff (each `...Steps.js`).
+    Each calls `sweepStaleFixtures()` as the first line of
+    `registerSteps`, a BL-971 prefix sweep of `SHORT_FIXTURE_BASE`
+    (`/tmp`). BL-1630 moved some of these sweeps out of module load and
+    into `registerSteps`.
+  - The census came from this shell census. It counts the `registerSteps`
+    bodies whose first 12 lines call a sweep at two-space indent:
+    `for f in specs/pipeline/steps/*Steps.js; do awk '/^function
+    registerSteps\(registry\) \{/{on=1;n=0} on{n++; if ($0 ~
+    /^  sweep[A-Za-z]*\(/) {print FILENAME; on=0} if(n>12) on=0}' "$f";
+    done`. It prints exactly these 13 files, and the fs-recording probe
+    agrees.
+  - `/tmp` held 463,388 entries. 445,231 of them are leaked
+    `bl1039-seed-template-*` dirs, which BL-1867 owns. Each listing
+    therefore costs about half a second, and more under the lane's load.
+    A test that spends a third of its budget on directory listings alone
+    goes red once the lane is busy.
+
+  ## What is wanted
+
+  - Building the full registry makes no listing, creation or removal in
+    the temp directory (scenario 01, invariant 1). The registry still
+    holds at least 18000 definitions, so a registry that failed to load
+    cannot pass vacuously (BL-1445).
+  - Each of the 13 handlers still sweeps its own stale fixtures, but not
+    from the top level of `registerSteps` (scenario 02, invariant 2).
+    Pin the census at exactly 13 named files.
+  - bl800's full-registry test finishes alone in under 3000 ms, in the
+    fastest of three runs (scenario 03). That is 10% of its budget, and
+    the quiet-host prediction is about 1 s (registration about 160 ms
+    plus resolves about 320 ms). The coder's evidence records the before
+    and after test-1 ms with the 1-minute load of each run.
+  - The register row added by this mint is present and owned while this
+    ticket is open, and the land retires it (BL-1631). Scenario 04 holds
+    in both states.
+  - One full property-lane run on the parcel. If bl800 is red in it, the
+    evidence carries its failure line verbatim (use a reporter that keeps
+    it, e.g. `--reporter=json --outputFile`), so the class of the
+    2026-10-01 red is on record. That class may be a timeout, or a sweep
+    racing a sibling's fixture. A failure other than a timeout is raised
+    as a note to the specifier, not folded in.
+
+  ## How (direction, not mandate)
+
+  - Move each handler's sweep to the point where that handler creates its
+    first fixture of the process: a once-per-process guard inside its
+    `initFixture`, or its Background step. Registration then only defines
+    patterns.
+  - Scenario 01's handler builds the registry in a child `node` process
+    that wraps `fs.readdirSync`, `fs.rmSync`, `fs.rmdirSync` and
+    `fs.opendirSync`. Any call naming a path equal to or under `/tmp` or
+    `os.tmpdir()` counts. The specifier's probe did exactly this
+    (`REQUIRE_TMP_CALLS 0`, `REGISTER_TMP_CALLS 13`, `DEFS 18291`).
+  - Scenario 03 runs the bl800 file three times alone with a JSON
+    reporter and takes test 1's fastest duration (the BL-1658 D2 rule).
+    At about 5 s per run after the fix, that fits the per-mutant ceiling
+    (BL-1541).
+  - Step handler `specs/pipeline/steps/bl1866FullRegistryListsNoTempDirSteps.js`,
+    discovered from its own file (BL-1371).
+
+constraints: >
+  The 13 named step handler files, this ticket's own step handler, and
+  evidence. The bl800 test file, specs/pipeline/stepRegistry.js,
+  specs/pipeline/steps/index.js and extension/src stay unchanged. Never
+  edit backlog/standing-reds.tsv in the parcel: the land retires the row
+  (coder.prompt, BL-1663).
+
+out_of_scope: |
+  - The leaked bl1039 seed templates in /tmp and the helper that leaks
+    them (BL-1867).
+  - Making the 13 prefix sweeps owner-aware, so they reap only roots no
+    live run owns (the BL-1385/BL-1390 rule). Those sweeps were blind
+    before this ticket, and this ticket only moves them.
+  - Other property files that build the full registry (bl1277,
+    acceptanceContractGate, bl968). They get the same saving for free,
+    and a new red there is a new unowned-red note.
+  - The QA gather report's 4000-character tail that dropped the failing
+    line.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), from `extension/`
+  unless noted.
+  1. `node specs/pipeline/cli.js specs/features/BL-1866-building-the-full-step-registry-lists-no-temp-directory.feature`
+     from the repo root: 4 of 4 ok. Measured at mint, no handler exists
+     yet. Read by hand: 01 is red (13 `/tmp` listings during
+     registerSteps), 02 is red (all 13 sweep from the top level of
+     registerSteps), 03 is red (9667 ms alone), and 04 holds (the row is
+     present and owned).
+  2. `npx vitest run --config vitest.properties.config.mjs test/bl800StepRegistryScopingConsistency.property.test.js --reporter=verbose`
+     once: 2/2 passed, test 1 under 3000 ms. Record the time and
+     `cat /proc/loadavg`.
+  3. `npm run test:properties` once: bl800 not red. Record any other red
+     with its text and raise it as an unowned-red note; never fold it in.
+  4. From the repo root, `node specs/pipeline/cli.js` on the BL-1343 and
+     BL-1565 features: their result equals main's. This checks that the
+     moved sweeps still run before their handlers' first fixture.
+  After the land: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+  reports no row for the bl800 file.
+
+notes: |
+  Minted 2026-10-01 by the specifier from QA's unowned-red note 003662,
+  the same pass, with its register row in the same commit (standing red
+  at first sighting, severity high). The holder (QA, BL-1822's land) is
+  sent "BL-1822: bl800StepRegistryScopingConsistency owned by BL-1866
+  (<sha>) - resume land" in the same pass (BL-1566); this line records
+  that it was sent. BL-1867 was minted in the same pass for the
+  seed-template leak found while measuring this one.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

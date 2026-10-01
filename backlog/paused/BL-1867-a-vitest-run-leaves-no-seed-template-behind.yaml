@@ -1,0 +1,154 @@
+id: BL-1867
+title: "The BL-1039 shared-repo fixture seeds a new template on every copy and never removes it in a vitest worker: one test file of 11 tests leaves 11 bl1039-seed-template dirs, and /tmp held 445,231 of them on 2026-10-01 (about 76 GB and 18M of the root filesystem's inodes, growing about 40,000 a day); a process now seeds one template and a run leaves none behind"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. At about 1.6M inodes a day
+# against 45M free, the root filesystem runs out of inodes in about four
+# weeks (swarm-down). Today every directory listing of /tmp costs about
+# half a second, which is the cost behind BL-1866's standing red.
+status: todo
+epic: code-quality-gates
+priority: 2
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test helper under extension/test/helpers/ and its own test;
+# not a Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1867-a-vitest-run-leaves-no-seed-template-behind.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1867SeedTemplateLeakSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): sharedRepoFixture.js and its
+# callers already exist, so any pattern on them matches before and after.
+
+human_approval: approved
+approval_context: >
+  Defect found by the specifier while minting BL-1866 for QA's
+  unowned-red note 003662 (2026-10-01). No choice is posed. FIRM: the
+  BL-1039 contract holds. A caller still gets an independent repository
+  with identity configured and one initial commit on main, for one
+  filesystem copy and no git spawn per copy. FIRM: the parcel deletes
+  nothing in /tmp it did not create. The 445,231 already leaked are a
+  one-time host cleanup for the human (see notes), never a sweep run
+  inside a test.
+
+invariants:
+  - "A process seeds the bl1039 template at most once unless the template is found unhealthy, and seedCount() equals the number of templates that process created."
+  - "No vitest run, unit or property config, leaves a bl1039-seed-template-* entry in its temp directory once it exits, however its workers end."
+
+source: |
+  Specifier measurement, 2026-10-01, while profiling the bl800 red that
+  QA's unowned-red note 003662 raised (BL-1866):
+  - `ls -f /tmp | wc -l` returned 463,388 entries, 445,231 of them
+    `bl1039-seed-template-*` dirs. By mtime: 46,237 on 09-18, 66,842 on
+    09-30, 31,453 on 10-01 by 17:00.
+  - One template is 172 KB and 41 inodes. `df -i /` showed 22,011,107
+    inodes used and 45,097,757 free.
+  - `TMPDIR=<empty dir> npx vitest run test/applyCooldownPauseCli.test.js`
+    from `extension/` gave 11 of 11 passed in 1735 ms, and left 11
+    `bl1039-seed-template-*` dirs in that TMPDIR. Measured twice, 11
+    both times.
+  - In one plain node process, 5 calls of `copySeededRepoInto` left 5
+    templates on disk before exit, while `seedCount()` returned 1.
+  - `git config core.worktree` in a fresh repo exits 1 (the key is
+    unset).
+
+description: |
+  ## What is wrong
+
+  `extension/test/helpers/sharedRepoFixture.js` (BL-1039) has two
+  defects.
+  - **A template is seeded on every copy.** `seedTemplateOnce()` first
+    asks `templateIsHealthy(templateDir)`, which runs `git config
+    core.worktree` through `execFileSync`. On a healthy template that key
+    is unset, so git exits 1 and `execFileSync` throws. The catch returns
+    false, the template reads as unhealthy, and a new one is seeded. The
+    reset also sets `seedings = 0`, so `seedCount()` always reports 1.
+    BL-1039's saving (four git spawns per caller avoided) is gone, and
+    the counter that should show it cannot. The health check came from
+    BL-1112's d262889196 (2026-08-27).
+  - **Templates are never removed in a vitest worker.**
+    `mkProcessTmpDir` removes each template only on
+    `process.once('exit')`. A vitest fork worker that is torn down never
+    emits it, so every template a worker seeded stays in /tmp.
+
+  At 93 test files using the helper and every role running lanes all
+  day, /tmp gains about 40,000 dirs a day.
+
+  ## What is wanted
+
+  - One template per process (scenario 01), with every copy still a git
+    repository with exactly one commit on main.
+  - `seedCount()` tells the truth (scenario 02). When a template is
+    really found unhealthy (core.worktree set), it is re-seeded, and the
+    count shows 2.
+  - A vitest run of a file that copies the seeded repository leaves no
+    template behind (scenario 03, invariant 2). Pin the census: the file
+    under test must still require `copySeededRepoInto`, or the scenario
+    passes vacuously (BL-1445).
+  - The coder's evidence records the before and after counts from
+    scenario 03's run, and one unit-lane run with an isolated TMPDIR:
+    how many `bl1039-seed-template-*` it leaves, before and after.
+
+  ## How (direction, not mandate)
+
+  - Treat `git config core.worktree` exit 1 with empty output as "no
+    key", which is healthy. Only a non-empty value is unhealthy. Never
+    zero the counter on a re-seed.
+  - For worker teardown, either place one template per run where the
+    main process removes it (a globalSetup teardown runs in the vitest
+    main process, not in a worker), or use one fixed, content-addressed
+    template path reused across runs and created atomically
+    (mkdtemp + rename). The coder picks one. Either way nothing is left
+    per run.
+  - Scenario 03's handler runs vitest once with `TMPDIR` set to a fresh
+    mkdtemp dir. That takes about 2 to 5 s, inside the per-mutant ceiling
+    (BL-1541). The handler removes that dir in a `finally`.
+  - Step handler `specs/pipeline/steps/bl1867SeedTemplateLeakSteps.js`,
+    discovered from its own file (BL-1371).
+
+constraints: >
+  extension/test/helpers/sharedRepoFixture.js and, if the coder picks
+  it, extension/test/helpers/tmpDir.js or a vitest globalSetup, plus the
+  helper's own unit test, the step handler and evidence. extension/src
+  stays unchanged. No test may sweep the existing leaked templates.
+
+out_of_scope: |
+  - Removing the 445,231 templates already in /tmp. That is a one-time
+    host cleanup for the human (command in notes). A sweep over about
+    18M inodes inside a test would blow every budget, and the parcel
+    must not delete what it did not create.
+  - Other leaked /tmp prefixes counted the same day:
+    `sfvc-unit-lane-budget-` 858, `swarmforge-tmp-cleanup-registry` 532,
+    `bl1754-peer-question` 354, `bl547-model-steward` 285,
+    `bl1617-msg`/`bl1617-fixture` 256 each, `sfvc-launch` 253. Each is
+    a census of its own, not this ticket.
+  - BL-1866 (the 13 step handlers that list /tmp at registration).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. From the repo root, `node specs/pipeline/cli.js specs/features/BL-1867-a-vitest-run-leaves-no-seed-template-behind.feature`:
+     3 of 3 ok. Measured at mint, no handler exists yet. Read by hand on
+     main: 01 is red (5 templates for 5 copies), 02 is red (the count
+     reports 1), and 03 is red (11 templates left).
+  2. From `extension/`, `npm test` once with `TMPDIR` set to a fresh
+     dir: the lane result equals main's, and `ls $TMPDIR | grep -c
+     '^bl1039-seed-template-'` prints 0. Record the lane's duration
+     beside main's.
+  3. From `extension/`, `npm run test:properties` once with `TMPDIR` set
+     to a fresh dir: the same count prints 0. Record any red with its
+     text, and raise an unregistered one as an unowned-red note.
+
+notes: |
+  Minted 2026-10-01 by the specifier, the same pass as BL-1866 (QA
+  unowned-red note 003662), from measurements made while profiling it.
+  For the human, not the parcel: a one-time cleanup of the leaked
+  templates older than an hour, with no live owner, is
+  `find /tmp -maxdepth 1 -name 'bl1039-seed-template-*' -mmin +60 -exec rm -rf {} +`
+  (about 18M inodes, expect it to take a while). Until it runs,
+  BL-1866's timing measurements read a slow /tmp.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
