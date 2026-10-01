@@ -18,6 +18,15 @@
 // repository is built and asked in one bb process, so a run costs one
 // subprocess per case rather than one per question.
 //
+// BL-1865: that one-bb-per-question design still reloaded the 4071-line
+// land_step_lib.bb from scratch on every draw (~1.0-1.1 s per load) - with 27
+// draws per test, most of each test's wall time was the same lib being
+// re-parsed 27 times. landStepLibSession starts ONE bb process per test that
+// loads the lib once and answers each draw's own expression over stdin, so
+// the load cost is paid once per test, never once per draw. Every draw still
+// sends its own expression, evaluated fresh against its own fixture root -
+// no draw's answer is cached, stubbed or reused for another draw.
+//
 // GENERATOR REACH (the asserted floor, never a hoped-for one). The whole
 // defect lives in ONE corner: a path the landing ticket introduces whose only
 // attributing commit names a sibling. A generator drawing subjects freely
@@ -41,11 +50,12 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync, spawnSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { checkoutSeededRepo } = require('./helpers/sharedRepoFixture');
 const { sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { startBbSession } = require('./helpers/landStepLibSession');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -92,26 +102,16 @@ function buildRepo(files) {
   return root;
 }
 
-function ask(root, expression) {
-  const program = `
-(require '[cheshire.core :as json])
-(load-file "${LAND_STEP_LIB}")
-(println (json/generate-string ${expression}))`;
-  const result = spawnSync('bb', ['-e', program], { encoding: 'utf8' });
-  assert.equal(result.status, 0, `bb failed: ${result.stderr}`);
-  return JSON.parse(result.stdout.trim());
-}
-
 function headOf(root) {
   return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 }
 
-function ownPaths(root) {
-  return ask(root, `(land-step-lib/own-paths "${root}" "${headOf(root)}" "${TICKET}" #{"${SIBLING}"})`);
+function ownPaths(session, root) {
+  return session.ask(`(land-step-lib/own-paths "${root}" "${headOf(root)}" "${TICKET}" #{"${SIBLING}"})`);
 }
 
-function landPlan(root) {
-  return ask(root, `(land-step-lib/land-plan {:root "${root}" :commit "${headOf(root)}" :task-ticket-id "${TICKET}"})`);
+function landPlan(session, root) {
+  return session.ask(`(land-step-lib/land-plan {:root "${root}" :commit "${headOf(root)}" :task-ticket-id "${TICKET}"})`);
 }
 
 // Every generated file is one the landing ticket's tip introduces (absent
@@ -197,103 +197,113 @@ function toCommits(testCase) {
   return out;
 }
 
-test('BL-1343/BL-654 invariant 1: a differing tip is never reported as landed or as nothing left to replay', () => {
+test('BL-1343/BL-654 invariant 1: a differing tip is never reported as landed or as nothing left to replay', async () => {
   sweepStaleFixtures();
   const reach = { fullySubtracted: 0, partiallySubtracted: 0, nothingSubtracted: 0 };
+  const session = startBbSession(LAND_STEP_LIB);
 
-  for (const shape of SHAPES) {
-    fc.assert(
-      fc.property(caseArbFor(shape), (testCase) => {
-        const commits = toCommits(testCase);
-        const root = buildRepo(commits);
-        try {
-          const survivors = commits.filter((c) => c.creditedTo !== 'sibling');
-          if (survivors.length === 0) reach.fullySubtracted += 1;
-          else if (survivors.length < commits.length) reach.partiallySubtracted += 1;
-          else reach.nothingSubtracted += 1;
+  try {
+    for (const shape of SHAPES) {
+      await fc.assert(
+        fc.asyncProperty(caseArbFor(shape), async (testCase) => {
+          const commits = toCommits(testCase);
+          const root = buildRepo(commits);
+          try {
+            const survivors = commits.filter((c) => c.creditedTo !== 'sibling');
+            if (survivors.length === 0) reach.fullySubtracted += 1;
+            else if (survivors.length < commits.length) reach.partiallySubtracted += 1;
+            else reach.nothingSubtracted += 1;
 
-          const plan = landPlan(root);
+            const plan = await landPlan(session, root);
 
-          // :land means "merge this tip as it stands", which carries every one
-          // of the ticket's paths onto main - a real completion, admissible
-          // only when no sibling is entangled and so nothing was subtracted.
-          // With a sibling in the range, the tip cannot be taken whole, and
-          // calling it landed is exactly the silent loss this invariant bans.
-          if (plan.action === 'land') {
-            assert.equal(
-              commits.filter((c) => c.creditedTo === 'sibling').length,
-              0,
-              `reported LAND on a tip whose paths a sibling would subtract: ${JSON.stringify(plan)}`,
-            );
+            // :land means "merge this tip as it stands", which carries every one
+            // of the ticket's paths onto main - a real completion, admissible
+            // only when no sibling is entangled and so nothing was subtracted.
+            // With a sibling in the range, the tip cannot be taken whole, and
+            // calling it landed is exactly the silent loss this invariant bans.
+            if (plan.action === 'land') {
+              assert.equal(
+                commits.filter((c) => c.creditedTo === 'sibling').length,
+                0,
+                `reported LAND on a tip whose paths a sibling would subtract: ${JSON.stringify(plan)}`,
+              );
+              return true;
+            }
+            if (plan.action === 'replay') {
+              assert.ok(
+                Array.isArray(plan['own-paths']) && plan['own-paths'].length > 0,
+                `replay with nothing to replay, on a tip that still differs: ${JSON.stringify(plan)}`,
+              );
+            } else {
+              assert.equal(plan.action, 'escalate', `unexpected action: ${JSON.stringify(plan)}`);
+            }
             return true;
+          } finally {
+            fs.rmSync(root, { recursive: true, force: true });
           }
-          if (plan.action === 'replay') {
-            assert.ok(
-              Array.isArray(plan['own-paths']) && plan['own-paths'].length > 0,
-              `replay with nothing to replay, on a tip that still differs: ${JSON.stringify(plan)}`,
-            );
-          } else {
-            assert.equal(plan.action, 'escalate', `unexpected action: ${JSON.stringify(plan)}`);
-          }
-          return true;
-        } finally {
-          fs.rmSync(root, { recursive: true, force: true });
-        }
-      }),
-      { numRuns: SHAPE_CELL_RUNS },
-    );
-  }
+        }),
+        { numRuns: SHAPE_CELL_RUNS },
+      );
+    }
 
-  assertReachFloor(reach, ['fullySubtracted', 'partiallySubtracted', 'nothingSubtracted'], 1, 'subtraction-shape');
+    assertReachFloor(reach, ['fullySubtracted', 'partiallySubtracted', 'nothingSubtracted'], 1, 'subtraction-shape');
+  } finally {
+    session.close();
+  }
 }, propertyLaneTimeoutMs(20000));
 
-test('BL-1343/BL-654 invariant 2: an exclusion that empties the contribution refuses, naming path, ticket and sibling', () => {
+test('BL-1343/BL-654 invariant 2: an exclusion that empties the contribution refuses, naming path, ticket and sibling', async () => {
   sweepStaleFixtures();
   const reach = { refusals: 0, kept: 0 };
+  const session = startBbSession(LAND_STEP_LIB);
 
-  for (const shape of SHAPES) {
-    fc.assert(
-      fc.property(caseArbFor(shape), (testCase) => {
-        const commits = toCommits(testCase);
-        const root = buildRepo(commits);
-        try {
-          const result = ownPaths(root);
-          const siblingOnly = commits.filter((c) => c.creditedTo === 'sibling');
-          const survivors = commits.filter((c) => c.creditedTo !== 'sibling');
+  try {
+    for (const shape of SHAPES) {
+      await fc.assert(
+        fc.asyncProperty(caseArbFor(shape), async (testCase) => {
+          const commits = toCommits(testCase);
+          const root = buildRepo(commits);
+          try {
+            const result = await ownPaths(session, root);
+            const siblingOnly = commits.filter((c) => c.creditedTo === 'sibling');
+            const survivors = commits.filter((c) => c.creditedTo !== 'sibling');
 
-          if (survivors.length === 0) {
-            // Every path credited away: a refusal, and one that says what it
-            // removed - never a silent empty set.
-            reach.refusals += 1;
-            assert.equal(result.paths, null, `a fully-subtracted contribution answered silently: ${JSON.stringify(result)}`);
-            const text = result.warning || '';
-            assert.ok(text.includes(TICKET), `the refusal does not name the landing ticket: ${text}`);
-            assert.ok(text.includes(SIBLING), `the refusal does not name the sibling: ${text}`);
-            for (const c of siblingOnly) {
-              assert.ok(text.includes(c.path), `the refusal does not name ${c.path}: ${text}`);
+            if (survivors.length === 0) {
+              // Every path credited away: a refusal, and one that says what it
+              // removed - never a silent empty set.
+              reach.refusals += 1;
+              assert.equal(result.paths, null, `a fully-subtracted contribution answered silently: ${JSON.stringify(result)}`);
+              const text = result.warning || '';
+              assert.ok(text.includes(TICKET), `the refusal does not name the landing ticket: ${text}`);
+              assert.ok(text.includes(SIBLING), `the refusal does not name the sibling: ${text}`);
+              for (const c of siblingOnly) {
+                assert.ok(text.includes(c.path), `the refusal does not name ${c.path}: ${text}`);
+              }
+            } else {
+              // Something of the ticket's own survives, so the subtraction is
+              // ordinary tip-pure replay and must NOT refuse (BL-1241/BL-1272
+              // untouched).
+              reach.kept += 1;
+              assert.ok(Array.isArray(result.paths), `an ordinary replay refused: ${JSON.stringify(result)}`);
+              assert.equal(result.warning, null);
+              for (const c of survivors) {
+                assert.ok(result.paths.includes(c.path), `${c.path} was dropped from the replay set`);
+              }
+              for (const c of siblingOnly) {
+                assert.ok(!result.paths.includes(c.path), `${c.path} is a sibling's and should not be replayed`);
+              }
             }
-          } else {
-            // Something of the ticket's own survives, so the subtraction is
-            // ordinary tip-pure replay and must NOT refuse (BL-1241/BL-1272
-            // untouched).
-            reach.kept += 1;
-            assert.ok(Array.isArray(result.paths), `an ordinary replay refused: ${JSON.stringify(result)}`);
-            assert.equal(result.warning, null);
-            for (const c of survivors) {
-              assert.ok(result.paths.includes(c.path), `${c.path} was dropped from the replay set`);
-            }
-            for (const c of siblingOnly) {
-              assert.ok(!result.paths.includes(c.path), `${c.path} is a sibling's and should not be replayed`);
-            }
+            return true;
+          } finally {
+            fs.rmSync(root, { recursive: true, force: true });
           }
-          return true;
-        } finally {
-          fs.rmSync(root, { recursive: true, force: true });
-        }
-      }),
-      { numRuns: SHAPE_CELL_RUNS },
-    );
-  }
+        }),
+        { numRuns: SHAPE_CELL_RUNS },
+      );
+    }
 
-  assertReachFloor(reach, ['refusals', 'kept'], 1, 'refusal-shape');
+    assertReachFloor(reach, ['refusals', 'kept'], 1, 'refusal-shape');
+  } finally {
+    session.close();
+  }
 }, propertyLaneTimeoutMs(20000));

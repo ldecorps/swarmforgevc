@@ -176,6 +176,7 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-10-01, by: specifier, blamed: specifier, class: spec-gap, commit: 5de866d698, evidence: backlog/evidence/BL-1865-bounce-20261001.md }
+  - { at: 2026-10-01, by: cleaner, blamed: specifier, class: acceptance, commit: 46d506a00b, evidence: backlog/evidence/BL-1865-cleaner-bounce-20261001.md }

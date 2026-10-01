@@ -210,6 +210,24 @@ same invariant, the same oracle blob, not re-pinned. Acceptance:
 No new extension command or setting; no diagram edit — test-only.)
 Prior entry —
 
+**Last Updated:** October 1, 2026 (BL-1845: a local-model seat's qwen
+runs interactive — the launch hands qwen its kickoff as the value of
+`-i` (`--prompt-interactive`) instead of a bare argument, which qwen
+0.22.2 copies into `--prompt`, running one headless pass with no screen
+and no keyboard. On 2026-09-30 the coder@iq3 pane showed nothing of
+qwen's work, had no input box, and never read handoffd's typed wakes —
+the seat picked up mail only by relaunch (six qwen runs between 15:36
+and 16:14 BST). Stamp-off of hotfix c885d0c071, which already landed the
+launch line; this parcel adds the step handler, invariants, and docs.
+The kickoff text (including the resume note) is unchanged, `-y` stays,
+and every other agent's generated launch script is byte-identical.
+Acceptance:
+`specs/features/BL-1845-a-local-model-seats-qwen-runs-interactive-so-its-pane-shows-its-work-and-takes-typed-input.feature`.
+How-to: `docs/how-to/BL-1052-local-model-seat-launch.md` (new "A
+local-model seat's qwen runs interactive" section under Launch). No new
+extension command or setting; no diagram edit — launch-script-internal.)
+Prior entry —
+
 **Last Updated:** October 1, 2026 (BL-1839: swarm stamp-off (BL-848
 review-only certification) of hotfixes 2cdb259806, 7f38e5d7fe and
 91c208a923, which the specifier landed on 2026-09-30 under the human's
@@ -241,24 +259,7 @@ No new extension command or setting; no diagram edit — review-only,
 changes no production file except the smallest start-swarm.sh test
 seam scenario 03 needed. The human records certification separately via
 `hotfix_ledger_update.bb --decide` after QA.)
-Prior entry —
 
-**Last Updated:** October 1, 2026 (BL-1845: a local-model seat's qwen
-runs interactive — the launch hands qwen its kickoff as the value of
-`-i` (`--prompt-interactive`) instead of a bare argument, which qwen
-0.22.2 copies into `--prompt`, running one headless pass with no screen
-and no keyboard. On 2026-09-30 the coder@iq3 pane showed nothing of
-qwen's work, had no input box, and never read handoffd's typed wakes —
-the seat picked up mail only by relaunch (six qwen runs between 15:36
-and 16:14 BST). Stamp-off of hotfix c885d0c071, which already landed the
-launch line; this parcel adds the step handler, invariants, and docs.
-The kickoff text (including the resume note) is unchanged, `-y` stays,
-and every other agent's generated launch script is byte-identical.
-Acceptance:
-`specs/features/BL-1845-a-local-model-seats-qwen-runs-interactive-so-its-pane-shows-its-work-and-takes-typed-input.feature`.
-How-to: `docs/how-to/BL-1052-local-model-seat-launch.md` (new "A
-local-model seat's qwen runs interactive" section under Launch). No new
-extension command or setting; no diagram edit — launch-script-internal.)
 Prior entry —
 
 **Last Updated:** October 1, 2026 (BL-1842: a local-model seat's health is
@@ -328,6 +329,7 @@ How-to: `docs/how-to/BL-1052-local-model-seat-launch.md` (new "A
 local-model seat's card path never carries an '@'" section under
 Launch). No new extension command or setting; no diagram edit — this is
 launch-script-internal.)
+
 Prior entry —
 
 **Last Updated:** September 30, 2026 (BL-1830: a land's tip-pure replay no
