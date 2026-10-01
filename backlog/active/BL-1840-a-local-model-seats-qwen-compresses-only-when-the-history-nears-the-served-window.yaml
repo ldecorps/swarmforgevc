@@ -23,7 +23,10 @@ acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when
 required_wiring:
   - 'specs/pipeline/steps/bl1840QwenCompressionThresholdSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - refuse the launch, with SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1 to start anyway (recommended)
+ruling_provenance: tapped
 ruling_options:
   - A - refuse the launch, with SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1 to start anyway (recommended)
   - B - warn in the launch log and start the seat anyway
