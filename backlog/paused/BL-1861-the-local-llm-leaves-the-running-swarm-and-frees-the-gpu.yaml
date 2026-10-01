@@ -22,7 +22,7 @@ acceptance: specs/features/BL-1861-the-local-llm-leaves-the-running-swarm-and-fr
 required_wiring:
   - 'specs/pipeline/steps/bl1861LocalLlmRemoveSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The human asked for a pair of verbs to take the local LLM out of the
   running swarm and put it back (source). This is the remove half; BL-1862
