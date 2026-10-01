@@ -101,3 +101,5 @@ qa_e2e_procedure: |
 notes: |
   Minted 2026-09-30 by the specifier under the human's directive (source).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+assigned_to: coder
