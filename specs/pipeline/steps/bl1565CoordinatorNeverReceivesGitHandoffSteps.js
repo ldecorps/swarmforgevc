@@ -156,7 +156,9 @@ function registerSteps(registry) {
   // (bl968's tree probe, the BL-761 registration gate) must not pay for
   // a temp-dir listing that only a real registration needs, and must
   // never register a test runner either.
-  sweepStaleFixtures();
+  // BL-1866: the sweep runs before this handler's first step runs, never
+  // while the full step registry is being built.
+  registry = require('./lib/sweepOnFirstStep').sweepOnFirstStep(registry, sweepStaleFixtures);
   const { afterEach } = require('node:test');
   afterEach(() => {
     while (trackedRoots.length) {

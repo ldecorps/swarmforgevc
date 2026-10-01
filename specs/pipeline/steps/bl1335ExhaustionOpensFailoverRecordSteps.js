@@ -92,7 +92,9 @@ function registerSteps(registry) {
   // BL-1630: moved from module load - a mere require() of this file
   // (bl968's tree probe, the BL-761 registration gate) must not pay for
   // a temp-dir listing that only a real registration needs.
-  sweepStaleFixtures();
+  // BL-1866: the sweep runs before this handler's first step runs, never
+  // while the full step registry is being built.
+  registry = require('./lib/sweepOnFirstStep').sweepOnFirstStep(registry, sweepStaleFixtures);
 
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -180,6 +182,10 @@ function registerSteps(registry) {
         ...process.env,
         OUTAGE_FAILOVER_RECORDS_FILE: st.recordsFile,
         MODEL_STEWARD_STATE_DIR: st.stewardDir,
+        // The fixture's own failover state, never the checkout's: a live
+        // .swarmforge/outage-failover/active-swap.json made the consumer
+        // answer swap-already-active on the master checkout (2026-10-01).
+        OUTAGE_FAILOVER_STATE_DIR: path.join(st.root, '.swarmforge', 'outage-failover'),
       },
     });
     st.consumerOut = `${r.stdout || ''}${r.stderr || ''}`;

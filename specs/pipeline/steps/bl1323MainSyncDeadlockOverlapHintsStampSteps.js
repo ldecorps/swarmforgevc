@@ -97,7 +97,9 @@ function registerSteps(registry) {
   // BL-1630: moved from module load - a mere require() of this file
   // (bl968's tree probe, the BL-761 registration gate) must not pay for
   // a temp-dir listing that only a real registration needs.
-  sweepStaleFixtures();
+  // BL-1866: the sweep runs before this handler's first step runs, never
+  // while the full step registry is being built.
+  registry = require('./lib/sweepOnFirstStep').sweepOnFirstStep(registry, sweepStaleFixtures);
 
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 

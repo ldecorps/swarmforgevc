@@ -160,7 +160,9 @@ function evalRoleList(state, form) {
 function registerSteps(registry) {
   // BL-1630: moved from module load (called once here, when a real run
   // actually registers this handler, never merely by requiring the file).
-  sweepStaleFixtures();
+  // BL-1866: the sweep runs before this handler's first step runs, never
+  // while the full step registry is being built.
+  registry = require('./lib/sweepOnFirstStep').sweepOnFirstStep(registry, sweepStaleFixtures);
   // BL-1630: node:test required here, not at module load - a mere
   // require() of this file registers no test runner (no exit listeners,
   // no TAP epilogue) for a consumer that never calls registerSteps.
