@@ -70,8 +70,11 @@ state_field() {  # state_field <root> <field>
   ' "$root/.swarmforge/daemon/closing-ceremony-state.json" "$2"
 }
 
-sent_today() {  # sent_today <root>
-  local today; today="$(date +%Y-%m-%d)"
+# BL-1836 item 5: the ceremony runs on the simulated clock (2026-09-21
+# below), so the day the briefing is recorded for is that day, never the
+# wall-clock date - which matched only on the day this file was written.
+sent_today() {  # sent_today <root> <yyyy-mm-dd>
+  local today="$2"
   mkdir -p "$1/docs/briefings"
   printf '["%s.md"]' "$today" > "$1/docs/briefings/.sent.json"
 }
@@ -107,7 +110,7 @@ make_root sc02
 t0_02="$(node -e 'process.stdout.write(String(Date.UTC(2026,8,21,16,0,0)))')"
 tick_at "$root" "$t0_02" >/dev/null                                   # freeze
 tick_at "$root" "$((t0_02 + 2*60000 + 1000))" >/dev/null              # no in-flight: drains straight to briefing, instructs
-sent_today "$root"                                                    # the documenter's own act, between ticks - no sleep
+sent_today "$root" 2026-09-21                                         # the documenter's own act, between ticks - no sleep
 out02="$(tick_at "$root" "$((t0_02 + 2*60000 + 30000))")"             # still inside the briefing budget: sees it sent
 phase02="$(state_field "$root" phase)"
 if [[ "$phase02" == "done" ]] && ! grep -q 'closing-briefing-missing' <<<"$out02"; then

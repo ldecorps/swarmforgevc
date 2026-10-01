@@ -32,8 +32,6 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-acceptance	specs/features/BL-1640-a-finish-shift-sleep-runs-the-closing-ceremony-to-done.feature	BL-1836	2026-09-30	scenarios 01-02 red: sent_today writes the wall-clock date while the ceremony runs on a simulated 2026-09-21 (red since 2026-09-22)
-shell	swarmforge/scripts/test/test_bl1640_sleep_runs_ceremony_to_done.sh	BL-1836	2026-09-30	same cause as the BL-1640 acceptance row: sent_today uses date +%Y-%m-%d against a simulated clock
 property	extension/test/bl1061TunnelFixtureIsolation.property.test.js	BL-1849	2026-09-30	invariant 2 ENOENT: stat of a bl868 lane fixture removed between readdirSync and statSync (QA evidence d5726c9861); green alone
 property	extension/test/bl800StepRegistryScopingConsistency.property.test.js	BL-1866	2026-10-01	red in QA full lane for BL-1822 (ev 7ca2a87030), failure line not captured; alone test 1 9667 ms of 30000, 13 handlers list /tmp (445k entries) in registerSteps
 hardening	extension/src/tools/emit-throttle-recommendation.ts,extension/src/tools/rework-observatory.ts,extension/src/tools/suboptimality-verdict-line.ts	BL-1874	2026-10-01	BL-1869's deferred mutation pass (cooldown after hotfix 51591aab4a); BL-1874's hardener pass discharges it
