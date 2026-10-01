@@ -43,7 +43,10 @@ this current from its first pass onward.
     as BL-1442. A list whose paragraph intro is bold but whose items are
     not creates an inconsistent scan path; the identifier a reader is
     hunting for should carry the same weight as the sentence that
-    introduced the list.
+    introduced the list. Applies to any list of this shape, not just
+    ticket IDs — e.g. the Model scout section's leading model-name token
+    (BL-1822, [2026-10-01 brief](briefs/2026-10-01-bl1822-model-scout-list-item-scan-weight.md),
+    found at QA sign-off, pre-land).
 
 ## Unruled — for the Art Director to fill
 
