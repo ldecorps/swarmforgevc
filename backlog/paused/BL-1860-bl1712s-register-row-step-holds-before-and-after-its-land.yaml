@@ -1,5 +1,5 @@
 id: BL-1860
-title: "BL-1712's scenario 04 has been red on main since BL-1712 landed on 2026-09-24: it asserts that the standing-red register rows for pricingTable.test.js and the BL-1436 feature are present and owned by BL-1712, and BL-1712's own land retired both rows (BL-1631), so the scenario can pass only before its ticket lands; the step holds in both states - present and owned while BL-1712 is open, absent once it is done"
+title: "Stamp-off for hotfix 39391485f0: BL-1712's register-row step holds before and after its land (present and owned while BL-1712 is open, absent once it is done), so scenario 04, red on main since BL-1712 landed on 2026-09-24, is green again"
 milestone: M8
 type: defect
 severity: high
@@ -24,9 +24,10 @@ acceptance: specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feat
 
 human_approval: approved
 approval_context: >
-  An unowned standing red, minted high the pass it was sighted (2026-09-05
-  rule). FIRM: retire nothing; the scenario keeps its meaning (the rows are
-  BL-1712's while it is open) and gains the state after the land.
+  Standing-red owner minted the pass the red was sighted, then turned into
+  the stamp-off of hotfix 39391485f0 under the human's 2026-10-01
+  directive (source). No choice is posed. FIRM: nothing retired; the
+  scenario keeps its meaning and gains the state after the land.
 
 invariants:
   - "The register-row step passes when each row is present and owned by BL-1712 while BL-1712 is open, and when no row names either file once BL-1712 is in backlog/done; any other state fails."
@@ -40,38 +41,51 @@ source: |
   BL-1712 landed in e730910e59 and closed in 2957ec55ea (2026-09-24). No
   register row names its feature.
 
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim
+  (Article 5.3), after asking whether the BL-1868 hotfix lifts the cap:
+
+  > That should life the cap at 1, yes?
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
 description: |
-  ## Why
+  ## Status: hotfix 39391485f0 landed the fix
 
-  The specifier's 2026-09-24 rule ("the owner's scenarios assert the row
-  PRESENT and OWNED, never gone") was written for the parcel's own tree,
-  where the row is present. After the land the land step retires every
-  row the landing ticket owns (BL-1631), so on main the same step fails
-  forever. BL-1712 is the one landed feature with that step that is red
-  (census at mint: `grep -lE "register row.*(present|names BL-|owned by)"
-  specs/features/*.feature` finds BL-1712, BL-1713 and BL-1620; BL-1713
-  4/4 and BL-1620 2/2 pass). The specifier.prompt rule is amended in the
-  mint commit so new owners are written to hold in both states.
+  This parcel is its stamp-off: the pipeline's review of what landed. The
+  coder finds the step handler and feature already changed. Review them,
+  do not re-apply them.
 
-  ## What is wanted
+  ## What the hotfix changed
 
-  - The step in `specs/pipeline/steps/bl1712PricingTableOpus55Steps.js`
-    reads where BL-1712's YAML lives. While it is in backlog/active or
-    paused, both rows must be present and owned by BL-1712, as today. Once
-    it is in backlog/done, neither file may have a row.
-  - The step text may stay as written or be reworded to say both states;
-    if it changes, the feature changes in the same commit.
+  - `specs/pipeline/steps/bl1712PricingTableOpus55Steps.js`: a
+    `ticketState` helper finds BL-1712's YAML. In backlog/active or
+    backlog/paused, it is open; anywhere under backlog/done (milestone
+    folders such as `done/M8/` included), it is done; anywhere else, null.
+    Open: both rows present and owned by BL-1712, as before. Done: no row
+    names pricingTable.test.js or BL-1436's feature. Null fails.
+  - The feature's step text now says both states: "... are owned by
+    BL-1712 while it is open and gone once it is done".
+
+  ## What is wanted in this parcel
+
+  - Review the step against the invariant. Known edges to check, not
+    mandates: a YAML in two folders at once; a `done/` milestone folder
+    more than one level deep.
+  - Evidence: the review.
 
   ## Scope
 
-  The step handler, the feature if its step text changes, evidence.
+  The step handler, the feature's step text, evidence.
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feature`:
-     6 of 6 ok. Measured on main at mint: 5 of 6, scenario 04 red.
-  2. The register row naming the BL-1712 feature is present and names
-     BL-1860 on the parcel; after the land, no row names it.
+     6 of 6 ok. Measured on the hotfix tree at mint: 6 of 6 (it was 5 of
+     6, scenario 04 red).
+  2. `node specs/pipeline/cli.js specs/features/BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature`:
+     6 of 6 ok. Measured at mint: 6 of 6.
+  3. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no
+     row for BL-1712's feature (the hotfix removed it).
 
 notes: |
   Minted 2026-10-01 by the specifier the same pass the red was sighted;
@@ -84,3 +98,7 @@ notes: |
   > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
   The skip reasons are in stage_skip_reasons. Routing honours them
   because required_stages_routing_enabled is true (BL-606).
+  2026-10-01 (specifier): turned into the stamp-off of hotfix 39391485f0
+  under the human's directive (source). The hotfix retired BL-1712's
+  register row. Ledger entry linked here. The approval above stands:
+  the scope only shrank to reviewing what landed.

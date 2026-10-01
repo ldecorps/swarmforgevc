@@ -503,3 +503,17 @@
   stamp_ticket: BL-1868
   human_decision: null
   decided_at: null
+- commit: 2c805e9b0b
+  subject: "Hotfix: BL-526's console-menu steps check today's menu, so its feature is green again after 41 days red"
+  detected_at: 2026-10-01
+  state: pending
+  stamp_ticket: BL-1859
+  human_decision: null
+  decided_at: null
+- commit: 39391485f0
+  subject: "Hotfix: BL-1712's register-row step holds before and after its land, so scenario 04 is green on main again"
+  detected_at: 2026-10-01
+  state: pending
+  stamp_ticket: BL-1860
+  human_decision: null
+  decided_at: null

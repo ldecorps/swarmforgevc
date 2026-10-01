@@ -1,5 +1,5 @@
 id: BL-1859
-title: "BL-526's acceptance feature has been red on main since at least 2026-08-21 and no register row owned it: its Given counts every data-testid attribute in the Mini App console menu as a primary button and expects 2, but BL-592's live spec tree (2026-08-27) added more testids and the menu now carries 8; the step counts the two primary nav buttons by their own selector, so the feature tests the menu it describes"
+title: "Stamp-off for hotfix 2c805e9b0b: BL-526's console-menu steps check today's menu (the menu opens with the pipeline-grid and mono-router-feed buttons; ?bearer= since BL-696; no coordinator-pane split since 07-22), so BL-526's feature is green again after 41 days red with no owner until 2026-10-01"
 milestone: M8
 type: defect
 severity: high
@@ -26,9 +26,12 @@ acceptance: specs/features/BL-526-miniapp-console-menu-pipeline-grid-mono-feed.f
 
 human_approval: approved
 approval_context: >
-  An unowned standing red, minted high the pass it was sighted (2026-09-05
-  rule). FIRM: the scenario's text stays as written; only the step's count
-  changes, from every data-testid attribute to the menu's primary buttons.
+  Standing-red owner minted the pass the red was sighted, then turned into
+  the stamp-off of hotfix 2c805e9b0b under the human's 2026-10-01
+  directive (source). No choice is posed. FIRM: BL-526's scenario text is
+  unchanged. Beyond the minted count fix, the hotfix also updated two
+  other stale handler checks and re-tensed the feature narrative (see
+  description); the review decides whether that stands.
 
 invariants: []
 
@@ -42,37 +45,65 @@ source: |
   recorded it as "unchanged - pre-existing" on 2026-08-21. No
   backlog/standing-reds.tsv row named it.
 
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim
+  (Article 5.3), after asking whether the BL-1868 hotfix lifts the cap:
+
+  > That should life the cap at 1, yes?
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
 description: |
-  ## Why
+  ## Status: hotfix 2c805e9b0b landed the fix
 
-  `specs/pipeline/steps/bl526MiniappConsoleMenuSteps.js` asserts
-  `(html.match(/data-testid="/g) || []).length === 2` on
-  `getConsoleMenuUiHtml()`. That counts every element with a test id, not
-  the menu's primary buttons. `consoleMenuUiHtml.ts` last changed in
-  BL-592's live spec tree (2026-08-27) and the history restores after it;
-  the page now carries 8 test ids. The scenario's own text, two buttons
-  for the pipeline grid and the mono-router feed, may still hold.
+  This parcel is its stamp-off: the pipeline's review of what landed. The
+  coder finds the step handler already changed. Review it, do not
+  re-apply it.
 
-  ## What is wanted
+  ## What the hotfix changed
 
-  - The Given counts the primary buttons by the selector those two
-    buttons actually carry, and still finds exactly the pipeline-grid and
-    mono-router-feed buttons.
-  - If the menu really has more than two primary buttons now, do not
-    loosen the count to pass: stop and send the specifier a spec-gap note
-    naming what the menu shows, because the scenario would then be stale.
-  - The register row this commit adds is retired by the land (BL-1631).
+  `specs/pipeline/steps/bl526MiniappConsoleMenuSteps.js` held three
+  assertions that later approved tickets had made stale:
+  1. "Exactly two data-testid" on the console menu. BL-572, BL-592,
+     BL-696 and later tickets added buttons on purpose, and the menu
+     carried 8 on 2026-10-01 (pipeline-grid, mono-router-feed,
+     paused-ticket-pager, catch-up-pager, epic-reorder, spec-tree,
+     context-budget, lets-talk). The Given now checks that the menu opens
+     with pipeline-grid then mono-router-feed: the part BL-526 owns (the
+     BL-1006 frozen-boundary shape). The minted ticket asked to count
+     "primary buttons by their selector", but no selector separates those
+     two from the rest (all are `a.btn`, and mono-router-feed is
+     `.secondary` like the other six), so the hotfix checks their order.
+  2. `pipeline-board?token=` and `resident-pane?token=`. The pages
+     authenticate with `?bearer=` since BL-696. These were masked behind 1.
+  3. `coordinator-pane`. The live screen shows every live pane in one
+     grid since 2026-07-22 (9ea75f43c8), and that split id is gone. The
+     check is dropped. The live feed is still asserted by the
+     `/resident-pane?bearer=` poll and the "Swarm Live Screen" title.
+  The feature's narrative line is re-tensed from "a menu with two
+  buttons" to "the menu to open with two buttons". The scenario text is
+  unchanged.
+
+  ## What is wanted in this parcel
+
+  - Review the three changes against the scenario's observable claims.
+    If one of them hides a real regression rather than stale wording,
+    fix it here (product code included, then add the stages it needs) or
+    raise it to the specifier as a note.
+  - Evidence: the review, and the 2026-10-01 menu census above re-run on
+    the parcel commit.
 
   ## Scope
 
-  The step handler and evidence. No product code.
+  The step handler, the feature's narrative line, evidence.
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-526-miniapp-console-menu-pipeline-grid-mono-feed.feature`:
-     1 of 1 ok. Measured on main at mint: 0 of 1, "found 8".
-  2. The register row naming the BL-526 feature is present and names
-     BL-1859 on the parcel; after the land, no row names it.
+     1 of 1 ok. Measured on the hotfix tree at mint: 1 of 1 (it was 0 of
+     1, "found 8").
+  2. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no
+     row for BL-526's feature (the hotfix removed it).
+  3. Read the coder's evidence for the review of the three changes.
 
 notes: |
   Minted 2026-10-01 by the specifier the same pass the red was sighted;
@@ -84,3 +115,8 @@ notes: |
   > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
   The skip reasons are in stage_skip_reasons. Routing honours them
   because required_stages_routing_enabled is true (BL-606).
+  2026-10-01 (specifier): turned into the stamp-off of hotfix 2c805e9b0b
+  under the human's directive (source). The hotfix retired BL-526's
+  register row, which, at 41 days, was the oldest red and held the
+  BL-1429 throttle at cap 1. Ledger entry linked here. The approval
+  above stands: the scope only shrank to reviewing what landed.
