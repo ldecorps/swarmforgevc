@@ -252,6 +252,14 @@ export function renderLiveScreenBody(): string {
   .split .pane-col > pre {
     display: none;
   }
+  .pane-grid-model {
+    margin-top: 2px;
+    font-size: clamp(9px, 3.2vw, 11px);
+    font-weight: 600;
+    color: var(--tg-theme-hint-color, #8b949e);
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
   .pane-grid-ticket {
     margin-top: 4px;
     display: flex;
@@ -1105,6 +1113,10 @@ export function renderLiveScreenBody(): string {
 
   function buildGridTileHeadHtml(pane, label) {
     var html = '<div class="pane-head-main"><div class="pane-kind">' + escapeHtml(label) + '</div>';
+    // BL-1858: the model the seat runs, under its name (coder@2 reads Qwen2.5 Coder 14B).
+    if (pane && pane.available !== false && pane.modelLabel) {
+      html += '<div class="pane-grid-model">' + escapeHtml(pane.modelLabel) + '</div>';
+    }
     if (pane && pane.available !== false && pane.ticketId) {
       html += '<div class="pane-grid-ticket">';
       html += '<span class="pane-grid-ticket-id">' + escapeHtml(pane.ticketId) + '</span>';

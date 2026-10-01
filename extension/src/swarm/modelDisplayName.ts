@@ -19,9 +19,22 @@ export const MODEL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   'openai/qwen3.6-flash': 'Qwen 3.6 Flash',
 };
 
+// BL-1858: a local Ollama qwen coder tag, quantisation and tag dropped -
+// qwen2.5-coder-14b-q5km:latest -> Qwen2.5 Coder 14B.
+const OLLAMA_QWEN_CODER = /^qwen(\d+(?:\.\d+)?)-coder(?:[-:](\d+)b)?/i;
+
+function formatOllamaQwenCoder(modelId: string): string | undefined {
+  const match = OLLAMA_QWEN_CODER.exec(modelId);
+  return match ? `Qwen${match[1]} Coder${match[2] ? ` ${match[2]}B` : ''}` : undefined;
+}
+
 export function formatModelDisplayName(modelId: string): string {
   if (MODEL_DISPLAY_NAMES[modelId]) {
     return MODEL_DISPLAY_NAMES[modelId];
+  }
+  const qwenCoder = formatOllamaQwenCoder(modelId);
+  if (qwenCoder) {
+    return qwenCoder;
   }
   if (modelId.startsWith('openai/')) {
     return modelId.slice('openai/'.length);

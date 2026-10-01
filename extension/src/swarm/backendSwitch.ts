@@ -62,6 +62,9 @@ function readLaunchScriptModel(
       script.match(/\bgemini\b/) ? 'gemini' :
       script.match(/\bvibe\b/) ? 'vibe' :
       script.match(/\bgrok\b/) ? 'grok' :
+      // BL-1858: a qwen seat's command line; every launch script sources
+      // qwen_launch_guard_lib.sh, so a bare \bqwen\b would match a claude seat.
+      script.match(/^\s*qwen\s/m) ? 'qwen' :
       script.match(/\bclaude\b/) ? 'claude' :
       undefined;
     const prefersLaunchOverClaudeSettings = agent !== undefined && agent !== 'claude';
