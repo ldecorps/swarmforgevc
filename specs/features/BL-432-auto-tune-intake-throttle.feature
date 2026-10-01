@@ -43,3 +43,10 @@ Scenario: Every change to the effective cap is logged
   Given the rework diagnosis lowers the effective cap
   When the effective cap changes
   Then the change is written to the log with its reason
+
+# BL-432 auto-tune-intake-throttle-06 (added by BL-1869, the refresh-before-diagnose hotfix)
+Scenario: A degraded diagnosis left on disk does not lower the cap once the live window shows no rework
+  Given a persisted rework diagnosis from an earlier run that reads degraded
+  And no ticket closed in the live window was bounced
+  When the coordinator decides whether to promote the next item
+  Then the effective active-depth cap is the configured value
