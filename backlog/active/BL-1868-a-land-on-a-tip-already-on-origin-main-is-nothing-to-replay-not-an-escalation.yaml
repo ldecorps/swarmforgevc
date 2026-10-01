@@ -183,3 +183,5 @@ notes: |
   row. The ledger entry is linked here (hotfix_ledger_update.bb --link).
   The approval above was given to the owner ticket and still stands: the
   scope only shrank to reviewing what landed, and no ruling is posed.
+
+assigned_to: coder
