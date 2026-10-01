@@ -933,20 +933,20 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   ticket it built, stay with coder@2. The rule gates new tickets only, and
   moving a built parcel to the other seat breaks its branch lineage.
 
-## A local-model seat is judged from its records, never its pane (2026-09-30, until BL-1842 lands)
+## A local-model seat is judged from its records, never its pane (2026-09-30; BL-1842 landed 2026-10-01)
 - A local-model seat (coder@iq3) runs its model in the Ollama server, not
   in its own process tree, so near-0% CPU under the pane means nothing,
   and the repeated "You already have in_process work" lines are handoffd's
   nudges, which a non-interactive qwen never reads. On 2026-09-30 the seat
   read as stuck was generating at 3.5 tokens/s, then compressing its chat
   every turn (`backlog/evidence/coder-iq3-reliability-20260930-specifier.md`).
-- Until BL-1842 lands, before calling a local seat stuck, read three
-  records: `~/.qwen/usage/token-usage-<yyyy-mm>.jsonl` (its last requests
-  and their output and thoughtsTokens), the newest
-  `~/.qwen/projects/*coder-iq3/chats/*.jsonl` (`chat_compression`, api
-  errors), and `.swarmforge/ollama-serve-operator.log` (`tg =` for
-  generation in progress, `offloaded N/65 layers`). A seat whose model is
-  generating is working.
+- Before calling a local seat stuck, run `bb
+  swarmforge/scripts/local_seat_report_cli.bb <project-root> --seat
+  <seat>` (BL-1842). It reads the seat's qwen usage and session records
+  and the Ollama server log, and prints a state: `generating`, `idle` or
+  `down`. A seat whose model is generating is working. What each figure
+  means: `docs/how-to/BL-1052-local-model-seat-launch.md`, "Judge a seat's
+  health from its records, not its pane".
 - Route coder@iq3 only simple tickets (`mutation_cost: low`, one or two
   files) until BL-1840 and BL-1841 land: each turn costs minutes.
 - A note you send the coder stage about a ticket leads with
