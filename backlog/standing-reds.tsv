@@ -38,4 +38,3 @@ property	extension/test/bl1061TunnelFixtureIsolation.property.test.js	BL-1849	20
 acceptance	specs/features/BL-526-miniapp-console-menu-pipeline-grid-mono-feed.feature	BL-1859	2026-08-21	its Given counts every data-testid as a primary button and finds 8 since BL-592 (08-27); red, unowned, until 2026-10-01
 acceptance	specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feature	BL-1860	2026-09-24	scenario 04 asserts register rows that BL-1712 own land retired (BL-1631); red on main since that land
 property	extension/test/bl800StepRegistryScopingConsistency.property.test.js	BL-1866	2026-10-01	red in QA full lane for BL-1822 (ev 7ca2a87030), failure line not captured; alone test 1 9667 ms of 30000, 13 handlers list /tmp (445k entries) in registerSteps
-acceptance	specs/features/BL-1343-replay-drops-the-tickets-own-path.feature	BL-1868	2026-09-21	scenario 05 red since BL-1678 land 4823eafa41: identical tip escalates (bisected by specifier 2026-10-01)

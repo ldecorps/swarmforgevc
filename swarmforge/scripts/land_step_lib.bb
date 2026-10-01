@@ -3425,6 +3425,18 @@
   [root task-ticket-id candidates]
   (boolean (some #(contains? (:ids (commit-subject-attribution root %)) task-ticket-id) candidates)))
 
+;; BL-1868: an identical tip is the one shape where `paths []` is a real
+;; answer (own-paths' docstring), checked before land-plan walks anything.
+(defn- tip-is-origin-main?
+  "True when `commit` resolves to `origin-main` itself. False when either
+   is unresolved, so an unreadable tip falls through to the existing
+   checks, unchanged."
+  [root commit origin-main]
+  (boolean
+   (when origin-main
+     (let [res (git! root "rev-parse" "-q" "--verify" (str commit "^{commit}"))]
+       (and (zero? (:exit res)) (= origin-main (str/trim (:out res))))))))
+
 (defn land-plan
   "The land step's own decision: {:action :land :own-paths [...] :commit sha
    :branch name} when no entanglement is present; {:action :replay
@@ -3499,16 +3511,36 @@
    subject/parents spends tens of minutes before printing a verdict. This
    function preloads the candidate range's metadata once (`*commit-meta*`)
    so `commit-subject` / `merge-commit?` answer from memory; the candidate
-   SET stays the full ancestry (BL-1461 / BL-1308 stand)."
+   SET stays the full ancestry (BL-1461 / BL-1308 stand).
+
+   BL-1868: a `commit` that resolves to origin-main itself has no range
+   to walk, so nothing is left to replay. land-plan answers
+   {:action :nothing-to-replay :paths [] :origin-main sha} before any walk,
+   replay or register-row work, and never escalates for it (BL-1343
+   scenario 05). That answer is not a land: nothing is built and there is
+   no `:commit` to publish. land_step_cli.bb still prints LAND_ESCALATE
+   for such a citation, with the same BL-1713 reason as before, because QA
+   citing origin/main has nothing of the ticket's to land."
   [{:keys [root commit task-ticket-id] :as opts}]
-  (if-not task-ticket-id
+  (cond
+    (not task-ticket-id)
     {:action :escalate :reason "land-step: task name names no ticket id"}
+
+    ;; BL-1431 invariant 1: origin/main is resolved once, here, and the
+    ;; same sha is threaded through everything below.
+    (not (contains? opts :origin-main))
+    (land-plan (assoc opts :origin-main (origin-main-sha root)))
+
+    (tip-is-origin-main? root commit (:origin-main opts))
+    {:action :nothing-to-replay :paths [] :origin-main (:origin-main opts)}
+
+    :else
     ;; BL-1389: the per-PATH attribution is computed ONCE and feeds both
     ;; questions - which siblings have landed, and which paths may ride. They
     ;; used to be answered from different walks, and a path the per-path walk
     ;; credited to a sibling the per-sibling walk never reported was decided
     ;; against a verdict that had not seen it.
-    (let [origin-main (if (contains? opts :origin-main) (:origin-main opts) (origin-main-sha root))
+    (let [origin-main (:origin-main opts)
           walk-base (if (contains? opts :base)
                       (:base opts)
                       (or (task-scope-gate-lib/parcel-own-base root task-ticket-id) origin-main))

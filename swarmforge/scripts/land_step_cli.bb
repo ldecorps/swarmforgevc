@@ -349,6 +349,17 @@
               (print-plan-body! project-root task-name task-ticket-id canonical plan)
               (System/exit 0))
 
+            ;; BL-1868: the cited commit IS origin/main. land-plan answers
+            ;; that nothing is left to replay and builds nothing, but QA
+            ;; citing origin/main still has nothing of this ticket's to
+            ;; land, so the CLI refuses it with BL-1713's reason, unchanged.
+            :nothing-to-replay
+            (do
+              (println "LAND_ESCALATE")
+              (println (str "land-step: " (:origin-main plan) ".." canonical
+                            " holds no commit credited to " task-ticket-id))
+              (System/exit 1))
+
             :escalate
             (do
               (println "LAND_ESCALATE")

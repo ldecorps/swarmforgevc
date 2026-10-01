@@ -271,6 +271,22 @@
   (let [plan (land-step-lib/land-plan {:root root :commit "deadbeef" :task-ticket-id nil})]
     (assert= "land-plan: no task ticket id -> :escalate" :escalate (:action plan))))
 
+;; BL-1868: a tip identical to origin/main has nothing left to replay - a
+;; real answer, never an escalation, and nothing is built for it.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: already on main")
+  (mark-origin-main-here! root)
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        branches-before (:out (sh! root "git" "branch" "--list"))
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+        short-plan (land-step-lib/land-plan {:root root :commit (subs commit 0 10) :task-ticket-id "BL-9001"})]
+    (assert= "BL-1868: an identical tip answers nothing left to replay" :nothing-to-replay (:action plan))
+    (assert= "BL-1868: its replay set is empty" [] (:paths plan))
+    (assert= "BL-1868: it names the origin/main it compared against" commit (:origin-main plan))
+    (assert= "BL-1868: a short sha of origin/main answers the same" :nothing-to-replay (:action short-plan))
+    (assert= "BL-1868: no commit is offered to publish" nil (:commit plan))
+    (assert= "BL-1868: no replay branch is built" branches-before (:out (sh! root "git" "branch" "--list")))))
+
 ;; ── BL-1853: commit-line-changes' diff cache ────────────────────────────
 
 (defn- cache-path [root commit]
