@@ -1,49 +1,50 @@
 id: BL-1868
-title: "BL-1343's scenario 05 has been red on main since BL-1678's land (4823eafa41, 2026-09-21) with no register row: land-plan on a tip already identical to origin/main escalates (today 'origin/main..commit holds no commit credited to <ticket>', before BL-1713 'nothing to commit ... own-paths identical to origin/main') instead of answering that nothing is left to replay; this ticket owns the row and restores the non-refusal"
+title: "Stamp-off for hotfix a2173a96ea: land-plan on a tip already identical to origin/main answers that nothing is left to replay instead of escalating, so BL-1343's scenario 05 (red on main since BL-1678's land, 4823eafa41, 2026-09-21) is green again; land_step_cli.bb still refuses that citation with BL-1713's reason, unchanged"
 milestone: M8
 type: defect
 severity: high
-# high: a standing red on main in the acceptance lane is a broken safety
-# signal at first sighting (Article 3.2.4, 2026-09-05). It also makes
-# QA adjudicate an escalation for a land with nothing to publish.
+# high: the stamp-off of a hotfix that cleared a standing red (Article
+# 3.2.4, 2026-09-05). It reviews a change to the land step, which every
+# land runs through.
 status: todo
 epic: swarm-reliability
 priority: 2
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
-# low: one early return in land-plan plus a unit case in
-# land_step_lib_test_runner.bb. Babashka has no mutation lane wired, so
-# the unit suite is the gate.
+# low: the hotfix is one early branch in land-plan and one CLI clause.
+# Babashka has no mutation lane wired, so the unit suite is the gate.
 slice_size_envelope: low
 required_stages: [coder, qa]
 stage_skip_reasons:
-  cleaner: "one decision in one Babashka function changes; nothing to refactor"
+  cleaner: "one decision in one Babashka function changed; nothing to refactor"
   architect: "the spec and its invariants fix the design, and QA checks them"
-  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
-  documenter: "no documented behaviour changes"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); the hotfix's unit case and the acceptance runs are the coverage"
+  documenter: "no documented behaviour changes; land_step_cli.bb's printed output is unchanged"
 
 acceptance: specs/features/BL-1343-replay-drops-the-tickets-own-path.feature
-# This pointer does not claim BL-1343's contract. It is the contract this
-# fix must satisfy: scenario 05 goes green and every other scenario stays
-# green (the BL-1251 shape). It also earns BL-1276's task-scope exemption
-# for that path. The parcel neither edits the feature nor adds a handler.
-# bl1343ReplayDropsTheTicketsOwnPathSteps.js already registers every step.
-# No required_wiring: the handler and land-plan already exist, so any
-# anchor would match before and after the fix (BL-1235).
+# This pointer does not claim BL-1343's contract. It is the contract the
+# hotfix must keep satisfying: scenario 05 green and every other scenario
+# still green (the BL-1251 shape). It also earns BL-1276's task-scope
+# exemption for that path. The parcel neither edits the feature nor adds a
+# handler: bl1343ReplayDropsTheTicketsOwnPathSteps.js already registers
+# every step. No required_wiring: the handler and land-plan already exist,
+# so any anchor would match before and after (BL-1235).
 
 human_approval: approved
 approval_context: >
   Standing-red owner minted the same pass the specifier found the red
-  while measuring for BL-1866 (2026-10-01). No choice is posed: BL-1343's
-  scenario 05 states the intended behaviour, and neither BL-1678's ticket
-  nor its land retired it. FIRM: BL-1343's feature and its step handler
-  are not edited. FIRM: BL-1678's and BL-1713's guards are unchanged for
-  every tip that differs from origin/main.
+  while measuring for BL-1866 (2026-10-01), then turned into the stamp-off
+  of hotfix a2173a96ea at the human's direction ("Hotfix the lqst red and
+  filen8n a stamp off"). No choice is posed. FIRM: BL-1343's feature and
+  its step handler are not edited. FIRM: BL-1678's and BL-1713's guards
+  are unchanged for every tip that differs from origin/main, and
+  land_step_cli.bb's output for an identical tip is byte-identical to
+  before the hotfix.
 
 invariants:
   - "land-plan on a commit equal to origin/main never escalates and never builds a replay commit; it answers that nothing is left to replay."
-  - "For every commit that differs from origin/main, land-plan's answer is exactly what it is on main today (BL-1678's and BL-1713's features stay green)."
+  - "For every commit that differs from origin/main, land-plan's answer is exactly what it was before a2173a96ea (BL-1678's and BL-1713's features stay green)."
 
 source: |
   Found by the specifier on 2026-10-01 while measuring, for BL-1866's
@@ -56,15 +57,25 @@ source: |
   > not ok 5 - An empty replay set on an identical tip is a real answer
   > ... expected nothing left to replay, got: {"action":"escalate","reason":"land-step: 557bb0c632..557bb0c632 holds no commit credited to BL-9343"}
 
-  No row in backlog/standing-reds.tsv names this feature.
+  No row in backlog/standing-reds.tsv named this feature.
+
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim
+  (Article 5.3):
+
+  > Hotfix the lqst red and filen8n a stamp off
 
 description: |
-  ## What is wrong
+  ## Status: hotfix a2173a96ea landed the fix
+
+  This parcel is its stamp-off: the pipeline's review of the hotfix, and
+  the evidence the original ticket asked for. The coder finds the code
+  already changed. Review it, do not re-apply it.
+
+  ## What was wrong
 
   BL-1343's scenario 05 says that when the tip is identical to
   origin/main, land-plan answers that nothing is left to replay and does
-  not refuse. The handler accepts either `{:action :land}` or an empty
-  path set. The specifier bisected it on 2026-10-01. Each revision was
+  not refuse. The specifier bisected it on 2026-10-01. Each revision was
   exported with `git archive <rev> specs swarmforge` into a scratch dir,
   with the live `extension/` linked in, and the feature run there:
   - 0fee3e80d1 (BL-1670, 09-21 09:51) and 4823eafa41~1: 05 ok.
@@ -74,50 +85,63 @@ description: |
 
   BL-1678 replaced the bare `{:action :land}` that land-plan returned for
   a clean tip with a tip-pure replay built from the ticket's own paths.
-  On an identical tip that replay has an empty index, so it escalated
-  with "land-step replay: nothing to commit for <id> - own-paths
-  identical to origin/main". BL-1713 (09-24) later added the
-  `range-credits-ticket?` check ahead of the replay. An empty range
-  credits nothing, so today the escalation reads "<origin/main>..<commit>
-  holds no commit credited to <id>". Neither ticket mentions the
-  identical tip. land-plan's own docstring (around line 2063 of
-  land_step_lib.bb) still says that `paths []` is a real answer when the
-  tip is identical to origin/main. No lane runs BL-1343's feature, so the
-  red went unseen for 10 days.
+  On an identical tip that replay had an empty index, so it escalated.
+  BL-1713 (09-24) later added the `range-credits-ticket?` check ahead of
+  the replay. An empty range credits nothing, so the escalation read
+  "<origin/main>..<commit> holds no commit credited to <id>".
 
-  ## What is wanted
+  ## What the hotfix changed (a2173a96ea)
 
-  - BL-1343's feature passes 6 of 6, with scenario 05 green again
-    (invariant 1).
-  - BL-1678's and BL-1713's features stay 4 of 4. Every tip that differs
-    from origin/main gets the same answer as today (invariant 2).
-  - A unit case in `land_step_lib_test_runner.bb` pins invariant 1:
-    land-plan on a commit equal to origin/main gives no escalate and
-    builds no replay commit.
-  - The coder's evidence says what `land_main_publish.sh` and
-    `land_step_cli.bb` do with that answer, for example a no-op publish
-    or an already-landed skip. Any caller that would then misreport the
-    land is raised as a note to the specifier, not folded in.
+  1. `land_step_lib.bb`: `tip-is-origin-main?` resolves the cited commit
+     and compares it with origin/main. `land-plan` is now a `cond`: no
+     ticket id escalates as before; when the caller passed no
+     `:origin-main`, land-plan resolves it once and calls itself with it
+     (BL-1431's one read); an identical tip answers
+     `{:action :nothing-to-replay :paths [] :origin-main <sha>}` before
+     any walk; everything else runs the old body unchanged.
+  2. `land_step_cli.bb`: a `:nothing-to-replay` clause prints
+     `LAND_ESCALATE` and BL-1713's reason, byte for byte, and exits 1.
+     QA citing origin/main still has nothing of the ticket's to land, and
+     BL-1713's scenario 01 row 2 keeps refusing it. The ticket's original
+     direction, `{:action :land}`, would have printed LAND_CLEAN with no
+     built commit and broken that row. This is why the hotfix took a
+     distinct action instead.
+  3. `land_step_lib_test_runner.bb`: one case pins invariant 1 for a full
+     and a short sha (no `:commit`, no new branch).
+  4. `backlog/standing-reds.tsv`: BL-1343's row retired, since the hotfix
+     turned it green.
 
-  ## How (direction, not mandate)
+  ## What is wanted in this parcel
 
-  - Add an early branch in land-plan, ahead of BL-1713's credited-range
-    check and BL-1678's replay, for `commit` equal to the resolved
-    origin/main. Return the non-refusal answer the BL-1343 handler accepts
-    (`{:action :land}`). Nothing is built, so nothing unapproved can ship
-    (BL-1678's invariant holds trivially).
+  - Review the hotfix against both invariants. Known edges to check, not
+    mandates: a cited ref that is not a sha (`origin/main`, `HEAD`); an
+    unresolvable origin/main (`:origin-main nil` must still fall through
+    to the old body); the self-call never recursing twice.
+  - The evidence says what every consumer of land-plan does with the new
+    answer. At mint, land_step_cli.bb is the only production consumer.
+    BL-1872's lander reads the CLI's LAND_ESCALATE, which is unchanged.
+    Any caller that would misreport it is raised as a note to the
+    specifier, not folded in.
+  - If the review finds a defect, fix it in this parcel with a new unit
+    case, and say so in the evidence.
+
+  ## Scope
+
+  `swarmforge/scripts/land_step_lib.bb` (land-plan and
+  tip-is-origin-main? only), `swarmforge/scripts/land_step_cli.bb` (the
+  new clause only), `swarmforge/scripts/test/land_step_lib_test_runner.bb`,
+  and evidence.
 
 constraints: >
-  swarmforge/scripts/land_step_lib.bb (land-plan only),
-  swarmforge/scripts/test/land_step_lib_test_runner.bb, and
-  evidence. BL-1343's feature and step handler are not
-  edited. Never edit backlog/standing-reds.tsv in the parcel: the land
-  retires the row (coder.prompt, BL-1663).
+  BL-1343's feature and step handler are not edited. Never edit
+  backlog/standing-reds.tsv in the parcel (coder.prompt, BL-1663); the
+  hotfix already retired the row.
 
 out_of_scope: |
-  - BL-1865 (the bl1343 property file's per-draw lib load). It touches
-    the bl1343 property test, not land_step_lib.bb's land-plan, so the
-    two are independent.
+  - BL-1865 (the bl1343 property file's per-draw lib load).
+  - BL-1375 (01, 06, 07), BL-1465 (01, 02) and BL-1466 (02): red on main
+    before the hotfix and identical after it. The specifier handles them
+    separately.
   - Any lane that runs every feature on main. That this red went unseen
     for 10 days is the general gap, not this ticket's.
 
@@ -125,22 +149,25 @@ qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule), from the repo
   root.
   1. `node specs/pipeline/cli.js specs/features/BL-1343-replay-drops-the-tickets-own-path.feature`:
-     6 of 6 ok. Measured at mint on main 4efbf49fd4: 01, 02, 03, 04 and
-     06 ok; 05 not ok as quoted in source (the red this ticket owns).
+     6 of 6 ok. Measured on the hotfix tree at mint: 6 of 6 ok.
   2. `node specs/pipeline/cli.js` on
      `specs/features/BL-1678-a-land-never-ships-an-unapproved-forward-that-shares-no-path-with-the-landing-ticket.feature`
      and on
      `specs/features/BL-1713-the-land-step-never-blesses-a-commit-carrying-none-of-the-tickets-own-work.feature`:
-     4 of 4 ok each. Measured at mint: 4 of 4 ok each.
+     4 of 4 ok each. Measured on the hotfix tree at mint: 4 of 4 ok each.
   3. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: ALL PASS,
-     including the new identical-tip case.
+     including the BL-1868 identical-tip case. Measured at mint: ALL PASS.
+  4. Read the coder's evidence for the consumer list and the review of
+     both invariants.
   After the land: `bb swarmforge/scripts/standing_red_register_cli.bb .`
-  reports no row for BL-1343's feature.
+  reports no row for BL-1343's feature (the hotfix already removed it),
+  and the hotfix ledger entry for a2173a96ea moves on to awaiting-human
+  once this ticket is done.
 
 notes: |
   Minted 2026-10-01 by the specifier, the same pass the red was found
   (unowned red at first sighting, severity high), with its register row
-  in the same commit. It holds no parcel, so no resume note is owed.
+  in the same commit. It held no parcel, so no resume note was owed.
   Found while minting BL-1866 for QA's unowned-red note 003662.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   2026-10-01 (specifier): required_stages trimmed from the full chain to
@@ -149,3 +176,10 @@ notes: |
   > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
   The skip reasons are in stage_skip_reasons. Routing honours them
   because required_stages_routing_enabled is true (BL-606).
+  2026-10-01 (specifier): turned into the stamp-off of hotfix a2173a96ea
+  at the human's direction ("Hotfix the lqst red and filen8n a stamp
+  off", source). The hotfix landed the fix on main with a
+  Hotfix-Certification: pending trailer and retired BL-1343's register
+  row. The ledger entry is linked here (hotfix_ledger_update.bb --link).
+  The approval above was given to the owner ticket and still stands: the
+  scope only shrank to reviewing what landed, and no ruling is posed.

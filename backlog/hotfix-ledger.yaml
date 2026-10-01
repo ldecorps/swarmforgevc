@@ -492,7 +492,14 @@
 - commit: 51591aab4a
   subject: "Hotfix: the throttle and briefing rework verdicts refresh BL-430's observatory before diagnosing, so a July snapshot stops alarming"
   detected_at: 2026-10-01
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1869
+  human_decision: null
+  decided_at: null
+- commit: a2173a96ea
+  subject: "Hotfix: a land cited on a tip already identical to origin/main answers that nothing is left to replay, so BL-1343 scenario 05 is green again"
+  detected_at: 2026-10-01
+  state: pending
+  stamp_ticket: BL-1868
   human_decision: null
   decided_at: null
