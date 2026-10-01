@@ -589,6 +589,17 @@ You are the specifier.
   carries the script), because a "per file" ticket over 900 mutants fails
   INVEST Small on sight while a per-function group of ~60 is a sitting.
 
+## A same-day stamp cannot mandate Stryker on its hotfix's files (2026-10-01, BL-1869)
+- `mutation_cooldown_gate.bb` refuses any production file changed on main
+  within `mutation_cooldown_days` (1), and the hardener obeys it
+  unconditionally. A stamp ticket minted the day its hotfix lands
+  therefore cannot get the Stryker pass it mandates. BL-1869's hardener
+  hit `skip-cooldown` at file_age_days 0.09. At mint, either set
+  `not_before:` to the day after the hotfix, or name now the later ticket
+  whose hardener discharges the deferred row
+  (`hardening_debt_ledger_update.bb --defer`). Never leave a mandate the
+  gate is certain to refuse.
+
 ## Required wiring declarations (BL-531; backlog-schema.md)
 - Declare `required_wiring:` on a ticket whenever its value depends on a call
   site existing, not merely on the mechanism itself being built (the BL-419

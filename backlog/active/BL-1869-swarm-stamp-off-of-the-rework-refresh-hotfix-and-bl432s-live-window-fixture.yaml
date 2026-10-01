@@ -172,8 +172,12 @@ qa_e2e_procedure: |
   3. `npx vitest run` on emitThrottleRecommendationCli,
      reworkObservatoryCli and suboptimalityVerdictLineCli: all pass (28
      of 28 at mint).
-  4. The evidence answers probes a-c, and the hardener's evidence names
-     the three modules' mutation scores.
+  4. The evidence answers probes a-c. The hardener's Stryker pass over the
+     three modules is DEFERRED, not missing: the mutation cooldown gate
+     (BL-149, 1 day) refused it, because the hotfix changed all three files
+     the same day. backlog/hardening-debt-ledger.yaml holds the BL-1869
+     mutation row, and BL-1874's hardener pass owns its discharge. Do not
+     bounce on the missing scores (specifier amendment, 2026-10-01).
   5. The register row naming BL-1869 is present and owned at the parcel
      commit; after the land it is gone (BL-1631).
   After QA: the human records the certification with
@@ -186,5 +190,14 @@ notes: |
   row was added, in the mint commit. No parcel holds BL-432, so no resume
   note is owed.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  2026-10-01 (specifier, from hardender note 001656): the hardener could
+  not run Stryker on the three hotfixed modules. mutation_cooldown_gate.bb
+  answered skip-cooldown (file_age_days 0.09 of 1), and the gate is
+  unconditional. The specifier minted this ticket the same day as the
+  hotfix, so the mandate could not be met at this hop. The gate is
+  deferred to the hardening-debt ledger (row parcel BL-1869, gate
+  mutation), and BL-1874's hardener pass discharges it, more than a day
+  later and after BL-1874 changes emit-throttle-recommendation.ts itself.
+  qa_e2e step 4 is amended to match. No bounce: nobody's work is at fault.
 
 assigned_to: coder

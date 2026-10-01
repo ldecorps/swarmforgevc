@@ -12,9 +12,11 @@ status: todo
 epic: swarm-self-optimization
 priority: 3
 depends_on: []
-mutation_cost: low
-# low: one error path in emit-throttle-recommendation.ts's main and its
-# tests under Stryker.
+mutation_cost: medium
+# medium: one error path in emit-throttle-recommendation.ts's main, plus
+# the deferred Stryker pass over BL-1869's three hotfixed tool modules
+# (rework-observatory.ts, emit-throttle-recommendation.ts,
+# suboptimality-verdict-line.ts) that this ticket's hardener discharges.
 slice_size_envelope: low
 required_stages: [coder, hardender, qa]
 stage_skip_reasons:
@@ -70,6 +72,15 @@ description: |
      because the publish succeeded. The failure reaches the operator log
      the way the depth CLI already reports stderr.
   2. A refresh that succeeds behaves exactly as today (scenario 02).
+  3. The hardener's pass discharges BL-1869's deferred mutation gate: one
+     Stryker run over `rework-observatory.ts`,
+     `emit-throttle-recommendation.ts` and `suboptimality-verdict-line.ts`,
+     committed as evidence, then `hardening_debt_ledger_update.bb .
+     --discharge BL-1869 mutation --evidence <path>`. Each surviving mutant
+     carries one of three reasons: killed in this pass, accepted equivalent
+     with the code-level proof, or first-run debt owned by a named ticket
+     (2026-09-10 rule). If the cooldown gate refuses again, record
+     `--attempt` with its blocker rather than skipping silently.
 
   ## How (direction, not mandate)
 
@@ -91,7 +102,10 @@ description: |
   ## Scope
 
   `extension/src/tools/emit-throttle-recommendation.ts` and its unit
-  tests, the step handler and evidence.
+  tests, the step handler and evidence, plus the unit tests the deferred
+  Stryker pass over BL-1869's three modules needs to kill its survivors
+  (tests only for `rework-observatory.ts` and
+  `suboptimality-verdict-line.ts`).
 
 out_of_scope: |
   - The rework rate's own counting and walk cost: BL-1873.
@@ -107,8 +121,14 @@ qa_e2e_procedure: |
      BL-966 4/4 on the hotfix tree per BL-1869's evidence; BL-432 6/6 on
      BL-1869's parcel).
   3. `npx vitest run test/emitThrottleRecommendationCli.test.js`: all pass.
+  4. `bb swarmforge/scripts/hardening_debt_ledger_read.bb .` shows the
+     BL-1869 mutation row discharged, with evidence naming each survivor's
+     reason.
 
 notes: |
   Minted 2026-10-01 by the specifier from coder note 002301 (BL-1869
   probe c), the same pass. Medium, not auto-approved. Dynamic routing:
   TypeScript production, so coder, hardender, QA.
+  2026-10-01 amendment (from hardender note 001656 on BL-1869): this
+  ticket's hardener pass also discharges BL-1869's mutation row, which the
+  cooldown gate deferred the day the hotfix landed.
