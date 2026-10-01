@@ -27,7 +27,7 @@ acceptance: specs/features/BL-1856-the-merge-drop-guard-counts-a-repeated-line-b
 required_wiring:
   - 'specs/pipeline/steps/bl1856MergeDropGuardCountsRepeatedLinesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sign-off on narrowing what BL-1576's guard reports. FIRM: a line text is a
   finding only when the merge's count of that text differs from the side's
