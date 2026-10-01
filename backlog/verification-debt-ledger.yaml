@@ -116,3 +116,8 @@
   role: QA
   description: "cond (g) tip-pure hand build after LAND_ESCALATE on superseded stray 7206766a7e"
   detected_at: 2026-10-01
+- category: red-introducing-commit-bisect
+  ticket: BL-1868
+  role: specifier
+  description: "bisected by hand which land turned BL-1343 scenario 05 red: git archive of 11 revisions into scratch dirs with extension/ linked, feature run in each; first red 4823eafa41 (BL-1678); no tool finds the commit that introduced a standing red"
+  detected_at: 2026-10-01
