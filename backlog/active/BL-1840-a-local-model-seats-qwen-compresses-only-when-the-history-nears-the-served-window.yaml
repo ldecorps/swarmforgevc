@@ -1,21 +1,20 @@
 id: BL-1840
-title: "A local-model seat's qwen compresses its chat on nearly every turn - coder@iq3 compressed at 12:59, 13:04 and 13:09Z on 2026-09-30, each for token_limit at ~17,500 tokens of a 49152-token window, each saving ~80 tokens, each a hidden 6,000-8,400-token reply of ~5 minutes - so the seat's turns took five minutes; the qwen settings the swarm writes compress only above 80% of the window the seat's model is served with"
+title: "A local-model seat's qwen compacted its chat on nearly every turn because the seat was served a window in qwen's compaction dead zone - qwen compacts at the smaller of 85% of the window and the window less 33,000 tokens (fixed inside qwen), so coder@iq3's 49152 compacted at 16,152 tokens, sooner than the 27,852 a 32768 window gives, and no qwen setting moves it; the launch's window gate computes qwen's trigger for each local-model seat's served window and flags every window from 33,001 to 60,852 tokens"
 milestone: M8
 type: defect
-severity: high
-# high: a live fault degrading behaviour - the seat spends most of its time
-# on compressions that save nothing, so it cannot finish a simple ticket.
-# The human made a working iq3 the swarm's absolute priority.
+severity: medium
+# medium (was high at mint): the live fault ended when coder@iq3 was retired
+# on 2026-10-01; the local seat now, coder@2, is served 32768, outside the
+# dead zone. This guards against serving a seat that window again.
 status: todo
 epic: local-llm-swarm
 priority: 2
 direction: queue-jump
 depends_on: [BL-1838]
-# BL-1838 builds the writer this ticket extends (the seat's model entry in
-# the worktree's .qwen/settings.json).
+# BL-1838 built the served-window read this gate reuses.
 mutation_cost: low
-# low: one more key in BL-1838's zsh settings writer plus a handler that
-# runs the pinned qwen against a fake endpoint; no mutation lane for shell.
+# low: one rule in local_model_window_gate_lib.bb (bb, no mutation lane)
+# plus a handler that runs the pinned qwen against a fake endpoint.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
@@ -24,16 +23,28 @@ acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when
 required_wiring:
   - 'specs/pipeline/steps/bl1840QwenCompressionThresholdSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: approved
+human_approval: pending
+ruling_options:
+  - A - refuse the launch, with SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1 to start anyway (recommended)
+  - B - warn in the launch log and start the seat anyway
+ruling_tradeoffs:
+  - Pros - a seat never starts in a window that compacts every turn, as coder@iq3 did for a day, and the gate already refuses a window the first turn cannot fit, with the same override. Cons - a window picked for another reason needs the override. Recommended because the dead zone has no upside, a 32768 window gives more history before compaction for less memory.
+  - Pros - never blocks a launch. Cons - the warning sits in a launch log nobody reads while the seat compacts every turn, exactly how coder@iq3 ran on 2026-09-30.
 approval_context: >
-  A new feature file; no choice is posed. FIRM: a local-model seat's qwen
-  does not compress a history below 80% of the window its model is served
-  with. FIRM: the proof runs the qwen the seat runs, against a fake
-  endpoint - a key qwen ignores must fail the scenario (think false was
-  written and ignored for a week, BL-1841).
+  Re-pended on 2026-10-01: the auto-approved mint (15d1cd9cc6) promised a
+  fix that cannot work. Its FIRM line, that qwen never compresses below 80%
+  of the served window, is impossible at any window from 33,001 to 165,000
+  tokens: qwen 0.24.7 compacts at the smaller of the 85% share and the
+  window less 33,000, and no setting moves the 33,000 (coder and hardener
+  evidence, confirmed in qwen's source by the specifier). FIRM now: the
+  launch's window gate computes that trigger for every local-model seat
+  and flags each window from 33,001 to 60,852 tokens, where it is below
+  what a 32768 window gives; the proof still runs the pinned qwen. The one
+  question is what a flagged window does at launch.
 
 invariants:
-  - "A local-model seat's qwen never compresses a history below 80% of the window its model is served with."
+  - "The window gate flags exactly the served windows whose qwen compaction trigger is below the trigger a 32768-token window gives."
+  - "The trigger the gate reports for a window equals the one the pinned qwen computes for it."
 
 source: |
   The human, 2026-09-30, specifier pane, verbatim:
@@ -45,61 +56,95 @@ source: |
   (second pass).
 
 description: |
+  ## Amended 2026-10-01 (specifier): the first premise was wrong
+
+  As minted, this ticket wrote `context.autoCompactThreshold: 0.8` into the
+  seat's qwen settings. The hardener proved with qwen's own `--debug` log
+  that the key changes nothing at 49152, and the coder confirmed it from
+  qwen's source (evidence on the coder branch:
+  `backlog/evidence/BL-1840-hardener-bounce-20261001.md`,
+  `backlog/evidence/BL-1840-coder-20261001-bounce-response.md`). At 32768
+  qwen's default share (85%, 27,852 tokens) already compacts later than
+  0.8 would, so the key would only make it compact sooner. Remove it.
+  Specifier's adjudication: `backlog/evidence/BL-1840-bounce-20261001.md`.
+
   ## What happens
 
-  - qwen's session record for coder@iq3 (session 992f20dc) holds three
-    `chat_compression` events at 12:59:17, 13:04:08 and 13:09:24Z, each
-    `triggerReason: token_limit`, e.g. originalTokenCount 17539,
-    newTokenCount 17459.
-  - qwen's usage record shows the matching requests: 8,429, 5,992 and
-    6,739 output tokens (3,060 / 1,243 / 1,764 of them reasoning). The
-    recorded replies between them are 120-500 characters.
-  - At 24 tokens/s that is ~5 minutes per turn, spent on compressions
-    that save ~80 tokens each.
-  - Why it fires at ~17.5k in a 49152 window is part of the work: qwen
-    0.22.2's compression threshold, and the window it believes, are
-    set in its settings (`chatCompression`), and nothing the swarm writes
-    sets them.
+  - qwen 0.24.7 `computeThresholds(window, pct)` (installed
+    `chunks/chunk-TGWAQ5RB.js`): `auto = min(pct * window, window - 20000
+    - 13000)` when `window - 33000 > 0`, else `pct * window`; `pct`
+    defaults to 0.85. `COMPACT_MAX_OUTPUT_TOKENS = 2e4` and
+    `AUTOCOMPACT_BUFFER = 13e3` are fixed: no settings key, no env var.
+  - So the trigger falls from 27,852 at 32768 to 0 at 33,001, then climbs,
+    and does not reach 27,852 again until 60,852. coder@iq3 at 49152 got
+    16,152, which matches the ~17,500 it compacted at on 2026-09-30, with
+    a first turn of about 12,500 tokens of fixed overhead.
 
   ## What is wanted
 
-  1. The seat's qwen settings compress only above 80% of the served
-     window: 26214 tokens at 32768, 39321 at 49152 (scenario 01).
-  2. Proven against qwen itself: the pinned qwen, run in the seat's
-     worktree with the written settings, sends no compression request
-     for a 20,000-token history at 49152 (scenario 02).
+  1. `local_model_window_gate_lib.bb` computes qwen's trigger for the
+     served window it already learns, and flags a window whose trigger is
+     below the trigger at 32768 (scenario 01). A window it cannot learn is
+     never flagged, as today.
+  2. A flagged window is refused, naming the window, its trigger, 32768
+     and 60852 (scenario 02), with the existing
+     `SWARMFORGE_LOCAL_WINDOW_OVERRIDE` letting it start. If the human
+     rules B (warn), scenario 02 instead asserts the launch goes ahead
+     with that warning; the specifier amends it on the ruling.
+  3. The gate's formula is proven against the pinned qwen: its `--debug`
+     compaction line reports the same trigger (scenario 03). That run is
+     also what turns red if a qwen update changes the constants.
+  4. The settings writer no longer writes `context.autoCompactThreshold`.
 
   ## How (direction, not mandate)
 
-  - Extend BL-1838's `write_local_model_qwen_settings`. Find the key in
-    qwen 0.22.2's own settings schema (`qwen --help`, the bundled
-    settings schema), not from memory.
-  - Step handler `specs/pipeline/steps/bl1840QwenCompressionThresholdSteps.js`,
-    registered in `specs/pipeline/steps/index.js` in the same commit as
-    the feature's first green run (BL-233). Scenario 02 runs qwen with a
-    throwaway HOME against a loopback fake OpenAI endpoint that counts
-    requests (BL-1829's method); measure its runtime and state it in
-    the evidence. It must fit the per-mutant ceiling (300 s, BL-1541).
-    Never the live Ollama, never the operator's ~/.qwen.
+  - The constants (0.85, 20000, 13000, the 32768 reference) live once in
+    the gate lib, each with a comment naming qwen's own variable.
+  - Scenario 03 reuses the hardener's method: a throwaway HOME, a loopback
+    fake endpoint whose `/api/show` reports `num_ctx`, and qwen's
+    `[compaction] cheap-gate ... auto=<n>` debug line. Measure its runtime
+    and state it in the evidence; it must fit the per-mutant ceiling
+    (300 s, BL-1541). Never the live Ollama, never the operator's ~/.qwen.
+  - Step handler `specs/pipeline/steps/bl1840QwenCompressionThresholdSteps.js`
+    (the name the wiring pin already carries), registered in the same
+    commit as the feature's first green run (BL-233).
 
   ## Scope
 
-  `swarmforge/scripts/swarmforge.sh` (the settings writer), its shell
-  test, the step handler and its registration, evidence.
+  `local_model_window_gate_lib.bb` and its runner, the settings writer in
+  `swarmforge/scripts/swarmforge.sh` (removing the key), the step handler,
+  evidence, and the documenter's page on how a local-model seat's window
+  is chosen (`docs/how-to/BL-1052-local-model-seat-launch.md`).
+
+out_of_scope: |
+  - Comparing the seat's estimated first turn against qwen's trigger
+    rather than the window (a first turn of 12,500 tokens under a 16,152
+    trigger compacts every turn even outside the dead zone). Worth its
+    own ticket once this gate reports the trigger.
+  - Choosing coder@2's window. It is 32768 today, outside the zone.
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature`:
-     3 of 3 ok (two rows of 01, then 02). Measured 0 on main at mint: no
-     handler exists yet.
-  2. `bash swarmforge/scripts/test/test_bl1829_local_model_qwen_settings.sh`:
-     ALL PASS (measured on main 7f38e5d7fe at mint).
-  After the land (the coordinator's check on the next coder@iq3 session,
-  not QA's): the session's `chat_compression` events, if any, all show
-  originalTokenCount above 39321.
+     7 of 7 ok (four rows of 01, then 02, then two rows of 03). Measured 0
+     on main at amendment: no handler on main.
+  2. `bb swarmforge/scripts/test/local_model_window_gate_lib_test_runner.bb`
+     and `bash swarmforge/scripts/test/test_local_model_window_gate_cli.sh`:
+     ALL PASS.
+  3. `bash swarmforge/scripts/test/test_bl1829_local_model_qwen_settings.sh`:
+     ALL PASS, with no `autoCompactThreshold` in the written settings.
 
 notes: |
   Minted 2026-09-30 by the specifier under the human's directive (source).
-  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  It was minted under the 2026-09-17 auto-approval carve-out; that
+  approval was for the 80% promise, which the 2026-10-01 amendment
+  withdraws.
+  Amended 2026-10-01 after the hardener's bounce (962bde286b) and the
+  coder's spec-gap note 002294: the 80% mechanism cannot work at the
+  incident's window. The re-pend of human_approval is deliberate: the
+  original approval was the carve-out's (mint commit 15d1cd9cc6), the
+  FIRM line changed, and the new ask carries one ruling. Never restore
+  approved by hand. Severity lowered from high to medium because the live
+  seat is now served 32768.
 
 assigned_to: coder
