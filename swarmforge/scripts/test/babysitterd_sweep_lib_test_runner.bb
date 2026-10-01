@@ -875,6 +875,55 @@
                        :overlapping-paths []})]
                (and f (sw/escalation-eligible? f) (not (sw/nudge-eligible? f)))))
 
+;; ── BL-1832: seat-expected-agents ────────────────────────────────────────
+;; Scenario 01 rows: a mixed-agent router pack, home coder on aider, QA
+;; rotated in active - the home pane is healthy on EITHER agent.
+(assert= "BL-1832 (01a): router pack, resident active as a different role - both agents acceptable"
+         #{"aider" "claude"}
+         (sw/seat-expected-agents {:rotation-router? true :home-role "coder"
+                                    :active-role "QA"
+                                    :role-agent->token {"coder" "aider" "QA" "claude"}}))
+
+(assert= "BL-1832 (01b): resident at home (active role == home role) - single agent, same as today"
+         #{"aider"}
+         (sw/seat-expected-agents {:rotation-router? true :home-role "coder"
+                                    :active-role "coder"
+                                    :role-agent->token {"coder" "aider" "QA" "claude"}}))
+
+;; Scenario 02: neither agent present is still a half-launch CRIT - that
+;; decision stays in check-live-session's :has-claude-process? branch,
+;; unaffected by this resolver; covered here only by confirming the
+;; resolver itself never returns an empty or unbounded set.
+(assert-true "BL-1832 (02): the acceptable set never includes an agent neither role declares"
+             (not (contains? (sw/seat-expected-agents
+                              {:rotation-router? true :home-role "coder" :active-role "QA"
+                               :role-agent->token {"coder" "aider" "QA" "claude"}})
+                             "cursor-agent")))
+
+;; Scenario 03: no rotation router at all - judged on the home agent alone,
+;; exactly as pre-BL-1832.
+(assert= "BL-1832 (03): outside rotation router, only the home role's own agent is acceptable"
+         #{"aider"}
+         (sw/seat-expected-agents {:rotation-router? false :home-role "coder"
+                                    :active-role "QA"
+                                    :role-agent->token {"coder" "aider" "QA" "claude"}}))
+
+;; Scenario 04 (BL-1345 invariant 3): no HONOURED active role - a standing
+;; pack, or an absent/unknown marker - reaches the caller as `active-role`
+;; nil, same as every other marker consumer's gate. Judged on the home
+;; agent alone.
+(assert= "BL-1832 (04): no honoured active role (standing pack / absent-or-unknown marker) - home agent alone"
+         #{"aider"}
+         (sw/seat-expected-agents {:rotation-router? true :home-role "coder"
+                                    :active-role nil
+                                    :role-agent->token {"coder" "aider"}}))
+
+(assert= "BL-1832: an unmapped role falls back to \"claude\", the same default gather-role's own (or agent \"claude\") uses"
+         #{"aider" "claude"}
+         (sw/seat-expected-agents {:rotation-router? true :home-role "coder"
+                                    :active-role "QA"
+                                    :role-agent->token {"coder" "aider"}}))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

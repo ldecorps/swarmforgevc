@@ -80,6 +80,41 @@
     (assoc state role {"attempts" (if in-window? (inc (get prior "attempts" 0)) 1)
                        "last-ms" now-ms})))
 
+;; BL-1832: under `config rotation router` only the home role's tmux session
+;; stands; the resident runs every other role inside it (BL-804). When the
+;; home role and the role the resident is currently active as use different
+;; agents, the home pane legitimately holds a live process of EITHER agent -
+;; the resident's own home agent (not yet rotated, or rotated back), or the
+;; active role's agent (mid-rotation). check-live-session's :has-claude-
+;; process? for the home role must be judged against this whole set, not the
+;; home role's roles.tsv agent alone, or a healthy mixed-agent rotation reads
+;; as a half-launch CRIT and gets `tmux respawn-pane -k`'d out from under
+;; whichever role is actually running (2026-09-29: 60 proc-coder CRITs, 31
+;; killed QA Claude sessions, zero land walks finished that night).
+;;
+;; `role-agent->token` is role -> roles.tsv agent token (nil for an unknown
+;; role falls back to "claude", the same default `gather-role`'s own
+;; `(or agent "claude")` already uses - never a second, divergent default).
+;;
+;; Invariant 2 (BL-1345): with no HONOURED active role - a standing pack, or
+;; an absent/unknown marker - `active-role` arrives nil from the caller (the
+;; same `resident-decision`/`:honour-marker?` gate every other consumer of
+;; the marker already goes through), so the set collapses to the home role's
+;; own agent alone: every seat is judged exactly as it was before this
+;; ticket. Likewise when the resident is active AS its own home role (no
+;; rotation in progress), `active-role` equals `home-role` and the set is a
+;; single agent either way.
+(defn seat-expected-agents
+  "The set of agent tokens a router pack's HOME pane may run and still read
+   as healthy: the home role's own agent, plus (only when `rotation-router?`
+   is true and `active-role` is a DIFFERENT, honoured role) the active
+   role's own agent."
+  [{:keys [rotation-router? home-role active-role role-agent->token]}]
+  (let [agent-of (fn [role] (or (get role-agent->token role) "claude"))]
+    (cond-> #{(agent-of home-role)}
+      (and rotation-router? active-role (not= active-role home-role))
+      (conj (agent-of active-role)))))
+
 (defn check-live-session
   ;; BL-804: should-stand? is topology-derived (mono_router_lib, via the
   ;; babysitter_check.bb gatherer) and defaults to true so every pre-BL-804

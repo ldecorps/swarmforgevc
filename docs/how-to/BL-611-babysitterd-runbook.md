@@ -730,6 +730,52 @@ Acceptance features:
 [`specs/features/BL-1344-an-investigated-finding-can-be-waived.feature`](../../specs/features/BL-1344-an-investigated-finding-can-be-waived.feature),
 [`specs/features/BL-1404-a-recorded-waive-silences-the-operator-escalation-too.feature`](../../specs/features/BL-1404-a-recorded-waive-silences-the-operator-escalation-too.feature).
 
+## A router resident running its active role's agent is never respawned (BL-1832)
+
+Under `config rotation router` (BL-804, above) only the home role's tmux
+session stands; the resident runs every other role inside that one pane.
+Before this fix, `gather-role` judged the home pane against the home
+role's own `roles.tsv` agent alone, before `resident-active-role` was
+even resolved — so a healthy mixed-agent rotation (home `coder` on
+`aider`, `QA` rotated in on `claude`) read as a half-launch CRIT (check
+1, above) and got `tmux respawn-pane -k`'d by the bounded repair
+(BL-1169). On 2026-09-28/29, with the ISTA pack's coder on `aider` and
+every other role on `claude`, this fired a `CRIT [proc-coder] ... NO
+aider process` every ten minutes for five hours straight and killed 31
+QA Claude sessions mid-turn — QA's background `land_main_publish.sh
+--land` died twice at the exact second of a repair tick, and no land
+walk that night ever finished. The operator's own supervision treated
+the recurring CRIT as harmless because it "self-healed" on the next
+sweep; the repair IS what killed the rotated-in seat.
+
+A pure resolver, `babysitterd-sweep-lib/seat-expected-agents`, now
+answers which agent tokens the home pane may run and still read
+healthy: the home role's own agent, plus — only under rotation router,
+and only when the resident's active role is a DIFFERENT, honoured role
+(BL-1345's marker-honouring gate) — that active role's own agent too.
+`babysitter_check.bb` re-judges the home role's row against this whole
+set once both the home role and `resident-active-role` are known,
+rather than against the home agent alone before `resident-active-role`
+is resolved. Outside rotation router, with no honoured marker (a
+standing pack, or an absent/unknown marker — BL-1345 invariant 3), or
+when the resident is active as its own home role (no rotation in
+progress), the set collapses to a single agent and every seat is judged
+exactly as before this ticket.
+
+A home pane running neither the home agent nor the active role's agent
+is still the half-launch CRIT with its repair, unchanged — this only
+widens what counts as healthy, it never narrows it.
+
+Verify:
+
+```bash
+bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb
+bash swarmforge/scripts/test/test_babysitter_check.sh
+```
+
+Acceptance:
+[`specs/features/BL-1832-a-router-resident-running-its-active-roles-agent-is-never-respawned.feature`](../../specs/features/BL-1832-a-router-resident-running-its-active-roles-agent-is-never-respawned.feature).
+
 ## Verify
 
 ```bash

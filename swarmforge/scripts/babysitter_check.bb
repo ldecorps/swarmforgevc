@@ -1194,6 +1194,31 @@
                                 :repair-attempts (get prior "attempts" 0)))
                     roles)
         session-by-role (into {} (map (juxt :role :session) role-rows))
+        ;; BL-1832: gather-role judged the home role's pane against its OWN
+        ;; roles.tsv agent alone, before resident-active-role above was even
+        ;; resolved. Re-judge it here, now that both are known, against the
+        ;; whole acceptable set (home agent, and - only under rotation router
+        ;; with a DIFFERENT honoured active role - that role's own agent too)
+        ;; so a mixed-agent rotation in progress never reads as a half-launch
+        ;; CRIT. required_wiring: this IS the live gatherer asking the pure
+        ;; resolver, not a second copy of its decision.
+        role-agent->token (into {} (map (juxt :role :agent) role-rows))
+        roles (if (and rotation-router? resident-active-role
+                      (not= resident-active-role resident-home))
+                (mapv (fn [r]
+                        (if (= (:role r) resident-home)
+                          (let [acceptable (babysitterd-sweep-lib/seat-expected-agents
+                                            {:rotation-router? rotation-router?
+                                             :home-role resident-home
+                                             :active-role resident-active-role
+                                             :role-agent->token role-agent->token})
+                                pid (pane-pid socket (get session-by-role resident-home))]
+                            (assoc r :has-claude-process?
+                                     (boolean (some #(agent-process-line pid ps-output %)
+                                                    acceptable))))
+                          r))
+                      roles)
+                roles)
         ;; BL-958: observe the control plane through the SAME lib status/ensure
         ;; use, so babysitterd can own the prescribed ./swarm ensure recovery.
         ;; BL-1071 invariant 1: a throwing observer must not abort the sweep.
