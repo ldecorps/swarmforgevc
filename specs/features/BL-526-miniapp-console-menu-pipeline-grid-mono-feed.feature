@@ -1,7 +1,7 @@
 Feature: Miniapp Console Menu
   In order to provide an efficient operator interface
   As a user who accesses the miniapp console
-  I want to see a menu with two buttons for the pipeline and live feed
+  I want the menu to open with two buttons for the pipeline and live feed
   Scenario: Accessing Pipeline Status Grid
     Given the miniapp console menu is open on a portrait phone viewport
     When the operator taps the pipeline-grid button

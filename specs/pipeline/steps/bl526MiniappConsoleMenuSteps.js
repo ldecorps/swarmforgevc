@@ -1,6 +1,6 @@
 'use strict';
 
-// BL-526: Miniapp console menu — portrait two-button landing, pipeline
+// BL-526: Miniapp console menu — portrait landing led by two buttons, pipeline
 // STATUS GRID without below-grid LINKS, and mono-router resident feed.
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -16,8 +16,16 @@ function registerSteps(registry) {
     assert.match(html, /flex-direction:\s*column/);
     assert.match(html, /overflow-x:\s*hidden/);
     assert.match(html, /max-width:\s*100/);
-    const buttons = (html.match(/data-testid="/g) || []).length;
-    assert.equal(buttons, 2, `expected exactly two primary buttons, found ${buttons}`);
+    // BL-1859: the menu started with these two buttons; BL-572, BL-592,
+    // BL-696 and later tickets added more on purpose (8 on 2026-10-01), so
+    // the old "exactly two" count was a frozen boundary (BL-1006). What
+    // BL-526 owns is that its two buttons lead the menu, in this order.
+    const testIds = [...html.matchAll(/data-testid="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(
+      testIds.slice(0, 2),
+      ['pipeline-grid', 'mono-router-feed'],
+      `expected the menu to open with the pipeline-grid and mono-router-feed buttons, found ${testIds.join(', ')}`,
+    );
   });
 
   registry.define(/^the operator taps the pipeline-grid button$/, (ctx) => {
@@ -35,7 +43,8 @@ function registerSteps(registry) {
 
   registry.define(/^the pipeline STATUS GRID is shown without the below-grid links section$/, (ctx) => {
     assert.ok(ctx.pipelineGridHtml, 'expected pipeline-grid shell from prior step');
-    assert.match(ctx.pipelineGridHtml, /pipeline-board\?token=/);
+    // BL-1859: the pages authenticate with ?bearer= (BL-696), never ?token=.
+    assert.match(ctx.pipelineGridHtml, /pipeline-board\?bearer=/);
     assert.match(ctx.pipelineGridHtml, /STATUS GRID/);
     assert.ok(!ctx.pipelineGridHtml.includes('LINKS:'));
     assert.match(ctx.pipelineGridText, /526/);
@@ -54,10 +63,11 @@ function registerSteps(registry) {
 
   registry.define(/^a live feed of the mono-router RESIDENT is shown$/, (ctx) => {
     assert.ok(ctx.residentSpyHtml, 'expected resident-spy shell');
-    assert.match(ctx.residentSpyHtml, /resident-pane\?token=/);
+    // BL-1859: ?bearer= since BL-696. The 07-22 live screen shows every
+    // live pane in one grid, so the old coordinator-pane split id is gone;
+    // the resident's live feed is the /resident-pane poll.
+    assert.match(ctx.residentSpyHtml, /resident-pane\?bearer=/);
     assert.match(ctx.residentSpyHtml, /Swarm Live Screen/);
-    assert.match(ctx.residentSpyHtml, /coordinator-pane/);
-    assert.match(ctx.residentSpyHtml, /resident-pane/);
   });
 
   registry.define(/^neither destination requires horizontal scroll at a typical phone portrait width$/, (ctx) => {
