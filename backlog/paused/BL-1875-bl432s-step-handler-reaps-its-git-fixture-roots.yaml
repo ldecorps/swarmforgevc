@@ -1,0 +1,82 @@
+id: BL-1875
+title: "BL-432's step handler registers its git fixture roots for reaping and leaves BL-1636's census: since BL-1869 rewrote it to build a real git repo per scenario, every acceptance run leaves about 368K per scenario in /tmp (62 roots on 2026-10-01 alone), because the census still grandfathers its bare mkdtempSync"
+milestone: M8
+type: defect
+severity: medium
+# medium: a contained leak, but onto a host whose /tmp is already the
+# emergency BL-1867 owns (about 445,000 leaked dirs, 76 GB, inode exhaustion
+# weeks away). Each BL-432 run adds about 2 MB, and every QA and hardener
+# pass runs the feature.
+status: todo
+epic: code-quality-gates
+priority: 3
+depends_on: [BL-1869]
+# BL-1869 rewrote the handler and is landing. The fix edits that rewrite.
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
+
+acceptance: specs/features/BL-1636-a-step-handler-never-leaks-its-temp-root.feature
+# This pointer does not claim BL-1636's contract. It is the contract this
+# ticket must leave green: BL-1636's feature, with its census guard one
+# entry shorter. No feature file changes, so no human approval is asked.
+
+source: |
+  QA note 003674 (2026-10-01), verbatim: "bl432 handler (BL-1636 census)
+  now leaks a 368K git repo per scenario: 62 /tmp". QA's BL-1869 pass
+  evidence (BL-1869-QA-20261001.md) names the fix. This ticket quotes no
+  new human sentence.
+
+description: |
+  ## What is wrong
+
+  BL-1869 (landing) rewrote `specs/pipeline/steps/bl432AutoTuneIntakeThrottleSteps.js`
+  so that each scenario builds a real `git init -b main` fixture. The
+  root comes from a bare `fs.mkdtempSync` that nothing removes. BL-1636's
+  guard (`extension/test/stepHandlerTmpRootGuard.test.js`) lets it through
+  because the handler is in the frozen census
+  (`extension/test/step-handler-tmp-root-census.txt`, line 217 at QA's
+  pass). Each leaked root is now about 368K. QA counted 62
+  `bl432-auto-tune-*` roots in /tmp from 2026-10-01 alone.
+
+  ## What is wanted
+
+  - Every fixture root the handler creates comes from `trackedTmpRoot(`
+    in `specs/pipeline/steps/lib/fixtureReaper.js` (BL-1636), which
+    removes it on every exit path.
+  - The handler's line is removed from the census in the same commit. The
+    guard's second test fails on a census entry that no longer offends.
+  - BL-1390's proof stays: `rev-parse --git-common-dir` inside the root
+    before any further git command.
+
+  ## Scope
+
+  The step handler, the census file, evidence.
+
+out_of_scope: |
+  - The other census entries: BL-1659 owns the module-load ones, and the
+    rest burn down as their handlers are next touched.
+  - The roots already in /tmp: the human's one-time cleanup (BL-1867's
+    note).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `npx vitest run test/stepHandlerTmpRootGuard.test.js` (from
+     extension/): all pass, with the census one entry shorter.
+  2. `node specs/pipeline/cli.js specs/features/BL-432-auto-tune-intake-throttle.feature`:
+     6 of 6 ok.
+  3. Count `/tmp/bl432-auto-tune-*` and `/tmp/*bl432*` before and after
+     run 2. The count does not grow.
+  4. `node specs/pipeline/cli.js specs/features/BL-1636-a-step-handler-never-leaks-its-temp-root.feature`:
+     6 of 6 ok (measured on main at mint). Its scenario 03 pins the
+     census at "at least 400 handlers", and the census holds 525 at mint,
+     so removing one entry keeps it green.
+
+notes: |
+  Minted 2026-10-01 by the specifier from QA note 003674, the same pass.
+  Dynamic routing: test-side, so coder and QA only.
