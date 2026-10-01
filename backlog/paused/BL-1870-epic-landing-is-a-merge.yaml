@@ -11,6 +11,12 @@ decomposes_into: [BL-1871, BL-1872]
 remaining_slices:
   - "Retire the entanglement machinery once in-flight parcels drain: QA's merge-up send, the post-land re-point, reverse-hop copies, own-path replay, strays, abandoned_commits, the LAND_ESCALATE conditions and most of land_step_lib.bb"
 mutation_cost: medium
+verification_category: merge-collateral-scope
+# 2026-10-02 (specifier, QA note 003679): the category's three rows are
+# hand checks of which lines a bounce's merge-revert removed in branches
+# that merge each other. BL-1871's take-up never merges, and this epic's
+# retirement slice removes the merge-up and reverse-hop merges, so no
+# collateral-scope check is left to make by hand once the epic lands.
 
 human_approval: approved
 human_ruling: |
@@ -68,3 +74,11 @@ notes: |
   specifier's to land when each slice activates (BL-798). The
   boot-prefix budget has 26 characters of headroom, so the article edits
   move equal prose to reference/.
+  2026-10-02 (specifier): declares verification_category
+  merge-collateral-scope (QA note 003679: "debt merge-collateral-scope 3/3
+  unowned; revert guard named BL-1865 for BL-1835"). Its three rows,
+  BL-1821, BL-1816 and BL-1835, are hand checks of a bounce's merge-revert
+  scope in branches that merge each other, which this epic removes. Row 3
+  also found check_bounce_revert_scope.sh naming the wrong ticket (an
+  ancestor-of-P2 match on a stale record). That guard goes with the
+  retirement slice, so it gets no separate fix now.
