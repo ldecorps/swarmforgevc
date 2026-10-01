@@ -1751,6 +1751,37 @@
 ;; one. Same posture as `own-paths`' own memoized `blocking-for`.
 (def ^:private merge-authored-paths* (memoize merge-authored-paths))
 
+(defn- untagged-commit-lands-no-line?
+  "BL-1857: true when `c` is left out of `path`'s attribution because every
+   non-blank line it added to `path` is either already in `origin-main`'s
+   copy or absent from `landing-commit`'s own copy - a QA bounce restore
+   whose subject BL-1472's `revert-subject?` does not recognize (its
+   subjects are 'Restore bounced parcel paths to origin/main content.' and
+   similar, not the anchored-quote `Revert \"...\"` shape) puts no line of
+   its own into what the land will publish, so it is neither an owner nor
+   an untagged touch for this path - the same exclusion BL-1472 already
+   gives a recognized revert, reached by content instead of by subject
+   (BL-972: a gate decides on evidence, never a subject alone).
+
+   This decides only whether `c` is attributed AT ALL; it never decides
+   which lines land - that stays the tag-based walk's job untouched.
+
+   nil (never a default) when any of the three reads fail - the caller
+   must fail closed (treat `c` as an ordinary untagged touch, not as
+   excludable) exactly as `path-owner-tickets`' own blindness posture
+   requires elsewhere in this function."
+  [root c path origin-main landing-commit]
+  (when-let [changes (commit-line-changes root c)]
+    (let [added (get-in changes [path :added] #{})
+          origin-lines (blob-lines root origin-main path)
+          landing-lines (blob-lines root landing-commit path)]
+      (when (and (some? origin-lines) (some? landing-lines))
+        (every? (fn [line]
+                  (or (str/blank? line)
+                      (contains? origin-lines line)
+                      (not (contains? landing-lines line))))
+                added)))))
+
 (defn- path-owner-tickets
   "The attribution of `path`'s changes: every commit `commits-fn` reports for
    `path`, run through this file's own subject-attribution (BL-1544: single-
@@ -1814,6 +1845,23 @@
                                   (task-scope-gate-lib/revert-subject? (commit-subject root c))
                                   acc
 
+                                  ;; BL-1857: an untagged, non-merge commit
+                                  ;; that put no line of its own into the
+                                  ;; landing commit's copy (every added line
+                                  ;; is either on origin/main's copy already
+                                  ;; or absent from the landing copy) is left
+                                  ;; out entirely, same as a recognized
+                                  ;; revert above - but ONLY when it is
+                                  ;; untagged; a tagged commit still owns the
+                                  ;; path even if its content happens to
+                                  ;; match. `true?` so a nil (read failure,
+                                  ;; fail-closed) falls through to the
+                                  ;; ordinary untagged-touch branch below.
+                                  (and (not (merge-commit? root c))
+                                       (empty? (:ids (commit-subject-attribution root c)))
+                                       (true? (untagged-commit-lands-no-line? root c path origin-main commit)))
+                                  acc
+
                                   (not (merge-commit? root c))
                                   (conj acc c)
 
@@ -1829,6 +1877,9 @@
         (let [per-commit (map (fn [c] (assoc (commit-subject-attribution root c) :commit c)) attributing)]
           {:owners (into #{} (mapcat :ids per-commit))
            :any-untagged? (boolean (some #(empty? (:ids %)) per-commit))
+           ;; BL-1857: the specific commit(s) that kept :any-untagged? true,
+           ;; so a refusal can name why, not just the path and siblings.
+           :untagged-commits (into [] (comp (filter #(empty? (:ids %))) (map :commit)) per-commit)
            ;; BL-1544: true when at least one attributing commit's subject
            ;; names more than one ticket id and leads with none of them.
            ;; `:ambiguous` carries the {:commit :ids} detail for each such
@@ -2346,7 +2397,9 @@
                   :warning (str "land-step: refusing to replay " task-ticket-id
                                 " - " path " is shared with unlanded sibling(s) "
                                 (str/join "," (sort shared))
-                                ", and an untagged commit touches it, so the "
+                                ", and untagged commit(s) "
+                                (str/join "," (:untagged-commits attribution))
+                                " touch it, so the "
                                 "tag-based line-set walk cannot separate " task-ticket-id
                                 "'s own change from " (str/join "," (sort shared)) "'s lines "
                                 "(BL-1830: never resolved by keeping either version whole)")})

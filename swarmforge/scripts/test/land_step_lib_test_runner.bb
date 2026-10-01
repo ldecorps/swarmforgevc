@@ -4550,6 +4550,113 @@ RESOLVED BY THIS TICKET
     (assert-false "BL-1830 D1: the sibling never rides as a passenger instead"
                   (contains? (or (:passengers result) #{}) "BL-9002"))))
 
+;; ── BL-1857: an untagged commit that lands no line of its own is left out
+;;    of a shared path's attribution ──────────────────────────────────────
+;; BL-1842's real refusal (QA note 003628, 2026-10-01): six untagged QA
+;; bounce-restore/revert commits touched a shared doc; BL-1472's
+;; `revert-subject?` recognizes none of their subjects ("Restore bounced
+;; parcel paths to origin/main content." is not the anchored-quote `Revert
+;; "..."` shape), so each kept `:any-untagged? true` and the BL-1830
+;; rebuild refused by name even though not one of the six put a line into
+;; what the land would actually publish. Outline row 1: an untagged
+;; restore back to origin/main's content.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root bl1830-manifest "existing_test.sh\tstanding\n" "seed the manifest")
+  (mark-origin-main-here! root)
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\n"
+           "BL-9001: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\n"
+           "Restore bounced parcel paths to origin/main content.")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\n"
+           "BL-9001: reapply its own row after restore")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_bl9002.sh\tstanding\n"
+           "BL-9002: add its own test to the manifest")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1857 (01): a restore to origin/main's content is left out of attribution - no refusal"
+             nil (:warning result))
+    (assert-true "BL-1857 (01): the shared manifest path is still rebuilt and replayed"
+                 (contains? (set (:paths result)) bl1830-manifest))
+    (assert= "BL-1857 (01): the sibling is excluded from the rebuild, not a refusal"
+             #{"BL-9002"} (get-in result [:rebuilt bl1830-manifest :excluded]))
+    (let [lines (get-in result [:rebuilt bl1830-manifest :lines])]
+      (assert-true "BL-1857 (01): the rebuilt manifest carries BL-9001's own row"
+                   (boolean (some #{"test_bl9001.sh\tstanding"} lines)))
+      (assert-false "BL-1857 (01): the rebuilt manifest never carries BL-9002's row"
+                    (boolean (some #{"test_bl9002.sh\tstanding"} lines))))))
+
+;; Outline row 2: an untagged commit adds a line that a LATER untagged
+;; commit removes again before the landing commit - net contribution to
+;; what the land publishes is nothing, same exclusion as row 1.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root bl1830-manifest "existing_test.sh\tstanding\n" "seed the manifest")
+  (mark-origin-main-here! root)
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\n"
+           "BL-9001: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_scratch.sh\tstanding\n"
+           "Re-point scratch pass: add a transient row")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\n"
+           "Re-point scratch pass: drop the transient row")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_bl9002.sh\tstanding\n"
+           "BL-9002: add its own test to the manifest")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1857 (02): a line added then removed again before landing is left out of attribution - no refusal"
+             nil (:warning result))
+    (assert-true "BL-1857 (02): the shared manifest path is still rebuilt and replayed"
+                 (contains? (set (:paths result)) bl1830-manifest))
+    (assert= "BL-1857 (02): the sibling is excluded from the rebuild, not a refusal"
+             #{"BL-9002"} (get-in result [:rebuilt bl1830-manifest :excluded]))))
+
+;; Outline row 3: an untagged commit's added line survives into the landing
+;; commit's own copy and origin/main lacks it - still refuses by name,
+;; unchanged. (BL-1830 D1's own fixture above already covers this exact
+;; shape; this is the ticket's own outline row, named for BL-1857.)
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root bl1830-manifest "existing_test.sh\tstanding\n" "seed the manifest")
+  (mark-origin-main-here! root)
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\n"
+           "BL-9001: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_bl9002.sh\tstanding\n"
+           "BL-9002: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_bl9002.sh\tstanding\ntest_untracked_by_anyone.sh\tstanding\n"
+           "Restore bounced-ticket paths to origin/main after re-point.")
+  (let [untagged-sha (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+      (assert= "BL-1857 (03): an untagged commit whose added line survives into the landing copy still refuses"
+               nil (:paths result))
+      (assert-includes "BL-1857 (03): the refusal names the shared path" (:warning result) bl1830-manifest)
+      (assert-includes "BL-1857 (03): the refusal names the sibling" (:warning result) "BL-9002")
+      ;; BL-1857's own bullet: "the refusal names which commit kept it
+      ;; untagged" - untested by any pass before this one (grepped: no
+      ;; assertion anywhere reads :untagged-commits or checks the warning
+      ;; for a commit sha). Verified by hand this fails loud without the
+      ;; fix: reverting the warning string to the pre-BL-1857 text (no
+      ;; untagged-commits interpolation) makes this assertion fail, while
+      ;; (:paths result) and the path/sibling assertions above stay green -
+      ;; so this is the only assertion in the suite that would have caught
+      ;; a regression dropping the commit-naming half of the fix.
+      (assert-includes "BL-1857 (03): the refusal names the untagged commit that kept it untagged"
+                        (:warning result) untagged-sha))))
+
 ;; BL-1830 D1's own guard (hardener pass, 2026-09-30): a sibling already
 ;; CLOSED on origin/main by the time own-paths runs - origin/main shows
 ;; BL-9002 done, but the branch still carries BL-9002's own tagged commit

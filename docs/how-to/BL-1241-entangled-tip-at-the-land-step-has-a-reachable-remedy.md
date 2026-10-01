@@ -1828,3 +1828,46 @@ entangled-sibling DETECTION, approval-state gating
 
 Acceptance:
 `specs/features/BL-1830-a-land-never-publishes-a-siblings-lines-in-a-shared-own-path.feature`.
+
+## An untagged commit that lands no line of its own never blocks a shared-path rebuild (BL-1857)
+
+BL-1830 (above) refuses a land by name the moment any untagged commit
+touches a path the landing ticket shares with an unlanded sibling — it
+cannot tell such a commit's own lines apart from the sibling's, so it
+fails closed. QA's bounce restores and reverts carry no ticket id by
+`QA.prompt`'s own rule (the BL-1650/BL-1653 posture), and QA's branch
+never shrinks (BL-1852), so every one of them sits in every later land's
+range. On 2026-10-01 this made BL-1842's land refuse on
+`docs/how-to/BL-1052-local-model-seat-launch.md` (QA note 003628): six
+untagged commits touched the file, all of them QA restores or reverts,
+and not one line any of them added was in BL-1842's approved copy without
+also being on `origin/main` — none put anything into what the land would
+have published, yet the land refused anyway.
+
+`path-owner-tickets` now leaves such a commit out of the path's
+attribution entirely — neither an owner nor an untagged touch — the same
+exclusion BL-1472 already gives a commit whose subject matches the
+anchored `Revert "..."` shape, but reached by content instead of by
+subject (BL-972: a gate decides on evidence, never a subject alone). A
+new private predicate, `untagged-commit-lands-no-line?`, answers true
+only when every non-blank line the commit added to the path is either
+already in `origin/main`'s copy or absent from the landing commit's own
+copy; it reads nil (never a default) on any read failure, and the caller
+treats nil as an ordinary untagged touch, never as excludable — failing
+closed exactly as the rest of `path-owner-tickets`' blindness posture
+does. This decides only whether the commit is attributed AT ALL; which
+lines actually land is still the tag-based walk's job, untouched. A QA
+restore/revert subject that BL-1472's `revert-subject?` does not
+recognize (its subjects read "Restore bounced parcel paths to
+origin/main content." and similar, not the anchored-quote shape) is the
+routine case this closes; an untagged commit whose own line DOES survive
+into the landing copy without being on `origin/main` still refuses by
+name, unchanged.
+
+The refusal message now names which commit(s) kept the path untagged
+(`:untagged-commits` on the attribution map), not only the path and the
+blocking siblings — the earlier message gave no way to tell a genuine
+entangled touch from a QA restore that should have been excluded.
+
+Acceptance:
+`specs/features/BL-1857-a-commit-that-lands-no-line-of-its-own-never-blocks-a-shared-path-rebuild.feature`.
