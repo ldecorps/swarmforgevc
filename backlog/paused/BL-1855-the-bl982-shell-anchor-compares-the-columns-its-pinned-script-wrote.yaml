@@ -1,0 +1,136 @@
+id: BL-1855
+title: "The bl982 single-seat shell anchor compares the columns its pinned script wrote - test_bl982_multi_seat_identity.sh case 7 (red on main since 44d2d42591 appended the reverse-hop column to roles.tsv on 2026-08-30) compares the current rows projected onto the pinned pre-change script's first eight columns, as BL-1541 already does in the property runner, so an appended column no longer fails it and a change among the first eight still does"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the standing shell suite (2026-09-05 rule:
+# high at first sighting). Raised as unowned by the hardener on BL-1837's pass.
+status: todo
+epic: code-quality-gates
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: test code only (one shell test, one sourced helper, one step handler);
+# no production script changes.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1855-the-bl982-shell-anchor-compares-the-columns-its-pinned-script-wrote.feature
+
+# The test file is the pre-existing consumer (BL-1235). The first anchor is
+# the source line of the helper, so a projection defined inline in the test
+# (where scenario 02 cannot reach it) fails the gate. The helper and handler
+# names are chosen here at mint so each pattern is a literal (BL-874).
+required_wiring:
+  - 'swarmforge/scripts/test/test_bl982_multi_seat_identity.sh::lib/bl982_pinned_shape.sh::case 7 sources the projection helper scenario 02 drives'
+  - 'swarmforge/scripts/test/test_bl982_multi_seat_identity.sh::bl982_rows_match_pinned_shape::case 7 compares through the helper'
+  - 'specs/pipeline/steps/bl1855Bl982ShellAnchorProjectsColumnsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A defect with no choice posed. FIRM: what case 7 guards (BL-982 invariant
+  2, as BL-1541 amended it on 2026-09-14) is unchanged. The pinned blob
+  2edd9a17ba stays the oracle, and it is not re-pinned. An appended column
+  is ignored, and an inserted, reordered or altered value among the first
+  eight columns still fails. No swarmforge.sh change.
+
+invariants:
+  - "A column appended after the pinned script's eighth never fails case 7; an inserted, reordered or altered value among the first eight always does."
+
+source: |
+  Hardener note 001637 (2026-09-30 23:56Z), verbatim:
+
+  > unowned-red test_bl982_multi_seat_identity.sh case 7 - stale forward-only pin
+
+  Evidence on the hardender branch at 170b74d2d3:
+  `backlog/evidence/BL-1837-hardender-unowned-red-test-bl982-20261001.md`,
+  with the verbatim diff (each row carries a trailing `forward-only` that
+  the pinned script's rows lack) and a reproduction on the `main` checkout.
+
+description: |
+  ## Why
+
+  Case 7 of `swarmforge/scripts/test/test_bl982_multi_seat_identity.sh`
+  builds a single-seat pack twice, once with the current `swarmforge.sh` and
+  once with the pre-change script pinned by blob sha
+  `2edd9a17ba9d40709c0f436d12395b638563c0ca`. It then diffs the two
+  `roles.tsv` files whole. `44d2d42591` (2026-08-30, the upstream
+  reverse-hop steal) made `write_roles_file` append a ninth column, the
+  propagation mode (default `forward-only`), which the pinned script cannot
+  write. Case 7 has therefore failed on every correct tree since then.
+  Measured on main at mint: exit 1, 4.5 s, cases 1-6 pass and case 7 fails.
+
+  The same invariant has two other copies, and both were fixed for this
+  exact column:
+  - BL-1541 (2026-09-14) amended invariant 2 in
+    `bl982_multi_seat_identity_property_runner.bb` (`project-first-8-cols`).
+    The current rows are projected onto the pinned script's first eight
+    columns, "an appended column must not diverge the oracle, but an
+    inserted, reordered or altered column among the first 8 still must".
+  - BL-1489 made the acceptance handler compare only the fields its scenario
+    names.
+  Case 7 is the one copy still comparing whole rows.
+
+  Census at mint: `grep -ln 'cat-file blob' swarmforge/scripts/test/*.sh`
+  finds one shell test, this one. The property runner pins the same blob
+  and already projects.
+
+  ## What is wanted
+
+  - Case 7 compares the current `roles.tsv` rows, each cut to its first
+    eight tab-separated fields, with the pinned script's rows. It still
+    normalizes on the fixture root. The pinned blob and the single-seat
+    configuration are unchanged (scenario 01).
+  - The projection-and-compare lives in
+    `swarmforge/scripts/test/lib/bl982_pinned_shape.sh` as
+    `bl982_rows_match_pinned_shape`. Case 7 sources and calls it, and
+    scenario 02 drives the same function on a pinned row and an edited copy
+    (the outline's three rows).
+  - Case 7's comment and the file header say "projected onto the pinned
+    script's eight columns" where they say "byte-identical" today, and name
+    BL-1541's amendment.
+
+  ## How (direction, not mandate)
+
+  - `cut -f1-8` on the current side is enough. Keep the pinned side
+    unprojected, as the property runner does, so a pinned row that somehow
+    grew a column still shows up.
+  - The step handler `specs/pipeline/steps/bl1855Bl982ShellAnchorProjectsColumnsSteps.js`
+    produces the pinned row from the real pinned blob, the way case 7 does,
+    never as a hand-typed row. It derives the current row by the one edit
+    each outline row names, and validates `difference` and `verdict`
+    against explicit KNOWN_VALUES. Scenario 01 runs the real shell test.
+    Fixtures live under mkdtemp (BL-1390). The handler is discovered from
+    its own file (BL-1371).
+  - The helper lives under `lib/`, which the suite inventory does not list
+    as a test (column 1 names test files only, BL-1239).
+
+  ## Scope
+
+  `test_bl982_multi_seat_identity.sh`, the new `lib/bl982_pinned_shape.sh`,
+  the step handler, evidence. Not in scope: `swarmforge.sh`, the property
+  runner, and BL-982's or BL-1541's landed features.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1855-the-bl982-shell-anchor-compares-the-columns-its-pinned-script-wrote.feature`:
+     4 of 4 ok (scenario 01 and the outline's 3 rows). Measured 0 on main at
+     mint: no handler exists yet.
+  2. `bash swarmforge/scripts/test/test_bl982_multi_seat_identity.sh`:
+     exit 0, `ALL PASS`. Measured on main at mint: exit 1 on case 7, 4.5 s
+     at load 6.6.
+  3. `bash swarmforge/scripts/test/run_bb_suite.sh bl982`: the standing
+     suite's own selection of this file passes.
+  After the land (the coordinator's check, not QA's): no row in
+  `backlog/standing-reds.tsv` names
+  `swarmforge/scripts/test/test_bl982_multi_seat_identity.sh`; the land
+  step retires it (BL-1631).
+
+notes: |
+  Minted 2026-10-01 by the specifier from hardener note 001637 (source), in
+  the same pass as its register row in `backlog/standing-reds.tsv`. The
+  hardener did not hold BL-1837 over this red: its pass went on and forwarded
+  NONE. BL-1837's hardener evidence names the red, though, so QA's
+  Article 4.2 check needs this row before it approves BL-1837. The hardener
+  was told in the same pass.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
