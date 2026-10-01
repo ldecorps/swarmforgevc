@@ -175,4 +175,14 @@ notes: |
   effect when the cleaner and hardender seats are next relaunched from the
   pack (`./swarm ensure` regenerates a launch script from it).
 
+  2026-10-02, the specifier: the prose this ticket makes true landed at
+  activation (BL-798) in e60cb4e6e0, as "Until BL-1871 lands" interims in
+  Article 2.4 and 2.5, workflow.prompt (lineage, bounce revert, merge-up),
+  PIPELINE.md's receive modes and the cleaner, architect, coder and
+  hardender prompts. Bookkeeping only: nothing the coder builds changes.
+  handoff-protocol.md stays the documenter's, in this parcel (Scope).
+  After the land, the specifier retires the "until" halves; the full
+  site list is in workflow-detailed.prompt "Parcel lines - boot wording
+  before BL-1871's interims".
+
 assigned_to: coder
