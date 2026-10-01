@@ -1,5 +1,5 @@
 id: BL-1866
-title: "bl800's full-registry property test went red in QA's full property-lane run for BL-1822 on 2026-10-01 with no register row; building the full step registry takes 6 to 10 s of its 30000 ms budget alone because 13 step handlers each list /tmp from the top level of registerSteps to sweep stale fixtures, and /tmp holds about 445,000 entries; this ticket owns the row and makes building the full registry list nothing in the temp directory"
+title: "Stamp-off for hotfix 635570352e: the 13 step handlers that listed /tmp from the top level of registerSteps now sweep before their own first step (specs/pipeline/steps/lib/sweepOnFirstStep.js), so building the full step registry lists nothing in the temp directory and bl800's full-registry test (red in QA's lane for BL-1822 on 2026-10-01) runs in about 2.4 s alone; this parcel builds the feature's handler and reviews the hotfix"
 milestone: M8
 type: defect
 severity: high
@@ -58,6 +58,26 @@ source: |
   BL-1822's parcel 3f42139c68: 2/2 passed in 6797 ms.
 
 description: |
+  ## Status: hotfix 635570352e landed the fix
+
+  The 13 handlers already call
+  `registry = require('./lib/sweepOnFirstStep').sweepOnFirstStep(registry, sweepStaleFixtures);`
+  in place of the bare sweep. The new lib wraps `define`/`defineScoped` so
+  the handler's sweep runs once per process, before the first of its own
+  steps runs. Measured at the hotfix: full `registerSteps` 282 ms, 0
+  `/tmp` listings, 18308 definitions; bl800 test 1 at 2438 ms alone (was
+  9667 ms). bl800's register row was retired in the hotfix commit. This
+  parcel is the stamp-off: review that change against both invariants,
+  and build the feature's step handler (scenarios 01-03). Do not re-apply
+  the fix. The coder chooses whether the wrapper stands or the sweep moves
+  into each `initFixture` as "How" below first suggested. Either way,
+  the evidence says why.
+
+  The same hotfix also gave BL-1335's failover consumer
+  `OUTAGE_FAILOVER_STATE_DIR` in its fixture root. A live
+  `.swarmforge/outage-failover/active-swap.json` had made BL-1335
+  scenario 06 red on the master checkout. Review that line too.
+
   ## What is wrong
 
   The file's first test builds the full step registry and checks that
@@ -115,9 +135,6 @@ description: |
     the quiet-host prediction is about 1 s (registration about 160 ms
     plus resolves about 320 ms). The coder's evidence records the before
     and after test-1 ms with the 1-minute load of each run.
-  - The register row added by this mint is present and owned while this
-    ticket is open, and the land retires it (BL-1631). Scenario 04 holds
-    in both states.
   - One full property-lane run on the parcel. If bl800 is red in it, the
     evidence carries its failure line verbatim (use a reporter that keeps
     it, e.g. `--reporter=json --outputFile`), so the class of the
@@ -144,8 +161,9 @@ description: |
     discovered from its own file (BL-1371).
 
 constraints: >
-  The 13 named step handler files, this ticket's own step handler, and
-  evidence. The bl800 test file, specs/pipeline/stepRegistry.js,
+  The 13 named step handler files and specs/pipeline/steps/lib/sweepOnFirstStep.js
+  (review only, already changed by the hotfix), this ticket's own step
+  handler, and evidence. The bl800 test file, specs/pipeline/stepRegistry.js,
   specs/pipeline/steps/index.js and extension/src stay unchanged. Never
   edit backlog/standing-reds.tsv in the parcel: the land retires the row
   (coder.prompt, BL-1663).
@@ -166,11 +184,12 @@ qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule), from `extension/`
   unless noted.
   1. `node specs/pipeline/cli.js specs/features/BL-1866-building-the-full-step-registry-lists-no-temp-directory.feature`
-     from the repo root: 4 of 4 ok. Measured at mint, no handler exists
-     yet. Read by hand: 01 is red (13 `/tmp` listings during
-     registerSteps), 02 is red (all 13 sweep from the top level of
-     registerSteps), 03 is red (9667 ms alone), and 04 holds (the row is
-     present and owned).
+     from the repo root: 3 of 3 ok. No handler exists yet. Read by hand
+     on the hotfix tree: 01 holds (0 `/tmp` listings during
+     registerSteps), 02 holds (none of the 13 sweeps from the top level of
+     registerSteps), and 03 holds (2438 ms alone). Scenario 04, which
+     tracked the register row, was dropped from this unbuilt feature by
+     the hotfix amendment, because the row is already gone.
   2. `npx vitest run --config vitest.properties.config.mjs test/bl800StepRegistryScopingConsistency.property.test.js --reporter=verbose`
      once: 2/2 passed, test 1 under 3000 ms. Record the time and
      `cat /proc/loadavg`.
@@ -179,8 +198,8 @@ qa_e2e_procedure: |
   4. From the repo root, `node specs/pipeline/cli.js` on the BL-1343 and
      BL-1565 features: their result equals main's. This checks that the
      moved sweeps still run before their handlers' first fixture.
-  After the land: `bb swarmforge/scripts/standing_red_register_cli.bb .`
-  reports no row for the bl800 file.
+  `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+  for the bl800 file: hotfix 635570352e retired it.
 
 notes: |
   Minted 2026-10-01 by the specifier from QA's unowned-red note 003662,
@@ -197,5 +216,13 @@ notes: |
   > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
   The skip reasons are in stage_skip_reasons. Routing honours them
   because required_stages_routing_enabled is true (BL-606).
+  2026-10-01 (specifier): turned into the stamp-off of hotfix 635570352e
+  under the human's directive, verbatim: "Yeah so basically hotfix all
+  red and file stamp off instead". The register row was retired in that
+  commit, and scenario 04, which tracked it, was dropped from this
+  unbuilt feature. The ledger entry is linked here. The amendment landed
+  while the coordinator's routing note sat unread in the coder's inbox,
+  and a priority-00 note told the coder to merge main first. The approval
+  above stands.
 
 assigned_to: coder

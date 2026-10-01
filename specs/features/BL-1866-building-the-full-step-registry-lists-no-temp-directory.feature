@@ -10,7 +10,8 @@ Feature: BL-1866 building the full step registry lists no temp directory
   registry took 6 to 10 s of that test's 30000 ms budget alone. Building
   the full registry now lists nothing in the temp directory, and each of
   those 13 handlers still sweeps its stale fixtures before its first
-  fixture.
+  fixture. Hotfix 635570352e landed the change and retired bl800's
+  register row, so this feature carries no register-row scenario.
 
   # BL-1866 building-the-full-registry-lists-no-temp-directory-01
   Scenario: building the full step registry lists and removes nothing in the temp directory
@@ -29,8 +30,3 @@ Feature: BL-1866 building the full step registry lists no temp directory
   Scenario: bl800's full-registry test finishes in under 3000 ms when run alone
     When the bl800 property file is run alone three times
     Then its full-registry test finishes in under 3000 ms in its fastest run
-
-  # BL-1866 the-register-row-follows-the-ticket-04
-  Scenario: the register row for the bl800 property file follows BL-1866
-    When the standing-red register is read
-    Then the row for "extension/test/bl800StepRegistryScopingConsistency.property.test.js" is present and owned by BL-1866 while BL-1866 is open, and absent once BL-1866 is in backlog/done
