@@ -9,9 +9,10 @@
  * Shelled out to from swarmforge/scripts/effective_backlog_depth_cli.bb at
  * EVERY promotion decision (Babashka has no way to import compiled TS) - the
  * same shell-to-node-and-degrade-on-failure pattern handoffd.bb already uses
- * for its other emit-*.js CLIs. Computed FRESH on every call rather than on a
- * periodic sweep: a promotion decision needs the current diagnosis, not one
- * that might be stale between coordinator wake-ups.
+ * for its other emit-*.js CLIs. Refreshes BL-430's observatory signal then
+ * re-diagnoses on every CLI call rather than on a periodic sweep: a
+ * promotion decision needs the current diagnosis, not one that might be
+ * stale between coordinator wake-ups (or left on disk from months ago).
  *
  * needs_human-style safety contract (BL-429): only a 'lower the intake
  * throttle' verdict (no concentrated, attributable cause - the epic's ONE
@@ -28,6 +29,7 @@ import { diagnoseReworkSignal, classifyThrottleSeverity, recommendedCapForSeveri
 import { computeStandingRedRecommendation, describeStandingRedSignal, StandingRedRecommendation } from '../metrics/standingRedSignal';
 import { atomicWrite, atomicAppend } from '../util/atomicWrite';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
+import { refreshReworkSignal } from './rework-observatory';
 
 export interface EmitThrottleRecommendationArgs {
   targetRepoPath: string;
@@ -180,6 +182,10 @@ export const main = makeArgsGuardedMain(
   parseArgs,
   'Usage: node emit-throttle-recommendation.js <target-repo-path>\n',
   async (args) => {
+    // Refresh before diagnose: computeThrottleRecommendation still reads the
+    // persisted signal (so in-process unit tests can inject fixtures), but
+    // the live CLI never trusts a snapshot that nothing else has rewritten.
+    refreshReworkSignal(args.targetRepoPath);
     printJsonToStdout(emitThrottleRecommendation(args.targetRepoPath));
   }
 );

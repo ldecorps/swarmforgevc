@@ -198,24 +198,26 @@ test('main() prints usage and exits non-zero when the target repo path is missin
   assert.notEqual(result.exitCode, 0);
 });
 
-test('main() emits the recommendation and prints it to stdout', async () => {
+test('main() refreshes the observatory before diagnosing - a stale injected signal is not trusted', async () => {
   const targetPath = mkTmp();
   writeSignal(targetPath, { reworkRate: 0.3, baselineRate: 0.1 });
   const { exitCode, output } = await runCli([targetPath]);
   assert.equal(exitCode, 0);
   const printed = JSON.parse(output);
-  assert.equal(printed.recommendedCap, 1);
+  // Empty tmp has no completed tickets in the live window, so refresh
+  // yields no sample and the stale degraded recommendation must not stick.
+  assert.equal(printed.recommendedCap, null);
   assert.ok(fs.existsSync(throttleRecommendationPath(targetPath)));
 });
 
 // A single subprocess smoke test locks the compiled CLI's own wiring
 // (require.main === module, real argv boundary) - an ADDITION to the
 // in-process tests above, never the only cover for the real logic.
-test('the compiled CLI runs standalone as a subprocess and publishes the recommendation', () => {
+test('the compiled CLI runs standalone as a subprocess and refreshes rather than echoing a stale alarm', () => {
   const targetPath = mkTmp();
   writeSignal(targetPath, { reworkRate: 0.5, baselineRate: 0.1 });
   const output = execFileSync('node', [CLI_PATH, targetPath], { encoding: 'utf8' });
   const printed = JSON.parse(output);
-  assert.equal(printed.recommendedCap, 0);
+  assert.equal(printed.recommendedCap, null);
   assert.ok(fs.existsSync(throttleRecommendationPath(targetPath)));
 });

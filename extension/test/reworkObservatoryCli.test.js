@@ -110,6 +110,16 @@ test('runObservatory reports no sample when nothing closed within the trailing w
   assert.equal(result.signal.hasSample, false);
 });
 
+test('refreshReworkSignal recomputes and persists via runObservatory', () => {
+  const { refreshReworkSignal, loadRoleWorktreesOrEmpty } = require('../out/tools/rework-observatory');
+  const repo = mkTmp();
+  initRepoOnMain(repo);
+  assert.deepEqual(loadRoleWorktreesOrEmpty(repo), []);
+  const signal = refreshReworkSignal(repo, Date.now(), []);
+  assert.equal(signal.hasSample, false);
+  assert.equal(fs.existsSync(observatorySignalsPath(repo)), true);
+});
+
 // ── main() - real git fixture, in-process (thin-wrapper rule) ──────────────
 
 function mkCliFixture() {

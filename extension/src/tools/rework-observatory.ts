@@ -10,7 +10,7 @@
  *
  * Usage: node rework-observatory.js
  */
-import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
+import { resolveCliMainWorktreeContext, loadRoles, runCliMain } from './swarm-metrics';
 import { RoleWorktree, NO_SAMPLE_PLACEHOLDER } from '../metrics/swarmMetrics';
 import { computeReworkSignal, ReworkSignal } from '../metrics/reworkObservatory';
 import { loadCompletedTicketRecords } from '../metrics/reworkObservatorySource';
@@ -19,6 +19,29 @@ import { persistReworkSignal } from '../metrics/reworkObservatoryStore';
 export const WINDOW_DAYS = 14;
 export const BASELINE_WINDOW_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Soft roles.tsv load for consumers that only have a target path (emit-
+// throttle CLI, tests without a packed swarm) - missing/unreadable roles
+// degrade to "no live handoff attribution", never a crash; evidence-based
+// bounce counting on main still works with an empty roles list.
+export function loadRoleWorktreesOrEmpty(targetPath: string): RoleWorktree[] {
+  try {
+    return loadRoles(targetPath).map((r) => ({ role: r.role, worktreePath: r.worktreePath }));
+  } catch {
+    return [];
+  }
+}
+
+// BL-430 refresh seam used by BL-431 (briefing verdict) and BL-432 (throttle
+// emit) so neither diagnoses a stale observatory snapshot. Returns the fresh
+// signal; persists it the same way the standalone rework-observatory CLI does.
+export function refreshReworkSignal(
+  targetPath: string,
+  nowMs: number = Date.now(),
+  roles?: RoleWorktree[]
+): ReworkSignal {
+  return runObservatory(targetPath, roles ?? loadRoleWorktreesOrEmpty(targetPath), nowMs).signal;
+}
 
 function formatPercent(rate: number): string {
   return `${Math.round(rate * 100)}%`;
