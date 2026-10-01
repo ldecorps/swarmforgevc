@@ -41,4 +41,4 @@ Feature: BL-1712 the pricing table prices claude-opus-5-5
   Scenario: the display-name map names the model and both register rows are owned by BL-1712
     When the display-name map and the standing-red register are read from the parcel's own tree
     Then claude-opus-5-5 displays as "Opus 5.5"
-    And the register rows naming pricingTable.test.js and the BL-1436 feature file are both present and each names BL-1712 as its owner
+    And the register rows naming pricingTable.test.js and the BL-1436 feature file are owned by BL-1712 while it is open and gone once it is done
