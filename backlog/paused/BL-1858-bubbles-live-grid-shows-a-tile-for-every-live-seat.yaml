@@ -29,7 +29,7 @@ acceptance: specs/features/BL-1858-bubbles-live-grid-shows-a-tile-for-every-live
 required_wiring:
   - 'specs/pipeline/steps/bl1858LiveGridTilePerLiveSeatSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file, for the stamp-off of two hotfixes the human asked for
   ("Hot fix it + stamp off", 2026-10-01). FIRM: the grid's seats are every
