@@ -1,0 +1,188 @@
+id: BL-1869
+title: "Swarm stamp-off of hotfix 51591aab4a - the throttle and briefing rework verdicts refresh BL-430's observatory before diagnosing - and owner of the BL-432 red it landed with: four of BL-432's five scenarios persist a degraded signal that the throttle CLI now recomputes over, so BL-432's step handler builds each diagnosis from a live 14-day window of closed tickets, and a sixth scenario pins that a stale signal left on disk no longer lowers the cap"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main at first sighting (2026-09-05 amendment).
+# BL-432's feature went red the moment hotfix 51591aab4a landed; the human
+# chose to land it with this ticket owning the red.
+status: todo
+epic: swarm-self-optimization
+priority: 2
+direction: human-intake
+depends_on: []
+mutation_cost: medium
+# medium: the hardener runs Stryker over the three tool modules the hotfix
+# changed (rework-observatory.ts, emit-throttle-recommendation.ts,
+# suboptimality-verdict-line.ts). The handler rewrite is test-side.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a fixture rewrite in one step handler plus one scenario; nothing to refactor"
+  architect: "review-only stamp of a landed hotfix; the probes go to the specifier by note, never an in-parcel redesign"
+  documenter: "no living doc describes the throttle reading a persisted signal; the probe findings live in the evidence"
+
+acceptance: specs/features/BL-432-auto-tune-intake-throttle.feature
+# This pointer does not claim BL-432's contract. It is the contract this
+# ticket must leave green: BL-432's feature, six of six, against the
+# hotfixed CLIs (the BL-1251 shape). No required_wiring: the handler this
+# ticket rewrites already exists, so any anchor in it matches before and
+# after (BL-1235).
+
+human_approval: approved
+approval_context: >
+  Stamp-off of the human's own hotfix, landed at the human's direction
+  with the BL-432 red the human chose to accept (2026-10-01, source). No
+  choice is posed. FIRM - review the landed diff (BL-848 posture), never
+  re-implement it; the parcel changes no production file. FIRM - BL-432's
+  scenarios 01-05 keep their Gherkin text; only the handler's fixture
+  changes, from a persisted signal to a live window of closed tickets.
+  FIRM - each confirmed probe finding is a note to the specifier, never an
+  in-parcel rewrite; the parcel never writes human_decision into
+  backlog/hotfix-ledger.yaml (the human certifies after QA).
+
+invariants:
+  - "Every effective-cap answer the throttle CLI gives is computed from a rework signal refreshed in that same call; a signal an earlier run left on disk never lowers the cap."
+
+source: |
+  The human's ruling on the ticket-less edits, 2026-09-29 (evidence
+  `backlog/evidence/specifier-ticketless-master-edits-rework-refresh-20260929.md`),
+  verbatim (Article 5.3):
+
+  > A - mine/operator: I will land it as a hotfix
+
+  The human, Claude Code specifier session, 2026-10-01, verbatim:
+
+  > do something about those uncomitted changes (basically commit them ?)
+
+  Told at land time that the hotfix turns four BL-432 scenarios red, the
+  human picked "Land + owned red (Recommended)": land now, and mint this
+  ticket as the stamp and the owner of the red. Then, verbatim:
+
+  > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
+
+  which set this ticket's stages to coder, hardender, QA.
+
+description: |
+  ## What landed (review this diff)
+
+  51591aab4a, the human's 2026-09-29 edits, unchanged:
+  - `extension/src/tools/rework-observatory.ts`: `refreshReworkSignal`
+    runs `runObservatory` (which persists) and returns the fresh signal;
+    `loadRoleWorktreesOrEmpty` reads roles.tsv softly (empty on failure).
+  - `emit-throttle-recommendation.ts` (BL-432): `main` refreshes before
+    `emitThrottleRecommendation`, which still reads the persisted signal.
+  - `suboptimality-verdict-line.ts` (BL-431): `main` refreshes, then
+    diagnoses the fresh signal.
+  - The three CLI unit files: a stale snapshot is not echoed; the verdict
+    line fires from a live window with a bounced close.
+  The compiled `extension/out` on master already ran this code before it
+  landed: the 2026-10-01 16:49Z promotion refreshed the signal.
+
+  ## What is red, and why
+
+  `effective_backlog_depth_cli.bb` shells the throttle CLI at every
+  promotion. BL-432's handler (`bl432AutoTuneIntakeThrottleSteps.js`)
+  stages each diagnosis by persisting a rework signal, then runs that
+  CLI, which now recomputes over it from the fixture's git history. The
+  fixture has no closed tickets, so the fresh signal has no sample and
+  the cap is never lowered. Measured on the hotfix tree at mint: 01
+  (`Then the effective active-depth cap is one`), 02, 03 (`setup:
+  expected the degraded recommendation already in effect`) and 05
+  (ENOENT on `.swarmforge/coordinator/throttle-changes.jsonl`) red, 04
+  ok. On HEAD before the hotfix, built in a scratch tree: 5 of 5 ok.
+
+  ## What is wanted
+
+  1. BL-432's handler builds each diagnosis from the fixture repo's own
+     history on `main`, the shape `suboptimalityVerdictLineCli.test.js`
+     already uses: tickets moved `backlog/active/` -> `backlog/done/`
+     with commit dates inside the trailing 14 days (the live window) and
+     14-28 days back (the baseline), plus `backlog/evidence/` files for
+     the ones that bounced. Degraded, severe and cleared are rates the
+     handler arranges, not signals it writes. Scenarios 01-05 keep their
+     Gherkin text and go green.
+  2. Add scenario 06 to BL-432's feature, with its handler, in the same
+     commit (BL-233):
+
+     ```
+     # BL-432 auto-tune-intake-throttle-06
+     Scenario: A degraded diagnosis left on disk does not lower the cap once the live window shows no rework
+       Given a persisted rework diagnosis from an earlier run that reads degraded
+       And no ticket closed in the live window was bounced
+       When the coordinator decides whether to promote the next item
+       Then the effective active-depth cap is the configured value
+     ```
+
+     Its comment line names this ticket ("added by BL-1869, the
+     refresh-before-diagnose hotfix"), so the addition is greppable.
+  3. The hardener's mutation pass covers the three hotfixed tool modules.
+  4. Probes. Report each in the evidence; a confirmed finding is a note
+     to the specifier, never an in-parcel change:
+     a. **Cost.** Loading the completed-ticket records took 32 s on this
+        repo at mint (1670 records, `loadCompletedTicketRecords` alone).
+        The throttle CLI now pays it at every promotion decision, through
+        `effective_backlog_depth_cli.bb`'s unbounded `process/sh`, and
+        the verdict line at every briefing. Measure one run of
+        `node extension/out/tools/emit-throttle-recommendation.js <root>`
+        on the live checkout (it writes only what a promotion writes) and
+        say whether the depth CLI needs a bound.
+     b. **Metric.** `reworkObservatorySource.ts` `evidenceTicketIdSet`
+        counts a ticket as bounced when ANY `backlog/evidence/` file
+        names it; its comment says QA bounce evidence. The live signal at
+        2026-10-01T16:49Z read 94.6% over a 99.5% baseline (205 samples,
+        top role architect). Every ticket carries pass evidence, so the
+        rate may sit near 100% in both windows and never fire. Count how
+        many of the 205 have bounce evidence by file name.
+     c. **Failure path.** `emit-throttle-recommendation`'s `main` calls
+        `refreshReworkSignal` outside any try. If it throws, the CLI
+        exits non-zero, and the depth CLI logs it and reads the
+        throttle-recommendation file already on disk, which is the stale
+        shape the hotfix exists to remove. Confirm or refute with an
+        in-process probe on a mkdtemp root.
+
+  ## How (direction, not mandate)
+
+  - Fixture roots under mkdtemp, `git init`, proven by `rev-parse
+    --git-common-dir` before any git command (BL-1390); commit dates set
+    with `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` relative to the run's
+    own clock, never a fixed calendar date, or the window drifts.
+  - The handler stays discovered from its own file (BL-1371). Never write
+    or read the live `.swarmforge/telemetry/observatory-signals.json`.
+
+  ## Scope
+
+  `specs/pipeline/steps/bl432AutoTuneIntakeThrottleSteps.js`, BL-432's
+  feature (scenario 06 added, 01-05 untouched), evidence. No production
+  file.
+
+out_of_scope: |
+  - Fixing the rework metric (probe b) or bounding the depth CLI (probe
+    a): each is a ticket of its own if the probe confirms it.
+  - BL-431's feature: green on the hotfix tree at mint (scenario 05 uses
+    the pure formatter).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-432-auto-tune-intake-throttle.feature`:
+     6 of 6 ok. Measured on the hotfix tree at mint: 01, 02, 03, 05 red
+     as the register row owned by this ticket describes, 04 ok, 06 absent.
+  2. The BL-430, BL-431, BL-1106, BL-1429 and BL-966 features: all ok
+     (`# fail 0`), as measured on the hotfix tree at mint.
+  3. `npx vitest run` on emitThrottleRecommendationCli,
+     reworkObservatoryCli and suboptimalityVerdictLineCli: all pass (28
+     of 28 at mint).
+  4. The evidence answers probes a-c, and the hardener's evidence names
+     the three modules' mutation scores.
+  5. The register row naming BL-1869 is present and owned at the parcel
+     commit; after the land it is gone (BL-1631).
+  After QA: the human records the certification with
+  `bb swarmforge/scripts/hotfix_ledger_update.bb . --decide 51591aab4a <approved|waived>`.
+
+notes: |
+  Minted 2026-10-01 by the specifier while landing the human's uncommitted
+  master edits at their request (source). The hotfix ledger row for
+  51591aab4a was added and linked to this ticket, and the BL-432 register
+  row was added, in the mint commit. No parcel holds BL-432, so no resume
+  note is owed.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

@@ -489,3 +489,10 @@
   stamp_ticket: BL-1858
   human_decision: null
   decided_at: null
+- commit: 51591aab4a
+  subject: "Hotfix: the throttle and briefing rework verdicts refresh BL-430's observatory before diagnosing, so a July snapshot stops alarming"
+  detected_at: 2026-10-01
+  state: pending
+  stamp_ticket: BL-1869
+  human_decision: null
+  decided_at: null
