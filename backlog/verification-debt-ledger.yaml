@@ -132,3 +132,8 @@
   description: "probes a/b/c: timed loadCompletedTicketRecords+emit-throttle-recommendation.js on the live checkout, classified how many of the live-window 'bounced' tickets have an evidence filename actually naming a bounce vs routine pass evidence, and forced an EACCES inside refreshReworkSignal to confirm the depth CLI falls back to a stale on-disk recommendation"
   detected_at: 2026-10-01
   evidence: backlog/evidence/BL-1869-coder-20261001.md
+- category: merge-collateral-scope
+  ticket: BL-1835
+  role: QA
+  description: "verified a bounce merge-revert's scope by hand: check_bounce_revert_scope.sh named BL-1865 for BL-1835's revert of 1600d34169 - its ancestor-of-P2 match took BL-1865's stale record (commit in coder's lineage) because QA's BL-1835 record cites bounce commit d03f2fa110, a descendant of the parcel; not BL-1831's single-commit case"
+  detected_at: 2026-10-02
