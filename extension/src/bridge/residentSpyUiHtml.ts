@@ -176,7 +176,9 @@ export function renderLiveScreenBody(): string {
   .split.pane-count-5,
   .split.pane-count-6,
   .split.pane-count-7,
-  .split.pane-count-8 {
+  .split.pane-count-8,
+  .split.pane-count-9,
+  .split.pane-count-10 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   @media (min-width: 700px) {
@@ -187,6 +189,11 @@ export function renderLiveScreenBody(): string {
     .split.pane-count-7,
     .split.pane-count-8 {
       grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    /* BL-1858: a ten-seat swarm (coder@2, art-director) is two rows of five. */
+    .split.pane-count-9,
+    .split.pane-count-10 {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
     }
   }
   .pane-col {
@@ -283,7 +290,9 @@ export function renderLiveScreenBody(): string {
     color: var(--tg-theme-text-color, #e6edf3);
   }
   .split.pane-count-7 .pane-title,
-  .split.pane-count-8 .pane-title { font-size: 11px; }
+  .split.pane-count-8 .pane-title,
+  .split.pane-count-9 .pane-title,
+  .split.pane-count-10 .pane-title { font-size: 11px; }
   .pane-ticket {
     margin-top: 4px;
     font-size: 10px;
@@ -312,7 +321,9 @@ export function renderLiveScreenBody(): string {
   }
   /* BL-609: crowded grids pack a fixed step tighter than the chosen size. */
   .split.pane-count-7 pre,
-  .split.pane-count-8 pre {
+  .split.pane-count-8 pre,
+  .split.pane-count-9 pre,
+  .split.pane-count-10 pre {
     font-size: calc(var(--pane-font-size) - ${PANE_FONT_CROWDED_DELTA_PX}px);
   }
   .pane-fullscreen {

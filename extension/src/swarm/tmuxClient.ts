@@ -348,6 +348,44 @@ export function readLiveSwarmRoles(targetPath: string): SwarmRole[] {
   return readSwarmRoles(targetPath).filter((role) => sessionExists(socket, role.session));
 }
 
+// BL-1858: one roles.tsv row (swarmforge.sh's write_roles_file layout:
+// role, worktree-name, worktree path, session, display name, agent, ...)
+// as a SwarmRole, or undefined for a blank/malformed line. `index` is the
+// row's position, since roles.tsv carries no launch index of its own.
+export function parseRosterLine(line: string, index: number): SwarmRole | undefined {
+  const [role, , , session, displayName, agent] = line.split('\t');
+  if (!line.trim() || !hasRequiredRoleFields(role, session, displayName)) {
+    return undefined;
+  }
+  return { index, role, session, displayName, agent: agent || 'unknown' };
+}
+
+/**
+ * BL-1858: every seat roles.tsv lists, then every sessions.tsv seat it does
+ * not. roles.tsv is the roster `./swarm ensure`, babysitterd and
+ * retire_seat.sh keep current; sessions.tsv is written only by a full
+ * launch, so a seat added or swapped afterwards (coder@2 on 2026-10-01)
+ * never gets a row there. retire_seat.sh drops a seat from both files.
+ */
+export function readRosterSwarmRoles(targetPath: string): SwarmRole[] {
+  const rolesFile = path.join(targetPath, '.swarmforge', 'roles.tsv');
+  const lines = fs.existsSync(rolesFile) ? fs.readFileSync(rolesFile, 'utf8').split('\n') : [];
+  const roster = lines
+    .map((line, i) => parseRosterLine(line, i + 1))
+    .filter((role): role is SwarmRole => role !== undefined);
+  const listed = new Set(roster.map((entry) => entry.role));
+  return [...roster, ...readSwarmRoles(targetPath).filter((entry) => !listed.has(entry.role))];
+}
+
+/** BL-1858: readRosterSwarmRoles ∩ live tmux sessions. */
+export function readLiveRosterSwarmRoles(targetPath: string): SwarmRole[] {
+  const socket = readTmuxSocket(targetPath);
+  if (!socket) {
+    return [];
+  }
+  return readRosterSwarmRoles(targetPath).filter((role) => sessionExists(socket, role.session));
+}
+
 export interface RespawnResult {
   success: boolean;
   message: string;

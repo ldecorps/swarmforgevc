@@ -3,7 +3,8 @@
 import {
   readTmuxSocket,
   readSwarmRoles,
-  readLiveSwarmRoles,
+  readRosterSwarmRoles,
+  readLiveRosterSwarmRoles,
   getPaneBaseIndex,
   resolveAgentPaneTarget,
   capturePane,
@@ -262,21 +263,22 @@ export function monoRouterActiveRoleForPane(
   return monoLayout && role === 'coder' ? activeRole : undefined;
 }
 
+/** BL-1858: the role a numbered seat belongs to - `coder@2` -> `coder`. */
+export function seatBaseRole(seat: string): string {
+  const at = seat.indexOf('@');
+  return at > 0 ? seat.slice(0, at) : seat;
+}
+
+// BL-1858: a role's own tile first, then its numbered seats in roster order.
+function liveScreenRoleGroup(liveRoles: SwarmRole[], roleId: string): SwarmRole[] {
+  const own = liveRoles.filter((entry) => entry.role === roleId);
+  const seats = liveRoles.filter((entry) => entry.role !== roleId && seatBaseRole(entry.role) === roleId);
+  return [...own, ...seats];
+}
+
 export function orderLiveScreenRoles(liveRoles: SwarmRole[]): SwarmRole[] {
-  const byRole = new Map(liveRoles.map((entry) => [entry.role, entry]));
-  const ordered: SwarmRole[] = [];
-  for (const roleId of LIVE_SCREEN_ROLE_ORDER) {
-    const entry = byRole.get(roleId);
-    if (entry) {
-      ordered.push(entry);
-    }
-  }
-  for (const entry of liveRoles) {
-    if (!ordered.includes(entry)) {
-      ordered.push(entry);
-    }
-  }
-  return ordered;
+  const ordered = LIVE_SCREEN_ROLE_ORDER.flatMap((roleId) => liveScreenRoleGroup(liveRoles, roleId));
+  return [...ordered, ...liveRoles.filter((entry) => !ordered.includes(entry))];
 }
 
 export function liveScreenPaneId(roleEntry: SwarmRole, monoLayout: boolean): string {
@@ -337,8 +339,10 @@ export function captureLiveScreenPanes(targetPath: string): LiveScreenPaneEntry[
   if (!socketPath) {
     return [];
   }
-  const roles = readSwarmRoles(targetPath);
-  const liveRoles = readLiveSwarmRoles(targetPath);
+  // BL-1858: tiles come from roles.tsv, the roster ensure keeps current, so
+  // a seat added after launch (no sessions.tsv row) still gets one.
+  const roles = readRosterSwarmRoles(targetPath);
+  const liveRoles = readLiveRosterSwarmRoles(targetPath);
   const monoLayout = isMonoRouterLayout(targetPath, liveRoles);
   const paneBaseIndex = getPaneBaseIndex(socketPath);
   const activeRole = readMonoRouterActiveRole(targetPath);
@@ -372,7 +376,7 @@ export function captureMonoRouterLiveScreenUncached(targetPath: string): MonoRou
   // this tick would otherwise misread as a standing pack. Same inputs
   // captureLiveScreenPanes already used, so the layout this snapshot
   // reports always matches the layout its own panes were built under.
-  const monoRouterLayout = isMonoRouterLayout(targetPath, readLiveSwarmRoles(targetPath));
+  const monoRouterLayout = isMonoRouterLayout(targetPath, readLiveRosterSwarmRoles(targetPath));
   return {
     available: anyAvailable,
     resident,
