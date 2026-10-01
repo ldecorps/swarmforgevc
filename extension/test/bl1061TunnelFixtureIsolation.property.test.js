@@ -49,6 +49,7 @@ const {
   isProductionTunnelName,
   assertFixtureTunnelName,
   leakedFixtureTunnelPids,
+  findProductionTunnelBindings,
 } = require('./helpers/fixtureTunnelName');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -230,22 +231,9 @@ test('property (invariant 2): the leaked-fixture sweep selects fixtures by temp 
 });
 
 test('property (invariant 2): no committed test fixture binds a production tunnel name', () => {
-  const fs = require('node:fs');
-  const testDir = __dirname;
-  const offenders = [];
-  for (const name of fs.readdirSync(testDir)) {
-    if (!name.endsWith('.js')) continue;
-    const full = path.join(testDir, name);
-    if (!fs.statSync(full).isFile()) continue;
-    const text = fs.readFileSync(full, 'utf8');
-    for (const prod of PRODUCTION_TUNNEL_NAMES) {
-      // A fixture BINDS the name when it hands it to the launcher as the
-      // tunnel to serve. Mentioning it in a URL scheme or a comment is not a
-      // binding, and flagging those would make the guard noise nobody reads.
-      const bindRe = new RegExp(`SWARMFORGE_NAMED_TUNNEL\\s*[:=]\\s*['"\`]${prod}['"\`]`);
-      if (bindRe.test(text)) offenders.push(`${name}: binds ${prod}`);
-    }
-  }
+  // BL-1849: through the tolerant finder - a bl868 lane fixture removed
+  // between the listing and the read is skipped, never an ENOENT.
+  const offenders = findProductionTunnelBindings(__dirname);
   assert.deepEqual(offenders, [],
     `a fixture binds a production tunnel name; the reap selects by name against the host process table: ${offenders.join('; ')}`);
 });

@@ -151,8 +151,38 @@ function leakedFixtureTunnelPids(execFileSync) {
     .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
 }
 
+/**
+ * BL-1849: every test file under `dir` (recursive, `fixtures/` left out as
+ * before) that hands a production tunnel name to the launcher as the tunnel
+ * to serve, as `<path relative to dir>: binds <name>` strings. Reads through
+ * the shared tolerant walk (BL-1443), so a bl868 lane fixture removed
+ * between the listing and the read is skipped, never an ENOENT.
+ */
+function findProductionTunnelBindings(dir, { fsImpl } = {}) {
+  const path = require('node:path');
+  const { walkFilesTolerant, DEFAULT_EXCLUDED_DIR_NAMES } = require('./tolerantTreeWalk');
+  const files = walkFilesTolerant(dir, {
+    excludeDirs: new Set([...DEFAULT_EXCLUDED_DIR_NAMES, 'fixtures']),
+    extension: '.js',
+    withContent: true,
+    ...(fsImpl ? { fsImpl } : {}),
+  });
+  const offenders = [];
+  for (const { path: full, content } of files) {
+    for (const prod of PRODUCTION_TUNNEL_NAMES) {
+      // A fixture BINDS the name when it hands it to the launcher as the
+      // tunnel to serve. Mentioning it in a URL scheme or a comment is not a
+      // binding, and flagging those would make the guard noise nobody reads.
+      const bindRe = new RegExp(`SWARMFORGE_NAMED_TUNNEL\\s*[:=]\\s*['"\`]${prod}['"\`]`);
+      if (bindRe.test(content)) offenders.push(`${path.relative(dir, full)}: binds ${prod}`);
+    }
+  }
+  return offenders.sort();
+}
+
 module.exports = {
   PRODUCTION_TUNNEL_NAMES,
+  findProductionTunnelBindings,
   fixtureTunnelName,
   isProductionTunnelName,
   assertFixtureTunnelName,
