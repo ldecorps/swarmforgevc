@@ -67,3 +67,9 @@
   description: "adjudicated LAND_ESCALATE on closed-owner doc stray 4552cc4594 on BL-1816's own how-to path: grepped BL-1816's YAML for the sha (item 5 carries it) and the origin/main..tip diff of its own paths for sibling lines by hand"
   detected_at: 2026-10-01
   evidence: backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
+- category: merge-drop-guard-triage
+  ticket: BL-1845
+  role: specifier
+  description: "reproduced lines-lost by hand to tell a merge-drop guard refusal's false positives (repeated 'Prior entry —' separator) from its one real resurrection, counted every line text across base/sides/merge, and proved a guard-clean commit chain with commit-tree"
+  detected_at: 2026-10-01
+  evidence: backlog/evidence/BL-1845-specifier-merge-drop-guard-boilerplate-separator-adjudication-20261001.md
