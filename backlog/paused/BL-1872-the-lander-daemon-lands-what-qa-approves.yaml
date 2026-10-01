@@ -33,9 +33,11 @@ human_approval: pending
 approval_context: >
   Second slice of BL-1870 (ruling A). FIRM - QA still decides and owns
   every refusal; the daemon only carries out an approval QA queued. FIRM -
-  the daemon runs today's land_main_publish.sh --land unchanged, so every
-  publish gate, the land lock and the land-approval record stay as they
-  are. FIRM - one land at a time, oldest first; each queued approval lands
+  the daemon runs today's land_main_publish.sh --land, in a worktree of
+  its own and never QA's, so every publish gate, the land lock and the
+  land-approval record stay as they are. One change to the step: its
+  single rematch no longer leaves the worktree on a detached HEAD (QA note
+  003673). FIRM - one land at a time, oldest first; each queued approval lands
   or is refused exactly once; a refusal goes to QA by note with the land
   step's reason, and the daemon never retries it. FIRM - no merge-up
   broadcast is sent, because BL-1871 made it a no-op. The land step's own
@@ -79,8 +81,13 @@ description: |
      nothing (scenario 01). The same task and commit queued again is the
      same entry (scenario 05).
   2. A lander sweep in handoffd. When no land is running, it takes the
-     oldest queued entry and runs `land_main_publish.sh <qa-worktree>
-     --land <task> <sha> [<issue-ref>]` detached, logging to
+     oldest queued entry and runs `land_main_publish.sh <lander-worktree>
+     --land <task> <sha> [<issue-ref>]` detached. The lander has a worktree
+     of its own (`.worktrees/lander`, created from origin/main on first use)
+     and never runs a land in QA's, because QA is reviewing its next parcel
+     there while the land runs. The post-land re-point therefore moves the
+     lander's branch, not QA's. Under parcel lines (BL-1871) QA's branch
+     needs no re-point. Logs go to
      `.swarmforge/lander/<task>-<sha10>.log`. A later tick reads the
      outcome:
      - LAND_PUBLISHED: the entry is marked landed, and the coordinator gets
@@ -95,6 +102,14 @@ description: |
        land lock already stops two publishes from racing; the sweep must
        also not start a second land behind it.
   3. No merge-up broadcast. Under parcel lines (BL-1871) it moves nothing.
+  4. The rematch never detaches a worktree (scenario 06). Today
+     `land_main_publish.sh`'s single permitted rematch runs `git -C $ROOT
+     rebase origin/main $land_sha`. A bare commit as the branch argument
+     makes git check it out first, so the worktree is left on a detached
+     HEAD at the rebased commit. QA saw its own worktree left that way on
+     2026-09-30 and 2026-10-01 (BL-1865's land), note 003673. Build the
+     rematched commit without moving any worktree's HEAD (or restore the
+     branch afterwards), and push that.
 
   ## How (direction, not mandate)
 
@@ -121,24 +136,25 @@ description: |
   ## Scope
 
   `lander_lib.bb`, `lander_queue.bb`, their bb test runner, the sweep
-  registration in `handoffd.bb`, the step handler and evidence. The
+  registration in `handoffd.bb`, the rematch block in
+  `land_main_publish.sh`, the step handler and evidence. The
   documenter writes the how-to (queueing a land, reading the lander log,
   what a refusal note means) and links it from `docs/index.md`. The
   specifier changes QA.prompt's land recipe to queue instead of land when
   this ticket activates (BL-798).
 
 out_of_scope: |
-  - Changing what the land step does. It runs unchanged here; deleting
-    its replay, strays and re-point is a later BL-1870 slice, after
-    in-flight parcels drain.
+  - Changing what the land step decides. Apart from the rematch's detached
+    HEAD it runs unchanged here. Deleting its replay, strays and re-point
+    is a later BL-1870 slice, after in-flight parcels drain.
   - Running the unit lane on the merged tree before the push. Add it in a
     later slice if a merge-skew red is ever traced to a land.
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1872-the-lander-daemon-lands-what-qa-approves.feature`:
-     6 of 6 ok (01, 02, 03, two rows of 04, 05). Measured 0 at mint: no
-     handler exists yet.
+     7 of 7 ok (01, 02, 03, two rows of 04, 05, 06). Measured 0 at mint:
+     no handler exists yet.
   2. The new lander runner: ALL PASS.
   3. `node specs/pipeline/cli.js specs/features/BL-1678-a-land-never-ships-an-unapproved-forward-that-shares-no-path-with-the-landing-ticket.feature` (the
      publish step's own contract): 4 of 4 ok, as measured on main at
@@ -154,3 +170,9 @@ notes: |
   that directive (STEERING.md). IR-DRY findings were reviewed at mint:
   they are value variants (landed or refused, one or two entries) that
   one patterned step covers, not duplicated meaning.
+  2026-10-01 amendment, before approval, from QA note 003673 ("LAND_REMATCH
+  leaves QA worktree detached HEAD (09-30, 10-01 BL-1865); no ticket"):
+  the cause is the bare-sha rebase in the rematch. It is folded in here,
+  together with the lander's own worktree, rather than minted as a
+  separate defect, because this slice is where the daemon starts
+  invoking the step.

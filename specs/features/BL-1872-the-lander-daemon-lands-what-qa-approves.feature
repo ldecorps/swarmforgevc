@@ -6,8 +6,10 @@ Feature: BL-1872 The lander daemon lands what QA approves, so QA's turn ends at 
   travels on its own line (BL-1871), landing it needs no judgement: merge
   origin/main in, fast-forward push, record the approval, tell the
   coordinator. From this ticket on, QA's last act on a parcel is to queue
-  the approval, and handoffd's lander sweep runs the land. A land the sweep
-  cannot complete goes back to QA with the land step's own reason.
+  the approval, and handoffd's lander sweep runs the land in a worktree of
+  its own, never QA's. A land the sweep cannot complete goes back to QA
+  with the land step's own reason. The one rematch a land allows no longer
+  leaves its worktree on a detached HEAD.
 
   Background:
     Given a fixture project with a bare origin and a lander queue
@@ -53,3 +55,11 @@ Feature: BL-1872 The lander daemon lands what QA approves, so QA's turn ends at 
     Given QA queues the land of BL-9001 at the same commit twice
     When the lander sweep runs until the queue is empty
     Then origin/main carries exactly one landing commit for BL-9001
+
+  # BL-1872 a-rematched-land-leaves-no-worktree-detached-06
+  Scenario: a land whose first push loses the race to origin/main rematches without detaching any worktree
+    Given the lander queue holds an entry for BL-9001 at a commit on BL-9001's own line
+    And origin/main moves after the land is built and before it is pushed
+    When the lander sweep runs until the queue is empty
+    Then origin/main carries BL-9001's change
+    And QA's worktree and the lander's worktree are each still on their own branch
