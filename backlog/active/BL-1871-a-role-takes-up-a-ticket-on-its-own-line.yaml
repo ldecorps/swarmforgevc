@@ -174,3 +174,5 @@ notes: |
   step, and Article 2.4's batch sentence. The receive-mode change takes
   effect when the cleaner and hardender seats are next relaunched from the
   pack (`./swarm ensure` regenerates a launch script from it).
+
+assigned_to: coder
