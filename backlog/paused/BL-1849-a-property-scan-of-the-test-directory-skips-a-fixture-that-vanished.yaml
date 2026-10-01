@@ -55,6 +55,16 @@ source: |
   at bl1061TunnelFixtureIsolation.property.test.js:239.
 
 description: |
+  ## Status: hotfix 1323266735 landed item 1 (bl1061)
+
+  The red file is fixed on main: bl1061's invariant 2 now calls
+  `findProductionTunnelBindings(__dirname)` in
+  `helpers/fixtureTunnelName.js`, which reads through
+  `walkFilesTolerant`, recursive with `fixtures/` left out. Its register
+  row is retired. This ticket is that hotfix's stamp-off. Review it, do
+  not re-apply it. The rest stays as written: bl932's and bl1280's latent
+  scans, the feature and its handler.
+
   ## Why
 
   bl1061's invariant 2 runs `readdirSync(__dirname)`, then `statSync` and
@@ -136,10 +146,9 @@ qa_e2e_procedure: |
      they were already green, which is why step 1 is the gate for the race.
   3. The property lane's full run (QA's normal gather): no ENOENT from any
      of the three files.
-  After the land (the coordinator's check, not QA's): no row in
-  `backlog/standing-reds.tsv` names
-  `extension/test/bl1061TunnelFixtureIsolation.property.test.js`; the land
-  step retires it (BL-1631).
+  No row in `backlog/standing-reds.tsv` names
+  `extension/test/bl1061TunnelFixtureIsolation.property.test.js`: hotfix
+  1323266735 retired it.
 
 notes: |
   Minted 2026-09-30 by the specifier from QA note 003612 (source), the same
@@ -153,3 +162,7 @@ notes: |
   > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
   The skip reasons are in stage_skip_reasons. Routing honours them
   because required_stages_routing_enabled is true (BL-606).
+  2026-10-01 (specifier): bl1061's red hotfixed at 1323266735 under the
+  human's directive, verbatim: "Yeah so basically hotfix all red and
+  file stamp off instead". The register row was retired in that commit,
+  and the ledger entry is linked here. The approval above stands.
