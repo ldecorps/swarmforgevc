@@ -121,3 +121,8 @@
   role: specifier
   description: "bisected by hand which land turned BL-1343 scenario 05 red: git archive of 11 revisions into scratch dirs with extension/ linked, feature run in each; first red 4823eafa41 (BL-1678); no tool finds the commit that introduced a standing red"
   detected_at: 2026-10-01
+- category: land-path-ownership
+  ticket: BL-1865
+  role: QA
+  description: "LAND_REPLAY 9a092db6d0 carried docs/reference/Specification.MD, not a BL-1865 path; diffed sorted content by hand: pure reorder of the BL-1845/BL-1839 entries plus 2 blank lines, nothing lost"
+  detected_at: 2026-10-01
