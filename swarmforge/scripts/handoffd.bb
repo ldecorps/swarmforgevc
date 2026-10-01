@@ -29,6 +29,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_mail_relay_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "local_parcel_driver_lib.bb")))
@@ -836,6 +837,63 @@
               (catch Exception e
                 (log! "canary-sweep-error" (str f) (.getMessage e))))))))))
 
+;; ── BL-1847: deterministic-coordinator mail relay ───────────────────────
+;; On a pack declaring `config coordinator_mode deterministic` (BL-1846's
+;; reader), the coordinator's new mail is prose no script can sort by
+;; urgency (a census of its senders/wordings is in the ticket's own
+;; description) - so every parcel is relayed to the human's Telegram
+;; OPERATOR topic unchanged, and nothing waits for a reader that does not
+;; exist. Runs EVERY tick (unconditional, same cadence as poll-once!/
+;; canary-sweep! above - not gated to the ~10-cycle chase cadence), since a
+;; QA approval sitting unrelayed for up to 10 cycles would delay the ticket
+;; close guard that reads it.
+(defn coordinator-mail-sweep! [roles]
+  (try
+    (when-let [coord (get roles "coordinator")]
+      (let [conf-text (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+                           (catch Exception _ nil))]
+        (when (coordinator-config-lib/deterministic-coordinator? conf-text)
+          (let [new-dir (handoff-lib/mailbox-dir coord :new)]
+            (when (fs/exists? new-dir)
+              (let [files (->> (fs/list-dir new-dir)
+                               (filter #(and (fs/regular-file? %)
+                                             (str/ends-with? (fs/file-name %) ".handoff")))
+                               ;; Deterministic ordering across ticks - a
+                               ;; filename already leads with a zero-padded
+                               ;; priority then a timestamp (handoff_lib.bb's
+                               ;; own naming), so this is the same order the
+                               ;; parcel would have been worked in.
+                               (sort-by #(fs/file-name %)))]
+                (when (seq files)
+                  (let [parsed (mapv (fn [f] {:file f :filename (fs/file-name f)
+                                              :parcel (parse-message f)})
+                                     files)
+                        lines (mapv (fn [{:keys [parcel filename]}]
+                                      (coordinator-mail-relay-lib/relay-line
+                                       parcel filename chase-sweep-lib/extract-ticket-id))
+                                    parsed)
+                        {:keys [text kept]} (coordinator-mail-relay-lib/relay-text lines)
+                        reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
+                    ;; Invariant 1: a parcel moves to completed/ only AFTER
+                    ;; its relay line is actually written to the outbox - a
+                    ;; failed write leaves every parcel in new/, to be
+                    ;; retried (and re-summarized, batch membership may
+                    ;; differ) next tick, never half-moved.
+                    (try
+                      (fs/create-dirs (fs/parent reply-outbox))
+                      (spit (str reply-outbox)
+                            (str (json/generate-string {"threadId" "OPERATOR" "text" text}) "\n")
+                            :append true)
+                      ;; Invariant 2: the file itself is moved, never
+                      ;; rewritten - byte-identical in completed/.
+                      (doseq [{:keys [file]} (take kept parsed)]
+                        (move-with-collision file (handoff-lib/mailbox-dir coord :completed)))
+                      (log! "coordinator-mail-relayed" kept)
+                      (catch Exception e
+                        (log! "coordinator-mail-relay-error" (.getMessage e))))))))))))
+    (catch Exception e
+      (log! "coordinator-mail-sweep-error" (.getMessage e)))))
+
 ;; The JVM only waits for registered shutdown-hook THREADS to finish before
 ;; halting - it does not wait for arbitrary other threads. A hook that only
 ;; flips an atom returns in microseconds, so the poll loop (running on the
@@ -909,6 +967,14 @@
 
 (def reconcile-sweep-once-only?
   (some #{"--reconcile-sweep-once"} *command-line-args*))
+
+;; BL-1847: same one-shot-and-exit posture as the flags above, for the
+;; deterministic-coordinator mail relay specifically. It already runs every
+;; tick in the real loop (unlike the chase-cadence sweeps above), but an
+;; acceptance scenario still needs exactly one deterministic pass with no
+;; background process and no real tick wait.
+(def coordinator-mail-sweep-once-only?
+  (some #{"--coordinator-mail-sweep-once"} *command-line-args*))
 
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
@@ -5730,6 +5796,12 @@
         (try (master-main-reconcile-sweep!) (catch Exception e (log! "reconcile-sweep-once-error" (.getMessage e))))
         (log! "reconcile-sweep-once done"))
 
+      coordinator-mail-sweep-once-only?
+      (do
+        (try (coordinator-mail-sweep! roles)
+             (catch Exception e (log! "coordinator-mail-sweep-once-error" (.getMessage e))))
+        (log! "coordinator-mail-sweep-once done"))
+
       :else
       (let [claim (claim-pid-file!)]
         (if-let [conflicting (and (vector? claim) (second claim))]
@@ -5771,6 +5843,15 @@
                     (canary-sweep!)
                     (catch Exception e
                       (log! "canary-sweep-error" (.getMessage e))))
+                  ;; BL-1847: every cycle - a relayed QA approval sitting
+                  ;; unrelayed for up to ~10 chase-cadence cycles would delay
+                  ;; the ticket close guard that reads the coordinator's
+                  ;; completed/ mailbox.
+                  (reset! daemon-cycle-guard-lib/current-context "coordinator-mail-sweep")
+                  (try
+                    (coordinator-mail-sweep! (load-roles))
+                    (catch Exception e
+                      (log! "coordinator-mail-sweep-error" (.getMessage e))))
                   ;; BL-1697: every cycle, not gated to chase-sweep's own
                   ;; cadence - the driver's own idle-detection needs to be
                   ;; responsive to a model turn ending, and drive-tick!

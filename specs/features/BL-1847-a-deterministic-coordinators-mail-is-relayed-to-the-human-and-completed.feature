@@ -52,3 +52,12 @@ Feature: BL-1847 a deterministic coordinator's mail is relayed to the human and 
     When handoffd runs its coordinator-mail sweep once
     Then that note is still in the coordinator's new mail
     And no operator message is written
+
+  # BL-1847 deterministic-coordinator-mail-06
+  Scenario: a parcel a coordinator seat already claimed is left alone
+    Given the pack declares the deterministic coordinator mode
+    And a note from QA naming a ticket waits in the coordinator's new mail
+    And another parcel already sits in the coordinator's in-process mail
+    When handoffd runs its coordinator-mail sweep once
+    Then that note is in the coordinator's completed mail byte for byte
+    And the in-process parcel is unchanged and was not relayed

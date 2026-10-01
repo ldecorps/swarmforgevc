@@ -2732,6 +2732,61 @@ in `swarmforge/roles/coordinator.prompt` still applies to it unchanged.
 Acceptance:
 `specs/features/BL-1846-a-deterministic-coordinator-promotes-and-routes-the-next-ticket-itself.feature`.
 
+#### Deterministic coordinator's mail relay (BL-1847)
+
+BL-1846 (above) removes the one hop of the mono-router happy path that
+still read a model coordinator's prose. Everything else that reaches the
+coordinator's mailbox still needs a reader: QA's approvals (more than ten
+wordings — "QA-approved BL-N landed", "BL-N approved SHA", ...), the
+specifier's "BL-N ready in paused", a coder's "blocked"/"unowned-red", and
+the daemon's own dropped-parcel and open-slot notes. No script can sort
+that prose by urgency, so on a pack declaring `config coordinator_mode
+deterministic`, `handoffd.bb`'s `coordinator-mail-sweep!` relays ALL of
+it to the human instead of waiting for a reader that is not there:
+
+1. Every tick, the sweep lists the coordinator's `inbox/new/` and parses
+   each parcel with `handoff_lib`'s own `parse-envelope`.
+2. `coordinator_mail_relay_lib.bb`'s `relay-line` (pure) turns one parcel
+   into one text line: sender, type, the ticket id if the parcel names
+   one (via the same `extract-ticket-id-fn` the dispatch-gap sweep uses,
+   injected rather than copied), the first line of its own text (its
+   `message:` header, else its body's first line, else — a `git_handoff`
+   carries neither — its `task:`/`commit:`), and the parcel's own file
+   name so a human can find it on disk.
+3. `relay-text` (pure) batches one tick's lines into ONE message, bounded
+   at Telegram's 4096-character hard limit: when every line fits, all go
+   out; when they do not, it keeps as many LEADING lines as fit and
+   appends `"and N more"` — the sweep moves only the KEPT parcels to
+   `completed/` and leaves the rest in `inbox/new/` for the next tick. A
+   single line that alone exceeds the limit still goes out once,
+   un-truncated, rather than being silently dropped.
+4. The batched text is appended to the same outbox every other operator
+   alert on this swarm writes
+   (`.swarmforge/operator/telegram-reply-outbox.jsonl`, `threadId`
+   `OPERATOR` — the BL-798 escalation channel, above), no email. Only
+   AFTER that append returns does the sweep move each relayed parcel,
+   byte-identical, from `inbox/new/` to the coordinator's
+   `inbox/completed/` — never edited, never deleted. The ticket close
+   guard (`ticket_close_guard_lib.bb`) reads `completed/`, so a relayed
+   QA approval still authorizes the ticket's close exactly as a
+   coordinator-read one would.
+5. `inbox/in_process/` is untouched: a parcel a coordinator seat already
+   claimed is that seat's, not the sweep's, until a later slice removes
+   the coordinator seat entirely.
+6. `handoffd.bb` logs `coordinator-mail-relayed <count>` for a tick that
+   relays, and `coordinator-mail-relay-error <detail>` when the outbox
+   write itself fails (the sweep then leaves every parcel in `new/`
+   rather than moving one without its relay line having landed).
+
+A pack whose conf does not declare the line, or declares anything other
+than `deterministic`, keeps its coordinator mailbox exactly as before
+this ticket — a model coordinator still reads and acts on it. Out of
+scope: stopping the daemon's own coordinator notes on a deterministic
+pack (they are relayed like any other parcel), booting no coordinator
+seat at all, and reading or classifying the prose to skip "routine"
+mail — a later ruling, not a guess made here. Acceptance:
+`specs/features/BL-1847-a-deterministic-coordinators-mail-is-relayed-to-the-human-and-completed.feature`.
+
 ### Dropped-parcel nudge sweep (BL-719)
 
 The dispatch-gap sweep above answers exactly one question: **was this
