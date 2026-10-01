@@ -16,7 +16,10 @@ remaining_slices:
   - "Retire the entanglement machinery once in-flight parcels drain: merge-up broadcast, post-land re-point, reverse-hop copies, own-path replay, strays, abandoned_commits, LAND_ESCALATE conditions"
 mutation_cost: medium
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - parcel lines plus a lander daemon, so landing is merge origin/main and fast-forward push (recommended)
+ruling_provenance: tapped
 approval_context: >
   The human asked the specifier, through QA, to first assess whether the
   whole landing concept is wrong. Short answer - yes, in one place. Every
