@@ -49,6 +49,26 @@ Until the human declares one of those as the cycle direction, no Direction-lane
 gate is in force. That does **not** mean the human has said nothing about
 product surfaces — see the standing freeze below.
 
+## Standing human directive (2026-10-01, specifier session) — landing is a merge (BL-1870) is the swarm's priority
+
+**Human, verbatim:** they tapped BL-1870 ruling A ("parcel lines plus a
+lander daemon, so landing is merge origin/main and fast-forward push") at
+20:18 BST, then wrote: "Prioritize this work."
+
+**Effect:**
+
+- BL-1871 (a role takes up a ticket on its own line) and BL-1872 (the
+  lander daemon; depends on BL-1871) are `direction: queue-jump`, priority
+  1. Promote BL-1871 the moment its human approval lands, then BL-1872 as
+  soon as BL-1871 is in `done/`. They come before every other queue-jump,
+  including the local-LLM ones (the local LLM was removed on 2026-10-01).
+- Article 3.2.4's expedite lane is unchanged: a critical or high defect
+  still orders ahead within the cap.
+- The two slices need human approval of their feature files first; the
+  specifier asked for it at mint.
+- **Expiry:** when the BL-1870 epic's last slice is in `done/`, or when the
+  human says otherwise.
+
 ## Standing human directive (2026-09-30, specifier pane) — a working coder@iq3 is the swarm's absolute priority
 
 **Human, verbatim (Claude Code, specifier pane):** "Take over the in progress hotfix. Make it the swarm absokute priority to make iq3 work."

@@ -1,0 +1,156 @@
+id: BL-1872
+title: "The lander daemon lands what QA approves: QA's last act on a parcel is one queue command, and handoffd's lander sweep runs land_main_publish.sh --land for each queued approval, one at a time, records the land, sends the coordinator its bookkeeping note, and returns any land it cannot complete to QA with the land step's own reason, so QA's turn is never held by a land"
+milestone: M8
+type: feature
+status: todo
+epic: landing-is-a-merge
+priority: 1
+direction: queue-jump
+depends_on: [BL-1871]
+# BL-1871 first: under parcel lines the merge-up broadcast moves nothing,
+# so the daemon sends none. Before BL-1871 lands, skipping it would leave
+# role branches behind main.
+mutation_cost: low
+# low: Babashka (a new lib and CLI, one handoffd sweep registration); no
+# Stryker lane (BL-472), so the hardener hand-mutates the queue writes and
+# the land invocation.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new lib, its CLI and one sweep registration; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
+
+acceptance: specs/features/BL-1872-the-lander-daemon-lands-what-qa-approves.feature
+
+# Consumer anchor: handoffd.bb is the live daemon whose sweep must reach
+# the new lib (BL-1235: the consumer's call, not the parcel's own
+# declaration). The lib name is fixed here so the anchor is a literal that
+# will exist (BL-874). Handler pin per BL-233/BL-1371.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::lander_lib::the daemon sweep must run queued lands through the new lib'
+  - 'specs/pipeline/steps/bl1872LanderDaemonSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Second slice of BL-1870 (ruling A). FIRM - QA still decides and owns
+  every refusal; the daemon only carries out an approval QA queued. FIRM -
+  the daemon runs today's land_main_publish.sh --land unchanged, so every
+  publish gate, the land lock and the land-approval record stay as they
+  are. FIRM - one land at a time, oldest first; each queued approval lands
+  or is refused exactly once; a refusal goes to QA by note with the land
+  step's reason, and the daemon never retries it. FIRM - no merge-up
+  broadcast is sent, because BL-1871 made it a no-op. The land step's own
+  simplification (deleting replay, strays and re-point) is a later slice,
+  after in-flight parcels drain.
+
+invariants:
+  - "Every queued approval is landed or refused exactly once, and the sweep never starts a land while another is running."
+  - "Queueing an approval never fetches, builds or pushes: QA's queue command touches only the lander queue."
+  - "A land the sweep cannot complete reaches QA as a note carrying the land step's own reason; the sweep never retries it on its own."
+
+source: |
+  The human, relayed by QA as rule_proposal 003669 (2026-10-01), verbatim
+  (Article 5.3):
+
+  > Ok with the idea of landing deamon. Let specifier cook up something. Tell it to first assess if we got the while concept wrong? In my mind it should not be much more than a git merge.
+
+  QA's rationale, quoting the human's earlier message, verbatim:
+
+  > Could we introduce a new role "lander" dedicated to this task? It is takibg far too long and the stops the whole swarm while it runs. Or change the landing logic all together?
+
+  The human tapped BL-1870 ruling A at 20:18 BST, then, verbatim:
+
+  > Prioritize this work.
+
+description: |
+  ## What happens today
+
+  QA.prompt's land recipe: QA runs `land_main_publish.sh <qa-worktree>
+  --land <task> <full-sha> [<issue-ref>]` itself (detached, because the
+  harness kills a background command at 30 minutes), reads LAND_PUBLISHED,
+  LAND_ESCALATE or the exit-3 ENTANGLED_SIBLING_BLOCK, then sends the
+  merge-up broadcast and the coordinator's bookkeeping note through
+  `ceremony_handoff.sh`. The whole land runs inside QA's turn.
+
+  ## What is wanted
+
+  1. A queue command QA runs once it has approved: `lander_queue.bb <root>
+     --enqueue <task> <full-sha> [<issue-ref>]`. It writes one entry under
+     `.swarmforge/lander/queue/` and returns. It fetches, builds and pushes
+     nothing (scenario 01). The same task and commit queued again is the
+     same entry (scenario 05).
+  2. A lander sweep in handoffd. When no land is running, it takes the
+     oldest queued entry and runs `land_main_publish.sh <qa-worktree>
+     --land <task> <sha> [<issue-ref>]` detached, logging to
+     `.swarmforge/lander/<task>-<sha10>.log`. A later tick reads the
+     outcome:
+     - LAND_PUBLISHED: the entry is marked landed, and the coordinator gets
+       the bookkeeping note `ceremony_handoff.sh bookkeep` composes today
+       (scenario 02).
+     - Any refusal or failure (LAND_ESCALATE, ENTANGLED_SIBLING_BLOCK, a
+       conflict with origin/main, a non-zero exit): the entry is marked
+       refused, and QA gets a note naming the ticket and the land step's
+       own reason (scenario 04). QA adjudicates as today. The sweep never
+       retries a refused entry.
+     - At most one land runs at a time, oldest first (scenario 03). The
+       land lock already stops two publishes from racing; the sweep must
+       also not start a second land behind it.
+  3. No merge-up broadcast. Under parcel lines (BL-1871) it moves nothing.
+
+  ## How (direction, not mandate)
+
+  - `swarmforge/scripts/lander_lib.bb`, a pure decision (which entry, what
+    outcome, which notes) plus thin impure edges, and
+    `swarmforge/scripts/lander_queue.bb` as the CLI. handoffd registers
+    the sweep the way it registers its other sweeps. The anchor in
+    required_wiring is the lib's file name in handoffd.bb.
+  - Never wrap the land in `timeout`: a kill mid re-point leaves QA's
+    branch half-moved (operator memory, 2026-10-01). A run still going
+    past an hour is reported to QA by note and left alone.
+  - Notes go through swarm_handoff.sh like every other daemon note. Use
+    the sender the daemon already uses for its own notes, and say in the
+    evidence which one that is.
+  - Step handler `specs/pipeline/steps/bl1872LanderDaemonSteps.js`,
+    discovered from its own file (BL-1371). Fixture roots are created by
+    `git init` under mkdtemp with a bare origin, proven with `rev-parse
+    --git-common-dir` before any mutating git command (BL-1390). Drive the
+    sweep's tick function in-process and run the real land step against
+    the fixture, the way the BL-1678 and BL-1343 handlers do. Fit the
+    feature inside the per-mutant ceiling (BL-1541): measure one full run
+    and record it in the evidence.
+
+  ## Scope
+
+  `lander_lib.bb`, `lander_queue.bb`, their bb test runner, the sweep
+  registration in `handoffd.bb`, the step handler and evidence. The
+  documenter writes the how-to (queueing a land, reading the lander log,
+  what a refusal note means) and links it from `docs/index.md`. The
+  specifier changes QA.prompt's land recipe to queue instead of land when
+  this ticket activates (BL-798).
+
+out_of_scope: |
+  - Changing what the land step does. It runs unchanged here; deleting
+    its replay, strays and re-point is a later BL-1870 slice, after
+    in-flight parcels drain.
+  - Running the unit lane on the merged tree before the push. Add it in a
+    later slice if a merge-skew red is ever traced to a land.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1872-the-lander-daemon-lands-what-qa-approves.feature`:
+     6 of 6 ok (01, 02, 03, two rows of 04, 05). Measured 0 at mint: no
+     handler exists yet.
+  2. The new lander runner: ALL PASS.
+  3. `node specs/pipeline/cli.js specs/features/BL-1678-a-land-never-ships-an-unapproved-forward-that-shares-no-path-with-the-landing-ticket.feature` (the
+     publish step's own contract): 4 of 4 ok, as measured on main at
+     mint.
+  After the land (the specifier's or coordinator's check, not QA's): the
+  next approval QA queues lands without QA running land_main_publish.sh,
+  QA's hold on it ends at the queue command, and the lander log for it
+  shows LAND_PUBLISHED.
+
+notes: |
+  Minted 2026-10-01 by the specifier, second slice of BL-1870 after the
+  human tapped ruling A and said "Prioritize this work." Queue-jump per
+  that directive (STEERING.md). IR-DRY findings were reviewed at mint:
+  they are value variants (landed or refused, one or two entries) that
+  one patterned step covers, not duplicated meaning.

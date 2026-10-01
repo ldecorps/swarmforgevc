@@ -7,13 +7,9 @@ epic: landing-is-a-merge
 priority: 1
 direction: human-requested
 depends_on: []
-decomposes_into: []
+decomposes_into: [BL-1871, BL-1872]
 remaining_slices:
-  - "Parcel lines at the coder: each ticket starts from current origin/main, never from the coder branch's previous content"
-  - "Receiving roles switch instead of merge: merge_and_process moves the worktree onto the parcel commit; batch roles work their parcels one at a time"
-  - "The lander daemon: on QA approval it merges origin/main into the approved commit, fast-forward pushes, records the land approval and notes the coordinator; a conflict goes back to the coder"
-  - "Constitution and prompts: Article 1.8, 2.4 and 2.5 and the workflow rules on lineage, merge-up and bounce reverts (specifier lands the prose)"
-  - "Retire the entanglement machinery once in-flight parcels drain: merge-up broadcast, post-land re-point, reverse-hop copies, own-path replay, strays, abandoned_commits, LAND_ESCALATE conditions"
+  - "Retire the entanglement machinery once in-flight parcels drain: QA's merge-up send, the post-land re-point, reverse-hop copies, own-path replay, strays, abandoned_commits, the LAND_ESCALATE conditions and most of land_step_lib.bb"
 mutation_cost: medium
 
 human_approval: approved
@@ -58,3 +54,17 @@ notes: |
   constitution text changes until the human rules; under A, the specifier
   lands the prose with the slice that switches receiving roles.
   New milestone: none, M8 fits. New epic id: landing-is-a-merge.
+  2026-10-01 20:18 BST: the human tapped ruling A, then said, verbatim,
+  "Prioritize this work." Sliced the same evening:
+  - BL-1871: a role takes up a ticket on its own line, the coder starts
+    from origin/main, and the live pack runs the cleaner and hardender in
+    task mode. A separate batch-helper slice was dropped: serving several
+    tickets at once would put them back on one line, and with parcel
+    lines each ticket needs its own pass anyway.
+  - BL-1872: the lander daemon (depends on BL-1871).
+  Both are queue-jump. The prose they make true (Articles 1.8, 2.4 and
+  2.5, PIPELINE.md, handoff-protocol.md, the workflow rules on lineage,
+  merge-up and bounce reverts, QA.prompt's land recipe) is the
+  specifier's to land when each slice activates (BL-798). The
+  boot-prefix budget has 26 characters of headroom, so the article edits
+  move equal prose to reference/.

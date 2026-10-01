@@ -1,0 +1,176 @@
+id: BL-1871
+title: "A role takes up a ticket on that ticket's own line: ready_for_next moves a role's worktree onto the parcel's commit instead of the role merging it into its long-lived branch, the coder starts a new ticket from origin/main, and the live pack runs the cleaner and hardender in task mode, so every commit between origin/main and a parcel belongs to that parcel's ticket"
+milestone: M8
+type: feature
+status: todo
+epic: landing-is-a-merge
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: Babashka and one pack line (ready_for_next_task.bb, a new lib,
+# full-forge.conf); bb has no
+# Stryker lane (BL-472), so the hardener's pass is hand-mutants over the
+# git writes (the move and the backup ref).
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new lib and one call site; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
+
+acceptance: specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature
+
+# Consumer anchor: the live consumer is ready_for_next_task.bb, which every
+# task-mode role runs on every turn. It must load the new lib, so the
+# anchor is the lib's file name in that file (BL-1235: a consumer call, not
+# the parcel's own declaration). The lib name is fixed here so the anchor is
+# a literal that will exist (BL-874). Handler pin per BL-233/BL-1371.
+required_wiring:
+  - 'swarmforge/scripts/ready_for_next_task.bb::parcel_line_lib::the claim path must take up a parcel through the new lib'
+  - 'specs/pipeline/steps/bl1871ParcelLineTakeUpSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  First slice of BL-1870 (ruling A, tapped 2026-10-01 20:18), and the
+  slice that removes the cause. FIRM - a git_handoff is taken up by moving
+  the role's worktree onto the cited commit, never by merging it into what
+  the role held. FIRM - the move never loses work: it refuses while
+  tracked files are uncommitted, never moves a line back from work the
+  role committed on top, and keeps the head it leaves under a backup ref.
+  FIRM - the specifier's and coordinator's shared master checkout is never
+  moved. FIRM - the live pack runs the cleaner and hardender in task mode. FIRM - a non-forwarding copy and QA's merge-up note move nothing,
+  because under parcel lines there is nothing to merge. Parcels already in
+  flight keep landing through today's land step; a ticket started after
+  this lands travels on a clean line.
+
+invariants:
+  - "Taking up a parcel never loses a commit: the head a role moves off stays reachable from a ref, and a worktree with uncommitted tracked changes is never moved."
+  - "Taking up a git_handoff never creates a commit: afterwards the role's HEAD is the cited commit, or a commit the role made on top of it, never a merge of it with what the role held before."
+  - "The master checkout's branch and HEAD are never changed by ready_for_next, whatever the specifier's or coordinator's inbox holds."
+
+source: |
+  The human, relayed by QA as rule_proposal 003669 (2026-10-01), verbatim
+  (Article 5.3):
+
+  > Ok with the idea of landing deamon. Let specifier cook up something. Tell it to first assess if we got the while concept wrong? In my mind it should not be much more than a git merge.
+
+  The human tapped BL-1870 ruling A at 20:18 BST, then wrote in the
+  specifier session, verbatim:
+
+  > Prioritize this work.
+
+description: |
+  ## What happens today
+
+  - `handoff-protocol.md`: a git_handoff's payload is
+    `merge_and_process <sender> <commit>`, and the role prompts say merge
+    first, then work, then forward. Every role branch therefore carries
+    every ticket that ever passed through it. On 2026-10-01
+    `swarmforge-coder` was 16,462 commits past origin/main,
+    `swarmforge-cleaner` 16,463 and `swarmforge-QA` 16,590.
+  - The coder starts each new ticket on that same branch. The parcel's
+    line then begins on top of every older ticket, and the land step has
+    to replay the ticket's own paths back out (land_step_lib.bb).
+  - QA's merge-up broadcast (`ceremony_handoff.sh merge-up`) merges every
+    landed commit into every role branch. Under parcel lines that would
+    re-entangle whatever ticket the role holds next.
+
+  ## What is wanted
+
+  In `ready_for_next_task.bb`'s claim path (the same place BL-529's branch
+  guard and the merge-main-first hint already run), for a role with its
+  own worktree:
+  1. A forwarding git_handoff for ticket X citing commit C: the worktree
+     moves onto C (the role branch now points at C; scenario 01). When the
+     role asks again with the same parcel in_process and HEAD is C or a
+     descendant of C, nothing moves (scenario 02). The payload merge an
+     agent may still run is then a no-op ("Already up to date").
+  2. A coordinator `Work X` note to the coder: the worktree moves onto the
+     newest commit handed off for X (`salvage-lib/latest-item-handoffs`,
+     the reader task_scope_gate_lib.bb's `last-handoff-commit` already
+     uses). With none, it starts from a freshly fetched origin/main
+     (scenario 04). One exception: when the coder's current line already
+     carries unlanded commits that name X and no other ticket, it stays
+     there, so a re-sent Work note never strands work the coder has not
+     yet forwarded.
+  3. A non-forwarding copy (a reverse hop) and QA's merge-up note move
+     nothing (scenario 05). The role completes them as today. Under parcel
+     lines there is nothing to merge.
+  4. Never move a worktree that holds uncommitted changes to tracked
+     files. Print one line naming them and saying the parcel was not taken
+     up (scenario 03). The move is retried every time the parcel is
+     printed, so the next ask after the role cleans up takes it up.
+  5. Before any move, keep the head being left under
+     `refs/swarmforge/parcel-backup/<role>/<UTC stamp>`.
+  6. A master-resident role (roles.tsv `worktree-name` = `master`; the
+     specifier and the coordinator share one checkout on main) is never
+     moved (scenario 06; BL-1515's roster-shape rule).
+  7. `swarmforge/packs/full-forge.conf`: the cleaner and hardener windows
+     declare `task` instead of `batch` (scenario 07), so they take up their
+     parcels through the same claim path. A batch helper that serves several
+     tickets at once would merge them onto one line again. Batching on
+     parcel lines is not worth a slice of its own: each ticket needs its own
+     pass anyway, and dynamic routing already skips the cleaner on most
+     tickets.
+
+  ## How (direction, not mandate)
+
+  - A new `swarmforge/scripts/parcel_line_lib.bb`: a pure decision
+    (move-to C / stay / blocked / skip) from the role row, the parcel
+    headers, HEAD, the newest handed-off commit and the dirty paths, plus a
+    thin impure apply. `ready_for_next_task.bb` calls it where it prints
+    the task. The anchor in required_wiring is that file name.
+  - The move is `git switch -C <role branch> <commit>` in the role's
+    worktree. Fetch origin before a fresh start.
+  - Step handler `specs/pipeline/steps/bl1871ParcelLineTakeUpSteps.js`,
+    discovered from its own file (BL-1371). Fixture roots are created by
+    `git init` under mkdtemp, with a bare origin, and proven with
+    `rev-parse --git-common-dir` before any mutating git command (BL-1390).
+    The role worktrees are `git worktree add` inside the fixture. One step
+    pattern takes the role name (architect, coder, specifier): the IR-DRY
+    synonyms are role data, not duplicates.
+  - Never touch the live checkout or the live `.swarmforge/` from a test.
+
+  ## Scope
+
+  `parcel_line_lib.bb`, its bb test runner, the call in
+  `ready_for_next_task.bb`, the two window lines in
+  `swarmforge/packs/full-forge.conf`, the step handler and evidence. The
+  documenter updates `swarmforge/handoff-protocol.md` (what taking up a
+  parcel does now) and the how-to that describes merge_and_process.
+
+out_of_scope: |
+  - The batch helper itself (`ready_for_next_batch.bb`) is unchanged. No
+    live window uses it after this ticket. Other packs keep their receive
+    modes until they are next launched for real.
+  - The lander daemon: BL-1872.
+  - Retiring the land step's replay, strays and re-point, and QA's
+    merge-up send. That is a later BL-1870 slice, after in-flight parcels
+    drain. The specifier lands the prompt and constitution prose when this
+    ticket activates (BL-798).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`:
+     9 of 9 ok (01, 02, 03, two rows of 04, two rows of 05, 06, 07). Measured
+     0 at mint: no handler exists yet.
+  2. `bb swarmforge/scripts/test/branch_claim_guard_test_runner.bb` and
+     the new parcel_line_lib runner: ALL PASS (the branch guard runner
+     measured ALL PASS on main at mint).
+  3. In-process probe on a mkdtemp scratch repo, never the live checkout:
+     an architect worktree on a branch 3 commits past origin/main takes up
+     a git_handoff on a clean line, and `git rev-list --count
+     origin/main..HEAD` equals that line's own commit count.
+  After the land (the specifier's or coordinator's check, not QA's): the
+  next ticket the coder starts shows `git log origin/main..HEAD
+  --format=%s` naming only that ticket in each role it reaches, and its
+  QA land prints no LAND_REPLAY.
+
+notes: |
+  Minted 2026-10-01 by the specifier, first slice of BL-1870 after the
+  human tapped ruling A and said "Prioritize this work." Queue-jump per
+  that directive (STEERING.md). The specifier lands the prose this ticket
+  makes true when it activates: Article 2.4, PIPELINE.md, handoff-protocol
+  wording, the workflow rules on lineage and bounce reverts, QA's merge-up
+  step, and Article 2.4's batch sentence. The receive-mode change takes
+  effect when the cleaner and hardender seats are next relaunched from the
+  pack (`./swarm ensure` regenerates a launch script from it).
