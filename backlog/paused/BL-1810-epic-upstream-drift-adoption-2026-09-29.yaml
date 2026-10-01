@@ -54,3 +54,4 @@ notes: |
   upstream's podium agent or ensemble experiments against the live swarm;
   this fork shares no git ancestor with upstream, so every adoption is a
   manual reimplementation.
+mutation_cost: low

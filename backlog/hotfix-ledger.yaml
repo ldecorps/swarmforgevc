@@ -471,7 +471,7 @@
 - commit: c885d0c071
   subject: "Hotfix: a local-model seat's qwen runs interactive, so its pane shows its work and takes typed input"
   detected_at: 2026-09-30
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1845
   human_decision: null
   decided_at: null
@@ -485,7 +485,7 @@
 - commit: 93d6f69ba0
   subject: "Hotfix: each live-grid tile names its seat's model under the role name, so coder@2 reads Qwen2.5 Coder 14B"
   detected_at: 2026-10-01
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1858
   human_decision: null
   decided_at: null

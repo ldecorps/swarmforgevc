@@ -1,0 +1,28 @@
+actor:
+  - "the human"
+  - "a phone user"
+  - "a SwarmForge VC user"
+  - "the operator"
+  - "the specifier"
+  - "the coder"
+  - "the cleaner"
+  - "the architect"
+  - "the hardender"
+  - "the documenter"
+  - "QA"
+  - "the coordinator"
+  - "the art director"
+
+action:
+  - "file a new intake from my phone"
+  - "see that an agent has accepted my question"
+  - "chat with a local model about the project"
+  - "run a swarm seat on a local model"
+  - "approve or reject a pending decision"
+
+goal:
+  - "know the swarm is working on it"
+  - "keep the backlog in one ubiquitous language"
+  - "work on the project away from my desk"
+  - "cut cloud token costs"
+  - "trust that nothing lands without review"
