@@ -37,3 +37,10 @@ Feature: BL-1852 A post-land re-point carries only QA's own commits
     And the change of one of them has since landed on origin/main
     When the post-land re-point runs
     Then it re-applies only the commit whose change has not landed
+
+  # BL-1852 carried-then-new-commits-apply-in-authored-order-04
+  Scenario: a carried-forward commit and a new commit on the same file apply in authored order
+    Given the last re-point carried 1 of QA's own commits and 0 evidence commits that had come in through a merge, recorded the way land-repoint.log records it on 2026-09-30
+    And QA has since edited the same file an earlier re-point carried forward
+    When the post-land re-point runs
+    Then it re-applies both commits with no conflict, and the carried file ends with both edits in order

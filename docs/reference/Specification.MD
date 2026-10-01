@@ -1,5 +1,130 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 1, 2026 (BL-1852: a post-land re-point on QA's
+branch now re-applies only QA's own work, never a merged parcel's
+lineage. `post-land-repoint!`'s candidate set was every commit
+`ancestry-commits`' full ancestry walk could reach from QA's old tip —
+built for a different caller's different need, detecting an entangled
+tip — so a merged parcel's own evidence commits matched the bookkeeping
+keep rule every time and were re-applied under a new sha on every
+re-point, forever: kept commits grew from 47 to 2299 across one day
+(2026-09-30) with land time rising from 2-6 minutes to 13+. The
+candidate set (`own-line-candidates`) is now QA's own first-parent-line,
+non-merge commits since the previous re-point's new tip, unioned with
+whichever of that record's own kept commits were themselves on its old
+tip's first-parent line — so a commit a past, buggy re-point wrongly
+carried stops being perpetuated — with a safe first-parent-since-merge-
+base fallback when no usable previous record exists.
+`classify-repoint-candidate`'s own keep/drop rules (BL-1467) are
+unchanged; only what reaches them as a candidate narrows. How-to:
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+("A re-point's candidate set is QA's own line only, never merged-in
+lineage (BL-1852)" section). Acceptance:
+`specs/features/BL-1852-a-post-land-re-point-carries-only-qas-own-commits.feature`.
+No new extension command or setting; no diagram edit — swarm-internal
+land-step tooling.)
+Prior entry —
+
+**Last Updated:** October 1, 2026 (BL-1822: `bb
+swarmforge/scripts/recruiter_score_table_cli.bb <project-root>
+--briefing` renders the recruiter's score table (BL-1821) as the morning
+briefing's "Model scout" section, so the documenter pastes it verbatim
+and never invents or re-ranks a number. When the table's `updated_at` is
+after the previous briefing: the rows, highest passed count first, each
+naming the model, its passed count out of the total, and `incumbent`
+when flagged, then the table's own recommend line. When it is not: the
+single line "Model scout: no new scout since the previous briefing."
+When no score table exists yet: "Model scout: no scout has run yet."
+The documenter's morning-briefing duty already carries the paste
+instruction (`swarmforge/roles/documenter.prompt`, landed at mint); the
+Art Director answers QA's sign-off note on how the section reads, never
+on the numbers. How-to: `docs/how-to/BL-1821-recruiter-specifier-scout.md`
+("Publishing the score table into the daily briefing (BL-1822)"
+section). Acceptance:
+`specs/features/BL-1822-the-morning-briefing-carries-the-model-scout-table.feature`.
+No new extension command or setting; no diagram edit — a standalone CLI
+over an existing JSON file.)
+Prior entry —
+
+**Last Updated:** October 1, 2026 (BL-1847: on a pack declaring `config
+coordinator_mode deterministic` (BL-1846), `handoffd.bb`'s new
+`coordinator-mail-sweep!` relays every parcel that reaches the
+coordinator's `inbox/new/` to the human instead of waiting for a model
+reader that is not there — QA approvals, the specifier's "ready in
+paused", a coder's "blocked", and the daemon's own dropped-parcel and
+open-slot notes alike, since no script can sort that prose by urgency.
+Each tick batches one relay line per parcel (sender, type, ticket id,
+first line of its text, file name) into ONE Telegram-sized message
+(bounded at 4096 characters, with "and N more" for an overflowing tick)
+to the same OPERATOR-topic outbox the BL-798 escalation already writes,
+no email. Only after that outbox append returns does each relayed
+parcel move, byte-identical, to the coordinator's `inbox/completed/` —
+so the ticket close guard still reads a relayed QA approval exactly as
+it would a coordinator-read one. `inbox/in_process/` is untouched. A
+pack with no deterministic mode is unchanged. See the new "Deterministic
+coordinator's mail relay (BL-1847)" section in
+`swarmforge/handoff-protocol.md`. Acceptance:
+`specs/features/BL-1847-a-deterministic-coordinators-mail-is-relayed-to-the-human-and-completed.feature`.
+No new extension command or setting; no diagram edit — the coordinator's
+mailbox handling is swarm-internal, not part of the extension's own
+surface.)
+Prior entry —
+
+**Last Updated:** October 1, 2026 (BL-1832: on a mixed-agent `config
+rotation router` pack, babysitterd no longer respawns the resident's
+home pane just because the role rotated into it runs a different agent
+than the home row. A new pure resolver,
+`babysitterd-sweep-lib/seat-expected-agents`, returns the set of agent
+tokens the home pane may run and still read healthy — the home role's
+own agent, plus (only under rotation router, with a different, honoured
+active role) that role's own agent too — and `babysitter_check.bb`
+re-judges the home seat against this whole set once both the home role
+and the resident's active role are known, instead of against the home
+role's `roles.tsv` agent alone before the active role is even resolved.
+On 2026-09-28/29, with the ISTA pack's coder on `aider` and every other
+role on `claude`, the old single-agent check read a healthy rotated-in
+QA Claude session as a half-launch CRIT every ten minutes for five
+hours and `tmux respawn-pane -k`'d it, killing 31 QA sessions mid-turn
+and leaving every land walk that night unfinished; the operator's own
+supervision treated the recurring CRIT as harmless "self-heal" because
+it never recognized the repair itself as the kill. A home pane running
+neither agent is still the half-launch CRIT with its repair, unchanged;
+outside rotation router, with no honoured active-role marker, or when
+the resident is active as its own home role, every seat is judged
+against its own agent alone exactly as before (BL-1345's invariant 3
+holds by construction). How-to:
+`docs/how-to/BL-611-babysitterd-runbook.md` ("A router resident running
+its active role's agent is never respawned (BL-1832)" section).
+Acceptance:
+`specs/features/BL-1832-a-router-resident-running-its-active-roles-agent-is-never-respawned.feature`.
+No new extension command or setting; no diagram edit — babysitterd-internal.)
+Prior entry —
+
+**Last Updated:** October 1, 2026 (BL-1857: the land step's `path-owner-tickets`
+no longer refuses a shared-path rebuild by name over an untagged commit
+that put no line of its own into what the land would publish — an
+untagged, non-merge commit is now left out of a shared path's attribution
+entirely when every non-blank line it added is either already on
+`origin/main`'s copy or absent from the landing commit's own copy, the
+same exclusion BL-1472 already gives a recognized `Revert "..."` commit
+but reached by content instead of subject (BL-972). This closes the
+routine case BL-1830's own refusal hit on 2026-10-01: six untagged QA
+bounce restore/revert commits touching
+`docs/how-to/BL-1052-local-model-seat-launch.md`, none of which put a
+line into BL-1842's approved copy, refused the land anyway (QA note
+003628). Any untagged commit whose own line survives into the landing
+copy without being on `origin/main` still refuses by name, unchanged, and
+the refusal now names which commit(s) kept the path untagged
+(`:untagged-commits`). BL-1830's own rebuild, refusal-by-name posture, and
+merge-commit handling (BL-1374) are otherwise unchanged. How-to:
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+("An untagged commit that lands no line of its own never blocks a
+shared-path rebuild (BL-1857)" section). Acceptance:
+`specs/features/BL-1857-a-commit-that-lands-no-line-of-its-own-never-blocks-a-shared-path-rebuild.feature`.
+No new extension command or setting; no diagram edit — swarm-internal
+land-step tooling.)
+Prior entry —
+
 **Last Updated:** October 1, 2026 (BL-1844: `prompt_engine_test_runner.bb`'s
 claude/coder check pinned the composed prompt's length at BL-1798's mint
 measurement (58371 characters), so it turned red on every later edit to

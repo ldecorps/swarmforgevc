@@ -88,8 +88,9 @@ context_telemetry_test_runner.bb	standing
 control_plane_lib_test_runner.bb	standing		
 coordinator_activity_feed_lib_test_runner.bb	standing		
 coordinator_activity_feed_post_lib_test_runner.bb	standing		
-coordinator_config_test_runner.bb	standing		
-cursor_bridge_supervisor_test_runner.bb	standing		
+coordinator_config_test_runner.bb	standing
+coordinator_mail_relay_lib_test_runner.bb	standing
+cursor_bridge_supervisor_test_runner.bb	standing
 cursor_seat_guard_lib_test_runner.bb	standing		
 daemon_alarm_test_runner.bb	standing		
 daemon_cycle_guard_lib_test_runner.bb	standing		
@@ -177,8 +178,9 @@ push_sweep_ahead_range_lib_test_runner.bb	standing
 push_sweep_lib_test_runner.bb	standing		
 qa_hold_cli_test_runner.bb	standing		
 qa_hold_lib_test_runner.bb	standing		
-rate_limit_cooldown_gate_test_runner.bb	standing		
-reference_freshness_lib_test_runner.bb	standing		
+rate_limit_cooldown_gate_test_runner.bb	standing
+recruiter_score_table_lib_test_runner.bb	standing
+reference_freshness_lib_test_runner.bb	standing
 remote_wakeup_test_runner.bb	standing		
 required_stages_test_runner.bb	standing		
 rescue_lib_test_runner.bb	standing		
@@ -500,7 +502,7 @@ test_start_ancillary_services_freshness_cron.sh	standing
 test_start_ancillary_services_operator_watch_gate.sh	standing		
 test_start_handoff_daemon.sh	standing		
 test_start_stop_bridge_headless.sh	standing		
-test_start_stop_cursor_bridge.sh	standing		
+test_start_stop_cursor_bridge.sh	standing
 test_start_swarm_test_source_only_seam.sh	standing
 test_stop_ancillary_services_ollama_failure_not_fatal.sh	standing
 test_stop_ancillary_services_onboarder_dual_clear.sh	standing		

@@ -34,6 +34,7 @@
 (ns land-step-lib
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
+            [clojure.edn :as edn]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
@@ -3661,6 +3662,119 @@
 (defn- repoint-bookkeeping-path? [id path]
   (boolean (re-matches (repoint-bookkeeping-path-pattern id) path)))
 
+;; ── BL-1852: the candidate set is QA's OWN line only, never merged-in ────
+;;
+;; The keep rule above (bookkeeping-shape) answers "is this commit's
+;; content for some OTHER ticket's bookkeeping" - it was never wrong on its
+;; own. What was wrong is what reached it as a candidate at all:
+;; `ancestry-commits` (BL-1308's FULL ancestry, deliberately not
+;; first-parent, for a DIFFERENT caller's different need - detecting an
+;; entangled tip must see a merge's second-parent lineage) also fed
+;; post-land-repoint!, so a merged parcel's own evidence commits - never
+;; QA's own work - sat in the candidate set and matched the bookkeeping
+;; shape every time, re-applied under a new sha on every single re-point
+;; forever (47 -> 2299 kept commits across one day, 2026-09-30).
+;;
+;; The candidate set here is QA's own first-parent line ONLY
+;; (`--first-parent --no-merges`), plus whatever the PREVIOUS re-point's
+;; own record shows was genuinely on ITS OLD TIP's first-parent line -
+;; carried forward again so a still-unlanded other-ticket bookkeeping
+;; commit a re-point legitimately needs to keep (invariant 2) is not lost
+;; the one time `prev-new-tip` happens to be the walk's exact boundary. A
+;; commit the previous re-point wrongly kept (reached it only through a
+;; merge, back when the old code ran) is EXCLUDED by this same first-
+;; parent-line check against ITS OWN old tip - it never belonged, and this
+;; is where that is finally decided, not perpetuated.
+
+(defn- first-parent-no-merge-range
+  "Oldest-first non-merge commits reachable from `to` and not from `from`,
+   walking ONLY first-parent - never a merge's second-parent lineage. nil
+   (fail-closed) on any git failure."
+  [root from to]
+  (let [res (git! root "rev-list" "--first-parent" "--no-merges" (str from ".." to))]
+    (when (zero? (:exit res))
+      (->> (str/split-lines (:out res)) (remove str/blank?) reverse vec))))
+
+(defn- first-parent-no-merge-ancestors
+  "The SET of every non-merge commit on `tip`'s own first-parent line, back
+   through the whole history reachable that way - used only to answer 'was
+   this specific sha ever really on this tip's own line', never walked
+   per-commit. nil (fail-closed) on any git failure (an unreadable git
+   object, e.g. one GC already pruned - older than this swarm's history
+   retention)."
+  [root tip]
+  (let [res (git! root "rev-list" "--first-parent" "--no-merges" tip)]
+    (when (zero? (:exit res))
+      (into #{} (remove str/blank? (str/split-lines (:out res)))))))
+
+(defn- read-last-repointed-record
+  "The most recent `:repointed` entry `land-repoint.log` holds (a plain
+   `<timestamp> <edn-map>` line per log-repoint!, the SAME shape whether
+   written before or after this ticket - nothing about the record format
+   changes), or nil when the log is absent, empty, or holds no `:repointed`
+   entry (every prior re-point was `:skipped`, or this is the first one
+   ever). A line that fails to parse (truncated by a crash mid-write, or
+   hand-edited) is skipped rather than aborting the whole read - the
+   caller's fallback path (first-parent-since-merge-base) is always safe
+   when no usable record exists."
+  [root]
+  (let [log-path (str (fs/path root ".swarmforge" "daemon" "land-repoint.log"))]
+    (when (fs/exists? log-path)
+      (->> (str/split-lines (slurp log-path))
+           (remove str/blank?)
+           (keep (fn [line]
+                   (try
+                     (let [sp (str/index-of line " ")]
+                       (when sp
+                         (let [m (edn/read-string (subs line (inc sp)))]
+                           (when (= :repointed (:action m)) m))))
+                     (catch Exception _ nil))))
+           last))))
+
+(defn- own-line-candidates
+  "The candidate commits for post-land-repoint!'s keep/drop classification,
+   oldest first: QA's own first-parent-line, non-merge commits, with no
+   merged-in lineage ever included (invariant 1).
+
+   When the previous re-point's record is readable AND its `:new-tip` is
+   still an ancestor of `old-tip` (the ordinary case: nothing has reset
+   this branch out from under that history since) - the delta is every
+   first-parent, non-merge commit since that `:new-tip`, UNIONED with
+   whichever of that record's own `:kept` entries were themselves on ITS
+   OLD TIP's first-parent line (invariant 2: a commit an earlier re-point
+   legitimately carried for QA is carried again, even across a boundary
+   where the delta walk alone would not re-reach it; a commit that record
+   wrongly carried - reached only through a merge back when the old keep
+   rule ran - is excluded here, by the same first-parent check against its
+   own origin, and finally stops being perpetuated).
+
+   Otherwise (no readable record, or `:new-tip` is not an ancestor of
+   `old-tip` - a hand-run repoint, a branch reset, or the very first
+   re-point after this ticket lands) - the whole of QA's own first-parent
+   line since `old-tip`'s merge-base with `origin-main`. A safe superset of
+   QA's own work (description's own direction) that still never reaches
+   merged-in lineage, the same guarantee either path gives.
+
+   nil (fail-closed) on any git failure, same contract `ancestry-commits`
+   already used here."
+  [root old-tip origin-main]
+  (let [prev (read-last-repointed-record root)
+        prev-new-tip (:new-tip prev)
+        ancestor? (and prev-new-tip
+                       (zero? (:exit (git! root "merge-base" "--is-ancestor" prev-new-tip old-tip))))]
+    (if ancestor?
+      (let [baseline-line (first-parent-no-merge-ancestors root (:old-tip prev))
+            baseline-shas (when baseline-line
+                            (->> (:kept prev)
+                                 (keep :sha)
+                                 (filter #(contains? baseline-line %))))
+            delta (first-parent-no-merge-range root prev-new-tip old-tip)]
+        (when (and baseline-line delta)
+          (vec (distinct (concat baseline-shas delta)))))
+      (let [mb-res (git! root "merge-base" origin-main old-tip)]
+        (when (zero? (:exit mb-res))
+          (first-parent-no-merge-range root (str/trim (:out mb-res)) old-tip))))))
+
 ;; {:disposition :keep :sha :subject} or {:disposition :drop :sha :subject
 ;; :reason "..."} - never nil, so every candidate is accounted for one way
 ;; or the other (this ticket's invariant 1: named, not silently lost).
@@ -3855,17 +3969,16 @@
         (if-not origin-main
           (let [r {:action :skipped :reason "land-step: origin/main could not be resolved" :old-tip old-tip}]
             (log-repoint! root r) (finish! r))
-          (let [candidates (ancestry-commits root origin-main old-tip)]
+          (let [candidates (own-line-candidates root old-tip origin-main)]
             (if (nil? candidates)
               (let [r {:action :skipped
-                       :reason (str "land-step: could not read " old-tip "'s own local-only history against " origin-main)
+                       :reason (str "land-step: could not read " old-tip "'s own first-parent line against " origin-main)
                        :old-tip old-tip}]
                 (log-repoint! root r) (finish! r))
-              ;; Oldest first: `ancestry-commits` (rev-list) answers
-              ;; newest-first, and a cherry-pick replay must apply in
-              ;; authored order.
+              ;; own-line-candidates already answers oldest first - a
+              ;; cherry-pick replay must apply in authored order.
               (let [classified (mapv #(classify-repoint-candidate root % landed-task-ticket-id)
-                                     (reverse candidates))
+                                     candidates)
                     reset-res (git! root "reset" "--hard" origin-main)]
                 (if-not (zero? (:exit reset-res))
                   (let [r {:action :skipped :reason "land-step: branch re-point failed" :old-tip old-tip}]

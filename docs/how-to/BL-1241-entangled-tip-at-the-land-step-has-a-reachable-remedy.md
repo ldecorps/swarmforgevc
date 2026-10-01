@@ -866,6 +866,39 @@ just-landed ticket's own bookkeeping drop as redundant (its content is
 already carried by its own replay) instead of re-applying a second time.
 Acceptance: `specs/features/BL-1467-the-re-point-keeps-qa-bookkeeping-and-names-what-it-drops.feature`.
 
+## A re-point's candidate set is QA's own line only, never merged-in lineage (BL-1852)
+
+BL-1467's keep rule (bookkeeping-shape, above) was never wrong on its
+own — what fed it candidates was. `post-land-repoint!` used
+`ancestry-commits`' FULL ancestry walk (BL-1308's walk, built for a
+different caller's different need: detecting an entangled tip must see
+a merge's second-parent lineage), so a merged parcel's own evidence
+commits — never QA's own work — sat in the candidate set and matched
+the bookkeeping shape every time, re-applied under a NEW sha on every
+single re-point forever. Each re-application gives a commit a new id,
+so nothing bounds the growth: kept commits went from 47 to 2299 across
+one day (2026-09-30), and land time went from 2-6 minutes to 13+.
+
+The candidate set is now `own-line-candidates`: QA's own
+first-parent-line, non-merge commits only, since the previous
+re-point's new tip — when that tip is still an ancestor of the current
+old tip, the ordinary case. It is UNIONED with whichever of the
+previous record's own `:kept` commits were themselves on THAT record's
+old tip's first-parent line (re-derived from git by original sha, so a
+log record written before this ticket reads correctly too): a commit a
+past, buggy re-point wrongly carried — reached only through a merge,
+back when the old code ran — is excluded by this same check against its
+own origin, and finally stops being perpetuated instead of riding
+forward under yet another new sha. With no readable previous record, or
+when its new tip is not an ancestor of the current old tip (a hand-run
+repoint, or a branch reset), the fallback is QA's own first-parent line
+since the old tip's merge-base with `origin/main` — a safe superset of
+QA's own work that still never reaches merged-in lineage, the same
+guarantee either path gives. `classify-repoint-candidate`'s own
+keep/drop rules (BL-1467, above) are unchanged; only what reaches them
+as a candidate narrows. Acceptance:
+`specs/features/BL-1852-a-post-land-re-point-carries-only-qas-own-commits.feature`.
+
 ## The bounded walk never counts landed history, and a replay carries every hop's work (BL-1446)
 
 BL-1432's bound was wrong in two ways the moment a QA branch synced
