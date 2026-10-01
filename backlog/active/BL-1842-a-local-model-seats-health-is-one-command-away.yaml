@@ -104,3 +104,8 @@ notes: |
   CLI.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-30, by: architect, blamed: coder, class: behavior, commit: 683bbecb45, evidence: backlog/evidence/BL-1842-architect-20260930-bounce.md }
+  - { at: 2026-10-01, by: QA, blamed: coder, class: behavior, commit: cfa7cf59cd, evidence: backlog/evidence/BL-1842-QA-20261001.md }
+abandoned_commits: [fd050b00c9]

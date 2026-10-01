@@ -1,5 +1,42 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 1, 2026 (BL-1842: a local-model seat's health is
+one command away — `bb swarmforge/scripts/local_seat_report_cli.bb
+<project-root> --seat <seat> [--sessions N]` reads the seat's qwen usage
+and session records and the Ollama server log, and prints requests,
+recorded conversation turns, chat compressions with their before/after
+token counts, api errors, total output and reasoning tokens, the longest
+single request, how Ollama is serving the model (layers on GPU out of
+total, context, KV cache type, latest tokens/s), and a state —
+`generating` (the Ollama log shows generation in progress in the last
+minute), `idle`, or `down` (no process for the seat's worktree). This
+answers the misdiagnosis of 2026-09-30, where the coordinator read
+coder@iq3 as stuck from its pane (CPU near 0%, no commits) when it was in
+fact generating at 3.5 tokens/s with 8 of 65 layers offloaded to CPU, then
+later compressing its chat every turn — every one of those facts was
+already on disk. A QA bounce (2026-10-01, D1/D2) found the live report
+itself wrong twice: it chose the Ollama log by existence alone (a stale
+swarm-owned log beat the live server's actual operator log) and matched
+a seat's process by `pgrep -f` against argv (missing a live seat whose
+argv never names its worktree, and false-matching an unrelated shell
+that happens to). Fixed to pick whichever log has the newer mtime and to
+resolve each candidate process's own `/proc/<pid>/cwd` against the
+worktree instead. Read-only by declared invariant, proven by a black-box
+property test (`bl1842LocalSeatReportReadOnlyInvariant.property.test.js`)
+that snapshots a generated fixture root's full file tree before and after
+running the real CLI via `execFileSync` and asserts the two snapshots are
+byte-identical: it never touches a seat, a pane, or the Ollama server, and
+every source path defaults to the real location (`~/.qwen/usage`,
+`~/.qwen/projects/.../chats`, the swarm's own Ollama log) while staying
+overridable (`--qwen-home`, `--qwen-usage-dir`, `--qwen-projects-dir`,
+`--ollama-log`, `--now-ms`) so a fixture never reads the operator's own
+records. Acceptance:
+`specs/features/BL-1842-a-local-model-seats-health-is-one-command-away.feature`.
+How-to: `docs/how-to/BL-1052-local-model-seat-launch.md` (new "Judge a
+seat's health from its records, not its pane" section). No new extension
+command or setting — a standalone CLI; no diagram edit.)
+Prior entry —
+
 **Last Updated:** September 30, 2026 (BL-1846: a pack whose
 `swarmforge.conf` declares `config coordinator_mode deterministic` no
 longer needs a model to clear the one hop of the mono-router happy path

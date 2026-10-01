@@ -199,6 +199,31 @@ Reaping ghost runners and detached run clients with no live server at all
 (BL-1705, narrowed by BL-1726) is documented in
 `docs/reference/Specification.MD`'s BL-1705/BL-1726 entries.
 
+## Judge a seat's health from its records, not its pane
+
+On 2026-09-30 the coordinator read the coder@iq3 seat as stuck (CPU near
+0%, the same pane lines, no commits). It was in fact generating at
+3.5 tokens/s with 8 of 65 layers offloaded to CPU, then later compressing
+its chat every turn — every one of those facts was already on disk. BL-1842
+reads them for you:
+
+```sh
+bb swarmforge/scripts/local_seat_report_cli.bb <project-root> --seat coder@iq3 [--sessions N]
+```
+
+Prints the seat's latest session (requests, recorded conversation turns,
+chat compressions with their before/after token counts, api errors, total
+output and reasoning tokens, and the longest single request), how
+Ollama is serving the model (layers on GPU out of total, context, KV cache
+type, latest tokens/s), and a state — `generating` (the Ollama log shows a
+generation in progress in the last minute), `idle`, or `down` (no process
+for the seat's worktree). Read-only: it never touches a seat, a pane or the
+Ollama server, and every path it reads defaults to the real locations
+(`~/.qwen/usage`, `~/.qwen/projects/.../chats`, the swarm's own Ollama log
+or `.swarmforge/ollama-serve-operator.log`) — each overridable
+(`--qwen-home`, `--qwen-usage-dir`, `--qwen-projects-dir`, `--ollama-log`,
+`--now-ms`) so a fixture never reads the operator's own records.
+
 ## Repair
 
 ```sh
