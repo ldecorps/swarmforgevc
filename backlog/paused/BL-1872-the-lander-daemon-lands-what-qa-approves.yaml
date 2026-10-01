@@ -29,7 +29,7 @@ required_wiring:
   - 'swarmforge/scripts/handoffd.bb::lander_lib::the daemon sweep must run queued lands through the new lib'
   - 'specs/pipeline/steps/bl1872LanderDaemonSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Second slice of BL-1870 (ruling A). FIRM - QA still decides and owns
   every refusal; the daemon only carries out an approval QA queued. FIRM -
