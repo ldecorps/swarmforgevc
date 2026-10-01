@@ -61,11 +61,38 @@ Test-only seams inside `recruiter_specifier_scout.sh` itself
 let the acceptance lane and unit tests run the whole pipeline with no
 network or Ollama; none of them are for operator use either.
 
+## Publishing the score table into the daily briefing (BL-1822)
+
+`bb swarmforge/scripts/recruiter_score_table_cli.bb <project-root>
+--briefing` renders the score table as the morning briefing's "Model
+scout" section:
+
+- When the table's `updated_at` is after the previous briefing
+  (`docs/briefings/<date>.md`, the latest one before today): the rows,
+  highest passed count first, each naming the model, its passed count
+  out of the total, and `incumbent` when flagged, then the table's own
+  recommend line. The model name is bold (`- **qwen2.5-coder-14b-q5km**
+  — 9/10 (incumbent)`), per the Art Director's 2026-09-06 scan-weight
+  rule in `docs/design/system.md` — a row the human scans on a phone
+  needs its one load-bearing word to read first (Art Director brief
+  `2026-10-01-bl1822-model-scout-list-item-scan-weight.md`, BL-1822's
+  own bounce).
+- When it is not: the single line `Model scout: no new scout since the
+  previous briefing.`.
+- When no score table exists yet: the single line `Model scout: no
+  scout has run yet.`.
+
+The documenter pastes this output verbatim into the briefing (per
+`documenter.prompt`'s "Model scout section" duty) — it never writes,
+ranks or rounds the numbers itself, and the Art Director answers QA's
+sign-off note on the briefing artifact for how the section reads, never
+for the numbers. Acceptance:
+[`specs/features/BL-1822-the-morning-briefing-carries-the-model-scout-table.feature`](../../specs/features/BL-1822-the-morning-briefing-carries-the-model-scout-table.feature).
+
 ## What is not here yet
 
-Publishing the score table into the daily briefing is a separate slice
-(BL-1822), not yet landed. Staffing a local specifier seat from the table
-(a gate mirroring [Local coder evidence bar](BL-1127-local-coder-steward-evidence-bar.md))
+Staffing a local specifier seat from the table (a gate mirroring
+[Local coder evidence bar](BL-1127-local-coder-steward-evidence-bar.md))
 is a recorded follow-on, not minted: it becomes due when a local
 specifier seat is the next staffing goal.
 
