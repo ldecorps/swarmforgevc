@@ -387,6 +387,136 @@
                            acc d))
               {} diffs))))
 
+(defn- blob-content
+  "The RAW string content of `path` at `rev`, exactly as git holds it - no
+   split, no trim: BL-1830's rebuild writes this straight to a scratch
+   file for `patch` to operate on, and a flattened line SET (`blob-lines`
+   above) would lose the exact bytes `patch` matches context against.
+   \"\" when `path` is absent at `rev` - a real empty answer, the same
+   posture `blob-lines` already takes. nil when the blob exists but could
+   not be read, which the caller must fail closed on."
+  [root rev path]
+  (let [blob (blob-at root rev path)]
+    (if (= ::absent blob)
+      ""
+      (let [res (git! root "cat-file" "blob" blob)]
+        (when (zero? (:exit res)) (:out res))))))
+
+(defn- commit-path-patch
+  "`commit`'s own unified diff for JUST `path` against its first parent,
+   context 3 - a real, applicable patch, never the flattened added/removed
+   line SETS `sibling-own-line-changes` computes for other purposes: BL-
+   1830's rebuild reverses this out of the reviewed tip with the `patch`
+   utility, which relies on surrounding context to find the right place -
+   the same context a flattened set discards, which is how an earlier
+   version of this rebuild silently misplaced a landing ticket's own
+   addition relative to unrelated structure (a file's closing bracket).
+   \"\" when the commit does not touch `path` at all - a real, skippable
+   answer. nil when the diff could not be read, which the caller must
+   fail closed on."
+  [root commit path]
+  (let [res (git! root "show" "--format=" "--unified=3" commit "--" path)]
+    (when (zero? (:exit res)) (:out res))))
+
+(defn- reverse-apply-patch!
+  "Reverse-applies `patch-text` onto the file at `scratch-path` via the
+   POSIX `patch` utility - never `git apply`, which refuses a path outside
+   a git worktree without `--unsafe-paths`. `scratch-path` is named
+   explicitly on the command line, so `patch` writes to exactly that file
+   regardless of whatever path the diff's own a/ b/ headers name.
+
+   `--fuzz=3`, matching `commit-path-patch`'s own `--unified=3`, deliberately
+   never a smaller fuzz (0, or `patch`'s own default of 2): the excluded
+   sibling's own hunk was cut against a SMALLER file (the state before
+   whichever already-included contributor's lines followed it), so its
+   trailing context routinely runs to the end of THAT file while the
+   scratch file (the reviewed tip) has more lines after it - the ordinary
+   shape of `shared-own-path-rebuild`'s own reach, not an edge case.
+   Reversing such a hunk needs fuzz AT LEAST as large as the context width
+   itself to discount a fully-consumed context block sitting at EOF -
+   `--fuzz=0` refused it outright, and `patch`'s own default (2) still
+   refused it once the context reached exactly 3 lines (measured directly
+   against BL-1375's own step-registry fixture and a range of baseline
+   sizes up to 50 lines). Fuzz only ever
+   trims CONTEXT lines at a hunk's edges - it never changes which +/-
+   content lines are applied, so raising it here cannot turn a real
+   conflict into a silent success (re-verified directly against this
+   ticket's own edit-sibling-row escalate shape at `--fuzz=3`).
+
+   Deliberately never `--batch` either: with no tty attached, `patch`
+   already answers its own interactive \"Unreversed patch detected -
+   Ignore -R?\" prompt with its default (refuse) the instant its prompt
+   read hits EOF on the now-fully-consumed stdin - measured directly
+   (BL-1830's own escalate fixture, BL-9001 editing BL-9002's exact row).
+   `--batch` overrides that default to \"proceed anyway\", which is
+   fuzz-matched against the WRONG location once the hunk no longer
+   reverses cleanly, silently duplicating a line rather than refusing -
+   worse than the bug this ticket exists to fix. Omitting both flags is
+   what keeps a real conflict a refusal.
+
+   true on a clean reversal; false on any conflict - a context mismatch,
+   meaning another contributor's own line sits where the reverted
+   commit's patch expected to find its own (BL-9001 editing the exact row
+   BL-9002 added, this ticket's own escalate scenario). Any `.rej` file
+   `patch` leaves behind on a conflict is swept before returning - it is
+   never read, and `shared-own-path-rebuild` discards the whole attempt."
+  [scratch-path patch-text]
+  (let [res (daemon-cycle-guard-lib/sh! ["patch" "-R" "--silent" "--fuzz=3"
+                                         "--no-backup-if-mismatch" (str scratch-path)]
+                                        {:in patch-text})]
+    (fs/delete-if-exists (str scratch-path ".rej"))
+    (zero? (:exit res))))
+
+(defn- shared-own-path-rebuild
+  "BL-1830: for a path shared between task-ticket-id and `sibling-ids` (an
+   unlanded, non-blocking sibling set), the content to replay - the
+   REVIEWED TIP's own content for `path`, with each of `sibling-ids`'s own
+   non-merge commits touching `path` reverse-applied out of it via a REAL
+   patch (`patch -R`, context 3), most recent sibling commit first
+   (`candidates`' own order, unchanged) - never a flattened line-SET
+   reconstruction (origin/main's kept lines plus a landing ticket's own
+   additions appended at the tail), which silently misplaces an addition
+   relative to unrelated structure the tip's own file has (a closing
+   bracket, a footer line): BL-1375's own step-registry fixture
+   (specs/pipeline/steps/index.js, the exact file BL-1324's incident was
+   about) turned a landing ticket's own registration into a dead trailing
+   comment this way. Reversing the sibling's own patches out of the TIP
+   instead leaves every OTHER contributor's lines - the landing ticket's,
+   and any already-landed ticket's - in their own original position,
+   surgically removing only what `sibling-ids` added.
+
+   {:ok true :lines [...]} on a clean reversal.
+   {:ok false :conflict? true} when a reversal does not apply cleanly -
+   the sibling's own line and another contributor's edit are entangled at
+   the same place, so a three-way apply cannot separate them; the caller
+   escalates, naming the path and the sibling, never silently taking
+   either ticket's version whole (BL-1332's own posture, narrowed here to
+   the line rather than the whole path).
+   {:ok false :unreadable? true} when the tip's own content, or one of
+   the commits' own diffs for this path, could not be read - fails
+   closed rather than reversing a partial or guessed patch."
+  [root candidates sibling-ids path commit]
+  (let [tip-content (blob-content root commit path)]
+    (if (nil? tip-content)
+      {:ok false :unreadable? true}
+      (let [own-commits (->> candidates
+                              (filter #(contains? sibling-ids (commit-ticket-id root %)))
+                              (remove #(merge-commit? root %)))
+            scratch (fs/create-temp-file {:prefix "bl1830-rebuild-"})]
+        (try
+          (spit (str scratch) tip-content)
+          (loop [remaining own-commits]
+            (if (empty? remaining)
+              {:ok true :lines (str/split-lines (slurp (str scratch)))}
+              (let [c (first remaining)
+                    patch-text (commit-path-patch root c path)]
+                (cond
+                  (nil? patch-text) {:ok false :unreadable? true}
+                  (str/blank? patch-text) (recur (rest remaining))
+                  (reverse-apply-patch! scratch patch-text) (recur (rest remaining))
+                  :else {:ok false :conflict? true}))))
+          (finally (fs/delete-if-exists scratch)))))))
+
 (defn sibling-path-verdict
   "Pure over the injected facts: what does ONE attributed path say about
    whether this sibling has landed? `:landed`, `:unlanded`, or `:vacuous` -
@@ -1832,7 +1962,22 @@
    already resolved it) or threaded in by land-plan's single resolution
    (the 8-arg arity) - never re-resolved by name mid-walk, which is what let
    a mint landing between two reads desync the attribution map this
-   function reads from the walk that built it."
+   function reads from the walk that built it.
+
+   BL-1830: a path BOTH this ticket and an unlanded, non-blocking sibling
+   own (the sibling is approved, or its per-path lines already landed) is
+   never taken whole from the cited tip either - that would ship the
+   sibling's genuinely new lines (BL-1801's suite-manifest.tsv rows). It
+   is instead REBUILT by reverse-applying the sibling's own commits' real
+   patches for that path out of the cited tip (`shared-own-path-rebuild`),
+   and the result rides in `:rebuilt` ({path {:lines [...] :excluded
+   #{sibling-id ...}}}) for the caller to write instead of checking the
+   path out from the cited commit, and to report to QA. When this
+   ticket's own change to that path is entangled with the sibling's lines
+   closely enough that the reversal does not apply cleanly, the whole
+   replay refuses by name (a three-way apply cannot silently pick a side)
+   - never silently widened to `:excluded` or resolved by keeping the
+   sibling's line."
   ([root commit task-ticket-id]
    (let [origin-main (origin-main-sha root)
          {:keys [unlanded warning]} (entangled-siblings root commit task-ticket-id nil nil origin-main)]
@@ -1901,8 +2046,14 @@
              ;; excluded from THIS ticket's own-paths (never folded into its
              ;; tip-pure commit, which would lose the stray's own author/
              ;; subject) and land separately, ahead of it.
-             stray-paths (or (:stray-paths opts) #{})]
-        (loop [remaining delivered acc [] excluded [] passengers #{} content-clear []]
+             stray-paths (or (:stray-paths opts) #{})
+             ;; BL-1830: lazy - the common land (no unlanded sibling ever
+             ;; co-owns a path this ticket also owns) never pays for the
+             ;; ancestry walk `shared-own-path-rebuild` needs; the :else
+             ;; clause below forces it only once it actually needs a shared
+             ;; own path rebuilt.
+             ancestry (delay (ancestry-commits root origin-main commit))]
+        (loop [remaining delivered acc [] excluded [] passengers #{} content-clear [] rebuilt {}]
          (if (empty? remaining)
            ;; BL-1343. An empty set is two different answers wearing the same
            ;; face. With nothing delivered, the tip IS origin/main and "nothing
@@ -1935,7 +2086,7 @@
              ;; replayed tip by hand to see why a bounced sibling's path
              ;; still rode.
              {:paths acc :warning nil :passengers passengers :excluded excluded
-              :content-clear content-clear})
+              :content-clear content-clear :rebuilt rebuilt})
            (let [path (first remaining)
                  attribution (attribution-of path)]
              (cond
@@ -2018,7 +2169,8 @@
                                 (map (fn [id]
                                        {:path path :sibling id
                                         :verdict (get (:verdicts (meta content-blocked)) id)})
-                                     (sort blocker-ids))))))
+                                     (sort blocker-ids)))
+                          rebuilt)))
 
                ;; BL-1544. A path whose attribution is AMBIGUOUS (some
                ;; touching commit's subject names more than one ticket id
@@ -2062,7 +2214,7 @@
                     (contains? stray-paths path))
                (recur (rest remaining) acc
                       (conj excluded {:path path :owners (:owners attribution)})
-                      passengers content-clear)
+                      passengers content-clear rebuilt)
 
                ;; BL-1546. A path whose every owner is CLOSED on origin/main
                ;; (backlog/done/ there) is never silently excluded on the
@@ -2145,17 +2297,141 @@
                      (seq (remove #(path-landed? % path) (:owners attribution)))))
                (recur (rest remaining) acc
                       (conj excluded {:path path :owners (:owners attribution)})
-                      passengers content-clear)
+                      passengers content-clear rebuilt)
+
+               ;; BL-1830 D1 (QA bounce 2026-09-30): an UNTAGGED touch on a
+               ;; path this ticket owns, shared with an unlanded non-closed
+               ;; sibling, is caught HERE, before the rebuild clause below,
+               ;; and escalates by name - it must never fall through to the
+               ;; ordinary keep-whole-tip logic at the bottom of this cond,
+               ;; which is exactly the leak QA found: BL-1801's land shared
+               ;; suite-manifest.tsv with unlanded BL-1821, and the untagged
+               ;; touch was QA's OWN housekeeping commit ('Restore
+               ;; bounced-ticket paths to origin/main after re-point.',
+               ;; carrying no ticket id by QA.prompt's own rule) - routine on
+               ;; a QA tip, so this shape recurs. The rebuild clause below
+               ;; already refuses to ATTEMPT a rebuild here (its own
+               ;; `(not any-untagged?)` guard), since an untagged commit
+               ;; could equally be the landing ticket's OWN uncredited work -
+               ;; a tag-based line-set walk cannot tell - so the answer here
+               ;; is REFUSE, never "keep whole, sibling's lines included"
+               ;; (invariant: never, in any path).
+               ;;
+               ;; DELIBERATELY NOT `:any-ambiguous?` too, despite reading the
+               ;; same on paper: BL-1544 (02)'s own fixture (an ambiguous
+               ;; commit's subject names BOTH the sibling's id and the
+               ;; landing ticket's own id, then a SECOND, cleanly-tagged
+               ;; commit is the landing ticket's own unambiguous touch on the
+               ;; same path) is already adjudicated - kept, sibling riding as
+               ;; an ordinary passenger, never a refusal - because the
+               ;; landing ticket demonstrably has its own real stake in the
+               ;; path via that second commit, so nothing here can be shown
+               ;; to be "only" the sibling's. Escalating that case too would
+               ;; regress BL-1544 (02)'s own scenario for no incident this
+               ;; bounce ever named; D1's own remediation pointer is scoped
+               ;; to the `(not (:any-untagged? attribution))` guard alone.
+               ;;
+               ;; `shared` is computed exactly as the rebuild clause computes
+               ;; it (a co-owner CLOSED on origin/main is excluded from
+               ;; `shared`, so a path with ONLY closed co-owners still falls
+               ;; through to the ordinary keep logic below, BL-1546).
+               (and (contains? (:owners attribution) task-ticket-id)
+                    (:any-untagged? attribution)
+                    (seq (remove #(closed-on-main? root origin-main %)
+                                 (filter unlanded-siblings (:owners attribution)))))
+               (let [shared (set (remove #(closed-on-main? root origin-main %)
+                                          (filter unlanded-siblings (:owners attribution))))]
+                 {:paths nil
+                  :warning (str "land-step: refusing to replay " task-ticket-id
+                                " - " path " is shared with unlanded sibling(s) "
+                                (str/join "," (sort shared))
+                                ", and an untagged commit touches it, so the "
+                                "tag-based line-set walk cannot separate " task-ticket-id
+                                "'s own change from " (str/join "," (sort shared)) "'s lines "
+                                "(BL-1830: never resolved by keeping either version whole)")})
+
+               ;; BL-1830: a path this ticket owns that an unlanded, non-
+               ;; blocking sibling ALSO owns (the co-owner is approved, or
+               ;; already cleared upstream) is never taken whole from the
+               ;; cited tip either - the whole-tip clause below did exactly
+               ;; that, and BL-1801's land shipped two of BL-1821's
+               ;; suite-manifest.tsv rows this way. Rebuilt instead, or
+               ;; refused by name when this ticket's own change cannot be
+               ;; separated from the sibling's lines.
+               ;;
+               ;; `(not (:any-untagged? attribution))`/`(not (:any-
+               ;; ambiguous? attribution))`, the same guards BL-1544 already
+               ;; takes one clause up: an untagged or ambiguous touch may be
+               ;; the landing ticket's OWN uncredited work, so the line-set
+               ;; walk this rebuild runs (strictly by commit-subject tag)
+               ;; cannot be trusted to separate "task-ticket-id's own
+               ;; change" from "content neither side positively owns" -
+               ;; BL-1544 (02)'s own fixture (an ambiguous commit introduces
+               ;; a line, then the landing ticket's OWN tagged commit edits
+               ;; it) escalated here wrongly before this guard, naming a
+               ;; line origin/main never had as "only the sibling's" when
+               ;; its true owner was never decided at all. BL-1830 D1: since
+               ;; the clause just above now catches every untagged/ambiguous
+               ;; case first, these two guards can never be false when this
+               ;; clause is reached - kept anyway as an explicit, redundant
+               ;; statement of the precondition, cheaper to read than to
+               ;; prove never-false from cond ordering alone.
+               ;;
+               ;; A co-owner CLOSED on origin/main is excluded from `shared`
+               ;; too (never from this clause's guard itself - a path with
+               ;; ONLY closed co-owners still falls through here to the
+               ;; ordinary keep logic, `shared` empty): BL-1546 already
+               ;; ruled a closed ticket's content rides as an ordinary
+               ;; passenger, since it will never separately land its own
+               ;; commit again under its own id (5dbd34f27f, 2026-09-12) -
+               ;; this ticket narrows what an OPEN sibling's lines may do,
+               ;; never what BL-1546 already settled for a closed one.
+               ;;
+               ;; Every path this guard turns away falls through to the
+               ;; ordinary keep logic below, exactly as before this ticket -
+               ;; unchanged for the cases BL-1544/BL-1546 already reasoned
+               ;; through.
+               (and (contains? (:owners attribution) task-ticket-id)
+                    (not (:any-untagged? attribution))
+                    (not (:any-ambiguous? attribution))
+                    (seq (remove #(closed-on-main? root origin-main %)
+                                 (filter unlanded-siblings (:owners attribution)))))
+               (let [shared (set (remove #(closed-on-main? root origin-main %)
+                                          (filter unlanded-siblings (:owners attribution))))
+                     rb (shared-own-path-rebuild root @ancestry shared path commit)]
+                 (cond
+                   (:ok rb)
+                   (recur (rest remaining) (conj acc path) excluded passengers content-clear
+                          (assoc rebuilt path {:lines (:lines rb) :excluded shared}))
+
+                   (:unreadable? rb)
+                   {:paths nil
+                    :warning (str "land-step: refusing to replay " task-ticket-id
+                                  " - " path "'s own content, or one of " (str/join "," (sort shared))
+                                  "'s own commits touching it, could not be read (BL-1830, "
+                                  "fails closed rather than taking the cited tip's whole blob)")}
+
+                   :else
+                   {:paths nil
+                    :warning (str "land-step: refusing to replay " task-ticket-id
+                                  " - " path " is shared with unlanded sibling(s) "
+                                  (str/join "," (sort shared))
+                                  ", and " task-ticket-id "'s own change to it does not apply "
+                                  "cleanly once " (str/join "," (sort shared)) "'s own lines are "
+                                  "reversed out (BL-1830: a three-way apply cannot separate the "
+                                  "two, never resolved by taking either version whole)")}))
 
                :else
                (recur (rest remaining) (conj acc path) excluded
-                      ;; Every approved unlanded co-owner of an INCLUDED path
-                      ;; rides. A path this ticket does not own is excluded
-                      ;; above and boards nobody.
+                      ;; Every approved unlanded co-owner of an INCLUDED
+                      ;; path rides - untagged, ambiguous or closed, the
+                      ;; cases the BL-1830 clause above turns away. A path
+                      ;; this ticket does not own is excluded above and
+                      ;; boards nobody.
                       (if (contains? (:owners attribution) task-ticket-id)
                         (into passengers (filter unlanded-siblings (:owners attribution)))
                         passengers)
-                      content-clear))))))
+                      content-clear rebuilt))))))
        {:paths nil :warning (str "land-step: could not read " task-ticket-id
                                   "'s own-range touched paths, " origin-main ".." commit)})
      {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)}))))
@@ -2181,20 +2457,32 @@
 ;; (Article 1.8) stays the human-observed final step. This only produces
 ;; the commit for QA to review and then land itself.
 
-(defn- write-tree-from-paths! [root cited-commit paths]
-  "Applies each path's content AT cited-commit onto the CURRENT index/
-   worktree - `git checkout <cited-commit> -- <path>` per path (also
-   handles deletions: a path task-tagged-changed-paths names but no longer
-   present at cited-commit is removed). Returns true on success."
-  (let [ok (atom true)]
-    (doseq [p paths]
-      (let [show (git! root "cat-file" "-e" (str cited-commit ":" p))]
-        (if (zero? (:exit show))
-          (let [res (git! root "checkout" cited-commit "--" p)]
-            (when-not (zero? (:exit res)) (reset! ok false)))
-          (let [res (git! root "rm" "-q" "--ignore-unmatch" "--" p)]
-            (when-not (zero? (:exit res)) (reset! ok false))))))
-    @ok))
+(defn- write-tree-from-paths!
+  "Applies each path's content onto the CURRENT index/worktree. A path in
+   `rebuilt` ({path [lines...]}, BL-1830) is written from those lines
+   directly and staged - the shared-own-path rebuild's own content, never
+   the cited tip's whole blob, which would carry an unlanded sibling's
+   lines too. Every other path is taken AT cited-commit as before -
+   `git checkout <cited-commit> -- <path>` (also handles deletions: a
+   path task-tagged-changed-paths names but no longer present at
+   cited-commit is removed). Returns true on success."
+  ([root cited-commit paths] (write-tree-from-paths! root cited-commit paths {}))
+  ([root cited-commit paths rebuilt]
+   (let [ok (atom true)]
+     (doseq [p paths]
+       (if-let [lines (get rebuilt p)]
+         (let [full (fs/file (str (fs/path root p)))]
+           (fs/create-dirs (fs/parent full))
+           (spit full (str (str/join "\n" lines) (when (seq lines) "\n")))
+           (let [res (git! root "add" "--" p)]
+             (when-not (zero? (:exit res)) (reset! ok false))))
+         (let [show (git! root "cat-file" "-e" (str cited-commit ":" p))]
+           (if (zero? (:exit show))
+             (let [res (git! root "checkout" cited-commit "--" p)]
+               (when-not (zero? (:exit res)) (reset! ok false)))
+             (let [res (git! root "rm" "-q" "--ignore-unmatch" "--" p)]
+               (when-not (zero? (:exit res)) (reset! ok false)))))))
+     @ok)))
 
 ;; ── BL-1604: a tip-pure replay never un-owns another open ticket's row ───
 ;; write-tree-from-paths! above takes each own-path WHOLE from the cited
@@ -2673,8 +2961,13 @@
    BL-1431: `:origin-main` is an optional key, the same threading contract
    as land-plan's - land_step_cli.bb passes the SAME sha it gave land-plan,
    so the worktree this builds is created off the exact tip own-paths was
-   decided against, not a tip main may have moved to since."
-  [{:keys [root commit task-ticket-id own-paths passengers tree-guards-fn stray-commits] :as opts}]
+   decided against, not a tip main may have moved to since.
+
+   BL-1830: `:rebuilt` (optional, {path {:lines [...] ...}}, own-paths'
+   own key) names every own-path whose content is written from `:lines`
+   rather than checked out from `commit` whole - a shared own path an
+   unlanded sibling also owns, rebuilt to exclude the sibling's lines."
+  [{:keys [root commit task-ticket-id own-paths passengers tree-guards-fn stray-commits rebuilt] :as opts}]
   (let [origin-main (if (contains? opts :origin-main) (:origin-main opts) (origin-main-sha root))
         common-dir (git-common-dir root)
         run-guards (or tree-guards-fn (fn [tree-root _] (run-replayed-tree-guards tree-root)))]
@@ -2811,7 +3104,8 @@
             (do (cleanup!)
                 (drop-branch!)
                 {:success false :reason @stray-failure})
-          (let [applied? (write-tree-from-paths! scratch commit own-paths)]
+          (let [applied? (write-tree-from-paths! scratch commit own-paths
+                                                  (into {} (map (fn [[p v]] [p (:lines v)])) rebuilt))]
             (if-not applied?
               (do (cleanup!)
                   (drop-branch!)
@@ -3183,7 +3477,7 @@
         ;; else not this ticket's own paths) can never be what gets
         ;; published just because it happened to be the tip asked about.
         (let [clean? (empty? entangled)
-              {:keys [paths warning passengers excluded content-clear]}
+              {:keys [paths warning passengers excluded content-clear rebuilt]}
               (own-paths root commit task-ticket-id unlanded nil nil
                          {:attribution (when attribution @attribution)
                           :stray-paths stray-paths
@@ -3224,7 +3518,8 @@
             (let [replay-result (replay! {:root root :commit commit :task-ticket-id task-ticket-id
                                            :own-paths paths :passengers (or passengers #{})
                                            :origin-main origin-main
-                                           :stray-commits strays-to-cherry-pick})]
+                                           :stray-commits strays-to-cherry-pick
+                                           :rebuilt (or rebuilt {})})]
               (if-not (:success replay-result)
                 {:action :escalate :reason (:reason replay-result) :unlanded unlanded}
                 (let [parcel-paths (parcel-commit-paths root task-ticket-id origin-main commit)]
@@ -3240,12 +3535,15 @@
                     ;; replay's copy diverge from the cited tip's (adding
                     ;; back rows the tip legitimately never carried, another
                     ;; open ticket's own), the sanctioned exception this
-                    ;; ticket exists to create. Every other own-path keeps
-                    ;; the full byte-for-byte check unchanged.
-                    (let [registry-paths (set (map :path registry-specs))
+                    ;; ticket exists to create. BL-1830: every `rebuilt`
+                    ;; path is exempt for the same reason - it deliberately
+                    ;; diverges from the cited tip to drop an unlanded
+                    ;; sibling's lines. Every other own-path keeps the full
+                    ;; byte-for-byte check unchanged.
+                    (let [completeness-exempt-paths (into (set (map :path registry-specs)) (keys rebuilt))
                           offenders (replay-completeness-offenders
                                      root commit (:commit replay-result)
-                                     (remove registry-paths parcel-paths))]
+                                     (remove completeness-exempt-paths parcel-paths))]
                       (if (seq offenders)
                         (do (git! root "branch" "-q" "-D" (:branch replay-result))
                             {:action :escalate
@@ -3273,6 +3571,7 @@
                            :landed-paths (or landed-paths {})
                            :excluded (or excluded [])
                            :content-clear (or content-clear [])
+                           :rebuilt (or rebuilt {})
                            :own-paths paths :passengers (or passengers #{})
                            :commit (:commit replay-result) :branch (:branch replay-result)
                            :restored-registry-rows (:restored-registry-rows replay-result)

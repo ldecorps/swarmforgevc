@@ -218,59 +218,72 @@ test('BL-1375/BL-654 invariant 1: a sibling that is not positively approved stil
 }, propertyLaneTimeoutMs(20000));
 
 test('BL-1375/BL-654 invariant 2: a passenger rides only through a self-consistent replayed tree', () => {
+  // BL-1830 supersedes this invariant's OWN fixture (measured 2026-09-30,
+  // docs/reference/BL-1830-*.md): SHARED_PATH is a path BOTH the landing
+  // ticket and the sibling own, so it is now REBUILT (the sibling's own
+  // require() line reverse-applied out of the reviewed tip), never carried
+  // as a passenger whose target existing on main is what this invariant's
+  // dangling/resolved split originally gated - the dangling reference this
+  // fixture builds never reaches the replayed tree at all now, on EITHER
+  // branch below, so the land always replays. The underlying contract this
+  // invariant names - replay! runs the tree guards before publish when a
+  // passenger's lines actually ride - is still real, and is still pinned
+  // directly (with :passengers supplied by hand, since own-paths no longer
+  // produces one for this shape) by land_step_lib_test_runner.bb's own
+  // BL-1375/06 and BL-1375/07 tests.
   const approved = APPROVAL_SHAPES.find((s) => s.name === 'approved');
-  const reach = { dangling: 0, resolved: 0 };
+  const reach = { withoutHandlerOnMain: 0, withHandlerOnMain: 0 };
   const CONSISTENCY_CELL_RUNS = runsPerCell(2 * 2, 2);
 
-  for (const consistent of [false, true]) {
+  for (const handlerOnMain of [false, true]) {
     fc.assert(
       fc.property(extraPathArb, (extraPath) => {
         const root = buildFixture(approved, extraPath);
         try {
-          // The passenger's registry line reaches for its handler file, which
-          // is the sibling's OWN path and therefore excluded from the replay.
-          // Putting it on main is the only thing that makes the replayed tree
-          // self-consistent - which is exactly the question the rider asks.
-          if (consistent) putOnMain(root, SIBLING_HANDLER, 'module.exports = { registerSteps() {} };\n');
+          // Whether the sibling's own handler file is on main no longer
+          // changes the outcome (BL-1830): its require() line is excluded
+          // from the rebuilt path either way, so this is exercised on both
+          // branches purely to prove that irrelevance rather than assume it.
+          if (handlerOnMain) putOnMain(root, SIBLING_HANDLER, 'module.exports = { registerSteps() {} };\n');
 
-          // BL-1465: since BL-1447, land-plan builds the tip-pure commit and
-          // runs the tree guards itself before ever returning - the property
-          // now reads the refusal (or the pass) from the SAME decision point,
-          // never re-running replay! on a plan that already decided.
           const citedTip = head(root);
           const plan = landPlan(root);
+          reach[handlerOnMain ? 'withHandlerOnMain' : 'withoutHandlerOnMain'] += 1;
 
-          if (consistent) {
-            reach.resolved += 1;
-            assert.equal(plan.action, 'replay', `a self-consistent replayed tree was refused: ${JSON.stringify(plan)}`);
-            const passengers = plan.passengers || [];
-            assert.ok(passengers.includes(SIBLING), `no passenger rode, so this run proves nothing about the guard`);
-            // Independently verify the built tip actually passes the guard -
-            // never trust land-plan's own internal claim alone (the same
-            // guard run-replayed-tree-guards calls, land_step_lib.bb ~1169).
-            // Checked out IN root (replay!'s own scratch worktree is already
-            // gone by the time land-plan returns), so root must be back on
-            // its original tip before the branch can be dropped.
-            git(root, 'checkout', '-q', plan.branch);
-            const guard = spawnSync('bash', [CHECK_FEATURE_HANDLER_REGISTRATION, root, '--assume-main'], { encoding: 'utf8' });
-            assert.equal(guard.status, 0, `the built tip failed its own guard: ${guard.stdout}${guard.stderr}`);
-            git(root, 'checkout', '-q', citedTip);
-            git(root, 'branch', '-q', '-D', plan.branch);
-          } else {
-            reach.dangling += 1;
-            assert.equal(plan.action, 'escalate', `an inconsistent replayed tree was published: ${JSON.stringify(plan)}`);
-            assert.ok(plan.reason.includes(SIBLING), `the refusal does not name the passenger: ${plan.reason}`);
-            assert.ok(
-              Array.isArray(plan.unlanded) && plan.unlanded.includes(SIBLING),
-              `plan.unlanded does not name the passenger: ${JSON.stringify(plan)}`,
-            );
-            // Nothing is left behind for anyone to land by accident.
-            assert.equal(
-              git(root, 'worktree', 'list').trim().split('\n').length,
-              1,
-              'a scratch worktree survived the refusal',
-            );
-          }
+          assert.equal(plan.action, 'replay', `the shared registry path was not rebuilt cleanly: ${JSON.stringify(plan)}`);
+          assert.deepEqual(
+            plan.passengers || [],
+            [],
+            `${SIBLING} rode as a passenger, never a rebuild exclusion (BL-1830): ${JSON.stringify(plan)}`,
+          );
+          const rebuilt = (plan.rebuilt || {})[SHARED_PATH];
+          assert.ok(rebuilt, `${SHARED_PATH} was not reported as rebuilt: ${JSON.stringify(plan)}`);
+          assert.ok(
+            (rebuilt.excluded || []).includes(SIBLING),
+            `${SIBLING} is not credited as excluded on the rebuilt path: ${JSON.stringify(plan)}`,
+          );
+          assert.ok(
+            !(rebuilt.lines || []).some((l) => l.includes(SIBLING_LINE)),
+            `the sibling's dangling require() line reached the rebuilt tree: ${JSON.stringify(rebuilt)}`,
+          );
+
+          // Independently verify the built tip actually passes the guard -
+          // never trust land-plan's own internal claim alone (the same
+          // guard run-replayed-tree-guards calls, land_step_lib.bb ~1169).
+          // Checked out IN root (replay!'s own scratch worktree is already
+          // gone by the time land-plan returns), so root must be back on
+          // its original tip before the branch can be dropped.
+          git(root, 'checkout', '-q', plan.branch);
+          const guard = spawnSync('bash', [CHECK_FEATURE_HANDLER_REGISTRATION, root, '--assume-main'], { encoding: 'utf8' });
+          assert.equal(guard.status, 0, `the built tip failed its own guard: ${guard.stdout}${guard.stderr}`);
+          git(root, 'checkout', '-q', citedTip);
+          git(root, 'branch', '-q', '-D', plan.branch);
+
+          assert.equal(
+            git(root, 'worktree', 'list').trim().split('\n').length,
+            1,
+            'a scratch worktree survived a successful replay',
+          );
           return true;
         } finally {
           fs.rmSync(root, { recursive: true, force: true });
@@ -280,7 +293,7 @@ test('BL-1375/BL-654 invariant 2: a passenger rides only through a self-consiste
     );
   }
 
-  assertReachFloor(reach, ['dangling', 'resolved'], CONSISTENCY_CELL_RUNS, 'passenger consistency');
+  assertReachFloor(reach, ['withoutHandlerOnMain', 'withHandlerOnMain'], CONSISTENCY_CELL_RUNS, 'passenger consistency');
 }, propertyLaneTimeoutMs(20000));
 
 test('BL-1375/BL-654 invariant 3: the replay never reaches outside what the tip actually delivers', () => {

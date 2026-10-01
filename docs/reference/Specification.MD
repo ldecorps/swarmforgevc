@@ -35,6 +35,42 @@ change, the same treatment the diagram already gives BL-1425's queue-jump
 mode note.)
 Prior entry —
 
+**Last Updated:** September 30, 2026 (BL-1830: a land's tip-pure replay no
+longer takes a path both the landing ticket and an unlanded, non-blocking
+sibling own WHOLE from the cited tip. When every excluded sibling's own
+commits on that path are cleanly tagged and separable, `own-paths`
+rebuilds the path instead, reverse-applying each excluded sibling's own
+non-merge commits for that path out of the reviewed tip via a real patch
+(`patch -R --fuzz=3`), so none of the sibling's genuinely new lines reach
+`origin/main` under the landing ticket's own approval, and
+`land_step_cli.bb` prints one `SHARED_OWN_PATH_REBUILT <path>
+<ticket-id>` line per rebuilt path — never a `PASSENGER_SIBLING` line for
+that path. When any commit touching the shared path in the land's range
+carries no ticket id — QA's own untagged restore commits are the routine
+case — the land cannot tell the landing ticket's own change from the
+sibling's, so it refuses the whole replay by name instead of guessing or
+falling through to the old whole-tip-plus-passenger behaviour, publishing
+nothing for that ticket (the same BL-1332 posture, narrowed to the line
+rather than the whole path). BL-1801's real land (`e1cb2615de`) is the
+untagged case, not the rebuilt one: the range it landed from,
+`5e754399e4..d1db3d0659`, carries QA's own untagged `5dfbca55d1 Restore
+bounced-ticket paths to origin/main after re-point.` on
+`swarmforge/scripts/test/suite-manifest.tsv`, so replaying it against the
+fixed code now refuses BL-1801 by name instead of repeating the original
+leak (two of BL-1821's rows riding as a passenger — QA note 003539,
+hand-dropped in `a86fd40c17`); proven live by replaying that exact
+fixture, not only asserted. BL-1717's own "shared path" scenario and
+BL-1375's invariant-2 property test's shared step-registry fixture are
+both superseded to match. Nothing about entangled-sibling detection,
+approval-state gating, or a path owned by only one side changes.
+Acceptance:
+`specs/features/BL-1830-a-land-never-publishes-a-siblings-lines-in-a-shared-own-path.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+("A shared own path is rebuilt to exclude an unlanded sibling's lines,
+not carried whole (BL-1830)" section). No new extension command or
+setting; no diagram edit — this is swarm-internal land-step tooling.)
+Prior entry —
+
 **Last Updated:** September 27, 2026 (BL-1655: a reclaimed claim now stays
 with the seat that held it. The relaunch orphan-claim sweep
 (`orphan_claim_sweep_lib.bb`'s `reclaim-file!`) re-delivers a dead

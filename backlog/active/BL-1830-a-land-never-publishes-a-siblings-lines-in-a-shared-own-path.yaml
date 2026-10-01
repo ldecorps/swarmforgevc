@@ -132,3 +132,21 @@ notes: |
   passenger). Pending, with ruling_options.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-30, by: QA, blamed: coder, class: behavior, commit: 0859945f13, evidence: backlog/evidence/BL-1830-QA-20260930.md }
+  - { at: 2026-09-30, by: QA, blamed: coder, class: unit, commit: 377e7494a3, evidence: backlog/evidence/BL-1830-QA-20260930-2.md }
+# 2026-10-01 (documenter): pre_qa_gate flagged 96cbf866aa/377e7494a3/
+# 04aa55618d as stranded on swarmforge-QA - QA's own round-2 bounce-record
+# polish commits (bounce_history edit + evidence "(detail)" append), made
+# on QA's branch after coder's merge point (de3fd55f89/da492acccb) had
+# already been cut. Content already reached this branch by an equivalent
+# route: this ticket's own bounce_history above (rows identical to
+# 96cbf866aa's diff) and backlog/evidence/BL-1830-QA-20260930-2.md (a
+# strict superset of 04aa55618d's content, carrying 377e7494a3's later
+# "## Detail" append too, via cef2e22948's own merge lineage). No content
+# is missing; only the exact commit hashes differ.
+abandoned_commits:
+  - 96cbf866aa
+  - 377e7494a3
+  - 04aa55618d

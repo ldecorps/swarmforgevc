@@ -1755,15 +1755,25 @@ RESOLVED BY THIS TICKET
            "BL-9002: the unlanded sibling adds its handler to the same file")
   (:out (sh! root "git" "rev-parse" "HEAD")))
 
+;; BL-1830 supersedes this scenario's own former assertion that the
+;; approved sibling's line "rides as a passenger": it no longer does - the
+;; shared path is REBUILT from origin/main plus only BL-9001's own line
+;; changes, excluding BL-9002's "// sibling line" outright (never a
+;; passenger, since nothing of BL-9002's actually reaches the replayed
+;; tree). See land_step_lib.bb's own-paths docstring, BL-1830 paragraph.
 (with-fixture [root]
   (let [commit (shared-path-fixture! root "active" "human_approval: approved\n")
-        {:keys [paths warning passengers]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
-    (assert= "BL-1375/01: an approved sibling no longer blocks the shared path"
+        {:keys [paths warning passengers rebuilt]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1375/01 (BL-1830): an approved sibling no longer blocks the shared path"
              nil warning)
-    (assert-true "BL-1375/01: and the shared path is replayed"
+    (assert-true "BL-1375/01 (BL-1830): and the shared path is replayed"
                  (contains? (set paths) "specs/pipeline/steps/index.js"))
-    (assert= "BL-1375/01: the approved sibling is named as a passenger"
-             #{"BL-9002"} passengers)))
+    (assert= "BL-1830: the approved sibling no longer rides as a passenger - its line is excluded"
+             #{} passengers)
+    (assert= "BL-1830: the shared path is rebuilt, naming the excluded sibling"
+             #{"BL-9002"} (get-in rebuilt ["specs/pipeline/steps/index.js" :excluded]))
+    (assert= "BL-1830: the rebuilt content carries BL-9001's own line and never BL-9002's"
+             ["// base"] (get-in rebuilt ["specs/pipeline/steps/index.js" :lines]))))
 
 (with-fixture [root]
   (let [commit (shared-path-fixture! root "active" "human_approval: pending\n")
@@ -1805,18 +1815,30 @@ RESOLVED BY THIS TICKET
     (assert= "BL-1375: one blocking co-owner among approved ones still refuses" nil paths)
     (assert-includes "BL-1375: and the refusal names the blocking sibling" warning "BL-9003")))
 
-;; ── land-plan carries the passengers forward ──────────────────────────────
+;; ── land-plan carries the rebuild forward (BL-1830 supersedes the former
+;;    "passengers" assertion here - see BL-1375/01 above) ──────────────────
 
 (with-fixture [root]
   (let [commit (shared-path-fixture! root "active" "human_approval: approved\n")
         plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
     (assert= "BL-1375: an all-approved shared path plans a replay, not an escalation"
              :replay (:action plan))
-    (assert= "BL-1375: and the plan names the passengers riding on it"
-             #{"BL-9002"} (:passengers plan))))
+    (assert= "BL-1830: nothing rides as a passenger - the sibling's line is excluded, not carried"
+             #{} (:passengers plan))
+    (assert= "BL-1830: the plan names the rebuilt path and the excluded sibling"
+             #{"BL-9002"} (get-in plan [:rebuilt "specs/pipeline/steps/index.js" :excluded]))
+    (sh! root "git" "branch" "-q" "-D" (:branch plan))))
 
 ;; ── the rider: the replayed tree is guarded before publish ────────────────
 
+;; BL-1830: a genuinely new sibling line no longer reaches :passengers at
+;; all (shared-path-fixture!'s own BL-9002 line is now excluded via
+;; rebuild - BL-1375/01 above) - land-plan's own :passengers for this
+;; fixture is now #{}. replay!'s OWN contract ("run the tree guards only
+;; when a passenger's lines actually ride") is still real and still worth
+;; pinning directly, independent of whether any caller's :own-paths walk
+;; produces such a set today - the two tests below supply :passengers
+;; by hand rather than reading it off `plan`.
 (with-fixture [root]
   ;; A replayed tree that leaves a feature file with no registered handler.
   ;; The guard refuses, so the land refuses, naming the passenger (BL-1324).
@@ -1831,7 +1853,7 @@ RESOLVED BY THIS TICKET
         result (land-step-lib/replay! {:root root :commit commit
                                        :task-ticket-id "BL-9001"
                                        :own-paths (:own-paths plan)
-                                       :passengers (:passengers plan)
+                                       :passengers #{"BL-9002"}
                                        :tree-guards-fn (fn [_ _] ["registration guard: no handler for x.feature"])})]
     (assert= "BL-1375/06: a failing tree guard refuses the land" false (:success result))
     (assert-includes "BL-1375/06: and the refusal names the passenger" (:reason result) "BL-9002")
@@ -1845,7 +1867,7 @@ RESOLVED BY THIS TICKET
         result (land-step-lib/replay! {:root root :commit commit
                                        :task-ticket-id "BL-9001"
                                        :own-paths (:own-paths plan)
-                                       :passengers (:passengers plan)
+                                       :passengers #{"BL-9002"}
                                        :tree-guards-fn (fn [_ _] [])})]
     (assert-true "BL-1375/07: a passing tree guard lets the passenger ride" (:success result))
     (sh! root "git" "branch" "-q" "-D" (:branch result))))
@@ -4408,10 +4430,13 @@ RESOLVED BY THIS TICKET
              "id: BL-9002\nstatus: todo\nhuman_approval: approved\n"
              "BL-9002: the sibling's ticket")
     (commit! root "BL-9003-own.txt" "own\n" "BL-9003: the landing ticket's own file")
-    ;; BL-9003 ALSO touches the shared path this time - the passenger shape
-    ;; (BL-1375/BL-1332): once a real co-owner of the SAME task-ticket-id,
-    ;; own-paths includes it and credits BL-9002 as a passenger, never
-    ;; silently.
+    ;; BL-9003 ALSO touches the shared path this time - once a real
+    ;; co-owner of the SAME task-ticket-id, own-paths includes it. BL-1830
+    ;; supersedes what used to happen next: BL-9002's own line no longer
+    ;; rides as a passenger (BL-1375/BL-1332's old shape) - the path is
+    ;; instead REBUILT from origin/main plus only BL-9003's own line
+    ;; change, excluding BL-9002's "U line" outright, and BL-9002 is named
+    ;; in :rebuilt rather than :passengers.
     (commit! root "shared.md" "L line\nU line\nA line\n" "BL-9003: also touch the shared path")
     (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
       (sh! root "git" "checkout" "-q" "-b" "landing" base)
@@ -4419,10 +4444,197 @@ RESOLVED BY THIS TICKET
       (mark-origin-main-here! root)
       (sh! root "git" "checkout" "-q" "main")
       (let [result (land-step-lib/own-paths root tip "BL-9003")]
-        (assert= "BL-1717: the shared path rides when the landing ticket also touches it, crediting the unlanded co-owner as a passenger"
+        (assert= "BL-1717: the shared path rides when the landing ticket also touches it, rebuilt to exclude the unlanded co-owner"
                  #{"BL-9003-own.txt" "shared.md"} (set (:paths result)))
-        (assert= "BL-1717: BL-9002 rides as a named passenger, never silently"
-                 #{"BL-9002"} (:passengers result))))))
+        (assert= "BL-1830: BL-9002 no longer rides as a passenger - its line is excluded, not carried"
+                 #{} (:passengers result))
+        (assert= "BL-1830: BL-9002 is named as the excluded sibling on the rebuilt path"
+                 #{"BL-9002"} (get-in result [:rebuilt "shared.md" :excluded]))
+        (assert= "BL-1830: the rebuilt content carries BL-9001's landed line and BL-9003's own line, never BL-9002's"
+                 ["L line" "A line"] (get-in result [:rebuilt "shared.md" :lines]))))))
+
+;; ── BL-1830: a land never publishes a sibling's lines in a shared own path ──
+;; BL-1801's real incident (backlog/evidence/BL-1801-QA note 003539): two
+;; open tickets each add a row to the same TSV manifest. The landing
+;; ticket's own land shipped BOTH rows - its own, and the unlanded
+;; sibling's - because own-paths (pre-BL-1830) took the whole cited blob
+;; for a shared own path once the co-owner was merely approved, never
+;; blocking. QA had to drop the sibling's rows by hand three minutes
+;; later (a86fd40c17). The fix: a shared own path is rebuilt from
+;; origin/main plus only the landing ticket's own line changes, never the
+;; cited tip's whole blob.
+
+(def ^:private bl1830-manifest "swarmforge/scripts/test/suite-manifest.tsv")
+
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root bl1830-manifest "existing_test.sh\tstanding\n" "seed the manifest")
+  (mark-origin-main-here! root)
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\n"
+           "BL-9001: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_bl9002.sh\tstanding\n"
+           "BL-9002: add its own test to the manifest")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1830: no refusal for a cleanly-separable shared manifest row" nil (:warning result))
+    (assert-true "BL-1830: the shared manifest path is replayed"
+                 (contains? (set (:paths result)) bl1830-manifest))
+    (assert= "BL-1830: nothing rides as a passenger - the sibling's row is excluded, not carried"
+             #{} (:passengers result))
+    (assert= "BL-1830: the sibling is named as excluded on the rebuilt path"
+             #{"BL-9002"} (get-in result [:rebuilt bl1830-manifest :excluded]))
+    (let [lines (get-in result [:rebuilt bl1830-manifest :lines])]
+      (assert-true "BL-1830: the rebuilt manifest keeps the pre-existing row"
+                   (boolean (some #{"existing_test.sh\tstanding"} lines)))
+      (assert-true "BL-1830: the rebuilt manifest carries BL-9001's own row"
+                   (boolean (some #{"test_bl9001.sh\tstanding"} lines)))
+      (assert-false "BL-1830: the rebuilt manifest never carries BL-9002's row"
+                    (boolean (some #{"test_bl9002.sh\tstanding"} lines))))))
+
+;; An own change that only applies on top of a line the sibling introduced
+;; (BL-9001 correcting BL-9002's own row) cannot be separated by a
+;; three-way apply - the land refuses by name rather than silently taking
+;; either ticket's version of the row whole.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root bl1830-manifest "existing_test.sh\tstanding\n" "seed the manifest")
+  (mark-origin-main-here! root)
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9002.sh\tstanding\n"
+           "BL-9002: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9002.sh\tstanding\t\n"
+           "BL-9001: correct the sibling's row's trailing tabs")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1830: an own change that only applies on top of the sibling's line refuses"
+             nil (:paths result))
+    (assert-includes "BL-1830: naming the shared path" (:warning result) bl1830-manifest)
+    (assert-includes "BL-1830: naming the sibling" (:warning result) "BL-9002")))
+
+;; BL-1830 D1 (QA bounce 2026-09-30, backlog/evidence/BL-1830-QA-20260930.md):
+;; BL-1801's real land shared suite-manifest.tsv with unlanded BL-1821 - both
+;; owning tickets' own commits were cleanly tagged, but a THIRD, UNTAGGED
+;; commit also touched the manifest (QA's own routine housekeeping,
+;; 'Restore bounced-ticket paths to origin/main after re-point.', which
+;; QA.prompt requires carry no ticket id). Every fixture above this point is
+;; tagged-only, so none of them could have shown the bug: with an untagged
+;; touch present, own-paths (pre-D1-fix) skipped the BL-1830 rebuild clause
+;; (its own `(not any-untagged?)` guard) and fell all the way through to the
+;; ordinary keep-whole-tip logic, shipping BL-9002's row as a silent
+;; passenger - the exact leak QA found live. The fix refuses by name instead.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root bl1830-manifest "existing_test.sh\tstanding\n" "seed the manifest")
+  (mark-origin-main-here! root)
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\n"
+           "BL-9001: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_bl9002.sh\tstanding\n"
+           "BL-9002: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_bl9002.sh\tstanding\ntest_untracked_by_anyone.sh\tstanding\n"
+           "Restore bounced-ticket paths to origin/main after re-point.")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1830 D1: an untagged touch on a shared own path refuses, never a silent passenger"
+             nil (:paths result))
+    (assert-includes "BL-1830 D1: the refusal names the shared path" (:warning result) bl1830-manifest)
+    (assert-includes "BL-1830 D1: the refusal names the sibling" (:warning result) "BL-9002")
+    (assert-false "BL-1830 D1: the sibling never rides as a passenger instead"
+                  (contains? (or (:passengers result) #{}) "BL-9002"))))
+
+;; BL-1830 D1's own guard (hardener pass, 2026-09-30): a sibling already
+;; CLOSED on origin/main by the time own-paths runs - origin/main shows
+;; BL-9002 done, but the branch still carries BL-9002's own tagged commit
+;; in the replay range (e.g. cherry-picked before BL-9002 separately
+;; landed) plus an untagged touch - is excluded from the refusal exactly
+;; as BL-1546 already excludes it from the older rebuild clause
+;; (BL-1375/01 above). Confirmed non-vacuous: removing the
+;; `(remove #(closed-on-main? ...) ...)` filter from D1's own guard
+;; (leaving the `shared` binding used in the message untouched) turns
+;; this test's `:warning` from nil to an escalation naming BL-9002 - no
+;; other fixture in the suite, the acceptance feature or the property
+;; file supplies both an untagged commit AND a sibling closed on
+;; origin/main.
+(with-fixture [root]
+  (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n"
+           "BL-9002: filed as done on origin/main")
+  (commit! root bl1830-manifest "existing_test.sh\tstanding\n" "seed the manifest")
+  (mark-origin-main-here! root)
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9002.sh\tstanding\n"
+           "BL-9002: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9002.sh\tstanding\ntest_bl9001.sh\tstanding\n"
+           "BL-9001: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9002.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_untracked_by_anyone.sh\tstanding\n"
+           "Restore bounced-ticket paths to origin/main after re-point.")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1830 D1: a sibling already closed on origin/main is excluded from the refusal guard, even with its own commit present and an untagged touch too"
+             nil (:warning result))
+    (assert-true "BL-1830 D1: the shared path still lands - the closed sibling's own line already sits on origin/main"
+                 (contains? (set (:paths result)) bl1830-manifest))))
+
+;; replay!'s own writer: a :rebuilt path is written from its own lines,
+;; never checked out from the cited commit (which may not even carry that
+;; path at all, as here).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "own/only.txt" "a\n" "BL-9001: the landing ticket's own path")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/replay! {:root root :commit commit
+                                       :task-ticket-id "BL-9001"
+                                       :own-paths ["own/only.txt" "shared.tsv"]
+                                       :rebuilt {"shared.tsv" {:lines ["row-a" "row-b"]}}
+                                       :passengers #{}
+                                       :tree-guards-fn (fn [_ _] [])})]
+    (assert-true "BL-1830: replay! succeeds with a rebuilt path" (:success result))
+    (assert= "BL-1830: the rebuilt path's committed content is written from :rebuilt, never checked out from the cited commit"
+             "row-a\nrow-b"
+             (:out (sh! root "git" "show" (str (:commit result) ":shared.tsv"))))
+    (sh! root "git" "branch" "-q" "-D" (:branch result))))
+
+;; End to end through land-plan: BL-1801's own incident, replayed and
+;; landed, never escalated as "replay-incomplete" by the byte-identity
+;; completeness check (BL-1447) - :rebuilt paths are exempt from it for
+;; the same reason the two registry files already are (BL-1604): they
+;; deliberately diverge from the cited tip on purpose.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root bl1830-manifest "existing_test.sh\tstanding\n" "seed the manifest")
+  (mark-origin-main-here! root)
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\n"
+           "BL-9001: add its own test to the manifest")
+  (commit! root bl1830-manifest
+           "existing_test.sh\tstanding\ntest_bl9001.sh\tstanding\ntest_bl9002.sh\tstanding\n"
+           "BL-9002: add its own test to the manifest")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+    (assert= "BL-1830: land-plan replays a clean, cleanly-separable shared manifest row, never an escalation"
+             :replay (:action plan))
+    (assert= "BL-1830: nothing rides as a passenger" #{} (:passengers plan))
+    (assert= "BL-1830: the sibling is named on the rebuilt manifest path"
+             #{"BL-9002"} (get-in plan [:rebuilt bl1830-manifest :excluded]))
+    (let [published (:out (sh! root "git" "show" (str (:commit plan) ":" bl1830-manifest)))]
+      (assert-true "BL-1830: the LANDED manifest keeps the pre-existing row"
+                   (str/includes? published "existing_test.sh"))
+      (assert-true "BL-1830: the LANDED manifest carries BL-9001's own row"
+                   (str/includes? published "test_bl9001.sh"))
+      (assert-false "BL-1830: the LANDED manifest never carries BL-9002's row (BL-1801's own incident)"
+                    (str/includes? published "test_bl9002.sh")))
+    (sh! root "git" "branch" "-q" "-D" (:branch plan))))
 
 ;; ── BL-1806: *commit-meta* preload is consulted BEFORE live git ──────────
 ;; land-plan's batched git-log feeds commit-subject and merge-commit? from

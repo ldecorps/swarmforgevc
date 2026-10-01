@@ -46,11 +46,6 @@ function registerSteps(registry) {
     }
   );
 
-  // ── Given (scenario 02) ────────────────────────────────────────────────
-  scoped(/^A's own commit also changed P$/, (ctx) => {
-    ctx.bl1717.shape = 'shared';
-  });
-
   // ── When ────────────────────────────────────────────────────────────────
   scoped(/^the land step plans A's land$/, (ctx) => {
     ctx.bl1717.report = runFixture(ctx.bl1717.shape);
@@ -74,24 +69,6 @@ function registerSteps(registry) {
     assert.ok(
       report.excluded.some(([excludedPath, owner]) => excludedPath === P && owner === U),
       `no EXCLUDED_SIBLING_PATH line names ${P} and ${U}: ${JSON.stringify(report.excluded)}`
-    );
-  });
-
-  scoped(/^the built commit's diff against origin\/main names P and Q$/, (ctx) => {
-    const { report } = ctx.bl1717;
-    for (const p of [P, Q]) {
-      assert.ok(
-        report.replayPaths.includes(p),
-        `expected ${p} in the replay: ${JSON.stringify(report.replayPaths)}`
-      );
-    }
-  });
-
-  scoped(/^the report names U as a passenger$/, (ctx) => {
-    const { report } = ctx.bl1717;
-    assert.ok(
-      report.passengers.includes(U),
-      `${U} did not ride as a passenger: ${JSON.stringify(report.lines)}`
     );
   });
 }

@@ -10,6 +10,13 @@ Feature: BL-1717 A landed co-owner never shields an unlanded sibling's lines
   not count against excluding that path, and that an unlanded sibling's
   lines never ride unreported.
 
+  BL-1830 takes out this feature's scenario 02 (retired, never reworded -
+  BL-1006): it asserted a shared own path rode whole with the unlanded
+  sibling named as a passenger, the exact behaviour BL-1830's rebuild fix
+  removes. Its one unique assertion, the report naming the rebuilt path,
+  is now BL-1830's own scenario 01 And step. Scenario 01 here, about a path
+  the landing ticket never touched, is unaffected and unchanged.
+
   Background:
     Given a fixture origin where landed ticket L and unlanded approved ticket U both changed path P, and landing ticket A changed its own path Q
 
@@ -18,10 +25,3 @@ Feature: BL-1717 A landed co-owner never shields an unlanded sibling's lines
     When the land step plans A's land
     Then the built commit's diff against origin/main names Q and not P
     And the report names P as excluded, credited to U
-
-  # BL-1717 a-shared-path-names-the-unlanded-passenger-02
-  Scenario: when A also changed P, U's lines ride only as a named passenger
-    Given A's own commit also changed P
-    When the land step plans A's land
-    Then the built commit's diff against origin/main names P and Q
-    And the report names U as a passenger

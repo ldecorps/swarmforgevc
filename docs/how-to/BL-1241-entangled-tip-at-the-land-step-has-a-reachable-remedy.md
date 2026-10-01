@@ -1695,3 +1695,103 @@ matters once that bound has already slipped.
 
 Acceptance:
 `specs/features/BL-1806-a-land-plan-over-a-fat-qa-tip-finishes-fast.feature`.
+
+## A shared own path is rebuilt to exclude an unlanded sibling's lines, not carried whole (BL-1830)
+
+BL-1717 (above) stopped a landed co-owner from shielding an unlanded
+sibling's lines on a path the landing ticket never touched. It left the
+mirror case out of scope: a path the landing ticket DOES own, that an
+unlanded, non-blocking sibling (approved, or otherwise cleared to ride —
+BL-1375/BL-1481) also touches. `own-paths` still took such a path WHOLE
+from the cited tip, printing `PASSENGER_SIBLING` — correct when the
+sibling's own lines are meant to ride, wrong when they are not. Live on
+BL-1801's land (`e1cb2615de`): the replay carried two of BL-1821's rows
+into `swarmforge/scripts/test/suite-manifest.tsv` alongside BL-1801's own
+two, naming test files still absent from `origin/main` (QA note 003539);
+QA dropped the two rows by hand three minutes later (`a86fd40c17`).
+
+`own-paths` now rebuilds such a shared own path instead of taking it
+whole (`shared-own-path-rebuild`, `land_step_lib.bb`): starting from the
+REVIEWED TIP's own content for the path, it reverse-applies each excluded
+sibling's own non-merge commits touching that path, most recent first, via
+a real unified-diff patch (`git show --unified=3` reversed with `patch -R
+--fuzz=3`) — never a flattened added/removed line-SET reconstruction,
+which an earlier version of this fix tried first and which silently
+misplaced the landing ticket's own addition relative to unrelated
+structure (a file's closing bracket, on BL-1375's own step-registry
+fixture). `--fuzz=3` matches the forward patch's own `--unified=3`
+context width; less fuzz refused a hunk whose trailing context routinely
+runs past EOF against a smaller pre-sibling file. `--batch` is
+deliberately never passed — it overrides `patch`'s default refusal on a
+context mismatch, which would silently duplicate a line at the wrong
+location instead of failing closed.
+
+A clean reversal replaces the path's replayed content with the rebuilt
+lines (never the sibling's), and `land_step_cli.bb` prints one
+`SHARED_OWN_PATH_REBUILT <path> <ticket-id>` line per rebuilt path, one
+line per named sibling — never a `PASSENGER_SIBLING` line for that path,
+since none of the sibling's lines actually ride. A reversal that does not
+apply cleanly (the landing ticket's own change is entangled with the
+sibling's line closely enough that a three-way apply cannot separate
+them) refuses the whole replay, naming the path and the sibling — the
+same BL-1332 posture (never silently take either ticket's version whole),
+narrowed here to the line rather than the whole path.
+
+The rebuild attempt itself never runs when any commit touching the shared
+path in the land's range carries no ticket id: an untagged commit's own
+lines on that path cannot be told apart from an excluded sibling's, so a
+tag-based reverse-apply cannot be trusted to leave the right lines behind.
+`own-paths` catches this case with a `cond` clause placed immediately
+before the rebuild attempt — refusing the whole replay by name (the path
+and every such sibling) rather than falling through to the old
+keep-whole-tip-plus-passenger branch at the bottom of the `cond`, which
+was the exact leak this ticket was minted for. This refusal is scoped to
+`:any-untagged?` alone, deliberately narrower than it reads on paper: an
+*ambiguous* touch (a commit subject naming more than one ticket id,
+leading with none — BL-1544) with no untagged touch alongside it is left
+to fall through to the ordinary keep-whole-tip-plus-passenger branch, same
+as before this ticket, not escalated and not rebuilt either (the rebuild
+clause's own guard also requires `(not :any-ambiguous?)`). An ambiguous
+touch could equally be the landing ticket's own uncredited work, so
+escalating it too would refuse the land on no real evidence of a leak —
+`land_step_lib_test_runner.bb`'s pre-existing "BL-1544 (02)" fixture (an
+ambiguous commit, then the landing ticket's own separate, cleanly-tagged
+commit on the same path) pins one shape of this; it is not the only one,
+since the guard reads `:any-ambiguous?` on the path as a whole, not on
+that one fixture's specific second-commit shape. Only a genuinely
+untagged touch — a commit whose subject names no ticket id at all —
+triggers the refusal; a co-owner already CLOSED on `origin/main` is
+excluded from the sibling set the refusal and the rebuild both check
+(BL-1546), so a path with only closed co-owners still falls through to
+the ordinary keep logic regardless of tagging.
+
+BL-1801's own land (`e1cb2615de`, the leak this ticket was minted for) is
+this escalation case, not the clean-rebuild case above: replaying its
+real range, `origin/main 5e754399e4` to its landed tip `d1db3d0659`, finds
+QA's own untagged `5dfbca55d1 Restore bounced-ticket paths to origin/main
+after re-point.` touching `swarmforge/scripts/test/suite-manifest.tsv` —
+QA's restore commits carry no ticket id by `QA.prompt`'s own rule, so this
+shape is routine on a QA tip, not a one-off. Replayed against the fixed
+code, `own-paths` now refuses BL-1801 by name
+(`swarmforge/scripts/test/suite-manifest.tsv` shared with unlanded
+BL-1815 and BL-1821, untagged commit in range) and publishes nothing for
+it, rather than repeating the original leak (BL-1821's two rows riding as
+a passenger, dropped by QA's own hand-fix `a86fd40c17`). A land whose
+shared-path commits are ALL cleanly tagged — the ordinary case this
+ticket's own acceptance feature and unit fixtures cover — still rebuilds
+as described above; BL-1801's history is simply not that shape.
+
+This is lazy: the ancestry walk `shared-own-path-rebuild` needs only runs
+once a shared own path is actually found, so an ordinary land (no
+unlanded sibling ever co-owns a path this ticket also owns) pays nothing
+extra. BL-1717's own "shared path" scenario, and BL-1375's invariant-2
+property test's shared step-registry fixture, are both superseded to
+match — each fixture's co-owner touches are cleanly tagged, so that path
+is now rebuilt rather than ridden whole as a passenger; an ambiguous- or
+untagged-touch shared path is unaffected by that particular supersession
+and follows the escalate/fall-through rules above instead. Nothing about
+entangled-sibling DETECTION, approval-state gating
+(BL-1375/BL-1481), or a path owned by only one side changes.
+
+Acceptance:
+`specs/features/BL-1830-a-land-never-publishes-a-siblings-lines-in-a-shared-own-path.feature`.

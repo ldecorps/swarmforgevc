@@ -19,7 +19,12 @@
 ;;
 ;; Prints one JSON line:
 ;;   {"exit":N,"lines":[...],"entangled":[...],"landed":[[id,path]],
-;;    "excluded":[[path,owner]],"passengers":[...],"replayPaths":[...]}
+;;    "excluded":[[path,owner]],"passengers":[...],"replayPaths":[...],
+;;    "rebuilt":[[path,sibling]]}
+;; BL-1830: the "shared" shape (A also changes P) no longer names U as a
+;; passenger - P is rebuilt from origin/main plus only A's own line
+;; changes, excluding U's line, and reported as one SHARED_OWN_PATH_REBUILT
+;; line per excluded sibling instead.
 
 (require '[babashka.fs :as fs]
          '[babashka.process :as process]
@@ -134,7 +139,8 @@
                    :landed (lines-of "LANDED_SIBLING" out)
                    :excluded (lines-of "EXCLUDED_SIBLING_PATH" out)
                    :passengers (mapv first (lines-of "PASSENGER_SIBLING" out))
-                   :replayPaths (or (replay-paths root out) [])})))
+                   :replayPaths (or (replay-paths root out) [])
+                   :rebuilt (lines-of "SHARED_OWN_PATH_REBUILT" out)})))
       (finally (fs/delete-tree work)))))
 
 (let [[shape] *command-line-args*]

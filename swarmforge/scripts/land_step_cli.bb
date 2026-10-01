@@ -41,6 +41,13 @@
 ;;   surviving lines already match origin/main under whatever sha put them
 ;;   there) or "reverted" (the sibling's own contribution to this path is
 ;;   entirely gone at the tip, so the path owes it nothing).
+;;   BL-1830: also one "SHARED_OWN_PATH_REBUILT <path> <ticket-id>" line
+;;   per shared path (one line per named sibling) rebuilt from origin/main
+;;   plus only this ticket's own line changes - never a PASSENGER_SIBLING
+;;   line, since no line of the named sibling's actually rides on that
+;;   path. A path where the landing ticket's own change cannot be
+;;   separated from the sibling's lines this way escalates below instead,
+;;   naming the path and the sibling.
 ;; Exit 1, prints "LAND_ESCALATE" then the reason on the next line: the
 ;;   detection or replay itself could not be completed cleanly (a real
 ;;   conflict, an unreadable range). Per QA.prompt: not a bounce to the
@@ -281,7 +288,10 @@
   (doseq [id (sort (:passengers plan))] (println (str "PASSENGER_SIBLING " id)))
   (doseq [{:keys [path sibling verdict]} (sort-by (juxt :path :sibling) (:content-clear plan))]
     (println (str "CONTENT_CLEAR_SIBLING_PATH " path " " sibling " "
-                  (if (= :vacuous verdict) "reverted" "landed")))))
+                  (if (= :vacuous verdict) "reverted" "landed"))))
+  (doseq [[path {:keys [excluded]}] (sort-by key (:rebuilt plan))
+          sibling (sort excluded)]
+    (println (str "SHARED_OWN_PATH_REBUILT " path " " sibling))))
 
 (defn- main-land [args]
   (let [[task-name commit repo-root-arg] args]
