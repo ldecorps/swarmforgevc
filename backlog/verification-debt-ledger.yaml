@@ -100,3 +100,9 @@
   role: QA
   description: "cond (l) hand split Spec.MD BL-1844 vs BL-1845; standing-red row retired by hand"
   detected_at: 2026-10-01
+- category: qwen-internals-read-by-hand
+  ticket: BL-1840
+  role: specifier
+  description: "read qwen 0.24.7's compiled computeThresholds and its constants by hand to adjudicate coder note 002294 (autoCompactThreshold inert at 49152); BL-1840 scenario 03 makes it a run against the pinned qwen"
+  detected_at: 2026-10-01
+  evidence: backlog/evidence/BL-1840-bounce-20261001.md
