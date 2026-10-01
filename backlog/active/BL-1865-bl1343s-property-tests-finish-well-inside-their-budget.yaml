@@ -1,5 +1,5 @@
 id: BL-1865
-title: "bl1343's property file went red in QA's full property-lane run for BL-1853 on 2026-10-01 with no register row; alone on origin/main its two tests take 18424 ms and 15558 ms of a 20000 ms base, because each of their 27 draws starts a fresh bb that loads the 4071-line land_step_lib.bb (about 1.0 s per load); this ticket owns the row and makes each test finish alone in under 8000 ms with the same draws and the same assertions"
+title: "bl1343's property file went red in QA's full property-lane run for BL-1853 on 2026-10-01 with no register row; alone on origin/main its two tests take 18424 ms and 15558 ms of a 20000 ms base, because each of their 27 draws starts a fresh bb that loads the 4071-line land_step_lib.bb (about 1.0 s per load); this ticket owns the row and makes each test load the lib once instead of once per draw, with the same draws and the same assertions"
 milestone: M8
 type: defect
 severity: high
@@ -77,11 +77,12 @@ description: |
 
   ## What is wanted
 
-  - Each of the two tests finishes alone in under 8000 ms in the fastest
-    of three runs (scenario 01). The bound is 40% of the 20000 ms base,
-    and it leaves headroom over a quiet-host measurement the parcel
-    records with its load. The coder's evidence records the before and
-    after per-test ms and the 1-minute load of each run.
+  - A solo run of the file loads `land_step_lib.bb` exactly twice, once
+    per test, and both tests pass (scenario 01). On main today the same
+    run loads it 54 times: one `bb -e` per draw, 27 draws per test. The
+    coder's evidence records the before and after per-test ms and the
+    1-minute load of each run. Those times are evidence, not a gate
+    (amended 2026-10-01, see notes).
   - The draws and assertions are unchanged (scenario 02, invariants 1 and
     2).
   - The register row added by this mint is present and owned while this
@@ -103,10 +104,13 @@ description: |
     its own fixture root (invariant 2).
   - Leave the fixture side alone unless measurement shows it matters:
     `buildRepo` costs one checkout copy plus a few git spawns per draw.
-  - Scenario 01's handler runs the file three times alone with a JSON
-    reporter and takes each test's fastest duration (the BL-1658 D2
-    rule). About 3 x 10 s after the fix fits the per-mutant ceiling
-    (BL-1541). Scenario 02 is a source-level read in seconds; pin its
+  - Scenario 01's handler runs the file once alone with every `bb`
+    launch counted, for example a `bb` shim first on the run's PATH, in
+    a mkdtemp dir removed in a `finally`, that logs one line per launch
+    and then execs the real `bb`. It counts the launches that load
+    `land_step_lib.bb`. A shim the run never reached counts 0, so the
+    exact-2 step is red, not vacuous (BL-1445). One run of about 10-15 s
+    fits the per-mutant ceiling (BL-1541). Scenario 02 is a source-level read in seconds; pin its
     census with the "exactly 2 tests" step, so a matcher that finds
     nothing is red, not vacuous (BL-1445).
   - Step handler `specs/pipeline/steps/bl1865Bl1343PropertyBudgetSteps.js`,
@@ -130,13 +134,15 @@ qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule), from `extension/`
   unless noted.
   1. `node specs/pipeline/cli.js specs/features/BL-1865-bl1343s-property-tests-finish-well-inside-their-budget.feature`
-     from the repo root: 3 of 3 ok. Measured at mint: no handler exists
-     yet. Read by hand, 02 and 03 hold on main today (2 tests,
-     runsPerCell(27, SHAPES.length), 3 shapes; the row is present and
-     owned), and 01 is red (18424 and 15558 ms alone).
+     from the repo root: 3 of 3 ok. Measured at the 2026-10-01
+     amendment: on the coder's parcel 5de866d698, 02 and 03 ok and 01
+     red, because its handler still asserts the retired 8000 ms bound.
+     Read by hand, main today loads the lib 54 times in a solo run (one
+     `bb -e` per draw), so the amended 01 would be red there.
   2. `npx vitest run --config vitest.properties.config.mjs test/bl1343ReplayNeverDropsOwnPathInvariants.property.test.js --reporter=verbose`
-     once: 2/2 passed, each test under 8000 ms; record the times and
-     `cat /proc/loadavg`.
+     once: 2/2 passed. Record each test's time and `cat /proc/loadavg`
+     in the evidence. The times are recorded, not judged here: step 3
+     and the register judge them.
   3. `npm run test:properties` once: bl1343 not red. Record any other red
      with its text and raise it as an unowned-red note; never fold it in.
   After the land: `bb swarmforge/scripts/standing_red_register_cli.bb .`
@@ -149,6 +155,24 @@ notes: |
   sent "BL-1853: bl1343ReplayNeverDropsOwnPathInvariants owned by
   BL-1865 (<sha>) - resume land" in the same pass (BL-1566); this line
   records that it was sent.
+  AMENDED 2026-10-01 by the specifier, in flight at the cleaner, from
+  coder note 002299 ("fixed, but 8000ms bound not reliably hit on this
+  host"). Scenario 01's 8000 ms fastest-of-three bound was a projection
+  made at mint: it assumed the per-draw cost left after the lib load
+  would fit 296 ms. It was never measured on a fixed build, so the bound
+  broke the BL-1658 D2 rule. The coder measured the fixed build at about
+  340-530 ms a draw. That is buildRepo's git spawns plus the lib's own
+  git calls, both needed per draw by invariant 2. The fastest of three
+  for invariant 1 ranged 7840-12694 ms over four batches at 1-minute
+  loads of 1.8-3.0. Per D2's last clause, the scenario now gates the
+  mechanism the ticket changes (one lib load per test, counted at run
+  time) and leaves the number to the register: QA's full-lane run
+  (procedure step 3) and the land's row retirement. The FIRM
+  approval_context items are unchanged: 27 draws, the assertions,
+  propertyLaneTimeoutMs(20000) and no caching. No ruling_options either,
+  so the auto-approval below still applies. This send-back is the
+  specifier's spec defect and is recorded against the specifier, not
+  the coder.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
 
 assigned_to: coder
