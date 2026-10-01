@@ -13,6 +13,12 @@ Feature: BL-1389 A path an unlanded sibling owns alone never rides another ticke
   whatever the sibling's approval reads, that landed means every attributed
   path, and that the report names the paths and the verdicts.
 
+  BL-1830 (the human's ruling A, 2026-09-30) rebuilds a shared own path
+  from origin/main plus only the landing ticket's own changes, so an
+  approved sibling no longer rides as a passenger. Scenario 03 asserted
+  that it did; it is retired (never reworded - BL-1006) by the BL-1876
+  hotfix. BL-1830's own scenario 01 covers the shared path now.
+
   Background:
     Given origin/main holds sibling "BL-9002"'s feature file
     And the tip carries "BL-9002"'s handler and a source file under commits tagged "BL-9002"
@@ -31,15 +37,6 @@ Feature: BL-1389 A path an unlanded sibling owns alone never rides another ticke
     Given "BL-9002" is approved
     When the land step replays "BL-9001"
     Then the replay excludes "BL-9002"'s handler and source file
-
-  # BL-1389 a-shared-path-still-carries-an-approved-passenger-03
-  Scenario: a path both tickets own still carries an approved sibling as a passenger
-    Given "BL-9002" is approved
-    And the tip carries a path both "BL-9001" and "BL-9002" changed
-    When the land step replays "BL-9001"
-    Then the shared path is in the replay
-    And the report names "BL-9002" as a passenger
-    And the tree guards ran against the replayed tree
 
   # BL-1389 landed-means-every-attributed-path-04
   Scenario: a sibling reads landed only when every attributed path is already on origin/main
