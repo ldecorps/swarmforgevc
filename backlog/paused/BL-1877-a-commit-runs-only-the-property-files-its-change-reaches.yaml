@@ -1,0 +1,133 @@
+id: BL-1877
+title: "Every role's pre-commit hook runs the whole property lane (493 files, about 7 minutes) when a commit stages any extension/src file or property test; 41 commits paid it on 2026-10-01 alone, and QA's gather runs the same lane once per parcel anyway; a commit now runs only the property files its staged change reaches, and the whole lane only when it cannot tell which"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading the swarm: every source commit in every
+# worktree waits about 7 minutes in its pre-commit hook. The human, seeing
+# the coder wait on it: "This also needs a rewrite, should notntake this
+# long." Not auto-approved: it poses a ruling.
+status: todo
+epic: code-quality-gates
+priority: 2
+direction: queue-jump
+# queue-jump: the human, 2026-10-02 ("Too long"), on the coder's wait.
+depends_on: []
+mutation_cost: low
+# low: one bash guard and its shell test; Babashka/shell has no mutation
+# lane (BL-472).
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one guard script changes; nothing to refactor"
+  architect: "the ruling fixes the design, and QA checks the invariant"
+  hardender: "no Stryker lane for shell (BL-472); the shell test and the acceptance run are the coverage"
+  documenter: "the guard's own header documents it; no how-to describes the per-commit lane cost"
+
+acceptance: specs/features/BL-1877-a-commit-runs-only-the-property-files-its-change-reaches.feature
+
+# Handler pin only (BL-233, BL-1371). No consumer anchor: run_commit_guards.sh
+# already calls check_property_suite_drift.sh, so it matches before and
+# after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1877CommitRunsReachedPropertyFilesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+human_ruling: |
+  A - a commit runs only the property files its staged change reaches, the whole lane when that cannot be computed (recommended)
+ruling_provenance: specifier-pane
+approval_context: >
+  Not part of BL-1870 (landing is a merge): this is the pre-commit hook
+  every role runs on its own commits. FIRM: a commit's property check
+  falls back to the whole lane whenever it cannot tell what its change
+  reaches, and QA's gather still runs the whole lane once per parcel, so
+  no property regression reaches main unrun. FIRM: the cheap guards ahead
+  of it are unchanged. The ask is how much a commit still runs. The
+  scenarios are written for A; B turns scenario 01 into "runs no property
+  file".
+
+ruling_options:
+  - A - a commit runs only the property files its staged change reaches, the whole lane when that cannot be computed (recommended)
+  - B - a commit runs no property file at all, the whole lane runs only at QA's gather
+
+ruling_tradeoffs:
+  - Pros - a property broken by a change is still caught at the commit that broke it, in seconds for a one-file change. Cons - computing the reach (the compiled module graph, and files that name the path) is new code that can miss a file reached only through a spawned script. Recommended because it keeps the early catch and drops nearly all of the 7 minutes.
+  - Pros - simplest, zero commit cost, and nothing new to get wrong. Cons - a property regression is found only at QA, after every stage has built on it, which is the bounce the BL-570 guard was added to prevent.
+
+invariants:
+  - "A property file the staged change reaches is never skipped at the commit; when the guard cannot compute the reach it runs the whole lane."
+
+source: |
+  The human, specifier pane (Claude Code), 2026-10-02 00:15, with a
+  screenshot of the coder pane waiting on the BL-1835 commit's guard
+  chain, verbatim (Article 5.3):
+
+  > This also needs a rewrite, should notntake this long. Isnitnpart of the qa landing rewrite?
+
+  > Too long
+
+  Measured by the specifier the same night: the coder's commit spent
+  about 400 s in `check_property_suite_drift.sh` (`npm run compile &&
+  vitest run --config vitest.properties.config.mjs`, 493 property files).
+  `git log --all --since='2026-10-01 00:00' --no-merges --name-only`
+  finds 41 commits staging `extension/src/*` or `*.property.test.js`,
+  each of which paid the same run.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/run_commit_guards.sh` runs
+  `check_property_suite_drift.sh` last. Its `staged_needs_check` fires on
+  any staged `extension/src/*` or `*.property.test.js` path, and then the
+  guard compiles and runs the whole property lane, whatever the change
+  reaches. A one-line fix to one module costs every role about 7 minutes
+  per commit, and a bounce rebuild pays it again. QA's gather already runs
+  the whole lane once per parcel.
+
+  ## What is wanted (ruling A)
+
+  - A staged source change runs only the property files that reach it:
+    the files whose compiled module graph reaches the changed modules
+    (vitest's `related` over the compiled `out/` paths is one way), plus
+    any property file that names the changed path. A staged property file
+    runs itself.
+  - When the reach cannot be computed (compile fails, the graph read
+    errors), the guard runs the whole lane, as today.
+  - The allowlist (BL-1175), the reconcile-import skip (BL-1121), the
+    refusal log (BL-1275) and the override env stay as they are.
+  - Evidence: the time of a one-module commit before and after, and how
+    many property files that commit ran.
+
+  ## How (direction, not mandate)
+
+  - The guard already takes an injectable suite command (its usage
+    header), so the scenarios record the command it would run instead of
+    running vitest.
+  - Step handler `specs/pipeline/steps/bl1877CommitRunsReachedPropertyFilesSteps.js`,
+    fixture under mkdtemp (BL-1390).
+
+  ## Scope
+
+  `check_property_suite_drift.sh`, its shell test, the step handler,
+  evidence.
+
+out_of_scope: |
+  - QA's gather and the hardener's lanes: they keep the whole lane.
+  - BL-1870's landing rewrite.
+  - BL-1730 (a property worker dying on the heap cap).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1877-a-commit-runs-only-the-property-files-its-change-reaches.feature`:
+     4 of 4 ok (01 has two rows). Measured at mint: no handler yet.
+  2. The guard's shell test in `swarmforge/scripts/test/`: ALL PASS.
+  3. Read the coder's before and after timing for a one-module commit.
+
+notes: |
+  Minted 2026-10-02 by the specifier from the human's question in the
+  specifier pane (source). It poses a ruling, so it was not auto-approved.
+  2026-10-02 (specifier): the human approved in the specifier pane
+  (Claude Code), before the mint commit landed, verbatim: "Approved". No
+  option was named, so this records A, the recommended option the
+  scenarios are written for. The specifier told the human, and a reply
+  naming B re-pends the ticket for the rewrite.
