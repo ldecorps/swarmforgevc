@@ -124,3 +124,6 @@ notes: |
   --new/--link).
 
 assigned_to: coder
+# 2026-10-01 (QA): condition (k)/(l) hand-built tip-pure land off origin/main.
+abandoned_commits:
+  - 38bc0b69e1

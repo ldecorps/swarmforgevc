@@ -152,6 +152,46 @@ hand-run shape — bare `ollama serve`, native context length):
 | `SWARMFORGE_OLLAMA_WAIT_SECONDS` | bound on how long the launch waits for a newly started server to answer | `30` |
 | `SWARMFORGE_OLLAMA_POLL_INTERVAL_SECONDS` | how often the wait re-probes | `1` |
 
+### Serving a GPU-fitting local seat: flash attention, KV cache, reading the log (BL-1839 stamp-off)
+
+Every Ollama server the swarm starts (`ollama_ancillary_start_server`,
+used by both the launch-time probe above and BL-1711's crash restart)
+sets two environment variables before `ollama serve` runs, unless the
+caller already set them:
+
+| Variable | Default | Why |
+|---|---|---|
+| `OLLAMA_FLASH_ATTENTION` | `1` | required for a quantized KV cache |
+| `OLLAMA_KV_CACHE_TYPE` | `q8_0` | halves the KV cache's memory, which is what lets a large context window fit on a fixed-size GPU |
+
+Measured on the ISTA IQ3_S coder seat (a 16 GiB GPU, a 49152-token
+window): with the default `f16` KV cache, 8 of 65 layers could not fit
+and ran on the CPU, at ~3.5 tokens/s; with `q8_0`, all 65 layers fit on
+the GPU, at ~18.5 tokens/s. Both variables honor a caller-set value
+first — a hand-started `ollama serve` that wants different behavior
+(or the `f16` default) sets them itself before starting the server;
+the swarm's own start only fills in what the caller left unset.
+
+Ollama's own log (the path `ollama_ancillary_start_server` was given —
+`.swarmforge/ollama/serve.log` for a swarm-owned server, or wherever a
+hand-started one redirects its output) names the serving facts a role
+judges a local seat by, as plain lines:
+
+- `load_tensors: offloaded N/M layers to GPU` — how many of the
+  model's layers actually fit on the GPU (N of M; M minus N ran on the
+  CPU, the slow path above).
+- `llama_kv_cache: size = ... (q8_0)` (or `f16`, etc.) — which KV cache
+  type actually took effect for this load.
+- `llama_context: n_ctx = ...` — the context window Ollama actually
+  served, which may differ from what a Modelfile or client requested.
+- `slot print_timing: ... tg = X t/s` — the most recent generation's
+  measured tokens/s.
+
+`bb swarmforge/scripts/local_seat_report_cli.bb` (BL-1842) reads these
+same lines for you, already correctly handling a stale vs. live log
+file (D1) — see "Judge a seat's health from its records, not its pane"
+below for its full output.
+
 ### The seat's qwen settings carry its served context window (BL-1829, BL-1838)
 
 Each `local-model` seat gets a worktree-local `.qwen/settings.json`

@@ -1,5 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 1, 2026 (BL-1839: swarm stamp-off (BL-848
+review-only certification) of hotfixes 2cdb259806, 7f38e5d7fe and
+91c208a923, which the specifier landed on 2026-09-30 under the human's
+iq3-priority directive: `start-swarm.sh` forwards a loopback
+`OPENAI_API_BASE`'s Ollama key and the pack/window-gate/endpoint env
+vars to the nohup launch; `swarmforge.sh`'s BL-1801 window gate measures
+the STAGE card rather than the seat id, and the qwen launch strips
+`--seat-tier` before passing the rest of its window line through;
+`ollama_ancillary_start_server` defaults `OLLAMA_FLASH_ATTENTION=1` and
+`OLLAMA_KV_CACHE_TYPE=q8_0` (caller-set values win); the ISTA IQ3_S
+coder seat's Modelfile sets `num_ctx 49152`, `num_predict 4096`, and
+corrects a comment about what `num_predict` does. Confirmed each change
+against its own commit's claim (scenarios 01-05) and probed all three
+review goals: no credential value lands in a generated launch script,
+prompt file, or commit through the new env forwarding (2a); a BL-1711
+crash restart still sets the same two Ollama defaults (2b); and
+`start-swarm.sh`'s loopback check is a plain substring match on
+`127.0.0.1`/`localhost`, not a URL-authority parse — a low-severity,
+non-blocking finding (a non-loopback base coincidentally containing
+either string sends the Ollama placeholder key, never a real secret)
+the coder already reported to the specifier by note (2c). Documents how
+to serve a GPU-fitting local seat
+(the two Ollama variables and how to read layers-on-GPU/tokens-per-
+second from the server log) in the new "Serving a GPU-fitting local
+seat" section of `docs/how-to/BL-1052-local-model-seat-launch.md`,
+already linked from `docs/index.md`. Acceptance:
+`specs/features/BL-1839-swarm-stamp-off-of-the-coder-iq3-hotfixes.feature`.
+No new extension command or setting; no diagram edit — review-only,
+changes no production file except the smallest start-swarm.sh test
+seam scenario 03 needed. The human records certification separately via
+`hotfix_ledger_update.bb --decide` after QA.)
+Prior entry —
+
 **Last Updated:** October 1, 2026 (BL-1842: a local-model seat's health is
 one command away — `bb swarmforge/scripts/local_seat_report_cli.bb
 <project-root> --seat <seat> [--sessions N]` reads the seat's qwen usage

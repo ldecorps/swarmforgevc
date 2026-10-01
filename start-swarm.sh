@@ -91,6 +91,15 @@ if [[ "${OPENAI_API_BASE:-}" == *127.0.0.1* || "${OPENAI_API_BASE:-}" == *localh
   export OPENAI_API_KEY="${OLLAMA_API_KEY:-ollama}"
   export OLLAMA_API_KEY="${OLLAMA_API_KEY:-ollama}"
 fi
+
+# BL-1839 test seam: the rest of this script starts real ancillary
+# processes, which no test may do. BL1839_TEST_SOURCE_ONLY=1 returns here,
+# after HOME/.zshenv and the loopback-key resolution above have run,
+# before anything with a side effect.
+if [[ -n "${BL1839_TEST_SOURCE_ONLY:-}" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 for tool in tmux bb; do

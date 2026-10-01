@@ -501,6 +501,7 @@ test_start_ancillary_services_operator_watch_gate.sh	standing
 test_start_handoff_daemon.sh	standing		
 test_start_stop_bridge_headless.sh	standing		
 test_start_stop_cursor_bridge.sh	standing		
+test_start_swarm_test_source_only_seam.sh	standing
 test_stop_ancillary_services_ollama_failure_not_fatal.sh	standing
 test_stop_ancillary_services_onboarder_dual_clear.sh	standing		
 test_stop_ancillary_services_tunnel_orphan_reap.sh	standing		
