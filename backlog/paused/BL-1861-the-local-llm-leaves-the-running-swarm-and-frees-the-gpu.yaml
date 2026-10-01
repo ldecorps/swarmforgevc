@@ -1,0 +1,167 @@
+id: BL-1861
+title: "The local LLM leaves the running swarm and frees the GPU - local_llm.sh <root> remove takes every local-model seat out of every roster copy, stops its session, unloads the model those seats name from the model server (which keeps running for an outside task), reports every parcel they hold, and records what it took out in .swarmforge/local-llm/removed.json, while every Claude seat keeps working"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 6
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+# medium: roster surgery across every roster copy plus an HTTP unload with a
+# bounded wait, in bash/bb (no mutation lane, engineering.prompt). It changes
+# the swarm's own seat machinery, so it stays off the easy local seat.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1861-the-local-llm-leaves-the-running-swarm-and-frees-the-gpu.feature
+
+# The verb's consumer is the human at a shell (BL-1863 wires the operator
+# surface to it), so there is no pre-existing live caller to anchor; the
+# entry below only keeps the handler in the same parcel as the feature.
+required_wiring:
+  - 'specs/pipeline/steps/bl1861LocalLlmRemoveSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  The human asked for a pair of verbs to take the local LLM out of the
+  running swarm and put it back (source). This is the remove half; BL-1862
+  is add, BL-1863 puts both on Telegram and Cursor, BL-1864 keeps a removed
+  local LLM out across a full relaunch (that one carries a ruling). The
+  intake left three calls to the specifier, ruled here and open to amend.
+  RULED: a parcel a removed seat holds stays where it is, never moved or
+  deleted, is reported by path and ticket, and resumes when add brings the
+  seat back. Moving it to the Claude coder is the BL-1004 hazard (a seat
+  that never built the parcel reworking a tree without its work), and a
+  seat stopped mid-turn may hold uncommitted work only its own tree has.
+  Fresh coder work still flows: the coder stage queue is shared, so the
+  Claude coder claims it once the local seats are gone. RULED: remove
+  unloads the model, never stops the model server, so an outside task can
+  use the same server. RULED: a local-model seat that is a bare seat (an id
+  with no "@", the coordinator included) makes remove refuse and change
+  nothing, because stage addressing needs the bare seat and the
+  coordinator's pane exiting tears the swarm down (BL-107). FIRM: no Claude
+  seat, handoffd or other pack process stops.
+
+invariants:
+  - "Remove never takes out a bare seat (an id with no @, the coordinator included): when any local-model seat is one, it refuses and changes nothing."
+  - "Remove never deletes or moves a parcel, worktree, branch or mailbox, never stops the model server, and never unloads a model that no removed seat names."
+  - "A seat that is not local-model keeps its roster rows and its tmux session through remove."
+
+source: |
+  The human, via Cursor, 2026-10-01 ~08:45 BST, verbatim:
+
+  > other local llm ticket: introduce a pair of verbs to easily add / remove the local llm from the running swarm. Reason is that GPU memory is tight and we might want to dedicate the local llm to another task, outside the swarm.
+
+  Intake: backlog/archive/INTAKE-local-llm-add-remove-verbs-20261001.md
+  (operator commit ce1db72c53). Split 1:4 by the specifier: this ticket is
+  the remove verb; BL-1862 add; BL-1863 the operator verbs; BL-1864 a full
+  relaunch keeps a removed local LLM out.
+
+description: |
+  ## Why
+
+  The full-forge pack keeps local-model coder seats beside the Claude
+  seats. The model they run (qwen2.5-coder-14b-q5km) held about 13.1 GB of
+  the 16.3 GB card in the 2026-09-30 bake-off; `nvidia-smi` read 13381 of
+  16311 MiB in use at mint. The human wants to give the local LLM, or the
+  GPU, to a task outside the swarm without stopping the swarm. Nothing
+  does that today:
+  - `retire_seat.sh` (BL-1720) drops one named seat from every roster copy
+    and kills its session, but leaves the model loaded.
+  - Killing the pane by hand is undone by the babysitter, which
+    resurrects a session its roster still lists (both `swarm_ensure.bb`
+    and the babysitter read `roles.tsv`).
+  - The ollama stop paths (BL-1704) run only when the swarm itself stops,
+    and stop a swarm-owned server.
+  - Ollama's keep-alive holds the weights after the pane dies.
+
+  ## What is wanted
+
+  `swarmforge/scripts/local_llm.sh <project-root> remove` (the verb name
+  and path are the contract BL-1863 calls):
+  1. Finds every row of the running `roles.tsv` whose agent column is
+     `local-model` (column 6). The target is whatever the live roster
+     holds, never a hardcoded window name. During this mint the live
+     roster went from `coder@iq3` and `coder@2` (the iq3 row had no
+     launch script and no session) to `coder@2` alone (08:53 BST). A
+     local row with no launch script is removed too and contributes no
+     model.
+  2. Refuses, changing nothing, when any of them is a bare seat
+     (scenario 05, invariant 1).
+  3. Writes `.swarmforge/local-llm/removed.json` (path is the contract
+     BL-1862, BL-1863 and BL-1864 read) BEFORE touching the roster. It
+     holds, per removed seat, its `roles.tsv` row and its `sessions.tsv`
+     row byte for byte with their line positions; per model, its name,
+     the endpoint the seat's launch script names, and the VRAM size the
+     server reported for it before the unload (null when it was not
+     loaded); and the time of the removal. A fresh remove of seats a
+     relaunch put back replaces the record.
+  4. Takes each seat out of every roster copy and kills its session
+     last, in the same order and through the same roster copies as
+     `retire_seat.sh` (scenario 01).
+  5. Unloads each model a removed seat names from the endpoint its launch
+     script names, then waits a bounded time (default 30 s, a seam lets
+     the fixture shorten it) until the server no longer lists it as
+     loaded. Another loaded model is left alone and the server keeps
+     running (scenario 02). When the wait runs out it exits non-zero
+     naming the model and saying to run remove again (scenario 06); the
+     seats stay removed.
+  6. Prints a line per parcel in each removed seat's `inbox/new/` and
+     `inbox/in_process/`, with its ticket, and moves none (scenario 04).
+  7. Prints the GPU memory in use after the unload when `nvidia-smi`
+     answers within 2 seconds, and says it is unknown otherwise.
+
+  Run again with nothing left to remove, it succeeds and says so. When a
+  record exists it retries the unload of the record's models first
+  (scenario 03), so re-running remove is also how a leftover keep-alive
+  is cleared.
+
+  ## How (direction, not mandate)
+
+  - A pure bb lib (pick local rows, refuse bare seats, build and read the
+    record, parse the model and endpoint out of a launch script) plus the
+    thin shell verb. Reuse `retire_seat_lib.bb` for the row filtering
+    rather than a second filter.
+  - Unload over Ollama's HTTP API (a generate request with keep_alive 0,
+    `/api/ps` to verify) against the endpoint the launch script names
+    (its OPENAI_BASE_URL less `/v1`), so the fixture's stub is an HTTP
+    server on an ephemeral port, never the live Ollama. `ollama stop` is
+    the same thing by hand.
+  - Stock macOS bash 3.2 (no mapfile); fixtures under mkdtemp with
+    `git init`, a stub tmux on PATH recording kill-session, never the
+    live socket (BL-1390).
+  - Step handler `specs/pipeline/steps/bl1861LocalLlmRemoveSteps.js`,
+    discovered from its own file (BL-1371).
+
+  ## Scope
+
+  The verb, its lib and a bb test; the step handler; a how-to under
+  `docs/how-to/` and a line in
+  `docs/how-to/BL-1320-add-or-remove-a-seat-of-a-bottleneck-stage.md`
+  pointing at it; evidence. Not in scope: add (BL-1862), the operator
+  verbs (BL-1863), relaunch behaviour (BL-1864).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1861-the-local-llm-leaves-the-running-swarm-and-frees-the-gpu.feature`:
+     9 of 9 ok (01, 02, two rows of 03, 04, two rows of 05, 06). Measured
+     0 on main at mint: no handler exists yet.
+  2. The lib's bb test: ALL PASS.
+  3. Read-only on the live host: with the lib loaded, the local rows it
+     picks from the live `.swarmforge/roles.tsv` are exactly the rows whose
+     column 6 is `local-model` (`awk -F'\t' '$6=="local-model"{print $1}'
+     .swarmforge/roles.tsv` gives the census), and the model and endpoint
+     it parses from `.swarmforge/launch/coder@2.sh` are
+     `qwen2.5-coder-14b-q5km:latest` and `http://127.0.0.1:11434`.
+  QA does not run remove against the live swarm: the human runs it when
+  they want the GPU. The first live run is recorded in the how-to's
+  evidence by whoever runs it.
+
+notes: |
+  Minted 2026-10-01 by the specifier from the operator's root intake
+  (source), split 1:4 with BL-1862, BL-1863 and BL-1864. Queue-jump under
+  the 2026-09-30 standing directive "Auto-jump any ticket that has to do
+  with local llm"; priority 6 places it after the iq3 build order already
+  in STEERING (the intake asked not to rank itself ahead of it).
+  Route to the primary coder: it changes the swarm's own seat machinery.

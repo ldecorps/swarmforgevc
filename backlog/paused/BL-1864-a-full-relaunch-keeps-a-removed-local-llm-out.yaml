@@ -1,0 +1,131 @@
+id: BL-1864
+title: "A full relaunch keeps a removed local LLM out - while .swarmforge/local-llm/removed.json exists, a full launch leaves every local-model seat the record names out of the roster, starts no session for it, asks the model server nothing for it and says so, while still writing its worktree and launch script and refreshing the record's rows, so a bounce or the day shift starting never loads the model onto a card the human gave to an outside task"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 10
+direction: queue-jump
+depends_on: [BL-1861, BL-1862]
+mutation_cost: medium
+# medium: a filter in the launcher's window handling (swarmforge.sh, bash,
+# no mutation lane) plus a record refresh; the launcher is the swarm's own
+# launch path, so it stays off the easy local seat.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1864-a-full-relaunch-keeps-a-removed-local-llm-out.feature
+
+# The launcher is the pre-existing live consumer of the record. The pattern
+# is the stem every name BL-1861 gives its verb or lib shares (it names the
+# verb swarmforge/scripts/local_llm.sh as a contract); swarmforge.sh has no
+# occurrence of it at mint (grep -c local_llm = 0), so it cannot match by
+# accident before the wiring exists.
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::local_llm::the launcher consults the removal record before it lists or starts a local-model seat'
+  - 'specs/pipeline/steps/bl1864RelaunchKeepsLocalLlmOutSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  The intake did not say what a full relaunch does while the local LLM is
+  removed, and the swarm relaunches on its own (a /restart or /bounce, the
+  09:00 day shift, a ceremony restart). On 2026-10-01 a 07:51Z relaunch
+  regenerated a renamed-away coder@iq3 launch script and started the seat
+  again, so renaming a launch script aside did not survive it. Pick one.
+  If B, BL-1864 is not built and BL-1862's "already in the roster" path covers what a
+  relaunch leaves behind. FIRM either way: the Claude seats relaunch as
+  today, and add (BL-1862) is how a removed local LLM comes back.
+
+ruling_options:
+  - A - a removed local LLM stays out across every relaunch until add is run (recommended)
+  - B - removal lasts until the next full relaunch, which brings the local seats back
+
+ruling_tradeoffs:
+  - Pros - the GPU stays with the outside task however long it runs, including across the overnight stop and the 09:00 day-shift start; one rule, add is the only way back. Cons - a forgotten remove keeps the local seat out for days; BL-1863's /localllm status shows it, and the record names when it was removed. Recommended because the outside task is why the GPU was freed, and the swarm relaunches on its own schedule, not the human's.
+  - Pros - no launcher change, nothing to forget. Cons - the next relaunch loads about 13 GB onto the card the outside task is using, without asking, which is the contention the human asked the verbs to avoid.
+
+invariants:
+  - "While the removal record names a seat, a full launch never lists it in a roster copy, never starts its session and never sends the model server a request for it."
+  - "A full launch with no removal record lists and starts every local-model seat exactly as before this ticket."
+
+source: |
+  The human, via Cursor, 2026-10-01 ~08:45 BST, verbatim:
+
+  > other local llm ticket: introduce a pair of verbs to easily add / remove the local llm from the running swarm. Reason is that GPU memory is tight and we might want to dedicate the local llm to another task, outside the swarm.
+
+  Intake: backlog/archive/INTAKE-local-llm-add-remove-verbs-20261001.md
+  (operator commit ce1db72c53): "Remove must free the GPU, not only kill
+  the pane." Split 1:4 by the specifier: this ticket keeps a removed
+  local LLM out across a full relaunch; BL-1861 remove; BL-1862 add;
+  BL-1863 the operator verbs.
+
+description: |
+  ## Why
+
+  BL-1861 takes the local-model seats out of the live roster, which is
+  what the babysitter and `./swarm ensure` read, so neither brings them
+  back. A full launch does not read the live roster: it rebuilds it from
+  the pack, which still declares the seats, regenerates their launch
+  scripts, asks Ollama about each local seat's window
+  (`check_local_model_seat_windows`) and starts them. The swarm relaunches
+  without the human asking, so the removal would quietly end.
+
+  ## What is wanted (if ruling A)
+
+  While `.swarmforge/local-llm/removed.json` exists, a full launch:
+  - lists no local-model seat the record names in `roles.tsv`,
+    `sessions.tsv` or any worktree copy, and starts no session for it
+    (scenario 01);
+  - asks the model server nothing for it: the window check skips it, and
+    a pack with no remaining local seat asks Ollama nothing at all,
+    including the ollama ancillary start (scenario 01);
+  - prints one line naming each such seat as kept out until
+    `local_llm.sh <root> add` (scenario 01);
+  - still creates the seat's worktree and writes its launch script, and
+    replaces the record's rows for it with the rows it would have
+    written, so add brings back the seat the pack declares now, not the
+    one it declared at remove (scenarios 01, 03).
+  A local-model window in the pack that the record does not name launches
+  as before. With no record, nothing changes (scenario 02).
+
+  ## How (direction, not mandate)
+
+  - Filter at one point after the pack is parsed, before the window check,
+    the ollama ancillary start, the roster write and the session starts,
+    so none of them sees the kept-out seats. The record read and refresh
+    belong to BL-1861's lib; the launcher calls it rather than parsing
+    the JSON itself (BL-1811).
+  - Step handler `specs/pipeline/steps/bl1864RelaunchKeepsLocalLlmOutSteps.js`,
+    discovered from its own file (BL-1371). Drive the launcher the way
+    `bl1320SeatOperatorStepSteps.js` does (source swarmforge.sh in zsh,
+    run the parse and the roster write), with a stub HTTP server counting
+    requests, a stub tmux and a mkdtemp root; it must fit the per-mutant
+    ceiling (BL-1541), so no full pane launch.
+
+  ## Scope
+
+  The launcher filter and record refresh, a shell test in the shape of
+  `test_retire_seat_stays_dropped.sh`, the step handler, the how-to
+  BL-1861 wrote (relaunch section), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1864-a-full-relaunch-keeps-a-removed-local-llm-out.feature`:
+     3 of 3 ok. Measured 0 on main at mint: no handler exists yet.
+  2. The new shell test and BL-1861's and BL-1862's bb tests: ALL PASS.
+  3. `grep -n local_llm swarmforge/scripts/swarmforge.sh` names the one
+     call that reads the record, placed before
+     `check_local_model_seat_windows` and `ensure_ollama_ancillary_for_launch`
+     run.
+  QA does not relaunch the live swarm. The first live relaunch with the
+  local LLM removed is the human's, and its launch output carries the
+  kept-out line.
+
+notes: |
+  Minted 2026-10-01 by the specifier from the operator's root intake
+  (source), split 1:4 with BL-1861, BL-1862 and BL-1863. The intake did
+  not address relaunch; the specifier found the gap while scoping remove
+  (a full launch rebuilds the roster from the pack) and poses it as a
+  ruling rather than deciding it. Queue-jump under the 2026-09-30 standing
+  directive "Auto-jump any ticket that has to do with local llm";
+  priority 10. Under ruling B, BL-1864 is closed unbuilt.

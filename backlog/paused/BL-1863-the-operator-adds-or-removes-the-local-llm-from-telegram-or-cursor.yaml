@@ -1,0 +1,114 @@
+id: BL-1863
+title: "The operator adds or removes the local LLM from Telegram or Cursor - /localllm remove and /localllm add run local_llm.sh behind one Confirm tap and reply with its output, /localllm add force passes the GPU override, and a bare /localllm (or /localllm status) relays local_llm.sh status without a confirm"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 9
+direction: queue-jump
+depends_on: [BL-1861, BL-1862]
+mutation_cost: medium
+# medium: TypeScript on the operator surface (Stryker applies) plus a
+# read-only status subcommand in the shell verb.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1863-the-operator-adds-or-removes-the-local-llm-from-telegram-or-cursor.feature
+
+# The operator dispatcher is the pre-existing live consumer: the verb is
+# wired only when it calls the shell pair (BL-1235).
+required_wiring:
+  - 'extension/src/tools/telegramCursorOperatorExec.ts::local_llm.sh::the operator dispatcher runs the shell pair'
+  - 'specs/pipeline/steps/bl1863LocalLlmOperatorVerbSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  The human asked for verbs that make adding and removing the local LLM
+  easy (source); the intake let the specifier choose whether the pair is
+  also an operator verb. RULED: yes, on the BL-698 surface, as /localllm
+  (no hyphen, so it types easily on a phone). remove and add are soft (one
+  Confirm tap, like /hold): remove can stop a local seat mid-turn, add can
+  load the model onto a busy card. A bare /localllm and /localllm status
+  are read, no confirm. An unknown subcommand replies with the usage and
+  runs nothing. FIRM: the reply carries the shell verb's own output, so a
+  refusal from add (GPU held, server down) reaches the human word for word
+  with the override it names.
+
+invariants:
+  - "A bare /localllm, /localllm status and local_llm.sh status change no file and stop or start nothing."
+
+source: |
+  The human, via Cursor, 2026-10-01 ~08:45 BST, verbatim:
+
+  > other local llm ticket: introduce a pair of verbs to easily add / remove the local llm from the running swarm. Reason is that GPU memory is tight and we might want to dedicate the local llm to another task, outside the swarm.
+
+  Intake: backlog/archive/INTAKE-local-llm-add-remove-verbs-20261001.md
+  (operator commit ce1db72c53): "a script the operator must remember the
+  path of is the floor, not the ceiling." Split 1:4 by the specifier: this
+  ticket is the operator verbs; BL-1861 remove; BL-1862 add; BL-1864 a
+  full relaunch keeps a removed local LLM out.
+
+description: |
+  ## Why
+
+  BL-1861 and BL-1862 give `swarmforge/scripts/local_llm.sh <root>
+  remove|add`. The human runs the swarm from Telegram and Cursor, where
+  the BL-698 operator surface already carries the control verbs (/hold,
+  /ensure, /stop and the rest). Remembering a script path is the floor.
+
+  ## What is wanted
+
+  - `telegramCursorOperatorCore.ts`: `/localllm remove`, `/localllm add`
+    and `/localllm add force` are soft; `/localllm`, `/localllm status`
+    and any other `/localllm <word>` are read (scenario 01; the unknown
+    word is read so it can reply with the usage, scenario 04).
+  - `telegramCursorOperatorExec.ts`: a confirmed verb runs `local_llm.sh
+    <repo root> remove`, `add` or `add --force` and replies with its
+    output and whether it succeeded (scenario 02); `status` runs
+    `local_llm.sh <repo root> status` (scenario 03); an unknown word
+    replies with the usage and runs nothing (scenario 04). The run is
+    bounded like the surface's other script-running verbs.
+  - `local_llm.sh <project-root> status` (scenario 05): reads the removal
+    record and the roster, prints "removed at <time>: <seats>", "in the
+    swarm: <seats>" or "no local-model seat", exits 0, changes nothing.
+    It lives in the shell verb, not in TypeScript, so the record is read
+    in one place (the owning module answers, BL-1811).
+  - `/help` lists the verb if `/help` lists verbs.
+
+  ## How (direction, not mandate)
+
+  - Follow the shape of `/hold`'s classification and `executeHold`'s
+    dispatch. The script runner is a seam the unit test and the step
+    handler stub; the handler never runs the real verb against the live
+    swarm.
+  - Step handler `specs/pipeline/steps/bl1863LocalLlmOperatorVerbSteps.js`,
+    discovered from its own file (BL-1371); scenario 05 drives the real
+    `local_llm.sh status` against a mkdtemp fixture root.
+
+  ## Scope
+
+  The two operator-surface files and their unit tests, the status
+  subcommand and its bb test, the step handler, the BL-698 reference page
+  (`docs/reference/specs/BL-698-telegram-cursor-operator-command-surface.md`)
+  and the how-to BL-1861 wrote, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1863-the-operator-adds-or-removes-the-local-llm-from-telegram-or-cursor.feature`:
+     13 of 13 ok (five rows of 01, three rows of 02, 03, 04, three rows of
+     05). Measured 0 on main at mint: no handler exists yet.
+  2. `npm test` from `extension/` for the two operator-surface test files:
+     ALL PASS.
+  3. Live, read-only: `bash swarmforge/scripts/local_llm.sh "$PWD" status`
+     on the live root prints "in the swarm:" followed by the local-model
+     seats the live roster lists (coder@2 alone at 08:53 BST on the mint
+     day), and
+     `git status --porcelain .swarmforge` shows no change it made.
+  After the land (the human's, not QA's): `/localllm` in the operator
+  topic replies with the same line, no confirm asked.
+
+notes: |
+  Minted 2026-10-01 by the specifier from the operator's root intake
+  (source), split 1:4 with BL-1861, BL-1862 and BL-1864. Queue-jump under
+  the 2026-09-30 standing directive "Auto-jump any ticket that has to do
+  with local llm"; priority 9, after the pair it calls.

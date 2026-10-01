@@ -1,0 +1,129 @@
+id: BL-1862
+title: "The local LLM comes back into the running swarm - local_llm.sh <root> add puts back every seat BL-1861's remove recorded, with the exact roster rows they had, and starts each from its persisted launch script while every other seat keeps running; it refuses (changing nothing) while the model server is down or the GPU has no room for the model, unless forced, and says so instead of contending with an outside task"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 7
+direction: queue-jump
+depends_on: [BL-1861]
+mutation_cost: medium
+# medium: roster restore across every roster copy, a session start from a
+# persisted launch script, an HTTP probe and a GPU probe, in bash/bb (no
+# mutation lane). Swarm seat machinery, so it stays off the easy local seat.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1862-the-local-llm-comes-back-into-the-running-swarm.feature
+
+# Same as BL-1861: the consumer is the human at a shell (BL-1863 wires the
+# operator surface), so the entry only keeps the handler in the parcel.
+required_wiring:
+  - 'specs/pipeline/steps/bl1862LocalLlmAddSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  The add half of the pair the human asked for (source); BL-1861 is remove.
+  The intake left one call here to the specifier, ruled and open to amend.
+  RULED: when the GPU has less free memory than the model's size recorded
+  at remove, and the model is not already loaded on the server, add
+  REFUSES and changes nothing, naming the free memory and the size;
+  `add --force` adds anyway with a warning. Why a refusal and not a
+  warning: the outside task is the reason the GPU was freed, and a model
+  loaded beside it spills to the CPU or evicts the task's own model. When
+  the model is already loaded (the outside task used the same model on the
+  same server) there is no contention for memory and add proceeds. When
+  the GPU cannot be probed (no nvidia-smi, macOS among them) add proceeds
+  with a warning, so the verb still works on such hosts. FIRM: add never
+  edits the pack conf and never restarts a running session.
+
+invariants:
+  - "Add never edits the pack conf, and never kills or restarts a session that is already running."
+  - "A refused add changes nothing: the roster copies, the sessions and the removal record are as they were."
+  - "Add starts only seats the removal record names."
+
+source: |
+  The human, via Cursor, 2026-10-01 ~08:45 BST, verbatim:
+
+  > other local llm ticket: introduce a pair of verbs to easily add / remove the local llm from the running swarm. Reason is that GPU memory is tight and we might want to dedicate the local llm to another task, outside the swarm.
+
+  Intake: backlog/archive/INTAKE-local-llm-add-remove-verbs-20261001.md
+  (operator commit ce1db72c53). Split 1:4 by the specifier: this ticket is
+  the add verb; BL-1861 remove; BL-1863 the operator verbs; BL-1864 a full
+  relaunch keeps a removed local LLM out.
+
+description: |
+  ## Why
+
+  BL-1861's remove takes the local-model seats out and unloads their
+  model. Today the only way back is the inverse `retire_seat.sh` never
+  had: put the `window` line back in the pack and relaunch the whole swarm
+  (`docs/how-to/BL-1320-add-or-remove-a-seat-of-a-bottleneck-stage.md`
+  says so). The human wants it to be one command against the swarm that
+  is already running.
+
+  ## What is wanted
+
+  `swarmforge/scripts/local_llm.sh <project-root> add [--force]`, reading
+  `.swarmforge/local-llm/removed.json` (BL-1861's record):
+  1. With no record, succeeds, says there is nothing to add, and changes
+     nothing (scenario 02).
+  2. Checks the endpoint the record names answers; refuses, changing
+     nothing, when it does not, naming it (scenario 04). This is the same
+     guard the launcher applies ("local-model launch refused: endpoint not
+     ready").
+  3. Checks the GPU per the ruling in approval_context (scenario 03):
+     `nvidia-smi --query-gpu=memory.used,memory.total` within 2 seconds,
+     against the record's VRAM size for each model not already loaded on
+     the server.
+  4. For each recorded seat whose `.swarmforge/launch/<seat>.sh` exists:
+     puts its rows back into every roster copy (master `roles.tsv`,
+     `sessions.tsv`, every worktree's `roles.tsv`) byte for byte at their
+     former positions, then starts its session from that launch script,
+     the way `./swarm ensure` repairs a missing session; every other
+     session keeps its pane process (scenario 01). Rows go back BEFORE
+     the session starts, the mirror of remove's order, so nothing ever
+     sees a session its roster does not list.
+  5. A recorded seat with no launch script is named in the output as not
+     restored and left out of the roster (scenario 05): restoring its row
+     would only bring back a babysitter CRIT for a seat that cannot start.
+  6. When a relaunch already put the recorded seats back (before BL-1864,
+     a full launch does), it says they are already in the roster, starts
+     nothing that is running, and deletes the record (scenario 02).
+  7. Deletes the record once every recorded seat is back or reported.
+
+  ## How (direction, not mandate)
+
+  - Extend BL-1861's lib and verb; a session start reuses whatever
+    `swarm_ensure.bb` uses to respawn one seat from its persisted launch
+    script, rather than a second spawn path. If the coder runs a whole
+    `./swarm ensure` instead, scenario 01's "every other session keeps its
+    pane process" must still hold.
+  - The GPU probe and the endpoint are seams (stub nvidia-smi on PATH, a
+    stub HTTP server on an ephemeral port); fixtures under mkdtemp with
+    `git init`, a stub tmux, never the live socket (BL-1390).
+  - Step handler `specs/pipeline/steps/bl1862LocalLlmAddSteps.js`,
+    discovered from its own file (BL-1371).
+
+  ## Scope
+
+  The add path in the verb and lib, bb tests, the step handler, the
+  how-to BL-1861 wrote (add section), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1862-the-local-llm-comes-back-into-the-running-swarm.feature`:
+     9 of 9 ok (01, two rows of 02, four rows of 03, 04, 05). Measured 0
+     on main at mint: no handler exists yet.
+  2. The lib's bb tests (BL-1861's and this one's): ALL PASS.
+  3. Read-only on the live host: `nvidia-smi --query-gpu=memory.used,memory.total
+     --format=csv,noheader` answers (13381 MiB, 16311 MiB at mint with the
+     model loaded), so the live probe path is the one the scenarios stub.
+  QA does not run add against the live swarm; the human runs the pair.
+
+notes: |
+  Minted 2026-10-01 by the specifier from the operator's root intake
+  (source), split 1:4 with BL-1861, BL-1863 and BL-1864. Queue-jump under
+  the 2026-09-30 standing directive "Auto-jump any ticket that has to do
+  with local llm"; priority 7, after BL-1861 which it depends on.
+  Route to the primary coder: it changes the swarm's own seat machinery.

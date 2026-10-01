@@ -49,3 +49,21 @@ The specifier names the verbs and chooses whether the backend is a shell pair (t
 - Shutdown-only ollama stop, external server left running: `swarmforge/scripts/ollama_ancillary_lib.sh` `ollama_ancillary_stop_swarm_owned`
 - Operator verb surface, if the pair lands there: `docs/reference/specs/BL-698-telegram-cursor-operator-command-surface.md`, `extension/src/tools/telegramCursorOperatorCore.ts`
 - Epic: `backlog/paused/BL-1125-epic-local-ollama-swarm-readiness.yaml`; queue-jump rule in `backlog/STEERING.md` (2026-09-30, "Auto-jump any ticket that has to do with local llm")
+
+## Disposition (specifier, 2026-10-01)
+
+Split 1:4. Every ticket carries the human's sentence verbatim in `source:`
+(Article 5.3) and points back here.
+
+- **BL-1861** — remove: the "Remove" half of "What is wanted", the GPU
+  unload, the parcel report, the bare-seat refusal, idempotency.
+  Rulings: an in-process parcel stays where it is and resumes on add;
+  unload, never stop the server.
+- **BL-1862** — add: the "Add" half, idempotency, and the GPU check.
+  Ruling: refuse while the GPU has no room for the model, `--force`
+  overrides; unknown GPU occupancy warns.
+- **BL-1863** — the verbs on the BL-698 Telegram / Cursor surface:
+  `/localllm remove|add|add force|status`, plus `local_llm.sh status`.
+- **BL-1864** — not in this intake: what a full relaunch does while the
+  local LLM is removed. Posed to the human as `ruling_options` (A: stays
+  out until add, recommended; B: the next relaunch brings it back).
