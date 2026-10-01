@@ -21,7 +21,7 @@ acceptance: specs/features/BL-1862-the-local-llm-comes-back-into-the-running-swa
 required_wiring:
   - 'specs/pipeline/steps/bl1862LocalLlmAddSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The add half of the pair the human asked for (source); BL-1861 is remove.
   The intake left one call here to the specifier, ruled and open to amend.
