@@ -114,3 +114,6 @@ notes: |
   BL-1852 (which lands first; see depends_on).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   [2026-10-01] human (Cursor): /jumpq as soon as BL-1852 lands. Stay paused until BL-1852 is in backlog/done/, then queue-jump past the depth cap and dispatch to coder.
+  [2026-10-01] human (Cursor): /jumpq BL-1853 — BL-1852 is in backlog/done/. Queue-jump past the depth cap (active count 5 >= cap 1; orthogonality advisory: swarm-reliability also active on BL-1857) and dispatch to coder.
+
+assigned_to: coder
