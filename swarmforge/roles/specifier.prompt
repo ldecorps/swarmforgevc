@@ -861,6 +861,11 @@ You are the specifier.
   pass exists to prevent. Record it with:
   `node extension/out/tools/closing-ceremony-outcome.js --shift <yyyy-MM-dd>
   --outcome <process_ticket|spec_gate_tweak|no_change> [--ref <id>]`.
+  That outcome is also the fix the morning briefing names for the shift's
+  bottleneck (operator directive 2026-10-02). A coordinator note
+  `bottleneck <shift>: ... - your fix for the briefing?` means none is
+  recorded yet. Make the pass for the top dwell hotspot, record it, and
+  answer the coordinator with the outcome and its ref.
 - **The pass is never just the packet.** Run the shift-end consolidation
   sweep ("Consolidation Authority" above) as part of every pass, not as a
   separate optional step. A merge you make there records `process_ticket`

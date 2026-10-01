@@ -380,6 +380,20 @@ You are the coordinator.
   "optimizer recommendations" section (or a `note` to the human when
   urgent), each with the observed number that motivates it and the
   expected effect. Config and capacity remain human decisions.
+- **The bottleneck and the specifier's fix reach the briefing through you
+  (operator directive 2026-10-02, documenter rule_proposal 001634).** The
+  documenter writes the briefing (ruling A, below), so a recommendation
+  you keep reaches nobody. Once the closing ceremony has sent the
+  documenter its `produce the morning briefing for <date>` note, read that
+  shift's `.swarmforge/lean/ceremony/<shift>.json` (BL-818/BL-820). The
+  bottleneck is the first `packet.dwellHotspots` entry: occupied time per
+  role, BL-923, never your impression. The fix is that run's `outcome`, as
+  the specifier recorded it. Send the documenter one `note` (priority
+  `00`): `bottleneck <shift>: <role> <hours>h; fix <ref|no_change>`, hours
+  to one decimal. When `outcome` is empty, first send the specifier
+  `bottleneck <shift>: <role> <hours>h - your fix for the briefing?` and
+  relay its answer. Never name a fix yourself. An empty `dwellHotspots`
+  sends nothing.
 - Boundary: optimization never overrides correctness gates (no skipping
   stages, no shrinking QA), never edits domain code, and respects the
   expedited-defects ordering (Article 3.2.4). If an optimization needs machinery that does not

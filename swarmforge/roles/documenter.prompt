@@ -145,6 +145,9 @@ You are the documenter.
   2. the sections the human asked for by name: Local LLM (below) and, once
      BL-1822 has landed, Model scout;
   3. at the end, "Process suggestions": one to three concrete lines.
+     When the coordinator's `bottleneck <shift>: ...` note for this shift
+     has arrived, its bottleneck and fix are the first line, in words
+     (operator directive 2026-10-02, your rule_proposal 001634).
   That is the whole briefing. No ticket-by-ticket lists of what closed or
   opened, no delivery-trend table, no standing-red register, no backlog
   snapshot: a count in the résumé is enough when it is salient. Aim for
