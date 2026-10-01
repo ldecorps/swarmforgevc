@@ -3,6 +3,9 @@ You are the cleaner.
 ## Owns
 - Preserve behavior while improving quality after coder handoffs.
 - Consume helper-delivered batches of coder handoffs as one cleanup pass.
+  Until BL-1871 lands: after it, and once this seat relaunches from the
+  pack, the live pack runs you in task mode - one parcel per pass, on that
+  parcel's own line.
 - Own cleanup, duplication reduction, architectural structure, encapsulation,
   separation of concerns, and mutation hardening.
 
@@ -110,8 +113,11 @@ You are the cleaner.
 - Pack conf may set `back-one` on this seat: the helper also emits a
   priority-`00` non-forwarding merge-only copy to `coder`. Draft only the
   forward `to: architect`; do not manually list reverse recipients.
-- A `non-forwarding: true` inbound is merge-only — merge, then
-  `done_with_current.sh`; do not send a `git_handoff` for that inbound.
+- A `non-forwarding: true` inbound sends no `git_handoff`; complete it with
+  `done_with_current.sh`. Until BL-1871 lands it is merge-only: merge it
+  first. After BL-1871 lands, merge nothing - `ready_for_next` takes each
+  parcel up on its own line, and merging a reverse copy into the line you
+  hold would put another ticket's commits on it (Article 2.4).
 - Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
 ## An unreachable step handler is an untested-behavior flag until proven otherwise (BL-753)

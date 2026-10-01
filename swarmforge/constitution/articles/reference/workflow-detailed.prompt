@@ -25,6 +25,9 @@ go first without waiting its turn; reach for the expeditor only when the
 pipeline itself is the casualty. queue-jump never stops or holds anything —
 it moves ONE ticket out of `backlog/paused/` onto the live pipeline now,
 past the depth cap (2026-09-05, BL-1425), and changes nothing else.
+Spelled out, because the boot article compresses it to "≠": queue-jump is
+not ambulance, queue-jump is not the expeditor, and ambulance is not the
+expeditor.
 
 Legacy "expedite" wording, disambiguated below into queue-jump or the
 expeditor — none of these names change in this ticket (out of scope:
@@ -901,3 +904,68 @@ Branch" section, verbatim, before this split compressed it:
   gate's own: record the abandoned base in `abandoned_commits:`, rebuild a
   tip-pure commit on `origin/main`, cite that. Hit on 2026-08-29 and again
   on 2026-09-05 (`ea6628d01e`, BL-1212 at the documenter's send).
+
+## Parcel lines - boot wording before BL-1871's interims (2026-10-02)
+
+BL-1871 (first slice of BL-1870, ruling A) makes `ready_for_next` take a
+`git_handoff` up by moving the role's worktree onto the cited commit, never
+by merging it into the branch the role holds. The specifier landed its
+prose on 2026-10-02, when it activated (BL-798), as "Until BL-1871 lands"
+interims. Retire the "until" halves once QA's land note arrives. The boot
+wording each interim replaced, verbatim:
+
+`02_handoffs.md` 2.4:
+
+> Use `ready_for_next.sh` to receive work (checks `in_process/` first). Batch
+> roles (cleaner, hardener) process multiple parcels at once. A parcel stuck
+> in `inbox/new/` >10 minutes: the coordinator must chase it. See
+> **02-handoffs-detailed.md**.
+>
+> A `non-forwarding: true` inbound is **merge-only**: run the payload merge,
+> then `done_with_current.sh`. Do **not** send a `git_handoff` for that
+> inbound — the helper refuses while such an inbound is `in_process`. On a
+> reverse (handback), the inbound tree is the structure; replay this role's
+> current task onto that shape.
+
+`02_handoffs.md` 2.5, second paragraph:
+
+> QA merge-up **notes** remain the QA→upstream sync path for now (QA windows
+> stay `forward-only`). Reverse hops on cleaner/architect may coexist; do not
+> treat reverse copies as a replacement for the QA note broadcast until that
+> migration is explicit.
+
+`workflow.prompt`, "Forwarded Commits Carry Their Lineage":
+
+> - A forwarded commit MUST have the received commit as an ancestor
+>   (`git merge-base --is-ancestor <received> <yours>`). Merge FIRST (plain
+>   `git merge`/`--no-ff`, never `reset --hard`), then work, then forward,
+>   re-running the ancestry check every time. See
+>   **workflow-detailed.prompt**.
+
+`workflow.prompt`, "A Bounce Must Be Reverted Out Of The Bouncing Branch":
+
+> - Bouncing sends a `note` back but does NOT remove the bounced commit —
+>   revert what it wrongly ADDED, same step; an OMISSION bounce (spec-gap,
+>   missing test/doc) reverts NOTHING, and `git revert -m 1` reverses the
+>   WHOLE merge: restore every other ticket's path. EXCEPTION: already an
+>   ancestor of `main` → do NOT revert; report the breach. See
+>   **workflow-detailed.prompt** for the full wording (BL-954/956, 2026-09-07).
+
+`workflow.prompt`, "QA merge-up broadcast (worktree roles)":
+
+> - A pipeline worktree role receiving a merge-up `note` from QA: `git merge
+>   <qa-commit>` in your worktree, resolve conflicts, then
+>   `done_with_current.sh` — do not forward, the chain ended at QA. Specifier
+>   and coordinator are not merge-up recipients (BL-247). See
+>   **workflow-detailed.prompt**.
+
+`PIPELINE.md`: the cleaner and hardender rows read `batch`, with no
+footnote.
+
+Interim sites, so the retirement sweep finds all of them: the three
+boot files above, plus `cleaner.prompt`, `architect.prompt`,
+`coder.prompt` and `hardender.prompt` (each carries the literal "Until
+BL-1871 lands", which is what QA's retire trigger greps). The `"git merge
+<commit>" never a cherry-pick` warning in coder.prompt stays after the
+land: only its merge half retires. QA's merge-up SEND is unchanged by
+BL-1871; a later BL-1870 slice retires it.

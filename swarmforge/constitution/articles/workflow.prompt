@@ -2,16 +2,16 @@
 
 ## How Work Moves — Normal Live Swarm, Queue-Jump, Ambulance, Expeditor (BL-715)
 - **The normal live swarm is the default path** for every ticket. Three
-  named specials exist and **none replaces it**: **queue-jump** (the human's
-  Q jump tap, `/qjump` or pager Expedite: approve, promote PAST
+  named specials exist and **none of them replaces that path**:
+  **queue-jump** promotes sooner then walks the normal live pipeline (the
+  human's Q jump tap, `/qjump` or pager Expedite: approve, promote PAST
   `active_backlog_max_depth`, dispatch now; `depends_on`/hold/blocked
   still refuse, the coordinator's own promotion stays capped — directive
   2026-09-05, BL-1425; Article 3.2.4's defect lane only reorders),
-  **ambulance** (holds other parcels for one ticket,
-  `docs/how-to/BL-655-ambulance-mode-the-hold.md`), and
-  **expeditor** (drives one ticket with the swarm stopped,
-  `swarmforge/scripts/expedite.sh`). **queue-jump ≠ ambulance ≠
-  expeditor.** See **workflow-detailed.prompt** for the escalation ladder.
+  **ambulance** holds other parcels on a live stack for one ticket
+  (`docs/how-to/BL-655-ambulance-mode-the-hold.md`), and **expeditor**
+  drives one ticket with the swarm stopped (`swarmforge/scripts/expedite.sh`).
+  **queue-jump ≠ ambulance ≠ expeditor.** See **workflow-detailed.prompt**.
 
 ## Handoff transport (tmux primary, mailbox backup)
 - Agents send work via `swarm_handoff.sh` only — never direct tmux commands.
@@ -69,10 +69,10 @@
 
 ## Forwarded Commits Carry Their Lineage
 - A forwarded commit MUST have the received commit as an ancestor
-  (`git merge-base --is-ancestor <received> <yours>`). Merge FIRST (plain
-  `git merge`/`--no-ff`, never `reset --hard`), then work, then forward,
-  re-running the ancestry check every time. See
-  **workflow-detailed.prompt**.
+  (`git merge-base --is-ancestor <received> <yours>`). Until BL-1871
+  lands, merge FIRST (plain `git merge`, never `reset --hard`); after,
+  `ready_for_next` moves you onto it. Then work and forward, re-running
+  the ancestry check every time. See **workflow-detailed.prompt**.
 
 ## An Approval Authorizes Only Its Ticket's Work (BL-506)
 - A parcel carries ONE ticket's task name; QA approval authorizes ONLY that
@@ -81,12 +81,11 @@
   out-of-scope diffs. See **workflow-detailed.prompt**.
 
 ## A Bounce Must Be Reverted Out Of The Bouncing Branch (BL-490/BL-495)
-- Bouncing sends a `note` back but does NOT remove the bounced commit —
-  revert what it wrongly ADDED, same step; an OMISSION bounce (spec-gap,
-  missing test/doc) reverts NOTHING, and `git revert -m 1` reverses the
-  WHOLE merge: restore every other ticket's path. EXCEPTION: already an
-  ancestor of `main` → do NOT revert; report the breach. See
-  **workflow-detailed.prompt** for the full wording (BL-954/956, 2026-09-07).
+- Until BL-1871 lands: a bounce does NOT remove the bounced commit —
+  revert what it wrongly ADDED, same step (confirm CONTENT is gone,
+  never by ancestry); an OMISSION bounce reverts NOTHING; `-m 1` reverses
+  the WHOLE merge. Already on `main` → report, never revert. After, the
+  next take-up leaves that line. See **workflow-detailed.prompt** (BL-954/956).
 
 ## Never Blind-Forward A Bounce You Cannot Fix (BL-425/BL-576)
 - A bounce routes to the role that owns the fix. One reaching you for a
@@ -105,11 +104,10 @@
   read the one that is ahead (BL-891). See **workflow-detailed.prompt**.
 
 ## QA merge-up broadcast (worktree roles)
-- A pipeline worktree role receiving a merge-up `note` from QA: `git merge
-  <qa-commit>` in your worktree, resolve conflicts, then
-  `done_with_current.sh` — do not forward, the chain ended at QA. Specifier
-  and coordinator are not merge-up recipients (BL-247). See
-  **workflow-detailed.prompt**.
+- A worktree role's QA merge-up `note`: until BL-1871 lands, `git merge
+  <qa-commit>`, resolve conflicts, then `done_with_current.sh`; after it,
+  merge nothing. Never forward it. Specifier and coordinator are not
+  recipients (BL-247). See **workflow-detailed.prompt**.
 
 ## Announcements, Commit Messages, Temporary Files
 - Announcements/check-in comments: no role bylines. Every git commit

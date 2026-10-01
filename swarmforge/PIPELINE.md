@@ -25,13 +25,14 @@ merge, close tickets, or promote backlog items.
 | **coordinator** | master (no domain code) | task | specifier *(intake/routing)*; backlog bookkeeping after QA (no git merge/push) |
 | **specifier** | master | task | **coder** — specifications only |
 | **coder** | `coder` | task | **cleaner** |
-| **cleaner** | `cleaner` | batch | **architect** |
+| **cleaner** | `cleaner` | batch* | **architect** |
 | **architect** | `architect` | task | **hardender** |
-| **hardender** | `hardender` | batch | **documenter** |
+| **hardender** | `hardender` | batch* | **documenter** |
 | **documenter** | `documenter` | task | **QA** |
 | **QA** | `QA` | task | **coordinator** *(approval + merge-up broadcast)*; lands the approved commit on `main` |
 | **art-director** | `art-director` | task | **specifier** *(briefs)*; **QA** *(land note, BL-1444)*; answers QA sign-off notes — outside the chain (Article 1.10) |
 
+- *Task once BL-1871 lands and the seat relaunches.
 - The specifier works on **master** but only for spec/prompt files — not
   integration merges; every other role works only in its own
   `.worktrees/<role>` branch. See **pipeline-detailed.md** for the
