@@ -73,3 +73,9 @@
   description: "reproduced lines-lost by hand to tell a merge-drop guard refusal's false positives (repeated 'Prior entry —' separator) from its one real resurrection, counted every line text across base/sides/merge, and proved a guard-clean commit chain with commit-tree"
   detected_at: 2026-10-01
   evidence: backlog/evidence/BL-1845-specifier-merge-drop-guard-boilerplate-separator-adjudication-20261001.md
+- category: land-path-ownership
+  ticket: BL-1842
+  role: specifier
+  description: "checked by hand that all six untagged QA restores/reverts touching BL-1842's shared how-to put no line into the approved copy beyond origin/main's, before ruling a condition (k) hand-built land"
+  detected_at: 2026-10-01
+  evidence: backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
