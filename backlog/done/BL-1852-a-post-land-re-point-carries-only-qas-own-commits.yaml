@@ -123,3 +123,5 @@ notes: |
   land_step_lib.bb. This one goes first because the cache cannot hit
   commits whose ids change on every re-point.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+assigned_to: coder
