@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: first-run-mutation-debt
-priority: 40
+priority: 107
 direction: swarm-proposed
 depends_on: []
 decomposes_into: [BL-1520, BL-1523, BL-1577, BL-1669, BL-1672, BL-1674, BL-1675, BL-1676]

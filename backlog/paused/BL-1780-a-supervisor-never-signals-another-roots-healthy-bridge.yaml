@@ -9,7 +9,7 @@ severity: medium
 # on 8765, GpuBargainHunter on 8767), so that is one misconfiguration
 # away, and the result is another swarm's front desk killed.
 epic: swarm-reliability
-priority: 20
+priority: 77
 depends_on: []
 mutation_cost: low
 # low: one pure decision in front_desk_supervisor_lib.bb (Babashka, no

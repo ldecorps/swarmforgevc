@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: quota-budget-manager
-priority: 50
+priority: 111
 severity: low
 depends_on: [BL-552]
 source: "backlog/INTAKE-per-provider-api-plan-usage-view.md, drained 2026-08-29"

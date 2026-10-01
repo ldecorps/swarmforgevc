@@ -8,7 +8,7 @@ severity: medium
 # e5a03ee6c7 warns about it; nothing is broken right now.
 status: todo
 epic: onboarding-target-repo
-priority: 3
+priority: 13
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium

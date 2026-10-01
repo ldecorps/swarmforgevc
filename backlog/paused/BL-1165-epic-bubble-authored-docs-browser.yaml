@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: bubble-authored-docs
-priority: 12
+priority: 56
 direction: human-requested
 depends_on: [BL-829]
 mutation_cost: high

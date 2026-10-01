@@ -10,7 +10,7 @@ severity: medium
 # handoffd's master reconcile stayed up to date through all of 2026-09-24.
 status: todo
 epic: swarm-reliability
-priority: 20
+priority: 76
 direction: swarm-reported
 depends_on: []
 # No open ticket touches the certification sweep's ledger write (grep of

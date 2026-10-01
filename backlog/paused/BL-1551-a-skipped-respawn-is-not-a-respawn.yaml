@@ -12,7 +12,7 @@ severity: medium
 # 2026-09-12 ledger makes and that never happened.
 status: todo
 epic: lean-aware-coordinator
-priority: 12
+priority: 60
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

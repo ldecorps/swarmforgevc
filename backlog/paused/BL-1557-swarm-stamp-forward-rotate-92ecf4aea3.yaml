@@ -9,7 +9,7 @@ severity: medium
 # and the ledger's resurfacing keeps the ask alive without the expedite lane.
 status: todo
 epic: swarm-reliability
-priority: 20
+priority: 74
 direction: human-directive
 depends_on: []
 mutation_cost: low

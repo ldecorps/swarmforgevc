@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: code-quality-gates
 human_approval: approved
-priority: 40
+priority: 109
 direction: pipeline-note
 depends_on: []
 mutation_cost: low

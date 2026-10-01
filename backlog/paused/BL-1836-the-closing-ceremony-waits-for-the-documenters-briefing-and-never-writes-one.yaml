@@ -9,7 +9,7 @@ severity: high
 # 2026-09-22 (register rows added in this mint, 2026-09-05 amendment).
 status: todo
 epic: swarm-reliability
-priority: 1
+priority: 2
 direction: human-intake
 depends_on: []
 # Not BL-1835: under ruling A the ceremony stops dump-free either way. Until

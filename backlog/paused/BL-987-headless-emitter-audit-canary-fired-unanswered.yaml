@@ -7,7 +7,7 @@ status: active
 assigned_to: coder
 epic: code-quality-gates
 human_approval: approved
-priority: 30
+priority: 103
 direction: pipeline-note
 depends_on: []
 mutation_cost: low

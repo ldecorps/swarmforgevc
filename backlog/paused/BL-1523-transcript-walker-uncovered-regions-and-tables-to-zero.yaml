@@ -8,7 +8,7 @@ severity: medium
 # gap on the transcript walker that classifies every agent turn.
 status: todo
 epic: first-run-mutation-debt
-priority: 30
+priority: 99
 direction: swarm-proposed
 depends_on: []
 # BL-1488 is active and discharges the ledger row; it is not a dependency -

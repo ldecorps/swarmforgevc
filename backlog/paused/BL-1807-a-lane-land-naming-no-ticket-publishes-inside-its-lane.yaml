@@ -11,7 +11,7 @@ severity: medium
 # refused tip carries a brief the specifier already minted as BL-1792.
 status: todo
 epic: art-direction
-priority: 20
+priority: 80
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

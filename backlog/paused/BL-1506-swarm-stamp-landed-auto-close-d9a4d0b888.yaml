@@ -10,7 +10,7 @@ severity: medium
 # is recorded in coordinator.prompt by the specifier at mint (BL-798).
 status: todo
 epic: swarm-reliability
-priority: 20
+priority: 71
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

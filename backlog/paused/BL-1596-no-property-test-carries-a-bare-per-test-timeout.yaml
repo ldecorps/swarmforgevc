@@ -10,7 +10,7 @@ severity: medium
 # unrelated parcel's hold.
 status: todo
 epic: code-quality-gates
-priority: 12
+priority: 61
 direction: swarm-reported
 depends_on: [BL-1588, BL-1592, BL-1595, BL-1606]
 # depends_on: BL-1588 lands the helper's fork signal; BL-1592 and BL-1595

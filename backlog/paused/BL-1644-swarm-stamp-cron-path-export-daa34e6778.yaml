@@ -9,7 +9,7 @@ severity: medium
 # resurfacing keeps the ask alive without the expedite lane.
 status: todo
 epic: swarm-reliability
-priority: 20
+priority: 75
 direction: human-directive
 depends_on: []
 mutation_cost: low

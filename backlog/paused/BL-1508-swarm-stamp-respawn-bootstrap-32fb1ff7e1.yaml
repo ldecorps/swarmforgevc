@@ -9,7 +9,7 @@ severity: medium
 # degraded today; the claude seats in the live pack never had the gap.
 status: todo
 epic: swarm-reliability
-priority: 20
+priority: 73
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

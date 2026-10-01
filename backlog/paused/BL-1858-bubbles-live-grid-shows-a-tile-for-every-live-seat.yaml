@@ -8,7 +8,7 @@ severity: medium
 # the panes stayed reachable from tmux and the VS Code tiles.
 status: todo
 epic: local-llm-swarm
-priority: 2
+priority: 8
 direction: queue-jump
 # queue-jump: the human's 2026-09-30 directive auto-jumps every
 # local-llm-swarm ticket; this one exists so the human can watch the local

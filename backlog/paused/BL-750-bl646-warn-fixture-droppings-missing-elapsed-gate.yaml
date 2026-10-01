@@ -10,7 +10,7 @@ severity: medium
 # cannot observe the boundary at all.
 status: todo
 epic: code-quality-gates
-priority: 81
+priority: 116
 direction: normal
 depends_on: []
 mutation_cost: low

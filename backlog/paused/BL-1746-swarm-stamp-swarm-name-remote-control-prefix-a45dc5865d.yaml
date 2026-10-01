@@ -8,7 +8,7 @@ severity: medium
 # readers of the name were not updated (probe 2).
 status: todo
 epic: fleet-topology
-priority: 30
+priority: 101
 direction: swarm-reported
 depends_on: []
 # No open ticket touches remote_control_session_name_for_role or

@@ -4,7 +4,7 @@ milestone: M8
 type: epic
 epic: onboarding-target-repo
 status: todo
-priority: 3
+priority: 10
 depends_on: []
 decomposes_into: [BL-1756, BL-1757, BL-1758, BL-1759, BL-1774, BL-1775, BL-1776, BL-1777, BL-1828]
 remaining_slices:

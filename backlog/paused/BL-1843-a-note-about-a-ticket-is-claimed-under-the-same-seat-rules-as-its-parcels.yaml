@@ -9,7 +9,7 @@ severity: medium
 # human's iq3 directive, not by severity.
 status: todo
 epic: multi-seat-stages
-priority: 1
+priority: 2
 direction: queue-jump
 depends_on: []
 mutation_cost: low

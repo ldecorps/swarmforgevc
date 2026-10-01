@@ -11,7 +11,7 @@ severity: medium
 # nothing is degraded for a seat doing its ordinary work.
 status: todo
 epic: tool-miss-auto-heal
-priority: 30
+priority: 100
 direction: specifier-found
 depends_on: []
 mutation_cost: low

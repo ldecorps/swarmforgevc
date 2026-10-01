@@ -4,7 +4,7 @@ milestone: M8
 type: chore
 status: todo
 epic: onboarding-target-repo
-priority: 30
+priority: 102
 direction: specifier-found
 depends_on: [BL-1758]
 # BL-1758 removes the wrapper block that fetches an upstream archive

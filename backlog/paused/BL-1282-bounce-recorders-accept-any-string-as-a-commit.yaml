@@ -14,7 +14,7 @@ severity: medium
 # per-role bounce-rate experiment BL-990 was built to protect.
 status: todo
 epic: code-quality-gates
-priority: 90
+priority: 118
 direction: agent-reported
 depends_on: []
 mutation_cost: low

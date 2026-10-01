@@ -10,7 +10,7 @@ severity: medium
 # from being loaded.
 status: todo
 epic: code-quality-gates
-priority: 25
+priority: 91
 direction: swarm-reported
 depends_on: []
 # No open ticket touches these probes (grep of paused/ and active/ for

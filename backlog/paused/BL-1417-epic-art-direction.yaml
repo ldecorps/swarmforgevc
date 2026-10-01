@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: art-direction
-priority: 30
+priority: 96
 direction: human-requested
 depends_on: []
 decomposes_into: [BL-1418, BL-1419, BL-1442, BL-1444, BL-1792, BL-1807, BL-1823]

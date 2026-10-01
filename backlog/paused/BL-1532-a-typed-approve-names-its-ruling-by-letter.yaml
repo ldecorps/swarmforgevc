@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: question-attention-path
-priority: 12
+priority: 59
 direction: human-directive
 depends_on: [BL-1531]
 mutation_cost: low

@@ -9,7 +9,7 @@ severity: medium
 # /ambulance or Expedite tap on a GH ticket fails silently today.
 status: todo
 epic: swarm-reliability
-priority: 30
+priority: 97
 direction: swarm-reported
 depends_on: [BL-1452]
 mutation_cost: medium

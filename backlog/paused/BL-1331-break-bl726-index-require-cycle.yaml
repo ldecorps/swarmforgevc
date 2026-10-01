@@ -12,7 +12,7 @@ severity: low
 # to include specs/pipeline/steps/index.js or this sibling file.
 status: todo
 epic: code-quality-gates
-priority: 40
+priority: 106
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

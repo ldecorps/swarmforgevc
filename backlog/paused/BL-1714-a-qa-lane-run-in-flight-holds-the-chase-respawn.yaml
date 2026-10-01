@@ -12,7 +12,7 @@ severity: medium
 # was time, not a verdict.
 status: todo
 epic: swarm-reliability
-priority: 14
+priority: 66
 direction: swarm-reported
 depends_on: []
 # BL-1652 (the lane guard) and BL-1673 (the scan excludes its own pid)

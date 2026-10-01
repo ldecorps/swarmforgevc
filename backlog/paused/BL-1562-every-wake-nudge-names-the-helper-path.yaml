@@ -11,7 +11,7 @@ severity: low
 # behind (the cleaner's was, at mint).
 status: todo
 epic: tool-miss-auto-heal
-priority: 40
+priority: 108
 direction: specifier-found
 depends_on: []
 mutation_cost: low

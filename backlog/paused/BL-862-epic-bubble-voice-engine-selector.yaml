@@ -5,7 +5,7 @@ type: epic
 status: todo
 epic: bubble-voice-engine
 human_approval: approved
-priority: 41
+priority: 110
 direction: human-intake
 depends_on: []
 assigned_to: coordinator

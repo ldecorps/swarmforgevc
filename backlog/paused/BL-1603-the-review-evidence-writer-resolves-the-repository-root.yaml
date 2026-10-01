@@ -8,7 +8,7 @@ severity: medium
 # read from main missing a pass record. Not high: no gate is red.
 status: todo
 epic: code-quality-gates
-priority: 12
+priority: 62
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium

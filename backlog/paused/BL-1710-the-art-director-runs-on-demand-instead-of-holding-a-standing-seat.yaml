@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: on-demand-roles
-priority: 10
+priority: 52
 direction: human-requested
 depends_on: []
 mutation_cost: medium

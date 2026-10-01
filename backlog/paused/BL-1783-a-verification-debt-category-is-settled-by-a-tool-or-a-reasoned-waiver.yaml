@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: feature
 epic: lean-aware-coordinator
-priority: 20
+priority: 78
 depends_on: [BL-1782]
 mutation_cost: low
 # low: two verbs added to BL-1782's bb lib and recorder CLI plus the

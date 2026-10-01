@@ -9,7 +9,7 @@ severity: medium
 # and on the onboarding negotiation's Telegram relay text and intent routing.
 status: todo
 epic: first-run-mutation-debt
-priority: 30
+priority: 98
 direction: swarm-proposed
 depends_on: []
 mutation_cost: medium

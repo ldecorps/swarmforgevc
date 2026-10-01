@@ -10,7 +10,7 @@ severity: medium
 # intake at a stale cap.
 status: todo
 epic: swarm-self-optimization
-priority: 3
+priority: 19
 depends_on: []
 mutation_cost: medium
 # medium: one error path in emit-throttle-recommendation.ts's main, plus

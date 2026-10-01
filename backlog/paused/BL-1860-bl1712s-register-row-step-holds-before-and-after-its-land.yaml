@@ -6,7 +6,7 @@ severity: high
 # high: a standing red on main is a broken safety signal (2026-09-05).
 status: todo
 epic: swarm-reliability
-priority: 3
+priority: 17
 depends_on: []
 mutation_cost: low
 # low: one step handler under specs/pipeline/steps/; no product code.
