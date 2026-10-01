@@ -134,3 +134,5 @@ notes: |
   Article 4.2 check needs this row before it approves BL-1837. The hardener
   was told in the same pass.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+assigned_to: coder
