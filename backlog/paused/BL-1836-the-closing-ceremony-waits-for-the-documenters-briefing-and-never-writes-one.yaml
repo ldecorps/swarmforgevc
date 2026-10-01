@@ -123,11 +123,14 @@ description: |
      its test lose their only caller: remove them if `grep` still finds no
      other. `banked_briefing_lib.bb` stays; handoffd's banked mode (BL-308)
      uses it.
-  5. Fix BL-1640's shell fixture, which owns today's red: `sent_today`
-     writes the wall-clock date (`date +%Y-%m-%d`), while the ceremony
-     runs on a simulated 2026-09-21, so scenarios 01-02 have failed every
-     day since the file landed. Write the simulated day, in the sweep's
-     real `{"sent": [...]}` shape.
+  5. BL-1640's shell fixture: hotfix 4d089d21e5 (2026-10-01) already
+     writes the simulated day (`sent_today <root> 2026-09-21`), so the red
+     is gone and both register rows are retired. Review that commit; this
+     ticket is its stamp-off. What is left here: the fixture still writes
+     the bare-list shape the current reader takes. When item 2 moves
+     `briefingSent` to the sweep's real `{"sent": [...]}` shape, move
+     `sent_today` to that shape in the same commit, or BL-1640's 01-02 go
+     red again.
 
   ## How (direction, not mandate)
 
@@ -166,16 +169,15 @@ qa_e2e_procedure: |
      5 of 5 ok (two rows of 01, then 02, 03, 04). Measured 0 on main at
      mint: no handler exists yet.
   2. `node specs/pipeline/cli.js specs/features/BL-1640-a-finish-shift-sleep-runs-the-closing-ceremony-to-done.feature`:
-     6 of 6 ok. Measured on main 91c208a923 at mint: 01 and 02 red, as the
-     register rows owned by this ticket describe; 03-06 ok.
+     6 of 6 ok. Measured on main 91c208a923 at mint: 01 and 02 red; 6 of
+     6 ok since hotfix 4d089d21e5.
   3. `node specs/pipeline/cli.js specs/features/BL-1641-a-ceremony-at-its-briefing-deadline-produces-a-briefing-before-the-stop.feature`:
      no scenarios, no failure. Measured 4 of 4 ok before retirement.
   4. `node specs/pipeline/cli.js specs/features/BL-1458-every-briefing-trigger-instructs-the-documenter.feature`:
      6 of 6 ok (measured on main d6c27c9b11 at mint).
   5. `grep -rn "compose_banked_briefing_cli\|composeHeadlessBriefing" extension/src swarmforge/scripts`:
      nothing, or only callers the evidence names.
-  6. The register rows naming BL-1836 are present and owned at the parcel
-     commit; after the land they are gone (BL-1631).
+  6. No register row names BL-1836: hotfix 4d089d21e5 retired both.
   After the land (the specifier's or coordinator's check on the next
   closing ceremony, not QA's): `.swarmforge/daemon/closing-ceremony-state.json`
   has no `briefing-composed-headless`, and the day's briefing on main is a
@@ -194,3 +196,8 @@ notes: |
   > If they are defects, The fixes dont have to run whole swarm do they? I dont want thebswarm’spending most itd time fixing defects....
   The skip reasons are in stage_skip_reasons. Routing honours them
   because required_stages_routing_enabled is true (BL-606).
+  2026-10-01 (specifier): BL-1640's red hotfixed at 4d089d21e5 under the
+  human's directive, verbatim: "Yeah so basically hotfix all red and
+  file stamp off instead". Both register rows retired in that commit.
+  The ledger entry is linked here, and item 5 is now the review of it
+  plus the shape move that goes with item 2.
