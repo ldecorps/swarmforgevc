@@ -19,7 +19,10 @@ mutation_cost: medium
 # backendSwitch.ts, modelDisplayName.ts) plus the served page's inline JS;
 # the hotfix already changed them, so the hardener's pass is the real cost.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
 
 acceptance: specs/features/BL-1858-bubbles-live-grid-shows-a-tile-for-every-live-seat.feature
 
@@ -160,3 +163,8 @@ notes: |
   SWARMFORGE_ROLE=QA, the BL-848 how-to's route; both are on the hotfix
   ledger with stamp_ticket BL-1858. Severity medium, so it is not
   auto-approved; human approval is pending.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

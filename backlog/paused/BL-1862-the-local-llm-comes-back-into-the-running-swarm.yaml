@@ -12,7 +12,9 @@ mutation_cost: medium
 # persisted launch script, an HTTP probe and a GPU probe, in bash/bb (no
 # mutation lane). Swarm seat machinery, so it stays off the easy local seat.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1862-the-local-llm-comes-back-into-the-running-swarm.feature
 
@@ -127,3 +129,8 @@ notes: |
   the 2026-09-30 standing directive "Auto-jump any ticket that has to do
   with local llm"; priority 7, after BL-1861 which it depends on.
   Route to the primary coder: it changes the swarm's own seat machinery.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

@@ -14,7 +14,12 @@ priority: 81
 direction: normal
 depends_on: []
 mutation_cost: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 acceptance: specs/features/BL-750-fixture-droppings-alert-respects-the-shared-grace-period.feature
 
 invariants:
@@ -134,3 +139,8 @@ notes: |
   title, description and approval_context; it is what turns the open question
   "was immediate wake deliberate?" into a recommendation to fix. Gherkin lint
   gate: clean. IR-DRY: 0 findings.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

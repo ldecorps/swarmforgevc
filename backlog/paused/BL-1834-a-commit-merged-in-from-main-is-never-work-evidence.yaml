@@ -20,7 +20,7 @@ required_stages: [coder, qa]
 stage_skip_reasons:
   cleaner: "one decision in one Babashka function changes; nothing to refactor"
   architect: "the spec and its invariants fix the design, and QA checks them"
-  hardender: "Babashka has no mutation lane wired (BL-472), so the pass would only record the degraded fallback; the coder's bb test is the coverage"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
   documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1834-a-commit-merged-in-from-main-is-never-work-evidence.feature

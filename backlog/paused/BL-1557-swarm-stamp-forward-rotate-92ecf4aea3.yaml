@@ -18,7 +18,11 @@ mutation_cost: low
 # real dispatchers through the fixture shape
 # test_ready_for_next_rotate_home.sh already builds.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1557-swarm-stamp-forward-rotate-92ecf4aea3.feature
 
@@ -217,6 +221,11 @@ notes: |
   of goal 4 no `rotate-forward` row can appear until BL-1558 lands, so a
   live forward-rotation is identified by a `handoff-forward` row whose
   `to` is not coder following a git_handoff send.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: |
   On the parcel commit:

@@ -17,7 +17,12 @@ mutation_cost: low
 # low: review-only; shell/Babashka only (no mutation/CRAP/DRY wired, BL-472);
 # one step handler drives the launcher's real naming function.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1746-swarm-stamp-swarm-name-remote-control-prefix-a45dc5865d.feature
 
@@ -99,3 +104,8 @@ notes: |
   ledger pending row, stamp-open triage). Ledger row linked with
   `hotfix_ledger_update.bb --link a45dc5865d BL-1746` in the mint commit.
   The probes were found at mint by reading the other readers of the name.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

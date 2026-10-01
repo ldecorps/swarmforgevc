@@ -18,7 +18,11 @@ mutation_cost: low
 # one bb call, and the sibling BL-308 feature (same harness family) runs in
 # 4 s, far inside the 300 s per-mutant ceiling.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
 acceptance: specs/features/BL-1792-a-headless-briefings-git-activity-renders-one-list-item-per-commit.feature
 
 human_approval: approved
@@ -180,3 +184,8 @@ notes: |
   briefing readable on a phone). Estimable (one helper, three call sites).
   Small (4 scenarios, 1 invariant). Testable (composer plus renderer,
   in-process through bb, seconds).
+  2026-10-01 (specifier): required_stages set to
+  [coder, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

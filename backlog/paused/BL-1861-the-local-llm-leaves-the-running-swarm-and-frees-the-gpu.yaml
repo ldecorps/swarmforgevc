@@ -12,7 +12,9 @@ mutation_cost: medium
 # bounded wait, in bash/bb (no mutation lane, engineering.prompt). It changes
 # the swarm's own seat machinery, so it stays off the easy local seat.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1861-the-local-llm-leaves-the-running-swarm-and-frees-the-gpu.feature
 
@@ -165,3 +167,8 @@ notes: |
   with local llm"; priority 6 places it after the iq3 build order already
   in STEERING (the intake asked not to rank itself ahead of it).
   Route to the primary coder: it changes the swarm's own seat machinery.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

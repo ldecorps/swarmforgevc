@@ -16,7 +16,10 @@ mutation_cost: medium
 # at the top of main(); the provisioner's existing tests already stub the
 # network and os.homedir.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
 
 acceptance: specs/features/BL-1776-the-provisioner-keys-fleet-creds-only-by-a-swarm-name-the-target-declares.feature
 
@@ -126,3 +129,8 @@ notes: |
   Negotiable (check shape is direction), Valuable (a mis-keyed fleet dir
   can no longer be written), Estimable (one check at the top of main),
   Small, Testable (fixture target and home, stubbed fetch).
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

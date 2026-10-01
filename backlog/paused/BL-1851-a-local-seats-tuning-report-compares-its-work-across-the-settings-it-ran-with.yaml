@@ -11,7 +11,9 @@ mutation_cost: low
 # low: a bb lib and thin CLI reading three records; bb has no mutation lane
 # wired (engineering.prompt). Fixtures only, no live seat.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1851-a-local-seats-tuning-report-compares-its-work-across-the-settings-it-ran-with.feature
 
@@ -131,3 +133,8 @@ notes: |
   when each ran, so a change made mid-session outside the swarm (the
   human's GPU power limit, 180 W -> 150 W, source) splits the session at
   the row BL-1850 records for it.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

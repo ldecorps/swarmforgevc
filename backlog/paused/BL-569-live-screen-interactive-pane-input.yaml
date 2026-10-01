@@ -151,6 +151,9 @@ description: |
   armed indicator), but a human driving live keys accepts live-pane risk
   in a way the automated poll path must not.
 
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 acceptance: |
   Specifier writes executable scenarios; minimum the design must make
   testable:
@@ -178,3 +181,9 @@ out_of_scope: |
   - Automating answers (BL-568 owns the automated menu path).
   - Exposing panes of non-swarm tmux sessions (target resolution stays
     within the roles.tsv/resident set the spy already serves).
+notes: |
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

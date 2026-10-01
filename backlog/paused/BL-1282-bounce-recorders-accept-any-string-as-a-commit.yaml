@@ -18,7 +18,11 @@ priority: 90
 direction: agent-reported
 depends_on: []
 mutation_cost: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  documenter: "no documented behaviour changes"
 acceptance: specs/features/BL-1282-bounce-recorders-accept-any-string-as-a-commit.feature
 
 invariants:
@@ -160,3 +164,8 @@ notes: |
   both raised by the architect) were checked and are correctly attributed —
   both tickets do declare invariants in their YAML, so BL-633's mechanism
   worked as designed and no spec-side defect is implied by them.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

@@ -13,7 +13,9 @@ mutation_cost: low
 # recordApprovalReply adapter, and reply text; everything unit-testable
 # over the fakes the classifier already has.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1532-a-typed-approve-names-its-ruling-by-letter.feature
 
@@ -113,6 +115,11 @@ notes: |
   defined there and BL-1531's pick hint is what this ticket extends.
   Documenter: docs/how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md
   and the BL-589 how-to gain the typed form; handoff-protocol is untouched.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: |
   On the parcel commit, from `extension/`, after `npm run compile`.

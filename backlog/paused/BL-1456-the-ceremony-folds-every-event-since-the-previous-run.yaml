@@ -20,7 +20,10 @@ mutation_cost: low
 # one call-site change in night-closing-ceremony-run.ts, all unit-testable
 # over a mkdtemp fixture root with a seeded ledger and a seeded prior run.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
 
 acceptance: specs/features/BL-1456-the-ceremony-folds-every-event-since-the-previous-run.feature
 
@@ -204,3 +207,8 @@ notes: |
   (night-closing-ceremony-run.ts calling runClosingCeremony) exists before
   the fix, so an anchor on it would match unchanged code and gate nothing
   (BL-1235); scenario 07 is the gate for that call-site change.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

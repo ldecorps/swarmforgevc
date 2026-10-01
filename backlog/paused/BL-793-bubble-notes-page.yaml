@@ -10,7 +10,10 @@ priority: 127
 direction: human-requested
 depends_on: [BL-769, BL-790]
 mutation_cost: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect pass covers structure, so the cleaner runs only for large slices"
+  hardender: "Kotlin/Android has no mutation lane wired; the JVM unit suite and the recorded device procedure are the coverage (BL-769)"
 acceptance: specs/features/BL-793-bubble-notes-page.feature
 
 invariants:
@@ -144,3 +147,8 @@ notes: |
      states the reason in each case rather than a bare code, and that neither
      reports the note as queued.
   7. Confirm no amend or withdraw control is present anywhere on the page.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

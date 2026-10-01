@@ -11,7 +11,9 @@ mutation_cost: medium
 # (standingRedSignal.ts is ~140 lines) plus a fold in
 # emit-throttle-recommendation.ts; four scenarios.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 acceptance: specs/features/BL-1784-an-unowned-verification-debt-category-throttles-intake.feature
 
 invariants:
@@ -124,3 +126,8 @@ notes: |
   nobody remembers it). Estimable (BL-1429's standingRedSignal.ts and its
   fold are the template). Small (4 scenarios, 2 invariants). Testable
   (fixture root, the same shape as BL-1429's feature).
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

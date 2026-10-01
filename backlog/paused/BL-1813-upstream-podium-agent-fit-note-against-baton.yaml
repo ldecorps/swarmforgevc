@@ -12,7 +12,11 @@ depends_on: []
 mutation_cost: low
 # low: two docs and one read-only step handler; no production code.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a one-page note and a step handler; nothing to refactor"
+  architect: "a measurement note, no design change"
+  hardender: "no production code changes"
 
 acceptance: specs/features/BL-1813-upstream-podium-agent-fit-note-against-baton.feature
 
@@ -117,3 +121,8 @@ notes: |
   suggested items". human_approval is approved on that directive's
   "approve as needed"; no choice is posed. Vocabulary per the human's
   ruling during this mint (see approval_context).
+  2026-10-01 (specifier): required_stages set to
+  [coder, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

@@ -27,7 +27,12 @@ mutation_cost: medium
 # feature's runners: one whole-tree census in a fresh child (about a
 # second after BL-1630), two fixture requires, one nested runtime run.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1659-no-step-handler-registers-a-test-runner-at-module-load.feature
 
@@ -147,3 +152,8 @@ notes: |
   the same guard file (stepHandlerModuleLoadBudget.test.js's non-vacuity
   case) as an expedited standing-red owner; sequencing only, nothing in
   this ticket's scope changes.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

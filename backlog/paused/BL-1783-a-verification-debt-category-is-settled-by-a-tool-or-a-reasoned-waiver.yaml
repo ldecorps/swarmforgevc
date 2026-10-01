@@ -10,7 +10,9 @@ mutation_cost: low
 # low: two verbs added to BL-1782's bb lib and recorder CLI plus the
 # reader's exclusion of settled rows; four scenarios.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 acceptance: specs/features/BL-1783-a-verification-debt-category-is-settled-by-a-tool-or-a-reasoned-waiver.feature
 
 invariants:
@@ -111,5 +113,10 @@ notes: |
   with a reason). Estimable (two verbs on a lib that exists by then, with
   BL-1439's --discharge as the template). Small (4 scenarios). Testable
   (mkdtemp git fixture).
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 assigned_to: coder

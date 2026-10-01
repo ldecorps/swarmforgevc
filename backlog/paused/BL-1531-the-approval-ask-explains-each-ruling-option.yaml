@@ -13,7 +13,9 @@ mutation_cost: medium
 # unit-testable over fixtures, Stryker-covered. Not low because the
 # composer's truncation ordering is new branchy logic.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1531-the-approval-ask-explains-each-ruling-option.feature
 
@@ -156,6 +158,11 @@ notes: |
   Documenter: docs/how-to/BL-589-approval-ask-carries-ruling-options.md
   describes the ask; extend it with the lettered block and the new field.
   No registered diagram depicts the ask composition.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: |
   On the parcel commit, from `extension/`, after `npm run compile`.

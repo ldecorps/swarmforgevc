@@ -17,7 +17,12 @@ mutation_cost: low
 # against a fixture Claude config through an env seam - never the live
 # ~/.claude.json.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1759-a-launch-never-leaves-a-pane-on-claude-codes-trust-dialog.feature
 
@@ -121,3 +126,8 @@ notes: |
   (epic BL-1755). The intake's investigation half was done at mint by
   reading only the `hasTrustDialogAccepted` flags of ~/.claude.json's
   projects map, nothing else in that file.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

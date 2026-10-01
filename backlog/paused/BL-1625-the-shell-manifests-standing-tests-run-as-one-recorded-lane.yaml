@@ -22,7 +22,9 @@ mutation_cost: low
 # tiny features (~50 s of registry load until BL-1630), inside BL-1541's
 # ceiling. The real populations run only as bounded samples in the parcel.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1625-the-shell-manifests-standing-tests-run-as-one-recorded-lane.feature
 
@@ -251,3 +253,8 @@ notes: |
   (five scenarios, two invariants), Testable (fixtures in seconds, two
   tiny features under a minute). Priority 4: measurement, like BL-1619,
   ahead of any lane-set change.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

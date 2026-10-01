@@ -18,7 +18,11 @@ mutation_cost: medium
 # medium: tests only, one 389-line module, full Stryker run over the unit
 # suite; a production change only if a seam is genuinely missing.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "tests only; nothing to refactor"
+  architect: "tests only, no design surface"
+  documenter: "nothing beyond the evidence file, as the ticket says"
 
 acceptance: specs/features/BL-1523-transcript-walker-uncovered-regions-and-tables-to-zero.feature
 
@@ -182,3 +186,8 @@ notes: |
   silently deciding it would be the BL-1300 shape. The recommended option
   applies that ruling by analogy and says so; the other option is one
   line to tap.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

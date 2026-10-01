@@ -17,7 +17,11 @@ mutation_cost: low
 # from) plus its tests; the acceptance handler drives the runner over
 # stand-in deps in milliseconds.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1765-a-closing-ceremony-in-progress-at-midnight-finishes-under-its-own-night.feature
 
@@ -112,3 +116,8 @@ notes: |
   change with its own bound). IR-DRY: the three medium findings are one
   step reused with a literal and a placeholder, and a Given and a Then
   with different meanings; left as they are.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

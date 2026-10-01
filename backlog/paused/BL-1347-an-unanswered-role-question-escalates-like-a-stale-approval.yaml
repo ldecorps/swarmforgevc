@@ -10,7 +10,9 @@ depends_on: [BL-584]
 mutation_cost: medium
 slice_size_envelope: low
 assigned_to: none
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1347-an-unanswered-role-question-escalates-like-a-stale-approval.feature
 
@@ -138,6 +140,11 @@ notes: |
 
   This ticket's own `acceptance:` names a real `.feature`, not a `.feature.draft`,
   so it is not caught by the BL-1340 promotion deadlock.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: |
   1. With the front-desk bot running against a scratch target, write a role

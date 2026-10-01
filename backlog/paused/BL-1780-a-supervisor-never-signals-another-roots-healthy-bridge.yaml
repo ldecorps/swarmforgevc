@@ -16,7 +16,12 @@ mutation_cost: low
 # mutation/CRAP/DRY wired, BL-472), one branch in the supervisor, one
 # feature over fixture listeners.
 slice_size_envelope: small
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1780-a-supervisor-never-signals-another-roots-healthy-bridge.feature
 
@@ -121,3 +126,8 @@ notes: |
   (one pure branch plus one call site), Small (two scenarios, one
   invariant), Testable (stand-in listeners on fixture ports, plus the
   live-pid check in QA's step 2).
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

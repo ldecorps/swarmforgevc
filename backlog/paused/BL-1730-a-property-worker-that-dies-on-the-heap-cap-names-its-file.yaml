@@ -23,7 +23,12 @@ mutation_cost: medium
 # run over two fixture files (seconds each, far inside BL-1541's
 # per-mutant ceiling).
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1730-a-property-worker-that-dies-on-the-heap-cap-names-its-file.feature
 
@@ -143,3 +148,8 @@ notes: |
   Minted 2026-09-25 by the specifier from the backlog-root intake, the
   same pass as BL-1729. Medium severity, so not expedited, and it minted
   `pending` like any non-severity feature file.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

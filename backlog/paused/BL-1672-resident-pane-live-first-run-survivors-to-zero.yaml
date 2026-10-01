@@ -26,7 +26,11 @@ mutation_cost: medium
 # sitting: twelve declarations, 76 mutants (BL-1519's ~60-per-sitting
 # arithmetic; the largest group, captureResidentPaneLive, is 18).
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "tests only; nothing to refactor"
+  architect: "tests only, no design surface"
+  documenter: "nothing beyond the evidence file, as the ticket says"
 
 acceptance: specs/features/BL-1672-resident-pane-live-first-run-survivors-to-zero.feature
 
@@ -197,3 +201,8 @@ notes: |
   gate goes from 66% to a full account), Estimable (76 mutants, twelve
   groups, one sitting), Small (two scenarios, one invariant), Testable
   (the parcel's own evidence; the 220 pin is BL-1445's discipline).
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

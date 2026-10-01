@@ -22,7 +22,11 @@ mutation_cost: medium
 # Clojure and TypeScript source snippets. One sitting: six small regex
 # parsers, ~106 mutants (BL-1519's per-function sizing).
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "tests only; nothing to refactor"
+  architect: "tests only, no design surface"
+  documenter: "nothing beyond the evidence file, as the ticket says"
 
 acceptance: specs/features/BL-1669-multi-branch-parser-extraction-first-run-survivors-to-zero.feature
 
@@ -125,3 +129,8 @@ notes: |
   Added to BL-1519's decomposes_into in the mint commit. IR-DRY at mint:
   the two scenarios share "When the evidence is read" by design, as
   BL-1520's do.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

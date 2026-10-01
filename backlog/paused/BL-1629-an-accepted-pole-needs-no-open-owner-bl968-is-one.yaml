@@ -18,7 +18,9 @@ mutation_cost: medium
 # one reader column, one verdict branch, the unit test for both; the
 # register row; one test file's sweep; feature and handler; evidence, docs.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1629-an-accepted-pole-needs-no-open-owner-bl968-is-one.feature
 
@@ -147,3 +149,8 @@ notes: |
   verdict branch, one row, one sweep - one sitting), Small (three
   scenarios, one invariant), Testable (fixture registers in milliseconds;
   bl968's solo run is the one long e2e step). Priority 8, beside BL-1620.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

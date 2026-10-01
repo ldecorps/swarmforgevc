@@ -478,19 +478,27 @@ You are the specifier.
   `stage_skip_reasons` entry per skipped stage:
   - test-side only (step handler, test helper, unit or property file):
     `[coder, qa]`;
-  - Babashka or shell production code: `[coder, qa]`. No mutation lane is
-    wired (BL-472), so a hardener pass only records the degraded fallback;
-    the coder's bb test is the coverage;
+  - Babashka or shell production code: `[coder, qa]`. No Stryker lane is
+    wired (BL-472); for a small fix the coder's bb test and the acceptance
+    run are the coverage. Add `hardender` when the fix writes durable state,
+    because its hand-mutant pass is the only gate on a write (BL-959);
   - TypeScript production code: `[coder, hardender, qa]`. Mutation is the
     Hardener gate (Article 4.1);
   - add `documenter` when a living doc describes the behaviour that
     changes, `architect` when the fix moves a boundary between components
-    that the spec cannot pin, and `cleaner` when the change is large
-    enough to leave duplication behind.
-- The full chain is for features and for defects whose design is
-  genuinely open; say why in `notes:` when you declare it. Re-check the
-  list when you amend a paused ticket, and never trim an ACTIVE ticket's
-  stages under a parcel in flight (the routing decision is already made).
+    that the spec cannot pin (or the ticket asks the architect a question),
+    and `cleaner` when the change is large enough to leave duplication
+    behind.
+- A feature keeps `architect` and `documenter`. It keeps `hardender` unless
+  it is Kotlin/Android only (no mutation lane, BL-769). It drops `cleaner`
+  unless its `slice_size_envelope` or `mutation_cost` is `high`. The full
+  chain is for large slices and for defects whose design is genuinely open.
+  Say why in `notes:` when you declare it. Re-check the list when you amend
+  a paused ticket. Never trim an ACTIVE ticket's stages under a parcel in
+  flight, because the routing decision is already made.
+- Every `stage_skip_reasons` entry is ONE physical line in a block mapping
+  under the key. Check it with `required_stages_lib.bb`'s
+  `read-stage-skip-reasons`: `:malformed` must be nil.
 
 ## Epic and milestone hygiene (BL-544; backlog-schema.md)
 - Every non-`type: epic` ticket you write MUST carry a non-empty `epic:` field —

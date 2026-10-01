@@ -10,7 +10,9 @@ priority: 129
 direction: human-requested
 depends_on: [BL-829, BL-842]
 mutation_cost: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 acceptance: specs/features/BL-843-bubble-control-page.feature
 
 approval_context: >
@@ -117,3 +119,9 @@ source: |
   Cursor, 2026-07-31), drained 2026-08-07 as slice B of a 1:2 split under the
   new BL-841 epic. The intake's locked decisions, including the mock's layout
   direction, are quoted verbatim in BL-841.
+notes: |
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

@@ -14,7 +14,10 @@ direction: swarm-reported
 depends_on: [BL-1452]
 mutation_cost: medium
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
 
 acceptance: specs/features/BL-1453-every-typescript-tool-accepts-github-seeded-ticket-ids.feature
 
@@ -128,6 +131,11 @@ notes: |
   mechanical swaps, one extractor, one grep handler; medium), Small (two
   scenarios, ten runs, two invariants - an outline over sites, not a
   scenario per site), Testable (pure parsers; a derived grep).
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 source: |
   Sweep of extension/src on 2026-09-06 (specifier); the GH-25 and GH-24

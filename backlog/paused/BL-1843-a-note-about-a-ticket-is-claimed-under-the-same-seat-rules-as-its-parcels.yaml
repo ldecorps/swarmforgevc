@@ -16,7 +16,12 @@ mutation_cost: low
 # low: the claim loop in ready_for_next_task.bb and the pure decisions in
 # seat_affinity_lib.bb / the shared task reader; bb has no mutation lane.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1843-a-note-about-a-ticket-is-claimed-under-the-same-seat-rules-as-its-parcels.feature
 
@@ -119,3 +124,8 @@ notes: |
   Minted 2026-09-30 by the specifier from coordinator note 014024, under
   the human's iq3 directive. coordinator.prompt: ticket notes to a stage
   lead with `Work <id>:` (landed in the mint commit).
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

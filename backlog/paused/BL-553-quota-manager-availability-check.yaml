@@ -65,6 +65,9 @@ description: |
   epic-runtime-wiring-slice rule) until BL-525 ModelFactory or another real
   caller is scoped to consume it. Do not add a caller in this ticket.
 
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 acceptance: specs/features/BL-553-quota-manager-availability-check.feature
 
 out_of_scope: |
@@ -77,3 +80,9 @@ out_of_scope: |
     "Future enhancements" in the original intake).
 
 mutation_cost: medium
+notes: |
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

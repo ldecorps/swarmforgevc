@@ -16,7 +16,10 @@ mutation_cost: low
 # ensureCoordinatorTopic with the postFn seam the hotfix's own unit tests
 # already use. No production edit.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
 
 acceptance: specs/features/BL-1774-onboarding-opens-the-new-swarms-coordinator-topic.feature
 
@@ -130,3 +133,8 @@ notes: |
   INVEST: Independent (review of landed code), Negotiable (handler shape
   is direction), Valuable (the hotfix gets its gate), Estimable (one
   export, three cases), Small, Testable (fake Bot API).
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

@@ -19,7 +19,10 @@ mutation_cost: medium
 slice_size_envelope: medium
 # medium since the 2026-09-21 consolidation: two mechanisms (the writer's
 # root and the commit-time guard) for one outcome, still one sitting.
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
 
 acceptance: specs/features/BL-1603-the-review-evidence-writer-resolves-the-repository-root.feature
 
@@ -256,5 +259,10 @@ notes: |
   plus the census pin on 02; its feature file left as a scenario-less tombstone (a deletion on one side of a diverged main can never join the daemon reconcile - check_merge_deletion.sh, BL-1662). BL-1552 quoted no
   operator sentence; every FIRM line survives in approval_context above.
   Evidence: backlog/evidence/consolidation-sweep-paused-20260921.md.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 assigned_to: null

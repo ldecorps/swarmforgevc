@@ -10,7 +10,9 @@ priority: 147
 direction: human-requested
 depends_on: [BL-836, BL-829]
 mutation_cost: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 acceptance: specs/features/BL-838-bubble-question-sheet-answer-or-discuss-further.feature
 
 approval_context: >
@@ -133,3 +135,8 @@ notes: |
   reports the refusal and re-renders; finally choose discuss it further and
   confirm Let's Talk opens with the question in context and the question is still
   pending.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

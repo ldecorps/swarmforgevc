@@ -25,7 +25,11 @@ mutation_cost: low
 # no production code, no Stryker target. The diff is wide (about 40
 # files) but mechanical: one require line per file, one call per site.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
 
 acceptance: specs/features/BL-1596-no-property-test-carries-a-bare-per-test-timeout.feature
 
@@ -219,5 +223,10 @@ notes: |
   census subtraction names it. No scenario changes: scenario 02's
   count is 'at least 38' and scenario 03's census is re-run at the
   parcel's base commit, where bl968's site is already gone.
+  2026-10-01 (specifier): required_stages set to
+  [coder, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 assigned_to: null

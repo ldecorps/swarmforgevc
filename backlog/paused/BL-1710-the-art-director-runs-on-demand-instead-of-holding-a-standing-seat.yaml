@@ -12,7 +12,9 @@ mutation_cost: medium
 # bash (launch path); no Stryker lane for either. The Gherkin handler runs
 # fake-tmux passes, seconds per run.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1710-the-art-director-runs-on-demand-instead-of-holding-a-standing-seat.feature
 
@@ -173,3 +175,8 @@ notes: |
   session), Estimable (launch skip, one spawn helper, two quiet-when-
   dormant checks, one pack line), Small (five scenarios, two invariants),
   Testable (fake tmux over the real passes).
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

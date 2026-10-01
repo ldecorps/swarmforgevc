@@ -11,7 +11,11 @@ depends_on: []
 mutation_cost: low
 slice_size_envelope: low
 assigned_to: none
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1355-clearing-a-role-question-announces-its-closure.feature
 
@@ -183,3 +187,8 @@ notes: |
   `remaining_slices` entry is amended in the same pass to say so. No operator
   sentence is dropped: slice D's wording survives verbatim in that entry, with the
   minted half marked.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

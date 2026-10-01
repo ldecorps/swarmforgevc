@@ -11,7 +11,9 @@ mutation_cost: medium
 # medium: the matrix mark and cell width in pipelineBoard.ts, plus (ruling
 # A) a second sync path in pipelineBoardSync.ts; Stryker targets both.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1818-the-pipeline-board-cell-shows-how-long-the-seat-has-held-it.feature
 
@@ -125,3 +127,8 @@ notes: |
   (separator folded into the cell; the glance layout does not change);
   its refresh concern is the one ruling asked. Pending with
   ruling_options; normal priority, as the intake set.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

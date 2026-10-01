@@ -11,7 +11,11 @@ priority: 30
 direction: pipeline-note
 depends_on: []
 mutation_cost: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  documenter: "no documented behaviour changes"
 acceptance: specs/features/BL-336-headless-dark-emitter-audit.feature
 
 invariants:
@@ -158,6 +162,11 @@ notes: >
   What did NOT change: the re-baseline prohibition stands unchanged and now
   matters more, since the tempting number (1022) is not merely
   whatever-the-system-does, it is whatever-a-dead-archive-did.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: >
   1. Run the contract and assert all 8 scenarios green:

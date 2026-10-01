@@ -22,7 +22,10 @@ mutation_cost: low
 # generate-and-run launch scripts (test_resume_on_start.sh does the same
 # in seconds) and bb calls on fixture records.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec and its invariants fix the design; QA checks the coder property tests"
 
 acceptance: specs/features/BL-1789-a-vanished-role-session-names-how-its-agent-ended.feature
 
@@ -232,3 +235,8 @@ notes: |
   a32c9cb5e1 (01 and 04 red, register row owned by BL-1833). Step 2's
   "all ok" for it holds once BL-1833 lands; until then expect 01 and 04
   red for BL-1833's reasons, not this parcel's. No build change.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

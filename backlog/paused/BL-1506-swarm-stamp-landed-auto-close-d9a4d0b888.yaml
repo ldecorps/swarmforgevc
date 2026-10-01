@@ -18,7 +18,11 @@ mutation_cost: low
 # step-handler file drives the real landed_ticket_autoclose_lib.bb and the
 # daemon's adapters with fakes.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "review-only stamp of a landed hotfix; nothing to refactor"
+  hardender: "Babashka/shell review with no Stryker lane (BL-472); the coder tests and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1506-swarm-stamp-landed-auto-close-d9a4d0b888.feature
 
@@ -145,6 +149,11 @@ notes: |
   the mint commit. Prompt: coordinator.prompt paragraph "The daemon may
   have closed it already" landed in the same commit (BL-798: a prompt
   deliverable is the specifier's to land at mint).
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: |
   On the parcel commit:

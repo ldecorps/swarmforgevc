@@ -13,7 +13,12 @@ mutation_cost: low
 slice_size_envelope: medium
 # medium: one parameterization, one corpus addition, one long measured run
 # and a report; BL-959 did the same shape in one parcel.
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1812-aps-candidate-equivalence-at-step-data-table-tip.feature
 
@@ -114,3 +119,8 @@ notes: |
   suggested items". human_approval is approved on that directive's
   "approve as needed"; no choice is posed. The candidate SHA was read
   with `git ls-remote` at mint: 27e9915678a70c4552370d05c3d2077b884f470c.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

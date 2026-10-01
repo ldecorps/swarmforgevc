@@ -20,7 +20,11 @@ mutation_cost: medium
 # under 1 s, the guard on the real tree about 2 s, extractRequiredModules
 # rows in milliseconds - inside the BL-1358 ceiling.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1622-swarm-stamp-feature-handler-guard-scanner-hotfix.feature
 
@@ -179,3 +183,8 @@ notes: |
   two census probes - one sitting), Small (four scenarios, one invariant),
   Testable (real tool in seconds - BL-1541). Severity medium per BL-1591's
   precedent for a stamp of a fault already fixed.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

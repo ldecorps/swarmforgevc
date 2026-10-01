@@ -10,7 +10,12 @@ priority: 40
 direction: pipeline-note
 depends_on: []
 mutation_cost: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
 acceptance: specs/features/BL-974-shell-fixtures-short-root-and-loud-source-failures.feature
 
 invariants:
@@ -149,6 +154,11 @@ notes: >
   (handoffd) - but BL-973 also plans a check over
   swarmforge/scripts/test/, so prefer not co-active with BL-973, or
   sequence their merges deliberately.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 approval_context: >
   Two calls to say the word on: (1) this is minted as a SIBLING of

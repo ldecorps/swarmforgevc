@@ -17,7 +17,11 @@ mutation_cost: low
 # Tools"); the gherkin mutation re-runs a four-row feature on BL-1650's
 # fixture shape (BL-1650's eleven rows ran in 9.0 s, BL-1768 QA evidence).
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
 acceptance: specs/features/BL-1787-a-stray-the-land-step-cannot-land-never-holds-the-landing-tickets-own-land.feature
 verification_category: land-path-ownership
 retires:
@@ -202,3 +206,8 @@ notes: |
   print, BL-1670's fixtures are the template). Small (3 scenarios, 4
   runs, 2 invariants). Testable (mkdtemp fixtures driven through the CLI,
   the same shape as BL-1650's feature).
+  2026-10-01 (specifier): required_stages set to
+  [coder, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

@@ -23,7 +23,10 @@ mutation_cost: low
 # step-handler file. Runners the feature shells: the departing-mid-parcel
 # gate test measured 4.1 s on this host (BL-1358 ceiling 300 s).
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
 
 acceptance: specs/features/BL-1551-a-skipped-respawn-is-not-a-respawn.feature
 
@@ -249,6 +252,11 @@ notes: |
   decomposes_into re-pointed. Grep BL-1551, BL-1505, BL-918 before minting
   anything about chaser telemetry labels. Evidence:
   backlog/evidence/consolidation-sweep-paused-20260921.md.
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: |
   On the parcel commit, from the repo root after `npm run compile` in

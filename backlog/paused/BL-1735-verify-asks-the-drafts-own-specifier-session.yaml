@@ -18,7 +18,9 @@ mutation_cost: medium
 # session store, the prompt, and the findings parser; the Claude CLI is the
 # unsuitable boundary, faked in acceptance.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1735-verify-asks-the-drafts-own-specifier-session.feature
 
@@ -141,3 +143,8 @@ qa_e2e_procedure: |
 notes: |
   Minted 2026-09-25 by the specifier from the backlog-root intake
   (queue-jump, human-approved by the jump request).
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

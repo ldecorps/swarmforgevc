@@ -12,7 +12,9 @@ mutation_cost: medium
 # no mutation lane) plus a record refresh; the launcher is the swarm's own
 # launch path, so it stays off the easy local seat.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1864-a-full-relaunch-keeps-a-removed-local-llm-out.feature
 
@@ -132,3 +134,8 @@ notes: |
   ruling rather than deciding it. Queue-jump under the 2026-09-30 standing
   directive "Auto-jump any ticket that has to do with local llm";
   priority 10. Under ruling B, BL-1864 is closed unbuilt.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

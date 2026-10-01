@@ -11,7 +11,9 @@ mutation_cost: low
 # low: a rendering mode over BL-1851's bb lib; bb has no mutation lane wired
 # (engineering.prompt). Fixtures only.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1854-the-daily-briefing-shows-each-local-seats-telemetry-trend.feature
 
@@ -110,3 +112,8 @@ notes: |
   this lands, the specifier removes the interim sentence. The documenter
   was sent a priority-00 note the same pass. Placed after BL-1851 (its
   lib) at the end of the STEERING iq3 order.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

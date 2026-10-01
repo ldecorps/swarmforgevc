@@ -18,7 +18,11 @@ mutation_cost: medium
 # (contractSurvey.ts, promptProposal.ts) with fixture tests already in the
 # unit lane; the change is one empty-case branch each.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1756-a-survey-of-a-target-with-no-code-proposes-a-grammatical-contract-and-prompts.feature
 
@@ -89,3 +93,8 @@ notes: |
   Minted 2026-09-25 by the specifier, 1:N split of the onboarding intake
   (epic BL-1755). Code claims re-verified at mint (contractSurvey.ts:8,13,16;
   promptProposal.ts:37,47 and the Tech Stack line).
+  2026-10-01 (specifier): required_stages set to
+  [coder, hardender, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

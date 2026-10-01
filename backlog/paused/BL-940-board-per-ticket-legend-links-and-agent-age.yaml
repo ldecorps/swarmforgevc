@@ -10,7 +10,9 @@ depends_on: [BL-585, BL-670, BL-1451]
 assigned_to: coder
 mutation_cost: medium
 human_approval: approved
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 approval_context: >
   This ticket exists ONLY so your 2026-07-26 board addendum is not lost. Your
@@ -142,3 +144,8 @@ notes: |
   asOf") was false and is corrected above. Scenarios unchanged; the
   elapsed mark reads `asOf` from the row entry BL-1451 adds. The
   coordinator clears `blocked` and re-routes once BL-1451 is in done/.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

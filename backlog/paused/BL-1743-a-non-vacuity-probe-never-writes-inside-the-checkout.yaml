@@ -20,7 +20,12 @@ mutation_cost: medium
 # medium: eight test files, fifteen sites, most of them one line once a
 # shared helper exists; plus that helper and one step handler.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1743-a-non-vacuity-probe-never-writes-inside-the-checkout.feature
 
@@ -135,3 +140,8 @@ notes: |
   bl1652 scratch from a killed run). The census was derived and pinned at
   mint. Launch-sync propagation was found at mint (worktree copies'
   mtime = the launch second).
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

@@ -16,7 +16,11 @@ mutation_cost: low
 # low: review-only; the code under review is shell (swarmforge.sh) and
 # Babashka - no mutation/CRAP/DRY wired; one step-handler file.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "review-only stamp of a landed hotfix; nothing to refactor"
+  hardender: "Babashka/shell review with no Stryker lane (BL-472); the coder tests and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1507-swarm-stamp-bai-base-follows-key-a4b30d454b.feature
 
@@ -115,6 +119,11 @@ description: |
 notes: |
   Ledger: linked to row a4b30d454b via `hotfix_ledger_update.bb --link` in the
   mint commit.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: |
   On the parcel commit:

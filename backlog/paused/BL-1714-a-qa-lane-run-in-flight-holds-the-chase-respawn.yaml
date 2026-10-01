@@ -27,7 +27,12 @@ mutation_cost: low
 # 6.1 s at load 13 on 2026-09-24 - far inside the 300 s per-mutant
 # ceiling (BL-1541).
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1714-a-qa-lane-run-in-flight-holds-the-chase-respawn.feature
 
@@ -177,3 +182,8 @@ notes: |
   approval stands: the added rows fall inside the approved invariant
   ("a lane entry point that role's prompt directs it to run" - QA.prompt
   names both land commands).
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

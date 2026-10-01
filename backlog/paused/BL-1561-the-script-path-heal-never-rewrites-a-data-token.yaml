@@ -20,7 +20,12 @@ mutation_cost: low
 # acceptance handler executes the real composed wrapper under bash against a
 # mkdtemp fixture, the shape the runner's own e2e already uses.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1561-the-script-path-heal-never-rewrites-a-data-token.feature
 
@@ -131,6 +136,11 @@ notes: |
   minting anything about the script-path heal class. If this lands before
   BL-1560, BL-1560's goal 7 records "fixed by BL-1561" rather than a
   reproduction; its scenarios 01-06 stay true under the direction above.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: |
   On the parcel commit:

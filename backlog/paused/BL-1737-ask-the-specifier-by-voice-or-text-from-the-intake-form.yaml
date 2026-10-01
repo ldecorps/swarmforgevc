@@ -19,7 +19,9 @@ mutation_cost: medium
 # BL-1735 session, form routes for turns, and the transcript section;
 # Let's Talk's loop and engines are reused unchanged.
 slice_size_envelope: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1737-ask-the-specifier-by-voice-or-text-from-the-intake-form.feature
 
@@ -141,3 +143,8 @@ qa_e2e_procedure: |
 notes: |
   Minted 2026-09-25 by the specifier from the backlog-root intake
   (queue-jump, human-approved by the jump request).
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

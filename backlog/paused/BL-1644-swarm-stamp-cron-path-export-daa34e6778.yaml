@@ -17,7 +17,12 @@ mutation_cost: low
 # step-handler file drives the two real scripts' PATH prelude under a
 # cron-shaped environment against a fixture HOME.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1644-swarm-stamp-cron-path-export-daa34e6778.feature
 
@@ -162,6 +167,11 @@ notes: |
   Goal 3 probe at mint: `find .swarmforge -maxdepth 3 -iname "*descent*"`
   found nothing - consistent with the descent-review cron line never
   having produced an artifact; the parcel confirms and records it.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 qa_e2e_procedure: |
   On the parcel commit:

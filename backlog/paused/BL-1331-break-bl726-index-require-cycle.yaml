@@ -17,7 +17,12 @@ direction: swarm-reported
 depends_on: []
 mutation_cost: low
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
 acceptance: specs/features/BL-1331-break-bl726-index-require-cycle.feature
 
 human_approval: approved
@@ -144,6 +149,11 @@ notes: |
   ("Dependency gate (BL-259, hard gate)" section) and the same file's
   closing "Out-of-parcel note already sent" cross-reference in
   `backlog/evidence/BL-1294-architect-bounce-20260902.md`.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
 
 source: |
   Architect note 00_20260902T084643Z_001347_from_architect_to_specifier

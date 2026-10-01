@@ -17,7 +17,9 @@ mutation_cost: medium
 # medium: TypeScript under Stryker - a drafts store and routes, and a
 # vocabulary delete; five scenarios over the routes and stores.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1733-intake-drafts-are-kept-and-dropdown-values-can-be-deleted.feature
 
@@ -129,3 +131,8 @@ qa_e2e_procedure: |
 notes: |
   Minted 2026-09-25 by the specifier from the backlog-root intake
   (queue-jump, human-approved by the jump request).
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

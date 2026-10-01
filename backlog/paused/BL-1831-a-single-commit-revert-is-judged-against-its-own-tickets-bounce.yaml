@@ -15,7 +15,12 @@ depends_on: []
 mutation_cost: low
 # low: the attribution branch of one shell guard and its shell test.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a targeted Babashka/shell fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+  hardender: "no Stryker lane for Babashka/shell (BL-472); for a fix this size the coder bb test and the acceptance run are the coverage"
+  documenter: "no documented behaviour changes"
 
 acceptance: specs/features/BL-1831-a-single-commit-revert-is-judged-against-its-own-tickets-bounce.feature
 
@@ -78,3 +83,8 @@ notes: |
   Minted 2026-09-30 by the specifier from the documenter's spec-gap note
   001587 (item 2). Item 1 of that note (BL-1815's owed doc paragraph) went
   to BL-1816's scope instead, the same pass. Pending a plain approval.
+  2026-10-01 (specifier): required_stages set to
+  [coder, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

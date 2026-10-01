@@ -11,7 +11,9 @@ mutation_cost: low
 # low: one pure check and one gatherer in two bb files; bb has no mutation
 # lane wired (engineering.prompt). Fixtures only, no live Ollama.
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1848-a-local-models-served-window-is-watched-against-its-work-and-the-gpu.feature
 
@@ -145,3 +147,8 @@ notes: |
   turn uses, and this watch says when one of them pushes it past either
   limit. The window stays 49152 until BL-1841 and BL-1840 land and the
   census is re-run (evidence file above).
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

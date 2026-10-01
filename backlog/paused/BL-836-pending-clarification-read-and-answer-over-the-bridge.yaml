@@ -10,7 +10,9 @@ priority: 126
 direction: human-requested
 depends_on: []
 mutation_cost: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 acceptance: specs/features/BL-836-pending-clarification-read-and-answer-over-the-bridge.feature
 
 approval_context: >
@@ -136,3 +138,8 @@ notes: |
   answer (pane inject if live, `ready_for_next.sh` note if dormant), that
   `.swarmforge/operator/role-awaiting/specifier.json` is gone, and that
   re-submitting the same answer is refused rather than delivered twice.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

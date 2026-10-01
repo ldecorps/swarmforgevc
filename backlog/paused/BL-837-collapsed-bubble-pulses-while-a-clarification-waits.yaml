@@ -10,7 +10,10 @@ priority: 128
 direction: human-requested
 depends_on: [BL-836]
 mutation_cost: medium
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect pass covers structure, so the cleaner runs only for large slices"
+  hardender: "Kotlin/Android has no mutation lane wired; the JVM unit suite and the recorded device procedure are the coverage (BL-769)"
 acceptance: specs/features/BL-837-collapsed-bubble-pulses-while-a-clarification-waits.feature
 
 approval_context: >
@@ -141,3 +144,8 @@ notes: |
   poll interval, that starting a talk turn shows the recording colour instead and
   the pulse resumes on idle, that answering on Telegram stops the pulse, and that
   killing the tunnel mid-pulse leaves the pulse as it was rather than clearing it.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.

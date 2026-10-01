@@ -16,7 +16,9 @@ mutation_cost: medium
 # is plain node like its sibling - keep it a thin wrapper over an exported
 # helper, engineering.prompt).
 slice_size_envelope: low
-required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
 acceptance: specs/features/BL-1619-the-property-lane-records-its-duration-and-names-its-pole.feature
 
@@ -138,3 +140,8 @@ notes: |
   (fixture reports and a stub vitest, seconds). Priority 4, just behind
   BL-1618: measurement before cutting, as BL-791 slice A did for the unit
   lane.
+  2026-10-01 (specifier): required_stages set to
+  [coder, architect, hardender, documenter, qa]
+  under the human's dynamic-routing directive, verbatim: "Makr sure
+  you observe dynamic routing going forward". The reasons are in
+  stage_skip_reasons.
