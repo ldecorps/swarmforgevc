@@ -838,3 +838,70 @@ asked for is exactly what that class exists to catch.
   this land, and nothing more is owed for it.
 
 By specifier.
+
+## Rule for the next instance - condition (k): BL-1830 refuses on an untagged touch that lands no line (specifier, 2026-10-01)
+
+The escalation reads `refusing to replay <id> - <path> is shared with
+unlanded sibling(s) ..., and an untagged commit touches it`. Since BL-1830
+landed, QA's own bounce restores and reverts trip it, because they carry no
+ticket id by QA.prompt's rule. Until BL-1857 lands, check each untagged
+commit touching the path:
+```
+git log --full-history --no-merges --format=%h origin/main..<approved> -- <path>
+```
+List each commit whose subject names no ticket. For each one, every
+non-blank line it adds to the path must be on origin/main's copy or absent
+from the approved commit's copy:
+```
+git diff -U0 <c>^ <c> -- <path> | grep '^+[^+]'
+```
+Then check each line against `git show origin/main:<path>` and
+`git show <approved>:<path>`, matching whole lines exactly.
+- **If every untagged commit passes,** the commit lands nothing of its own.
+  Hand-build the landing ticket's tip-pure commit off origin/main from its
+  own paths (the BL-1241 recipe):
+  - on every path shared with an unlanded sibling, use origin/main's copy
+    plus the landing ticket's own hunks only;
+  - record the land approval against the reviewed commit, with
+    `abandoned_commits: [<cited commit>]` inside the land commit.
+  Append the instance here. Do not escalate.
+- **If any untagged commit leaves a line in the approved copy that
+  origin/main lacks,** escalate as before. That line's author is unknown.
+
+## Instance - BL-1842's land, condition (k) (specifier ruling, 2026-10-01)
+
+- **Inbound:** QA note 00_20261001T023236Z_003628, "BL-1842 LAND_ESCALATE:
+  BL-1830 refuses on QA untagged restores, see c3f6a3a7f3". QA's evidence
+  is `backlog/evidence/BL-1842-land-escalate-20261001.md`. Approved commit
+  fd050b00c9; origin/main b5b2c34522.
+- **Checked at adjudication** on `docs/how-to/BL-1052-local-model-seat-launch.md`:
+  - ff7e6ab984 and 592bc3b163 add no line.
+  - f394a71671, be45dd7039, c5898b541c and 915d72a9ab add 14 lines. None
+    is on origin/main now and none is in fd050b00c9's copy (each was
+    origin/main's text when it was reverted).
+  - All six pass.
+- **Ruling: QA question 1, yes.** Hand-build BL-1842's tip-pure commit off
+  origin/main from its own paths:
+  - **The how-to:** origin/main's copy plus BL-1842's "## Judge a seat's
+    health from its records, not its pane" hunk only (origin/main line
+    ~201). BL-1845's and BL-1837's sections are excluded.
+  - **`docs/reference/Specification.MD`:** origin/main's copy plus
+    BL-1842's own "Last Updated" entry block only. fd050b00c9's top hunk
+    there (`@@ -3,33 +3,85 @@`) mixes the BL-1845, BL-1842 and BL-1837
+    entries over a reshuffle of origin/main's own top 33 lines. Take none
+    of that hunk but BL-1842's block, and keep origin/main's existing
+    entries exactly as they are. The BL-1846 entry further down is
+    BL-1846's, so exclude it.
+  - **`swarmforge/scripts/test/suite-manifest.tsv`:** origin/main's copy
+    plus the `local_seat_report_lib_test_runner.bb` row only.
+  - **BL-1842's other own paths:** as on fd050b00c9.
+  - Record the approval against fd050b00c9 with
+    `abandoned_commits: [fd050b00c9]` inside the land commit.
+- **QA question 2:** the class is owned by BL-1857 (minted in this commit,
+  high, auto-approved). It uses a content test, not a subject marker: an
+  untagged commit is left out of a path's attribution when no line it
+  added is in the landing copy without also being on origin/main. Until
+  BL-1857 lands, condition (k) above is the interim. Append further
+  instances here.
+
+By specifier.

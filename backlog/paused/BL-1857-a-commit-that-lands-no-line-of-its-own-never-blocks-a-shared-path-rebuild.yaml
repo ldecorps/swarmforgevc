@@ -1,0 +1,150 @@
+id: BL-1857
+title: "A commit that lands no line of its own never blocks a shared-path rebuild - BL-1830's land step refuses any land whose shared own path an untagged commit touched, and QA's bounce restores carry no ticket id by rule and stay in every later land's range, so every land sharing a path with an in-flight sibling escalates (BL-1842, 2026-10-01); an untagged commit whose every added line on the path is either on origin/main's copy or absent from the landing commit's copy is left out of the attribution, and any other untagged touch still refuses by name"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in the land step. Since BL-1830 landed (17fa16cf56,
+# 2026-10-01) it escalates every land whose shared own path QA ever bounced
+# a ticket on while a co-owner is in flight. Each one costs a specifier
+# round trip and a hand-built land.
+status: todo
+epic: swarm-reliability
+priority: 0
+# 0: ahead of BL-1852 and BL-1853 (priority 1). All three edit
+# land_step_lib.bb, so the coordinator's orthogonality rule runs them one
+# at a time, and this one is the one holding lands now.
+depends_on: []
+mutation_cost: low
+# low: one predicate in a bb lib and its caller. bb has no mutation tooling
+# wired (engineering.prompt), so land_step_lib_test_runner.bb is the gate.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1857-a-commit-that-lands-no-line-of-its-own-never-blocks-a-shared-path-rebuild.feature
+
+# No call-site anchor: the change sits in land_step_lib.bb's attribution
+# (path-owner-tickets or own-paths' BL-1830 clause), which land_step_cli.bb
+# already reaches. A new symbol would be declared and used in the same file
+# and gate nothing (BL-1235). The handler anchor is the BL-233 one.
+required_wiring:
+  - 'specs/pipeline/steps/bl1857UntaggedCommitLandsNoLineSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A defect with no ruling posed. QA asked whether to fix it with a marker in
+  the restore subject or with a content test. The specifier chose the
+  content test: the land step decides by what a commit put into the landed
+  copy, never by its subject (BL-972's rule that a gate decides on evidence,
+  not a subject). FIRM: an untagged touch that leaves a line in the landing
+  commit's copy that origin/main lacks still refuses by name, exactly as
+  BL-1830 ruled. QA.prompt's rule that restores carry no ticket id is
+  unchanged.
+
+invariants:
+  - "An untagged commit is left out of a shared path's attribution only when no line it added to that path is in the landing commit's copy and absent from origin/main's copy; every other untagged touch still refuses by name."
+  - "A land never publishes an unlanded sibling's line on a shared path (BL-1830's invariant, unchanged)."
+
+source: |
+  QA note 003628 (2026-10-01 02:32Z), verbatim:
+
+  > BL-1842 LAND_ESCALATE: BL-1830 refuses on QA untagged restores, see c3f6a3a7f3
+
+  QA evidence: `backlog/evidence/BL-1842-land-escalate-20261001.md`
+  (c3f6a3a7f3). Its question 2: "Should the restore subject carry a
+  recognisable marker the land step can skip ..., or should the land step
+  recognise a commit whose touched paths all equal origin/main content at
+  that commit as a restore? Either needs a ticket".
+
+description: |
+  ## Why
+
+  `land_step_lib.bb`'s own-paths refuses a land when a path the landing
+  ticket owns is shared with an unlanded sibling and `path-owner-tickets`
+  reports `:any-untagged? true` (BL-1830 D1, dee1e6410a). The tag-based
+  line-set walk cannot tell whether an untagged commit was the landing
+  ticket's own uncredited work. QA.prompt requires QA's bounce restores to
+  carry no ticket id (the BL-1650/BL-1653 rule). QA's branch never shrinks
+  (BL-1852), so every such restore sits in every later land's range.
+  BL-1472 already skips `Revert "..."` commits by subject, but QA's restore
+  subjects ("Restore bounced parcel paths to origin/main content.",
+  "Revert a bounced parcel's code out of QA's branch ...") are not that
+  shape.
+
+  Measured on BL-1842's refusal at mint, on `docs/how-to/BL-1052-local-model-seat-launch.md`,
+  against origin/main b5b2c34522 and the approved commit fd050b00c9:
+  - ff7e6ab984 and 592bc3b163 (2026-10-01 restores) add no line at all.
+  - f394a71671, be45dd7039, c5898b541c and 915d72a9ab (2026-09-25/26
+    reverts) add 14 lines. Each was origin/main's text when the revert was
+    made; none is on origin/main now, and none is in fd050b00c9's copy.
+  None of the six put a line into what BL-1842 would land.
+
+  ## What is wanted
+
+  - An untagged, non-merge commit touching a path is left out of that
+    path's attribution, the way BL-1472 leaves out a revert, when every
+    non-blank line it adds to the path is either:
+    - in origin/main's copy of the path, or
+    - absent from the landing commit's copy.
+    It is then neither an owner nor an untagged touch for that path.
+  - Every other untagged touch keeps `:any-untagged? true` and the BL-1830
+    refusal by name, unchanged (outline row 3).
+  - Merge commits keep their current handling (BL-1374's
+    `merge-authored-paths*`).
+  - The refusal names which commit kept it untagged, so the next escalation
+    says why (today it names only the path and siblings).
+
+  ## How (direction, not mandate)
+
+  - The test needs three texts per touching commit: its own added lines
+    (`git diff -U0 <c>^ <c> -- <path>`), origin/main's copy and the landing
+    commit's copy. own-paths already reads the last two for the rebuild.
+    Compare lines as sets of non-blank texts. This decides whether a commit
+    is attributed at all; it never decides which lines land, which stays
+    the tag-based walk's job.
+  - Unit cases in `land_step_lib_test_runner.bb` cover all three outline
+    rows, plus a merge commit that is unaffected.
+  - The step handler `specs/pipeline/steps/bl1857UntaggedCommitLandsNoLineSteps.js`
+    builds real git fixtures under mkdtemp (BL-1390). BL-1830's handler
+    `bl1830SharedOwnPathSteps.js` already builds this shape. It validates
+    `untagged change` and `outcome` against explicit KNOWN_VALUES. It is
+    discovered from its own file (BL-1371).
+
+  ## Scope
+
+  `land_step_lib.bb`, its test runner, the step handler, evidence. Not in
+  scope:
+  - QA.prompt's restore-subject rule;
+  - BL-1852's re-point and BL-1853's diff cache (same file, separate
+    tickets);
+  - BL-1830's landed feature, whose three scenarios stand.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1857-a-commit-that-lands-no-line-of-its-own-never-blocks-a-shared-path-rebuild.feature`:
+     3 of 3 ok. Measured 0 on main at mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-1830-a-land-never-publishes-a-siblings-lines-in-a-shared-own-path.feature`:
+     3 of 3 ok. Measured on main b5b2c34522 at mint: 3 of 3, 9 s.
+  3. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb`: all pass.
+  4. Replay BL-1842's real refusal. Use the QA memory recipe: a `git clone
+     --shared` mkdtemp fixture with `origin/main` at b5b2c34522, detached at
+     fd050b00c9, and the parcel's `swarmforge/scripts` exported into it.
+     Call `(land-step-lib/own-paths root "fd050b00c9..." "BL-1842"
+     #{"BL-1651" "BL-1671" "BL-1837" "BL-1845"})` directly, not the full
+     CLI.
+     - Expect no refusal on `docs/how-to/BL-1052-local-model-seat-launch.md`.
+     - The path is rebuilt to origin/main's copy plus BL-1842's "Judge a
+       seat's health from its records, not its pane" section only, with no
+       BL-1837 or BL-1845 section.
+     Measured at mint: the refusal QA quotes in c3f6a3a7f3. Never trust a
+     green fixture alone here; BL-1830's first round was green on fixtures
+     and leaked on the real land.
+
+notes: |
+  Minted 2026-10-01 by the specifier from QA note 003628 (source), in the
+  same pass as the BL-1842 ruling (condition (k) in
+  backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md).
+  Until it lands, condition (k) is the interim for this class.
+  It is not a local-llm-swarm ticket. Under the 2026-09-30 promotion
+  directive it rides the expedite lane as a high defect, which the 09-25
+  directive already excepts.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
