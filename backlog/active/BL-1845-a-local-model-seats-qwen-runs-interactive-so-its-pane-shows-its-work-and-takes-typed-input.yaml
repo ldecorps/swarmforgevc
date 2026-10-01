@@ -184,3 +184,48 @@ notes: |
   next slot to open. Will promote+route on the next close/recheck.
 
 assigned_to: coder
+# 2026-10-01 (documenter): pre_qa_gate flagged eae4999d0d/0e64d2a2f7 as
+# stranded on swarmforge-QA. These are this branch's own BL-1845 doc +
+# evidence commits from before the specifier's merge-drop-guard recipe
+# redo (note f3700b91e4): reached QA through a separate path while this
+# branch's own history was rewound (git reset --keep) to apply the
+# recipe, so they are not ancestors of this branch's current tip, but
+# their content is reproduced byte-identical in the current doc commits
+# (verified by diff against the current how-to/Specification.MD text).
+# 2026-10-01 (documenter): pre_qa_gate flagged 11 more stranded-on-QA
+# commits after this branch merged QA's bounce commit be35c8ee06 (the
+# bounce, the pipeline-pass evidence, the cleaner/architect/hardener/
+# documenter NONE passes, and the merge-drop-guard false-positive
+# evidence). Same cause as the pair above: this branch's history was
+# rewound (git reset --keep) for the merge-drop-guard recipe, so these
+# commits (reached via a different path) are not its ancestors, but
+# every file they touch is present with equivalent content in the
+# current tree (verified file-by-file against each commit's diff).
+abandoned_commits:
+  - eae4999d0d
+  - 0e64d2a2f7
+  - 1186357ec1
+  - 34436e190d
+  - 0822d68b51
+  - 8aad502b05
+  - 76ac5e11d9
+  - 70ab283a5e
+  - dde00f08fb
+  - 81d826b523
+  - 2e79f2e5fa
+  - 845ec4b2cf
+  - 124129e87a
+  - b25eed2450
+  - b0935a7283
+  - 64755fd07b
+  - e1240e28ae
+  - 3da893c609
+  - afc54ede38
+  - 372241191c
+  - 2ceb3a89ea
+  - 05a3c96aad
+  - 4217212e92
+  - 801f05b92e
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-01, by: QA, blamed: documenter, class: behavior, commit: 70339b76d6, evidence: backlog/evidence/BL-1845-QA-20261001.md }

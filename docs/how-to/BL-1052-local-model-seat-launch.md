@@ -44,6 +44,31 @@ Every role window names agent `local-model` and a `--model <id>`. Launch is
 **refused** when the local endpoint health check is not ready — the refusal
 names the endpoint.
 
+### A local-model seat's qwen runs interactive (BL-1845)
+
+Before this fix, the launch handed qwen its kickoff as a bare argument;
+qwen 0.22.2 copies a bare argument into `--prompt`, and any `--prompt`
+runs one headless pass — no screen, no keyboard. On 2026-09-30 the
+coder@iq3 pane showed nothing of qwen's work, had no input box for the
+human to steer it, and never read the wakes handoffd typed into it — the
+seat picked up new mail only when relaunched (six qwen runs between
+15:36 and 16:14 BST that day).
+
+The launch now hands the kickoff to qwen as the value of `-i`
+(`--prompt-interactive`) instead: `qwen --auth-type openai -y <cli> -i
+"<kickoff>"`. qwen opens its interactive screen with the kickoff as the
+first message, so the pane shows its tool-call lines and keeps a text
+input box, the same qwen process spans multiple turns (no new
+RESUME-ON-START chat record every parcel), and a typed wake reaches a
+live `ready_for_next.sh` call instead of sitting unread until the next
+relaunch. The kickoff text itself, including the resume note when the
+seat's `in_process` mailbox holds a parcel, is unchanged — only how it
+reaches qwen changes. `-y` still stays, so qwen still runs shell commands
+unattended. Every other agent's generated launch script is
+byte-identical before and after this change. qwen's own auto-update
+stays on (the human's ruling): an interactive qwen installs updates
+under `~/.qwen/updates/npm/` and runs them from its next launch.
+
 ### A local-model seat's card path never carries an "@" (BL-1837)
 
 qwen (and gemini, which shares its handling) reads `@<path>` in a prompt
