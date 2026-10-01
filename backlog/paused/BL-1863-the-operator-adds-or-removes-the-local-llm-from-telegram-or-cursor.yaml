@@ -21,7 +21,7 @@ required_wiring:
   - 'extension/src/tools/telegramCursorOperatorExec.ts::local_llm.sh::the operator dispatcher runs the shell pair'
   - 'specs/pipeline/steps/bl1863LocalLlmOperatorVerbSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The human asked for verbs that make adding and removing the local LLM
   easy (source); the intake let the specifier choose whether the pair is
