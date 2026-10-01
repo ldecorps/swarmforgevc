@@ -1,0 +1,75 @@
+id: BL-1860
+title: "BL-1712's scenario 04 has been red on main since BL-1712 landed on 2026-09-24: it asserts that the standing-red register rows for pricingTable.test.js and the BL-1436 feature are present and owned by BL-1712, and BL-1712's own land retired both rows (BL-1631), so the scenario can pass only before its ticket lands; the step holds in both states - present and owned while BL-1712 is open, absent once it is done"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 3
+depends_on: []
+mutation_cost: low
+# low: one step handler under specs/pipeline/steps/; no product code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# Not a claim of ownership over BL-1712's contract (BL-1251): the contract
+# this ticket must satisfy is that feature, green on main.
+acceptance: specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feature
+
+human_approval: approved
+approval_context: >
+  An unowned standing red, minted high the pass it was sighted (2026-09-05
+  rule). FIRM: retire nothing; the scenario keeps its meaning (the rows are
+  BL-1712's while it is open) and gains the state after the land.
+
+invariants:
+  - "The register-row step passes when each row is present and owned by BL-1712 while BL-1712 is open, and when no row names either file once BL-1712 is in backlog/done; any other state fails."
+
+source: |
+  Specifier, 2026-10-01, while verifying hotfix c54b9060a6 (BL-1858):
+  `node specs/pipeline/cli.js specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feature`
+  printed 5 pass, 1 fail: "the register rows naming pricingTable.test.js
+  and the BL-1436 feature file are both present and each names BL-1712 as
+  its owner": "expected a register row naming pricingTable.test.js".
+  BL-1712 landed in e730910e59 and closed in 2957ec55ea (2026-09-24). No
+  register row names its feature.
+
+description: |
+  ## Why
+
+  The specifier's 2026-09-24 rule ("the owner's scenarios assert the row
+  PRESENT and OWNED, never gone") was written for the parcel's own tree,
+  where the row is present. After the land the land step retires every
+  row the landing ticket owns (BL-1631), so on main the same step fails
+  forever. BL-1712 is the one landed feature with that step that is red
+  (census at mint: `grep -lE "register row.*(present|names BL-|owned by)"
+  specs/features/*.feature` finds BL-1712, BL-1713 and BL-1620; BL-1713
+  4/4 and BL-1620 2/2 pass). The specifier.prompt rule is amended in the
+  mint commit so new owners are written to hold in both states.
+
+  ## What is wanted
+
+  - The step in `specs/pipeline/steps/bl1712PricingTableOpus55Steps.js`
+    reads where BL-1712's YAML lives. While it is in backlog/active or
+    paused, both rows must be present and owned by BL-1712, as today. Once
+    it is in backlog/done, neither file may have a row.
+  - The step text may stay as written or be reworded to say both states;
+    if it changes, the feature changes in the same commit.
+
+  ## Scope
+
+  The step handler, the feature if its step text changes, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1712-the-pricing-table-prices-claude-opus-5-5.feature`:
+     6 of 6 ok. Measured on main at mint: 5 of 6, scenario 04 red.
+  2. The register row naming the BL-1712 feature is present and names
+     BL-1860 on the parcel; after the land, no row names it.
+
+notes: |
+  Minted 2026-10-01 by the specifier the same pass the red was sighted;
+  register row added and specifier.prompt's register-row rule amended in
+  the same commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

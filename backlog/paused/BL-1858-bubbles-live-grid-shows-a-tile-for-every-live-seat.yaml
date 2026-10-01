@@ -1,0 +1,162 @@
+id: BL-1858
+title: "Bubble's live grid took its seats from .swarmforge/sessions.tsv, which only a full launch writes, so a seat enabled later - coder@2, re-enabled as the local-model seat on 2026-10-01 by editing roles.tsv and running ./swarm ensure - and art-director got no tile: the human's phone showed eight tiles while ten seats ran; the grid now takes every roles.tsv seat plus any sessions.tsv seat roles.tsv lacks, puts coder@2 after coder, and each tile names its seat's model under the role name (coder@2 reads Qwen2.5 Coder 14B)"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real fault, but contained. The human's live view hid a running
+# seat (the local-model seat they are watching), but no work was lost, and
+# the panes stayed reachable from tmux and the VS Code tiles.
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+# queue-jump: the human's 2026-09-30 directive auto-jumps every
+# local-llm-swarm ticket; this one exists so the human can watch the local
+# seat (coder@2) on Bubble.
+depends_on: []
+mutation_cost: medium
+# medium: four TS modules under Stryker (tmuxClient.ts, residentPaneLive.ts,
+# backendSwitch.ts, modelDisplayName.ts) plus the served page's inline JS;
+# the hotfix already changed them, so the hardener's pass is the real cost.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1858-bubbles-live-grid-shows-a-tile-for-every-live-seat.feature
+
+# Handler pin (BL-233, BL-1371). No consumer anchor: captureLiveScreenPanes
+# is already what the bridge's /resident-pane route serves, and the hotfix
+# changed it in place, so an anchor there matches before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1858LiveGridTilePerLiveSeatSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file, for the stamp-off of two hotfixes the human asked for
+  ("Hot fix it + stamp off", 2026-10-01). FIRM: the grid's seats are every
+  roles.tsv seat plus any sessions.tsv seat roles.tsv lacks, intersected
+  with live tmux sessions, so the grid never shows fewer tiles than before.
+  FIRM: art-director gets a tile by the same rule; it was missing for the
+  same reason. FIRM: a numbered seat sits right after its base role's tile.
+  FIRM: every tile names its seat's model under the role name, Claude seats
+  included (Sonnet 5, Opus 5.5), not only the qwen seat. Out: the VS Code
+  tiles, launcher readiness and the Mini App resident pane still read
+  sessions.tsv.
+
+invariants:
+  - "The live grid has exactly one tile for each seat that roles.tsv or sessions.tsv lists and whose tmux session is live, and none for a live session neither lists."
+  - "A tile's label, model, held ticket and transcript are its own seat's, never another seat's of the same role."
+
+source: |
+  The human, coordinator pane, 2026-10-01 06:00 BST, with a screenshot of
+  the Bubble live grid (bubble.musicalsifu.com: Coordinator, Specifier,
+  Coder, Cleaner, Architect, Hardender, Documenter, QA; one CODER tile),
+  verbatim (Article 5.3):
+
+  > Add it here
+
+  Relayed by the coordinator as note 014355, "Human wants Bubble grid to
+  add a tile for coder@2 (mixed-seat gap)". Then to the specifier,
+  verbatim:
+
+  > Hot fix it + stamp off
+
+  > Ensute its qwen coder 2.5
+
+  > In the title pane
+
+description: |
+  ## Status: hotfixes c54b9060a6 and 93d6f69ba0 landed the fix
+
+  This parcel is their stamp-off: the step handler that makes the feature
+  run, unit tests for the new seams, the documenter's pages, evidence, and
+  the pipeline's review of both hotfixes. The coder finds the code already
+  changed; review it, do not re-apply it.
+
+  ## What happened before the hotfixes
+
+  - `captureLiveScreenPanes` (`extension/src/bridge/residentPaneLive.ts`)
+    took its seats from `readLiveSwarmRoles`: `.swarmforge/sessions.tsv`
+    intersected with live tmux sessions. Only `swarmforge.sh`'s
+    `write_sessions_file` writes that file, at a full launch;
+    `retire_seat.sh` drops rows from it.
+  - On 2026-10-01 at 04:54Z the coordinator re-enabled coder@2 as the
+    local-model seat (bake-off winner qwen2.5-coder-14b-q5km) by editing
+    `roles.tsv` and running `./swarm ensure`, which reads `roles.tsv`.
+    coder@2 got a live session and no sessions.tsv row. art-director had
+    no row either. Ten seats ran; the grid showed eight.
+  - `readRoleModelId` (`backendSwitch.ts`) did not recognise a qwen launch
+    script, so a qwen seat's model came from any leftover
+    `<seat>.claude-settings.json` (coder@2's names claude-sonnet-5).
+    `formatModelDisplayName` passed Ollama tags through raw, and the grid
+    tile head showed no model at all.
+
+  ## What the hotfixes changed
+
+  1. `tmuxClient.ts`: `readRosterSwarmRoles` (every roles.tsv seat, then
+     every sessions.tsv seat roles.tsv lacks) and
+     `readLiveRosterSwarmRoles` (that, intersected with live sessions).
+     `captureLiveScreenPanes` and the layout check use them.
+  2. `residentPaneLive.ts`: `orderLiveScreenRoles` puts a numbered seat
+     (`coder@2`) right after its base role's tile (`seatBaseRole`).
+  3. `residentSpyUiHtml.ts`: 9- and 10-tile grids take the crowded font
+     step; two columns on a phone, five on a wide screen. The tile head
+     shows `pane.modelLabel` under the role name.
+  4. `backendSwitch.ts` recognises a launch line starting `qwen`;
+     `modelDisplayName.ts` formats `qwen<ver>-coder[-<n>b]...` as
+     `Qwen<ver> Coder <n>B`.
+
+  ## What is wanted in this parcel
+
+  - The step handler `specs/pipeline/steps/bl1858LiveGridTilePerLiveSeatSteps.js`,
+    discovered from its own file (BL-1371). Build the fixture under
+    mkdtemp the way `bl929LiveScreenPackLayoutSteps.js` does (its fake
+    tmux answers has-session for every session), and render the served
+    page in jsdom for scenarios 04 and 05. Validate `seat` and `model`
+    against explicit KNOWN_VALUES.
+  - Unit tests for `readRosterSwarmRoles`, `parseRosterLine`,
+    `seatBaseRole`, the qwen launch detection and the qwen display-name
+    rule, so the hardener's mutation pass on the four modules has tests
+    to kill against.
+  - Review both hotfixes against the invariants. Known edges to check, not
+    mandates: a roles.tsv row with fewer than four columns; a seat whose
+    base role is not in the pipeline chain; the model line's wrap on a
+    10-tile phone grid.
+
+  ## Scope
+
+  The four modules above and their unit tests, the step handler, the
+  evidence, and the documenter's pages that describe the live grid
+  (`docs/how-to/BL-775-bubble-live-screen-shell.md` at least). The
+  art-director reviews the grid on the real surface (Article 1.10).
+
+out_of_scope: |
+  - The VS Code tiles, launcher readiness (`swarmLauncher.ts`),
+    `operator-decide` and the Mini App resident pane still read
+    `sessions.tsv` through `readSwarmRoles`/`readLiveSwarmRoles`. Moving
+    them is a sibling ticket if wanted.
+  - Keeping `sessions.tsv` itself in step with `roles.tsv` when
+    `./swarm ensure` adds a seat.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1858-bubbles-live-grid-shows-a-tile-for-every-live-seat.feature`:
+     7 of 7 ok (01 and 05 are outlines of two rows). Measured at mint: 0,
+     no handler exists yet.
+  2. The BL-929, BL-1189, BL-775 and BL-881 features: 4/4, 5/5, 11/11,
+     3/3 ok. Measured on the hotfix tree at mint: the same.
+  3. `npx vitest run` on residentPaneLive, bl775BubbleLiveScreenShell,
+     bl994LiveScreenGrid, residentSpyUiHtml, tmuxClient, backendSwitch and
+     modelDisplayName unit files: all pass.
+  4. Live, read-only: `node -e` calling `captureLiveScreenPanes(<root>)`
+     lists one tile per live seat, coder@2 right after coder, and coder@2's
+     `modelLabel` reads `Qwen2.5 Coder 14B` while it runs that model.
+  5. Send the art-director the sign-off note for the grid on its real
+     surface (Bubble live, phone width and wide).
+
+notes: |
+  Minted 2026-10-01 by the specifier from coordinator note 014355 and the
+  human's "Hot fix it + stamp off" (source). Hotfixes c54b9060a6 (seats)
+  and 93d6f69ba0 (model in the tile title) landed on main with
+  SWARMFORGE_ROLE=QA, the BL-848 how-to's route; both are on the hotfix
+  ledger with stamp_ticket BL-1858. Severity medium, so it is not
+  auto-approved; human approval is pending.

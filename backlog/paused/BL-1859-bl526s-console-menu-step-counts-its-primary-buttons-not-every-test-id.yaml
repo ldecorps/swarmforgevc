@@ -1,0 +1,75 @@
+id: BL-1859
+title: "BL-526's acceptance feature has been red on main since at least 2026-08-21 and no register row owned it: its Given counts every data-testid attribute in the Mini App console menu as a primary button and expects 2, but BL-592's live spec tree (2026-08-27) added more testids and the menu now carries 8; the step counts the two primary nav buttons by their own selector, so the feature tests the menu it describes"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05); this
+# one has been red for six weeks with no owner.
+status: todo
+epic: swarm-reliability
+priority: 3
+depends_on: []
+mutation_cost: low
+# low: one step handler under specs/pipeline/steps/ (not under Stryker's
+# mutate scope) and no product code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# Not a claim of ownership over BL-526's contract (BL-1251): the contract
+# this ticket must satisfy is that feature, green, with its scenario as written.
+acceptance: specs/features/BL-526-miniapp-console-menu-pipeline-grid-mono-feed.feature
+
+human_approval: approved
+approval_context: >
+  An unowned standing red, minted high the pass it was sighted (2026-09-05
+  rule). FIRM: the scenario's text stays as written; only the step's count
+  changes, from every data-testid attribute to the menu's primary buttons.
+
+invariants: []
+
+source: |
+  Specifier, 2026-10-01, while verifying hotfix c54b9060a6 (BL-1858):
+  `node specs/pipeline/cli.js specs/features/BL-526-miniapp-console-menu-pipeline-grid-mono-feed.feature`
+  printed 0 pass, 1 fail: "Scenario \"Accessing Pipeline Status Grid\"
+  failed at step \"Given the miniapp console menu is open on a portrait
+  phone viewport\": expected exactly two primary buttons, found 8".
+  backlog/evidence/BL-979-coder-findings-20260821.md line 84 already
+  recorded it as "unchanged - pre-existing" on 2026-08-21. No
+  backlog/standing-reds.tsv row named it.
+
+description: |
+  ## Why
+
+  `specs/pipeline/steps/bl526MiniappConsoleMenuSteps.js` asserts
+  `(html.match(/data-testid="/g) || []).length === 2` on
+  `getConsoleMenuUiHtml()`. That counts every element with a test id, not
+  the menu's primary buttons. `consoleMenuUiHtml.ts` last changed in
+  BL-592's live spec tree (2026-08-27) and the history restores after it;
+  the page now carries 8 test ids. The scenario's own text, two buttons
+  for the pipeline grid and the mono-router feed, may still hold.
+
+  ## What is wanted
+
+  - The Given counts the primary buttons by the selector those two
+    buttons actually carry, and still finds exactly the pipeline-grid and
+    mono-router-feed buttons.
+  - If the menu really has more than two primary buttons now, do not
+    loosen the count to pass: stop and send the specifier a spec-gap note
+    naming what the menu shows, because the scenario would then be stale.
+  - The register row this commit adds is retired by the land (BL-1631).
+
+  ## Scope
+
+  The step handler and evidence. No product code.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-526-miniapp-console-menu-pipeline-grid-mono-feed.feature`:
+     1 of 1 ok. Measured on main at mint: 0 of 1, "found 8".
+  2. The register row naming the BL-526 feature is present and names
+     BL-1859 on the parcel; after the land, no row names it.
+
+notes: |
+  Minted 2026-10-01 by the specifier the same pass the red was sighted;
+  register row added in the same commit.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

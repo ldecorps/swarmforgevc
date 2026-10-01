@@ -450,21 +450,42 @@
 - commit: 2cdb259806
   subject: "Hotfix: the coder@iq3 local-model seat launches and fits its window"
   detected_at: 2026-09-30
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1839
   human_decision: null
   decided_at: null
 - commit: 7f38e5d7fe
   subject: "Hotfix: coder@iq3 runs its 49152 window on the GPU and cannot overflow it with one reply"
   detected_at: 2026-09-30
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1839
   human_decision: null
   decided_at: null
 - commit: 91c208a923
   subject: "Hotfix: correct the ista-iq3s Modelfile's claim that num_predict caps a coder@iq3 reply"
   detected_at: 2026-09-30
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1839
+  human_decision: null
+  decided_at: null
+- commit: c885d0c071
+  subject: "Hotfix: a local-model seat's qwen runs interactive, so its pane shows its work and takes typed input"
+  detected_at: 2026-09-30
+  state: stamp-open
+  stamp_ticket: BL-1845
+  human_decision: null
+  decided_at: null
+- commit: c54b9060a6
+  subject: "Hotfix: Bubble's live grid shows a tile for every live seat, so coder@2 and art-director appear"
+  detected_at: 2026-10-01
+  state: stamp-open
+  stamp_ticket: BL-1858
+  human_decision: null
+  decided_at: null
+- commit: 93d6f69ba0
+  subject: "Hotfix: each live-grid tile names its seat's model under the role name, so coder@2 reads Qwen2.5 Coder 14B"
+  detected_at: 2026-10-01
+  state: pending
+  stamp_ticket: BL-1858
   human_decision: null
   decided_at: null

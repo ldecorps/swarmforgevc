@@ -529,6 +529,12 @@ You are the specifier.
   feature one scenario short at its parcel commit. When you mint that
   owner, grep `specs/features/` for "no register row names <file>" and
   write the owner's `qa_e2e_procedure` to expect it (coder note 002114).
+  **A presence-only step is red on main after the land (2026-10-01,
+  BL-1860).** The feature outlives its ticket, and the land removes the
+  row it asserts. BL-1712's scenario 04 has been red on main since it
+  landed on 2026-09-24. So write the step to hold in both states: the row
+  is present and owned while the ticket is in `paused/` or `active/`, and
+  absent once it is in `done/`.
 
 ## A deferred-gate discharge ticket's "reason per survivor" names an OWNER (2026-09-10)
 - A ticket whose deliverable is running a deferred mutation gate (the
