@@ -1,0 +1,57 @@
+id: BL-1870
+title: "EPIC - Landing is a merge: parcels travel on their own line from origin/main instead of being merged into every role's long-lived branch, so landing an approved parcel is merge origin/main and fast-forward push, done by a lander daemon instead of a 21-minute QA turn"
+milestone: M8
+status: todo
+type: epic
+epic: landing-is-a-merge
+priority: 1
+direction: human-requested
+depends_on: []
+decomposes_into: []
+remaining_slices:
+  - "Parcel lines at the coder: each ticket starts from current origin/main, never from the coder branch's previous content"
+  - "Receiving roles switch instead of merge: merge_and_process moves the worktree onto the parcel commit; batch roles work their parcels one at a time"
+  - "The lander daemon: on QA approval it merges origin/main into the approved commit, fast-forward pushes, records the land approval and notes the coordinator; a conflict goes back to the coder"
+  - "Constitution and prompts: Article 1.8, 2.4 and 2.5 and the workflow rules on lineage, merge-up and bounce reverts (specifier lands the prose)"
+  - "Retire the entanglement machinery once in-flight parcels drain: merge-up broadcast, post-land re-point, reverse-hop copies, own-path replay, strays, abandoned_commits, LAND_ESCALATE conditions"
+mutation_cost: medium
+
+human_approval: pending
+approval_context: >
+  The human asked the specifier, through QA, to first assess whether the
+  whole landing concept is wrong. Short answer - yes, in one place. Every
+  role merges each parcel into its own long-lived branch, so the commit QA
+  approves carries other tickets' unapproved work (QA's branch is 16,590
+  commits ahead of origin/main today), and the land step spends a median
+  21-minute QA hold, about 100 tickets and 8,741 lines of code taking it
+  apart again. FIRM - a worktree per role, the stage order, every gate,
+  QA's review and the handoff format do not change. The choice below is
+  the direction. Slices are minted after the ruling, each routed only
+  through the stages it needs. Full assessment -
+  backlog/evidence/BL-1870-landing-concept-assessment-20261001.md
+ruling_options:
+  - A - parcel lines plus a lander daemon, so landing is merge origin/main and fast-forward push (recommended)
+  - B - a lander daemon only, which runs today's land step off QA's turn
+  - C - keep the current landing and measure the BL-1852 and BL-1853 speedups first
+ruling_tradeoffs:
+  - Pros - landing takes seconds and needs no judgment, QA is never held, and a whole class of defects goes away with the replay, strays, re-point and bounce reverts. Recommended because the cost comes from how parcels travel, and only this option changes that. Cons - five slices including a constitution change, the cleaner and hardener switch between parcels one at a time, and in-flight parcels drain through the old step during the move.
+  - Pros - QA is freed at once, in about one slice. Cons - each land still takes minutes and runs one at a time, the entanglement machinery and its hand-built conditions stay, and its escalations reach a daemon that cannot judge them.
+  - Pros - no new work, and two speedups landed today that nobody has measured yet. Cons - the cost the human named stays, and so does the defect stream that has produced about 100 tickets.
+
+source: |
+  The human, relayed by QA as rule_proposal 003669 (2026-10-01), verbatim
+  (Article 5.3):
+
+  > Ok with the idea of landing deamon. Let specifier cook up something. Tell it to first assess if we got the while concept wrong? In my mind it should not be much more than a git merge.
+
+  The human's earlier message, as QA's rationale, verbatim:
+
+  > Could we introduce a new role "lander" dedicated to this task? It is takibg far too long and the stops the whole swarm while it runs. Or change the landing logic all together?
+
+notes: |
+  Minted 2026-10-01 by the specifier from QA's rule_proposal 003669. The
+  assessment, with its measurements, is in
+  backlog/evidence/BL-1870-landing-concept-assessment-20261001.md. No
+  constitution text changes until the human rules; under A, the specifier
+  lands the prose with the slice that switches receiving roles.
+  New milestone: none, M8 fits. New epic id: landing-is-a-merge.
