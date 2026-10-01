@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d04f0e8f6a093c3d99e5b3b310c0d3ee53561df0c75f5fbe848fdf0f039bce23
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-01T11:55:16.847057332Z","feature_name":"BL-1840 A local-model seat is never served a window in qwen's compaction dead zone","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the window gate judges a served window by the trigger qwen computes for it","scenario_hash":"ed19ed4defa7c1bddb720e58c0ee8124f97ed5e842ed2029b6d3ccb22802c85c","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-10-01T11:55:16.847057332Z"},{"index":2,"name":"the trigger the gate reports is the one the pinned qwen computes","scenario_hash":"43db3c55a28d3f47330e0a86e081f6bfb389ab11bc0219dbb3a1576513bd580f","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-10-01T11:55:16.847057332Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1840 A local-model seat is never served a window in qwen's compaction dead zone
 
   qwen summarises its own chat history once the history passes a trigger it

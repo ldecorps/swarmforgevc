@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 1, 2026 (BL-1840: the local-model launch
+refuses a served window in qwen's own compaction dead zone. qwen 0.24.7
+auto-compacts at `min(0.85 * window, window - 33000)` once that second
+term is positive, else `0.85 * window` alone — both constants are fixed
+inside qwen, no setting moves either — so the trigger falls from 27,852
+tokens at a 32768-token window to 0 at 33,001 and does not climb back to
+27,852 until 60,852: every window from 33,001 to 60,852 compacts sooner
+than a smaller 32768 window, while costing more memory. `coder@iq3` sat
+at 49152 (trigger 16,152) for a day before this. `local_model_window_gate_lib.bb`
+now computes qwen's trigger for each seat's served window and refuses
+the launch when it is below the 32768-window trigger, naming the window,
+its trigger, and 32768/60852 as the windows that avoid it;
+`SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1` starts it anyway as a warning, same
+as the existing fit check. The formula is proven against the pinned
+qwen's own `--debug` compaction log line. An earlier attempt wrote
+`context.autoCompactThreshold: 0.8` into the seat's settings; proven
+inert at every dead-zone window and harmful outside it, so the settings
+writer no longer writes that key. How-to:
+`docs/how-to/BL-1052-local-model-seat-launch.md` (new "The window gate
+refuses qwen's compaction dead zone" section under Launch). Acceptance:
+`specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature`.
+No new extension command or setting; no diagram edit —
+launch-script-internal.)
+Prior entry —
+
 **Last Updated:** October 1, 2026 (BL-1852: a post-land re-point on QA's
 branch now re-applies only QA's own work, never a merged parcel's
 lineage. `post-land-repoint!`'s candidate set was every commit

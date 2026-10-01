@@ -103,3 +103,6 @@ abandoned_commits:
   - 5d9def87b7
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-01, by: QA, blamed: coder, class: behavior, commit: f2e258e9ee, evidence: backlog/evidence/BL-1822-QA-20261001.md }

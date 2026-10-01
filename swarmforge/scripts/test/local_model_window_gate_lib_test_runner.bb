@@ -65,6 +65,55 @@
 (let [{:keys [decision]} (outcome 6000 6000 false)]
   (assert= "estimate exactly equal to the window -> warn (not refuse: not strictly over)" :warn decision))
 
+;; ── BL-1840: qwen-compaction-trigger / dead-zone-outcome ───────────────────
+
+;; Scenario 01's own table, verbatim.
+(assert= "trigger at 32768 (the reference window)" 27852 (local-model-window-gate-lib/qwen-compaction-trigger 32768))
+(assert= "trigger at 49152 (coder@iq3's incident window)" 16152 (local-model-window-gate-lib/qwen-compaction-trigger 49152))
+(assert= "trigger at 60852 (the dead zone's own upper bound)" 27852 (local-model-window-gate-lib/qwen-compaction-trigger 60852))
+(assert= "trigger at 65536" 32536 (local-model-window-gate-lib/qwen-compaction-trigger 65536))
+
+(assert= "32768 does not flag (it is the reference window itself)" false (local-model-window-gate-lib/in-dead-zone? 32768))
+(assert= "49152 flags" true (local-model-window-gate-lib/in-dead-zone? 49152))
+(assert= "60852 does not flag (back up to the reference trigger)" false (local-model-window-gate-lib/in-dead-zone? 60852))
+(assert= "65536 does not flag" false (local-model-window-gate-lib/in-dead-zone? 65536))
+
+;; boundary: just inside the dead zone at both edges.
+(assert= "33001 flags (one past the reference window)" true (local-model-window-gate-lib/in-dead-zone? 33001))
+(assert= "33000 does not flag (the pct branch still applies there)" false (local-model-window-gate-lib/in-dead-zone? 33000))
+
+(assert= "dead-zone-upper-window is derived, not hardcoded" 60852 local-model-window-gate-lib/dead-zone-upper-window)
+
+(defn dz-outcome [window override?]
+  (local-model-window-gate-lib/dead-zone-outcome
+   {:window window :override? override? :role "coder" :model "ista-iq3s-coder:latest"}))
+
+;; scenario 01: a window outside the dead zone proceeds, no message.
+(let [{:keys [decision message]} (dz-outcome 32768 false)]
+  (assert= "outside the dead zone -> proceed" :proceed decision)
+  (assert= "proceed carries no message" nil message))
+
+;; scenario 02: a dead-zone window is refused, naming the window, its
+;; trigger, and the two windows that avoid it.
+(let [{:keys [decision message]} (dz-outcome 49152 false)]
+  (assert= "dead-zone window, no override -> refuse" :refuse decision)
+  (assert-true* "refusal names the window" (clojure.string/includes? message "49152"))
+  (assert-true* "refusal names the trigger" (clojure.string/includes? message "16152"))
+  (assert-true* "refusal names 32768" (clojure.string/includes? message "32768"))
+  (assert-true* "refusal names 60852" (clojure.string/includes? message "60852"))
+  (assert-true* "refusal names the override env var" (clojure.string/includes? message "SWARMFORGE_LOCAL_WINDOW_OVERRIDE")))
+
+;; a dead-zone window WITH the override warns instead, naming the override.
+(let [{:keys [decision message]} (dz-outcome 49152 true)]
+  (assert= "dead-zone window with override -> warn, not refuse" :warn decision)
+  (assert-true* "override warn names the override" (clojure.string/includes? message "SWARMFORGE_LOCAL_WINDOW_OVERRIDE"))
+  (assert-true* "override warn names the window" (clojure.string/includes? message "49152")))
+
+;; a window the gate cannot learn is never flagged (item 1).
+(let [{:keys [decision message]} (dz-outcome nil false)]
+  (assert= "unknown window -> proceed, never flagged" :proceed decision)
+  (assert= "proceed carries no message" nil message))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")

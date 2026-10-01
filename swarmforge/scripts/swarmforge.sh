@@ -828,6 +828,18 @@ check_local_model_seat_windows() {
         --override "${SWARMFORGE_LOCAL_WINDOW_OVERRIDE:-0}"; then
       rc=1
     fi
+    # BL-1840: a served window in qwen's own compaction dead zone (33,001
+    # to 60,852 tokens - it compacts sooner there than a 32768-token window
+    # does, while costing more memory) is refused the same way the fit
+    # check above is, with the same override.
+    if ! bb "$SCRIPT_DIR/local_model_window_gate_cli.bb" dead-zone \
+        --role "${ROLES[$i]}" \
+        --model "$model" \
+        --endpoint-url "$(local_model_endpoint_url)" \
+        --context-length "${SWARMFORGE_OLLAMA_CONTEXT_LENGTH:-}" \
+        --override "${SWARMFORGE_LOCAL_WINDOW_OVERRIDE:-0}" > /dev/null; then
+      rc=1
+    fi
     rm -f "$prompt_tmp"
   done
   return $rc
@@ -2053,6 +2065,18 @@ EOF
 # of that num_ctx read (IO-near code calls the owner, BL-1811). A failure
 # writing the provider entry never aborts the launch; the tool-scoping
 # write above already succeeded either way.
+#
+# BL-1840 (amended 2026-10-01): `context.autoCompactThreshold` is NOT
+# written here. The hardener proved with qwen's own `--debug` log, and the
+# coder confirmed in qwen's installed source, that this key changes
+# nothing: qwen 0.24.7's `computeThresholds(window, pct)` is `min(pct *
+# window, window - 33000)` once `window - 33000 > 0` (49152, the seat's
+# incident window: 16152 either way, pct provably inert), and `pct *
+# window` alone otherwise (32768: qwen's un-pinned 0.85 default already
+# compacts LATER than 0.8 would, so the key would only make it worse). The
+# real fix is the launch's window gate (BL-1840's own
+# local_model_window_gate_lib.bb), which refuses a served window whose
+# trigger is below what 32768 gives, before any pane starts.
 write_local_model_qwen_settings() {
   local worktree="$1"
   local model="${2:-}"

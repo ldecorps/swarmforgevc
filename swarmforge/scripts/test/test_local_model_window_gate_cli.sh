@@ -134,4 +134,47 @@ RC=$?
 [[ "$RC" -eq 1 ]] || fail "07: expected exit 1 (context length stands in), got $RC: $OUT"
 pass "07: an unreachable Ollama falls back to the swarm's own context length"
 
+# ── BL-1840: the dead-zone subcommand ───────────────────────────────────
+
+# 08: a window outside the dead zone reports its trigger and proceeds.
+start_fake_ollama 32768
+OUT="$(bb "$CLI" dead-zone --role coder --model m --endpoint-url "$ENDPOINT" 2>&1)"
+RC=$?
+stop_fake_ollama
+[[ "$RC" -eq 0 ]] || fail "08: expected exit 0, got $RC: $OUT"
+[[ "$OUT" == "TRIGGER: 27852" ]] || fail "08: expected TRIGGER: 27852, got: $OUT"
+pass "08: a window outside the dead zone reports its trigger and proceeds"
+
+# 09: a dead-zone window is refused, naming the window, the trigger, and
+#     the two windows that avoid it.
+start_fake_ollama 49152
+OUT="$(bb "$CLI" dead-zone --role coder --model m --endpoint-url "$ENDPOINT" 2>&1)"
+RC=$?
+stop_fake_ollama
+[[ "$RC" -eq 1 ]] || fail "09: expected exit 1, got $RC: $OUT"
+[[ "$OUT" == *"TRIGGER: 16152"* ]] || fail "09: expected TRIGGER: 16152, got: $OUT"
+[[ "$OUT" == *REFUSE:* ]] || fail "09: expected a REFUSE line, got: $OUT"
+[[ "$OUT" == *49152* && "$OUT" == *16152* && "$OUT" == *32768* && "$OUT" == *60852* ]] \
+  || fail "09: expected the refusal to name 49152, 16152, 32768 and 60852, got: $OUT"
+pass "09: a dead-zone window is refused, naming the window, trigger and the windows that avoid it"
+
+# 10: the override turns the dead-zone refusal into a warning.
+start_fake_ollama 49152
+OUT="$(bb "$CLI" dead-zone --role coder --model m --endpoint-url "$ENDPOINT" --override 1 2>&1)"
+RC=$?
+stop_fake_ollama
+[[ "$RC" -eq 0 ]] || fail "10: expected exit 0, got $RC: $OUT"
+[[ "$OUT" == *WARN:* ]] || fail "10: expected a WARN line, got: $OUT"
+[[ "$OUT" == *SWARMFORGE_LOCAL_WINDOW_OVERRIDE* ]] || fail "10: expected the override to be named, got: $OUT"
+pass "10: the override turns a dead-zone refusal into a warning"
+
+# 11: an unknown window (no num_ctx, no context length) never flags.
+start_fake_ollama none
+OUT="$(bb "$CLI" dead-zone --role coder --model m --endpoint-url "$ENDPOINT" 2>&1)"
+RC=$?
+stop_fake_ollama
+[[ "$RC" -eq 0 ]] || fail "11: expected exit 0 (unknown window never flags), got $RC: $OUT"
+[[ "$OUT" == "TRIGGER: unknown" ]] || fail "11: expected TRIGGER: unknown, got: $OUT"
+pass "11: an unknown window never flags"
+
 echo "ALL PASS"

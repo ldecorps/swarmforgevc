@@ -47,6 +47,18 @@ json_ok="$(python3 -c 'import json; json.load(open("'"$SETTINGS"'")); print("ok"
 [[ "$json_ok" == "ok" ]] || fail "settings.json is not valid JSON: $json_ok"
 pass "settings.json is valid JSON"
 
+# BL-1840 (amended): autoCompactThreshold changes nothing at the windows
+# this swarm serves (proven against qwen's own --debug log) and would
+# only ever make compaction fire sooner - the settings writer no longer
+# writes it at all.
+HAS_AUTO_COMPACT="$(python3 -c '
+import json
+d = json.load(open("'"$SETTINGS"'"))
+print("autoCompactThreshold" in d.get("context", {}))
+')"
+[[ "$HAS_AUTO_COMPACT" == "False" ]] || fail "expected no context.autoCompactThreshold in the written settings"
+pass "BL-1840: no context.autoCompactThreshold in the written settings"
+
 CORE_EXPECTED='["run_shell_command", "read_file", "write_file", "edit", "glob", "grep_search"]'
 EXCLUDE_EXPECTED='["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal"]'
 

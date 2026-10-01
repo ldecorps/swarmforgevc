@@ -145,3 +145,5 @@ notes: |
   whose draft carried the reserved `from:` header.
 
 assigned_to: coder
+abandoned_commits:
+  - 905a1c80c6

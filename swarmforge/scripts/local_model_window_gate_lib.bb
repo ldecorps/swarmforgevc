@@ -87,3 +87,76 @@
 
     :else
     {:decision :proceed :message nil}))
+
+;; BL-1840: qwen 0.24.7's own auto-compaction trigger (computeThresholds in
+;; the installed @qwen-code/qwen-code package's chunks/chunk-TGWAQ5RB.js) -
+;; the token count at which qwen summarises a seat's history for a given
+;; served window. pct/max-output/buffer are qwen's own fixed constants: no
+;; settings key or env var moves any of them (this ticket's own coder/
+;; hardener evidence, confirmed in qwen's source).
+(def qwen-compact-pct 0.85)
+(def qwen-compact-max-output-tokens 20000)
+(def qwen-compact-buffer-tokens 13000)
+
+;; The window every other window is judged against: the one the operator
+;; actually ran before this ticket (BL-1840 approval_context).
+(def dead-zone-reference-window 32768)
+
+(defn qwen-compaction-trigger
+  "qwen's computeThresholds(window, pct): min(pct * window, window -
+   max-output - buffer) once that second term is positive, else pct *
+   window alone. Matches qwen's own --debug `cheap-gate ... auto=<n>` log
+   line exactly (scenario 03's own proof)."
+  [window]
+  (let [reserved (- window (+ qwen-compact-max-output-tokens qwen-compact-buffer-tokens))
+        pct-trigger (long (Math/floor (* qwen-compact-pct window)))]
+    (if (pos? reserved)
+      (min pct-trigger reserved)
+      pct-trigger)))
+
+(def dead-zone-reference-trigger (qwen-compaction-trigger dead-zone-reference-window))
+
+;; Derived, never hardcoded: the window at which the trigger climbs back up
+;; to dead-zone-reference-trigger (60852 today) - the same formula, read
+;; backwards from the reserved-tokens branch.
+(def dead-zone-upper-window
+  (+ qwen-compact-max-output-tokens qwen-compact-buffer-tokens dead-zone-reference-trigger))
+
+(defn in-dead-zone?
+  "True when `window`'s own compaction trigger falls below the trigger a
+   32768-token window gives (BL-1840 invariant 1). A window the gate
+   cannot learn is never asked - the caller skips this entirely for a nil
+   window, as today (BL-1840 'what is wanted' item 1)."
+  [window]
+  (< (qwen-compaction-trigger window) dead-zone-reference-trigger))
+
+(defn dead-zone-outcome
+  "{:window (a positive int, or nil when unknown) :override? :role :model}
+   -> {:decision (:proceed :warn :refuse) :message (string, or nil)}
+
+   A window the gate cannot learn is never flagged. A flagged window is
+   refused, naming the window, its trigger, and the two windows (32768 and
+   the dead zone's own upper bound) that avoid it; the existing
+   SWARMFORGE_LOCAL_WINDOW_OVERRIDE lets it start anyway, as a warning."
+  [{:keys [window override? role model]}]
+  (if (nil? window)
+    {:decision :proceed :message nil}
+    (let [trigger (qwen-compaction-trigger window)]
+      (if (in-dead-zone? window)
+        (if override?
+          {:decision :warn
+           :message (str "SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1 let " role " (" model
+                          ") start in qwen's compaction dead zone: its " window
+                          "-token window compacts at " trigger " tokens, below the "
+                          dead-zone-reference-trigger " tokens a " dead-zone-reference-window
+                          "-token window gives - windows " dead-zone-reference-window
+                          " and " dead-zone-upper-window " avoid it")}
+          {:decision :refuse
+           :message (str "local-model launch refused: " role " (" model ")'s "
+                          window "-token window compacts at " trigger
+                          " tokens, sooner than the " dead-zone-reference-trigger
+                          " tokens a " dead-zone-reference-window
+                          "-token window gives, while costing more memory - set "
+                          "SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1 to start anyway, or use a window at "
+                          dead-zone-reference-window " or below, or at " dead-zone-upper-window " or above")})
+        {:decision :proceed :message nil}))))

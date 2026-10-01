@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-09-30
+Last Updated: 2026-10-01
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -242,6 +242,41 @@ in it:
   configured context length available, no provider entry is written and
   one warning line names the seat — never a guessed value.
 
+
+### The window gate refuses qwen's compaction dead zone (BL-1840)
+
+qwen 0.24.7 auto-compacts a seat's chat at `min(0.85 * window, window -
+33000)` once that second term is positive, else `0.85 * window` alone —
+both the 0.85 share and the 33,000 (20,000 max-output plus 13,000 buffer)
+are fixed inside qwen; no settings key or env var moves either. The
+formula is not monotonic: the trigger falls from 27,852 tokens at a
+32768-token window to 0 at 33,001, then climbs back up, not reaching
+27,852 again until 60,852. A window anywhere from 33,001 to 60,852 tokens
+therefore compacts sooner than the smaller 32768 window does, while
+costing more memory for no benefit — the dead zone `coder@iq3` sat in at
+49152 tokens on 2026-09-30, compacting at 16,152 and losing most of a
+turn's context on nearly every exchange.
+
+`local_model_window_gate_lib.bb` computes qwen's own trigger for each
+local-model seat's served window (reading it the same way BL-1838's
+provider entry does) and compares it against the trigger a 32768-token
+window gives. A window the gate cannot learn is never flagged, same as
+the fit check above. A flagged window refuses the launch, naming the
+window, its trigger, and the two window sizes (32768 and the dead zone's
+own upper bound, 60852) that avoid it; `SWARMFORGE_LOCAL_WINDOW_OVERRIDE=1`
+lets it start anyway, same override as the fit check, now logged as a
+warning instead of a refusal. The gate's formula is proven against the
+pinned qwen's own `--debug` `cheap-gate ... auto=<n>` log line, so a qwen
+update that changes the constants turns the check red rather than going
+silently stale.
+
+An earlier version of this fix wrote `context.autoCompactThreshold: 0.8`
+into the seat's qwen settings; the hardener proved with qwen's `--debug`
+log and the coder confirmed in qwen's installed source that this key is
+inert at every window in the dead zone and only makes compaction happen
+sooner outside it (0.8 compacts earlier than qwen's own 0.85 default at
+32768). The settings writer no longer writes that key — the real fix is
+refusing the window at launch, above.
 ### A crashed ollama server is restarted (BL-1711)
 
 While `serve.json` exists (a local-endpoint pack is running), handoffd's
