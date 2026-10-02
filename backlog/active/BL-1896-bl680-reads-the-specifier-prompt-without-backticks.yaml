@@ -74,3 +74,5 @@ notes: |
   36c869209a. No register row: the hotfix turned it green. Ledger entry
   linked here.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+assigned_to: coder
