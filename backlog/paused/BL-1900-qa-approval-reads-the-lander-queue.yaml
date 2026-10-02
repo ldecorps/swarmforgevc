@@ -1,0 +1,117 @@
+id: BL-1900
+title: "Stamp-off for hotfix 099be7db00: a commit QA queued for the lander, or an ancestor of one, reads as QA-approved beside swarmforge-QA, so lander lands stop failing the predicate (BL-1871 parcel lines move QA's branch off every approved parcel) and the master-main reconcile merge, refused for three hours on 2026-10-02, goes through"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. Every lander land read as unapproved
+# pipeline code (a false Article 4.2 finding per land) and main could not
+# absorb origin/main.
+status: todo
+epic: landing-is-a-merge
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: one bash predicate gains one store reader; no Stryker lane for shell.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one reader added beside the land-replay store's; nothing to refactor"
+  architect: "the approval path mirrors BL-1334's land-replay mapping; the review is the coder's stamp-off pass"
+  hardender: "the predicate writes nothing; the shell tests cover each approve and refuse row"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-1872's contract (BL-1251): the predicate
+# reads BL-1872's queue, and that feature must stay green.
+acceptance: specs/features/BL-1872-the-lander-daemon-lands-what-qa-approves.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix under the human's 2026-10-01 directive. No choice
+  is posed. FIRM: the bounce vetoes still run first, and approval comes
+  only from QA's own queue entries; removing an entry retracts it.
+
+invariants: []
+
+source: |
+  Coordinator note 015265 (2026-10-02 19:04Z), verbatim: "main
+  merge-blocked: chain-gap + merge-drop guard bug - see evidence"
+  (backlog/evidence/main-merge-blocked-chain-gap-and-guard-bug-20261002.md).
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim:
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 099be7db00 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `is_qa_ancestor.sh` is the one approval predicate (BL-925): a commit is
+  approved when it is an ancestor of swarmforge-QA and has no bounce
+  verdict. A lander replay is approved when its recorded source is
+  (BL-1334). Under BL-1871 parcel lines QA's branch moves onto each new
+  parcel's own line, so the source of every earlier land falls off
+  swarmforge-QA. On 2026-10-02 every lander land read "not approved"
+  (942dddee74, 974b1c35e7, 2a3370bced, 596f03a17c, 71c6ef1e99).
+  check_pipeline_code_on_main.sh's import exemption depends on this
+  predicate, so the reconcile merge of origin/main into main was refused
+  from 17:10. Main sat 26 ahead and 11 behind, and the babysitter raised
+  an Article 4.2 finding for each land, which the coordinator waived one
+  by one.
+  The coordinator's second problem, the merge-deletion guard firing on an
+  unrelated commit, was the same blockage: check_merge_deletion.sh runs
+  only while MERGE_HEAD exists, and the coordinator committed while the
+  daemon's refused merge was still open.
+
+  ## What the hotfix changed
+
+  The predicate reads `.swarmforge/lander/queue/*.edn` from the shared
+  root. lander_queue.bb, QA's last act on an approved parcel, writes those
+  entries, and QA removes an entry to retract. Each entry's `:commit` is a
+  QA-approved tip beside swarmforge-QA. A commit reachable from one
+  (computed once, `git rev-list <tips> ^swarmforge-QA`, about 0.1 s for 12
+  entries) is approved, both directly and as a land-replay source. Bounce
+  vetoes still run first, and an entry with no commit grants nothing.
+  New test: swarmforge/scripts/test/test_is_qa_ancestor_lander_queue_store.sh,
+  10 rows. Against the pre-fix predicate it fails the 5 approve rows and
+  passes the 5 refuse rows.
+
+  ## What is wanted in this parcel
+
+  - Review the change against BL-925 invariant 2 (one definition of
+    approval) and BL-952 (a bounced parcel never reads approved). Say in
+    the evidence whether queue entries should expire once their land is
+    on origin/main, because the reach set grows with every entry.
+  - Evidence: the review and one run of each test named below.
+
+  ## Scope
+
+  is_qa_ancestor.sh and its new test (review only), evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each:
+  1. `bash swarmforge/scripts/test/test_is_qa_ancestor_lander_queue_store.sh`:
+     ALL PASS (10 rows).
+  2. The other is_qa_ancestor tests:
+     `test_is_qa_ancestor_expedite_store.sh`,
+     `test_is_qa_ancestor_land_replay_store.sh`,
+     `test_is_qa_ancestor_yaml_store.sh`: ALL PASS.
+  3. On the live checkout: `bash swarmforge/scripts/is_qa_ancestor.sh <the
+     newest lander replay on origin/main>` exits 0 and names its source.
+  4. `bb swarmforge/scripts/main_sync_status_cli.bb .` reads `behind` 0
+     after the next reconcile tick.
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  099be7db00. No register row: no test was red; the broken
+  signal was the predicate itself.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfixed on main while main_sync_status read wait-dirty-clear. That wait
+  could not end without this change: the daemon's merge was refused by the
+  predicate, and a ticket minted on local main could not reach a coder
+  line started from origin/main. The hotfix is a commit on main, not a
+  merge. The daemon's next reconcile tick does the merge.
+  Not fixed here: a commit made while the daemon's merge is open still
+  meets MERGE_HEAD and the merge guards. That window was recurring only
+  because every merge was refused.
