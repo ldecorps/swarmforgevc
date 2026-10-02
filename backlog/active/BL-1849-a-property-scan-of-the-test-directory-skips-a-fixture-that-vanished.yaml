@@ -166,3 +166,5 @@ notes: |
   human's directive, verbatim: "Yeah so basically hotfix all red and
   file stamp off instead". The register row was retired in that commit,
   and the ledger entry is linked here. The approval above stands.
+
+assigned_to: coder
