@@ -160,7 +160,20 @@ description: |
   documenter writes the how-to (queueing a land, reading the lander log,
   what a refusal note means) and links it from `docs/index.md`. The
   specifier changes QA.prompt's land recipe to queue instead of land when
-  this ticket activates (BL-798).
+  this ticket activates (BL-798), as an "Until BL-1872 lands" interim
+  that keeps today's recipe until the land, the way BL-1871's prose
+  landed (e60cb4e6e0).
+
+  The parcel also retires BL-247 scenario 01 (`qa-integrates-01`), the
+  BL-1006 shape: its Then "QA fast-forwards main to the approved commit
+  and pushes origin" is false once the lander lands what QA queues, and
+  its handler reads the QA.prompt recipe lines that retire with the
+  interim. Retire, never reword. This ticket's scenario 02 covers the
+  land, and BL-247's scenario 02 still pins that the coordinator runs no
+  git merge or push. Remove the step definitions only scenario 01 used
+  from `specs/pipeline/steps/qaIntegratesCoordinatorBookkeepsSteps.js`,
+  and re-tense the Feature narrative where it says QA lands. That edit is
+  not a claim of ownership over BL-247's contract (BL-1251).
 
 out_of_scope: |
   - Changing what the land step decides. Apart from the rematch's detached
@@ -178,6 +191,9 @@ qa_e2e_procedure: |
   3. `node specs/pipeline/cli.js specs/features/BL-1678-a-land-never-ships-an-unapproved-forward-that-shares-no-path-with-the-landing-ticket.feature` (the
      publish step's own contract): 4 of 4 ok, as measured on main at
      mint.
+  4. `node specs/pipeline/cli.js specs/features/BL-247-qa-integrates-coordinator-bookkeeps.feature`:
+     2 of 2 ok, scenario 01 retired. Measured on main 2026-10-02 after
+     hotfix 83d5e34527: 3 of 3.
   After the land (the specifier's or coordinator's check, not QA's): the
   next approval QA queues lands without QA running land_main_publish.sh,
   QA's hold on it ends at the queue command, and the lander log for it
@@ -211,3 +227,8 @@ notes: |
   needed. The feature was linted and IR-DRY checked; the one new finding
   pairs "exactly one landing commit" with the record step, which mean
   different things.
+  2026-10-02, second amendment the same pass: BL-247 scenario 01's
+  retirement is scoped in (BL-1006), and the activation prose is pinned
+  as an "Until BL-1872 lands" interim. Found while hotfixing BL-247's
+  77-day red (83d5e34527, stamp-off BL-1878). BL-1878 reviews the same
+  handler, so the two should not run at once.
