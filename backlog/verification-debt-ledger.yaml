@@ -142,3 +142,9 @@
   role: QA
   description: "LAND_REMATCH rebased replay 4890a3635a to dd2950dc24 in QA's worktree: HEAD left detached so the re-point moved HEAD not swarmforge-QA (ready_for_next BRANCH_DRIFT), and the rematched sha had no land-approval record (is_qa_ancestor exit 1); re-attached, merged origin/main, ran record_land_approval.bb by hand"
   detected_at: 2026-10-02
+- category: stryker-dry-run-timeout-fallback
+  ticket: BL-1836
+  role: hardener
+  description: "Stryker's perTest dry run (nightClosingCeremonyLive.js and night-closing-ceremony-run.js) timed out at the 5-minute ceiling twice independently (concurrency 1 and 8, host load 4-7 on 20 cores); hand-authored mutation sweep over the two files' new/changed logic (landBriefingIfDue's nightKey guard, briefingSent's exact-match change) stood in, finding and fixing two real survivors - differential complexity read by hand against main's baseline too"
+  detected_at: 2026-10-02
+  evidence: backlog/evidence/BL-1836-hardender-20261002.md
