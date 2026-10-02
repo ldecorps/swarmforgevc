@@ -1,0 +1,104 @@
+id: BL-1882
+title: "Stamp-off for hotfix 81a2c737c2: four features the coder found red on main are green again - BL-998's dispatch-isolation guard no longer fails open (BL-1665's rewrite put a redirect inside its pattern), and BL-1316, BL-1317 and BL-529's fixtures follow the audit exit, forward gate and swarm identity that landed after them"
+milestone: M8
+type: defect
+severity: high
+# high: standing reds on main are a broken safety signal (2026-09-05), and
+# BL-998's guard had silently stopped guarding.
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: three step handlers and one shell test guard; no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "small test-side fixes; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fixes are test-side"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-998's contract (BL-1251): its guard is
+# the one fix that changed what a gate decides; the other three features
+# are in the procedure.
+acceptance: specs/features/BL-998-a-shell-test-never-dispatches-into-the-real-repo.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 81a2c737c2 under the human's 2026-10-01 directive
+  (source). No choice is posed. FIRM: no scenario text changed. One guard
+  line and three fixtures changed. The review decides whether that stands.
+
+invariants: []
+
+source: |
+  Coder note 002311 (2026-10-02 07:36Z), verbatim: "unowned-red on main:
+  BL-529 3/6, BL-998 1/5, BL-1316 6/6, BL-1317 1/3". The specifier
+  reproduced all four on main; no backlog/standing-reds.tsv row named any.
+
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim
+  (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 81a2c737c2 landed the fix
+
+  This parcel is its stamp-off: the pipeline's review of what landed. The
+  coder finds the four files already changed. Review them, do not re-apply
+  them.
+
+  ## What the hotfix changed
+
+  1. `swarmforge/scripts/test/test_shell_fixture_dispatch_isolation.sh`
+     (BL-998 scenario 03). BL-1665's land (c0e67cd2cf, 2026-09-30) rewrote
+     `grep -qE "$(execution_re "$var")" 2>/dev/null` as
+     `grep -E "$(execution_re " >/dev/null$var")" 2>/dev/null`: the redirect
+     went inside the argument, so the variable name became
+     " >/dev/nullREADY" and no offender could ever match. The guard failed
+     open for three days. The redirect is back after `grep`. Run over the
+     real test directory the guard still passes, so no offender landed in
+     that window. Re-check that, and grep the rest of c0e67cd2cf's 144 files
+     for the same misplaced-redirect shape (the specifier's search found
+     only this one).
+  2. `bl1316ClaimTimeEffortSteps.js`: the fixture asserted the self-audit
+     challenge exits 0, which BL-1529 changed to non-zero. The challenge is
+     now told apart by its AUDIT_REQUIRED text.
+  3. `bl1317AdaptEffortSteps.js`: BL-1609 refuses to complete a forwarding
+     parcel nothing forwarded. The fixture completes with a stated
+     `--no-op` reason, and the effort record still runs as a clean pass
+     (done_with_current_task.bb signals "clean" for any forwarding inbound).
+  4. `bl529TicketBranchMismatchGuardSteps.js`: BL-966's depth lookup warns
+     on stderr when the swarm identity names no depth conf, and scenario
+     01 requires a passing guard to print nothing. The fixture's identity
+     now names a fixture conf, as swarmforge.sh writes it.
+
+  ## What is wanted in this parcel
+
+  - Review the four changes against the scenarios' observable claims. If
+    one hides a real regression rather than a stale fixture, fix it here or
+    raise it to the specifier as a note.
+  - Evidence: the review, and the census of c0e67cd2cf in item 1.
+
+  ## Scope
+
+  The guard, the three step handlers, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-998-a-shell-test-never-dispatches-into-the-real-repo.feature`:
+     5 of 5 ok. Measured at mint: 5 of 5 on the hotfix tree, 4 of 5 before.
+  2. BL-529 6 of 6 (3 before), BL-1316 6 of 6 (0 before), BL-1317 3 of 3
+     (2 before).
+  3. `bash swarmforge/scripts/test/test_shell_fixture_dispatch_isolation.sh`
+     prints PASS on the parcel commit; BL-1539 7 of 7 and BL-1665 6 of 6,
+     as measured at mint.
+  4. Read the coder's evidence for the review and the census.
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  81a2c737c2, the same pass the reds were reported (directive in source).
+  The hotfix turned them green, so no register row was added. Ledger entry
+  linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

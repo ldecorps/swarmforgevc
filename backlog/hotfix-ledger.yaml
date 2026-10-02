@@ -580,3 +580,10 @@
   stamp_ticket: BL-1881
   human_decision: null
   decided_at: null
+- commit: 81a2c737c2
+  subject: "Hotfix: four features the coder found red on main are green again - BL-529, BL-998, BL-1316 and BL-1317"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1882
+  human_decision: null
+  decided_at: null
