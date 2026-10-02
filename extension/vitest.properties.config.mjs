@@ -134,6 +134,8 @@ export default defineConfig({
       './test/helpers/gitEnvGuardSetup.js',
       './test/helpers/propertyLaneHeapGuardSetup.js',
     ],
+    // BL-1867: same bl1039 shared-repo-template sweep as vitest.config.mjs.
+    globalSetup: ['./test/helpers/bl1039TemplateGlobalTeardown.js'],
     include: ['test/**/*.property.test.js'],
     testTimeout: PROPERTY_LANE_DEFAULT_TIMEOUT_MS,
     // BL-871 QA bounce D2 follow-up (2026-08-11): raising per-test timeouts

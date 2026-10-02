@@ -82,6 +82,12 @@ export default defineConfig({
       './test/helpers/contentionBudgetSetup.js',
       './test/helpers/gitEnvGuardSetup.js',
     ],
+    // BL-1867: runs once in the MAIN process, after every worker has
+    // finished, sweeping any bl1039 shared-repo template a fork worker
+    // seeded and left behind (a worker is recycled/killed, never exits
+    // normally, so sharedRepoFixture.js's own mkProcessTmpDir exit hook
+    // never fires for it).
+    globalSetup: ['./test/helpers/bl1039TemplateGlobalTeardown.js'],
     // BL-422: an unbounded `vitest run` sizes its worker pool to the CPU
     // count (20 on the reference host) with no per-worker heap limit - one
     // run ballooned four workers to ~13GB and drove the kernel OOM-killer

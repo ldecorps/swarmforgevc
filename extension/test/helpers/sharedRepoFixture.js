@@ -27,6 +27,19 @@ const os = require('os');
 const { mkTmpDir, mkProcessTmpDir } = require('./tmpDir');
 const { execFileSync } = require('child_process');
 
+// BL-1867: the template's directory name carries ITS OWN creating process's
+// pid (`<PREFIX><pid>-<random>`), the one naming shape
+// tmpDir.js's sweepStaleTmpDirs (BL-971/BL-1385/BL-1390's owner-aware
+// sweep) can target - never a bare mkdtemp random suffix, which carries no
+// owner to check liveness against. A vitest fork worker that seeds this
+// template is torn down without ever firing mkProcessTmpDir's own
+// `process.once('exit')` handler (tinypool recycles/kills forks rather than
+// letting them exit normally), so the directory this name scheme produces
+// is swept instead by bl1039TemplateGlobalTeardown.js's own call to
+// sweepStaleTmpDirs, once per vitest invocation, from the main process -
+// the one process that reliably survives to the end of a run.
+const TEMPLATE_PREFIX = 'bl1039-seed-template-';
+
 let templateDir = null;
 let seedings = 0;
 
@@ -41,19 +54,37 @@ function gitIn(dir, args) {
  * The template, seeded at most once per process. Callers never touch it - they
  * only ever receive copies - so it can be reused for the whole run.
  */
+function readCoreWorktree(dir) {
+  try {
+    return { value: execFileSync('git', ['config', 'core.worktree'], {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim() };
+  } catch (err) {
+    // `git config` exits 1 with empty stdout when the key is simply unset -
+    // the common, healthy case, which execFileSync reports by THROWING
+    // (non-zero exit), not by returning empty. Only THAT exact shape (exit
+    // 1, nothing on stdout) means "no key"; any other failure (a different
+    // exit status, or something on stdout despite the throw) is a genuine
+    // read failure, left unhealthy.
+    const stdout = (err && err.stdout && err.stdout.toString()) || '';
+    if (err && err.status === 1 && stdout.trim() === '') {
+      return { value: '' };
+    }
+    return null;
+  }
+}
+
 function templateIsHealthy(dir) {
   if (!fs.existsSync(dir)) {
     return false;
   }
+  const worktree = readCoreWorktree(dir);
+  if (!worktree || worktree.value) {
+    return false;
+  }
   try {
-    const worktree = execFileSync('git', ['config', 'core.worktree'], {
-      cwd: dir,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-    if (worktree) {
-      return false;
-    }
     const tracked = execFileSync('git', ['ls-files'], {
       cwd: dir,
       encoding: 'utf8',
@@ -67,15 +98,18 @@ function templateIsHealthy(dir) {
 
 function seedTemplateOnce() {
   if (templateDir && !templateIsHealthy(templateDir)) {
+    // BL-1867: a genuine re-seed (the template really went unhealthy) still
+    // counts on top of what came before - seedCount() reports how many
+    // templates THIS process created in total, not just "since the last
+    // unhealthy one". Zeroing here was the reason seedCount() always read 1.
     templateDir = null;
-    seedings = 0;
   }
   if (templateDir && fs.existsSync(templateDir)) return templateDir;
   // mkProcessTmpDir, not mkTmpDir: BL-420's helper sweeps per TEST and its
   // shared sibling per FILE, and the template must outlive both or the saving
   // evaporates - it is seeded once and reused across files. Allocated through
   // the shared helper all the same, so this file carries no raw mkdtemp.
-  const dir = mkProcessTmpDir('bl1039-seed-template-');
+  const dir = mkProcessTmpDir(`${TEMPLATE_PREFIX}${process.pid}-`);
   // `-b main` deliberately, not bare `init`: the template's branch name is part
   // of the contract callers see. Without it the branch is whatever the host's
   // `init.defaultBranch` happens to be, so a caller doing `git checkout main`
@@ -145,4 +179,4 @@ function resetForTest() {
   seedings = 0;
 }
 
-module.exports = { checkoutSeededRepo, copySeededRepoInto, seedTemplateOnce, seedCount, resetForTest };
+module.exports = { checkoutSeededRepo, copySeededRepoInto, seedTemplateOnce, seedCount, resetForTest, TEMPLATE_PREFIX };
