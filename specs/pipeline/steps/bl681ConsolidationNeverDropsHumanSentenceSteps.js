@@ -52,26 +52,29 @@ function registerSteps(registry) {
     FEATURE_NAME
   );
 
+  // The literals follow the article as worded now: the boot-prefix trims
+  // compressed 5.3 (the sentence is its heading, "ticket(s)"), with the
+  // same meaning; the long form is in reference/05-amendments-detailed.md.
   // ── Scenario 01: the clause exists and binds the act rather than a role ──
   registry.define(/^it states that a consolidation never drops a human sentence$/, (ctx) => {
-    requireIncludes(ctx.bl681ArticleText, 'A consolidation never drops a human sentence.', '05_amendments.md');
+    requireIncludes(ctx.bl681ArticleText, 'A Consolidation Never Drops A Human Sentence', '05_amendments.md');
   });
 
   registry.define(/^the clause names no specific role as its subject$/, (ctx) => {
-    requireIncludes(ctx.bl681ArticleText, 'The clause binds the ACT of consolidating, not any one office.', '05_amendments.md');
+    requireIncludes(ctx.bl681ArticleText, 'Binds the ACT of consolidating, not any one office.', '05_amendments.md');
   });
 
   // ── Scenario 02: the clause says what surviving means ────────────────────
   registry.define(/^it states that every directive quoted from a human survives verbatim$/, (ctx) => {
     requireIncludes(
       ctx.bl681ArticleText,
-      'every directive quoted from a human survives verbatim into the resulting ticket or tickets',
+      'every directive quoted from a human survives verbatim into the resulting ticket(s)',
       '05_amendments.md'
     );
   });
 
   registry.define(/^it states that a consolidation which cannot preserve one is refused rather than trimmed$/, (ctx) => {
-    requireIncludes(ctx.bl681ArticleText, 'A consolidation that cannot preserve one is refused rather than trimmed.', '05_amendments.md');
+    requireIncludes(ctx.bl681ArticleText, 'a consolidation that cannot preserve one is refused rather than trimmed.', '05_amendments.md');
   });
 
   // ── Scenario 03: the clause is reachable from the role that exercises it ─
