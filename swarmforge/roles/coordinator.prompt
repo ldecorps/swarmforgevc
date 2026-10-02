@@ -942,6 +942,13 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   QA, `commit: 4b7615bc14`, the documenter's forward) - never a fresh Work
   note to the coder, never a re-run from the start. Verify by the
   receiver's `in_process/` naming the task on its next turn.
+- Until BL-1906 lands, the sweep and `dispatch_trail_cli.bb` cannot see
+  the lander queue (BL-1872). A ticket QA queued to land has no mailbox
+  parcel, so it reads as dropped while it waits. Before acting on the
+  nudge or routing, read `.swarmforge/lander/queue/<id>-*.edn`. If one
+  says `:status :queued` or `:running`, the ticket is in flight: complete
+  the nudge and send nothing. On 2026-10-02 BL-1879 was nudged four times
+  while it waited and was re-sent to QA.
 
 ## Dropping a seat mid-shift: every roster copy, then the session (2026-09-24, until BL-1720 lands)
 - Killing a seat's session is undone by the babysitter within minutes: its

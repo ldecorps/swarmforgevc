@@ -1,0 +1,163 @@
+id: BL-1906
+title: "The dropped-parcel sweep and dispatch_trail_cli.bb count a parcel in flight only from role mailboxes, so a ticket QA queued for BL-1872's lander reads as dropped while it waits: on 2026-10-02 BL-1879 was nudged four times and re-sent to QA, and the router would route it to the coder without --force; a lander entry still queued or running now counts as in flight"
+milestone: M8
+type: defect
+severity: high
+# high: a broken health signal with a harmful remedy. Every approved parcel
+# waiting in the serial lander queue reads as dropped once its trail goes
+# stale. The coordinator's prompt answers a drop with a git_handoff to QA,
+# and route_backlog_to_coder.sh answers DROPPED with a Work note to the
+# coder, which would rebuild approved work from scratch.
+status: todo
+epic: landing-is-a-merge
+priority: 8
+depends_on: []
+mutation_cost: low
+# low: one queue reader beside lander_lib.bb's own, fed to the two
+# consumers of the verdict, plus the feature's handler. No TypeScript.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one reader and two call sites; nothing to refactor"
+  architect: "no boundary moves; handoffd already loads lander_lib.bb, the module that owns the queue"
+  hardender: "Babashka with no Stryker lane (BL-472); the fix only reads the queue and writes nothing, and the outline rows pin each status both ways"
+  documenter: "no living doc states the drop criterion; the coordinator.prompt interim is the specifier's and retires on its Until marker"
+
+acceptance: specs/features/BL-1906-a-ticket-queued-for-the-lander-is-in-flight-not-dropped.feature
+
+# Handler pin only (BL-233, BL-1371). The scenarios drive the real
+# consumers - handoffd.bb's own dropped-parcel-sweep! and the real
+# dispatch_trail_cli.bb - so a consumer anchor would gate nothing more
+# (BL-1235). Neither consumer mentions the lander today, but the reader's
+# name and home are the coder's call, so no literal is fixed yet.
+required_wiring:
+  - 'specs/pipeline/steps/bl1906LanderQueuedTicketInFlightSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Reported by QA (note 003733) and traced by the specifier. No choice is
+  posed. FIRM: a queue entry counts only while it is queued or running and
+  only for the ticket it names; a finished land, a missing queue or an
+  unreadable entry leaves the verdict as the mailboxes decide it.
+
+invariants:
+  - "The daemon's dropped-parcel sweep and dispatch_trail_cli.bb give the same verdict for the same ticket, and both count a lander-queue entry naming that ticket with status queued or running as a parcel in flight."
+  - "A missing queue directory, an unreadable entry, an entry for another ticket, or an entry in any other status leaves the verdict exactly as the role mailboxes alone decide it."
+  - "The consumers only read the lander queue; none writes, moves or deletes an entry."
+
+source: |
+  QA note 003733 (2026-10-02 22:39Z), verbatim: "dropped-parcel sweep
+  ignores lander queue: re-sent queued BL-1879 to QA". QA's note 003732 to
+  the coordinator the same minute, verbatim: "BL-1879 not dropped:
+  QA-approved 3bef687e1f is in lander queue, lands next".
+  Specifier trace, 2026-10-02 22:40-23:10Z:
+  - .swarmforge/lander/queue/BL-1879-3bef687e1f.edn reads :status :queued,
+    enqueued 18:48Z. The lander lands one entry at a time; BL-1892's run
+    alone took until 21:44Z, so BL-1879, BL-1900 and BL-1882 sat queued for
+    hours.
+  - The coordinator's inbox holds four self-notes "BL-1879 no parcel in
+    flight - possible drop." (19:35Z, 20:58Z, 21:28Z, 22:33Z), one per
+    cooldown window.
+  - chase_sweep_lib.bb's decide-dropped-parcel? reads live-mail? from
+    build-dropped-parcel-trail-index over every role's new and in_process
+    mailbox only. ticket-dispatch-verdict-in, which dispatch_trail_cli.bb
+    prints and route_backlog_to_coder.sh acts on, reads the same facts.
+    Neither file mentions the lander.
+  - route_backlog_to_coder.sh routes a DROPPED ticket without --force
+    (BL-1415), so a coordinator routing a stale queued ticket would send
+    the coder "Work <id>" for a parcel QA already approved.
+
+description: |
+  ## What is wrong
+
+  Under BL-1872, QA approves a parcel by queueing it with lander_queue.bb
+  and completing the git_handoff. The lander lands one entry at a time.
+  Until it does, the ticket has no handoff in any role's mailbox, so once
+  its last trail event is older than the stall threshold the dropped-parcel
+  sweep nudges the coordinator once per cooldown window, and
+  dispatch_trail_cli.bb answers DROPPED.
+
+  ## What is wanted
+
+  - A lander-queue entry whose `:status` is `:queued` or `:running`, and
+    whose task names the ticket, counts as a parcel in flight for both
+    consumers: handoffd.bb's dropped-parcel-sweep! (no nudge) and
+    dispatch_trail_cli.bb's `dispatched` verb (DISPATCHED).
+  - `:landed` and `:refused` entries change nothing. The lander has already
+    sent the bookkeep note or the refusal note, so a ticket that sits after
+    that is a real drop.
+  - Direction, not mandate: the module that owns the queue answers the
+    question (engineering rule, BL-1811). One function in lander_lib.bb
+    returning the set of tickets with a land in flight, mapped by the
+    lander's own task-to-ticket rule (ticket-of), never a second glob of
+    `.swarmforge/lander/queue/*.edn`. Fold that set into live-ids once, so
+    that dropped-parcel-evaluation and ticket-dispatch-verdict-in cannot
+    disagree.
+  - Scenarios 01 and 02 drive handoffd.bb's own dropped-parcel-sweep!,
+    loaded under its BL-1395 guard with a mkdtemp root bound through
+    `*command-line-args*` (bl1494_post_qa_sweep_wake_field_test_runner.bb's
+    idiom). Do not drive dropped_parcel_sweep_harness.bb, which mirrors the
+    daemon by hand and would leave the daemon's call site ungated. Stub the
+    send the bl1494 way, or deliver into the fixture's own mailboxes the way
+    BL-719's handlers do. Never the live root. If the harness stays in use
+    by BL-719 and BL-1301, give it the same input in the same commit.
+  - Scenario 03 runs the real dispatch_trail_cli.bb against the fixture root.
+  - The step handler `bl1906LanderQueuedTicketInFlightSteps`, registered in
+    the same parcel, scoped to this feature (BL-1301's handler shows why:
+    the sweep step text reads naturally in several features). The fixture
+    root is `git init` under mkdtemp, proven by `rev-parse --git-common-dir`
+    before any mutating git command (BL-1390).
+
+  ## Scope
+
+  lander_lib.bb (the reader), chase_sweep_lib.bb and/or handoffd.bb and
+  dispatch_trail_cli.bb (feeding it in), their bb unit runners, the step
+  handler, evidence.
+
+  ## Out of scope
+
+  - BL-1479's parked-active sweep also reads live-ids, but it parks only
+    `status: blocked` or future `not_before` tickets, which QA does not
+    approve. Reuse the same set there if it is free; do not add a scenario.
+  - Why the lander is slow, and a queued entry stuck behind a broken lander
+    sweep. A running land past an hour is reported to QA by the lander
+    (lander_lib.bb overdue-note); a broken sweep shows as lander-error lines
+    in handoffd.log. BL-1870's remaining slice removes most of the land
+    step's work.
+  - The coordinator.prompt interim (landed by the specifier at mint).
+
+qa_e2e_procedure: |
+  On the parcel commit, from your worktree:
+  1. ONE run: `node specs/pipeline/cli.js specs/features/BL-1906-a-ticket-queued-for-the-lander-is-in-flight-not-dropped.feature`:
+     10 of 10 ok (outlines of 4, 3 and 3 rows).
+  2. ONE run each, all measured at mint on main 553f926932: BL-719's
+     feature 6 of 6 ok (23 s), BL-1301's 8 of 8 ok (39 s), BL-1415's 6 of 6
+     ok (24 s); `bb swarmforge/scripts/test/dropped_parcel_test_runner.bb`,
+     `lander_lib_test_runner.bb` and
+     `bl1097_router_dispatch_trail_test_runner.bb` ALL PASS (about 1 s
+     each). Same results expected.
+  3. Read-only against the live root, from your worktree: for every
+     `.swarmforge/lander/queue/*.edn` reading `:status :queued` or
+     `:running`, `bb swarmforge/scripts/dispatch_trail_cli.bb <master-root>
+     dispatched <ticket>` prints DISPATCHED. If the queue holds none, say so
+     in the evidence; the fixture rows are the proof.
+  4. Read handoffd.bb's dropped-parcel-sweep! and confirm the scenarios
+     loaded that function, not a copy of it.
+
+notes: |
+  Minted 2026-10-02 by the specifier from QA note 003733.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Not hotfixed: there is no red on main (every sweep feature is green
+  while the verdict is wrong), and the specifier writes no production code
+  outside a standing-red hotfix.
+  [coder, qa] per the 2026-10-01 routing rule: Babashka production code
+  that writes no durable state.
+  Interim: coordinator.prompt "A dropped-parcel nudge is cleared only by a
+  live inbound" carries an "Until BL-1906 lands" bullet (landed in the mint
+  commit): check the lander queue before acting on the nudge or routing.
+  IR-DRY: the one near-duplicate finding is the parameterized step
+  `a dropped-parcel nudge is sent: "<sent>"` used with a fixed "yes" in
+  scenario 02, the same shape as BL-1301's feature. The handler validates
+  both against KNOWN_VALUES.
+  Not overlapping BL-1900 (is_qa_ancestor.sh reads the same queue for
+  approval) or BL-1901 (the land step).
