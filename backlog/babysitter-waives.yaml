@@ -364,3 +364,8 @@
   waived_by: coordinator
   reason: "Same pattern as eda4bb1934: BL-1491 tip-pure replay, land-approvals record exists with source 40830d747f, is_qa_ancestor.sh fails on source but QA did the land-step"
   waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-feb18315ea117495d770c438f870b525d8f8e8e1
+  waived_by: coordinator
+  reason: "QA-approved BL-1887 land via the new lander daemon (BL-1872); land-approvals record and lander log confirm LAND_PUBLISH_OK. Close itself is blocked on a separate gap (lander notifies coordinator as coordinator, not QA) - flagged to specifier, not a sign the land itself is unapproved."
+  waived_at: 2026-10-02
