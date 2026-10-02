@@ -171,3 +171,5 @@ notes: |
   both against KNOWN_VALUES.
   Until this lands, a role that runs BL-1317's feature should check
   `git reflog -3` afterwards and re-take its parcel if the branch moved.
+
+assigned_to: coder
