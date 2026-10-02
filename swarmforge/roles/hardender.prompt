@@ -2681,3 +2681,22 @@ You are the hardender.
   at fault: it called your content "first-round" when it was the rework
   dee1e6410a, whose `land_step_lib.bb` matches the second rework
   056d063dbb byte for byte.
+
+## An unseeded property test that guards a race fix is measured before it is trusted (hardener rule_proposal, 2026-10-02, accepted with amendment)
+- When a property test with random draws is the only guard on a fix
+  (typically a race or timing fix), hand-mutate the fix out and run that
+  test 3 times, not once, before you count it as coverage. Record the catch
+  rate in your evidence, e.g. "caught 1 of 3".
+- If it misses even once, do not leave the guard to chance. Pin a
+  deterministic case that kills the mutant on every run: a fixed
+  `fc.assert` `examples` entry (the shape of hotfix 3771562541), or a
+  plain unit case beside the property. Then rerun once with the mutant to
+  show the pinned case catches it.
+- The 3-run cap is the human's 2026-09-17 limit on repeat runs. More runs
+  only make a stochastic number look more precise. The fix is to stop it
+  being stochastic.
+- BL-1892, 2026-10-02: its property test caught the absence of its own fix
+  in only 1 of 4 repeated runs, from an unseeded draw. A single green run
+  would have recorded the fix as covered. The same day,
+  bl1871ParcelLineTakeUp's reach floor failed in about 1 run in 20 for the
+  same reason and held BL-1876 at QA until a fixed example was pinned.
