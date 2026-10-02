@@ -1,0 +1,85 @@
+id: BL-1889
+title: "The unit lane intermittently fails a fully green run with vitest's '[vitest-worker]: Timeout calling onTaskUpdate' (QA held BL-1834 on it, 2026-10-02): one test file holds its worker in a synchronous call longer than vitest's fixed 60 s RPC heartbeat under load; find the file and stop it starving the heartbeat, without the property lane's blanket dangerouslyIgnoreUnhandledErrors"
+milestone: M8
+type: defect
+severity: medium
+# medium: an intermittent false red that holds a QA land when it fires; a
+# re-run clears it, and no code under test is wrong.
+status: todo
+epic: swarm-reliability
+priority: 20
+depends_on: []
+mutation_cost: low
+# low: test-side changes to the file(s) found; no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "small test-side change; nothing to refactor"
+  architect: "no production code or design surface"
+  hardender: "test-side only; nothing to mutate"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-871's contract (BL-1251): BL-871 is
+# where this vitest mechanism was diagnosed for the property lane, and its
+# feature must stay green.
+acceptance: specs/features/BL-871-property-lane-worker-pool-cap.feature
+
+human_approval: pending
+approval_context: >
+  FIRM: the unit lane keeps failing on genuinely new unhandled errors - no
+  dangerouslyIgnoreUnhandledErrors there (engineering rule: the
+  onTaskUpdate artifact is allowlisted only for test:properties). The fix
+  is in the test file(s) that block a worker, e.g. an awaited spawn instead
+  of a synchronous one, or a split. Medium severity, so it waits for you.
+
+invariants: []
+
+source: |
+  QA note 003689 (2026-10-02 09:49Z), verbatim: "unowned-red unit lane
+  vitest onTaskUpdate timeout; BL-1834 held d57ce1775c". QA's log
+  (.worktrees/QA/tmp/BL-1834-unit.log) shows one unhandled
+  "[vitest-worker]: Timeout calling onTaskUpdate" and no failing test. The
+  specifier's re-run on main the same morning: 646/646 files, 10995 tests,
+  exit 0, 147 s - intermittent, load-dependent.
+
+description: |
+  ## What is wrong
+
+  Vitest's worker RPC has a hardcoded 60 s heartbeat for `onTaskUpdate`
+  (BL-871's diagnosis, vitest.properties.config.mjs). A worker that spends
+  longer than that inside one synchronous call starves it, vitest reports
+  an unhandled error, and the whole unit run exits 1 though every test
+  passed. The unit lane does not ignore unhandled errors, rightly, so a
+  loaded host turns a long synchronous call into a false red.
+
+  ## What is wanted
+
+  - Find the unit file(s) whose single synchronous call can exceed 60 s
+    under load. Candidates from the per-file durations (suite-poles.tsv,
+    BL-791): renderBriefingBurndownCli.test.js (36.6 s at census, 46.9 s
+    on 2026-10-02), renderBriefingDiagramsCli.test.js (two spawnSync),
+    epicReorderBridge.test.js. Record the longest synchronous block per
+    candidate in the evidence.
+  - Change those files so no single call blocks the worker for a long time
+    (an awaited async spawn, or splitting the work across tests). Never add
+    dangerouslyIgnoreUnhandledErrors to the unit lane.
+
+  ## Scope
+
+  The test file(s) found, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `cd extension && npm test` 3 times (a flake ticket hunting this named
+     intermittent failure, 2026-09-17 rule), one of them while the
+     property lane runs in parallel to load the host: exit 0 with no
+     "Timeout calling onTaskUpdate" in any of the 3.
+  2. `node specs/pipeline/cli.js specs/features/BL-871-property-lane-worker-pool-cap.feature`:
+     6 of 6, as measured on main at mint.
+  3. Read the coder's evidence of the longest synchronous block before and
+     after.
+
+notes: |
+  Minted 2026-10-02 by the specifier from QA note 003689. Not a standing
+  red: it did not reproduce on main (646/646, 147 s), so no register row;
+  QA was told to re-run and resume BL-1834.
