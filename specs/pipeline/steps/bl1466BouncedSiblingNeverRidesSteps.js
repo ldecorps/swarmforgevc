@@ -169,12 +169,6 @@ function registerSteps(registry) {
     assert.ok(!(ctx.plan.passengers || []).includes(SIBLING), `the bounced sibling rode as a passenger: ${JSON.stringify(ctx.plan)}`);
   });
 
-  scoped(/^the sibling's approval state is approved and it may ride as a passenger as before$/, (ctx) => {
-    assert.equal(ctx.plan.action, 'replay', `expected replay, got: ${JSON.stringify(ctx.plan)}`);
-    assert.ok((ctx.plan.passengers || []).includes(SIBLING), `the re-fixed sibling did not ride: ${JSON.stringify(ctx.plan)}`);
-    if (ctx.plan.branch) git(ctx.root, 'branch', '-q', '-D', ctx.plan.branch);
-  });
-
   // BL-1876: scenario 05, the still-valid half of the retired scenario 02.
   // BL-1830 rebuilds the shared path without the sibling's lines, so the
   // re-fixed sibling is approved and lets the land through, never a passenger.

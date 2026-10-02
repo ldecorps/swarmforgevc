@@ -209,71 +209,25 @@ function registerSteps(registry) {
     state(ctx).subject = SUBJECT_SIBLING;
   });
 
-  scoped(/^one sibling's shared-path lines reference a file that is not on main$/, (ctx) => {
-    const st = state(ctx);
-    // The precondition is READ, not arranged: the Background already put the
-    // sibling's require line in the shared registry and its handler file on
-    // the sibling's own (excluded) path. A fixture that stopped doing that
-    // would make this scenario pass for the wrong reason.
-    const registry = fs.readFileSync(path.join(st.root, SHARED_PATH), 'utf8');
-    assert.ok(registry.includes(SIBLING_LINE), 'the sibling contributed no line to the shared registry');
-    const onMain = spawnSync('git', ['show', `refs/remotes/origin/main:${SIBLING_HANDLER}`], {
-      cwd: st.root,
-      encoding: 'utf8',
-    });
-    assert.notEqual(onMain.status, 0, `${SIBLING_HANDLER} is already on main, so nothing is dangling`);
-    st.treeShouldBeConsistent = false;
-  });
-
-  scoped(/^every file the shared-path lines reference is on main$/, (ctx) => {
-    const st = state(ctx);
-    // ON MAIN, literally - origin/main is advanced to a commit carrying the
-    // handler, rather than the handler being committed on the tip where the
-    // replay would exclude it as the sibling's own path. That distinction is
-    // the whole scenario: the passenger's line is safe precisely because what
-    // it reaches for is ALREADY there.
-    landHandlerOnMain(st);
-    st.treeShouldBeConsistent = true;
-  });
+  // BL-1876: the tree-axis Givens of the retired scenarios 06/07 (a
+  // passenger's line through an inconsistent or consistent replayed tree)
+  // were removed with them - BL-1830 rebuilds the shared path without any
+  // unlanded sibling's lines, so no passenger rides to be guarded.
 
   // "one of them" and "another of them" are the same act from the landing
   // ticket's seat - which sibling the scenario is talking ABOUT is fixed by
-  // its Given, not by the pronoun. Both therefore run the same decision, and
-  // scenarios 06/07 (whose subject is the tree guard, not the plan) go on
-  // through the REAL replay!, which runs the REAL guard against its own tree.
+  // its Given, not by the pronoun. Both therefore run the same decision.
   const decide = (ctx) => {
     const st = state(ctx);
-    // BL-1447: land-plan itself now builds and tree-guards its own replay
-    // before ever deciding :replay - a scenario that never ran either
-    // tree-axis Given (06's "not on main" / 07's "on main") is not ABOUT
-    // that axis at all (e.g. scenario 01, the approval axis only) and must
-    // not incidentally inherit the Background's default-inconsistent tree
-    // (the sibling's handler sits on its own excluded path, deliberately,
-    // for 06/07's sake). Defaulting such a scenario to consistent removes
-    // that dependency without touching this feature's own Gherkin text.
-    if (st.treeShouldBeConsistent === undefined) {
-      landHandlerOnMain(st);
-    }
+    // BL-1447: land-plan builds and tree-guards its own replay before it
+    // decides :replay, so the sibling's handler is put on main first and no
+    // scenario inherits the Background's otherwise-dangling registry line.
+    landHandlerOnMain(st);
     st.commit = head(st.root);
     st.plan = askLandStep(
       st.root,
       `(land-step-lib/land-plan {:root "${st.root}" :commit "${st.commit}" :task-ticket-id "${LANDING}"})`,
     );
-    if (st.treeShouldBeConsistent !== undefined) {
-      // BL-1447: land-plan itself now builds the tip-pure commit AND runs
-      // the tree guards (via its own internal replay! call) before ever
-      // deciding :replay - a tree guard refusal (BL-1375/BL-1324's own
-      // invariant 2) now surfaces as land-plan's own :escalate directly,
-      // never a separate "plan says :replay, then a second replay! call
-      // discovers the guard refused" two-step. st.replay is a thin shim
-      // over that single answer, so the assertions below read the same
-      // fields either way.
-      st.replay = {
-        success: st.plan.action === 'replay',
-        branch: st.plan.branch,
-        reason: st.plan.reason,
-      };
-    }
   };
 
   scoped(/^the land step decides for one of them$/, (ctx) => {
@@ -298,52 +252,31 @@ function registerSteps(registry) {
 
   scoped(/^a land is available for that ticket$/, (ctx) => {
     const st = state(ctx);
-    if (st.treeShouldBeConsistent !== undefined) {
-      assert.equal(
-        st.replay.success,
-        true,
-        `the land was refused for a self-consistent replayed tree: ${JSON.stringify(st.replay)}`,
-      );
-      assert.ok(
-        (st.plan.passengers || []).includes(SUBJECT_SIBLING),
-        `no passenger rode, so the guard's pass proves nothing: ${JSON.stringify(st.plan)}`,
-      );
-      git(st.root, 'branch', '-q', '-D', st.replay.branch);
-    } else {
-      assert.equal(st.plan.action, 'replay', `no land is available: ${JSON.stringify(st.plan)}`);
-      assert.ok(
-        (st.plan['own-paths'] || []).includes(SHARED_PATH),
-        `the shared path was not replayed: ${JSON.stringify(st.plan)}`,
-      );
-      // BL-1876: BL-1830 rebuilds the shared path from origin/main plus
-      // only the landing ticket's own changes, so the approved sibling no
-      // longer rides as a passenger. Its lines are excluded by name.
-      const rebuilt = (st.plan.rebuilt || {})[SHARED_PATH];
-      assert.ok(
-        rebuilt && (rebuilt.excluded || []).includes(SUBJECT_SIBLING),
-        `the shared path was not rebuilt without the approved sibling's lines: ${JSON.stringify(st.plan)}`,
-      );
-      assert.ok(
-        !(st.plan.passengers || []).includes(SUBJECT_SIBLING),
-        `the approved sibling rode as a passenger: ${JSON.stringify(st.plan)}`,
-      );
-    }
+    assert.equal(st.plan.action, 'replay', `no land is available: ${JSON.stringify(st.plan)}`);
+    assert.ok(
+      (st.plan['own-paths'] || []).includes(SHARED_PATH),
+      `the shared path was not replayed: ${JSON.stringify(st.plan)}`,
+    );
+    // BL-1876: BL-1830 rebuilds the shared path from origin/main plus
+    // only the landing ticket's own changes, so the approved sibling no
+    // longer rides as a passenger. Its lines are excluded by name.
+    const rebuilt = (st.plan.rebuilt || {})[SHARED_PATH];
+    assert.ok(
+      rebuilt && (rebuilt.excluded || []).includes(SUBJECT_SIBLING),
+      `the shared path was not rebuilt without the approved sibling's lines: ${JSON.stringify(st.plan)}`,
+    );
+    assert.ok(
+      !(st.plan.passengers || []).includes(SUBJECT_SIBLING),
+      `the approved sibling rode as a passenger: ${JSON.stringify(st.plan)}`,
+    );
     cleanup(st);
   });
 
   scoped(/^the land is refused naming that sibling$/, (ctx) => {
     const st = state(ctx);
-    if (st.treeShouldBeConsistent === false) {
-      assert.equal(st.replay.success, false, `an inconsistent replayed tree was published: ${JSON.stringify(st.replay)}`);
-      assert.ok(
-        st.replay.reason.includes(SUBJECT_SIBLING),
-        `the refusal does not name the passenger: ${st.replay.reason}`,
-      );
-    } else {
-      assert.equal(st.plan.action, 'escalate', `the land was not refused: ${JSON.stringify(st.plan)}`);
-      assert.ok(st.plan.reason.includes(SUBJECT_SIBLING), `the refusal does not name the sibling: ${st.plan.reason}`);
-      assert.ok(st.plan.reason.includes(SHARED_PATH), `the refusal does not name the shared path: ${st.plan.reason}`);
-    }
+    assert.equal(st.plan.action, 'escalate', `the land was not refused: ${JSON.stringify(st.plan)}`);
+    assert.ok(st.plan.reason.includes(SUBJECT_SIBLING), `the refusal does not name the sibling: ${st.plan.reason}`);
+    assert.ok(st.plan.reason.includes(SHARED_PATH), `the refusal does not name the shared path: ${st.plan.reason}`);
     // No scratch worktree is left behind by a refusal, whichever door it left by.
     assert.equal(
       git(st.root, 'worktree', 'list').trim().split('\n').length,

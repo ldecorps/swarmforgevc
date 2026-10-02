@@ -222,3 +222,6 @@ notes: |
   superseded.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-02, by: QA, blamed: coder, class: acceptance, commit: 7a98fa10c8, evidence: backlog/evidence/BL-1877-QA-20261002.md }

@@ -36,7 +36,6 @@ const FEATURE =
 const SIBLING_HANDLER = 'specs/pipeline/steps/BL-9002SiblingSteps.js';
 const SIBLING_SOURCE = 'extension/src/BL-9002-sibling.ts';
 const OWN_FILE = 'backlog/active/BL-9001-own.yaml';
-const SHARED_PATH = 'docs/reference/shared.md';
 
 function runFixture(shape) {
   const out = execFileSync('bb', [FIXTURE_CLI, shape], {
@@ -72,12 +71,6 @@ function registerSteps(registry) {
   // ── Given ───────────────────────────────────────────────────────────────
   scoped(/^"(BL-\d+)" is approved$/, (ctx) => {
     ctx.bl1389.shape = 'approved';
-  });
-
-  scoped(/^the tip carries a path both "(BL-\d+)" and "(BL-\d+)" changed$/, (ctx) => {
-    // Only ever after the approved Given: BL-1375's passenger rule is about an
-    // APPROVED sibling riding on a path the landing ticket also owns.
-    ctx.bl1389.shape = 'shared';
   });
 
   scoped(
@@ -134,38 +127,6 @@ function registerSteps(registry) {
     assert.ok(
       report.replayPaths.includes(OWN_FILE),
       `the landing ticket's own file did not land: ${JSON.stringify(report.replayPaths)}`
-    );
-  });
-
-  scoped(/^the shared path is in the replay$/, (ctx) => {
-    const { report } = ctx.bl1389;
-    assert.ok(
-      report.replayPaths.includes(SHARED_PATH),
-      `the shared path was dropped, so BL-1375's passenger rule did not survive: ${JSON.stringify(report.replayPaths)}`
-    );
-  });
-
-  scoped(/^the report names "(BL-\d+)" as a passenger$/, (ctx, id) => {
-    assert.ok(
-      ctx.bl1389.report.passengers.includes(id),
-      `${id} did not ride as a passenger: ${JSON.stringify(ctx.bl1389.report.lines)}`
-    );
-  });
-
-  scoped(/^the tree guards ran against the replayed tree$/, (ctx) => {
-    const { report } = ctx.bl1389;
-    // replay! runs the guards ONLY when a passenger actually rides, and a
-    // refusal is an escalate rather than a replay - so a passenger line beside
-    // a zero exit is the guards having run and passed. Asserted together: the
-    // exit alone would also be true of a replay that carried nobody.
-    assert.ok(
-      report.passengers.length > 0,
-      `no passenger rode, so a clean exit proves nothing about the guards: ${JSON.stringify(report.lines)}`
-    );
-    assert.equal(
-      report.exit,
-      0,
-      `the guards refused the replayed tree: ${JSON.stringify(report.lines)}`
     );
   });
 

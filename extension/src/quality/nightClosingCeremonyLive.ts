@@ -33,11 +33,6 @@ export type LiveAction =
   // "a silent ceremony is a failed ceremony" (BL-820 carried) - but sends no
   // briefing and delivers no packet.
   | { kind: 'record-empty-outcome'; shiftKey: string }
-  // BL-1641: at the briefing hard deadline with nothing sent, give the
-  // executor a chance to land the documenter's own commit for the day or,
-  // failing that, compose the banked headless briefing - never touching a
-  // briefing main already has. Emitted before 'surface'/'night-stop' below.
-  | { kind: 'ensure-briefing'; dayKey: string }
   | { kind: 'night-stop' };
 
 export type LiveObservation = {
@@ -51,6 +46,14 @@ export type LiveObservation = {
   activeRole: string | null;
   heldParcelIds: string[];
   briefingAlreadySent: boolean;
+  /**
+   * BL-1836: does main already carry the day's briefing (sent or not)? The
+   * runner lands the documenter's own briefing commit before it observes,
+   * so this is true from the tick that briefing exists. At the hard deadline
+   * it decides a quiet stop from a loud one. Optional, defaulting to false:
+   * a caller that cannot tell must never silence the missing alarm.
+   */
+  briefingOnMain?: boolean;
   /**
    * BL-1393: did the swarm actually work a shift since the last ceremony? The
    * human's directive is "each time the swarm does at least 1 shift and goes
@@ -223,17 +226,17 @@ function advanceBriefing(state: LiveState, obs: LiveObservation): LiveAdvance {
   }
 
   if (obs.nowMs >= state.hardDeadlineMs) {
-    pushUnique(sequence, 'briefing-missing');
-    loudSurfaces.push('closing-briefing-missing');
-    // BL-1641: before the surface and the stop, give the deps a chance to
-    // land the documenter's own commit for today (byte-identical) or, when
-    // nothing exists to land, compose the banked headless briefing - never
-    // touching a briefing main already has. The pure machine only DECIDES
-    // that this chance is due; which (if either) actually happened is
-    // unknown until the executor runs it, so no forced-step name is added
-    // to `sequence` here (see withForcedBriefingStep in the run CLI).
-    actions.push({ kind: 'ensure-briefing', dayKey: obs.dayKey });
-    actions.push({ kind: 'surface', code: 'closing-briefing-missing' });
+    // BL-1836 (the human's ruling A, 2026-09-30): at the deadline the swarm
+    // stops and nothing is composed. The briefing on main is the
+    // documenter's own (landed by the runner the moment it existed); with
+    // none, the stop is loud and the documenter writes it after the restart.
+    if (obs.briefingOnMain) {
+      pushUnique(sequence, 'briefing-committed');
+    } else {
+      pushUnique(sequence, 'briefing-missing');
+      loudSurfaces.push('closing-briefing-missing');
+      actions.push({ kind: 'surface', code: 'closing-briefing-missing' });
+    }
     pushUnique(sequence, 'swarm-stopped');
     actions.push({ kind: 'night-stop' });
     return {
@@ -325,12 +328,11 @@ export type SleepLoopDecision = 'wait' | 'done' | 'overran';
  * done" so the ceiling still binds instead of waiting forever on a read
  * failure.
  */
-// BL-1641: the pure machine decides an 'ensure-briefing' chance is due but
-// cannot know its outcome; the executor runs it and folds the resulting
-// forced-step name back into the written state's sequence, right before
-// 'swarm-stopped' (matching the acceptance's "before swarm-stopped"
-// wording), the same post-action fold shape BL-1528's loud-code folding
-// already established for this file.
+// BL-1641/BL-1836: the runner lands the documenter's briefing commit before
+// it observes, an outcome the pure machine cannot know ahead of time; the
+// runner folds that step's name into the written state's sequence, right
+// before 'swarm-stopped' when the ceremony stopped on that tick, the same
+// post-action fold shape BL-1528's loud-code folding established here.
 export function withForcedBriefingStep(state: LiveState, forcedStep: string | null): LiveState {
   if (!forcedStep) {
     return state;

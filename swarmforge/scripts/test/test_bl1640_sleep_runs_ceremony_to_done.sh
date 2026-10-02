@@ -73,10 +73,12 @@ state_field() {  # state_field <root> <field>
 # BL-1836 item 5: the ceremony runs on the simulated clock (2026-09-21
 # below), so the day the briefing is recorded for is that day, never the
 # wall-clock date - which matched only on the day this file was written.
+# Written in the email sweep's own shape, {"sent": [...]}
+# (briefing_email_lib.bb's record-briefing-sent!), which the ceremony reads.
 sent_today() {  # sent_today <root> <yyyy-mm-dd>
   local today="$2"
   mkdir -p "$1/docs/briefings"
-  printf '["%s.md"]' "$today" > "$1/docs/briefings/.sent.json"
+  printf '{"sent":["%s.md"]}' "$today" > "$1/docs/briefings/.sent.json"
 }
 
 # ── 01: a sleep with in-flight work reaches done before any stop runs ────

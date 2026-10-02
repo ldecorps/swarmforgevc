@@ -111,7 +111,7 @@ function readNightState(target) {
 function markBriefingAlreadySent(target, dayKey) {
   const dir = path.join(target, 'docs', 'briefings');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, '.sent.json'), JSON.stringify([`${dayKey}.md`]));
+  fs.writeFileSync(path.join(dir, '.sent.json'), JSON.stringify({ sent: [`${dayKey}.md`] }));
 }
 
 function runNightCli(ctx) {
