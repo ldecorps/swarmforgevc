@@ -46,6 +46,23 @@ so landing `f1cb7ecbf1` would close BL-1836 without its doc retirement.
 - QA (note 002180, priority 00): unqueue `f1cb7ecbf1`, merge `e6bb3d93c6`,
   requeue. QA owns the queue entry. The specifier does not touch it.
 
+## Superseded the same pass: QA requeued at 6e7fe3d4cb
+
+QA unqueued `f1cb7ecbf1` and requeued BL-1836 at `6e7fe3d4cb` (its BL-1892
+NONE pass, 15:21). That commit carries `125447f009`, `e6bb3d93c6` and
+`838d643744`. The doc retirement lands. `838d643744` is in the landed line,
+so it is not abandoned. The record moves to `f1cb7ecbf1`, the commit left
+off, which the documenter and hardender lines still carry.
+
+`838d643744` must never be listed. Every BL-1836 commit is its ancestor, and
+`ancestor-of-owner-abandoned?` (land_step_lib.bb, BL-1795) skips an owner's
+commit in a stray replay when it is an ancestor of an abandoned entry.
+`f1cb7ecbf1`'s BL-1836 ancestors (`ff15be1e29`, `1c63610bdf`, `2fcb5b6f15`)
+all ride `6e7fe3d4cb`, so recording it skips nothing that still has to land.
+
+The landed `BL-1836-QA-20261002.md` reads "1 defect(s)" (`838d643744`'s
+inventory). Its one defect was fixed on main by `8ed4173ce4` (BL-1893).
+
 ## Process point for the specifier
 
 Under parcel lines a "merge main, re-run, resume" note to a role that has

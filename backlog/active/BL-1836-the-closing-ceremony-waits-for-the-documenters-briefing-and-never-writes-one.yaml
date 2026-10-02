@@ -185,7 +185,7 @@ qa_e2e_procedure: |
   the restart.
 
 abandoned_commits:
-  - 838d643744
+  - f1cb7ecbf1
 
 notes: |
   Minted 2026-09-30 by the specifier from the root intake above, after the
@@ -226,5 +226,17 @@ notes: |
   the documenter's five files. QA was told the same pass (note 002180) to
   unqueue f1cb7ecbf1, merge e6bb3d93c6 and requeue. Evidence:
   backlog/evidence/BL-1836-diverged-qa-lines-adjudication-20261002.md.
+  2026-10-02 (specifier, same pass): QA unqueued f1cb7ecbf1 and requeued
+  BL-1836 at 6e7fe3d4cb, its BL-1892 NONE pass, which already carries
+  125447f009, e6bb3d93c6 and 838d643744. So 838d643744 is in the landed
+  line and not abandoned. f1cb7ecbf1 is the one left off, and the
+  documenter and hardender lines still carry it. abandoned_commits now
+  names f1cb7ecbf1, so a later land from those lines does not read it as
+  an unlanded BL-1836 commit. Never list 838d643744: every BL-1836 commit
+  is its ancestor, and a tip-pure replay skips an owner's commits that are
+  ancestors of an abandoned entry (land_step_lib ancestor-of-owner-abandoned?).
+  The BL-1836-QA-20261002.md that lands reads "1 defect(s)" (838d643744's
+  inventory). Its one defect is the pole red that hotfix 8ed4173ce4 fixed
+  (BL-1893), and QA approved at 6e7fe3d4cb.
 
 assigned_to: coder
