@@ -167,7 +167,7 @@ offences_in() {
     # and neither may be swept in, so the variable has to appear in COMMAND
     # position: at the start of a command, after any env assignments and an
     # optional `bb`. `grep -q "..." "$VAR"` is an argument, not a command.
-    if code_only "$test_file" | grep -E "$(execution_re " >/dev/null$var")" 2>/dev/null; then
+    if code_only "$test_file" | grep -E "$(execution_re "$var")" >/dev/null 2>&1; then
       echo "$(basename "$test_file"):\$$var -> $script"
     fi
   done <<EOF

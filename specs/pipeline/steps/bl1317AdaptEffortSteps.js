@@ -156,7 +156,10 @@ function complete(ctx) {
   // done_with_current_task.bb execs ready_for_next_task.sh at the end, which
   // reports NO_TASK once the queue is empty - a non-zero exit that says the
   // completion itself worked. The effort record happens before that exec.
-  const res = spawnSync('bb', [path.join(SCRIPTS_DIR, 'done_with_current_task.bb')], {
+  // BL-1609 refuses to complete a forwarding parcel nothing forwarded unless
+  // a --no-op reason is stated; this fixture tests the effort dial, not the
+  // forward, and the record runs (as a clean pass) with the reason given.
+  const res = spawnSync('bb', [path.join(SCRIPTS_DIR, 'done_with_current_task.bb'), '--no-op', 'BL-1317 fixture: the effort record is under test, not the forward'], {
     cwd: seatDir(ctx.root, ROLE),
     encoding: 'utf8',
     timeout: 60000,

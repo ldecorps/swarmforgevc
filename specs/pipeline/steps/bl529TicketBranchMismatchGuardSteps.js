@@ -78,7 +78,17 @@ function mkSwarmFixture() {
 
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `coder\tcoder\t${wt}\tswarmforge-coder\tCoder\tclaude\ttask\n`);
-  fs.writeFileSync(path.join(root, '.swarmforge', 'swarm-identity'), 'swarm_name\tprimary\nswarm_mode\tautonomous\n');
+  // The identity names the depth conf the way swarmforge.sh writes it
+  // (BL-966): without active_backlog_max_depth_conf_path, backlog_depth_lib
+  // warns on stderr that it fell back to the default conf, and scenario 01's
+  // "a passing guard emits no warning" has failed on that line since
+  // 5c8b0835f8 (2026-08-20).
+  fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'swarmforge', 'swarmforge.conf'), 'config active_backlog_max_depth 1\n');
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'swarm-identity'),
+    'swarm_name\tprimary\nswarm_mode\tautonomous\nactive_backlog_max_depth_conf_path\tswarmforge/swarmforge.conf\n'
+  );
 
   const inbox = path.join(wt, '.swarmforge', 'handoffs', 'inbox');
   for (const state of ['new', 'in_process', 'completed']) {

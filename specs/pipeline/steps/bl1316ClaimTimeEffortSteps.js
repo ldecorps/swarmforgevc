@@ -116,9 +116,14 @@ function send(ctx) {
     });
   // Article 2.3's self-audit: the FIRST call against a given draft
   // fingerprint always challenges (AUDIT_REQUIRED / HANDOFF_NOT_QUEUED,
-  // exit 0, nothing queued); an identical second call queues it for real.
+  // nothing queued); an identical second call queues it for real. Since
+  // BL-1529 the challenge exits non-zero, so it is told apart from a queue
+  // by its text, never by its status.
   let res = sendOnce();
-  assert.equal(res.status, 0, `send (audit) failed: ${res.stdout}${res.stderr}`);
+  assert.ok(
+    res.status === 0 || `${res.stdout}${res.stderr}`.includes('AUDIT_REQUIRED'),
+    `send (audit) failed: ${res.stdout}${res.stderr}`
+  );
   res = sendOnce();
   assert.equal(res.status, 0, `send (queue) failed: ${res.stdout}${res.stderr}`);
 }
