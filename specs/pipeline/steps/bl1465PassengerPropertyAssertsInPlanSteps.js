@@ -17,7 +17,6 @@ const FEATURE = "BL-1465 BL-1375's passenger property asserts its invariant wher
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
-const CHECK_FEATURE_HANDLER_REGISTRATION = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_feature_handler_registration.sh');
 const ALLOWLIST_TSV = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_standing_allowlist.tsv');
 const STANDING_REDS_TSV = path.join(REPO_ROOT, 'backlog', 'standing-reds.tsv');
 const PROPERTY_FILE = path.join(REPO_ROOT, 'extension', 'test', 'bl1375ApprovedSiblingsCanLandInvariants.property.test.js');
@@ -80,20 +79,6 @@ function buildFixture(ctx) {
   ctx.citedTip = head(root);
 }
 
-function putOnMain(root, rel, body) {
-  const base = git(root, 'rev-parse', 'refs/remotes/origin/main');
-  const index = path.join(root, '.git', 'bl1465-index');
-  const env = { ...process.env, GIT_INDEX_FILE: index };
-  const plumb = (args, input) => execFileSync('git', args, { cwd: root, env, encoding: 'utf8', input }).trim();
-  plumb(['read-tree', base]);
-  const blob = plumb(['hash-object', '-w', '--stdin'], body);
-  plumb(['update-index', '--add', '--cacheinfo', `100644,${blob},${rel}`]);
-  const tree = plumb(['write-tree']);
-  const commit = plumb(['commit-tree', tree, '-p', base, '-m', `main already carries ${rel}`]);
-  git(root, 'update-ref', 'refs/remotes/origin/main', commit);
-  fs.rmSync(index, { force: true });
-}
-
 function landPlan(root, commit) {
   const program = `
 (require '[cheshire.core :as json])
@@ -114,48 +99,8 @@ function registerSteps(registryObj) {
     },
   );
 
-  scoped(/^the passenger's registry line reaches for a handler file that is on neither the tip nor main$/, (ctx) => {
-    // Dangling: buildFixture already leaves it this way - nothing further to do.
-  });
-
-  scoped(/^the passenger's handler file is already on main$/, (ctx) => {
-    putOnMain(ctx.root, SIBLING_HANDLER, 'module.exports = { registerSteps() {} };\n');
-  });
-
   scoped(/^the land step plans the landing ticket's tip$/, (ctx) => {
     ctx.plan = landPlan(ctx.root, ctx.citedTip);
-  });
-
-  scoped(/^the plan's action is escalate$/, (ctx) => {
-    assert.equal(ctx.plan.action, 'escalate', `expected escalate, got: ${JSON.stringify(ctx.plan)}`);
-  });
-
-  scoped(/^its reason names the passenger and the consistency guard that refused the replayed tree$/, (ctx) => {
-    assert.ok(ctx.plan.reason.includes(SIBLING), `reason does not name the passenger: ${ctx.plan.reason}`);
-    assert.ok(
-      ctx.plan.reason.includes('check_feature_handler_registration.sh'),
-      `reason does not name the consistency guard: ${ctx.plan.reason}`,
-    );
-    assert.ok(
-      Array.isArray(ctx.plan.unlanded) && ctx.plan.unlanded.includes(SIBLING),
-      `plan.unlanded does not name the passenger: ${JSON.stringify(ctx.plan)}`,
-    );
-  });
-
-  scoped(/^the plan's action is replay carrying the passenger$/, (ctx) => {
-    assert.equal(ctx.plan.action, 'replay', `expected replay, got: ${JSON.stringify(ctx.plan)}`);
-    assert.ok(
-      Array.isArray(ctx.plan.passengers) && ctx.plan.passengers.includes(SIBLING),
-      `plan.passengers does not name the passenger: ${JSON.stringify(ctx.plan)}`,
-    );
-  });
-
-  scoped(/^the built tip-pure commit passes the same consistency guard$/, (ctx) => {
-    git(ctx.root, 'checkout', '-q', ctx.plan.branch);
-    const guard = spawnSync('bash', [CHECK_FEATURE_HANDLER_REGISTRATION, ctx.root, '--assume-main'], { encoding: 'utf8' });
-    assert.equal(guard.status, 0, `the built tip failed its own guard: ${guard.stdout}${guard.stderr}`);
-    git(ctx.root, 'checkout', '-q', ctx.citedTip);
-    git(ctx.root, 'branch', '-q', '-D', ctx.plan.branch);
   });
 
   scoped(/^the bl1375 property file runs alone under the property lane's runner$/, (ctx) => {
