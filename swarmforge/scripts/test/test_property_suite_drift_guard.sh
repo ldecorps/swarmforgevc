@@ -830,4 +830,37 @@ rm -f "$LOG_25"
 git -C "$ROOT" reset -q HEAD
 rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
 
+# ── 26: BL-1877 the default path runs only the property files the change reaches ──
+# No injected command: the guard compiles (npm stub), asks property_reach.js,
+# and hands vitest (npx stub, argv recorded) only the reached files. Its own
+# repo under $ROOT, so the cases above are untouched.
+R26="$ROOT/bl1877-repo"
+mkdir -p "$R26/swarmforge/scripts" "$R26/extension/node_modules" "$R26/extension/src" "$R26/extension/out" "$R26/extension/test" "$ROOT/bl1877-bin"
+for f in check_property_suite_drift.sh property_reach.js property_suite_shared_repo_guard.sh incoming_merge_parent_lib.sh; do
+  cp "$SCRIPT_DIR/../$f" "$R26/swarmforge/scripts/$f"
+done
+echo 'export default {};' > "$R26/extension/vitest.properties.config.mjs"
+echo 'x' > "$R26/extension/src/m.ts"
+echo '' > "$R26/extension/out/m.js"
+echo "require('../out/m');" > "$R26/extension/test/hit.property.test.js"
+echo "require('fast-check');" > "$R26/extension/test/miss.property.test.js"
+echo 'extension/node_modules/' > "$R26/.gitignore"
+git -C "$R26" init -q -b main
+git -C "$R26" add -A
+git -C "$R26" -c user.email=test@test -c user.name=test commit -q -m init
+printf '#!/usr/bin/env bash\nexit 0\n' > "$ROOT/bl1877-bin/npm"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\nexit 0\n' "$ROOT/bl1877-npx.log" > "$ROOT/bl1877-bin/npx"
+chmod +x "$ROOT/bl1877-bin/npm" "$ROOT/bl1877-bin/npx"
+echo y >> "$R26/extension/src/m.ts"
+git -C "$R26" add extension/src/m.ts
+set +e
+OUT26="$(cd "$R26" && PATH="$ROOT/bl1877-bin:$PATH" bash "$R26/swarmforge/scripts/check_property_suite_drift.sh" 2>&1)"
+ST26=$?
+set -e
+[[ "$ST26" -eq 0 ]] || fail "26: a green reached run must allow, got $ST26: $OUT26"
+[[ "$(wc -l < "$ROOT/bl1877-npx.log" | tr -d ' ')" -eq 1 ]] || fail "26: expected one vitest run, got: $(cat "$ROOT/bl1877-npx.log")"
+grep -qx 'vitest run --config vitest.properties.config.mjs test/hit.property.test.js' "$ROOT/bl1877-npx.log" \
+  || fail "26: expected only the reached file, got: $(cat "$ROOT/bl1877-npx.log")"
+pass "26: the default path runs only the property files the staged change reaches (BL-1877)"
+
 echo "ALL PASS"
