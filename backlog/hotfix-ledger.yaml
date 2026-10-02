@@ -594,3 +594,10 @@
   stamp_ticket: BL-1883
   human_decision: null
   decided_at: null
+- commit: 8b1c763709
+  subject: "Hotfix: five shell tests red on main since the host move and later guards are green again - daemon log freshness, bridge headless, onboarder launch, BL-1159 and BL-763"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1886
+  human_decision: null
+  decided_at: null

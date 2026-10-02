@@ -1,0 +1,101 @@
+id: BL-1886
+title: "Stamp-off for hotfix 8b1c763709: five shell tests red on main since the macOS-to-Linux host move and later guards are green again - daemon log freshness (node-less PATH), bridge headless (fixture is its own host root), onboarder launch (supervisor's full lib closure), BL-1159 and BL-763 (git fixture roots via the shared sandbox helper)"
+milestone: M8
+type: defect
+severity: high
+# high: standing reds on main are a broken safety signal (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: shell test fixtures and one shared test helper; no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "small test-side fixes; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fixes are test-side"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-762's contract (BL-1251): the closest
+# feature to these shell tests' area; the tests themselves are the checks.
+acceptance: specs/features/BL-762-finish-shift-leaves-the-phone-path-up.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 8b1c763709 under the human's 2026-10-01 directive.
+  No choice is posed. FIRM: no production code changed; one test helper
+  moved into the shared sandbox lib. The review decides whether that
+  stands.
+
+invariants: []
+
+source: |
+  Specifier, 2026-10-02: the census in hotfix 7f5cd31fe6 ran the 13 shell
+  tests that kill background children; five failed, identically on HEAD
+  before that hotfix, with no register row. The human, specifier pane
+  (Claude Code), 2026-10-01, verbatim (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 8b1c763709 landed the fix
+
+  This parcel is its stamp-off: the pipeline's review of what landed.
+  Review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  1. `test_daemon_log_freshness.sh`: BL-796's checks ran the checker with
+     `PATH=/usr/bin:/bin` to mean "node is nvm-only", true on the macOS host
+     they were written on. This host's /usr/bin has a distro node, which
+     `swarmforge_prepend_operator_bins` finds before nvm. They now use a
+     node-less copy of /usr/bin. The fleet-telegram check's stub curl was
+     shadowed by /usr/bin's real curl once the checker prepended node's
+     directory (and that real curl sent a request with a fake token); a stub
+     node beside the stub curl keeps it first.
+  2. `test_start_stop_bridge_headless.sh`: since 9a3063a071 (2026-09-26) a
+     root without a compiled entrypoint falls back to
+     `BRIDGE_EXTENSION_HOST_ROOT`, which defaults to this machine's live
+     checkout path. The fixture now passes itself as that root.
+  3. `test_launch_onboarder.sh`: the fixture lacked
+     `daemon_log_freshness_pulse_lib.bb` and `daemon_cycle_guard_lib.bb`,
+     so the real supervisor died at load and section 4 aborted under
+     `set -e` with no FAIL line.
+  4. `test_bl1159_*`, `test_operator_runtime_bl763_*`: BL-1517 made
+     operator_runtime.bb refuse a non-git project root; BL-1728 fixed only
+     the babysitterd watchdog test, inline. `init_git_fixture_root` and
+     `prove_git_fixture_root` moved into `lib/operator_runtime_sandbox.sh`
+     and all three call them. BL-1159's HTTP stub now waits (bounded) for
+     its port instead of 0.05 s.
+
+  ## What is wanted in this parcel
+
+  - Review the four changes. Two points worth a judgment: whether
+    `start_bridge_headless.sh`'s machine-specific default for
+    `BRIDGE_EXTENSION_HOST_ROOT` should exist at all (raise it to the
+    specifier as a note if not), and whether other operator_runtime tests
+    still build non-git roots (grep `make_fixture` under
+    `swarmforge/scripts/test/` for `mktemp -d` without
+    `init_git_fixture_root`).
+  - Evidence: the review and one run of each of the seven tests.
+
+  ## Scope
+
+  The seven test files and the shared helper, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule):
+  `test_daemon_log_freshness.sh`, `test_start_stop_bridge_headless.sh`,
+  `test_launch_onboarder.sh`, `test_bl1159_bridge_child_survives_without_crash_giveup_loop.sh`,
+  `test_operator_runtime_bl763_cursor_bridge_watchdog.sh` and
+  `test_operator_runtime_babysitterd_watchdog.sh` under
+  `swarmforge/scripts/test/`: each exits 0 (measured at the hotfix: all 0;
+  before it, five failed). Then read the coder's review.
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  8b1c763709, the same pass the reds were found. The hotfix turned them
+  green, so no register row was added. Ledger entry linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
