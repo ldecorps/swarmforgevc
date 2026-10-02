@@ -1,0 +1,73 @@
+id: BL-1893
+title: "Stamp-off for hotfix 8ed4173ce4: confirmPoleAloneOutcomeShapes.test.js ran four real vitest spawns (7.3 s alone under load, over the 7 s per-file budget, holding BL-1836); the first and third tests shared the same call, which now runs once"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red that held a QA land (2026-09-05 rule).
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: one unit test file; no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a small test-side change; nothing to refactor"
+  architect: "no production code or design surface"
+  hardender: "test-side only; nothing to mutate"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-1721's contract (BL-1251): the test this
+# hotfix trimmed covers BL-1721's confirmation outcomes.
+acceptance: specs/features/BL-1721-a-failed-pole-confirmation-is-said-and-retried-once.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 8ed4173ce4 under the human's 2026-10-01 directive.
+  No choice is posed. FIRM: every assertion in the file is unchanged.
+
+invariants: []
+
+source: |
+  QA note 003698 (2026-10-02 12:20Z), verbatim: "unowned-red
+  confirmPoleAloneOutcomeShapes.test.js 7.3s>7.0s alone; BL-1836 held".
+
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim (Article
+  5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 8ed4173ce4 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  Each `confirmPoleAlone` call spawns a real vitest run, about 1 s at load
+  5 and about 1.8 s under QA's load. The file made four: the first and
+  third tests each confirmed the same repo-relative file. That call now
+  runs once (`confirmRelOnce`) and both tests read its outcome. Measured:
+  2.1 s for the file at load 5 over two runs, against 3.2 s before.
+
+  ## What is wanted in this parcel
+
+  - Review the change; confirm no assertion changed.
+  - Evidence: the review and the file's duration from one run.
+
+  ## Scope
+
+  The test file and evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run: `cd extension && npx vitest run
+  test/confirmPoleAloneOutcomeShapes.test.js`: 3 of 3 pass, under 7 s
+  (measured at the hotfix: 2.1 s at load 5). BL-1721's feature
+  3 of 3 at mint.
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  8ed4173ce4. No pole-register row: the file is back under budget. Ledger
+  entry linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

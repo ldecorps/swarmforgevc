@@ -629,3 +629,10 @@
   stamp_ticket: BL-1891
   human_decision: null
   decided_at: null
+- commit: 8ed4173ce4
+  subject: "Hotfix: confirmPoleAloneOutcomeShapes.test.js spawns vitest three times, not four, so it fits the 7 s per-file budget again"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1893
+  human_decision: null
+  decided_at: null
