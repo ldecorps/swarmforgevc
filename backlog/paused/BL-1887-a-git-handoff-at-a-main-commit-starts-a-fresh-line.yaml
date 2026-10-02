@@ -1,0 +1,101 @@
+id: BL-1887
+title: "Since BL-1871 landed, a git_handoff that routes a new ticket at a commit already on origin/main leaves the role on its previous ticket's line (the take-up stays when HEAD descends from the target, and every long-lived line descends from main): BL-1872 was routed at 095f2827a7 and the coder stayed on BL-1877's line; such a git_handoff now starts its ticket on a fresh line, as a Work note does"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in just-landed delivery machinery - every ticket routed
+# this way inherits the previous ticket's unlanded work, the entanglement
+# BL-1871 exists to end.
+status: todo
+epic: landing-is-a-merge
+priority: 2
+direction: queue-jump
+# queue-jump: BL-1870's epic, at the human's "Prioritize this work."
+depends_on: []
+mutation_cost: low
+# low: one Babashka lib's decision; no Stryker lane for bb (BL-472), so the
+# hardener hand-mutates it - it moves worktrees, durable git state.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one decision changes; nothing to refactor"
+  architect: "the fix reuses the Work-note start path the lib already has; no boundary moves"
+  documenter: "BL-1871's how-to describes take-up and start; the fix makes routing follow it"
+
+acceptance: specs/features/BL-1887-a-git-handoff-at-a-main-commit-starts-a-fresh-line.feature
+
+# Handler pin only (BL-233, BL-1371). No consumer anchor: ready_for_next_task.bb
+# already loads parcel_line_lib.bb, so an anchor there matches before and
+# after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1887MainCommitHandoffStartsFreshSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Defect in BL-1871 (landed), found by the coder in live use. No choice is
+  posed. FIRM: a git_handoff at a commit not on origin/main is taken up
+  exactly as BL-1871 does today; only one already on origin/main changes,
+  to the Work-note start.
+
+invariants:
+  - "A take-up never leaves a role on a line that carries another ticket's unlanded work."
+
+source: |
+  Coder note 002323 (2026-10-02 09:40Z), verbatim: "BL-1871 gap:
+  git_handoff route at main commit never starts a fresh line". The
+  specifier confirmed it: coordinator parcel 014966 routed BL-1872 to the
+  coder as a git_handoff at 095f2827a7 (main's head), and
+  `parcel_line_lib.bb`'s take-up stays whenever HEAD descends from the
+  target.
+
+description: |
+  ## What is wrong
+
+  `parcel-intent` makes every forwarding git_handoff a `:take-up` of its
+  commit. `resolve-target` for `:take-up` sets `at-or-past-target?` when
+  the commit is an ancestor of HEAD, and `move-decision` then stays. A
+  role's line always descends from origin/main, so a git_handoff at a main
+  commit (a route, not a build) never moves it, and the role works the new
+  ticket on top of the previous ticket's unlanded commits. The `:start`
+  path (a coordinator Work note to the coder) already avoids this, with the
+  comment "A fresh start is never past origin/main: a long-lived branch
+  descends from it and would wrongly stay."
+
+  ## What is wanted
+
+  - A git_handoff whose commit is already on origin/main starts its task's
+    ticket the way `:start` does: onto the ticket's newest handed-off
+    commit, or else origin/main, unless the line already carries the
+    ticket's own unlanded work (scenarios 01, 03).
+  - A git_handoff at a commit not on origin/main is taken up as today
+    (scenario 02).
+  - It applies to every role that takes up parcels, not only the coder.
+
+  ## How (direction, not mandate)
+
+  - In `parcel_line_lib.bb`, decide from facts: whether the commit is an
+    ancestor of origin/main, then reuse `:start`'s target and `own-line?`.
+    The ticket comes from the parcel's task name (`extract-ticket-id`).
+  - Step handler `specs/pipeline/steps/bl1887MainCommitHandoffStartsFreshSteps.js`,
+    fixture with a bare origin under mkdtemp (BL-1390), driving
+    `take-up!` the way BL-1871's handler does.
+
+  ## Scope
+
+  `parcel_line_lib.bb`, its test runner, the step handler, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1887-a-git-handoff-at-a-main-commit-starts-a-fresh-line.feature`:
+     3 of 3 ok. Measured 0 at mint: no handler exists.
+  2. `node specs/pipeline/cli.js specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`:
+     every scenario still ok; `parcel_line_lib_test_runner.bb` ALL PASS.
+  After the land (the specifier's or coordinator's check): the next
+  ticket routed to the coder as a git_handoff at main's head prints
+  PARCEL_LINE moved onto origin/main.
+
+notes: |
+  Minted 2026-10-02 by the specifier from coder note 002323. Not a red, so
+  ticketed rather than hotfixed. The coder's current BL-1872 parcel sits on
+  BL-1877's line; the coder knows (it raised this).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

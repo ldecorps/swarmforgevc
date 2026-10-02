@@ -7,7 +7,7 @@ epic: landing-is-a-merge
 priority: 0
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-1871, BL-1872]
+decomposes_into: [BL-1871, BL-1872, BL-1887]
 remaining_slices:
   - "Retire the entanglement machinery once in-flight parcels drain: QA's merge-up send, the post-land re-point, reverse-hop copies, own-path replay, strays, abandoned_commits, the LAND_ESCALATE conditions and most of land_step_lib.bb"
 mutation_cost: medium
