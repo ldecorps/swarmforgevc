@@ -4,13 +4,17 @@
 # (core.hooksPath), same standalone-script pattern as check_commit_size.sh.
 #
 # Usage: check_property_suite_drift.sh [suite-command [args...]]
-#   No args — run `npm run test:properties` from extension/ when the
-#   toolchain is present. With args — those are the suite command
-#   (injectable for tests; no *_FORCE_RESULT env bypasses).
+#   No args — compile, then run the property files the staged change
+#   reaches (BL-1877, property_reach.js), or the whole lane
+#   (`npm run test:properties`) when the reach cannot be computed. With
+#   args — those are the suite command (injectable for tests; no
+#   *_FORCE_RESULT env bypasses).
 #
 # Env:
 #   SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 — warn and exit 0 (recovery-only;
 #   never the standing recipe — see BL-1121).
+#   SWARMFORGE_PROPERTY_GUARD_WHOLE_LANE=1 — run the whole lane instead of
+#   the reached files (BL-1877).
 #
 # Exit 0: path skip, reconcile-import skip (BL-1121), override, green suite,
 #         allowlisted standing reds only (BL-1175), or toolchain unavailable.
@@ -384,8 +388,46 @@ default_toolchain_ready() {
   [[ -d extension/node_modules ]] && command -v npm >/dev/null 2>&1
 }
 
-run_default_suite() {
+# BL-1877 (ruling A): a commit runs only the property files its staged
+# change reaches (property_reach.js), not the whole lane - 493 files, about
+# 7 minutes, paid by every role's commit that staged an extension/src or
+# property file. It compiles first, because the reach and the files it runs
+# read out/. Whenever the reach cannot be computed - the compile fails, the
+# reach script is missing or errors, or it answers ALL - the whole lane
+# runs, as before. QA's gather still runs the whole lane once per parcel.
+# SWARMFORGE_PROPERTY_GUARD_WHOLE_LANE=1 forces the whole lane.
+run_whole_lane() {
   (cd extension && npm run test:properties)
+}
+
+run_default_suite() {
+  local reach_script="$SCRIPT_DIR/property_reach.js" reach_out line
+  local reached=()
+  if [[ "${SWARMFORGE_PROPERTY_GUARD_WHOLE_LANE:-}" == "1" || ! -f "$reach_script" ]]; then
+    echo "property-suite-guard: whole lane (reach not computed)"
+    run_whole_lane
+    return
+  fi
+  if ! (cd extension && npm run compile); then
+    echo "property-suite-guard: whole lane (compile failed)"
+    run_whole_lane
+    return
+  fi
+  if ! reach_out="$(node "$reach_script" "$REPO_ROOT" ${TRIGGER_PATHS[@]+"${TRIGGER_PATHS[@]}"})" \
+      || [[ "$reach_out" == "ALL" ]]; then
+    echo "property-suite-guard: whole lane (reach not computable for this change)"
+    (cd extension && npx vitest run --config vitest.properties.config.mjs)
+    return
+  fi
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && reached+=("$line")
+  done <<<"$reach_out"
+  if (( ${#reached[@]} == 0 )); then
+    echo "property-suite-guard: the staged change reaches no property file (BL-1877)"
+    return 0
+  fi
+  echo "property-suite-guard: running the ${#reached[@]} property files the staged change reaches (BL-1877)"
+  (cd extension && npx vitest run --config vitest.properties.config.mjs "${reached[@]}")
 }
 
 # BL-1202: the guard must report its BL-1124 canary verdict on EVERY exit
