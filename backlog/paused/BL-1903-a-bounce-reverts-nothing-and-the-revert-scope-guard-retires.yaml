@@ -1,0 +1,94 @@
+id: BL-1903
+title: "A bounce reverts nothing on parcel lines, so check_bounce_revert_scope.sh (BL-1471) retires from the commit guard chain and the tree, BL-1471's feature, step handler and property test retire with it, and its how-to moves to docs/deprecated"
+milestone: M8
+type: feature
+status: todo
+epic: landing-is-a-merge
+priority: 4
+direction: human-requested
+depends_on: [BL-1902]
+mutation_cost: low
+verification_category: merge-collateral-scope
+# low: removals across shell, hook, handler and docs.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a removal; nothing to refactor"
+  architect: "the guard has no caller once no role makes a bounce revert; the scenarios pin the removal"
+  hardender: "deletes code and adds none, so there is nothing to mutate"
+
+acceptance: specs/features/BL-1903-a-bounce-reverts-nothing-and-the-revert-scope-guard-retires.feature
+
+# Handler pin only (BL-233, BL-1371).
+required_wiring:
+  - 'specs/pipeline/steps/bl1903RevertScopeGuardRetiresSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+retires:
+  - specs/features/BL-1471-a-bounce-revert-touches-only-the-bounced-tickets-paths.feature
+  - specs/pipeline/steps/bl1471BounceRevertScopeSteps.js
+  - extension/test/bl1471BounceRevertScopeInvariants.property.test.js
+  - swarmforge/scripts/check_bounce_revert_scope.sh
+  - swarmforge/scripts/test/test_check_bounce_revert_scope.sh
+
+human_approval: pending
+approval_context: >
+  The third of three slices minted from BL-1870's last remaining line, at
+  your "Do get the missing slice minted". FIRM: it follows BL-1902, so no
+  batch seat that could still make a bounce revert is live; the BL-490
+  workflow rule's batch-seat half retires with it (the specifier's prose).
+
+invariants: []
+
+source: |
+  Root intake backlog/INTAKE-operator-question-1790964692294.md (filed by
+  the Operator 2026-10-02T18:11Z), verbatim:
+  "HUMAN DIRECTIVE (2026-10-02 18:10Z, PIPELINE_BOARD thread), verbatim:
+  "Do get the missing slice minted""
+  The intake also says: "check_bounce_revert_scope.sh's wrong-ticket
+  naming (ancestor-of-P2 match on a stale record) was explicitly deferred
+  to this slice, and the epic's verification_category
+  merge-collateral-scope is expected to retire with it." Split 1:N with
+  BL-1901 and BL-1902 (Consolidation Authority).
+
+description: |
+  ## What is wanted
+
+  - The guard leaves the chain: `run_commit_guards.sh` (12 guards at mint,
+    11 after) and `swarmforge/git-hooks/commit-msg`.
+  - Retired, not reworded: check_bounce_revert_scope.sh and its shell
+    test (with its suite-manifest row), BL-1471's feature, its step
+    handler and index registration, its property test, and the guard's
+    entry in BL-1252's guard-inventory step handler.
+    test_merge_deletion_guard.sh names the script and is updated, not
+    retired.
+  - Docs (documenter): docs/how-to/BL-1471-bounce-revert-scope-guard.md
+    moves to docs/deprecated/ and is linked from docs/index.md;
+    docs/how-to/BL-1252 and docs/reference/Specification.MD stop listing
+    the guard as live.
+  - The step handler `bl1903RevertScopeGuardRetiresSteps`, registered in
+    the same parcel.
+  - workflow.prompt's "A Bounce Must Be Reverted Out Of The Bouncing
+    Branch" and its detailed reference are the specifier's prose, landed
+    at activation (BL-798).
+
+  ## Scope
+
+  The paths under `retires:`, the guard chain, the commit-msg hook,
+  BL-1252's handler, test_merge_deletion_guard.sh, the docs, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. ONE run: `node specs/pipeline/cli.js specs/features/BL-1903-a-bounce-reverts-nothing-and-the-revert-scope-guard-retires.feature`:
+     all ok.
+  2. `node specs/pipeline/cli.js specs/features/BL-1252-*.feature`: all ok
+     with the shorter guard inventory.
+  3. `bash swarmforge/scripts/test/test_merge_deletion_guard.sh` and
+     `bb swarmforge/scripts/test/suite_inventory_cli.bb swarmforge/scripts/test`:
+     no new problem (2 pre-existing at mint, BL-1641's retired files).
+
+notes: |
+  Minted 2026-10-02 by the specifier from the root intake above, one of
+  three slices (BL-1901 notes carry the full split).
+  It also closes BL-1870's verification_category merge-collateral-scope:
+  its three rows are hand checks of bounce-revert scope, which no role
+  makes once this lands.
