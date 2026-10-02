@@ -54,8 +54,8 @@ description: |
      bl1221's shapes (a run that touched no authored docs; a landing
      reachable from origin/main).
   2. BL-633 (`bl633…Steps.js`): scenario 05 read
-     `backlog/hold/BL-590-onboarding-facilitator-agent.yaml`, which left
-     hold on 2026-07-27 and is in done; the handler now finds it in
+     BL-590's ticket file from `backlog/hold/`, which it left on
+     2026-07-27 (it is in done); the handler now finds it in
      whichever backlog folder holds it. Scenario 03 checked the architect
      prompt for "One bounce per property, never one per site." with a
      period; 13a466571e bolded it with an em-dash, so the check drops the
