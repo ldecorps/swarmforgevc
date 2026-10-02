@@ -201,3 +201,5 @@ notes: |
   file stamp off instead". Both register rows retired in that commit.
   The ledger entry is linked here, and item 5 is now the review of it
   plus the shape move that goes with item 2.
+
+assigned_to: coder
