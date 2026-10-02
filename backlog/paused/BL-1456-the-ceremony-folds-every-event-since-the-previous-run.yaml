@@ -2,14 +2,16 @@ id: BL-1456
 title: "The closing ceremony folds every lifecycle event since the previous run: the packet folds only events stamped with the run's UTC date, and since the 24/7 schedule moved the ceremony to about 04:25Z each packet has covered a four-hour sliver of its shift - 176 of 1756 events (10%) across 2026-09-04..07 - so the lean pass read 2026-09-06 as one ticket on a day fifteen moved"
 milestone: M8
 type: defect
-severity: medium
-# medium, not high: the ledger keeps every event (append-only; nothing is
-# lost) and no other consumer reads the packet, so the fault is contained
-# to the lean pass's own view, and the first post-fix run folds forward
-# from where the last run stopped. Not low: the pass is the swarm's one
-# process-health loop and it has drawn its hypotheses from ~10% of the
-# evidence since 2026-09-05, silently - the 09-06 packet read "one ticket,
-# BL-1440" on a day fifteen tickets moved and five closed.
+severity: high
+# high since 2026-10-02 (re-classed by the specifier's lean pass; medium at
+# mint): a broken health signal. The ceremony now starts at 00:00Z, so the
+# packet folds the UTC day that has just begun: the 2026-10-02 packet held
+# 0 path rows and 0 hypotheses against 2870 ledger rows for 2026-10-01,
+# and the 10-01 packet covered 00:00Z..07:11Z only. The pass is the swarm's
+# one process-health loop (the mint's own words), and its dwell hotspots are
+# the measure of the human's 2026-10-02 "make the swarm churn much faster".
+# The mint's medium reasoning still holds in part: the ledger is
+# append-only, so nothing is lost.
 status: todo
 epic: lean-aware-coordinator
 priority: 57
@@ -212,3 +214,11 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+  2026-10-02 (specifier, closing-ceremony lean pass for shift
+  2026-10-02): severity medium -> high, reason in the severity comment.
+  Measured: `.swarmforge/daemon/closing-ceremony-state.json` startedAtMs
+  = 2026-10-02T00:00:01Z, nightKey 2026-10-02; `eventsForShiftKey` kept
+  the events stamped 2026-10-02, i.e. none, and the packet reached the
+  specifier with only its two determinism candidates. The premise is
+  unchanged (the fold is by UTC date) and only worse, so the scenarios
+  stand as written. deprecate-check: allow.
