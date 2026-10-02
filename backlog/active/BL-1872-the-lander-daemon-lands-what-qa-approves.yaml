@@ -232,5 +232,11 @@ notes: |
   as an "Until BL-1872 lands" interim. Found while hotfixing BL-247's
   77-day red (83d5e34527, stamp-off BL-1878). BL-1878 reviews the same
   handler, so the two should not run at once.
+  2026-10-02 (specifier): the QA.prompt prose landed at activation in
+  78a55a85cd (BL-798): a "Queue the land" bullet for after the land, and
+  today's recipe kept as "Until BL-1872 lands: Land it on `main`
+  yourself", which QA retires at the land. Bookkeeping only, nothing the
+  coder builds changes. The coder's BL-1872 take-up sat on BL-1877's line
+  (BL-1887, the routing gap this activation exposed).
 
 assigned_to: coder
