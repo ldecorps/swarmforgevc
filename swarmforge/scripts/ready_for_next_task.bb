@@ -34,6 +34,8 @@
 ;; posture on a different pair of duplicated readers).
 (load-file (str (fs/path script-dir "work_note_evidence_lib.bb")))
 (load-file (str (fs/path script-dir "landed_ticket_lib.bb")))
+;; BL-1871: a parcel is taken up on its own ticket's line.
+(load-file (str (fs/path script-dir "parcel_line_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -408,6 +410,27 @@
                       (when sha (str " at " sha))
                       "; merge main before reading it"))))))
 
+;; ── BL-1871: take up the parcel on its own ticket's line ──────────────────
+;; Runs where the task is printed, every time it is printed, so a move
+;; refused for uncommitted changes is retried on the next ask. Decisions
+;; live in parcel_line_lib.bb; a master-resident role (roles.tsv
+;; worktree-name master) and a role with no row are never moved.
+(defn- take-up-parcel-line! [handoff-file]
+  (let [role (handoff-lib/current-role)
+        role-info (handoff-lib/load-role-info role)
+        intent (parcel-line-lib/parcel-intent
+                {:master? (when role-info (= "master" (:worktree-name role-info)))
+                 :role role
+                 :type (handoff-lib/header-field handoff-file "type")
+                 :non-forwarding? (handoff-lib/non-forwarding? handoff-file)
+                 :commit (handoff-lib/header-field handoff-file "commit")
+                 :work-ticket (work-note-evidence-lib/work-note-ticket-id-from-message
+                               (handoff-lib/header-field handoff-file "message"))})]
+    (parcel-line-lib/take-up! {:root (handoff-lib/worktree-root)
+                               :project-root (str (handoff-lib/target-root))
+                               :role role
+                               :intent intent})))
+
 (defn -main []
   (print-qa-hold-status-if-any!)
   (try-pending-land-repoint-if-qa!)
@@ -457,6 +480,7 @@
           ;; new-dir - see origin-new-dir-for.
           (enforce-branch-claim-guard! (first in-process-files) in-process-dir
                                        (origin-new-dir-for (first in-process-files)))
+          (take-up-parcel-line! (first in-process-files))
           (apply-effort-for-task! (first in-process-files) (mono-router-conf-text))
           (handoff-lib/print-task (first in-process-files))
           (print-merge-main-first-hint! (first in-process-files)))
@@ -617,6 +641,7 @@
                         ;; the resume path above.
                         (enforce-branch-claim-guard! target-file in-process-dir
                                                      (origin-new-dir-for target-file))
+                        (take-up-parcel-line! target-file)
                         (apply-effort-for-task! target-file pack-conf)
                         (handoff-lib/print-task target-file)
                         (print-merge-main-first-hint! target-file))
