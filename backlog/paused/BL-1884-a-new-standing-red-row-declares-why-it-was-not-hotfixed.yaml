@@ -22,7 +22,7 @@ acceptance: specs/features/BL-1884-a-new-standing-red-row-declares-why-it-was-no
 required_wiring:
   - 'specs/pipeline/steps/bl1884RegisterRowDeclaresFallbackSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your question 2026-10-02: "How do we ensure you won't make the mistake
   again? Can we maje this deterministic gate fornypu?" - gate 1 of 2. FIRM:
