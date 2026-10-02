@@ -615,3 +615,10 @@
   stamp_ticket: BL-1890
   human_decision: null
   decided_at: null
+- commit: 7964654efc
+  subject: "Hotfix: the BL-1728 property test reads the git-fixture helpers where 8b1c763709 moved them, so it is green on main again"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1886
+  human_decision: null
+  decided_at: null
