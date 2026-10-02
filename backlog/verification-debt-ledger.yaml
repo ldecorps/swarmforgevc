@@ -137,3 +137,8 @@
   role: QA
   description: "verified a bounce merge-revert's scope by hand: check_bounce_revert_scope.sh named BL-1865 for BL-1835's revert of 1600d34169 - its ancestor-of-P2 match took BL-1865's stale record (commit in coder's lineage) because QA's BL-1835 record cites bounce commit d03f2fa110, a descendant of the parcel; not BL-1831's single-commit case"
   detected_at: 2026-10-02
+- category: land-rematch-recovery
+  ticket: BL-1835
+  role: QA
+  description: "LAND_REMATCH rebased replay 4890a3635a to dd2950dc24 in QA's worktree: HEAD left detached so the re-point moved HEAD not swarmforge-QA (ready_for_next BRANCH_DRIFT), and the rematched sha had no land-approval record (is_qa_ancestor exit 1); re-attached, merged origin/main, ran record_land_approval.bb by hand"
+  detected_at: 2026-10-02
