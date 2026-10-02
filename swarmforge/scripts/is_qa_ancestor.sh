@@ -121,6 +121,9 @@ EXPEDITE_PROBLEM=""
 # a bounce on file must still answer a clean "no" even when this store is
 # unreadable.
 LAND_PROBLEM=""
+# BL-1872: commits reachable from a lander-queued tip (see below).
+QUEUE_REACH=""
+QUEUE_DIR=""
 
 collect_verdict_stores() {
   # ── bounce verdict: the JSONL store record-bounce.js appends ────────────
@@ -283,6 +286,40 @@ collect_verdict_stores() {
 "
     done
   fi
+
+  # ── approval: the commits QA queued for the lander (BL-1872) ───────────
+  # Under BL-1871 parcel lines QA's branch moves onto each parcel's own
+  # line, so a parcel QA approved earlier is no longer an ancestor of
+  # swarmforge-QA once QA takes up the next one. lander_queue.bb, QA's own
+  # last act on an approved parcel, writes the approved commit into the
+  # queue, and QA removes the entry when it retracts the approval. The
+  # queued commits are therefore QA's approved tips beside swarmforge-QA:
+  # the same ancestry question asked of more tips, never a second
+  # definition of approval (BL-925 invariant 2). An entry with no commit
+  # grants nothing, and the bounce vetoes still run first.
+  # QUEUE_REACH is computed once: every commit reachable from a queued tip
+  # but not from swarmforge-QA (which already answers for the rest).
+  if [[ -n "$LAND_ROOT" ]]; then
+    QUEUE_DIR="$LAND_ROOT/.swarmforge/lander/queue"
+  else
+    QUEUE_DIR=".swarmforge/lander/queue"
+  fi
+  if [[ -d "$QUEUE_DIR" ]]; then
+    local tips
+    tips="$(cat "$QUEUE_DIR"/*.edn 2>/dev/null \
+              | grep -oE ':commit "[0-9a-fA-F]{40}"' \
+              | sed -E 's/:commit "([0-9a-fA-F]+)"/\1/' || true)"
+    if [[ -n "$tips" ]]; then
+      # shellcheck disable=SC2086 # one sha per word
+      QUEUE_REACH="$(git rev-list $tips ^swarmforge-QA 2>/dev/null || true)"
+    fi
+  fi
+}
+
+# BL-1872: is FULL sha an ancestor of a commit QA queued for the lander?
+queued_tip_reaches() {
+  [[ -n "$QUEUE_REACH" ]] || return 1
+  grep -qx "$1" <<< "$QUEUE_REACH"
 }
 
 # BL-1334: is the SOURCE a land record names itself approved? A mapping is
@@ -327,6 +364,9 @@ source_is_approved() {
   done <<< "$YAML_TOKENS"
 
   if git merge-base --is-ancestor "$full_source" swarmforge-QA 2>/dev/null; then
+    return 0
+  fi
+  if queued_tip_reaches "$full_source"; then
     return 0
   fi
 
@@ -422,6 +462,12 @@ answer_one() {
   #    fail closed on ─────────────────────────────────────────────────────
   rc=0
   git merge-base --is-ancestor "$FULL_SHA" swarmforge-QA || rc=$?
+  # BL-1872: a clean "no" from the QA ref is asked again of QA's queued
+  # tips. A real failure (rc other than 1) still passes through.
+  if [[ "$rc" -eq 1 ]] && queued_tip_reaches "$FULL_SHA"; then
+    echo "approved: $SHORT_SHA is an ancestor of a commit QA queued for the lander ($QUEUE_DIR) - BL-1872" >&2
+    return 0
+  fi
   return "$rc"
 }
 

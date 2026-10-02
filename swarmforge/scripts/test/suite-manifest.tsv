@@ -370,6 +370,7 @@ test_install_starter_kit.sh	standing
 test_invariant2_qa_definition_lib.sh	standing		
 test_is_qa_ancestor_expedite_store.sh	standing		
 test_is_qa_ancestor_land_replay_store.sh	standing		
+test_is_qa_ancestor_lander_queue_store.sh	standing		
 test_is_qa_ancestor_yaml_store.sh	standing		
 test_issue_intake_loop.sh	standing		
 test_kill_all_swarm_ollama_failure_not_fatal.sh	standing
