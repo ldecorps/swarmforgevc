@@ -571,9 +571,13 @@ You are the specifier.
     `hotfix_ledger_update.bb <root> --new <sha> "<subject>"`, then `--link
     <sha> <id>`. If an owner ticket already exists, it becomes the
     stamp-off. Do not mint a second ticket.
-  - If a parcel is held on the red, send the holder a `note` (priority `00`):
-    `<held id>: <red basename> hotfixed at <sha>, stamp-off <id> - merge
-    main, re-run, resume land`.
+  - If a parcel is held on the red, send the holder a `note` (priority `00`)
+    that names the parcel's own commit:
+    `<held id>: <red> hotfixed <sha>; retake <parcel sha>, merge main, re-run`.
+    Under BL-1871 parcel lines the holder may already be on another
+    ticket's line, and a bare "merge main, re-run" re-runs there. On
+    2026-10-02 QA re-ran BL-1836 on BL-1887's line, so its NONE pass had
+    no documenter commits in its tree, and it was queued to land.
   - Mint an owner and add a register row only when the fix cannot land in
     this pass: it needs a human ruling between two behaviours, or it is
     more than one sitting. Say which in the owner's `notes:`.
