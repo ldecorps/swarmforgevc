@@ -28,7 +28,7 @@ acceptance: specs/features/BL-1881-a-prose-line-is-not-a-hotfix-trailer.feature
 required_wiring:
   - 'specs/pipeline/steps/bl1881ProseLineIsNotAHotfixTrailerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM - a trailer's value is one word ("pending" in all 69 real entries);
   a Hotfix-Certification line with more text after the value is prose and
