@@ -1,0 +1,90 @@
+id: BL-1892
+title: "A land sent TERM releases its lock but keeps running (land_release_trap does not exit), so it can push and re-point without the lock; since BL-1872 the lander runs lands unattended and a daemon restart or swarm stop can TERM one - a land told to stop now releases the lock and exits, except during the post-land re-point, which it finishes first"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real fault, contained by the fast-forward-only push (a lockless
+# land cannot overwrite main, only be rejected or race a re-point); not seen
+# in the wild yet.
+status: todo
+epic: landing-is-a-merge
+priority: 10
+depends_on: []
+mutation_cost: low
+# low: one shell script's traps and its shell test; no Stryker lane for
+# shell (BL-472), so the hardener hand-mutates them.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "two traps change; nothing to refactor"
+  architect: "the scenarios fix the behaviour; the re-point exception is the one design point and it is stated"
+  documenter: "BL-1366's how-to describes the lock, not signal handling"
+
+acceptance: specs/features/BL-1892-a-terminated-land-stops-without-its-lock.feature
+
+# Handler pin only (BL-233, BL-1371).
+required_wiring:
+  - 'specs/pipeline/steps/bl1892TerminatedLandStopsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  The coder's proposal from reviewing BL-1890 (source). FIRM: a land sent
+  TERM or INT releases the lock and exits non-zero (143 or 130) without
+  pushing; during the post-land re-point it finishes the re-point first,
+  so no branch is left half-moved (the operator's 2026-10-01 lesson about
+  killing a land mid re-point). Medium severity, so it waits for you.
+
+invariants:
+  - "A land never pushes or re-points after it has released the land lock."
+
+source: |
+  Coder note 002334 (2026-10-02 12:17Z), from its review of BL-1890's
+  stamp-off, verbatim: "BL-1890: TERMed land runs on lockless; propose exit
+  143 except mid re-point".
+
+description: |
+  ## What happens today
+
+  `run_land` and `run_push` in `land_main_publish.sh` set
+  `trap land_release_trap EXIT INT TERM`. `land_release_trap` releases the
+  lock if held and returns, so on INT or TERM bash resumes the script after
+  the handler: the land goes on to push and re-point with no lock held. The
+  re-point runs inside a command substitution, so a TERM sent only to the
+  land's own process already waits for it to finish; a TERM sent to the
+  whole process group also kills the re-point mid-way.
+
+  ## What is wanted
+
+  - On INT or TERM: release the lock and exit non-zero, never push after
+    the signal (scenario 01).
+  - During the post-land re-point: finish the re-point, then release and
+    exit, including when the signal goes to the whole process group
+    (scenario 02).
+  - The EXIT path and every existing BL-1366 check behave as today.
+
+  ## How (direction, not mandate)
+
+  - A distinct INT/TERM trap that records the signal; release and exit at
+    once outside the re-point, and after it inside.
+  - Step handler `specs/pipeline/steps/bl1892TerminatedLandStopsSteps.js`,
+    fixture repo with a bare origin under mkdtemp (BL-1390), the same shape
+    as test_bl1366_land_is_one_command.sh. Signal the land itself (exec, the
+    BL-1890 lesson), and the process group for scenario 02.
+
+  ## Scope
+
+  `land_main_publish.sh`'s traps, its shell test, the step handler,
+  evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1892-a-terminated-land-stops-without-its-lock.feature`:
+     2 of 2 ok. Measured 0 at mint: no handler exists.
+  2. `bash swarmforge/scripts/test/test_bl1366_land_is_one_command.sh`:
+     every check PASS (rc 0 at mint).
+  3. BL-1366 and BL-1872 features green.
+
+notes: |
+  Minted 2026-10-02 by the specifier from coder note 002334, the BL-1890
+  stamp-off review's own finding. BL-1872 has landed, so nothing in flight
+  edits this script.
