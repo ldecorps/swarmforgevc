@@ -1,0 +1,72 @@
+id: BL-1894
+title: "Stamp-off for hotfix 6424d253d7: BL-1366 scenario 01 looked for 'the approved commit reached origin/main', which BL-1716 reworded in the e2e on 2026-09-24 to 'the land's published commit reached origin/main'; the handler now reads the new line"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: one step handler literal; no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a one-literal test-side fix; nothing to refactor"
+  architect: "no production code or design surface"
+  hardender: "test-side only; nothing to mutate"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-1366's contract (BL-1251).
+acceptance: specs/features/BL-1366-landing-an-approved-commit-is-one-command.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 6424d253d7 under the human's 2026-10-01 directive.
+  No choice is posed. FIRM: BL-1366's scenario text is unchanged.
+
+invariants: []
+
+source: |
+  Coder note 002337 (2026-10-02 13:29Z), verbatim: "unowned-red BL-1366
+  sc01: approved commit reached origin/main fails on main".
+
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim (Article
+  5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 6424d253d7 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  `bl1366LandingIsOneCommandSteps.js` maps each scenario claim to a line
+  the e2e prints. BL-1716 (ad512073ca, 2026-09-24) reworded the landed
+  line because the land publishes a commit it builds off origin/main, not
+  the approved commit itself; the handler's `landed` literal is now the new
+  line. 9 of 9 at the hotfix.
+
+  ## What is wanted in this parcel
+
+  - Review the change, and check the handler's other literals against the
+    e2e's current output, so the next reword is caught here.
+  - Evidence: the review and one run of the feature.
+
+  ## Scope
+
+  The step handler and evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run: `node specs/pipeline/cli.js
+  specs/features/BL-1366-landing-an-approved-commit-is-one-command.feature`:
+  9 of 9 ok (measured at the hotfix; 8 of 9 before it).
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  6424d253d7. No register row: the hotfix turned it green. Ledger entry
+  linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

@@ -636,3 +636,10 @@
   stamp_ticket: BL-1893
   human_decision: null
   decided_at: null
+- commit: 6424d253d7
+  subject: "Hotfix: BL-1366 scenario 01 reads the e2e's published-commit line as BL-1716 reworded it, so BL-1366's feature is green on main again"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1894
+  human_decision: null
+  decided_at: null
