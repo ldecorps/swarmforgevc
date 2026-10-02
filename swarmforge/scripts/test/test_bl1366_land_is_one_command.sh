@@ -209,7 +209,10 @@ fi
 # ── 5. killed mid-sequence: no lock survives, the next land succeeds ──────
 setup five
 SHA="$(approve_commit)"
-( cd "$root" && LAND_LOCK_WAIT_SECONDS=60 bash "$root/swarmforge/scripts/land_main_publish.sh" "$root" --land "BL-9366-fixture-task" "$SHA" \
+# exec: LAND_PID must be the land itself. Without it the TERM below killed
+# only this subshell, the land ran on orphaned and still held the lock, and
+# the check passed only when the land had already finished inside 2 s.
+( cd "$root" && LAND_LOCK_WAIT_SECONDS=60 exec bash "$root/swarmforge/scripts/land_main_publish.sh" "$root" --land "BL-9366-fixture-task" "$SHA" \
     >"$WORK/five.kill.out" 2>&1 ) &
 LAND_PID=$!
 sleep 2; kill -TERM "$LAND_PID" 2>/dev/null; wait "$LAND_PID" 2>/dev/null
