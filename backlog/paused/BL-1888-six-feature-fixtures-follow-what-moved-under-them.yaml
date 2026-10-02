@@ -1,0 +1,89 @@
+id: BL-1888
+title: "Stamp-off for hotfix 364dabfd66: six features red on main with no register row are green again - BL-739, BL-741, BL-753 and BL-758 stub the pilot landing gate's newer dependencies, BL-633 finds BL-590 wherever it lives and reads the architect rule as it is worded now, and BL-1638's register step holds before and after its land"
+milestone: M8
+type: defect
+severity: high
+# high: standing reds on main are a broken safety signal (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: six step handlers under specs/pipeline/steps/; no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "small test-side fixes; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fixes are test-side"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-739's contract (BL-1251): it is one of
+# the six the hotfix changed, and all six must stay green (procedure).
+acceptance: specs/features/BL-739-bl718-pilot-missed-vacuous-property-generator.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 364dabfd66 under the human's 2026-10-01 directive.
+  No choice is posed. FIRM: no scenario text changed; only six step
+  handlers. The review decides whether that stands.
+
+invariants: []
+
+source: |
+  Specifier, 2026-10-02, running every feature whose handler reads a prompt
+  or article it was editing (BL-1871's interim retirement, 31f86c7567):
+  BL-633 3/5, BL-739 3/5, BL-741 3/5, BL-753 2/5, BL-758 3/6, BL-1638 2/4,
+  the same on HEAD before that commit, with no register row. The human,
+  specifier pane (Claude Code), 2026-10-01, verbatim (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 364dabfd66 landed the fix
+
+  This parcel is its stamp-off: the pipeline's review of what landed.
+  Review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  1. BL-739, BL-741, BL-753, BL-758 (`bl739…`, `bl741…`, `bl753…`,
+     `bl758…Steps.js`): each `baseDeps` predated two gate dependencies,
+     `checkOrphanedAuthoredDocs` and `checkOriginMainLanding`, so
+     `landPilotedTicket` threw "is not a function". Both are now stubbed in
+     bl1221's shapes (a run that touched no authored docs; a landing
+     reachable from origin/main).
+  2. BL-633 (`bl633…Steps.js`): scenario 05 read
+     `backlog/hold/BL-590-onboarding-facilitator-agent.yaml`, which left
+     hold on 2026-07-27 and is in done; the handler now finds it in
+     whichever backlog folder holds it. Scenario 03 checked the architect
+     prompt for "One bounce per property, never one per site." with a
+     period; 13a466571e bolded it with an em-dash, so the check drops the
+     period.
+  3. BL-1638 (`bl1638…Steps.js`): the register step asserted its hardening
+     rows present and owned, and its land retired them (BL-1631), so it
+     went red at the land. It now holds in both states: present and owned
+     while BL-1638 is open, absent (and nothing unowned) once it is done.
+
+  ## What is wanted in this parcel
+
+  - Review the three changes. The scenario text of BL-633 05 still says
+    "in the backlog hold folder"; say in the evidence whether that should
+    be retired and replaced by a successor scenario.
+  - Evidence: the review and one run of each of the six features.
+
+  ## Scope
+
+  The six step handlers and evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), `node
+  specs/pipeline/cli.js` on the features of BL-633 (5/5), BL-739 (5/5),
+  BL-741 (5/5), BL-753 (5/5), BL-758 (6/6) and BL-1638 (4/4), as measured
+  at the hotfix; before it 3/5, 3/5, 3/5, 2/5, 3/6 and 2/4.
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  364dabfd66, the same pass the reds were found. The hotfix turned them
+  green, so no register row was added. Ledger entry linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

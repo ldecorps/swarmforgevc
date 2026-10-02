@@ -601,3 +601,10 @@
   stamp_ticket: BL-1886
   human_decision: null
   decided_at: null
+- commit: 364dabfd66
+  subject: "Hotfix: six features red on main with no register row are green again - BL-739, BL-741, BL-753, BL-758, BL-633 and BL-1638"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1888
+  human_decision: null
+  decided_at: null
