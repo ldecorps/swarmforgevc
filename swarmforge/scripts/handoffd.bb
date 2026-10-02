@@ -49,6 +49,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_ahead_range_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_main_reconcile_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "post_qa_branch_sweep_lib.bb")))
+;; BL-1872: the lander sweep lands what QA queued.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "lander_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_activity_feed_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_drift_lib.bb")))
@@ -5022,6 +5024,28 @@
           {:success true})
       {:success false :error (str/trim (str (or (:err result) "")))})))
 
+;; ── BL-1872: lander sweep ─────────────────────────────────────────────────
+;; One step per cycle (lander_lib.bb tick!): start the oldest queued land when
+;; none is running, or read a finished one's outcome. Its notes go through
+;; swarm_handoff the way this daemon's other notes do (write-scratch-draft! +
+;; swarm-handoff-script as coordinator), so every send gate still arms.
+(defn- lander-send-note! [note]
+  (let [draft (write-scratch-draft! (lander-lib/draft-lines note))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "lander-note" (:message note))
+      (log! "lander-note-error" (:message note) (str (:err result))))))
+
+(defn lander-sweep! []
+  (try
+    (let [decision (lander-lib/tick! (str project-root) {:send-note! lander-send-note!
+                                                         :now-ms (System/currentTimeMillis)})]
+      (when-not (#{:idle :wait} (:action decision))
+        (log! "lander" (name (:action decision)) (str (:id decision)))))
+    (catch Exception e
+      (log! "lander-error" (.getMessage e)))))
+
 (defn post-qa-branch-sweep-sweep! []
   (try
     (git-fetch-origin-main!)
@@ -6045,6 +6069,11 @@
                     ;; clean pipeline role branches after origin/main advances.
                     (run-sweep! "post-qa-branch-sweep"
                         #(post-qa-branch-sweep-sweep!))
+                    ;; BL-1872: lands what QA queued, one at a time, same
+                    ;; cadence; the land itself runs detached, so the sweep
+                    ;; never holds the cycle.
+                    (run-sweep! "lander-sweep"
+                        #(lander-sweep!))
                     ;; GH-24: coordinator activity feed shares the same
                     ;; cadence - no separate timeout, same rationale as
                     ;; every sibling sweep in this block. Config-gated

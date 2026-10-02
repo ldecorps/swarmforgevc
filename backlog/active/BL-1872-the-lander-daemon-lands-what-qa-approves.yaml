@@ -240,3 +240,4 @@ notes: |
   (BL-1887, the routing gap this activation exposed).
 
 assigned_to: coder
+abandoned_commits: [4a15257ae5]

@@ -150,6 +150,31 @@ land_push_ff_only() {
   git -C "$ROOT" push origin "$sha:refs/heads/main" 2>&1
 }
 
+# BL-1872 item 4: rebuild the single-parent land commit `sha` onto the
+# current origin/main without moving any worktree's HEAD. Prints the new
+# commit; returns non-zero (printing nothing) on a conflict. Keeps the
+# author, date and message; the committer is whoever runs the land.
+land_rematch_commit() {
+  local sha="$1" onto tree
+  onto="$(git -C "$ROOT" rev-parse origin/main)" || return 1
+  tree="$(git -C "$ROOT" merge-tree --write-tree --merge-base "$sha^" "$onto" "$sha" 2>/dev/null)" || return 1
+  tree="$(head -n1 <<<"$tree")"
+  GIT_AUTHOR_NAME="$(git -C "$ROOT" log -1 --format=%an "$sha")" \
+  GIT_AUTHOR_EMAIL="$(git -C "$ROOT" log -1 --format=%ae "$sha")" \
+  GIT_AUTHOR_DATE="$(git -C "$ROOT" log -1 --format=%aD "$sha")" \
+    git -C "$ROOT" commit-tree "$tree" -p "$onto" -m "$(git -C "$ROOT" log -1 --format=%B "$sha")"
+}
+
+# BL-1872 item 5: the rematched commit's land-approval record, written by
+# record_land_approval.bb (the land step's own recorder, BL-1405) against
+# the approved source QA cited. Its verdict line and exit are reported, never
+# fatal: an unrecorded rematch degrades to today's behaviour, never a lost land.
+land_record_rematch() {
+  local rematched="$1" source="$2" task="$3" ticket=""
+  ticket="$(grep -oE '^(BL|GH)-[0-9]+' <<<"$task" || true)"
+  bb "$SCRIPT_DIR/record_land_approval.bb" "$ROOT" "$rematched" "$source" ${ticket:+"$ticket"} 2>&1 || true
+}
+
 run_land() {
   local task="$1" commit="$2" issue="$3"
   if [[ -z "$task" || -z "$commit" ]]; then
@@ -208,14 +233,24 @@ run_land() {
     #    too, the land stops and waits for the next attempt.
     echo "LAND_REMATCH: origin moved; rematching onto its current tip once (never twice, never --force)."
     git -C "$ROOT" fetch origin main >/dev/null 2>&1 || true
-    local rematch_rc=0
-    git -C "$ROOT" rebase origin/main "$land_sha" >/dev/null 2>&1 || rematch_rc=$?
-    if (( rematch_rc != 0 )); then
-      git -C "$ROOT" rebase --abort >/dev/null 2>&1 || true
+    # BL-1872 item 4: the rematch is built with no checkout at all. `git
+    # rebase origin/main <sha>` checked the bare commit out first and left
+    # the worktree on a detached HEAD (QA's own, 2026-09-30 and 2026-10-01,
+    # note 003673). The land commit is single-parent (verify-push-safe), so
+    # rematching it is one three-way merge of its own change onto the
+    # current origin tip, written straight to objects.
+    local rematched=""
+    if ! rematched="$(land_rematch_commit "$land_sha")"; then
       echo "LAND_STOPPED: the single permitted rematch conflicted; main is untouched and nothing was force-pushed." >&2
       return 5
     fi
-    land_sha="$(git -C "$ROOT" rev-parse HEAD)"
+    land_sha="$rematched"
+    # BL-1872 item 5: the rematch publishes a commit the land step never
+    # recorded. Record it against the same approved source, through the
+    # same recorder (BL-1405), BEFORE the push: a record naming a commit
+    # main never carries grants nothing, but a published commit with no
+    # record reads as unapproved (the 2026-10-02 dd2950dc24 CRIT).
+    land_record_rematch "$land_sha" "$commit" "$task"
     push_rc=0
     push_out="$(land_push_ff_only "$land_sha")" || push_rc=$?
     printf '%s\n' "$push_out"
