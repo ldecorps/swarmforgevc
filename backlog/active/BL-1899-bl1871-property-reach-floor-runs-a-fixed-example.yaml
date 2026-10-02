@@ -80,3 +80,5 @@ notes: |
   turned it green. Ledger entry linked here.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Holder told the same pass: QA, BL-1876 at 7b078d90b0.
+
+assigned_to: coder
