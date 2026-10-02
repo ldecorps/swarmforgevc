@@ -1,0 +1,128 @@
+id: BL-1897
+title: "With TMPDIR inside a git checkout, config.test.js's target-bootstrap fixtures commit into that checkout: QA's BL-1867 unit run under ./tmp/BL-1867-tmpdir made 16 commits on its live branch and BL-1834's land put 29 fixture files under tmp/ on main; a fixture dir is now never part of the checkout that holds it, and tmp/ is removed from the repository"
+milestone: M8
+type: defect
+severity: high
+# high: a test fixture mutated a live role branch and the land carried it
+# to main - the BL-1390 guardrail ("a test fixture never mutates the live
+# repository") broken in the live lane. It recurs whenever a role follows the
+# ./tmp workflow rule while overriding TMPDIR.
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: the shared test helper and a repository cleanup; no production code
+# unless the coder chooses the product route (notes).
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a test-helper fix and a path removal; nothing to refactor"
+  architect: "the product's bootstrap behaviour is unchanged; the fix is in how tests allocate fixture dirs"
+  hardender: "test-side only; nothing in extension/src changes, so there is nothing to mutate"
+  documenter: "no documented behaviour changes"
+
+acceptance: specs/features/BL-1897-a-unit-fixture-never-commits-into-the-checkout-holding-its-tmpdir.feature
+
+# Handler pin only (BL-233, BL-1371). Scenario 01 runs the real
+# config.test.js, so the proof is behavioural; no consumer anchor.
+required_wiring:
+  - 'specs/pipeline/steps/bl1897UnitFixtureNeverCommitsIntoItsCheckoutSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Found by the specifier reading BL-1836's queued land. No choice is posed.
+  FIRM: the bootstrap product code keeps committing into the repository its
+  target sits in; the tests stop putting their fixture dirs inside one.
+
+invariants:
+  - "No unit or property test run commits into, or moves the HEAD of, the git checkout that contains its TMPDIR."
+
+source: |
+  Specifier, 2026-10-02 15:50, checking BL-1836's queued land at
+  6e7fe3d4cb (QA note 003708): the line carries 16 untagged commits made
+  in QA's worktree between 10:50 and 10:52 ("Initialize SwarmForge target
+  prompts" x10, "Propose SwarmForge onboarding contract" x5, "Revise
+  contract"), each adding a tmp/BL-1867-tmpdir/sfvc-bootstrap-*/ dir.
+  BL-1867's qa_e2e_procedure step 2 asked for `npm test` "with TMPDIR set
+  to a fresh dir", and QA used ./tmp/BL-1867-tmpdir in its worktree, as the
+  workflow rule says. All 29 files are on origin/main through BL-1834's
+  tip-pure replay 7faaee00db.
+  Reproduced: a `git init` checkout under the scratchpad with TMPDIR at
+  <checkout>/tmp/x; `npx vitest run test/config.test.js` exited 1 with 6
+  failed tests and added 9 commits. The other file that reaches the
+  committer, provisionOnboardingTelegramChannelCli.test.js, passed 25 of 25
+  and added none.
+
+description: |
+  ## What is wrong
+
+  `targetBootstrap.ts`'s `isGitRepository` asks `git rev-parse
+  --is-inside-work-tree`, which is true in any subdirectory of a work tree.
+  config.test.js allocates its "non-git directory" fixtures with
+  `mkTmpDir('sfvc-bootstrap-')` (25 call sites), under `os.tmpdir()`. When
+  TMPDIR is inside a checkout, those fixtures are inside that checkout's
+  work tree, so `initializeTargetRepo`, `initializeTargetContract` and
+  `updateTargetContract` commit their files into the live branch. The tests
+  then fail (they expect `committed: false`), but the commits are already
+  made.
+
+  ## What is wanted
+
+  - A unit or property run with TMPDIR inside a git checkout leaves that
+    checkout untouched and passes. Direction, not mandate: the shared helper
+    `extension/test/helpers/tmpDir.js`, which every allocator runs through
+    (mkTmpDir, mkSharedTmpDir and the process-lifetime sibling), could stop
+    git discovery at `os.tmpdir()` (`GIT_CEILING_DIRECTORIES`) for the test
+    process. That covers every fixture at once and leaves a fixture that
+    runs `git init` itself unaffected.
+  - Remove `tmp/BL-1867-tmpdir/` from the repository in the parcel, so
+    nothing is tracked under `tmp/` (root `.gitignore` already ignores
+    `/tmp/`).
+  - A step handler for the feature,
+    `bl1897UnitFixtureNeverCommitsIntoItsCheckoutSteps`, registered in the
+    same parcel. Scenario 01's checkout is a `git init` under mkdtemp,
+    proven by `rev-parse --git-common-dir` before the run (BL-1390).
+
+  ## Scope
+
+  The test helper (or the narrowest test-side place that covers both
+  allocator kinds), the tmp/ removal, the step handler, evidence. If the
+  coder finds the fix needs extension/src, send a note first: that adds
+  the hardender (TypeScript, Article 4.1).
+
+  ## Out of scope
+
+  The product's behaviour when a real target sits inside another
+  repository. The 16 leak commits on the role branches: they are not
+  rewritten (notes).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. ONE run: `node specs/pipeline/cli.js specs/features/BL-1897-a-unit-fixture-never-commits-into-the-checkout-holding-its-tmpdir.feature`:
+     2 of 2 ok. Measured at mint on main: scenario 01's run of
+     config.test.js exits 1 with 6 failed tests and adds 9 commits to the
+     scratch checkout (about 9 s); 29 tracked paths are under tmp/.
+  2. From `extension/`, `npm test` once with TMPDIR set to a directory
+     inside a scratch `git init` checkout made for this step (not your
+     worktree): the lane result equals main's, and the checkout's
+     `git rev-list --count HEAD` is unchanged.
+  3. After the land: `git ls-tree -r --name-only origin/main -- tmp` prints
+     nothing.
+
+notes: |
+  Minted 2026-10-02 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Not hotfixed: there is no red on main to turn green. Under the default
+  TMPDIR every lane passes, and the fix is a test-helper change with a
+  feature and handler. [coder, qa] per the 2026-10-01 routing rule (test
+  side only).
+  Re-add risk: the 16 leak commits (42ca466751..ee1384908e) ride the QA,
+  coder, documenter and hardender lines, untagged. A line that took them
+  but has not merged main since BL-1834's land (7faaee00db, 12:38) can
+  carry the files back after this ticket removes them. Scenario 02 goes
+  red on main if that happens, and the red is hotfixed by removing the
+  files again.
+  The trigger was the specifier's own BL-1867 procedure wording ("TMPDIR
+  set to a fresh dir") meeting the ./tmp workflow rule. Until this lands,
+  a TMPDIR override for a lane run uses a dir outside every git checkout.
