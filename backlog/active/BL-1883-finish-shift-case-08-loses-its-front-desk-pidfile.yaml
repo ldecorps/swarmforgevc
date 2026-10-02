@@ -108,3 +108,5 @@ notes: |
   the wrong call: the fix was one sitting once the trace was read. The
   register row was retired in the hotfix commit. BL-1884 makes this
   fallback a declared, gated choice.
+
+assigned_to: coder
