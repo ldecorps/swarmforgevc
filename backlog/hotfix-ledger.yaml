@@ -499,7 +499,7 @@
 - commit: a2173a96ea
   subject: "Hotfix: a land cited on a tip already identical to origin/main answers that nothing is left to replay, so BL-1343 scenario 05 is green again"
   detected_at: 2026-10-01
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1868
   human_decision: null
   decided_at: null
