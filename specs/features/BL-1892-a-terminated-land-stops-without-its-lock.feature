@@ -26,3 +26,4 @@ Feature: BL-1892 A land told to stop releases its lock and stops, but never mid 
     When the land is sent TERM
     Then the re-point completes and the branch is not left half-moved
     And the land lock is released
+    And the land exits non-zero

@@ -105,6 +105,81 @@ land_release_trap() {
   fi
 }
 
+# BL-1892: INT/TERM is not EXIT. land_release_trap only releases and
+# returns, so as the INT/TERM handler it let a signalled land run on and push
+# or re-point with no lock held. A signal now releases and exits 143 at once -
+# except during the post-land re-point, where it is recorded and honoured the
+# moment the re-point returns (a kill mid re-point leaves a branch
+# half-moved, operator note 2026-10-01). The re-point runs in a process
+# group of its own, so a signal to the land's whole group cannot cut it
+# either: an inherited "ignore" is not enough, because bb (a native-image
+# JVM) installs its own SIGTERM handler. perl's setpgrp, not setsid(1),
+# which macOS does not ship.
+LAND_IN_REPOINT=0
+LAND_STOP_REQUESTED=0
+# Every descendant of pid, parents before children (pgrep -P is on macOS and
+# Linux alike).
+land_descendants() {
+  local child
+  for child in $(pgrep -P "$1" 2>/dev/null); do
+    echo "$child"
+    land_descendants "$child"
+  done
+}
+
+# BL-1892 QA bounce D1 (seed -12637621): a trapped TERM that arrives while
+# bash reads a command substitution runs the trap AT ONCE, and the
+# substitution's subshell (the push, say) runs on without the land - it
+# pushed ~570 ms after the lock was released. So the stop ends the land's
+# own process tree first, parents first so nothing it starts survives, and
+# only then releases the lock. Re-swept until empty, bounded.
+land_stop_children() {
+  local round pids
+  for round in 1 2 3 4 5; do
+    pids="$(land_descendants "$$")"
+    [[ -z "$pids" ]] && return 0
+    kill -TERM $pids 2>/dev/null || true
+    sleep 0.1
+  done
+  pids="$(land_descendants "$$")"
+  [[ -n "$pids" ]] && kill -KILL $pids 2>/dev/null || true
+}
+
+land_signal_trap() {
+  if [[ "$LAND_IN_REPOINT" == "1" ]]; then
+    LAND_STOP_REQUESTED=1
+    return
+  fi
+  land_stop_children
+  land_release_trap
+  echo "LAND_STOPPED: signalled; the lock is released and nothing further runs." >&2
+  exit 143
+}
+
+land_install_traps() {
+  trap land_release_trap EXIT
+  trap land_signal_trap INT TERM
+}
+
+# The post-land re-point, shielded from INT/TERM (see land_signal_trap).
+# Prints the re-point's own output; a stop requested meanwhile is honoured
+# right after it returns.
+land_repoint() {
+  local out
+  LAND_IN_REPOINT=1
+  # Two shields: the command-substitution subshell (which stays in the
+  # land's group, since traps are set) ignores INT/TERM so it keeps waiting,
+  # and the re-point itself runs in its own process group.
+  out="$(trap '' INT TERM; perl -e 'setpgrp(0, 0); exec @ARGV or die "exec: $!"' bb "$SCRIPT_DIR/land_step_cli.bb" repoint "$ROOT" "$@" 2>&1)" || true
+  LAND_IN_REPOINT=0
+  printf '%s\n' "$out"
+  if [[ "$LAND_STOP_REQUESTED" == "1" ]]; then
+    land_release_trap
+    echo "LAND_STOPPED: signalled during the re-point; it finished first, the lock is released." >&2
+    exit 143
+  fi
+}
+
 land_acquire_with_deadline() {
   # Bounded, never an unbounded spin (the repo-wide guardrail for lock loops).
   local deadline=$(( $(date +%s) + ${LAND_LOCK_WAIT_SECONDS:-120} ))
@@ -134,6 +209,23 @@ land_acquire_with_deadline() {
 land_verify_push_safe() {
   local sha="$1"
   bb "$SCRIPT_DIR/land_step_cli.bb" verify-push "$sha" "$ROOT" 2>&1
+}
+
+# BL-1892 QA bounce (delayMs 600): bash runs a trap only once a foreground
+# command substitution returns, so a TERM during push_out="$(...)" waited
+# for the verify AND the push to finish - the push started ~436 ms after
+# the signal. A background job plus `wait` is interrupted by a trapped
+# signal at once, so land_signal_trap's land_stop_children ends the push
+# subshell before it reaches git push. Output lands in LAND_PUSH_OUT.
+LAND_PUSH_OUT=""
+land_push_interruptible() {
+  local out_file rc=0
+  out_file="$(mktemp)"
+  land_push_ff_only "$1" >"$out_file" &
+  wait $! || rc=$?
+  LAND_PUSH_OUT="$(cat "$out_file")"
+  rm -f "$out_file"
+  return "$rc"
 }
 
 # Never --force, and never a retry loop around a rejected push: at most ONE
@@ -182,7 +274,7 @@ run_land() {
     return 2
   fi
 
-  trap land_release_trap EXIT INT TERM
+  land_install_traps
 
   # 1. The entanglement verdict FIRST, before the lock: an escalation must not
   #    even take the lock, let alone push (invariant 3). This is QA's judgement
@@ -215,7 +307,8 @@ run_land() {
 
   # 3. Push FF-only. A rejection means origin moved under us.
   local push_out push_rc=0
-  push_out="$(land_push_ff_only "$land_sha")" || push_rc=$?
+  land_push_interruptible "$land_sha" || push_rc=$?
+  push_out="$LAND_PUSH_OUT"
   printf '%s\n' "$push_out"
 
   # BL-1678 item 3: a REFUSAL (land_push_ff_only's own sentinel, exit 9) is
@@ -252,7 +345,8 @@ run_land() {
     # record reads as unapproved (the 2026-10-02 dd2950dc24 CRIT).
     land_record_rematch "$land_sha" "$commit" "$task"
     push_rc=0
-    push_out="$(land_push_ff_only "$land_sha")" || push_rc=$?
+    land_push_interruptible "$land_sha" || push_rc=$?
+    push_out="$LAND_PUSH_OUT"
     printf '%s\n' "$push_out"
     if (( push_rc != 0 )); then
       echo "LAND_STOPPED: the push was rejected again after the one permitted rematch; not rematching twice and not forcing. Re-run once the lock is free." >&2
@@ -275,8 +369,7 @@ run_land() {
   # its own on top of (invariant 3). BL-1467: `$task` names the ticket
   # this land just published, so the re-point drops that ticket's own
   # bookkeeping as redundant instead of re-applying it a second time.
-  repoint_out="$(bb "$SCRIPT_DIR/land_step_cli.bb" repoint "$ROOT" "$task" 2>&1)" || true
-  printf '%s\n' "$repoint_out"
+  land_repoint "$task"
 
   # 5. A GH-seeded ticket closes its issue; anything else attempts no issue
   #    call at all.
@@ -305,10 +398,11 @@ run_push() {
     echo "usage: land_main_publish.sh <project-root> --push <commit>" >&2
     return 2
   fi
-  trap land_release_trap EXIT INT TERM
+  land_install_traps
   land_acquire_with_deadline || return 4
   local push_out push_rc=0
-  push_out="$(land_push_ff_only "$commit")" || push_rc=$?
+  land_push_interruptible "$commit" || push_rc=$?
+  push_out="$LAND_PUSH_OUT"
   printf '%s\n' "$push_out"
   if (( push_rc == 9 )); then
     echo "LAND_STOPPED: the publish step refused to push $commit; main is untouched and nothing was pushed." >&2
@@ -329,13 +423,11 @@ run_push() {
   # landed-task so that ticket's own bookkeeping drops as redundant.
   local landed_task=""
   landed_task="$(git -C "$ROOT" log -1 --format=%s "$commit" 2>/dev/null || true)"
-  local repoint_out=""
   if [[ -n "$landed_task" ]]; then
-    repoint_out="$(bb "$SCRIPT_DIR/land_step_cli.bb" repoint "$ROOT" "$landed_task" 2>&1)" || true
+    land_repoint "$landed_task"
   else
-    repoint_out="$(bb "$SCRIPT_DIR/land_step_cli.bb" repoint "$ROOT" 2>&1)" || true
+    land_repoint
   fi
-  printf '%s\n' "$repoint_out"
   return 0
 }
 

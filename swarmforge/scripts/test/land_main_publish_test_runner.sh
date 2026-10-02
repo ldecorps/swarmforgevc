@@ -274,13 +274,56 @@ pass "08 detector present but crashes when run → fails OPEN, ordinary decision
 # pre-receive hook rejects only the FIRST push); until that fixture
 # exists, pin the ordering statically.
 REC_LINE09="$(grep -n 'land_record_rematch "\$land_sha" "\$commit" "\$task"' "$CLI" | head -1 | cut -d: -f1)"
-PUSH_LINES09="$(grep -n 'push_out="\$(land_push_ff_only "\$land_sha")"' "$CLI" | cut -d: -f1)"
+PUSH_LINES09="$(grep -n 'land_push_interruptible "\$land_sha" || push_rc=\$?' "$CLI" | cut -d: -f1)"
 PUSH_FIRST09="$(echo "$PUSH_LINES09" | sed -n '1p')"
 PUSH_SECOND09="$(echo "$PUSH_LINES09" | sed -n '2p')"
 [[ -n "$REC_LINE09" ]] || fail "09: land_record_rematch call not found"
-[[ -n "$PUSH_FIRST09" && -n "$PUSH_SECOND09" ]] || fail "09: expected two land_push_ff_only \"\$land_sha\" calls (the original push and the rematch's push)"
+[[ -n "$PUSH_FIRST09" && -n "$PUSH_SECOND09" ]] || fail "09: expected two land_push_interruptible \"\$land_sha\" calls (the original push and the rematch's push) - BL-1892 renamed the call site this pins (land_push_ff_only -> land_push_interruptible); update this grep if it moves again"
 (( REC_LINE09 > PUSH_FIRST09 )) || fail "09: the record call must sit in the rematch branch, after the ORIGINAL push already failed"
 (( REC_LINE09 < PUSH_SECOND09 )) || fail "09: BL-1872 item 5 - land_record_rematch must run BEFORE the rematch's own push (got record at line $REC_LINE09, rematch push at line $PUSH_SECOND09)"
 pass "09 the rematch's approval record is written before its own push (BL-1872 item 5)"
+
+# ── 10: BL-1892 QA bounce D1. land_stop_children kills every descendant,
+# parents and grandchildren alike, before land_signal_trap releases the
+# lock. (The acceptance feature and the property test both exercise this
+# only through full land timing, which is inherently racy: a repeated run
+# of the property test with the fix hand-reverted caught the regression
+# in just 1 of 4 runs - a flaky gate for the exact bug this ticket closes.
+# This case pins the kill behaviour deterministically, with no timing
+# dependency at all.) Extracted by function-name boundary (never a
+# hardcoded line range, which would silently stop testing the real
+# function the day someone moves it) and sourced in THIS shell so the
+# spawned sleeps are its own children/grandchildren - land_stop_children
+# walks $$ itself.
+FUNCS10="$(mktemp)"
+sed -n '/^land_descendants() {/,/^}/p; /^land_stop_children() {/,/^}/p' "$CLI" > "$FUNCS10"
+[[ -s "$FUNCS10" ]] || fail "10: land_descendants/land_stop_children not found in $CLI"
+# shellcheck source=/dev/null
+source "$FUNCS10"
+rm -f "$FUNCS10"
+sleep 30 &
+CHILD10=$!
+bash -c 'sleep 30 & wait' &
+GRANDPARENT10=$!
+sleep 0.3
+DESC10="$(land_descendants $$)"
+grep -qx "$CHILD10" <<<"$DESC10" || fail "10: land_descendants missed its own direct child $CHILD10: $DESC10"
+grep -qx "$GRANDPARENT10" <<<"$DESC10" || fail "10: land_descendants missed its own child $GRANDPARENT10: $DESC10"
+[[ "$(wc -l <<<"$DESC10")" -ge 3 ]] || fail "10: land_descendants should also find the grandchild sleep under $GRANDPARENT10: $DESC10"
+pass "10a land_descendants walks parents AND grandchildren"
+land_stop_children
+sleep 0.2
+kill -0 "$CHILD10" 2>/dev/null && fail "10: land_stop_children left the direct child $CHILD10 running"
+kill -0 "$GRANDPARENT10" 2>/dev/null && fail "10: land_stop_children left $GRANDPARENT10 running"
+# Not a fresh land_descendants sample here: land_descendants is itself
+# invoked through a command substitution subshell, which is a child of
+# $$ for as long as it runs, so a fresh sample always reports at least
+# its OWN momentary subshell pid - a self-reference artifact, not a
+# leaked process. Checking DESC10's own pids (captured before the stop)
+# stay dead is the real assertion; re-sampling fresh would always "fail".
+for p in $DESC10; do
+  kill -0 "$p" 2>/dev/null && fail "10: land_stop_children left descendant $p running (from: $DESC10)"
+done
+pass "10b land_stop_children kills every descendant, parents and grandchildren alike"
 
 echo "ALL PASS: land_main_publish.sh"
