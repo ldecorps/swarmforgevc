@@ -55,6 +55,11 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-364dabfd66e47e1a38f15baba7c8f418606a6048
+  waived_by: coordinator
+  reason: "Standing-directive hotfix (amendment aa6dacc938): red-first, stamp-off second. Ledger entry records stamp_ticket BL-1888 (paused, high-severity, ready for promotion) - that mint is the close-out per the 2026-10-01 directive."
+  waived_at: 2026-10-02
+
 - key: pipeline-code-on-main-386af7de24d3f3a714c915d55325538935bcd648
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
