@@ -14,6 +14,10 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
+  # BL-1517: operator_runtime.bb refuses a project-root that is not a git
+  # checkout; init_git_fixture_root (operator_runtime_sandbox.sh) inits and
+  # proves it (BL-1390).
+  init_git_fixture_root "$d" || exit 1
   mkdir -p "$d/swarmforge/scripts" "$d/extension/out/tools" "$d/.swarmforge/operator"
   cp "$SRC/stop_bridge_headless.sh" "$SRC/recover_miniapp_bridge.sh" \
      "$SRC/rearm_front_desk_bridge.sh" "$d/swarmforge/scripts/"
@@ -57,7 +61,14 @@ class Handler(BaseHTTPRequestHandler):
 HTTPServer(('127.0.0.1', port), Handler).serve_forever()
 PY
   HTTP_PID=$!
-  sleep 0.05
+  # A fixed 0.05 s was shorter than python3's own start-up on a loaded host,
+  # so check 04's curl met a closed port and, under set -e, exited 7 with
+  # every check green. Wait (bounded) until the port accepts a connection.
+  local i
+  for i in $(seq 1 100); do
+    (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && return 0
+    sleep 0.1
+  done
 }
 
 jget() { bb -e "(require '[cheshire.core :as j]) (println (get (j/parse-string (slurp \"$1\") true) $2))"; }
@@ -126,7 +137,7 @@ rm -rf "$F"
 F="$(make_fixture)"
 TEST_PORT="$(pick_free_port)"
 start_http_server "$TEST_PORT"
-status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:${TEST_PORT}/resident-spy")"
+status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:${TEST_PORT}/resident-spy" || true)"
 check "bl-1159-04: resident-spy route returns 200 on bridge port" '[[ "$status" == "200" ]]'
 kill "$HTTP_PID" 2>/dev/null || true
 wait "$HTTP_PID" 2>/dev/null || true

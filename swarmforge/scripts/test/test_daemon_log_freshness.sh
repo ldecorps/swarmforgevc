@@ -58,6 +58,23 @@ make_root() {
   printf '%s' "$d"
 }
 
+# BL-796's scenarios need a system PATH with no node on it. This host's
+# /usr/bin carries a distro node (nodejs, installed 2026-06-06), which the
+# shared resolver finds before ever reaching nvm, so the literal
+# /usr/bin:/bin that the scenarios were written with on the macOS host no
+# longer means "nvm-only". This builds the same directory minus node.
+make_nodeless_sysbin() {
+  local d f
+  d="$(mktemp -d)"
+  register_tmp_dir "$d"
+  for f in /usr/bin/* /bin/*; do
+    case "${f##*/}" in node|nodejs) continue ;; esac
+    [ -e "$d/${f##*/}" ] || ln -s "$f" "$d/${f##*/}" 2>/dev/null || true
+  done
+  printf '%s' "$d"
+}
+NODELESS_SYSBIN="$(make_nodeless_sysbin)"
+
 # BL-1012: the contention seams are PINNED here, not left to the host. The
 # effective threshold is now load-relative, so an unpinned run would compute
 # a different threshold on a busy box than on a quiet one and every assertion
@@ -537,7 +554,7 @@ sleep 120 &
 FAKE_PID=$!
 echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
 RESOLVED_NODE_LOG="$ROOT/resolved-node.log"
-PATH=/usr/bin:/bin \
+PATH="$NODELESS_SYSBIN" \
 HOME="$FAKE_HOME" \
 FRESHNESS_ROOT="$ROOT" \
 FRESHNESS_CONF="$CONF" \
@@ -576,7 +593,7 @@ esac
 sleep 3
 FAKEBB
 chmod +x "$FAKE_BB_DIR/bb"
-PATH="$FAKE_BB_DIR:/usr/bin:/bin" \
+PATH="$FAKE_BB_DIR:$NODELESS_SYSBIN" \
 HOME="$FAKE_HOME" \
 HANDOFFD_BB="$ROOT/fake-handoffd.bb" \
 HANDOFFD_SUPERVISOR_BB="$ROOT/fake-handoffd-supervisor.bb" \
@@ -607,7 +624,7 @@ fi
 cat > "$store"
 EOF
 chmod +x "$NVM_CRON/crontab"
-PATH="$NVM_CRON:/usr/bin:/bin" HOME="$FAKE_HOME" CRONTAB_STORE="$NVM_STORE" bash "$INSTALLER" "$ROOT" >/dev/null
+PATH="$NVM_CRON:$NODELESS_SYSBIN" HOME="$FAKE_HOME" CRONTAB_STORE="$NVM_STORE" bash "$INSTALLER" "$ROOT" >/dev/null
 check "BL-796-03: crontab PATH bakes the resolved nvm node bin directory" \
   "grep -qF \"$FAKE_HOME/.nvm/versions/node\" \"\$NVM_STORE\""
 pass "BL-796-03: the installed crontab line bakes a node directory when node is nvm-only"
@@ -719,6 +736,12 @@ printf '%s\n' "\$*" >> "$CURL_LOG"
 exit 0
 EOF
 chmod +x "$ROOT/bin/curl"
+# The checker prepends the directory it resolves node from; on a host with
+# /usr/bin/node that is /usr/bin, whose real curl then shadows the stub
+# above and sends a real request. A stub node here makes this directory the
+# node directory, so the stub curl stays first.
+printf '#!/bin/sh\nexit 0\n' > "$ROOT/bin/node"
+chmod +x "$ROOT/bin/node"
 ERRF="$ROOT/checker.err"
 PATH="$ROOT/bin:$PATH" \
 HOME="$FLEET_HOME" SWARMFORGE_FLEET_HOME="$FLEET_HOME" \

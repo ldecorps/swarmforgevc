@@ -25,9 +25,13 @@ make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
   mkdir -p "$d/swarmforge/scripts" "$d/extension/out/tools" "$d/.swarmforge/operator"
+  # The supervisor's whole load-file closure: it also loads
+  # daemon_log_freshness_pulse_lib.bb, and process_table_lib.bb loads
+  # daemon_cycle_guard_lib.bb. Without them the real supervisor died at load
+  # in section 4 and never claimed its pid file.
   cp "$SRC/launch_onboarder.sh" "$SRC/onboarder_supervisor.bb" \
      "$SRC/front_desk_supervisor_lib.bb" "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" \
-     "$SRC/process_table_lib.bb" \
+     "$SRC/process_table_lib.bb" "$SRC/daemon_cycle_guard_lib.bb" "$SRC/daemon_log_freshness_pulse_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '' > "$d/extension/out/tools/onboarder-reconcile.js"
   printf '%s' "$d"

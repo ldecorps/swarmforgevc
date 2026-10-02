@@ -24,49 +24,6 @@ trap cleanup_live_pids EXIT
 jget() { bb -e "(require '[cheshire.core :as j]) (println (get (j/parse-string (slurp \"$1\") true) $2))"; }
 jget_in() { bb -e "(require '[cheshire.core :as j]) (println (get-in (j/parse-string (slurp \"$1\") true) $2))"; }
 
-# BL-1728: fails (prints to stderr, returns 1) unless DIR is itself a git
-# checkout whose --git-common-dir resolves under DIR - never a live
-# enclosing repository (engineering Guardrails, BL-1390). Never mutates
-# anything; safe to call against an unproven directory.
-#
-# --path-format=absolute (git >= 2.31): a plain --git-common-dir prints a
-# path RELATIVE to DIR when DIR is itself the repository root (".git"), and
-# a "../../.git"-shaped climb when DIR is an unproven subdirectory of an
-# enclosing repo - a bare string-prefix check on that climb still reads as
-# "starts with DIR/", which is exactly the false pass this proof exists to
-# prevent. --path-format=absolute sidesteps it: always a real path.
-prove_git_fixture_root() {
-  local d="${1:?prove_git_fixture_root: fixture root required}"
-  local common_dir d_abs
-  common_dir="$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || {
-    echo "FIXTURE PROOF FAILED: git -C $d rev-parse --git-common-dir failed - not a git checkout" >&2
-    return 1
-  }
-  d_abs="$(cd "$d" 2>/dev/null && pwd -P)" || {
-    echo "FIXTURE PROOF FAILED: cannot resolve $d" >&2
-    return 1
-  }
-  case "$common_dir" in
-    "$d_abs"/*|"$d_abs") return 0 ;;
-    *)
-      echo "FIXTURE PROOF FAILED: git-common-dir $common_dir for $d resolves outside it - this is a subdirectory of a live enclosing checkout, not its own" >&2
-      return 1
-      ;;
-  esac
-}
-
-# BL-1728: `git init`s DIR as its own checkout (a fresh branch, throwaway
-# identity, no gpg signing) and proves it before returning. DIR must
-# already exist.
-init_git_fixture_root() {
-  local d="${1:?init_git_fixture_root: fixture root required}"
-  git -C "$d" init -q -b main
-  git -C "$d" config user.email "watchdog-fixture@example.com"
-  git -C "$d" config user.name "watchdog fixture"
-  git -C "$d" config commit.gpgsign false
-  prove_git_fixture_root "$d"
-}
-
 make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"

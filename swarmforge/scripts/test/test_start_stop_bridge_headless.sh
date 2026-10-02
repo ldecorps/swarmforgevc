@@ -29,9 +29,13 @@ make_fixture() {
 START_IN() { echo "$1/swarmforge/scripts/start_bridge_headless.sh"; }
 STOP_IN() { echo "$1/swarmforge/scripts/stop_bridge_headless.sh"; }
 PID_FILE_IN() { echo "$1/.swarmforge/operator/bridge-headless-supervisor.pid"; }
+# BRIDGE_EXTENSION_HOST_ROOT: since 9a3063a071 (2026-09-26) a root with no
+# compiled entrypoint falls back to that host checkout's, which defaults to
+# this machine's live repo - so "missing compiled entrypoint fails loudly"
+# found the live build and passed nothing. The fixture is its own host root.
 START() {
   local root="$1"; shift
-  env CURSOR_RIPGREP_PATH="$root/fake-rg" bash "$(START_IN "$root")" "$root" "$@"
+  env CURSOR_RIPGREP_PATH="$root/fake-rg" BRIDGE_EXTENSION_HOST_ROOT="$root" bash "$(START_IN "$root")" "$root" "$@"
 }
 
 F="$(make_fixture)"
