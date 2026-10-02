@@ -70,6 +70,14 @@ description: |
   - A git_handoff at a commit not on origin/main is taken up as today
     (scenario 02).
   - It applies to every role that takes up parcels, not only the coder.
+  - A Work note for a ticket the coder already sent on from its line
+    leaves the line in place (scenario 04). Coder note 002330 (10:20Z):
+    the coordinator dispatched BL-1872 twice, as git_handoff 014966 and
+    Work note 014965; the coder took up the first (staying on BL-1877's
+    line, the gap above), sent BL-1872 from there, and the stale Work note
+    then moved it off that line - the `:start` path saw a line carrying
+    another ticket's commits as not BL-1872's own. With the take-up fixed
+    the line is BL-1872's own and stays; scenario 04 pins it.
 
   ## How (direction, not mandate)
 
@@ -87,7 +95,7 @@ description: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1887-a-git-handoff-at-a-main-commit-starts-a-fresh-line.feature`:
-     3 of 3 ok. Measured 0 at mint: no handler exists.
+     4 of 4 ok. Measured 0 at mint: no handler exists.
   2. `node specs/pipeline/cli.js specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`:
      every scenario still ok; `parcel_line_lib_test_runner.bb` ALL PASS.
   After the land (the specifier's or coordinator's check): the next
@@ -99,3 +107,7 @@ notes: |
   ticketed rather than hotfixed. The coder's current BL-1872 parcel sits on
   BL-1877's line; the coder knows (it raised this).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  2026-10-02 (specifier, coder note 002330): scenario 04 added while the
+  coder holds the parcel (it raised both gaps). Also worth a line in the
+  evidence: the coordinator routed BL-1872 both as a git_handoff and a
+  Work note; one dispatch per ticket would have avoided gap 2 entirely.

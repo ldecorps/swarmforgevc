@@ -31,3 +31,10 @@ Feature: BL-1887 A git_handoff at a commit already on origin/main starts the tic
     Given the coder's line carries BL-9002's unlanded commit on top of origin/main
     When the coder takes up a git_handoff for BL-9002 at a commit already on origin/main
     Then the coder's branch is unchanged
+
+  # BL-1887 a-stale-work-note-after-the-send-stays-04
+  Scenario: a Work note that arrives after the coder already sent the ticket on leaves the line in place
+    Given the coder's line carries BL-9002's unlanded commit on top of origin/main
+    And the coder has already sent BL-9002 on at that commit
+    When the coder takes up a Work note for BL-9002
+    Then the coder's branch is unchanged
