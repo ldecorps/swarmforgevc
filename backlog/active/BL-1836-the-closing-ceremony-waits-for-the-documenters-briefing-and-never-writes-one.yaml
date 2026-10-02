@@ -201,5 +201,12 @@ notes: |
   file stamp off instead". Both register rows retired in that commit.
   The ledger entry is linked here, and item 5 is now the review of it
   plus the shape move that goes with item 2.
+  2026-10-02 (specifier, coder note 002322): test_bl1640_sleep_runs_ceremony_to_done.sh
+  stays in retires: but is kept, not deleted. BL-1640's own step handler
+  runs it, and item 5 keeps the fixture and moves its sent_today shape.
+  The coder kept it and moved the shape, which is right. The entry stays
+  because retires: is the task-scope gate's exemption for editing another
+  ticket's file (task_scope_gate_lib.bb), and nothing reads it as a
+  deletion.
 
 assigned_to: coder
