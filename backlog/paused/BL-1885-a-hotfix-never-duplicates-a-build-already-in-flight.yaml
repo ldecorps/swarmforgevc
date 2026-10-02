@@ -23,7 +23,7 @@ required_wiring:
   - 'swarmforge/git-hooks/commit-msg::check_hotfix_duplicate_build.sh::the commit-msg hook must run the new guard'
   - 'specs/pipeline/steps/bl1885HotfixNeverDuplicatesABuildSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your question 2026-10-02: "How do we ensure you won't make the mistake
   again? Can we maje this deterministic gate fornypu?" - gate 2 of 2. FIRM:
