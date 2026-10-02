@@ -1,0 +1,106 @@
+id: BL-1881
+title: "The hotfix ledger's sweep reads any message line starting with Hotfix-Certification: as a trailer, so a wrapped prose sentence in aa6dacc938 (a specifier prompt commit) became an uncertified hotfix with no stamp ticket; a trailer's value is now one word, and the false entry leaves the ledger"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real but contained fault - one false ledger entry and a
+# coordinator nudge to mint a stamp for a commit that is not a hotfix. No
+# real hotfix is missed and no gate is wrong.
+status: todo
+epic: swarm-reliability
+priority: 20
+depends_on: []
+mutation_cost: low
+# low: one Babashka predicate and its tests; no Stryker lane for bb
+# (BL-472), so the hardener hand-mutates it.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a one-predicate fix; nothing to refactor"
+  architect: "the predicate's contract is fixed by the scenarios; no boundary moves"
+  documenter: "BL-848's how-to describes the trailer as Hotfix-Certification: pending, which stays true"
+
+acceptance: specs/features/BL-1881-a-prose-line-is-not-a-hotfix-trailer.feature
+
+# Handler pin only (BL-233, BL-1371). No consumer anchor: operator_runtime.bb
+# already calls hotfix-declared? (line 1654), so an anchor there matches
+# before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1881ProseLineIsNotAHotfixTrailerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  FIRM - a trailer's value is one word ("pending" in all 69 real entries);
+  a Hotfix-Certification line with more text after the value is prose and
+  declares nothing. FIRM - the parcel removes the aa6dacc938 entry from
+  backlog/hotfix-ledger.yaml, because that commit never declared a hotfix.
+  No choice is posed; medium severity, so it waits for your approval.
+
+invariants:
+  - "Every commit the ledger holds today as a declared hotfix (the 69 whose trailer value is pending) is still declared after the fix."
+
+source: |
+  Coordinator note 014860 (2026-10-02 06:46Z): "ledger entry aa6dacc938 no
+  stamp ticket - mint or adjudicate false-pos". The specifier flagged the
+  same entry to the human that morning as a misread. Adjudicated a false
+  positive: aa6dacc938 changes specifier.prompt and a constitution
+  reference article, and its body wraps a sentence onto a line that starts
+  "Hotfix-Certification: pending, SWARMFORGE_ROLE=QA only for QA-exclusive".
+
+description: |
+  ## What is wrong
+
+  `hotfix_certification_lib.bb`'s `hotfix-trailer-value` takes the first
+  message line that, trimmed, starts with `Hotfix-Certification:`, at any
+  indentation and any position. operator_runtime's recurrent check
+  (line 1654) calls it through `hotfix-declared?` and appends a ledger
+  entry for every match. Measured 2026-10-02 over backlog/hotfix-ledger.yaml:
+  69 entries carry the value exactly `pending`, 12 have no trailer (entered
+  by hand), and one, aa6dacc938, carries
+  `pending, SWARMFORGE_ROLE=QA only for QA-exclusive`. That one is prose.
+
+  ## What is wanted
+
+  - A trailer's value is one word: a `Hotfix-Certification:` line whose
+    value has more text after its first word declares nothing
+    (scenarios 01, 02). Every entry the ledger holds today keeps its
+    declaration (invariant).
+  - Remove the aa6dacc938 entry from `backlog/hotfix-ledger.yaml` in the
+    parcel. Its `stamp_ticket` names this ticket only as the interim that
+    stops the sweep's mint nudge; it was never a stamp-off.
+  - Evidence: the census above re-run on the parcel commit (69 still
+    declared, aa6dacc938 not).
+
+  ## How (direction, not mandate)
+
+  - Restricting the match to git's trailer block (the last paragraphs) is
+    an alternative; say in the evidence which you chose and why. The
+    invariant holds either way.
+  - Step handler `specs/pipeline/steps/bl1881ProseLineIsNotAHotfixTrailerSteps.js`
+    drives `hotfix-trailer-value` on message fixtures; no git repo needed.
+
+  ## Scope
+
+  `hotfix_certification_lib.bb`, its lib test runner, the step handler,
+  the ledger entry, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1881-a-prose-line-is-not-a-hotfix-trailer.feature`:
+     2 of 2 ok. Measured 0 at mint: no handler exists yet.
+  2. `specs/features/BL-848-hotfix-swarm-certification-recurring-check.feature`
+     10 of 10, and `bb swarmforge/scripts/test/hotfix_certification_lib_test_runner.bb`
+     and `bl848_hotfix_certification_property_runner.bb` ok, as measured on
+     main at mint.
+  3. `grep -c 'commit: aa6dacc938' backlog/hotfix-ledger.yaml` prints 0 on
+     the parcel commit.
+  After the land: the coordinator gets no further stamp nudge for
+  aa6dacc938.
+
+notes: |
+  Minted 2026-10-02 by the specifier from coordinator note 014860.
+  Not a red, so it is ticketed rather than hotfixed (the 2026-10-01
+  directive covers reds). Ledger entry aa6dacc938 linked here the same
+  pass, so the sweep stops asking the coordinator to mint a stamp for it.
+  The specifier's own lesson: never wrap prose so a line starts with
+  "Hotfix-Certification:".
