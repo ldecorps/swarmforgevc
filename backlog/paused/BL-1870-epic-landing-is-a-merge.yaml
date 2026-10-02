@@ -9,7 +9,7 @@ direction: human-requested
 depends_on: []
 decomposes_into: [BL-1871, BL-1872, BL-1887, BL-1892, BL-1895, BL-1898, BL-1900, BL-1901, BL-1902, BL-1903]
 remaining_slices:
-  - "Delete the land step's rebuild machinery: own-path replay, strays, abandoned_commits, the LAND_ESCALATE conditions, the post-land re-point and most of land_step_lib.bb. Mint it, with a census, once 20 consecutive land records name BL-1901's merge path"
+  - "Delete the land step's rebuild machinery: own-path replay, strays, abandoned_commits, the LAND_ESCALATE conditions, the post-land re-point and most of land_step_lib.bb. Mint it, with a census, once 20 consecutive land records name BL-1901's merge path. First move the registry pass (BL-1631 retire, BL-1604 restore) out of the land step, into the merge path or the coordinator's close, because BL-1901 declines every line that pass would change (amended 2026-10-02)"
 mutation_cost: medium
 verification_category: merge-collateral-scope
 # 2026-10-02 (specifier, QA note 003679): the category's three rows are

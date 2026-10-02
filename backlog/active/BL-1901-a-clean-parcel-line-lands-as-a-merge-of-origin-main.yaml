@@ -38,6 +38,7 @@ approval_context: >
 invariants:
   - "origin/main only ever moves by fast-forward, and a merge-path land publishes no commit naming a ticket other than the landing one."
   - "A line the merge path does not accept lands exactly as it does today, through the land step, and is never half-landed."
+  - "Every land leaves origin/main's register rows (standing-reds.tsv, the property allowlist, suite-poles.tsv) as the land step's registry pass would: none owned by the landing ticket, and every open other ticket's row kept."
 
 source: |
   Root intake backlog/INTAKE-operator-question-1790964692294.md (filed by
@@ -81,6 +82,21 @@ description: |
   - The step handler `bl1901CleanLineLandsAsAMergeSteps`, registered in
     the same parcel. BL-1872's lander steps are scoped to its own feature,
     so this handler defines its own.
+  - Amended 2026-10-02 (QA spec-gap note 003735, evidence 10781b1004):
+    the land step runs a registry pass that the merge path has no
+    equivalent of. land_step_lib.bb's restore-other-tickets-registry-rows!
+    retires the landing ticket's own rows (BL-1631) and restores an open
+    other ticket's row that the line lacks (BL-1604), in standing-reds.tsv,
+    the property allowlist and suite-poles.tsv. Publishing the line as-is
+    leaves an owner's row on main, where it reads UNOWNED once the ticket
+    closes and throttles intake (BL-1429). The merge path declines to the
+    land step whenever that pass would change the merged tree, that is,
+    when rows-to-retire or rows-to-restore is non-empty for any registry.
+    Direction, not mandate: reuse land_step_lib.bb's registry-specs,
+    rows-to-retire and rows-to-restore (expose them), never a second
+    definition. Scenarios 04 and 05 (text in notes) pin the outcome on
+    origin/main, not the path, so they stay true when BL-1870's deletion
+    slice moves the pass.
 
   ## Scope
 
@@ -120,6 +136,40 @@ notes: |
     paths still fire once this merge path runs, and minting it now would
     fail INVEST Estimable. Its trigger is this ticket's land records:
     mint it when 20 consecutive lands record the merge path.
+  Amendment 2026-10-02, specifier ruling on QA note 003735 ("BL-1901
+  spec-gap: merge path skips BL-1631 own-row retire; see QA evidence
+  776fb"): decline to the land step rather than give the merge path its
+  own registry writer, so one implementation of the register rules exists
+  until BL-1870's deletion slice moves it. The parcel's feature carries
+  the hardener's mutation stamp, so the feature is NOT edited on main
+  (BL-1385). The coder adds these two scenarios inside the parcel, after
+  scenario 03, and their handler steps in bl1901CleanLineLandsAsAMergeSteps:
+
+    # BL-1901 a-land-never-leaves-the-owners-row-04
+    Scenario: a land never leaves the landing ticket's own register row on origin/main
+      Given origin/main's backlog/standing-reds.tsv carries a row owned by BL-9001
+      And the lander queue holds an entry for BL-9001 whose line carries only BL-9001 commits on top of origin/main
+      When the lander sweep runs until the queue is empty
+      Then BL-9001's work is on origin/main
+      And origin/main's backlog/standing-reds.tsv has no row owned by BL-9001
+
+    # BL-1901 a-land-keeps-another-open-tickets-row-05
+    Scenario: a land never drops another open ticket's register row from origin/main
+      Given origin/main's backlog/standing-reds.tsv carries a row owned by BL-9002, an open ticket
+      And the lander queue holds an entry for BL-9001 whose line deletes that row
+      When the lander sweep runs until the queue is empty
+      Then BL-9001's work is on origin/main
+      And origin/main's backlog/standing-reds.tsv still has the row owned by BL-9002
+
+  In 05 BL-9002 is open when a backlog/paused/BL-9002-*.yaml exists in the
+  fixture, which is what qa_hold_lib's open-ticket-ids-for reads. Not run
+  at amendment (no handler exists yet). Expected red on the parcel commit
+  2bceb52e48: its merge path accepts both lines and publishes them as-is,
+  per QA's evidence "Spec gap" and land_merge_path_lib.bb's line check,
+  which reads subjects and parents, never registry content. Run both
+  against 2bceb52e48 first and record the red in evidence, so the
+  scenarios are shown to gate. If the land step does not publish 05's line
+  at all, send the specifier a note; do not weaken the Then.
   Promotion is the coordinator's. BL-1870 carries the human's "Prioritize
   this work." (2026-10-01), and the 2026-09-30 promotion restriction
   names local-llm work and high/critical defects.
