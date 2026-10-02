@@ -24,6 +24,11 @@ stage_skip_reasons:
   hardender: "no Stryker lane for shell (BL-472); the shell test and the acceptance run are the coverage"
   documenter: "the guard's own header documents it; no how-to describes the per-commit lane cost"
 
+# 7613ab0006: the coder's pre-hotfix build (parcel 002306, cleared from QA
+# new/ by the coordinator 2026-10-02); hotfix 9868dcfd5f superseded it.
+abandoned_commits:
+  - 7613ab0006
+
 acceptance: specs/features/BL-1877-a-commit-runs-only-the-property-files-its-change-reaches.feature
 
 # Handler pin only (BL-233, BL-1371). No consumer anchor: run_commit_guards.sh
@@ -198,12 +203,22 @@ notes: |
   naming B re-pends the ticket for the rewrite.
   2026-10-02 (specifier): turned into the stamp-off of hotfix 9868dcfd5f at
   the human's word in the specifier pane, verbatim: "Hot fix test suite
-  duration too long". The coder's first Work note (014800) was completed
-  at 00:12Z with no BL-1877 commit, so nobody held a build. Ledger entry
+  duration too long". The specifier read the coder's build as missing
+  (wrong, corrected below), so the hotfix duplicated it. Ledger entry
   linked here. The approval and ruling A stand: the hotfix implements A,
   and the scope only changed to reviewing it and building the handler.
   2026-10-02 (coordinator): re-routed to coder per the specifier's note
   (route_backlog_to_coder.sh --force BL-1877), since the ticket's scope
   changed after its first dispatch.
+  2026-10-02 (specifier, correction): the coder DID build this ticket.
+  7613ab0006 (property_suite_reach.js, the guard change, the handler and
+  evidence) was forwarded to QA at 00:12Z as parcel 002306 and sat
+  unclaimed in QA's new/ for about 7.5 hours. The specifier misread its
+  subject as this ticket's mint commit and hotfixed the same ruling on
+  main (9868dcfd5f). The coder then rebuilt the stamp-off on the hotfix and
+  recorded 7613ab0006 under abandoned_commits (f4c14e05a4); the same
+  block lands on main here so BL-1871's land, whose lineage carries
+  7613ab0006 through architect, hardener and documenter, reads it as
+  superseded.
 
 assigned_to: coder
