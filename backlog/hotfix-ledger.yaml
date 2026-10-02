@@ -520,7 +520,7 @@
 - commit: 4d089d21e5
   subject: "Hotfix: BL-1640's shell fixture records the briefing as sent on the simulated day, so its feature and shell test are green again"
   detected_at: 2026-10-01
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-1836
   human_decision: null
   decided_at: null
