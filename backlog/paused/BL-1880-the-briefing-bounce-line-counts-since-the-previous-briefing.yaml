@@ -1,0 +1,145 @@
+id: BL-1880
+title: "The briefing's bounce line counts every bounce since the project began (507 on 2026-10-02), so it cannot show whether a role's work got better or worse after its model changed; it now counts since the previous briefing, shows a seven-day trend per producing role, names the model each role runs now, keeps the all-time total last, and prints the same figures as JSON for the coordinator's model advice"
+milestone: M8
+type: feature
+status: todo
+epic: lean-aware-coordinator
+priority: 3
+depends_on: []
+mutation_cost: medium
+# medium: one TypeScript CLI (qa-bounce-line.ts) and its briefing call
+# site; Stryker runs on the changed module.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one CLI grows a window, a trend and a JSON mode; the architect and hardener passes cover structure"
+
+acceptance: specs/features/BL-1880-the-briefing-bounce-line-counts-since-the-previous-briefing.feature
+
+# Handler pin (BL-233, BL-1371). No consumer anchor: handoffd.bb already
+# shells to qa-bounce-line.js for the briefing, so an anchor there matches
+# before and after (BL-1235). The JSON's consumer is the coordinator's
+# prompt, landed on main at mint, which this gate cannot read (BL-798).
+required_wiring:
+  - 'specs/pipeline/steps/bl1880BriefingBounceWindowSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  From your two messages to the documenter this morning (source). FIRM -
+  the line leads with the bounces since the previous briefing was sent,
+  then a seven-day per-day trend for each producing role, each role named
+  with the model it runs now, and the all-time total last. FIRM - the same
+  figures as JSON, which the coordinator cites in its model advice. The
+  advice itself reaches the briefing through prompt prose landed with
+  this mint (advice only, as you said "to start with"). The coordinator
+  making the swap itself is recorded on the epic as a later slice, not
+  built here.
+
+invariants:
+  - "The window counts, the trend and the all-time total are read from the same bounce log through the same reader, so a correction (BL-990) removes a bounce from every figure at once."
+  - "A bounce is in the window exactly when its time is after the window start, so no bounce is counted in two consecutive briefings."
+
+source: |
+  The human, documenter pane (Claude Code), 2026-10-02 06:40Z, quoting the
+  briefing's line, verbatim (Article 5.3):
+
+  > Whe yoinszy this, its scounted since previous daily breif?
+  >
+  > Bounces: 507 total (1.0 defects/bounce) - by bouncing role: QA x250, architect x152, unattributed x54, cleaner x21, specifier x15, hardender x11, documenter x4 - whose work: coder x356, documenter x78, cleaner x31, hardender x20, architect x11, specifier x11 - by ticket type: defect x321, feature x169, chore x8, bug x5, docs x2, enhancement x1, epic x1
+
+  The documenter answered that it is an all-time count with no date
+  filter. The human, 06:44Z, verbatim:
+
+  > Scope it since last email, or at least show a trend. The idea is that it has to support the choice to change models.
+  > Lean coordinatornis supposed to suggestnthose changes, even mqkenthe midel swapnby itself.
+  > I guess tonstarrbwith let's hqve it give his advice in the daily breif
+
+  Relayed by the documenter as note 001636 ("human directive: trend
+  bounce-stats + coordinator model-swap advice in briefing").
+
+description: |
+  ## What happens today
+
+  `extension/src/tools/qa-bounce-line.ts` (BL-454, BL-635, BL-689) reads
+  the durable bounce log (`.swarmforge/bounces/<month>.jsonl`, plus the
+  legacy store) from its first record, with no date filter, and handoffd
+  puts its line in the briefing. A record names the producing role and the
+  bouncing role, never the model. So the line cannot answer the question
+  the human is asking it: did a role's work bounce more, or less, since its
+  model changed?
+
+  ## What is wanted
+
+  - The line leads with the bounces since the previous briefing was sent
+    (scenario 01), and names that start. With no send on record, the window
+    is the last 24 hours and the line says so (scenario 02).
+  - A seven-day trend per producing role, one count per day, oldest first
+    (scenario 03).
+  - Each producing role in the window is named with the model it runs now,
+    as the swarm tiles show it (scenario 04).
+  - The all-time total stays, last, labelled all-time (scenario 05).
+  - A JSON mode prints the same figures: window start, window counts by
+    producing and bouncing role, the trend, and each role's model
+    (scenario 06). The coordinator cites these in its model advice.
+  - The existing breakdowns (bouncing role, ticket type, defects per
+    bounce) stay available; their place on the line is the coder's call.
+    Keep the line readable in an email, not a table dump.
+
+  ## How (direction, not mandate)
+
+  - Window start: when the previous briefing was sent. Each send commits
+    `docs/briefings/.sent.json` ("briefing: record sent marker"), so the
+    commit that added the previous briefing's file is one source; the
+    briefing caller may also pass it in. Say in the evidence which you used.
+  - Model: `readRoleModelId` (`extension/src/swarm/backendSwitch.ts`) with
+    `formatModelDisplayName`, the source the Bubble tiles use (BL-1858).
+    Never re-derive it (BL-1811).
+  - Read bounces through the reader the all-time tally uses today, so
+    corrections apply to every figure (invariant 1).
+  - Step handler `specs/pipeline/steps/bl1880BriefingBounceWindowSteps.js`,
+    fixture under mkdtemp (BL-1390), render time injected, never the wall
+    clock.
+
+  ## Scope
+
+  `qa-bounce-line.ts`, its call site in the briefing path if it must pass
+  the window start, unit tests, the step handler, evidence. BL-454, BL-635,
+  BL-688 and BL-689's features call `formatBounceLine` and must stay green.
+
+out_of_scope: |
+  - Recording the model on each bounce, so past bounces split by the model
+    that produced them. This slice pairs each role with its model now; a
+    record of which model did the work is a later slice if the trend
+    proves too coarse.
+  - The coordinator applying a model swap itself (epic notes, later slice).
+  - BL-1327's descent ladder, which has no state writer and has never run.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1880-the-briefing-bounce-line-counts-since-the-previous-briefing.feature`:
+     6 of 6 ok. Measured 0 at mint: no handler exists yet.
+  2. BL-454 8 of 8, BL-635 15 of 15, BL-688 15 of 15, BL-689 10 of 10, as
+     measured on main at mint.
+  3. On the live checkout, `node extension/out/tools/qa-bounce-line.js`
+     leads with the bounces since the 2026-10-02 briefing (or the latest
+     one sent) and ends with the all-time total; its JSON mode prints the
+     same counts.
+  After the land (the specifier's or coordinator's check): the next
+  morning briefing's bounce line leads with the window.
+
+notes: |
+  Minted 2026-10-02 by the specifier from the documenter's relay of the
+  human's two messages (source). Not queue-jump: the standing directive
+  admits only local-LLM work and high/critical defects, and this is a
+  feature; the human can Q-jump it from the Approvals topic.
+  The coordinator's model advice channel is prompt prose, landed with this
+  mint in coordinator.prompt and documenter.prompt (BL-798): the
+  coordinator sends the documenter its advice at the ceremony, citing
+  counted figures, advice only. Until BL-1880 lands, the coordinator
+  counts with jq over the bounce log; that prose carries the literal
+  "Until BL-1880 lands" marker, so QA removes it at the land.
+  The human's "even make the model swap by itself" is recorded on BL-818
+  as a later slice. It reverses BL-1327's 2026-09-02 proposal-only ruling,
+  so it needs its own ask.
+  INVEST: one CLI's output, six scenarios, two invariants; the per-model
+  record of past bounces was cut to out_of_scope to keep it one sitting.

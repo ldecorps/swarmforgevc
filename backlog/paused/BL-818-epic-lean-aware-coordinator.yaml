@@ -7,7 +7,7 @@ epic: lean-aware-coordinator
 priority: 54
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-819, BL-820, BL-1365, BL-1528, BL-1551, BL-1782, BL-1783, BL-1784]
+decomposes_into: [BL-819, BL-820, BL-1365, BL-1528, BL-1551, BL-1782, BL-1783, BL-1784, BL-1880]
 source: |
   Raw intake `backlog/INTAKE-lean-aware-coordinator.md` (human via Cursor
   2026-08-05 ~09:55 CEST, amended ~09:58 for the shift-closing ceremony),
@@ -170,5 +170,22 @@ notes: |
   skipped respawn is not a respawn) - same adapter, same caller, same
   composer, one rung apart; BL-1590 retired as superseded-by-BL-1551 and
   decomposes_into re-pointed.
+
+  2026-10-02 (specifier): model advice. The human, documenter pane,
+  verbatim (Article 5.3), after learning the briefing's bounce line was an
+  all-time count:
+
+  > Scope it since last email, or at least show a trend. The idea is that it has to support the choice to change models.
+  > Lean coordinatornis supposed to suggestnthose changes, even mqkenthe midel swapnby itself.
+  > I guess tonstarrbwith let's hqve it give his advice in the daily breif
+
+  First step built: BL-1880 (the bounce line counts since the previous
+  briefing, with a trend and each role's model, plus JSON), and the
+  coordinator's model advice reaching the briefing by note (coordinator
+  and documenter prompts, landed with BL-1880's mint). Later slice, not
+  minted: the coordinator applying a model swap itself. It reverses
+  BL-1327's 2026-09-02 proposal-only ruling and BL-1056's "no autonomous
+  seat mutation", so it is minted with its own ask once the advice has run
+  for a while.
 
 mutation_cost: high
