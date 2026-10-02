@@ -19,7 +19,9 @@ const E2E = path.join('swarmforge', 'scripts', 'test', 'test_bl1366_land_is_one_
 // Explicit KNOWN_VALUES: a scenario naming a claim this handler does not know
 // throws rather than passing through unchecked.
 const CLAIMS = {
-  landed: 'the approved commit reached origin/main',
+  // BL-1716 (ad512073ca, 2026-09-24): the land publishes a commit it builds
+  // off origin/main, and the e2e reworded this line to say so.
+  landed: "the land's published commit reached origin/main",
   'no-force': 'the push used no force',
   'lock-gone': 'the land lock directory is gone afterwards',
   'clean-zero': 'a clean land exits 0',
