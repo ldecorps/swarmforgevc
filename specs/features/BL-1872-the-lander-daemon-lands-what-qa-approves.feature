@@ -9,7 +9,9 @@ Feature: BL-1872 The lander daemon lands what QA approves, so QA's turn ends at 
   the approval, and handoffd's lander sweep runs the land in a worktree of
   its own, never QA's. A land the sweep cannot complete goes back to QA
   with the land step's own reason. The one rematch a land allows no longer
-  leaves its worktree on a detached HEAD.
+  leaves its worktree on a detached HEAD, and the commit it rebuilds gets
+  its own land approval record, so the commit that reaches main is never
+  one the Article 4.2 check reads as unapproved.
 
   Background:
     Given a fixture project with a bare origin and a lander queue
@@ -63,3 +65,11 @@ Feature: BL-1872 The lander daemon lands what QA approves, so QA's turn ends at 
     When the lander sweep runs until the queue is empty
     Then origin/main carries BL-9001's change
     And QA's worktree and the lander's worktree are each still on their own branch
+
+  # BL-1872 a-rematched-land-records-the-commit-it-published-07
+  Scenario: a land whose first push loses the race records its approval against the rematched commit it published
+    Given the lander queue holds an entry for BL-9001 at a commit on BL-9001's own line
+    And origin/main moves after the land is built and before it is pushed
+    When the lander sweep runs until the queue is empty
+    Then the land approvals hold a record for the commit origin/main carries for BL-9001
+    And that record names the queued commit as its source

@@ -63,6 +63,10 @@ source: |
 
   > Prioritize this work.
 
+  QA note 003682 (2026-10-02), verbatim:
+
+  > BL-1872 add: rematched land sha has no land-approval record (dd2950dc24)
+
 description: |
   ## What happens today
 
@@ -110,6 +114,21 @@ description: |
      2026-09-30 and 2026-10-01 (BL-1865's land), note 003673. Build the
      rematched commit without moving any worktree's HEAD (or restore the
      branch afterwards), and push that.
+  5. The rematched commit gets its own land approval record (scenario 07).
+     The land step records the replay it built (BL-1334), but the rematch
+     publishes a different commit, and nothing records that one. So
+     is_qa_ancestor.sh reads the published commit as unapproved, and the
+     babysitter escalates an Article 4.2 CRIT for an approved land. BL-1835's
+     land on 2026-10-02 is the case: the replay 4890a3635a was recorded, its
+     push was rejected, the rematch published dd2950dc24 with no record, the
+     CRIT fired at 05:44:12Z, and QA added the record by hand at 05:46:40Z
+     (note 003682). Today QA is at hand to do that. Under the lander nobody
+     is, because QA's turn ends at the queue command. Before the second
+     push, record the rematched commit against the same approved source the
+     replay's record names, through the recorder the land step already uses
+     (`record-land-approval!`, or `record_land_approval.bb`), never a second
+     writer (BL-1405). A record written before a push that then fails names
+     a commit main never carries, and grants nothing.
 
   ## How (direction, not mandate)
 
@@ -153,8 +172,8 @@ out_of_scope: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1872-the-lander-daemon-lands-what-qa-approves.feature`:
-     7 of 7 ok (01, 02, 03, two rows of 04, 05, 06). Measured 0 at mint:
-     no handler exists yet.
+     8 of 8 ok (01, 02, 03, two rows of 04, 05, 06, 07). Measured 0 at
+     mint: no handler exists yet.
   2. The new lander runner: ALL PASS.
   3. `node specs/pipeline/cli.js specs/features/BL-1678-a-land-never-ships-an-unapproved-forward-that-shares-no-path-with-the-landing-ticket.feature` (the
      publish step's own contract): 4 of 4 ok, as measured on main at
@@ -162,7 +181,9 @@ qa_e2e_procedure: |
   After the land (the specifier's or coordinator's check, not QA's): the
   next approval QA queues lands without QA running land_main_publish.sh,
   QA's hold on it ends at the queue command, and the lander log for it
-  shows LAND_PUBLISHED.
+  shows LAND_PUBLISHED. For the first land whose log shows LAND_REMATCH,
+  `is_qa_ancestor.sh <published sha>` exits 0 with no record added by hand,
+  and no pipeline-code-on-main CRIT names that sha.
 
 notes: |
   Minted 2026-10-01 by the specifier, second slice of BL-1870 after the
@@ -176,3 +197,17 @@ notes: |
   together with the lander's own worktree, rather than minted as a
   separate defect, because this slice is where the daemon starts
   invoking the step.
+  2026-10-02 amendment, after approval, from QA note 003682: item 5 and
+  scenario 07, so a rematched land records the commit it published. It is
+  folded in for the same reason as note 003673: it is the same rematch
+  block, and the lander is what removes QA's hand fix. The human approved
+  "every publish gate, the land lock and the land-approval record stay as
+  they are", and today the rematch is the one path that publishes with no
+  record, so this keeps that promise rather than posing a new choice. The
+  ticket was not re-pended, because there is no ruling to collect. The
+  approval_context above still says "One change to the step", and that is
+  the wording the human approved. A reply re-pends the ticket if the human
+  wants this split out instead. Paused, so nobody holds it and no note is
+  needed. The feature was linted and IR-DRY checked; the one new finding
+  pairs "exactly one landing commit" with the record step, which mean
+  different things.
