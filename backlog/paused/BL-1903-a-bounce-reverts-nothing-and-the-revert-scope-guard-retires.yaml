@@ -30,7 +30,7 @@ retires:
   - swarmforge/scripts/check_bounce_revert_scope.sh
   - swarmforge/scripts/test/test_check_bounce_revert_scope.sh
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The third of three slices minted from BL-1870's last remaining line, at
   your "Do get the missing slice minted". FIRM: it follows BL-1902, so no
