@@ -54,11 +54,14 @@ function registerSteps(registry) {
     if (!ctx.qaPrompt.includes('Land it on `main` yourself')) {
       throw new Error('expected QA.prompt to instruct QA to land the approved commit on main itself (BL-247)');
     }
-    if (!ctx.qaPrompt.includes('fast-forward `main` to it')) {
-      throw new Error('expected QA.prompt to instruct a fast-forward of main to the approved commit');
+    // Today's wording (d5c618fa01, BL-891, 2026-08-14): QA lands through the
+    // publish step, which pushes fast-forward only. The literal "fast-forward
+    // `main` to it" / "push `main` to origin" left the prompt then.
+    if (!ctx.qaPrompt.includes('swarmforge/scripts/land_main_publish.sh <qa-worktree> --land')) {
+      throw new Error('expected QA.prompt to instruct QA to land through land_main_publish.sh --land');
     }
-    if (!ctx.qaPrompt.includes('push `main` to origin')) {
-      throw new Error('expected QA.prompt to instruct QA to push main to origin');
+    if (!ctx.qaPrompt.includes('pushes the commit the step BUILT (fast-forward')) {
+      throw new Error('expected QA.prompt to say the land pushes the built commit fast-forward only');
     }
     if (!ctx.qaPrompt.includes('never force-push')) {
       throw new Error('expected QA.prompt to prohibit force-push when landing on main');
@@ -89,7 +92,9 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it moves the ticket from active to done and promotes the next paused item$/, (ctx) => {
-    if (!ctx.coordinatorPrompt.includes('move its YAML from `backlog/active/` to `backlog/done/`')) {
+    // Today's wording (e1123e1933, BL-419, 2026-07-17): the close is a
+    // `git mv` committed through commit_integrity_cli.bb.
+    if (!ctx.coordinatorPrompt.includes('git mv backlog/active/<TICKET-ID>-<slug>.yaml backlog/done/')) {
       throw new Error('expected coordinator.prompt to still instruct closing the ticket active -> done');
     }
     if (!ctx.coordinatorPrompt.includes('Promote** the next eligible item from `backlog/paused/`')) {
