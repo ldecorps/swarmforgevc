@@ -85,9 +85,20 @@ if [[ -z "${__SWARMFORGE_TMP_CLEANUP_REGISTRY:-}" ]]; then
   fi
   export __SWARMFORGE_TMP_CLEANUP_REGISTRY
 
+  # BL-1883: only the process that installed the trap sweeps. A background
+  # job (`sleep 300 & PID=$!`) killed before it execs its command is still a
+  # bash child carrying this EXIT trap, and it ran the sweep: on 2026-10-02
+  # test_finish_shift_lib.sh's case 08 killed three such children and they
+  # deleted every registered fixture root mid-test, the front desk's
+  # pidfile with it. BASHPID is bash 4+; stock macOS bash 3.2 gets the same
+  # pid from the parent of an exec'd sh (the expansion runs inline, never in
+  # a helper called through $(...), whose own subshell would answer).
+  __SWARMFORGE_TMP_CLEANUP_OWNER_PID="${BASHPID:-$(exec sh -c 'echo "$PPID"')}"
+
   __swarmforge_cleanup_tmp_dirs() {
     local registry="$__SWARMFORGE_TMP_CLEANUP_REGISTRY"
     local d
+    [[ "${BASHPID:-$(exec sh -c 'echo "$PPID"')}" == "$__SWARMFORGE_TMP_CLEANUP_OWNER_PID" ]] || return 0
     if [[ -f "$registry" ]]; then
       while IFS= read -r d || [[ -n "$d" ]]; do
         [[ -n "$d" ]] && rm -rf -- "$d"

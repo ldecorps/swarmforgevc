@@ -75,10 +75,10 @@ fi
 # APS as covered gates) - see backlog/evidence/BL-762-coder-pass.md.
 (
   source "$SRC/lifecycle_matrix.sh"
-  if lifecycle_matrix_validate >/tmp/bl762-02-intact.out 2>&1; then
+  if lifecycle_matrix_validate >"$ROOT/bl762-02-intact.out" 2>&1; then
     echo "INTACT_VALID"
   else
-    echo "INTACT_INVALID: $(cat /tmp/bl762-02-intact.out)"
+    echo "INTACT_INVALID: $(cat "$ROOT/bl762-02-intact.out")"
   fi
 )
 intact_result="$(
@@ -102,13 +102,13 @@ for component in babysitterd front-desk onboarder operator-runtime tunnels; do
         [[ "$entry" == "${component}:${verb}:"* ]] || filtered+=("$entry")
       done
       LIFECYCLE_MATRIX_ENTRIES=("${filtered[@]}")
-      if lifecycle_matrix_validate >/tmp/bl762-02-missing.out 2>&1; then
+      if lifecycle_matrix_validate >"$ROOT/bl762-02-missing.out" 2>&1; then
         echo "SHOULD_HAVE_FAILED"
       else
-        if grep -q "\"$component\"" /tmp/bl762-02-missing.out && grep -q "\"$verb\"" /tmp/bl762-02-missing.out; then
+        if grep -q "\"$component\"" "$ROOT/bl762-02-missing.out" && grep -q "\"$verb\"" "$ROOT/bl762-02-missing.out"; then
           echo "CORRECTLY_FAILED"
         else
-          echo "FAILED_WRONG_MESSAGE: $(cat /tmp/bl762-02-missing.out)"
+          echo "FAILED_WRONG_MESSAGE: $(cat "$ROOT/bl762-02-missing.out")"
         fi
       fi
     )"
