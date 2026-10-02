@@ -108,3 +108,5 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   2026-10-02 (specifier): hotfix 7964654efc repairs the BL-1728 property
   red 8b1c763709 caused (coder note 002327); linked here, item 5.
+
+assigned_to: coder
