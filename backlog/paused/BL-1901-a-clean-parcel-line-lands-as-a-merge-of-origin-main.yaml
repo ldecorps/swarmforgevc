@@ -1,0 +1,125 @@
+id: BL-1901
+title: "A queued parcel line that carries only its own ticket's commits (and merges of origin/main) lands as one merge of origin/main and a fast-forward push, without the land step's rebuild; any other line goes through the land step as before, and the land record says which path ran"
+milestone: M8
+type: feature
+status: todo
+epic: landing-is-a-merge
+priority: 4
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: a new land path in the lander plus its fallback; bb, so the
+# hardener's hand-mutant pass is the mutation gate (BL-472).
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a new path beside an unchanged one; the cleanup is BL-1870's later retirement of the land step itself"
+
+acceptance: specs/features/BL-1901-a-clean-parcel-line-lands-as-a-merge-of-origin-main.feature
+
+# Handler pin only (BL-233, BL-1371). Every scenario drives the lander
+# sweep (lander_lib.bb tick!), the live consumer, so the proof is
+# behavioural; an anchor in lander_lib matches before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1901CleanLineLandsAsAMergeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  The first of three slices minted from BL-1870's last remaining line, at
+  your "Do get the missing slice minted". FIRM: the land step is untouched
+  and still lands every line this path does not accept; origin/main only
+  ever moves by fast-forward; QA's queue and the coordinator's note are
+  unchanged. This is the "should not be much more than a git merge" part
+  of ruling A, which BL-1872 did not build: the lander still rebuilds
+  every parcel by cherry-pick. The other two slices are BL-1902 and
+  BL-1903. Deleting the land step's replay machinery stays on the epic
+  until this path has run (notes).
+
+invariants:
+  - "origin/main only ever moves by fast-forward, and a merge-path land publishes no commit naming a ticket other than the landing one."
+  - "A line the merge path does not accept lands exactly as it does today, through the land step, and is never half-landed."
+
+source: |
+  Root intake backlog/INTAKE-operator-question-1790964692294.md (filed by
+  the Operator 2026-10-02T18:11Z), verbatim:
+  "HUMAN DIRECTIVE (2026-10-02 18:10Z, PIPELINE_BOARD thread), verbatim:
+  "Do get the missing slice minted""
+  The slice is BL-1870's remaining_slices line: "Retire the entanglement
+  machinery once in-flight parcels drain: QA's merge-up send, the
+  post-land re-point, reverse-hop copies, own-path replay, strays,
+  abandoned_commits, the LAND_ESCALATE conditions and most of
+  land_step_lib.bb". Split 1:N here (BL-1901, BL-1902, BL-1903; the
+  land-step deletion stays on the epic), Consolidation Authority.
+  BL-1870's source, verbatim (Article 5.3):
+
+  > Ok with the idea of landing deamon. Let specifier cook up something. Tell it to first assess if we got the while concept wrong? In my mind it should not be much more than a git merge.
+
+description: |
+  ## What is wanted
+
+  Measured at mint: the 53 land records written on 2026-10-01 and
+  2026-10-02 all name a rebuilt commit (commit differs from source). Since
+  BL-1678 the land step's `land-plan` rebuilds a parcel's own paths onto
+  origin/main by cherry-pick even when nothing is entangled, and
+  BL-1887's land took an hour. Ruling A's "landing is merge origin/main
+  and fast-forward push" was never built.
+
+  - When the lander starts a queued land, it first checks the line from
+    origin/main to the queued commit. The line is clean when every commit
+    on it either names the landing ticket and no other in its subject, or
+    is a merge whose other parent is already on origin/main.
+  - A clean line lands in the lander's own worktree: merge origin/main
+    into the queued commit (no merge when it already contains origin/main),
+    then push fast-forward to origin/main. The commit-msg guards run on
+    the merge as they do today. The land record names the ticket, the
+    published commit, the queued commit as source, and the path
+    (`merge`). It also tells the coordinator, exactly as a land-step land
+    does.
+  - Any other line, and a clean line whose merge conflicts or whose push
+    loses a race it cannot redo by merging again, runs the land step
+    exactly as today. Its record names the `land-step` path.
+  - The step handler `bl1901CleanLineLandsAsAMergeSteps`, registered in
+    the same parcel. BL-1872's lander steps are scoped to its own feature,
+    so this handler defines its own.
+
+  ## Scope
+
+  lander_lib.bb (or a lib it calls), the land record writer, their bb
+  tests, the step handler, the lander how-to, evidence.
+
+  ## Out of scope
+
+  Deleting or changing the land step (BL-1870's remaining line). QA's
+  queue command. Which parcels arrive clean: that depends on the cleaner
+  and hardender running in task mode (BL-1902).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. ONE run: `node specs/pipeline/cli.js specs/features/BL-1901-a-clean-parcel-line-lands-as-a-merge-of-origin-main.feature`:
+     all ok.
+  2. `node specs/pipeline/cli.js specs/features/BL-1872-the-lander-daemon-lands-what-qa-approves.feature`:
+     all ok (8 of 8 at mint).
+  3. After the land, read `.swarmforge/land-approvals/` for the next lands:
+     a [coder, qa] stamp-off, whose line is origin/main plus coder and QA
+     commits, should record the merge path.
+
+notes: |
+  Minted 2026-10-02 by the specifier from the root intake above (the
+  human's "Do get the missing slice minted"). The raw intake is removed
+  from the backlog root in the mint commit.
+  The split, with every slice recording the intake it came from:
+  - BL-1901 (this): the merge-path land, the core of ruling A.
+  - BL-1902: reverse-hop copies and QA's merge-up send retire, once the
+    cleaner and hardender run in task mode.
+  - BL-1903: a bounce reverts nothing, and check_bounce_revert_scope.sh
+    (with its deferred wrong-ticket naming) retires.
+  - Stays on BL-1870 as its remaining line: deleting the land step's
+    rebuild machinery (own-path replay, strays, abandoned_commits, the
+    LAND_ESCALATE conditions, the post-land re-point, most of
+    land_step_lib.bb). Not minted now. Its size depends on which of those
+    paths still fire once this merge path runs, and minting it now would
+    fail INVEST Estimable. Its trigger is this ticket's land records:
+    mint it when 20 consecutive lands record the merge path.
+  Promotion is the coordinator's. BL-1870 carries the human's "Prioritize
+  this work." (2026-10-01), and the 2026-09-30 promotion restriction
+  names local-llm work and high/critical defects.
