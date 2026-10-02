@@ -614,6 +614,12 @@ or `note` referencing that ticket id. A coder or architect "bookkeeping stale"
 successful close, the CLI also abandons every role's pending `new/` and
 `in_process/` handoffs for that ticket so the pipeline cannot keep routing
 closed work.
+**Until BL-1898 lands, a lander land's bookkeep note does not open that
+gate.** The lander (BL-1872) sends QA's `<id> QA-approved <sha>` note
+through `swarm_handoff` as the coordinator, so it arrives `from:
+coordinator` and the gate refuses it, and the daemon's auto-close below
+does too. Send QA a `note` (priority `00`) asking for its own bookkeep
+note for that ticket, then close on QA's note (BL-1887, note 015136).
 **The daemon may have closed it already (landed auto-close, hotfix
 d9a4d0b888, 2026-09-09; stamp BL-1506).** `handoffd` reads QA's land record
 (`.swarmforge/land-approvals/*.jsonl`) and, for an active ticket whose latest
