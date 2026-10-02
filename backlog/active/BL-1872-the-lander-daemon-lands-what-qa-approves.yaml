@@ -232,3 +232,5 @@ notes: |
   as an "Until BL-1872 lands" interim. Found while hotfixing BL-247's
   77-day red (83d5e34527, stamp-off BL-1878). BL-1878 reviews the same
   handler, so the two should not run at once.
+
+assigned_to: coder
