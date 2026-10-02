@@ -13,6 +13,7 @@ const {
   importsSharedHeavyTimeout,
   usesSharedHeavyTimeoutOnly,
 } = require('./helpers/sharedHeavyTimeoutGuard');
+const { walkFilesTolerant } = require('./helpers/tolerantTreeWalk');
 
 const TEST_DIR = __dirname;
 const HELPERS_DIR = path.join(TEST_DIR, 'helpers');
@@ -81,11 +82,14 @@ test('property: every real adopter file imports the shared constant and declares
 });
 
 test('property: exactly one file across the property lane declares the shared constant, and it is the shared helper', () => {
-  const candidates = [
-    ...fs.readdirSync(TEST_DIR).filter((f) => f.endsWith('.js')).map((f) => path.join(TEST_DIR, f)),
-    ...fs.readdirSync(HELPERS_DIR).filter((f) => f.endsWith('.js')).map((f) => path.join(HELPERS_DIR, f)),
-  ];
-  const declarers = candidates.filter((f) => declaresLocalConstant(fs.readFileSync(f, 'utf8')));
+  // BL-1849: read through the shared tolerant walk, so a bl868 lane fixture
+  // removed between the listing and the read is skipped, never an ENOENT.
+  // The walk recurses; the population stays flat over TEST_DIR and helpers/.
+  const scanned = new Set([TEST_DIR, HELPERS_DIR]);
+  const declarers = walkFilesTolerant(TEST_DIR, { extension: '.js', withContent: true })
+    .filter(({ path: file }) => scanned.has(path.dirname(file)))
+    .filter(({ content }) => declaresLocalConstant(content))
+    .map(({ path: file }) => file);
   assert.deepEqual(declarers, [HELPER_FILE], `expected the shared helper to be the only declaration of ${CONSTANT_NAME}, found: ${JSON.stringify(declarers)}`);
 });
 
