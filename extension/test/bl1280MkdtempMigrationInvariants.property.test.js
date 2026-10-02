@@ -41,6 +41,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { walkFilesTolerant } = require('./helpers/tolerantTreeWalk');
 const {
   findRawMkdtempCallSites,
   findRawMkdtempLines,
@@ -93,16 +94,20 @@ function isAllocation(line) {
   return quotes % 2 === 0;
 }
 
+// BL-1849: reads through the shared tolerant walk, so a bl868 lane fixture
+// removed between the listing and the read is skipped, never an ENOENT. The
+// population is unchanged: recursive, `fixtures/` left out at any depth, and
+// nothing else excluded.
 function mkTmpDirCallSites(dir) {
   const sites = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name !== 'fixtures') sites.push(...mkTmpDirCallSites(full));
-      continue;
-    }
-    if (!entry.name.endsWith('.js')) continue;
-    const lines = fs.readFileSync(full, 'utf8').split('\n');
+  const files = walkFilesTolerant(dir, {
+    excludeDirs: new Set(['fixtures']),
+    rootOnlyExcludeDirs: new Set(),
+    extension: '.js',
+    withContent: true,
+  });
+  for (const { path: full, content } of files) {
+    const lines = content.split('\n');
     lines.forEach((line, index) => {
       if (!isAllocation(line)) return;
       sites.push({ file: path.relative(TEST_DIR, full), line: index + 1, where: classifyCallSite(lines, index) });
