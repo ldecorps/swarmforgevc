@@ -23,7 +23,7 @@ acceptance: specs/features/BL-1880-the-briefing-bounce-line-counts-since-the-pre
 required_wiring:
   - 'specs/pipeline/steps/bl1880BriefingBounceWindowSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   From your two messages to the documenter this morning (source). FIRM -
   the line leads with the bounces since the previous briefing was sent,
