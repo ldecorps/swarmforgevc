@@ -1,0 +1,82 @@
+id: BL-1899
+title: "Stamp-off for hotfix 3771562541: bl1871ParcelLineTakeUp's first invariant test runs a fixed example that reaches a move, a dirty-tree block and a stay on the role's own work before its ten random draws, so its reach floor (work-on-top >= 1) no longer fails in about 1 run in 20"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05); this
+# one held BL-1876 at QA.
+status: todo
+epic: landing-is-a-merge
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: one property test's options and a constant; no production code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a small test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-1871's contract (BL-1251). The red is
+# BL-1871's property file; its feature must stay green.
+acceptance: specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 3771562541 under the human's 2026-10-01 directive.
+  No choice is posed. FIRM: the three invariants, the ten random draws and
+  the reach floors are unchanged; a fixed example now runs first.
+
+invariants: []
+
+source: |
+  QA note 003713 (2026-10-02 15:30Z), verbatim: "unowned-red
+  bl1871ParcelLineTakeUp stay-on-top reach 0; BL-1876 held 7b078d90b0".
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim:
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 3771562541 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  The first test in `extension/test/bl1871ParcelLineTakeUp.property.test.js`
+  asserts that ten random op sequences reach a stay on the role's work on
+  top (a take-up, role work on top of it, then the same take-up again) at
+  least once. Nothing guaranteed it. The specifier measured the miss rate
+  at mint by replaying the generator 2000 times through a model of the
+  take-up decision: 105 of 2000 runs (about 5%) reached it zero times. The
+  move and blocked floors never missed. The run on main passed, so QA's
+  red was a draw.
+  The hotfix adds `REACH_EXAMPLE`, passed as `fc.assert`'s `examples`, so
+  it runs before the random draws. Through the real bb fixture it reaches
+  move 6, stay-on-top 1, blocked 1 by itself.
+
+  ## What is wanted in this parcel
+
+  - Review the example against the three invariants and the reach floors,
+    and say in the evidence whether the other two floors want the same pin.
+  - Evidence: the review and one run of the file.
+
+  ## Scope
+
+  The property file (review only) and evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. From `extension/`, ONE run: `npx vitest run --config vitest.properties.config.mjs test/bl1871ParcelLineTakeUp.property.test.js`:
+     2 of 2 pass (measured at the hotfix, about 12 s).
+  2. `node specs/pipeline/cli.js specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`:
+     all ok, as on main.
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  3771562541. No register row: QA named the red unowned and the hotfix
+  turned it green. Ledger entry linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Holder told the same pass: QA, BL-1876 at 7b078d90b0.

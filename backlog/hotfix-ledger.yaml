@@ -650,3 +650,10 @@
   stamp_ticket: BL-1896
   human_decision: null
   decided_at: null
+- commit: 3771562541
+  subject: "Hotfix: bl1871ParcelLineTakeUp's first invariant test runs a fixed example that reaches move, blocked and work-on-top before its ten random draws"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1899
+  human_decision: null
+  decided_at: null
