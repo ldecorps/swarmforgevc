@@ -24,7 +24,7 @@ stage_skip_reasons:
 # feature must stay green.
 acceptance: specs/features/BL-871-property-lane-worker-pool-cap.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM: the unit lane keeps failing on genuinely new unhandled errors - no
   dangerouslyIgnoreUnhandledErrors there (engineering rule: the
