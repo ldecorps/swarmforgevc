@@ -1,5 +1,5 @@
 id: BL-1877
-title: "Every role's pre-commit hook runs the whole property lane (493 files, about 7 minutes) when a commit stages any extension/src file or property test; 41 commits paid it on 2026-10-01 alone, and QA's gather runs the same lane once per parcel anyway; a commit now runs only the property files its staged change reaches, and the whole lane only when it cannot tell which"
+title: "Stamp-off for hotfix 9868dcfd5f: every role's pre-commit hook runs the whole property lane (493 files, about 7 minutes) when a commit stages any extension/src file or property test; 41 commits paid it on 2026-10-01 alone, and QA's gather runs the same lane once per parcel anyway; a commit now runs only the property files its staged change reaches, and the whole lane only when it cannot tell which"
 milestone: M8
 type: defect
 severity: high
@@ -74,7 +74,69 @@ source: |
   each of which paid the same run.
 
 description: |
-  ## What is wrong
+  ## Status: hotfix 9868dcfd5f landed the fix
+
+  The human, 2026-10-02 morning, specifier pane, verbatim: "Hot fix test
+  suite duration too long". The specifier hotfixed this ticket's guard on
+  main under the 2026-10-01 directive, so this parcel is its stamp-off:
+  the pipeline's review of what landed, plus the acceptance handler the
+  hotfix did not write. Review the guard change, do not re-apply it.
+
+  ## What the hotfix changed
+
+  - `swarmforge/scripts/property_reach.js` (new) answers which property
+    files a staged change reaches, or ALL. Reached: a staged property file
+    itself; a file whose literal require/import graph (out/, test helpers,
+    specs/pipeline) reaches a changed module; a file that names a reached
+    out/ module or the changed source by file name right after a quote or
+    `/` (a spawned CLI); a file that names a swarmforge/scripts or step-lib
+    script that itself names one (one more hop); and, for the 19 files that
+    require by a built path, a bare quoted module name, or a step-registry
+    loader when the change reaches a step handler. Whole-line comments do
+    not count (prose in land_step_lib.bb once pulled 21 land-step files
+    into a one-line change). ALL when a staged path is not a .ts module
+    under extension/src, the module was deleted or has no out/ file, or the
+    change reaches the lane's config or setup files.
+  - `check_property_suite_drift.sh`'s default path (no injected command)
+    compiles, asks property_reach.js, and runs only the reached files with
+    `vitest run --config vitest.properties.config.mjs <files>`. It runs
+    the whole lane when the compile fails, the script is missing or
+    errors, or it answers ALL, and nothing when the change reaches no
+    property file. `SWARMFORGE_PROPERTY_GUARD_WHOLE_LANE=1` forces the
+    whole lane. The injected-command path (the shell tests) is unchanged.
+    The allowlist, re-run-alone, refusal log and canary all apply to the
+    reached run as they did to the whole lane.
+
+  ## Measured at the hotfix (host load about 14-17 on 20 cores)
+
+  - recordBounceArgs.ts staged: 3 files, 13 s for the whole guard. Before:
+    about 400 s for every such commit (source).
+  - bridgeServer.ts staged (a central module): 35 files, 268 s, including
+    a 30 s re-run of bl857, which failed under load and passed alone
+    (BL-1407 recorded it as a flake).
+  - Reach over 80 sampled src modules: median 15 files, p90 74, max 117 of
+    494; 1 ALL (the lane's own budget module). Recall audit: every
+    property file whose code names a sampled module, with or without an
+    extension, was reached, except quoted generic words (git's 'commit',
+    the 'extension' directory, 'index').
+
+  ## What is wanted in this parcel
+
+  - Review the reach rules against the invariant. A file the change
+    reaches only through a chain the rules do not follow (a spawned script
+    two hops away) is the known gap ruling A accepted; QA's gather still
+    runs the whole lane. If a rule is wrong rather than incomplete, fix it
+    here.
+  - Build the feature's handler: its scenarios are unbuilt. The hotfix
+    narrows only the default path, so the fixture drives that path, for
+    example with PATH stubs for npm and npx that record their argv and a
+    real node for property_reach.js. A seam for the reached-files runner is
+    your call (direction, not mandate).
+  - Unit coverage for property_reach.js's rules on a mkdtemp fixture
+    tree, and a case in the guard's shell test for the reached run.
+  - Evidence: the review, and one timed one-module commit on the parcel.
+
+  ## What was wrong
 
   `swarmforge/scripts/run_commit_guards.sh` runs
   `check_property_suite_drift.sh` last. Its `staged_needs_check` fires on
@@ -108,8 +170,8 @@ description: |
 
   ## Scope
 
-  `check_property_suite_drift.sh`, its shell test, the step handler,
-  evidence.
+  `property_reach.js`, `check_property_suite_drift.sh`, their tests, the
+  step handler, evidence.
 
 out_of_scope: |
   - QA's gather and the hardener's lanes: they keep the whole lane.
@@ -121,7 +183,10 @@ qa_e2e_procedure: |
   1. `node specs/pipeline/cli.js specs/features/BL-1877-a-commit-runs-only-the-property-files-its-change-reaches.feature`:
      4 of 4 ok (01 has two rows). Measured at mint: no handler yet.
   2. The guard's shell test in `swarmforge/scripts/test/`: ALL PASS.
-  3. Read the coder's before and after timing for a one-module commit.
+  3. `node swarmforge/scripts/property_reach.js . extension/src/tools/recordBounceArgs.ts`
+     prints 3 property files (measured at the hotfix), and the same for
+     `extension/src/tools/vitest-worker-memory-budget.ts` prints ALL.
+  4. Read the coder's review and the timed one-module commit.
 
 notes: |
   Minted 2026-10-02 by the specifier from the human's question in the
@@ -131,5 +196,11 @@ notes: |
   option was named, so this records A, the recommended option the
   scenarios are written for. The specifier told the human, and a reply
   naming B re-pends the ticket for the rewrite.
+  2026-10-02 (specifier): turned into the stamp-off of hotfix 9868dcfd5f at
+  the human's word in the specifier pane, verbatim: "Hot fix test suite
+  duration too long". The coder's first Work note (014800) was completed
+  at 00:12Z with no BL-1877 commit, so nobody held a build. Ledger entry
+  linked here. The approval and ruling A stand: the hotfix implements A,
+  and the scope only changed to reviewing it and building the handler.
 
 assigned_to: coder

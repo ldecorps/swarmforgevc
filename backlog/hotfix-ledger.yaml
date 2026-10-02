@@ -559,3 +559,10 @@
   stamp_ticket: BL-1878
   human_decision: null
   decided_at: null
+- commit: 9868dcfd5f
+  subject: "Hotfix: a commit runs only the property files its staged change reaches, so a one-module commit's property check takes seconds instead of about 7 minutes"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1877
+  human_decision: null
+  decided_at: null
