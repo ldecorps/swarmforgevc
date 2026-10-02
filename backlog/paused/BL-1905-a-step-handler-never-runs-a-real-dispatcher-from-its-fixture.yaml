@@ -1,0 +1,167 @@
+id: BL-1905
+title: "Five acceptance step handlers run the REAL receive or completion dispatcher from their fixture, so the receive lands in the checkout running the feature and reads the live mailbox as the fixture's role (BL-1317's moved swarmforge-QA on 2026-10-02); each runs its fixture's own copy, a scan scenario keeps the class out of specs/pipeline/steps, and this parcel is the stamp-off of hotfixes 1b7d4e4bbe and 224074e2a7"
+milestone: M8
+type: defect
+severity: high
+# high: a test fixture reads, and can claim from, the live mailbox of
+# another role and takes up its parcel in whatever checkout runs the
+# feature - the BL-1390 guardrail broken in the live lane (BL-1897 is the
+# same class at high). It is also the stamp-off of two standing-red
+# hotfixes, which are high at first sighting (2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+depends_on: []
+mutation_cost: low
+# low: step handlers and one new scan handler; no production code.
+slice_size_envelope: medium
+# medium: five fixtures move onto their own scripts copy, plus the scan.
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "test-side fixture changes of one shape; a shared install helper, if the coder extracts one, is part of the fix"
+  architect: "no production code or boundary changes; BL-998 already settled the fixture shape"
+  hardender: "no production code changes, so nothing to mutate; the scan's scenario 03 is its own negative control"
+  documenter: "no documented behaviour changes"
+
+acceptance: specs/features/BL-1905-a-step-handler-never-runs-a-real-dispatcher-from-its-fixture.feature
+
+# Handler pin only (BL-233, BL-1371). The scan runs over the real
+# specs/pipeline/steps tree, so the proof is behavioural.
+required_wiring:
+  - 'specs/pipeline/steps/bl1905StepHandlerNeverRunsRealDispatcherSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Found tracing QA note 003731; also the stamp-off of two hotfixes landed
+  the same pass under the human's 2026-10-01 directive (source). No choice
+  is posed. FIRM: every step handler that runs a receive or completion
+  dispatcher runs its fixture's own copy or the cwd-rooted leaf; nothing
+  changes in swarmforge/scripts.
+
+invariants:
+  - "No acceptance step handler starts a receive or completion dispatcher from the real scripts dir; a fixture runs its own installed copy or the cwd-rooted leaf."
+
+source: |
+  QA note 003731 (2026-10-02 19:53Z): "swarmforge-QA reset x2 mid-pass by
+  non-QA (318263e06d,aa4ded4d8a); BL-1882 ev". Traced by the specifier to
+  bl1317AdaptEffortSteps.js's complete() (BL-1904's source has the full
+  trace). The census of every handler with the same shape, and a scratch
+  clone run of each one's feature, are in
+  backlog/evidence/BL-1905-census-20261002.md.
+  The census runs turned up two unowned reds, hotfixed the same pass:
+  1b7d4e4bbe (BL-1566 scenario 06, red since BL-1609 on 2026-09-17) and
+  224074e2a7 (BL-231's battery, 6 of 18 red since BL-1529 on 2026-09-12).
+
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim
+  (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## What is wrong
+
+  `done_with_current_task.bb` and `done_with_current_batch.bb` end by
+  exec'ing the self-rooting `ready_for_next_*.sh`, and `ready_for_next.bb`
+  and `done_with_current.bb` dispatch to them. Those wrappers `cd` into
+  their own scripts dir. A handler that starts the REAL copy from a
+  fixture therefore runs the receive in the checkout holding the real
+  scripts, as the fixture's role, against the live mailbox. It prints, and
+  can claim, that role's parcels and runs the BL-1871 take-up there.
+  Five handlers do this on 224074e2a7 (census evidence):
+  bl1237ReferenceFreshnessDirectionSteps.js,
+  bl1266ReferenceFreshnessRefSelectionSteps.js, bl1317AdaptEffortSteps.js,
+  bl1566ArticleFortyTwoHoldRecordSteps.js and
+  bl615OrphanedClaimProgressSidecarReapSteps.js. bl615 sets
+  SWARMFORGE_SKIP_READY_FOR_NEXT=1, and no script reads it. BL-998's guard
+  covers swarmforge/scripts/test/*.sh only.
+
+  ## What is wanted
+
+  - Each of the five runs its fixture's own copy (BL-998's
+    installScripts, and complianceBatterySteps.js since 224074e2a7) or the
+    cwd-rooted leaf. Direction, not mandate: the copy needs a checkout of
+    its own for the wrapper's cd to land in, so a fixture seat that is a
+    plain directory becomes a linked worktree (224074e2a7 shows it). Three
+    handlers now copy the scripts tree, so a shared helper under
+    specs/pipeline/steps/lib/ fits. Remove bl615's dead env var.
+  - Each of the five features keeps its scenario count and passes.
+  - The step handler `bl1905StepHandlerNeverRunsRealDispatcherSteps`,
+    registered in the same parcel. Scenario 01 scans the real
+    specs/pipeline/steps. Scenario 02 pins the census (specifier.prompt,
+    BL-1445): the four handlers that only NAME a real dispatcher must be
+    candidates and must not be flagged. Re-run the census script in the
+    evidence before trusting your scan's population. Scenario 03 builds a
+    synthetic handler under mkdtemp and is the scan's negative control.
+    The dispatcher set is the receive and completion members of BL-998's
+    derived set (listed in the evidence). Derive it rather than copy the
+    list, as BL-1539 requires of the shell guard.
+  - Stamp-off review, no re-apply, of the two hotfixes the census found
+    (see below). Record the review in the evidence.
+
+  ## Status: hotfixes 1b7d4e4bbe and 224074e2a7 landed
+
+  1. `1b7d4e4bbe`, bl1566ArticleFortyTwoHoldRecordSteps.js. Scenario 06
+     ("an unreleased hold never blocks completing the parcel QA parks")
+     completes a git_handoff, which BL-1609 refuses without a forward or
+     a stated reason. The handler now passes `--no-op` with a reason when
+     the scenario's in_process holds a git_handoff. Review that this is how
+     QA parks a withheld parcel. The completion now reaches the trailing
+     receive, as scenario 08's already did, and this parcel's fixture
+     change removes it.
+  2. `224074e2a7`, complianceBatterySteps.js. The fixture's single
+     swarm_handoff.bb call now goes through sendGitHandoffTwoCall. Before
+     that, the fixture was moved off the real dispatchers, because a
+     successful send would have let them receive and complete as the coder
+     against the live mailbox. The coder dir is a linked worktree with its
+     own scripts copy, and the compliant completion states `--no-op`.
+     Review whether `--no-op` changes what the battery's "complete" check
+     proves (it reads completed_at only).
+
+  ## Scope
+
+  The five handlers, the new scan handler (and a shared install helper if
+  extracted), evidence. If a fix seems to need swarmforge/scripts, send the
+  specifier a note first. No production-side env bypass
+  (engineering.prompt: inject seams, never *_FORCE_RESULT switches).
+
+  ## Out of scope
+
+  Moving a checkout for another role's parcel (BL-1904). Commit-time
+  guarding of JS handlers (BL-998's guard is shell-only; the scenario here
+  runs in the acceptance lane). Unit tests under extension/.
+
+qa_e2e_procedure: |
+  Run everything in a scratch clone of the PARCEL commit, never your
+  worktree, until scenario 01 is green there: `git clone -q --shared` the
+  repo, check out the parcel commit on a branch `swarmforge-QA` plus one
+  `git commit --allow-empty`, symlink extension/out and
+  extension/node_modules from the live checkout, write .swarmforge/roles.tsv
+  as the live one with the repo root rewritten to the clone, and copy a
+  live coder git_handoff into
+  `.worktrees/coder/.swarmforge/handoffs/inbox/in_process/`.
+  1. ONE run: BL-1905's feature, 3 of 3 ok.
+  2. ONE run each: BL-1237 6 of 6, BL-1266 4 of 4, BL-1317 3 of 3, BL-1566
+     8 of 8, BL-615 2 of 2, BL-231 18 of 18. After all six, the clone's
+     swarmforge-QA is still at its empty commit, there is no
+     refs/swarmforge/parcel-backup ref, and the seeded parcel is still the
+     only file in the clone's coder in_process. Measured at mint (evidence
+     table): BL-1317's and BL-615's runs each moved the clone's branch.
+  3. Read the coder's stamp-off review of 1b7d4e4bbe and 224074e2a7.
+
+notes: |
+  Minted 2026-10-02 by the specifier, the same pass as BL-1904 (sibling:
+  BL-1904 stops the take-up moving a checkout that is not the role's own;
+  this ticket stops the handlers reaching the live mailbox at all).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Stamp-off of hotfixes 1b7d4e4bbe and 224074e2a7: both hotfixes
+  touch files this ticket changes anyway, so it is their stamp-off rather
+  than a second ticket. Ledger entries linked here. The hotfixes turned
+  both reds green, so no register row was added.
+  How BL-1317's stray got armed: hotfix 81a2c737c2 (BL-1882, the
+  specifier's own, 2026-10-02) gave complete() a `--no-op` reason so the
+  completion would pass BL-1609. Until then the completion was refused
+  before the trailing receive ever ran. BL-1871's take-up (landed the same
+  day) is what turned the stray receive into a branch move. Lesson for
+  hotfixes: making a fixture's completion succeed also runs whatever the
+  helper does after it.
+  [coder, qa] per the 2026-10-01 routing rule (test side only).

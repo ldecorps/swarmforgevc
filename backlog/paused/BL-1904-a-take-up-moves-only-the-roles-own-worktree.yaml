@@ -1,0 +1,173 @@
+id: BL-1904
+title: "BL-1871's take-up moves whatever checkout the receive runs from, for whatever role SWARMFORGE_ROLE names: on 2026-10-02 a BL-1317 acceptance run made a coder receive in QA's worktree and swarmforge-QA was moved onto origin/main twice mid-pass, dropping QA's parcel; a take-up now moves only the running role's own roles.tsv worktree"
+milestone: M8
+type: defect
+severity: high
+# high: a live role branch was moved mid-pass and the parcel QA was gating
+# fell off its line (QA caught it in its own reflog and re-merged). Any role
+# that runs BL-1317's feature, or any shell whose cwd sits in another role's
+# checkout when it runs a receive, does the same today.
+status: todo
+epic: landing-is-a-merge
+priority: 4
+depends_on: []
+mutation_cost: low
+# low: one refusal check where the take-up decides to move, plus the
+# feature's handler. No TypeScript.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one guard in parcel_line_lib.bb and a step handler; nothing to refactor"
+  architect: "no boundary moves; the take-up already knows the role and its roles.tsv row, it just never compared them"
+  hardender: "Babashka with no Stryker lane (BL-472); the fix guards a write rather than adding one, and the scenarios pin both the refusal and the normal move"
+
+acceptance: specs/features/BL-1904-a-take-up-moves-only-the-roles-own-worktree.feature
+
+# Handler pin only (BL-233, BL-1371). The scenarios drive the real
+# ready_for_next_task.bb, whose take-up-parcel-line! is the live consumer
+# already, so no consumer anchor would gate anything (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1904TakeUpMovesOnlyOwnWorktreeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Found by QA (note 003731) and traced by the specifier. No choice is posed.
+  FIRM: the take-up refuses, and prints why, when the checkout it would move
+  is not the running role's own roles.tsv worktree. The stray receive that
+  BL-1317's fixture makes into the real checkout is BL-1905's, not this
+  ticket's.
+
+invariants:
+  - "A take-up moves, resets or switches only the checkout registered for the running role in roles.tsv; every other checkout's branch and HEAD are left exactly as they were."
+
+source: |
+  QA note 003731 (2026-10-02 19:53Z): "swarmforge-QA reset x2 mid-pass by
+  non-QA (318263e06d,aa4ded4d8a); BL-1882 ev". QA's BL-1882 evidence
+  (705b132d88) records that while it ran six features, swarmforge-QA was
+  reset to 318263e06d and then aa4ded4d8a (topic-record tips of main),
+  dropping parcel 1c2af996c8, with nothing in land-repoint.log.
+  Specifier trace, 2026-10-02 21:00-21:20Z:
+  - QA's reflog shows "branch: Reset to" at 19:38:22Z and 19:39:37Z, the
+    `git switch -C` pattern of parcel_line_lib.bb's take-up!.
+  - take-up! writes a parcel-backup ref under the RUNNING role before it
+    moves. refs/swarmforge/parcel-backup/coder/20261002T193822.908Z holds
+    1c2af996c8 and .../coder/20261002T193937.077Z holds 318263e06d: QA's
+    heads at those moments, not the coder's (the coder's own worktree sat
+    at 318263e06d from 19:36:48Z). So a take-up running as the coder moved
+    QA's checkout.
+  - QA's transcript: at 19:37:17Z it ran BL-998, 529, 1316, 1317, 1539 and
+    1665's features from .worktrees/QA. The coder agent was only reading
+    files then, and no agent transcript holds the PARCEL_LINE output.
+  - Reproduced in a scratch `git clone --shared` with a swarmforge-QA
+    branch one commit ahead of origin/main and a copy of the live coder's
+    in_process BL-1901 git_handoff: of the six features only BL-1317's
+    moved the clone's branch (3 of 3 ok, 234 s, one
+    parcel-backup/coder ref, HEAD at origin/main). The process tree showed
+    `bb .../swarmforge/scripts/ready_for_next_task.bb --idle-boundary`
+    under BL-1317's generated test.
+  Mechanism: bl1317AdaptEffortSteps.js's complete() runs the REAL
+  done_with_current_task.bb from its fixture with SWARMFORGE_ROLE=coder.
+  That helper's run-ready! execs the real ready_for_next_task.sh, which
+  cds into the real scripts dir, so the receive's worktree-root and
+  target-root are the checkout the feature runs from. It reads the live
+  coder's mailbox; BL-1887 makes a git_handoff at a main commit a fresh
+  start, and the take-up moves the current checkout's branch (QA's) onto
+  origin/main.
+
+description: |
+  ## What is wrong
+
+  `ready_for_next_task.bb`'s take-up-parcel-line! passes
+  `(handoff-lib/worktree-root)` (the cwd's `git rev-parse --show-toplevel`)
+  as :root and `SWARMFORGE_ROLE` as :role. It already loads that role's
+  roles.tsv row, but only to read `:worktree-name` for the master check;
+  `:worktree-path` is never compared with :root. Whenever the receive runs
+  in a checkout that is not the role's own, the take-up moves that
+  checkout's branch for another role's parcel.
+
+  ## What is wanted
+
+  - When the checkout the take-up would move is not the running role's
+    roles.tsv worktree, the take-up moves nothing, writes no parcel-backup
+    ref, and prints one PARCEL_LINE line naming the checkout and saying the
+    parcel was not taken up there. Compare canonical paths of the git
+    toplevel, so a receive run from a subdirectory of the role's own
+    worktree still moves (scenario 02).
+  - Direction, not mandate: the comparison belongs where the move is
+    decided (move-decision takes facts; a :foreign-checkout? fact fits its
+    existing :blocked shape), fed from the role-info take-up-parcel-line!
+    already loads. Callers that pass :root without a roles.tsv row today
+    (bl1887MainCommitHandoffStartsFreshSteps.js and
+    parcel_line_lib_test_runner.bb call take-up! directly) must stay green:
+    give their fixtures the row, or keep the check where role-info exists.
+    Never let a missing row read as "foreign" for a role the master check
+    already skips.
+  - Before relying on the check, confirm a `config rotation router` pack's
+    rotated role runs from its own roles.tsv worktree (rotate_to_role.sh).
+    If a rotated role runs from the resident's checkout, send the specifier
+    a note before building: the check would refuse every rotated take-up.
+  - The step handler `bl1904TakeUpMovesOnlyOwnWorktreeSteps`, registered in
+    the same parcel. The fixture is a `git init` with a bare origin under
+    mkdtemp, proven by `rev-parse --git-common-dir` before any mutating git
+    command (BL-1390). It drives the real ready_for_next_task.bb (the leaf;
+    it uses its cwd, so it stays in the fixture) with SWARMFORGE_ROLE set
+    and the chosen checkout as cwd.
+  - Scenario 03 builds the master-resident shape (a specifier row with
+    worktree-name master on the shared checkout) and asserts silence there
+    (specifier.prompt, BL-1515's roster-shape rule).
+
+  ## Scope
+
+  parcel_line_lib.bb and/or ready_for_next_task.bb's take-up call, the step
+  handler, the fixtures of existing direct take-up! callers if they need a
+  row, evidence. The documenter adds the new PARCEL_LINE refusal line to
+  docs/how-to/BL-1871-parcel-line-take-up.md, beside the existing
+  "uncommitted changes" refusal.
+
+  ## Out of scope
+
+  Stopping a test from dispatching into the real checkout at all (BL-1905).
+  What the stray receive prints or claims from the live mailbox (BL-1905).
+  Restoring any branch: QA re-merged 1c2af996c8 itself.
+
+qa_e2e_procedure: |
+  On the parcel commit, from your worktree:
+  1. ONE run: `node specs/pipeline/cli.js specs/features/BL-1904-a-take-up-moves-only-the-roles-own-worktree.feature`:
+     4 of 4 ok (scenario 02 is an outline of 2 rows).
+  2. ONE run each: BL-1871's and BL-1887's features and
+     `bb swarmforge/scripts/test/parcel_line_lib_test_runner.bb`. Measured
+     at mint on main (f00e859d75): BL-1871 9 of 9 ok (15 s), BL-1887 4 of 4
+     ok (3 s), runner ALL PASS (2 s). Same results expected.
+  3. The incident, replayed in a scratch clone so nothing live is touched
+     (BL-1905 has not removed BL-1317's stray receive yet):
+     `git clone -q --shared <repo> <scratch>/repo`; in it `git switch -c
+     swarmforge-QA` and one `git commit --allow-empty`; symlink
+     extension/out and extension/node_modules from the live checkout; write
+     `.swarmforge/roles.tsv` as the live one with the repo root rewritten to
+     the clone; copy any live coder git_handoff at a main commit into
+     `.worktrees/coder/.swarmforge/handoffs/inbox/in_process/`. Then run
+     BL-1317's feature once from the clone root. Measured at mint on main:
+     3 of 3 ok, 234 s, and the clone's swarmforge-QA moved to origin/main
+     with one refs/swarmforge/parcel-backup/coder ref. Expected on the
+     parcel: 3 of 3 ok, swarmforge-QA still at its empty commit, no
+     parcel-backup ref.
+  4. `grep -n "not taken up" docs/how-to/BL-1871-parcel-line-take-up.md`
+     lists the new refusal next to the uncommitted-changes one.
+
+notes: |
+  Minted 2026-10-02 by the specifier from QA note 003731.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Not hotfixed: there is no red on main (BL-1317's feature passes while
+  it moves the branch), and the fix is a guard with a feature and handler.
+  [coder, documenter, qa] per the 2026-10-01 routing rule: Babashka
+  production code, plus the BL-1871 how-to that lists PARCEL_LINE outcomes.
+  Sibling: BL-1905 (high) removes the stray receive from the five step
+  handlers that still run a real receive or completion dispatcher. Either can
+  land first; with both landed a test neither reaches the live mailbox nor
+  moves a checkout.
+  IR-DRY: the remaining near-duplicate findings are the one parameterized
+  step `ready_for_next_task runs as "<role>" from "<checkout>"` and the
+  one mailbox step with different quoted values; the handler validates
+  both against KNOWN_VALUES.
+  Until this lands, a role that runs BL-1317's feature should check
+  `git reflog -3` afterwards and re-take its parcel if the branch moved.
