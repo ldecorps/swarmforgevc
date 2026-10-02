@@ -15,7 +15,10 @@
 // git fixture inside ONE bb process per draw (the lib loads once, BL-1865's
 // per-spawn cost). Generator reach is asserted, not hoped for: across the
 // draws the sequences must move, stay on work-on-top, and be blocked by a
-// dirty tree. Invariant 3 batches every draw into one bb call.
+// dirty tree. REACH_EXAMPLE runs first and reaches all three by itself:
+// ten random draws missed work-on-top in about 1 run in 20, and that red
+// held a parcel at QA on 2026-10-02. Invariant 3 batches every draw into
+// one bb call.
 //
 // Non-vacuity: with take-up!'s dirty check removed (move-decision's
 // (seq dirty-paths) clause), invariant 1 fails on the first blocked op; with
@@ -93,6 +96,13 @@ const op = fc.oneof(
   { weight: 1, arbitrary: fc.constant(['clean']) }
 );
 
+// Six moves, one dirty-tree block, one stay on the role's own work on top.
+const REACH_EXAMPLE = [
+  ['take-up', 0], ['on-top'], ['take-up', 0],
+  ['dirty'], ['take-up', 1], ['clean'],
+  ['take-up', 1], ['take-up', 2], ['take-up', 0], ['take-up', 1], ['take-up', 2],
+];
+
 test(
   'BL-1871/BL-654 invariants 1 and 2: a take-up loses no commit, never moves a dirty tree, never makes a commit',
   () => {
@@ -103,7 +113,7 @@ test(
         const reach = JSON.parse(out.split('\n').pop());
         for (const k of Object.keys(total)) total[k] += reach[k];
       }),
-      { numRuns: 10 }
+      { numRuns: 10, examples: [[REACH_EXAMPLE]] }
     );
     // Generator reach floor: every state the invariants quantify over occurred.
     assert.ok(total.move >= 5, `moves reached: ${JSON.stringify(total)}`);
