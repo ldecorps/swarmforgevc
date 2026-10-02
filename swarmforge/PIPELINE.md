@@ -32,7 +32,7 @@ merge, close tickets, or promote backlog items.
 | **QA** | `QA` | task | **coordinator** *(approval + merge-up broadcast)*; lands the approved commit on `main` |
 | **art-director** | `art-director` | task | **specifier** *(briefs)*; **QA** *(land note, BL-1444)*; answers QA sign-off notes — outside the chain (Article 1.10) |
 
-- *Task once BL-1871 lands and the seat relaunches.
+- *Task once the seat relaunches (BL-1871 landed 2026-10-02).
 - The specifier works on **master** but only for spec/prompt files — not
   integration merges; every other role works only in its own
   `.worktrees/<role>` branch. See **pipeline-detailed.md** for the

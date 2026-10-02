@@ -69,9 +69,9 @@
 
 ## Forwarded Commits Carry Their Lineage
 - A forwarded commit MUST have the received commit as an ancestor
-  (`git merge-base --is-ancestor <received> <yours>`). Until BL-1871
-  lands, merge FIRST (plain `git merge`, never `reset --hard`); after,
-  `ready_for_next` moves you onto it. Then work and forward, re-running
+  (`git merge-base --is-ancestor <received> <yours>`). In task mode
+  `ready_for_next` moves you onto it (BL-1871); a batch seat merges FIRST
+  (plain `git merge`, never `reset --hard`). Then work and forward, re-running
   the ancestry check every time. See **workflow-detailed.prompt**.
 
 ## An Approval Authorizes Only Its Ticket's Work (BL-506)
@@ -81,11 +81,11 @@
   out-of-scope diffs. See **workflow-detailed.prompt**.
 
 ## A Bounce Must Be Reverted Out Of The Bouncing Branch (BL-490/BL-495)
-- Until BL-1871 lands: a bounce does NOT remove the bounced commit —
+- In batch mode a bounce does NOT remove the bounced commit —
   revert what it wrongly ADDED, same step (confirm CONTENT is gone,
   never by ancestry); an OMISSION bounce reverts NOTHING; `-m 1` reverses
-  the WHOLE merge. Already on `main` → report, never revert. After, the
-  next take-up leaves that line. See **workflow-detailed.prompt** (BL-954/956).
+  the WHOLE merge. Already on `main` → report, never revert. In task mode
+  the next take-up leaves that line (BL-1871). See **workflow-detailed.prompt** (BL-954/956).
 
 ## Never Blind-Forward A Bounce You Cannot Fix (BL-425/BL-576)
 - A bounce routes to the role that owns the fix. One reaching you for a
@@ -104,9 +104,9 @@
   read the one that is ahead (BL-891). See **workflow-detailed.prompt**.
 
 ## QA merge-up broadcast (worktree roles)
-- A worktree role's QA merge-up `note`: until BL-1871 lands, `git merge
-  <qa-commit>`, resolve conflicts, then `done_with_current.sh`; after it,
-  merge nothing. Never forward it. Specifier and coordinator are not
+- A worktree role's QA merge-up `note`: in task mode merge nothing
+  (BL-1871); a batch seat runs `git merge <qa-commit>`, resolves
+  conflicts, then `done_with_current.sh`. Never forward it. Specifier and coordinator are not
   recipients (BL-247). See **workflow-detailed.prompt**.
 
 ## Announcements, Commit Messages, Temporary Files

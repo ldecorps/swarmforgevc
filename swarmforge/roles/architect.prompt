@@ -279,10 +279,9 @@ You are the architect.
   coordinator). Draft only the forward `to:`; do not manually list reverse
   recipients for routine structure handback.
 - A `non-forwarding: true` inbound sends no `git_handoff`; complete it with
-  `done_with_current.sh`. Until BL-1871 lands it is merge-only: merge it
-  first. After BL-1871 lands, merge nothing - `ready_for_next` takes each
-  parcel up on its own line, and merging a reverse copy into the line you
-  hold would put another ticket's commits on it (Article 2.4).
+  `done_with_current.sh` and merge nothing (BL-1871): `ready_for_next`
+  takes each parcel up on its own line, and merging a reverse copy into the
+  line you hold would put another ticket's commits on it (Article 2.4).
 - A re-forwarded fixed bounce is never a no-op (2026-09-16, BL-1609). The
   received commit may be evidence-only; the PARCEL is not. Merge it, run
   the full checklist, commit the inventory (NONE or defects) and forward or

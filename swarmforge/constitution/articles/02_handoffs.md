@@ -55,22 +55,21 @@ helper-synthesized. The last non-coordinator pack role's forward
 
 ## 2.4 Receiving Rules
 Use `ready_for_next.sh` to receive work (checks `in_process/` first). Batch
-roles process several parcels at once (the live cleaner and hardener, until
-BL-1871 lands). A parcel stuck in `inbox/new/` >10 minutes: the coordinator
+roles process several parcels at once (the live cleaner and hardener,
+until they relaunch). A parcel stuck in `inbox/new/` >10 minutes: the coordinator
 must chase it. See **02-handoffs-detailed.md**.
 
 A `non-forwarding: true` inbound sends no `git_handoff` (refused while it is
-`in_process`). Until BL-1871 lands it is **merge-only**: run the payload
-merge, then `done_with_current.sh`; on a reverse, replay this role's task
-onto the inbound tree. After it, merge nothing (parcel lines).
+`in_process`). In task mode merge nothing (parcel lines, BL-1871). A batch
+seat is **merge-only**: merge the payload, then `done_with_current.sh`.
 
 ## 2.5 Merge-Up Protocol
 The full sequence (QA broadcast → land on `main` → coordinator bookkeeping)
 is stated in `PIPELINE.md` steps 5–6 — not repeated here. Draft-format
 mechanics: 2.2/2.3 above. See **02-handoffs-detailed.md**.
 
-Until BL-1871 lands, QA merge-up **notes** are the QA→upstream sync path
-(QA windows stay `forward-only`); after it, a recipient merges nothing.
+A QA merge-up **note** moves nothing in task mode (BL-1871); a batch seat
+still merges it.
 
 ## 2.6 Multi-Ticket Batch Forwards Carry Every Ticket ID
 - A `git_handoff` names ONE ticket. When a batch role's committed work

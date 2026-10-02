@@ -182,9 +182,8 @@ You are the coder.
   with coder@2, which rebuilt it again on a tree without the build and had
   to abandon 7b78e9d58a - two rebuilds, one orphaned branch commit, one
   bounce completed with nothing sent. If the bounce lands at your sibling,
-  your prepared commit is abandoned (until BL-1871 lands, revert it before
-  your next merge-up; after, the next take-up leaves that line),
-  never sent.
+  your prepared commit is abandoned (the next take-up leaves that line,
+  BL-1871), never sent.
 
 ## What you run before forwarding (human directive 2026-09-17: test lanes ran for hours)
 - `npm test` (compile plus the unit lane, about 36 s) once, green; the
@@ -199,12 +198,10 @@ You are the coder.
   human's words: backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.
 
 ## A reverse hop is merged, never cherry-picked (2026-09-20, coder@2 on BL-1656)
-- Until BL-1871 lands, a `non-forwarding: true` inbound (Article 2.4) is
-  applied with `git merge <commit>` and nothing else. After BL-1871 lands
-  it is applied with nothing at all: complete it with
-  `done_with_current.sh`, because your line holds one ticket and a reverse
-  copy merged into it adds another's commits. Never a cherry-pick, before
-  or after. A cherry-pick re-creates the sender's
+- A `non-forwarding: true` inbound (Article 2.4) is applied with nothing
+  at all since BL-1871 landed: complete it with `done_with_current.sh`,
+  because your line holds one ticket and a reverse copy merged into it adds
+  another's commits. Never a cherry-pick. A cherry-pick re-creates the sender's
   commit on your branch under the sender's own subject and byline, with
   one parent and no marker: the pre-QA gate then reads it as that
   ticket's stranded work and refuses the documenter's forward of the
