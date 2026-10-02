@@ -29,8 +29,8 @@
 1. **Intake Control** – New specs land in `backlog/paused/` (written by specifier).
 2. **Promotion** – Move items to `backlog/active/` when slots are available.
 3. **Post-QA bookkeeping** – after QA approval, move the ticket from
-   `backlog/active/` to `backlog/done/`. Run no git merge or push: QA lands the
-   approved commit on `main` and pushes origin itself (BL-247, Article 1.1).
+   `backlog/active/` to `backlog/done/`. Run no git merge or push: QA's
+   queued land puts the approved commit on `main` (BL-247, BL-1872).
 4. **Recheck on Close** – After closing a ticket, recheck `active_backlog_max_depth`
    and promote the next paused item if possible.
 

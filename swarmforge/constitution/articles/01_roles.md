@@ -10,7 +10,7 @@
     (Article 3.6) — especially for old tickets whose premises may be stale.
   - After QA approval, does backlog bookkeeping only: moves the ticket to
     `backlog/done/` and promotes the next paused item. Runs no git merge or
-    push — QA lands the approved commit on `main` (BL-247).
+    push — QA's queued land puts it on `main` (BL-247, BL-1872).
 
 ## 1.2 Specifier
 - **Worktree**: `main`.
@@ -65,9 +65,10 @@
 - **Worktree**: `.worktrees/QA`.
 - **Responsibilities**:
   - Runs final tests and quality checks.
-  - On pass: broadcasts merge-up to the worktree roles, **lands the approved
-    commit on `main`** (push origin, and close the GH issue for a `GH-`-seeded
-    ticket), and notifies the coordinator to do backlog bookkeeping. QA is the
+  - On pass: broadcasts merge-up to the worktree roles and **queues the
+    approved commit's land**; handoffd's lander pushes it, closes a `GH-`
+    issue, notifies the coordinator, and returns a land it cannot complete
+    to QA (BL-1872). QA is the
     integration point (BL-247).
   - Rejects parcels with issues, routing them back to the appropriate role.
 

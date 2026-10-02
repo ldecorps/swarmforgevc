@@ -29,7 +29,7 @@ merge, close tickets, or promote backlog items.
 | **architect** | `architect` | task | **hardender** |
 | **hardender** | `hardender` | batch* | **documenter** |
 | **documenter** | `documenter` | task | **QA** |
-| **QA** | `QA` | task | **coordinator** *(approval + merge-up broadcast)*; lands the approved commit on `main` |
+| **QA** | `QA` | task | **coordinator** *(approval + merge-up broadcast)*; queues the land (the lander lands it, BL-1872) |
 | **art-director** | `art-director` | task | **specifier** *(briefs)*; **QA** *(land note, BL-1444)*; answers QA sign-off notes — outside the chain (Article 1.10) |
 
 - *Task once the seat relaunches (BL-1871 landed 2026-10-02).
@@ -51,9 +51,9 @@ merge, close tickets, or promote backlog items.
    hardening) → documenter (docs) → QA (final gate). See
    **pipeline-detailed.md** for steps 1-4's full pre-trim wording.
 5. **QA** is the last quality gate. On pass it broadcasts a merge-up `note` to
-   every worktree role, **lands the approved commit on `main`** itself
-   (pushes origin, closes a `GH-`-seeded issue; BL-247), then sends the
-   coordinator the approved commit + task id.
+   every worktree role and **queues the approved commit's land**: handoffd's
+   lander lands it on `main`, closes a `GH-` issue and sends the coordinator
+   its note, and returns a land it cannot complete to QA (BL-247, BL-1872).
 6. The **coordinator** (bookkeeping only — no git merge/push): moves the item
    `active/` → `done/`, rechecks the depth cap, and **routes** the next
    promoted item in the SAME turn (mono-router: Work note to coder /

@@ -133,11 +133,12 @@ You are QA.
     parcel ends there. handoffd's lander sweep runs the land step in a
     worktree of its own, sends the coordinator its bookkeeping note, and
     returns a land it cannot complete to you by `note` with the land step's
-    own reason; adjudicate that as you adjudicate a refusal today. Until
-    BL-1872 lands the queue does not exist: land it yourself as below.
-  - **Until BL-1872 lands: Land it on `main` yourself** (BL-247; operator
-    ruling 2026-07-10 — QA is the integration point, not the coordinator). Your approved commit already is
-    the verified, integrated result.     Land via BL-1144 discipline (never
+    own reason; adjudicate that as you adjudicate a refusal today, using
+    the recipe below.
+  - **When the lander returns a land to you: Land it on `main` yourself**
+    as your adjudication directs (BL-247; operator ruling 2026-07-10 — QA
+    is the integration point, not the coordinator). Your approved commit
+    already is the verified, integrated result.     Land via BL-1144 discipline (never
     force-push): sync first (`git fetch origin`, merge `origin/main` into
     your branch, item 2 below says why), then run
     `swarmforge/scripts/land_main_publish.sh <qa-worktree> --land <task-name> <full-sha>`.
@@ -168,13 +169,6 @@ You are QA.
     hold would time out the publish. On push rejection:
     fetch, rematch once (bounded), wait on the lock — never force-push and
     never unbounded tip-purity bounce loops mid-gate.
-    - **Until BL-1872 lands: a land whose log shows `LAND_REMATCH` published
-      a commit nothing recorded (QA note 003682).** The land step recorded
-      the replay it built, and the rematch rebuilt that replay as a new
-      commit. Record the `LAND_PUBLISHED` sha against the same approved
-      source with `record_land_approval.bb`, then check `is_qa_ancestor.sh`
-      (steps 1 and 2 of the hand-built recipe below) before you report the
-      land done.
     - **The publish re-points your branch after every land (BL-1438, BL-1772).**
       `--land` (the path this recipe runs) and `--push` both invoke the
       re-point. Right after `LAND_PUBLISHED`, the publish prints one more line:
