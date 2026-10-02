@@ -33,3 +33,4 @@
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
 hardening	extension/src/tools/emit-throttle-recommendation.ts,extension/src/tools/rework-observatory.ts,extension/src/tools/suboptimality-verdict-line.ts	BL-1874	2026-10-01	BL-1869's deferred mutation pass (cooldown after hotfix 51591aab4a); BL-1874's hardener pass discharges it
+shell	swarmforge/scripts/test/test_finish_shift_lib.sh	BL-1883	2026-10-02	case 08 intermittent: the front-desk pidfile in the shared fixture root vanishes before the keep snapshot (2 of 3 runs red at mint); remover not yet found

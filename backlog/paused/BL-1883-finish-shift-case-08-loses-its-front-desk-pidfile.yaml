@@ -1,0 +1,99 @@
+id: BL-1883
+title: "test_finish_shift_lib.sh case 08 is intermittently red: the front desk's pidfile in the shared fixture root is gone by the time the keep snapshot runs, while its process still lives, so the snapshot records nothing and BL-762's check that a kept component dying unexpectedly is caught reads CLEAN"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05), and
+# this case is the one that proves finish-shift notices a dead front desk.
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: a shell test fixture, unless the remover turns out to be production
+# code (then add the stages its language needs, notes).
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a test fixture fix; nothing to refactor"
+  architect: "no boundary moves unless the remover is production code, which the coder raises as a note"
+  hardender: "test-side unless the remover is production code; bb and shell have no Stryker lane (BL-472)"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-762's contract (BL-1251): case 08 is
+# BL-762's shell test, and that feature must stay green.
+acceptance: specs/features/BL-762-finish-shift-leaves-the-phone-path-up.feature
+
+human_approval: approved
+approval_context: >
+  Standing-red owner, minted because the fix is more than one sitting: the
+  remover is not yet found (notes). No choice is posed.
+
+invariants: []
+
+source: |
+  Coder note 002319 (2026-10-02 08:54Z), verbatim: "unowned-red
+  test_finish_shift_lib.sh case 08 (front-desk CLEAN) red on main".
+
+  Specifier, the same pass: `bash swarmforge/scripts/test/test_finish_shift_lib.sh`
+  failed case 08 twice ("FAIL: 08: expected front-desk flagged as
+  unexpectedly stopped, got: CLEAN") and then passed 18 of 18 on the next
+  run. Instrumented failing run: at the snapshot,
+  `<root>/.swarmforge/operator/front-desk-supervisor.pid` did not exist
+  ("No such file or directory") while `kill -0 $FD_PID` answered alive, so
+  `finish_shift_keep_snapshot` recorded nothing and `finish_shift_verify`
+  had nothing to miss. The passing instrumented run listed the pidfile
+  present before and after start_fixture.
+
+description: |
+  ## What is wrong
+
+  Case 08 calls `start_fixture`, which writes
+  `front-desk-supervisor.pid` into `$OP_DIR` of the root that cases 04-08
+  share, then snapshots the keep set (front-desk, tunnels). In the failing
+  runs the pidfile was already gone. Nothing in the test, in
+  `finish_shift_lib.sh`, in `lifecycle_matrix.sh` (the keep set is
+  front-desk and tunnels, the stop set babysitterd, onboarder and
+  operator-runtime) or in `stop_ancillary_services.sh` removes that file
+  on this path, and `tmp_cleanup.sh`'s sweep only removes roots it can
+  attribute to a dead owner by name, which a `mktemp -d` root never is.
+  So something outside this run removed it.
+
+  ## What is wanted
+
+  - Find the remover and say in the evidence what it was. Candidates the
+    specifier did not rule out: a concurrent run of this test or of a
+    sibling that resolves its root from the environment rather than its
+    own fixture; a live script that deletes a front-desk pidfile
+    (`stop_bridge_headless.sh`, `recover_miniapp_bridge.sh`,
+    `launch_front_desk.sh`, `swarm_ensure.bb`) pointed at a fixture root;
+    an orphan janitor.
+  - Fix it where it lives. If it is the test's shared root, give case 08
+    its own fresh root (case 07 already does). If it is production code
+    reaching a root it should not, fix that, and add the stages that code
+    needs.
+  - Keep the register row until the land retires it (BL-1631).
+
+  ## Scope
+
+  `swarmforge/scripts/test/test_finish_shift_lib.sh`, and whatever the
+  evidence shows removes the pidfile.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `bash swarmforge/scripts/test/test_finish_shift_lib.sh`: ALL PASS,
+     run 3 times (a flake ticket hunting this named intermittent failure,
+     2026-09-17 rule), one of them while a second copy of the same test
+     runs at the same time. Expect 3 of 3. At mint it failed 2 of 3.
+  2. `node specs/pipeline/cli.js specs/features/BL-762-finish-shift-leaves-the-phone-path-up.feature`:
+     14 of 14, as measured at mint.
+  3. While the ticket is open the register row naming it is present;
+     after the land it is gone.
+
+notes: |
+  Minted 2026-10-02 by the specifier from coder note 002319, with a
+  register row the same pass. Not hotfixed: the remover was not found in
+  one sitting, and a fix that only rewrites the pidfile before the
+  snapshot would hide a process that deletes files in roots it does not
+  own.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
