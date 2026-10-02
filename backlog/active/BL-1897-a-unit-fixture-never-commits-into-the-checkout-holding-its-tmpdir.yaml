@@ -126,3 +126,5 @@ notes: |
   The trigger was the specifier's own BL-1867 procedure wording ("TMPDIR
   set to a fresh dir") meeting the ./tmp workflow rule. Until this lands,
   a TMPDIR override for a lane run uses a dir outside every git checkout.
+
+assigned_to: coder
