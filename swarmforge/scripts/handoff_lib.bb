@@ -25,6 +25,12 @@
 ;; already checks (see pause-hold-active? below).
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 
+;; BL-1835: briefing-generation-schedule-lib is a leaf here too (it requires
+;; only babashka.fs) - loaded so partition-pause-held's exemption can build
+;; its prefix match from briefing-due-instruction's own literal rather than
+;; a third copy of it (see briefing-due-instruction-prefix below).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_generation_schedule_lib.bb")))
+
 ;; BL-1029: the ONE place a launch-script path becomes a shell word. Every
 ;; respawn site in the tree routes through shell-quote-lib/launch-command, so
 ;; an install path carrying an apostrophe cannot break the repair that exists
@@ -1827,16 +1833,56 @@
    (backlog-depth-lib/read-pause-state (target-root))
    (System/currentTimeMillis)))
 
+;; BL-1835: the ONE exemption carved into the pause hold - a `type: note`
+;; addressed to the documenter whose `message:` is the morning-briefing
+;; nudge (briefing-generation-schedule-lib/briefing-due-instruction's own
+;; prefix, built from that function itself rather than a third copy of the
+;; literal - the SAME literal nightClosingCeremonyLive.ts's
+;; briefingInstruction(dayKey) sends, BL-897 mirror:
+;; bl1458BriefingTriggerInvariants.property.test.js). Matched by PREFIX,
+;; never a full-string match, since the real instruction carries a day-key
+;; that varies by date. A different message, a different type, or this
+;; exact text addressed to any OTHER role all stay held exactly as before -
+;; this is an exemption for one note shape, never a blanket pass for the
+;; documenter's whole inbox.
+;;
+;; QA bounce (BL-1835, D1): the first cut matched `to:` LIST MEMBERSHIP, so
+;; a broadcast (`to: coder,documenter`) delivered a copy into EVERY named
+;; role's own inbox, and the predicate exempted ALL of them - including the
+;; coder's copy - since "documenter" sat anywhere in that shared list. The
+;; per-copy ADDRESSEE is the `recipient:` header the delivery step stamps
+;; (handoff-protocol.md's own "for broadcast handoffs, `to` preserves the
+;; full recipient list and `recipient` identifies the specific recipient
+;; copy") - checked by EXACT match, never list membership, and a missing
+;; recipient (an untagged/legacy file `mine?`/`stage-handoff-files` above
+;; treat as "pass") stays HELD here instead: this is a narrow allowlisted
+;; bypass of the pause hold, not a general inbox filter, so uncertainty
+;; must fail closed rather than open.
+(def briefing-due-instruction-prefix
+  (briefing-generation-schedule-lib/briefing-due-instruction ""))
+
+(defn briefing-instruction-note?
+  [file]
+  (and (= "note" (header-field file "type"))
+       (= "documenter" (header-field file "recipient"))
+       (str/starts-with? (or (header-field file "message") "") briefing-due-instruction-prefix)))
+
 (defn partition-pause-held
-  "A pause holds ALL candidates uniformly (it is a property of the moment,
-   not of any individual parcel) rather than testing each one, but returns
-   the same {:held :valid} shape as partition-ambulance-held so
+  "A pause holds every candidate EXCEPT the BL-1835 exemption above - still
+   returns the same {:held :valid} shape as partition-ambulance-held so
    resolve-dequeueable-candidates can treat both stages identically.
-   active?-fn (default pause-hold-active?) is injectable for tests."
-  ([candidate-files] (partition-pause-held candidate-files pause-hold-active?))
-  ([candidate-files active?-fn]
+   active?-fn (default pause-hold-active?) and exempt?-fn (default
+   briefing-instruction-note?) are both injectable for tests."
+  ([candidate-files] (partition-pause-held candidate-files pause-hold-active? briefing-instruction-note?))
+  ([candidate-files active?-fn] (partition-pause-held candidate-files active?-fn briefing-instruction-note?))
+  ([candidate-files active?-fn exempt?-fn]
    (if (active?-fn)
-     {:held (vec candidate-files) :valid []}
+     (reduce (fn [acc f]
+               (if (exempt?-fn f)
+                 (update acc :valid conj f)
+                 (update acc :held conj f)))
+             {:held [] :valid []}
+             candidate-files)
      {:held [] :valid (vec candidate-files)})))
 
 (defn resolve-dequeueable-candidates
@@ -1851,19 +1897,22 @@
    genuinely eligible to dequeue - both receive modes apply the identical
    guards this way, rather than each re-deriving them. resolve-fn? (default
    git-commit-resolves?), held?-fn (default default-ambulance-held?) and
-   paused?-fn (default pause-hold-active?) are all injectable for tests."
+   paused?-fn (default pause-hold-active?) and exempt?-fn (default
+   briefing-instruction-note?, BL-1835) are all injectable for tests."
   ([new-files completed-basenames abandoned-basenames]
-   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames git-commit-resolves? default-ambulance-held? pause-hold-active?))
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames git-commit-resolves? default-ambulance-held? pause-hold-active? briefing-instruction-note?))
   ([new-files completed-basenames abandoned-basenames resolve-fn?]
-   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames resolve-fn? default-ambulance-held? pause-hold-active?))
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames resolve-fn? default-ambulance-held? pause-hold-active? briefing-instruction-note?))
   ([new-files completed-basenames abandoned-basenames resolve-fn? held?-fn]
-   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames resolve-fn? held?-fn pause-hold-active?))
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames resolve-fn? held?-fn pause-hold-active? briefing-instruction-note?))
   ([new-files completed-basenames abandoned-basenames resolve-fn? held?-fn paused?-fn]
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames resolve-fn? held?-fn paused?-fn briefing-instruction-note?))
+  ([new-files completed-basenames abandoned-basenames resolve-fn? held?-fn paused?-fn exempt?-fn]
    (let [{:keys [skipped dequeueable]} (dedup-new-candidates new-files completed-basenames abandoned-basenames)
          {:keys [corrupt valid]} (partition-corrupt dequeueable)
          {:keys [quarantined valid]} (partition-unresolvable-commit valid resolve-fn?)
          {:keys [held valid]} (partition-ambulance-held valid held?-fn)
-         {paused :held valid :valid} (partition-pause-held valid paused?-fn)]
+         {paused :held valid :valid} (partition-pause-held valid paused?-fn exempt?-fn)]
      (doseq [f skipped]
        (println "SKIPPED already-processed:" (fs/file-name f)))
      (doseq [f corrupt]

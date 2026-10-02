@@ -180,3 +180,6 @@ notes: |
   because required_stages_routing_enabled is true (BL-606).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-01, by: QA, blamed: coder, class: behavior, commit: d03f2fa110, evidence: backlog/evidence/BL-1835-QA-20261001.md }

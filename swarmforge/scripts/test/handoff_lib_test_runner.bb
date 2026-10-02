@@ -379,6 +379,104 @@
     (assert-true "ambulance-hold-04: the held candidate is still sitting in new/, not moved anywhere"
                  (fs/exists? only-660))))
 
+;; ── BL-1835: the pause hold exempts a briefing-instruction note addressed
+;;    to the documenter - everything else, including this exact text to any
+;;    other role (or another role's own COPY of a broadcast that also names
+;;    the documenter in `to:`), stays held exactly as before. `recipient`
+;;    is the per-copy inbox-owner header a real delivery stamps
+;;    (handoff-protocol.md) - `to` alone can list more than one role for a
+;;    broadcast. ─────────────────────────────────────────────────────────
+
+(defn note-content
+  ([to recipient message] (note-content to recipient message "coordinator"))
+  ([to recipient message from]
+   (str "id: 20260930T000000Z_000001_from_" from "\n"
+        "from: " from "\nto: " to "\nrecipient: " recipient "\npriority: 00\ntype: note\nmessage: " message "\n"
+        "\n" message "\n")))
+
+(def bl1835-briefing-message "produce the morning briefing for 2026-10-01")
+
+(let [dir (mk-tmp-dir)
+      briefing-for-documenter (fs/path dir "00_a_from_coordinator_to_documenter.handoff")
+      ordinary-for-documenter (fs/path dir "10_b_from_coordinator_to_documenter.handoff")
+      briefing-for-coder (fs/path dir "00_c_from_coordinator_to_coder.handoff")
+      land-note-for-qa (fs/path dir "10_d_from_coordinator_to_qa.handoff")
+      git-handoff-for-documenter (fs/path dir "50_e_from_qa_to_documenter.handoff")
+      ;; QA bounce D1: a broadcast's CODER copy (`to: coder,documenter`,
+      ;; `recipient: coder`) carries the exact briefing text and names the
+      ;; documenter in `to` too - the shape that wrongly passed the old
+      ;; to-list-membership check.
+      broadcast-coder-copy (fs/path dir "00_f_from_coordinator_to_coder.handoff")]
+  (spit (str briefing-for-documenter) (note-content "documenter" "documenter" bl1835-briefing-message))
+  (spit (str ordinary-for-documenter) (note-content "documenter" "documenter" "branch behind abc1234567: merge up"))
+  (spit (str briefing-for-coder) (note-content "coder" "coder" bl1835-briefing-message))
+  (spit (str land-note-for-qa) (note-content "QA" "QA" "land documenter briefing 0123456789"))
+  (spit (str git-handoff-for-documenter) (git-handoff-content "abcdef0123" "BL-9001"))
+  (spit (str broadcast-coder-copy) (note-content "coder,documenter" "coder" bl1835-briefing-message))
+  (let [{:keys [held valid]} (handoff-lib/partition-pause-held
+                               [briefing-for-documenter ordinary-for-documenter briefing-for-coder
+                                land-note-for-qa git-handoff-for-documenter broadcast-coder-copy]
+                               (constantly true))]
+    (assert= "BL-1835: only the briefing note addressed to the documenter is exempt"
+             [briefing-for-documenter] valid)
+    (assert= "BL-1835: every other candidate, including a broadcast's coder copy, stays held"
+             [ordinary-for-documenter briefing-for-coder land-note-for-qa git-handoff-for-documenter broadcast-coder-copy] held)
+    (assert-true "BL-1835: a held candidate is left byte-identical at its original path"
+                 (= (note-content "documenter" "documenter" "branch behind abc1234567: merge up")
+                    (slurp (str ordinary-for-documenter))))))
+
+;; A missing `recipient:` header (an untagged/legacy file) fails CLOSED -
+;; held, never exempt - unlike mine?/stage-handoff-files' own "untagged
+;; passes" convention, since this is a narrow allowlisted pause-hold bypass
+;; rather than a general inbox filter.
+(let [dir (mk-tmp-dir)
+      untagged (fs/path dir "00_g_untagged.handoff")]
+  (spit (str untagged)
+        (str "id: t\nfrom: coordinator\nto: documenter\npriority: 00\ntype: note\nmessage: " bl1835-briefing-message "\n"
+             "\n" bl1835-briefing-message "\n"))
+  (let [{:keys [held valid]} (handoff-lib/partition-pause-held [untagged] (constantly true))]
+    (assert= "BL-1835: a briefing note with no recipient header stays held (fail closed)" [untagged] held)
+    (assert= "BL-1835: a briefing note with no recipient header is never exempt" [] valid)))
+
+(let [dir (mk-tmp-dir)
+      briefing-for-documenter (fs/path dir "00_a_from_coordinator_to_documenter.handoff")
+      ordinary-for-documenter (fs/path dir "10_b_from_coordinator_to_documenter.handoff")]
+  (spit (str briefing-for-documenter) (note-content "documenter" "documenter" bl1835-briefing-message))
+  (spit (str ordinary-for-documenter) (note-content "documenter" "documenter" "hi"))
+  (let [{:keys [held valid]} (handoff-lib/partition-pause-held
+                               [briefing-for-documenter ordinary-for-documenter]
+                               (constantly false))]
+    (assert= "BL-1835: an inactive pause holds nothing, exemption or not (unchanged behavior)"
+             [] held)
+    (assert= "BL-1835: an inactive pause validates every candidate"
+             [briefing-for-documenter ordinary-for-documenter] valid)))
+
+;; resolve-dequeueable-candidates end-to-end: the exemption flows through the
+;; shared dequeue path every live caller (ready_for_next_task.bb,
+;; ready_for_next_batch.bb) actually uses, not just the isolated partition.
+(let [dir (mk-tmp-dir)
+      briefing-for-documenter (fs/path dir "00_a_from_coordinator_to_documenter.handoff")
+      ordinary-for-documenter (fs/path dir "10_b_from_coordinator_to_documenter.handoff")]
+  (spit (str briefing-for-documenter) (note-content "documenter" "documenter" bl1835-briefing-message))
+  (spit (str ordinary-for-documenter) (note-content "documenter" "documenter" "hi"))
+  (let [dequeued (handoff-lib/resolve-dequeueable-candidates
+                  [briefing-for-documenter ordinary-for-documenter] [] []
+                  (constantly true) (constantly false) (constantly true))]
+    (assert= "BL-1835: resolve-dequeueable-candidates end-to-end serves only the briefing note while paused"
+             [briefing-for-documenter] dequeued)
+    (assert-true "BL-1835: the held ordinary note is still sitting in new/, not moved anywhere"
+                 (fs/exists? ordinary-for-documenter))))
+
+;; The two triggers' own literal: briefing-due-instruction("") IS the prefix
+;; partition-pause-held matches by, and with a real day-key it is exactly
+;; the text nightClosingCeremonyLive.ts's briefingInstruction(dayKey) sends
+;; (BL-897 mirror: bl1458BriefingTriggerInvariants.property.test.js covers
+;; the cross-language identity; this pins that the PREFIX used for matching
+;; is a real prefix of the real instruction, never a drifted copy).
+(assert-true "BL-1835: briefing-due-instruction-prefix is a true prefix of a real day's instruction"
+             (str/starts-with? (briefing-generation-schedule-lib/briefing-due-instruction "2026-10-01")
+                                handoff-lib/briefing-due-instruction-prefix))
+
 ;; ── BL-927: departing-role-blocking-handoff resolves the departing role
 ;;    from LIVE identity (via the injectable :live-role-fn seam), never the
 ;;    raw marker alone - unit-level coverage of the pure decision shape;
