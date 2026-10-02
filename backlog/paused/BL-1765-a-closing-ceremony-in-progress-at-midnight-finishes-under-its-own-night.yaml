@@ -11,7 +11,7 @@ status: todo
 epic: swarm-reliability
 priority: 11
 direction: specifier-found
-depends_on: []
+depends_on: [BL-1836]
 mutation_cost: low
 # low: one decision in one function (where the tick's night key comes
 # from) plus its tests; the acceptance handler drives the runner over
@@ -66,8 +66,8 @@ description: |
     `briefing`) and the tick is at or before `prev.hardDeadlineMs +
     SLEEP_CEILING_GRACE_MS`, the tick uses `prev.nightKey` for both
     `nightKey` and `dayKey`: the briefing check, `instruct-briefing` and
-    `ensure-briefing` all name the night the ceremony started (scenarios
-    01 and 02).
+    BL-1836's `briefing-missing` report all name the night the ceremony
+    started (scenarios 01 and 02).
   - Past that ceiling, and whenever the previous night is idle or done,
     the tick's own local calendar day decides, exactly as today (scenario
     01's third row and scenario 03).
@@ -121,3 +121,12 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+  2026-10-02 (specifier, coder note 002321): scenario 02 asserted that
+  `ensure-briefing` asks for the start night's briefing, and BL-1836
+  (active, approved) removes that action: at the hard deadline the
+  ceremony writes nothing and reports `briefing-missing`. Amended while
+  unbuilt (no handler, 0 of 6 run): scenario 02 now asserts the briefing
+  reported missing is the start night's, its Given matches BL-1836's
+  no-briefing-anywhere case, the narrative says "waited for", and
+  depends_on names BL-1836 so this builds on that land. The night-key
+  rule this ticket owns is unchanged, so the approval stands.

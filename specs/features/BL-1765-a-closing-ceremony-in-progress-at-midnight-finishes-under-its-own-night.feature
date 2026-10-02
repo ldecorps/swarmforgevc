@@ -3,7 +3,7 @@ Feature: BL-1765 a closing ceremony in progress at local midnight finishes under
   A sleep that starts the ceremony shortly before local midnight therefore
   meets a new day on its next tick, abandons the night it started, and
   freezes promotion again for a second night: the first night's briefing
-  is never asked for and bedtime runs the drain twice. A night in progress
+  is never waited for and bedtime runs the drain twice. A night in progress
   keeps the day it started under until its own sleep ceiling (the hard
   deadline plus the fixed grace) has passed. Past that ceiling, and for a
   night already done, the tick's calendar day decides, as before.
@@ -26,11 +26,11 @@ Feature: BL-1765 a closing ceremony in progress at local midnight finishes under
       | 2026-09-25 12:00 | 40      | 2026-09-25 | 1       |
 
   # BL-1765 ceremony-crosses-midnight-02
-  Scenario: the briefing asked for at the deadline is the night the ceremony started
+  Scenario: the briefing reported missing at the deadline is the night the ceremony started
     Given a sleep starts the ceremony at local "2026-09-25 23:50"
-    And no briefing is sent for any day
+    And no briefing exists for any day
     When the sleep ticks it at its hard deadline
-    Then ensure-briefing asks for the briefing of "2026-09-25"
+    Then the briefing reported missing is the one for "2026-09-25"
     And the sequence ends with "swarm-stopped"
 
   # BL-1765 ceremony-crosses-midnight-03
