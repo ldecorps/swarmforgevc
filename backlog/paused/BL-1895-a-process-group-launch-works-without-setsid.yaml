@@ -28,7 +28,7 @@ acceptance: specs/features/BL-1895-a-process-group-launch-works-without-setsid.f
 required_wiring:
   - 'specs/pipeline/steps/bl1895ProcessGroupWithoutSetsidSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   From the coder's note (source). FIRM: setsid when it is on PATH, as
   today; otherwise perl's setpgrp, which stock macOS ships. The child is a
