@@ -26,7 +26,7 @@ acceptance: specs/features/BL-1892-a-terminated-land-stops-without-its-lock.feat
 required_wiring:
   - 'specs/pipeline/steps/bl1892TerminatedLandStopsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The coder's proposal from reviewing BL-1890 (source). FIRM: a land sent
   TERM or INT releases the lock and exits non-zero (143 or 130) without
