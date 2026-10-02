@@ -123,3 +123,5 @@ notes: |
   (source), after both hotfixes landed. The ledger entries for
   c7ee0fb192 and 6dad026320 are linked here.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+assigned_to: coder
