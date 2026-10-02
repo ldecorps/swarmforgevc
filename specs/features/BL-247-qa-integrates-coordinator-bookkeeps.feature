@@ -1,4 +1,4 @@
-Feature: QA lands approved work on main; the coordinator only keeps the books
+Feature: QA approves the work that lands on main; the coordinator only keeps the books
 
   # Baton epic (BL-242) sibling of BL-243. Operator ruling 2026-07-10 (via the
   # coordinator, evidence backlog/evidence/BL-243-integration-role-ruling-20260710
@@ -13,13 +13,10 @@ Feature: QA lands approved work on main; the coordinator only keeps the books
   Background:
     Given a pipeline ending at QA, with worktree roles merging up to QA's approved commit
 
-  # BL-247 qa-integrates-01
-  Scenario: QA lands the approved commit on main after the merge-up broadcast
-    Given QA approved a parcel and broadcast merge-up to the worktree roles
-    And every worktree role merged its branch up to QA's approved commit
-    When integration runs
-    Then QA fast-forwards main to the approved commit and pushes origin
-    And the coordinator performs no git merge into main
+  # BL-247 qa-integrates-01 - RETIRED by BL-1872 (2026-10-02): QA no longer
+  # lands on main itself; it queues the approval and handoffd's lander sweep
+  # lands it (BL-1872 scenario 02). Scenario 02 below still pins that the
+  # coordinator runs no git merge or push.
 
   # BL-247 coordinator-bookkeeps-02
   Scenario: the coordinator only moves the ticket and promotes, running no git integration

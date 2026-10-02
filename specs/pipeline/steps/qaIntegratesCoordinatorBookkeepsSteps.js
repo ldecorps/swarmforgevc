@@ -33,52 +33,8 @@ function registerSteps(registry) {
     }
   );
 
-  // ── qa-integrates-01 ─────────────────────────────────────────────────
-  registry.define(/^QA approved a parcel and broadcast merge-up to the worktree roles$/, () => {
-    // Nothing further to fixture - the Background already loaded the real
-    // role prompts; the merge-up broadcast wording is pre-existing and
-    // unchanged by BL-247.
-  });
-
-  registry.define(/^every worktree role merged its branch up to QA's approved commit$/, () => {
-    // Same pre-existing merge-up mechanic - not BL-247's change, nothing
-    // to fixture here.
-  });
-
-  registry.define(/^integration runs$/, () => {
-    // Documents the precondition; the Then steps below inspect
-    // ctx.qaPrompt/ctx.coordinatorPrompt directly.
-  });
-
-  registry.define(/^QA fast-forwards main to the approved commit and pushes origin$/, (ctx) => {
-    if (!ctx.qaPrompt.includes('Land it on `main` yourself')) {
-      throw new Error('expected QA.prompt to instruct QA to land the approved commit on main itself (BL-247)');
-    }
-    // Today's wording (d5c618fa01, BL-891, 2026-08-14): QA lands through the
-    // publish step, which pushes fast-forward only. The literal "fast-forward
-    // `main` to it" / "push `main` to origin" left the prompt then.
-    if (!ctx.qaPrompt.includes('swarmforge/scripts/land_main_publish.sh <qa-worktree> --land')) {
-      throw new Error('expected QA.prompt to instruct QA to land through land_main_publish.sh --land');
-    }
-    if (!ctx.qaPrompt.includes('pushes the commit the step BUILT (fast-forward')) {
-      throw new Error('expected QA.prompt to say the land pushes the built commit fast-forward only');
-    }
-    if (!ctx.qaPrompt.includes('never force-push')) {
-      throw new Error('expected QA.prompt to prohibit force-push when landing on main');
-    }
-  });
-
-  registry.define(/^the coordinator performs no git merge into main$/, (ctx) => {
-    if (!ctx.coordinatorPrompt.includes('you run NO git merge and NO push')) {
-      throw new Error('expected coordinator.prompt to state the coordinator runs no git merge and no push');
-    }
-    if (!ctx.coordinatorPrompt.includes('You do NOT merge the approved commit into `main`')) {
-      throw new Error('expected coordinator.prompt to explicitly disclaim merging the approved commit into main');
-    }
-    if (ctx.coordinatorPrompt.includes('Merge the QA-approved commit into `main` on the master worktree')) {
-      throw new Error('expected the old "coordinator merges to main" instruction to be gone (BL-247)');
-    }
-  });
+  // qa-integrates-01 retired by BL-1872: QA queues the approval and the
+  // lander sweep lands it, so its steps left with it.
 
   // ── coordinator-bookkeeps-02 ─────────────────────────────────────────
   registry.define(/^QA approved a parcel$/, () => {

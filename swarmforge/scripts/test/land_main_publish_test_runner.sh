@@ -257,4 +257,30 @@ grep -q 'ENTANGLED_SIBLING_BLOCK' <<<"$OUT08" && fail "08: a crashing detector s
 grep -q ':purity-action' <<<"$OUT08" || fail "08: no ordinary decision when the detector crashed: $OUT08"
 pass "08 detector present but crashes when run → fails OPEN, ordinary decision printed"
 
+# ── 09: BL-1872 item 5. The rematch's approval record is written BEFORE
+# its own push, never after. (hardener-found gap: scenario 07 of
+# BL-1872's acceptance only checks the END state after a successful
+# rematch+push, which is identical whether the record is written before
+# or after a push that then succeeds - it cannot tell the two orders
+# apart. Hand-swapping the two lines in the live script left every
+# existing suite green, including the feature's 8/8.) The property this
+# ordering buys: if the rematch's own push then fails or the process
+# dies between the two calls, "record first" still leaves a dangling,
+# harmless record for a commit main never carries (item 5's own words);
+# "push first" would instead leave main carrying a published commit with
+# NO record at all - exactly the dd2950dc24 CRIT this ticket exists to
+# close. A dynamic reproduction needs a fixture whose rematch push also
+# loses a race, which BL-1872's current fixture does not build (its
+# pre-receive hook rejects only the FIRST push); until that fixture
+# exists, pin the ordering statically.
+REC_LINE09="$(grep -n 'land_record_rematch "\$land_sha" "\$commit" "\$task"' "$CLI" | head -1 | cut -d: -f1)"
+PUSH_LINES09="$(grep -n 'push_out="\$(land_push_ff_only "\$land_sha")"' "$CLI" | cut -d: -f1)"
+PUSH_FIRST09="$(echo "$PUSH_LINES09" | sed -n '1p')"
+PUSH_SECOND09="$(echo "$PUSH_LINES09" | sed -n '2p')"
+[[ -n "$REC_LINE09" ]] || fail "09: land_record_rematch call not found"
+[[ -n "$PUSH_FIRST09" && -n "$PUSH_SECOND09" ]] || fail "09: expected two land_push_ff_only \"\$land_sha\" calls (the original push and the rematch's push)"
+(( REC_LINE09 > PUSH_FIRST09 )) || fail "09: the record call must sit in the rematch branch, after the ORIGINAL push already failed"
+(( REC_LINE09 < PUSH_SECOND09 )) || fail "09: BL-1872 item 5 - land_record_rematch must run BEFORE the rematch's own push (got record at line $REC_LINE09, rematch push at line $PUSH_SECOND09)"
+pass "09 the rematch's approval record is written before its own push (BL-1872 item 5)"
+
 echo "ALL PASS: land_main_publish.sh"
