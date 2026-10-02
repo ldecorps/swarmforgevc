@@ -608,3 +608,10 @@
   stamp_ticket: BL-1888
   human_decision: null
   decided_at: null
+- commit: 89935d52d0
+  subject: "Hotfix: test_bl1366_land_is_one_command.sh's killed-land case signals the land itself, so it is green on main again"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1890
+  human_decision: null
+  decided_at: null

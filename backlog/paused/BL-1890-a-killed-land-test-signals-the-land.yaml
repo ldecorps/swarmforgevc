@@ -1,0 +1,80 @@
+id: BL-1890
+title: "Stamp-off for hotfix 89935d52d0: test_bl1366_land_is_one_command.sh's killed-land case sent TERM to a subshell instead of the land, so the land ran on holding the lock and the case passed only when the land finished within 2 s; the land is now exec'd. Review also decides whether a TERMed land should stop (its trap releases the lock but does not exit)"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05).
+status: todo
+epic: landing-is-a-merge
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: one shell test line; the TERM question is a review judgment.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a one-line test change; nothing to refactor"
+  architect: "no production code changed; the TERM question is raised as a note if it needs a design ruling"
+  hardender: "test-side only; nothing to mutate"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-1366's contract (BL-1251).
+acceptance: specs/features/BL-1366-landing-an-approved-commit-is-one-command.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 89935d52d0 under the human's 2026-10-01 directive.
+  No choice is posed to the human here: if the review finds the land
+  should stop on TERM, it raises that to the specifier as a note.
+
+invariants: []
+
+source: |
+  Coder note 002325 (2026-10-02 09:56Z), verbatim: "unowned-red
+  test_bl1366_land_is_one_command.sh: killed land left lock held". The
+  specifier reproduced it (1 of 21 checks red) and found the subshell PID.
+
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim (Article
+  5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 89935d52d0 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  The killed-land case ran `( cd "$root" && bash land_main_publish.sh ... ) &`
+  and sent TERM to `$!`, the subshell. The land ran on orphaned, still
+  holding `.swarmforge/land-main.publish.lock`, so the case failed unless
+  the land had already finished within its 2 s. The land is now `exec`'d,
+  so the TERM reaches it and its trap releases the lock. 2 of 2 runs green.
+
+  ## What is wanted in this parcel
+
+  - Review the change.
+  - Judge one production behaviour the hotfix exposed: `run_land`'s
+    `trap land_release_trap EXIT INT TERM` releases the lock on TERM but
+    does not exit, so a TERMed land continues afterwards, without its lock
+    if it was mid-sequence. Exiting at once is not obviously right either:
+    a kill mid re-point leaves a branch half-moved (operator note,
+    2026-10-01). Write the reasoning in the evidence, and if the land should
+    change, send the specifier a note so it is ticketed (BL-1872 edits the
+    same script).
+
+  ## Scope
+
+  The test file and evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run: `bash swarmforge/scripts/test/test_bl1366_land_is_one_command.sh`
+  exits 0, every check PASS (measured at the hotfix: 2 of 2 runs). Read
+  the coder's evidence on the TERM question.
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  89935d52d0. No register row: the hotfix turned it green. Ledger entry
+  linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
