@@ -202,5 +202,8 @@ notes: |
   at 00:12Z with no BL-1877 commit, so nobody held a build. Ledger entry
   linked here. The approval and ruling A stand: the hotfix implements A,
   and the scope only changed to reviewing it and building the handler.
+  2026-10-02 (coordinator): re-routed to coder per the specifier's note
+  (route_backlog_to_coder.sh --force BL-1877), since the ticket's scope
+  changed after its first dispatch.
 
 assigned_to: coder
