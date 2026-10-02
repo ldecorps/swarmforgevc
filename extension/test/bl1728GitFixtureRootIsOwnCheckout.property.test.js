@@ -4,8 +4,9 @@
 // its own git checkout, and no git command in the test resolves to the
 // live repository."
 //
-// Drives the REAL test_operator_runtime_babysitterd_watchdog.sh's own
-// prove_git_fixture_root/init_git_fixture_root function bodies - extracted
+// Drives the REAL prove_git_fixture_root/init_git_fixture_root function
+// bodies (in swarmforge/scripts/test/lib/operator_runtime_sandbox.sh since
+// 8b1c763709 moved them out of the babysitterd watchdog test) - extracted
 // by source position, never retyped, via
 // specs/pipeline/steps/lib/bl1728GitFixtureRootProofCli.sh (BL-1516's own
 // convention) - against real mkdtemp directories and a real enclosing

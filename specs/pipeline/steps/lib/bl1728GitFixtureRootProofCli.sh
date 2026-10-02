@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# BL-1728: drives test_operator_runtime_babysitterd_watchdog.sh's OWN
+# BL-1728: drives the operator_runtime sandbox lib's OWN
 # prove_git_fixture_root/init_git_fixture_root function bodies - extracted
 # by source position, never retyped - against a caller-chosen directory, so
 # the property test exercises the real proof without running the whole
@@ -19,7 +19,10 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET="$SCRIPT_DIR/../../../../swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh"
+# The two functions moved from test_operator_runtime_babysitterd_watchdog.sh
+# into the shared operator_runtime_sandbox.sh (8b1c763709, 2026-10-02), which
+# every operator_runtime fixture now sources.
+TARGET="$SCRIPT_DIR/../../../../swarmforge/scripts/test/lib/operator_runtime_sandbox.sh"
 
 # Extracts one function's definition, by its own `name() {` .. `}` markers -
 # the source's own text, never a re-typed copy.
