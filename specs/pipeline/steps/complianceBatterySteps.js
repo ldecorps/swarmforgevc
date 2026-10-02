@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -25,6 +26,21 @@ const REAL_FEATURE_FILE = path.join(REPO_ROOT, 'specs', 'features', 'BL-226-remo
 
 function git(root, args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
+}
+
+// The receive and completion dispatchers cd into their own scripts dir
+// before they run, so the REAL ones would receive and complete in the
+// checkout that holds the real scripts, as the coder, against the live
+// mailbox. The coder worktree gets its own copy, as BL-998's fixtures do.
+function installScripts(wt) {
+  const dest = path.join(wt, 'swarmforge', 'scripts');
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(SWARMFORGE_SCRIPTS)) {
+    if (entry.endsWith('.bb') || entry.endsWith('.sh')) {
+      fs.copyFileSync(path.join(SWARMFORGE_SCRIPTS, entry), path.join(dest, entry));
+    }
+  }
+  return dest;
 }
 
 function battery(args) {
@@ -74,6 +90,8 @@ function buildFixture(violation) {
 
   const specifierWt = root;
   const coderWt = path.join(root, '.worktrees', 'coder');
+  git(root, ['worktree', 'add', '-q', '-b', 'swarmforge-coder', coderWt]);
+  const coderScripts = installScripts(coderWt);
   fs.mkdirSync(path.join(specifierWt, '.swarmforge', 'handoffs', 'specifier', 'outbox', 'tmp'), { recursive: true });
   fs.mkdirSync(path.join(specifierWt, '.swarmforge', 'handoffs', 'specifier', 'sent'), { recursive: true });
   fs.mkdirSync(path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'new'), { recursive: true });
@@ -114,17 +132,25 @@ function buildFixture(violation) {
 
     const draft = path.join(root, 'draft.handoff');
     fs.writeFileSync(draft, `type: git_handoff\nto: coder\npriority: 50\ntask: BL-231-battery-fixture\ncommit: ${commitSha}\n`);
-    execFileSync('bb', [SWARM_HANDOFF, draft], {
+    const sent = sendGitHandoffTwoCall('bb', [SWARM_HANDOFF, draft], {
       cwd: specifierWt,
+      encoding: 'utf8',
       env: { ...baseEnv, SWARMFORGE_ROLE: 'specifier', SWARMFORGE_SKIP_DAEMON: '1' },
     });
+    if (sent.status !== 0) {
+      throw new Error(`swarm_handoff.bb did not queue the fixture parcel: ${sent.stdout || ''}${sent.stderr || ''}`);
+    }
   }
 
+  const coderEnv = { ...baseEnv, SWARMFORGE_ROLE: 'coder' };
   if (violation !== 'receive') {
-    execFileSync('bb', [READY_FOR_NEXT], { cwd: coderWt, env: { ...baseEnv, SWARMFORGE_ROLE: 'coder' } });
+    execFileSync('bb', [path.join(coderScripts, 'ready_for_next.bb')], { cwd: coderWt, env: coderEnv });
   }
   if (violation !== 'complete' && violation !== 'receive') {
-    execFileSync('bb', [DONE_WITH_CURRENT], { cwd: coderWt, env: { ...baseEnv, SWARMFORGE_ROLE: 'coder' } });
+    // A compliant coder that received a git_handoff and sends nothing on
+    // says why (BL-1609); the direct-write note needs no reason.
+    const noOp = commitSha ? ['--no-op', 'BL-231 fixture: the battery checks the receive and the completion'] : [];
+    execFileSync('bb', [path.join(coderScripts, 'done_with_current.bb'), ...noOp], { cwd: coderWt, env: coderEnv });
   }
 
   return { root, coderWt, commitSha };
