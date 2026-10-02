@@ -1,0 +1,73 @@
+id: BL-1891
+title: "Stamp-off for hotfix 6d8a61c1dd: BL-681's steps read Article 5.3 as BL-1227's boot-prefix trim worded it (the sentence is the heading, 'ticket(s)', 'Binds the ACT'), so BL-681's feature is green again after five weeks red with no owner"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: one step handler; no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a small test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-681's contract (BL-1251).
+acceptance: specs/features/BL-681-consolidation-never-drops-a-human-sentence.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 6d8a61c1dd under the human's 2026-10-01 directive.
+  No choice is posed. FIRM: BL-681's scenario text and Article 5.3's rule
+  are unchanged; four step literals follow the article's current wording.
+
+invariants: []
+
+source: |
+  Specifier, 2026-10-02, running the features whose handlers read the
+  articles 882a11157c edited: BL-681 1/3, the same on HEAD before it, no
+  register row. The human, specifier pane (Claude Code), 2026-10-01,
+  verbatim (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 6d8a61c1dd landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  BL-1227 (af55356bde, 2026-08-28) compressed Article 5.3 to fit the boot
+  prefix: the sentence "A consolidation never drops a human sentence."
+  became the section heading, "into the resulting ticket or tickets"
+  became "ticket(s)", "The clause binds the ACT" became "Binds the ACT",
+  and the refusal clause lost its capital. The handler's four literals now
+  follow that wording; the long form stays in
+  reference/05-amendments-detailed.md.
+
+  ## What is wanted in this parcel
+
+  - Review the four literals against the scenarios' claims, and say in the
+    evidence whether the handler should read the detailed reference too.
+  - Evidence: the review and one run of the feature.
+
+  ## Scope
+
+  The step handler and evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run: `node specs/pipeline/cli.js specs/features/BL-681-consolidation-never-drops-a-human-sentence.feature`: 3 of 3 ok
+  (measured at the hotfix; 1 of 3 before it).
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  6d8a61c1dd. No register row: the hotfix turned it green. Ledger entry
+  linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

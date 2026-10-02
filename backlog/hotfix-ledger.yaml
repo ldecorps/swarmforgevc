@@ -622,3 +622,10 @@
   stamp_ticket: BL-1886
   human_decision: null
   decided_at: null
+- commit: 6d8a61c1dd
+  subject: "Hotfix: BL-681's steps read Article 5.3 as worded since BL-1227's trim, so its feature is green on main again"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1891
+  human_decision: null
+  decided_at: null
