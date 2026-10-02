@@ -664,3 +664,17 @@
   stamp_ticket: BL-1900
   human_decision: null
   decided_at: null
+- commit: 224074e2a7
+  subject: "Hotfix: BL-231 battery fixture sends with the two-call protocol and dispatches its own scripts copy"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
+- commit: 1b7d4e4bbe
+  subject: "Hotfix: BL-1566 scenario 06 parks QA's withheld git_handoff with --no-op"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
