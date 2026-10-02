@@ -205,6 +205,11 @@
   reason: "Standing-directive hotfix (amendment aa6dacc938): red-first, stamp-off second. Ledger entry already records stamp_ticket BL-1879 (paused, high-severity, ready for promotion) - that mint is the close-out per the 2026-10-01 directive; no separate land-approval/evidence record applies to this class."
   waived_at: 2026-10-02
 
+- key: pipeline-code-on-main-8ed4173ce47b79e9d32de22814b9188ca0facbc9
+  waived_by: coordinator
+  reason: "Standing-directive hotfix (amendment aa6dacc938): red-first, stamp-off second. Ledger entry records stamp_ticket BL-1893 (paused, ready for promotion) - that mint is the close-out per the 2026-10-01 directive."
+  waived_at: 2026-10-02
+
 - key: pipeline-code-on-main-9021f12bb2657444abdecf1ffddbbc9c22c15d6b
   waived_by: coordinator
   reason: "False positive: commit is part of BL-1285 pipeline that was QA-approved (b9c93bdf73). Coder work commit is ancestor of QA approval, not descendant. Land-approvals store has BL-1285 approval record."
