@@ -4,16 +4,15 @@ Feature: standing property-suite reds must not block unrelated green commits
   # refuses on ~22 pre-existing property failures (594/604 pass). SKIP override
   # is recovery-only (BL-1121). Restore a green (or explicitly allowlisted)
   # property lane so unrelated green parcels can land without the override.
+  # Scenario 01 (standing-reds-listed-01: "the property suite reports
+  # multiple failing files", at least 20 rows) is retired by hotfix
+  # 2026-10-02 (stamp-off BL-1879): every standing red was fixed and the
+  # live allowlist is empty since 1035192e8c (2026-09-18), so its premise is
+  # false. The remaining scenarios run the guard from a copy with a
+  # fixture-owned allowlist (the BL-1448 shape).
 
   Background:
     Given the property-suite drift guard runs on commits that stage extension src or property tests
-
-  # BL-1175 standing-reds-listed-01
-  Scenario: the standing property failures are named and owned
-    Given the property suite reports multiple failing files on a stock extension run
-    When the standing-red inventory for this ticket is read
-    Then each failing file is listed with a fix-or-allowlist disposition
-    And no silent standing red remains without a named disposition
 
   # BL-1175 green-parcel-commit-not-blocked-02
   Scenario: a green parcel that only adds its own green property tests can commit without SKIP

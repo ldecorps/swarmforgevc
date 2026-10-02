@@ -36,6 +36,27 @@ const KNOWN_GUARDS = {
 };
 const SUITE_GUARD = 'check_property_suite_drift.sh';
 const ALL_GUARDS = [...Object.values(KNOWN_GUARDS), SUITE_GUARD];
+// Every guard the runner itself calls gets a passing stub, read from the
+// runner (BL-1408's helper) rather than listed here: guards added to the
+// chain after this ticket (BL-1303's feature-handler and module-graph
+// guards and later ones) were absent from the seam directory, so a clean
+// commit was refused for "No such file or directory" and scenario 07 was
+// red from 2026-08-31.
+// Read on first use, never at module load (BL-1630).
+function guardFixtureSet() {
+  return require(path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'commitGuardFixtureSet'));
+}
+function stubbedGuards() {
+  const chain = guardFixtureSet().deriveCommitGuardFixtureSet({ repoRoot: REPO_ROOT, hookRels: [] }).guards;
+  return [...new Set([...chain, ...ALL_GUARDS])];
+}
+// The commit-msg hook's own guards, out of this ticket's scope, read from
+// that hook the same way (it grew check_bounce_revert_scope.sh and
+// check_closed_ticket_subject.sh after the three once listed here).
+function commitMsgGuards() {
+  const { deriveCommitGuardFixtureSet, COMMIT_MSG_REL } = guardFixtureSet();
+  return deriveCommitGuardFixtureSet({ repoRoot: REPO_ROOT, runnerRel: null, hookRels: [COMMIT_MSG_REL] }).guards;
+}
 
 // "commit-size, ticket-deletion and pipeline-code-on-main" -> three tokens.
 function parseViolations(phrase) {
@@ -76,7 +97,7 @@ function writeGuard(ctx, name, exitCode) {
 // exits: guard-script name -> exit code. 1 is a guard's own refusal, any
 // other non-zero is an unexpected failure.
 function stageFixture(ctx, exits) {
-  for (const guard of ALL_GUARDS) {
+  for (const guard of stubbedGuards()) {
     writeGuard(ctx, guard, exits[guard] ?? 0);
   }
   fs.writeFileSync(path.join(ctx.repo, 'work.txt'), `change ${Date.now()}\n`);
@@ -111,12 +132,19 @@ function registerSteps(registry) {
       path.join(ctx.repo, 'swarmforge', 'scripts', 'run_commit_guards.sh')
     );
     fs.chmodSync(path.join(ctx.repo, 'swarmforge', 'scripts', 'run_commit_guards.sh'), 0o755);
+    // BL-1303 (ab46787808, 2026-08-31) split the runner: it sources
+    // commit_guard_chain_lib.sh from its own directory and refuses the
+    // commit when that file is missing, so the lib must sit beside it.
+    fs.copyFileSync(
+      path.join(REPO_ROOT, 'swarmforge', 'scripts', 'commit_guard_chain_lib.sh'),
+      path.join(ctx.repo, 'swarmforge', 'scripts', 'commit_guard_chain_lib.sh')
+    );
     // The SAME hooks directory also carries the commit-msg hook, which is
     // explicitly out of this ticket's scope. Its three guards are no-ops in
     // the fixture so an unrelated gate cannot decide this feature's
     // outcome. They are never reached by the pre-commit chain, which reads
     // its guards from the seam directory instead.
-    for (const guard of ['check_ticket_deletion.sh', 'check_merge_deletion.sh', 'check_retirement_readdition.sh']) {
+    for (const guard of commitMsgGuards()) {
       fs.writeFileSync(
         path.join(ctx.repo, 'swarmforge', 'scripts', guard),
         '#!/usr/bin/env bash\nexit 0\n',

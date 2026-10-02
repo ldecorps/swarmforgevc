@@ -11,9 +11,20 @@ const { spawnSync } = require('node:child_process');
 
 const FEATURE = 'standing property-suite reds must not block unrelated green commits';
 const REPO = path.join(__dirname, '..', '..', '..');
-const GUARD = path.join(REPO, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
-const ALLOWLIST_TSV = path.join(REPO, 'swarmforge', 'scripts', 'property_suite_standing_allowlist.tsv');
-const CANARY_LIB = path.join(REPO, 'swarmforge', 'scripts', 'property_suite_shared_repo_guard.sh');
+const SCRIPTS = path.join(REPO, 'swarmforge', 'scripts');
+const GUARD = path.join(SCRIPTS, 'check_property_suite_drift.sh');
+const CANARY_LIB = path.join(SCRIPTS, 'property_suite_shared_repo_guard.sh');
+// The fixture owns its allowlist (the BL-1448 shape): the guard reads the
+// TSV beside itself, so it runs from a copy with a one-row list. Reading the
+// live list made scenarios 02 and 03 red once every standing red was fixed
+// and the live list emptied (1035192e8c, 2026-09-18).
+const GUARD_FILES = [
+  'check_property_suite_drift.sh',
+  'property_suite_shared_repo_guard.sh',
+  'incoming_merge_parent_lib.sh',
+  'property_suite_standing_allowlist_lib.sh',
+];
+const ALLOWLISTED_RED = 'test/bl632CommitTimeGuardInvariants.property.test.js';
 
 function git(cwd, args) {
   const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
@@ -50,20 +61,22 @@ function write(root, rel, body) {
   fs.writeFileSync(full, body);
 }
 
-function readInventory() {
-  return fs
-    .readFileSync(ALLOWLIST_TSV, 'utf8')
-    .trim()
-    .split('\n')
-    .slice(1)
-    .map((line) => {
-      const [file, disposition, rationale] = line.split('\t');
-      return { file, disposition, rationale: rationale ?? '' };
-    });
+function installFixtureGuard(st) {
+  const dir = path.join(st.root, '.fixture-guard');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const name of GUARD_FILES) {
+    fs.copyFileSync(path.join(SCRIPTS, name), path.join(dir, name));
+  }
+  fs.writeFileSync(
+    path.join(dir, 'property_suite_standing_allowlist.tsv'),
+    `file\tdisposition\trationale\n${ALLOWLISTED_RED}\tallowlist\tfixture standing red\n`
+  );
+  return path.join(dir, 'check_property_suite_drift.sh');
 }
 
 function runGuard(st) {
-  const allowlisted = readInventory()[0]?.file ?? 'test/bl632CommitTimeGuardInvariants.property.test.js';
+  const allowlisted = ALLOWLISTED_RED;
+  const guard = installFixtureGuard(st);
   const suiteByMode = {
     green: ['bash', '-c', 'exit 0'],
     allowlistedRed: [
@@ -81,7 +94,7 @@ function runGuard(st) {
   const env = { ...process.env };
   if (st.envSkip) env.SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD = '1';
   else delete env.SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD;
-  const r = spawnSync('bash', [GUARD, ...(suiteByMode[st.suite] || suiteByMode.green)], {
+  const r = spawnSync('bash', [guard, ...(suiteByMode[st.suite] || suiteByMode.green)], {
     cwd: st.root,
     encoding: 'utf8',
     env,
@@ -97,28 +110,6 @@ function registerSteps(registry) {
     const st = ensure(ctx);
     write(st.root, 'extension/src/pipelineBoard.ts', 'parcel\n');
     git(st.root, ['add', 'extension/src/pipelineBoard.ts']);
-  });
-
-  scoped(/^the property suite reports multiple failing files on a stock extension run$/, (ctx) => {
-    ensure(ctx).inventory = readInventory();
-    assert.ok(ctx.bl1175.inventory.length >= 20, 'expected multiple standing failures inventoried');
-  });
-
-  scoped(/^the standing-red inventory for this ticket is read$/, (ctx) => {
-    ensure(ctx).inventory = readInventory();
-  });
-
-  scoped(/^each failing file is listed with a fix-or-allowlist disposition$/, (ctx) => {
-    const rows = ensure(ctx).inventory.length ? ensure(ctx).inventory : readInventory();
-    for (const row of rows) {
-      assert.ok(['allowlist', 'fix'].includes(row.disposition), JSON.stringify(row));
-      assert.ok(row.rationale.length > 0, JSON.stringify(row));
-    }
-  });
-
-  scoped(/^no silent standing red remains without a named disposition$/, (ctx) => {
-    const rows = ensure(ctx).inventory.length ? ensure(ctx).inventory : readInventory();
-    assert.ok(rows.every((r) => r.disposition && r.file.endsWith('.property.test.js')));
   });
 
   scoped(/^BL-605 acceptance and its property tests are green$/, (ctx) => {

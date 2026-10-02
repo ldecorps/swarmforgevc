@@ -29,7 +29,31 @@ const { mkProcessTmpDir } = require('../../../extension/test/helpers/tmpDir');
 const FEATURE = 'BL-1407 The property gate re-runs a red in isolation before it refuses';
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
+const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
+// The fixture owns its allowlist (the BL-1448 shape): the guard reads the
+// TSV beside itself, so it runs from a copy whose list holds the one file
+// scenario 03 allowlists. Reading the live list re-ran that file once every
+// standing red was fixed and the live list emptied (1035192e8c, 2026-09-18).
+const GUARD_FILES = [
+  'check_property_suite_drift.sh',
+  'property_suite_shared_repo_guard.sh',
+  'incoming_merge_parent_lib.sh',
+  'property_suite_standing_allowlist_lib.sh',
+];
+const ALLOWLISTED_RED = 'test/bl632CommitTimeGuardInvariants.property.test.js';
+
+function installFixtureGuard(root) {
+  const dir = path.join(root, '.fixture-guard');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const name of GUARD_FILES) {
+    fs.copyFileSync(path.join(SCRIPTS, name), path.join(dir, name));
+  }
+  fs.writeFileSync(
+    path.join(dir, 'property_suite_standing_allowlist.tsv'),
+    `file\tdisposition\trationale\n${ALLOWLISTED_RED}\tallowlist\tfixture standing red\n`
+  );
+  return path.join(dir, 'check_property_suite_drift.sh');
+}
 
 function git(root, args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -53,7 +77,7 @@ function stageNonPropertyTrigger(root) {
 
 function runGuard(root, extraArgs, env) {
   try {
-    const out = execFileSync('bash', [GUARD, ...extraArgs], {
+    const out = execFileSync('bash', [installFixtureGuard(root), ...extraArgs], {
       cwd: root,
       encoding: 'utf8',
       env: { ...process.env, ...env },
@@ -147,7 +171,7 @@ function registerSteps(registry) {
   scoped(/^one allowlisted property file that fails in the full run$/, (ctx) => {
     const state = ensureCtx(ctx);
     assert.ok(state.threeFiles, 'the three non-allowlisted files must be set up first');
-    state.allowlistedFile = 'test/bl632CommitTimeGuardInvariants.property.test.js';
+    state.allowlistedFile = ALLOWLISTED_RED;
     const failLines = [...state.threeFiles, state.allowlistedFile]
       .map((f) => ` FAIL  ${f} > x`)
       .map((l) => `printf '%s\\n' '${l}' >&2;`)
