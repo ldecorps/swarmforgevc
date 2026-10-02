@@ -1,0 +1,91 @@
+id: BL-1902
+title: "Reverse-hop copies and QA's merge-up broadcast retire: the live pack declares no back-one or back-all window, and the ceremony library composes no merge-up note, so a parcel's forward and QA's approval wake only the role that acts (roles on parcel lines merge neither)"
+milestone: M8
+type: feature
+status: todo
+epic: landing-is-a-merge
+priority: 4
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: two pack-conf declarations, one ceremony entry and its tests.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a removal; nothing to refactor"
+  architect: "BL-1871's ruling already decided parcel lines merge neither handoff; the scenarios pin the removal"
+  hardender: "bb and conf only, and the change writes no durable state"
+
+acceptance: specs/features/BL-1902-reverse-hops-and-the-merge-up-broadcast-retire.feature
+
+# Handler pin only (BL-233, BL-1371). The scenarios read the live pack and
+# the live ceremony library directly.
+required_wiring:
+  - 'specs/pipeline/steps/bl1902ReverseHopsAndMergeUpRetireSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  The second of three slices minted from BL-1870's last remaining line,
+  at your "Do get the missing slice minted". FIRM: it only waits for the
+  cleaner and hardender seats to run in task mode. The pack already
+  declares task for them (BL-1871), but the live seats were launched
+  before that and are still batch, and a batch seat still uses the
+  merge-up note to sync. The relaunch is the coordinator's or yours (notes).
+
+invariants:
+  - "No handoff is sent whose only effect on its recipient is to be completed."
+
+source: |
+  Root intake backlog/INTAKE-operator-question-1790964692294.md (filed by
+  the Operator 2026-10-02T18:11Z), verbatim:
+  "HUMAN DIRECTIVE (2026-10-02 18:10Z, PIPELINE_BOARD thread), verbatim:
+  "Do get the missing slice minted""
+  It covers "QA's merge-up send" and "reverse-hop copies" from BL-1870's
+  remaining_slices line. Split 1:N with BL-1901 and BL-1903
+  (Consolidation Authority).
+
+description: |
+  ## What is wanted
+
+  - `swarmforge/packs/full-forge.conf`: the cleaner window drops
+    `back-one` and the architect window drops `back-all`, so both are
+    forward-only (the default). Measured at mint: those are the only two
+    reverse-hop declarations among the pack's 8 role windows.
+  - `ceremony_handoff_lib.bb`: the `merge-up` ceremony is removed, with
+    its test-runner rows. The `bookkeep` ceremony, which the lander sends,
+    is unchanged.
+  - handoff-protocol.md stops describing the merge-up broadcast and
+    reverse hops as live (documenter).
+  - The step handler `bl1902ReverseHopsAndMergeUpRetireSteps`, registered
+    in the same parcel.
+  - The prose that names the merge-up broadcast or reverse hops (QA.prompt's
+    approval steps, Article 2.3 "Reverse hops", Article 2.5, workflow.prompt
+    "QA merge-up broadcast", PIPELINE.md step 5) is the specifier's, landed
+    when this ticket activates (BL-798). Nothing the coder builds depends
+    on it.
+
+  ## Scope
+
+  The pack conf, the ceremony lib and its runner, handoff-protocol.md, the
+  step handler, evidence.
+
+qa_e2e_procedure: |
+  Before taking it up, confirm `.swarmforge/roles.tsv` shows `task` for
+  the cleaner and the hardender (see notes).
+  On the parcel commit:
+  1. ONE run: `node specs/pipeline/cli.js specs/features/BL-1902-reverse-hops-and-the-merge-up-broadcast-retire.feature`:
+     all ok.
+  2. `bb swarmforge/scripts/test/ceremony_handoff_lib_test_runner.bb`: green.
+  3. After the land and the next relaunch: a forward from the cleaner or
+     the architect writes no non-forwarding copy to an earlier role's
+     inbox, and a land sends no merge-up note.
+
+notes: |
+  Minted 2026-10-02 by the specifier from the root intake above, one of
+  three slices (BL-1901 notes carry the full split).
+  Promotion precondition: the cleaner and hardender seats must be live in
+  task mode. At mint `.swarmforge/roles.tsv` reads `batch` for both
+  (launched before BL-1871 landed at 10:31), while `full-forge.conf`
+  already declares `task`. A relaunch from the pack makes it true. While
+  a batch seat is live, the merge-up note is how it syncs, so retiring it
+  early would strand that seat's branch.
