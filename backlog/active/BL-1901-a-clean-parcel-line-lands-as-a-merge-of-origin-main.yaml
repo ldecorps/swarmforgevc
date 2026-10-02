@@ -123,3 +123,5 @@ notes: |
   Promotion is the coordinator's. BL-1870 carries the human's "Prioritize
   this work." (2026-10-01), and the 2026-09-30 promotion restriction
   names local-llm work and high/critical defects.
+
+assigned_to: coder
