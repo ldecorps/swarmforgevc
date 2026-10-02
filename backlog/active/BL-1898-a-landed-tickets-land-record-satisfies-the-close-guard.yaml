@@ -115,3 +115,5 @@ notes: |
   Spec gap in BL-1872 (the specifier's): its landed-note design said "QA's
   own bookkeeping note" and never checked the sender the close guard
   requires.
+
+assigned_to: coder

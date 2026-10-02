@@ -385,6 +385,66 @@
     (assert-true "commit-with-integrity! succeeds for git-mv-shaped close paths"
                  (:success result))))
 
+;; ── BL-1898: the land record as a third approval path ─────────────────────
+
+(let [v (verdict :land {:kind :approved} :land-record {:commit "feb18315ea" :store-file ".swarmforge/land-approvals/2026-10.jsonl" :ancestor? true})]
+  (assert-true "a land record whose commit is on main allows the close" (:allowed? v))
+  (assert= "as the land-record path" :land-record (:reason v))
+  (assert-true "naming the commit and store it relied on"
+               (and (str/includes? (str (:detail v)) "feb18315ea")
+                    (str/includes? (str (:detail v)) "land-approvals"))))
+
+(let [v (verdict :land {:kind :approved} :land-record {:commit "feb18315ea" :ancestor? false})]
+  (assert-false "a land record whose commit is not on main refuses" (:allowed? v))
+  (assert= "and says so" :land-commit-not-on-main (:reason v)))
+
+(let [v (verdict :land {:kind :approved} :land-record {:commit "feb18315ea" :ancestor? nil})]
+  (assert-false "an unanswerable land ancestry refuses" (:allowed? v))
+  (assert= "as its own reason" :land-ancestry-undeterminable (:reason v)))
+
+(let [v (verdict :land {:kind :problem :detail "the land record store x holds a line that is not a record"})]
+  (assert-false "an unreadable land store refuses" (:allowed? v))
+  (assert= "as a land store problem" :land-store-problem (:reason v))
+  (assert-true "naming the store" (str/includes? (str (:detail v)) "land record store")))
+
+(assert-true "the mailbox still decides first over an unusable land store"
+             (:allowed? (verdict :qa-mailbox? true :land {:kind :problem :detail "x"})))
+(assert= "no land record names the ticket: missing QA approval"
+         :missing-qa-approval (:reason (verdict :land {:kind :no-match})))
+
+(let [recs [{:commit "aaa"} {:commit "bbb"} {:commit "ccc"}]]
+  (assert= "the first record on main wins"
+           {:commit "bbb" :ancestor? true}
+           (ticket-close-guard-lib/land-record-on-main recs {"aaa" false "bbb" true "ccc" nil}))
+  (assert= "an unanswerable record outranks a definite no"
+           {:commit "ccc" :ancestor? nil}
+           (ticket-close-guard-lib/land-record-on-main recs {"aaa" false "bbb" false "ccc" nil}))
+  (assert= "all definite no: the last record"
+           {:commit "ccc" :ancestor? false}
+           (ticket-close-guard-lib/land-record-on-main recs (constantly false)))
+  (assert= "no records: nil" nil (ticket-close-guard-lib/land-record-on-main [] (constantly true))))
+
+(let [root (mk-root)
+      dir (fs/path root ".swarmforge" "land-approvals")]
+  (assert= "no store: absent" {:kind :absent} (ticket-close-guard-lib/land-approval root "BL-9001"))
+  (fs/create-dirs dir)
+  (spit (str (fs/path dir "2026-10.jsonl"))
+        (str "{\"ticket\":\"BL-9002\",\"commit\":\"aaa\"}\n{\"ticket\":\"BL-9001\",\"commit\":\"bbb\",\"source\":\"x\"}\n"))
+  (assert= "only the records naming the ticket"
+           ["bbb"] (mapv :commit (:records (ticket-close-guard-lib/land-approval root "BL-9001"))))
+  (assert= "another ticket's record grants nothing"
+           {:kind :no-match} (ticket-close-guard-lib/land-approval root "BL-9003"))
+  (spit (str (fs/path dir "2026-10.jsonl")) "{\"ticket\":\"BL-9001\",\"commit\":\"bbb\"}\nnot a record\n" :append true)
+  (let [r (ticket-close-guard-lib/land-approval root "BL-9001")]
+    (assert= "a line that is not a record is a problem" :problem (:kind r))
+    (assert-true "naming the land record store" (str/includes? (:detail r) "land record store")))
+  (spit (str (fs/path dir "2026-10.jsonl")) "{\"ticket\":\"BL-9001\"}\n")
+  (assert-true "a record with no commit field is a problem"
+               (str/includes? (str (:detail (ticket-close-guard-lib/land-approval root "BL-9001"))) "no commit field"))
+  (spit (str (fs/path dir "2026-10.jsonl")) "[1]\n")
+  (assert= "a JSON value that is not a map is a problem"
+           :problem (:kind (ticket-close-guard-lib/land-approval root "BL-9001"))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (binding [*out* *err*] (println f)))

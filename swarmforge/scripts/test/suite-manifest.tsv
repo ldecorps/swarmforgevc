@@ -249,6 +249,7 @@ test_bl1317_effort_ladder_parity.sh	standing
 test_bl1374_sync_merge_passengers.sh	standing		
 test_bl1376_expedite_branch_handover.sh	standing		
 test_bl1378_expedite_close_guard.sh	standing		
+test_bl1898_land_record_close_guard.sh	standing		
 test_bl648_resident_boot_role_override.sh	standing		
 test_bl657_harness_env_scrub_wiring.sh	standing		
 test_bl657_wait_for_ready_sustained_check.sh	standing		
