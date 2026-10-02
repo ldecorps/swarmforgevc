@@ -1,0 +1,87 @@
+id: BL-1895
+title: "lander_lib.bb (BL-1872) and bounded_run_lib.bb launch through setsid, which stock macOS does not ship: on a macOS host the lander never starts a land and every bounded run (the babysitter's checks among them) fails before it begins; both now start their child as a process-group leader through setsid when present and perl's setpgrp otherwise"
+milestone: M8
+type: defect
+severity: medium
+# medium: latent - this Linux host has setsid; on a macOS host (a supported
+# target, the swarm has run on one) every land and bounded run would fail.
+status: todo
+epic: landing-is-a-merge
+priority: 12
+depends_on: []
+mutation_cost: low
+# low: two Babashka call sites and one shared helper; no Stryker lane for bb
+# (BL-472).
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one shared helper replaces two literal setsid calls; nothing more to refactor"
+  architect: "the scenarios fix the behaviour; the perl fallback is BL-878's established pattern carried into bb"
+  hardender: "no durable state is written; the coder's bb test and the acceptance run cover it"
+  documenter: "no documented behaviour changes"
+
+acceptance: specs/features/BL-1895-a-process-group-launch-works-without-setsid.feature
+
+# Handler pin only (BL-233, BL-1371). No consumer anchor: handoffd.bb and
+# babysitter_check.bb already reach both libs, so an anchor there matches
+# before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1895ProcessGroupWithoutSetsidSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  From the coder's note (source). FIRM: setsid when it is on PATH, as
+  today; otherwise perl's setpgrp, which stock macOS ships. The child is a
+  process-group leader either way, so a group kill still reaches every
+  grandchild (bounded_run_lib's reason for setsid). Medium severity, so it
+  waits for you.
+
+invariants:
+  - "On any supported host, a launched child is the leader of its own process group, so a group kill reaches its children."
+
+source: |
+  Coder note 002339 (2026-10-02 13:38Z), verbatim: "BL-1872 lander_lib
+  launches with setsid; macOS ships none (perl setpgrp works)". The
+  specifier found the same unguarded setsid in bounded_run_lib.bb:53.
+
+description: |
+  ## What is wrong
+
+  `lander_lib.bb`'s `launch!` runs `setsid bash -c <land>`, and
+  `bounded_run_lib.bb` runs `setsid <cmd>` under a group-kill timeout.
+  setsid is util-linux; stock macOS has none. BL-878's
+  `portable_daemon_spawn_lib.sh` already guards the shell daemon spawns
+  (setsid, else nohup), but the two bb call sites were never given a
+  fallback.
+
+  ## What is wanted
+
+  - One bb helper that builds the launch argv: `setsid ...` when setsid is
+    on PATH, else `perl -e 'setpgrp(0,0); exec @ARGV' ...`, so the child
+    leads its own process group either way. Both call sites use it
+    (scenarios 01, 02).
+  - On this Linux host nothing changes.
+
+  ## How (direction, not mandate)
+
+  - Put the helper beside daemon_cycle_guard_lib or bounded_run_lib; the
+    BL-1811 rule applies (both call sites use the one helper).
+  - Step handler `specs/pipeline/steps/bl1895ProcessGroupWithoutSetsidSteps.js`,
+    fixture under mkdtemp (BL-1390) with a PATH that has perl and bash but
+    no setsid.
+
+  ## Scope
+
+  `lander_lib.bb`, `bounded_run_lib.bb`, the helper, their bb tests, the
+  step handler, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1895-a-process-group-launch-works-without-setsid.feature`:
+     2 of 2 ok. Measured 0 at mint: no handler exists.
+  2. BL-1872's feature and the lander and bounded-run bb test runners
+     green on this host (setsid present).
+
+notes: |
+  Minted 2026-10-02 by the specifier from coder note 002339; the bounded
+  run half was found the same pass.
