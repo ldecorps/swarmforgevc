@@ -1,0 +1,105 @@
+id: BL-1878
+title: "Stamp-off for hotfix 83d5e34527: BL-247's land and close steps check today's QA and coordinator wording (the land_main_publish.sh --land recipe, which pushes fast-forward only, and the git mv close through commit_integrity_cli.bb), so BL-247's feature is green again after 77 days red with no owner"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05); the
+# coordinator half has been red since 2026-07-17 with no register row.
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: one step handler under specs/pipeline/steps/ (not under Stryker's
+# mutate scope) and no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a small test-side fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-247's contract (BL-1251): the contract
+# this ticket must satisfy is that feature, green, with its scenarios as written.
+acceptance: specs/features/BL-247-qa-integrates-coordinator-bookkeeps.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 83d5e34527 under the human's 2026-10-01 directive
+  (source). No choice is posed. FIRM: BL-247's scenario text is
+  unchanged; only two step checks moved to today's wording for the same
+  rule. The review decides whether that stands.
+
+invariants: []
+
+source: |
+  Specifier, 2026-10-02, running the features whose handlers read
+  QA.prompt after a QA.prompt edit (409d7fb1ca, QA note 003682):
+  `node specs/pipeline/cli.js specs/features/BL-247-qa-integrates-coordinator-bookkeeps.feature`
+  printed "not ok 1 ... expected QA.prompt to instruct a fast-forward of
+  main to the approved commit" and "not ok 2 ... expected
+  coordinator.prompt to still instruct closing the ticket active ->
+  done". The same two failures on HEAD without the edit (git archive
+  scratch tree). No backlog/standing-reds.tsv row named it.
+
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim
+  (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 83d5e34527 landed the fix
+
+  This parcel is its stamp-off: the pipeline's review of what landed. The
+  coder finds the step handler already changed. Review it, do not
+  re-apply it.
+
+  ## What the hotfix changed
+
+  `specs/pipeline/steps/qaIntegratesCoordinatorBookkeepsSteps.js` held two
+  prompt literals that later approved tickets reworded with the same
+  meaning:
+  1. Scenario 02 checked coordinator.prompt for "move its YAML from
+     `backlog/active/` to `backlog/done/`". BL-419 (e1123e1933,
+     2026-07-17) made the close a `git mv` committed through
+     commit_integrity_cli.bb. The step now checks the `git mv
+     backlog/active/<TICKET-ID>-<slug>.yaml backlog/done/` line.
+  2. Scenario 01 checked QA.prompt for "fast-forward `main` to it" and
+     "push `main` to origin". BL-891's prose correction (d5c618fa01,
+     2026-08-14) replaced them with the `land_main_publish.sh
+     <qa-worktree> --land` recipe, which "pushes the commit the step
+     BUILT (fast-forward only ...)". The step now checks those two lines.
+     Its "Land it on `main` yourself" and "never force-push" checks are
+     unchanged.
+
+  ## What is wanted in this parcel
+
+  - Review both changes against the scenarios' observable claims. If one
+    hides a real regression rather than reworded prose, fix it here or
+    raise it to the specifier as a note.
+  - Evidence: the review, and the feature run on the parcel commit.
+
+  ## Scope
+
+  The step handler and evidence.
+
+out_of_scope: |
+  - BL-1872 retires BL-247 scenario 01 when the lander takes the land
+    over from QA (its own scope). Nothing here anticipates that.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-247-qa-integrates-coordinator-bookkeeps.feature`:
+     3 of 3 ok. Measured at mint: 3 of 3 on the hotfix tree, 1 of 3 on
+     HEAD before it (01 and 02 not ok).
+  2. Read the coder's evidence for the review of the two changes.
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  83d5e34527, the same pass the red was sighted (directive in source). The
+  hotfix turned the red green, so no register row was added. Ledger entry
+  linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Shares the BL-247 handler with BL-1872, which retires scenario 01 in
+  its own parcel; do not run the two at once.

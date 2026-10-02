@@ -552,3 +552,10 @@
   stamp_ticket: BL-1876
   human_decision: null
   decided_at: null
+- commit: 83d5e34527
+  subject: "Hotfix: BL-247's land and close steps check today's QA and coordinator wording, so its feature is green on main again"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1878
+  human_decision: null
+  decided_at: null
