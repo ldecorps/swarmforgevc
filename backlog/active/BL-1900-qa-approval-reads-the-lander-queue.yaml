@@ -115,3 +115,5 @@ notes: |
   Not fixed here: a commit made while the daemon's merge is open still
   meets MERGE_HEAD and the merge guards. That window was recurring only
   because every merge was refused.
+
+assigned_to: coder
