@@ -171,6 +171,88 @@
                                  {:kind :approved :commit (:commit hit) :store-file file}))))))
               (or matched {:kind :no-match}))))))))
 
+;; ── BL-1898: the land record as a third approval PATH ──────────────────────
+;;
+;; Since BL-1872 the lander lands what QA queued and sends QA's bookkeep note
+;; through swarm_handoff as the coordinator, so qa-approved-ticket? never sees
+;; it and every lander land's close was refused (BL-1887, feb18315ea). The land
+;; step already writes a durable record of every land - the store
+;; is_qa_ancestor.sh and landed_ticket_autoclose_lib.bb read. Reading it here
+;; adds an approval PATH, never a second definition of approval, the shape
+;; BL-1378 gave the expedite record. The lander keeps sending as the
+;; coordinator; a coordinator-sent note still approves nothing by itself.
+
+(def land-approvals-dir
+  "The store land_step_lib.bb writes for every land. One path, named once."
+  [".swarmforge" "land-approvals"])
+
+(defn- land-line-problem
+  "Invariant 2: a line the guard cannot read as a land record refuses the
+   close rather than letting the rest of the store hand out approvals."
+  [file line]
+  (let [parsed (try (json/parse-string line true) (catch Exception _ ::unparseable))]
+    (cond
+      (or (= ::unparseable parsed) (not (map? parsed)))
+      (str "the land record store " file " holds a line that is not a record")
+      (not (string? (:ticket parsed))) (str "the land record store " file " holds a record line with no ticket field")
+      (not (string? (:commit parsed))) (str "the land record store " file " holds a record line with no commit field")
+      :else nil)))
+
+(defn land-approval
+  "Read the land record store for `ticket-id`.
+
+   {:kind :absent}                          no store, or no record files
+   {:kind :problem  :detail \"...\"}         obstructed, unreadable or corrupt
+   {:kind :no-match}                        readable, no record names the ticket
+   {:kind :approved :records [{:commit :store-file}...]}  every record naming it
+
+   Invariant 1: a record names exactly one ticket and opens only that one."
+  [root ticket-id]
+  (let [dir (apply fs/path root land-approvals-dir)]
+    (cond
+      (and (fs/exists? dir) (not (fs/directory? dir)))
+      {:kind :problem
+       :detail (str "the land record store " (str dir) " exists but is not a directory (obstructed record store)")}
+
+      (not (fs/exists? dir))
+      {:kind :absent}
+
+      :else
+      (let [files (sort (map str (filter #(str/ends-with? (str %) ".jsonl") (fs/list-dir dir))))]
+        (if (empty? files)
+          {:kind :absent}
+          (loop [remaining files records []]
+            (if-let [file (first remaining)]
+              (if-not (fs/readable? file)
+                {:kind :problem :detail (str "the land record store " file " is unreadable")}
+                (let [lines (remove str/blank? (str/split-lines (slurp file)))]
+                  (if-let [problem (some #(land-line-problem file %) lines)]
+                    {:kind :problem :detail problem}
+                    (recur (rest remaining)
+                           (into records
+                                 (for [r (map #(json/parse-string % true) lines)
+                                       :when (= (:ticket r) ticket-id)]
+                                   {:commit (:commit r) :store-file file}))))))
+              (if (seq records)
+                {:kind :approved :records records}
+                {:kind :no-match}))))))))
+
+(defn land-record-on-main
+  "The first of `records` whose commit `ancestor?` answers true for, as
+   {:commit :store-file :ancestor? true}; otherwise the last record with the
+   answer it got (false, or nil when ancestry could not be determined - a
+   nil wins over false, so an unanswerable question is never reported as a
+   definite no). nil for no records."
+  [records ancestor?]
+  (when (seq records)
+    (loop [rs records unknown nil last-seen nil]
+      (if-let [r (first rs)]
+        (let [a (ancestor? (:commit r))]
+          (if (true? a)
+            (assoc r :ancestor? true)
+            (recur (rest rs) (if (nil? a) (assoc r :ancestor? nil) unknown) (assoc r :ancestor? a))))
+        (or unknown last-seen)))))
+
 (defn close-verdict
   "PURE: the three answers this guard can get, and the one verdict they make.
 
@@ -185,13 +267,27 @@
    Landing is required as well as approval, per the human's ruling of
    2026-09-03 (option 1): a ticket in backlog/done/ whose code is on no branch
    anyone reads is the situation this must not make official."
-  [{:keys [qa-mailbox? store ancestor?]}]
+  [{:keys [qa-mailbox? store ancestor? land land-record]}]
   (cond
     qa-mailbox?
     {:allowed? true :reason :qa-mailbox-handoff}
 
     (= :problem (:kind store))
     {:allowed? false :reason :expedite-store-problem :detail (:detail store)}
+
+    ;; BL-1898 invariant 2: an unreadable land store is never a pass.
+    (= :problem (:kind land))
+    {:allowed? false :reason :land-store-problem :detail (:detail land)}
+
+    (and (= :approved (:kind store)) (true? ancestor?))
+    {:allowed? true :reason :expedite-qa-verdict
+     :detail (str "expedite QA verdict record for commit " (:commit store)
+                  (when (:store-file store) (str " in " (:store-file store))))}
+
+    (true? (:ancestor? land-record))
+    {:allowed? true :reason :land-record
+     :detail (str "land record for commit " (:commit land-record)
+                  (when (:store-file land-record) (str " in " (:store-file land-record))))}
 
     (= :approved (:kind store))
     (cond
@@ -208,6 +304,14 @@
       :else
       {:allowed? false :reason :expedite-ancestry-undeterminable
        :detail (str "whether the approved commit " (:commit store) " reached main could not be determined")})
+
+    (false? (:ancestor? land-record))
+    {:allowed? false :reason :land-commit-not-on-main
+     :detail (str "the land record's commit " (:commit land-record) " is not an ancestor of main")}
+
+    (some? land-record)
+    {:allowed? false :reason :land-ancestry-undeterminable
+     :detail (str "whether the land record's commit " (:commit land-record) " reached main could not be determined")}
 
     :else
     {:allowed? false :reason :missing-qa-approval}))
@@ -251,11 +355,16 @@
           verdicts (into {}
                          (for [{:keys [ticket-id]} closes]
                            [ticket-id
-                            (let [store (expedite-approval root ticket-id)]
+                            (let [store (expedite-approval root ticket-id)
+                                  land (land-approval root ticket-id)]
                               (close-verdict {:qa-mailbox? (qa-approved-ticket? root ticket-id)
                                               :store store
                                               :ancestor? (when (= :approved (:kind store))
-                                                           (ancestor-of-main? root (:commit store)))}))]))
+                                                           (ancestor-of-main? root (:commit store)))
+                                              :land land
+                                              :land-record (when (= :approved (:kind land))
+                                                             (land-record-on-main (:records land)
+                                                                                  #(ancestor-of-main? root %)))}))]))
           blocked (->> ticket-ids (remove #(:allowed? (get verdicts %))) vec)]
       (if (seq blocked)
         ;; The reason belongs to the tickets that actually failed, and a
