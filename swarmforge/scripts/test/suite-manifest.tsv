@@ -601,3 +601,4 @@ local_model_qwen_provider_lib_test_runner.bb	standing
 test_bl1838_qwen_provider_no_known_window.sh	standing
 test_bl1838_qwen_provider_entry_via_launch_script.sh	standing
 local_seat_report_lib_test_runner.bb	standing
+parcel_line_lib_test_runner.bb	standing		

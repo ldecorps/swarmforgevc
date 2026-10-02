@@ -203,6 +203,45 @@ The script validates the task name and canonicalizes the commit abbreviation
 before queuing the handoff. The task name is a short, stable human-readable
 name that follows the work through downstream git handoffs for the same task.
 
+**Taking up a `git_handoff` moves the worktree, it does not merge (BL-1871).**
+The generated body's literal text is still `merge_and_process <sender>
+<commit>`, but for a role with its own worktree (anything whose
+`roles.tsv` `worktree-name` is not `master`), `ready_for_next_task.bb`'s
+claim path takes that payload up by moving the role's branch onto the cited
+commit (`git switch -C <branch> <commit>`) — never by merging it into
+whatever the role already held. The head being left is kept first under
+`refs/swarmforge/parcel-backup/<role>/<UTC stamp>`, so no commit is ever
+lost. Three refinements:
+- If the role's current HEAD is already the cited commit or a descendant of
+  it (e.g. the role already committed on top of a parcel it previously took
+  up), nothing moves — any merge an agent still runs on the payload is then
+  a no-op ("Already up to date").
+- A worktree with uncommitted changes to tracked files is never moved; the
+  claim path prints the blocking paths and leaves the parcel in place for
+  the next ask once they're committed or restored.
+- A coordinator `Work <ticket>` note to the coder moves the coder's
+  worktree onto the newest commit any role has been handed off for that
+  ticket, or a freshly fetched `origin/main` when none exists — unless the
+  coder's current line already carries only that ticket's own unlanded
+  work, in which case it stays, so a re-sent `Work` note never strands
+  work the coder has not yet forwarded.
+
+A non-forwarding copy (a reverse hop) and QA's merge-up `note` carry no work
+to move onto and leave the worktree untouched; the role completes them as
+usual. The **specifier's and coordinator's shared master checkout is never
+moved** — the two roles have no single branch identity for a move to resolve
+against, so a `git_handoff` addressed to either is processed as before (a
+merge the agent runs by hand, if anything is sent to master at all; in
+practice specifier/coordinator parcels are notes, not forwarding
+`git_handoff`s). The live pack's cleaner and hardender windows run `task`
+mode (not `batch`) so they take up their own parcels through this same path,
+one ticket at a time, instead of merging several tickets onto one branch.
+
+Every commit between `origin/main` and a role's worktree HEAD therefore
+belongs to the one ticket currently on that line — the land step no longer
+has to replay a ticket's own paths back out of a branch that also carries
+every other ticket that ever passed through the role.
+
 A role must not send or forward a `git_handoff` when the received commit
 produces no functional project change. This exemption is narrow and covers
 only meta churn: manifest-only, audit-only, generated metadata,
