@@ -1,0 +1,109 @@
+id: BL-1879
+title: "Stamp-off for hotfix 8d1c41e427: three commit-guard features that read live state their fixtures should own are green again - BL-1252's handler stubs every guard the runner and the commit-msg hook call (red since 2026-08-31), BL-1175's and BL-1407's run the drift guard from a copy with a fixture-owned allowlist (red since the live list emptied on 2026-09-18), and BL-1175 scenario 01 is retired"
+milestone: M8
+type: defect
+severity: high
+# high: standing reds on main are a broken safety signal (2026-09-05);
+# these had no register row.
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: three step handlers under specs/pipeline/steps/ and one feature
+# narrative; no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "small test-side fixes; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is test-side"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-1252's contract (BL-1251): it is the
+# largest of the three the hotfix changed and must stay green; the other
+# two are in the procedure.
+acceptance: specs/features/BL-1252-commit-guard-chain-reports-every-violation.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 8d1c41e427 under the human's 2026-10-01 directive
+  (source). No choice is posed. FIRM: no guard's behaviour changed; only
+  the three handlers' fixtures, plus BL-1175 scenario 01's retirement
+  (retired, never reworded, BL-1006). The review decides whether that
+  stands.
+
+invariants: []
+
+source: |
+  Specifier, 2026-10-02, running every feature whose handler drives
+  check_property_suite_drift.sh while verifying hotfix 9868dcfd5f (the
+  human: "Hot fix test suite duration too long"). BL-1175 1 of 4, BL-1252
+  1 of 9 and BL-1407 3 of 4, the same on HEAD before that hotfix (git
+  archive scratch tree). No backlog/standing-reds.tsv row named any.
+
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim
+  (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 8d1c41e427 landed the fix
+
+  This parcel is its stamp-off: the pipeline's review of what landed. The
+  coder finds the handlers already changed. Review them, do not re-apply
+  them.
+
+  ## What the hotfix changed
+
+  1. `bl1252CommitGuardCompleteInventorySteps.js`. The fixture copied
+     run_commit_guards.sh alone, but BL-1303 (ab46787808, 2026-08-31) made
+     it source commit_guard_chain_lib.sh, so every commit was refused
+     "the guard chain could not be loaded". It also stubbed four guards by
+     hand, and the chain has since grown (feature-handler registration,
+     module graph and later guards), as has the commit-msg hook (bounce
+     revert scope, closed-ticket subject). The fixture now copies the lib
+     and stubs every guard both chains call, read through BL-1408's
+     commitGuardFixtureSet helper on first use (never at module load,
+     BL-1630). KNOWN_GUARDS still resolves the Examples tokens.
+  2. `bl1175PropertySuiteStandingRedsSteps.js` and
+     `bl1407PropertyGateRerunsARedInIsolationSteps.js`. Both ran the live
+     guard, which reads the allowlist beside itself, and named bl632 as
+     the allowlisted red. Every standing red was fixed and the live list
+     has been empty since 1035192e8c (2026-09-18), so bl632 was treated as
+     a new red. Both now run the guard from a copy whose allowlist holds
+     that one row (the BL-1448 shape).
+  3. BL-1175 scenario 01 (standing-reds-listed-01) is retired. Its Given,
+     "the property suite reports multiple failing files on a stock
+     extension run", asserted at least 20 inventoried reds, and that is
+     false now that the lane is clean. Its step definitions went with it,
+     and the feature narrative names the retirement.
+
+  ## What is wanted in this parcel
+
+  - Review the three changes against the scenarios' observable claims.
+    If one hides a real regression rather than a stale fixture, fix it
+    here or raise it to the specifier as a note.
+  - Evidence: the review, and the three features run on the parcel
+    commit.
+
+  ## Scope
+
+  The three step handlers, BL-1175's feature, evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1252-commit-guard-chain-reports-every-violation.feature`:
+     9 of 9 ok. Measured at mint: 9 of 9 on the hotfix tree, 1 of 9 before.
+  2. `node specs/pipeline/cli.js specs/features/BL-1175-property-suite-standing-reds-block-unrelated-commits.feature`:
+     3 of 3 ok (scenario 01 retired). Before: 1 of 4.
+  3. `node specs/pipeline/cli.js specs/features/BL-1407-*.feature`: 4 of
+     4 ok. Before: 3 of 4.
+  4. Read the coder's evidence for the review.
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  8d1c41e427, the same pass the reds were sighted (directive in source).
+  The hotfix turned them green, so no register row was added. Ledger
+  entry linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

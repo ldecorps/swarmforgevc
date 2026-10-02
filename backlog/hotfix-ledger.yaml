@@ -566,3 +566,10 @@
   stamp_ticket: BL-1877
   human_decision: null
   decided_at: null
+- commit: 8d1c41e427
+  subject: "Hotfix: three commit-guard features read live state their fixtures should own, so BL-1252, BL-1175 and BL-1407 are green on main again"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1879
+  human_decision: null
+  decided_at: null
