@@ -1,5 +1,5 @@
 id: BL-1883
-title: "test_finish_shift_lib.sh case 08 is intermittently red: the front desk's pidfile in the shared fixture root is gone by the time the keep snapshot runs, while its process still lives, so the snapshot records nothing and BL-762's check that a kept component dying unexpectedly is caught reads CLEAN"
+title: "Stamp-off for hotfix 7f5cd31fe6: a killed background child no longer runs the shell tests' tmp cleanup (it swept every registered fixture root mid-test, which turned test_finish_shift_lib.sh case 08 red), and that test's case 02 stops sharing fixed /tmp paths between concurrent runs"
 milestone: M8
 type: defect
 severity: high
@@ -26,8 +26,9 @@ acceptance: specs/features/BL-762-finish-shift-leaves-the-phone-path-up.feature
 
 human_approval: approved
 approval_context: >
-  Standing-red owner, minted because the fix is more than one sitting: the
-  remover is not yet found (notes). No choice is posed.
+  Stamp-off of hotfix 7f5cd31fe6 under the human's 2026-10-01 directive.
+  It was minted as a standing-red owner first, and the human asked why it
+  was not hotfixed (notes). No choice is posed.
 
 invariants: []
 
@@ -46,49 +47,52 @@ source: |
   present before and after start_fixture.
 
 description: |
-  ## What is wrong
+  ## Status: hotfix 7f5cd31fe6 landed the fix
 
-  Case 08 calls `start_fixture`, which writes
-  `front-desk-supervisor.pid` into `$OP_DIR` of the root that cases 04-08
-  share, then snapshots the keep set (front-desk, tunnels). In the failing
-  runs the pidfile was already gone. Nothing in the test, in
-  `finish_shift_lib.sh`, in `lifecycle_matrix.sh` (the keep set is
-  front-desk and tunnels, the stop set babysitterd, onboarder and
-  operator-runtime) or in `stop_ancillary_services.sh` removes that file
-  on this path, and `tmp_cleanup.sh`'s sweep only removes roots it can
-  attribute to a dead owner by name, which a `mktemp -d` root never is.
-  So something outside this run removed it.
+  This parcel is its stamp-off: the pipeline's review of what landed.
+  Review it, do not re-apply it.
 
-  ## What is wanted
+  ## What the hotfix changed
 
-  - Find the remover and say in the evidence what it was. Candidates the
-    specifier did not rule out: a concurrent run of this test or of a
-    sibling that resolves its root from the environment rather than its
-    own fixture; a live script that deletes a front-desk pidfile
-    (`stop_bridge_headless.sh`, `recover_miniapp_bridge.sh`,
-    `launch_front_desk.sh`, `swarm_ensure.bb`) pointed at a fixture root;
-    an orphan janitor.
-  - Fix it where it lives. If it is the test's shared root, give case 08
-    its own fresh root (case 07 already does). If it is production code
-    reaching a root it should not, fix that, and add the stages that code
-    needs.
-  - Keep the register row until the land retires it (BL-1631).
+  1. `swarmforge/scripts/test/lib/tmp_cleanup.sh`. Its EXIT trap swept
+     every registered fixture root. A background child started with
+     `sleep 300 & PID=$!` and killed before it exec'd `sleep` is still a
+     bash process carrying that trap, and it ran the sweep too. Case 08
+     kills three such children just before its snapshot, so the fixture
+     root, the front desk's pidfile with it, was deleted mid-test and the
+     verify read CLEAN. Found in an xtrace: three concurrent sweeps right
+     after the kill. The trap now sweeps only in the process that installed
+     it: `BASHPID`, or on stock macOS bash 3.2 the parent of an exec'd sh.
+  2. `test_finish_shift_lib.sh` case 02 wrote `/tmp/bl762-02-*.out`, so two
+     concurrent runs clobbered each other (02b red in both of two parallel
+     runs). The files now live under the run's own root.
+
+  ## What is wanted in this parcel
+
+  - Review both changes. Confirm on stock macOS bash 3.2 if a host is at
+    hand, or say in the evidence that the fallback was checked only on
+    bash 5.2 here.
+  - Census: 134 shell tests source the helper. The 13 that kill
+    background children were run on the hotfix; 5 failed, identically on
+    HEAD before it, so they are separate reds (the specifier's next pass).
+    Re-run the 13 and confirm none regressed.
+  - Evidence: the review and that census.
 
   ## Scope
 
-  `swarmforge/scripts/test/test_finish_shift_lib.sh`, and whatever the
-  evidence shows removes the pidfile.
+  The helper, the finish-shift test, evidence.
 
 qa_e2e_procedure: |
   On the parcel commit:
-  1. `bash swarmforge/scripts/test/test_finish_shift_lib.sh`: ALL PASS,
+  1. `bash swarmforge/scripts/test/test_finish_shift_lib.sh`: 18 of 18,
      run 3 times (a flake ticket hunting this named intermittent failure,
-     2026-09-17 rule), one of them while a second copy of the same test
-     runs at the same time. Expect 3 of 3. At mint it failed 2 of 3.
+     2026-09-17 rule), two of them concurrently. Measured at the hotfix: 3
+     of 3; before it, case 08 failed 3 of 3 and 02b failed under
+     concurrency.
   2. `node specs/pipeline/cli.js specs/features/BL-762-finish-shift-leaves-the-phone-path-up.feature`:
      14 of 14, as measured at mint.
-  3. While the ticket is open the register row naming it is present;
-     after the land it is gone.
+  3. `bash swarmforge/scripts/test/test_tmp_cleanup_lib.sh`: ALL PASS. No
+     register row names this test (the hotfix retired it).
 
 notes: |
   Minted 2026-10-02 by the specifier from coder note 002319, with a
@@ -97,3 +101,10 @@ notes: |
   snapshot would hide a process that deletes files in roots it does not
   own.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  2026-10-02 (specifier): turned into the stamp-off of hotfix 7f5cd31fe6.
+  The human, verbatim: "You do observe the new role that instead of
+  marrying up a failing test with a ticket, you should hot fix on the spot
+  and mint a stampoff instrad, correct?" The owner-plus-row fallback was
+  the wrong call: the fix was one sitting once the trace was read. The
+  register row was retired in the hotfix commit. BL-1884 makes this
+  fallback a declared, gated choice.

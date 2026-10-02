@@ -587,3 +587,10 @@
   stamp_ticket: BL-1882
   human_decision: null
   decided_at: null
+- commit: 7f5cd31fe6
+  subject: "Hotfix: a killed background child no longer runs the shell tests' tmp cleanup, so test_finish_shift_lib.sh case 08 is green again; its case 02 stops sharing fixed /tmp paths between runs"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1883
+  human_decision: null
+  decided_at: null
