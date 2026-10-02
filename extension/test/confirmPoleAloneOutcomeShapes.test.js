@@ -25,8 +25,20 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { confirmPoleAlone } = require('../scripts/recordTestDuration.js');
 
+// Each confirmPoleAlone call spawns a real vitest run (about 1-2 s on a
+// loaded host). The repo-relative call is the same in the first and third
+// tests, so it runs once and both read its outcome: three spawns, not four,
+// which keeps this file under the 7 s per-file budget (QA saw 7.3 s alone
+// on 2026-10-02).
+const REL_FILE = 'extension/test/bl1007ContentionBudgetSmoke.test.js';
+let relOutcome;
+function confirmRelOnce() {
+  if (relOutcome === undefined) relOutcome = confirmPoleAlone(REL_FILE);
+  return relOutcome;
+}
+
 test('confirmPoleAlone measures a real, existing file and returns {ms}, never a bare number', () => {
-  const result = confirmPoleAlone('extension/test/bl1007ContentionBudgetSmoke.test.js');
+  const result = confirmRelOnce();
   assert.equal(typeof result, 'object');
   assert.ok(!('failed' in result), `expected a successful {ms} result, got: ${JSON.stringify(result)}`);
   assert.equal(typeof result.ms, 'number');
@@ -48,9 +60,8 @@ test('confirmPoleAlone resolves an absolute file path identically to its repo-ro
   // file's own sibling) is reached directly, never via `../..` + a
   // repo-relative segment re-appended (that lands one level too shallow
   // in a Stryker sandbox, where the sandbox itself is the extension root).
-  const relFile = 'extension/test/bl1007ContentionBudgetSmoke.test.js';
   const absFile = path.join(__dirname, 'bl1007ContentionBudgetSmoke.test.js');
-  const viaRel = confirmPoleAlone(relFile);
+  const viaRel = confirmRelOnce();
   const viaAbs = confirmPoleAlone(absFile);
   assert.ok(!('failed' in viaRel) && !('failed' in viaAbs), `expected both forms to succeed, got: ${JSON.stringify({ viaRel, viaAbs })}`);
 });
