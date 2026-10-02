@@ -103,3 +103,5 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Shares the BL-247 handler with BL-1872, which retires scenario 01 in
   its own parcel; do not run the two at once.
+
+assigned_to: coder
