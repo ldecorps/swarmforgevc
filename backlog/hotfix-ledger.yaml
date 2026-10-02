@@ -643,3 +643,10 @@
   stamp_ticket: BL-1894
   human_decision: null
   decided_at: null
+- commit: 36c869209a
+  subject: "Hotfix: the specifier prompt's epic-sweep sentence reads 'Correct any depends_on entries' again, so BL-680 scenario 04 is green"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1896
+  human_decision: null
+  decided_at: null

@@ -1,0 +1,76 @@
+id: BL-1896
+title: "Stamp-off for hotfix 36c869209a: the specifier prompt's epic-sweep sentence reads 'Correct any depends_on entries the cluster contradicts' without backticks again, so BL-680 scenario 04 is green after five weeks red with no owner"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: two backticks in a role prompt; no product code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a two-character prompt fix; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate; the fix is prompt text"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-680's contract (BL-1251).
+acceptance: specs/features/BL-680-specifier-consolidation-authority.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 36c869209a under the human's 2026-10-01 directive.
+  No choice is posed. FIRM: BL-680's scenario text and step handler are
+  unchanged; the prompt sentence went back to the wording they read.
+
+invariants: []
+
+source: |
+  Specifier, 2026-10-02, running the features whose handlers read
+  specifier.prompt after editing it (11a0cafbce): BL-680 failed 1 of 10,
+  scenario 04 at "it instructs correcting depends_on entries the cluster
+  contradicts", no register row. The literal has carried backticks since
+  a28aae435b (2026-08-27). The human, specifier pane (Claude Code),
+  2026-10-01, verbatim:
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 36c869209a landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  a28aae435b ("Make deprecator duty prominent in specifier prompt",
+  2026-08-27) wrapped `depends_on` in backticks inside the Consolidation
+  Authority section's sentence "Correct any depends_on entries the cluster
+  contradicts." BL-680's step handler reads that sentence as a plain
+  literal with whitespace normalised, so scenario 04 has been red since.
+  The hotfix removes the two backticks from the prompt. The handler and
+  the scenario are unchanged.
+
+  ## What is wanted in this parcel
+
+  - Review the change, and say in the evidence whether any other BL-680
+    literal is one formatting edit away from the same red (a backtick or a
+    line wrap inside a quoted phrase).
+  - Evidence: the review and one run of the feature.
+
+  ## Scope
+
+  The prompt line (review only) and evidence.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run: `node specs/pipeline/cli.js specs/features/BL-680-specifier-consolidation-authority.feature`: 10 of 10 ok
+  (measured at the hotfix; 9 of 10 before it, scenario 04 red).
+
+notes: |
+  Minted 2026-10-02 by the specifier as the stamp-off of hotfix
+  36c869209a. No register row: the hotfix turned it green. Ledger entry
+  linked here.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
