@@ -22,7 +22,16 @@ const SPECIFIER_PROMPT_PATH = path.join(REPO_ROOT, 'swarmforge', 'roles', 'speci
 const ARCHITECT_PROMPT_PATH = path.join(REPO_ROOT, 'swarmforge', 'roles', 'architect.prompt');
 const AUDIT_SCRIPT_PATH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'backlog_epic_milestone_audit.bb');
 const HYGIENE_LIB_PATH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'backlog_hygiene_lib.bb');
-const BL590_TICKET_PATH = path.join(REPO_ROOT, 'backlog', 'hold', 'BL-590-onboarding-facilitator-agent.yaml');
+// BL-590 left backlog/hold/ on 2026-07-27 (unparked, then closed to done);
+// the ticket is read from whichever backlog folder holds it now.
+const BL590_TICKET_NAME = 'BL-590-onboarding-facilitator-agent.yaml';
+function bl590TicketPath() {
+  for (const dir of ['hold', 'paused', 'active', 'done']) {
+    const p = path.join(REPO_ROOT, 'backlog', dir, BL590_TICKET_NAME);
+    if (fs.existsSync(p)) return p;
+  }
+  throw new Error(`${BL590_TICKET_NAME} is in none of backlog/hold, paused, active, done`);
+}
 
 // BL-633 hardening: scenario 04's fixture root was previously removed only in
 // the scenario's last step, so a throw in an earlier step (e.g. "the audit
@@ -122,7 +131,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it instructs one bounce per violated property rather than one per site$/, (ctx) => {
-    requireIncludes(ctx.bl633Text, 'One bounce per property, never one per site.', 'the architect prompt');
+    requireIncludes(ctx.bl633Text, 'One bounce per property, never one per site', 'the architect prompt');
   });
 
   // ── Scenario 04: an existing ticket reader tolerates the new field ──────
@@ -165,7 +174,7 @@ function registerSteps(registry) {
 
   // ── Scenario 05: BL-590 carries its invariant as the worked example ─────
   registry.define(/^the BL-590 ticket in the backlog hold folder$/, (ctx) => {
-    ctx.bl633Bl590Text = fs.readFileSync(BL590_TICKET_PATH, 'utf8');
+    ctx.bl633Bl590Text = fs.readFileSync(bl590TicketPath(), 'utf8');
   });
 
   registry.define(/^its invariants list includes the durable-write redelivery idempotency property$/, (ctx) => {

@@ -68,6 +68,10 @@ function baseDeps(ctx) {
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
+    // The gate gained this dependency after these fixtures were written
+    // (bl1221's stub shape: a run that touched no authored docs).
+    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
+    checkOriginMainLanding: () => ({ reachable: true }),
     checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),

@@ -55,6 +55,13 @@ function assertDischarged(ctx, parcel) {
   ctx.evidencePath = path.join(REPO_ROOT, row.discharged_evidence);
 }
 
+function bl1638IsDone() {
+  const done = path.join(REPO_ROOT, 'backlog', 'done');
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).some((e) =>
+    e.isDirectory() ? walk(path.join(d, e.name)) : /^BL-1638-.*\.yaml$/.test(e.name));
+  return fs.existsSync(done) && walk(done);
+}
+
 function assertRegisterOwnedForFiles(ctx, parcel) {
   const files = FILE_SETS[parcel];
   // The register's hardening rows are keyed on the ledger's own file_set
@@ -65,6 +72,15 @@ function assertRegisterOwnedForFiles(ctx, parcel) {
   const rows = ctx.registerReport.rows.filter(
     (r) => r.lane === 'hardening' && r.file.split(',').some((f) => files.includes(f))
   );
+  // The step holds before and after BL-1638's land (the 2026-10-01 rule):
+  // the land retires every row its owner names (BL-1631), so once BL-1638
+  // is in backlog/done/ no row may name the file set; while it is open the
+  // row must be present and owned by it.
+  if (bl1638IsDone()) {
+    assert.deepEqual(rows, [], `BL-1638 is done, so its land retired these rows; found: ${JSON.stringify(rows)}`);
+    assert.deepEqual(ctx.registerReport.unowned, [], `expected no unowned row in the register report, got: ${JSON.stringify(ctx.registerReport.unowned)}`);
+    return;
+  }
   assert.ok(rows.length > 0, `expected at least one hardening register row for ${parcel}'s file set (${files.join(', ')}), found none: ${JSON.stringify(ctx.registerReport.rows)}`);
   for (const row of rows) {
     assert.equal(row.ticket, 'BL-1638', `expected the hardening row for ${row.file} to name BL-1638 as owner, got: ${JSON.stringify(row)}`);
