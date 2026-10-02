@@ -127,14 +127,13 @@ function makeInjectedNightDeps() {
       return closingCeremonyLoudCodes(result);
     },
     workedAShift: () => true,
-    // BL-1641: this fixture's own hard deadline (06:00) is always already
+    // BL-1836: this fixture's own hard deadline (06:00) is always already
     // past its 20:00 UTC day (isoForDay), so every tick that reaches
-    // advanceBriefing takes the deadline branch and emits ensure-briefing -
-    // "neither producible" here is correct (this property is about the
-    // lean-packet send, not the briefing file), and matters only in that
-    // the executor must have something safe to call.
+    // advanceBriefing takes the deadline branch - "nothing to land, nothing
+    // on main" is correct here (this property is about the lean-packet
+    // send, not the briefing file).
     landDocumenterBriefing: () => null,
-    composeHeadlessBriefing: () => false,
+    mainHasBriefing: () => false,
   };
   return { deps, state, surfaced };
 }

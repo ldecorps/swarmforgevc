@@ -71,6 +71,10 @@ function makeRunDeps(over = {}) {
     deliverLeanPacket: () => [],
     recordEmptyOutcome: () => [],
     workedAShift: () => true,
+    // BL-1836: the runner lands the documenter's briefing and reads main on
+    // every tick; this property is about deadlines, so nothing is on main.
+    landDocumenterBriefing: () => null,
+    mainHasBriefing: () => false,
   };
 }
 

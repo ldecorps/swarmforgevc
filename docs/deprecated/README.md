@@ -16,9 +16,6 @@ retirement note at its top change.
 
 ## Retired pages
 
-*(none yet — this directory exists so the first retirement has a home to
-move into, and so `docs/index.md` links somewhere real.)*
-
 | Page | Retired by | Reason |
 |------|-----------|--------|
-| — | — | — |
+| [BL-1641: the closing ceremony composes a headless briefing at its hard deadline](BL-1641-closing-ceremony-headless-composer.md) | BL-1836 (2026-10-02) | Human ruling (2026-09-30): the ceremony waits for the documenter's own briefing instead of substituting a headless dump; a missing briefing at the deadline now just stops the swarm loudly, as it did before BL-1641. |

@@ -52,22 +52,29 @@ stop time moves the ceremony — no second clock to edit.
 4. **Happy path** — if drain ended at documenter, chain into briefing; else
    rotate resident to documenter with explicit briefing instruction.
 5. **Briefing** — written, committed, send confirmed via sent-state (not
-   “file exists”). Already-sent nights are not double-sent. **At the hard
-   deadline, a missing briefing is forced, never left absent (BL-1641,
-   2026-09-21):** `closing-briefing-missing` still surfaces loud, but
-   before `night-stop` the ceremony tries, in order — (a) land the
-   documenter branch's own newest commit touching that day's
-   `docs/briefings/<day>.md`, but only when that commit's WHOLE diff is
-   that one path (a pure add); the landed sha is recorded as
-   `briefing-landed-from-documenter` in the sequence; (b) otherwise
-   compose the banked headless briefing (BL-308) through
-   `compose_banked_briefing_cli.bb` and commit it, recorded as
-   `briefing-composed-headless`; (c) if neither is possible, the night
-   ends exactly as before — `briefing-missing, swarm-stopped`. A
+   “file exists”). Already-sent nights are not double-sent. **On any tick
+   in the briefing phase, the documenter branch's own pure-add briefing
+   commit is landed the moment it exists, never only at the deadline
+   (BL-1836, 2026-10-02):** when the previous tick's state was already in
+   this night's briefing phase, the runner lands the documenter branch's
+   newest commit touching that day's `docs/briefings/<day>.md` — but only
+   when that commit's WHOLE diff is that one path (a pure add) — BEFORE
+   observing, so the pure state machine sees the landed briefing on `main`
+   on that same tick; recorded as `briefing-landed-from-documenter`. **At
+   the hard deadline, nothing is composed** (human ruling, 2026-09-30: the
+   ceremony waits for the documenter rather than substituting a dump — see
+   the retired headless-composer behavior under
+   [Deprecated pages](../deprecated/BL-1641-closing-ceremony-headless-composer.md)):
+   a briefing already on `main` ends the ceremony quietly
+   (`briefing-committed, swarm-stopped`); with none on `main` and none on
+   the documenter branch, the night ends loud —
+   `briefing-missing, swarm-stopped` plus `closing-briefing-missing` — and
+   the documenter writes the briefing after the restart instead. A
    `docs/briefings/<day>.md` main already has is never touched by any of
    this, whatever its `.sent.json` state (2026-09-18: a 120-line briefing
    sat committed on the documenter branch, unlanded, when bedtime killed
-   the stack at its deadline — this closes that gap).
+   the stack at its deadline — landing on every tick, not only the
+   deadline, closes that gap).
 6. **Full stop** — night-stop / hard deadline (e.g. 06:00) remains the
    unconditional backstop if the ceremony hangs.
 
@@ -265,9 +272,10 @@ against every later merge of that branch, documenter or not.
 - Host crontab generation from conf may land as a sibling slice; conf remains
   authoritative.
 - Forbidden outcome remains silence: missing briefing /
-  drain-deadline surfaces must be loud — and, since BL-1641, a missing
-  briefing at the hard deadline is also forced (landed or composed) rather
-  than merely surfaced, per step 5 above.
+  drain-deadline surfaces must be loud. Since BL-1836, the only thing the
+  ceremony ever does for a briefing is land the documenter's own pure-add
+  commit the moment it exists; it never composes one itself (per step 5
+  above).
 
 ## Acceptance
 

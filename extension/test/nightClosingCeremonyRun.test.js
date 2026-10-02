@@ -4,7 +4,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { runNightClosingCeremony, mainHasBriefing } = require('../out/tools/night-closing-ceremony-run');
+const {
+  runNightClosingCeremony,
+  mainHasBriefing,
+  briefingSent,
+  SENT_LEDGER_KEY,
+} = require('../out/tools/night-closing-ceremony-run');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
@@ -53,12 +58,10 @@ function makeDeps(over = {}) {
         return [];
       },
       workedAShift: () => true,
-      // BL-1641: real deps land the documenter's own commit or compose the
-      // banked headless briefing at the deadline; defaults here mean
-      // "neither producible", so existing tests that never override these
-      // (and never reach the deadline) are unaffected.
+      // BL-1836: real deps land the documenter's own briefing commit on any
+      // briefing tick; the defaults mean "nothing to land, nothing on main".
       landDocumenterBriefing: () => null,
-      composeHeadlessBriefing: () => false,
+      mainHasBriefing: () => false,
       ...over,
     },
     state,
@@ -258,63 +261,145 @@ test('BL-1640: the daemon sweep never reopens a done night, even after a worked 
   assert.equal(second.advanced, false);
 });
 
-// ── BL-1641: at the deadline, ensure-briefing lands or composes ──────────
+// ── BL-1836: the documenter's briefing lands the moment it exists ────────
 
-test('BL-1641: at the hard deadline, ensure-briefing lands the documenter commit and folds the step before swarm-stopped', () => {
-  const { deps, actions } = makeDeps({
+// Drives a sleep ceremony into its briefing phase, then one more tick at `at`.
+function toBriefingThenTick(deps, root, at) {
+  const t0 = FIXED_NOW_MS;
+  runNightClosingCeremony(root, '/tmp/conf', t0, deps, false, 'finish-shift');
+  runNightClosingCeremony(root, '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
+  return runNightClosingCeremony(root, '/tmp/conf', t0 + at, deps, false, 'finish-shift');
+}
+
+function landingDeps(actions) {
+  const onMain = { value: false };
+  const made = makeDeps({
+    landDocumenterBriefing: (_t, dayKey) => {
+      actions.push(['land', dayKey]);
+      onMain.value = true;
+      return 'abcabcabcabc';
+    },
+    mainHasBriefing: () => onMain.value,
+  });
+  return made;
+}
+
+test('BL-1836: a briefing tick before the deadline lands the documenter commit and keeps waiting for the send', () => {
+  const actions = [];
+  const { deps } = landingDeps(actions);
+  const result = toBriefingThenTick(deps, '/tmp/bl1836a', 2000);
+  assert.ok(actions.some((a) => a[0] === 'land'), `landDocumenterBriefing was not called: ${JSON.stringify(actions)}`);
+  assert.equal(result.state.phase, 'briefing');
+  assert.ok(result.state.sequence.includes('briefing-landed-from-documenter'));
+  assert.ok(!result.state.loudSurfaces.includes('closing-briefing-missing'));
+});
+
+test('BL-1836: landing at the deadline stops quietly, the landing step before swarm-stopped', () => {
+  const actions = [];
+  const made = landingDeps(actions);
+  const result = toBriefingThenTick(made.deps, '/tmp/bl1836b', 40 * 60_000);
+  assert.equal(result.state.phase, 'done');
+  assert.ok(!result.state.loudSurfaces.includes('closing-briefing-missing'));
+  assert.ok(!made.actions.some((a) => a[0] === 'surface'));
+  const seq = result.state.sequence;
+  assert.ok(seq.indexOf('briefing-landed-from-documenter') < seq.indexOf('swarm-stopped'), seq.join(' -> '));
+});
+
+test('BL-1836: no briefing anywhere at the deadline stops loud and composes nothing', () => {
+  const { deps, actions } = makeDeps();
+  const result = toBriefingThenTick(deps, '/tmp/bl1836c', 40 * 60_000);
+  assert.deepEqual(result.state.sequence.slice(-2), ['briefing-missing', 'swarm-stopped']);
+  assert.ok(actions.some((a) => a[0] === 'surface' && a[1] === 'closing-briefing-missing'));
+  assert.ok(actions.some((a) => a[0] === 'stop'));
+});
+
+test('BL-1836: the frozen phase never tries to land (the documenter is not instructed yet)', () => {
+  const actions = [];
+  const { deps } = landingDeps(actions);
+  runNightClosingCeremony('/tmp/bl1836d', '/tmp/conf', FIXED_NOW_MS, deps, false, 'finish-shift');
+  assert.ok(!actions.some((a) => a[0] === 'land'));
+});
+
+test('BL-1836: a dry run never lands', () => {
+  const actions = [];
+  const { deps } = landingDeps(actions);
+  runNightClosingCeremony('/tmp/bl1836e', '/tmp/conf', FIXED_NOW_MS, deps, false, 'finish-shift');
+  runNightClosingCeremony('/tmp/bl1836e', '/tmp/conf', FIXED_NOW_MS + 1000, deps, false, 'finish-shift');
+  runNightClosingCeremony('/tmp/bl1836e', '/tmp/conf', FIXED_NOW_MS + 2000, deps, true, 'finish-shift');
+  assert.ok(!actions.some((a) => a[0] === 'land'));
+});
+
+test("BL-1836: a stale previous night still parked in the briefing phase never lands into today's night", () => {
+  // landBriefingIfDue's guard is `prev.phase !== 'briefing'`, gated by a
+  // SEPARATE `prev.nightKey !== nightKey` check - hand-mutation (removing
+  // just the nightKey clause) showed this exact case uncovered: a prior
+  // ceremony that crashed mid-briefing on an earlier calendar day and never
+  // reached done/idle must not have its stale "I'm in briefing" phase read
+  // as license to land TODAY's briefing before today's own ceremony has
+  // even started (it is still phase 'idle' for today, not 'briefing').
+  const actions = [];
+  const { deps, state } = makeDeps({
     landDocumenterBriefing: (_t, dayKey) => {
       actions.push(['land', dayKey]);
       return 'abcabcabcabc';
     },
-    composeHeadlessBriefing: () => {
-      throw new Error('must not run when landing succeeded');
-    },
   });
-  const t0 = FIXED_NOW_MS;
-  runNightClosingCeremony('/tmp/bl1641a', '/tmp/conf', t0, deps, false, 'finish-shift');
-  runNightClosingCeremony('/tmp/bl1641a', '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
-  const result = runNightClosingCeremony('/tmp/bl1641a', '/tmp/conf', t0 + 40 * 60_000, deps, false, 'finish-shift');
-  assert.ok(actions.some((a) => a[0] === 'land'), `landDocumenterBriefing was not called: ${JSON.stringify(actions)}`);
+  state.current = {
+    nightKey: '2026-09-24',
+    phase: 'briefing',
+    sequence: ['freeze-promotion', 'drain-ended', 'briefing-instructed'],
+    startedAtMs: FIXED_NOW_MS - 86_400_000,
+    drainDeadlineMs: FIXED_NOW_MS - 86_400_000,
+    hardDeadlineMs: FIXED_NOW_MS - 86_400_000 + 10 * 60_000,
+    rotationRequested: false,
+    loudSurfaces: [],
+    parked: false,
+    briefingInstructed: true,
+    hadInFlight: false,
+  };
+  runNightClosingCeremony('/tmp/bl1836f', '/tmp/conf', FIXED_NOW_MS, deps, false, 'finish-shift');
   assert.ok(
-    result.state.sequence.includes('briefing-landed-from-documenter'),
-    `sequence missing forced step: ${result.state.sequence.join(' -> ')}`,
+    !actions.some((a) => a[0] === 'land'),
+    `landDocumenterBriefing fired for the wrong night: ${JSON.stringify(actions)}`
   );
-  const idx = result.state.sequence.indexOf('briefing-landed-from-documenter');
-  assert.ok(idx < result.state.sequence.indexOf('swarm-stopped'), 'the forced step must precede swarm-stopped');
 });
 
-test('BL-1641: when landing fails, ensure-briefing falls back to composing the headless briefing', () => {
-  const { deps, actions } = makeDeps({
-    landDocumenterBriefing: () => {
-      actions.push(['land', null]);
-      return null;
-    },
-    composeHeadlessBriefing: (_t, dayKey) => {
-      actions.push(['compose', dayKey]);
-      return true;
-    },
-  });
-  const t0 = FIXED_NOW_MS;
-  runNightClosingCeremony('/tmp/bl1641b', '/tmp/conf', t0, deps, false, 'finish-shift');
-  runNightClosingCeremony('/tmp/bl1641b', '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
-  const result = runNightClosingCeremony('/tmp/bl1641b', '/tmp/conf', t0 + 40 * 60_000, deps, false, 'finish-shift');
-  assert.ok(actions.some((a) => a[0] === 'land'));
-  assert.ok(actions.some((a) => a[0] === 'compose'));
-  assert.ok(result.state.sequence.includes('briefing-composed-headless'));
+// ── BL-1836: .sent.json is read in the email sweep's own shape ───────────
+
+function sentLedgerRoot(content) {
+  const root = mkTmpDir('bl1836-sent-');
+  fs.mkdirSync(path.join(root, 'docs', 'briefings'), { recursive: true });
+  if (content !== undefined) fs.writeFileSync(path.join(root, 'docs', 'briefings', '.sent.json'), content);
+  return root;
+}
+
+test("BL-1836: briefingSent reads the sweep's {\"sent\": [...]} shape", () => {
+  const root = sentLedgerRoot(JSON.stringify({ sent: ['2026-09-24.md', '2026-09-25.md'] }));
+  assert.equal(briefingSent(root, '2026-09-25'), true);
+  assert.equal(briefingSent(root, '2026-09-26'), false);
 });
 
-test('BL-1641: when neither lands nor composes, the sequence still ends briefing-missing, swarm-stopped with no forced step', () => {
-  const { deps } = makeDeps({
-    landDocumenterBriefing: () => null,
-    composeHeadlessBriefing: () => false,
-  });
-  const t0 = FIXED_NOW_MS;
-  runNightClosingCeremony('/tmp/bl1641c', '/tmp/conf', t0, deps, false, 'finish-shift');
-  runNightClosingCeremony('/tmp/bl1641c', '/tmp/conf', t0 + 1000, deps, false, 'finish-shift');
-  const result = runNightClosingCeremony('/tmp/bl1641c', '/tmp/conf', t0 + 40 * 60_000, deps, false, 'finish-shift');
-  assert.deepEqual(result.state.sequence.slice(-2), ['briefing-missing', 'swarm-stopped']);
-  assert.ok(!result.state.sequence.includes('briefing-landed-from-documenter'));
-  assert.ok(!result.state.sequence.includes('briefing-composed-headless'));
+test('BL-1836: a bare list, a missing file or junk is never read as sent', () => {
+  assert.equal(briefingSent(sentLedgerRoot(JSON.stringify(['2026-09-25.md'])), '2026-09-25'), false);
+  assert.equal(briefingSent(sentLedgerRoot(), '2026-09-25'), false);
+  assert.equal(briefingSent(sentLedgerRoot('{not json'), '2026-09-25'), false);
+  assert.equal(briefingSent(sentLedgerRoot(JSON.stringify({ sent: 'x' })), '2026-09-25'), false);
+});
+
+test('BL-1836: the match is exact, not a prefix - a longer entry sharing the day key is not this day sent', () => {
+  // The old reader matched with `.startsWith(dayKey)`, which this ticket
+  // dropped in the same change as the shape fix. Hand-mutation (restoring
+  // startsWith) showed every existing test still green, because none of
+  // them ever put a longer, day-key-prefixed entry in the ledger.
+  const root = sentLedgerRoot(JSON.stringify({ sent: ['2026-09-250.md', '2026-09-25-extra.md'] }));
+  assert.equal(briefingSent(root, '2026-09-25'), false);
+});
+
+test('BL-1836 / BL-897: the ledger key matches briefing_email_lib.bb on both sides', () => {
+  const lib = fs.readFileSync(path.join(__dirname, '..', '..', 'swarmforge', 'scripts', 'briefing_email_lib.bb'), 'utf8');
+  assert.equal(SENT_LEDGER_KEY, 'sent');
+  assert.match(lib, new RegExp(`\\(:${SENT_LEDGER_KEY} \\(read-json`));
+  assert.match(lib, new RegExp(`\\{:${SENT_LEDGER_KEY} \\(vec`));
 });
 
 test('BL-1528: a loud code from recordEmptyOutcome is surfaced the same way', () => {

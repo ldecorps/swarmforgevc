@@ -406,7 +406,7 @@ if [[ -f "$REAL_CLI" ]]; then
   # budgets), simulating the documenter sending the briefing between ticks,
   # never a real multi-minute wait.
   today="$(date +%Y-%m-%d)"
-  ( sleep 0.3; mkdir -p "$ROOT11/docs/briefings"; printf '["%s.md"]' "$today" > "$ROOT11/docs/briefings/.sent.json" ) &
+  ( sleep 0.3; mkdir -p "$ROOT11/docs/briefings"; printf '{"sent":["%s.md"]}' "$today" > "$ROOT11/docs/briefings/.sent.json" ) &
   BG_SENDER11=$!
   (
     source "$SRC/finish_shift_lib.sh"

@@ -104,34 +104,47 @@ test('hard deadline without send surfaces missing briefing', () => {
   assert.ok(missing.actions.some((a) => a.kind === 'night-stop'));
 });
 
-// ── BL-1641: the deadline gives the executor a chance to ensure a briefing ──
+// ── BL-1836: the deadline never asks for a briefing to be written ─────────
 
-test('BL-1641: the hard deadline emits ensure-briefing before surface and night-stop', () => {
+function atDeadline(over = {}) {
   const started = tick(null, { inFlightCount: 0 });
   const briefing = tick(started.state, { nowMs: started.state.startedAtMs + 1, inFlightCount: 0 });
-  const missing = tick(briefing.state, {
+  return tick(briefing.state, {
     nowMs: briefing.state.hardDeadlineMs + 1,
     inFlightCount: 0,
     briefingAlreadySent: false,
+    ...over,
   });
+}
+
+test('BL-1836: no briefing on main at the deadline stops loud, and asks nobody to compose one', () => {
+  const missing = atDeadline({ briefingOnMain: false });
   const kinds = missing.actions.map((a) => a.kind);
-  assert.ok(kinds.includes('ensure-briefing'), `no ensure-briefing action: ${kinds.join(', ')}`);
-  const ensureAt = kinds.indexOf('ensure-briefing');
-  assert.ok(ensureAt < kinds.indexOf('surface'), 'ensure-briefing must precede surface');
-  assert.ok(ensureAt < kinds.indexOf('night-stop'), 'ensure-briefing must precede night-stop');
-  const dayKeyAction = missing.actions.find((a) => a.kind === 'ensure-briefing');
-  assert.equal(dayKeyAction.dayKey, '2026-08-26');
+  assert.deepEqual(kinds, ['surface', 'night-stop']);
+  assert.deepEqual(missing.state.sequence.slice(-2), ['briefing-missing', 'swarm-stopped']);
+  assert.ok(missing.state.loudSurfaces.includes('closing-briefing-missing'));
 });
 
-test('BL-1641: an already-sent briefing never emits ensure-briefing (nothing to ensure)', () => {
+test('BL-1836: an absent briefingOnMain reads as no briefing (pre-BL-1836 callers stay loud)', () => {
+  const missing = atDeadline();
+  assert.ok(missing.state.loudSurfaces.includes('closing-briefing-missing'));
+});
+
+test('BL-1836: a briefing already on main at the deadline stops quietly', () => {
+  const quiet = atDeadline({ briefingOnMain: true });
+  assert.equal(quiet.state.phase, 'done');
+  assert.deepEqual(quiet.actions.map((a) => a.kind), ['night-stop']);
+  assert.deepEqual(quiet.state.loudSurfaces, []);
+  assert.ok(!quiet.state.sequence.includes('briefing-missing'));
+  assert.deepEqual(quiet.state.sequence.slice(-2), ['briefing-committed', 'swarm-stopped']);
+});
+
+test('BL-1836: before the deadline a briefing on main but unsent keeps waiting', () => {
   const started = tick(null, { inFlightCount: 0 });
   const briefing = tick(started.state, { nowMs: started.state.startedAtMs + 1, inFlightCount: 0 });
-  const sent = tick(briefing.state, {
-    nowMs: briefing.state.hardDeadlineMs - 1,
-    inFlightCount: 0,
-    briefingAlreadySent: true,
-  });
-  assert.ok(!sent.actions.some((a) => a.kind === 'ensure-briefing'));
+  const wait = tick(briefing.state, { nowMs: briefing.state.hardDeadlineMs - 1, inFlightCount: 0, briefingOnMain: true });
+  assert.equal(wait.state.phase, 'briefing');
+  assert.deepEqual(wait.actions, []);
 });
 
 // ── BL-1641: withForcedBriefingStep folds the executor's outcome in ──────
@@ -155,8 +168,8 @@ test('withForcedBriefingStep: a null forced step leaves the sequence untouched (
 
 test('withForcedBriefingStep: appends when swarm-stopped is absent, never throws', () => {
   const state = { ...doneState(), sequence: ['freeze-promotion'] };
-  const next = withForcedBriefingStep(state, 'briefing-composed-headless');
-  assert.deepEqual(next.sequence, ['freeze-promotion', 'briefing-composed-headless']);
+  const next = withForcedBriefingStep(state, 'briefing-landed-from-documenter');
+  assert.deepEqual(next.sequence, ['freeze-promotion', 'briefing-landed-from-documenter']);
 });
 
 test('not due does not start', () => {

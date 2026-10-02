@@ -235,7 +235,6 @@ test/bl1635JvmBuildEnvInvariant.property.test.js	13	1
 test/bl1636StepHandlerTempRootInvariants.property.test.js	15	2
 test/bl1637SeatForwardEvidenceInvariant.property.test.js	15	1
 test/bl1640SleepDeadlinesAndCeilingInvariants.property.test.js	23	2
-test/bl1641EnsureBriefingInvariants.property.test.js	19	2
 test/bl1642QaNoteEvidenceInvariants.property.test.js	15	2
 test/bl1648RegisterCliInjectedDateInvariants.property.test.js	12	3
 test/bl1650LandStepPureEvidenceStrayInvariants.property.test.js	20	2

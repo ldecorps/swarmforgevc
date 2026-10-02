@@ -59,20 +59,17 @@ export type RunDeps = {
    */
   workedAShift: (target: string) => boolean;
   /**
-   * BL-1641: at the briefing hard deadline, land the documenter branch's
-   * own commit for the day's briefing when one exists (byte-identical,
-   * touching only that one path) and main does not already have the file.
-   * Returns the LANDING commit's sha, or null when nothing was landed
-   * (main already has the file, no qualifying documenter commit exists,
-   * or the tool/branch is unavailable).
+   * BL-1641/BL-1836: land the documenter branch's own commit for the day's
+   * briefing when one exists (byte-identical, touching only that one path)
+   * and main does not already have the file. Called on every briefing-phase
+   * tick, so the briefing lands the moment it exists. Returns the LANDING
+   * commit's sha, or null when nothing was landed (main already has the
+   * file, no qualifying documenter commit exists, or the tool/branch is
+   * unavailable).
    */
   landDocumenterBriefing: (target: string, dayKey: string) => string | null;
-  /**
-   * BL-1641: when nothing was landed, compose the banked headless briefing
-   * for the day and commit it (never touching a file main already has).
-   * Returns whether a commit was made.
-   */
-  composeHeadlessBriefing: (target: string, dayKey: string) => boolean;
+  /** BL-1836: does main carry the day's briefing? Fails closed (see mainHasBriefing). */
+  mainHasBriefing: (target: string, dayKey: string) => boolean;
 };
 
 function statePath(target: string): string {
@@ -126,11 +123,18 @@ function readActiveRole(target: string): string | null {
   }
 }
 
-function briefingSent(target: string, dayKey: string): boolean {
+// BL-1836: the email sweep (briefing_email_lib.bb's load-sent-briefings /
+// record-briefing-sent!) writes {"sent": ["<day>.md", ...]}. The ceremony read
+// a bare list and never matched, so every ceremony ran to its deadline. The
+// key is pinned on both sides by a test (BL-897).
+export const SENT_LEDGER_KEY = 'sent';
+
+export function briefingSent(target: string, dayKey: string): boolean {
   const sentPath = path.join(target, 'docs', 'briefings', '.sent.json');
   try {
-    const sent = JSON.parse(fs.readFileSync(sentPath, 'utf8')) as string[];
-    return Array.isArray(sent) && sent.some((name) => name === `${dayKey}.md` || name.startsWith(dayKey));
+    const ledger = JSON.parse(fs.readFileSync(sentPath, 'utf8')) as Record<string, unknown> | null;
+    const sent = ledger && !Array.isArray(ledger) ? ledger[SENT_LEDGER_KEY] : null;
+    return Array.isArray(sent) && sent.some((name) => name === `${dayKey}.md`);
   } catch {
     return false;
   }
@@ -151,7 +155,7 @@ function briefingSent(target: string, dayKey: string): boolean {
 // next time that role is played (ready_for_next.sh checks in_process
 // first). If even the forced rotate fails (no session, no launch
 // script), this function does nothing further: BL-1641's own
-// hard-deadline path (ensure-briefing, the loud closing-briefing-missing,
+// hard-deadline path (BL-1836: the loud closing-briefing-missing,
 // night-stop) is the unchanged safety net. No note to coordinator either
 // (dropped, not kept - coordinator cannot respawn a pane it does not own,
 // so the old note was inert whether or not a session followed it, and
@@ -223,19 +227,17 @@ function withRuntimeLoudCodes(state: LiveState, runtimeLoudCodes: string[]): Liv
   return runtimeLoudCodes.length > 0 ? { ...state, loudSurfaces: [...state.loudSurfaces, ...runtimeLoudCodes] } : state;
 }
 
-// BL-1641: land the documenter's own commit for the day when one exists;
-// otherwise compose the banked headless briefing. Neither outcome is known
-// to the pure machine ahead of time, so this returns the forced-step name
-// (or null) for the caller to fold into the written state's sequence via
-// withForcedBriefingStep - split out for the same differential-complexity
-// reason as withRuntimeLoudCodes above.
-function applyEnsureBriefing(target: string, dayKey: string, deps: RunDeps): string | null {
-  const landedSha = deps.landDocumenterBriefing(target, dayKey);
-  if (landedSha) {
-    return 'briefing-landed-from-documenter';
+// BL-1836: in the briefing phase, land the documenter's own briefing commit
+// before observing, so the pure machine sees it on main from the tick it
+// exists. The ceremony never composes a briefing itself (the human's ruling
+// A, 2026-09-30). Returns the step name to fold into the written sequence
+// via withForcedBriefingStep, or null - split out for the same
+// differential-complexity reason as withRuntimeLoudCodes above.
+function landBriefingIfDue(target: string, prev: LiveState | null, nightKey: string, deps: RunDeps, dryRun: boolean): string | null {
+  if (dryRun || prev === null || prev.nightKey !== nightKey || prev.phase !== 'briefing') {
+    return null;
   }
-  const composed = deps.composeHeadlessBriefing(target, dayKey);
-  return composed ? 'briefing-composed-headless' : null;
+  return deps.landDocumenterBriefing(target, nightKey) ? 'briefing-landed-from-documenter' : null;
 }
 
 // BL-1528: returns the loud codes a 'lean-packet'/'record-empty-outcome'
@@ -328,11 +330,11 @@ export function buildRealDeps(): RunDeps {
     },
     workedAShift: (target) => shiftWorkedSinceLastCeremony(target),
     landDocumenterBriefing,
-    composeHeadlessBriefing,
+    mainHasBriefing,
   };
 }
 
-// ── BL-1641: land the documenter's own briefing, or compose the banked one ──
+// ── BL-1641/BL-1836: land the documenter's own briefing ──────────────────
 
 const DOCUMENTER_BRANCH_TSV_COLUMN = 3;
 
@@ -463,41 +465,6 @@ export function landDocumenterBriefing(target: string, dayKey: string): string |
     return trimmedSha;
   } catch {
     return null;
-  }
-}
-
-export function composeHeadlessBriefing(target: string, dayKey: string): boolean {
-  // Invariant 1 again: the same guard as landing - a compose call reached
-  // after a landing failure must still never overwrite a file main has.
-  if (mainHasBriefing(target, dayKey)) {
-    return false;
-  }
-  const composeCli = path.join(target, 'swarmforge', 'scripts', 'compose_banked_briefing_cli.bb');
-  if (!fs.existsSync(composeCli)) {
-    return false;
-  }
-  try {
-    execFileSync(
-      'bb',
-      [composeCli, target, dayKey, '--label', 'Closing ceremony - headless briefing'],
-      { cwd: target, stdio: 'pipe' }
-    );
-  } catch {
-    return false;
-  }
-  const commitCli = path.join(target, 'swarmforge', 'scripts', 'commit_integrity_cli.bb');
-  if (!fs.existsSync(commitCli)) {
-    return false;
-  }
-  try {
-    execFileSync(
-      'bb',
-      [commitCli, target, '--message', `Closing ceremony: compose headless briefing ${dayKey}`, '--path', briefingRelPath(dayKey)],
-      { cwd: target, stdio: 'pipe' }
-    );
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -670,6 +637,8 @@ export function runNightClosingCeremony(
 
   const nightKey = localDayKey(nowMs);
   const { drainBudgetMs, hardDeadlineMs } = resolveCeremonyDeadlines(nowMs, gate, sleepPath);
+  const prev = deps.readState(target);
+  const landedStep = landBriefingIfDue(target, prev, nightKey, deps, dryRun);
   const flight = deps.scanInFlight(target);
   const obs = {
     nowMs,
@@ -682,34 +651,26 @@ export function runNightClosingCeremony(
     activeRole: deps.readActiveRole(target),
     heldParcelIds: deps.scanHeld(target),
     briefingAlreadySent: deps.briefingSent(target, nightKey),
+    briefingOnMain: deps.mainHasBriefing(target, nightKey),
     workedAShift: deps.workedAShift(target),
     fromSleep: sleepPath !== null,
   };
 
   // Continue in-progress nights even outside the begin window.
-  const prev = deps.readState(target);
   if (prev && prev.nightKey === nightKey && prev.phase !== 'done' && prev.phase !== 'idle') {
     obs.ceremonyDue = true;
   }
 
   const { state, actions } = advanceNightClosingCeremony(prev, obs);
   const runtimeLoudCodes: string[] = [];
-  let forcedBriefingStep: string | null = null;
   for (const action of actions) {
-    if (action.kind === 'ensure-briefing') {
-      if (!dryRun) {
-        forcedBriefingStep = applyEnsureBriefing(target, action.dayKey, deps);
-      }
-      continue;
-    }
     runtimeLoudCodes.push(...applyAction(target, action, deps, dryRun));
   }
   // BL-1528: a send's own outcome (unlike a 'surface' action) is unknown
   // until applyAction runs it, so these codes join loudSurfaces here rather
-  // than inside advanceNightClosingCeremony's pure decision. BL-1641: same
-  // reasoning for which (if either) briefing path an ensure-briefing action
-  // actually took.
-  const finalState = withForcedBriefingStep(withRuntimeLoudCodes(state, runtimeLoudCodes), forcedBriefingStep);
+  // than inside advanceNightClosingCeremony's pure decision. BL-1836: same
+  // reasoning for whether the documenter's briefing was landed this tick.
+  const finalState = withForcedBriefingStep(withRuntimeLoudCodes(state, runtimeLoudCodes), landedStep);
   if (!dryRun) {
     deps.writeState(target, finalState);
   }
