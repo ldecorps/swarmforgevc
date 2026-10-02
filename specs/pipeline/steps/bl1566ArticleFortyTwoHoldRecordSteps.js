@@ -96,8 +96,11 @@ function runReadyForNext(state) {
   return { status: res.status, output: `${res.stdout || ''}${res.stderr || ''}` };
 }
 
+// QA parks a withheld git_handoff with --no-op: since BL-1609 a forwarding
+// parcel completed with nothing sent is refused unless a reason is stated.
 function runDoneWithCurrent(state) {
-  const res = spawnSync('bb', [DONE_WITH_CURRENT_TASK], {
+  const args = state.parksGitHandoff ? ['--no-op', 'BL-1566 fixture: QA parks the withheld parcel'] : [];
+  const res = spawnSync('bb', [DONE_WITH_CURRENT_TASK, ...args], {
     cwd: state.qaDir,
     encoding: 'utf8',
     timeout: 60000,
@@ -239,6 +242,7 @@ function registerSteps(registry) {
   scoped(/^QA's in_process holds a git_handoff for task "([^"]+)"$/, (ctx, task) => {
     const state = ensureState(ctx);
     writeGitHandoff(state, task, state.holdCommit || 'abcdef0123');
+    state.parksGitHandoff = true;
   });
 
   scoped(/^it exits zero$/, (ctx) => {
