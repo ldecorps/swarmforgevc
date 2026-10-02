@@ -184,6 +184,9 @@ qa_e2e_procedure: |
   documenter commit ("Compose the ..."), landed before the stop or after
   the restart.
 
+abandoned_commits:
+  - 838d643744
+
 notes: |
   Minted 2026-09-30 by the specifier from the root intake above, after the
   human answered the role_ask in the specifier pane (A). The BL-1640 red
@@ -208,5 +211,20 @@ notes: |
   because retires: is the task-scope gate's exemption for editing another
   ticket's file (task_scope_gate_lib.bb), and nothing reads it as a
   deletion.
+  2026-10-02 (specifier, coordinator note 015101): adjudicated the two
+  diverged QA lines. 838d643744 (QA, 1 defect) reviewed the full parcel
+  e6bb3d93c6; its one defect was the unowned pole red that hotfix
+  8ed4173ce4 fixed (BL-1893), so it is superseded and recorded under
+  abandoned_commits. f1cb7ecbf1 (QA, NONE) is the re-run after that
+  hotfix, but QA made it on BL-1887's line (parent 9b21296a49) after my
+  note 002174 said "merge main, re-run, resume". That line carries the
+  coder and hardener commits (ff15be1e29, 1c63610bdf, 2fcb5b6f15) and not
+  the documenter's 125447f009 (the BL-1641 doc retirement) or e6bb3d93c6.
+  It was queued with the lander as-is, so landing it would close this
+  ticket without its docs. The resume point is f1cb7ecbf1 with
+  e6bb3d93c6 merged in. A dry-run merge-tree is clean and adds exactly
+  the documenter's five files. QA was told the same pass (note 002180) to
+  unqueue f1cb7ecbf1, merge e6bb3d93c6 and requeue. Evidence:
+  backlog/evidence/BL-1836-diverged-qa-lines-adjudication-20261002.md.
 
 assigned_to: coder
