@@ -1,0 +1,117 @@
+id: BL-1898
+title: "The lander sends QA's bookkeep note as the coordinator, and the close guard accepts only a note from QA, so every lander land's active-to-done commit is refused (BL-1887 landed as feb18315ea and stayed open until QA re-sent by hand); the guard now also accepts the land record the land step writes, for the ticket it names and a commit on main"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in the delivery path. Every land QA queues stalls at
+# close until someone notices and QA re-sends, and the landed-ticket
+# auto-close hits the same refusal.
+status: todo
+epic: landing-is-a-merge
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: one Babashka guard lib gains a reader of an existing store; no
+# Stryker lane for bb (BL-472).
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one reader added beside the expedite-record path; nothing to refactor"
+  architect: "the scenarios pin the approval path, and BL-1378 is the established shape it follows"
+  hardender: "the guard writes nothing; the coder's bb test and the acceptance run cover it"
+  documenter: "the coordinator.prompt interim is the specifier's prose and retires at the land"
+
+acceptance: specs/features/BL-1898-a-landed-tickets-land-record-satisfies-the-close-guard.feature
+
+# Handler pin only (BL-233, BL-1371). validate-close-allowed already sits on
+# the close path (commit_integrity_cli.bb, close_ticket.sh), so an anchor
+# there matches before and after (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1898LandRecordSatisfiesCloseGuardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  From the coordinator's note (source). No choice is posed. FIRM: the guard
+  keeps its one definition of approval; the land record becomes another
+  path to it, read the way is_qa_ancestor.sh reads it, the shape BL-1378
+  used for the expedite record. The lander keeps sending as the
+  coordinator.
+
+invariants:
+  - "A land record opens the close only of the ticket it names, and only when its commit is an ancestor of main."
+  - "A missing or unreadable land record never turns a refusal into a pass."
+
+source: |
+  Coordinator note 015137 (2026-10-02 15:08Z), verbatim: "lander notifies
+  as coordinator not QA - BL-1887 close blocked".
+  Specifier, the same pass: handoffd.bb `lander-send-note!` runs
+  swarm_handoff with SWARMFORGE_ROLE=coordinator, so the landed note
+  ("BL-1887 QA-approved feb18315ea - move to done and promote next",
+  015135) reached the coordinator from: coordinator.
+  ticket_close_guard_lib.bb `qa-approved-ticket?` requires from = QA. The
+  land step had already written
+  `{"ticket":"BL-1887","commit":"feb18315ea","source":"9b21296a49"}` to
+  .swarmforge/land-approvals/2026-10.jsonl.
+
+description: |
+  ## What is wrong
+
+  BL-1872 moved the land into a daemon: QA queues, handoffd's lander runs
+  land_main_publish.sh, and on success sends the bookkeep note
+  ceremony_handoff_lib composes for QA. handoffd sends every note as the
+  coordinator, so this one arrives from: coordinator.
+  `ticket_close_guard_lib.bb` allows an active-to-done move only on a
+  handoff from QA naming the ticket (`qa-approved-ticket?`) or an expedite
+  QA verdict record (BL-1378). A lander land therefore can never be closed
+  by the coordinator, or by handoffd's landed-ticket auto-close (which runs
+  close_ticket.sh through the same guard), without QA re-sending by hand.
+
+  ## What is wanted
+
+  - The guard accepts a third approval path: a row in
+    `.swarmforge/land-approvals/*.jsonl` naming the ticket, whose `commit`
+    is an ancestor of main. It is read the way is_qa_ancestor.sh and
+    landed_ticket_autoclose_lib.bb already read that store, and it never
+    adds a second definition of approval. The verdict names the record it
+    relied on, as BL-1378's does.
+  - An unreadable line in that store refuses the close and names the
+    store, the posture `record-line-problem` already takes for the expedite
+    store.
+  - The step handler `bl1898LandRecordSatisfiesCloseGuardSteps`, registered
+    in the same parcel. Reuse BL-1378's registered steps where the wording
+    is the same, and define only the new ones.
+
+  ## Scope
+
+  ticket_close_guard_lib.bb, its bb test, the step handler, evidence.
+
+  ## Out of scope
+
+  Which role the lander sends as. QA's hand land is unchanged too: it
+  still sends from QA, and that path keeps working.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. ONE run: `node specs/pipeline/cli.js specs/features/BL-1898-a-landed-tickets-land-record-satisfies-the-close-guard.feature`:
+     5 of 5 ok.
+  2. `bash swarmforge/scripts/test/test_ticket_close_guard.sh` and
+     `bb swarmforge/scripts/test/ticket_close_guard_lib_test_runner.bb`
+     green, and `node specs/pipeline/cli.js
+     specs/features/BL-1378-an-expedite-closed-ticket-can-never-satisfy-the-close-guard.feature`
+     still all ok.
+  3. After the land, the next ticket the lander lands closes without a QA
+     re-send: it reaches backlog/done/ through handoffd's auto-close or the
+     coordinator's close, and no "send your QA-approved bookkeep note"
+     request appears for it.
+
+notes: |
+  Minted 2026-10-02 by the specifier from coordinator note 015137.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Not hotfixed: no test is red, and the change gives a close guard a new
+  approval path. A gate's approval semantics get a parcel and QA's review.
+  Interim until it lands: coordinator.prompt says to ask QA for its own
+  bookkeep note after a lander land, as the coordinator did for BL-1887
+  (note 015136).
+  Spec gap in BL-1872 (the specifier's): its landed-note design said "QA's
+  own bookkeeping note" and never checked the sender the close guard
+  requires.
