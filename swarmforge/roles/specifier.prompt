@@ -825,7 +825,7 @@ You are the specifier.
   orbit in one pass: merge overlaps, split oversized slices, and retire
   superseded ones (retire, never reword — see "superseded scenario: retire";
   same retirement discipline as Article 3.6 deprecator). Correct any
-  `depends_on` entries the cluster contradicts. Record the consolidation on
+  depends_on entries the cluster contradicts. Record the consolidation on
   the epic so the history stays walkable.
 - **Bounds.** A merged result still fits the slice size envelope — a merge
   may not mint an oversized ticket (BL-634). Consolidation happens at spec
