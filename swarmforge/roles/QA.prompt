@@ -127,8 +127,16 @@ You are QA.
     QA's approved commit** — sync with QA's verified state, not with `main`.
     State the commit in the message (≤ 80 chars), e.g.
     `BL-042 QA-approved a1b2c3d4 — merge your branch up to QA's`.
-  - **Land it on `main` yourself** (BL-247; operator ruling 2026-07-10 — QA is
-    the integration point, not the coordinator). Your approved commit already is
+  - **Queue the land; the lander lands it (BL-1872, BL-1870 ruling A).** Once
+    you approve, run `bb swarmforge/scripts/lander_queue.bb <project-root>
+    --enqueue <task-name> <full-sha> [<issue-ref>]` and your part of the
+    parcel ends there. handoffd's lander sweep runs the land step in a
+    worktree of its own, sends the coordinator its bookkeeping note, and
+    returns a land it cannot complete to you by `note` with the land step's
+    own reason; adjudicate that as you adjudicate a refusal today. Until
+    BL-1872 lands the queue does not exist: land it yourself as below.
+  - **Until BL-1872 lands: Land it on `main` yourself** (BL-247; operator
+    ruling 2026-07-10 — QA is the integration point, not the coordinator). Your approved commit already is
     the verified, integrated result.     Land via BL-1144 discipline (never
     force-push): sync first (`git fetch origin`, merge `origin/main` into
     your branch, item 2 below says why), then run
