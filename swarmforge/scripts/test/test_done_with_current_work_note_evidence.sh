@@ -219,4 +219,49 @@ rm -rf "$QUEUE_DIR"
   || fail "05: expected exactly 28 completed files"
 pass "05: a burst over 28 chase notes plus a Work note completes the chase notes and stops at the Work note"
 
-echo "ALL PASS: done_with_current Work-note evidence gate (BL-1422)"
+# ── 06: a commit main gained after dequeue is not evidence once merged in ──
+# BL-1834: the coordinator's own "Promote <id>" / "BL topic record for <id>"
+# commits land on main seconds after the Work note and read as the role's
+# work the instant the role merges main - however the merge arrives
+# (fast-forward or a merge commit).
+for MERGE_KIND in fast-forward no-ff; do
+  DEQUEUED_AT="$(fresh_dequeued_at)"
+  reset_mailbox
+  write_work_note BL-9001
+  # Align taskrole to main's current tip first: taskrole accumulates its own
+  # test commits scenario over scenario in this one shared fixture, so an
+  # unconditional --ff-only below would otherwise hit "diverging branches"
+  # once an earlier scenario (e.g. 02a) has committed directly on taskrole.
+  git -C "$TASK_WT" reset -q --hard main
+  git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m "BL-9001: did the work"
+  if [[ "$MERGE_KIND" == "fast-forward" ]]; then
+    git -C "$TASK_WT" merge -q --ff-only main
+  else
+    git -C "$TASK_WT" -c user.email=test@test -c user.name=test merge -q --no-ff -m "Merge main into taskrole." main
+  fi
+  set +e
+  OUT="$(run_done 2>&1)"
+  STATUS=$?
+  set -e
+  [[ "$STATUS" -ne 0 ]] || fail "06 ($MERGE_KIND): expected non-zero, got 0; out=$OUT"
+  echo "$OUT" | grep 'WORK_NOT_EVIDENCED' >/dev/null || fail "06 ($MERGE_KIND): expected WORK_NOT_EVIDENCED, got: $OUT"
+  echo "$OUT" | grep 'BL-9001' >/dev/null || fail "06 ($MERGE_KIND): refusal must name BL-9001, got: $OUT"
+  [[ -f "$IN_PROCESS/10_work.handoff" ]] || fail "06 ($MERGE_KIND): Work note must still be in_process"
+  pass "06 ($MERGE_KIND): a commit main gained after dequeue is not work evidence once merged in"
+done
+
+# ── 07: a commit on the role's own branch after dequeue still completes,
+#    even when main also gained a ticket-naming commit the role merged in ──
+DEQUEUED_AT="$(fresh_dequeued_at)"
+reset_mailbox
+write_work_note BL-9001
+git -C "$TASK_WT" reset -q --hard main
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m "BL topic record for BL-9001"
+git -C "$TASK_WT" -c user.email=test@test -c user.name=test merge -q --no-ff -m "Merge main into taskrole." main
+git -C "$TASK_WT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m "BL-9001: build the thing"
+OUT="$(run_done 2>&1)"
+echo "$OUT" | grep 'COMPLETED:' >/dev/null || fail "07: expected COMPLETED, got: $OUT"
+[[ -f "$COMPLETED/10_work.handoff" ]] || fail "07: expected the Work note in completed/"
+pass "07: a commit on the role's own branch since dequeue still completes the note, main noise notwithstanding"
+
+echo "ALL PASS: done_with_current Work-note evidence gate (BL-1422, BL-1834)"

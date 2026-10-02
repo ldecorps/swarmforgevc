@@ -133,12 +133,21 @@
    (handoff-lib/header-field source-file "message")))
 
 (defn- git-log-names-ticket-since?
-  "A commit on HEAD, committed after since-iso, whose subject's leading
-   ticket id is exactly ticket-id (never a substring match)."
+  "A commit on HEAD, committed after since-iso, reachable from HEAD but not
+   from main or origin/main (whichever resolve -
+   landed-ticket-lib/declaration-refs, BL-1834), whose subject's leading
+   ticket id is exactly ticket-id (never a substring match). A commit the
+   coordinator lands on main - a 'Promote <id>' or 'BL topic record for
+   <id>' commit - reads as the role's own work the instant it merges main
+   in, however it arrived (fast-forward or merge commit); excluding both
+   refs keeps that commit from ever counting as evidence."
   [ticket-id since-iso]
   (try
-    (let [{:keys [out exit]} (process/sh ["git" "log" (str "--since=" since-iso) "--format=%s" "HEAD"]
-                                         {:dir (handoff-lib/worktree-root)})]
+    (let [root (handoff-lib/worktree-root)
+          exclude-refs (landed-ticket-lib/declaration-refs root)
+          args (into ["git" "log" (str "--since=" since-iso) "--format=%s" "HEAD"]
+                     (when (seq exclude-refs) (cons "--not" exclude-refs)))
+          {:keys [out exit]} (process/sh args {:dir root})]
       (boolean
        (and (zero? exit)
             (some #(= ticket-id (pipeline-stage-lib/extract-ticket-id %))
