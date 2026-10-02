@@ -111,3 +111,5 @@ notes: |
   coder holds the parcel (it raised both gaps). Also worth a line in the
   evidence: the coordinator routed BL-1872 both as a git_handoff and a
   Work note; one dispatch per ticket would have avoided gap 2 entirely.
+
+assigned_to: coder
