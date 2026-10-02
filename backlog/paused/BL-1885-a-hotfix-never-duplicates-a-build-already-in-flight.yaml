@@ -1,0 +1,98 @@
+id: BL-1885
+title: "A hotfix commit can duplicate a build already in flight (2026-10-02: BL-1877 was hotfixed while the coder's own build sat unclaimed in QA's queue): the commit-msg chain now refuses a hotfix whose stamp-off ticket has a live parcel in any mailbox or an unlanded build on a role branch, unless the message names that build as superseded"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+priority: 3
+depends_on: []
+mutation_cost: low
+# low: one shell guard in the commit-msg chain plus its test; it reuses
+# duplicate_chain_guard_lib.bb's parcel lookup. No Stryker lane (BL-472).
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new guard reusing an existing lookup; nothing to refactor"
+
+acceptance: specs/features/BL-1885-a-hotfix-never-duplicates-a-build-already-in-flight.feature
+
+# Consumer anchor: the commit-msg hook is the live caller that must reach the
+# new guard; its file name is fixed here so the anchor is a literal (BL-874).
+# Handler pin per BL-233/BL-1371.
+required_wiring:
+  - 'swarmforge/git-hooks/commit-msg::check_hotfix_duplicate_build.sh::the commit-msg hook must run the new guard'
+  - 'specs/pipeline/steps/bl1885HotfixNeverDuplicatesABuildSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Your question 2026-10-02: "How do we ensure you won't make the mistake
+  again? Can we maje this deterministic gate fornypu?" - gate 2 of 2. FIRM:
+  a commit whose message carries the hotfix certification trailer and a
+  "Stamp-off: BL-nnnn" line is refused when that ticket has a git_handoff
+  parcel in any role's new/ or in_process/, or a commit naming it on a role
+  branch that is not on main and not in its abandoned_commits. A
+  "Supersedes-Build: <sha>" line naming each such build lets it through.
+  It would have stopped the BL-1877 duplicate before it landed.
+
+invariants:
+  - "A hotfix commit never lands for a stamp-off ticket that has a build in flight, unless its message names every such build as superseded."
+
+source: |
+  The human, specifier pane (Claude Code), 2026-10-02, verbatim (Article
+  5.3), after the specifier's BL-1877 hotfix duplicated the coder's build
+  (7613ab0006, parcel 002306, unclaimed in QA's new/ for about 7.5 hours)
+  and the duplicate leaked into BL-1871's lineage:
+
+  > How do we ensure you won't make the mistake again? Can we maje this deterministic gate fornypu?
+
+description: |
+  ## What happens today
+
+  A hotfix (`commit_integrity_cli.bb` with the hotfix certification
+  trailer) lands on main with nothing comparing it to work already in the
+  pipeline. On 2026-10-02 the specifier judged BL-1877 unbuilt from a commit
+  subject and hotfixed it, duplicating the coder's build. The coder had to
+  rebuild on the hotfix, record 7613ab0006 under abandoned_commits, and
+  three role branches carried the stale build into BL-1871's lineage.
+
+  ## What is wanted
+
+  - A new guard in the commit-msg chain, `check_hotfix_duplicate_build.sh`.
+    For a message with the hotfix trailer and a `Stamp-off: BL-nnnn` line it
+    refuses when BL-nnnn has a git_handoff parcel in any role's mailbox
+    (`new/` or `in_process/`) at a commit not on main (scenario 01), or a
+    commit naming BL-nnnn on a role branch that is not on main and not in
+    the ticket's `abandoned_commits` (scenario 02).
+  - A `Supersedes-Build: <sha>` line for each such build lets it through
+    (scenario 03); nothing in flight lets it through (scenario 04).
+  - The refusal names each build found, so the committer sees what it
+    would duplicate.
+
+  ## How (direction, not mandate)
+
+  - Reuse `duplicate_chain_guard_lib.bb`'s mailbox lookup (BL-760); never a
+    second parcel walker (BL-1811).
+  - Step handler `specs/pipeline/steps/bl1885HotfixNeverDuplicatesABuildSteps.js`,
+    fixture repo with role branches and mailboxes under mkdtemp (BL-1390).
+
+  ## Scope
+
+  The guard, its wiring in `swarmforge/git-hooks/commit-msg`, its shell
+  test, the step handler, evidence. The specifier adds the
+  `Supersedes-Build:` line to specifier.prompt's hotfix recipe at
+  activation (BL-798).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1885-a-hotfix-never-duplicates-a-build-already-in-flight.feature`:
+     4 of 4 ok. Measured 0 at mint: no handler exists.
+  2. The guard's shell test: ALL PASS; BL-1252's feature (the commit guard
+     chain) 9 of 9, as measured on main 2026-10-02.
+  3. Replay the BL-1877 case in a scratch clone: a parcel for a fixture
+     ticket in QA's new/, then a hotfix commit naming it as stamp-off:
+     refused, naming the parcel.
+
+notes: |
+  Minted 2026-10-02 by the specifier at the human's question (source),
+  gate 2 of 2; gate 1 is BL-1884. Pending: a new commit gate is the
+  human's to approve.

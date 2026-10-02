@@ -1,0 +1,93 @@
+id: BL-1884
+title: "The hotfix-first rule for reds is prose, so taking its fallback (an owner ticket plus a register row instead of a hotfix) is invisible: the register's commit guard now refuses a commit that adds a red row unless the owner ticket declares hotfix_fallback (needs-ruling with ruling_options, or multi-sitting with a reason)"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+priority: 3
+depends_on: []
+mutation_cost: low
+# low: one shell guard (check_standing_red_register.sh) and its test; no
+# Stryker lane for shell (BL-472), so the hardener hand-mutates it.
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one guard grows one check; nothing large enough to refactor"
+
+acceptance: specs/features/BL-1884-a-new-standing-red-row-declares-why-it-was-not-hotfixed.feature
+
+# Handler pin only (BL-233, BL-1371). No consumer anchor: run_commit_guards.sh
+# already calls check_standing_red_register.sh, so it matches before and after
+# (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1884RegisterRowDeclaresFallbackSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Your question 2026-10-02: "How do we ensure you won't make the mistake
+  again? Can we maje this deterministic gate fornypu?" - gate 1 of 2. FIRM:
+  a commit that ADDS a register row in a test lane (property, unit, bb,
+  acceptance, shell) is refused unless the owner ticket declares
+  hotfix_fallback: needs-ruling (and has ruling_options) or multi-sitting
+  (with a hotfix_fallback_reason). Rows already on main and hardening-lane
+  rows are not judged. The guard cannot judge whether the reason is true;
+  it makes every fallback declared and countable.
+
+invariants:
+  - "A commit never adds a test-lane register row whose owner ticket does not declare a valid hotfix_fallback."
+
+source: |
+  The human, specifier pane (Claude Code), 2026-10-02, verbatim (Article
+  5.3), after the specifier minted an owner and a register row (BL-1883)
+  for a red instead of hotfixing it:
+
+  > You do observe the new role that instead of marrying up a failing test with a ticket, you should hot fix on the spot and mint a stampoff instrad, correct?
+
+  > How do we ensure you won't make the mistake again? Can we maje this deterministic gate fornypu?
+
+description: |
+  ## What happens today
+
+  The 2026-10-01 directive (specifier.prompt "Hotfix the red, then mint its
+  stamp-off"; standing-red amendment section 6) says a red is hotfixed in
+  the same pass, and an owner plus a register row is the fallback only for
+  a fix that needs a human ruling or is more than one sitting. Nothing
+  checks that the fallback was a choice: `check_standing_red_register.sh`
+  (BL-1428) judges only that a new row names an open ticket.
+
+  ## What is wanted
+
+  - A commit that adds a row in a test lane is refused unless the owner
+    ticket (staged or on disk) declares `hotfix_fallback:` as
+    `needs-ruling` with a non-empty `ruling_options`, or `multi-sitting`
+    with a non-empty one-line `hotfix_fallback_reason:` (scenarios 01, 02).
+  - The refusal names the row and what the owner is missing, in the same
+    one-refusal-per-commit shape as the guard's other checks (BL-1252).
+  - Rows already on main, merge-inherited rows (BL-1646) and hardening-lane
+    rows are not judged (scenarios 03, 04).
+
+  ## How (direction, not mandate)
+
+  - Extend `check_standing_red_register.sh`'s added-row pass; read the
+    owner's YAML with the same reader the guard already uses for openness.
+  - Step handler `specs/pipeline/steps/bl1884RegisterRowDeclaresFallbackSteps.js`,
+    fixture repo under mkdtemp (BL-1390).
+
+  ## Scope
+
+  The guard, its shell test, the step handler, evidence. The specifier
+  lands the `hotfix_fallback` schema entry (backlog-schema.md) and the
+  specifier.prompt line at activation (BL-798).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1884-a-new-standing-red-row-declares-why-it-was-not-hotfixed.feature`:
+     6 of 6 ok (02 has three rows). Measured 0 at mint: no handler exists.
+  2. The register guard's shell test: ALL PASS.
+  3. In a scratch clone, stage a new shell-lane row naming an open ticket
+     with no hotfix_fallback and commit: refused, naming the row.
+
+notes: |
+  Minted 2026-10-02 by the specifier at the human's question (source),
+  gate 1 of 2; gate 2 is BL-1885. Pending: a new commit gate is the
+  human's to approve.
