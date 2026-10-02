@@ -424,6 +424,7 @@
                  :type (handoff-lib/header-field handoff-file "type")
                  :non-forwarding? (handoff-lib/non-forwarding? handoff-file)
                  :commit (handoff-lib/header-field handoff-file "commit")
+                 :task (handoff-lib/header-field handoff-file "task")
                  :work-ticket (work-note-evidence-lib/work-note-ticket-id-from-message
                                (handoff-lib/header-field handoff-file "message"))})]
     (parcel-line-lib/take-up! {:root (handoff-lib/worktree-root)

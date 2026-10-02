@@ -19,8 +19,12 @@
 (def handoff {:master? false :role "architect" :type "git_handoff" :commit "abc1234567"})
 
 (assert= "a forwarding git_handoff is taken up on its own commit"
-         {:intent :take-up :commit "abc1234567"}
+         {:intent :take-up :commit "abc1234567" :ticket nil}
          (parcel-line-lib/parcel-intent handoff))
+
+(assert= "BL-1887: the take-up carries the ticket its task names"
+         {:intent :take-up :commit "abc1234567" :ticket "BL-9002"}
+         (parcel-line-lib/parcel-intent (assoc handoff :task "BL-9002-some-slug")))
 
 (assert= "a master-resident role never moves"
          :skip (:intent (parcel-line-lib/parcel-intent (assoc handoff :master? true))))
@@ -159,6 +163,112 @@
       (parcel-line-lib/take-up! facts)
       (assert= "a line carrying another ticket's work is not the Work note's own line; it restarts from origin/main"
                main-sha (git wt "rev-parse" "HEAD")))
+    (finally (fs/delete-tree root))))
+
+;; ── BL-1887: a git_handoff at a commit already on origin/main starts fresh ──
+(let [root (str (fs/create-temp-dir {:prefix "parcel-line-1887-"}))]
+  (try
+    (git root "init" "-q" "-b" "main")
+    (let [base (commit! root "a.txt" "a\n" "init")
+          _ (git root "update-ref" "refs/remotes/origin/main" base)
+          wt (str (fs/path root "wt"))
+          _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt base)
+          other (commit! wt "o.txt" "o\n" "BL-9001: other ticket's unlanded work")
+          route {:root wt :project-root root :role "coder"
+                 :intent {:intent :take-up :commit base :ticket "BL-9002"}}]
+      (with-out-str (parcel-line-lib/take-up! route))
+      (assert= "BL-1887: a route at a main commit moves the line off another ticket's work"
+               base (git wt "rev-parse" "HEAD"))
+      (assert= "BL-1887: the head it left is backed up" true
+               (str/includes? (git wt "for-each-ref" "--format=%(objectname)" "refs/swarmforge/parcel-backup/coder/") other))
+      ;; the ticket's own unlanded work stays
+      (let [own (commit! wt "n.txt" "n\n" "BL-9002: own work")]
+        (with-out-str (parcel-line-lib/take-up! route))
+        (assert= "BL-1887: a route at a main commit leaves the ticket's own line in place"
+                 own (git wt "rev-parse" "HEAD")))
+      ;; a build not on origin/main is still taken up
+      (git wt "checkout" "-q" "-B" "swarmforge-coder" other)
+      (git wt "checkout" "-q" "-b" "build" base)
+      (let [build (commit! wt "b.txt" "b\n" "BL-9002: the build")]
+        (git wt "checkout" "-q" "swarmforge-coder")
+        (with-out-str (parcel-line-lib/take-up! (assoc-in route [:intent :commit] build)))
+        (assert= "BL-1887: a build not on origin/main is taken up as before"
+                 build (git wt "rev-parse" "HEAD"))))
+    (finally (fs/delete-tree root))))
+
+;; ── BL-1887: a route whose commit is on the REAL origin/main, but not yet
+;; on this worktree's stale local tracking ref, still starts fresh after
+;; resolve-target's one fetch. (hardener-found gap: deleting this whole
+;; cond clause - the "fetch once and re-ask" branch - left every existing
+;; suite green: the unit runner above, the 4/4 acceptance feature and the
+;; property test all set up the local origin/main ref directly via
+;; `update-ref`, so none of them ever exercises an ACTUAL git fetch. A
+;; role whose worktree has not fetched recently is exactly the ordinary
+;; case this branch exists for; without it, such a route silently falls
+;; through to "take up as a build", carrying the previous ticket's
+;; unlanded work forward - the very defect BL-1887 exists to close, just
+;; gated behind a stale local ref instead of an absent one.)
+(let [bare (str (fs/create-temp-dir {:prefix "parcel-line-1887-bare-"}))
+      root (str (fs/create-temp-dir {:prefix "parcel-line-1887c-"}))]
+  (try
+    (git bare "init" "-q" "--bare" "-b" "main")
+    (git root "init" "-q" "-b" "main")
+    (let [base (commit! root "a.txt" "a\n" "init")]
+      (git root "remote" "add" "origin" bare)
+      (git root "push" "-q" "origin" "main")
+      (let [wt (str (fs/path root "wt"))
+            _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt base)
+            other (commit! wt "o.txt" "o\n" "BL-9001: other ticket's unlanded work")
+            ;; the route's own commit, built on a side branch so its object
+            ;; is fetched into root's odb WITHOUT moving the local
+            ;; refs/remotes/origin/main tracking ref.
+            _ (git wt "checkout" "-q" "-b" "side" base)
+            routed (commit! wt "n.txt" "n\n" "BL-9002: lands on the real origin meanwhile")
+            _ (git wt "push" "-q" "origin" "side:refs/heads/side")
+            _ (git root "fetch" "-q" "origin" "side")
+            ;; origin/main lands routed AND one commit past it, so the
+            ;; start-target path (origin/main's TIP) and the old take-up
+            ;; path (the bare `commit` field, routed itself) land on
+            ;; different shas - discriminating which path actually ran.
+            ;; Pushed to a PARKING ref, never "main", so this push's own
+            ;; local-tracking-ref update (git's documented post-push
+            ;; behaviour) never touches root's origin/main ref either -
+            ;; only the direct `update-ref` on the bare repo below does,
+            ;; keeping root's tracking ref genuinely stale.
+            _ (git root "checkout" "-q" "--detach" routed)
+            later (commit! root "p.txt" "p\n" "BL-9100: landed just after, meanwhile")
+            _ (git root "push" "-q" "origin" (str later ":refs/heads/parking"))
+            _ (git bare "update-ref" "refs/heads/main" later)
+            _ (git wt "checkout" "-q" "swarmforge-coder")]
+        (assert= "the local tracking ref has not caught up yet" false
+                 (= later (git root "rev-parse" "origin/main")))
+        (with-out-str
+          (parcel-line-lib/take-up!
+           {:root wt :project-root root :role "coder"
+            :intent {:intent :take-up :commit routed :ticket "BL-9002"}}))
+        (assert= "BL-1887: a fetch during resolve-target reveals the route is on origin/main, so it starts fresh at the TIP, not merely the cited commit"
+                 later (git wt "rev-parse" "HEAD"))
+        (assert= "the foreign ticket's head it left is backed up" true
+                 (str/includes? (git wt "for-each-ref" "--format=%(objectname)" "refs/swarmforge/parcel-backup/coder/") other))))
+    (finally (fs/delete-tree bare) (fs/delete-tree root))))
+
+;; ── BL-1887 scenario 04: a stale Work note after the send stays, even once origin/main moved ──
+(let [root (str (fs/create-temp-dir {:prefix "parcel-line-1887b-"}))]
+  (try
+    (git root "init" "-q" "-b" "main")
+    (let [base (commit! root "a.txt" "a\n" "init")
+          _ (git root "update-ref" "refs/remotes/origin/main" base)
+          wt (str (fs/path root "wt"))
+          _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt base)
+          sent (commit! wt "n.txt" "n\n" "BL-9002: sent on")
+          ;; origin/main moves on after the line was cut
+          _ (git root "checkout" "-q" "--detach" base)
+          moved (commit! root "m.txt" "m\n" "BL-9100: landed meanwhile")
+          _ (git root "update-ref" "refs/remotes/origin/main" moved)]
+      (with-out-str (parcel-line-lib/take-up! {:root wt :project-root root :role "coder"
+                                               :intent {:intent :start :ticket "BL-9002"}}))
+      (assert= "BL-1887: a stale Work note leaves the ticket's own line in place after origin/main moved"
+               sent (git wt "rev-parse" "HEAD")))
     (finally (fs/delete-tree root))))
 
 ;; ── report ────────────────────────────────────────────────────────────────

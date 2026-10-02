@@ -28,7 +28,7 @@
    checkout on main) or a role whose row is unknown (:master? nil) never
    moves; a non-forwarding copy and every other note carry no work to move
    onto."
-  [{:keys [master? role type non-forwarding? commit work-ticket]}]
+  [{:keys [master? role type non-forwarding? commit work-ticket task]}]
   (cond
     (nil? master?) {:intent :skip :reason :unknown-role}
     master? {:intent :skip :reason :master-checkout}
@@ -36,7 +36,10 @@
     (cond
       non-forwarding? {:intent :skip :reason :non-forwarding}
       (str/blank? commit) {:intent :skip :reason :no-commit}
-      :else {:intent :take-up :commit commit})
+      ;; BL-1887: the ticket rides along, so a take-up at a commit already
+      ;; on origin/main (a route, not a build) can start it fresh.
+      :else {:intent :take-up :commit commit
+             :ticket (re-find #"^(?:BL|GH)-\d+" (str task))})
     (and (= type "note") work-ticket (= "coder" (role-stage role)))
     {:intent :start :ticket work-ticket}
     :else {:intent :skip :reason :no-work}))
@@ -99,13 +102,15 @@
         (salvage-lib/latest-item-handoffs project-root ticket)))
 
 (defn- own-line?
-  "HEAD descends from origin/main and every commit between them names
-   ticket and no other: unlanded work a re-sent Work note must not strand."
+  "Every commit the line carries beyond origin/main names ticket and no
+   other: unlanded work a re-sent Work note must not strand. Measured from
+   the merge base, so origin/main moving on after the line was cut does not
+   disown it (BL-1887 scenario 04, coder note 002330)."
   [root origin-main ticket]
   (boolean
-   (when (and origin-main (ancestor? root origin-main "HEAD"))
+   (when-let [base (and origin-main (git-out root "merge-base" origin-main "HEAD"))]
      (let [subjects (remove str/blank? (str/split-lines
-                                        (or (git-out root "log" "--format=%s" (str origin-main "..HEAD")) "")))]
+                                        (or (git-out root "log" "--format=%s" (str base "..HEAD")) "")))]
        (and (seq subjects) (every? #(subject-names-only? % ticket) subjects))))))
 
 (defn backup-ref [role stamp]
@@ -115,6 +120,22 @@
   (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss.SSS'Z'")
            (.atZone (java.time.Instant/now) java.time.ZoneOffset/UTC)))
 
+(defn- start-target
+  "A fresh start for ticket: its newest handed-off commit, else origin/main.
+   Never \"past\" origin/main: a long-lived branch descends from it and would
+   wrongly stay; only the ticket's own unlanded line stays (own-line?)."
+  [root project-root head ticket]
+  (git root "fetch" "-q" "origin")
+  (let [origin-main (resolve-commit root "origin/main")
+        handed (some->> (newest-handoff-commit project-root ticket) (resolve-commit root))
+        target (or handed origin-main)]
+    {:target target
+     :at-or-past-target? (= head target)
+     :own-line? (own-line? root origin-main ticket)}))
+
+(defn- on-origin-main? [root sha]
+  (boolean (when-let [om (resolve-commit root "origin/main")] (ancestor? root sha om))))
+
 (defn- resolve-target
   "{:target sha :at-or-past-target? bool :own-line? bool} for the intent."
   [{:keys [root project-root intent]}]
@@ -122,19 +143,25 @@
     (case (:intent intent)
       :take-up
       (let [target (resolve-commit root (:commit intent))]
-        {:target target
-         :at-or-past-target? (boolean (and target head (ancestor? root target head)))})
+        ;; BL-1887: a git_handoff at a commit already on origin/main is a
+        ;; route, not a build - start its ticket fresh, as a Work note does.
+        ;; Checked against the local origin/main first; a target HEAD already
+        ;; holds that is not on it stays without a fetch (re-prints are
+        ;; cheap); anything else fetches once and asks again.
+        (cond
+          (and target (:ticket intent) (on-origin-main? root target))
+          (start-target root project-root head (:ticket intent))
+
+          (and target head (ancestor? root target head))
+          {:target target :at-or-past-target? true}
+
+          (and target (:ticket intent)
+               (do (git root "fetch" "-q" "origin") (on-origin-main? root target)))
+          (start-target root project-root head (:ticket intent))
+
+          :else {:target target :at-or-past-target? false}))
       :start
-      (let [ticket (:ticket intent)
-            _ (git root "fetch" "-q" "origin")
-            origin-main (resolve-commit root "origin/main")
-            handed (some->> (newest-handoff-commit project-root ticket) (resolve-commit root))
-            target (or handed origin-main)]
-        ;; A fresh start is never "past" origin/main: a long-lived branch
-        ;; descends from it and would wrongly stay.
-        {:target target
-         :at-or-past-target? (= head target)
-         :own-line? (own-line? root origin-main ticket)}))))
+      (start-target root project-root head (:ticket intent)))))
 
 (defn take-up!
   "Moves the worktree at :root onto the parcel's line per :intent (from
