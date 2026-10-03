@@ -13,10 +13,15 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+const { lazy } = require('./lib/lazy');
+
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
-const { pollAndForward } = require(path.join(EXT_OUT, 'tools', 'telegramFrontDeskBotCore'));
-const { postOperatorContext } = require(path.join(EXT_OUT, 'tools', 'telegram-front-desk-bot'));
-const { readRecord } = require(path.join(EXT_OUT, 'concierge', 'blTopicStore'));
+// Required on first use, not at load: together these cost about 636 ms of
+// incremental require time alone (QA, 2026-10-03), over the 400 ms per-handler
+// budget stepHandlerModuleLoadBudget.test.js enforces.
+const botCore = lazy(() => require(path.join(EXT_OUT, 'tools', 'telegramFrontDeskBotCore')));
+const frontDeskBot = lazy(() => require(path.join(EXT_OUT, 'tools', 'telegram-front-desk-bot')));
+const topicStore = lazy(() => require(path.join(EXT_OUT, 'concierge', 'blTopicStore')));
 // BL-379: "the front desk collects the waiting messages" is VERBATIM
 // identical to this file's own step text below - since this file
 // registers FIRST (index.js order), the registry's first-match-wins
@@ -24,7 +29,7 @@ const { readRecord } = require(path.join(EXT_OUT, 'concierge', 'blTopicStore'));
 // ctx.updates (set only by THIS file's own Background) distinguishes the
 // two - a BL-379 scenario's ctx never has it, so it delegates rather than
 // crashing on `ctx.updates.map` of undefined.
-const { collectFrontDeskMessages } = require('./frontDeskListensOnlyToItsOwnChatSteps');
+const ownChatSteps = lazy(() => require('./frontDeskListensOnlyToItsOwnChatSteps'));
 
 const PRINCIPAL_ID = 111;
 
@@ -82,7 +87,7 @@ function registerSteps(registry) {
     if (ctx.updates === undefined) {
       // BL-379's own ctx shape (its Background never sets ctx.updates) -
       // delegate to that ticket's own logic instead of this file's.
-      await collectFrontDeskMessages(ctx);
+      await ownChatSteps().collectFrontDeskMessages(ctx);
       return;
     }
     const adapters = {
@@ -100,7 +105,7 @@ function registerSteps(registry) {
       postOperatorContext: async () => true,
       recordApprovalReply: async () => true,
     };
-    ctx.result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+    ctx.result = await botCore().pollAndForward(0, PRINCIPAL_ID, adapters);
   });
 
   // ── a-dropped-message-must-not-park-the-offset-01 ───────────────────
@@ -139,7 +144,7 @@ function registerSteps(registry) {
     ctx.ticketId = 'BL-777';
     ctx.updateId = 501;
     ctx.text = 'nothing to approve right now';
-    await postOperatorContext(ctx.target, ctx.ticketId, ctx.text, ctx.updateId);
+    await frontDeskBot().postOperatorContext(ctx.target, ctx.ticketId, ctx.text, ctx.updateId);
   });
 
   registry.define(/^a message already answered by the swarm$/, async (ctx) => {
@@ -147,15 +152,15 @@ function registerSteps(registry) {
     ctx.ticketId = 'BL-778';
     ctx.updateId = 601;
     ctx.text = 'nothing to approve right now';
-    await postOperatorContext(ctx.target, ctx.ticketId, ctx.text, ctx.updateId);
+    await frontDeskBot().postOperatorContext(ctx.target, ctx.ticketId, ctx.text, ctx.updateId);
   });
 
   registry.define(/^the front desk is given that same message again$/, async (ctx) => {
-    await postOperatorContext(ctx.target, ctx.ticketId, ctx.text, ctx.updateId);
+    await frontDeskBot().postOperatorContext(ctx.target, ctx.ticketId, ctx.text, ctx.updateId);
   });
 
   registry.define(/^it is not recorded against that ticket a second time$/, (ctx) => {
-    const record = readRecord(ctx.target, ctx.ticketId);
+    const record = topicStore().readRecord(ctx.target, ctx.ticketId);
     if (record.messages.length !== 1) {
       throw new Error(`expected exactly one recorded message against ${ctx.ticketId}, got ${record.messages.length}`);
     }

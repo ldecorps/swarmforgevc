@@ -150,9 +150,14 @@ qa_e2e_procedure: |
   3. Read the architect's invariant-3 census in its evidence. It lists the
      adopter's live children and each reaper's candidates over them, and
      no daemon or supervisor is a candidate.
-  4. After the land, the land step retires this ticket's two register rows
-     (BL-1631): `grep -c BL-1907 backlog/standing-reds.tsv` on origin/main
-     prints 0.
+  4. ONE run: `node specs/pipeline/cli.js specs/features/BL-684-*.feature`.
+     Its scenario 09 runs test_onboarder_supervisor_tick.sh, so it is this
+     ticket's third register row (acceptance lane, added 2026-10-03). At
+     the amendment only 09 was expected red, after a specifier hotfix
+     cleared BL-684's other reds. Expected all ok.
+  5. After the land, the land step retires this ticket's three register
+     rows (BL-1631): `grep -c BL-1907 backlog/standing-reds.tsv` on
+     origin/main prints 0.
 
 notes: |
   Minted 2026-10-03 by the specifier from coder note 002359.
@@ -169,6 +174,22 @@ notes: |
   Babashka production code; architect for the three-reaper boundary;
   hardener because a mutant in this predicate kills live processes.
   Hotfix ledger: 5df467b09a linked to this ticket in the mint commit.
+  Amended 2026-10-03 (coder note 002362's census): BL-684's feature
+  scenario 09 ("the supervisor tick test is run under the new names")
+  runs test_onboarder_supervisor_tick.sh, so its remaining red is this
+  ticket's. A third register row (acceptance lane, the BL-684 feature)
+  names BL-1907; qa_e2e step 4 runs it.
+  Confirmed 2026-10-03 ~02:40Z: the Relay /init (5772) and its parent
+  (5770) exited, apparently when the launching WSL terminal closed. The
+  tmux server and the daemons were re-adopted by PID 1, and from then on
+  test_onboarder_supervisor_tick.sh, test_handoffd_supervisor_job_reaper.sh
+  and BL-684's feature (21 of 21) all pass. So the reds track exactly which
+  process adopts orphans, as diagnosed. They come back whenever the swarm
+  is launched from a live WSL terminal, so the rows stay, and QA's
+  procedure must make that condition itself. Scenario 01's fixture
+  subreaper already does; for steps 2 and 4, run under a subreaper
+  (python3 with prctl(PR_SET_CHILD_SUBREAPER) execing the test) and record
+  the run under PID 1 too.
   Leaked at mint and left running (not the specifier's to kill): the
   22:02Z reconcile loop on the live root and the coder's fixture bridge.
   The coordinator was told.

@@ -230,7 +230,8 @@
   ;; itself, so it needs exactly the same record a replay always got).
   (let [rec (land-step-lib/record-land-approval!
              {:root project-root :commit (:commit plan)
-              :source canonical :task-ticket-id task-ticket-id})]
+              :source canonical :task-ticket-id task-ticket-id
+              :path "land-step"})]
     (when-not (:ok? rec)
       (binding [*out* *err*]
         (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))

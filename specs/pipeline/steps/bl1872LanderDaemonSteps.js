@@ -78,6 +78,10 @@ function queue(fx, ticket, sha) {
 // the commit origin moves to writes that file too, so the land's single
 // rematch (a three-way merge onto the moved tip) conflicts.
 function raceOnce(fx, conflictFile = null) {
+  // The race is aimed at the land step's push and its one rematch, so these
+  // lands take the land-step path directly (BL-1901's merge path, which runs
+  // first by default, would consume the race on its own push).
+  fx.landPath = 'land-step';
   const marker = path.join(fx.work, 'raced');
   const hook = path.join(fx.origin, 'hooks', 'pre-receive');
   fs.writeFileSync(
@@ -118,7 +122,7 @@ function runSweep(fx) {
       (spit (str (fs/path dir (str "00_lander_" (swap! n inc) "_to_" to ".handoff")))
             (str (str/join "\\n" (lander-lib/draft-lines note)) "\\n\\n" (:message note) "\\n")))))
 (loop [i 0]
-  (let [d (lander-lib/tick! ${JSON.stringify(fx.root)} {:send-note! deliver! :now-ms (System/currentTimeMillis)})]
+  (let [d (lander-lib/tick! ${JSON.stringify(fx.root)} {:send-note! deliver! :now-ms (System/currentTimeMillis)${fx.landPath ? ` :land-path :${fx.landPath}` : ''}})]
     (println "TICK" (name (:action d)) (str (:id d)))
     (cond
       (= :idle (:action d)) nil
@@ -328,4 +332,5 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+// BL-1901 reuses the fixture (its own feature drives the same lander sweep).
+module.exports = { registerSteps, fixture: { makeFixture, git, queue, runSweep, entries, approvals } };

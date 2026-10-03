@@ -1,0 +1,196 @@
+id: BL-1910
+title: "recordTestDuration.js's confirmPoleAlone times out with spawnSync, which signals only the vitest process it started, so vitest's forked workers are orphaned and keep running; on the loaded swarm host that feeds itself (BL-1904's unit run failed four unrelated files at load about 44); a confirmation now leaves no process behind. Also the stamp-off of hotfix 9bbd0f461c (five step handlers that went red when the contracts under them moved: BL-1633, BL-1761, BL-914, BL-969, BL-935)"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading the unit lane every role runs. Each timed-out
+# confirmation adds orphaned workers, the extra load pushes more files over
+# the refusal line, and those confirmations time out too. Also the
+# stamp-off of a standing-red hotfix.
+status: todo
+epic: swarm-reliability
+priority: 12
+depends_on: []
+mutation_cost: low
+# low: one spawn site in a plain-JS script outside Stryker's scope, its
+# step handler, and five handler fixes under review.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one spawn site; nothing to refactor"
+  architect: "no boundary moves; confirmPoleAlone keeps its {ms}/{failed} contract (BL-1721)"
+  hardender: "extension/scripts/ is outside Stryker's compiled out/ scope and the fix writes no durable state; the scenarios pin both outcomes"
+  documenter: "no living doc describes how the confirmation is spawned"
+
+acceptance: specs/features/BL-1910-a-pole-confirmation-leaves-no-process-behind.feature
+
+# Handler pin only (BL-233, BL-1371). The scenarios drive the real
+# confirmPoleAlone, which npm test's recorder already calls, so a consumer
+# anchor would gate nothing more (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1910ConfirmationLeavesNoProcessSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Reported by the coder (note 002365) and traced by the specifier. No
+  choice is posed. FIRM: confirmPoleAlone's outcome contract ({ms} or
+  {failed}, retried once by the guard) is unchanged; only what it leaves
+  running changes.
+
+invariants:
+  - "Every process a confirmation starts has exited by the time confirmPoleAlone returns, whatever its outcome."
+
+source: |
+  Coder note 002365 (2026-10-03 01:22Z), verbatim: "recordTestDuration
+  confirmPoleAlone timeout orphans vitest workers under load". The coder's
+  BL-1904 evidence (worktree, 2026-10-03), verbatim: "On an earlier run at
+  load around 44, four files failed: startBridgeHeadlessCli,
+  confirmPoleAloneOutcomeShapes, stepHandlerModuleLoadBudget (naming another
+  handler) and bl1652HandoffdRespawnReadingsWiring. All four then passed
+  alone ... The runaway that load came from, orphaned `vitest` workers left
+  by `recordTestDuration.js` confirmPoleAlone's timeout kill, was noted to
+  the specifier (002365)."
+  Specifier trace, 2026-10-03: confirmPoleAlone (recordTestDuration.js)
+  calls spawnSync(vitest, [...], { timeout: 3 * PER_FILE_DURATION_BUDGET_MS,
+  stdio: 'ignore' }). spawnSync's timeout sends killSignal to that one child
+  only, and spawnSync cannot start the child in its own process group.
+  Measuring the confirmer's features for this ticket found two unowned
+  reds, and checking the handlers that touch the vitest config found three
+  more; all five are hotfixed in 9bbd0f461c (see description).
+
+description: |
+  ## What is wrong
+
+  A confirmation that hits its timeout kills the vitest parent and leaves
+  its forked workers running with no parent waiting on them.
+
+  ## What is wanted
+
+  - When a confirmation times out, every process it started is gone before
+    confirmPoleAlone returns, and it still returns {failed} naming the
+    timeout. A confirmation that finishes is unchanged.
+  - Direction, not mandate: start vitest as the leader of its own process
+    group (an async spawn with detached: true, waited on synchronously
+    enough for the guard's synchronous caller, or a small wrapper) and
+    signal the whole group on timeout, TERM then KILL after a short grace.
+    Keep it working on macOS bash 3.2 hosts, so no setsid binary and no
+    GNU-only timeout flags.
+  - A seam for the timeout so scenario 01 runs in seconds (an optional
+    argument or an env override read only by this function). The default
+    stays three per-file budgets.
+  - Step handler `bl1910ConfirmationLeavesNoProcessSteps`, registered in the
+    same parcel. The fixture test file lives in a mkdtemp directory outside
+    extension/test/ (BL-1390, as BL-1633's scenario 03 does). To find "every
+    process the confirmation started", mark them, for example with an env
+    variable unique to the scenario that every descendant inherits, and look
+    for it after the call (/proc/<pid>/environ on Linux, `ps eww` on macOS).
+    Matching by command line does not work: vitest's worker command lines
+    do not name the test file.
+
+  ## Stamp-off of hotfix 9bbd0f461c (review it, do not re-apply)
+
+  Measured at mint with no register row: BL-1633's feature 0 of 5,
+  BL-1761's 1 of 2, BL-914's 0 of 5, BL-969's 0 of 2, BL-935's 0 of 11.
+  - bl1633NewPoleConfirmedAloneSteps.js: BL-1721 (2026-09-24) made a
+    confirmation an outcome, {ms} or {failed}. This handler's fake
+    confirmers still returned bare numbers and its real-confirmer checks
+    expected a number. Both now use the outcome shape. Scenario 04 takes
+    the fastest of up to three samples (one sample read 9.2 s; then 8.3 s
+    and 3.8 s at load ~20, no code change).
+  - bl1761ConfirmPoleAloneSandboxSteps.js: since BL-1867 (2026-10-02)
+    vitest.config.mjs names a global teardown under test/helpers/. The
+    sandbox fixture lacked test/helpers, vitest failed to load, and the
+    report had no entry. The fixture now links test/helpers.
+  - bl914PerTestTimeoutSteps.js and bl969BurndownNoflagsTimeoutSteps.js:
+    since BL-1007 (2026-08-24) the config declares its default as
+    resolveUnitLaneTimeout(20000) and the literal testTimeout: <number>
+    they parsed is gone; they now read that base. BL-914 also follows
+    BL-579's test renames ("the two maintained diagrams" became "the
+    maintained diagrams").
+  - bl935VitestForkPoolSteps.js: BL-1651 (2026-09-19) halved
+    PER_WORKER_HEAP_MB, so the fixture RAM is derived from the exported
+    constants; the real-config scenario patches os.platform inside its own
+    subprocess (the swarm host moved from macOS to Linux), and reads the
+    config's last output line (a [property-lane-budget] log line had made
+    the property lane read NaN).
+  Say in the evidence whether each stands, the os.platform patch above all.
+
+  ## Stamp-off of hotfix b7db6f9ed1 (review it, do not re-apply)
+
+  Added 2026-10-03: QA note 003741 (evidence ff09912f8d) held BL-1897 on two
+  property reds with no owner. Same review as above.
+  - bl1892TerminatedLandNeverPushesLockless.property.test.js: moment and
+    target were drawn uniformly 16 times, then asserted reached twice each;
+    pre-push came up once (about a 1.4% draw). Now moment x target is
+    iterated by construction (runsPerCell over 18, assertReachFloor), signal
+    and delay still random. Confirm the remaining midRepoint and honoured
+    floors are outcomes of timing, not draws.
+  - bl1529ScriptSenderAuditOutcomesInvariant.property.test.js: each cell's
+    property draws fc.constant(null), so its second run repeated the first;
+    it now runs once per cell. Confirm no assertion and no coverage was lost.
+
+  ## Stamp-off of hotfix d39ed089f0 (review it, do not re-apply)
+
+  Added 2026-10-03: QA note 003745 (evidence c703bbc70f) held BL-1891 on
+  stepHandlerModuleLoadBudget.test.js: aDroppedMessageMustNotParkTheOffsetSteps.js
+  cost 635.8 ms of incremental require time (budget 400 ms), with no owner.
+  Its three compiled modules and its sibling handler are now lib/lazy.js
+  getters called inside the steps. Confirm no step reads them at load.
+
+  ## Stamp-off of hotfix 7671b0b717 (review it, do not re-apply)
+
+  Added 2026-10-03: QA note 003747 (evidence ebf0c9de0d) held BL-1904 on
+  telegramFrontDeskBotCli.property.test.js with no owner. Its BL-1203
+  invariant 1 timed out at its 60 s base (each draw spawns bb
+  swarm_handoff.bb up to four times, about 10 s a spawn at load ~20), kept
+  running, and its finally removed the shared root invariant 2 was using.
+  Both tests now take a 180000 ms base through propertyLaneTimeoutMs (no
+  draw count changed), and invariant 2 starts from a fresh root. Say
+  whether the budget should stay or the draws should stop spawning bb.
+
+  ## Scope
+
+  extension/scripts/recordTestDuration.js (confirmPoleAlone), its step
+  handler, the five handler fixes under review, evidence.
+
+  ## Out of scope
+
+  Reaping orphans other runs already left (the orphan janitor's job,
+  BL-1907). The per-file budget itself.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each:
+  1. `node specs/pipeline/cli.js specs/features/BL-1910-a-pole-confirmation-leaves-no-process-behind.feature`:
+     2 of 2 ok.
+  2. Measured at mint on main after 9bbd0f461c, same expected:
+     BL-1633's feature 5 of 5, BL-1761's 2 of 2, BL-1721's 3 of 3, BL-914's
+     5 of 5, BL-969's 2 of 2, BL-935's 11 of 11 (`specs/features/BL-1633-*`,
+     `BL-1761-*`, `BL-1721-*`, `BL-914-*`, `BL-969-*`, `BL-935-*`), and
+     `npx vitest run confirmPoleAloneOutcomeShapes` from extension/
+     3 passed (7 s).
+  3. Afterwards, `ps -eo pid,ppid,args | grep vitest` lists no vitest process
+     from those runs.
+  4. ONE run each with `npx vitest run --config vitest.properties.config.mjs`
+     from extension/: bl1892TerminatedLandNeverPushesLockless (1 passed,
+     141 s alone at mint) and bl1529ScriptSenderAuditOutcomesInvariant (1
+     passed, 88 s alone at load 18).
+  5. ONE run each: `npx vitest run stepHandlerModuleLoadBudget` from
+     extension/ (8 passed at mint), and BL-389's and BL-379's features
+     (`specs/features/BL-389-*`, `BL-379-*`), 5 of 5 each at mint.
+  6. ONE run: `npx vitest run --config vitest.properties.config.mjs
+     test/telegramFrontDeskBotCli.property.test.js` from extension/: 3
+     passed at mint (196 s alone, load ~11).
+
+notes: |
+  Minted 2026-10-03 by the specifier from coder note 002365.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  [coder, qa] per the 2026-10-01 routing rule: plain-JS tooling outside the
+  mutation scope, no durable writes.
+  Not hotfixed: there is no red for the orphaning itself, and the fix
+  changes how a production script spawns.
+  Orthogonality: BL-1893 (active) edits
+  extension/test/confirmPoleAloneOutcomeShapes.test.js, which calls this
+  function. Its parcel's tests still need to pass on this change.
+  Hotfix ledger: 9bbd0f461c linked to this ticket in the mint commit;
+  b7db6f9ed1, d39ed089f0 and 7671b0b717 linked in the 2026-10-03
+  amendments.

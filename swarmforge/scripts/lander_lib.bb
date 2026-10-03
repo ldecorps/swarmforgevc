@@ -1,6 +1,8 @@
 ;; BL-1872: the lander daemon lands what QA approves. QA's last act on a
 ;; parcel is one queue command (lander_queue.bb --enqueue); handoffd's lander
-;; sweep calls tick! each cycle, which runs land_main_publish.sh --land for
+;; sweep calls tick! each cycle, which runs land_merge_path.bb (BL-1901: a
+;; clean line lands as a merge of origin/main, any other through
+;; land_main_publish.sh --land) for
 ;; the oldest queued approval in a worktree of its own (.worktrees/lander,
 ;; never QA's), one at a time, then reads the outcome on a later tick: a land
 ;; sends the coordinator QA's bookkeeping note; any refusal or failure goes
@@ -154,20 +156,32 @@
           (throw (ex-info (str "lander worktree: " (str/trim (:err r))) {})))))
     (str wt)))
 
-(defn- launch! [root entry]
+(defn land-command
+  "The shell command one land runs. :merge (the default, BL-1901) runs
+   land_merge_path.bb, which lands a clean line as a merge of origin/main and
+   hands every other line to land_main_publish.sh --land unchanged; :land-step
+   runs land_main_publish.sh --land directly (a caller testing the land step's
+   own behaviour, BL-1872)."
+  [land-path wt entry]
+  (let [[runner script args] (if (= :land-step land-path)
+                               ["bash" "land_main_publish.sh" [wt "--land" (:task entry) (:commit entry)]]
+                               ["bb" "land_merge_path.bb" [wt (:task entry) (:commit entry)]])
+        args (cond-> args (not (str/blank? (:issue entry))) (conj (:issue entry)))]
+    (str runner " " (pr-str (str (fs/path script-dir script))) " " (str/join " " (map pr-str args)))))
+
+(defn- launch! [root entry land-path]
   (let [wt (lander-worktree root)
-        land (str (fs/path script-dir "land_main_publish.sh"))
-        cmd (str "bash " (pr-str land) " " (pr-str wt) " --land " (pr-str (:task entry)) " " (pr-str (:commit entry))
-                 (when-not (str/blank? (:issue entry)) (str " " (pr-str (:issue entry))))
+        cmd (str (land-command land-path wt entry)
                  " > " (pr-str (str (log-file root (:id entry)))) " 2>&1; echo $? > "
                  (pr-str (str (exit-file root (:id entry)))))]
     ;; Detached: the land outlives this tick (and a test's bb process).
     (process/process ["setsid" "bash" "-c" cmd] {:out :discard :err :discard :in :inherit})))
 
 (defn tick!
-  "One sweep step. deps: {:send-note! (fn [note]) :now-ms long}. Returns the
-   decision taken."
-  [root {:keys [send-note! now-ms]}]
+  "One sweep step. deps: {:send-note! (fn [note]) :now-ms long, optional
+   :land-path (:merge, the default, or :land-step; see land-command)}.
+   Returns the decision taken."
+  [root {:keys [send-note! now-ms land-path] :or {land-path :merge}}]
   (let [entries (read-entries root)
         by-id (into {} (map (juxt :id identity) entries))
         decision (next-action entries now-ms)
@@ -178,7 +192,7 @@
           (fs/delete-if-exists (exit-file root (:id entry)))
           (write-entry! root (assoc entry :status :running :started-at now-ms
                                     :log (str (log-file root (:id entry)))))
-          (launch! root entry))
+          (launch! root entry land-path))
       :finish
       (let [log (try (slurp (str (log-file root (:id entry)))) (catch Exception _ ""))
             result (outcome log (:exit entry))]

@@ -692,3 +692,38 @@
   stamp_ticket: BL-1881
   human_decision: null
   decided_at: null
+- commit: 8bd8940741
+  subject: "Hotfix: thirteen operator_runtime shell fixtures are git checkouts again, two wait as long as this host's ticks take, and BL-671's and BL-684's step handlers follow the derived helpers"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1908
+  human_decision: null
+  decided_at: null
+- commit: 9bbd0f461c
+  subject: "Hotfix: five acceptance features red on main follow the contracts that moved under their step handlers - BL-1633, BL-1761, BL-914, BL-969 and BL-935"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null
+- commit: b7db6f9ed1
+  subject: "Hotfix: the two property files that held BL-1897's QA pass are green - bl1892's reach floor is constructed and bl1529 runs each identical cell once"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null
+- commit: d39ed089f0
+  subject: "Hotfix: aDroppedMessageMustNotParkTheOffsetSteps requires its three compiled modules and its sibling handler on first use, so it loads inside the 400 ms per-handler budget"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null
+- commit: 7671b0b717
+  subject: "Hotfix: telegramFrontDeskBotCli's BL-1203 property tests get a 180 s base budget and the second test its own fixture root, so a slow first test can no longer fail both"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null

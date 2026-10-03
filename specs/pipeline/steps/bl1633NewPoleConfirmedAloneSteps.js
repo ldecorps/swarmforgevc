@@ -82,9 +82,12 @@ function registerSteps(registry) {
   scoped(/^a confirmer that measures (.+) alone at (\d+) ms$/, (ctx, file, ms) => {
     const aloneMs = Number(ms);
     ctx.bl1633ConfirmCalls = [];
+    // BL-1721 made a confirmation an outcome, {ms} or {failed}, never a bare
+    // number or null; these fakes return that shape (red on main from
+    // 2026-09-24 until 2026-10-03 because they did not).
     ctx.bl1633Confirm = (f) => {
       ctx.bl1633ConfirmCalls.push(f);
-      return f === file ? aloneMs : null;
+      return f === file ? { ms: aloneMs } : { failed: `fixture confirmer has no reading for ${f}` };
     };
   });
 
@@ -95,8 +98,8 @@ function registerSteps(registry) {
       ctx.bl1633ConfirmCalls = [];
       ctx.bl1633Confirm = (f) => {
         ctx.bl1633ConfirmCalls.push(f);
-        if (f === timeoutFile) return null; // BL-1633's own timeout sentinel
-        return f === okFile ? aloneMs : null;
+        if (f === timeoutFile) return { failed: 'fixture timeout' }; // BL-1633's timeout, in BL-1721's shape
+        return f === okFile ? { ms: aloneMs } : { failed: `fixture confirmer has no reading for ${f}` };
       };
     }
   );
@@ -173,12 +176,10 @@ function registerSteps(registry) {
   });
 
   scoped(/^it returns a duration at least 200 ms and under the per-file budget$/, (ctx) => {
-    assert.ok(ctx.bl1633ConfirmedMs !== null, 'expected a real measured duration, not null (timeout/failure)');
-    assert.ok(ctx.bl1633ConfirmedMs >= 200, `expected at least 200ms, got ${ctx.bl1633ConfirmedMs}`);
-    assert.ok(
-      ctx.bl1633ConfirmedMs < PER_FILE_DURATION_BUDGET_MS,
-      `expected under the ${PER_FILE_DURATION_BUDGET_MS}ms budget, got ${ctx.bl1633ConfirmedMs}`
-    );
+    const r = ctx.bl1633ConfirmedMs;
+    assert.ok(r && typeof r.ms === 'number', `expected a real measured duration {ms}, got ${JSON.stringify(r)}`);
+    assert.ok(r.ms >= 200, `expected at least 200ms, got ${r.ms}`);
+    assert.ok(r.ms < PER_FILE_DURATION_BUDGET_MS, `expected under the ${PER_FILE_DURATION_BUDGET_MS}ms budget, got ${r.ms}`);
   });
 
   // -- Scenario 04 ---------------------------------------------------------------
@@ -187,14 +188,25 @@ function registerSteps(registry) {
     ctx.bl1633RepoRelFile = TARGET_REPO_REL_FILE;
   });
 
+  // Fastest of up to three samples, stopping at the first under budget
+  // (specifier rule, BL-1658 D2): one sample on the loaded swarm host read
+  // 9.2 s, then 8.3 s and 3.8 s at load ~20 with no code change (2026-10-03).
   scoped(/^it runs alone once under the real vitest$/, (ctx) => {
-    ctx.bl1633Ms = confirmPoleAlone(ctx.bl1633RepoRelFile);
+    let best = null;
+    for (let i = 0; i < 3; i += 1) {
+      const r = confirmPoleAlone(ctx.bl1633RepoRelFile);
+      if (r && typeof r.ms === 'number' && (!best || typeof best.ms !== 'number' || r.ms < best.ms)) best = r;
+      else if (!best) best = r;
+      if (best && typeof best.ms === 'number' && best.ms < PER_FILE_DURATION_BUDGET_MS) break;
+    }
+    ctx.bl1633Ms = best;
   });
 
   scoped(/^it measures under 7000 ms$/, (ctx) => {
+    const r = ctx.bl1633Ms;
     assert.ok(
-      ctx.bl1633Ms !== null && ctx.bl1633Ms < PER_FILE_DURATION_BUDGET_MS,
-      `expected under the ${PER_FILE_DURATION_BUDGET_MS}ms budget, got ${ctx.bl1633Ms}`
+      r && typeof r.ms === 'number' && r.ms < PER_FILE_DURATION_BUDGET_MS,
+      `expected under the ${PER_FILE_DURATION_BUDGET_MS}ms budget, got ${JSON.stringify(r)}`
     );
   });
 
