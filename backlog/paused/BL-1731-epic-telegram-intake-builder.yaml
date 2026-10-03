@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: telegram-intake-builder
-priority: 1
+priority: 2
 # 0 ties only the local-llm-swarm epic (BL-1125); the slices carry own
 # priority 21, above every local-llm-swarm ticket (0..20), so the gate
 # (BL-900: epic priority, own priority, id) serves every local-LLM ticket
