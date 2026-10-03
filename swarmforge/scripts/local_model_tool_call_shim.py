@@ -23,6 +23,14 @@ own turns as bare announcements goes on announcing instead of calling.
 And a reply that announces an action but calls no tool is asked once more,
 "Call the tool now." (BL-1920) - never when the seat is idle on NO_TASK.
 
+Every chat completion, with tools or without, has its max_tokens (and
+max_completion_tokens) lowered to the num_predict the model's own Modelfile
+declares, read from Ollama's /api/show (2026-10-03 hotfix). Ollama lets a
+request's max_tokens override the Modelfile, and qwen sends a large one, so
+iq3's declared 4096 never bound: its tool-less compression summaries ran 8-14k
+tokens and took about 89% of the coder's wall clock. A model with no
+num_predict, or an /api/show that fails, is left unclamped.
+
 Usage:
   local_model_tool_call_shim.py serve  --port <n> --upstream <http://host:port/v1>
   local_model_tool_call_shim.py ensure --port <n> --upstream <http://host:port/v1> --log <path>
@@ -50,6 +58,8 @@ from typing import Any, Callable
 NAME = "local-model-tool-call-shim"
 HEALTH_PATH = "/shim/health"
 HOP_BY_HOP = {"host", "content-length", "connection", "transfer-encoding", "accept-encoding", "keep-alive"}
+OUTPUT_BUDGET_KEYS = ("max_tokens", "max_completion_tokens")
+OUTPUT_CAP_TTL_S = 300.0
 
 _TAGGED = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _FENCED = re.compile(r"```[A-Za-z0-9_-]*[ \t]*\n?(.*?)```", re.DOTALL)
@@ -284,6 +294,36 @@ def completion_to_chunks(completion: dict[str, Any], include_usage: bool) -> lis
     return chunks
 
 
+def num_predict_of(show: Any) -> int | None:
+    """The positive num_predict an Ollama /api/show answer declares, else None
+    (absent, unreadable, or -1/-2, which Ollama reads as unlimited)."""
+    params = show.get("parameters") if isinstance(show, dict) else None
+    for line in str(params or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == "num_predict" and re.fullmatch(r"-?\d+", parts[1]):
+            value = int(parts[1])
+            return value if value > 0 else None
+    return None
+
+
+def clamp_output_budget(request: dict[str, Any], cap: int | None) -> tuple[dict[str, Any], int | None]:
+    """The request with every output budget above cap lowered to cap, and the
+    largest value lowered (None when nothing changed). Never raises a budget
+    and never adds one: an absent max_tokens already falls back to the
+    Modelfile."""
+    if not cap:
+        return request, None
+    out, lowered = request, None
+    for key in OUTPUT_BUDGET_KEYS:
+        value = request.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value > cap:
+            if out is request:
+                out = dict(request)
+            out[key] = cap
+            lowered = max(lowered or 0, value)
+    return out, lowered
+
+
 def upstream_root(upstream: str) -> str:
     root = upstream.rstrip("/")
     return root[: -len("/v1")] if root.endswith("/v1") else root
@@ -297,6 +337,7 @@ class ShimHandler(BaseHTTPRequestHandler):
     upstream = "http://127.0.0.1:11434/v1"
     timeout_s = 900.0
     keepalive_s = 15.0
+    output_caps: dict[str, tuple[int | None, float]] = {}
 
     def log_message(self, *_args: Any) -> None:  # the shim logs its own lines
         pass
@@ -323,7 +364,33 @@ class ShimHandler(BaseHTTPRequestHandler):
             if isinstance(request, dict) and declared_tool_names(request):
                 self._shim_chat(request)
                 return
+            if isinstance(request, dict):
+                clamped, lowered = clamp_output_budget(request, self._output_cap(request.get("model")))
+                if lowered is not None:
+                    body = json.dumps(clamped).encode()
+                    _log(f"passthrough model={request.get('model')} budget={lowered}->{clamped.get('max_tokens', clamped.get('max_completion_tokens'))}")
         self._passthrough(body)
+
+    def _output_cap(self, model: Any) -> int | None:
+        """The model's Modelfile num_predict, cached for OUTPUT_CAP_TTL_S so an
+        `ollama create` is picked up without a restart. A failed lookup is not
+        cached and leaves the request unclamped."""
+        if not isinstance(model, str) or not model:
+            return None
+        cached = self.output_caps.get(model)
+        if cached and time.monotonic() - cached[1] < OUTPUT_CAP_TTL_S:
+            return cached[0]
+        req = urllib.request.Request(
+            upstream_root(self.upstream) + "/api/show", data=json.dumps({"model": model}).encode(),
+            method="POST", headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                cap = num_predict_of(json.loads(resp.read() or b"{}"))
+        except (urllib.error.URLError, OSError, ValueError):
+            return None
+        self.output_caps[model] = (cap, time.monotonic())
+        return cap
 
     def _read_body(self) -> bytes:
         length = int(self.headers.get("content-length") or 0)
@@ -397,7 +464,8 @@ class ShimHandler(BaseHTTPRequestHandler):
         """One chat completion for the seat: history without text beside its
         calls, text tool calls rewritten, and at most one nudge."""
         names = declared_tool_names(request)
-        upstream_request, stripped = history_without_call_prose(request)
+        clamped, lowered = clamp_output_budget(request, self._output_cap(request.get("model")))
+        upstream_request, stripped = history_without_call_prose(clamped)
         status, payload = self._parsed(*self._call_upstream(upstream_request))
         rewritten, nudge = 0, "none"
         if status == 200 and isinstance(payload, dict):
@@ -412,7 +480,8 @@ class ShimHandler(BaseHTTPRequestHandler):
                 nudge = "ok" if ok else "no-call"
         finish = ((payload.get("choices") or [{}])[0] or {}).get("finish_reason") if isinstance(payload, dict) else None
         _log(f"chat model={request.get('model')} status={status} tools={len(request.get('tools') or [])} "
-             f"history_stripped={stripped} rewritten={rewritten} nudge={nudge} finish={finish}")
+             f"history_stripped={stripped} rewritten={rewritten} nudge={nudge} finish={finish}"
+             + (f" budget={lowered}->{clamped.get('max_tokens', clamped.get('max_completion_tokens'))}" if lowered is not None else ""))
         return status, payload
 
     def _shim_chat(self, request: dict[str, Any]) -> None:
@@ -447,7 +516,7 @@ class ShimHandler(BaseHTTPRequestHandler):
 
 
 def make_server(port: int, upstream: str, host: str = "127.0.0.1") -> ThreadingHTTPServer:
-    handler = type("BoundShimHandler", (ShimHandler,), {"upstream": upstream})
+    handler = type("BoundShimHandler", (ShimHandler,), {"upstream": upstream, "output_caps": {}})
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
     return server
