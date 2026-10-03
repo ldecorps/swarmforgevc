@@ -38,3 +38,7 @@ Rules that apply the whole time:
 - Temporary files go in `./tmp/` inside your worktree, never `/tmp`.
 - If your assigned worktree or branch is missing, stop and report instead
   of working in the wrong place.
+- Run one command at a time and read what it printed before the next: a
+  later step usually depends on an earlier step's output.
+- write_file and edit take a literal path: `$(date +%Y%m%d)` or `~` in a
+  path is not expanded. Run `date +%Y%m%d` first and type its result.

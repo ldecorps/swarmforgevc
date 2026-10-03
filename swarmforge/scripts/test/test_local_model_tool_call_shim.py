@@ -74,6 +74,20 @@ class ExtractToolCallsTests(unittest.TestCase):
 
 
 class RewriteCompletionTests(unittest.TestCase):
+    def test_a_reply_of_many_calls_runs_only_the_first(self) -> None:
+        # The live coder seat's ten-call reply on 2026-10-03 ran all ten blind.
+        content = ("Here is the plan.\n"
+                   '```json\n{"name": "read_file", "arguments": {"file_path": "a"}}\n```\n'
+                   '```json\n{"name": "run_shell_command", "arguments": {"command": "git commit"}}\n```\n'
+                   '```json\n{"name": "run_shell_command", "arguments": {"command": "done_with_current.sh"}}\n```')
+        names = NAMES | {"run_shell_command"}
+        out, n = shim.rewrite_completion(completion(content), names, new_id=lambda: "call_x")
+        message = out["choices"][0]["message"]
+        self.assertEqual(n, 1)
+        self.assertEqual([c["function"]["name"] for c in message["tool_calls"]], ["read_file"])
+        self.assertNotIn("git commit", message["content"])
+        self.assertNotIn("done_with_current", message["content"])
+
     def test_fenced_reply_is_rewritten(self) -> None:
         out, n = shim.rewrite_completion(completion(FENCED), NAMES, new_id=lambda: "call_x")
         self.assertEqual(n, 1)

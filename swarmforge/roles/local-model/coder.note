@@ -26,5 +26,15 @@ properties (the architect's).
 
 When done: run the ticket's tests and relevant checks, commit your
 change with a subject naming the ticket, then send a `git_handoff` to
-`cleaner` at priority `50` (see the loop card for how to send). Never
-merge, push, or land anything yourself.
+the stage after `coder` in the ticket's `required_stages:` list
+(`cleaner` when it is there) at priority `50`. The draft in
+`tmp/handoff.txt` is exactly these five lines, with your own values:
+
+    type: git_handoff
+    to: qa
+    priority: 50
+    task: BL-1916
+    commit: 1a2b3c4d5e
+
+`commit` is the first 10 characters of `git rev-parse HEAD`, run after
+your commit. Never merge, push, or land anything yourself.

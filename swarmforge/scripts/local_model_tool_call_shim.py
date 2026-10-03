@@ -149,7 +149,16 @@ def _new_call_id() -> str:
 def rewrite_completion(
     completion: dict[str, Any], names: set[str], new_id: Callable[[], str] = _new_call_id
 ) -> tuple[dict[str, Any], int]:
-    """Turns text tool calls in a non-streamed chat completion into tool_calls.
+    """Turns the FIRST text tool call in a non-streamed chat completion into
+    a tool_call, and drops the rest of them from the reply.
+
+    A model that writes its whole plan as calls in one reply never sees a
+    result before its next step: on 2026-10-03 the coder seat wrote ten
+    (write the evidence, git add, commit, write the handoff draft, send it,
+    done_with_current, ready_for_next) and all ten ran blind - a path with
+    a literal $(date ...) in it, a draft reading "NONE", a commit of a file
+    that did not exist. One call per reply, and it plans the next from
+    what came back.
 
     Returns the completion and how many calls were rewritten (0 leaves it
     untouched, including every reply that already carries tool_calls)."""
@@ -162,6 +171,7 @@ def rewrite_completion(
     calls, remaining = extract_tool_calls(str(message.get("content") or ""), names)
     if not calls:
         return completion, 0
+    calls = calls[:1]
     message["tool_calls"] = [
         {"id": new_id(), "index": i, "type": "function", "function": call} for i, call in enumerate(calls)
     ]
