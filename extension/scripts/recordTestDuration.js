@@ -39,7 +39,14 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { listTestFiles, buildRecord, appendRecord, computeFinalExitCode } = require('./testDurationRecorderLib');
+const {
+  listTestFiles,
+  buildRecord,
+  appendRecord,
+  computeFinalExitCode,
+  RUN_IN_OWN_GROUP_FLAG,
+  groupRunFailure,
+} = require('./testDurationRecorderLib');
 const {
   buildSuiteBudgetVerdict,
   formatSuiteBudgetVerdict,
@@ -116,7 +123,13 @@ function resolveConfirmedFile(file, rootDir, repoRootDir) {
   return path.join(repoRootDir, file);
 }
 
-function confirmPoleAlone(file) {
+// BL-1910: the nested vitest runs through testDurationRecorderLib.js's
+// process-group runner, so a timeout kills vitest's forked workers too and
+// nothing the confirmation started outlives it. `timeoutMs` is the seam the
+// acceptance fixture shortens; the default stays three per-file budgets.
+const CONFIRM_GRACE_MS = 2000;
+
+function confirmPoleAlone(file, { timeoutMs = 3 * PER_FILE_DURATION_BUDGET_MS } = {}) {
   const vitestBin = path.join(ROOT_DIR, 'node_modules', '.bin', 'vitest');
   const absFile = resolveConfirmedFile(file, ROOT_DIR, REPO_ROOT_DIR);
   const dir = path.dirname(absFile);
@@ -135,15 +148,30 @@ function confirmPoleAlone(file) {
     // prevent. Ignoring the streams removes the failure mode entirely
     // rather than raising the cap (which only moves the same ceiling).
     const result = spawnSync(
-      vitestBin,
-      ['run', '--dir', dir, base, '--reporter=json', `--outputFile=${tmpReport}`],
-      { cwd: ROOT_DIR, timeout: 3 * PER_FILE_DURATION_BUDGET_MS, stdio: 'ignore' }
+      process.execPath,
+      [
+        path.join(__dirname, 'testDurationRecorderLib.js'),
+        RUN_IN_OWN_GROUP_FLAG,
+        String(timeoutMs),
+        String(CONFIRM_GRACE_MS),
+        vitestBin,
+        'run',
+        '--dir',
+        dir,
+        base,
+        '--reporter=json',
+        `--outputFile=${tmpReport}`,
+      ],
+      // The runner times itself out; this outer bound only catches a runner
+      // that hangs, and is generous enough never to race it.
+      { cwd: ROOT_DIR, timeout: timeoutMs + 4 * CONFIRM_GRACE_MS + 10000, stdio: 'ignore' }
     );
     if (result.error) {
       return { failed: `spawn error: ${result.error.message}` };
     }
-    if (result.signal) {
-      return { failed: `confirmation killed by signal ${result.signal} (likely the ${3 * PER_FILE_DURATION_BUDGET_MS}ms timeout)` };
+    const groupFailure = groupRunFailure(result, timeoutMs);
+    if (groupFailure) {
+      return { failed: groupFailure };
     }
     if (!fs.existsSync(tmpReport)) {
       return { failed: 'no report file was written' };

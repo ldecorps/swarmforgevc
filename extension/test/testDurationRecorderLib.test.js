@@ -3,7 +3,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { listTestFiles, buildRecord, appendRecord, computeFinalExitCode } = require('../scripts/testDurationRecorderLib');
+const {
+  listTestFiles,
+  buildRecord,
+  appendRecord,
+  computeFinalExitCode,
+  GROUP_TIMEOUT_EXIT,
+  GROUP_SIGNALLED_EXIT,
+  groupRunExitCode,
+  groupRunFailure,
+  RUN_IN_OWN_GROUP_FLAG,
+} = require('../scripts/testDurationRecorderLib');
+const { spawnSync } = require('node:child_process');
 
 function mkTmp() {
   return mkTmpDir('sfvc-recorder-lib-');
@@ -185,4 +196,71 @@ test('computeFinalExitCode omitting the work ratchet argument behaves exactly as
   assert.equal(computeFinalExitCode(1, 0), 1);
   assert.equal(computeFinalExitCode(0, 1), 1);
   assert.equal(computeFinalExitCode(0, 0), 0);
+});
+
+// ── BL-1910: a command run in its own process group leaves nothing behind ──
+
+test('groupRunExitCode: a timeout wins, whatever the leader did after it', () => {
+  assert.equal(groupRunExitCode({ timedOut: true, code: 0, signal: null }), GROUP_TIMEOUT_EXIT);
+  assert.equal(groupRunExitCode({ timedOut: true, code: null, signal: 'SIGTERM' }), GROUP_TIMEOUT_EXIT);
+});
+
+test('groupRunExitCode: an exit code passes through; a signal the runner did not send is its own code', () => {
+  assert.equal(groupRunExitCode({ timedOut: false, code: 0, signal: null }), 0);
+  assert.equal(groupRunExitCode({ timedOut: false, code: 3, signal: null }), 3);
+  assert.equal(groupRunExitCode({ timedOut: false, code: null, signal: 'SIGKILL' }), GROUP_SIGNALLED_EXIT);
+});
+
+test('groupRunFailure names the timeout, a stray signal, or nothing for a run that finished', () => {
+  assert.match(groupRunFailure({ status: GROUP_TIMEOUT_EXIT, signal: null }, 21000), /timed out after 21000ms/);
+  assert.match(groupRunFailure({ status: GROUP_SIGNALLED_EXIT, signal: null }, 21000), /killed by a signal/);
+  assert.match(groupRunFailure({ status: null, signal: 'SIGKILL' }, 21000), /runner killed by signal SIGKILL/);
+  assert.equal(groupRunFailure({ status: 0, signal: null }, 21000), null);
+  assert.equal(groupRunFailure({ status: 1, signal: null }, 21000), null);
+});
+
+// The runner itself, end to end: a leader that forks a grandchild and then
+// outlives the timeout. Every process carries a marker in its environment,
+// and none may be alive when the runner returns.
+function aliveWithMarker(marker) {
+  const found = [];
+  for (const pid of fs.readdirSync('/proc').filter((d) => /^\d+$/.test(d))) {
+    try {
+      if (fs.readFileSync(`/proc/${pid}/environ`, 'utf8').includes(marker)) {
+        const state = fs.readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ').pop().split(' ')[0];
+        if (state !== 'Z') found.push(Number(pid));
+      }
+    } catch {
+      /* gone, or not ours to read */
+    }
+  }
+  return found;
+}
+
+const LIB = path.join(__dirname, '..', 'scripts', 'testDurationRecorderLib.js');
+const linuxOnly = fs.existsSync('/proc/self/environ') ? test : test.skip;
+
+linuxOnly('the runner kills the whole group on timeout and exits GROUP_TIMEOUT_EXIT, leaving no marked process', () => {
+  const marker = `BL1910_UNIT_${process.pid}_${Date.now()}`;
+  const leader = `require('child_process').spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)'], { stdio: 'ignore' }); setTimeout(()=>{}, 60000);`;
+  const res = spawnSync(process.execPath, [LIB, RUN_IN_OWN_GROUP_FLAG, '300', '200', process.execPath, '-e', leader], {
+    encoding: 'utf8',
+    env: { ...process.env, BL1910_MARKER: marker },
+    timeout: 30000,
+  });
+  assert.equal(res.status, GROUP_TIMEOUT_EXIT, `${res.stdout}${res.stderr}`);
+  assert.deepEqual(aliveWithMarker(marker), []);
+});
+
+linuxOnly('the runner passes a finished command\'s exit code through and leaves no marked process', () => {
+  const marker = `BL1910_UNIT_${process.pid}_${Date.now()}_ok`;
+  // The leader exits at once; the grandchild it forked would linger.
+  const leader = `require('child_process').spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)'], { stdio: 'ignore' }); process.exit(3);`;
+  const res = spawnSync(process.execPath, [LIB, RUN_IN_OWN_GROUP_FLAG, '20000', '200', process.execPath, '-e', leader], {
+    encoding: 'utf8',
+    env: { ...process.env, BL1910_MARKER: marker },
+    timeout: 30000,
+  });
+  assert.equal(res.status, 3, `${res.stdout}${res.stderr}`);
+  assert.deepEqual(aliveWithMarker(marker), []);
 });
