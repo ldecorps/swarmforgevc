@@ -173,6 +173,13 @@ You are the specifier.
     setup, move it into a `Background:` — only when doing so is
     meaning-preserving; never force one that changes what a scenario
     actually asserts.
+  - **No step DataTables (BL-1851, 2026-10-03)**: the pinned APS
+    gherkin-parser drops a table under a step from its IR (`Examples:`
+    tables survive), and the lint gate still passes the file. Put the
+    values in the step text: one step per row, one step pattern.
+    BL-1851's scenario 02 shipped a three-row table; the coder could only
+    hardcode its rows, so editing the table gated nothing. BL-244's
+    Background table has the same decorative shape.
   - **Write e2e QA procedure**: note, in the ticket, the end-to-end
     procedure QA will run to verify the scenarios hold in the live swarm.
   - **Human approval**: a feature file is not final until a human has
