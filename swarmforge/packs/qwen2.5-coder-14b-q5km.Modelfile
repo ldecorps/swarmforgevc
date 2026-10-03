@@ -1,0 +1,20 @@
+# qwen2.5-coder-14b-q5km:latest - Qwen2.5-Coder-14B-Instruct Q5_K_M sized
+# for a local-model (qwen CLI) coder seat.
+#
+# Why num_ctx (2026-10-03, specifier hotfix, BL-1916): the bare tag carries
+# no num_ctx, the hand-started `ollama serve` sets no OLLAMA_CONTEXT_LENGTH,
+# and qwen talks to /v1, which takes no per-request num_ctx. So every seat
+# request was served at Ollama's 4096 default, and Ollama cut the seat's
+# first request (8310 tokens: qwen's system prompt plus the six-tool schema,
+# BL-1829) to its last 2050 tokens - serve.log: "truncating input prompt
+# limit=2050 prompt=8310". The model never saw most of its own instructions.
+# 32768 is this model's native window. On the 16 GB RTX 5060 Ti it fits with
+# the q8_0 KV cache the server already runs (weights ~10 GB + KV ~3 GB).
+#
+# Apply:  ollama create qwen2.5-coder-14b-q5km:latest -f swarmforge/packs/qwen2.5-coder-14b-q5km.Modelfile
+# Use:    window coder local-model coder --model qwen2.5-coder-14b-q5km:latest
+# Undo:   ollama cp hf.co/bartowski/Qwen2.5-Coder-14B-Instruct-GGUF:Q5_K_M qwen2.5-coder-14b-q5km:latest
+#
+# FROM a tag keeps that tag's chat template and stop tokens unchanged.
+FROM hf.co/bartowski/Qwen2.5-Coder-14B-Instruct-GGUF:Q5_K_M
+PARAMETER num_ctx 32768
