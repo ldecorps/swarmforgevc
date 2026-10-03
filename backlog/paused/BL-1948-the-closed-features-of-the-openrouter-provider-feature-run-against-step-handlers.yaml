@@ -1,0 +1,93 @@
+id: BL-1948
+title: "The closed features of the OpenRouter provider feature run against step handlers - BL-523 closed with acceptance features no step handler binds, so every scenario fails if run, and each holds a standing-red register row; bind them as written"
+milestone: M8
+type: defect
+severity: high
+# high: each feature is a standing red on main (2026-09-05 amendment), and
+# the register they sit in throttles intake (human ruling A, 2026-10-03).
+status: todo
+epic: code-quality-gates
+priority: 13
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: test-side only, 5 existing scenarios to bind against shipped code.
+slice_size_envelope: medium
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "new step-handler files beside unchanged code; nothing to deduplicate"
+  architect: "test-side only; no production boundary moves"
+  hardender: "test-side only and no durable write; the handlers are the gate, there is no production code to mutate"
+  documenter: "no living doc describes an acceptance binding; the closed tickets' docs are unchanged"
+
+# Not a claim of ownership over the closed tickets' contracts (BL-1251): this
+# ticket binds features they left unbound and changes none of their scenarios.
+acceptance: specs/features/BL-523-openrouter-provider-support.feature
+
+# One handler per feature, each discovered from its own file (BL-1371); the
+# pre-QA gate checks every one lands in this parcel (BL-233).
+required_wiring:
+  - 'specs/pipeline/steps/bl523OpenRouterProviderSteps.js::registerSteps::binds BL-523-openrouter-provider-support.feature (discovered by suffix, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Owner of standing reds the specifier registered on the human's ruling A
+  (2026-10-03, "A - register all 54 now (throttles intake)"). No choice is
+  posed. FIRM: each feature's scenarios are bound as written; a scenario
+  that fails on its merits once bound is reported to the specifier, never
+  reworded and never skipped.
+
+invariants:
+  - "No scenario text in any of this ticket's features changes, and no production file changes."
+  - "Every handler builds its own fixtures under mkdtemp and never reads or writes this checkout's git, backlog or .swarmforge (BL-1390)."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: `specs/features/BL-523-openrouter-provider-support.feature` all pass.
+
+  2. `git diff <parcel>^..<parcel> --stat`: only new files under
+     `specs/pipeline/steps/` (and this ticket's evidence); no `.feature`, no
+     `extension/src` or `swarmforge/scripts` path.
+  3. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
+     carries one row per feature above naming BL-1948. After the land the rows
+     are gone (BL-1631 retires them); check on origin/main.
+
+source: |
+  The human's ruling A, 2026-10-03 (specifier role_ask): "A - register all
+  54 now (throttles intake)". Census: backlog/evidence/BL-1937-closed-tickets-features-with-no-step-handler-census-20261003.md.
+  Adjudication (wire, retire or draft, per feature): backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
+
+notes: |
+  Minted 2026-10-04 by the specifier (BL-541 register drain).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  The features' register rows moved from BL-541 to this ticket in the mint commit.
+
+description: |
+  ## What is wrong
+
+  These closed tickets' acceptance features have no step handler at all.
+  Run, every scenario fails with "no step handler matched". Each holds a
+  register row, and the register's size throttles intake until it is back
+  to 10 rows (Article 3.5). Scenarios that were unwireable, superseded or
+  never built were retired on 2026-10-04 (evidence above); what remains
+  describes behaviour that ships.
+
+  ## What is wanted
+
+  One step-handler file per feature, binding every remaining step as
+  written, so each feature passes against the shipped code:
+
+  - `specs/features/BL-523-openrouter-provider-support.feature` (5 scenarios): swarmforge.sh write_role_launch_script in a mkdtemp via zsh; scenario 02's ANTHROPIC_API_KEY unset for an OpenRouter role looks unimplemented - bind as written, report a red; M.
+
+  ## How (direction, not mandate)
+
+  - Drive compiled modules (`extension/out/...`) and scripts in-process,
+    the way the sibling handlers named above do. Build fixtures under
+    mkdtemp; prove a fixture repo with `rev-parse --git-common-dir` before
+    any mutating git command.
+  - These step texts are often generic. Register them with `defineScoped`
+    under each feature's own `Feature:` name, so they never answer another
+    feature's steps (BL-1277). The collision guard in the unit lane must
+    stay green.
+  - A scenario that fails on its merits once bound is a real defect in
+    shipped behaviour. Send the specifier a note naming the scenario and the
+    observed value, and keep binding the rest. Never edit a scenario to pass.
