@@ -16,7 +16,8 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync, spawnSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
+const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_HANDOFF = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_handoff.bb');
@@ -104,7 +105,9 @@ function runSwarmHandoff(ctx, commit) {
     draftPath,
     `type: git_handoff\nto: ${RECIPIENT}\npriority: 50\ntask: ${TASK}\ncommit: ${commit}\n`,
   );
-  const res = spawnSync('bb', [SWARM_HANDOFF, draftPath], {
+  // BL-1529/BL-1602: an allowed send answers the self-audit challenge with
+  // the identical draft; a gate refusal comes back from the first call.
+  const res = sendGitHandoffTwoCall('bb', [SWARM_HANDOFF, draftPath], {
     cwd,
     encoding: 'utf8',
     env: { ...processEnvAllowlist(), SWARMFORGE_ROLE: SENDER },
