@@ -57,7 +57,11 @@ const OUTCOME_KINDS = ['queued', 'failed'];
 // hoped for by a uniform draw over both axes (a uniform 20-draw over 10 cells
 // missed a cell about 1 run in 70, the BL-1062 lottery).
 const CELLS = OUTCOME_KINDS.flatMap((kind) => STAGES.map((stage) => `${kind}:${stage}`));
-const TOTAL_RUNS = OUTCOME_KINDS.length * STAGES.length * 2;
+// One run per cell: each cell's property draws fc.constant(null), so a second
+// run repeats the first exactly and adds no coverage, only a second bb spawn.
+// At load ~20 (2026-10-03) a spawn took about 10 s, and the doubled 20-spawn
+// run timed out alone (206 s) and in QA's full lane (120 s budget).
+const TOTAL_RUNS = OUTCOME_KINDS.length * STAGES.length;
 const CELL_RUNS = runsPerCell(TOTAL_RUNS, CELLS.length);
 
 const STUB_SWARM_HANDOFF =

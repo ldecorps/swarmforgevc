@@ -35,6 +35,7 @@ const { execFileSync } = require('node:child_process');
 const fc = require('fast-check');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const LAND = path.join(__dirname, '..', '..', 'swarmforge', 'scripts', 'land_main_publish.sh');
 const BRANCH = 'swarmforge-lander';
@@ -117,57 +118,67 @@ function runDraw({ moment, signal, target, delayMs }) {
   return { out, events, landOut: fs.readFileSync(path.join(work, 'land.out'), 'utf8') };
 }
 
+const MOMENTS = ['pre-push', 'repoint', 'random'];
+const TARGETS = ['process', 'group'];
+const CELLS = MOMENTS.flatMap((moment) => TARGETS.map((target) => ({ moment, target })));
+const PER_CELL_RUNS = runsPerCell(18, CELLS.length);
+
 test(
   'BL-1892/BL-654 invariant: a land never pushes or re-points after it has released the land lock',
   () => {
     const reach = { 'pre-push': 0, repoint: 0, random: 0, group: 0, process: 0, beforeAnyPush: 0, midRepoint: 0, honoured: 0 };
-    fc.assert(
-      fc.property(
-        fc.record({
-          moment: fc.constantFrom('pre-push', 'repoint', 'random'),
-          signal: fc.constantFrom('TERM', 'TERM', 'INT'),
-          target: fc.constantFrom('process', 'group'),
-          // Half the random delays land in the window where the land is
-          // building and verifying its push (~0.6-1.5 s in) - QA's bounce D1
-          // (seed -12637621) was a TERM there, reached only by luck before.
-          delayMs: fc.oneof(fc.integer({ min: 200, max: 4000 }), fc.integer({ min: 600, max: 1500 })),
-        }),
-        (draw) => {
-          const { out, events, landOut } = runDraw(draw);
-          assert.match(out, /LOCK_GONE/, `lock left behind:\n${landOut}`);
-          const sig = BigInt((events.find(([k]) => k === 'signal') || [])[1] || '0');
-          assert.ok(sig > 0n, `no signal recorded: ${out}`);
-          if (/LAND_STOPPED: signalled/.test(landOut)) {
-            reach.honoured += 1;
-            // A stop honoured DURING the re-point means the re-point process
-            // was already running when the signal came (the land marks it
-            // before spawning it); its ref-transaction hook only logs when the
-            // ref moves, which can be after the signal. The lock is released
-            // after that re-point, so its event is not "after release". A push
-            // start after the signal with the lock already released never is
-            // allowed (QA bounce 2, delayMs 600); one whose hook logs just
-            // after the signal while the lock is still held was spawned before
-            // it, and the stop kills it before the lock goes.
-            const midRepointStop = /LAND_STOPPED: signalled during the re-point/.test(landOut);
-            const after = events.filter(
-              ([k, t, lock]) =>
-                BigInt(t) > sig && lock === 'free' && (k === 'push-start' || (k === 'repoint-start' && !midRepointStop))
-            );
-            assert.deepEqual(after, [], `${JSON.stringify(draw)} started after the signal: ${JSON.stringify(events)}\n${landOut}`);
-          } else {
-            assert.match(landOut, /LAND_PUBLISHED|LAND_STOPPED/, `${JSON.stringify(draw)} neither stopped nor finished:\n${landOut}`);
+    // Moment x target is iterated by construction (BL-1062, BL-1583's
+    // remedy): a uniform draw of 16 left pre-push reached once about 1.4% of
+    // the time, which held BL-1897's QA pass on 2026-10-03. Signal and delay
+    // stay random inside each cell.
+    for (const cell of CELLS) {
+      fc.assert(
+        fc.property(
+          fc.record({
+            moment: fc.constant(cell.moment),
+            signal: fc.constantFrom('TERM', 'TERM', 'INT'),
+            target: fc.constant(cell.target),
+            // Half the random delays land in the window where the land is
+            // building and verifying its push (~0.6-1.5 s in) - QA's bounce D1
+            // (seed -12637621) was a TERM there, reached only by luck before.
+            delayMs: fc.oneof(fc.integer({ min: 200, max: 4000 }), fc.integer({ min: 600, max: 1500 })),
+          }),
+          (draw) => {
+            const { out, events, landOut } = runDraw(draw);
+            assert.match(out, /LOCK_GONE/, `lock left behind:\n${landOut}`);
+            const sig = BigInt((events.find(([k]) => k === 'signal') || [])[1] || '0');
+            assert.ok(sig > 0n, `no signal recorded: ${out}`);
+            if (/LAND_STOPPED: signalled/.test(landOut)) {
+              reach.honoured += 1;
+              // A stop honoured DURING the re-point means the re-point process
+              // was already running when the signal came (the land marks it
+              // before spawning it); its ref-transaction hook only logs when the
+              // ref moves, which can be after the signal. The lock is released
+              // after that re-point, so its event is not "after release". A push
+              // start after the signal with the lock already released never is
+              // allowed (QA bounce 2, delayMs 600); one whose hook logs just
+              // after the signal while the lock is still held was spawned before
+              // it, and the stop kills it before the lock goes.
+              const midRepointStop = /LAND_STOPPED: signalled during the re-point/.test(landOut);
+              const after = events.filter(
+                ([k, t, lock]) =>
+                  BigInt(t) > sig && lock === 'free' && (k === 'push-start' || (k === 'repoint-start' && !midRepointStop))
+              );
+              assert.deepEqual(after, [], `${JSON.stringify(draw)} started after the signal: ${JSON.stringify(events)}\n${landOut}`);
+            } else {
+              assert.match(landOut, /LAND_PUBLISHED|LAND_STOPPED/, `${JSON.stringify(draw)} neither stopped nor finished:\n${landOut}`);
+            }
+            reach[draw.moment] += 1;
+            reach[draw.target] += 1;
+            if (draw.moment === 'pre-push') reach.beforeAnyPush += 1;
+            if (draw.moment === 'repoint' && events.some(([k, t]) => k === 'repoint-start' && BigInt(t) < sig)) reach.midRepoint += 1;
           }
-          reach[draw.moment] += 1;
-          reach[draw.target] += 1;
-          if (draw.moment === 'pre-push') reach.beforeAnyPush += 1;
-          if (draw.moment === 'repoint' && events.some(([k, t]) => k === 'repoint-start' && BigInt(t) < sig)) reach.midRepoint += 1;
-        }
-      ),
-      { numRuns: 16 }
-    );
-    for (const k of ['pre-push', 'repoint', 'random', 'group', 'process']) {
-      assert.ok(reach[k] >= 2, `reach: ${JSON.stringify(reach)}`);
+        ),
+        { numRuns: PER_CELL_RUNS }
+      );
     }
+    assertReachFloor(reach, MOMENTS, 2, 'bl1892 moment');
+    assertReachFloor(reach, TARGETS, 2, 'bl1892 target');
     assert.ok(reach.beforeAnyPush >= 2 && reach.midRepoint >= 2 && reach.honoured >= 5, `reach: ${JSON.stringify(reach)}`);
   },
   SUBPROCESS_HEAVY_TIMEOUT_MS * 4
