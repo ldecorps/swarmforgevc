@@ -4,11 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
+const { installScripts } = require('./lib/fixtureScriptsInstall');
 
 const FEATURE = 'claim-progress sidecars never outlive their handoff';
 const REPO = path.join(__dirname, '..', '..', '..');
-const DONE = path.join(REPO, 'swarmforge', 'scripts', 'done_with_current_task.bb');
 const CHASE = path.join(REPO, 'swarmforge', 'scripts', 'chase_sweep_lib.bb');
 
 function ensure(ctx) {
@@ -27,6 +27,19 @@ function sh(cwd, cmd, args, env = {}) {
 function mkRoleInbox() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl615-aps-'));
   const wt = path.join(root, '.worktrees', 'coder');
+  // BL-1905: a git root with the coder seat as a linked worktree carrying
+  // its own scripts copy. The completion helper ends by exec'ing a wrapper
+  // that cds into its own scripts dir, so the REAL one received in the
+  // checkout running the feature, as the coder, against the live mailbox.
+  const git = (...args) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', '-C', root, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  git('init', '-q', '-b', 'main');
+  git('commit', '-q', '--allow-empty', '-m', 'seed');
+  git('worktree', 'add', '-q', '-b', 'swarmforge-coder', wt, 'HEAD');
+  const scripts = installScripts(wt);
   const ip = path.join(wt, '.swarmforge', 'handoffs', 'inbox', 'in_process');
   const completed = path.join(wt, '.swarmforge', 'handoffs', 'inbox', 'completed');
   fs.mkdirSync(ip, { recursive: true });
@@ -38,7 +51,7 @@ function mkRoleInbox() {
   );
   fs.mkdirSync(path.join(wt, '.swarmforge'), { recursive: true });
   fs.copyFileSync(path.join(root, '.swarmforge', 'roles.tsv'), path.join(wt, '.swarmforge', 'roles.tsv'));
-  return { root, wt, ip, completed };
+  return { root, wt, ip, completed, scripts };
 }
 
 function registerSteps(registry) {
@@ -59,9 +72,9 @@ function registerSteps(registry) {
 
   scoped(/^the role completes the handoff with done_with_current\.sh$/, (ctx) => {
     const st = ensure(ctx);
-    // Skip ready_for_next by stubbing — done_with_current_task calls ready at end.
-    // Use env to skip if available; else run and ignore ready failure.
-    const r = sh(st.fx.wt, 'bb', [DONE], { SWARMFORGE_ROLE: 'coder', SWARMFORGE_SKIP_READY_FOR_NEXT: '1' });
+    // The seat's own copy: its trailing receive runs here, against this
+    // fixture's mailbox, and finds nothing more to take.
+    const r = sh(st.fx.wt, 'bb', [path.join(st.fx.scripts, 'done_with_current_task.bb')], { SWARMFORGE_ROLE: 'coder' });
     st.doneExit = r.status;
     st.doneOut = (r.stdout || '') + (r.stderr || '');
   });
