@@ -66,8 +66,19 @@
 ;; this file once a caller is running.
 (def ^:private script-dir (str (fs/parent (fs/canonicalize *file*))))
 
-(defn- git! [root & args]
-  (apply daemon-cycle-guard-lib/sh! (into ["git" "-C" (str root)] args)))
+(defn- git!
+  "BL-1912: a trailing map in args (e.g. {:bound-ms N}) is daemon-cycle-
+   guard-lib/sh!'s own opts, passed through as the SEPARATE second
+   positional arg its split-sh-args expects when the first is a command
+   vector - never appended into the vector itself, which split-sh-args'
+   varargs-strings branch would stringify into a bogus git argument."
+  [root & args]
+  (let [opts? (map? (last args))
+        git-args (if opts? (butlast args) args)
+        cmd (into ["git" "-C" (str root)] git-args)]
+    (if opts?
+      (daemon-cycle-guard-lib/sh! cmd (last args))
+      (apply daemon-cycle-guard-lib/sh! cmd))))
 
 (defn git-common-dir
   "The repository's real git directory, absolute, as git itself reports it.
@@ -2923,24 +2934,59 @@
 ;; what a refusing hook could print.
 (def ^:private replay-commit-stderr-truncate-limit 2000)
 
+;; BL-1912: the replay's own `git commit` runs the repository's pre-commit
+;; and commit-msg hook chains, which measured 69s on a busy host (BL-1893's
+;; two-file evidence commit) - well past the generic 60s subprocess wait
+;; every other git call in this file still uses. 600000ms (10 minutes) is
+;; land-scale headroom (the lander's own overdue-ms, lander_lib.bb, gives a
+;; WHOLE land an hour before reporting it overdue; this one step staying a
+;; small fraction of that still catches a genuinely stuck commit without
+;; silently absorbing the land's whole budget) - roughly 8.7x the measured
+;; 69s. The env seam lets the acceptance feature shorten it to prove the
+;; timeout path itself without waiting 10 minutes.
+(def default-replay-commit-bound-ms (* 10 60 1000))
+
+(defn replay-commit-bound-ms []
+  (or (some-> (System/getenv "SWARMFORGE_LAND_REPLAY_COMMIT_BOUND_MS") parse-long)
+      default-replay-commit-bound-ms))
+
 (defn replay-commit-refusal-reason
   "BL-1474: the replay's escalate reason, true of the actual cause. Pure -
    takes what replay! already observed before and after the commit attempt
-   (whether the scratch index was empty, and the commit's raw stderr), no
-   git calls of its own, so the three cases (empty index; a refusing guard
-   with a message; a refusing hook with none) are unit-testable without a
-   repository.
+   (whether the scratch index was empty, the commit's raw stderr, and
+   whether daemon-cycle-guard's own bounded wait is what ended it), no git
+   calls of its own, so the four cases (empty index; a timeout; a refusing
+   guard with a message; a refusing hook with none) are unit-testable
+   without a repository.
 
    'nothing to commit' is reported ONLY when the index itself was empty -
    never inferred from the commit's exit code alone, which is exactly the
    bug this ticket fixes: a commit-time guard (merge-deletion, ticket-
    deletion, registration, ...) refuses a REAL, non-empty index with its
    own non-zero exit, and that refusal must never be reported as an empty
-   diff (BL-1463, BL-1408, both 2026-09-07)."
-  [task-ticket-id index-empty? stderr]
+   diff (BL-1463, BL-1408, both 2026-09-07).
+
+   BL-1912: a commit that outlasts its own bound is reported as a timeout
+   naming the bound, in seconds - never folded into the generic stderr
+   branch below, where daemon-cycle-guard's own 'bounded-wait timeout
+   after Nms' text would otherwise read as an ordinary hook refusal and
+   the caller's :timeout? classification (which keeps this out of the
+   entangled-tip escalation text) would have nothing distinct to key off.
+
+   3-arg form kept for BL-1474's own property test
+   (bl1474ReplayCommitRefusalReasonInvariants.property.test.js) and any
+   other pre-BL-1912 caller - timed-out? defaults false, the shape every
+   call made before this ticket."
+  ([task-ticket-id index-empty? stderr]
+   (replay-commit-refusal-reason task-ticket-id index-empty? stderr false nil))
+  ([task-ticket-id index-empty? stderr timed-out? bound-ms]
   (cond
     index-empty?
     (str "land-step replay: nothing to commit for " task-ticket-id " - own-paths identical to origin/main")
+
+    timed-out?
+    (str "land-step replay: commit for " task-ticket-id " timed out after "
+         (quot bound-ms 1000) " second(s) (SWARMFORGE_LAND_REPLAY_COMMIT_BOUND_MS)")
 
     (str/blank? stderr)
     (str "land-step replay: commit refused for " task-ticket-id ", no text")
@@ -2951,7 +2997,7 @@
           body (if over-limit?
                  (str (subs trimmed 0 replay-commit-stderr-truncate-limit) " ... (truncated)")
                  trimmed)]
-      (str "land-step replay: commit refused for " task-ticket-id " - " body))))
+      (str "land-step replay: commit refused for " task-ticket-id " - " body)))))
 
 ;; BL-1650 QA bounce (D1, 2026-09-20): `git cherry-pick -x` on a commit
 ;; whose content is ALREADY present on the target tree (a distinct commit,
@@ -3256,13 +3302,23 @@
                     (doseq [registry (into #{} (map :registry) (concat (:restored restore-result) (:retired restore-result)))]
                       (git! scratch "add" "--" registry))
                     (let [index-empty? (zero? (:exit (git! scratch "diff" "--cached" "--quiet")))
+                          bound-ms (replay-commit-bound-ms)
                           commit-res (git! scratch "-c" "user.email=t@t" "-c" "user.name=t"
-                                            "commit" "-q" "-m" (str task-ticket-id ": tip-pure replay onto origin/main (BL-1241 land-step remedy)"))]
+                                            "commit" "-q" "-m" (str task-ticket-id ": tip-pure replay onto origin/main (BL-1241 land-step remedy)")
+                                            {:bound-ms bound-ms})
+                          ;; BL-1912: 124 is daemon-cycle-guard-lib/sh!'s own
+                          ;; bounded-wait-timeout sentinel (mirrors
+                          ;; coreutils timeout(1)) - a reliable signal, read
+                          ;; off the exit code rather than sniffed from
+                          ;; stderr text that a real hook refusal could also
+                          ;; happen to contain.
+                          timed-out? (= 124 (:exit commit-res))]
                       (if-not (zero? (:exit commit-res))
                         (do (cleanup!)
                             (drop-branch!)
                             {:success false
-                             :reason (replay-commit-refusal-reason task-ticket-id index-empty? (:err commit-res))})
+                             :timeout? timed-out?
+                             :reason (replay-commit-refusal-reason task-ticket-id index-empty? (:err commit-res) timed-out? bound-ms)})
                         (let [sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))
                               ;; BL-1375 invariant 2. Run ONLY when a passenger's
                               ;; lines actually ride: with nothing riding, the tree
@@ -3685,7 +3741,14 @@
                                            :stray-commits strays-to-cherry-pick
                                            :rebuilt (or rebuilt {})})]
               (if-not (:success replay-result)
-                {:action :escalate :reason (:reason replay-result) :unlanded unlanded}
+                ;; BL-1912: a commit that timed out under its own bound is
+                ;; never reported as entangled - omitting :unlanded is what
+                ;; keeps the CLI's `(when (contains? plan :unlanded) ...)`
+                ;; from printing the entanglement note and its specifier-
+                ;; adjudication text for a timeout, which is not what
+                ;; happened here.
+                (merge {:action :escalate :reason (:reason replay-result)}
+                       (when-not (:timeout? replay-result) {:unlanded unlanded}))
                 (let [parcel-paths (parcel-commit-paths root task-ticket-id origin-main commit)]
                   (if (nil? parcel-paths)
                     (do (git! root "branch" "-q" "-D" (:branch replay-result))

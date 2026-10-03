@@ -604,26 +604,64 @@
 
 (assert= "replay-commit-refusal-reason: empty index reports nothing to commit"
          "land-step replay: nothing to commit for BL-9001 - own-paths identical to origin/main"
-         (land-step-lib/replay-commit-refusal-reason "BL-9001" true "irrelevant stderr"))
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" true "irrelevant stderr" false 60000))
 
 (assert= "replay-commit-refusal-reason: non-empty index with stderr carries it verbatim"
          "land-step replay: commit refused for BL-9001 - a guard said no"
-         (land-step-lib/replay-commit-refusal-reason "BL-9001" false "a guard said no"))
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" false "a guard said no" false 60000))
 
 (assert= "replay-commit-refusal-reason: non-empty index with blank stderr names no text"
          "land-step replay: commit refused for BL-9001, no text"
-         (land-step-lib/replay-commit-refusal-reason "BL-9001" false ""))
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" false "" false 60000))
 
 (assert= "replay-commit-refusal-reason: nil stderr is treated the same as blank"
          "land-step replay: commit refused for BL-9001, no text"
-         (land-step-lib/replay-commit-refusal-reason "BL-9001" false nil))
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" false nil false 60000))
 
 (let [long-stderr (apply str (repeat 3000 "x"))
-      reason (land-step-lib/replay-commit-refusal-reason "BL-9001" false long-stderr)]
+      reason (land-step-lib/replay-commit-refusal-reason "BL-9001" false long-stderr false 60000)]
   (assert-true "replay-commit-refusal-reason: stderr over the bound is truncated"
                (< (count reason) (count long-stderr)))
   (assert-includes "replay-commit-refusal-reason: a truncation is named"
                    reason "truncated"))
+
+;; ── BL-1912: replay-commit-refusal-reason's timeout case ──────────────────
+
+(assert= "BL-1912: a timeout reports it by name, naming the bound in seconds"
+         "land-step replay: commit for BL-9001 timed out after 1 second(s) (SWARMFORGE_LAND_REPLAY_COMMIT_BOUND_MS)"
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" false "daemon-cycle-guard: bounded-wait timeout after 1000ms: git -C x commit -q -m y" true 1000))
+
+(assert= "BL-1912: a timeout takes priority over a non-blank stderr - never the generic 'commit refused' wording"
+         false
+         (str/includes? (land-step-lib/replay-commit-refusal-reason "BL-9001" false "some stderr text" true 1000) "commit refused"))
+
+(assert= "BL-1912: a timeout with a larger bound reports it in whole seconds"
+         "land-step replay: commit for BL-9001 timed out after 600 second(s) (SWARMFORGE_LAND_REPLAY_COMMIT_BOUND_MS)"
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" false "daemon-cycle-guard: bounded-wait timeout after 600000ms: x" true 600000))
+
+;; ── BL-1912: replay-commit-bound-ms (the env seam) ────────────────────────
+
+(assert= "BL-1912: the default replay-commit bound is land-scale (10 minutes), well above the measured 69s hook run"
+         600000
+         land-step-lib/default-replay-commit-bound-ms)
+
+;; ── BL-1912: git! passes a trailing opts map through to sh! correctly,
+;;    never stringifying it into the git argv (the exact bug this ticket's
+;;    own fix for the replay commit call depends on) ──────────────────────
+
+(let [root (fs/create-temp-dir {:prefix "bl1912-git-bang-"})]
+  (try
+    (daemon-cycle-guard-lib/sh! "git" "-C" (str root) "init" "-q")
+    (daemon-cycle-guard-lib/sh! "git" "-C" (str root) "-c" "user.email=t@t" "-c" "user.name=t" "commit" "-q" "--allow-empty" "-m" "seed")
+    (let [res (#'land-step-lib/git! root "log" "-1" "--format=%s" {:bound-ms 5000})]
+      (assert= "BL-1912: git! with a trailing opts map still runs the real git command, opts never leaking into argv"
+               "seed"
+               (str/trim (:out res))))
+    (let [res (#'land-step-lib/git! root "status" "--porcelain")]
+      (assert= "BL-1912: git! with no opts map behaves exactly as before"
+               0 (:exit res))
+      (assert= "BL-1912: a clean worktree has empty status output" "" (str/trim (:out res))))
+    (finally (fs/delete-tree root))))
 
 ;; ── entanglement-note ────────────────────────────────────────────────────
 
