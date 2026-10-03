@@ -22,12 +22,15 @@ const FEATURE = 'BL-1712 the pricing table prices claude-opus-5-5';
 const MODEL = 'claude-opus-5-5';
 
 // 'open' when the ticket's YAML is in backlog/active or backlog/paused,
-// 'done' when it is anywhere under backlog/done (milestone folders
-// included), null when it is in neither.
-function ticketState(id) {
+// 'done' when it is anywhere under backlog/done (milestone folders at any
+// depth), null when it is in neither - or in both, which is no state the
+// invariant names (BL-1860 review). A ticket file is `<id>.yaml` or
+// `<id>-<slug>.yaml`, never a longer id such as `<id>0-...`.
+function ticketState(id, root = REPO_ROOT) {
+  const isTicket = (f) => f === `${id}.yaml` || (f.startsWith(`${id}-`) && f.endsWith('.yaml'));
   const named = (dir) => {
     try {
-      return fs.readdirSync(dir).some((f) => f.startsWith(`${id}-`) && f.endsWith('.yaml'));
+      return fs.readdirSync(dir).some(isTicket);
     } catch {
       return false;
     }
@@ -41,9 +44,39 @@ function ticketState(id) {
       return false;
     }
   };
-  if (['active', 'paused'].some((d) => named(path.join(REPO_ROOT, 'backlog', d)))) return 'open';
-  if (namedUnder(path.join(REPO_ROOT, 'backlog', 'done'))) return 'done';
+  const open = ['active', 'paused'].some((d) => named(path.join(root, 'backlog', d)));
+  const done = namedUnder(path.join(root, 'backlog', 'done'));
+  if (open && done) return null;
+  if (open) return 'open';
+  if (done) return 'done';
   return null;
+}
+
+const REGISTER_NEEDLES = ['pricingTable.test.js', 'BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature'];
+
+// Pure: whether the register (standing-reds.tsv text) is right for BL-1712's
+// state. Open: a row names each file and BL-1712 owns it. Done: no row names
+// either. Any other state fails. Returns { ok, reason }.
+function registerRowsVerdict(state, standingRedsText) {
+  const rows = String(standingRedsText || '')
+    .split('\n')
+    .filter((line) => line.length > 0 && !line.startsWith('#'))
+    .map((line) => line.split('\t'));
+  const rowFor = (needle) => rows.find((cols) => (cols[1] || '').includes(needle));
+  if (state === 'done') {
+    for (const needle of REGISTER_NEEDLES) {
+      const row = rowFor(needle);
+      if (row) return { ok: false, reason: `BL-1712 is done, so no register row may name ${needle}, got: ${row.join('\t')}` };
+    }
+    return { ok: true };
+  }
+  if (state !== 'open') return { ok: false, reason: 'expected BL-1712 in exactly one of backlog/active, backlog/paused or backlog/done' };
+  for (const needle of REGISTER_NEEDLES) {
+    const row = rowFor(needle);
+    if (!row) return { ok: false, reason: `expected a register row naming ${needle}` };
+    if (row[2] !== 'BL-1712') return { ok: false, reason: `expected ${needle}'s row owned by BL-1712, got: ${row[2]}` };
+  }
+  return { ok: true };
 }
 
 const KNOWN_CATEGORIES = new Map([
@@ -122,38 +155,13 @@ function registerSteps(registry) {
   scoped(
     /^the register rows naming pricingTable\.test\.js and the BL-1436 feature file are owned by BL-1712 while it is open and gone once it is done$/,
     (ctx) => {
-      const rows = ctx.standingReds
-        .split('\n')
-        .filter((line) => line.length > 0 && !line.startsWith('#'))
-        .map((line) => line.split('\t'));
-      const rowFor = (needle) => rows.find((cols) => (cols[1] || '').includes(needle));
-
       // BL-1860: the land retires every row its ticket owns (BL-1631), so
       // the feature outlives the rows. Which state holds depends on where
       // BL-1712's own YAML sits in this tree.
-      const state = ticketState('BL-1712');
-      if (state === 'done') {
-        for (const needle of ['pricingTable.test.js', 'BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature']) {
-          const row = rowFor(needle);
-          assert.ok(!row, `BL-1712 is done, so no register row may name ${needle}, got: ${row && row.join('\t')}`);
-        }
-        return;
-      }
-      assert.equal(state, 'open', 'expected BL-1712 in backlog/active, backlog/paused or backlog/done');
-
-      const unitRow = rowFor('pricingTable.test.js');
-      assert.ok(unitRow, `expected a register row naming pricingTable.test.js, got:\n${ctx.standingReds}`);
-      assert.equal(unitRow[2], 'BL-1712', `expected pricingTable.test.js's row owned by BL-1712, got: ${unitRow[2]}`);
-
-      const featureRow = rowFor('BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature');
-      assert.ok(featureRow, `expected a register row naming the BL-1436 feature, got:\n${ctx.standingReds}`);
-      assert.equal(
-        featureRow[2],
-        'BL-1712',
-        `expected the BL-1436 feature's row owned by BL-1712, got: ${featureRow[2]}`
-      );
+      const verdict = registerRowsVerdict(ticketState('BL-1712'), ctx.standingReds);
+      assert.ok(verdict.ok, `${verdict.reason}\n${ctx.standingReds}`);
     }
   );
 }
 
-module.exports = { registerSteps };
+module.exports = { registerSteps, ticketState, registerRowsVerdict, REGISTER_NEEDLES };
