@@ -46,3 +46,9 @@ specs/pipeline/generated/
 # bare `package-lock.json` line) so extension/package-lock.json, a real
 # tracked deployed surface, stays tracked.
 /package-lock.json
+
+# Hotfix 2026-10-03: a Python virtualenv never belongs in the repo. The
+# qwen2.5 coder seat created venv/ in its worktree and committed 1,019 of
+# its files (10aaa15e97) on git's "use git add to track" hint (QA D4).
+venv/
+.venv/
