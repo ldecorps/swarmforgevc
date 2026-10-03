@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-03
+Last Updated: 2026-10-03 (BL-1917: requests go through a tool-call shim)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -25,9 +25,12 @@ only; secrets never land in the pack, generated launch script, or prompt.
 1. BL-1082 pull + serve for the model id you will put on the window line
    (default first quest: `qwen2.5-coder:7b-instruct`). OpenAI-compat base
    URL ready at loopback (default `http://127.0.0.1:11434/v1`; override with
-   `SWARMFORGE_LOCAL_MODEL_ENDPOINT_URL`). The launcher forces
-   `OPENAI_API_BASE` / `OPENAI_BASE_URL` to that URL in the pane — never a
-   Token Plan cloud host.
+   `SWARMFORGE_LOCAL_MODEL_ENDPOINT_URL`). The seat's own requests do not
+   reach that endpoint directly — see "A local-model seat's requests go
+   through a tool-call shim (BL-1917)" below — but the window-gate reads
+   and the health check named here still read Ollama's own endpoint. The
+   launcher forces `OPENAI_API_BASE` / `OPENAI_BASE_URL` to the seat's URL
+   in the pane — never a Token Plan cloud host.
 2. `qwen` on `PATH` (`npm i -g @qwen-code/qwen-code`).
 3. No cloud provider API key required. An optional local OpenAI-compat
    client token may sit in the launching environment and reaches the pane
@@ -135,6 +138,46 @@ The record lives at `.swarmforge/ollama/serve.json` (`owner`: `external` or
 `swarm-owned`, `pid`, `startedAt`, `endpoint`) — read by the stop path so a
 server the swarm did not start is never stopped by the swarm (it may be
 serving something else, like the Local Agent chat).
+
+### A local-model seat's requests go through a tool-call shim (BL-1917)
+
+qwen2.5-coder writes a tool call as text — a ```` ```json ```` fence naming
+the tool and its arguments — rather than starting the reply with Ollama's
+own `<tool_call>` template tag. Ollama only parses a reply into
+`tool_calls` when it starts with that tag, so without a fix the seat
+printed the call as plain content and the turn stalled (every one of 5
+captured replies, at both a 4096 and a 32768-token window).
+
+`swarmforge/scripts/local_model_tool_call_shim.py` (stdlib Python, no
+dependencies) now sits between a local-model seat and Ollama:
+
+- Every request is forwarded upstream unchanged **except** a chat
+  completion that declares `tools`. That one request goes upstream
+  unstreamed so the shim can read the whole reply, and a fenced, bare, or
+  `<tool_call>`-tagged JSON object naming one of the request's own
+  declared tools is rewritten into a real `tool_calls` entry; any other
+  text is passed through as plain content. A streaming client still gets
+  an SSE response back, with a keepalive comment sent while Ollama works.
+- `GET /shim/health` names `local-model-tool-call-shim` and the upstream
+  URL it forwards to.
+- The seat's generated launch script starts it (reusing one that already
+  answers on the port) right before qwen starts — never babysitterd, the
+  Ollama ancillary, or BL-1711's crash restart; none of those manage its
+  lifetime.
+- `swarmforge.sh`'s `local_model_seat_url` gives the seat the shim's own
+  URL (`http://127.0.0.1:<port>/v1`) in place of Ollama's endpoint;
+  `local_model_qwen_provider_cli.bb --base-url` sets that URL on the
+  provider entry qwen actually uses (over `OPENAI_BASE_URL`), while
+  `--endpoint-url` still names Ollama's own endpoint for the window-gate
+  reads above.
+- Its log lands at `.swarmforge/local-model-shim/shim.log`; a line reading
+  `rewritten=1` is one turn where the shim turned printed text into a
+  real tool call.
+
+| `swarm.env` key | Meaning | Default |
+|---|---|---|
+| `SWARMFORGE_LOCAL_MODEL_SHIM_PORT` | the shim's own loopback port | `11439` |
+| `SWARMFORGE_LOCAL_MODEL_SHIM` | `off` sends the seat to Ollama's endpoint directly, bypassing the shim | `on` |
 
 ### Ollama is stopped by the swarm (BL-1704)
 

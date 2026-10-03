@@ -414,6 +414,21 @@
 %% (RESTARTED/RESTART_FAILED/ESCALATED, one wording each) naming the pids
 %% and the server log. At most 3 restarts in any 30 minutes; a 4th starts
 %% nothing and raises the ESCALATED alert instead.
+%% BL-1917 (2026-10-03): qwen2.5-coder writes its tool call as text (a
+%% ```json fence naming the tool), which Ollama parses as plain content
+%% unless the reply starts with the template's <tool_call> tag, so the
+%% seat printed the call and stalled. local_model_tool_call_shim.py now
+%% sits between a local-model seat and OLLAMA: it forwards every request
+%% unchanged except a chat completion that declares tools, which goes
+%% upstream unstreamed so the shim can rewrite a fenced/bare/
+%% <tool_call>-tagged JSON reply naming a declared tool into real
+%% tool_calls (other text stays content; a streaming client still gets
+%% SSE back, with a keepalive while Ollama works). The seat's pane script
+%% starts it (reusing one that already answers), never babysitterd or the
+%% ollama ancillary; SWARMFORGE_LOCAL_MODEL_SHIM_PORT picks its port
+%% (default 11439), SWARMFORGE_LOCAL_MODEL_SHIM=off sends the seat to
+%% OLLAMA directly. Its log lands at
+%% .swarmforge/local-model-shim/shim.log.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -462,6 +477,7 @@ flowchart TB
     IDENTITY["swarm-identity (BL-313: the conf this launch\nactually loaded; BL-966: read at the master checkout\nfrom any worktree via git rev-parse --git-common-dir)"]
     ACPDIR["acp/<role>.json (BL-1081: structured seat\nsnapshot — stop reason, idle, permission;\nvibe spike seat only today)"]
     OLLAMASTATE["ollama/serve.json (BL-1703: launch-time\nancillary record — owner (external |\nswarm-owned), pid, startedAt, endpoint;\nread by BL-1704's stop path)"]
+    SHIMSTATE["local-model-shim/shim.log\n(BL-1917: the started/reused shim's\nown log; rewritten=1 per turn it\nturned text into a real tool call)"]
     PEERQUESTIONS["peer-questions/ (BL-1754: one-shot\nread-only role-to-role question/answer\nrecords; never a claimed parcel)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
@@ -469,6 +485,7 @@ flowchart TB
   subgraph LOCALINFER["Local inference (BL-1082, host-side)"]
     MODELSTORE["~/.swarmforge/models/ollama\n(OLLAMA_MODELS; outside worktree)"]
     OLLAMA["ollama pull / ollama serve\n(loopback OpenAI-compatible API)"]
+    SHIM["local_model_tool_call_shim.py\n(BL-1917: stdlib Python, started by the\nseat's pane script; forwards unchanged\nexcept a tool-declaring chat completion -\nrewrites a fenced/bare/<tool_call>-tagged\nJSON reply into real tool_calls; SSE\nkeepalive on a streaming request;\nGET /shim/health)"]
   end
 
   subgraph GITHUB["git / GitHub"]
@@ -482,6 +499,9 @@ flowchart TB
   LAUNCHER -->|reads| SOCKET
   NAMEDMODEL -->|composes / optional --execute| OLLAMA
   OLLAMA -->|weights + manifests| MODELSTORE
+  PANES -->|a local-model seat's OpenAI-compat\nrequests: SWARMFORGE_LOCAL_MODEL_SHIM_PORT\n(default 11439; =off bypasses, seat\ntargets OLLAMA directly) (BL-1917)| SHIM
+  SHIM -->|forwards unchanged, except an\nunstreamed tool-declaring chat\ncompletion| OLLAMA
+  SHIM -->|appends rewritten=0/1 per turn| SHIMSTATE
   SUBSTRATE -->|ensure_ollama_ancillary_for_launch:\nprobes before any seat starts,\nstarts if silent, refuses if never\nanswers (BL-1703)| OLLAMA
   SUBSTRATE -->|writes owner/pid/startedAt| OLLAMASTATE
   OLLAMASTATE -->|handoffd.bb ollama-crash-restart\nsweep: probes the recorded endpoint\nevery poll cycle while the record\nexists; never signals a live ollama\nserve process (BL-1711)| OLLAMA
@@ -547,9 +567,9 @@ flowchart TB
   class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,METRICSGATE,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL,NAMEDMODEL host;
   class TILES webview;
   class SOCKET,PANES substrate;
-  class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR,ACPDIR state;
+  class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR,ACPDIR,SHIMSTATE state;
   class TARGETREPO,GH gh;
-  class MODELSTORE,OLLAMA state;
+  class MODELSTORE,OLLAMA,SHIM state;
 %% BL-726 (2026-08-27): BL-718 acceptance step handlers wired
 %% (bl718BubbleTalkMirrorSteps) — Gherkin gate actually runs.
 %% BL-744 (2026-08-27): Bubble mirror topic merge helpers extracted to
