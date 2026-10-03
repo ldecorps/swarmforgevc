@@ -685,3 +685,10 @@
   stamp_ticket: BL-1907
   human_decision: null
   decided_at: null
+- commit: 1877b935a2
+  subject: "Register hotfix-ledger entries for BL-231 and BL-1566 hotfixes"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1881
+  human_decision: null
+  decided_at: null
