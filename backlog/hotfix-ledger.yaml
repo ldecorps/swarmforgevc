@@ -832,3 +832,10 @@
   stamp_ticket: BL-1927
   human_decision: null
   decided_at: null
+- commit: b12d063001
+  subject: "Hotfix: a bounced parcel's task name finds its ticket file and forwards under the bare ticket id"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1927
+  human_decision: null
+  decided_at: null

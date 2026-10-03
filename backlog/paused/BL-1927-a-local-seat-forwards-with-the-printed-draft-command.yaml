@@ -1,5 +1,5 @@
 id: BL-1927
-title: "Stamp-off for hotfixes aec0daba54, e2e2287822 and dca94239f4: a served git_handoff's forward step is the exact draft command, swarm_handoff.sh, then done_with_current, and a resumed local-model seat reads its card before ready_for_next.sh"
+title: "Stamp-off for hotfixes aec0daba54, e2e2287822, dca94239f4 and b12d063001: a served git_handoff's forward step is the exact draft command, swarm_handoff.sh, then done_with_current, and a resumed local-model seat reads its card before ready_for_next.sh"
 milestone: M8
 type: defect
 severity: high
@@ -100,6 +100,11 @@ description: |
     matched and invariant 2 failed its guard before any property ran (QA
     note 003777, an unowned red found on BL-1916's gather). The needle is
     now `-i \"Use read_file now`; both invariants assert what they did.
+  - b12d063001, handoff_lib.bb: leading-ticket-id. A bounce's task header
+    carries its reason after the id (`BL-1858 [behavior: ...]`), so the
+    ticket-file lookup and the printed draft's task line now use the bare
+    id; before, a bounce got no ticket file, no forward command, and would
+    have forwarded under the whole reason.
 
   ## What each stage checks
 
@@ -137,6 +142,8 @@ notes: |
     "NONE, or one item per defect found.", and
     .swarmforge/handoffs/outbox/handoff_done/BL-1916.handoff_done (a
     subdirectory handoffd does not deliver from).
+  - Amended again 2026-10-03 (still paused): also b12d063001, the bounce
+    task-name fix to the same forward step (observation 11).
   - Amended 2026-10-03 (still paused): also the stamp-off of dca94239f4, the
     hotfix of the bl1845 property red e2e2287822 caused (QA note 003777, "BL-1927
     lacks it"). One owner, no second ticket.
