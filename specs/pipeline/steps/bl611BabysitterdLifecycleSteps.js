@@ -303,6 +303,8 @@ function listTrackedFiles() {
   const result = spawnSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
+    // ~1.01 MB today, a hair under Node's 1 MiB default (QA note 003781).
+    maxBuffer: 64 * 1024 * 1024,
   });
   if (result.status !== 0) {
     throw new Error(`git ls-files failed: ${result.stderr}`);

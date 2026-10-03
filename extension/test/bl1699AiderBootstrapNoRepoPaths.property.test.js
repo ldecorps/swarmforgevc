@@ -39,7 +39,9 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'prompt_engine_lib.bb');
 
 function gitLines(args) {
-  return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' })
+  // The repo's whole `git ls-files` is ~1.01 MB, a hair under Node's 1 MiB
+  // default exec buffer (ENOBUFS once it grows; QA note 003781, 2026-10-03).
+  return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
