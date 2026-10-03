@@ -25,12 +25,32 @@ const HYGIENE_LIB_PATH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'backlog_
 // BL-590 left backlog/hold/ on 2026-07-27 (unparked, then closed to done);
 // the ticket is read from whichever backlog folder holds it now.
 const BL590_TICKET_NAME = 'BL-590-onboarding-facilitator-agent.yaml';
+// done/ is searched at any depth: closed tickets also live in milestone
+// folders (done/M8/...), and a re-file must not turn this scenario red
+// (BL-1888 review).
 function bl590TicketPath() {
-  for (const dir of ['hold', 'paused', 'active', 'done']) {
+  const under = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const e of entries) if (e.isFile() && e.name === BL590_TICKET_NAME) return path.join(dir, e.name);
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const found = under(path.join(dir, e.name));
+      if (found) return found;
+    }
+    return null;
+  };
+  for (const dir of ['hold', 'paused', 'active']) {
     const p = path.join(REPO_ROOT, 'backlog', dir, BL590_TICKET_NAME);
     if (fs.existsSync(p)) return p;
   }
-  throw new Error(`${BL590_TICKET_NAME} is in none of backlog/hold, paused, active, done`);
+  const done = under(path.join(REPO_ROOT, 'backlog', 'done'));
+  if (done) return done;
+  throw new Error(`${BL590_TICKET_NAME} is in none of backlog/hold, paused, active, or anywhere under done`);
 }
 
 // BL-633 hardening: scenario 04's fixture root was previously removed only in
