@@ -102,3 +102,5 @@ notes: |
   under the human's directive (source). The hotfix retired BL-1712's
   register row. Ledger entry linked here. The approval above stands:
   the scope only shrank to reviewing what landed.
+
+assigned_to: coder

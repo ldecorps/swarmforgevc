@@ -1,0 +1,1 @@
+{"id":"BL-1860","messages":[{"seq":0,"ts":1791002600958,"author":"swarm","type":"outbound","text":"BL-1860 🎵 in progress — Stamp-off for hotfix 39391485f0: BL-1712's register-row step holds before and after its land (present and owned while BL-1712 is open, absent once it is done), so scenario 04, red on main since BL-1712 landed on 2026-09-24, is green again"}]}

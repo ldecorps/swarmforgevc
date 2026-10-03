@@ -2874,9 +2874,12 @@
       (let [now-ms (System/currentTimeMillis)
             all-dirs (dispatch-gap-scan-dirs roles)
             live-dirs (dropped-parcel-live-mail-dirs roles)
+            ;; BL-1906: a ticket QA queued for the lander is in flight
+            ;; until the land finishes, though no mailbox holds it.
             {:keys [items suppressed]} (chase-sweep-lib/dropped-parcel-evaluation
                                         (active-backlog-dir) all-dirs live-dirs now-ms
-                                        (dropped-parcel-stall-threshold-ms))
+                                        (dropped-parcel-stall-threshold-ms)
+                                        (lander-lib/tickets-in-flight project-root))
             cooldown-ms (dropped-parcel-cooldown-ms)]
         ;; BL-1301 invariant 3: a park silences the nudge, never the record -
         ;; every suppression is logged with the ticket id and the reason, on
