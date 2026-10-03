@@ -100,6 +100,8 @@ notes: |
     starts (the specifier starts it, per the human).
   - No required_wiring: each slice's consumer call is a literal that does not
     exist yet (BL-874), and the scenarios drive the real entry points.
+  - 2026-10-03 18:3xZ coordinator: queue-jump promoted, assigned_to coder,
+    routed (dispatch_trail confirms DISPATCHED).
   - Deferred edit: BL-1125's remaining_slices "seatless boot" line should
     point at BL-1931..BL-1933; that file carries the human's uncommitted
     edits, so it was left alone.
