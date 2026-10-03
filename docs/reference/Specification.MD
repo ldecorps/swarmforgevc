@@ -1,25 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** October 3, 2026 (BL-1850: every local-model seat's
-generated launch script now runs `local_seat_settings_snapshot_cli.bb`
-just before qwen starts, appending one JSON row to
-`.swarmforge/local-agent/seat-settings/<seat>.jsonl` with Ollama's
-version, parameters and quantization, qwen's version and the provider
-entry and compression settings it will use (credentials dropped), the
-card's size and sha256, the GPU's power limits, and a fingerprint that
-changes only when a setting does — so a change in a seat's behaviour can
-be tied to the setting that changed. A silent source is recorded
-`"unknown"`, every failure is logged, and the snapshot never holds up
-the seat's start, bounded to 3 seconds. The same command can be run by
-hand after changing a setting outside the swarm (for example the GPU
-power limit) to bracket the change with a before/after row. Grouping
-sessions by the settings in force at the time they ran is a later slice
-(BL-1851). How-to:
-`docs/how-to/BL-1052-local-model-seat-launch.md` ("A local-model seat
-records the settings it starts with (BL-1850)" section). Acceptance:
-`specs/features/BL-1850-a-local-model-seat-records-the-settings-it-starts-with.feature`.
-No new extension command or setting; no diagram edit — swarm-internal
-local-agent instrumentation.)
+**Last Updated:** October 3, 2026 (BL-1848: the babysitter sweep now
+watches every local model Ollama has loaded against two limits, read-only.
+Too big for the GPU: the model's `size_vram` (`/api/ps`) is below its
+`size` — part of it spilled to the CPU — CRIT keyed
+`local-window-vram-<model>`, naming the MiB in VRAM of the total and the
+served context. Too small for the work: a qwen usage record for that
+model in the last 60 minutes reached 90% of its served `context_length`
+— CRIT keyed `local-window-size-<model>`, naming the peak request and
+its input/output split. Ollama not answering, or no model loaded, yields
+no window finding. Both findings travel through the existing coordinator
+nudge and operator escalation on the usual 30-minute cooldown per key,
+and are waivable through `babysitter_waive.bb` the same way any other
+permanent-history finding is. How-to:
+`docs/how-to/BL-611-babysitterd-runbook.md` ("A local model's served
+window is watched against the GPU and its own work (BL-1848)" section).
+Acceptance:
+`specs/features/BL-1848-a-local-models-served-window-is-watched-against-its-work-and-the-gpu.feature`.
+No new extension command or setting; no diagram edit — babysitter-internal
+sweep logic.)
 Prior entry —
 
 **Last Updated:** October 3, 2026 (BL-1901: a queued parcel line whose

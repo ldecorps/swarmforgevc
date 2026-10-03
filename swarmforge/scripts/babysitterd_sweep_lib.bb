@@ -324,6 +324,63 @@
 
     :else nil))
 
+;; ── check 8b: local-window-fit (BL-1848) ─────────────────────────────────────
+;; A local model's served window has two limits: too big for the GPU (Ollama
+;; spills layers to the CPU) and too small for the work (a request runs into
+;; it). Pure: the gathered /api/ps models and qwen usage rows come in as
+;; facts, so the check reads nothing and changes nothing. Nil facts (Ollama
+;; not answering) or no loaded model is no finding - a seat being down is
+;; another check's job.
+
+(def local-window-lookback-ms (* 60 60 1000))
+
+(defn local-window-size-threshold
+  "90% of the served window, rounded up: 49152 -> 44237."
+  [context-length]
+  (long (Math/ceil (* 0.9 context-length))))
+
+(defn- bytes->mib [b]
+  (Math/round (/ (double b) 1048576.0)))
+
+(defn- local-window-vram-finding
+  [{:keys [name size size-vram context-length]}]
+  (when (and (number? size) (number? size-vram) (< size-vram size))
+    {:key (str "local-window-vram-" name) :severity "CRIT"
+     :message (str "local model " name ": only " (bytes->mib size-vram) " of "
+                   (bytes->mib size) " MiB in VRAM at a "
+                   (if context-length (str context-length "-token") "unreported")
+                   " context - the window outgrew GPU memory; check the serving"
+                   " `ollama serve` carries OLLAMA_FLASH_ATTENTION=1 and"
+                   " OLLAMA_KV_CACHE_TYPE=q8_0 and that no second model is loaded,"
+                   " before lowering num_ctx")}))
+
+(defn- local-window-size-finding
+  [{:keys [name context-length]} usage now-ms]
+  (when (and (number? context-length) (pos? context-length))
+    (let [since (- now-ms local-window-lookback-ms)
+          total #(+ (or (:input-tokens %) 0) (or (:output-tokens %) 0))
+          recent (filter #(and (= name (:model %))
+                               (number? (:timestamp-ms %))
+                               (>= (:timestamp-ms %) since))
+                         usage)
+          peak (when (seq recent) (apply max-key total recent))]
+      (when (and peak (>= (total peak) (local-window-size-threshold context-length)))
+        {:key (str "local-window-size-" name) :severity "CRIT"
+         :message (str "local model " name ": a " (total peak) "-token request ("
+                       (or (:input-tokens peak) 0) " in, " (or (:output-tokens peak) 0)
+                       " out) in the last 60 min reached 90% of its " context-length
+                       "-token context - the window is too small for the work; the"
+                       " served window is the Modelfile's num_ctx (BL-1838 carries"
+                       " it into qwen), about 34 KiB of VRAM per token at q8_0")}))))
+
+(defn check-local-window-fit
+  "Every loaded model's facts at once -> a vector of findings, in /api/ps order."
+  [{:keys [models usage]} now-ms]
+  (vec (mapcat (fn [model]
+                 (remove nil? [(local-window-vram-finding model)
+                               (local-window-size-finding model usage now-ms)]))
+               models)))
+
 ;; ── check 11: claim-progress risk scan (BL-528 salvage) ──────────────────────
 
 (def ^:private claim-risk-crit-severities #{"critical" "halt-imminent"})
@@ -806,7 +863,8 @@
            resident-stranded-grace-min
            control-plane-classification launch-scripts-present?
            control-plane-repair-allowed? socket-path control-plane-error
-           deadlock-active? ahead behind reason overlapping-paths]}]
+           deadlock-active? ahead behind reason overlapping-paths
+           local-windows]}]
   (let [paused? (boolean (:active? pause))
         control-plane-finding (check-control-plane
                                {:control-plane-classification control-plane-classification
@@ -860,6 +918,7 @@
         dead-letter-finding (check-dead-letter {:failed-count failed-count})
         stuck-findings (check-stuck-in-process stuck-parcels)
         memory-finding (check-memory-floor {:available-mb available-mb :floor-mb mem-floor-mb})
+        local-window-findings (check-local-window-fit local-windows now-ms)
         claim-findings (map check-claim-risk (or claim-risks []))
         rotate-finding (check-rotate-not-honored
                         (when rotate-note
@@ -892,6 +951,7 @@
                                       [handoffd-finding dead-letter-finding]
                                       stuck-findings
                                       [memory-finding]
+                                      local-window-findings
                                       claim-findings
                                       [rotate-finding starved-finding resume-overdue-finding
                                        resident-stranded-finding]
