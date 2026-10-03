@@ -779,7 +779,12 @@ You are QA.
   (until BL-1566 lands: the evidence file carries the parcel commit and
   every red path on their own lines, and the specifier's resume note is the
   wake). Then complete the parcel — the resident must be free to rotate;
-  the hold, not the parcel's presence, is the memory. On EVERY later turn
+  the hold, not the parcel's presence, is the memory. The forward gate
+  (BL-1609) accepts that completion only because your note names the held
+  ticket id in its message, which BL-1642 counts as QA's forward. Lead the
+  note with the ticket id; if it cannot name it, complete with
+  `done_with_current.sh --no-op "held <ticket> on <red>"` (coder note
+  002372, 2026-10-03: note 003748 named only the red file). On EVERY later turn
   read the first lines `ready_for_next.sh` prints: a `RELEASED <task>
   <commit>` line (until BL-1566 lands: any note naming a red you hold and
   its owner) means re-run your gate on THAT commit against the register as

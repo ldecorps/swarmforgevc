@@ -35,6 +35,8 @@
   (:require [babashka.fs :as fs]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+;; BL-1906: the lander queue is the lander's to read (tickets-in-flight).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "lander_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -72,7 +74,8 @@
           (let [{:keys [verdict reason]}
                 (chase-sweep-lib/ticket-dispatch-verdict-in
                  ticket-id (scan-dirs-for root) (live-mail-dirs-for root)
-                 (System/currentTimeMillis) (stall-threshold-ms root))]
+                 (System/currentTimeMillis) (stall-threshold-ms root)
+                 (lander-lib/tickets-in-flight root))]
             (println (case verdict
                        :dispatched "DISPATCHED"
                        :undispatched "UNDISPATCHED"
