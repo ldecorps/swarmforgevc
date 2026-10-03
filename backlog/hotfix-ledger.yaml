@@ -839,3 +839,59 @@
   stamp_ticket: BL-1927
   human_decision: null
   decided_at: null
+- commit: fb62eaa9e8
+  subject: "Hotfix: a local-model seat can never run sudo, apt or pip install"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1929
+  human_decision: null
+  decided_at: null
+- commit: 358be6be62
+  subject: "Hotfix: a Python virtualenv (venv/, .venv/) is ignored by git"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1929
+  human_decision: null
+  decided_at: null
+- commit: 479155f733
+  subject: "Hotfix: the qwen2.5 coder model caps a reply at 2048 tokens (num_predict)"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1929
+  human_decision: null
+  decided_at: null
+- commit: 52a5036fa8
+  subject: "Hotfix: swarm_handoff refuses a git_handoff naming a ticket other than the sender's in-process parcel"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1929
+  human_decision: null
+  decided_at: null
+- commit: ae5d0646a0
+  subject: "Hotfix: BL-1307's acceptance driver answers the self-audit challenge (3 scenarios red since BL-1529)"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1930
+  human_decision: null
+  decided_at: null
+- commit: 56910c695b
+  subject: "Hotfix: BL-1293's acceptance driver answers the self-audit challenge (3 scenarios red since BL-1529)"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1930
+  human_decision: null
+  decided_at: null
+- commit: da781b0fef
+  subject: "Hotfix: BL-1529's census of git_handoff-drafting scripts counts eight, naming the two that joined (red since 2026-09-24)"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1930
+  human_decision: null
+  decided_at: null
+- commit: 1dbe9de8e1
+  subject: "Hotfix: the two whole-repo git ls-files readers in tests take a 64 MiB buffer"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1930
+  human_decision: null
+  decided_at: null

@@ -1,0 +1,124 @@
+id: BL-1929
+title: "Stamp-off for hotfixes fb62eaa9e8, 358be6be62, 479155f733 and 52a5036fa8: a local seat cannot install a toolchain, a virtualenv is never committed, qwen2.5 caps a reply at 2048 tokens, and swarm_handoff refuses a draft for another ticket than the in-process parcel"
+milestone: M8
+type: defect
+severity: high
+# high: each fault cost the local coder A/B a parcel on 2026-10-03 - a hung
+# sudo prompt, a 1,020-file junk commit QA bounced, a 9-minute runaway reply,
+# and a stale BL-1858 draft delivered to the hardender.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one pure lib with a caller and two tests, one Modelfile line, one
+# .gitignore stanza, one settings stanza - each with tests or a probe.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "small additions beside unchanged code; nothing to refactor"
+  architect: "the guard is one more send-time refusal in swarm_handoff.bb's existing validate chain, beside BL-1565's; no boundary moves"
+  hardender: "Babashka, shell and config have no mutation lane (BL-472), none of the changes writes state, and the wiring was hand-mutated at mint (the fixture test fails with the refusal removed)"
+  documenter: "no living doc describes these four behaviours; the A/B evidence file records them"
+
+# Not a claim of ownership over BL-1565's contract (BL-1251): the send-time
+# git_handoff refusal feature the new guard sits beside.
+acceptance: specs/features/BL-1565-a-git-handoff-to-the-coordinator-is-refused-at-send.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of four hotfixes landed under the human's 2026-10-03 dogfood
+  loop ("have specifier implementing them") and the A/B ruling relayed at
+  ~13:57Z ("hotfix the model-agnostic faults"). No choice is posed. FIRM:
+  the review decides whether each change stands; the coder never re-applies
+  them.
+
+invariants:
+  - "swarm_handoff refuses a git_handoff whose task ticket is not the ticket of the sender's in-process git_handoff or Work note, and allows it in every other case (no in-process item naming a ticket, a master-resident sender, a batch seat)."
+  - "A refused send writes nothing to any mailbox and leaves the draft in place."
+
+source: |
+  Root intake backlog/archive/INTAKE-coder2-tool-calls-20261003.md. The
+  human, via Cursor, 2026-10-03, verbatim (Article 5.3):
+
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  The human's A/B ruling, relayed by the operator at ~13:57Z, verbatim in
+  its operative part:
+
+  > hotfix the model-agnostic faults (swarm_handoff refusing a git_handoff that names a ticket other than the seat's in-progress parcel; venv/ into .gitignore; output cap on the qwen2.5 Modelfile)
+
+  Observations: backlog/evidence/BL-1917-local-coder-ab-qwen25-vs-iq3-plan-20261003.md
+  ("qwen2.5 on QA's BL-1916 bounce"), QA's BL-1916 second inventory
+  (backlog/evidence/BL-1916-QA-20261003-2.md, D4 and D5), and observation 11
+  (the hung `sudo apt install`, 12:31Z).
+
+description: |
+  ## Status: four hotfixes landed the fix
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong
+
+  - Observation 11 (12:31Z): given "run the tests", the qwen2.5 seat ran
+    `sudo apt update && sudo apt install python3 && pip install pytest`; the
+    password prompt hung the call to its 120 s bound and the seat stopped,
+    asking for Python to be installed by hand. Python 3.12 is installed.
+  - BL-1916's bounce (12:55Z): on a review-only stamp-off with nothing to
+    commit, git answered "untracked files present (use git add to track)";
+    the seat ran `git add tests/ venv/` and committed 1,019 virtualenv files
+    and an unrelated pytest file (10aaa15e97, 375k lines). QA's D4: the extra
+    paths also took bl1699's `git ls-files` past Node's 1 MB exec buffer.
+  - 13:22Z: one text-only reply repeated "Let's execute these commands in
+    sequence" for 7127 tokens (about 9 minutes of GPU) until qwen cut it.
+  - 13:00:39Z: holding QA's BL-1916 bounce, the seat sent tmp/handoff.txt,
+    a draft left from BL-1858 (task BL-1858, commit 127768f186). Its audit
+    challenge had been answered in an earlier session, so it queued at once
+    and reached the hardender (002384). Task and commit agreed, so the
+    coherence gate passed it.
+
+  ## What the hotfixes changed
+
+  - fb62eaa9e8, swarmforge.sh write_local_model_qwen_settings: the seat's
+    .qwen/settings.json carries `permissions.deny` for `sudo *`, `apt *`,
+    `apt-get *`, `pip install *` and `pip3 install *` (a hard denial even
+    under YOLO, probed before the hotfix); npm stays allowed.
+  - 358be6be62, .gitignore: `venv/` and `.venv/`.
+  - 479155f733, swarmforge/packs/qwen2.5-coder-14b-q5km.Modelfile:
+    `PARAMETER num_predict 2048` (every one of the seat's 339 replies that
+    day above 1452 tokens was a runaway); applied with `ollama create`.
+  - 52a5036fa8, swarmforge/scripts/in_process_ticket_guard_lib.bb (pure
+    `decide`) called from swarm_handoff.bb's validate: a git_handoff whose
+    leading task ticket is not the ticket of the sender's top-level
+    in-process git_handoff (task header) or `Work <id>` note is refused with
+    IN_PROCESS_TICKET_MISMATCH, before the audit challenge and any mailbox
+    write. Master-resident senders, the dispatch-gap auto-route, a held note
+    naming no Work ticket and an unreadable mailbox all pass.
+
+  ## What each stage checks
+
+  - Coder: each hotfix against this description and the invariants; the
+    four tests below; that no gate or test sends a cross-ticket git_handoff
+    on purpose (the mint sweep ran 8 swarm_handoff shell tests and the 20
+    features whose handlers drive swarm_handoff; its three pre-existing reds
+    are BL-1930's). Evidence:
+    backlog/evidence/BL-1929-coder-<date>.md.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/in_process_ticket_guard_lib_test_runner.bb` ends "ALL TESTS PASSED".
+  2. `bash swarmforge/scripts/test/test_swarm_handoff_refuses_other_ticket_than_in_process.sh` ends "ALL PASS".
+  3. `bash swarmforge/scripts/test/test_bl1829_local_model_qwen_settings.sh` ends "ALL PASS: BL-1829 write_local_model_qwen_settings" (measured at mint).
+  4. `node specs/pipeline/cli.js specs/features/BL-1565-a-git-handoff-to-the-coordinator-is-refused-at-send.feature`
+     passes (measured at mint: 9 of 9 ok on HEAD 52a5036fa8).
+  5. `ollama show qwen2.5-coder-14b-q5km:latest --parameters` prints num_predict 2048 and num_ctx 32768.
+  6. `git check-ignore -v venv/pyvenv.cfg` from a worktree prints the .gitignore `venv/` rule.
+
+notes: |
+  - Minted 2026-10-03 by the specifier, after the A/B ruling relayed ~13:57Z.
+    One stamp-off for four SHAs (the BL-1905 shape).
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - fb62eaa9e8 landed at 12:37Z with no stamp-off (the specifier was parked
+    on the BL-1858 routing ask); this ticket is it.
+  - Not covered here: BL-1928 (approved, option A) is the lasting fix for a
+    seat running its parcel commit's tooling.

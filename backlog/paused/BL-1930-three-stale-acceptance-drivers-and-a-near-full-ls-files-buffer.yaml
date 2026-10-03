@@ -1,0 +1,107 @@
+id: BL-1930
+title: "Stamp-off for hotfixes ae5d0646a0, 56910c695b, da781b0fef and 1dbe9de8e1: BL-1307's and BL-1293's drivers answer the self-audit, BL-1529's script-sender census counts eight, and two whole-repo git ls-files readers take a 64 MiB buffer"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is high at first sighting (Article 3.2.4,
+# 2026-09-05) - three acceptance features were red with no register row,
+# and bl1699 was ~36 KB from ENOBUFS on main.
+status: todo
+epic: swarm-reliability
+priority: 5
+depends_on: []
+mutation_cost: low
+# low: test-side only - two driver send calls, one census scenario and its
+# step, two exec option lines.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "four one-place changes to test code; nothing to refactor"
+  architect: "test-side only; no production boundary moves"
+  hardender: "test-side only; there is no production code to mutate"
+  documenter: "no living doc describes these drivers or buffers"
+
+# Not a claim of ownership over BL-1529's contract (BL-1251): the feature
+# whose census scenario hotfix da781b0fef amended.
+acceptance: specs/features/BL-1529-a-script-originated-git-handoff-is-never-swallowed-by-the-audit.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of four test-side hotfixes landed under the standing human
+  directive of 2026-10-01 ("instead of minting a red, hotfix the defect and
+  mint a stampoff"). No choice is posed. FIRM: the review decides whether
+  each change stands; the coder never re-applies them.
+
+invariants:
+  - "Every acceptance driver whose scenario expects a git_handoff to be allowed sends it through the two-call self-audit helper; a gate refusal is still read from the first call."
+
+source: |
+  The human, 2026-10-01, verbatim (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  Found 2026-10-03 by the specifier's regression sweep for hotfix
+  52a5036fa8 (the in-process-ticket guard, BL-1929), which ran every
+  feature whose driver sends through swarm_handoff, and by QA note 003781
+  (bl1699's buffer, seen on BL-1916's second QA pass).
+
+description: |
+  ## Status: four hotfixes landed the fix
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong
+
+  - BL-1307's and BL-1293's step handlers ran swarm_handoff.bb once and
+    read any non-zero exit as a refusal. Since BL-1529 the first valid call
+    of a git_handoff draft prints AUDIT_REQUIRED and exits non-zero, so
+    every "the forward is allowed" row failed: 3 of 6 in each feature, red
+    on main since 2026-09-12. BL-1602 swept the drivers it listed by name,
+    and these two were not in its Examples (its population check is
+    "contains", so a driver outside the list is never checked). Neither
+    feature had a register row.
+  - BL-1529 scenario 06 pinned a census of six git_handoff-drafting
+    scripts; BL-1697's local_parcel_driver_lib.bb (09-24) and BL-1700's
+    model_steward_coder_probe_lib.bb (09-26) made it eight, red since
+    09-24 with no register row.
+  - bl1699AiderBootstrapNoRepoPaths.property.test.js (gitLines) and
+    bl611BabysitterdLifecycleSteps.js (listTrackedFiles) read the repo's
+    whole `git ls-files` through Node's default 1 MiB exec buffer; main's
+    listing is 1,012,198 bytes (1,012,578 with untracked files), about 36
+    KB from ENOBUFS. BL-1916's second QA pass saw bl1699 go red once 64 KB
+    of venv paths were committed.
+
+  ## What the hotfixes changed
+
+  - ae5d0646a0, 56910c695b: both drivers send through
+    specs/pipeline/steps/lib/sendGitHandoffTwoCall.js (BL-1602's helper).
+  - da781b0fef: scenario 06 also names local_parcel_driver_lib.bb and
+    model_steward_coder_probe_lib.bb and pins eight; neither sends through
+    the real swarm_handoff (the driver writes its requeue copy straight
+    into the stage queue; the probe drafts against a stub), so the audit
+    cannot swallow either. The feature's mutation stamp is now stale; the
+    next hardener pass on it re-mutates.
+  - 1dbe9de8e1: both readers pass `maxBuffer: 64 * 1024 * 1024`. Every
+    other ls-files exec under extension/test and specs/pipeline/steps is
+    pathspec-filtered or runs in a fixture repo (census:
+    `grep -rn "ls-files" extension/test/*.js specs/pipeline/steps/*.js | grep -E "execFileSync|spawnSync|execSync" | grep -v maxBuffer`,
+    plus bl1699's multi-line call).
+
+  ## What each stage checks
+
+  - Coder: each hotfix against this description and the invariant; the
+    census above re-run; and whether any other driver that expects an
+    allowed git_handoff still sends once (the mint sweep found none among
+    the 20 features it ran). Evidence: backlog/evidence/BL-1930-coder-<date>.md.
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1307-*.feature` passes (measured at mint: 6 of 6 ok).
+  2. `node specs/pipeline/cli.js specs/features/BL-1293-*.feature` passes (measured at mint: 6 of 6 ok).
+  3. `node specs/pipeline/cli.js specs/features/BL-1529-a-script-originated-git-handoff-is-never-swallowed-by-the-audit.feature` passes (measured at mint: 7 of 7 ok).
+  4. Read from the gather row's `npm run test:properties`: bl1699AiderBootstrapNoRepoPaths.property.test.js passes (2 of 2 at mint).
+
+notes: |
+  - Minted 2026-10-03 by the specifier: four test-side hotfixes, one
+    stamp-off (the BL-1905 shape). No register rows were added: each red
+    was fixed in the pass that found it (amendment §6).
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
