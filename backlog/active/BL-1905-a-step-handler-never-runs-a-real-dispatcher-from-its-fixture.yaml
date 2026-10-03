@@ -165,3 +165,5 @@ notes: |
   hotfixes: making a fixture's completion succeed also runs whatever the
   helper does after it.
   [coder, qa] per the 2026-10-01 routing rule (test side only).
+
+assigned_to: coder
