@@ -44,6 +44,14 @@ how `ready_for_next_task.bb`'s claim path processes it.
   the changed paths and says the parcel was not taken up; it retries the
   move on every later ask, so the next ask after the role commits or
   restores those paths takes the parcel up normally.
+- **A receive run from a checkout that is not the running role's own
+  `roles.tsv` worktree** (BL-1904, the 2026-10-02 incident: a coder receive
+  run from inside QA's worktree moved `swarmforge-QA` onto `origin/main`
+  twice mid-pass, dropping QA's own parcel): the move is refused — nothing
+  moves, no parcel-backup ref is written — and the claim path names the
+  checkout it refused to move. A foreign checkout that would have stayed
+  anyway (nothing to move, or already at the target) stays silently, same
+  as any other role.
 
 Example output when a move happens:
 ```
@@ -52,6 +60,7 @@ PARCEL_LINE: moved swarmforge-architect onto a1b2c3d9e8 (left 7f3c0e1a2b under r
 When a move is blocked:
 ```
 PARCEL_LINE: uncommitted changes to tracked files (swarmforge/foo.bb); the parcel was not taken up. Commit or restore them and ask again.
+PARCEL_LINE: /home/carillon/swarmforgevc/.worktrees/QA is not coder's own worktree (/home/carillon/swarmforgevc/.worktrees/coder); the parcel was not taken up there.
 ```
 When nothing moves (parcel carries no work, or the role is already at or
 past the target), the claim path prints nothing extra.
@@ -87,13 +96,15 @@ merging several tickets onto one shared branch.
 
 | Piece | Location |
 | --- | --- |
-| Pure decisions (`parcel-intent`, `move-decision`) plus the impure `take-up!` | `swarmforge/scripts/parcel_line_lib.bb` |
-| Wiring into the claim path | `swarmforge/scripts/ready_for_next_task.bb` |
+| Pure decisions (`parcel-intent`, `move-decision`, `foreign-checkout?`) plus the impure `take-up!` | `swarmforge/scripts/parcel_line_lib.bb` |
+| Wiring into the claim path (passes the role's own `roles.tsv` worktree as `:own-root`) | `swarmforge/scripts/ready_for_next_task.bb` |
 | Cleaner/hardener receive-mode lines | `swarmforge/packs/full-forge.conf` |
 | Step handler | `specs/pipeline/steps/bl1871ParcelLineTakeUpSteps.js` |
+| Foreign-checkout refusal step handler (BL-1904) | `specs/pipeline/steps/bl1904TakeUpMovesOnlyOwnWorktreeSteps.js` |
 
 Acceptance:
-`specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`
+`specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`,
+`specs/features/BL-1904-a-take-up-moves-only-the-roles-own-worktree.feature`
 
 ## See Also
 
