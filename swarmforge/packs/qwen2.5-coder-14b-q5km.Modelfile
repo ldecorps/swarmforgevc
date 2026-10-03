@@ -18,3 +18,11 @@
 # FROM a tag keeps that tag's chat template and stop tokens unchanged.
 FROM hf.co/bartowski/Qwen2.5-Coder-14B-Instruct-GGUF:Q5_K_M
 PARAMETER num_ctx 32768
+# Why num_predict (2026-10-03, specifier hotfix, human ruling on the local
+# coder A/B): with no cap, one text-only reply repeated "Let's execute these
+# commands in sequence" for 7127 tokens (about 9 minutes on the GPU) until
+# qwen cut it off. Of the seat's 339 replies that day every one above 1452
+# tokens was a runaway like that (7127, 4999, three at qwen's 4000 cut), so
+# 2048 bounds a runaway to a couple of minutes and leaves the largest real
+# reply 40% headroom. ista-iq3s-coder pins num_predict 4096 the same way.
+PARAMETER num_predict 2048
