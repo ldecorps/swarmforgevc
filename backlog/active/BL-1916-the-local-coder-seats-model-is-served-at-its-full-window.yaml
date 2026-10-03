@@ -106,3 +106,5 @@ notes: |
     this ticket is the review parcel the seat attempts next.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1916; that file
     carries the human's uncommitted edits, so it was left alone.
+
+assigned_to: coder
