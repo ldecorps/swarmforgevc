@@ -427,9 +427,12 @@
                  :task (handoff-lib/header-field handoff-file "task")
                  :work-ticket (work-note-evidence-lib/work-note-ticket-id-from-message
                                (handoff-lib/header-field handoff-file "message"))})]
+    ;; BL-1904: the receive's cwd decides :root, so name the role's own
+    ;; roles.tsv worktree too; the take-up never moves any other checkout.
     (parcel-line-lib/take-up! {:root (handoff-lib/worktree-root)
                                :project-root (str (handoff-lib/target-root))
                                :role role
+                               :own-root (:worktree-path role-info)
                                :intent intent})))
 
 (defn -main []

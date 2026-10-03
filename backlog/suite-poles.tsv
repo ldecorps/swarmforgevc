@@ -22,3 +22,4 @@ extension/test/renderBriefingDiagramsCli.test.js	BL-791	2026-09-16	14600	BL-791 
 extension/test/epicReorderBridge.test.js	BL-791	2026-09-16	10600	BL-791 slice D pole census; cut work not yet minted
 extension/test/pilotAcceptanceGateCli.test.js	BL-791	2026-09-16	8500	BL-791 slice D pole census; cut work not yet minted
 extension/test/recordBounceCli.test.js	BL-791	2026-09-16	7300	BL-791 slice D pole census; cut work not yet minted
+extension/test/bl1901MergePathLandDeclines.test.js	BL-791	2026-10-03	47500	BL-1901 owned it until its land retired the row (3184cca043, BL-1631); alone 16.4 s at QA 2026-10-03, six tests each a real git fixture plus a bb land_merge_path.bb spawn; cut work not yet minted

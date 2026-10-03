@@ -713,3 +713,17 @@
   stamp_ticket: BL-1910
   human_decision: null
   decided_at: null
+- commit: d39ed089f0
+  subject: "Hotfix: aDroppedMessageMustNotParkTheOffsetSteps requires its three compiled modules and its sibling handler on first use, so it loads inside the 400 ms per-handler budget"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null
+- commit: 7671b0b717
+  subject: "Hotfix: telegramFrontDeskBotCli's BL-1203 property tests get a 180 s base budget and the second test its own fixture root, so a slow first test can no longer fail both"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null

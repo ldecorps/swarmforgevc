@@ -73,6 +73,30 @@
          {:action :stay}
          (parcel-line-lib/move-decision {:target nil :at-or-past-target? false :dirty-paths []}))
 
+;; BL-1904: a checkout that is not the running role's own registered worktree
+;; is never moved, whatever else would have moved it.
+(assert= "a foreign checkout that would move is refused"
+         {:action :foreign}
+         (parcel-line-lib/move-decision {:target "c" :at-or-past-target? false :dirty-paths [] :foreign-checkout? true}))
+
+(assert= "a foreign checkout is refused ahead of a dirty one"
+         {:action :foreign}
+         (parcel-line-lib/move-decision {:target "c" :at-or-past-target? false :dirty-paths ["x.txt"] :foreign-checkout? true}))
+
+(assert= "a foreign checkout that would stay stays, silently"
+         {:action :stay}
+         (parcel-line-lib/move-decision {:target "c" :at-or-past-target? true :dirty-paths [] :foreign-checkout? true}))
+
+(assert= "foreign-checkout? false changes nothing"
+         {:action :move :target "c"}
+         (parcel-line-lib/move-decision {:target "c" :at-or-past-target? false :dirty-paths [] :foreign-checkout? false}))
+
+(assert= "foreign-checkout? matches only its own canonical path"
+         [false true false]
+         [(parcel-line-lib/foreign-checkout? "/a/b" "/a/b")
+          (parcel-line-lib/foreign-checkout? "/a/b" "/a/c")
+          (parcel-line-lib/foreign-checkout? "/a/b" nil)])
+
 ;; ── subject-names-only? ──────────────────────────────────────────────────
 (assert= "a subject naming only the ticket" true (parcel-line-lib/subject-names-only? "BL-9002: build it" "BL-9002"))
 (assert= "a subject naming another ticket too" false (parcel-line-lib/subject-names-only? "BL-9002, BL-9003: both" "BL-9002"))
@@ -127,7 +151,23 @@
       (let [out (with-out-str (parcel-line-lib/take-up! facts))]
         (assert= "a dirty worktree is not moved" old (git wt "rev-parse" "HEAD"))
         (assert= "the blocked line names the file" true (str/includes? out "a.txt"))
-        (assert= "the blocked line says not taken up" true (str/includes? out "not taken up"))))
+        (assert= "the blocked line says not taken up" true (str/includes? out "not taken up")))
+      (git wt "checkout" "-q" "--" "a.txt")
+      ;; BL-1904: :own-root names the running role's roles.tsv worktree.
+      (let [other (str (fs/path root "other"))
+            _ (git root "worktree" "add" "-q" "-b" "swarmforge-QA" other old)
+            refs-before (git root "for-each-ref" "--format=%(refname)" "refs/swarmforge/parcel-backup/")
+            out (with-out-str (parcel-line-lib/take-up! (assoc facts :own-root other)))]
+        (assert= "a checkout that is not the role's own is not moved" old (git wt "rev-parse" "HEAD"))
+        (assert= "and its branch is kept" "swarmforge-architect" (git wt "rev-parse" "--abbrev-ref" "HEAD"))
+        (assert= "no parcel-backup ref is written for it" refs-before
+                 (git root "for-each-ref" "--format=%(refname)" "refs/swarmforge/parcel-backup/"))
+        (assert= "the refusal says not taken up" true (str/includes? out "not taken up"))
+        (assert= "the refusal names the checkout" true (str/includes? out wt))
+        (assert= "the refusal is one PARCEL_LINE line" 1 (count (re-seq #"PARCEL_LINE:" out))))
+      (let [out (with-out-str (parcel-line-lib/take-up! (assoc facts :own-root (str wt "/sub/.."))))]
+        (assert= "the role's own worktree, spelled another way, still moves" c (git wt "rev-parse" "HEAD"))
+        (assert= "and reports the move" true (str/includes? out "PARCEL_LINE: moved"))))
     (finally (fs/delete-tree root))))
 
 ;; ── take-up! :start path and the own-line exception ────────────────────────
