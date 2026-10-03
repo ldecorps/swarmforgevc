@@ -166,3 +166,25 @@ plus the same four BL-1916 bounce files). A fresh qwen session; the seat's
 settings declare contextWindowSize 32768. A stray root package.json (an npm
 init stub from 13:50Z) was moved to the worktree's tmp/. BL-1917 is next
 in the queue.
+
+## iq3 attempt 2 (clean retry, 16:48:42-17:10:23Z) - stopped, model judgment
+
+| measure | iq3, BL-1916 bounce, clean retry |
+|---|---|
+| wall time | 22 min, stopped by the specifier |
+| tool calls | 77 (66 shell, 8 read_file, 2 glob, 1 edit) |
+| pace | a call every ~5 s; no compaction loop (the harness fix held) |
+| commits / forwards | 0 / 0 |
+| bounce items started | none of D1-D3 |
+
+It read the card, the ticket and QA's evidence, then went back to the
+window gate: it re-ran `bb -e '(require "swarmforge/scripts/...bb")'`
+(a string path, which bb's require cannot take), then from about 17:05Z
+wrote /tmp/test_nsN.clj and ran the same failing require on it, N up to 46,
+one call every ~5 s. It also edited swarmforge/scripts/local_model_window_gate_lib.bb
+(`{:out :string}` on served-window's curl call), outside BL-1916's scope;
+saved to the coder worktree's tmp/BL-1916-iq3-retry-offscope-gate-lib-edit-20261003T1710Z.patch
+and restored. It left 50 /tmp/test_ns*.clj files.
+
+**Result: neither local model can act on a bounce.** qwen2.5 forwarded
+junk (5 defects); iq3 never started the three items in two attempts.
