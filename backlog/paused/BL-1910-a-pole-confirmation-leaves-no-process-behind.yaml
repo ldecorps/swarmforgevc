@@ -129,6 +129,14 @@ description: |
     property draws fc.constant(null), so its second run repeated the first;
     it now runs once per cell. Confirm no assertion and no coverage was lost.
 
+  ## Stamp-off of hotfix d39ed089f0 (review it, do not re-apply)
+
+  Added 2026-10-03: QA note 003745 (evidence c703bbc70f) held BL-1891 on
+  stepHandlerModuleLoadBudget.test.js: aDroppedMessageMustNotParkTheOffsetSteps.js
+  cost 635.8 ms of incremental require time (budget 400 ms), with no owner.
+  Its three compiled modules and its sibling handler are now lib/lazy.js
+  getters called inside the steps. Confirm no step reads them at load.
+
   ## Scope
 
   extension/scripts/recordTestDuration.js (confirmPoleAlone), its step
@@ -155,6 +163,9 @@ qa_e2e_procedure: |
      from extension/: bl1892TerminatedLandNeverPushesLockless (1 passed,
      141 s alone at mint) and bl1529ScriptSenderAuditOutcomesInvariant (1
      passed, 88 s alone at load 18).
+  5. ONE run each: `npx vitest run stepHandlerModuleLoadBudget` from
+     extension/ (8 passed at mint), and BL-389's and BL-379's features
+     (`specs/features/BL-389-*`, `BL-379-*`), 5 of 5 each at mint.
 
 notes: |
   Minted 2026-10-03 by the specifier from coder note 002365.
@@ -167,4 +178,4 @@ notes: |
   extension/test/confirmPoleAloneOutcomeShapes.test.js, which calls this
   function. Its parcel's tests still need to pass on this change.
   Hotfix ledger: 9bbd0f461c linked to this ticket in the mint commit;
-  b7db6f9ed1 linked in the 2026-10-03 amendment.
+  b7db6f9ed1 and d39ed089f0 linked in the 2026-10-03 amendments.
