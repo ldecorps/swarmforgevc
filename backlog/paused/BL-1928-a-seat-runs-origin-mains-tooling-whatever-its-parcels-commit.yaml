@@ -21,7 +21,10 @@ stage_skip_reasons:
 
 acceptance: specs/features/BL-1928-a-seat-runs-origin-mains-tooling-whatever-its-parcels-commit.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - seats call the master checkout's tooling with the worktree as their working directory, as the daemons and the step handlers already do (recommended)
+ruling_provenance: tapped
 approval_context: >
   FIRM: the defect - since BL-1871 a seat runs ./swarmforge/scripts from the
   worktree it just moved onto the parcel's commit, so a hotfix landed on
