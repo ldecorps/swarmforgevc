@@ -25,6 +25,9 @@ required_wiring:
   - 'specs/pipeline/steps/bl1911LocalSeatReadsTheRepoSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
 human_approval: pending
+human_ruling: |
+  B - each turn the seat searches the repo for the question and sends what it found, one model call (recommended)
+ruling_provenance: relayed by specifier
 approval_context: >
   You asked, from the Host topic, for the local seat to be an all-rounder
   chat equivalent to Cursor there. FIRM: the seat stays outside the
@@ -129,6 +132,12 @@ notes: |
   and its unit and property files stayed green.
   direction queue-jump per the 2026-09-30 directive ("Auto-jump any ticket
   that has to do with local llm"). It still needs the human's ruling.
+  Ruling B relayed 2026-10-03 03:18Z by coordinator note 015543, verbatim:
+  "BL-1911 ruling: B (search+one model call) - human picked". Recorded with
+  relay-ruling.js (human_ruling only). human_approval stays pending until
+  the human approves in the Approvals topic. The ask there lists no options
+  yet (BL-1531 is unbuilt), which is likely why the pick came by another
+  channel.
   [coder, architect, hardender, documenter, qa]: a feature in TypeScript
   production code with a security boundary (the secret filter), and a
   how-to that describes the seat.
