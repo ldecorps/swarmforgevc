@@ -93,3 +93,5 @@ notes: |
   - Deferred edit: BL-1125's remaining_slices "seatless boot" line should
     point at BL-1931..BL-1933; that file carries the human's uncommitted
     edits, so it was left alone.
+
+assigned_to: coder
