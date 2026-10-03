@@ -1,5 +1,5 @@
 id: BL-1929
-title: "Stamp-off for hotfixes fb62eaa9e8, 358be6be62, 479155f733 and 52a5036fa8: a local seat cannot install a toolchain, a virtualenv is never committed, qwen2.5 caps a reply at 2048 tokens, and swarm_handoff refuses a draft for another ticket than the in-process parcel"
+title: "Stamp-off for hotfixes fb62eaa9e8, 358be6be62, 479155f733, 52a5036fa8, ff104fc258 and d65a268de5: a local seat cannot install a toolchain, a virtualenv is never committed, qwen2.5 caps a reply at 2048 tokens, swarm_handoff refuses a draft for another ticket than the in-process parcel, and iq3 is served out of qwen's compaction dead zone, with the dead-zone gate run whenever one seat's launch script is written"
 milestone: M8
 type: defect
 severity: high
@@ -55,7 +55,7 @@ source: |
   (the hung `sudo apt install`, 12:31Z).
 
 description: |
-  ## Status: four hotfixes landed the fix
+  ## Status: six hotfixes landed the fix
 
   This parcel is their stamp-off: review them, do not re-apply them.
 
@@ -96,6 +96,20 @@ description: |
     write. Master-resident senders, the dispatch-gap auto-route, a held note
     naming no Work ticket and an unreadable mailbox all pass.
 
+  - ff104fc258, swarmforge/packs/ista-iq3s-coder.Modelfile: num_ctx 49152
+    -> 32768 (applied with ollama create). qwen 0.24.7 compacts at
+    min(0.85 x window, window - 20000 - 13000), so 49152 compacted at 16152
+    tokens and the iq3 seat compacted on every turn (one tool call per 5-10
+    minutes for 1.5 hours on BL-1916's bounce); 32768 compacts at 27852. The
+    first turn measures ~12.9k prompt tokens; BL-1801's fit check passes.
+  - d65a268de5, swarmforge.sh write_role_launch_script: BL-1840's dead-zone
+    gate ran only on a full ./swarm launch, so the one-seat regeneration that
+    swapped the coder to iq3 put the 49152 window live. A local-model seat's
+    script is now written only after the same dead-zone CLI passes; a refusal
+    leaves the previous script byte-identical, SWARMFORGE_LOCAL_WINDOW_OVERRIDE
+    writes it with a warning, an unknown window is never refused. Two
+    fixtures moved their context-length fallback from 49152 to 65536.
+
   ## What each stage checks
 
   - Coder: each hotfix against this description and the invariants; the
@@ -113,12 +127,24 @@ qa_e2e_procedure: |
      passes (measured at mint: 9 of 9 ok on HEAD 52a5036fa8).
   5. `ollama show qwen2.5-coder-14b-q5km:latest --parameters` prints num_predict 2048 and num_ctx 32768.
   6. `git check-ignore -v venv/pyvenv.cfg` from a worktree prints the .gitignore `venv/` rule.
+  7. `ollama show ista-iq3s-coder:latest --parameters` prints num_ctx 32768, and
+     `bb swarmforge/scripts/local_model_window_gate_cli.bb dead-zone --role coder --model ista-iq3s-coder:latest --endpoint-url http://127.0.0.1:11434/v1 --context-length "" --override 0`
+     prints `TRIGGER: 27852` and exits 0 (measured at mint).
+  8. `bash swarmforge/scripts/test/test_local_model_launch_script_dead_zone_gate.sh` ends "ALL PASS: local-model launch script dead-zone gate".
 
 notes: |
   - Minted 2026-10-03 by the specifier, after the A/B ruling relayed ~13:57Z.
-    One stamp-off for four SHAs (the BL-1905 shape).
+    One stamp-off for six SHAs (the BL-1905 shape).
   - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   - fb62eaa9e8 landed at 12:37Z with no stamp-off (the specifier was parked
     on the BL-1858 routing ask); this ticket is it.
+  - Amended 2026-10-03 (still paused): also the stamp-off of ff104fc258,
+    the iq3 compaction dead-zone fix (human: "fix the compression trigger
+    first and give iq3 one clean retry on the same bounce"). One owner, no
+    second ticket. The gap that let iq3 start in the dead zone (the gate ran
+    only on a full ./swarm launch) was hotfixed in the same pass, d65a268de5,
+    and is stamped here too. BL-1560's one red when its features run from the
+    master checkout (the ledger-status step reads the master's uncommitted
+    sweep state) is environmental and unchanged.
   - Not covered here: BL-1928 (approved, option A) is the lasting fix for a
     seat running its parcel commit's tooling.
