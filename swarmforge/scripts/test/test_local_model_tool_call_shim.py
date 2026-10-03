@@ -99,6 +99,30 @@ class RewriteCompletionTests(unittest.TestCase):
         self.assertEqual(len(shim.completion_to_chunks(out, include_usage=False)), 2)
 
 
+class HistoryTests(unittest.TestCase):
+    CALL = [{"id": "call_a", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
+
+    def test_text_beside_a_call_is_dropped_and_counted(self) -> None:
+        request = {"messages": [
+            {"role": "user", "content": "go"},
+            {"role": "assistant", "content": "I'll read the card.", "tool_calls": self.CALL},
+            {"role": "tool", "tool_call_id": "call_a", "content": "card"},
+        ]}
+        out, n = shim.history_without_call_prose(request)
+        self.assertEqual(n, 1)
+        self.assertEqual(out["messages"][1], {"role": "assistant", "content": "", "tool_calls": self.CALL})
+        self.assertEqual(request["messages"][1]["content"], "I'll read the card.")  # caller's copy untouched
+
+    def test_other_turns_are_left_alone(self) -> None:
+        request = {"messages": [
+            {"role": "user", "content": "go"},
+            {"role": "assistant", "content": "Done: NO_TASK, waiting for a wake."},
+            {"role": "assistant", "content": "", "tool_calls": self.CALL},
+        ]}
+        out, n = shim.history_without_call_prose(request)
+        self.assertEqual((n, out), (0, request))
+
+
 class FakeOllama(BaseHTTPRequestHandler):
     seen: list = []
 
@@ -158,6 +182,16 @@ class LiveShimTests(unittest.TestCase):
         self.assertEqual(chunks[1]["choices"][0]["finish_reason"], "tool_calls")
         path, sent = FakeOllama.seen[-1]
         self.assertEqual((path, sent["stream"], "stream_options" in sent), ("/v1/chat/completions", False, False))
+
+    def test_history_reaches_ollama_without_text_beside_calls(self) -> None:
+        tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+        call = [{"id": "call_a", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
+        self.post({"model": "m", "tools": tools, "messages": [
+            {"role": "user", "content": "go"},
+            {"role": "assistant", "content": "I'll read the card.", "tool_calls": call},
+            {"role": "tool", "tool_call_id": "call_a", "content": "card"}]})
+        _path, sent = FakeOllama.seen[-1]
+        self.assertEqual(sent["messages"][1]["content"], "")
 
     def test_request_without_tools_and_other_paths_pass_through(self) -> None:
         out = json.loads(self.post({"model": "m", "messages": [{"role": "user", "content": "hi"}]}))

@@ -16,6 +16,11 @@ declared tools, that object becomes a tool call and the rest of the content
 stays as content. A client that asked for a stream gets the reply back as
 server-sent events, with a keepalive comment while Ollama works.
 
+Going the other way, an assistant turn in the request history that carries
+tool_calls loses its text before it reaches Ollama (BL-1919): the template
+shows such a turn's calls only when it has no text, and a model shown its
+own turns as bare announcements goes on announcing instead of calling.
+
 Usage:
   local_model_tool_call_shim.py serve  --port <n> --upstream <http://host:port/v1>
   local_model_tool_call_shim.py ensure --port <n> --upstream <http://host:port/v1> --log <path>
@@ -164,6 +169,28 @@ def rewrite_completion(
     return completion, len(calls)
 
 
+def history_without_call_prose(request: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """The request with the text dropped from every assistant turn that also
+    carries tool_calls, and how many turns lost their text (BL-1919).
+
+    The model's chat template renders an assistant turn's tool calls only
+    when that turn has no text, so a turn kept as "I'll read the card." plus
+    its call reached the model as the sentence alone. Shown its own history
+    as announcements with no calls, it went on announcing: 3 of 4 replays
+    with that history ended in prose, 0 of 4 with the text dropped."""
+    messages = request.get("messages")
+    if not isinstance(messages, list):
+        return request, 0
+    stripped, kept = 0, []
+    for message in messages:
+        if isinstance(message, dict) and message.get("role") == "assistant" \
+                and message.get("tool_calls") and message.get("content"):
+            message = {**message, "content": ""}
+            stripped += 1
+        kept.append(message)
+    return ({**request, "messages": kept}, stripped) if stripped else (request, 0)
+
+
 def completion_to_chunks(completion: dict[str, Any], include_usage: bool) -> list[dict[str, Any]]:
     """The chat.completion.chunk events a streaming client would have received."""
     base = {
@@ -294,7 +321,7 @@ class ShimHandler(BaseHTTPRequestHandler):
         except (urllib.error.URLError, OSError) as err:
             return 502, json.dumps({"error": {"message": f"{NAME}: upstream unreachable: {err}"}}).encode()
 
-    def _rewritten(self, request: dict[str, Any], status: int, raw: bytes) -> tuple[int, Any]:
+    def _rewritten(self, request: dict[str, Any], status: int, raw: bytes, stripped: int = 0) -> tuple[int, Any]:
         try:
             payload = json.loads(raw or b"{}")
         except ValueError:
@@ -304,12 +331,13 @@ class ShimHandler(BaseHTTPRequestHandler):
             payload, rewritten = rewrite_completion(payload, declared_tool_names(request))
         finish = ((payload.get("choices") or [{}])[0] or {}).get("finish_reason") if isinstance(payload, dict) else None
         _log(f"chat model={request.get('model')} status={status} tools={len(request.get('tools') or [])} "
-             f"rewritten={rewritten} finish={finish}")
+             f"history_stripped={stripped} rewritten={rewritten} finish={finish}")
         return status, payload
 
     def _shim_chat(self, request: dict[str, Any]) -> None:
+        upstream_request, stripped = history_without_call_prose(request)
         if not request.get("stream"):
-            status, payload = self._rewritten(request, *self._call_upstream(request))
+            status, payload = self._rewritten(request, *self._call_upstream(upstream_request), stripped)
             self._send_json(status, payload)
             return
         self.send_response(200)
@@ -318,14 +346,14 @@ class ShimHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         box: dict[str, tuple[int, bytes]] = {}
-        worker = threading.Thread(target=lambda: box.setdefault("r", self._call_upstream(request)), daemon=True)
+        worker = threading.Thread(target=lambda: box.setdefault("r", self._call_upstream(upstream_request)), daemon=True)
         worker.start()
         while worker.is_alive():
             worker.join(self.keepalive_s)
             if worker.is_alive():
                 self.wfile.write(b": keepalive\n\n")
                 self.wfile.flush()
-        status, payload = self._rewritten(request, *box["r"])
+        status, payload = self._rewritten(request, *box["r"], stripped)
         if status != 200:
             error = payload.get("error") if isinstance(payload, dict) else None
             self.wfile.write(b"data: " + json.dumps({"error": error or {"message": str(payload)}}).encode() + b"\n\n")
