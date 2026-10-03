@@ -108,3 +108,7 @@ notes: |
     carries the human's uncommitted edits, so it was left alone.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-10-03, by: QA, blamed: coder, class: behavior, commit: 28965db6b7, evidence: backlog/evidence/BL-1916-QA-20261003.md }
+  - { at: 2026-10-03, by: QA, blamed: coder, class: behavior, commit: a3f4588527, evidence: backlog/evidence/BL-1916-QA-20261003-2.md }
