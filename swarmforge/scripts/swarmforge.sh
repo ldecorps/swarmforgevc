@@ -688,6 +688,37 @@ local_model_endpoint_url() {
   printf '%s\n' "${SWARMFORGE_LOCAL_MODEL_ENDPOINT_URL:-$DEFAULT_LOCAL_MODEL_ENDPOINT_URL}"
 }
 
+# BL-1917: a local-model seat talks to its endpoint through the tool-call
+# shim (local_model_tool_call_shim.py). qwen2.5-coder writes its tool call
+# as text, a ```json fence, which Ollama never turns into tool_calls, so
+# without the shim the seat prints its first call and stalls. Prints the
+# URL the seat uses: the shim's, or the endpoint itself when the shim is
+# switched off (SWARMFORGE_LOCAL_MODEL_SHIM=off). Starts nothing: the seat's
+# own pane script starts the shim (local_model_shim_start_line), so
+# writing a launch script never leaves a process behind.
+local_model_shim_port() {
+  printf '%s\n' "${SWARMFORGE_LOCAL_MODEL_SHIM_PORT:-11439}"
+}
+
+local_model_seat_url() {
+  local lm_url="$1"
+  if [[ "${SWARMFORGE_LOCAL_MODEL_SHIM:-on}" == "off" ]]; then
+    printf '%s\n' "$lm_url"
+    return 0
+  fi
+  printf 'http://127.0.0.1:%s/v1\n' "$(local_model_shim_port)"
+}
+
+# The pane-script line that starts the shim for one seat, or reuses the one
+# already answering. A shim that cannot take its port says so on the pane
+# and in the seat's launch log; the seat then fails its requests loudly
+# rather than printing its tool calls and stalling.
+local_model_shim_start_line() {
+  local lm_url="$1" role="$2"
+  printf '%s\n' "mkdir -p '${STATE_DIR}/local-model-shim'
+python3 '${SCRIPT_DIR}/local_model_tool_call_shim.py' ensure --port '$(local_model_shim_port)' --upstream '${lm_url}' --log '${STATE_DIR}/local-model-shim/shim.log' 2>>'${STATE_DIR}/launch/${role}.shim.log' || echo 'SwarmForge: local-model tool-call shim is not up - see ${STATE_DIR}/launch/${role}.shim.log' >&2"
+}
+
 # Returns 0 when the loopback inference endpoint is ready. The status seam
 # SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS={healthy|missing|unhealthy} lets
 # tests drive refusal without a live server (BL-089); production probes.
@@ -2083,6 +2114,9 @@ write_local_model_qwen_settings() {
   local endpoint_url="${3:-}"
   local context_length="${4:-}"
   local seat_role="${5:-}"
+  # BL-1917: the URL the seat's requests use (its tool-call shim). The
+  # provider entry's baseUrl; the window is still read from endpoint_url.
+  local seat_url="${6:-}"
   mkdir -p "$worktree/.qwen"
   cat > "$worktree/.qwen/settings.json" <<'JSON'
 {
@@ -2106,6 +2140,7 @@ JSON
       --model "$model" \
       --endpoint-url "$endpoint_url" \
       --context-length "$context_length" \
+      --base-url "$seat_url" \
       --role "$seat_role" || true
   fi
 }
@@ -2402,10 +2437,19 @@ RESUMECHECK
   # configuration (env), never a hard-coded vendor cloud. Key value is not
   # written here; OPENAI_API_KEY arrives via tmux -e when the operator set one.
   if [[ "$agent" == "local-model" ]]; then
-    local lm_url
+    local lm_url seat_url
     lm_url="$(local_model_endpoint_url)"
-    local_model_guard="export OPENAI_API_BASE='${lm_url}'
-export OPENAI_BASE_URL='${lm_url}'
+    # BL-1917: the seat's requests go through its tool-call shim. The pane
+    # script starts it on every start and respawn; the provider entry's
+    # baseUrl (written below) is the URL qwen actually uses.
+    seat_url="$(local_model_seat_url "$lm_url")"
+    local_model_guard=""
+    if [[ "$seat_url" != "$lm_url" ]]; then
+      local_model_guard="$(local_model_shim_start_line "$lm_url" "$role")
+"
+    fi
+    local_model_guard+="export OPENAI_API_BASE='${seat_url}'
+export OPENAI_BASE_URL='${seat_url}'
 "
     # BL-1829: written once per launch-script generation, before this seat's
     # pane ever starts, so qwen's own first-request tool schema is already
@@ -2417,7 +2461,8 @@ export OPENAI_BASE_URL='${lm_url}'
       "$(extra_cli_model_flag "$extra_cli")" \
       "$lm_url" \
       "${SWARMFORGE_OLLAMA_CONTEXT_LENGTH:-}" \
-      "$role"
+      "$role" \
+      "$seat_url"
     # BL-1850: every start (and respawn) of a local-model seat appends one row
     # of the settings it starts with to .swarmforge/local-agent/seat-settings/
     # <seat>.jsonl, before qwen starts - so a change in the seat's behaviour

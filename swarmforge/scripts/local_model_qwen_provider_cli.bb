@@ -15,7 +15,7 @@
 ;; Usage:
 ;;   local_model_qwen_provider_cli.bb write --settings-file <path> \
 ;;     --model <id> --endpoint-url <http://host:port/v1> \
-;;     [--context-length <n>] [--role <role>]
+;;     [--base-url <http://host:port/v1>] [--context-length <n>] [--role <role>]
 (ns local-model-qwen-provider-cli
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
@@ -47,7 +47,7 @@
    Returns :written, or :skipped when neither the served window nor
    context-length is known (prints ONE warning line naming role/model to
    stderr and touches the file not at all)."
-  [{:keys [settings-file model endpoint-url context-length role]}]
+  [{:keys [settings-file model endpoint-url base-url context-length role]}]
   (let [served (local-model-window-gate-lib/served-window endpoint-url model)
         window (local-model-qwen-provider-lib/resolve-window served context-length)]
     (if (nil? window)
@@ -56,25 +56,30 @@
                           " (" model ") - qwen settings written with no provider entry")))
           :skipped)
       (let [existing (read-settings settings-file)
-            merged (local-model-qwen-provider-lib/merge-provider-entry existing model endpoint-url window)]
+            ;; BL-1917: the entry's baseUrl is the seat's own URL (its
+            ;; tool-call shim) when given; the window is still read from the
+            ;; endpoint itself, which answers before any pane starts.
+            merged (local-model-qwen-provider-lib/merge-provider-entry
+                    existing model (if (str/blank? (str base-url)) endpoint-url base-url) window)]
         (fs/create-dirs (fs/parent (fs/path settings-file)))
         (spit (str settings-file) (json/generate-string merged {:pretty true}))
         :written))))
 
 (defn -main [args]
   (when (not= "write" (first args))
-    (binding [*out* *err*] (println "Usage: local_model_qwen_provider_cli.bb write --settings-file <path> --model <id> --endpoint-url <url> [--context-length <n>] [--role <role>]"))
+    (binding [*out* *err*] (println "Usage: local_model_qwen_provider_cli.bb write --settings-file <path> --model <id> --endpoint-url <url> [--base-url <url>] [--context-length <n>] [--role <role>]"))
     (System/exit 2))
   (let [rest-args (rest args)
         settings-file (opt-value rest-args "--settings-file")
         model (opt-value rest-args "--model")
         endpoint-url (opt-value rest-args "--endpoint-url")
+        base-url (opt-value rest-args "--base-url")
         context-length (opt-value rest-args "--context-length")
         role (opt-value rest-args "--role")]
     (when (or (str/blank? settings-file) (str/blank? model) (str/blank? endpoint-url))
       (binding [*out* *err*] (println "local_model_qwen_provider_cli.bb write: --settings-file, --model and --endpoint-url are all required"))
       (System/exit 2))
     (write-provider! {:settings-file settings-file :model model :endpoint-url endpoint-url
-                       :context-length context-length :role role})))
+                       :base-url base-url :context-length context-length :role role})))
 
 (-main (cli-args))
