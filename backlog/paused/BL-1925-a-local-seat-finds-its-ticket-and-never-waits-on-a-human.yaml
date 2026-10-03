@@ -1,0 +1,134 @@
+id: BL-1925
+title: "Stamp-off for hotfixes 55182a77c3, e69b66a68d and 7f95cdc139: a local-model seat is served its ticket's YAML path, is nudged when it asks the user a question, and has no tool that waits for a human in its pane"
+milestone: M8
+type: defect
+severity: high
+# high: the coder seat stalled on its first real parcel, asking a user who
+# is not there for the ticket, then blocking on ask_user_question -
+# observation 8 of the dogfood loop (intake loop step 2).
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: [BL-1920]
+mutation_cost: low
+# low: one regex and its guard, one path lookup and two text lines, four
+# names added to two settings lists - each with tests.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "three small additions beside unchanged code; nothing to refactor"
+  architect: "BL-1920's architect pass reviews the nudge heuristic; the path lookup and the exclude list move no boundary"
+  hardender: "Python, Babashka and shell have no mutation lane (BL-472) and none of the three writes state"
+  documenter: "BL-1924's documenter pass adds the served ACTION text, step 2 included, to the BL-1871 take-up how-to"
+
+# Not a claim of ownership over BL-1052's contract (BL-1251): the seat
+# launch feature whose settings writer and shim these hotfixes touch.
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes 55182a77c3, e69b66a68d and 7f95cdc139, landed under
+  the human's 2026-10-03 dogfood loop ("have specifier implementing them").
+  No choice is posed. FIRM: the review decides whether each change stands;
+  the coder never re-applies them; the NO_TASK guard stays whatever else
+  changes.
+
+invariants:
+  - "The shim never nudges a request whose last message is a tool result reading NO_TASK, nor a reply that says NO_TASK."
+  - "A local-model seat's written qwen settings exclude every tool that waits for a human answer in the pane."
+
+source: |
+  Root intake backlog/archive/INTAKE-coder2-tool-calls-20261003.md. The
+  human, via Cursor, 2026-10-03, verbatim (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 8 (specifier, from the human's pane screenshots, 2026-10-03
+  11:36-11:43Z): served "2) Implement BL-1916 from backlog/active/", the
+  coder read README.md and asked "Please provide the specific instructions
+  or tasks related to BL-1916", then "Could you please provide more
+  information about the task ...?"; nudged, it called ask_user_question and
+  the pane waited on "Waiting for user confirmation...".
+
+description: |
+  ## Status: three hotfixes landed the fix
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong
+
+  A served git_handoff named no ticket file, only "from backlog/active/". The
+  coder seat read README.md, then asked the user for the ticket. A question
+  is not an announcement, so BL-1920's nudge did not fire. Replayed from the
+  seat's own transcript with the nudge added: a tool call 3 of 3, every one
+  on a guessed backlog/active/BL-1916.md. And with the nudge live, the call
+  the seat chose was ask_user_question. qwen 0.24.7 declares all 13 of its
+  tools whatever coreTools says, so that tool and the plan-mode pair were
+  always there.
+
+  ## What the hotfixes changed
+
+  - 55182a77c3, local_model_tool_call_shim.py: needs_nudge also fires on a
+    reply that asks the user for input ("could/can/would you", "please
+    provide/clarify/specify/confirm/share/tell/let me know"). The NO_TASK
+    guard and the one-nudge limit are unchanged.
+  - e69b66a68d, handoff_lib.bb and ready_for_next_task.bb: active-ticket-file
+    finds <root>/backlog/active/<id>-*.yaml (or <id>.yaml), absolute. A served
+    git_handoff's step 2 reads "2) Read <path> with read_file - it is <id>'s
+    spec - then implement it with your edit/test tools."; a Work note adds
+    "The ticket it names is <path> - read it with read_file.". Without a file
+    the text is as before.
+  - 7f95cdc139, swarmforge.sh write_local_model_qwen_settings: excludeTools
+    and tools.exclude also name ask_user_question, enter_plan_mode,
+    exit_plan_mode and propose_goal. Checked live: 9 tools declared after
+    the respawn, 13 before.
+
+  Live result (11:46Z): the respawned seat read its card, ran
+  ready_for_next.sh, read the named BL-1916 YAML, then the Modelfile under
+  review.
+
+  ## What each stage checks
+
+  - Coder: each hotfix against the description and both invariants, and
+    the new tests (shim test_a_question_to_the_user_is_nudged; the
+    active-ticket-file and step-2 cases in handoff_lib_test_runner.bb;
+    test_bl1829_local_model_qwen_settings.sh's longer list). Is the
+    question regex too wide? A finished seat that ends "Can you merge
+    this?" gets one nudge, and the NO_TASK guard ends it. Evidence:
+    backlog/evidence/BL-1925-coder-<date>.md.
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_bl1917_local_model_seat_url.sh` prints ALL PASS
+     (its case 0 runs the shim's unit cases, 24 at mint).
+  2. `bb swarmforge/scripts/test/handoff_lib_test_runner.bb` ends "ALL TESTS PASSED".
+  3. `bash swarmforge/scripts/test/test_bl1829_local_model_qwen_settings.sh` ends "ALL PASS".
+  4. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`
+     passes (measured at mint on HEAD 7f95cdc139: 9 of 9 ok).
+  5. In the coder seat's qwen transcripts after 2026-10-03 11:45:51Z, no
+     ask_user_question call appears, and shim.log's tools= count for the
+     coder is 9.
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 8 of the dogfood loop.
+    One stamp-off for three SHAs of one observation (the BL-1905 shape).
+    depends_on BL-1920: its architect pass judges the nudge heuristic that
+    55182a77c3 widens.
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - Live: shim restarted onto 55182a77c3 at 11:43:37Z; the coder worktree
+    fast-forwarded onto e69b66a68d (no coder commits on its line), its
+    generated .qwen/settings.json patched to 7f95cdc139's list, and the
+    pane respawned at 11:45:51Z. The coder2 worktree's settings were left
+    alone (that seat is held down); its next launch writes the new list.
+  - Seen, not fixed here: the PAYLOAD line "Re-read your role and
+    constitution." sent one session grepping all *.prompt files for
+    role|constitution, against its card's "do NOT read" rule.
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1925; that file
+    carries the human's uncommitted edits, so it was left alone.

@@ -783,3 +783,24 @@
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
+- commit: 55182a77c3
+  subject: "Hotfix: a local-model seat that stops to ask the user a question is nudged to use its tools"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1925
+  human_decision: null
+  decided_at: null
+- commit: e69b66a68d
+  subject: "Hotfix: a served parcel names its ticket's YAML file instead of 'from backlog/active/'"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1925
+  human_decision: null
+  decided_at: null
+- commit: 7f95cdc139
+  subject: "Hotfix: a local-model seat is never given a tool that waits for a human in its pane"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1925
+  human_decision: null
+  decided_at: null

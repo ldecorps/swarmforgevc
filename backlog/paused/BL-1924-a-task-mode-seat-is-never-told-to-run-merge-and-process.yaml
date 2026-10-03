@@ -92,7 +92,9 @@ description: |
     backlog/evidence/BL-1924-coder-<date>.md.
   - Documenter: docs/how-to/BL-1871-parcel-line-take-up.md shows the
     PARCEL_LINE lines but not the ACTION text served under them; add what
-    a task-mode seat is told after a move, a stay, and a refusal.
+    a task-mode seat is told after a move, a stay, and a refusal, including
+    step 2's named ticket file (e69b66a68d, reviewed under BL-1925, which
+    leaves its documentation to this pass).
 
 qa_e2e_procedure: |
   1. `bb swarmforge/scripts/test/handoff_lib_test_runner.bb` ends "ALL TESTS PASSED".
