@@ -1121,6 +1121,26 @@
                (str/includes? (with-out-str (handoff-lib/print-task gh {:task-mode? true :take-up :moved}))
                               "3) Commit, git_handoff to the next role")))
 
+;; ── a bounce's task header carries its reason after the id (2026-10-03) ──
+(let [root (mk-tmp-dir)
+      active (fs/path root "backlog" "active")
+      _ (fs/create-dirs active)
+      f (str (fs/path active "BL-9101-a-slug.yaml"))
+      gh (str (fs/path root "00_b_from_QA_to_coder_for_coder.handoff"))]
+  (spit f "id: BL-9101\n")
+  (assert= "leading-ticket-id: a bounce task name gives its id" "BL-9101" (handoff-lib/leading-ticket-id "BL-9101 [behavior: a reason]"))
+  (assert= "leading-ticket-id: a bare id is itself" "BL-9101" (handoff-lib/leading-ticket-id "BL-9101"))
+  (assert= "leading-ticket-id: a longer id is not cut short" nil (handoff-lib/leading-ticket-id "BL-9101x"))
+  (assert= "leading-ticket-id: nil for a non-id task" nil (handoff-lib/leading-ticket-id "demo-task"))
+  (assert= "active-ticket-file finds a bounced ticket's file" (str (fs/absolutize f))
+           (handoff-lib/active-ticket-file root "BL-9101 [behavior: a reason]"))
+  (spit gh (str (git-handoff-content "abcdef0123" "BL-9101 [behavior: a reason]") "merge_and_process QA abcdef0123\n"))
+  (let [out (with-redefs [handoff-lib/current-role (constantly "coder")]
+              (with-out-str (handoff-lib/print-task gh {:task-mode? true :take-up :moved :next-stage "QA"
+                                                        :ticket-file (handoff-lib/active-ticket-file root "BL-9101 [behavior: a reason]")})))]
+    (assert-true "print-task: a bounce's draft names the bare ticket id" (str/includes? out "\\ntask: BL-9101\\ncommit"))
+    (assert-false "print-task: a bounce's draft never carries the reason" (str/includes? out "task: BL-9101 ["))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")

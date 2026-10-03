@@ -1958,6 +1958,13 @@
           [(short-rev-fn object) nil]
           [nil (format "Header 'commit' must resolve to a commit; '%s' resolves to '%s'." commit object-type)])))))
 
+(defn leading-ticket-id
+  "The ticket id a task name starts with, or nil. A bounce's task header
+   carries its reason after the id - `BL-1858 [behavior: ...]` - and the
+   ticket file and the forward draft both want the bare id (2026-10-03)."
+  [task-name]
+  (some->> task-name str (re-find #"^[A-Za-z]+-\d+(?=$|\s)")))
+
 (defn active-ticket-file
   "The absolute path of `ticket-id`'s YAML under <root>/backlog/active/
    (<id>-<slug>.yaml, or <id>.yaml), or nil. print-task names it because a
@@ -1965,7 +1972,7 @@
    user for the ticket, and when nudged guessed backlog/active/<id>.md
    (2026-10-03)."
   [root ticket-id]
-  (when (and root ticket-id (re-matches #"[A-Za-z]+-\d+" (str ticket-id)))
+  (when-let [ticket-id (and root (leading-ticket-id ticket-id))]
     (let [dir (fs/path (str root) "backlog" "active")]
       (when (fs/directory? dir)
         (->> (concat (fs/glob dir (str ticket-id "-*.yaml")) [(fs/path dir (str ticket-id ".yaml"))])
@@ -2026,7 +2033,7 @@
         (let [stage (first (str/split (str (current-role)) #"@"))]
           (println (str "3) Commit only the paths you changed - `git add <path>` for each, never `git add .` - with a message that ends `By " stage ".`"))
           (println (str "4) Forward it to " next-stage " (the stage after yours in " task-name "'s required_stages). After the commit, run:"))
-          (println (str "   " (forward-draft-command next-stage stage task-name)))
+          (println (str "   " (forward-draft-command next-stage stage (or (leading-ticket-id task-name) task-name))))
           (println "   then run: swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt")
           (println "   git_handoff is the draft's type, not a git command. If it prints AUDIT_REQUIRED, check your work and run that same command again.")
           (println "5) Then run: swarmforge/scripts/done_with_current.sh   (no arguments)"))
