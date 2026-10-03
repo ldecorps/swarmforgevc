@@ -1019,7 +1019,6 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   `VERIFICATION_DEBT_UNOWNED`, send the specifier a `note` (priority
   `00`) naming the category, then carry on. When a row is owed and when
   it is not: `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
-  The script ships with BL-1782. Until it lands there is nothing to record.
 - **Your soft duty (the human's "core responsibility of the lean
   coordinator", 2026-09-26).** At every closing ceremony, and whenever the
   effective depth reads 1 on the verification-debt signal (BL-1784), run

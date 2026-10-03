@@ -378,4 +378,3 @@ You are the architect.
   `VERIFICATION_DEBT_UNOWNED`, send the specifier a `note` (priority
   `00`) naming the category, then carry on. When a row is owed and when
   it is not: `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
-  The script ships with BL-1782. Until it lands there is nothing to record.

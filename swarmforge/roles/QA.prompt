@@ -946,7 +946,6 @@ You are QA.
   `VERIFICATION_DEBT_UNOWNED`, send the specifier a `note` (priority
   `00`) naming the category, then carry on. When a row is owed and when
   it is not: `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
-  The script ships with BL-1782. Until it lands there is nothing to record.
 - Your commonest case has a category already: deciding by hand which
   paths or commits belong to the landed ticket (the BL-1711 pre-trust
   grep, a condition (g) tip-pure build after LAND_ESCALATE) is

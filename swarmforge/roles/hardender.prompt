@@ -2643,7 +2643,6 @@ You are the hardender.
   `VERIFICATION_DEBT_UNOWNED`, send the specifier a `note` (priority
   `00`) naming the category, then carry on. When a row is owed and when
   it is not: `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
-  The script ships with BL-1782. Until it lands there is nothing to record.
 
 ## Ancestry checks use `git merge-base --is-ancestor`, never `git rev-parse` (hardener rule_proposal, 2026-09-29)
 - Ask "is A an ancestor of B?" only as `git merge-base --is-ancestor A B`

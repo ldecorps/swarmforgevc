@@ -124,4 +124,8 @@ wake-up, or run `ready_for_next.sh` once — never poll.
   `VERIFICATION_DEBT_UNOWNED`, send the specifier a `note` (priority
   `00`) naming the category, then carry on. When a row is owed and when
   it is not: `swarmforge/constitution/articles/reference/verification-debt-ledger-2026-09-26.md`.
-  The script ships with BL-1782. Until it lands there is nothing to record.
+  Recording is not a lane breach: your lane binds your tip, the commits
+  QA lands from your branch (check_art_director_tip.sh). The recorder
+  writes and commits on the master checkout itself and never touches
+  your branch. Never point it at your own worktree: that puts backlog/
+  into your tip, and the tip check refuses it (note 000027, 2026-10-03).
