@@ -217,3 +217,21 @@ back in process and respawned the seat at 17:24:37Z.
 gets past its window-gate detour; qwen2.5 could not. QA's verdict on
 b0a90a38d2 is pending: the evening control pause (16:00:18Z to 00:00Z)
 holds QA's claim.
+
+## QA's verdict on iq3's BL-1916 rework (2026-10-03 ~17:59Z)
+
+QA note 003783: "A/B iq3 BL-1916 retry: D1-D3 fixed, QA NONE c39783d9b3,
+land queued". iq3's b0a90a38d2 passed QA with no defects; the land is queued.
+
+| | qwen2.5 on BL-1916's bounce | iq3 on BL-1916's bounce |
+|---|---|---|
+| QA inventory on its forward | 5 defects (D1-D3 unfixed, a committed venv, an unrelated pytest file) | NONE |
+| what it committed | 1,020 junk files (10aaa15e97) | only the two evidence paths (b0a90a38d2) |
+| wrong forwards | 1 (a stale BL-1858 draft, to the hardender) | 0 |
+| harness faults hit | 4096 window (fixed earlier), runaway reply | compaction dead zone at 49152 (ff104fc258, d65a268de5) |
+
+The run is not clean on wall time: iq3's attempt 1 lost 2h44m to the
+dead-zone harness fault and to a window-gate detour, and its finish came in
+two sessions (3.5 min of D1/D2, then 10.3 min to commit and forward after
+the specifier restored the stashed edits). On the bounce itself, judged by
+QA, iq3 passes and qwen2.5 does not. BL-1917 is iq3's next parcel.
