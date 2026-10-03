@@ -132,3 +132,5 @@ notes: |
     the pane respawned at 11:01; the shim's first request came at 11:01:25.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1917; that file
     carries the human's uncommitted edits, so it was left alone.
+
+assigned_to: coder
