@@ -1,0 +1,80 @@
+id: BL-1922
+title: "Stamp-off for hotfix 3c03fb2e4f: confirmPoleAloneOutcomeShapes.test.js spawns vitest twice, not three times (its absolute-path case checks resolveConfirmedFile), so it fits the 7 s per-file budget with headroom where QA measured 7.1 s alone"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is a broken safety signal (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: one test file; no production code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a small test-side change; nothing to refactor"
+  architect: "no production code or design surface"
+  hardender: "test-side only; nothing to mutate"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-1721's contract (BL-1251): the feature
+# whose confirmation outcomes this test file exercises, as BL-1893's did.
+acceptance: specs/features/BL-1721-a-failed-pole-confirmation-is-said-and-retried-once.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 3c03fb2e4f under the human's 2026-10-01 directive.
+  No choice is posed. FIRM: no production code changed; the success and
+  no-entry cases keep their real vitest spawns; the review decides whether
+  the change stands.
+
+invariants: []
+
+source: |
+  QA note 003772 (2026-10-03 10:49Z), verbatim: "unowned-red
+  confirmPoleAloneOutcomeShapes.test.js alone 7.1s > 7.0s budget". The
+  file's previous cut (hotfix 8ed4173ce4, four spawns to three) was
+  stamped by BL-1893, now closed, so the overrun had no owner.
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 3c03fb2e4f landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  The target file the test confirms is an empty test, so each
+  confirmPoleAlone call costs vitest's own startup, about 2 s on a loaded
+  host. The third test (an absolute path resolves like its repo-relative
+  form) now checks resolveConfirmedFile, confirmPoleAlone's only path
+  handling: the spawn's --dir and file name come from that answer and
+  nothing else, so equal answers mean the same spawn, which the first test
+  runs for real. The roots come from the module's own location, as the
+  module computes them, so the check holds in a Stryker sandbox (BL-1761).
+  Two spawns remain: the success case and the no-entry case.
+
+  ## What the coder checks
+
+  - The test against the description; resolveConfirmedFile is the only
+    path handling between the argument and the spawn (scripts/
+    recordTestDuration.js).
+  - The file alone: `npx vitest run test/confirmPoleAloneOutcomeShapes.test.js`
+    passes 3/3. Evidence: backlog/evidence/BL-1922-coder-<date>.md.
+
+qa_e2e_procedure: |
+  1. Read confirmPoleAloneOutcomeShapes.test.js's row from the gather's
+     npm test: it passes, and its per-file duration is under 7000 ms; the
+     lane reports no new-pole for it.
+  2. `grep -c confirmPoleAloneOutcomeShapes backlog/suite-poles.tsv` is 0.
+
+notes: |
+  - Minted 2026-10-03 by the specifier under the hotfix-then-stamp-off
+    directive. Measured at mint, alone at a 1-minute load of about 4.5:
+    before 3.30 s and 2.98 s, after 1.97 s and 1.72 s. QA's 7.1 s was on a
+    busier host.
+  - No register row named this file (standing-reds.tsv, suite-poles.tsv),
+    so the hotfix removed none.

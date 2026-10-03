@@ -6,7 +6,8 @@ severity: medium
 # medium: real and visible (a tile's age or second slug line is cut off on
 # a phone at nine or ten seats), contained to the live grid's layout; no
 # data is wrong and the fullscreen pane still shows everything.
-status: todo
+status: done
+closed_as: superseded-by-BL-1858
 epic: swarmforge-console
 priority: 20
 depends_on: [BL-1858]
@@ -22,7 +23,7 @@ stage_skip_reasons:
   architect: "CSS inside the existing style block; no boundary moves"
   documenter: "no living doc describes the grid's spacing; the art-director's inventory is updated at sign-off"
 
-acceptance: specs/features/BL-1921-a-nine-or-ten-tile-phone-grid-shows-every-tiles-full-head.feature
+# acceptance (removed unbuilt at retirement, 2026-10-03): specs/features/BL-1921-a-nine-or-ten-tile-phone-grid-shows-every-tiles-full-head.feature
 
 # Handler pin only (BL-233, BL-1371): the scenarios read the page the real
 # residentSpyUiHtml.ts renders, the live consumer already (BL-1235).
@@ -100,3 +101,13 @@ notes: |
     epic waits until the local-LLM push ends.
   - The full-forge pack staffs nine seats today (coder@2 is commented
     out), so the fifth phone row is live now, not only at ten.
+  - [2026-10-03] RETIRED the same pass it was minted, closed_as
+    superseded-by-BL-1858. QA's BL-1858 bounce (a2217a726d) already lists
+    this as D3, and BL-1858's own ticket names the edge ("the model line's
+    wrap on a 10-tile phone grid"), so the fix is in BL-1858's scope and
+    passing BL-1858 without it would pass a known in-scope defect. QA asked
+    the specifier to choose between dropping D3 and retiring this ticket.
+    D3 rides the bounce, and QA closes it on a fresh art-director sign-off.
+    The feature file is removed unbuilt; its scenarios were not moved into
+    BL-1858's feature, because that would add step-handler work to an
+    in-flight rework.
