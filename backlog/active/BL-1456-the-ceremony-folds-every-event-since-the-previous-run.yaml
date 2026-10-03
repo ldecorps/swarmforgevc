@@ -222,3 +222,5 @@ notes: |
   specifier with only its two determinism candidates. The premise is
   unchanged (the fold is by UTC date) and only worse, so the scenarios
   stand as written. deprecate-check: allow.
+
+assigned_to: coder
