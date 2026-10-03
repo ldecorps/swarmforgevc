@@ -17,7 +17,10 @@ stage_skip_reasons:
   cleaner: "medium envelope; it reuses land_step_lib's existing row rules rather than adding new code to tidy"
 acceptance: specs/features/BL-1915-a-tickets-own-register-rows-leave-main-when-it-closes.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - the commit that closes the ticket removes its rows, so a land is only a merge (recommended)
+ruling_provenance: tapped
 approval_context: >
   The first slice BL-1870 names before the land step's rebuild machinery
   can be deleted. FIRM - which rows leave (the closing ticket's own, never
