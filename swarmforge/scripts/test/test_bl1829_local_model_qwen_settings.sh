@@ -60,7 +60,7 @@ print("autoCompactThreshold" in d.get("context", {}))
 pass "BL-1840: no context.autoCompactThreshold in the written settings"
 
 CORE_EXPECTED='["run_shell_command", "read_file", "write_file", "edit", "glob", "grep_search"]'
-EXCLUDE_EXPECTED='["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal"]'
+EXCLUDE_EXPECTED='["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal", "ask_user_question", "enter_plan_mode", "exit_plan_mode", "propose_goal"]'
 
 read_node() {
   python3 -c "
@@ -81,12 +81,12 @@ check_eq() {
 
 check_eq "flat coreTools names exactly the six loop tools" "$CORE_EXPECTED" "$(read_node coreTools)"
 check_eq "nested tools.core names exactly the six loop tools" "$CORE_EXPECTED" "$(read_node tools.core)"
-check_eq "flat excludeTools names the twelve always-on extras" "$EXCLUDE_EXPECTED" "$(read_node excludeTools)"
-check_eq "nested tools.exclude names the twelve always-on extras" "$EXCLUDE_EXPECTED" "$(read_node tools.exclude)"
+check_eq "flat excludeTools names the always-on extras and the four tools that wait for a human" "$EXCLUDE_EXPECTED" "$(read_node excludeTools)"
+check_eq "nested tools.exclude names the always-on extras and the four tools that wait for a human" "$EXCLUDE_EXPECTED" "$(read_node tools.exclude)"
 
 # A tool named neither core nor excluded is untested territory this
 # ticket does not rely on - every one of the six loop tools must appear
-# in coreTools and NOT in excludeTools (and vice versa for the twelve).
+# in coreTools and NOT in excludeTools (and vice versa for the excluded).
 OVERLAP="$(python3 -c '
 import json
 d = json.load(open("'"$SETTINGS"'"))

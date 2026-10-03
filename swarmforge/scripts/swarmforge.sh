@@ -2108,6 +2108,11 @@ EOF
 # real fix is the launch's window gate (BL-1840's own
 # local_model_window_gate_lib.bb), which refuses a served window whose
 # trigger is below what 32768 gives, before any pane starts.
+# 2026-10-03: qwen 0.24.7 declares all 13 of its tools to the model whatever
+# coreTools says, so the exclude list is what removes one. ask_user_question,
+# enter_plan_mode, exit_plan_mode and propose_goal each wait for a human in
+# the pane: a nudged coder seat called ask_user_question and sat on "Waiting
+# for user confirmation..." with no one there to answer.
 write_local_model_qwen_settings() {
   local worktree="$1"
   local model="${2:-}"
@@ -2121,10 +2126,10 @@ write_local_model_qwen_settings() {
   cat > "$worktree/.qwen/settings.json" <<'JSON'
 {
   "coreTools": ["run_shell_command", "read_file", "write_file", "edit", "glob", "grep_search"],
-  "excludeTools": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal"],
+  "excludeTools": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal", "ask_user_question", "enter_plan_mode", "exit_plan_mode", "propose_goal"],
   "tools": {
     "core": ["run_shell_command", "read_file", "write_file", "edit", "glob", "grep_search"],
-    "exclude": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal"]
+    "exclude": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal", "ask_user_question", "enter_plan_mode", "exit_plan_mode", "propose_goal"]
   }
 }
 JSON
