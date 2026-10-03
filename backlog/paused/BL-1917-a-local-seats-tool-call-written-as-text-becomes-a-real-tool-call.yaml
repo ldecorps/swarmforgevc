@@ -1,0 +1,134 @@
+id: BL-1917
+title: "Stamp-off for hotfix 102d854f87: a local-model seat's tool call written as text (qwen2.5-coder's ```json fence) becomes a real tool call through a shim between qwen and Ollama, so the seat runs read_file and run_shell_command where it used to print the call and stall"
+milestone: M8
+type: defect
+severity: high
+# high: the seat could run no tool at all - the exact failure the human's
+# dogfood exercise exists to fix (intake loop step 2).
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: review of a landed stdlib-Python shim, its launch wiring and tests.
+slice_size_envelope: low
+required_stages: [coder, architect, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a new module beside unchanged launch code; nothing to deduplicate"
+  hardender: "Python and shell have no mutation lane (BL-472); the shim writes no durable state, only its log"
+
+# Not a claim of ownership over BL-1052's contract (BL-1251): the seat
+# launch feature whose loopback-endpoint and refusal scenarios the wiring
+# had to keep.
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 102d854f87, landed under the human's 2026-10-03
+  dogfood loop ("have specifier implementing them"). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it.
+
+invariants: []
+
+source: |
+  Root intake backlog/INTAKE-coder2-tool-calls-20261003.md (archived to
+  backlog/archive/ in this mint). The human, via Cursor, 2026-10-03, verbatim
+  (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 2 (the one the intake names): the coder pane printed
+  {"name": "read_file", "arguments": {...}} as a code block on its first
+  turn and stalled.
+
+description: |
+  ## Status: hotfix 102d854f87 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  qwen2.5-coder-14b writes its tool call as text. Replaying the coder
+  seat's captured first request: 5 of 5 replies were a ```json fence
+  naming read_file with the right arguments, at 4096 and at 32768 alike.
+  Ollama parses a reply into tool_calls only when it starts with the
+  template's <tool_call> tag, so qwen received plain content, printed it,
+  and the turn ended. A template without the tag parsed 0 of 5 real
+  replies, so the fix sits outside the model.
+
+  ## What the hotfix changed
+
+  - swarmforge/scripts/local_model_tool_call_shim.py (stdlib Python):
+    forwards every request to Ollama unchanged, except a chat completion
+    that declares tools. That one goes upstream unstreamed, and a fenced,
+    bare or <tool_call>-tagged JSON object naming a declared tool becomes
+    tool_calls; other text stays content. A streaming client gets SSE back,
+    with a keepalive comment while Ollama works. GET /shim/health names it.
+  - swarmforge.sh: local_model_seat_url gives a local-model seat the shim's
+    URL (SWARMFORGE_LOCAL_MODEL_SHIM_PORT, default 11439;
+    SWARMFORGE_LOCAL_MODEL_SHIM=off keeps the endpoint) and starts nothing;
+    the seat's pane script starts the shim (local_model_shim_start_line),
+    reusing one that answers. write_local_model_qwen_settings takes the
+    seat URL as an optional 6th argument.
+  - local_model_qwen_provider_cli.bb: --base-url sets the provider entry's
+    baseUrl; the window is still read from --endpoint-url. The provider
+    entry is what qwen uses, over OPENAI_BASE_URL.
+  - Tests: test_bl1917_local_model_seat_url.sh (standing; its case 0 runs
+    test_local_model_tool_call_shim.py).
+
+  ## What each stage checks
+
+  - Coder: the diff against the description; run
+    test_bl1917_local_model_seat_url.sh and BL-1052's feature; one live
+    check through the running shim (its log line for your own first turn
+    reads rewritten=1). Evidence: backlog/evidence/BL-1917-coder-<date>.md.
+  - Architect: a new process now sits in the seat's request path. Is the
+    pane-script start the right owner of its lifetime (babysitterd, the
+    ollama ancillary and BL-1711's crash restart all leave it alone), and
+    is a seat whose shim cannot take its port loud enough?
+  - Documenter: docs/diagrams/architecture.mmd draws the seat's path to
+    OLLAMA and its change-trigger fired (a new process in that path, a new
+    .swarmforge/local-model-shim/ state folder); update it.
+    docs/how-to/BL-1052-local-model-seat-launch.md says the seat targets
+    127.0.0.1:11434 directly; say it goes through the shim and how to turn
+    the shim off.
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_bl1917_local_model_seat_url.sh` prints ALL PASS (5 cases).
+  2. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`
+     passes (measured at mint: all ok).
+  3. `curl -s http://127.0.0.1:11439/shim/health` names local-model-tool-call-shim
+     and upstream http://127.0.0.1:11434/v1 while the coder seat is staffed.
+  4. `grep -c 'rewritten=1' .swarmforge/local-model-shim/shim.log` is at least 1:
+     the seat ran a tool the shim rewrote.
+  5. architecture.mmd shows the shim between the seat and OLLAMA; the BL-1052
+     how-to names the shim and SWARMFORGE_LOCAL_MODEL_SHIM=off.
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 2 of the dogfood loop in
+    backlog/INTAKE-coder2-tool-calls-20261003.md. Siblings BL-1916 (window)
+    and BL-1918 (kickoff).
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - Verified at mint: qwen 0.24.7 headless through the shim ran read_file
+    (/etc/hostname) and run_shell_command (ls /etc | wc -l, 172, the true
+    count). Features BL-1052, 1053, 1801, 1829, 1845, 1798, 1837, 1841,
+    1838, 1840, 1816, 1796, 1839, 1081 ok. BL-1560 scenario 16 failed in the
+    master checkout only because it reads that checkout's uncommitted
+    hotfix-ledger sweep state.
+  - First design started the shim while writing the launch script; about a
+    dozen step handlers drive the real write_role_launch_script against
+    fixtures, so each would have left a shim on port 11439. Moved to the
+    pane script before the commit.
+  - Live: the coder's launch script was regenerated with these changes and
+    the pane respawned at 11:01; the shim's first request came at 11:01:25.
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1917; that file
+    carries the human's uncommitted edits, so it was left alone.

@@ -727,3 +727,31 @@
   stamp_ticket: BL-1910
   human_decision: null
   decided_at: null
+- commit: e022e33baf
+  subject: "Hotfix: the local coder seat's model is served at its 32768 window, not Ollama's 4096 default"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1916
+  human_decision: null
+  decided_at: null
+- commit: 102d854f87
+  subject: "Hotfix: a local-model seat's tool call written as text becomes a real tool call"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1917
+  human_decision: null
+  decided_at: null
+- commit: f9c3e4e1da
+  subject: "Hotfix: a local-model seat's kickoff names the tool and the first command"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1918
+  human_decision: null
+  decided_at: null
+- commit: 0d44613b74
+  subject: "Hotfix: a local-model seat's history reaches the model with its own tool calls showing"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1919
+  human_decision: null
+  decided_at: null

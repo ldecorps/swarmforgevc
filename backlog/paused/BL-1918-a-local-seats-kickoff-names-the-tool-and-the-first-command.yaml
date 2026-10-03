@@ -1,0 +1,105 @@
+id: BL-1918
+title: "Stamp-off for hotfix f9c3e4e1da: a local-model seat's kickoff names the tool and the first command (\"Use read_file now to read <card>\"), where \"Read and obey every instruction in <card>\" got a prose reply asking for the card's contents on every replay"
+milestone: M8
+type: defect
+severity: high
+# high: the seat stalled on its first turn with every tool working - the
+# dogfood loop's third observation (intake loop step 2).
+status: todo
+epic: local-llm-swarm
+priority: 3
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one line of launch text in swarmforge.sh.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one launch line; nothing to refactor"
+  architect: "no component boundary moves; only the kickoff wording"
+  hardender: "shell launch text has no mutation lane (BL-472) and writes no state"
+  documenter: "no living doc quotes the local-model kickoff"
+
+# Not a claim of ownership over BL-1837's contract (BL-1251): the feature
+# that pins what the local-model kickoff may and may not say.
+acceptance: specs/features/BL-1837-a-local-model-seats-launch-hands-qwen-its-card-by-a-path-qwen-reads-verbatim.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix f9c3e4e1da, landed under the human's 2026-10-03
+  dogfood loop ("have specifier implementing them"). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it.
+
+invariants: []
+
+source: |
+  Root intake backlog/INTAKE-coder2-tool-calls-20261003.md (archived to
+  backlog/archive/ in this mint). The human, via Cursor, 2026-10-03, verbatim
+  (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 3 (specifier, 2026-10-03 11:01): with BL-1916 and BL-1917
+  live, the respawned coder answered its kickoff "Please provide the
+  contents of /home/carillon/swarmforgevc/.swarmforge/prompts/coder.md so I
+  can follow the instructions."
+
+description: |
+  ## Status: hotfix f9c3e4e1da landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  Replayed from a scratch copy of the seat's real interactive first request
+  (23483-character system prompt, 13 tools), the kickoff "Read and obey
+  every instruction in '<card>' (your card). Then begin your role loop"
+  got a prose reply every time: with 13 tools or the 6 loop tools, at
+  temperature 0, 0.1 and 0.3, and with a one-line system-prompt nudge.
+
+  ## What the hotfix changed
+
+  swarmforge.sh's local-model launch body now reads: "Use read_file now to
+  read '<card>' - it is your card, and obey every instruction in it. Its
+  loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT
+  at the worktree root)." Replayed with that text, read_file came back 8 of
+  8 times, and with the card returned as the tool result,
+  run_shell_command ./swarmforge/scripts/ready_for_next.sh came back 8 of 8
+  times. "obey every instruction in" stays because BL-1052's scenario 05
+  reads it; the line carries no "@" (BL-1837 scenario 01).
+
+  ## What the coder checks
+
+  - The launch line in the diff, and that the regenerated
+    .swarmforge/launch/coder.sh carries it.
+  - BL-1837's, BL-1845's and BL-1052's features pass.
+  - Your own first turn: did you call read_file on your card?
+    Evidence: backlog/evidence/BL-1918-coder-<date>.md.
+
+qa_e2e_procedure: |
+  1. `grep -c 'Use read_file now to read' .swarmforge/launch/coder.sh` is 1 while the coder is a local-model seat.
+  2. `node specs/pipeline/cli.js` on BL-1837's, BL-1845's and BL-1052's features:
+     each passes (measured at mint: all ok).
+  3. The coder pane's first turn after its last respawn shows "Read" of its
+     card (a ✓ Read line), not a request for the card's contents.
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 3 of the dogfood loop in
+    backlog/INTAKE-coder2-tool-calls-20261003.md. Siblings BL-1916 and
+    BL-1917.
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - Live: coder.sh regenerated and the pane respawned at 11:16:57. Turn 1
+    ran read_file on the card (shim log rewritten=1). Turn 2 announced
+    "I'll start by running ./swarmforge/scripts/ready_for_next.sh" with no
+    call, and did it again after handoffd's wake: that is observation 4,
+    not this ticket's.
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1918; that file
+    carries the human's uncommitted edits, so it was left alone.

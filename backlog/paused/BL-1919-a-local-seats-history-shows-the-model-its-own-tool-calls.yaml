@@ -1,0 +1,113 @@
+id: BL-1919
+title: "Stamp-off for hotfix 0d44613b74: a local-model seat's request history reaches the model with its own tool calls showing (the shim drops the text beside each call), where the template hid every call that had text beside it and the seat went on announcing actions instead of calling tools"
+milestone: M8
+type: defect
+severity: high
+# high: the seat stalled after every turn that carried text beside its
+# call - the dogfood loop's fourth observation (intake loop step 2).
+status: todo
+epic: local-llm-swarm
+priority: 4
+direction: queue-jump
+depends_on: [BL-1917]
+mutation_cost: low
+# low: one pure function in the landed shim, its call site and tests.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one function beside unchanged code; nothing to refactor"
+  architect: "no boundary moves; BL-1917's architect pass reviews the shim's place in the request path"
+  hardender: "Python has no mutation lane (BL-472) and the function writes no state"
+  documenter: "BL-1917's documenter pass describes the shim; this changes no documented behaviour"
+
+# Not a claim of ownership over BL-1052's contract (BL-1251): the seat
+# launch feature the shim's wiring keeps.
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 0d44613b74, landed under the human's 2026-10-03
+  dogfood loop ("have specifier implementing them"). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it.
+
+invariants: []
+
+source: |
+  Root intake backlog/INTAKE-coder2-tool-calls-20261003.md (archived to
+  backlog/archive/ in this mint). The human, via Cursor, 2026-10-03, verbatim
+  (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 4 (specifier, 2026-10-03 11:17): with BL-1916..BL-1918 live,
+  the coder ran read_file on its card, then twice answered "I'll start by
+  running ./swarmforge/scripts/ready_for_next.sh ..." with no call.
+
+description: |
+  ## Status: hotfix 0d44613b74 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  The model's chat template renders an assistant turn's tool calls only
+  when that turn has no text: `{{ if .Content }}{{ .Content }}{{- else if
+  .ToolCalls }}<tool_call>...`. BL-1917's shim keeps a reply's leftover
+  text ("I'll start by reading the card.") as content beside the rewritten
+  call, qwen replays that turn as history, and the model saw its own turns
+  as announcements with no calls. Replayed with the card already read:
+  that history ended in prose 3 of 4 times; the same history with the text
+  dropped ran ready_for_next.sh 4 of 4 times. A template that renders both
+  reached 3 of 4, so the fix sits in the shim.
+
+  ## What the hotfix changed
+
+  local_model_tool_call_shim.py: history_without_call_prose drops the text
+  of every assistant turn in the request that carries tool_calls, before
+  the request goes to Ollama. The reply qwen shows on the pane keeps its
+  text. Each log line gains history_stripped=<n>.
+
+  ## What the coder checks
+
+  - The function against the description, and that the reply side is
+    untouched.
+  - test_bl1917_local_model_seat_url.sh passes (its case 0 runs the shim's
+    16 unit cases).
+  - Your own session's shim log lines carry history_stripped.
+    Evidence: backlog/evidence/BL-1919-coder-<date>.md.
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_bl1917_local_model_seat_url.sh` prints ALL PASS.
+  2. `grep -c 'history_stripped=[1-9]' .swarmforge/local-model-shim/shim.log`
+     is at least 1 after the coder's last respawn.
+  3. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`
+     passes (measured at mint: all ok).
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 4 of the dogfood loop in
+    backlog/INTAKE-coder2-tool-calls-20261003.md. Siblings BL-1916..BL-1918.
+    depends_on BL-1917: this reviews a function inside BL-1917's shim.
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - Live: the running shim was stopped and the coder respawned at 11:29:26
+    so its pane script started the new shim. The seat then read its card,
+    ran ready_for_next.sh, completed QA's BL-1848 merge-up note with
+    done_with_current.sh (correct in task mode, BL-1871), and stalled on an
+    announcement once more ("I will now read the role and constitution").
+  - Next lever, measured but not landed: qwen 0.24.7's
+    model.skipNextSpeakerCheck (default true). Set false, qwen asks the
+    model who speaks next after a reply with no call and sends "Please
+    continue." when it is the model. One scratch replica with a stub
+    ready_for_next.sh idled correctly after NO_TASK. Not enabled live yet:
+    a NO_TASK spin trips handoffd's swarm-wide endless-loop stop.
+  - A shim code change needs the running shim restarted: ensure reuses any
+    healthy shim with the same upstream, whatever its version.
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1919; that file
+    carries the human's uncommitted edits, so it was left alone.

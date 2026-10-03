@@ -1,0 +1,108 @@
+id: BL-1916
+title: "Stamp-off for hotfix e022e33baf: the local coder seat's model (qwen2.5-coder-14b-q5km) is served at its 32768 window, where every seat request used to run at Ollama's 4096 default and lose all but its last 2050 tokens"
+milestone: M8
+type: defect
+severity: high
+# high: the seat could not see its own instructions - a live fault that
+# blocks the human's dogfood exercise outright (intake loop step 2).
+status: todo
+epic: local-llm-swarm
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one committed Modelfile; no code changed.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one config file; nothing to refactor"
+  architect: "no component boundary moves; the model tag and the seat's endpoint are unchanged"
+  hardender: "no production code changed, so nothing to mutate"
+  documenter: "the Modelfile's own header documents the why, apply and undo; no living doc describes the window"
+
+# Not a claim of ownership over BL-1838's contract (BL-1251): the feature
+# whose served-window read this hotfix makes answer again.
+acceptance: specs/features/BL-1838-a-local-model-seats-qwen-budgets-the-window-its-model-is-served-with.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix e022e33baf, landed under the human's 2026-10-03
+  dogfood loop ("have specifier implementing them"). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it.
+
+invariants: []
+
+source: |
+  Root intake backlog/INTAKE-coder2-tool-calls-20261003.md (archived to
+  backlog/archive/ in this mint). The human, via Cursor, 2026-10-03, verbatim
+  (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 1 of that loop (specifier, 2026-10-03 10:34): Ollama's
+  serve.log for the seat's real first request read "truncating input prompt
+  limit=2050 prompt=8310 keep=4 new=2050".
+
+description: |
+  ## Status: hotfix e022e33baf landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  The bare qwen2.5-coder-14b-q5km:latest tag carried no num_ctx, the
+  hand-started `ollama serve` sets no OLLAMA_CONTEXT_LENGTH, and qwen talks
+  to /v1, which takes no per-request num_ctx. So every seat request ran at
+  Ollama's 4096 default and Ollama kept only the last 2050 tokens of the
+  seat's 8310-token first request: most of qwen's own system prompt never
+  reached the model. The launch's window gate (BL-1801/BL-1840) read no
+  num_ctx, so it only warned, and BL-1838's provider entry was skipped for
+  the same reason.
+
+  ## What the hotfix changed
+
+  - swarmforge/packs/qwen2.5-coder-14b-q5km.Modelfile: FROM the bartowski
+    Q5_K_M tag, PARAMETER num_ctx 32768 (the model's native window), chat
+    template unchanged. Same shape as ista-iq3s-coder.Modelfile.
+  - Applied live with the file's own Apply line.
+
+  ## What the coder checks
+
+  - The Modelfile's FROM names the tag the seat ran before (`ollama show
+    qwen2.5-coder-14b-q5km:latest --modelfile`) and the template matches
+    the bartowski tag's.
+  - The served window now reads 32768 through the same function the launch
+    uses (local_model_window_gate_lib.bb's served-window), and BL-1838's
+    feature passes.
+  - Write the result to backlog/evidence/BL-1916-coder-<date>.md: NONE, or
+    one item per defect found.
+
+qa_e2e_procedure: |
+  1. `ollama show qwen2.5-coder-14b-q5km:latest --parameters` prints num_ctx 32768.
+  2. `grep 'truncating input prompt' .swarmforge/ollama/serve.log | tail -3`:
+     no line timed after the hotfix's apply (2026-10-03 10:38 local) names a
+     prompt of 8000 tokens or more from the coder seat.
+  3. `node specs/pipeline/cli.js specs/features/BL-1838-a-local-model-seats-qwen-budgets-the-window-its-model-is-served-with.feature`
+     passes (measured at mint: all ok).
+  4. The coder's evidence file exists and names this commit range.
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 1 of the dogfood loop in
+    backlog/INTAKE-coder2-tool-calls-20261003.md. Siblings BL-1917 (tool call
+    written as text) and BL-1918 (kickoff answered in prose).
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - The intake's own loop text says the specifier does not write the code;
+    the human's verbatim line says "have specifier implementing them", and
+    the seat cannot implement its own repair while it cannot run a tool. The
+    verbatim line governs (Article 5.3), so the fix landed as a hotfix and
+    this ticket is the review parcel the seat attempts next.
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1916; that file
+    carries the human's uncommitted edits, so it was left alone.
