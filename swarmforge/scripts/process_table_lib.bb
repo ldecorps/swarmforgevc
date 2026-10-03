@@ -102,23 +102,96 @@
       0)
     (catch Exception _ 0)))
 
+;; ── BL-1907: the host's adopter of last resort ──────────────────────────────
+;; An orphan is adopted by PID 1, or by the nearest CHILD SUBREAPER above it
+;; (prctl PR_SET_CHILD_SUBREAPER): WSL's per-session Relay /init, systemd
+;; --user. No /proc field names a subreaper, so the adopter is learned the
+;; way an orphan learns it: a short-lived probe is orphaned below this
+;; process and the pid that adopts it is read. A reaper and the processes
+;; it judges sit below the same subreaper, so they share the answer.
+
+(defn orphaned-by-parent?
+  "PURE. Whether a process with this parent reads orphaned: no parent, a
+   parent of PID 1, a dead parent, or a parent that is the host's adopter
+   (adopter-pid, nil when none was learned - then only today's PID 1 rule
+   applies)."
+  [{:keys [parent-pid parent-alive? adopter-pid]}]
+  (boolean
+   (or (nil? parent-pid)
+       (= 1 parent-pid)
+       (not parent-alive?)
+       (and adopter-pid (= adopter-pid parent-pid)))))
+
+(defn adopter-from-probe
+  "PURE. The adopter a probe teaches: the pid that parents it after its
+   starter exited. Nothing when the parent is unreadable, is still the
+   starter (not reparented), or is the reading process itself - a process
+   that is its own subreaper must never read its own children orphaned."
+  [{:keys [probe-ppid self-pid starter-pid]}]
+  (when (and probe-ppid (pos? probe-ppid) (not= probe-ppid self-pid) (not= probe-ppid starter-pid))
+    probe-ppid))
+
+(defn- start-instant [pid]
+  (try
+    (some-> (.orElse (java.lang.ProcessHandle/of (long pid)) nil) .info .startInstant (.orElse nil) str)
+    (catch Exception _ nil)))
+
+(defn- probe-adopter!
+  "Orphans a `sleep` below this process (its `sh` starter exits at once),
+   reads the pid that adopts it, then kills it. nil on any failure."
+  []
+  (try
+    (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! "sh" "-c" "sleep 30 </dev/null >/dev/null 2>&1 & echo \"$$ $!\"")
+          [starter probe] (map parse-long (str/split (str/trim (str out)) #"\s+"))]
+      (when (and (zero? exit) starter probe)
+        (when-let [ph (.orElse (java.lang.ProcessHandle/of (long probe)) nil)]
+          (try
+            (let [ppid (loop [i 0]
+                         (let [pp (some-> (.orElse (.parent ph) nil) .pid)]
+                           (if (and (= pp starter) (< i 50))
+                             (do (Thread/sleep 10) (recur (inc i)))
+                             pp)))]
+              (adopter-from-probe {:probe-ppid ppid
+                                   :self-pid (.pid (java.lang.ProcessHandle/current))
+                                   :starter-pid starter}))
+            (finally (.destroyForcibly ph))))))
+    (catch Exception _ nil)))
+
+(defonce ^:private adopter-cache (atom nil))
+
+(defn orphan-adopter-pid
+  "The pid that adopts this process's orphans (PID 1 or a child
+   subreaper), probed once and cached for the life of the process. The
+   cache is dropped when that pid has exited or been reused (a different
+   start instant), so a long-lived reaper never trusts a stale adopter."
+  []
+  (let [{:keys [pid start]} @adopter-cache]
+    (if (and pid (some? start) (= start (start-instant pid)))
+      pid
+      (let [fresh (probe-adopter!)]
+        (reset! adopter-cache (when fresh {:pid fresh :start (start-instant fresh)}))
+        fresh))))
+
 (defn parent-orphaned?
-  "True when pid has been reparented to init/launchd (ppid 1) or its
-   parent ProcessHandle is missing/dead. Disposable-root front-desk
-   bridge/bot children keep a living supervisor as parent while a test
-   is still running; PPID 1 means that supervisor already exited and
-   left them behind (the exact leftovers that bind host :8765 and trip
-   the production front-desk give-up email before the multi-hour age
-   gate would ever fire)."
+  "True when pid's parent is gone, dead, PID 1 (init/launchd), or the
+   host's adopter of last resort (orphan-adopter-pid: a child subreaper such
+   as WSL's Relay /init, BL-1907). Disposable-root front-desk bridge/bot
+   children keep a living supervisor as parent while a test is still
+   running; an adopted parent means that supervisor already exited and
+   left them behind (the exact leftovers that bind host :8765 and trip the
+   production front-desk give-up email before the multi-hour age gate
+   would ever fire). Never true for a process whose live starter is not the
+   adopter. A daemon the swarm detaches on purpose is parented the same
+   way, so each reaper's own candidate filter is what keeps it off one."
   [pid]
   (try
     (if-let [ph (.orElse (java.lang.ProcessHandle/of (long pid)) nil)]
-      (let [parent (.orElse (.parent ph) nil)]
-        (cond
-          (nil? parent) true
-          (= 1 (.pid parent)) true
-          (not (.isAlive parent)) true
-          :else false))
+      (let [parent (.orElse (.parent ph) nil)
+            parent-pid (some-> parent .pid)]
+        (orphaned-by-parent? {:parent-pid parent-pid
+                              :parent-alive? (boolean (some-> parent .isAlive))
+                              :adopter-pid (when (and parent-pid (not= 1 parent-pid) (.isAlive parent))
+                                             (orphan-adopter-pid))}))
       true)
     (catch Exception _ false)))
 
