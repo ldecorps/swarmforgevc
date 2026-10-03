@@ -138,5 +138,12 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+  2026-10-03 (specifier): scenario 02 amended in flight, at the coder
+  (coder note 000076). The pinned APS gherkin-parser drops a step
+  DataTable from its IR, so the table reached no handler and the coder
+  had to hardcode its rows. The rows are now three steps with the
+  numbers in their text, one step pattern; the numbers and the
+  expected readings are unchanged. The IR-DRY checker's three
+  possible-synonym findings are that one pattern, kept on purpose.
 
 assigned_to: coder

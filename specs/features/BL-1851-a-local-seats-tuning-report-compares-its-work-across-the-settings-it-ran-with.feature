@@ -25,11 +25,9 @@ Feature: BL-1851 A local seat's tuning report compares its work across the setti
 
   # BL-1851 a-group-prints-its-turn-numbers-02
   Scenario: a group prints its time to first token, prefill and decode speed, output and thinking
-    Given one group's requests recorded these numbers
-      | time to first token ms | duration ms | input tokens | output tokens | thinking tokens |
-      | 10000                  | 30000       | 12000        | 480           | 120             |
-      | 20000                  | 60000       | 16000        | 960           | 240             |
-      | 40000                  | 100000      | 24000        | 1200          | 600             |
+    Given a request in the group took 10000 ms to first token and 30000 ms in all, with 12000 input, 480 output and 120 thinking tokens
+    And a request in the group took 20000 ms to first token and 60000 ms in all, with 16000 input, 960 output and 240 thinking tokens
+    And a request in the group took 40000 ms to first token and 100000 ms in all, with 24000 input, 1200 output and 600 thinking tokens
     When the tuning report runs for "coder@iq3"
     Then the group reads median time to first token 20 s, prefill 800 tokens/s and decode 24 tokens/s
     And the group reads median output 960 tokens with thinking at 25% of output
