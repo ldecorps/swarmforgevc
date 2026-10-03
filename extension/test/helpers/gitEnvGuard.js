@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+
 // BL-1196: GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE inherited from an ambient
 // shell silently redirect ANY `git -C <cwd>` spawn onto whatever repo those
 // vars name, regardless of cwd - the exact shape that corrupted
@@ -29,4 +32,37 @@ function stripAmbientGitDirRedirect() {
   delete process.env.GIT_INDEX_FILE;
 }
 
-module.exports = { stripAmbientGitDirRedirect };
+// BL-1897: with TMPDIR inside a git checkout (the ./tmp workflow rule), every
+// fixture dir under it sits inside that checkout's work tree, and git
+// discovery from the fixture finds the checkout: config.test.js's
+// "non-git directory" bootstrap fixtures committed into QA's live branch (16
+// commits on 2026-10-02, 29 files replayed onto main). GIT_CEILING_DIRECTORIES
+// stops discovery before it climbs into os.tmpdir(), so a fixture is never
+// part of the checkout that holds it, while a fixture that runs `git init`
+// itself is still its own repository.
+
+// Pure: the colon-separated ceiling `current` with `dirs` appended, keeping
+// existing entries first, dropping empty entries and repeats (idempotent).
+function ceilingDirectoriesWith(current, dirs) {
+  const entries = [];
+  for (const d of [...String(current || '').split(':'), ...dirs]) {
+    if (d && !entries.includes(d)) entries.push(d);
+  }
+  return entries.join(':');
+}
+
+// Impure: adds `tmpdir` (default os.tmpdir()) and its real path to
+// process.env.GIT_CEILING_DIRECTORIES, which every spawned git inherits. Git
+// resolves a ceiling entry's symlinks itself. The real path is added too so
+// that the ceiling never depends on that resolution.
+function ceilGitDiscoveryAtTmpdir(tmpdir = os.tmpdir()) {
+  let real = tmpdir;
+  try {
+    real = fs.realpathSync(tmpdir);
+  } catch {
+    /* a missing tmpdir has no real path to add */
+  }
+  process.env.GIT_CEILING_DIRECTORIES = ceilingDirectoriesWith(process.env.GIT_CEILING_DIRECTORIES, [tmpdir, real]);
+}
+
+module.exports = { stripAmbientGitDirRedirect, ceilingDirectoriesWith, ceilGitDiscoveryAtTmpdir };

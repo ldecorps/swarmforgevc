@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { stripAmbientGitDirRedirect } = require('./helpers/gitEnvGuard');
+const { stripAmbientGitDirRedirect, ceilingDirectoriesWith, ceilGitDiscoveryAtTmpdir } = require('./helpers/gitEnvGuard');
 
 // BL-1196: the pure strip must remove an inherited ambient GIT_DIR/
 // GIT_WORK_TREE redirect so every test file's own local, unguarded
@@ -98,5 +98,50 @@ test('BL-1196 qa_e2e step 2: a plain unguarded git() spawn honors cwd, not an am
   } finally {
     if (savedDir === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = savedDir;
     if (savedWorkTree === undefined) delete process.env.GIT_WORK_TREE; else process.env.GIT_WORK_TREE = savedWorkTree;
+  }
+});
+
+// ── BL-1897: git discovery stops at os.tmpdir() ─────────────────────────────
+// With TMPDIR inside a checkout, a fixture dir under it was inside that
+// checkout's work tree, so the bootstrap's `rev-parse --is-inside-work-tree`
+// answered yes and committed the fixture into the live branch.
+
+test('ceilingDirectoriesWith adds the tmpdir and its real path to an unset ceiling', () => {
+  assert.equal(ceilingDirectoriesWith(undefined, ['/t/x', '/real/t/x']), '/t/x:/real/t/x');
+});
+
+test('ceilingDirectoriesWith keeps the entries already there, ahead of its own', () => {
+  assert.equal(ceilingDirectoriesWith('/a:/b', ['/t']), '/a:/b:/t');
+});
+
+test('ceilingDirectoriesWith never repeats an entry, so a second call changes nothing', () => {
+  const once = ceilingDirectoriesWith('/a', ['/t', '/t']);
+  assert.equal(once, '/a:/t');
+  assert.equal(ceilingDirectoriesWith(once, ['/t']), once);
+});
+
+test('ceilingDirectoriesWith drops empty entries it would otherwise carry', () => {
+  assert.equal(ceilingDirectoriesWith('', ['/t']), '/t');
+});
+
+test('ceilGitDiscoveryAtTmpdir: a fixture dir under a TMPDIR inside a checkout is not inside that work tree', () => {
+  const checkout = mkTmpDir('sfvc-bl1897-checkout-');
+  git(checkout, ['init', '-q']);
+  const tmpdir = path.join(checkout, 'tmp', 'unit');
+  const fixture = path.join(tmpdir, 'sfvc-bootstrap-x');
+  fs.mkdirSync(fixture, { recursive: true });
+  const inside = (env) => spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: fixture, encoding: 'utf8', env }).stdout.trim();
+  const saved = process.env.GIT_CEILING_DIRECTORIES;
+  try {
+    delete process.env.GIT_CEILING_DIRECTORIES;
+    assert.equal(inside(process.env), 'true', 'fixture precondition: without a ceiling the fixture reads as inside the checkout');
+    ceilGitDiscoveryAtTmpdir(tmpdir);
+    assert.notEqual(inside(process.env), 'true');
+    // A fixture that runs `git init` itself is still its own repository.
+    git(fixture, ['init', '-q']);
+    assert.equal(inside(process.env), 'true');
+  } finally {
+    if (saved === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+    else process.env.GIT_CEILING_DIRECTORIES = saved;
   }
 });

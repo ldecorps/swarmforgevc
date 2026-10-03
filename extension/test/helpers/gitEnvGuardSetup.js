@@ -7,6 +7,9 @@
 // so calling the strip here, unconditionally, at module load, closes the
 // ambient-GIT_DIR-redirect door for every current AND future local
 // `git(cwd, args)` helper in the file, with nothing to remember per file.
-const { stripAmbientGitDirRedirect } = require('./gitEnvGuard');
+const { stripAmbientGitDirRedirect, ceilGitDiscoveryAtTmpdir } = require('./gitEnvGuard');
 
 stripAmbientGitDirRedirect();
+// BL-1897: and git discovery never climbs out of os.tmpdir() into a
+// checkout that holds it (see gitEnvGuard.js).
+ceilGitDiscoveryAtTmpdir();
