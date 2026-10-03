@@ -2183,12 +2183,14 @@ write_role_launch_script() {
   local resume_check
   resume_check="$(cat <<RESUMECHECK
 RESUME_NOTE=""
+LOCAL_RESUME_NOTE=""
 if in_process_dir="\$(bb '$SCRIPT_DIR/mailbox_dir.bb' '$WORKING_DIR' '$role' in_process 2>/dev/null)" \\
     && [[ -n "\$in_process_dir" && -d "\$in_process_dir" ]] \\
     && find "\$in_process_dir" -mindepth 1 -maxdepth 1 \( -name '*.handoff' -o -name 'batch_*' \) -print -quit 2>/dev/null | grep -q .; then
   RESUME_NOTE='RESUME-ON-START: your inbox/in_process queue already holds a parcel from before this session started (a prior session claimed it and did not finish it). Run ./swarmforge/scripts/ready_for_next.sh as your very first action, before reading or doing anything else, and follow its output to resume it.
 
 '
+  LOCAL_RESUME_NOTE=' RESUME-ON-START: a parcel from an earlier session is already in your in_process queue. Read the card first; then ready_for_next.sh, your first command, serves that parcel again.'
 fi
 RESUMECHECK
 )"
@@ -2378,8 +2380,15 @@ RESUMECHECK
       # <card>", it called read_file 8 of 8 times, then ran
       # ready_for_next.sh 8 of 8 times once the card came back. "obey every
       # instruction in" stays: BL-1052's scenario 05 reads it.
+      # 2026-10-03: the resume note comes AFTER the card instruction, as
+      # LOCAL_RESUME_NOTE. RESUME_NOTE's "run ready_for_next.sh as your very
+      # first action, before reading or doing anything else" sent the seat
+      # straight to ready_for_next.sh 3 of 3 in replay, and the live seat
+      # never read its card that session - so never saw the handoff draft
+      # it then could not write. Card first, resume note after: read_file on
+      # the card 3 of 3.
       local qwen_cli="$(swarm_only_strip_seat_tier "$extra_cli")"
-      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\${RESUME_NOTE}Use read_file now to read '$prompt_file' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
+      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"Use read_file now to read '$prompt_file' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\${LOCAL_RESUME_NOTE}\""
       ;;
     *)
       # BL-1080: same Unsupported agent wording + how-to pointer as validate_agent.
