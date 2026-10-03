@@ -195,7 +195,7 @@ def history_without_call_prose(request: dict[str, Any]) -> tuple[dict[str, Any],
 
 _ANNOUNCE = re.compile(
     r"(?i)(?:^|[.!?:]\s+|\n)\s*(?:(?:now|next|first|then),?\s+)?"
-    r"(?:i\s+will|i'll|i\s+am\s+going\s+to|i'm\s+going\s+to|let\s+me)\b"
+    r"(?:i\s+will|i'll|i\s+am\s+going\s+to|i'm\s+going\s+to|let\s+me|let['’]s|let\s+us)\b"
 )
 NUDGE = "Call the tool now. Reply with the tool call only."
 

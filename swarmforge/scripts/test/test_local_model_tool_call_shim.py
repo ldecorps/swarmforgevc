@@ -131,6 +131,16 @@ class NudgeTests(unittest.TestCase):
         self.assertTrue(shim.needs_nudge({"messages": [self.WAKE]}, completion(self.ANNOUNCE)))
         self.assertTrue(shim.needs_nudge({"messages": [self.WAKE]}, completion("Done reading. Let me run it.")))
 
+    def test_a_lets_plan_is_nudged(self) -> None:
+        # The live coder seat's own words on 2026-10-03, each the last turn before a stall.
+        for text in ("It seems there are uncommitted changes in the repository that need to be addressed "
+                     "before proceeding with the new handoff mail. Let's commit the changes first and then "
+                     "run `ready_for_next.sh` again.\n\n1. Commit the uncommitted changes.\n2. Run "
+                     "`ready_for_next.sh` again.\n\nLet's proceed with these steps.",
+                     "Let’s add the entry.", "Here is the plan. Let us run the tests."):
+            self.assertTrue(shim.needs_nudge({"messages": [self.WAKE]}, completion(text)), text)
+        self.assertFalse(shim.needs_nudge({"messages": [self.WAKE]}, completion("The outlet's tests passed.")))
+
     def test_an_idle_seat_is_never_nudged(self) -> None:
         idle = {"messages": [{"role": "tool", "tool_call_id": "c1", "content": "NO_TASK"}]}
         self.assertFalse(shim.needs_nudge(idle, completion(self.ANNOUNCE)))
