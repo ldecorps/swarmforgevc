@@ -260,6 +260,11 @@
   reason: "is_qa_ancestor.sh single-hop bug: chain 9bb36c35dd<-328fa64f71<-d945e17a86 verified, d945e17a86 is a real QA-branch ancestor with no bounce veto; land-approval record added at 05:41Z"
   waived_at: 2026-09-20
 
+- key: pipeline-code-on-main-9bbd0f461ca45222be002b27a9518db3b72ad649
+  waived_by: coordinator
+  reason: "Standing-directive hotfix (amendment aa6dacc938): red-first, stamp-off second. Ledger entry records stamp_ticket BL-1910 (paused, ready for promotion) - that mint is the close-out per the 2026-10-01 directive."
+  waived_at: 2026-10-03
+
 - key: pipeline-code-on-main-9e90bf92a6dcd3a0772c54a3d976872162adb446
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
