@@ -123,6 +123,44 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual((n, out), (0, request))
 
 
+class NudgeTests(unittest.TestCase):
+    ANNOUNCE = "I will now run the ready_for_next.sh script to check for any new handoff mail."
+    WAKE = {"role": "user", "content": "You have new handoff mail. If idle, run ready_for_next.sh."}
+
+    def test_an_announcement_after_a_wake_is_nudged(self) -> None:
+        self.assertTrue(shim.needs_nudge({"messages": [self.WAKE]}, completion(self.ANNOUNCE)))
+        self.assertTrue(shim.needs_nudge({"messages": [self.WAKE]}, completion("Done reading. Let me run it.")))
+
+    def test_an_idle_seat_is_never_nudged(self) -> None:
+        idle = {"messages": [{"role": "tool", "tool_call_id": "c1", "content": "NO_TASK"}]}
+        self.assertFalse(shim.needs_nudge(idle, completion(self.ANNOUNCE)))
+        self.assertFalse(shim.needs_nudge({"messages": [self.WAKE]},
+                                          completion("NO_TASK. I will wait for a wake-up.")))
+
+    def test_calls_cut_off_replies_and_plain_statements_are_not_nudged(self) -> None:
+        native = [{"id": "c", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
+        cut = completion(self.ANNOUNCE)
+        cut["choices"][0]["finish_reason"] = "length"
+        for reply in (completion("", native), cut, completion("The parcel is complete and forwarded."),
+                      completion("")):
+            self.assertFalse(shim.needs_nudge({"messages": [self.WAKE]}, reply))
+
+    def test_the_nudged_call_joins_the_original_text(self) -> None:
+        call = [{"id": "c", "type": "function", "function": {"name": "run_shell_command", "arguments": "{}"}}]
+        merged, ok = shim.merge_nudged(completion(self.ANNOUNCE), completion("", call))
+        self.assertTrue(ok)
+        self.assertEqual(merged["choices"][0]["message"]["content"], self.ANNOUNCE)
+        self.assertEqual(merged["choices"][0]["message"]["tool_calls"], call)
+        self.assertEqual(merged["choices"][0]["finish_reason"], "tool_calls")
+        same, ok = shim.merge_nudged(completion(self.ANNOUNCE), completion("Still talking."))
+        self.assertEqual((ok, same["choices"][0]["message"]["content"]), (False, self.ANNOUNCE))
+
+    def test_the_nudged_request_ends_on_the_announcement_and_the_nudge(self) -> None:
+        out = shim.nudged_request({"messages": [self.WAKE]}, self.ANNOUNCE)
+        self.assertEqual(out["messages"][-2:], [{"role": "assistant", "content": self.ANNOUNCE},
+                                                {"role": "user", "content": shim.NUDGE}])
+
+
 class FakeOllama(BaseHTTPRequestHandler):
     seen: list = []
 
@@ -143,7 +181,11 @@ class FakeOllama(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         FakeOllama.seen.append((self.path, body))
-        self._reply(completion(FENCED))
+        last = (body.get("messages") or [{}])[-1]
+        if last.get("content") == "announce, please":
+            self._reply(completion("I will now run the ready_for_next.sh script."))
+        else:
+            self._reply(completion(FENCED))
 
 
 def serve(server: ThreadingHTTPServer) -> None:
@@ -192,6 +234,17 @@ class LiveShimTests(unittest.TestCase):
             {"role": "tool", "tool_call_id": "call_a", "content": "card"}]})
         _path, sent = FakeOllama.seen[-1]
         self.assertEqual(sent["messages"][1]["content"], "")
+
+    def test_an_announcement_is_nudged_once_into_a_call(self) -> None:
+        tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+        before = len(FakeOllama.seen)
+        out = json.loads(self.post({"model": "m", "tools": tools,
+                                    "messages": [{"role": "user", "content": "announce, please"}]}))
+        message = out["choices"][0]["message"]
+        self.assertEqual(message["content"], "I will now run the ready_for_next.sh script.")
+        self.assertEqual(message["tool_calls"][0]["function"]["name"], "read_file")
+        self.assertEqual(len(FakeOllama.seen) - before, 2)
+        self.assertEqual(FakeOllama.seen[-1][1]["messages"][-1], {"role": "user", "content": shim.NUDGE})
 
     def test_request_without_tools_and_other_paths_pass_through(self) -> None:
         out = json.loads(self.post({"model": "m", "messages": [{"role": "user", "content": "hi"}]}))

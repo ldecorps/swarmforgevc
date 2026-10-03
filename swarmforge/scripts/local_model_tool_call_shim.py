@@ -20,6 +20,8 @@ Going the other way, an assistant turn in the request history that carries
 tool_calls loses its text before it reaches Ollama (BL-1919): the template
 shows such a turn's calls only when it has no text, and a model shown its
 own turns as bare announcements goes on announcing instead of calling.
+And a reply that announces an action but calls no tool is asked once more,
+"Call the tool now." (BL-1920) - never when the seat is idle on NO_TASK.
 
 Usage:
   local_model_tool_call_shim.py serve  --port <n> --upstream <http://host:port/v1>
@@ -191,6 +193,53 @@ def history_without_call_prose(request: dict[str, Any]) -> tuple[dict[str, Any],
     return ({**request, "messages": kept}, stripped) if stripped else (request, 0)
 
 
+_ANNOUNCE = re.compile(
+    r"(?i)(?:^|[.!?:]\s+|\n)\s*(?:(?:now|next|first|then),?\s+)?"
+    r"(?:i\s+will|i'll|i\s+am\s+going\s+to|i'm\s+going\s+to|let\s+me)\b"
+)
+NUDGE = "Call the tool now. Reply with the tool call only."
+
+
+def needs_nudge(request: dict[str, Any], completion: dict[str, Any]) -> bool:
+    """True when the reply announces an action and calls no tool (BL-1920).
+
+    A seat that once ended a turn on "I will now run X" and no call saw that
+    turn in its history and kept announcing: 3 of 3 replays of the live
+    conversation. qwen's own "Please continue." still got prose 3 of 3;
+    this nudge got the call 3 of 3. Never when the request ends on a tool
+    result reading NO_TASK, or the reply itself says NO_TASK: an idle seat
+    nudged into ready_for_next.sh again would spin, and handoffd halts the
+    whole swarm on a NO_TASK spin."""
+    choice = (completion.get("choices") or [{}])[0] or {}
+    message = choice.get("message") or {}
+    if message.get("tool_calls") or choice.get("finish_reason") not in (None, "stop"):
+        return False
+    text = str(message.get("content") or "")
+    if not text.strip() or "NO_TASK" in text or not _ANNOUNCE.search(text):
+        return False
+    messages = request.get("messages") or []
+    last = messages[-1] if messages else {}
+    return not (isinstance(last, dict) and last.get("role") == "tool" and "NO_TASK" in str(last.get("content")))
+
+
+def nudged_request(request: dict[str, Any], text: str) -> dict[str, Any]:
+    """The request again, with the announcement as the model's turn and the nudge after it."""
+    return {**request, "messages": [*(request.get("messages") or []),
+                                    {"role": "assistant", "content": text}, {"role": "user", "content": NUDGE}]}
+
+
+def merge_nudged(original: dict[str, Any], nudged: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """The original reply's text with the nudged reply's tool calls, or the
+    original unchanged when the nudge got no call either."""
+    nudged_message = ((nudged.get("choices") or [{}])[0] or {}).get("message") or {}
+    if not nudged_message.get("tool_calls"):
+        return original, False
+    choice = original["choices"][0]
+    choice["message"] = {**(choice.get("message") or {}), "tool_calls": nudged_message["tool_calls"]}
+    choice["finish_reason"] = "tool_calls"
+    return original, True
+
+
 def completion_to_chunks(completion: dict[str, Any], include_usage: bool) -> list[dict[str, Any]]:
     """The chat.completion.chunk events a streaming client would have received."""
     base = {
@@ -321,23 +370,38 @@ class ShimHandler(BaseHTTPRequestHandler):
         except (urllib.error.URLError, OSError) as err:
             return 502, json.dumps({"error": {"message": f"{NAME}: upstream unreachable: {err}"}}).encode()
 
-    def _rewritten(self, request: dict[str, Any], status: int, raw: bytes, stripped: int = 0) -> tuple[int, Any]:
+    @staticmethod
+    def _parsed(status: int, raw: bytes) -> tuple[int, Any]:
         try:
-            payload = json.loads(raw or b"{}")
+            return status, json.loads(raw or b"{}")
         except ValueError:
-            payload = {"error": {"message": raw.decode(errors="replace")[:500]}}
-        rewritten = 0
+            return status, {"error": {"message": raw.decode(errors="replace")[:500]}}
+
+    def _complete(self, request: dict[str, Any]) -> tuple[int, Any]:
+        """One chat completion for the seat: history without text beside its
+        calls, text tool calls rewritten, and at most one nudge."""
+        names = declared_tool_names(request)
+        upstream_request, stripped = history_without_call_prose(request)
+        status, payload = self._parsed(*self._call_upstream(upstream_request))
+        rewritten, nudge = 0, "none"
         if status == 200 and isinstance(payload, dict):
-            payload, rewritten = rewrite_completion(payload, declared_tool_names(request))
+            payload, rewritten = rewrite_completion(payload, names)
+            if needs_nudge(upstream_request, payload):
+                text = str(payload["choices"][0]["message"].get("content") or "")
+                nudge_status, nudged = self._parsed(*self._call_upstream(nudged_request(upstream_request, text)))
+                ok = False
+                if nudge_status == 200 and isinstance(nudged, dict):
+                    nudged, _ = rewrite_completion(nudged, names)
+                    payload, ok = merge_nudged(payload, nudged)
+                nudge = "ok" if ok else "no-call"
         finish = ((payload.get("choices") or [{}])[0] or {}).get("finish_reason") if isinstance(payload, dict) else None
         _log(f"chat model={request.get('model')} status={status} tools={len(request.get('tools') or [])} "
-             f"history_stripped={stripped} rewritten={rewritten} finish={finish}")
+             f"history_stripped={stripped} rewritten={rewritten} nudge={nudge} finish={finish}")
         return status, payload
 
     def _shim_chat(self, request: dict[str, Any]) -> None:
-        upstream_request, stripped = history_without_call_prose(request)
         if not request.get("stream"):
-            status, payload = self._rewritten(request, *self._call_upstream(upstream_request), stripped)
+            status, payload = self._complete(request)
             self._send_json(status, payload)
             return
         self.send_response(200)
@@ -345,15 +409,15 @@ class ShimHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "close")
         self.end_headers()
-        box: dict[str, tuple[int, bytes]] = {}
-        worker = threading.Thread(target=lambda: box.setdefault("r", self._call_upstream(upstream_request)), daemon=True)
+        box: dict[str, tuple[int, Any]] = {}
+        worker = threading.Thread(target=lambda: box.setdefault("r", self._complete(request)), daemon=True)
         worker.start()
         while worker.is_alive():
             worker.join(self.keepalive_s)
             if worker.is_alive():
                 self.wfile.write(b": keepalive\n\n")
                 self.wfile.flush()
-        status, payload = self._rewritten(request, *box["r"], stripped)
+        status, payload = box["r"]
         if status != 200:
             error = payload.get("error") if isinstance(payload, dict) else None
             self.wfile.write(b"data: " + json.dumps({"error": error or {"message": str(payload)}}).encode() + b"\n\n")
