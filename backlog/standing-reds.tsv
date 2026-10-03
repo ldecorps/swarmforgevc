@@ -33,3 +33,4 @@
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
 hardening	extension/src/tools/emit-throttle-recommendation.ts,extension/src/tools/rework-observatory.ts,extension/src/tools/suboptimality-verdict-line.ts	BL-1874	2026-10-01	BL-1869's deferred mutation pass (cooldown after hotfix 51591aab4a); BL-1874's hardener pass discharges it
+acceptance	specs/features/BL-096-velocity-burndown-metrics.feature	BL-1937	2026-10-03	all 8 scenarios: no step handler matched (BL-096 closed 2026-07 unbound); QA note 003788 held BL-1861; not hotfixed: 8 scenarios incl. the token-gated /metrics route exceed a specifier sitting, and it is 1 of 55 (census on BL-1937)

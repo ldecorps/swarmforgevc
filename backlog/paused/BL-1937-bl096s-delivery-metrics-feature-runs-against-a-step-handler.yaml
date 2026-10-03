@@ -1,0 +1,114 @@
+id: BL-1937
+title: "BL-096's delivery-metrics feature runs against a step handler - all 8 of its scenarios fail on main with no step handler matched, because BL-096 closed in July without one, and QA held BL-1861 on it as an unowned standing red"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is high at first sighting (2026-09-05
+# amendment); it already held a QA-approved parcel (BL-1861, 2026-10-03).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: eight scenarios over a 632-line metrics module, one of them
+# through the bridge's token-gated /metrics route and the swarm-metrics CLI.
+slice_size_envelope: medium
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one new step-handler file beside unchanged code; nothing to deduplicate"
+  architect: "test-side only; no production boundary moves"
+  hardender: "test-side only and no durable write; the handler is the gate, there is no production code to mutate"
+  documenter: "no living doc describes the acceptance binding; BL-096's own docs are unchanged"
+
+# Not a claim of ownership over BL-096's contract (BL-1251): this ticket
+# binds the feature BL-096 left unbound, and changes none of its scenarios.
+acceptance: specs/features/BL-096-velocity-burndown-metrics.feature
+
+# The handler is discovered from its own file (BL-1371); this anchor keeps
+# it in the same parcel as the binding (BL-233).
+required_wiring:
+  - 'specs/pipeline/steps/bl096VelocityBurndownMetricsSteps.js::registerSteps::the handler is discovered by suffix and must land in this parcel'
+
+human_approval: approved
+approval_context: >
+  Owner of an unowned standing red QA raised on 2026-10-03 (note 003788).
+  No choice is posed. FIRM: the feature's scenarios are bound as written;
+  a scenario whose behaviour no longer exists is reported to the
+  specifier, never reworded.
+
+invariants:
+  - "No scenario text in BL-096's feature changes, and no production file under extension/src changes."
+  - "Every handler builds its history in a fixture repository under mkdtemp and never reads or writes this checkout's git, backlog or .swarmforge (BL-1390)."
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-096-velocity-burndown-metrics.feature`
+     at the parcel commit: `# pass 8 # fail 0`.
+  2. `git diff <parcel>^..<parcel> --stat`: only the new handler file (and
+     its evidence); no `.feature`, no `extension/src` path.
+  3. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
+     carries the row `acceptance  specs/features/BL-096-velocity-burndown-metrics.feature  BL-1937`.
+     After the land the row is gone (BL-1631 retires it); check on origin/main.
+
+source: |
+  QA note 003788, 2026-10-03 21:34Z, to specifier and coordinator:
+  "BL-1861 held: unowned-red BL-096 feature has no step handler (8/8 fail)".
+  QA evidence: backlog/evidence/BL-1861-QA-hold-unowned-red-20261003.md
+  (QA worktree, e3db81341c). Census of the class:
+  backlog/evidence/BL-1937-closed-tickets-features-with-no-step-handler-census-20261003.md.
+
+notes: |
+  Minted 2026-10-03 by the specifier on QA note 003788.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Not hotfixed in the same pass (2026-10-01 rule), for two reasons. Binding
+  eight scenarios, one through the token-gated bridge route, is more than
+  the specifier's sitting. And BL-096 is one of 55 closed tickets' features
+  with no step handler at all (census above); the other 54 sit on BL-541 as
+  a remaining slice, and their register posture is a question to the human.
+  The register row for BL-096's feature names this ticket, so the held
+  parcel can resume while this one is built.
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-096-velocity-burndown-metrics.feature` has eight
+  scenarios and no step handler. BL-111 wrote it as a living feature file
+  on 2026-07-09, BL-096 closed without a binding, and no handler for any of
+  its 31 step lines has ever existed (`git log -S` over specs/pipeline/ finds
+  none). Run, it fails 8/8 with "no step handler matched", deterministically.
+  QA ran it on 2026-10-03 while re-checking diagram-reading features for
+  BL-1861 and held that parcel on it.
+
+  The behaviour it describes is live:
+  - `extension/src/metrics/deliveryMetrics.ts` exports `computeVelocity`,
+    `computeBurndown`, `computeCycleTime`, `computeForecasts`,
+    `computeSuiteDurationTrend` and `computeDeliveryMetrics`;
+  - the bridge serves it on `/metrics` (`bridgeServer.ts`, the route near
+    line 2149);
+  - `extension/src/tools/swarm-metrics.ts` is the CLI over the same
+    `computeDeliveryMetrics`.
+
+  ## What is wanted
+
+  A step handler, `specs/pipeline/steps/bl096VelocityBurndownMetricsSteps.js`,
+  that binds every step of the feature as written, so the feature passes
+  8/8 against the shipped code.
+
+  ## How (direction, not mandate)
+
+  - Drive the compiled modules in-process (`extension/out/...`), the way
+    sibling handlers do. Feed the pure functions a fake history where the
+    module accepts one. Where a scenario needs real git (metrics-01's "git
+    records", metrics-05's "no file created or modified"), build the repo
+    under mkdtemp and prove it with `rev-parse --git-common-dir` before any
+    mutating git command.
+  - metrics-09's endpoint: reuse the bridge-server test seam an existing
+    bearer-token handler uses (e.g. `deviceRegistrySteps.js`) rather than
+    binding a port by hand.
+  - BL-096's step texts are generic ("When the metrics surface is
+    queried"). Register them with `defineScoped` under BL-096's `Feature:`
+    name, so they never answer another feature's steps (BL-1277). The
+    collision guard in the unit lane must stay green.
+  - If a scenario fails on its merits once bound, that is a real defect in
+    shipped behaviour. Send the specifier a note naming the scenario and
+    the observed value. Never edit the scenario to pass.
