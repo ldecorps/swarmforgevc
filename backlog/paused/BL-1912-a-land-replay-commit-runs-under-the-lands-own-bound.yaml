@@ -1,0 +1,111 @@
+id: BL-1912
+title: "A land-step replay commit runs under the land's own bound, not the generic 60 s subprocess wait, so a commit whose hooks need longer lands instead of escalating to QA as an entangled tip"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in the delivery machinery. Two of the 12 lander runs
+# since 02:09 on 2026-10-03 stopped with LAND_ESCALATE for it, and each
+# stop waits for QA (BL-1901: escalated 02:09, on main 03:19).
+status: todo
+epic: landing-is-a-merge
+priority: 4
+depends_on: []
+mutation_cost: low
+# low: one call site's bound and one refusal label in land_step_lib.bb.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one call site changes; nothing to refactor"
+  architect: "no boundary moves; the replay keeps its hooks and its stop-on-refusal behaviour"
+  hardender: "no durable write changes; the acceptance drives the real land step through a slow and a refusing hook"
+  documenter: "no living doc describes the replay commit's wait bound"
+acceptance: specs/features/BL-1912-a-land-replay-commit-is-not-cut-short-by-the-subprocess-wait.feature
+
+human_approval: approved
+approval_context: >
+  Defect in the land step, found by the specifier's BL-1870 merge-path
+  census. No choice is posed. FIRM: the replay's commit still runs every
+  hook and a refusal still stops the land; only the wait bound and the
+  name of a timeout change.
+
+invariants:
+  - "The replay never publishes a commit whose commit hooks did not run to completion and pass: no --no-verify, no hook skipped or short-circuited to make the commit fit a bound."
+  - "A replay commit that does not finish, for any reason, leaves origin/main untouched and pushes nothing."
+
+source: |
+  Specifier census, 2026-10-03:
+  backlog/evidence/BL-1870-merge-path-decline-census-20261003.md, cause 2.
+  Lander logs .swarmforge/lander/BL-1901-cd74fb9ca0.log (02:09) and
+  BL-1893-593e79cc91.log (05:41), both reading:
+  "land-step replay: commit refused for <id> - daemon-cycle-guard:
+  bounded-wait timeout after 60000ms" then "entangled tip - every ancestor
+  sibling ticket has already landed, but the tip-pure replay could not
+  complete cleanly; specifier adjudication needed."
+
+description: |
+  ## What is wrong
+
+  land_step_lib.bb's tip-pure replay commits through `git!`, which runs
+  every git command under `daemon-cycle-guard-lib/sh!` with the generic
+  `SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS` default of 60 s (the call is near
+  line 3259, `"commit" "-q" "-m" (str task-ticket-id ": tip-pure replay
+  ...")`). `git commit` runs the repository's pre-commit and commit-msg
+  hook chains. Measured on 2026-10-03: the replay commit of BL-1893's two
+  evidence files took 69 s at load average 14.3, with the property guard
+  skipping. So on a busy host the hooks alone can outlast the wait,
+  whatever the commit carries.
+
+  The timeout is then reported as a commit refusal and classified as an
+  entangled tip that needs specifier adjudication. The land stops with
+  exit 3 and waits for QA. Nothing is entangled, and there is nothing to
+  adjudicate.
+
+  ## What is wanted
+
+  - A replay whose commit hooks take longer than the generic subprocess
+    wait completes and lands.
+  - A commit hook's refusal still stops the land, with the hook's own words
+    in the log (unchanged).
+  - A replay commit that outlasts the land's own bound is reported as a
+    timeout that names the bound. It is never reported as an entangled tip
+    or a request for specifier adjudication.
+
+  ## How (direction, not mandate)
+
+  Give the replay commit a land-scale bound of its own, well above the
+  hooks' measured time (the lander already lets a whole land run an hour
+  before it reports it overdue, lander_lib.bb `overdue-ms`), with an env
+  seam the acceptance can shorten. Read a daemon-cycle-guard timeout as a
+  timeout in `replay-commit-refusal-reason` and in the escalation's
+  classification, so it never reaches the entangled-tip text. Leave every
+  other git call on the generic wait. The merge path's own `git merge`
+  (land_merge_path.bb `build!`) runs without the wrapper and is not in
+  scope.
+
+  ## Scope
+
+  swarmforge/scripts/land_step_lib.bb (the replay commit call, its refusal
+  reason, the escalation's classification), its bb test runner, the new
+  feature and its step handler bl1912LandReplayCommitBoundSteps.js.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each:
+  1. `node specs/pipeline/cli.js specs/features/BL-1912-a-land-replay-commit-is-not-cut-short-by-the-subprocess-wait.feature`:
+     01, 02, 03 ok.
+  2. `node specs/pipeline/cli.js specs/features/BL-1631-a-land-retires-the-landing-tickets-own-register-rows.feature`
+     and the BL-1901 feature: every scenario ok, as on main today.
+  3. The land step's bb test runner(s) the coder names in the evidence:
+     ALL PASS.
+  4. Read the evidence: the coder states the new bound's value and why it
+     sits above the measured 69 s with headroom.
+
+notes: |
+  Minted 2026-10-03 by the specifier from its BL-1870 merge-path census.
+  Not a standing red: no test is red; the fault is in the live land step.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Part of the human-prioritized epic (BL-1870, "Prioritize this work.",
+  2026-10-01). The epic later deletes the replay, but that waits on 20
+  consecutive merge-path lands, and until then every land-step run can
+  hit this.
+  Measured at mint (2026-10-03, main 41a07792fc, node specs/pipeline/cli.js):
+  BL-1901 feature 7 of 7 ok (21 s), BL-1631 5 of 5 ok, BL-1242 14 of 14 ok.

@@ -7,9 +7,9 @@ epic: landing-is-a-merge
 priority: 0
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-1871, BL-1872, BL-1887, BL-1892, BL-1895, BL-1898, BL-1900, BL-1901, BL-1902, BL-1903]
+decomposes_into: [BL-1871, BL-1872, BL-1887, BL-1892, BL-1895, BL-1898, BL-1900, BL-1901, BL-1902, BL-1903, BL-1912, BL-1913, BL-1914, BL-1915]
 remaining_slices:
-  - "Delete the land step's rebuild machinery: own-path replay, strays, abandoned_commits, the LAND_ESCALATE conditions, the post-land re-point and most of land_step_lib.bb. Mint it, with a census, once 20 consecutive land records name BL-1901's merge path. First move the registry pass (BL-1631 retire, BL-1604 restore) out of the land step, into the merge path or the coordinator's close, because BL-1901 declines every line that pass would change (amended 2026-10-02)"
+  - "Delete the land step's rebuild machinery: own-path replay, strays, abandoned_commits, the LAND_ESCALATE conditions, the post-land re-point and most of land_step_lib.bb. Mint it, with a census, once 20 consecutive land records name BL-1901's merge path. It depends_on BL-1913 (without it a line older than a deletion on main has no fallback) and BL-1915 (the registry pass's retire half leaves the land step); the restore half (BL-1604) is the merge path's to decline until then (amended 2026-10-03, census backlog/evidence/BL-1870-merge-path-decline-census-20261003.md)"
 mutation_cost: medium
 verification_category: merge-collateral-scope
 # 2026-10-02 (specifier, QA note 003679): the category's three rows are
@@ -96,3 +96,12 @@ notes: |
   of its paths still fire once BL-1901 runs, so minting it now would fail
   INVEST Estimable. BL-1900 (hotfix 099be7db00's stamp-off: QA approval
   reads the lander queue) belongs to the epic too.
+  2026-10-03 (specifier): census of the 14 lander runs since BL-1901
+  landed (backlog/evidence/BL-1870-merge-path-decline-census-20261003.md).
+  6 of 12 took the merge path, and the longest run was 3. Minted BL-1912
+  (replay commit cut short by the 60 s subprocess wait, 2 escalations),
+  BL-1913 (merge-deletion guard refuses origin/main's own deletions, 3
+  declines mislabelled as conflicts), BL-1914 (the decline names git's
+  reason) and BL-1915 (a ticket's own register rows leave at its close,
+  ruling A/B pending). Not ticketed: BL-1888's decline, a subject that
+  mentions other ids under BL-1901 invariant 1 (QA D2), deliberate.

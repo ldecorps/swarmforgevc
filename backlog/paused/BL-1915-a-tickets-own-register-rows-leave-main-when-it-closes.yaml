@@ -1,0 +1,147 @@
+id: BL-1915
+title: "A landed ticket's own register rows (standing reds, suite poles, property allowlist) leave main in the commit that closes it, so a line whose ticket owns a row lands on the merge path instead of being rebuilt by the land step"
+milestone: M8
+type: feature
+status: todo
+epic: landing-is-a-merge
+priority: 4
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: a register rewrite moves from the land step into close_ticket.sh
+# and the merge path's decline narrows; three registers, one accepted-pole
+# exception.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "medium envelope; it reuses land_step_lib's existing row rules rather than adding new code to tidy"
+acceptance: specs/features/BL-1915-a-tickets-own-register-rows-leave-main-when-it-closes.feature
+
+human_approval: pending
+approval_context: >
+  The first slice BL-1870 names before the land step's rebuild machinery
+  can be deleted. FIRM - which rows leave (the closing ticket's own, never
+  an accepted pole, never another open ticket's) is BL-1631's rule,
+  reused, not rewritten; the land step keeps retiring at land until the
+  deletion slice, and a second pass that finds nothing changes nothing;
+  the merge path still declines when the restore half (BL-1604) would
+  act. The choice is WHERE the closing ticket's rows leave main. The
+  feature file is written for A; under B, scenarios 02 and 03 move from
+  close_ticket.sh to the lander and BL-1901's scenario 04 stays.
+
+ruling_options:
+  - A - the commit that closes the ticket removes its rows, so a land is only a merge (recommended)
+  - B - the merge path removes them inside the land, as the land step does today
+
+ruling_tradeoffs:
+  - Pros - the land stays a git merge as ruling A on BL-1870 asked, and a row leaves in the same commit its ticket stops being open, so it is never unowned for a moment. Recommended because the close is where ownership ends. Cons - a row for a test that has turned green stays on main between the land and the close, usually minutes, and close_ticket.sh gains a step.
+  - Pros - rows leave main at the same moment as today and the close is untouched. Cons - the merge path edits the tree beyond the merge, so a land is again more than a merge, and the deletion slice then has to keep that rule alive in the merge path.
+
+invariants:
+  - "Only the closing ticket's own rows leave a register: another open ticket's row and an accepted pole row never do."
+  - "A ticket's own rows and its move to backlog/done/ reach main in one commit, so main never carries a row whose owner is closed because of this step."
+
+source: |
+  BL-1870 remaining_slices, verbatim: "First move the registry pass
+  (BL-1631 retire, BL-1604 restore) out of the land step, into the merge
+  path or the coordinator's close, because BL-1901 declines every line
+  that pass would change (amended 2026-10-02)".
+  The human, on BL-1870's assessment (relayed by QA as rule_proposal
+  003669, 2026-10-01), verbatim:
+
+  > Ok with the idea of landing deamon. Let specifier cook up something. Tell it to first assess if we got the while concept wrong? In my mind it should not be much more than a git merge.
+
+  Specifier census, 2026-10-03:
+  backlog/evidence/BL-1870-merge-path-decline-census-20261003.md, cause 3
+  (BL-1907's land, 07:05, "the land step's registry pass would change
+  backlog/standing-reds.tsv (retire 3, restore 0)").
+
+description: |
+  ## Why
+
+  BL-1631 has the land step retire every row the landing ticket owns in
+  backlog/standing-reds.tsv, backlog/suite-poles.tsv and
+  swarmforge/scripts/property_suite_standing_allowlist.tsv (land_step_lib
+  `registry-specs`, accepted poles excepted). BL-1901's merge path cannot,
+  so after QA spec-gap 003735 it declines every line whose ticket owns a
+  row and the land step rebuilds it. Every standing-red, pole and
+  allowlist owner therefore leaves the merge path, and BL-1870's deletion
+  slice cannot remove the land step while it still does this work.
+
+  ## What is wanted (ruling A)
+
+  - The merge path no longer declines a line because its ticket owns rows.
+    The land publishes the merge, and the rows stay on main.
+  - close_ticket.sh removes the closing ticket's own rows from each
+    register in the same commit that moves the ticket to backlog/done/.
+    It prints one line per removed row, as the land step's
+    REGISTER_ROW_RETIRED does.
+  - A row another open ticket owns, and an accepted pole row, stay.
+  - The merge path still declines when the restore half (BL-1604) would
+    act: a line that drops another open ticket's row.
+  - Retire BL-1901's scenario 04 ("a land never leaves the landing
+    ticket's own register row on origin/main"). Under A it is false.
+    Retire it, never reword it (BL-1006); BL-1915's scenario 01 is the
+    replacement. That feature carries the hardener's mutation stamp, so
+    the retirement rides BL-1915's parcel and is never made on main (BL-1385).
+
+  ## How (direction, not mandate)
+
+  Reuse land_step_lib's `rows-to-retire` and `registry-specs` (the merge
+  path already loads them) from a small bb helper that close_ticket.sh
+  calls before its commit, adding the rewritten registers to the same
+  commit_integrity_cli.bb `--path` list. Narrow land_merge_path.bb
+  `registry-decline` so that it reads only the restore half. A multi-id
+  close (Article 2.6) removes each id's rows.
+
+  ## Scope
+
+  swarmforge/scripts/close_ticket.sh, a helper it calls,
+  swarmforge/scripts/land_merge_path.bb and land_merge_path_lib.bb
+  (`registry-decline` and `registry-pass-changes`), their tests, the
+  BL-1901 feature (scenario 04 retired) and its step handler, the new
+  feature and its step handler bl1915OwnRowsLeaveAtCloseSteps.js. The
+  documenter updates the living docs that say the land removes a ticket's
+  rows (`grep -rln "BL-1631" docs/`).
+
+  ## Prose the specifier lands at activation (BL-798)
+
+  backlog/standing-reds.tsv's header ("the land step itself retires every
+  row whose owner is the landing ticket (BL-1631)... no other land removes
+  it"), specifier.prompt's "The owner's scenarios assert the row PRESENT
+  and OWNED" rule ("the land removes them"), and
+  articles/reference/standing-red-register-amendment-2026-09-05.md,
+  written as "Until BL-1915 lands" interims.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each:
+  1. `node specs/pipeline/cli.js specs/features/BL-1915-a-tickets-own-register-rows-leave-main-when-it-closes.feature`:
+     01, 02 (3 rows), 03 ok.
+  2. `node specs/pipeline/cli.js specs/features/BL-1901-a-clean-parcel-line-lands-as-a-merge-of-origin-main.feature`:
+     01, 02, 03, 05 ok, and scenario 04 is gone with a RETIRED comment.
+  3. `node specs/pipeline/cli.js specs/features/BL-1631-a-land-retires-the-landing-tickets-own-register-rows.feature`:
+     every scenario ok (the land step still retires until the deletion
+     slice).
+  4. close_ticket.sh's shell test and the merge path's bb test runner:
+     ALL PASS.
+  5. After the land, on the first real close of a ticket that owns a row:
+     `git show --stat <close commit>` lists both the ticket move and the
+     register(s), and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     prints `"unowned":[]`.
+
+notes: |
+  Minted 2026-10-03 by the specifier, the first of BL-1870's
+  remaining_slices, from the merge-path census.
+  human_approval is pending because a feature file needs the human's
+  review, and approval_context poses where the rows leave, so
+  ruling_options and ruling_tradeoffs are declared (BL-1300, BL-1531).
+  No required_wiring entry: scenarios 02 and 03 run the real
+  close_ticket.sh, the consumer itself, so the acceptance proves the call
+  site exists. Under ruling B the consumer is land_merge_path.bb, and the
+  scenarios name it there.
+  Pole rows: never let a ticket own a pole row for a file it will not make
+  fast. Today that row vanishes at land and, under A, at close; either way
+  the per-file gate then reads the file as a new pole (operator memory,
+  BL-1897 held by QA 003748).
+  Measured at mint (2026-10-03, main 41a07792fc, node specs/pipeline/cli.js):
+  BL-1901 feature 7 of 7 ok (21 s), BL-1631 5 of 5 ok, BL-1242 14 of 14 ok.
