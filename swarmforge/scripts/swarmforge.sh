@@ -2365,8 +2365,16 @@ RESUMECHECK
       # to go on and read the constitution/PIPELINE/role prompt up front,
       # which the compact-card shape and the hotfix's card rule exist to
       # avoid.
+      # BL-1918: the kickoff names the tool and the first command. Asked to
+      # "Read and obey every instruction in <card>", qwen2.5-coder-14b
+      # answered in prose ("Please provide the contents of ...") on every
+      # replay of the seat's real first request, at temperature 0, 0.1 and
+      # 0.3 and with a system-prompt nudge. Told "Use read_file now to read
+      # <card>", it called read_file 8 of 8 times, then ran
+      # ready_for_next.sh 8 of 8 times once the card came back. "obey every
+      # instruction in" stays: BL-1052's scenario 05 reads it.
       local qwen_cli="$(swarm_only_strip_seat_tier "$extra_cli")"
-      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (your card). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
+      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\${RESUME_NOTE}Use read_file now to read '$prompt_file' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
       ;;
     *)
       # BL-1080: same Unsupported agent wording + how-to pointer as validate_agent.
