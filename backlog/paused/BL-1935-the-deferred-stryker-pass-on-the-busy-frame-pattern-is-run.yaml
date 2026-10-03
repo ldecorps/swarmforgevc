@@ -1,0 +1,64 @@
+id: BL-1935
+title: "The deferred Stryker pass on hotfix 033dd1780c's live-status-frame pattern in agentPaneState.ts is run once the mutation cooldown clears"
+milestone: M8
+type: defect
+severity: medium
+# medium: the hotfix is reviewed and green (BL-1934); what is missing is the
+# mutation gate Article 4.1 sets for TypeScript production code, deferred
+# only because the host refuses a file changed within 3 days.
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: swarm-reported
+depends_on: [BL-1934]
+not_before: 2026-10-07
+mutation_cost: medium
+# medium: Stryker over one file whose regex literal yields many mutants.
+slice_size_envelope: low
+required_stages: [hardender, qa]
+stage_skip_reasons:
+  coder: "the change landed as hotfix 033dd1780c and BL-1934 reviews it; this pass writes tests only"
+  cleaner: "test-only additions"
+  architect: "no boundary moves"
+  documenter: "no living doc describes the pattern"
+
+# Not a claim of ownership over BL-970's contract (BL-1251).
+acceptance: specs/features/BL-970-wake-busy-gate-idle-pane-misclassification.feature
+
+human_approval: approved
+approval_context: >
+  Deferred mutation gate of hotfix 033dd1780c, minted beside its stamp-off
+  BL-1934 because mutation_cooldown_days (3) refuses Stryker on a file
+  changed the same day. No choice is posed.
+
+invariants: []
+
+source: |
+  Coordinator note 016108 (2026-10-03 20:03Z) and its evidence file
+  backlog/evidence/claim-halt-busy-detector-blind-to-spinner-phrases-20261003.md;
+  the specifier rule "A same-day stamp cannot mandate Stryker on its
+  hotfix's files" (BL-1869).
+
+description: |
+  ## What is wanted
+
+  Run Stryker with `--mutate out/panel/agentPaneState.js` once
+  mutation_cooldown_gate.bb allows it. Each survivor in
+  LIVE_STATUS_FRAME_PATTERN or isLiveStatusFrameLine is killed with a
+  test in extension/test/agentPaneState.test.js, accepted as equivalent
+  with the code-level proof, or listed as first-run debt owned by a named
+  ticket. The Babashka copy has no mutation lane (BL-472); the
+  BL-1003 parity property already ties it to this side's verdicts.
+
+  The evidence records the dry-run line, the score, and each survivor's
+  disposition: backlog/evidence/BL-1935-hardender-<date>.md.
+
+qa_e2e_procedure: |
+  1. Read backlog/evidence/BL-1935-hardender-<date>.md: a completed Stryker run on agentPaneState.js, and every survivor killed, proved equivalent, or owned by a named ticket.
+  2. Read from the gather's rows: extension/test/agentPaneState.test.js green.
+
+notes: |
+  - Minted 2026-10-03 by the specifier beside BL-1934, with not_before set
+    so the cooldown gate does not refuse the pass it mandates (BL-1869).
+
+assigned_to: hardender

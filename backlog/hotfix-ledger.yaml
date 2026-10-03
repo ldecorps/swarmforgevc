@@ -909,3 +909,10 @@
   stamp_ticket: BL-1929
   human_decision: null
   decided_at: null
+- commit: 033dd1780c
+  subject: "hotfix: busy detector reads a live frame with inner punctuation as busy"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1934
+  human_decision: null
+  decided_at: null
