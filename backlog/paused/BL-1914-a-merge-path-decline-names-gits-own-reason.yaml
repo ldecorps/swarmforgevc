@@ -20,7 +20,7 @@ stage_skip_reasons:
   documenter: "no living doc quotes the decline text"
 acceptance: specs/features/BL-1914-a-merge-path-decline-names-gits-own-reason.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Defect found by the specifier's BL-1870 merge-path census. No choice is
   posed. FIRM - the decline and its fallback to the land step do not
