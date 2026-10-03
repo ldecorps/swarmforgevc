@@ -54,7 +54,9 @@ function registerSteps(registry) {
 
   // The literals follow the article as worded now: the boot-prefix trims
   // compressed 5.3 (the sentence is its heading, "ticket(s)"), with the
-  // same meaning; the long form is in reference/05-amendments-detailed.md.
+  // same meaning. The article is the binding text, so it is the one read
+  // here. reference/05-amendments-detailed.md keeps the clause's rationale
+  // and provenance, not the rule's pre-trim sentences (BL-1891 review).
   // ── Scenario 01: the clause exists and binds the act rather than a role ──
   registry.define(/^it states that a consolidation never drops a human sentence$/, (ctx) => {
     requireIncludes(ctx.bl681ArticleText, 'A Consolidation Never Drops A Human Sentence', '05_amendments.md');
