@@ -160,3 +160,9 @@
   description: "qa-gather's after-run straggler check (host-wide pgrep) exited 0 on another role's live Stryker run; attributed it by hand via /proc args to .worktrees/hardender, not a QA orphan"
   detected_at: 2026-10-03
   evidence: backlog/evidence/BL-1841-QA-20261003.md
+- category: register-join-unidentified-red-triage
+  ticket: BL-1858
+  role: QA
+  description: "qa-gather register_join read the unit red 'unidentified'; by hand: the onTaskUpdate unhandled error matched to paused BL-1889, the suite-file-budget line to no open owner (BL-1893/BL-1910 done, no register/pole row)"
+  detected_at: 2026-10-03
+  evidence: backlog/evidence/BL-1858-QA-20261003.md
