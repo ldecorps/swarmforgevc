@@ -31,11 +31,16 @@
 ;; ista-iq3s-coder:latest entry (timeout, streamIdleTimeoutMs, maxRetries,
 ;; extra_body.think false, samplingParams) - fixed across every seat/model;
 ;; only :id, :name, :baseUrl and :generationConfig's :contextWindowSize vary.
+;; BL-1841: qwen merges extra_body into the top-level request body, and
+;; Ollama 0.32.15's /v1/chat/completions ignores a top-level think false
+;; (measured: reasoning on either way); reasoning_effort "none" is the field
+;; it honours (measured: no reasoning). Evidence:
+;; backlog/evidence/BL-1841-thinking-off-field-measurement-coder.md.
 (def generation-config-fixed
   {:timeout 600000
    :streamIdleTimeoutMs 900000
    :maxRetries 1
-   :extra_body {:think false}
+   :extra_body {:think false :reasoning_effort "none"}
    :samplingParams {:temperature 0.3 :top_p 0.9}})
 
 (defn provider-entry

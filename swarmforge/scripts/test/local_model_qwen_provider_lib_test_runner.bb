@@ -25,7 +25,10 @@
   (assert= "provider-entry :baseUrl is the given loopback endpoint" "http://127.0.0.1:11434/v1" (:baseUrl entry))
   (assert= "provider-entry :envKey is OLLAMA_API_KEY" "OLLAMA_API_KEY" (:envKey entry))
   (assert= "provider-entry contextWindowSize is the given window" 49152 (get-in entry [:generationConfig :contextWindowSize]))
-  (assert= "provider-entry keeps thinking off" false (get-in entry [:generationConfig :extra_body :think])))
+  (assert= "provider-entry keeps thinking off" false (get-in entry [:generationConfig :extra_body :think]))
+  ;; BL-1841: measured on Ollama 0.32.15's /v1/chat/completions - top-level
+  ;; think false is ignored; reasoning_effort "none" is the field it honours.
+  (assert= "provider-entry sends the honoured thinking-off field" "none" (get-in entry [:generationConfig :extra_body :reasoning_effort])))
 
 ;; two different windows for the SAME model produce only contextWindowSize
 ;; differing - the fixed shape (timeout/streamIdleTimeoutMs/maxRetries/
