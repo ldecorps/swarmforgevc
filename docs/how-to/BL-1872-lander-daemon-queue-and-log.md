@@ -44,10 +44,11 @@ bb swarmforge/scripts/lander_queue.bb <project-root> --enqueue <task-name> <full
   blocks every other start; once its exit code is known, the sweep reads
   the outcome on a later tick.
 - The land runs in `.worktrees/lander` (branch `swarmforge-lander`, created
-  from `origin/main` on first use) — **never QA's own worktree** — via
-  `land_main_publish.sh <lander-worktree> --land <task> <sha> [<issue>]`,
-  detached (`setsid`, never wrapped in `timeout`: a kill mid re-point would
-  leave a branch half-moved).
+  from `origin/main` on first use) — **never QA's own worktree.** The sweep
+  tries the merge path first (BL-1901, below); only a line the merge path
+  declines runs `land_main_publish.sh <lander-worktree> --land <task> <sha>
+  [<issue>]`, detached (`setsid`, never wrapped in `timeout`: a kill mid
+  re-point would leave a branch half-moved).
 - Output goes to `.swarmforge/lander/<task-name>-<sha10>.log`, and the exit
   code to the sibling `.exit` file next to it.
 - **A run still going past an hour** gets one `note` to QA saying so
@@ -76,6 +77,67 @@ adjudicates it the same way it adjudicates `LAND_ESCALATE` today (see
 points at). The sweep never retries a refused entry on its own; a retry
 means queueing a fresh commit for the same task.
 
+## A clean line lands as a merge, not a rebuild (BL-1901)
+
+Since BL-1678 the land step rebuilds a parcel's own paths onto
+`origin/main` by cherry-pick even when nothing is entangled — on
+2026-10-01 and 2026-10-02 every one of 53 land records was a rebuild, and
+BL-1887's took an hour. The human's ruling A on BL-1870: landing a parcel
+on its own line "should not be much more than a git merge". The lander
+now checks each queued line before falling back to the land step at all:
+
+- **Clean** — every commit from `origin/main` to the queued commit either
+  names the landing ticket and no other, or is a merge whose other
+  parents are already on `origin/main` AND whose own subject names no
+  ticket or only the landing one (a plain sync merge like
+  "Merge main `<sha>` into coder." names none, and stays clean; a merge
+  naming another ticket, e.g. "Merge BL-9002 work into coder.", does not).
+  (An empty line does not count.) `land_merge_path.bb` takes the land
+  step's own lock, then either publishes the queued commit as-is (it
+  already contains `origin/main`, so the push fast-forwards) or makes one
+  `git merge --no-ff` of `origin/main` on a detached HEAD so the
+  commit-msg hooks still run. The merge message names only the landing
+  ticket: `Land <ticket>: merge origin/main <sha10>`. The push is never
+  forced; a push that loses the race rebuilds once against the freshly
+  fetched `origin/main`. The lander worktree returns to its branch and
+  the lock releases in `finally` either way.
+- **Anything else** — an unclean line, a dirty lander worktree, the lock
+  not obtained, a detached-HEAD checkout that fails (e.g. an untracked
+  file in the way), a built commit that ends up missing the queued commit
+  or `origin/main`, a merge conflict (the merge is aborted), or the race
+  lost twice — declines before any push and hands the same commit to
+  `land_main_publish.sh --land` unchanged, printing
+  `LAND_PATH land-step: <reason>`.
+
+The land record (written before the push, same as always) carries a
+`path` field so a reader can tell which one ran: `merge` for the path
+above, `land-step` for the rebuild path — including the land step's own
+rematch record, which now says `land-step` explicitly rather than leaving
+the field out.
+
+### A clean line still declines when the registry pass would change the tree
+
+The land step's own registry pass (standing-reds.tsv, the property
+allowlist, suite-poles.tsv) retires a row the landing ticket owns and
+restores a row an open other ticket owns, even on an otherwise clean
+line — a merge-path land that skipped this would publish the wrong
+register content. So before recording or pushing, the merge path checks
+out the built commit and asks the land step's own `registry-specs` (now
+shared, not land-step-private) whether its pass would change anything
+between origin/main's copy of each register and the built tree's: a
+non-empty change declines to the land step with nothing pushed
+(`the land step's registry pass would change ...`); an unreadable
+register also declines, fail-closed. The same check runs again on the
+race-retry rebuild, and on the fast-forward path (where nothing else in
+the merge path checks the commit out, so this is the first checkout in
+the whole flow and can hit the same untracked-file hazard as the main
+build).
+
+Only the lander's own queue takes the merge path. QA's own land recipe
+(the "Until BL-1872 lands" interim above) and the expeditor's manual walk
+are unaffected; the land step itself is untouched and still lands every
+line the merge path does not accept.
+
 ## The rematch no longer detaches a worktree, and records what it publishes
 
 Two fixes to `land_main_publish.sh`'s existing single-rematch path ride
@@ -100,8 +162,12 @@ catch them:
 | Sweep registration | `swarmforge/scripts/handoffd.bb` (`lander-sweep!`) |
 | The rematch's no-checkout rebuild and pre-push record | `swarmforge/scripts/land_main_publish.sh` |
 | Step handler | `specs/pipeline/steps/bl1872LanderDaemonSteps.js` |
+| Clean-line verdict and merge message (pure) | `swarmforge/scripts/land_merge_path_lib.bb` |
+| The merge-path land itself | `swarmforge/scripts/land_merge_path.bb` |
+| Merge-path step handler | `specs/pipeline/steps/bl1901CleanLineLandsAsAMergeSteps.js` |
 
-Acceptance: `specs/features/BL-1872-the-lander-daemon-lands-what-qa-approves.feature`
+Acceptance: `specs/features/BL-1872-the-lander-daemon-lands-what-qa-approves.feature`,
+`specs/features/BL-1901-a-clean-parcel-line-lands-as-a-merge-of-origin-main.feature`
 
 ## See Also
 

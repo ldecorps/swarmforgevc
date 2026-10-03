@@ -175,3 +175,7 @@ notes: |
   names local-llm work and high/critical defects.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-10-02, by: QA, blamed: coder, class: behavior, commit: 10781b1004, evidence: backlog/evidence/BL-1901-QA-20261002.md }
+  - { at: 2026-10-02, by: QA, blamed: coder, class: behavior, commit: 830e868fb7, evidence: backlog/evidence/BL-1901-QA-20261003.md }
