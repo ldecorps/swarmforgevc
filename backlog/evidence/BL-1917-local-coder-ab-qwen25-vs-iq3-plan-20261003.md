@@ -84,3 +84,49 @@ the same commit. Next measurement: what the qwen2.5 seat does with this bounce.
 Tool calls per parcel, stalls (text-only stops, nudges, respawns), whether
 the forward lands (and time to it), and QA's bounce inventory (item count
 and classes), for BL-1916 after its bounce and for BL-1917 on iq3.
+
+## qwen2.5 on QA's BL-1916 bounce (12:54-13:38Z) - leg closed
+
+The human's ruling (SUP-17 12:44Z "Requeue it, run A/B as planned") put
+qwen2.5 on BL-1916's bounce. The specifier requeued BL-1858's bounce behind
+it, moved the coder onto f09cf2dfce with origin/main merged in (611844ce66,
+today's tooling) and respawned the seat at 12:54Z.
+
+| measure | qwen2.5, BL-1916 bounce |
+|---|---|
+| kickoff to forward | 12:54:16Z -> 13:38:25Z, 44 min |
+| sessions | 4 (ede72412, d6446e43, 12465c0a, 95764159) |
+| handoffd chase-respawns | 3 |
+| tool calls | 61 |
+| text-only stops | 10 |
+| shim nudges ok / text calls rewritten | 28 / 47 |
+| hand nudges | 1 (13:32:17Z, "Run: swarm_handoff.sh tmp/handoff.txt then done_with_current.sh") |
+| wrong forwards | 1: at 13:00:39Z it re-sent the stale BL-1858 draft left in tmp/handoff.txt (task BL-1858, 127768f186); the audit had been answered in an earlier session, so it queued and reached the hardender (002384), which reverted it and recorded a bounce |
+| junk committed | 10aaa15e97: 1,019 venv/ files plus tests/test_qwen_tile.py, 375k lines, after git's "use git add to track" hint on an empty commit |
+| runaway reply | one text-only reply of 7127 tokens (about 9 min), cut by qwen |
+| QA inventory on the forward | 5 items, all behavior, all blamed on coder (backlog/evidence/BL-1916-QA-20261003-2.md, 263005aebd/a3f4588527; bounce 003779 at 4ae9005cdf): D1-D3 of the first bounce all unfixed, D4 the venv (it also pushed bl1699's git ls-files past Node's 1 MB exec buffer), D5 an unrelated pytest file |
+
+After the forward it took the requeued BL-1858 bounce and completed it in 17
+seconds unworked (13:38:41Z), then worked stale Work notes: BL-1908 (already
+done) and BL-1456 (left one uncommitted line using an undefined `nowMs`,
+saved to the coder worktree's tmp/BL-1456-qwen25-wip-20261003T1355Z.patch).
+
+**Result: qwen2.5 cannot act on a bounce.** It fixed none of three defects
+and added two. The human closed its leg (ruling relayed ~13:57Z: "iq3 takes
+the BL-1916 bounce, stop qwen2.5 now").
+
+## iq3 leg (from 14:00:08Z)
+
+Per the same ruling iq3 takes the SAME bounce, so both models are measured
+on one parcel; BL-1917 follows. BL-1916's line was reset behind 10aaa15e97:
+611844ce66 with main merged (4720c4f64b), the qwen2.5 tip 4ae9005cdf kept
+under refs/swarmforge/parcel-backup/coder/<stamp>-bl1916-qwen25-junk-line.
+The in-process parcel is QA's first bounce text at 4720c4f64b (QA's 003779
+moved to abandoned/); BL-1917's Work note is next at priority 00. The seat's
+stale tmp/handoff.txt (BL-1916, 10aaa15e97) was renamed aside so it is not
+re-sent. Seat: ista-iq3s-coder:latest, num_ctx 49152, num_predict 4096,
+FA=1 and KV q8_0 on ollama serve, think:false checked through the shim
+(2-token "OK", no reasoning). Model-agnostic hotfixes landed first or
+alongside: venv/ ignored (358be6be62), qwen2.5 num_predict 2048
+(479155f733), and swarm_handoff refusing a git_handoff for a ticket other
+than the in-process parcel.
