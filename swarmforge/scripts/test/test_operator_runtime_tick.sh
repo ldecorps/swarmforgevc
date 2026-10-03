@@ -14,6 +14,10 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 make_fixture() {
   local d; d="$(mktemp -d)"
+  # BL-1517: operator_runtime.bb refuses a project-root that is not a git
+  # checkout; init_git_fixture_root (operator_runtime_sandbox.sh) inits and
+  # proves it (BL-1390).
+  init_git_fixture_root "$d" || exit 1
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
   # BL-281: operator_runtime.bb now also load-files telegram_topic_lib.bb
   # (per-launch dispatch/reply-context only, bridge-client architecture)
@@ -1104,16 +1108,31 @@ rm -rf "$F"
 # poll-interval-ms floors at 1000ms (resolve-poll-interval-ms's busy-spin
 # guard), so OPERATOR_INTERVAL_MS must clear a few multiples of that floor
 # for the "several poll wakes, then a second tick" shape to appear.
+#
+# The timings scale with how long one full tick takes on this host. The
+# loop stamps last-full-tick-ms when a wake STARTS, so a tick that outlasts
+# OPERATOR_INTERVAL_MS makes the very next wake due and the poll-only window
+# never happens. On the WSL host one tick took about 20 s (2026-10-03),
+# far past the original fixed 3500 ms. TICK_S is measured once with the
+# loop's own env; on a fast host it is 1-2 s and the interval stays a few
+# seconds.
+F="$(make_fixture)"
+tick_started=$SECONDS
+OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$F/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$F/.no-fixture-reap" \
+  bb "$F/swarmforge/scripts/operator_runtime.bb" "$F" --tick-once >/dev/null 2>&1
+TICK_S=$(( SECONDS - tick_started + 1 ))
+LOOP_INTERVAL_MS=$(( 3500 + TICK_S * 2000 ))
+rm -rf "$F"
 F="$(make_fixture)"
 OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$F/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$F/.no-fixture-reap" \
-  OPERATOR_INTERVAL_MS=3500 OPERATOR_POLL_INTERVAL_MS=1000 \
+  OPERATOR_INTERVAL_MS="$LOOP_INTERVAL_MS" OPERATOR_POLL_INTERVAL_MS=1000 \
   bb "$F/swarmforge/scripts/operator_runtime.bb" "$F" >"$F/loop.out" 2>&1 &
 loop_pid=$!; FD_PIDS+=("$loop_pid")
 
 # The FIRST wake is always due (last-full-tick-ms starts nil) and must run a
 # full tick! - status.json is written ONLY by tick!, never by poll! (proven
 # above), so its appearance is the tick marker.
-deadline=$((SECONDS + 5))
+deadline=$((SECONDS + 5 + TICK_S * 2))
 while [[ ! -f "$F/.swarmforge/operator/status.json" ]] && [[ $SECONDS -lt $deadline ]]; do sleep 0.05; done
 check "BL-481 live loop: the first wake runs a full tick (status.json appears immediately)" \
   '[[ -f "$F/.swarmforge/operator/status.json" ]]'
@@ -1121,7 +1140,7 @@ FIRST_STATUS="$(cat "$F/.swarmforge/operator/status.json" 2>/dev/null)"
 FIRST_HEARTBEAT="$(cat "$F/.swarmforge/operator/heartbeat" 2>/dev/null)"
 
 # Several poll-only wakes (every 1000ms) happen well inside the SAME
-# 3500ms tick interval - status.json must stay byte-identical (no re-run of
+# LOOP_INTERVAL_MS tick interval - status.json must stay byte-identical (no re-run of
 # the full tick! / heavy sweep bundle), while the heartbeat - written by
 # BOTH tick! and poll! - still advances, proving the loop is alive and
 # genuinely waking on schedule rather than having stalled.
@@ -1136,7 +1155,7 @@ check "BL-481 live loop: the loop is genuinely alive during the poll-only window
 # Once OPERATOR_INTERVAL_MS genuinely elapses, last-full-tick-ms's threading
 # must re-trigger a SECOND full tick - not just the first-ever "nil counts
 # as due" freebie.
-deadline=$((SECONDS + 5))
+deadline=$((SECONDS + 5 + LOOP_INTERVAL_MS / 1000 + TICK_S * 2))
 while [[ "$(cat "$F/.swarmforge/operator/status.json" 2>/dev/null)" == "$FIRST_STATUS" ]] && [[ $SECONDS -lt $deadline ]]; do sleep 0.1; done
 LATER_STATUS="$(cat "$F/.swarmforge/operator/status.json" 2>/dev/null)"
 check "BL-481 live loop: a second full tick fires once OPERATOR_INTERVAL_MS elapses" \
@@ -1146,7 +1165,7 @@ check "BL-481 live loop: a second full tick fires once OPERATOR_INTERVAL_MS elap
 # re-checked every short poll-interval-ms wake, per BL-481's comment in
 # build_freshness_cli.bb) - no force-kill needed.
 touch "$F/.swarmforge/operator/stop"
-deadline=$((SECONDS + 5))
+deadline=$((SECONDS + 5 + TICK_S * 2))
 while kill -0 "$loop_pid" 2>/dev/null && [[ $SECONDS -lt $deadline ]]; do sleep 0.1; done
 check "BL-481 live loop: the loop exits on its own stop-file within one poll interval" \
   '! kill -0 "$loop_pid" 2>/dev/null'

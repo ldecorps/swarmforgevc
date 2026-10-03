@@ -603,3 +603,4 @@ test_bl1838_qwen_provider_entry_via_launch_script.sh	standing
 local_seat_report_lib_test_runner.bb	standing
 parcel_line_lib_test_runner.bb	standing		
 lander_lib_test_runner.bb	standing
+land_merge_path_lib_test_runner.bb	standing

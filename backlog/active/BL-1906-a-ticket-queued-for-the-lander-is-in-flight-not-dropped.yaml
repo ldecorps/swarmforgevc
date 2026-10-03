@@ -161,3 +161,5 @@ notes: |
   both against KNOWN_VALUES.
   Not overlapping BL-1900 (is_qa_ancestor.sh reads the same queue for
   approval) or BL-1901 (the land step).
+
+assigned_to: coder

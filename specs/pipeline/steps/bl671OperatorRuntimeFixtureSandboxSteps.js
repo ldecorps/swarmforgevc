@@ -9,7 +9,18 @@ const { spawnSync } = require('node:child_process');
 const REPO = path.join(__dirname, '..', '..', '..');
 const TEST_DIR = path.join(REPO, 'swarmforge', 'scripts', 'test');
 const HELPER = path.join(TEST_DIR, 'lib', 'operator_runtime_sandbox.sh');
-const RUNTIME = path.join(REPO, 'swarmforge', 'scripts', 'operator_runtime.bb');
+const SCRIPTS = path.join(REPO, 'swarmforge', 'scripts');
+const RUNTIME = path.join(SCRIPTS, 'operator_runtime.bb');
+
+// test_operator_runtime_*.sh files that never sandbox operator_runtime.bb, so
+// "every fixture that sandboxes it" does not include them. Each needs a
+// reason. Any OTHER file that skips the shared helper still fails, which
+// keeps BL-671's guard against a hand-listed copy coming back.
+const NOT_A_RUNTIME_SANDBOX = {
+  // BL-1224: drives the real operator_runtime_supervisor.bb with a stand-in
+  // `bb ... operator_runtime.bb` process; it copies no runtime at all.
+  'test_operator_runtime_watch_adoption.sh': 'drives the supervisor with a stand-in runtime (BL-1224)',
+};
 
 const FEATURE = 'every operator_runtime.bb test fixture sandboxes the libs it load-files';
 
@@ -21,6 +32,7 @@ function listFixtures() {
   return fs
     .readdirSync(TEST_DIR)
     .filter((f) => /^test_operator_runtime_.*\.sh$/.test(f))
+    .filter((f) => !Object.prototype.hasOwnProperty.call(NOT_A_RUNTIME_SANDBOX, f))
     .sort();
 }
 
@@ -86,12 +98,24 @@ function registerSteps(registry) {
   );
 
   scoped(registry, /^the fixtures' shared sandbox-copy helper is updated for the new lib$/, (ctx) => {
-    // Contract check: helper is the single list; fixtures source it.
+    // Contract check: helper is the single place; fixtures source it. Since
+    // BL-973 the helper DERIVES the copy set (copy_bb_closure over its entry
+    // points) instead of naming each lib, so "covers every load-file target"
+    // means operator_runtime.bb is an entry point and its derived closure
+    // holds every lib it load-files.
     if (!ctx.helper.includes('OPERATOR_RUNTIME_SANDBOX') && !ctx.helper.includes('copy_operator_runtime_sandbox')) {
       throw new Error('helper missing copy_operator_runtime_sandbox');
     }
+    if (!ctx.helper.includes('copy_bb_closure') || !/^\s+operator_runtime\.bb\s*$/m.test(ctx.helper)) {
+      throw new Error('helper does not derive its copy set from operator_runtime.bb (copy_bb_closure entry point)');
+    }
+    // The closure the helper copies is bb_load_closure_cli.bb's answer, so ask
+    // that CLI, not the JS twin (BL-897 holds the two to the same answer).
+    const r = spawnSync('bb', [path.join(SCRIPTS, 'bb_load_closure_cli.bb'), SCRIPTS, 'operator_runtime.bb'], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`bb_load_closure_cli.bb failed: ${r.stderr}`);
+    const closure = new Set(r.stdout.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => path.basename(l)));
     for (const lib of ctx.loadFiles) {
-      if (!ctx.helper.includes(lib)) {
+      if (!closure.has(lib)) {
         throw new Error(`shared helper omits load-file target ${lib}`);
       }
     }

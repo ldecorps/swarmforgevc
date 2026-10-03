@@ -28,7 +28,7 @@
 
 (defn- usage! []
   (binding [*out* *err*]
-    (println "Usage: record_land_approval.bb <project-root> <replay-commit> <approved-source> [<ticket-id>]"))
+    (println "Usage: record_land_approval.bb <project-root> <replay-commit> <approved-source> [<ticket-id>] [<land-path>]"))
   (System/exit 2))
 
 (defn- print-verdict! [root replay-commit]
@@ -54,7 +54,7 @@
 
 (defn -main [args]
   (when (< (count args) 3) (usage!))
-  (let [[root replay-commit approved-source ticket-id] args
+  (let [[root replay-commit approved-source ticket-id land-path] args
         c (land-approval-cli-lib/short replay-commit)
         src (land-approval-cli-lib/short approved-source)]
     (when (or (nil? c) (nil? src))
@@ -64,7 +64,8 @@
     (if (land-approval-cli-lib/already-recorded? root c src)
       (println (str "LAND_APPROVAL_ALREADY_RECORDED " c " <- " src))
       (let [result (land-step-lib/record-land-approval!
-                    {:root root :commit c :source src :task-ticket-id ticket-id})]
+                    {:root root :commit c :source src :task-ticket-id ticket-id
+                     :path (when (seq land-path) land-path)})]
         (if (:ok? result)
           (println (str "LAND_APPROVAL_RECORDED " c " <- " src
                         (when (seq ticket-id) (str " (" ticket-id ")"))))

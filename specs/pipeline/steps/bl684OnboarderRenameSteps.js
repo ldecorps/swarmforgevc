@@ -29,6 +29,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync, spawn } = require('node:child_process');
 const { after } = require('node:test');
+const { computeClosure } = require('./lib/operatorRuntimeBbClosure');
+const { isExemptPrefix, isAllowlisted } = require('../../../extension/test/onboarderResidualAllowlist');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -42,10 +44,28 @@ const START_SCRIPT = path.join(SCRIPTS_DIR, 'start_ancillary_services.sh');
 const SUPERVISOR_BB = path.join(SCRIPTS_DIR, 'onboarder_supervisor.bb');
 const TICK_TEST = path.join(TEST_DIR, 'test_onboarder_supervisor_tick.sh');
 const RECONCILE_TS = path.join(EXT_DIR, 'src', 'tools', 'onboarder-reconcile.ts');
-const FRONT_DESK_LIB = path.join(SCRIPTS_DIR, 'front_desk_supervisor_lib.bb');
-const SWARM_IDENTITY_LIB = path.join(SCRIPTS_DIR, 'swarm_identity_lib.bb');
-const FLEET_CREDS_LIB = path.join(SCRIPTS_DIR, 'fleet_telegram_creds_lib.bb');
-const BL684_TICKET = path.join(REPO_ROOT, 'backlog', 'active', 'BL-684-rename-onboarding-facilitator-to-onboarder.yaml');
+const BL684_TICKET_NAME = 'BL-684-rename-onboarding-facilitator-to-onboarder.yaml';
+
+// The ticket moves active/ -> done/ at its land, so a fixed active/ path made
+// scenario 11 red-when-correct from the day BL-684 closed. Read it wherever
+// the backlog holds it (open folders first, then done/ and its milestone
+// subfolders).
+function findBl684Ticket() {
+  const backlog = path.join(REPO_ROOT, 'backlog');
+  for (const dir of ['active', 'paused', 'hold']) {
+    const p = path.join(backlog, dir, BL684_TICKET_NAME);
+    if (fs.existsSync(p)) return p;
+  }
+  const done = path.join(backlog, 'done');
+  const direct = path.join(done, BL684_TICKET_NAME);
+  if (fs.existsSync(direct)) return direct;
+  for (const sub of fs.readdirSync(done, { withFileTypes: true })) {
+    if (!sub.isDirectory()) continue;
+    const p = path.join(done, sub.name, BL684_TICKET_NAME);
+    if (fs.existsSync(p)) return p;
+  }
+  throw new Error(`${BL684_TICKET_NAME} not found under backlog/`);
+}
 
 const FEATURE_NAME = 'The Onboarding Facilitator is renamed to the Onboarder without breaking a live agent';
 
@@ -247,8 +267,11 @@ function buildSupervisorFixture() {
   fs.mkdirSync(opDir, { recursive: true });
   const fleetHome = path.join(root, 'fleet-home');
   fs.mkdirSync(fleetHome, { recursive: true });
-  for (const src of [SUPERVISOR_BB, FRONT_DESK_LIB, SWARM_IDENTITY_LIB, FLEET_CREDS_LIB]) {
-    fs.copyFileSync(src, path.join(swarmDir, path.basename(src)));
+  // The copy set is the supervisor's DERIVED load-file closure (BL-944's
+  // helper). The hand list it replaces missed process_table_lib.bb and its
+  // own loads, so the supervisor died at load and no status file appeared.
+  for (const name of computeClosure(SCRIPTS_DIR, path.basename(SUPERVISOR_BB))) {
+    fs.copyFileSync(path.join(SCRIPTS_DIR, name), path.join(swarmDir, name));
   }
   // A real supervised child that stays alive but writes no heartbeat of its
   // own - isolates the assertion to "did the supervisor consult the old
@@ -256,6 +279,12 @@ function buildSupervisorFixture() {
   fs.writeFileSync(path.join(swarmDir, 'extension', 'out', 'tools', 'onboarder-reconcile.js'), 'setInterval(() => {}, 1000);\n');
   return { root, swarmDir, opDir, fleetHome, reconcilePath: path.join(swarmDir, 'extension', 'out', 'tools', 'onboarder-reconcile.js') };
 }
+
+// Mirrors test_onboarder_supervisor_ignores_old_heartbeat.sh's check_once:
+// BL-1043 gave the supervisor a real startup grace (90 s by default), so the
+// stall window alone left a fresh child "running" and scenario 07 red once
+// the fixture could load the supervisor at all (2026-10-03).
+const STALL_ENV = { ONBOARDER_STALL_MS: '200', ONBOARDER_HEARTBEAT_STARTUP_GRACE_MS: '200' };
 
 function checkOnceSupervisor(fixture, extraEnv) {
   const env = {
@@ -270,6 +299,15 @@ function checkOnceSupervisor(fixture, extraEnv) {
     env,
     timeout: 15000,
   });
+  // --check-once exits after starting the supervised child, which then
+  // outlives the scenario (seen 2026-10-03: two reconcile loops left running
+  // once the fixture could load the supervisor). Hand its pid to after().
+  try {
+    const pid = readSupervisorStatus(fixture)?.onboarder?.pid;
+    if (Number.isInteger(pid) && pid > 0) pendingPids.add(pid);
+  } catch {
+    // no status yet - the supervisor started nothing to clean up.
+  }
 }
 
 function readSupervisorStatus(fixture) {
@@ -290,7 +328,13 @@ function registerSteps(registry) {
   });
 
   registry.define(/^every file still containing the old word is a record file that names its own history$/, (ctx) => {
-    const violations = ctx.matchesExcludingDated.filter((f) => !CONTENT_EXEMPT.some((re) => re.test(f)));
+    // A file the vitest residual scan accepts (onboarderResidualAllowlist.js,
+    // BL-694's mechanism, which later tickets extend) is accepted here too.
+    // This list alone had fallen behind it by nine files, so scenario 01 was
+    // red on main (2026-10-03).
+    const violations = ctx.matchesExcludingDated.filter(
+      (f) => !CONTENT_EXEMPT.some((re) => re.test(f)) && !isExemptPrefix(f) && !isAllowlisted(f)
+    );
     if (violations.length > 0) {
       throw new Error(`expected every remaining match to be an exempt record file, found unexplained: ${JSON.stringify(violations)}`);
     }
@@ -464,13 +508,13 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the renamed supervisor reports the agent's liveness$/, (ctx) => {
-    checkOnceSupervisor(ctx.fixture, { ONBOARDER_STALL_MS: '200' });
+    checkOnceSupervisor(ctx.fixture, STALL_ENV);
     // A real, bounded wall-clock wait for the real supervised child to be
     // judged stalled - mirrors test_onboarder_supervisor_ignores_old_
     // heartbeat.sh's own `sleep 0.5` between check-once calls exactly;
     // there is no fake-timer seam into the real supervised process here.
     execFileSync('sleep', ['0.5']);
-    checkOnceSupervisor(ctx.fixture, { ONBOARDER_STALL_MS: '200' });
+    checkOnceSupervisor(ctx.fixture, STALL_ENV);
     ctx.statusAfterStall = readSupervisorStatus(ctx.fixture);
   });
 
@@ -617,7 +661,7 @@ function registerSteps(registry) {
 
   // ── onboarder-rename-11 ─────────────────────────────────────────────
   registry.define(/^a live ticket that described the agent as current vocabulary is inspected$/, (ctx) => {
-    ctx.ticketPath = BL684_TICKET;
+    ctx.ticketPath = findBl684Ticket();
     ctx.ticketContent = fs.readFileSync(ctx.ticketPath, 'utf8');
   });
 

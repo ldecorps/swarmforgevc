@@ -31,9 +31,11 @@ const FILES = {
   },
   renderBriefingDiagramsCli: {
     path: path.join(EXT_TEST, 'renderBriefingDiagramsCli.test.js'),
+    // BL-579 (2026-08-24) dropped "two" from these names when the diagram
+    // list grew; the handler kept the old names until 2026-10-03.
     testNames: [
-      'renders exactly the two maintained diagrams, named and base64-encoded',
-      'main() runs in-process against the real repo and prints the two maintained diagrams as JSON',
+      'renders exactly the maintained diagrams, named and base64-encoded',
+      'main() runs in-process against the real repo and prints the maintained diagrams as JSON',
       'the compiled CLI runs standalone as a subprocess and produces the same result',
     ],
   },
@@ -55,9 +57,13 @@ function knownFile(token) {
 
 function readSuiteDefaultTimeout() {
   const text = fs.readFileSync(VITEST_CONFIG, 'utf8');
-  const match = text.match(/testTimeout:\s*(\d+)/);
+  // BL-1007 (2026-08-24) made the config's testTimeout a computed value,
+  // resolveUnitLaneTimeout(<declared base>).effectiveMs, scaled by a recorded
+  // contention factor. The declared default is that base; a literal
+  // testTimeout: <number> is still read if a config declares one.
+  const match = text.match(/resolveUnitLaneTimeout\((\d+)\)/) || text.match(/testTimeout:\s*(\d+)/);
   if (!match) {
-    throw new Error(`could not find testTimeout: <number> in ${VITEST_CONFIG}`);
+    throw new Error(`could not find resolveUnitLaneTimeout(<number>) or testTimeout: <number> in ${VITEST_CONFIG}`);
   }
   return Number(match[1]);
 }

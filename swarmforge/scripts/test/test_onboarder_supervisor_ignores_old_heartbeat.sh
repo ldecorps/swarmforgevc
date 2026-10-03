@@ -14,6 +14,8 @@
 # test otherwise establishes in half a second.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_closure_copy.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_fixture_load_guard.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -25,9 +27,11 @@ make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
   mkdir -p "$d/swarm/extension/out/tools" "$d/swarm/.swarmforge/operator" "$d/fleet-home"
-  cp "$SRC/onboarder_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" \
-     "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" \
-     "$SRC/process_table_lib.bb" "$d/swarm/"
+  # Copy set derived from the supervisor's load-file closure (BL-973), as in
+  # test_onboarder_supervisor_tick.sh; the hand list drifted.
+  copy_bb_closure "$SRC" "$d/swarm" onboarder_supervisor.bb \
+    || { printf 'FAIL - %s\n' "could not derive onboarder_supervisor.bb's load-file closure" >&2; exit 1; }
+  assert_bb_closure_present "$SRC" "$d/swarm" onboarder_supervisor.bb
   # A real supervised child that stays alive but writes NO heartbeat of its
   # own - isolates the assertion to "did the supervisor consult the old
   # file", never "did the real reconcile loop's own heartbeat save it".

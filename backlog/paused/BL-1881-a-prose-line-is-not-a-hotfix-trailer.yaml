@@ -1,5 +1,5 @@
 id: BL-1881
-title: "The hotfix ledger's sweep reads any message line starting with Hotfix-Certification: as a trailer, so a wrapped prose sentence in aa6dacc938 (a specifier prompt commit) became an uncertified hotfix with no stamp ticket; a trailer's value is now one word, and the false entry leaves the ledger"
+title: "The hotfix ledger's sweep reads any message line starting with Hotfix-Certification: as a trailer, so wrapped prose sentences in aa6dacc938 (a specifier prompt commit) and 1877b935a2 (a coordinator ledger commit) became uncertified hotfixes with no stamp ticket; a trailer's value is now one word, and the false entries leave the ledger"
 milestone: M8
 type: defect
 severity: medium
@@ -37,7 +37,7 @@ approval_context: >
   No choice is posed; medium severity, so it waits for your approval.
 
 invariants:
-  - "Every commit the ledger holds today as a declared hotfix (the 69 whose trailer value is pending) is still declared after the fix."
+  - "Every commit the ledger holds today as a declared hotfix (the 84 whose trailer value is exactly pending on 2026-10-03, 69 at mint) is still declared after the fix."
 
 source: |
   Coordinator note 014860 (2026-10-02 06:46Z): "ledger entry aa6dacc938 no
@@ -65,8 +65,9 @@ description: |
     value has more text after its first word declares nothing
     (scenarios 01, 02). Every entry the ledger holds today keeps its
     declaration (invariant).
-  - Remove the aa6dacc938 entry from `backlog/hotfix-ledger.yaml` in the
-    parcel. Its `stamp_ticket` names this ticket only as the interim that
+  - Remove the aa6dacc938 and 1877b935a2 entries from
+    `backlog/hotfix-ledger.yaml` in the parcel (1877b935a2 added
+    2026-10-03, see notes). Its `stamp_ticket` names this ticket only as the interim that
     stops the sweep's mint nudge; it was never a stamp-off.
   - Evidence: the census above re-run on the parcel commit (69 still
     declared, aa6dacc938 not).
@@ -87,13 +88,14 @@ description: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1881-a-prose-line-is-not-a-hotfix-trailer.feature`:
-     2 of 2 ok. Measured 0 at mint: no handler exists yet.
+     3 of 3 ok (scenario 02 is an outline of 2 rows since the 2026-10-03
+     amendment). Measured 0 at mint: no handler exists yet.
   2. `specs/features/BL-848-hotfix-swarm-certification-recurring-check.feature`
      10 of 10, and `bb swarmforge/scripts/test/hotfix_certification_lib_test_runner.bb`
      and `bl848_hotfix_certification_property_runner.bb` ok, as measured on
      main at mint.
-  3. `grep -c 'commit: aa6dacc938' backlog/hotfix-ledger.yaml` prints 0 on
-     the parcel commit.
+  3. `grep -c -E 'commit: (aa6dacc938|1877b935a2)' backlog/hotfix-ledger.yaml`
+     prints 0 on the parcel commit.
   After the land: the coordinator gets no further stamp nudge for
   aa6dacc938.
 
@@ -104,3 +106,15 @@ notes: |
   pass, so the sweep stops asking the coordinator to mint a stamp for it.
   The specifier's own lesson: never wrap prose so a line starts with
   "Hotfix-Certification:".
+  Amended 2026-10-03 (coordinator note 015458, verbatim: "1877b935a2 no
+  stamp ticket - ledger-reg only, both entries BL-1905"): the sweep added
+  a second false entry, 1877b935a2, the coordinator's commit registering
+  the ledger rows for hotfixes 224074e2a7 and 1b7d4e4bbe (both stamped by
+  BL-1905). Its body wraps "Hotfix-Certification: pending trailers but had
+  no ledger row yet." onto one line. The specifier committed its ledger
+  entry linked to this ticket, as aa6dacc938's is, so the sweep stops
+  asking for a stamp. The parcel removes it. Scenario 02 became an outline
+  with that line as its second row. Census on HEAD's ledger (2026-10-03):
+  84 entries exactly pending, 12 with no trailer, 1 prose (aa6dacc938);
+  1877b935a2 was then only in the sweep's uncommitted working copy. Same
+  rule, same FIRM points: no new choice for the human, so no re-pend.

@@ -1,0 +1,197 @@
+id: BL-1907
+title: "process_table_lib.bb's parent-orphaned? reads an orphan as owned when a live subreaper adopts it (WSL's Relay /init on this host), so BL-928's onboarder reap, BL-108's job reaper and the orphan janitor never fire here: a leaked reconcile loop ran against the live root and two standing shell tests are red; an orphan adopted by a subreaper now reads orphaned, and no reaper takes a daemon the swarm detached on purpose. Also the stamp-off of fixture hotfix 5df467b09a"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (two register rows), and a live
+# fault: the three orphan reapers are inert on this host, so leaks they
+# exist to remove stay running against the live root.
+status: todo
+epic: swarm-reliability
+priority: 8
+depends_on: []
+mutation_cost: medium
+# medium: one predicate shared by three reapers that kill processes; a
+# wrong row kills a live daemon. Babashka, so the hardener's hand-mutant
+# pass is the mutation gate (BL-472).
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one predicate and two test fixtures; nothing left to deduplicate"
+  documenter: "no living doc states the PPID 1 rule; the predicate's own docstring changes in-parcel"
+
+acceptance: specs/features/BL-1907-an-orphan-adopted-by-a-subreaper-is-an-orphan.feature
+
+# Handler pin only (BL-233, BL-1371). Scenario 01 drives the real
+# predicate and scenario 02 the two real standing tests, which drive the
+# real reapers, so a consumer anchor would gate nothing more (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1907SubreaperOrphanSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Reported by the coder (note 002359) and traced by the specifier. No choice
+  is posed. FIRM: an orphan adopted by a subreaper reads orphaned on any
+  host; a process whose starter is still running never does; no reaper
+  takes a daemon or supervisor the swarm detaches on purpose.
+
+invariants:
+  - "A process whose parent is the live process that started it never reads orphaned, on any host."
+  - "A process adopted by the host's adopter of last resort (PID 1, or a child subreaper such as WSL's Relay /init or systemd --user) reads orphaned on every host, exactly as PID 1 adoption does today."
+  - "No reaper that consults parent-orphaned? ever takes a daemon or supervisor the swarm starts detached, nor a job registered with detach_job.sh (BL-995), even though those are parented to the same adopter."
+
+source: |
+  Coder note 002359 (2026-10-03 00:06Z), verbatim: "unowned-red
+  test_onboarder_supervisor_tick.sh: cp lacks daemon_cycle_guard_lib".
+  Specifier trace, 2026-10-03 00:07-00:20Z, on main 553f926932 and later:
+  - The note's cause was a hand-listed fixture copy. process_table_lib.bb
+    load-files daemon_cycle_guard_lib.bb since BL-1524 (22b9acc56d,
+    2026-09-11). The heartbeat sibling test had the same list, and the
+    negotiation relay tick test missed daemon_log_freshness_pulse_lib.bb.
+    All three were red with no register row. Hotfix 5df467b09a derives the
+    copy set (copy_bb_closure, as BL-1279 did for the front-desk test); the
+    heartbeat test (4 ok, 1 s) and the relay test (16 ok, 4 s) are green.
+  - With the copy fixed, test_onboarder_supervisor_tick.sh loads and fails
+    on its own setup: "spawn_orphaned_reconcile: pid 18373 did not reparent
+    to PPID 1 (got 5772)" (7 ok, 1 FAIL, 22 s).
+    test_handoffd_supervisor_job_reaper.sh fails the same way: "04 setup:
+    process did not reparent to PPID 1 (got 5772)" (5 s). BL-1498 recorded
+    that second one on 2026-09-08 as "may be the harness subreaper" and
+    left it out of scope.
+  - PID 5772 is `Relay(5774)` running /init, a live child of PID 5770
+    (/init, parent 1). The swarm's tmux server, handoffd, handoffd_supervisor,
+    front_desk_supervisor, onboarder_supervisor, operator_runtime and
+    babysitterd are all its children too: detached on purpose, then adopted.
+  - parent-orphaned? (process_table_lib.bb) returns true only for a parent
+    that is PID 1, dead, or missing. Its three production callers (census
+    below) therefore never see an adopted orphan here. Live evidence at
+    00:12Z: an onboarder-reconcile.js poll-loop on the live root, started
+    22:02Z, parent 5772, ran beside the live supervisor's own loop (child of
+    supervisor 29328). A test fixture's start-bridge-headless.js from the
+    coder's scratchpad, parent 5772, was still alive ten minutes after its
+    run. orphan_janitor_lib.bb's comment says the predicate already covers
+    "WSL's /init"; it does not, because this /init is not PID 1.
+  Census of callers, counted with
+  `grep -rn 'process-table-lib/parent-orphaned?' swarmforge/scripts/*.bb`
+  minus docstring lines: 3 call sites. handoffd_supervisor.bb
+  orphaned-job-groups (BL-108), orphan_janitor_sweep_lib.bb's
+  :parent-orphaned?! adapter (vitest, front-desk bridge/bot and ollama run
+  client classes), onboarder_supervisor.bb reap-orphan-siblings! (BL-928,
+  through front_desk_supervisor_lib.bb decide-onboarder-orphan-reap).
+
+description: |
+  ## Status: hotfix 5df467b09a landed the fixture half
+
+  Review that commit as its stamp-off; do not re-apply it. This ticket
+  also owns the red it uncovered.
+
+  ## What is wrong
+
+  On a host whose orphans are adopted by a child subreaper, parent-orphaned?
+  reads every orphan as owned, so the three reapers above are inert. Both
+  standing tests that orphan a process on purpose wait for PPID 1 and fail
+  in setup.
+
+  ## What is wanted
+
+  - parent-orphaned? reads a process adopted by the host's adopter of last
+    resort as orphaned, whether that adopter is PID 1 or a child subreaper.
+  - Direction, not mandate: an allowlist of adopter names (/init, systemd)
+    is brittle and fails scenario 01, whose fixture makes its own subreaper.
+    One host-agnostic way is to learn the adopter empirically: double-fork
+    a short-lived probe, read the PID that adopts it, and cache it per
+    reaper process. That is the same thing both tests already do by hand.
+    A probe adopted by PID 1 keeps today's behaviour. Whatever the design,
+    keep one definition and call it from the three callers. Never a second
+    copy in a caller or a test.
+  - The two shell tests stop waiting for PPID 1 and wait for the same
+    adopter the predicate uses (call the bb definition; no bash re-derivation).
+  - The architect's pass is the invariant-3 census. List every live
+    process on this host whose parent is the adopter. Run each of the three
+    reapers' own candidate filters over that list, read-only (the pure
+    decide functions, no kill), and record that no swarm daemon or
+    supervisor, no tmux server, no cloudflared or code tunnel, and nothing
+    in detach_job.sh's registry is a candidate. A reaper whose filter would
+    take one is a defect in this parcel, not a follow-up.
+  - The step handler `bl1907SubreaperOrphanSteps`, registered in the same
+    parcel. Scenario 01's fixture is a Python process that calls
+    prctl(PR_SET_CHILD_SUBREAPER) and starts a child that double-forks
+    (works on this host, checked at mint). It runs under mkdtemp and reaps
+    every process it starts in a finally, never by pattern (BL-1385).
+    Scenario 02 runs the two shell tests as subprocesses.
+
+  ## Scope
+
+  process_table_lib.bb's parent-orphaned? (and any helper it gains), the
+  two shell tests' reparent waits, their bb unit runner if one covers the
+  predicate, the step handler, evidence. The stamp-off review of
+  5df467b09a (three fixture files).
+
+  ## Out of scope
+
+  - Killing the leaked processes named in the source. Once this lands, the
+    janitor and the onboarder startup reap take them on their own.
+  - macOS: launchd is PID 1 there, and that row is unchanged.
+  - test_handoffd_supervisor_job_reaper.sh's other cases, which pass today.
+
+qa_e2e_procedure: |
+  On the parcel commit, from your worktree:
+  1. ONE run: `node specs/pipeline/cli.js specs/features/BL-1907-an-orphan-adopted-by-a-subreaper-is-an-orphan.feature`:
+     4 of 4 ok (two outlines of 2 rows).
+  2. ONE run each, measured at mint on main after hotfix 5df467b09a:
+     `bash swarmforge/scripts/test/test_onboarder_supervisor_tick.sh`
+     7 ok, 1 FAIL (the PPID 1 wait, 22 s), expected all ok;
+     `bash swarmforge/scripts/test/test_handoffd_supervisor_job_reaper.sh`
+     FAIL at 04 setup (5 s), expected PASS;
+     `test_onboarder_supervisor_ignores_old_heartbeat.sh` 4 ok and
+     `test_negotiation_relay_supervisor_tick.sh` 16 ok (hotfix), expected
+     unchanged. Afterwards `ps -eo pid,ppid,args` shows no process from
+     those runs' mkdtemp roots.
+  3. Read the architect's invariant-3 census in its evidence. It lists the
+     adopter's live children and each reaper's candidates over them, and
+     no daemon or supervisor is a candidate.
+  4. ONE run: `node specs/pipeline/cli.js specs/features/BL-684-*.feature`.
+     Its scenario 09 runs test_onboarder_supervisor_tick.sh, so it is this
+     ticket's third register row (acceptance lane, added 2026-10-03). At
+     the amendment only 09 was expected red, after a specifier hotfix
+     cleared BL-684's other reds. Expected all ok.
+  5. After the land, the land step retires this ticket's three register
+     rows (BL-1631): `grep -c BL-1907 backlog/standing-reds.tsv` on
+     origin/main prints 0.
+
+notes: |
+  Minted 2026-10-03 by the specifier from coder note 002359.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfixed in part: 5df467b09a fixed the fixture copy (the note's cause)
+  and turned two of the three reds green. The third, and a fourth found in
+  the same pass, need this owner, because the fix cannot land in one pass.
+  The failing window was traced to the reparent wait, and the production
+  predicate makes the same PPID 1 assumption. Changing it decides what
+  three reapers kill on a host where the live daemons share the orphans'
+  adopter, so it needs the architect's census before it ships. Register
+  rows for both files name this ticket (same mint commit).
+  [coder, architect, hardender, qa] per the 2026-10-01 routing rule:
+  Babashka production code; architect for the three-reaper boundary;
+  hardener because a mutant in this predicate kills live processes.
+  Hotfix ledger: 5df467b09a linked to this ticket in the mint commit.
+  Amended 2026-10-03 (coder note 002362's census): BL-684's feature
+  scenario 09 ("the supervisor tick test is run under the new names")
+  runs test_onboarder_supervisor_tick.sh, so its remaining red is this
+  ticket's. A third register row (acceptance lane, the BL-684 feature)
+  names BL-1907; qa_e2e step 4 runs it.
+  Confirmed 2026-10-03 ~02:40Z: the Relay /init (5772) and its parent
+  (5770) exited, apparently when the launching WSL terminal closed. The
+  tmux server and the daemons were re-adopted by PID 1, and from then on
+  test_onboarder_supervisor_tick.sh, test_handoffd_supervisor_job_reaper.sh
+  and BL-684's feature (21 of 21) all pass. So the reds track exactly which
+  process adopts orphans, as diagnosed. They come back whenever the swarm
+  is launched from a live WSL terminal, so the rows stay, and QA's
+  procedure must make that condition itself. Scenario 01's fixture
+  subreaper already does; for steps 2 and 4, run under a subreaper
+  (python3 with prctl(PR_SET_CHILD_SUBREAPER) execing the test) and record
+  the run under PID 1 too.
+  Leaked at mint and left running (not the specifier's to kill): the
+  22:02Z reconcile loop on the live root and the coder's fixture bridge.
+  The coordinator was told.
+
+assigned_to: coder

@@ -59,6 +59,11 @@ function registerSteps(registry) {
     /^that extension root holds a small passing test under test\/$/,
     (ctx) => {
       fs.mkdirSync(path.join(ctx.sandboxRoot, 'test'), { recursive: true });
+      // vitest.config.mjs names a global teardown under test/helpers/
+      // (bl1039TemplateGlobalTeardown.js). A real Stryker sandbox copies
+      // test/ whole; this fixture links it, or vitest fails to load and the
+      // report holds no entry (red on main until 2026-10-03).
+      symlink(path.join(EXTENSION_DIR, 'test', 'helpers'), path.join(ctx.sandboxRoot, 'test', 'helpers'));
       ctx.sandboxTestFile = 'bl1761-sandbox-fixture.test.js';
       fs.writeFileSync(
         path.join(ctx.sandboxRoot, 'test', ctx.sandboxTestFile),

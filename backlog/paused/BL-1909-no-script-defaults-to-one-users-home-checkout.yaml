@@ -1,0 +1,118 @@
+id: BL-1909
+title: "start_bridge_headless.sh defaults BRIDGE_EXTENSION_HOST_ROOT to the literal /home/carillon/swarmforgevc and wait_for_expedite_then_bedtime.sh defaults its root the same way, so on any other host the bridge fallback silently finds nothing and on this one a root with no build silently borrows the live checkout's; both default to the checkout the running script belongs to"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. On this host the literal is the right path,
+# so nothing is wrong today; on any other host an onboarded project's spy
+# screen loses its bridge with no error, and a test fixture can borrow the
+# live build (BL-1886's green-for-the-wrong-reason). Cron passes the bedtime
+# script's root explicitly, so its default bites only on a hand run.
+status: todo
+epic: swarm-reliability
+priority: 40
+depends_on: []
+mutation_cost: low
+# low: two shell defaults and a step handler; no Stryker lane for shell.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two one-line defaults; nothing to refactor"
+  architect: "no boundary moves; the fallback's purpose is unchanged, only where its default comes from"
+  hardender: "shell with no Stryker lane (BL-472), and the fix writes no durable state; the outline rows pin each choice"
+  documenter: "the script's own header comment describes the default and changes in-parcel; no living doc names it"
+
+acceptance: specs/features/BL-1909-no-script-defaults-to-one-users-home-checkout.feature
+
+# Handler pin only (BL-233, BL-1371). Scenario 01 drives a real copy of
+# the script in a fixture checkout and scenario 02 greps the real tree, so
+# a consumer anchor would gate nothing more (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1909NoHomeCheckoutDefaultSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Raised by the coder in BL-1886's review. No choice is posed. FIRM: an
+  explicit BRIDGE_EXTENSION_HOST_ROOT still wins; a project's own build
+  still wins over any fallback; with neither, the fallback is the checkout
+  the running script belongs to. Medium severity, so it waits for your
+  approval.
+
+invariants:
+  - "Which bridge entrypoint start_bridge_headless.sh starts never depends on the host's user name or home directory."
+
+source: |
+  Coder note 002363 (2026-10-03 00:51Z), verbatim: "BL-1886:
+  start_bridge_headless.sh host-root default is a /home/carillon literal".
+  The coder's BL-1886 evidence (854687bb13), verbatim: "That should not
+  exist. It is one user's home path inside a product script. On any other
+  host, including the macOS host this swarm moved from, the fallback
+  silently does nothing. On this host a root without a build silently
+  borrows the live checkout's, which is how this test went
+  green-for-the-wrong-reason and then red." It proposed deriving the
+  default from the script's own checkout ($SCRIPT_DIR/../..) or having no
+  default.
+  Census at mint (main 132e655cba), counted with
+  `git grep -nE '\$\{[A-Za-z_0-9]+:-/(home|Users)/' -- 'swarmforge/scripts/*.sh' ':!swarmforge/scripts/test'`:
+  2 hits, start_bridge_headless.sh:35 and wait_for_expedite_then_bedtime.sh:45.
+  host_switchover_doctor_lib.bb's two /home/carillon mentions are docstring
+  examples, not defaults.
+
+description: |
+  ## What is wrong
+
+  Two non-test scripts default a path to one user's home checkout.
+  start_bridge_headless.sh uses it to find a compiled bridge for a project
+  with none; wait_for_expedite_then_bedtime.sh uses it as its project root
+  when no argument is given (cron passes one).
+
+  ## What is wanted
+
+  - With BRIDGE_EXTENSION_HOST_ROOT unset, the fallback is the checkout the
+    running script belongs to (direction: `$SCRIPT_DIR/../..`). An explicit
+    BRIDGE_EXTENSION_HOST_ROOT and a project's own build both still win, in
+    today's order. The script's header comment says so.
+  - wait_for_expedite_then_bedtime.sh with no argument uses the same
+    derived checkout.
+  - Before relying on the derivation, confirm an onboarded project launches
+    the PRIMARY checkout's copy of start_bridge_headless.sh (the shared
+    swarmforge.sh launcher), so `$SCRIPT_DIR/../..` is the checkout with the
+    build. If a target runs its own copy, send the specifier a note before
+    building: the default would then point at the target, which has no
+    build.
+  - Step handler `bl1909NoHomeCheckoutDefaultSteps`, registered in the same
+    parcel. Scenario 01's fixture is a mkdtemp checkout holding
+    swarmforge/scripts/start_bridge_headless.sh plus what it sources before
+    the dry-run (cursor_ripgrep_env.sh), and
+    extension/out/tools/start-bridge-headless.js; it runs that copy with
+    BRIDGE_HEADLESS_LAUNCH_DRYRUN=1 and reads the "DRYRUN bridge cmd" line.
+    Scenario 02 runs the census grep above over the tree and pins the two
+    named files in the searched set (BL-1445).
+
+  ## Scope
+
+  start_bridge_headless.sh, wait_for_expedite_then_bedtime.sh, the step
+  handler, evidence.
+
+  ## Out of scope
+
+  Literal home paths in tests, docs, cron entries and docstrings.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each:
+  1. `node specs/pipeline/cli.js specs/features/BL-1909-no-script-defaults-to-one-users-home-checkout.feature`:
+     4 of 4 ok (an outline of 3 rows, and scenario 02).
+  2. `bash swarmforge/scripts/test/test_start_stop_bridge_headless.sh` and
+     `bash swarmforge/scripts/test/test_bl1382_cron_ownership_agreement.sh`:
+     exit 0 (4 s and 0 s at mint on main 132e655cba). Same expected.
+  3. The census grep in the source prints nothing (2 lines at mint).
+  4. `BRIDGE_HEADLESS_LAUNCH_DRYRUN=1 bash swarmforge/scripts/start_bridge_headless.sh <a mkdtemp dir> 9999`
+     from the master checkout prints a bridge command whose entrypoint is
+     under the master checkout, with BRIDGE_EXTENSION_HOST_ROOT unset.
+
+notes: |
+  Minted 2026-10-03 by the specifier from coder note 002363 (BL-1886's
+  review).
+  [coder, qa] per the 2026-10-01 routing rule: shell production code that
+  writes no durable state.
+  Medium: under the 2026-09-30 promotion restriction it waits in paused.

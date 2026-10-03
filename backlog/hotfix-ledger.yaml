@@ -678,3 +678,38 @@
   stamp_ticket: BL-1905
   human_decision: null
   decided_at: null
+- commit: 5df467b09a
+  subject: "Hotfix: three supervisor test fixtures copy their bb load-file closure instead of a hand list"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1907
+  human_decision: null
+  decided_at: null
+- commit: 1877b935a2
+  subject: "Register hotfix-ledger entries for BL-231 and BL-1566 hotfixes"
+  detected_at: 2026-10-02
+  state: pending
+  stamp_ticket: BL-1881
+  human_decision: null
+  decided_at: null
+- commit: 8bd8940741
+  subject: "Hotfix: thirteen operator_runtime shell fixtures are git checkouts again, two wait as long as this host's ticks take, and BL-671's and BL-684's step handlers follow the derived helpers"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1908
+  human_decision: null
+  decided_at: null
+- commit: 9bbd0f461c
+  subject: "Hotfix: five acceptance features red on main follow the contracts that moved under their step handlers - BL-1633, BL-1761, BL-914, BL-969 and BL-935"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null
+- commit: b7db6f9ed1
+  subject: "Hotfix: the two property files that held BL-1897's QA pass are green - bl1892's reach floor is constructed and bl1529 runs each identical cell once"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null

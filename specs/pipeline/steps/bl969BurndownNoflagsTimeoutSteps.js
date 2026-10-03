@@ -29,9 +29,13 @@ const FLOOR_MS = 60000;
 
 function readSuiteDefaultTimeout() {
   const text = fs.readFileSync(VITEST_CONFIG, 'utf8');
-  const match = text.match(/testTimeout:\s*(\d+)/);
+  // BL-1007 (2026-08-24) made the config's testTimeout a computed value,
+  // resolveUnitLaneTimeout(<declared base>).effectiveMs, scaled by a recorded
+  // contention factor. The declared default is that base; a literal
+  // testTimeout: <number> is still read if a config declares one.
+  const match = text.match(/resolveUnitLaneTimeout\((\d+)\)/) || text.match(/testTimeout:\s*(\d+)/);
   if (!match) {
-    throw new Error(`could not find testTimeout: <number> in ${VITEST_CONFIG}`);
+    throw new Error(`could not find resolveUnitLaneTimeout(<number>) or testTimeout: <number> in ${VITEST_CONFIG}`);
   }
   return Number(match[1]);
 }

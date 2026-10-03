@@ -7,6 +7,8 @@
 # of front-desk's :bridge/:bot pair.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_closure_copy.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_fixture_load_guard.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -18,7 +20,12 @@ make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
   mkdir -p "$d/swarm/extension/out/tools" "$d/target/.swarmforge/operator"
-  cp "$SRC/negotiation_relay_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" "$d/swarm/"
+  # Copy set derived from the supervisor's load-file closure (BL-973,
+  # BL-1279's front-desk fix). The hand list this replaces missed
+  # daemon_log_freshness_pulse_lib.bb and the test was red on main.
+  copy_bb_closure "$SRC" "$d/swarm" negotiation_relay_supervisor.bb \
+    || { printf 'FAIL - %s\n' "could not derive negotiation_relay_supervisor.bb's load-file closure" >&2; exit 1; }
+  assert_bb_closure_present "$SRC" "$d/swarm" negotiation_relay_supervisor.bb
   write_healthy_relay_js "$d"
   printf '%s' "$d"
 }
