@@ -185,6 +185,11 @@
   reason: "legitimate operator hotfix (Hotfix-Certification: pending), tracked in backlog/hotfix-ledger.yaml state=stamp-open, stamp ticket BL-1714 (backlog/paused/), awaiting human decision"
   waived_at: 2026-09-25
 
+- key: pipeline-code-on-main-7671b0b71754d2ed882341ddff1637ba2727905d
+  waived_by: coordinator
+  reason: "Standing-directive hotfix (amendment aa6dacc938): red-first, stamp-off second. Another SHA folded into the same stamp_ticket BL-1910 (telegramFrontDeskBotCli BL-1203 property test budget/fixture fix) - paused, ready for promotion."
+  waived_at: 2026-10-03
+
 - key: pipeline-code-on-main-7964654efc86d3e90ebd3c80712e0935534ff87c
   waived_by: coordinator
   reason: "Standing-directive hotfix (amendment aa6dacc938): red-first, stamp-off second. Ledger entry records stamp_ticket BL-1886 (paused, ready for promotion) - that mint is the close-out per the 2026-10-01 directive."
