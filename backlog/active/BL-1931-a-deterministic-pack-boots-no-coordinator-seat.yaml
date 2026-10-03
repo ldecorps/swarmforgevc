@@ -108,5 +108,6 @@ notes: |
   - Prose (BL-798): PIPELINE.md and Article 1.1 say the coordinator is an
     always-on pane; the specifier lands that prose on main when this ticket
     activates, through the boot prefix budget gate, and records the commit
-    here.
+    here. Landed ce8d3ebdcc (2026-10-03, after activation; boot prefix
+    43997/44000). Nothing the parcel builds changes.
 assigned_to: coder
