@@ -25,5 +25,16 @@
 # which pushed 8 of 65 layers to the CPU and cut generation from ~18.5 to
 # ~3.5 tokens/s): serve with OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0.
 FROM hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S
-PARAMETER num_ctx 49152
+# Back to 32768 (2026-10-03, specifier hotfix, human: "fix the compression
+# trigger first and give iq3 one clean retry"). 49152 sits in qwen's
+# compaction dead zone (BL-1840): qwen 0.24.7 compacts at
+# min(0.85 x window, window - 20000 - 13000), so 49152 compacts at 16152
+# tokens while 32768 compacts at 27852. The seat's prompts ran ~20k tokens,
+# so it compacted on EVERY turn, shrinking ~60 tokens each time, and made
+# one tool call per 5-10 minutes for 1.5 hours on BL-1916's bounce. The
+# 09-30 reason for 49152 no longer holds: the compact local card plus qwen's
+# overhead now measures ~12.9k prompt tokens on the first turn (BL-1801's
+# fit check passes at 32768). The dead-zone gate refuses 49152, but only a
+# full ./swarm launch runs it; a one-seat launch-script regeneration did not.
+PARAMETER num_ctx 32768
 PARAMETER num_predict 4096
