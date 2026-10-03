@@ -93,5 +93,7 @@ notes: |
   - Deferred edit: BL-1125's remaining_slices "seatless boot" line should
     point at BL-1931..BL-1933; that file carries the human's uncommitted
     edits, so it was left alone.
+  - 2026-10-03 18:3xZ coordinator: queue-jump promoted, assigned_to coder,
+    routed (dispatch_trail confirms DISPATCHED).
 
 assigned_to: coder
