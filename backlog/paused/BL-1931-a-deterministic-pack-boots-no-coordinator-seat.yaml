@@ -15,7 +15,7 @@ stage_skip_reasons:
 
 acceptance: specs/features/BL-1931-a-deterministic-pack-boots-no-coordinator-seat.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM: the coordinator's roles.tsv row and mailbox stay (QA approvals, handoffd delivery and BL-1847's relay route by them); only the seat goes, and only on a pack that declares the mode. The all-local pack (ollama-ista-local-model-mono-router.conf) declares the mode and drops its coordinator_agent, coordinator_model and coordinator_effort lines. The ask: approve this first slice of the seatless boot (A launch, then BL-1932 keep-alive, then BL-1933 wakes); after the three land the specifier starts the all-local pack, per your 18:05Z message.
 

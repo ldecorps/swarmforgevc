@@ -15,7 +15,7 @@ stage_skip_reasons:
 
 acceptance: specs/features/BL-1932-nothing-revives-a-deterministic-packs-coordinator-seat.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM: on a pack declaring coordinator_mode deterministic a missing coordinator pane is not a fault: ensure creates nothing, babysitterd raises no pane-coordinator finding and repairs nothing, and the mono-router topology does not count the coordinator as standing. Packs without the declaration keep today's repair. The ask: approve slice 2 of the seatless boot (after BL-1931).
 

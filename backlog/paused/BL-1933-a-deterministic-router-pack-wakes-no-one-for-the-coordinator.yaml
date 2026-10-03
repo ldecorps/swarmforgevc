@@ -15,7 +15,7 @@ stage_skip_reasons:
 
 acceptance: specs/features/BL-1933-a-deterministic-router-pack-wakes-no-one-for-the-coordinator.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM: on a router pack declaring coordinator_mode deterministic the coordinator resolves to no wake session, so the closing context clear, babysitter nudges and git_handoff wakes addressed to it inject nothing into the resident; other dormant roles still wake the resident. The coordinator's mail stays BL-1847's relay. The ask: approve slice 3 of the seatless boot (after BL-1931).
 
