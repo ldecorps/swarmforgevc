@@ -112,6 +112,12 @@ test('property: composeRoleAnswerNoteMessage always yields a valid single-line s
 // re-paying fixture setup 15+ times over.
 let sharedRoot;
 
+// 180 s base, not 60 s: each draw spawns `bb swarm_handoff.bb` up to four
+// times, and at load ~20 (2026-10-03) a spawn took about 10 s. Invariant 1
+// timed out in the lane and alone (130 s); invariant 2 took 87 s alone. No
+// draw count changed.
+const BL1203_PROPERTY_BASE_MS = 180000;
+
 function ensureSharedRoot() {
   if (sharedRoot) {
     return sharedRoot;
@@ -176,12 +182,16 @@ test(
       sharedRoot = undefined;
     }
   },
-  propertyLaneTimeoutMs(60000)
+  propertyLaneTimeoutMs(BL1203_PROPERTY_BASE_MS)
 );
 
 test(
   'property (BL-1203 invariant 2): the pointer file always holds the text of the last genuinely-new-updateId capture, never a stale earlier one',
   async () => {
+    // A fresh root, never the one invariant 1 may still hold: a timed-out
+    // invariant 1 keeps running and its finally removes ITS root later,
+    // which failed this test on its first draw (2026-10-03).
+    sharedRoot = undefined;
     const root = ensureSharedRoot();
     try {
       await fc.assert(
@@ -210,5 +220,5 @@ test(
       sharedRoot = undefined;
     }
   },
-  propertyLaneTimeoutMs(60000)
+  propertyLaneTimeoutMs(BL1203_PROPERTY_BASE_MS)
 );
