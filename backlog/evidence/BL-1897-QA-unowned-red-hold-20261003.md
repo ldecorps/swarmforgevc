@@ -21,3 +21,12 @@ extension/test/stepHandlerModuleLoadBudget.test.js (unit lane) - BL-1659 (paused
 ## Parcel's own checks
 tmp/ untracked on the tip; ceilGitDiscoveryAtTmpdir wired via gitEnvGuardSetup.js
 (setupFile of both lanes); acceptance green; no register row names BL-1897.
+
+## Resume run (2026-10-03, parcel 98d6448c2c + main 0fa7c38c4d = 15fc206f59)
+Gather via detach_job.sh (the BL-108 orphan reaper killed two backgrounded runs:
+reap-job-orphan "node (vitest 1)" 02:59:42Z and 03:03:05Z).
+stragglers 0/0, sibling 0, register 0, wiring 0, acceptance 0, properties 0 (bl1529 + bl1892 green after b7db6f9ed1).
+unit 1 - only the suite file budget gate, verbatim:
+  `extension/test/bl1901MergePathLandDeclines.test.js: 47.5s exceeds the 7.0s per-file budget (confirmed alone: 16.4s, still over budget)`
+  ("1 new-pole offender(s)"). Its suite-poles.tsv row was retired by BL-1901's land 3184cca043
+  (REGISTER_ROW_RETIRED); no active/paused/hold ticket names the file. Unowned; held again.
