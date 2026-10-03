@@ -1,9 +1,0 @@
-scope:
-  - Build the thing.
-  - 'Per operator request: add logging'
-outOfScope:
-  - Rewrite the stack.
-boundaries:
-  - Respect the README.
-initialBacklogSummary: 3 tickets queued.
-agreement: proposed
