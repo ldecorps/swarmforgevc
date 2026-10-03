@@ -54,12 +54,30 @@ From the seat's qwen chat recordings, shim.log and handoffd.log
 | text-only stops (reply with no call) | 23 | 1 |
 | shim nudges (ok / no-call) | 42 / 1 | - |
 | forward landed | yes, 12:11:43Z (about 93 min after the 10:38Z route) | yes, about 4 min after its kickoff |
-| QA bounce inventory | pending | pending |
+| QA bounce inventory | 3 items, all `behavior`, all blamed on coder (backlog/evidence/BL-1916-QA-20261003.md at 28965db6b7; bounce f09cf2dfce, 12:25:50Z) | same parcel |
 
 The whole-run numbers are confounded. Ten harness hotfixes landed during
 the run (59a376845a ... e2e2287822; BL-1916's own stamp is e022e33baf). The
 final session ran on the finished harness, so it is the fair comparison
 for iq3's BL-1917 run.
+
+### QA's BL-1916 inventory (first forward, da06baf72d)
+
+- D1: a committed file literally named `BL-1916-coder-$(date +%Y%m%d).md`
+  holding `NONE`: written by session ad49be78's ten-call blind batch at
+  11:47Z, before 5a89725e03 added the literal-path rule, and committed by
+  session 79269ebf's `git add .` (62b66b7b2e). That session never read its
+  card.
+- D2: the evidence file is the ticket's own instruction sentence ("NONE, or
+  one item per defect found.") - no check run, no commit range.
+- D3: da06baf72d's subject claims a Modelfile edit it does not contain and
+  names no ticket; 62b66b7b2e has no byline.
+
+QA's verdict on the hotfix itself: e022e33baf stands (every check passed).
+D1 and D3's byline are harness-addressed now (card-first resume e2e2287822,
+the printed forward step aec0daba54). D2 and D3's subject are judgment, the
+thing this comparison measures. QA dogfood note 003778 (12:26Z) points at
+the same commit. Next measurement: what the qwen2.5 seat does with this bounce.
 
 ## Compare on
 
