@@ -8,6 +8,19 @@ sections below; this file holds the mechanics and rationale that moved out to
 make room under the 51200-char boot-prefix cap (BL-858, following the BL-433
 split mechanism BL-618 established).
 
+## A deterministic-coordinator pack has no coordinator seat (2026-10-03)
+
+A pack declaring `config coordinator_mode deterministic` keeps the
+coordinator as a roles.tsv row and a mailbox, never a seat (BL-1931 launch,
+BL-1932 keep-alive, BL-1933 wakes). handoffd does the coordinator's job
+there: it promotes and routes the next ticket through the same gated
+promote_and_route_next.sh (BL-1846), and relays every parcel that reaches
+the coordinator's mail to the human's Telegram OPERATOR topic, completing
+it (BL-1847). Article 1.1's bookkeeping duties are the daemon's on such a
+pack; "promotion stays coordinator-owned" below holds for packs with a
+coordinator seat. Census of what expected a seat:
+backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+
 ## Promotion stays coordinator-owned (from "Mono-router idle and open slots")
 
 Promotion is still coordinator-owned (file move `paused/` → `active/`); there

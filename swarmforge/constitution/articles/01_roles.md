@@ -7,10 +7,12 @@
   - Routes parcels to the **specifier** for initial processing.
   - Tracks parcel location in the pipeline and unblocks stalls.
   - Before promoting a paused ticket, runs the deprecator freshness gate
-    (Article 3.6) — especially for old tickets whose premises may be stale.
+    (Article 3.6).
   - After QA approval, does backlog bookkeeping only: moves the ticket to
     `backlog/done/` and promotes the next paused item. Runs no git merge or
     push — QA's queued land puts it on `main` (BL-247, BL-1872).
+- **Deterministic packs** (`config coordinator_mode deterministic`): no
+  seat; handoffd does it (BL-1846/1847/1931).
 
 ## 1.2 Specifier
 - **Worktree**: `main`.

@@ -77,12 +77,12 @@ merge, close tickets, or promote backlog items.
 **Scope: `config rotation router` packs only** (a standing pack, every role
 its own pane, is unaffected — BL-931). Mono-router packs keep **one
 resident** (usually **coder** as home) that rotates other roles in on
-demand, coordinator as a separate always-on pane. On `NO_TASK`: STOP (no
+demand; the coordinator is its own pane, or none under `coordinator_mode
+deterministic` (handoffd does its job, BL-1931). On `NO_TASK`: STOP (no
 re-poll/`/loop`); rotate to **specifier** if root intakes exist; else if a
 slot is open and paused work exists, send **one** `note` asking the
-coordinator to promote+route, then idle for a wake — promotion stays
-coordinator-owned. See **pipeline-detailed.md** for the full pre-trim
-wording.
+coordinator to promote+route, then idle for a wake. See
+**pipeline-detailed.md**.
 
 ### Aged-note rotation, `rule_proposal` actionability, non-home stranding (BL-576/795/550)
 
