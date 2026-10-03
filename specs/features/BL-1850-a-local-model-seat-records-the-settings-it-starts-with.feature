@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=225cbeb0f26c7a9b4183ce81ca67d45dbd762ab8a7eea11aed201db27796f341
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-03T06:31:46.291055600Z","feature_name":"BL-1850 A local-model seat records the settings it starts with","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1850-a-local-model-seat-records-the-settings-it-starts-with.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the fingerprint changes only when a setting changes","scenario_hash":"6149dea6f95271c8fde82ce715a1ec332be9f6a8d76fc74d95ec6cdb56715790","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-10-03T06:31:46.291055600Z"},{"index":3,"name":"the seat still starts when a source does not answer","scenario_hash":"e6b66708f2eff0be76d9826b8e425bf6dcf66391e09a14d11dbda76de02bd67e","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-10-03T06:31:46.291055600Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1850 A local-model seat records the settings it starts with
 
   coder@iq3 is tuned by changing settings: the model's num_ctx and

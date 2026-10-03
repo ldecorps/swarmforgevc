@@ -70,6 +70,8 @@
 (assert= "a fingerprint is a sha256 hex" true (boolean (re-matches #"[0-9a-f]{64}" ((f 'fingerprint) row))))
 (assert= "finish-row stamps the fingerprint of the row it returns"
          ((f 'fingerprint) row) (:fingerprint ((f 'finish-row) row)))
+(assert= "the fingerprint ignores a stale :fingerprint already on the row (re-checking a finished row must not fold its own old hash into the new one)"
+         ((f 'fingerprint) row) ((f 'fingerprint) (assoc row :fingerprint "stale-hash-from-before-this-setting-changed")))
 
 (if (seq @failures)
   (do (doseq [x @failures] (println x)) (println (count @failures) "failure(s)") (System/exit 1))
