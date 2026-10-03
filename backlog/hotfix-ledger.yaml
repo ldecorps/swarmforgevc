@@ -755,3 +755,10 @@
   stamp_ticket: BL-1919
   human_decision: null
   decided_at: null
+- commit: 0eb5958ab6
+  subject: "Hotfix: a local-model seat's reply that announces an action and calls no tool is asked once more to make the call"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1920
+  human_decision: null
+  decided_at: null

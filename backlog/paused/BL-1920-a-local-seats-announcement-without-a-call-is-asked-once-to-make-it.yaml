@@ -1,0 +1,111 @@
+id: BL-1920
+title: "Stamp-off for hotfix 0eb5958ab6: a local-model seat's reply that announces an action (\"I will now run ready_for_next.sh\") and calls no tool is asked once more to make the call, never when the seat is idle on NO_TASK"
+milestone: M8
+type: defect
+severity: high
+# high: the seat stalled on every announcement until the next wake - the
+# dogfood loop's fifth observation (intake loop step 2).
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: [BL-1917]
+mutation_cost: low
+# low: three pure functions and one method inside the landed shim, with tests.
+slice_size_envelope: low
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "small additions beside unchanged code; nothing to refactor"
+  hardender: "Python has no mutation lane (BL-472) and the nudge writes no state"
+  documenter: "BL-1917's documenter pass describes the shim; the nudge changes no documented behaviour"
+
+# Not a claim of ownership over BL-1052's contract (BL-1251): the seat
+# launch feature the shim's wiring keeps.
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 0eb5958ab6, landed under the human's 2026-10-03
+  dogfood loop ("have specifier implementing them"). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it; the NO_TASK guard stays whatever else changes.
+
+invariants:
+  - "The shim never nudges a request whose last message is a tool result reading NO_TASK, nor a reply that says NO_TASK."
+
+source: |
+  Root intake backlog/archive/INTAKE-coder2-tool-calls-20261003.md. The
+  human, via Cursor, 2026-10-03, verbatim (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 5 (specifier, 2026-10-03 11:30-11:32): with BL-1919 live the
+  coder ended a turn on "I will now read the role and constitution ..."
+  with no call, then after handoffd's wake answered "I will now run the
+  ready_for_next.sh script to check for any new handoff mail." with no
+  call.
+
+description: |
+  ## Status: hotfix 0eb5958ab6 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  A text-only announcement turn stays in the seat's history (BL-1919 drops
+  text only beside a call), and the model imitates it. Rebuilt from the
+  live conversation and replayed: prose 3 of 3. qwen's own next-speaker
+  continuation ("Please continue.", model.skipNextSpeakerCheck false)
+  still got prose 3 of 3, so that setting is not the fix.
+
+  ## What the hotfix changed
+
+  local_model_tool_call_shim.py: needs_nudge, nudged_request,
+  merge_nudged, and _complete (one completion: history stripped, text
+  calls rewritten, at most one nudge). A reply with no tool call whose text
+  announces an action ("I will", "I'll", "let me", ...) is asked once more
+  with "Call the tool now. Reply with the tool call only."; the call it
+  gets joins the original text, which qwen still shows on the pane. The
+  NO_TASK guard is the declared invariant: an idle seat nudged back into
+  ready_for_next.sh would spin, and handoffd halts the whole swarm on a
+  NO_TASK spin; so at most one extra call per wake. Log lines gain
+  nudge=none|ok|no-call. Measured: the nudge got the call 3 of 3 in replay
+  and 3 of 3 through a real shim against live Ollama.
+
+  ## What each stage checks
+
+  - Coder: the functions against the description;
+    test_bl1917_local_model_seat_url.sh (its case 0 runs the shim's 22 unit
+    cases). Evidence: backlog/evidence/BL-1920-coder-<date>.md.
+  - Architect: the invariant as its own pass. Is "ends on a NO_TASK tool
+    result" the right guard, or can a wake-nudge-NO_TASK cycle still repeat
+    faster than handoffd's chase cadence? Is a text heuristic acceptable
+    here, or should the trigger be structural?
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_bl1917_local_model_seat_url.sh` prints ALL PASS.
+  2. `grep -c 'nudge=ok' .swarmforge/local-model-shim/shim.log` is at least 1
+     after 2026-10-03 11:41 (the live shim's restart onto this code).
+  3. handoffd's log shows no endless-loop halt naming the coder since that
+     restart.
+  4. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`
+     passes (measured at mint: all ok).
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 5 of the dogfood loop.
+    Siblings BL-1916..BL-1919. depends_on BL-1917 (this reviews code inside
+    BL-1917's shim).
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - Live: the shim was restarted onto this code at 11:41:29 with the pane's
+    own ensure line; the coder's conversation carried on.
+  - BL-1919's notes name model.skipNextSpeakerCheck as the next lever; this
+    measurement retires that idea (prose 3 of 3 after "Please continue.").
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1920; that file
+    carries the human's uncommitted edits, so it was left alone.
