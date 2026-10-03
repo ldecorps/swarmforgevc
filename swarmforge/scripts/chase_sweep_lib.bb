@@ -863,8 +863,17 @@
 
 (def live-status-frame-pattern
   ;; <spinner glyph (not a transcript bullet ⏺/⎿, not a quote/bracket)>
-  ;; <verb word(s)> <… or ...> (<digit-led elapsed>
-  #"^\s*[^\sA-Za-z0-9(){}\[\]\"'⏺⎿]{1,2}\s+\p{L}[\p{L} -]{0,60}(?:…|\.{3})\s*\(\s*\d")
+  ;; then one of two phrase shapes:
+  ;;   <verb word(s)> <… or ...> (<digit-led elapsed>     - the original
+  ;;   <any phrase without parens> (<Nh|Nm|Ns ...> ·      - 2026-10-03 hotfix
+  ;; The second branch exists because a phrase with an internal ellipsis, an
+  ;; apostrophe, or a final "." ("Almost there... probably...", "Greasin' the
+  ;; cogs...", "even funnier.") read idle, and the claim-idle halt counted a
+  ;; mid-turn local-model seat to reclaims=8 of 10 toward kill_all_swarm
+  ;; (backlog/evidence/claim-halt-busy-detector-blind-to-spinner-phrases-
+  ;; 20261003.md). The unit-led elapsed plus "·" keeps tool-result lines such
+  ;; as "✓ Read x.ts (lines 201-400)" idle. Mirrored in agentPaneState.ts.
+  #"^\s*[^\sA-Za-z0-9(){}\[\]\"'⏺⎿]{1,2}\s+\p{L}(?:[\p{L} -]{0,60}(?:…|\.{3})\s*\(\s*\d|[^()]{0,80}\(\s*\d+[hms](?:\s+\d+[hms])*\s*·)")
 
 (defn live-status-frame-line? [line]
   (boolean (re-find live-status-frame-pattern (or line ""))))
