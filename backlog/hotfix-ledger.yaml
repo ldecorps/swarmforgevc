@@ -678,3 +678,10 @@
   stamp_ticket: BL-1905
   human_decision: null
   decided_at: null
+- commit: 5df467b09a
+  subject: "Hotfix: three supervisor test fixtures copy their bb load-file closure instead of a hand list"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1907
+  human_decision: null
+  decided_at: null
