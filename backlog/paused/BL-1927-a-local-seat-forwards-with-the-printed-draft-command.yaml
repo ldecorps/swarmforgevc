@@ -1,5 +1,5 @@
 id: BL-1927
-title: "Stamp-off for hotfixes aec0daba54 and e2e2287822: a served git_handoff's forward step is the exact draft command, swarm_handoff.sh, then done_with_current, and a resumed local-model seat reads its card before ready_for_next.sh"
+title: "Stamp-off for hotfixes aec0daba54, e2e2287822 and dca94239f4: a served git_handoff's forward step is the exact draft command, swarm_handoff.sh, then done_with_current, and a resumed local-model seat reads its card before ready_for_next.sh"
 milestone: M8
 type: defect
 severity: high
@@ -94,13 +94,20 @@ description: |
     LOCAL_RESUME_NOTE, and the qwen launch line puts it AFTER the card
     instruction. Replayed: read_file on the card 3 of 3. The live coder.sh
     was patched to the same lines.
+  - dca94239f4, bl1845LocalSeatQwenInteractiveInvariants.property.test.js:
+    e2e2287822 moved the qwen line's -i value to open on the card sentence,
+    so this property's mutation needle (`-i \"\${RESUME_NOTE}`) no longer
+    matched and invariant 2 failed its guard before any property ran (QA
+    note 003777, an unowned red found on BL-1916's gather). The needle is
+    now `-i \"Use read_file now`; both invariants assert what they did.
 
   ## What each stage checks
 
   - Coder: both hotfixes against the description and both invariants; the
     new cases in handoff_lib_test_runner.bb (the command, run in a fixture
     repo, writes the five lines with HEAD's 10 characters);
-    test_resume_on_start.sh. Evidence: backlog/evidence/BL-1927-coder-<date>.md.
+    test_resume_on_start.sh; dca94239f4's needle against the qwen line as
+    it stands. Evidence: backlog/evidence/BL-1927-coder-<date>.md.
 
 qa_e2e_procedure: |
   1. `bb swarmforge/scripts/test/handoff_lib_test_runner.bb` ends "ALL TESTS PASSED".
@@ -109,7 +116,10 @@ qa_e2e_procedure: |
      passes (measured at mint on HEAD e2e2287822: 9 of 9 ok).
   4. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`
      passes (measured at mint on HEAD e2e2287822: 9 of 9 ok).
-  5. In the coder seat's qwen transcripts after 2026-10-03 12:08:06Z (its
+  5. The gather row's `npm run test:properties` shows
+     bl1845LocalSeatQwenInteractiveInvariants.property.test.js passing (2 of 2
+     at mint, after dca94239f4).
+  6. In the coder seat's qwen transcripts after 2026-10-03 12:08:06Z (its
      respawn onto this code), its first tool call in each session is
      read_file on its card, and no call runs `git handoff` or git_handoff.sh.
 
@@ -127,5 +137,8 @@ notes: |
     "NONE, or one item per defect found.", and
     .swarmforge/handoffs/outbox/handoff_done/BL-1916.handoff_done (a
     subdirectory handoffd does not deliver from).
+  - Amended 2026-10-03 (still paused): also the stamp-off of dca94239f4, the
+    hotfix of the bl1845 property red e2e2287822 caused (QA note 003777, "BL-1927
+    lacks it"). One owner, no second ticket.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1927; that file
     carries the human's uncommitted edits, so it was left alone.

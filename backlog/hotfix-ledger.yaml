@@ -825,3 +825,10 @@
   stamp_ticket: BL-1927
   human_decision: null
   decided_at: null
+- commit: dca94239f4
+  subject: "Hotfix: the BL-1845 property test anchors its mutation on the qwen launch line as e2e2287822 left it"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1927
+  human_decision: null
+  decided_at: null
