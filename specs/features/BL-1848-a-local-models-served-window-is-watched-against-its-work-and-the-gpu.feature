@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-03T06:59:46.558551320Z","feature_name":"BL-1848 A local model's served window is watched against its work and the GPU","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1848-a-local-models-served-window-is-watched-against-its-work-and-the-gpu.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":3,"name":"no window finding when there is nothing to judge","scenario_hash":"c8394c6cc96e67ce6e38f3111417c224bc799fb580ef68583982198698819fac","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-10-03T06:59:46.558551320Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1848 A local model's served window is watched against its work and the GPU
 
   The coder@iq3 seat is served by Ollama with a 49152-token window. That

@@ -29,6 +29,7 @@ captures, an available-memory reading) against these checks, in
 | 6 | menu-blocked-pane | a pane capture shows an interactive menu/dialog (report only — never picks an option) |
 | 7 | busy-but-frozen | busy footer present but the spinner-stripped content hash is unchanged across 3 consecutive sweeps |
 | 8 | memory-floor | available memory is below the configured floor; reports `UNAVAILABLE` (never a fabricated OK or CRIT) when no memory facility on the host is readable |
+| 8b | local-window-fit | a local model Ollama has loaded is watched against the GPU and its own recent work (BL-1848, below) |
 | 9 | rotate-not-honored | On **rotation-router** packs only (BL-1129 / BL-804): the newest completed parcel's rotate instruction is older than a 10-minute grace period, its target differs from `.swarmforge/mono-router-active-role`, and the note is newer than that file's mtime. Standing packs never emit this CRIT (empty active-role is expected). |
 | 10 | swarm-starved | active tickets exist, **no countable motion** in pending/in-process across every mailbox, no pane shows a busy footer, sustained for **2 consecutive sweeps** (CRIT). From streak **≥3** (`default-swarm-starved-ensure-streak`), also queue `:ensure-control-plane` / `./swarm ensure` alongside the CRIT so recovery is not escalation-only (BL-1169). A non-abandoned `in_process` claim is motion even when the owning pane is idle this sweep (BL-1109 — Thinking pause / rotate gap must not false-STARVE). Pending never counts abandoned or >120-minute-old parcels. CRIT text never claims "zero … parcels" when claims were gathered.
 | 11 | claim-risk | the salvaged `babysitter_assess_lib.bb` scan (a role heading for bounce/halt with HEAD unchanged) |
@@ -354,6 +355,52 @@ How-to:
 [`docs/how-to/BL-1171-disaster-class-correlation-structured-escalation.md`](BL-1171-disaster-class-correlation-structured-escalation.md).
 Acceptance:
 [`specs/features/BL-1171-disaster-class-correlation-structured-escalation.feature`](../../specs/features/BL-1171-disaster-class-correlation-structured-escalation.feature).
+
+## A local model's served window is watched against the GPU and its own work (BL-1848)
+
+Every sweep, for every model `GET <base>/api/ps` reports loaded on Ollama
+(`gather-local-window-facts` in `babysitter_check.bb`, 2-second bounded,
+base `BABYSITTER_OLLAMA_URL` default `http://127.0.0.1:11434`), the pure
+`check-local-window-fit` in `babysitterd_sweep_lib.bb` watches two limits
+read-only — it never touches a window, a Modelfile, qwen's settings, or
+which models Ollama has loaded:
+
+- **Too big for the GPU** — the model's `size_vram` (from `/api/ps`) is
+  below its `size`: part of it spilled to the CPU. CRIT keyed
+  `local-window-vram-<model>`, naming the MiB in VRAM of the total and
+  the served context, and ending with a hint to check the serving
+  `ollama serve` carries `OLLAMA_FLASH_ATTENTION=1` and
+  `OLLAMA_KV_CACHE_TYPE=q8_0` and that no second model is loaded, before
+  lowering `num_ctx`.
+- **Too small for the work** — a qwen usage record for that model in the
+  last 60 minutes has input plus output tokens at or above 90% of the
+  model's `context_length` (49152 → 44237). CRIT keyed
+  `local-window-size-<model>`, naming the peak request, its input/output
+  split and the served context, ending with a hint that the served
+  window is the Modelfile's `num_ctx` (BL-1838 carries it into qwen), at
+  about 34 KiB of VRAM per token at `q8_0`.
+- **Nothing to judge** — Ollama not answering, or no model loaded: no
+  window finding (a seat being down is check 1's job). Usage is read
+  from `token-usage-<yyyy-mm>.jsonl` under `BABYSITTER_QWEN_USAGE_DIR`
+  (default `~/.qwen/usage`) for the current UTC month and the one
+  before, since the 60-minute look-back crosses the month boundary at
+  midnight on the 1st.
+
+Both findings travel like every other CRIT above: into
+`assemble-findings`, the coordinator nudge, and the operator escalation,
+each on the usual 30-minute cooldown per key, and each waivable through
+`babysitter_waive.bb` (above) the same way check 13's permanent findings
+are.
+
+Verify:
+
+```bash
+bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb
+bb swarmforge/scripts/test/bl1848_local_window_runner.bb
+```
+
+Acceptance:
+[`specs/features/BL-1848-a-local-models-served-window-is-watched-against-its-work-and-the-gpu.feature`](../../specs/features/BL-1848-a-local-models-served-window-is-watched-against-its-work-and-the-gpu.feature).
 
 ## Control-plane auto-heal, bounded in time (BL-958/BL-1071)
 

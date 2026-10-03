@@ -57,6 +57,9 @@
 ;; BL-1103: one shared wall-clock-bounded runner (was a hand-copy of expedite's).
 (load-file (str (fs/path script-dir "bounded_run_lib.bb")))
 (load-file (str (fs/path script-dir "master_main_reconcile_lib.bb")))
+;; BL-1848: the qwen usage-record reader (BL-1842) - the window check reuses it
+;; rather than parsing token-usage-*.jsonl a second way (BL-1811).
+(load-file (str (fs/path script-dir "local_seat_report_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -91,6 +94,70 @@
 
 (defn now-ms [] (System/currentTimeMillis))
 (defn now-iso [] (str (java.time.Instant/now)))
+
+;; ── BL-1848: local-window facts ──────────────────────────────────────────────
+;; Read-only and bounded: one GET /api/ps (2 s client timeout) and at most two
+;; usage files. Ollama not answering -> nil, never a throw, so the sweep goes
+;; on and the window check reports nothing. The env seams keep fixtures off
+;; the operator's ~/.qwen and the live Ollama.
+
+(def local-window-http-timeout-ms 2000)
+
+(defn- ollama-base-url []
+  (let [v (System/getenv "BABYSITTER_OLLAMA_URL")]
+    (str/replace (if (str/blank? v) "http://127.0.0.1:11434" v) #"/+$" "")))
+
+(defn- qwen-usage-dir []
+  (let [v (System/getenv "BABYSITTER_QWEN_USAGE_DIR")]
+    (if (str/blank? v) (str (fs/path (System/getProperty "user.home") ".qwen" "usage")) v)))
+
+(defn- ollama-loaded-models
+  "GET <base>/api/ps -> [{:name :size :size-vram :context-length}], or nil
+   when Ollama does not answer (refused, hung past the timeout, non-200)."
+  [base-url]
+  (try
+    (let [http-get (requiring-resolve 'babashka.http-client/get)
+          http-client (requiring-resolve 'babashka.http-client/client)
+          duration (java.time.Duration/ofMillis local-window-http-timeout-ms)
+          resp (http-get (str base-url "/api/ps")
+                         {:timeout duration :throw false
+                          :client (http-client {:connect-timeout duration})})]
+      (when (= 200 (:status resp))
+        (mapv (fn [m] {:name (or (:name m) (:model m))
+                       :size (:size m)
+                       :size-vram (:size_vram m)
+                       :context-length (:context_length m)})
+              (:models (json/parse-string (str (:body resp)) true)))))
+    (catch Exception _ nil)))
+
+(defn- usage-month-files
+  "token-usage-<yyyy-mm>.jsonl for now's UTC month and the one before: the
+   look-back hour crosses the month at midnight on the 1st."
+  [usage-dir now]
+  (let [month (java.time.YearMonth/from (.atZone (java.time.Instant/ofEpochMilli now)
+                                                 java.time.ZoneOffset/UTC))]
+    (for [m [(.minusMonths month 1) month]]
+      (fs/path usage-dir (str "token-usage-" m ".jsonl")))))
+
+(defn- iso->ms [ts]
+  (try (.toEpochMilli (java.time.Instant/parse (str ts))) (catch Exception _ nil)))
+
+(defn gather-local-window-facts
+  "{:models [...] :usage [{:model :input-tokens :output-tokens :timestamp-ms}]}
+   for check-local-window-fit, or nil when Ollama is not answering. Usage is
+   read only when a model is loaded."
+  ([] (gather-local-window-facts {}))
+  ([{:keys [base-url usage-dir now]}]
+   (when-let [models (ollama-loaded-models (or base-url (ollama-base-url)))]
+     {:models models
+      :usage (if (empty? models)
+               []
+               (->> (usage-month-files (or usage-dir (qwen-usage-dir)) (or now (now-ms)))
+                    (keep #(try (when (fs/regular-file? %) (slurp (str %)))
+                                (catch Exception _ nil)))
+                    local-seat-report-lib/parse-usage-entries
+                    (mapv #(assoc (select-keys % [:model :input-tokens :output-tokens])
+                                  :timestamp-ms (iso->ms (:timestamp %))))))})))
 
 (defn sh! [& args]
   ;; {:continue true} only softens a non-zero exit. A binary that cannot be
@@ -1241,6 +1308,9 @@
         snapshot
         {:now-ms (now-ms)
          :roles (mapv #(dissoc % :pane-text) roles)
+         ;; BL-1848: every loaded local model's window facts; nil when
+         ;; Ollama is not answering (bounded at the 2 s client timeout).
+         :local-windows (gather-local-window-facts)
          :handoffd-alive? (proc-alive? "handoffd\\.bb")
          :handoffd-supervisor-alive? (proc-alive? "handoffd_supervisor\\.bb")
          :handoffd-log-age-secs (file-age-secs (fs/path state-dir "daemon" "handoffd.log"))

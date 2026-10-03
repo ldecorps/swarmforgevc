@@ -21,6 +21,14 @@
 
 ;; ── parse-usage-entries / latest-session-id / session-usage-summary ────────
 
+;; BL-1848: the babysitter's window check judges each request against the
+;; window of the model that served it, so the reader keeps the row's model.
+(assert= "BL-1848: parse-usage-entries keeps each row's model"
+         ["qwen2.5-coder-14b-q5km:latest" nil]
+         (mapv :model (local-seat-report-lib/parse-usage-entries
+                       [(str "{\"model\":\"qwen2.5-coder-14b-q5km:latest\",\"sessionId\":\"S1\",\"inputTokens\":5630,\"outputTokens\":976,\"timestamp\":\"2026-10-02T23:41:08.169Z\"}\n"
+                             "{\"sessionId\":\"S2\",\"inputTokens\":1,\"outputTokens\":1,\"timestamp\":\"2026-10-02T23:42:00Z\"}\n")])))
+
 (defn usage-line [session-id in out thoughts ts]
   (str "{\"sessionId\":\"" session-id "\",\"inputTokens\":" in
        ",\"outputTokens\":" out ",\"thoughtsTokens\":" thoughts

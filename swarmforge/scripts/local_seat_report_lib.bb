@@ -19,7 +19,7 @@
 (defn parse-usage-entries
   "file-contents: a coll of raw jsonl strings (one per token-usage-*.jsonl
    file). Returns every parseable {:session-id :input-tokens :output-tokens
-   :thoughts-tokens :timestamp} row across all of them, blank lines and
+   :thoughts-tokens :timestamp :model} row across all of them, blank lines and
    unparseable rows dropped rather than throwing (BL-1842: a report never
    crashes on a malformed line it merely wants to skip)."
   [file-contents]
@@ -33,7 +33,8 @@
                     :input-tokens (or (:inputTokens row) 0)
                     :output-tokens (or (:outputTokens row) 0)
                     :thoughts-tokens (or (:thoughtsTokens row) 0)
-                    :timestamp (:timestamp row)})
+                    :timestamp (:timestamp row)
+                    :model (:model row)})
                  (catch Exception _ nil))))
        (remove #(str/blank? (:session-id %)))))
 

@@ -924,6 +924,101 @@
                                     :active-role "QA"
                                     :role-agent->token {"coder" "aider"}}))
 
+;; ── check 8b: local-window-fit (BL-1848) ─────────────────────────────────────
+;; Pure: every fact (the /api/ps models and the qwen usage rows) is injected,
+;; and now-ms is passed in. Sizes arrive in bytes, as Ollama reports them.
+(def bl1848-mib 1048576)
+(def bl1848-now 1800000000000)
+(defn bl1848-model [name in-vram-mib total-mib ctx]
+  {:name name :size (* total-mib bl1848-mib) :size-vram (* in-vram-mib bl1848-mib)
+   :context-length ctx})
+(defn bl1848-row [model in out minutes-ago]
+  {:model model :input-tokens in :output-tokens out
+   :timestamp-ms (- bl1848-now (* minutes-ago 60000))})
+(def bl1848-iq3 "ista-iq3s-coder:latest")
+
+(assert= "BL-1848: no facts (Ollama not answering) is no window finding"
+         [] (sw/check-local-window-fit nil bl1848-now))
+(assert= "BL-1848: Ollama answering with nothing loaded is no window finding"
+         [] (sw/check-local-window-fit {:models [] :usage []} bl1848-now))
+(assert= "BL-1848: a model fully in VRAM with no recent request is no window finding"
+         [] (sw/check-local-window-fit {:models [(bl1848-model bl1848-iq3 13818 13818 49152)]
+                                        :usage []} bl1848-now))
+(let [[f & more] (sw/check-local-window-fit
+                  {:models [(bl1848-model bl1848-iq3 12400 13818 49152)] :usage []} bl1848-now)]
+  (assert= "BL-1848: a model partly outside VRAM raises exactly one finding" nil more)
+  (assert= "BL-1848: VRAM finding is CRIT keyed local-window-vram-<model>"
+           ["CRIT" "local-window-vram-ista-iq3s-coder:latest"] [(:severity f) (:key f)])
+  (assert-true "BL-1848: VRAM message names the model, 12400 of 13818 MiB and the 49152 context"
+               (every? #(str/includes? (str (:message f)) %)
+                       [bl1848-iq3 "12400 of 13818 MiB" "49152"]))
+  (assert-true "BL-1848: VRAM message ends with the flash-attention / q8_0 / second-model hint"
+               (every? #(str/includes? (str (:message f)) %)
+                       ["OLLAMA_FLASH_ATTENTION=1" "OLLAMA_KV_CACHE_TYPE=q8_0" "second model" "num_ctx"])))
+
+;; 90% of 49152 is 44236.8; the threshold is its ceiling, 44237.
+(assert= "BL-1848: the size threshold is the ceiling of 90% of the window"
+         44237 (sw/local-window-size-threshold 49152))
+(assert= "BL-1848: a 44236-token request is one under the threshold - no finding"
+         [] (sw/check-local-window-fit {:models [(bl1848-model bl1848-iq3 13818 13818 49152)]
+                                        :usage [(bl1848-row bl1848-iq3 40000 4236 10)]}
+                                       bl1848-now))
+(let [[f & more] (sw/check-local-window-fit
+                  {:models [(bl1848-model bl1848-iq3 13818 13818 49152)]
+                   :usage [(bl1848-row bl1848-iq3 20000 4000 5)
+                           (bl1848-row bl1848-iq3 30800 14100 10)
+                           (bl1848-row bl1848-iq3 40000 4237 30)]}
+                  bl1848-now)]
+  (assert= "BL-1848: a request at the threshold raises exactly one size finding" nil more)
+  (assert= "BL-1848: size finding is CRIT keyed local-window-size-<model>"
+           ["CRIT" "local-window-size-ista-iq3s-coder:latest"] [(:severity f) (:key f)])
+  (assert-true "BL-1848: size message names the PEAK (44900), its split and the context"
+               (every? #(str/includes? (str (:message f)) %)
+                       [bl1848-iq3 "44900-token" "30800 in" "14100 out" "49152"]))
+  (assert-true "BL-1848: size message ends with the num_ctx / 34 KiB per token hint"
+               (every? #(str/includes? (str (:message f)) %)
+                       ["num_ctx" "BL-1838" "34 KiB"])))
+(assert= "BL-1848: a request older than 60 minutes is outside the look-back"
+         [] (sw/check-local-window-fit {:models [(bl1848-model bl1848-iq3 13818 13818 49152)]
+                                        :usage [(bl1848-row bl1848-iq3 40000 7000 61)]}
+                                       bl1848-now))
+(assert= "BL-1848: a request exactly 60 minutes old is still inside the look-back"
+         ["local-window-size-ista-iq3s-coder:latest"]
+         (mapv :key (sw/check-local-window-fit
+                     {:models [(bl1848-model bl1848-iq3 13818 13818 49152)]
+                      :usage [(bl1848-row bl1848-iq3 40000 7000 60)]}
+                     bl1848-now)))
+(assert= "BL-1848: another model's request is never judged against this model's window"
+         [] (sw/check-local-window-fit {:models [(bl1848-model bl1848-iq3 13818 13818 49152)]
+                                        :usage [(bl1848-row "other-model:latest" 40000 7000 10)]}
+                                       bl1848-now))
+(assert= "BL-1848: a model with no reported context_length gets no size judgment"
+         [] (sw/check-local-window-fit {:models [(bl1848-model bl1848-iq3 13818 13818 nil)]
+                                        :usage [(bl1848-row bl1848-iq3 40000 7000 10)]}
+                                       bl1848-now))
+(assert= "BL-1848: rows with no timestamp are skipped, never read as now"
+         [] (sw/check-local-window-fit {:models [(bl1848-model bl1848-iq3 13818 13818 49152)]
+                                        :usage [(dissoc (bl1848-row bl1848-iq3 40000 7000 10) :timestamp-ms)]}
+                                       bl1848-now))
+(assert= "BL-1848: both limits on one model, and a second model's spill, all reported in /api/ps order"
+         ["local-window-vram-ista-iq3s-coder:latest" "local-window-size-ista-iq3s-coder:latest"
+          "local-window-vram-qwen2.5-coder-14b-q5km:latest"]
+         (mapv :key (sw/check-local-window-fit
+                     {:models [(bl1848-model bl1848-iq3 12400 13818 49152)
+                               (bl1848-model "qwen2.5-coder-14b-q5km:latest" 9000 11000 32768)]
+                      :usage [(bl1848-row bl1848-iq3 40000 7000 10)]}
+                     bl1848-now)))
+(assert-true "BL-1848: assemble-findings carries the window finding with the other findings"
+             (some #(and (= "local-window-vram-ista-iq3s-coder:latest" (:key %)) (= "CRIT" (:severity %)))
+                   (:findings (sw/assemble-findings
+                               {:roles [] :now-ms bl1848-now :available-mb 9000 :mem-floor-mb 1500
+                                :local-windows {:models [(bl1848-model bl1848-iq3 12400 13818 49152)]
+                                                :usage []}}))))
+(assert-true "BL-1848: a snapshot with no window facts adds no window finding to the sweep"
+             (not-any? #(str/starts-with? (str (:key %)) "local-window-")
+                       (:findings (sw/assemble-findings
+                                   {:roles [] :now-ms bl1848-now :available-mb 9000 :mem-floor-mb 1500}))))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
