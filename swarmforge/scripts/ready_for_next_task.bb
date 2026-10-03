@@ -36,6 +36,7 @@
 (load-file (str (fs/path script-dir "landed_ticket_lib.bb")))
 ;; BL-1871: a parcel is taken up on its own ticket's line.
 (load-file (str (fs/path script-dir "parcel_line_lib.bb")))
+(load-file (str (fs/path script-dir "required_stages_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -424,6 +425,21 @@
        (work-note-evidence-lib/work-note-ticket-id-from-message
         (handoff-lib/header-field handoff-file "message")))))
 
+;; The stage after this role's in the served ticket's required_stages - the
+;; same resolver swarm_handoff routes a forward by - named in print-task's
+;; forward step (2026-10-03).
+(defn- served-next-stage [ticket-file]
+  (when ticket-file
+    (required-stages-lib/next-required-stage
+     (:effective (required-stages-lib/resolve-effective
+                  (required-stages-lib/read-required-stages (slurp ticket-file))))
+     (first (str/split (str (handoff-lib/current-role)) #"@")))))
+
+(defn- task-print-opts [handoff-file take-up]
+  (let [ticket-file (served-ticket-file handoff-file)]
+    {:task-mode? true :take-up take-up :ticket-file ticket-file
+     :next-stage (served-next-stage ticket-file)}))
+
 (defn- take-up-parcel-line! [handoff-file]
   (let [role (handoff-lib/current-role)
         role-info (handoff-lib/load-role-info role)
@@ -495,8 +511,7 @@
                                        (origin-new-dir-for (first in-process-files)))
           (let [take-up (take-up-parcel-line! (first in-process-files))]
             (apply-effort-for-task! (first in-process-files) (mono-router-conf-text))
-            (handoff-lib/print-task (first in-process-files) {:task-mode? true :take-up take-up
-                                                               :ticket-file (served-ticket-file (first in-process-files))}))
+            (handoff-lib/print-task (first in-process-files) (task-print-opts (first in-process-files) take-up)))
           (print-merge-main-first-hint! (first in-process-files)))
         (if (handoff-lib/draining?)
           (println "DRAINING")
@@ -657,8 +672,7 @@
                                                      (origin-new-dir-for target-file))
                         (let [take-up (take-up-parcel-line! target-file)]
                           (apply-effort-for-task! target-file pack-conf)
-                          (handoff-lib/print-task target-file {:task-mode? true :take-up take-up
-                                                                :ticket-file (served-ticket-file target-file)}))
+                          (handoff-lib/print-task target-file (task-print-opts target-file take-up)))
                         (print-merge-main-first-hint! target-file))
                       (recur (rest candidates)))))))))))))
 

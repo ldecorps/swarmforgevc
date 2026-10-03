@@ -1974,6 +1974,18 @@
              sort
              first)))))
 
+(defn forward-draft-command
+  "One shell command that writes the forward draft to tmp/handoff.txt with
+   the commit read from HEAD, so a seat never types the draft or the hash
+   itself. A local seat told only 'git_handoff to the next role' ran
+   `git handoff next`, then wrote a file reading 'handed off' into its
+   outbox (2026-10-03)."
+  [next-stage stage task-name]
+  (str "mkdir -p tmp && printf 'type: git_handoff\\nto: " next-stage
+       "\\npriority: " (if (= stage "coder") "50" "00")
+       "\\ntask: " task-name
+       "\\ncommit: %s\\n' \"$(git rev-parse HEAD | cut -c1-10)\" > tmp/handoff.txt"))
+
 (defn print-task
   "Prints the in-process parcel and what to do with it. The task helper
    passes {:task-mode? true :take-up <take-up! outcome>}: in task mode the
@@ -1984,7 +1996,7 @@
    instead of 'do not ask again', which contradicted PARCEL_LINE's own
    'ask again' (2026-10-03)."
   ([file] (print-task file {}))
-  ([file {:keys [task-mode? take-up ticket-file]}]
+  ([file {:keys [task-mode? take-up ticket-file next-stage]}]
   (let [task-name (header-field file "task")
         typ (header-value file "type" "unknown")
         not-taken-up? (= :refused take-up)]
@@ -2010,7 +2022,15 @@
         (println (if ticket-file
                    (str "2) Read " ticket-file " with read_file - it is " task-name "'s spec - then implement it with your edit/test tools.")
                    (str "2) Implement " task-name " from backlog/active/ with your edit/test tools."))))
-      (println "3) Commit, git_handoff to the next role, then done_with_current / ready_for_next.")
+      (if (and task-mode? next-stage task-name)
+        (let [stage (first (str/split (str (current-role)) #"@"))]
+          (println (str "3) Commit only the paths you changed - `git add <path>` for each, never `git add .` - with a message that ends `By " stage ".`"))
+          (println (str "4) Forward it to " next-stage " (the stage after yours in " task-name "'s required_stages). After the commit, run:"))
+          (println (str "   " (forward-draft-command next-stage stage task-name)))
+          (println "   then run: swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt")
+          (println "   git_handoff is the draft's type, not a git command. If it prints AUDIT_REQUIRED, check your work and run that same command again.")
+          (println "5) Then run: swarmforge/scripts/done_with_current.sh   (no arguments)"))
+        (println "3) Commit, git_handoff to the next role, then done_with_current / ready_for_next."))
       (println "USE YOUR TOOLS NOW. Narrating or re-printing this TASK is not progress."))
     ;; A note re-served with only the prohibition above and no remedy left
     ;; every local Ollama coordinator tried on 2026-09-20/21 (four different

@@ -1087,6 +1087,40 @@
     (assert-true "print-task: a Work note names the ticket's file too"
                  (str/includes? note (str "The ticket it names is " (fs/absolutize slugged))))))
 
+;; ── print-task spells out the forward (2026-10-03) ─────────────────────────
+;; Told "3) Commit, git_handoff to the next role", a local seat ran
+;; `git handoff next`, then wrote a file reading "handed off" into its outbox.
+(require '[clojure.java.shell])
+(let [d (mk-tmp-dir)
+      gh (str (fs/path d "00_z_from_coordinator_to_coder_for_coder.handoff"))]
+  (spit gh (str (git-handoff-content "abcdef0123" "BL-9001") "merge_and_process coordinator abcdef0123\n"))
+  (let [cmd (handoff-lib/forward-draft-command "QA" "coder" "BL-9001")
+        repo (mk-tmp-dir)
+        git! (fn [& args] (apply clojure.java.shell/sh "git" "-C" repo args))]
+    (git! "init" "-q")
+    (spit (str (fs/path repo "a.txt")) "a\n")
+    (git! "add" "a.txt")
+    (git! "-c" "user.email=t@t" "-c" "user.name=t" "commit" "-q" "-m" "a")
+    (let [r (clojure.java.shell/sh "bash" "-c" cmd :dir repo)
+          head (str/trim (:out (git! "rev-parse" "HEAD")))]
+      (assert= "forward-draft-command exits 0" 0 (:exit r))
+      (assert= "forward-draft-command writes the five draft lines with HEAD's 10-character commit"
+               (str "type: git_handoff\nto: QA\npriority: 50\ntask: BL-9001\ncommit: " (subs head 0 10) "\n")
+               (slurp (str (fs/path repo "tmp" "handoff.txt"))))))
+  (assert-true "forward-draft-command: a non-coder stage forwards at priority 00"
+               (str/includes? (handoff-lib/forward-draft-command "documenter" "hardender" "BL-9001") "priority: 00"))
+  (let [out (with-redefs [handoff-lib/current-role (constantly "coder@2")]
+              (with-out-str (handoff-lib/print-task gh {:task-mode? true :take-up :moved :next-stage "QA"})))]
+    (assert-true "print-task: the forward step names the next stage" (str/includes? out "4) Forward it to QA"))
+    (assert-true "print-task: the forward step prints the draft command" (str/includes? out "> tmp/handoff.txt"))
+    (assert-true "print-task: the forward step names swarm_handoff.sh" (str/includes? out "swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt"))
+    (assert-true "print-task: the commit byline is the seat's stage" (str/includes? out "ends `By coder.`"))
+    (assert-true "print-task: done_with_current comes after the forward" (str/includes? out "5) Then run: swarmforge/scripts/done_with_current.sh"))
+    (assert-false "print-task: the vague git_handoff line is gone" (str/includes? out "Commit, git_handoff to the next role")))
+  (assert-true "print-task: without a next stage the step-3 line is unchanged"
+               (str/includes? (with-out-str (handoff-lib/print-task gh {:task-mode? true :take-up :moved}))
+                              "3) Commit, git_handoff to the next role")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")
