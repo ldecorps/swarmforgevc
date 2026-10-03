@@ -1,0 +1,125 @@
+id: BL-1908
+title: "Stamp-off for hotfix 8bd8940741: thirteen operator_runtime shell fixtures are git checkouts again (BL-1517's guard refused them all), two of them wait as long as this host's ticks take, BL-671's scenario 01 retires (it ran every fixture inside one acceptance step), and BL-671's and BL-684's step handlers follow the derived helpers that replaced their hand lists"
+milestone: M8
+type: defect
+severity: high
+# high: standing reds on main are a broken safety signal (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 16
+depends_on: []
+mutation_cost: low
+# low: shell test fixtures, two step handlers, one test allowlist entry; no
+# production code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "small test-side fixes; nothing to refactor"
+  architect: "no production code or design surface; the review is the coder's stamp-off pass"
+  hardender: "no production code changes, so nothing to mutate; the fixes are test-side"
+  documenter: "no documented behaviour changes"
+
+# Not a claim of ownership over BL-671's contract (BL-1251): the feature
+# this hotfix retires a scenario from; the shell tests are the other checks.
+acceptance: specs/features/BL-671-operator-runtime-fixtures-miss-cost-ledger-lib.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 8bd8940741 under the human's 2026-10-01 directive. No
+  choice is posed. FIRM: no production code changed; BL-671's scenario 01
+  is retired, never reworded; the review decides whether each change
+  stands.
+
+invariants: []
+
+source: |
+  Coder note 002362 (2026-10-03 00:51Z), verbatim: "unowned-red 13
+  operator_runtime tests, BL-671/684: BL-1886 evidence 854687bb13". The
+  coder's census in backlog/evidence/BL-1886-coder-20261003.md found 18
+  operator_runtime tests that build a plain mktemp root. Five passed. Twelve
+  exited 2 with BL-1517's "not inside a git checkout" refusal, and
+  test_operator_runtime_events_lock.sh exited 2 with no output. None had a
+  register row. BL-671's and BL-684's features were red too.
+  The human, specifier pane (Claude Code), 2026-10-01, verbatim (Article 5.3):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+description: |
+  ## Status: hotfix 8bd8940741 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  - The 13 tests' make_fixture calls init_git_fixture_root (the shared
+    operator_runtime_sandbox.sh helper hotfix 8b1c763709 introduced), the
+    same one-line change 8b1c763709 made to BL-763's test.
+  - Two timing bounds that held only while a full operator_runtime tick was
+    fast. On the WSL host one tick took about 20 to 25 s.
+    test_operator_runtime_fixture_reaper_sweep_bounded_progress.sh's orphans
+    slept 30 s, so the third had exited by itself before tick 2's "survives"
+    check; they now sleep 600 s, and the cleanup trap kills them.
+    test_operator_runtime_tick.sh's BL-481 live-loop section used a fixed
+    3500 ms tick interval and 5 s deadlines; a tick longer than the interval
+    makes the next wake due at once. It now times one tick with the loop's
+    env (TICK_S) and scales the interval and every deadline from it.
+  - BL-671's feature: scenario 01 retired (narrative records why). It ran
+    all sixteen fixtures inside one acceptance step, about 25 minutes here,
+    three past its 120 s spawn limit. Each fixture is its own standing
+    shell row. The handler's scenario 02 check now reads the derived
+    closure (bb_load_closure_cli.bb, what the helper copies) instead of
+    lib names in the helper's text, which BL-973 removed. And
+    test_operator_runtime_watch_adoption.sh, which copies no runtime at
+    all, is a named exemption with its reason.
+  - BL-684's handler: the supervisor fixture copies the supervisor's derived
+    load-file closure (it missed process_table_lib.bb, so the supervisor
+    died at load); scenario 07 passes the startup-grace override the shell
+    twin passes (BL-1043); the supervised child's pid is handed to after()
+    so it no longer outlives the run; scenario 11 finds the ticket in any
+    backlog folder (it read backlog/active/ after BL-684 closed); scenario
+    01 accepts what extension/test/onboarderResidualAllowlist.js accepts
+    (BL-694's list, which had grown by nine files this one never followed).
+  - extension/test/onboarderResidualAllowlist.js allows
+    backlog/standing-reds.tsv, which names BL-684's feature by its real
+    filename in the row BL-1907 owns.
+
+  ## What is wanted in this parcel
+
+  - Review each change above. Say in the evidence whether the
+    watch_adoption exemption, the scenario 01 retirement and the scaled
+    live-loop timings stand.
+  - Evidence: the review and one run of each check below.
+
+  ## Scope
+
+  The files hotfix 8bd8940741 touched (review only), evidence.
+
+  ## Out of scope
+
+  BL-684's scenario 09 and the two shell tests BL-1907 owns: they are red
+  only while a live subreaper adopts orphans (BL-1907). The tick test's own
+  runtime (967 to 1528 s here) is an observation, not this ticket.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each, measured at mint on main after the
+  hotfix (PID 1 adopting orphans, see BL-1907):
+  1. `node specs/pipeline/cli.js specs/features/BL-671-operator-runtime-fixtures-miss-cost-ledger-lib.feature`:
+     1 of 1 ok (45 s).
+  2. `node specs/pipeline/cli.js specs/features/BL-684-*.feature`: 21 of 21
+     ok (79 s).
+  3. The 13 operator_runtime shell tests named in the source, each exit 0.
+     Measured: bl647 63 s, sandbox_sweep_bounded_progress 46 s,
+     control_lost 50 s, fixture_reaper_sweep_liveness_undetermined 16 s,
+     fixture_reaper_sweep 18 s, disk_space_sweep 137 s,
+     fixture_reaper_sweep_bounded_progress 52 s, bl653 159 s,
+     sandbox_sweep 40 s, sandbox_sweep_liveness_undetermined 22 s,
+     reconcile_unqueued 49 s, events_lock 45 s, tick 371 s (168 ok).
+  4. `npx vitest run onboarderRenameNoResidual`
+     from extension/: 1 passed; BL-694's and BL-752's features 9 of 9 and
+     3 of 3.
+
+notes: |
+  Minted 2026-10-03 by the specifier from coder note 002362.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  [coder, qa] per the 2026-10-01 routing rule: test-side only.
+  Hotfix ledger: 8bd8940741 linked to this ticket in the mint commit.
