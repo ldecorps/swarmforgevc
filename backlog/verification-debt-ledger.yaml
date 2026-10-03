@@ -166,3 +166,9 @@
   description: "qa-gather register_join read the unit red 'unidentified'; by hand: the onTaskUpdate unhandled error matched to paused BL-1889, the suite-file-budget line to no open owner (BL-1893/BL-1910 done, no register/pole row)"
   detected_at: 2026-10-03
   evidence: backlog/evidence/BL-1858-QA-20261003.md
+- category: artifact-render-source-review
+  ticket: BL-1858
+  role: art-director
+  description: "judged the 9-10 tile phone grid's tile-head fit from residentSpyUiHtml.ts CSS and row-height arithmetic (~126px a row at 700px), no live Telegram/Bubble tunnel to see the crop; recorded by the specifier for the art-director (note 000027)"
+  detected_at: 2026-10-03
+  evidence: docs/design/briefs/2026-10-03-bl1858-live-grid-ten-tile-phone-row-crowding.md
