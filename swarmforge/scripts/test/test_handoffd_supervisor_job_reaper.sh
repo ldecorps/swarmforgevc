@@ -14,7 +14,16 @@
 
 set -euo pipefail
 
+# BL-1907 (QA bounce D1): case 06's orphan is a real `node --test` batch. Run
+# from inside a node:test process (the acceptance runtime is one), it would
+# inherit NODE_TEST_CONTEXT, act as that runner's reporting child, and exit
+# at once - gone before anything could read it as orphaned. This script's
+# fixtures are its own batches, whoever runs it.
+unset NODE_TEST_CONTEXT
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# BL-1907: the orphaned-process wait asks parent-orphaned? itself.
+source "$SCRIPT_DIR/lib/orphan_wait.sh"
 SUPERVISOR="$SCRIPT_DIR/../handoffd_supervisor.bb"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -112,14 +121,10 @@ for _ in $(seq 1 40); do
 done
 [[ -s "$ROOT/orphan.pid" ]] || fail "04 setup: fake stryker process never wrote its pid file"
 ORPHAN_PID="$(cat "$ROOT/orphan.pid")"
-# confirm it really did reparent to launchd/init before asserting anything
-PPID_NOW=""
-for _ in $(seq 1 40); do
-  PPID_NOW="$(ps -o ppid= -p "$ORPHAN_PID" 2>/dev/null | tr -d ' ' || true)"
-  if [[ "$PPID_NOW" == "1" ]]; then break; fi
-  sleep 0.1
-done
-[[ "$PPID_NOW" == "1" ]] || fail "04 setup: process did not reparent to PPID 1 (got $PPID_NOW)"
+# confirm it really reads orphaned - to the reapers' own predicate, so on a
+# host whose orphans go to a child subreaper too (BL-1907) - before asserting anything
+ORPHANED_NOW="$(wait_until_orphaned "$SCRIPT_DIR/.." "$ORPHAN_PID" 40 0.1)" \
+  || fail "04 setup: process never read orphaned to process_table_lib parent-orphaned? ($ORPHANED_NOW)"
 
 check_once
 
@@ -158,13 +163,8 @@ for _ in $(seq 1 40); do
 done
 [[ -s "$ROOT/orphan_node.pid" ]] || fail "06 setup: fake node --test process never wrote its pid file"
 ORPHAN_NODE_PID="$(cat "$ROOT/orphan_node.pid")"
-PPID_NOW=""
-for _ in $(seq 1 40); do
-  PPID_NOW="$(ps -o ppid= -p "$ORPHAN_NODE_PID" 2>/dev/null | tr -d ' ' || true)"
-  if [[ "$PPID_NOW" == "1" ]]; then break; fi
-  sleep 0.1
-done
-[[ "$PPID_NOW" == "1" ]] || fail "06 setup: process did not reparent to PPID 1 (got $PPID_NOW)"
+ORPHANED_NOW="$(wait_until_orphaned "$SCRIPT_DIR/.." "$ORPHAN_NODE_PID" 40 0.1)" \
+  || fail "06 setup: process never read orphaned to process_table_lib parent-orphaned? ($ORPHANED_NOW)"
 
 check_once
 
@@ -208,13 +208,8 @@ for _ in $(seq 1 40); do
 done
 [[ -s "$ROOT/orphan_vitest.pid" ]] || fail "07 setup: fake vitest process never wrote its pid file"
 ORPHAN_VITEST_PID="$(cat "$ROOT/orphan_vitest.pid")"
-PPID_NOW=""
-for _ in $(seq 1 40); do
-  PPID_NOW="$(ps -o ppid= -p "$ORPHAN_VITEST_PID" 2>/dev/null | tr -d ' ' || true)"
-  if [[ "$PPID_NOW" == "1" ]]; then break; fi
-  sleep 0.1
-done
-[[ "$PPID_NOW" == "1" ]] || fail "07 setup: process did not reparent to PPID 1 (got $PPID_NOW)"
+ORPHANED_NOW="$(wait_until_orphaned "$SCRIPT_DIR/.." "$ORPHAN_VITEST_PID" 40 0.1)" \
+  || fail "07 setup: process never read orphaned to process_table_lib parent-orphaned? ($ORPHANED_NOW)"
 
 check_once
 
@@ -271,13 +266,8 @@ for _ in $(seq 1 40); do
 done
 [[ -s "$ROOT/orphan_unreg.pid" ]] || fail "08 setup: fake unregistered-orphan process never wrote its pid file"
 ORPHAN_UNREG_PID="$(cat "$ROOT/orphan_unreg.pid")"
-PPID_NOW=""
-for _ in $(seq 1 40); do
-  PPID_NOW="$(ps -o ppid= -p "$ORPHAN_UNREG_PID" 2>/dev/null | tr -d ' ' || true)"
-  if [[ "$PPID_NOW" == "1" ]]; then break; fi
-  sleep 0.1
-done
-[[ "$PPID_NOW" == "1" ]] || fail "08 setup: process did not reparent to PPID 1 (got $PPID_NOW)"
+ORPHANED_NOW="$(wait_until_orphaned "$SCRIPT_DIR/.." "$ORPHAN_UNREG_PID" 40 0.1)" \
+  || fail "08 setup: process never read orphaned to process_table_lib parent-orphaned? ($ORPHANED_NOW)"
 
 check_once
 

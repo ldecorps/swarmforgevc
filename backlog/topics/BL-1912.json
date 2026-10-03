@@ -1,0 +1,1 @@
+{"id":"BL-1912","messages":[{"seq":0,"ts":1791010366638,"author":"swarm","type":"outbound","text":"BL-1912 🎵 in progress — A land-step replay commit runs under the land's own bound, not the generic 60 s subprocess wait, so a commit whose hooks need longer lands instead of escalating to QA as an entangled tip"}]}

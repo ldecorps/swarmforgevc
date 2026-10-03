@@ -1,0 +1,84 @@
+id: BL-1914
+title: "When the merge path cannot merge origin/main into a line, its LAND_PATH decline gives git's own reason (the conflicted paths, or the refusing hook's first line) instead of calling every failure a conflict"
+milestone: M8
+type: defect
+severity: low
+# low: a wrong diagnostic. The fallback still lands the line; the cost is
+# whoever reads the land record chasing a conflict that does not exist.
+status: todo
+epic: landing-is-a-merge
+priority: 4
+depends_on: []
+mutation_cost: low
+# low: one branch in land_merge_path.bb build! keeps git's stderr.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one function's failure branch changes; nothing to refactor"
+  architect: "no boundary moves; the decline and its fallback stay as BL-1901 built them"
+  hardender: "nothing is written; the acceptance drives both failure shapes through the real lander"
+  documenter: "no living doc quotes the decline text"
+acceptance: specs/features/BL-1914-a-merge-path-decline-names-gits-own-reason.feature
+
+human_approval: pending
+approval_context: >
+  Defect found by the specifier's BL-1870 merge-path census. No choice is
+  posed. FIRM - the decline and its fallback to the land step do not
+  change; only the reason the LAND_PATH line gives.
+
+invariants: []
+
+source: |
+  Specifier census, 2026-10-03:
+  backlog/evidence/BL-1870-merge-path-decline-census-20261003.md, cause 1.
+  .swarmforge/lander/BL-1891-d3bb22043c.log, BL-1893-90b1c556a8.log and
+  BL-1906-ec82c2560a.log each read "LAND_PATH land-step: merging
+  origin/main into the line conflicts". The first two merge cleanly under
+  `git merge-tree`; the merge was refused by the commit-msg hook.
+
+description: |
+  ## What is wrong
+
+  land_merge_path.bb `build!` runs `git merge --no-ff` and, on any
+  non-zero exit, aborts the merge and declines with "merging origin/main
+  into the line conflicts". git's stderr is discarded. A commit hook that
+  refuses the merge commit (the pre-merge-commit or commit-msg chain) is
+  reported as a conflict. On 2026-10-03 three declines were the
+  commit-msg hook's check_merge_deletion.sh (BL-1913) and none was a
+  conflict. The land record is what QA, the coordinator and the BL-1870
+  census read to learn why a line left the merge path.
+
+  ## What is wanted
+
+  - A real conflict is declined naming the conflicted path(s).
+  - A hook refusal is declined with the refusing hook's first refusal
+    line, and the reason never says "conflicts".
+
+  ## How (direction, not mandate)
+
+  Before `git merge --abort`, read the unmerged paths (`git diff
+  --name-only --diff-filter=U`). If there are none, the merge was refused
+  after it resolved, so take the first non-blank stderr line. Keep the
+  LAND_PATH line on one line, and truncate a long reason the way the land
+  step already truncates a replay refusal.
+
+  ## Scope
+
+  swarmforge/scripts/land_merge_path.bb (`build!`), its bb test runner, the
+  new feature and its step handler bl1914MergePathDeclineReasonSteps.js.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each:
+  1. `node specs/pipeline/cli.js specs/features/BL-1914-a-merge-path-decline-names-gits-own-reason.feature`:
+     01, 02 ok.
+  2. `node specs/pipeline/cli.js specs/features/BL-1901-a-clean-parcel-line-lands-as-a-merge-of-origin-main.feature`:
+     every scenario ok (measured at mint, see notes).
+
+notes: |
+  Minted 2026-10-03 by the specifier from its BL-1870 merge-path census.
+  Not a standing red: no test is red.
+  Independent of BL-1913: after BL-1913 lands, the remaining merge
+  failures are real conflicts and other hooks' refusals, and those are
+  still mislabelled until this one lands.
+  Measured at mint (2026-10-03, main 41a07792fc, node specs/pipeline/cli.js):
+  BL-1901 feature 7 of 7 ok (21 s), BL-1631 5 of 5 ok, BL-1242 14 of 14 ok.

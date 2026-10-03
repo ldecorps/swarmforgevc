@@ -11,6 +11,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_closure_copy.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_fixture_load_guard.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/orphan_wait.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -81,8 +82,9 @@ die() { echo "FAIL: $*" >&2; exit 1; }
 # process that is deliberately NOT a poll-loop, for the "must not be
 # touched" negative case). Uses the same fork+setpgrp+exec double-fork
 # technique test_handoffd_supervisor_job_reaper.sh already established for
-# a genuine PPID-1 orphan (the python3 parent exits immediately after
-# forking, so the child reparents to launchd/init) - never a lingering
+# a genuine orphan (the python3 parent exits immediately after forking, so
+# the child reparents to launchd/init or the host's child subreaper,
+# BL-1907) - never a lingering
 # job-controlled bash child, which a live supervisor process would still
 # parent.
 spawn_orphaned_reconcile() {
@@ -105,15 +107,12 @@ PYEOF
     sleep 0.02
   done
   [[ -s "$pidfile" ]] || die "spawn_orphaned_reconcile: $pidfile was never written"
-  local p ppid_now
+  local p seen
   p="$(cat "$pidfile")"
-  ppid_now="0"
-  for i in $(seq 1 500); do
-    ppid_now="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
-    [[ "$ppid_now" == "1" ]] && break
-    sleep 0.02
-  done
-  [[ "$ppid_now" == "1" ]] || die "spawn_orphaned_reconcile: pid $p did not reparent to PPID 1 (got $ppid_now)"
+  # BL-1907: orphaned as the reaper under test reads it (PID 1, or the
+  # host's child subreaper), never a hand-rolled PPID 1 check.
+  seen="$(wait_until_orphaned "$SRC" "$p" 500 0.02)" \
+    || die "spawn_orphaned_reconcile: pid $p never read orphaned to process_table_lib parent-orphaned? ($seen)"
 }
 
 # BL-928: starts the REAL (non-check-once) supervisor loop in the

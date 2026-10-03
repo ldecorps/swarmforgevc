@@ -123,3 +123,5 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   [coder, qa] per the 2026-10-01 routing rule: test-side only.
   Hotfix ledger: 8bd8940741 linked to this ticket in the mint commit.
+
+assigned_to: coder

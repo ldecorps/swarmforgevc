@@ -2,6 +2,7 @@
 ;; Smoke tests for process_table_lib.bb (cross-platform process enumeration).
 (ns process-table-lib-test-runner
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "process_table_lib.bb")))
@@ -146,6 +147,59 @@
 (assert-true "nil cmd with an in-scope cwd still matches via the cwd leg"
              (process-table-lib/project-scoped-process?
               nil "/host/root/.worktrees/coder/extension" bl887-paths))
+
+;; ── BL-1907: an orphan adopted by a subreaper is an orphan ──────────────────
+(def adopter 5772)
+(assert= "no parent at all reads orphaned"
+         true (process-table-lib/orphaned-by-parent? {:parent-pid nil :parent-alive? false :adopter-pid adopter}))
+(assert= "a parent of PID 1 reads orphaned, whatever the adopter"
+         true (process-table-lib/orphaned-by-parent? {:parent-pid 1 :parent-alive? true :adopter-pid adopter}))
+(assert= "a parent of PID 1 reads orphaned with no adopter learned"
+         true (process-table-lib/orphaned-by-parent? {:parent-pid 1 :parent-alive? true :adopter-pid nil}))
+(assert= "a dead parent reads orphaned"
+         true (process-table-lib/orphaned-by-parent? {:parent-pid 4242 :parent-alive? false :adopter-pid adopter}))
+(assert= "a parent that is the host's adopter (a child subreaper) reads orphaned"
+         true (process-table-lib/orphaned-by-parent? {:parent-pid adopter :parent-alive? true :adopter-pid adopter}))
+(assert= "a live parent that is not the adopter does not read orphaned"
+         false (process-table-lib/orphaned-by-parent? {:parent-pid 4242 :parent-alive? true :adopter-pid adopter}))
+(assert= "with no adopter learned, a live non-1 parent does not read orphaned (today's rule)"
+         false (process-table-lib/orphaned-by-parent? {:parent-pid adopter :parent-alive? true :adopter-pid nil}))
+
+(assert= "a probe answer naming PID 1 is the adopter" 1
+         (process-table-lib/adopter-from-probe {:probe-ppid 1 :self-pid 100 :starter-pid 200}))
+(assert= "a probe answer naming a child subreaper is the adopter" adopter
+         (process-table-lib/adopter-from-probe {:probe-ppid adopter :self-pid 100 :starter-pid 200}))
+(assert= "a probe adopted by the reading process itself teaches nothing (its own children must never read orphaned)"
+         nil (process-table-lib/adopter-from-probe {:probe-ppid 100 :self-pid 100 :starter-pid 200}))
+(assert= "a probe still parented to its starter (not yet reparented) teaches nothing"
+         nil (process-table-lib/adopter-from-probe {:probe-ppid 200 :self-pid 100 :starter-pid 200}))
+(assert= "an unreadable probe parent teaches nothing"
+         nil (process-table-lib/adopter-from-probe {:probe-ppid nil :self-pid 100 :starter-pid 200}))
+
+(let [a (process-table-lib/orphan-adopter-pid)]
+  (assert-true "the live probe learns a positive adopter pid on this host" (and (integer? a) (pos? a)))
+  (assert= "the adopter is learned once per process (cached)" a (process-table-lib/orphan-adopter-pid)))
+
+;; parent-orphaned? itself (the impure wrapper around orphaned-by-parent?):
+;; a pid this process is still a live child of is never orphaned, and a pid
+;; that has already vanished entirely (ProcessHandle/of empty, never a
+;; "parent" question at all) reads orphaned - the one branch no other WIRED
+;; gate exercises (bl879_parent_orphaned_front_desk_property_runner.bb's own
+;; P3a/P3b cover the same two cases, but nothing - no .property.test.js, no
+;; step handler - ever calls that runner; its acceptance sibling drives a
+;; different, JSON-bridged runner instead), and because orphan_wait.sh
+;; deliberately checks `alive?` itself before ever trusting the predicate on
+;; a candidate pid.
+(let [child (process/process ["sleep" "5"] {:out :string :err :string})
+      child-pid (.pid (:proc child))]
+  (try
+    (assert= "a process whose parent is this still-live reading process is never orphaned"
+             false (process-table-lib/parent-orphaned? child-pid))
+    (finally
+      (process/destroy child)
+      (.waitFor ^java.lang.Process (:proc child) 2000 java.util.concurrent.TimeUnit/MILLISECONDS))))
+(assert-true "a pid that no longer exists at all reads orphaned (never a vacuous false)"
+             (process-table-lib/parent-orphaned? 999999999))
 
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
