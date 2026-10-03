@@ -24,7 +24,7 @@ acceptance: specs/features/BL-1911-the-local-seat-answers-from-what-it-reads-in-
 required_wiring:
   - 'specs/pipeline/steps/bl1911LocalSeatReadsTheRepoSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 human_ruling: |
   B - each turn the seat searches the repo for the question and sends what it found, one model call (recommended)
 ruling_provenance: relayed by specifier
