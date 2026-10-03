@@ -61,6 +61,19 @@
                   "❯\n"
                   "  bypass permissions on (shift+tab to cycle)"))
 
+;; ── 2026-10-03 hotfix: live local-model frames the verb class read idle ──
+(assert-busy "frame phrase with an internal ellipsis"
+             "  .. Almost there... probably... (1h 2m 3s · ↑ 1.3k tokens · esc to cancel)")
+(assert-busy "frame phrase ending in a plain full stop"
+             "  .  My other loading screen is even funnier. (1h 4m 19s · ↑ 1.3k tokens · esc to cancel)")
+(assert-busy "frame phrase with an apostrophe"
+             "  .. Greasin' the cogs of the machine... (13m 14s · ↑ 156 tokens · esc to cancel)")
+(assert-idle "qwen tool-result line with a digit-led parenthesis"
+             "  ✓ Read extension/src/bridge/residentSpyUiHtml.ts (lines 201-400)\n  ✓ Read a.ts (200 lines)\n❯")
+(assert-idle "qwen footer chrome"
+             (str "  ➜ coder · git:(swarmforge-coder) · ista-iq3s-coder:latest · 32.8k Context 59.3% used\n"
+                  "  Enter to steer · Ctrl+Q to queue · YOLO mode (shift + tab to cycle)"))
+
 ;; ── idle shapes the old classifier misread as busy ─────────────────────
 (assert-idle "finished-turn footer with lingering shells"
              (str "✻ Worked for 5m 2s · 5 shells still running\n"

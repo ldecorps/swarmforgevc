@@ -1,0 +1,120 @@
+id: BL-1934
+title: "Stamp-off for hotfix 033dd1780c: a live status frame whose phrase carries an inner ellipsis, an apostrophe or a final full stop reads busy, so the claim-idle halt stops counting a mid-turn seat toward kill_all_swarm"
+milestone: M8
+type: defect
+severity: critical
+# critical: the busy reading is the only thing between a working seat and the
+# claim-without-progress halt, whose action is kill_all_swarm. On 2026-10-03
+# the local-model coder reached reclaims=8 of 10 while mid-turn, about 2
+# increments from tearing the whole swarm down.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: the review reads one regex on each side of the language boundary and
+# its regression cases; the Stryker pass is BL-1935's, after the cooldown.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one regex literal and its comment on each side; nothing to deduplicate"
+  architect: "no boundary moves; both classifiers keep their callers, the tail window and the two-layer rule"
+  hardender: "mutation_cooldown_days is 3 on full-forge, so Stryker on agentPaneState.ts is refused until 2026-10-07; BL-1935 owns that pass"
+  documenter: "no living doc quotes the frame shape; the evidence file records the incident"
+
+# Not a claim of ownership over BL-970's contract (BL-1251): the busy-gate
+# feature this classifier must keep satisfying.
+acceptance: specs/features/BL-970-wake-busy-gate-idle-pane-misclassification.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed on the coordinator's CRITICAL
+  note 016108 (2026-10-03 20:03Z). No choice is posed. FIRM: the review
+  decides whether the change stands; the coder never re-applies it.
+
+invariants:
+  - "Every line the pre-hotfix pattern classified busy still classifies busy, on both sides of the language boundary."
+  - "chase_sweep_lib.bb actively-processing? and agentPaneState.ts isPaneActivelyProcessing return the same verdict for every capture."
+  - "The added branch accepts a line only when its parenthesis opens on a unit-led elapsed followed by a · separator, so a tool line such as ✓ Read x.ts (lines 201-400) stays idle."
+
+source: |
+  Coordinator note 016108 (2026-10-03 20:03Z): "CRITICAL busy-regex blind to
+  spinners, can kill swarm - see evidence file". Evidence:
+  backlog/evidence/claim-halt-busy-detector-blind-to-spinner-phrases-20261003.md.
+
+description: |
+  ## Status: hotfix 033dd1780c landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  Between 19:42:46Z and 19:55:53Z on 2026-10-03, handoffd counted the
+  local-model coder's claim 8 times toward the claim-without-progress halt
+  (threshold 10, action kill_all_swarm), each time with busy=false, while
+  the pane showed a live status frame with an advancing timer. The frame
+  pattern admitted only letters, spaces and hyphens before a closing
+  ellipsis, so these live frames read idle:
+
+  - `.. Almost there... probably... (1h 2m 3s · ↑ 1.3k tokens · esc to cancel)` (inner ellipsis)
+  - `.  My other loading screen is even funnier. (1h 4m 19s · ↑ 1.3k tokens · esc to cancel)` (final full stop)
+  - `.. Greasin' the cogs of the machine... (13m 14s · ↑ 156 tokens · esc to cancel)` (apostrophe; found at mint)
+
+  The coordinator reset the claim sidecar at 19:58:59Z, which bought 30
+  minutes and fixed nothing.
+
+  ## What the hotfix changed
+
+  - swarmforge/scripts/chase_sweep_lib.bb `live-status-frame-pattern` gains
+    a second branch: after the spinner glyph, any phrase without parentheses
+    whose parenthesis opens on a unit-led elapsed (`1h 2m 3s`, `13m 14s`,
+    `45s`) and a `·` separator. The original branch is unchanged.
+  - extension/src/panel/agentPaneState.ts `LIVE_STATUS_FRAME_PATTERN`: the
+    same change (BL-897 parity).
+  - Regression cases: three busy frames and two idle qwen shapes in
+    swarmforge/scripts/test/actively_processing_test_runner.bb; the same in
+    extension/test/agentPaneState.test.js.
+
+  ## What the coder checks
+
+  - Both literals against this description and the three invariants; that
+    the two branches are the same on both sides.
+  - The idle side: a qwen tool line such as `✓ Read x.ts (lines 201-400)`,
+    the qwen footer, the Claude `Worked for` footer and BL-970's
+    contamination shapes stay idle. Name any live frame shape you find that
+    still reads idle.
+  - Evidence: backlog/evidence/BL-1934-coder-<date>.md.
+
+  ## Not covered here
+
+  - The running handoffd loads the lib once at start, so the fix is live only
+    after a restart (build_freshness_cli.bb sync). That is the coordinator's
+    step, asked for by note on the hotfix.
+  - The evidence file's other two findings: handoffd's
+    `:on-claim-idle-bounce!` at threshold 6 only logs although its message
+    says it releases the claim, and a local-model seat has no claim-idle
+    exemption like the hardener's 90 minutes. Each is its own ticket.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/actively_processing_test_runner.bb` ends "actively_processing_test_runner: ALL CHECKS PASSED" (measured at mint).
+  2. `PROPERTY_RUNS=200 bb swarmforge/scripts/test/bl970_busy_gate_property_runner.bb` ends "ALL PROPERTIES HOLD" (measured at mint).
+  3. `bb swarmforge/scripts/test/bl996_one_definition_property_runner.bb` ends "ALL PROPERTIES HOLD" (measured at mint).
+  4. `node specs/pipeline/cli.js` on each of these passes with no failures (measured at mint: 7, 8, 5 and 12 ok):
+     specs/features/BL-970-wake-busy-gate-idle-pane-misclassification.feature,
+     specs/features/BL-996-one-definition-of-a-mid-turn-pane.feature,
+     specs/features/BL-997-the-busy-marker-agrees-across-the-language-boundary.feature,
+     specs/features/BL-1003-the-extension-host-busy-verdict-matches-the-swarms.feature.
+  5. Read from the gather's rows: extension/test/agentPaneState.test.js and extension/test/bl1003BusyVerdictParity.property.test.js green.
+  6. `.swarmforge/daemon/handoffd-build.json` names a build_sha that has 033dd1780c as an ancestor (the restart happened).
+
+notes: |
+  - Minted 2026-10-03 by the specifier on coordinator note 016108; hotfix
+    033dd1780c landed in the same pass.
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - The hotfix's tests were run with the lib edit in place: the runner, both
+    property runners (200 and 120 draws), loop_detect_lib, the four features
+    above, the bl1003 parity property, and the five TypeScript unit files
+    that read the classifier (117 tests).
+
+assigned_to: coder

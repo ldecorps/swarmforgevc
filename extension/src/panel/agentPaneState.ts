@@ -71,8 +71,16 @@ const ARROW_MARKER = /❯/;
 // fall outside it). See specs/features/fixtures/BL-970/ for the shared
 // captures both sides are verified against.
 const BUSY_TAIL_WINDOW = 20;
+// Two branches. The first is the original shape: a verb phrase of letters,
+// spaces and hyphens ending in an ellipsis. The second takes any phrase
+// without parentheses when the parenthesis opens on a unit-led elapsed and
+// a "·" separator. It exists because a phrase with an internal ellipsis, an
+// apostrophe, or a final "." ("Almost there... probably...", "Greasin' the
+// cogs...", "even funnier.") read idle, and the claim-idle halt counted a
+// mid-turn local-model seat toward kill_all_swarm (2026-10-03 hotfix).
+// Mirrors chase_sweep_lib.bb's live-status-frame-pattern; keep both equal.
 const LIVE_STATUS_FRAME_PATTERN =
-  /^\s*[^\sA-Za-z0-9(){}[\]"'⏺⎿]{1,2}\s+\p{L}[\p{L} -]{0,60}(?:…|\.{3})\s*\(\s*\d/u;
+  /^\s*[^\sA-Za-z0-9(){}[\]"'⏺⎿]{1,2}\s+\p{L}(?:[\p{L} -]{0,60}(?:…|\.{3})\s*\(\s*\d|[^()]{0,80}\(\s*\d+[hms](?:\s+\d+[hms])*\s*·)/u;
 
 function isLiveStatusFrameLine(line: string): boolean {
   return LIVE_STATUS_FRAME_PATTERN.test(line);

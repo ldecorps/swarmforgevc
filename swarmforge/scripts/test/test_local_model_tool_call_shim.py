@@ -198,6 +198,29 @@ class NudgeTests(unittest.TestCase):
                                                 {"role": "user", "content": shim.NUDGE}])
 
 
+class OutputBudgetTests(unittest.TestCase):
+    """2026-10-03 hotfix: the Modelfile's num_predict binds over the client's max_tokens."""
+
+    def test_num_predict_is_read_from_the_show_parameters(self) -> None:
+        self.assertEqual(shim.num_predict_of({"parameters": "num_ctx     32768\nnum_predict 4096"}), 4096)
+        self.assertIsNone(shim.num_predict_of({"parameters": "num_ctx 32768"}))
+        self.assertIsNone(shim.num_predict_of({"parameters": "num_predict -1"}))
+        self.assertIsNone(shim.num_predict_of({"error": "model not found"}))
+        self.assertIsNone(shim.num_predict_of(None))
+
+    def test_a_budget_above_the_cap_is_lowered_and_nothing_else_moves(self) -> None:
+        request = {"model": "x", "max_tokens": 13000, "max_completion_tokens": 9000, "temperature": 0.3}
+        out, lowered = shim.clamp_output_budget(request, 4096)
+        self.assertEqual((out["max_tokens"], out["max_completion_tokens"], out["temperature"], lowered),
+                         (4096, 4096, 0.3, 13000))
+        self.assertEqual(request["max_tokens"], 13000)
+
+    def test_a_budget_is_never_raised_added_or_read_from_a_bool(self) -> None:
+        for request in ({"max_tokens": 200}, {}, {"max_tokens": True}):
+            self.assertEqual(shim.clamp_output_budget(request, 4096), (request, None))
+        self.assertEqual(shim.clamp_output_budget({"max_tokens": 13000}, None), ({"max_tokens": 13000}, None))
+
+
 class FakeOllama(BaseHTTPRequestHandler):
     seen: list = []
 
@@ -217,6 +240,10 @@ class FakeOllama(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+        if self.path == "/api/show":
+            params = "num_ctx 32768\nnum_predict 4096" if body.get("model") == "capped" else "num_ctx 32768"
+            self._reply({"parameters": params})
+            return
         FakeOllama.seen.append((self.path, body))
         last = (body.get("messages") or [{}])[-1]
         if last.get("content") == "announce, please":
@@ -288,6 +315,21 @@ class LiveShimTests(unittest.TestCase):
         self.assertEqual(out["choices"][0]["message"]["content"], FENCED)
         with urllib.request.urlopen(self.base + "/v1/models", timeout=10) as resp:
             self.assertEqual(json.loads(resp.read())["path"], "/v1/models")
+
+    def test_a_tool_request_reaches_ollama_with_the_modelfile_cap(self) -> None:
+        tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+        self.post({"model": "capped", "max_tokens": 13000, "tools": tools,
+                   "messages": [{"role": "user", "content": "read it"}]})
+        self.assertEqual(FakeOllama.seen[-1][1]["max_tokens"], 4096)
+
+    def test_a_tool_less_compression_request_reaches_ollama_with_the_modelfile_cap(self) -> None:
+        self.post({"model": "capped", "max_tokens": 13000,
+                   "messages": [{"role": "system", "content": "summarize the history"}]})
+        self.assertEqual(FakeOllama.seen[-1][1]["max_tokens"], 4096)
+
+    def test_a_model_with_no_num_predict_keeps_the_client_budget(self) -> None:
+        self.post({"model": "m", "max_tokens": 13000, "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(FakeOllama.seen[-1][1]["max_tokens"], 13000)
 
     def test_health_names_the_shim_and_ensure_refuses_a_foreign_port(self) -> None:
         port = self.shim.server_address[1]

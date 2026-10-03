@@ -100,6 +100,29 @@ test('agentPaneStatusMessage reports the agent is not running for a non-empty sh
 // substring with no frame around it is exactly the false-busy shape BL-970
 // fixed on the swarm side; see specs/features/fixtures/BL-970/ for the
 // shared real-capture fixtures both sides are verified against.
+// 2026-10-03 hotfix: live frames captured from the local-model coder seat
+// mid-turn that the ellipsis-only verb class read idle (internal ellipsis,
+// apostrophe, phrase ending in "."), and qwen footer lines that stay idle.
+test('isPaneActivelyProcessing detects live frames whose phrase has inner punctuation', () => {
+  for (const frame of [
+    '  .. Almost there... probably... (1h 2m 3s · ↑ 1.3k tokens · esc to cancel)',
+    '  .  My other loading screen is even funnier. (1h 4m 19s · ↑ 1.3k tokens · esc to cancel)',
+    "  .. Greasin' the cogs of the machine... (13m 14s · ↑ 156 tokens · esc to cancel)",
+  ]) {
+    assert.equal(isPaneActivelyProcessing(frame), true, frame);
+  }
+});
+
+test('isPaneActivelyProcessing keeps qwen tool and footer lines idle', () => {
+  for (const line of [
+    '  ✓ Read extension/src/bridge/residentSpyUiHtml.ts (lines 201-400)',
+    '  ➜ coder · git:(swarmforge-coder) · ista-iq3s-coder:latest · 32.8k Context 59.3% used',
+    '  Enter to steer · Ctrl+Q to queue · YOLO mode (shift + tab to cycle)',
+  ]) {
+    assert.equal(isPaneActivelyProcessing(line), false, line);
+  }
+});
+
 test('isPaneActivelyProcessing detects a real live status frame', () => {
   assert.equal(isPaneActivelyProcessing('✻ Thinking… (5s · ⚒ tool)'), true);
 });
