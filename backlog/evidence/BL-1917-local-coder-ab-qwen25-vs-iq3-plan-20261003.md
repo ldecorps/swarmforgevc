@@ -130,3 +130,39 @@ FA=1 and KV q8_0 on ollama serve, think:false checked through the shim
 alongside: venv/ ignored (358be6be62), qwen2.5 num_predict 2048
 (479155f733), and swarm_handoff refusing a git_handoff for a ticket other
 than the in-process parcel.
+
+## iq3 attempt 1 (14:00:08-16:44:32Z) - stopped, harness fault
+
+| measure | iq3, BL-1916 bounce, attempt 1 |
+|---|---|
+| wall time | 2h44m, stopped by the specifier at the human's word |
+| sessions | 2 (04abf95a; 4f389834 after a 14:29Z chase-respawn) |
+| tool calls | 79 |
+| commits / forwards | 0 / 0 |
+| junk committed / wrong forwards | none |
+
+It read the card, the ticket and QA's first-bounce evidence correctly, then
+went off scope: it read the window gate CLI's `TRIGGER: 27852` (qwen2.5's
+compaction trigger, 0.85 x 32768) as a served-window fault and spent the
+rest of the run in local_model_window_gate_lib.bb. None of D1-D3 was
+started. From 15:05Z qwen compacted the history on every turn, about 20k
+prompt tokens shrinking by 60-900 each time, and the seat made one tool
+call per 5-10 minutes while Ollama answered each request in 3-26 s.
+
+Cause (harness): qwen 0.24.7 compacts at min(0.85 x window, window - 20000
+- 13000). iq3's 49152 window compacts at 16152, inside BL-1840's dead zone
+(33001-60852); the dead-zone gate refuses it, but only a full ./swarm
+launch runs that gate, and the one-seat regeneration used for the swap did
+not. The specifier missed it at the swap. Fix: hotfix ff104fc258 serves
+iq3 at 32768 (compaction at 27852; the first turn measures ~12.9k tokens
+and BL-1801's fit check passes).
+
+## iq3 attempt 2 (clean retry, from 16:48:42Z)
+
+Human, 2026-10-03: "fix the compression trigger first and give iq3 one
+clean retry on the same bounce". Same parcel: QA's first-bounce text, in
+process at 4720c4f64b; the line is 958e1c5c47 (main merged; tree = main
+plus the same four BL-1916 bounce files). A fresh qwen session; the seat's
+settings declare contextWindowSize 32768. A stray root package.json (an npm
+init stub from 13:50Z) was moved to the worktree's tmp/. BL-1917 is next
+in the queue.
