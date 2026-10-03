@@ -1,0 +1,111 @@
+id: BL-1926
+title: "Stamp-off for hotfix 5a89725e03: a local-model seat's reply of several text tool calls runs only the first, and its card shows the five-line git_handoff draft, the next stage from required_stages, and that file paths are literal"
+milestone: M8
+type: defect
+severity: high
+# high: the coder seat ran a ten-step plan blind and could not forward its
+# first real parcel - observation 9 of the dogfood loop (intake loop step 2).
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: [BL-1917]
+mutation_cost: low
+# low: one slice in the landed shim with a test, and card prose.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one slice and two card paragraphs; nothing to refactor"
+  architect: "the shim boundary is BL-1917's, reviewed there; this narrows what it forwards"
+  hardender: "Python has no mutation lane (BL-472) and the shim writes no state"
+  documenter: "the card notes are the documentation the seat reads; no living doc describes the shim's call count"
+
+# Not a claim of ownership over BL-1052's contract (BL-1251): the seat
+# launch feature whose shim and card this hotfix touches.
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 5a89725e03, landed under the human's 2026-10-03
+  dogfood loop ("have specifier implementing them"). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it; native tool_calls from the model are never cut.
+
+invariants:
+  - "A reply the shim rewrites from text carries at most one tool call, and a reply that already carries native tool_calls is passed through unchanged."
+
+source: |
+  Root intake backlog/archive/INTAKE-coder2-tool-calls-20261003.md. The
+  human, via Cursor, 2026-10-03, verbatim (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 9 (specifier, 2026-10-03 11:47Z): having read BL-1916's YAML
+  and the Modelfile, the coder wrote ten tool calls as text in one reply
+  (shim.log rewritten=10) and all ten ran before it saw a result.
+
+description: |
+  ## Status: hotfix 5a89725e03 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  The seat's ten blind calls: ollama show, a grep, the acceptance feature,
+  write_file to backlog/evidence/BL-1916-coder-$(date +%Y%m%d).md (a literal
+  path, since write_file runs no shell), git add of the expanded name
+  (pathspec error), git commit (refused), a tmp/handoff.txt reading "NONE"
+  (HANDOFF INVALID), swarm_handoff.sh, done_with_current.sh
+  (FORWARD_NOT_SENT) and ready_for_next.sh. Its card described the draft as
+  "plain field: value lines" with no example, and named cleaner as the next
+  stage although BL-1916's required_stages is [coder, qa].
+
+  ## What the hotfix changed
+
+  - local_model_tool_call_shim.py: rewrite_completion turns only the FIRST
+    text tool call into a tool_call and drops the rest from the reply's
+    text. A reply with native tool_calls is untouched.
+  - swarmforge/roles/local-model/loop.note (every local seat's card): run one
+    command at a time and read its output; write_file and edit paths are
+    literal (`$(date +%Y%m%d)`, `~`).
+  - swarmforge/roles/local-model/coder.note: the git_handoff goes to the
+    stage after coder in required_stages (cleaner when present), and the
+    card shows the five draft lines with a 10-character commit.
+
+  ## What each stage checks
+
+  - Coder: the change against the description and the invariant, the new
+    unit case test_a_reply_of_many_calls_runs_only_the_first, and whether
+    the other local role notes (cleaner, architect, hardender, documenter)
+    need the same required_stages wording - say so in evidence; do not
+    change them here. Evidence: backlog/evidence/BL-1926-coder-<date>.md.
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_bl1917_local_model_seat_url.sh` prints ALL PASS
+     (its case 0 runs the shim's unit cases, 25 at mint).
+  2. `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` ends "ALL PASS".
+  3. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`
+     passes (measured at mint on HEAD 5a89725e03: 9 of 9 ok).
+  4. shim.log after 2026-10-03 12:53 BST (the live restart onto this code)
+     has no rewritten= value above 1.
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 9 of the dogfood loop.
+    depends_on BL-1917 (this narrows the shim BL-1917 reviews).
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - Live: shim restarted onto this code at 12:53 BST; the coder card at
+    .swarmforge/prompts/coder.md rewritten to the new notes (byte-identical to
+    loop.note + coder.note); coder worktree fast-forwarded onto 5a89725e03 (no
+    coder commits on its line) and the pane respawned at 11:53:18Z.
+  - The seat's own untracked scratch file
+    "backlog/evidence/BL-1916-coder-$(date +%Y%m%d).md" (content NONE) was
+    left in the coder worktree; it is the seat's, from its BL-1916 parcel.
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1926; that file
+    carries the human's uncommitted edits, so it was left alone.

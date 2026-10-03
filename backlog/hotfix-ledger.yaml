@@ -804,3 +804,10 @@
   stamp_ticket: BL-1925
   human_decision: null
   decided_at: null
+- commit: 5a89725e03
+  subject: "Hotfix: a local-model seat runs one tool call per reply, and its card shows the handoff draft it must write"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1926
+  human_decision: null
+  decided_at: null
