@@ -154,3 +154,9 @@
   description: "land_main_publish.sh's rematch ordering (land_record_rematch before the rematch's own push, item 5) has no reachable dynamic test - BL-1872's fixture races only the FIRST push, not the rematch's own. Pinned the call order statically (land_main_publish_test_runner.sh case 09) instead of building a double-race fixture; the next ticket that touches this ordering should build that fixture rather than trust the static pin alone"
   detected_at: 2026-10-02
   evidence: backlog/evidence/BL-1872-hardender-20261002.md
+- category: straggler-owner-attribution
+  ticket: BL-1841
+  role: QA
+  description: "qa-gather's after-run straggler check (host-wide pgrep) exited 0 on another role's live Stryker run; attributed it by hand via /proc args to .worktrees/hardender, not a QA orphan"
+  detected_at: 2026-10-03
+  evidence: backlog/evidence/BL-1841-QA-20261003.md
