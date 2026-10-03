@@ -99,7 +99,7 @@ today's tooling) and respawned the seat at 12:54Z.
 | handoffd chase-respawns | 3 |
 | tool calls | 61 |
 | text-only stops | 10 |
-| shim nudges ok / text calls rewritten | 28 / 47 |
+| shim requests / nudges (ok, no-call) / text calls rewritten | 93 / 13 ok, 1 no-call / 48 (shim.log is stamped in local time: window 13:54:16-14:38:25 BST) |
 | hand nudges | 1 (13:32:17Z, "Run: swarm_handoff.sh tmp/handoff.txt then done_with_current.sh") |
 | wrong forwards | 1: at 13:00:39Z it re-sent the stale BL-1858 draft left in tmp/handoff.txt (task BL-1858, 127768f186); the audit had been answered in an earlier session, so it queued and reached the hardender (002384), which reverted it and recorded a bounce |
 | junk committed | 10aaa15e97: 1,019 venv/ files plus tests/test_qwen_tile.py, 375k lines, after git's "use git add to track" hint on an empty commit |
