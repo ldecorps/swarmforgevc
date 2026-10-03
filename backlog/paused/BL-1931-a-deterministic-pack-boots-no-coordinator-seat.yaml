@@ -1,0 +1,109 @@
+id: BL-1931
+title: "A pack declaring config coordinator_mode deterministic keeps the coordinator's roster row and mailbox but boots no coordinator seat, and the all-local iq3 mono-router pack declares it"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a feature with medium mutation_cost and envelope; the change sits beside unchanged code"
+
+acceptance: specs/features/BL-1931-a-deterministic-pack-boots-no-coordinator-seat.feature
+
+human_approval: pending
+approval_context: >
+  FIRM: the coordinator's roles.tsv row and mailbox stay (QA approvals, handoffd delivery and BL-1847's relay route by them); only the seat goes, and only on a pack that declares the mode. The all-local pack (ollama-ista-local-model-mono-router.conf) declares the mode and drops its coordinator_agent, coordinator_model and coordinator_effort lines. The ask: approve this first slice of the seatless boot (A launch, then BL-1932 keep-alive, then BL-1933 wakes); after the three land the specifier starts the all-local pack, per your 18:05Z message.
+
+invariants:
+  - "On a pack declaring config coordinator_mode deterministic, no code path creates a swarmforge-coordinator session or writes .swarmforge/launch/coordinator.sh at launch."
+  - "The coordinator roles.tsv row and its mailbox directories exist on every pack, deterministic or not."
+  - "A pack without the declaration launches exactly as before."
+
+source: |
+  The human, specifier pane, 2026-10-03 ~18:05Z, verbatim (Article 5.3):
+
+  > Ok so now can you prioritize the epic about the 100% iq3 monorouter with determinstic coordinator. And when it's ready, start it.
+
+  The epic's 2026-09-30 intake (backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md),
+  verbatim:
+
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  and its 19:16 BST addendum:
+
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  BL-1125's remaining slice "Deterministic-coordinator seatless boot (after
+  BL-1846 and BL-1847)" asked for a census and a split by it; the census is
+  backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+  This slice is the launch path (census group A).
+
+description: |
+  ## What is wrong
+
+  On a pack declaring `config coordinator_mode deterministic` (BL-1846,
+  BL-1847) the launcher still provisions the coordinator seat:
+  `provision_coordinator` (swarmforge.sh, census group A) registers and
+  starts it like any role, and the session and launch loops create its
+  session and write `.swarmforge/launch/coordinator.sh`. On the all-local pack
+  that seat is a second qwen client on the one GPU slot; on 2026-09-30 it
+  spent 32 minutes walking .swarmforge/ while the resident waited.
+
+  ## What is wanted
+
+  On such a pack, launch keeps the coordinator as a roster row and a mailbox
+  and starts no seat. Census constraint: removing the row breaks QA
+  approvals (`swarm_handoff.bb` refuses `to: coordinator`), handoffd
+  delivery and BL-1847's relay, and on a rotation-router pack
+  `is_sequential_dormant` assumes the coordinator is the last role, so QA
+  would become a second standing session. The pack
+  `swarmforge/packs/ollama-ista-local-model-mono-router.conf` declares
+  `config coordinator_mode deterministic` and drops its `coordinator_agent`,
+  `coordinator_model` and `coordinator_effort` lines (otherwise
+  `check_local_model_seat_windows` still checks a coordinator card).
+
+  ## How (direction, not mandate)
+
+  - Read the mode with `coordinator-config-lib/deterministic-coordinator?`
+    (add a mode field to coordinator_config_cli.bb for the shell side).
+  - `test_coordinator_provisioned_infrastructure.sh`'s secondary-mode
+    regression (:162-178) is a ready template for the fixture launch.
+  - Step handler: specs/pipeline/steps/bl1931DeterministicPackBootsNoCoordinatorSeatSteps.js,
+    registered in specs/pipeline/steps/index.js.
+
+  ## What each stage checks
+
+  - Coder: the three scenarios; test_coordinator_provisioned_infrastructure.sh
+    and test_rotation_sequential_pack.sh still pass.
+  - Architect: the three invariants; that nothing removes the row.
+  - Hardender: no Stryker lane for bb/shell (BL-472); a hand-mutant pass on
+    the mode check, evidence records the degraded fallback.
+  - Documenter: docs naming the coordinator as always provisioned
+    (census "Prose" list, docs side).
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1931-a-deterministic-pack-boots-no-coordinator-seat.feature` passes 3 of 3.
+  2. `bash swarmforge/scripts/test/test_coordinator_provisioned_infrastructure.sh` and `bash swarmforge/scripts/test/test_rotation_sequential_pack.sh` pass.
+  3. `grep -E '^config coordinator_(mode|agent|model|effort)' swarmforge/packs/ollama-ista-local-model-mono-router.conf` prints only `config coordinator_mode deterministic`.
+
+notes: |
+  - Minted 2026-10-03 by the specifier at the human's "prioritize the epic
+    about the 100% iq3 monorouter with determinstic coordinator", from the
+    census backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+    Seatless boot, three slices in order: BL-1931 launch, BL-1932 keep-alive,
+    BL-1933 wakes. Independent to build; all three before the all-local pack
+    starts (the specifier starts it, per the human).
+  - No required_wiring: each slice's consumer call is a literal that does not
+    exist yet (BL-874), and the scenarios drive the real entry points.
+  - Deferred edit: BL-1125's remaining_slices "seatless boot" line should
+    point at BL-1931..BL-1933; that file carries the human's uncommitted
+    edits, so it was left alone.
+  - Prose (BL-798): PIPELINE.md and Article 1.1 say the coordinator is an
+    always-on pane; the specifier lands that prose on main when this ticket
+    activates, through the boot prefix budget gate, and records the commit
+    here.

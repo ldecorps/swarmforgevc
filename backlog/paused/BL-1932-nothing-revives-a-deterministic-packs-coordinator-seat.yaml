@@ -1,0 +1,95 @@
+id: BL-1932
+title: "On a deterministic-coordinator pack, swarm ensure, the mono-router topology and babysitterd never respawn, flag or repair the absent coordinator seat, even with a stale coordinator launch script on disk"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a feature with medium mutation_cost and envelope; the change sits beside unchanged code"
+
+acceptance: specs/features/BL-1932-nothing-revives-a-deterministic-packs-coordinator-seat.feature
+
+human_approval: pending
+approval_context: >
+  FIRM: on a pack declaring coordinator_mode deterministic a missing coordinator pane is not a fault: ensure creates nothing, babysitterd raises no pane-coordinator finding and repairs nothing, and the mono-router topology does not count the coordinator as standing. Packs without the declaration keep today's repair. The ask: approve slice 2 of the seatless boot (after BL-1931).
+
+invariants:
+  - "On a pack declaring config coordinator_mode deterministic, no keep-alive path (swarm ensure, babysitterd repair, mono-router topology) creates a swarmforge-coordinator session."
+  - "A pack without the declaration still gets a missing coordinator session back."
+
+source: |
+  The human, specifier pane, 2026-10-03 ~18:05Z, verbatim (Article 5.3):
+
+  > Ok so now can you prioritize the epic about the 100% iq3 monorouter with determinstic coordinator. And when it's ready, start it.
+
+  The epic's 2026-09-30 intake (backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md),
+  verbatim:
+
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  and its 19:16 BST addendum:
+
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  BL-1125's remaining slice "Deterministic-coordinator seatless boot (after
+  BL-1846 and BL-1847)" asked for a census and a split by it; the census is
+  backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+  This slice is the keep-alive path (census group B).
+
+description: |
+  ## What is wrong
+
+  With the seat gone at launch (BL-1931), the keep-alive paths treat its
+  absence as a fault (census group B): `swarm_ensure.bb`'s `ensure-role!`
+  respawns it from whatever launch script exists without checking;
+  `mono_router_lib.bb` counts the resident and the coordinator as standing,
+  so `topology-action` restores it; babysitterd raises `pane-coordinator`,
+  escalates to the operator every 30 minutes and repairs it. A stale
+  `.swarmforge/launch/coordinator.sh` exists on this host (the launcher never
+  deletes launch scripts), so the seat would be back within ~10 minutes of
+  boot.
+
+  ## What is wanted
+
+  On such a pack, ensure, the router topology and babysitterd skip the
+  coordinator seat entirely; ensure exits zero and its report has no
+  FAILED/FIXED coordinator line.
+
+  ## How (direction, not mandate)
+
+  - `should-have-standing-session?`, `should-stand-role?` and
+    `(ensure-role! (str "agent:" role)` receive only role names today; the
+    pack mode has to reach them (read once per run).
+  - Step handler: specs/pipeline/steps/bl1932NothingRevivesTheCoordinatorSeatSteps.js.
+
+  ## What each stage checks
+
+  - Coder: the four scenarios; test_swarm_ensure.sh,
+    mono_router_lib_test_runner.bb and babysitterd_sweep_lib_test_runner.bb pass.
+  - Architect: the two invariants; ensure's launch-contract gate
+    (launch_contract_lib) still behaves on a deterministic pack.
+  - Hardender: hand-mutant pass on the three skips (BL-472 fallback recorded).
+  - Documenter: any how-to describing ensure/babysitter coordinator repair.
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1932-nothing-revives-a-deterministic-packs-coordinator-seat.feature` passes 4 of 4.
+  2. `bash swarmforge/scripts/test/test_swarm_ensure.sh`, `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` and `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb` pass.
+
+notes: |
+  - Minted 2026-10-03 by the specifier at the human's "prioritize the epic
+    about the 100% iq3 monorouter with determinstic coordinator", from the
+    census backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+    Seatless boot, three slices in order: BL-1931 launch, BL-1932 keep-alive,
+    BL-1933 wakes. Independent to build; all three before the all-local pack
+    starts (the specifier starts it, per the human).
+  - No required_wiring: each slice's consumer call is a literal that does not
+    exist yet (BL-874), and the scenarios drive the real entry points.
+  - Deferred edit: BL-1125's remaining_slices "seatless boot" line should
+    point at BL-1931..BL-1933; that file carries the human's uncommitted
+    edits, so it was left alone.

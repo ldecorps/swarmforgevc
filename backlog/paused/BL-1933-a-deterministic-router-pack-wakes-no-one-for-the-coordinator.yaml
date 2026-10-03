@@ -1,0 +1,95 @@
+id: BL-1933
+title: "On a deterministic-coordinator router pack, nothing meant for the coordinator - a wake, a babysitter nudge or a closing context clear - is typed into the resident's pane"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 3
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a feature with medium mutation_cost and envelope; the change sits beside unchanged code"
+
+acceptance: specs/features/BL-1933-a-deterministic-router-pack-wakes-no-one-for-the-coordinator.feature
+
+human_approval: pending
+approval_context: >
+  FIRM: on a router pack declaring coordinator_mode deterministic the coordinator resolves to no wake session, so the closing context clear, babysitter nudges and git_handoff wakes addressed to it inject nothing into the resident; other dormant roles still wake the resident. The coordinator's mail stays BL-1847's relay. The ask: approve slice 3 of the seatless boot (after BL-1931).
+
+invariants:
+  - "On a router pack declaring config coordinator_mode deterministic, nothing addressed to the coordinator is typed into the resident's pane."
+  - "Every other dormant role still resolves to the resident's session."
+
+source: |
+  The human, specifier pane, 2026-10-03 ~18:05Z, verbatim (Article 5.3):
+
+  > Ok so now can you prioritize the epic about the 100% iq3 monorouter with determinstic coordinator. And when it's ready, start it.
+
+  The epic's 2026-09-30 intake (backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md),
+  verbatim:
+
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  and its 19:16 BST addendum:
+
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  BL-1125's remaining slice "Deterministic-coordinator seatless boot (after
+  BL-1846 and BL-1847)" asked for a census and a split by it; the census is
+  backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+  This slice is the wake and inject path (census group C).
+
+description: |
+  ## What is wrong
+
+  On a rotation-router pack `handoff_lib.bb`'s `resolve-wake-session` sends
+  any recipient with no session to the resident's pane (census group C).
+  With no coordinator seat: `closing-context-clear-sweep!` reads the
+  resident's fullness and, because BL-1847's relay keeps the coordinator's
+  mailbox empty (always "idle"), sends `/clear` and a re-read into the
+  resident for each newly done ticket; `babysitter_check.bb`'s
+  `nudge-resident! ... "coordinator"` types findings into the resident (only
+  aider seats are skipped) and, the dedup stamp being written only on
+  success, retries every sweep; `maybe-notify!` wakes the resident for a
+  git_handoff delivered to the coordinator.
+
+  ## What is wanted
+
+  On such a pack the coordinator resolves to no wake session (mirroring
+  BL-614, which already keeps it out of rotation), so all three inject
+  nothing; a nudge that has nowhere to go is recorded so it is not retried
+  each sweep. Dormant roles still wake the resident.
+
+  ## How (direction, not mandate)
+
+  - One check in `resolve-wake-session` covers the wakes and the clear; the
+    babysitter nudge path calls its own resolver (`babysitter_nudge_lib`).
+  - Step handler: specs/pipeline/steps/bl1933DeterministicRouterWakesNoOneForTheCoordinatorSteps.js.
+
+  ## What each stage checks
+
+  - Coder: the four scenarios; handoff_wake_session_test_runner.bb,
+    closing_context_clear_test_runner.bb and babysitter_nudge_lib_test_runner.bb pass.
+  - Architect: the two invariants.
+  - Hardender: hand-mutant pass on the resolver check (BL-472 fallback recorded).
+  - Documenter: any doc describing the router wake redirect.
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1933-a-deterministic-router-pack-wakes-no-one-for-the-coordinator.feature` passes 4 of 4.
+  2. `bb swarmforge/scripts/test/handoff_wake_session_test_runner.bb`, `bb swarmforge/scripts/test/closing_context_clear_test_runner.bb` and `bb swarmforge/scripts/test/babysitter_nudge_lib_test_runner.bb` pass.
+
+notes: |
+  - Minted 2026-10-03 by the specifier at the human's "prioritize the epic
+    about the 100% iq3 monorouter with determinstic coordinator", from the
+    census backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+    Seatless boot, three slices in order: BL-1931 launch, BL-1932 keep-alive,
+    BL-1933 wakes. Independent to build; all three before the all-local pack
+    starts (the specifier starts it, per the human).
+  - No required_wiring: each slice's consumer call is a literal that does not
+    exist yet (BL-874), and the scenarios drive the real entry points.
+  - Deferred edit: BL-1125's remaining_slices "seatless boot" line should
+    point at BL-1931..BL-1933; that file carries the human's uncommitted
+    edits, so it was left alone.
