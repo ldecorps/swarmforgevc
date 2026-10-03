@@ -194,3 +194,5 @@ notes: |
   Hotfix ledger: 9bbd0f461c linked to this ticket in the mint commit;
   b7db6f9ed1, d39ed089f0 and 7671b0b717 linked in the 2026-10-03
   amendments.
+
+assigned_to: coder
