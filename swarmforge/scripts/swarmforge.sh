@@ -2481,6 +2481,24 @@ RESUMECHECK
     local_model_guard+="export OPENAI_API_BASE='${seat_url}'
 export OPENAI_BASE_URL='${seat_url}'
 "
+    # Hotfix 2026-10-03: BL-1840's dead-zone gate also runs when ONE seat's
+    # launch script is (re)written, not only on a full ./swarm launch
+    # (check_local_model_seat_windows). The coder seat was swapped to iq3 by
+    # regenerating its script alone; its 49152-token window compacted at
+    # 16152 tokens, so qwen compacted on every turn for 1.5 hours. A refusal
+    # returns before anything is written, so the previous script stands; the
+    # same SWARMFORGE_LOCAL_WINDOW_OVERRIDE lets it through as a warning.
+    local dead_zone_model
+    dead_zone_model="$(extra_cli_model_flag "$extra_cli")"
+    if [[ -n "$dead_zone_model" ]] && ! bb "$SCRIPT_DIR/local_model_window_gate_cli.bb" dead-zone \
+        --role "$role" \
+        --model "$dead_zone_model" \
+        --endpoint-url "$lm_url" \
+        --context-length "${SWARMFORGE_OLLAMA_CONTEXT_LENGTH:-}" \
+        --override "${SWARMFORGE_LOCAL_WINDOW_OVERRIDE:-0}" > /dev/null; then
+      error_msg "local-model window check refused ${role}'s launch script (see above); the previous script is unchanged."
+      return 1
+    fi
     # BL-1829: written once per launch-script generation, before this seat's
     # pane ever starts, so qwen's own first-request tool schema is already
     # scoped to the six loop tools by the time it boots. BL-1838: also

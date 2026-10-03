@@ -44,7 +44,7 @@ index_of_role() {
 ZSH_SCRIPT="source '$SWARMFORGE_SH' '$ROOT'; parse_config; ${INDEX_OF_ROLE} write_role_launch_script \"\$(index_of_role coder)\"; write_role_launch_script \"\$(index_of_role cleaner)\""
 OUT="$(PACK_STAFFING_SKIP_GATE=1 \
   SWARMFORGE_LOCAL_MODEL_ENDPOINT_URL="http://127.0.0.1:1/v1" \
-  SWARMFORGE_OLLAMA_CONTEXT_LENGTH=49152 \
+  SWARMFORGE_OLLAMA_CONTEXT_LENGTH=65536 \
   zsh -f -c "$ZSH_SCRIPT" 2>&1)" && RC=0 || RC=$?
 [[ "$RC" -eq 0 ]] || fail "write_role_launch_script exited $RC: $OUT"
 
