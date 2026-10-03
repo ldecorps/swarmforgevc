@@ -1131,6 +1131,21 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   "Its becoming a thing in itself." Sibling rule for the lanes themselves:
   BL-1618 (one verification command per role).
 
+## A `qa_e2e_procedure` never re-runs a test file QA's gather already runs (lean pass 2026-10-03)
+- QA's gather (`qa-gather.js`) runs `npm test` and `npm run
+  test:properties` on every parcel commit, and BL-1877 keeps the whole
+  property lane there on purpose. A step that runs one unit or property
+  file again (`npx vitest run <name>`, `--config
+  vitest.properties.config.mjs <file>`) pays its whole time a second time.
+  BL-1910's three such steps took about 7 of its 32 QA minutes, and on
+  2026-10-03 QA's queue wait, 486 of its 803 minutes, was the shift's top
+  dwell hotspot. Write the file and its expected verdict as something QA
+  READS from the gather's row. Write a run-alone step only when the
+  ticket is about the file's time alone (a pole or a budget), and say so
+  in the step. Sibling features, shell tests and bb runners are not in the
+  gather, so those steps stay. At that pass 27 open tickets carried such
+  steps; QA.prompt's gather section tells QA to read them from the row.
+
 ## A scenario that asserts a wall-clock budget samples three times and keeps the fastest (BL-1658 D2, 2026-09-22)
 - The acceptance lane runs on the shared, continuously loaded swarm host,
   so ONE timing sample lands on a sibling seat's scheduling spike often

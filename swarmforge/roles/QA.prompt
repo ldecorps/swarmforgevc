@@ -837,6 +837,18 @@ You are QA.
   to find out. When you run a lane by hand instead, keep that one run's
   full output under `tmp/` (`> tmp/<ticket>-<lane>.log 2>&1`) and name
   the failing file from it.
+- **A procedure step that runs a test file the gather already ran is read
+  from the gather (lean pass 2026-10-03).** A `qa_e2e_procedure` step that
+  runs one unit file (`npx vitest run <name>`) or one property file
+  (`--config vitest.properties.config.mjs <file>`) on the parcel commit
+  asks for a result your gather's `unit` or `properties` row already has.
+  When the row exits 0, every file in it passed. When the row is red, the
+  file passed unless the row's failing files name it. Record that in the
+  step, and do not run the file again. Run it alone only when the step
+  asks for its time ALONE (a pole or budget ticket), or when the row is
+  `blocked` or its red is `unidentified`. 27 open tickets minted before
+  this rule carry such steps. BL-1910's three cost about 7 of its 32 QA
+  minutes, on a shift whose top hotspot was QA's queue wait (486 min).
 
 ## Record your pass verdict by tool, never by hand (BL-1362; prompt half landed 2026-09-06)
 - Article 4.4's evidence file has had a writer since 2026-09-04. Once your
