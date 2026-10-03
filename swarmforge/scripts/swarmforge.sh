@@ -2418,6 +2418,14 @@ export OPENAI_BASE_URL='${lm_url}'
       "$lm_url" \
       "${SWARMFORGE_OLLAMA_CONTEXT_LENGTH:-}" \
       "$role"
+    # BL-1850: every start (and respawn) of a local-model seat appends one row
+    # of the settings it starts with to .swarmforge/local-agent/seat-settings/
+    # <seat>.jsonl, before qwen starts - so a change in the seat's behaviour
+    # can be tied to the setting that changed. The snapshot bounds itself
+    # (under 3 s) and always exits 0; `|| true` keeps even a missing bb from
+    # holding the start. Its own failures go to a log beside this script.
+    local_model_guard+="bb '${role_script_dir}/local_seat_settings_snapshot_cli.bb' '${WORKING_DIR}' --seat '${role}' --model '$(extra_cli_model_flag "$extra_cli")' --endpoint-url '${lm_url}' --card '${prompt_file}' --worktree '${role_worktree}' >/dev/null 2>>'${STATE_DIR}/launch/${role}.seat-settings.log' || true
+"
   fi
   if [[ "$agent" == "claude" ]]; then
     # BL-1328 PRECEDENCE ASYMMETRY, documented deliberately rather than
