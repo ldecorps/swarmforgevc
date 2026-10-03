@@ -97,6 +97,12 @@ print(sorted(core & excl))
 [[ "$OVERLAP" == "[]" ]] || fail "coreTools and excludeTools must never overlap, got: $OVERLAP"
 pass "coreTools and excludeTools never name the same tool"
 
+DENY="$(python3 -c "import json; print(json.load(open('$SETTINGS')).get('permissions', {}).get('deny'))")"
+for rule in 'Bash(sudo *)' 'Bash(apt *)' 'Bash(apt-get *)' 'Bash(pip install *)' 'Bash(pip3 install *)'; do
+  [[ "$DENY" == *"'$rule'"* ]] || fail "permissions.deny should name $rule, got: $DENY"
+done
+pass "permissions.deny blocks sudo, apt, apt-get and pip installs (a seat once sat at a sudo password prompt)"
+
 # Never the operator's own ~/.qwen - only ever <worktree>/.qwen.
 ROOT2="$(mktemp -d)"
 register_tmp_dir "$ROOT2"

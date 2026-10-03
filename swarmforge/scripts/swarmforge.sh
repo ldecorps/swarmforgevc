@@ -2108,6 +2108,11 @@ EOF
 # real fix is the launch's window gate (BL-1840's own
 # local_model_window_gate_lib.bb), which refuses a served window whose
 # trigger is below what 32768 gives, before any pane starts.
+# 2026-10-03: permissions.deny is a hard denial even in YOLO mode (probed:
+# "denied by permission rules. Matching deny rule: Bash(sudo *)"). A coder
+# seat with no test runner it recognised ran `sudo apt update && sudo apt
+# install python3 && pip install pytest` and sat at the sudo password prompt.
+# Installing system or pip packages is never a seat's job; npm stays allowed.
 # 2026-10-03: qwen 0.24.7 declares all 13 of its tools to the model whatever
 # coreTools says, so the exclude list is what removes one. ask_user_question,
 # enter_plan_mode, exit_plan_mode and propose_goal each wait for a human in
@@ -2130,6 +2135,9 @@ write_local_model_qwen_settings() {
   "tools": {
     "core": ["run_shell_command", "read_file", "write_file", "edit", "glob", "grep_search"],
     "exclude": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal", "ask_user_question", "enter_plan_mode", "exit_plan_mode", "propose_goal"]
+  },
+  "permissions": {
+    "deny": ["Bash(sudo *)", "Bash(apt *)", "Bash(apt-get *)", "Bash(pip install *)", "Bash(pip3 install *)"]
   }
 }
 JSON
