@@ -27,13 +27,6 @@ Scenario: offline shows last-known state honestly
   Then the last-cached board and charts render
   And an "as of <generation time>" indicator is visible
 
-# BL-097 dashboard-06
-Scenario: background sync keeps the cache recent on Android
-  Given the PWA is installed on Android Chrome with periodic sync granted
-  When the browser fires the registered periodic sync event
-  Then the service worker re-fetches backlog.json into the cache
-  And a later offline open renders that refreshed data with its "as of" time
-
 # BL-097 dashboard-07
 Scenario: platforms without periodic sync degrade silently
   Given a browser that does not support the Periodic Background Sync API

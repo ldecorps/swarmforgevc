@@ -81,6 +81,7 @@ description: |
     `list-handoff-files-with-batches`; the `new/` scan must use the same
     helper, not a plain directory listing.
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - superseded by BL-670 (supersedes: BL-573); shipped as BL-1048, both features wired. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-573-stage-sync-scans-inbox-new.feature
 
 qa_e2e_procedure: |

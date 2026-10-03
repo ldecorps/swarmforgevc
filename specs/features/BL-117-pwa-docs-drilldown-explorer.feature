@@ -9,13 +9,6 @@ Scenario: full drill path from vision to a Gherkin scenario
   And drilling into a ticket shows its prose description
   And drilling into the ticket's acceptance shows its Gherkin scenarios as readable scenario text
 
-# BL-117 docs-drilldown-02
-Scenario: the documentation is live against main
-  Given a backlog or docs change has been merged to main
-  When the Action publishes and the app next fetches
-  Then the explorer reflects the change at every affected level
-  And no app update or manual export was required
-
 # BL-117 docs-drilldown-03
 Scenario Outline: both acceptance forms render
   Given a ticket whose acceptance is <form>

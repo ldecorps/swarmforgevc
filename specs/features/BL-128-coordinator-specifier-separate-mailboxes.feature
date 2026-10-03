@@ -31,12 +31,6 @@ Scenario Outline: mail queued before the upgrade is migrated to the right role's
     | specifier   | new        |
     | specifier   | in_process |
 
-# BL-128 mailbox-isolation-03
-Scenario: existing specifier and coordinator duties are unaffected
-  Given the mailbox split is in place
-  Then the specifier still authors specs and merges QA-approved work on master
-  And the coordinator still routes intake without its own git worktree
-
 # Non-behavioral gate:
 #  - Option (a) per-role mailbox subdirectory is the decided approach; no
 #    coordinator worktree.

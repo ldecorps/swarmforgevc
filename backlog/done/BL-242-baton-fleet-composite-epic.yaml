@@ -59,5 +59,6 @@ description: |
   description, seams, and acceptance. Documentation-grade until promoted; the
   provided Gherkin has been converted to lint-clean APS feature files.
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - an epic umbrella that carries no code; its children carry their own wired features. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-242-baton-fleet-composite-epic.feature
 mutation_cost: low

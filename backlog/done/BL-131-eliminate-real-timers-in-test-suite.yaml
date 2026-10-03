@@ -47,5 +47,6 @@ description: |
   Do not touch property tests or Gherkin acceptance timing (out of scope,
   per the shared engineering article's existing separation of concerns).
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - whole-suite meta claims (a refactor changed nothing, a runtime baseline of 88 tests); the narrower BL-362 is wired; scenario 01's rule is broken today and is owned on BL-791. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-131-eliminate-real-timers-in-test-suite.feature
 mutation_cost: high

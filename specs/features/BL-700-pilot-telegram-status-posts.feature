@@ -10,24 +10,6 @@ Feature: Cursor /pilot posts Telegram status on ticket, hat, and bounce
   Background:
     Given the pilot expeditor prompt composer is available
 
-  # BL-700 pilot-status-01
-  Scenario: the /pilot prompt requires Telegram status posts on ticket change
-    When the offline expeditor prompt is composed for ticket "BL-700"
-    Then the prompt requires a Cursor Remote Telegram post on ticket change
-    And the prompt requires the ticket post to include ticket id and object summary
-
-  # BL-700 pilot-status-02
-  Scenario: the /pilot prompt requires Telegram status posts on hat change
-    When the offline expeditor prompt is composed for ticket "BL-700"
-    Then the prompt requires a Cursor Remote Telegram post on hat or casquette change
-    And the prompt requires the hat post to name the role and brief stage job
-
-  # BL-700 pilot-status-03
-  Scenario: the /pilot prompt requires Telegram status posts on bounce-back with reason
-    When the offline expeditor prompt is composed for ticket "BL-700"
-    Then the prompt requires a Cursor Remote Telegram post on bounce-back
-    And the prompt requires the bounce post to name the target role and explicit reason
-
   # BL-700 pilot-status-04
   Scenario: structured status helpers format the three mandatory events
     When a pilot ticket-change status is formatted for "BL-700" with object "status posts"

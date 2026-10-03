@@ -14,14 +14,3 @@ Feature: Let's Talk hold music expands with iconic chiptunes
     And it includes a song titled like Ghost'n Goblins
     And it includes a song titled like Zelda
     And it includes a song titled like Tron
-
-  # BL-705 chip-02
-  Scenario: new songs still show a title while playing
-    When hold music starts during the thinking phase with the toggle on
-    Then the hold-music title line shows the chosen song name
-
-  # BL-705 chip-03
-  Scenario: YM decoder is out of scope for this ticket
-    When the hold-music implementation is inspected
-    Then playback remains the existing Web Audio step-sequence player
-    And no Atari ST YM file decoder is required

@@ -51,5 +51,6 @@ description: |
   of this item (macOS/Linux extension rules unchanged; watching the remote
   swarm happens in the remote box's editor or plain tmux).
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - unwireable: a live ./swarm under WSL2, a second machine and a human following the how-to; its filter (belongs-to-own-swarm?, BL-090) is unit-tested. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-091-remote-swarm-bringup-wsl2.feature
 mutation_cost: low

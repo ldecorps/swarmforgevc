@@ -49,6 +49,7 @@ notes: |
   and (c) the new archive convention is now written down in the owning
   role's prompt.
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - unwireable: an agent's manual move inside gitignored .swarmforge/ plus a prompt-says-so claim; the ticket itself names no code path. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance:
   feature: specs/features/BL-311-intake-doc-archive-hygiene.feature
   steps:

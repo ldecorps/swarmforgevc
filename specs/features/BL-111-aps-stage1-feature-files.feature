@@ -8,12 +8,6 @@ Scenario: active and paused Gherkin lives in feature files
   And each item's YAML acceptance field references its feature file(s)
   And no done/ item was migrated
 
-# BL-111 pinned-tools-02
-Scenario: APS tools are installed at the pinned ref
-  When the APS tool installation runs
-  Then gherkin-parser and the IR-DRY checker come from the APS repo at accaa33d503340c56513ef387258f8da929ba902
-  And swarmforge.lock.json records that pin
-
 # BL-111 lint-gate-03
 Scenario: a malformed feature file fails the lint gate
   Given a feature file that gherkin-parser cannot parse

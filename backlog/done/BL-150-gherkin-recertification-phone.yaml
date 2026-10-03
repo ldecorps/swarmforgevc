@@ -54,5 +54,6 @@ description: |
   - BL-073 (email notifier) — reuses its previously-deferred inbound-email
     phase for the write path.
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - superseded: BL-451 retired the PWA recert view; BL-450 restates every scenario for Telegram and is wired. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-150-gherkin-recertification-phone.feature
 mutation_cost: low

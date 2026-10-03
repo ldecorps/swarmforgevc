@@ -108,6 +108,7 @@ description: |
   to. If a deliberate rationale IS found, leave the behaviour alone and
   record the reason in a comment at the call site instead.
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - superseded by BL-808 (supersedes: BL-562), whose feature is wired. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-562-backlog-depth-warning-counts-gitkeep.feature
 out_of_scope: |
   - Deleting or relocating `backlog/active/.gitkeep`. The placeholder is

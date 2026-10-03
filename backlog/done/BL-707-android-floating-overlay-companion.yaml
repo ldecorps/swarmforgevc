@@ -72,6 +72,7 @@ description: |
   - Jetpack Compose floating-window patterns
   - OSS floating-bubble-view (advisory only)
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - unwireable: the Android overlay on a device (BL-769: a recorded manual procedure, never a feature); pure logic is in the JVM suite. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-707-android-floating-overlay-companion.feature
 
 source: |

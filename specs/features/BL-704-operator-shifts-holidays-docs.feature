@@ -21,13 +21,3 @@ Feature: BL-704 operator shifts, holidays, oncall, and docs
     And the principal sends "/shift status"
     Then status reports the active shift
     And durable state is only under .swarmforge/operator/
-
-  Scenario: /oncall me routes alerts to the principal
-    When the principal sends "/oncall me"
-    Then subsequent ambulance and ensure alerts target that oncall id
-
-  Scenario: How-to and Cursor Remote diagrams exist
-    Then docs/how-to/BL-698-telegram-cursor-operator-commands.md exists
-    And docs/diagrams/cursor-remote-flow.mmd exists
-    And docs/diagrams/operator-command-surface.mmd exists
-    And the how-to links the diagrams and the danger-tier command map

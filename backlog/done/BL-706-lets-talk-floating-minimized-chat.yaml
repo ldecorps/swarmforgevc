@@ -56,6 +56,7 @@ description: |
   - A full second app shell unrelated to Let's Talk
   - Duplex / continuous call audio
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - unwireable: the Let's Talk page's audio and on-screen layout (a webview surface); its markup is pinned by letsTalkBridge.test.js and letsTalkCore.test.js. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-706-lets-talk-floating-minimized-chat.feature
 
 source: |

@@ -73,6 +73,7 @@ description: |
   - Closing-ceremony / briefing
   - Full hey-bubble / barge-in intakes
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - unwireable: phone behaviour (BL-769); the host-side pairing link is unit- and property-tested in residentSpyTunnelNotify. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-716-bubble-lets-talk-tunnel-hostname-dns.feature
 
 source: |

@@ -98,6 +98,7 @@ description: |
   3. The BL-372 detach check clearly passes while the server still dies —
      extend it or its wording so "detached" is not read as "will survive".
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - unwireable: a live tmux server alive 60 s after launch and a real restart; the pure scrub is gated by test_harness_env_scrub_bl657.sh and test_bl657_wait_for_ready_sustained_check.sh. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-657-launcher-tmux-server-dies-seconds-after-launch.feature
 
 out_of_scope: |

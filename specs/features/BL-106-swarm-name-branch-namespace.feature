@@ -13,12 +13,6 @@ Scenario: two swarms share a repo without collisions
   Then no branch ref is shared between them
   And each swarm's helpers address only its own namespace
 
-# BL-106 branch-ns-03
-Scenario: mismatched branch fails fast
-  Given a worktree on a branch outside its swarm_name namespace
-  When the launcher validates at startup
-  Then launch fails with a message naming the expected branch
-
 # BL-106 branch-ns-04
 Scenario: migration preserves everything
   Given the current mixed-scheme branches

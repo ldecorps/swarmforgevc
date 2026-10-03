@@ -56,5 +56,6 @@ description: |
   shared notify/transport paths concurrently. See each child ticket for its own
   scoped description, seams, and acceptance.
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - an epic umbrella that carries no code; its children are closed. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-151-handoff-transport-reliability-epic.feature
 mutation_cost: low

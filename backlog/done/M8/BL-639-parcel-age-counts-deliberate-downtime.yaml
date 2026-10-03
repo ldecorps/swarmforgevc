@@ -108,6 +108,7 @@ description: |
     hide a parcel that genuinely stalled for hours before the stop — exactly the one
     case in this incident that deserved the alarm.
 
+# 2026-10-04 (specifier, BL-541 register drain): this feature is retired - superseded by BL-650 and BL-823 (closed so, 704d6d9b14); its audit-log mechanism was never built. See backlog/evidence/BL-541-unbound-feature-adjudication-20261004.md.
 acceptance: specs/features/BL-639-parcel-age-counts-deliberate-downtime.feature
 out_of_scope: |
   - The genuine stall this storm buried. That is BL-636 (rotation preference ignores

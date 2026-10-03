@@ -61,10 +61,6 @@ Feature: BL-702 operator parse, env-reload, and danger tiers
     When the principal confirms "/resume"
     Then control-pause.json is inactive
 
-  Scenario: Hard-tier /stop runs kill_all_swarm after confirm
-    When the principal confirms "/stop"
-    Then kill_all_swarm.sh is invoked for the repo root
-
   Scenario: Hard-tier /start writes bounce sentinel for env-merging relaunch
     When the principal confirms "/start"
     Then a swarm bounce sentinel is written

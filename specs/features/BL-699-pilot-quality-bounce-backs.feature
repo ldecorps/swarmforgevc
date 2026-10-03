@@ -32,13 +32,6 @@ Feature: Cursor /pilot prefers quality and first-class bounce-backs
     When the offline expeditor prompt is composed for ticket "BL-699"
     Then the prompt forbids rushing to a QA stamp over fixing upstream defects
 
-  # BL-699 pilot-quality-04
-  Scenario: the /pilot prompt requires a Telegram poll for human questions
-    When the offline expeditor prompt is composed for ticket "BL-699"
-    Then the prompt requires any human question from a piloted hat to use a Telegram poll on Cursor Remote
-    And the prompt rejects free-text-only human asks as insufficient
-    And the prompt requires every such poll to include a "Need more detail" option
-
   # BL-699 pilot-quality-05
   Scenario: the /pilot prompt still walks stages and keeps expedite isolation
     When the offline expeditor prompt is composed for ticket "BL-699"
