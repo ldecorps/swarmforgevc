@@ -33,6 +33,3 @@
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
 hardening	extension/src/tools/emit-throttle-recommendation.ts,extension/src/tools/rework-observatory.ts,extension/src/tools/suboptimality-verdict-line.ts	BL-1874	2026-10-01	BL-1869's deferred mutation pass (cooldown after hotfix 51591aab4a); BL-1874's hardener pass discharges it
-shell	swarmforge/scripts/test/test_onboarder_supervisor_tick.sh	BL-1907	2026-10-03	fixture copy hotfixed 5df467b09a; red while a live subreaper adopts orphans (the launching WSL terminal Relay /init), green once only PID 1 does (seen 2026-10-03); BL-1907 fixes the predicate and the wait
-shell	swarmforge/scripts/test/test_handoffd_supervisor_job_reaper.sh	BL-1907	2026-09-08	04 setup waits for PPID 1; red while a live subreaper (WSL Relay /init) adopts orphans, green under PID 1 adoption (2026-10-03); recorded by BL-1498 2026-09-08; BL-1907 owns it
-acceptance	specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature	BL-1907	2026-10-03	scenario 09 runs test_onboarder_supervisor_tick.sh, so it is red exactly when that test is (a live subreaper adopts orphans); BL-1907 owns it

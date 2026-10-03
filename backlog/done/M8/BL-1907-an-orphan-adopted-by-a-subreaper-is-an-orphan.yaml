@@ -195,3 +195,6 @@ notes: |
   The coordinator was told.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-03, by: QA, blamed: coder, class: acceptance, commit: 3fd9b9ef3d, evidence: backlog/evidence/BL-1907-QA-20261003.md }
