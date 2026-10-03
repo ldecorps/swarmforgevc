@@ -699,3 +699,10 @@
   stamp_ticket: BL-1908
   human_decision: null
   decided_at: null
+- commit: 9bbd0f461c
+  subject: "Hotfix: five acceptance features red on main follow the contracts that moved under their step handlers - BL-1633, BL-1761, BL-914, BL-969 and BL-935"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null
