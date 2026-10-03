@@ -142,9 +142,12 @@ function brokenSwarmforgeShCopy() {
   fs.cpSync(SCRIPTS_DIR, dir, { recursive: true });
   const copyPath = path.join(dir, 'swarmforge.sh');
   const original = fs.readFileSync(SWARMFORGE_SH, 'utf8');
-  const needle = 'qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \\"\\${RESUME_NOTE}';
+  // e2e2287822 moved the resume note after the card instruction (as
+  // LOCAL_RESUME_NOTE), so the qwen line's -i value now opens on the card
+  // sentence; the mutation still drops only the -i.
+  const needle = 'qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \\"Use read_file now';
   assert.ok(original.includes(needle), 'bl1845 property: the local-model qwen launch line text moved - update this test\'s needle');
-  const broken = original.replace(needle, 'qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} \\"\\${RESUME_NOTE}');
+  const broken = original.replace(needle, 'qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} \\"Use read_file now');
   assert.notEqual(broken, original, 'bl1845 property: the mutation did not change the file');
   fs.writeFileSync(copyPath, broken);
   fs.chmodSync(copyPath, 0o755);
