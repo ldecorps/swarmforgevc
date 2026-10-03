@@ -15,7 +15,8 @@ direction: swarm-reported
 depends_on: [BL-1024]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1034-an-expedited-run-commits-the-backlog-moves-it-makes.feature
+# 2026-10-03 (specifier, BL-541 register drain): parked unbuilt in backlog/debt/, so its feature is a non-executable .feature.draft (BL-233). Unparking: rename it back to .feature and land its step handler in the SAME commit, then repoint this line.
+acceptance: specs/features/BL-1034-an-expedited-run-commits-the-backlog-moves-it-makes.feature.draft
 
 invariants:
   - "No expeditor exit path leaves a backlog move that run made staged and uncommitted in the shared master checkout."

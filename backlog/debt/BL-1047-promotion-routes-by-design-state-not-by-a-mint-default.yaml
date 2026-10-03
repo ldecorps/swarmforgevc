@@ -10,7 +10,8 @@ direction: normal
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1047-promotion-routes-by-design-state-not-by-a-mint-default.feature
+# 2026-10-03 (specifier, BL-541 register drain): parked unbuilt in backlog/debt/, so its feature is a non-executable .feature.draft (BL-233). Unparking: rename it back to .feature and land its step handler in the SAME commit, then repoint this line.
+acceptance: specs/features/BL-1047-promotion-routes-by-design-state-not-by-a-mint-default.feature.draft
 
 invariants:
   - "A ticket is routed to the specifier exactly when its design is still unsettled - never because of a value a minting session left behind."

@@ -16,7 +16,8 @@ direction: agent-proposed
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1067-tmux-reaper-guard-certifies-track-without-the-socket-pointer.feature
+# 2026-10-03 (specifier, BL-541 register drain): parked unbuilt in backlog/debt/, so its feature is a non-executable .feature.draft (BL-233). Unparking: rename it back to .feature and land its step handler in the SAME commit, then repoint this line.
+acceptance: specs/features/BL-1067-tmux-reaper-guard-certifies-track-without-the-socket-pointer.feature.draft
 human_approval: approved
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1067::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"

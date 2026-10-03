@@ -10,7 +10,8 @@ direction: human-requested
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1073-rolling-mailbox-retention.feature
+# 2026-10-03 (specifier, BL-541 register drain): parked unbuilt in backlog/debt/, so its feature is a non-executable .feature.draft (BL-233). Unparking: rename it back to .feature and land its step handler in the SAME commit, then repoint this line.
+acceptance: specs/features/BL-1073-rolling-mailbox-retention.feature.draft
 
 approval_context: >
   Already locked by the human and NOT open for renegotiation: mail leaving the

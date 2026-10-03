@@ -11,7 +11,8 @@ direction: human-requested
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1044-the-terminal-title-names-the-ticket-a-role-holds.feature
+# 2026-10-03 (specifier, BL-541 register drain): parked unbuilt in backlog/debt/, so its feature is a non-executable .feature.draft (BL-233). Unparking: rename it back to .feature and land its step handler in the SAME commit, then repoint this line.
+acceptance: specs/features/BL-1044-the-terminal-title-names-the-ticket-a-role-holds.feature.draft
 human_approval: approved
 
 invariants:

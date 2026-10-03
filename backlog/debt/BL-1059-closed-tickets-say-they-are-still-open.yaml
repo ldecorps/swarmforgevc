@@ -10,7 +10,8 @@ direction: swarm-detected
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1059-closed-tickets-say-they-are-still-open.feature
+# 2026-10-03 (specifier, BL-541 register drain): parked unbuilt in backlog/debt/, so its feature is a non-executable .feature.draft (BL-233). Unparking: rename it back to .feature and land its step handler in the SAME commit, then repoint this line.
+acceptance: specs/features/BL-1059-closed-tickets-say-they-are-still-open.feature.draft
 
 invariants:
   - "No ticket YAML states a lifecycle position that contradicts the folder it sits in — across every backlog folder and every done/ milestone subfolder, not only the ones a sweep happened to visit."

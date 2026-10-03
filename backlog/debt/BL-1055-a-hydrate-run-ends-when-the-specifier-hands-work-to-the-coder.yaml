@@ -9,7 +9,8 @@ direction: human-requested
 depends_on: [BL-1054]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1055-a-hydrate-run-ends-when-the-specifier-hands-work-to-the-coder.feature
+# 2026-10-03 (specifier, BL-541 register drain): parked unbuilt in backlog/debt/, so its feature is a non-executable .feature.draft (BL-233). Unparking: rename it back to .feature and land its step handler in the SAME commit, then repoint this line.
+acceptance: specs/features/BL-1055-a-hydrate-run-ends-when-the-specifier-hands-work-to-the-coder.feature.draft
 human_approval: approved
 approval_context: >
   Nothing needs deciding; this is the stop condition BL-698 already pinned,
