@@ -188,3 +188,32 @@ and restored. It left 50 /tmp/test_ns*.clj files.
 
 **Result: neither local model can act on a bounce.** qwen2.5 forwarded
 junk (5 defects); iq3 never started the three items in two attempts.
+
+## Correction, and iq3 finishes BL-1916's bounce (17:13:54-17:34:54Z)
+
+The 17:10Z "no bounce item started" above is wrong for attempt 2 taken
+whole. After the specifier held the seat, handoffd chase-respawned it at
+17:13:54Z (session 2fcdb1c3) with the bounce still in process. In 3.5
+minutes iq3 deleted the literal `$(date)` file (D1) and wrote a real
+verdict in backlog/evidence/BL-1916-coder-20261003.md (D2: four checks with
+their outputs, the reviewed range, the later num_predict hotfix marked out
+of scope). The specifier's respawn for a BL-1917 leg killed that session
+uncommitted at 17:17:19Z, and the next session's BL-1195 drift guard told
+the seat to `git stash push -u`, which it did (stash@{0}; the guard's own
+recipe conflicts with the "never git stash" guardrail).
+
+Human, ~17:22Z: let iq3 finish the bounce. The specifier restored exactly
+those two edits from the stash onto the line, put QA's first-bounce parcel
+back in process and respawned the seat at 17:24:37Z.
+
+| measure | iq3 finishing session (84aa3a41) |
+|---|---|
+| respawn to forward | 17:24:37Z -> 17:34:54Z, 10.3 min |
+| commit | b0a90a38d2, only the two evidence paths; subject "BL-1916: rework the coder evidence - remove the literal $(date) file, record the four checks and the reviewed range" (D3), body maps D1-D3, byline |
+| forward | printed draft command -> AUDIT_REQUIRED -> audited its own diff -> re-sent -> 002386 to QA -> done_with_current |
+| junk / wrong forwards / stalls | none / none / one ~5.5 min text reply during the audit |
+
+**Result so far: iq3 can act on a bounce** once the harness is right and it
+gets past its window-gate detour; qwen2.5 could not. QA's verdict on
+b0a90a38d2 is pending: the evening control pause (16:00:18Z to 00:00Z)
+holds QA's claim.
