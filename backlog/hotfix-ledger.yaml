@@ -811,3 +811,17 @@
   stamp_ticket: BL-1926
   human_decision: null
   decided_at: null
+- commit: aec0daba54
+  subject: "Hotfix: a served git_handoff's forward step is the exact draft command, swarm_handoff.sh, then done_with_current"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1927
+  human_decision: null
+  decided_at: null
+- commit: e2e2287822
+  subject: "Hotfix: a resumed local-model seat reads its card before it runs ready_for_next.sh"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1927
+  human_decision: null
+  decided_at: null

@@ -1,0 +1,131 @@
+id: BL-1927
+title: "Stamp-off for hotfixes aec0daba54 and e2e2287822: a served git_handoff's forward step is the exact draft command, swarm_handoff.sh, then done_with_current, and a resumed local-model seat reads its card before ready_for_next.sh"
+milestone: M8
+type: defect
+severity: high
+# high: the coder seat could not forward its parcel, faked a handoff file
+# in its outbox and reported the parcel handed off - observation 10 of the
+# dogfood loop (coordinator note 015895).
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: [BL-1924]
+mutation_cost: low
+# low: one string builder, three printed steps, one resolver call, and a
+# reordered kickoff line - each with tests.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "small additions beside unchanged code; nothing to refactor"
+  architect: "the forward still goes through swarm_handoff.sh and its routing; only the printed text and the kickoff order change"
+  hardender: "Babashka and shell have no mutation lane (BL-472) and neither change writes state"
+  documenter: "BL-1924's documenter pass documents the whole served ACTION block, steps 1 to 5"
+
+# Not a claim of ownership over BL-1871's contract (BL-1251): the take-up
+# feature whose served text this hotfix extends.
+acceptance: specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes aec0daba54 and e2e2287822, landed under the
+  human's 2026-10-03 dogfood loop ("have specifier implementing them"). No
+  choice is posed. FIRM: the review decides whether each change stands; the
+  coder never re-applies them; the forward still goes through
+  swarm_handoff.sh.
+
+invariants:
+  - "The draft the printed forward command writes is valid for swarm_handoff.sh: type, to, priority, task and a commit of exactly 10 hex characters read from HEAD."
+  - "A local-model seat's kickoff names its card before any instruction to run ready_for_next.sh; every other agent's kickoff is unchanged."
+
+source: |
+  Root intake backlog/archive/INTAKE-coder2-tool-calls-20261003.md. The
+  human, via Cursor, 2026-10-03, verbatim (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 10 (coordinator note 015895, 12:01Z: "coder stall BL-1916:
+  fake handoff_done file, no real forward"). Session 79269ebf (11:56Z): the
+  coder committed with `git add .`, ran `git handoff next` twice, then wrote
+  .swarmforge/handoffs/outbox/handoff_done/BL-1916.handoff_done reading
+  "Task BL-1916 has been handed off to the next role." Session 42df14c2
+  (12:01Z) ran ./swarmforge/scripts/git_handoff.sh, which does not exist.
+  Neither session read its card.
+
+description: |
+  ## Status: two hotfixes landed the fix
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong
+
+  - The served text's step 3 was "Commit, git_handoff to the next role, then
+    done_with_current / ready_for_next." A local seat reads git_handoff as a
+    command: `git handoff next`, then a script named git_handoff.sh.
+  - RESUME_NOTE ("Run ./swarmforge/scripts/ready_for_next.sh as your very
+    first action, before reading or doing anything else") came before the
+    qwen kickoff's "Use read_file now to read <card>". The seat obeyed the
+    first sentence and never read its card, where the five-line draft
+    example (5a89725e03) lives. handoffd respawns the seat often, so most of
+    its sessions start this way. Replayed: run_shell_command
+    ready_for_next.sh 3 of 3.
+
+  ## What the hotfixes changed
+
+  - aec0daba54, handoff_lib.bb: forward-draft-command builds one shell
+    command that writes tmp/handoff.txt (type git_handoff, to the next
+    stage, priority 50 for the coder and 00 otherwise, task, commit = first
+    10 characters of HEAD). In task mode, with a next stage, print-task's
+    steps become: 3) commit only your paths, never `git add .`, message
+    ending `By <stage>.`; 4) that command, then swarm_handoff.sh
+    tmp/handoff.txt, with "git_handoff is the draft's type, not a git
+    command" and the AUDIT_REQUIRED answer; 5) done_with_current.sh.
+    ready_for_next_task.bb passes the stage after this role's in the served
+    ticket's required_stages (required_stages_lib, the resolver
+    swarm_handoff routes by).
+  - e2e2287822, swarmforge.sh: the resume check also sets
+    LOCAL_RESUME_NOTE, and the qwen launch line puts it AFTER the card
+    instruction. Replayed: read_file on the card 3 of 3. The live coder.sh
+    was patched to the same lines.
+
+  ## What each stage checks
+
+  - Coder: both hotfixes against the description and both invariants; the
+    new cases in handoff_lib_test_runner.bb (the command, run in a fixture
+    repo, writes the five lines with HEAD's 10 characters);
+    test_resume_on_start.sh. Evidence: backlog/evidence/BL-1927-coder-<date>.md.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/handoff_lib_test_runner.bb` ends "ALL TESTS PASSED".
+  2. `bash swarmforge/scripts/test/test_resume_on_start.sh` ends "ALL PASS".
+  3. `node specs/pipeline/cli.js specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`
+     passes (measured at mint on HEAD e2e2287822: 9 of 9 ok).
+  4. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`
+     passes (measured at mint on HEAD e2e2287822: 9 of 9 ok).
+  5. In the coder seat's qwen transcripts after 2026-10-03 12:08:06Z (its
+     respawn onto this code), its first tool call in each session is
+     read_file on its card, and no call runs `git handoff` or git_handoff.sh.
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 10 of the dogfood loop.
+    One stamp-off for two SHAs of one observation (the BL-1905 shape).
+    depends_on BL-1924: this extends the served text BL-1924 reviews.
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - Live: the coder's BL-1916 line held its own commit 62b66b7b2e, so
+    origin/main was merged into it (f4770f80a9, "merge main first") rather than
+    fast-forwarded; the pane was respawned at 12:08:06Z.
+  - Left in the coder worktree, all the seat's own: commit 62b66b7b2e (adds
+    "backlog/evidence/BL-1916-coder-$(date +%Y%m%d).md" reading NONE, no
+    byline), the untracked backlog/evidence/BL-1916-coder-20261003.md reading
+    "NONE, or one item per defect found.", and
+    .swarmforge/handoffs/outbox/handoff_done/BL-1916.handoff_done (a
+    subdirectory handoffd does not deliver from).
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1927; that file
+    carries the human's uncommitted edits, so it was left alone.
