@@ -916,3 +916,10 @@
   stamp_ticket: BL-1934
   human_decision: null
   decided_at: null
+- commit: e44f9cdfc7
+  subject: "hotfix: the shim lowers every max_tokens to the model's Modelfile num_predict"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1936
+  human_decision: null
+  decided_at: null
