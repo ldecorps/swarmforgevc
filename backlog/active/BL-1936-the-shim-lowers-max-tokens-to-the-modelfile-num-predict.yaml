@@ -1,0 +1,114 @@
+id: BL-1936
+title: "Stamp-off for hotfix e44f9cdfc7: the tool-call shim lowers every max_tokens to the model's Modelfile num_predict, so iq3's 4096 and qwen2.5's 2048 reply caps bind and a compression summary stops at the cap"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the declared reply caps never
+# bound, and iq3's 8-14k-token compression summaries took about 52 of the
+# coder's 58 minutes between 19:27Z and 20:25Z on 2026-10-03.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: two pure helpers, one cached lookup and two call sites in a Python
+# file with no mutation lane (BL-472), each covered by a test.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "two helpers beside unchanged code; nothing to deduplicate"
+  architect: "the clamp sits inside the shim's existing request path; no boundary moves"
+  hardender: "Python has no mutation lane (BL-472) and the shim writes no durable state; the clamp was hand-mutated at mint and both live tests failed"
+
+# Not a claim of ownership over BL-1052's contract (BL-1251): the local-model
+# seat launch feature the shim's earlier stamp-offs (BL-1917, BL-1919) cite.
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed on the coordinator's CRIT note
+  016121 (2026-10-03 20:28Z), under the human's 2026-10-03 dogfood loop
+  ("have specifier implementing them"). No choice is posed. FIRM: the
+  review decides whether the change stands; the coder never re-applies it.
+
+invariants:
+  - "A chat completion reaches Ollama with no max_tokens or max_completion_tokens above the model's Modelfile num_predict, on the tool path and the tool-less passthrough alike."
+  - "The shim never raises or adds an output budget, and leaves the request unclamped when the model declares no positive num_predict or the lookup fails."
+
+source: |
+  Coordinator note 016121 (2026-10-03 20:28Z): "CRIT shim never clamps
+  max_tokens - BL-1929 cap inert, see evidence". Evidence:
+  backlog/evidence/iq3-modelfile-num-predict-overridden-by-client-max-tokens-20261003.md.
+  The human, via Cursor, 2026-10-03, verbatim (Article 5.3):
+
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+description: |
+  ## Status: hotfix e44f9cdfc7 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  Ollama lets a request's max_tokens override the Modelfile's num_predict,
+  and the qwen client sends a large one (14777 on the first request the
+  fixed shim saw). So iq3's declared num_predict 4096, and qwen2.5's 2048
+  (BL-1929's 479155f733), never bound: 61 of 863 generations on 2026-10-03
+  ran past 4096 tokens, the longest 14836. Each 6-9 minute generation
+  ended on a qwen `chat_compression` event (19:35:04Z, 19:42:59Z, 19:49:55Z,
+  19:57:31Z, 20:07:19Z, 20:16:08Z, 20:25:22Z). Between 19:27Z and 20:25Z
+  they took about 52 of the coder's 58 minutes, and an 8-14k-token summary
+  left the history nearly as large as before (29707 -> 29056), so
+  compression fired again after about a minute of work.
+
+  ## What the hotfix changed
+
+  swarmforge/scripts/local_model_tool_call_shim.py:
+  - `num_predict_of` reads a positive num_predict from an /api/show answer
+    (None for absent, -1 or -2).
+  - `clamp_output_budget` lowers max_tokens and max_completion_tokens above
+    the cap and reports the largest value it lowered; it never raises or
+    adds one.
+  - `ShimHandler._output_cap` asks Ollama's /api/show once per model and
+    caches the answer 300 s (an `ollama create` is picked up without a
+    restart); a failed lookup is not cached and leaves the request as sent.
+  - Applied in `_complete` (the tool path, nudge included) and in `do_POST`
+    for a tool-less chat completion (the passthrough). The log line gains
+    `budget=<sent>-><cap>` when a request was lowered.
+  - Six tests in swarmforge/scripts/test/test_local_model_tool_call_shim.py.
+
+  Deployed 2026-10-03 20:33:38Z by restarting the shim between two seat
+  requests. The next compression summary stopped at 4096 tokens in 173 s
+  (the one before: 9602 tokens in 394 s), and the seat went on working.
+
+  ## What each stage checks
+
+  - Coder: the change against this description and the two invariants;
+    that a reply cut at the cap reaches the client as a normal
+    `finish_reason: length` completion on both paths. Evidence:
+    backlog/evidence/BL-1936-coder-<date>.md.
+  - Documenter: docs/how-to/BL-1052-local-model-seat-launch.md's section
+    "A local-model seat's requests go through a tool-call shim (BL-1917)"
+    names the clamp, the `budget=` log field, and that the Modelfile's
+    num_predict is now the binding reply cap.
+
+qa_e2e_procedure: |
+  1. `cd swarmforge/scripts/test && python3 -m unittest test_local_model_tool_call_shim` ends "OK" (31 tests at mint).
+  2. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature` passes (measured at mint: 9 of 9 ok).
+  3. `bash swarmforge/scripts/test/test_bl1917_local_model_seat_url.sh` ends "ALL PASS: BL-1917 local_model_seat_url" (measured at mint).
+  4. `.swarmforge/local-model-shim/shim.log` has at least one `budget=<n>->4096` line for ista-iq3s-coder:latest after the 2026-10-03 21:33:38 (host-local) restart line.
+  5. No `eval time` line in `.swarmforge/ollama/serve.log` written after that restart reports more than 4096 generated tokens while iq3 is the only model served.
+  6. The how-to section named in the description carries the clamp.
+
+notes: |
+  - Minted 2026-10-03 by the specifier on coordinator note 016121; hotfix
+    e44f9cdfc7 landed and was deployed in the same pass.
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - With e44f9cdfc7 in force, BL-1929's "qwen2.5 caps a reply at 2048
+    tokens" (479155f733) holds for the first time; BL-1929 itself is not
+    amended.
+  - The evidence file says the client is Claude Code; the iq3 seat runs the
+    qwen CLI (0.24.7), which sends the max_tokens.
+
+assigned_to: coder
