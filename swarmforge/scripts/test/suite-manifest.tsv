@@ -122,6 +122,7 @@ headroom_cap_raise_lib_test_runner.bb	standing
 host_switchover_doctor_lib_test_runner.bb	standing		
 hotfix_certification_lib_test_runner.bb	standing		
 idle_clear_fullness_lib_test_runner.bb	standing		
+in_process_ticket_guard_lib_test_runner.bb	standing
 land_step_lib_test_runner.bb	standing		
 landed_but_open_test_runner.bb	standing		
 launch_contract_test_runner.bb	standing		
@@ -520,6 +521,7 @@ test_swarm_handoff_daemon_backup.sh	standing
 test_swarm_handoff_inbound_non_forwarding.sh	standing
 test_swarm_handoff_inbound_non_forwarding_batch.sh	standing
 test_swarm_handoff_refuses_coordinator_git_handoff.sh	standing
+test_swarm_handoff_refuses_other_ticket_than_in_process.sh	standing
 test_swarm_handoff_sync_deliver.sh	standing
 test_swarm_heal_push_before_reset.sh	standing		
 test_swarm_identity_conf_parsing.sh	standing		

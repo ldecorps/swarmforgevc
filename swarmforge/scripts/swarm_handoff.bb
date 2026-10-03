@@ -32,6 +32,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "reverse_hop_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_draft_root_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "git_handoff_recipient_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "in_process_ticket_guard_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -552,6 +553,29 @@
         sampled-reach-floor-block
         (when (sampled-reach-floor-guard-lib/blocked? sampled-reach-floor-result)
           sampled-reach-floor-result)
+        ;; Hotfix 2026-10-03: refuses a git_handoff naming a ticket other
+        ;; than the sender's in-process parcel - a draft left from another
+        ;; ticket (see in_process_ticket_guard_lib.bb). Skipped for the
+        ;; daemon's dispatch-gap auto-route, like the coherence gate;
+        ;; fail-open on an unreadable mailbox.
+        in-process-ticket-refusal
+        (when (and (= "git_handoff" type) (not (str/blank? task-name))
+                   (not= "1" (System/getenv
+                              task-commit-coherence-gate-lib/dispatch-gap-autoroute-env)))
+          (try
+            (let [items (mapv (fn [f] {:type (handoff-lib/header-field f "type")
+                                       :task (handoff-lib/header-field f "task")
+                                       :message (handoff-lib/header-field f "message")})
+                              (handoff-lib/handoff-files (handoff-lib/my-mailbox-dir :in_process)))
+                  decision (in-process-ticket-guard-lib/decide
+                            {:type type :task task-name :in-process items
+                             :master-resident? (= "master" (:worktree-name (handoff-lib/load-role-info sender)))})]
+              (when (= :refuse (:decision decision)) (:message decision)))
+            (catch Exception e
+              (binding [*out* *err*]
+                (println (str "IN_PROCESS_TICKET WARNING: in-process parcel unreadable, send allowed: "
+                              (.getMessage e))))
+              nil)))
         git-errors (cond-> []
                      (= "git_handoff" type)
                      (into (cond-> []
@@ -571,6 +595,8 @@
                              (conj (duplicate-chain-guard-lib/refusal-message dup-chain-block))
                              coherence-block
                              (conj (task-commit-coherence-gate-lib/refusal-message coherence-block))
+                             in-process-ticket-refusal
+                             (conj in-process-ticket-refusal)
                              (and (not (str/blank? task-name)) canonical)
                              (-> (into (pre-qa-gate-errors type to task-name canonical))
                                  (into (pointer-gate-errors type to task-name canonical)))
