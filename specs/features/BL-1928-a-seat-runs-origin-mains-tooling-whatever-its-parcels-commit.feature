@@ -35,3 +35,11 @@ Feature: BL-1928 A seat runs origin main's tooling whatever its parcel's commit
     Given the specifier and the coordinator share one checkout on main
     When the specifier asks for its next task
     Then the shared checkout's HEAD and branch have not changed
+
+  # BL-1928 a-tooling-change-landed-mid-parcel-reaches-the-seat-04
+  Scenario: a tooling change landed on origin main while a seat holds its parcel reaches the seat at its next ask
+    Given the architect has taken up the git_handoff for BL-9001 citing that parcel commit
+    And origin main then gains a second change to the served task text
+    When the architect asks for its next task
+    Then the served task text carries the line the second change adds
+    And the architect's worktree HEAD has not moved

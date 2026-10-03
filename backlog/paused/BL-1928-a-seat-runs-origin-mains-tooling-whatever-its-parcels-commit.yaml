@@ -102,7 +102,7 @@ description: |
 
   ## What each stage checks
 
-  - Coder: the three scenarios with a step handler registered as
+  - Coder: the four scenarios with a step handler registered as
     bl1928SeatToolingFromOriginMainSteps; BL-1871's feature still 9 of 9.
   - Architect: the invariants as three passes; under A, every tool entry
     point a seat can reach resolves its worktree from cwd, never its own path.
@@ -114,14 +114,13 @@ description: |
 
 qa_e2e_procedure: |
   1. `node specs/pipeline/cli.js specs/features/BL-1928-a-seat-runs-origin-mains-tooling-whatever-its-parcels-commit.feature`
-     passes 3 of 3.
+     passes 4 of 4.
   2. `node specs/pipeline/cli.js specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`
      passes (measured at mint on HEAD fb62eaa9e8: 9 of 9 ok).
   3. Read from the gather row: `npm test` and `npm run test:properties` green.
   4. Live, after the land: the next worktree seat to take up a parcel cut
-     before the land runs origin main's tooling. Under A its pane shows the
-     absolute master scripts path; under B its line carries a merge of
-     origin main right after the PARCEL_LINE move.
+     before the land runs origin main's tooling: its pane shows the absolute
+     master scripts path (option A, ruled).
 
 notes: |
   - Minted 2026-10-03 by the specifier, after the SUP-17 ruling.
@@ -131,4 +130,14 @@ notes: |
     was moved onto BL-1916's parcel f09cf2dfce (old head 127768f186 kept
     under refs/swarmforge/parcel-backup/coder/20261003T125331.000Z) and
     origin main merged in (611844ce66); the seat was respawned at 12:54Z.
-  - required_wiring is declared once the ruling names the call site.
+  - Ruled A by the human (tapped, 5fe17578f2, 2026-10-03 13:03Z): seats call
+    the master checkout's tooling with the worktree as cwd.
+  - Amended after the ruling (still paused, 2026-10-03): scenario 04, a
+    tooling change landed on origin main mid-parcel reaches the seat at its
+    next ask. It is the property option A was chosen for (its trade-off line:
+    "binds on every seat at its very next command, mid-parcel included"), so
+    no re-pend.
+  - No required_wiring, deliberately: under A the call sites are new paths
+    (kickoff text, card, served steps, wrapper scripts) whose literals do not
+    exist yet, so any anchor would be a placeholder (BL-874). The scenarios
+    drive ready_for_next itself, which exercises the wiring end to end.
