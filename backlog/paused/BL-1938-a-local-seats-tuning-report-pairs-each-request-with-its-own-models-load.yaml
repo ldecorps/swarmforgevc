@@ -27,7 +27,7 @@ acceptance: specs/features/BL-1938-a-local-seats-tuning-report-pairs-each-reques
 required_wiring:
   - 'specs/pipeline/steps/bl1938TuningReportPairsByModelSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A spec gap QA raised on BL-1851 (note 003790, 2026-10-03). No choice is
   posed: a request is labelled only by a load of its own model, and reads
