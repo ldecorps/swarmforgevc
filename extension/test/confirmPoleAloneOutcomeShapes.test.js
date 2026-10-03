@@ -23,13 +23,16 @@
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { confirmPoleAlone } = require('../scripts/recordTestDuration.js');
+const fs = require('node:fs');
+const { confirmPoleAlone, resolveConfirmedFile } = require('../scripts/recordTestDuration.js');
 
-// Each confirmPoleAlone call spawns a real vitest run (about 1-2 s on a
-// loaded host). The repo-relative call is the same in the first and third
-// tests, so it runs once and both read its outcome: three spawns, not four,
-// which keeps this file under the 7 s per-file budget (QA saw 7.3 s alone
-// on 2026-10-02).
+// Each confirmPoleAlone call spawns a real vitest run (about 2 s on a
+// loaded host, nearly all of it vitest's own startup). Two spawns: the
+// repo-relative success case (run once, read by the first and third tests)
+// and the no-entry case. The third test checks the absolute form through
+// resolveConfirmedFile, confirmPoleAlone's only path handling, rather than
+// a third spawn. QA saw 7.3 s alone with four spawns (2026-10-02) and
+// 7.1 s with three (2026-10-03), both over the 7 s per-file budget.
 const REL_FILE = 'extension/test/bl1007ContentionBudgetSmoke.test.js';
 let relOutcome;
 function confirmRelOnce() {
@@ -60,8 +63,17 @@ test('confirmPoleAlone resolves an absolute file path identically to its repo-ro
   // file's own sibling) is reached directly, never via `../..` + a
   // repo-relative segment re-appended (that lands one level too shallow
   // in a Stryker sandbox, where the sandbox itself is the extension root).
+  // confirmPoleAlone builds its --dir and file name from
+  // resolveConfirmedFile's answer and nothing else, so two inputs that
+  // resolve to the same file spawn the same run - and the first test runs
+  // that spawn for real. The roots are the module's own: its directory's
+  // parent, and that directory's parent.
   const absFile = path.join(__dirname, 'bl1007ContentionBudgetSmoke.test.js');
-  const viaRel = confirmRelOnce();
-  const viaAbs = confirmPoleAlone(absFile);
-  assert.ok(!('failed' in viaRel) && !('failed' in viaAbs), `expected both forms to succeed, got: ${JSON.stringify({ viaRel, viaAbs })}`);
+  const rootDir = path.join(path.dirname(require.resolve('../scripts/recordTestDuration.js')), '..');
+  const repoRootDir = path.join(rootDir, '..');
+  const fromAbs = resolveConfirmedFile(absFile, rootDir, repoRootDir);
+  const fromRel = resolveConfirmedFile(REL_FILE, rootDir, repoRootDir);
+  assert.equal(fromAbs, fromRel);
+  assert.ok(fs.existsSync(fromAbs), `expected the resolved file to exist: ${fromAbs}`);
+  assert.ok(!('failed' in confirmRelOnce()), `expected the shared spawn to succeed, got: ${JSON.stringify(confirmRelOnce())}`);
 });
