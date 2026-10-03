@@ -1,0 +1,102 @@
+id: BL-1921
+title: "A nine- or ten-tile phone grid shows every tile's full head: BL-609's crowded step now also tightens the tile head's padding and gap and steps its model label, ticket id, slug and age down one size for nine and ten panes, where the fifth phone row BL-1858 added inherits eight-tile spacing and crops each tile's bottom line"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and visible (a tile's age or second slug line is cut off on
+# a phone at nine or ten seats), contained to the live grid's layout; no
+# data is wrong and the fullscreen pane still shows everything.
+status: todo
+epic: swarmforge-console
+priority: 20
+depends_on: [BL-1858]
+# BL-1858 (in flight) owns residentSpyUiHtml.ts's ten-tile grid; this lands
+# after it so the two parcels never edit the same style block at once.
+mutation_cost: low
+# low: a handful of CSS rules in one TypeScript template string, and the
+# step handler that reads them.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a few added CSS rules; nothing to refactor"
+  architect: "CSS inside the existing style block; no boundary moves"
+  documenter: "no living doc describes the grid's spacing; the art-director's inventory is updated at sign-off"
+
+acceptance: specs/features/BL-1921-a-nine-or-ten-tile-phone-grid-shows-every-tiles-full-head.feature
+
+# Handler pin only (BL-233, BL-1371): the scenarios read the page the real
+# residentSpyUiHtml.ts renders, the live consumer already (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1921NineTenTileCrowdedStepSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  An art-director brief, minted as written. FIRM: CSS only in
+  residentSpyUiHtml.ts's style block; two columns on a phone and five wide
+  stay as BL-1858 chose; one to eight panes keep every value they have
+  today (scenario 02); the art-director signs the result off on the real
+  phone surface. The ask is only whether this layout fix should be built.
+
+invariants: []
+
+source: |
+  Art-director note 000025 (2026-10-03 10:38Z), payload "brief
+  2026-10-03-bl1858-live-grid-ten-tile-phone-row-crowding.md": the brief
+  at docs/design/briefs/ on the art-director branch, commit 70e04eac04
+  ("BL-1858 sign-off: live grid ten-tile phone row crowding brief"),
+  answering QA's BL-1858 sign-off request (ad8499e1d8). Its disposition,
+  verbatim: "Not blocking the hotfixes already on `main` — this is a
+  follow-on tightening of a layout they introduced, not a revert. Routed to
+  the specifier as a `note` to mint against BL-1858's fix owner; QA's
+  sign-off reply carries this brief as the defect."
+
+description: |
+  ## What is wanted
+
+  At nine or ten panes a phone grid has five rows of two. Each tile then
+  shows its whole head, role name, model label, ticket id, both clamped
+  slug lines and age, with nothing cropped. The brief's arithmetic: a
+  700px viewport less the ticket strip leaves about 126px a row, and the
+  head needs about that today (16px 12px padding, a 10px gap, five text
+  lines); a shorter phone has less. `.pane-col` is overflow hidden, so
+  what does not fit is cut off.
+
+  ## How (direction, not mandate)
+
+  Extend the crowded step the page already has. BL-609's `.pane-count-7`
+  and `-8` rules (BL-1858 added `-9`/`-10` to them) step down only
+  `.pane-title` and `pre`, which a grid tile does not show. Add `-9`/`-10`
+  rules for `.pane-head` (tighter padding and gap) and for
+  `.pane-grid-model`, `.pane-grid-ticket-id`, `.pane-grid-slug` and
+  `.pane-grid-age` (one font step down), as added selectors or a sibling
+  rule, never by changing a value one to eight panes use.
+
+  ## The values scenario 02 pins
+
+  Census of extension/src/bridge/residentSpyUiHtml.ts at main 0eb5958ab6
+  (`grep -nE 'pane-head \{|pane-grid-(model|ticket-id|slug|age)|pane-count-[78] (pre|\.pane-title)' -A4`):
+  `.pane-head` padding `16px 12px` and gap `10px`; `.pane-grid-model` and
+  `.pane-grid-ticket-id` font-size `clamp(9px, 3.2vw, 11px)`;
+  `.pane-grid-slug` and `.pane-grid-age` font-size `clamp(8px, 2.8vw,
+  10px)`; the seven- and eight-pane `.pane-title` at 11px and `pre` at
+  `calc(var(--pane-font-size) - 2px)`. "Smaller" for a clamp means its
+  minimum and maximum both drop. The handler reads the page
+  getResidentSpyUiHtml returns (extension/out/bridge/residentSpyUiHtml,
+  as BL-609's handler does), never a copy of the CSS.
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1921-a-nine-or-ten-tile-phone-grid-shows-every-tiles-full-head.feature` passes.
+  2. Send the art-director a sign-off note naming the parcel commit. It
+     checks the Live tab on a phone (or a 390px-wide emulated view) with
+     nine seats staffed: every tile shows its age and both slug lines, and
+     an eight-seat grid looks as it did. Approve on its LGTM; a defect list
+     routes per Article 4.3.
+
+notes: |
+  - Minted 2026-10-03 by the specifier from art-director note 000025.
+    Epic swarmforge-console (BL-609 owns the crowded step), not
+    local-llm-swarm, so it does not ride that epic's queue-jump; under the
+    human's 2026-09-30 promotion directive a medium defect outside that
+    epic waits until the local-LLM push ends.
+  - The full-forge pack staffs nine seats today (coder@2 is commented
+    out), so the fifth phone row is live now, not only at ten.
