@@ -327,8 +327,14 @@ function registerSteps(registry) {
     assert.ok(ctx.census.includes('chase_sweep_lib.bb'), `census missing chase_sweep_lib.bb: ${ctx.census.join(', ')}`);
   });
 
-  scoped(/^the list has six entries$/, (ctx) => {
-    assert.equal(ctx.census.length, 6, `expected six census entries, got ${ctx.census.length}: ${ctx.census.join(', ')}`);
+  scoped(/^the list names local_parcel_driver_lib\.bb and model_steward_coder_probe_lib\.bb$/, (ctx) => {
+    for (const name of ['local_parcel_driver_lib.bb', 'model_steward_coder_probe_lib.bb']) {
+      assert.ok(ctx.census.includes(name), `census missing ${name}: ${ctx.census.join(', ')}`);
+    }
+  });
+
+  scoped(/^the list has eight entries$/, (ctx) => {
+    assert.equal(ctx.census.length, 8, `expected eight census entries, got ${ctx.census.length}: ${ctx.census.join(', ')}`);
     cleanup(ctx);
   });
 }

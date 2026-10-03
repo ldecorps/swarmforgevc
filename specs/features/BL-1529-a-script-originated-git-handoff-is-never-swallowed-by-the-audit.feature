@@ -59,7 +59,13 @@ Feature: BL-1529 A script-originated git_handoff is never swallowed by the audit
     Then each prints ALL PASS and exits zero
 
   # BL-1529 script-sender-speaks-the-audit-06
+  # Six at this ticket's count. Two joined since, neither sending through the
+  # real swarm_handoff, so the audit cannot swallow either: BL-1697's
+  # local_parcel_driver_lib.bb writes its requeue copy straight into the
+  # stage queue, and BL-1700's model_steward_coder_probe_lib.bb drafts one
+  # against a stub swarm_handoff.sh in its probe fixture (hotfix 2026-10-03).
   Scenario: the census of script senders is the one the ticket counted
     When every non-test script under swarmforge/scripts that drafts a git_handoff is listed
     Then the list names salvage_lib.bb and chase_sweep_lib.bb
-    And the list has six entries
+    And the list names local_parcel_driver_lib.bb and model_steward_coder_probe_lib.bb
+    And the list has eight entries
