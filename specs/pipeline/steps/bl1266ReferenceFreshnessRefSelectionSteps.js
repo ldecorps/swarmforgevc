@@ -15,8 +15,11 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 
-const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const GUARD_SCRIPT = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'ready_for_next.bb');
+// BL-1905: the guard runs from the fixture worktree's own scripts copy. The
+// real ready_for_next.bb dispatches to a wrapper that cds into its own
+// scripts dir, which would receive in the checkout running the feature, as
+// the caller's role, against the live mailbox.
+const { installScripts } = require('./lib/fixtureScriptsInstall');
 const REL_PATH = 'swarmforge/constitution/articles/reference/engineering-detailed.prompt';
 
 const FEATURE_NAME = 'The reference-freshness guard asks about every ref, per path';
@@ -117,7 +120,14 @@ function addUnrelatedLocalCommits(ctx, n) {
 }
 
 function runGuard(worktreeRoot) {
-  const res = spawnSync('bb', [GUARD_SCRIPT], { cwd: worktreeRoot, encoding: 'utf8', timeout: 30_000 });
+  const scripts = installScripts(worktreeRoot);
+  const res = spawnSync('bb', [path.join(scripts, 'ready_for_next.bb')], {
+    cwd: worktreeRoot,
+    encoding: 'utf8',
+    timeout: 30_000,
+    // The fixture's own role, never the one the feature run inherited.
+    env: { ...process.env, SWARMFORGE_ROLE: 'coder' },
+  });
   return { status: res.status, out: `${res.stdout || ''}${res.stderr || ''}` };
 }
 

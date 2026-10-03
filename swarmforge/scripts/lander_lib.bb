@@ -130,6 +130,27 @@
                  (and (= :running (:status entry)) (fs/exists? ef))
                  (assoc :exit (parse-long (str/trim (slurp (str ef))))))))))))
 
+(defn tickets-in-flight-from
+  "PURE (BL-1906). The tickets with a land still in flight: an entry whose
+   :status is :queued or :running, named by the lander's own task-to-ticket
+   rule (ticket-of). A landed or refused entry has already handed its ticket
+   on by note, and anything that is not a map, has no task or has any other
+   status names nothing."
+  [entries]
+  (into #{}
+        (comp (filter map?)
+              (filter #(#{:queued :running} (:status %)))
+              (keep #(when-not (str/blank? (str (:task %))) (ticket-of (:task %)))))
+        entries))
+
+(defn tickets-in-flight
+  "BL-1906: tickets-in-flight-from over this root's queue - the one reader
+   the dropped-parcel sweep and the dispatch verdict ask, never a second glob
+   of the queue. Reads only (read-entries skips a missing queue and an
+   unreadable entry)."
+  [root]
+  (tickets-in-flight-from (read-entries root)))
+
 (defn enqueue!
   "QA's queue command: one entry under .swarmforge/lander/queue, nothing else.
    Never fetches, builds or pushes (BL-1872 invariant 2)."

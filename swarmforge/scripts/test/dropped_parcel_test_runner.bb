@@ -470,6 +470,43 @@
            (.toEpochMilli (java.time.Instant/parse "2026-09-05T05:14:42.000000Z"))
            (chase-sweep-lib/newest-trail-event-ms "BL-217" [sent-dir])))
 
+;; ── BL-1906: a land in flight is a parcel in flight ─────────────────────
+;; The lander's in-flight tickets fold into live-ids in ONE place, so the
+;; sweep and the router's verdict cannot disagree (invariant 1).
+(assert= "with-lands-in-flight adds the lander's tickets to the mailboxes' live ids"
+         #{"BL-1" "BL-2"} (chase-sweep-lib/with-lands-in-flight #{"BL-1"} #{"BL-2"}))
+(assert= "with no land in flight the live ids are the mailboxes' alone (invariant 2)"
+         #{"BL-1"} (chase-sweep-lib/with-lands-in-flight #{"BL-1"} #{}))
+(assert= "a nil in-flight set is read as empty, never as an error"
+         #{"BL-1"} (chase-sweep-lib/with-lands-in-flight #{"BL-1"} nil))
+
+(defn- bl1906-fixture
+  "A textbook dropped parcel for BL-1906 (trail, stale, no live mail)."
+  []
+  (let [tmp (mk-tmp)
+        active-dir (str (fs/path tmp "active"))
+        sent-dir (str (fs/path tmp "sent"))
+        coder-new (str (fs/path tmp "coder-new"))]
+    (write-active-item! active-dir "BL-1906" "coder")
+    (write-handoff! sent-dir "00_a.handoff"
+                    {:from "documenter" :to "QA" :type "git_handoff" :task "BL-1906-demo"
+                     :enqueued_at "2020-01-01T00:00:00.000000Z"})
+    {:active-dir active-dir :sent-dir sent-dir :coder-new coder-new}))
+
+(let [{:keys [active-dir sent-dir coder-new]} (bl1906-fixture)
+      sweep (fn [in-flight] (mapv :id (:items (chase-sweep-lib/dropped-parcel-evaluation
+                                                active-dir [sent-dir] [coder-new] far-future-now-ms 5000 in-flight))))
+      verdict (fn [in-flight] (:verdict (chase-sweep-lib/ticket-dispatch-verdict-in
+                                         "BL-1906" [sent-dir] [coder-new] far-future-now-ms 5000 in-flight)))]
+  (assert= "bl1906: a ticket with a land in flight is no sweep candidate" [] (sweep #{"BL-1906"}))
+  (assert= "bl1906: and its verdict is :dispatched" :dispatched (verdict #{"BL-1906"}))
+  (assert= "bl1906: a land in flight for ANOTHER ticket changes neither (invariant 2)"
+           [["BL-1906"] :dropped] [(sweep #{"BL-9999"}) (verdict #{"BL-9999"})])
+  (assert= "bl1906: the 5-arity callers are unchanged: still a drop"
+           [["BL-1906"] :dropped]
+           [(mapv :id (:items (chase-sweep-lib/dropped-parcel-evaluation active-dir [sent-dir] [coder-new] far-future-now-ms 5000)))
+            (:verdict (chase-sweep-lib/ticket-dispatch-verdict-in "BL-1906" [sent-dir] [coder-new] far-future-now-ms 5000))]))
+
 ;; ── BL-1415: ticket-dispatch-verdict / ticket-dispatch-verdict-in ─────────
 
 (assert= "ticket-dispatch-verdict: no trail at all -> :undispatched"

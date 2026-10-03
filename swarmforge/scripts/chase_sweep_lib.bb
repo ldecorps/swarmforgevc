@@ -1898,6 +1898,15 @@
      {:trail {} :live-ids #{}}
      (distinct (map str (concat all-scan-dirs live-mail-dirs))))))
 
+;; BL-1906: a ticket QA queued for the lander has no handoff in any mailbox
+;; until the land finishes, so the lander's in-flight tickets (lander-lib/
+;; tickets-in-flight, read by each caller from its own root) count as live
+;; mail. Folded in HERE, once, for both the sweep and the dispatch verdict.
+(defn with-lands-in-flight
+  "live-ids plus `in-flight` (nil reads as none)."
+  [live-ids in-flight]
+  (into (set live-ids) in-flight))
+
 (defn dropped-parcel-evaluation
   "One evaluation tick, in the shape the caller needs to both nudge AND
    record: {:items [nudge candidates] :suppressed [parked tickets a nudge
@@ -1907,10 +1916,14 @@
    ticket the sweep would have passed over anyway - so the caller's log line
    names only what the park actually silenced (BL-1301 invariant 3). One
    trail index pass serves both keys, so BL-978's single-read guarantee is
-   unchanged."
-  [active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
+   unchanged. in-flight (BL-1906, default none): tickets with a land in
+   flight, counted as live mail."
+  ([active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
+   (dropped-parcel-evaluation active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms #{}))
+  ([active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms in-flight]
   (let [items (read-active-items active-dir)
-        {:keys [trail live-ids]} (build-dropped-parcel-trail-index all-scan-dirs live-mail-dirs)
+        {:keys [trail live-ids]} (update (build-dropped-parcel-trail-index all-scan-dirs live-mail-dirs)
+                                         :live-ids with-lands-in-flight in-flight)
         facts (fn [item]
                 {:has-trail? (contains? trail (:id item))
                  :live-mail? (contains? live-ids (:id item))
@@ -1920,7 +1933,7 @@
      :suppressed (filterv #(and (parked-ticket? (:status %))
                                 (decide-dropped-parcel? (dissoc (facts %) :status)
                                                         now-ms stall-threshold-ms))
-                          items)}))
+                          items)})))
 
 (defn dropped-parcel-items
   "Full pipeline for one evaluation tick. active-dir: backlog/active/.
@@ -1978,15 +1991,20 @@
    `status` is not read here (the router/CLI is not given a ticket path) -
    a parked ticket the sweep would suppress still answers :dropped here,
    which only ever widens who gets routed, never narrows past what the
-   sweep itself would have nudged for an unparked ticket."
-  [item-id all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
-  (let [{:keys [trail live-ids]} (build-dropped-parcel-trail-index all-scan-dirs live-mail-dirs)]
-    (ticket-dispatch-verdict item-id
-                             {:has-trail? (contains? trail item-id)
-                              :live-mail? (contains? live-ids item-id)
-                              :newest-trail-ms (get-in trail [item-id :newest-trail-ms])
-                              :status nil}
-                             now-ms stall-threshold-ms)))
+   sweep itself would have nudged for an unparked ticket. in-flight
+   (BL-1906, default none): tickets with a land in flight, folded in by the
+   sweep's own with-lands-in-flight."
+  ([item-id all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
+   (ticket-dispatch-verdict-in item-id all-scan-dirs live-mail-dirs now-ms stall-threshold-ms #{}))
+  ([item-id all-scan-dirs live-mail-dirs now-ms stall-threshold-ms in-flight]
+   (let [{:keys [trail live-ids]} (update (build-dropped-parcel-trail-index all-scan-dirs live-mail-dirs)
+                                          :live-ids with-lands-in-flight in-flight)]
+     (ticket-dispatch-verdict item-id
+                              {:has-trail? (contains? trail item-id)
+                               :live-mail? (contains? live-ids item-id)
+                               :newest-trail-ms (get-in trail [item-id :newest-trail-ms])
+                               :status nil}
+                              now-ms stall-threshold-ms))))
 
 ;; ── BL-678: batch-claim-progress sidecar (live-owner half of BL-648's ──────
 ;; source near-miss) ─────────────────────────────────────────────────────────

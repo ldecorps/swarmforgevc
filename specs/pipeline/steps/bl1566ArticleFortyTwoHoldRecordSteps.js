@@ -29,7 +29,11 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const QA_HOLD_CLI = path.join(SCRIPTS_DIR, 'qa_hold_cli.bb');
 const READY_FOR_NEXT_TASK = path.join(SCRIPTS_DIR, 'ready_for_next_task.bb');
-const DONE_WITH_CURRENT_TASK = path.join(SCRIPTS_DIR, 'done_with_current_task.bb');
+// BL-1905: the completion runs the QA worktree's own scripts copy, never
+// the real done_with_current_task.bb, whose trailing receive cds into its
+// own scripts dir and would receive in the checkout running the feature, as
+// QA, against the live mailbox.
+const { installScripts } = require('./lib/fixtureScriptsInstall');
 
 const DEQUEUED_AT = '2020-01-01T00:00:00.000000000Z';
 
@@ -46,6 +50,8 @@ function makeFixture() {
   git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
 
   const qaDir = path.join(root, 'QA');
+  git(root, ['worktree', 'add', '-q', '-b', 'swarmforge-QA', qaDir, 'HEAD']);
+  const qaScripts = installScripts(qaDir);
   const inProcess = path.join(qaDir, '.swarmforge', 'handoffs', 'inbox', 'in_process');
   const completed = path.join(qaDir, '.swarmforge', 'handoffs', 'inbox', 'completed');
   const newDir = path.join(qaDir, '.swarmforge', 'handoffs', 'inbox', 'new');
@@ -64,7 +70,7 @@ function makeFixture() {
     `QA\tQA\t${qaDir}\tswarmforge-QA\tQA\tclaude\ttask\n`
   );
 
-  return { root, qaDir, inProcess, completed, newDir, holdReds: [], holdTask: null, holdCommit: null };
+  return { root, qaDir, qaScripts, inProcess, completed, newDir, holdReds: [], holdTask: null, holdCommit: null };
 }
 
 function ensureState(ctx) {
@@ -100,7 +106,7 @@ function runReadyForNext(state) {
 // parcel completed with nothing sent is refused unless a reason is stated.
 function runDoneWithCurrent(state) {
   const args = state.parksGitHandoff ? ['--no-op', 'BL-1566 fixture: QA parks the withheld parcel'] : [];
-  const res = spawnSync('bb', [DONE_WITH_CURRENT_TASK, ...args], {
+  const res = spawnSync('bb', [path.join(state.qaScripts, 'done_with_current_task.bb'), ...args], {
     cwd: state.qaDir,
     encoding: 'utf8',
     timeout: 60000,

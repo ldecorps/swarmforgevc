@@ -14,6 +14,7 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
+const { installScripts } = require('./lib/fixtureScriptsInstall');
 
 const FEATURE = 'BL-1317 Adapt-tier effort dial follows outcome signals';
 
@@ -81,6 +82,13 @@ function mkFixture(ctx, { backend = 'claude' } = {}) {
   git(['-c', 'core.hooksPath=/dev/null', 'add', '-A']);
   git(['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', 'seed']);
   ctx.commit = git(['rev-parse', '--short=10', 'HEAD']).trim();
+  // BL-1905: the coder seat is a linked worktree of the fixture with its own
+  // scripts copy. The completion helper ends by exec'ing a wrapper that cds
+  // into its own scripts dir, so the REAL one received in the checkout
+  // running the feature, as the coder, against the live mailbox (it moved
+  // swarmforge-QA on 2026-10-02). From the copy, the receive stays here.
+  git(['worktree', 'add', '-q', '-b', `swarmforge-${ROLE}`, seatDir(root, ROLE), 'HEAD']);
+  ctx.seatScripts = installScripts(seatDir(root, ROLE));
   ctx.parcelCounter = 0;
 }
 
@@ -159,7 +167,7 @@ function complete(ctx) {
   // BL-1609 refuses to complete a forwarding parcel nothing forwarded unless
   // a --no-op reason is stated; this fixture tests the effort dial, not the
   // forward, and the record runs (as a clean pass) with the reason given.
-  const res = spawnSync('bb', [path.join(SCRIPTS_DIR, 'done_with_current_task.bb'), '--no-op', 'BL-1317 fixture: the effort record is under test, not the forward'], {
+  const res = spawnSync('bb', [path.join(ctx.seatScripts, 'done_with_current_task.bb'), '--no-op', 'BL-1317 fixture: the effort record is under test, not the forward'], {
     cwd: seatDir(ctx.root, ROLE),
     encoding: 'utf8',
     timeout: 60000,

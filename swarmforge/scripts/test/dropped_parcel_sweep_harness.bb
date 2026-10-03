@@ -17,6 +17,8 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "chase_sweep_lib.bb")))
+;; BL-1906: the daemon now passes the lander's in-flight tickets; so does this.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "lander_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "project_root_arg_lib.bb")))
 
 ;; BL-1517/BL-889: an absent fixture-root argument used to silently
@@ -101,7 +103,8 @@
         now-ms (System/currentTimeMillis)
         {:keys [items suppressed]} (chase-sweep-lib/dropped-parcel-evaluation
                                     (str (fs/path project-root "backlog" "active"))
-                                    (all-scan-dirs roles) (live-mail-dirs roles) now-ms stall-threshold-ms)
+                                    (all-scan-dirs roles) (live-mail-dirs roles) now-ms stall-threshold-ms
+                                    (lander-lib/tickets-in-flight project-root))
         candidates items]
     ;; BL-1301 invariant 3, mirroring dropped-parcel-sweep! exactly: a park
     ;; silences the nudge, never the record.

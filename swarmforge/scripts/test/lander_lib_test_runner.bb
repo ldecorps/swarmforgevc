@@ -139,6 +139,37 @@
   (assert= "an issue ref rides at the end of either command"
            true (str/ends-with? (lander-lib/land-command :merge "/wt" (assoc entry :issue "GH-7")) "\"GH-7\"")))
 
+;; ── BL-1906: which tickets have a land in flight ─────────────────────────
+(let [e (fn [task status] {:id (str task "-x") :task task :commit "c" :status status})]
+  (assert= "queued and running entries name their tickets, by the lander's own ticket rule"
+           #{"BL-9001" "BL-9002"}
+           (lander-lib/tickets-in-flight-from [(e "BL-9001-a-slug" :queued) (e "BL-9002 [behavior: x]" :running)]))
+  (assert= "landed and refused entries name nothing (the lander already handed the ticket on)"
+           #{}
+           (lander-lib/tickets-in-flight-from [(e "BL-9001" :landed) (e "BL-9002" :refused)]))
+  (assert= "an entry with no status, an unknown one, or no task names nothing"
+           #{}
+           (lander-lib/tickets-in-flight-from [(e "BL-9001" nil) (e "BL-9002" :exploded) {:status :queued}]))
+  (assert= "an entry that is not a map names nothing"
+           #{}
+           (lander-lib/tickets-in-flight-from ['foo "bar" 42 nil]))
+  (assert= "no entries, no tickets" #{} (lander-lib/tickets-in-flight-from [])))
+
+(let [root (str (fs/create-temp-dir {:prefix "bl1906-lander-"}))]
+  (try
+    (assert= "a root with no queue directory has no land in flight" #{} (lander-lib/tickets-in-flight root))
+    (let [q (fs/path root ".swarmforge" "lander" "queue")]
+      (fs/create-dirs q)
+      (spit (str (fs/path q "BL-9001-aaaaaaaaaa.edn")) (pr-str {:id "BL-9001-aaaaaaaaaa" :task "BL-9001" :commit "a" :status :queued}))
+      (spit (str (fs/path q "BL-9003-cccccccccc.edn")) (pr-str {:id "BL-9003-cccccccccc" :task "BL-9003" :commit "c" :status :landed}))
+      (spit (str (fs/path q "BL-9004-dddddddddd.edn")) "{:id \"BL-9004\" :status :que")
+      (let [before (into {} (for [f (fs/list-dir q)] [(str f) (slurp (str f))]))]
+        (assert= "only the queued entry is in flight; a torn entry is skipped, never read as one"
+                 #{"BL-9001"} (lander-lib/tickets-in-flight root))
+        (assert= "reading the queue writes, moves and deletes nothing"
+                 before (into {} (for [f (fs/list-dir q)] [(str f) (slurp (str f))])))))
+    (finally (fs/delete-tree root))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (binding [*out* *err*] (println f)))
