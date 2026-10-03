@@ -115,6 +115,20 @@ description: |
     the property lane read NaN).
   Say in the evidence whether each stands, the os.platform patch above all.
 
+  ## Stamp-off of hotfix b7db6f9ed1 (review it, do not re-apply)
+
+  Added 2026-10-03: QA note 003741 (evidence ff09912f8d) held BL-1897 on two
+  property reds with no owner. Same review as above.
+  - bl1892TerminatedLandNeverPushesLockless.property.test.js: moment and
+    target were drawn uniformly 16 times, then asserted reached twice each;
+    pre-push came up once (about a 1.4% draw). Now moment x target is
+    iterated by construction (runsPerCell over 18, assertReachFloor), signal
+    and delay still random. Confirm the remaining midRepoint and honoured
+    floors are outcomes of timing, not draws.
+  - bl1529ScriptSenderAuditOutcomesInvariant.property.test.js: each cell's
+    property draws fc.constant(null), so its second run repeated the first;
+    it now runs once per cell. Confirm no assertion and no coverage was lost.
+
   ## Scope
 
   extension/scripts/recordTestDuration.js (confirmPoleAlone), its step
@@ -137,6 +151,10 @@ qa_e2e_procedure: |
      3 passed (7 s).
   3. Afterwards, `ps -eo pid,ppid,args | grep vitest` lists no vitest process
      from those runs.
+  4. ONE run each with `npx vitest run --config vitest.properties.config.mjs`
+     from extension/: bl1892TerminatedLandNeverPushesLockless (1 passed,
+     141 s alone at mint) and bl1529ScriptSenderAuditOutcomesInvariant (1
+     passed, 88 s alone at load 18).
 
 notes: |
   Minted 2026-10-03 by the specifier from coder note 002365.
@@ -148,4 +166,5 @@ notes: |
   Orthogonality: BL-1893 (active) edits
   extension/test/confirmPoleAloneOutcomeShapes.test.js, which calls this
   function. Its parcel's tests still need to pass on this change.
-  Hotfix ledger: 9bbd0f461c linked to this ticket in the mint commit.
+  Hotfix ledger: 9bbd0f461c linked to this ticket in the mint commit;
+  b7db6f9ed1 linked in the 2026-10-03 amendment.

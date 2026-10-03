@@ -706,3 +706,10 @@
   stamp_ticket: BL-1910
   human_decision: null
   decided_at: null
+- commit: b7db6f9ed1
+  subject: "Hotfix: the two property files that held BL-1897's QA pass are green - bl1892's reach floor is constructed and bl1529 runs each identical cell once"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1910
+  human_decision: null
+  decided_at: null
