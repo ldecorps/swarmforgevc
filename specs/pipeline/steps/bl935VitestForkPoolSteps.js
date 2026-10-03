@@ -11,10 +11,19 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { resolveWorkerPoolSize, resolveVitestWorkerPool } = require('../../../extension/out/tools/vitest-worker-memory-budget');
+const {
+  resolveWorkerPoolSize,
+  resolveVitestWorkerPool,
+  PER_WORKER_HEAP_MB,
+  SAFE_HOST_RAM_FRACTION,
+} = require('../../../extension/out/tools/vitest-worker-memory-budget');
 
 const EXTENSION_DIR = path.join(__dirname, '..', '..', '..', 'extension');
-const HOST_RAM_MB_FOR_3_FORKS = 8192; // floor(8192 * 0.5 / 1280) = 3, matching the real swarm host
+// Derived, never a literal: BL-1651 (2026-09-19) halved PER_WORKER_HEAP_MB
+// from 1280 to 640, so the old literal 8192 resolved to 6 forks and every
+// scenario here was red until 2026-10-03. Whatever the per-worker heap and
+// safe fraction are, this RAM resolves to exactly 3 forks.
+const HOST_RAM_MB_FOR_3_FORKS = Math.ceil((3 * PER_WORKER_HEAP_MB) / SAFE_HOST_RAM_FRACTION);
 
 const FEATURE = 'a vitest run under a live full-forge pack on macOS takes one fork, not the whole memory budget';
 
@@ -36,13 +45,27 @@ function knownValue(map, token, label) {
   return map[token];
 }
 
-function resolveConfigMaxForks(configFile, env) {
-  const out = execFileSync('node', ['-e', `import('${configFile.replace(/\\/g, '\\\\')}').then(m => console.log(m.default.test.poolOptions.forks.maxForks))`], {
+// The spawned script reports the platform the scenario names, not the host's
+// own: it patches os.platform and syncs the builtin's ESM exports before
+// importing the config, so the configs' own os.platform() reads it. The swarm
+// host moved from macOS to Linux, and this scenario was red on Linux until
+// 2026-10-03. The number is the LAST output line: the property config now
+// logs a [property-lane-budget] line first, which made the old
+// Number(out) read NaN.
+function resolveConfigMaxForks(configFile, env, platform) {
+  const script = [
+    "const os = require('node:os');",
+    `os.platform = () => ${JSON.stringify(platform)};`,
+    "require('node:module').syncBuiltinESMExports();",
+    `import(${JSON.stringify(configFile)}).then((m) => console.log(m.default.test.poolOptions.forks.maxForks));`,
+  ].join('\n');
+  const out = execFileSync('node', ['-e', script], {
     cwd: EXTENSION_DIR,
     encoding: 'utf8',
     env,
   });
-  return Number(out.trim());
+  const lines = out.trim().split('\n');
+  return Number(lines[lines.length - 1].trim());
 }
 
 function registerSteps(registry) {
@@ -114,16 +137,15 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the unit config and the property config each resolve their worker pool$/,
     (ctx) => {
-      // os.platform() inside the spawned config process reads the REAL host
-      // OS - can't be stubbed across a subprocess boundary. This scenario's
-      // own Given only ever sets macOS (the ticket's own platform gate), so
-      // require it rather than silently no-op on a host this feature was
-      // never meant to run against.
+      // The spawned config process reads the platform this scenario names
+      // (resolveConfigMaxForks patches os.platform inside it), so the macOS
+      // pack rule is exercised on any host. The Given only ever sets macOS
+      // (the ticket's own platform gate); require it.
       assert.equal(ctx.platform, 'darwin', 'scenario 02 exercises the real config files and only makes sense on macOS');
       const env = { ...process.env, SWARMFORGE_PACK: ctx.pack };
       delete env.SWARMFORGE_VITEST_MAX_FORKS;
-      ctx.unitForks = resolveConfigMaxForks(path.join(EXTENSION_DIR, 'vitest.config.mjs'), env);
-      ctx.propertyForks = resolveConfigMaxForks(path.join(EXTENSION_DIR, 'vitest.properties.config.mjs'), env);
+      ctx.unitForks = resolveConfigMaxForks(path.join(EXTENSION_DIR, 'vitest.config.mjs'), env, ctx.platform);
+      ctx.propertyForks = resolveConfigMaxForks(path.join(EXTENSION_DIR, 'vitest.properties.config.mjs'), env, ctx.platform);
     },
     FEATURE
   );
