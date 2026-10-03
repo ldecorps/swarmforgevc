@@ -769,3 +769,17 @@
   stamp_ticket: BL-1922
   human_decision: null
   decided_at: null
+- commit: 59a376845a
+  subject: "Hotfix: a local-model seat's 'Let's ...' plan with no tool call is nudged like 'I will ...' is"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1923
+  human_decision: null
+  decided_at: null
+- commit: 4b0e9adb96
+  subject: "Hotfix: a task-mode seat is never told to run merge_and_process, and a refused take-up never says 'do not ask again'"
+  detected_at: 2026-10-03
+  state: pending
+  stamp_ticket: BL-1924
+  human_decision: null
+  decided_at: null

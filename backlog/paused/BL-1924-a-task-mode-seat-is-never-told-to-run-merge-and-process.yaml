@@ -1,0 +1,118 @@
+id: BL-1924
+title: "Stamp-off for hotfix 4b0e9adb96: a task-mode seat's served parcel says the worktree is already on the parcel's line instead of \"Execute the PAYLOAD (merge_and_process ...)\", and a refused take-up says to fix it and ask again instead of \"Do NOT run ready_for_next.sh again\""
+milestone: M8
+type: defect
+severity: high
+# high: the instruction sent a local seat to run the lander's
+# land_merge_path.bb with guessed arguments (observation 7 of the dogfood
+# loop), and a refused take-up carried two contradicting instructions.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+mutation_cost: low
+# low: one returned keyword, one arity and two text branches, with tests.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "small additions beside unchanged code; nothing to refactor"
+  architect: "the take-up decision is unchanged; only the text printed after it follows its outcome"
+  hardender: "Babashka has no mutation lane (BL-472) and the change writes no state"
+
+# Not a claim of ownership over BL-1871's contract (BL-1251): the take-up
+# feature whose served text this hotfix makes follow the take-up.
+acceptance: specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 4b0e9adb96, landed under the human's 2026-10-03
+  dogfood loop ("have specifier implementing them"). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it; a batch seat keeps the merge_and_process instruction.
+
+invariants:
+  - "A batch seat's served git_handoff still says to execute the merge_and_process payload; only a task-mode serving drops it."
+  - "A parcel served after a refused take-up never says not to run ready_for_next.sh again, and gives no work or done_with_current steps."
+
+source: |
+  Root intake backlog/archive/INTAKE-coder2-tool-calls-20261003.md. The
+  human, via Cursor, 2026-10-03, verbatim (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 7 (specifier, 2026-10-03 11:25-11:34Z): the coder's take-up
+  succeeded ("PARCEL_LINE: moved swarmforge-coder onto 59a376845a"), then
+  it ran merge_and_process as a shell command (exit 127), globbed
+  swarmforge/scripts for *merge*, chmod +x'd land_merge_path.bb, ran it
+  three times with guessed arguments, and opened it in nano.
+
+description: |
+  ## Status: hotfix 4b0e9adb96 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  BL-1871 made the task helper move a role's worktree onto the parcel
+  before printing it, but handoff_lib.bb's print-task still printed "1)
+  Execute the PAYLOAD (merge_and_process ...) in this worktree." for every
+  git_handoff. A Claude seat knows from its prompt that this is not a
+  command. A local seat runs it, gets exit 127, then looks for a script
+  that merges. And when the take-up was refused, PARCEL_LINE said "Commit
+  or restore them and ask again" while the ACTION block below it said "Do
+  NOT run ready_for_next.sh again until you finish it".
+
+  ## What the hotfix changed
+
+  - parcel_line_lib.bb: take-up! returns its outcome (:stay, :moved,
+    :refused; nil when the intent asks for no move). The lines it prints
+    are unchanged.
+  - ready_for_next_task.bb: both print sites pass {:task-mode? true
+    :take-up <outcome>} to print-task.
+  - handoff_lib.bb: print-task gains that arity. In task mode step 1 says
+    ready_for_next.sh already put the worktree on the parcel's line, that
+    there is nothing to merge, and that merge_and_process is not a shell
+    command. After a refused take-up the ACTION says the parcel was NOT
+    taken up, to fix what PARCEL_LINE names and run ready_for_next.sh
+    again, and no work or done_with_current steps follow it. The batch
+    helper's one-arity call prints today's text, since a batch seat merges.
+
+  ## What each stage checks
+
+  - Coder: the change against the description and both invariants, and
+    the new cases in handoff_lib_test_runner.bb and
+    parcel_line_lib_test_runner.bb. Evidence:
+    backlog/evidence/BL-1924-coder-<date>.md.
+  - Documenter: docs/how-to/BL-1871-parcel-line-take-up.md shows the
+    PARCEL_LINE lines but not the ACTION text served under them; add what
+    a task-mode seat is told after a move, a stay, and a refusal.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/handoff_lib_test_runner.bb` ends "ALL TESTS PASSED".
+  2. `bb swarmforge/scripts/test/parcel_line_lib_test_runner.bb` ends "ALL PASS: parcel_line_lib.bb".
+  3. `node specs/pipeline/cli.js specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`
+     passes (measured at mint on HEAD 4b0e9adb96: 9 of 9 ok).
+  4. In the coder seat's qwen transcript after 2026-10-03 11:34:49Z (its
+     respawn onto this code), no run_shell_command runs merge_and_process
+     or land_merge_path.bb.
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 7 of the dogfood loop.
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - Live: the coder worktree was fast-forwarded onto 4b0e9adb96 (its line
+    held no coder commits) after the specifier undid the seat's chmod on
+    land_merge_path.bb, and the pane was respawned at 11:34:49Z.
+  - Landing note: handoff_lib.bb is daemon-executed, and handoffd's
+    master-checkout-drift sweep restored the uncommitted edit on main
+    within one sweep, twice, while ready_for_next_task.bb (not
+    daemon-executed) kept the new two-arity call. The fix was landed as
+    one commit for that reason.
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1924; that file
+    carries the human's uncommitted edits, so it was left alone.

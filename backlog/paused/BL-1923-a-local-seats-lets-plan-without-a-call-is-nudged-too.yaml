@@ -1,0 +1,108 @@
+id: BL-1923
+title: "Stamp-off for hotfix 59a376845a: a local-model seat's reply that ends on a \"Let's ...\" plan and calls no tool gets the same one nudge an \"I will ...\" reply gets"
+milestone: M8
+type: defect
+severity: high
+# high: the coder seat stalled on every such reply until handoffd's chase
+# respawned it (10 chase-respawns since 10:09Z) - observation 6 of the
+# dogfood loop (intake loop step 2).
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: [BL-1920]
+mutation_cost: low
+# low: one alternation added to one regex in the landed shim, with tests.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one regex alternation; nothing to refactor"
+  architect: "BL-1920's architect pass reviews the announcement heuristic itself; this adds words to it"
+  hardender: "Python has no mutation lane (BL-472) and the nudge writes no state"
+  documenter: "BL-1917's documenter pass describes the shim; the trigger words are not documented"
+
+# Not a claim of ownership over BL-1052's contract (BL-1251): the seat
+# launch feature the shim's wiring keeps.
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 59a376845a, landed under the human's 2026-10-03
+  dogfood loop ("have specifier implementing them"). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it; the NO_TASK guard stays whatever else changes.
+
+invariants:
+  - "The shim never nudges a request whose last message is a tool result reading NO_TASK, nor a reply that says NO_TASK."
+
+source: |
+  Root intake backlog/archive/INTAKE-coder2-tool-calls-20261003.md. The
+  human, via Cursor, 2026-10-03, verbatim (Article 5.3):
+
+  > I want to ascertain whether or not coder 2.5 can run tools.
+  > Can we start the swarm with coder2 seat and have the swarm dedicated to make it work. Kind of like dogfood local llm swarm.
+  > Feel free to reprioritize the local llm tickets in front of qa landing rewrite for this exercise.
+
+  and, ~10:18 BST:
+
+  > In fact, it might be more efficient to remove the anthropic coder and leave it all to coder2.5.
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Observation 6 (specifier, 2026-10-03 11:14-11:20Z): the coder ended
+  three turns in one session on a numbered plan closing "Let's proceed
+  with these steps." and no call; the shim logged nudge=none each time.
+
+description: |
+  ## Status: hotfix 59a376845a landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  BL-1920's announcement detector (_ANNOUNCE in
+  local_model_tool_call_shim.py) matched "I will", "I'll", "I am going
+  to", "I'm going to" and "let me" at a sentence or line start. qwen2.5-coder
+  also announces with "Let's ...", most often as the last line of a
+  numbered plan ("Let's proceed with these steps."). Those replies went
+  back to qwen with no call and no nudge, the seat sat idle, and handoffd's
+  chase sweep respawned it 100-160 s later, losing the conversation.
+
+  ## What the hotfix changed
+
+  _ANNOUNCE also matches "let's" (straight or curly apostrophe) and "let
+  us", with the same sentence-or-line-start anchor, so a mid-word
+  "outlet's" is not a trigger. Nothing else changed: the NO_TASK guard,
+  the one-nudge limit and the merge of the nudged call are BL-1920's.
+  Measured: the live stall replayed with the nudge after it got read_file
+  on the manifest 3 of 3 (step 1 of the seat's own plan).
+
+  ## What each stage checks
+
+  - Coder: the regex against the description, and the new unit case
+    test_a_lets_plan_is_nudged (three replies from the seat's own words
+    nudged, "The outlet's tests passed." not). Evidence:
+    backlog/evidence/BL-1923-coder-<date>.md.
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_bl1917_local_model_seat_url.sh` prints ALL PASS
+     (its case 0 runs the shim's unit cases, 23 at mint).
+  2. `node specs/pipeline/cli.js specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`
+     passes (measured at mint on HEAD 4b0e9adb96: 9 of 9 ok).
+  3. handoffd's log shows no endless-loop halt naming the coder since the
+     live shim restarted onto this code (2026-10-03 11:24:22Z).
+
+notes: |
+  - Minted 2026-10-03 by the specifier, observation 6 of the dogfood loop.
+    depends_on BL-1920: its architect pass decides whether a text
+    heuristic is the right trigger at all, and this only extends it.
+  - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - Live: the shim was restarted onto this code at 11:24:22Z (kill, then
+    the pane's own ensure command).
+  - Same pass, same seat: it had also overwritten all 609 lines of
+    swarmforge/scripts/test/suite-manifest.tsv with one row, using write_file
+    to "add" the row a commit guard suggested (the guard's tab reaches qwen
+    as spaces). The specifier restored the file in the coder worktree and
+    preserved BL-1861's stray TDD runner on refs/heads/swarmforge-coder-bl1861-wip
+    (79c8fd098c). Not fixed here; see backlog/evidence/BL-1923-dogfood-observation-6-7-20261003.md.
+  - Deferred edit: BL-1125's decomposes_into should gain BL-1923; that file
+    carries the human's uncommitted edits, so it was left alone.
