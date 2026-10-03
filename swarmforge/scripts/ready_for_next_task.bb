@@ -415,6 +415,15 @@
 ;; refused for uncommitted changes is retried on the next ask. Decisions
 ;; live in parcel_line_lib.bb; a master-resident role (roles.tsv
 ;; worktree-name master) and a role with no row are never moved.
+;; The served ticket's YAML, named in print-task's steps: a git_handoff's
+;; task header, or the ticket a Work note names (2026-10-03).
+(defn- served-ticket-file [handoff-file]
+  (handoff-lib/active-ticket-file
+   (handoff-lib/worktree-root)
+   (or (handoff-lib/header-field handoff-file "task")
+       (work-note-evidence-lib/work-note-ticket-id-from-message
+        (handoff-lib/header-field handoff-file "message")))))
+
 (defn- take-up-parcel-line! [handoff-file]
   (let [role (handoff-lib/current-role)
         role-info (handoff-lib/load-role-info role)
@@ -486,7 +495,8 @@
                                        (origin-new-dir-for (first in-process-files)))
           (let [take-up (take-up-parcel-line! (first in-process-files))]
             (apply-effort-for-task! (first in-process-files) (mono-router-conf-text))
-            (handoff-lib/print-task (first in-process-files) {:task-mode? true :take-up take-up}))
+            (handoff-lib/print-task (first in-process-files) {:task-mode? true :take-up take-up
+                                                               :ticket-file (served-ticket-file (first in-process-files))}))
           (print-merge-main-first-hint! (first in-process-files)))
         (if (handoff-lib/draining?)
           (println "DRAINING")
@@ -647,7 +657,8 @@
                                                      (origin-new-dir-for target-file))
                         (let [take-up (take-up-parcel-line! target-file)]
                           (apply-effort-for-task! target-file pack-conf)
-                          (handoff-lib/print-task target-file {:task-mode? true :take-up take-up}))
+                          (handoff-lib/print-task target-file {:task-mode? true :take-up take-up
+                                                                :ticket-file (served-ticket-file target-file)}))
                         (print-merge-main-first-hint! target-file))
                       (recur (rest candidates)))))))))))))
 

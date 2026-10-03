@@ -1958,6 +1958,22 @@
           [(short-rev-fn object) nil]
           [nil (format "Header 'commit' must resolve to a commit; '%s' resolves to '%s'." commit object-type)])))))
 
+(defn active-ticket-file
+  "The absolute path of `ticket-id`'s YAML under <root>/backlog/active/
+   (<id>-<slug>.yaml, or <id>.yaml), or nil. print-task names it because a
+   local seat told only 'from backlog/active/' read README.md, asked the
+   user for the ticket, and when nudged guessed backlog/active/<id>.md
+   (2026-10-03)."
+  [root ticket-id]
+  (when (and root ticket-id (re-matches #"[A-Za-z]+-\d+" (str ticket-id)))
+    (let [dir (fs/path (str root) "backlog" "active")]
+      (when (fs/directory? dir)
+        (->> (concat (fs/glob dir (str ticket-id "-*.yaml")) [(fs/path dir (str ticket-id ".yaml"))])
+             (filter fs/regular-file?)
+             (map (comp str fs/absolutize))
+             sort
+             first)))))
+
 (defn print-task
   "Prints the in-process parcel and what to do with it. The task helper
    passes {:task-mode? true :take-up <take-up! outcome>}: in task mode the
@@ -1968,7 +1984,7 @@
    instead of 'do not ask again', which contradicted PARCEL_LINE's own
    'ask again' (2026-10-03)."
   ([file] (print-task file {}))
-  ([file {:keys [task-mode? take-up]}]
+  ([file {:keys [task-mode? take-up ticket-file]}]
   (let [task-name (header-field file "task")
         typ (header-value file "type" "unknown")
         not-taken-up? (= :refused take-up)]
@@ -1991,7 +2007,9 @@
         (println "1) ready_for_next.sh already put this worktree on the parcel's line (BL-1871): there is nothing to merge, and merge_and_process is not a shell command - do not run it.")
         (println "1) Execute the PAYLOAD (merge_and_process …) in this worktree."))
       (when task-name
-        (println (str "2) Implement " task-name " from backlog/active/ with your edit/test tools.")))
+        (println (if ticket-file
+                   (str "2) Read " ticket-file " with read_file - it is " task-name "'s spec - then implement it with your edit/test tools.")
+                   (str "2) Implement " task-name " from backlog/active/ with your edit/test tools."))))
       (println "3) Commit, git_handoff to the next role, then done_with_current / ready_for_next.")
       (println "USE YOUR TOOLS NOW. Narrating or re-printing this TASK is not progress."))
     ;; A note re-served with only the prohibition above and no remedy left
@@ -2002,6 +2020,8 @@
     ;; same way the git_handoff branch already does.
     (when (and (= "note" typ) (not not-taken-up?))
       (println "1) Read the PAYLOAD and act on it per your role prompt if it asks for something")
+      (when ticket-file
+        (println (str "   The ticket it names is " ticket-file " - read it with read_file.")))
       (println "   (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).")
       (println "2) When done - or if there is nothing further you can do about it now - run:")
       (println "   swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)")

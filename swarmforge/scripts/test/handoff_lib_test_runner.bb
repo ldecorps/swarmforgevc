@@ -1052,6 +1052,41 @@
       (assert-false (str "print-task: a refused take-up of a " label " gives no work or completion steps")
                     (or (str/includes? out "2) Implement") (str/includes? out "done_with_current.sh"))))))
 
+;; ── print-task names the served ticket's file (2026-10-03) ──────────────
+;; "Implement BL-1916 from backlog/active/" sent a local seat to README.md,
+;; then to asking the user, then to a guessed backlog/active/BL-1916.md.
+(let [root (mk-tmp-dir)
+      active (fs/path root "backlog" "active")
+      _ (fs/create-dirs active)
+      slugged (str (fs/path active "BL-9001-a-slug.yaml"))
+      bare (str (fs/path active "BL-9003.yaml"))
+      gh (str (fs/path root "00_x_from_coordinator_to_coder_for_coder.handoff"))
+      wn (str (fs/path root "10_y_from_coordinator_to_coder_for_coder.handoff"))]
+  (spit slugged "id: BL-9001\n")
+  (spit bare "id: BL-9003\n")
+  (spit (str (fs/path active "BL-90010-other.yaml")) "id: BL-90010\n")
+  (assert= "active-ticket-file finds <id>-<slug>.yaml, absolute" (str (fs/absolutize slugged))
+           (handoff-lib/active-ticket-file root "BL-9001"))
+  (assert= "active-ticket-file finds a bare <id>.yaml" (str (fs/absolutize bare))
+           (handoff-lib/active-ticket-file root "BL-9003"))
+  (assert= "active-ticket-file is nil for a ticket not in active/" nil (handoff-lib/active-ticket-file root "BL-9002"))
+  (assert= "active-ticket-file is nil for a non-id" nil (handoff-lib/active-ticket-file root "demo-task"))
+  (assert= "active-ticket-file is nil without an active/ dir" nil (handoff-lib/active-ticket-file (mk-tmp-dir) "BL-9001"))
+  (spit gh (str (git-handoff-content "abcdef0123" "BL-9001") "merge_and_process coordinator abcdef0123\n"))
+  (spit wn (str "id: 20261003T000000Z_000010_from_coordinator\nfrom: coordinator\nto: coder\n"
+                "priority: 10\ntype: note\nmessage: Work BL-9001: merge main first, then read backlog/active\n"
+                "\nWork BL-9001\n"))
+  (let [named (with-out-str (handoff-lib/print-task gh {:task-mode? true :take-up :moved
+                                                         :ticket-file (handoff-lib/active-ticket-file root "BL-9001")}))
+        note (with-out-str (handoff-lib/print-task wn {:task-mode? true :take-up :moved
+                                                        :ticket-file (handoff-lib/active-ticket-file root "BL-9001")}))]
+    (assert-true "print-task: step 2 names the ticket's file to read"
+                 (str/includes? named (str "2) Read " (fs/absolutize slugged) " with read_file - it is BL-9001's spec")))
+    (assert-false "print-task: a named file replaces the bare backlog/active/ pointer"
+                  (str/includes? named "from backlog/active/ with"))
+    (assert-true "print-task: a Work note names the ticket's file too"
+                 (str/includes? note (str "The ticket it names is " (fs/absolutize slugged))))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")
