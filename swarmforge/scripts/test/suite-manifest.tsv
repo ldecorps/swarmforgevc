@@ -604,3 +604,5 @@ local_seat_report_lib_test_runner.bb	standing
 parcel_line_lib_test_runner.bb	standing		
 lander_lib_test_runner.bb	standing
 land_merge_path_lib_test_runner.bb	standing
+local_seat_settings_snapshot_lib_test_runner.bb	standing
+test_bl1850_seat_settings_snapshot_via_launch_script.sh	standing

@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-01
+Last Updated: 2026-10-03
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -277,6 +277,44 @@ inert at every window in the dead zone and only makes compaction happen
 sooner outside it (0.8 compacts earlier than qwen's own 0.85 default at
 32768). The settings writer no longer writes that key — the real fix is
 refusing the window at launch, above.
+### A local-model seat records the settings it starts with (BL-1850)
+
+Every local-model seat's generated launch script runs
+`local_seat_settings_snapshot_cli.bb` just before qwen starts (`|| true`,
+logged to `.swarmforge/launch/<role>.seat-settings.log`, never holding up
+the start). It appends one JSON row to
+`.swarmforge/local-agent/seat-settings/<seat>.jsonl`:
+
+- `at`, `seat`, `model`;
+- Ollama's version, `/api/show`'s `parameters` (num_ctx, num_predict,
+  temperature, …) and `details.quantization_level`;
+- qwen's version, the provider entry it will use for the model (the
+  seat worktree's own `.qwen/settings.json`, BL-1838's reading), and any
+  chat-compression settings — credentials dropped from both;
+- the card's path, byte size and sha256;
+- the GPU's name, enforced power limit and default power limit
+  (`nvidia-smi`);
+- `fingerprint`: a sha256 of every field above except `at`, so two rows
+  with the same fingerprint started from the same settings.
+
+A source that does not answer within its own bound is recorded as
+`"unknown"` rather than stopping or delaying the seat's start — the
+whole snapshot is bounded to 3 seconds. Run the same command by hand
+after changing a setting outside the swarm (for example the GPU power
+limit) so the before/after rows bracket the change:
+
+```sh
+bb swarmforge/scripts/local_seat_settings_snapshot_cli.bb <root> \
+  --seat coder@iq3 --model ista-iq3s-coder:latest \
+  --endpoint-url http://127.0.0.1:11434 \
+  --card .swarmforge/prompts/coder@iq3.md \
+  --worktree .worktrees/coder-iq3
+```
+
+This records a seat's own settings only — it reports nothing about how a
+session actually ran (that is the seat report above). Grouping sessions
+by the settings row in force at the time is a later slice (BL-1851).
+
 ### A crashed ollama server is restarted (BL-1711)
 
 While `serve.json` exists (a local-endpoint pack is running), handoffd's
