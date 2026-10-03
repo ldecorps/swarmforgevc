@@ -1,0 +1,1 @@
+{"id":"BL-1916","messages":[{"seq":0,"ts":1791023915959,"author":"swarm","type":"outbound","text":"BL-1916 🎵 in progress — Stamp-off for hotfix e022e33baf: the local coder seat's model (qwen2.5-coder-14b-q5km) is served at its 32768 window, where every seat request used to run at Ollama's 4096 default and lose all but its last 2050 tokens"}]}
