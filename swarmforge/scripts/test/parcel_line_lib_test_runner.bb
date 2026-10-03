@@ -135,21 +135,26 @@
           c (commit! wt "new.txt" "n\n" "BL-9001: own line")
           _ (git wt "checkout" "-q" "swarmforge-architect")
           facts {:root wt :role "architect" :intent {:intent :take-up :commit c}}
-          out (with-out-str (parcel-line-lib/take-up! facts))]
+          outcome (atom nil)
+          out (with-out-str (reset! outcome (parcel-line-lib/take-up! facts)))]
       (assert= "take-up! moves HEAD onto the cited commit" c (git wt "rev-parse" "HEAD"))
+      (assert= "take-up! returns :moved after a move, for print-task's ACTION text" :moved @outcome)
       (assert= "the role branch is kept" "swarmforge-architect" (git wt "rev-parse" "--abbrev-ref" "HEAD"))
       (assert= "the old head is kept under a parcel-backup ref" true
                (str/includes? (git wt "for-each-ref" "--format=%(objectname)" "refs/swarmforge/parcel-backup/architect/") old))
       (assert= "take-up! reports the move" true (str/includes? out "PARCEL_LINE: moved"))
       ;; work on top is never moved back
-      (let [mine (commit! wt "mine.txt" "m\n" "BL-9001: architect pass")]
-        (parcel-line-lib/take-up! facts)
-        (assert= "work on top is never moved back" mine (git wt "rev-parse" "HEAD")))
+      (let [mine (commit! wt "mine.txt" "m\n" "BL-9001: architect pass")
+            stayed (with-out-str (assert= "take-up! returns :stay when it stays" :stay (parcel-line-lib/take-up! facts)))]
+        (assert= "work on top is never moved back" mine (git wt "rev-parse" "HEAD"))
+        (assert= "a stay prints nothing" "" stayed))
       ;; dirty tracked change blocks
       (git wt "checkout" "-q" "-B" "swarmforge-architect" old)
       (spit (str (fs/path wt "a.txt")) "dirty\n")
-      (let [out (with-out-str (parcel-line-lib/take-up! facts))]
+      (let [outcome (atom nil)
+            out (with-out-str (reset! outcome (parcel-line-lib/take-up! facts)))]
         (assert= "a dirty worktree is not moved" old (git wt "rev-parse" "HEAD"))
+        (assert= "a refused take-up returns :refused" :refused @outcome)
         (assert= "the blocked line names the file" true (str/includes? out "a.txt"))
         (assert= "the blocked line says not taken up" true (str/includes? out "not taken up")))
       (git wt "checkout" "-q" "--" "a.txt")
@@ -157,8 +162,10 @@
       (let [other (str (fs/path root "other"))
             _ (git root "worktree" "add" "-q" "-b" "swarmforge-QA" other old)
             refs-before (git root "for-each-ref" "--format=%(refname)" "refs/swarmforge/parcel-backup/")
-            out (with-out-str (parcel-line-lib/take-up! (assoc facts :own-root other)))]
+            outcome (atom nil)
+            out (with-out-str (reset! outcome (parcel-line-lib/take-up! (assoc facts :own-root other))))]
         (assert= "a checkout that is not the role's own is not moved" old (git wt "rev-parse" "HEAD"))
+        (assert= "a foreign checkout's refusal returns :refused" :refused @outcome)
         (assert= "and its branch is kept" "swarmforge-architect" (git wt "rev-parse" "--abbrev-ref" "HEAD"))
         (assert= "no parcel-backup ref is written for it" refs-before
                  (git root "for-each-ref" "--format=%(refname)" "refs/swarmforge/parcel-backup/"))

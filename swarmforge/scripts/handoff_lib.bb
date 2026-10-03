@@ -1958,9 +1958,20 @@
           [(short-rev-fn object) nil]
           [nil (format "Header 'commit' must resolve to a commit; '%s' resolves to '%s'." commit object-type)])))))
 
-(defn print-task [file]
+(defn print-task
+  "Prints the in-process parcel and what to do with it. The task helper
+   passes {:task-mode? true :take-up <take-up! outcome>}: in task mode the
+   take-up has already moved the worktree onto the parcel (BL-1871), so a
+   git_handoff's merge_and_process line is not something to run - a local
+   seat ran it as a shell command, got exit 127, then ran the lander's
+   land_merge_path.bb looking for a merge. A refused take-up says so
+   instead of 'do not ask again', which contradicted PARCEL_LINE's own
+   'ask again' (2026-10-03)."
+  ([file] (print-task file {}))
+  ([file {:keys [task-mode? take-up]}]
   (let [task-name (header-field file "task")
-        typ (header-value file "type" "unknown")]
+        typ (header-value file "type" "unknown")
+        not-taken-up? (= :refused take-up)]
     (println "TASK:" (str file))
     (println "FROM:" (header-value file "from" "unknown"))
     (println "TYPE:" typ)
@@ -1970,9 +1981,15 @@
     (println "PAYLOAD:")
     (print (body file))
     (println)
-    (println "ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.")
-    (when (= "git_handoff" typ)
-      (println "1) Execute the PAYLOAD (merge_and_process …) in this worktree.")
+    (if not-taken-up?
+      (do
+        (println "ACTION: This parcel is in_process but was NOT taken up - read the PARCEL_LINE line above.")
+        (println "Do not start its work on this tree. Fix what PARCEL_LINE names, then run ready_for_next.sh again."))
+      (println "ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it."))
+    (when (and (= "git_handoff" typ) (not not-taken-up?))
+      (if task-mode?
+        (println "1) ready_for_next.sh already put this worktree on the parcel's line (BL-1871): there is nothing to merge, and merge_and_process is not a shell command - do not run it.")
+        (println "1) Execute the PAYLOAD (merge_and_process …) in this worktree."))
       (when task-name
         (println (str "2) Implement " task-name " from backlog/active/ with your edit/test tools.")))
       (println "3) Commit, git_handoff to the next role, then done_with_current / ready_for_next.")
@@ -1983,13 +2000,13 @@
     ;; ready_for_next.sh against the instruction, or inventing infra "fixes"
     ;; - because nothing told it how to finish. Name the remedy inline, the
     ;; same way the git_handoff branch already does.
-    (when (= "note" typ)
+    (when (and (= "note" typ) (not not-taken-up?))
       (println "1) Read the PAYLOAD and act on it per your role prompt if it asks for something")
       (println "   (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).")
       (println "2) When done - or if there is nothing further you can do about it now - run:")
       (println "   swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)")
       (println "3) Only then run ready_for_next.sh for the next parcel.")
-      (println "USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it."))))
+      (println "USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it.")))))
 
 ;; BL-1529: the shared two-call protocol every script-originated git_handoff
 ;; sender must speak. swarm_handoff.bb's own self-audit challenge (Article

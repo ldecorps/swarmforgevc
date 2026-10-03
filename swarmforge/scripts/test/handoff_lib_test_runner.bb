@@ -1014,6 +1014,44 @@
                      (fs/exists? (str (fs/path prompts-dir "coder@iq3.md")))))
     (finally (handoff-lib/set-project-root! nil))))
 
+;; ── print-task follows the BL-1871 take-up (2026-10-03) ──────────────────
+;; A local coder seat read "1) Execute the PAYLOAD (merge_and_process ...)",
+;; ran merge_and_process as a shell command (exit 127), then ran the
+;; lander's land_merge_path.bb looking for a merge - in task mode the
+;; take-up has already moved the worktree. And a refused take-up was told
+;; "Do NOT run ready_for_next.sh again" under a PARCEL_LINE saying "ask again".
+(let [d (mk-tmp-dir)
+      gh (str (fs/path d "00_x_from_coordinator_to_coder_for_coder.handoff"))
+      wn (str (fs/path d "10_y_from_coordinator_to_coder_for_coder.handoff"))
+      printed (fn [file opts] (with-out-str (handoff-lib/print-task file opts)))]
+  (spit gh (str (git-handoff-content "abcdef0123" "BL-9001") "merge_and_process coordinator abcdef0123\n"))
+  (spit wn (str "id: 20261003T000000Z_000009_from_coordinator\nfrom: coordinator\nto: coder\n"
+                "priority: 10\ntype: note\nmessage: Work BL-9002: merge main first, then read backlog/active\n"
+                "\nWork BL-9002\n"))
+  (let [batch (with-out-str (handoff-lib/print-task gh))
+        moved (printed gh {:task-mode? true :take-up :moved})
+        stayed (printed gh {:task-mode? true :take-up :stay})
+        refused (printed gh {:task-mode? true :take-up :refused})
+        refused-note (printed wn {:task-mode? true :take-up :refused})]
+    (assert-true "print-task: a batch seat (one-arity call) is still told to execute the merge_and_process payload"
+                 (str/includes? batch "1) Execute the PAYLOAD (merge_and_process"))
+    (doseq [[label out] [["moved" moved] ["stayed" stayed]]]
+      (assert-false (str "print-task: a task-mode take-up that " label " never says to execute merge_and_process")
+                    (str/includes? out "Execute the PAYLOAD"))
+      (assert-true (str "print-task: a task-mode take-up that " label " says there is nothing to merge")
+                   (str/includes? out "there is nothing to merge, and merge_and_process is not a shell command"))
+      (assert-true (str "print-task: a task-mode take-up that " label " still names the ticket to implement")
+                   (str/includes? out "2) Implement BL-9001 from backlog/active/")))
+    (doseq [[label out] [["git_handoff" refused] ["Work note" refused-note]]]
+      (assert-true (str "print-task: a refused take-up of a " label " says it was NOT taken up")
+                   (str/includes? out "was NOT taken up"))
+      (assert-true (str "print-task: a refused take-up of a " label " says to ask again once fixed")
+                   (str/includes? out "then run ready_for_next.sh again"))
+      (assert-false (str "print-task: a refused take-up of a " label " never says do not run ready_for_next again")
+                    (str/includes? out "Do NOT run ready_for_next.sh again"))
+      (assert-false (str "print-task: a refused take-up of a " label " gives no work or completion steps")
+                    (or (str/includes? out "2) Implement") (str/includes? out "done_with_current.sh"))))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")

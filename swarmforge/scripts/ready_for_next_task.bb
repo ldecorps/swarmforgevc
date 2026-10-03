@@ -484,9 +484,9 @@
           ;; new-dir - see origin-new-dir-for.
           (enforce-branch-claim-guard! (first in-process-files) in-process-dir
                                        (origin-new-dir-for (first in-process-files)))
-          (take-up-parcel-line! (first in-process-files))
-          (apply-effort-for-task! (first in-process-files) (mono-router-conf-text))
-          (handoff-lib/print-task (first in-process-files))
+          (let [take-up (take-up-parcel-line! (first in-process-files))]
+            (apply-effort-for-task! (first in-process-files) (mono-router-conf-text))
+            (handoff-lib/print-task (first in-process-files) {:task-mode? true :take-up take-up}))
           (print-merge-main-first-hint! (first in-process-files)))
         (if (handoff-lib/draining?)
           (println "DRAINING")
@@ -645,9 +645,9 @@
                         ;; the resume path above.
                         (enforce-branch-claim-guard! target-file in-process-dir
                                                      (origin-new-dir-for target-file))
-                        (take-up-parcel-line! target-file)
-                        (apply-effort-for-task! target-file pack-conf)
-                        (handoff-lib/print-task target-file)
+                        (let [take-up (take-up-parcel-line! target-file)]
+                          (apply-effort-for-task! target-file pack-conf)
+                          (handoff-lib/print-task target-file {:task-mode? true :take-up take-up}))
                         (print-merge-main-first-hint! target-file))
                       (recur (rest candidates)))))))))))))
 

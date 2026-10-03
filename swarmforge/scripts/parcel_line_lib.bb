@@ -182,32 +182,37 @@
    silent when it stays or skips. Keeps the head it leaves under a
    parcel-backup ref first, and never moves a dirty worktree. :own-root,
    the running role's roles.tsv worktree, is optional; when given, a :root
-   that is a different checkout is never moved (BL-1904)."
+   that is a different checkout is never moved (BL-1904). Returns the
+   outcome - :stay, :moved, or :refused when the parcel was not taken up -
+   and nil when the intent asks for no move, so the caller's ACTION text
+   can follow it."
   [{:keys [root role intent own-root] :as facts}]
   (when (#{:take-up :start} (:intent intent))
     (let [resolved (resolve-target facts)
           decision (move-decision (assoc resolved
                                          :dirty-paths (dirty-tracked-paths root)
-                                         :foreign-checkout? (foreign-checkout? root own-root)))]
+                                         :foreign-checkout? (foreign-checkout? root own-root)))
+          refused (fn [line] (println line) :refused)]
       (case (:action decision)
-        :stay nil
+        :stay :stay
         :foreign
-        (println (str "PARCEL_LINE: " root " is not " role "'s own worktree (" own-root
+        (refused (str "PARCEL_LINE: " root " is not " role "'s own worktree (" own-root
                       "); the parcel was not taken up there."))
         :blocked
-        (println (str "PARCEL_LINE: uncommitted changes to tracked files ("
+        (refused (str "PARCEL_LINE: uncommitted changes to tracked files ("
                       (str/join ", " (:paths decision))
                       "); the parcel was not taken up. Commit or restore them and ask again."))
         :move
         (let [head (resolve-commit root "HEAD")
               branch (git-out root "symbolic-ref" "--short" "-q" "HEAD")]
           (if (str/blank? branch)
-            (println "PARCEL_LINE: detached HEAD; the parcel was not taken up.")
+            (refused "PARCEL_LINE: detached HEAD; the parcel was not taken up.")
             (do
               (when head (git root "update-ref" (backup-ref role (utc-stamp)) head))
               (let [r (git root "switch" "-q" "-C" branch (:target decision))]
                 (if (zero? (:exit r))
-                  (println (str "PARCEL_LINE: moved " branch " onto " (subs (:target decision) 0 10)
-                                (when head (str " (left " (subs head 0 10) " under refs/swarmforge/parcel-backup/" role "/)"))))
-                  (println (str "PARCEL_LINE: move failed; the parcel was not taken up: "
+                  (do (println (str "PARCEL_LINE: moved " branch " onto " (subs (:target decision) 0 10)
+                                    (when head (str " (left " (subs head 0 10) " under refs/swarmforge/parcel-backup/" role "/)"))))
+                      :moved)
+                  (refused (str "PARCEL_LINE: move failed; the parcel was not taken up: "
                                 (str/trim (:err r)))))))))))))
