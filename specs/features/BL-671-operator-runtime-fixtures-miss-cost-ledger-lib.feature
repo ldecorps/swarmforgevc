@@ -7,18 +7,16 @@ Feature: every operator_runtime.bb test fixture sandboxes the libs it load-files
   # time. Fix (coder's call): a shared fixture helper that copies
   # operator_runtime.bb together with every lib it load-files, so the next
   # added lib breaks one place instead of nine.
-
-  # BL-671 all-ten-fixtures-pass-01
-  Scenario Outline: every test_operator_runtime_*.sh fixture passes end-to-end
-    Given "<fixture>" builds a sandbox copy of operator_runtime.bb
-    When "<fixture>" runs
-    Then it passes end-to-end
-    And operator_runtime.bb loads successfully in its sandbox
-
-    Examples:
-      | fixture                                              |
-      | test_operator_runtime_bl647_rotation_liveness.sh      |
-      | the other nine test_operator_runtime_*.sh fixtures    |
+  #
+  # Scenario 01 ("every test_operator_runtime_*.sh fixture passes
+  # end-to-end") was retired on 2026-10-03 (specifier hotfix, stamp-off
+  # BL-1908). It ran all sixteen shell fixtures inside one acceptance step.
+  # On this host that takes about 25 minutes, and three fixtures (the tick,
+  # disk-space and BL-653 tests) run past its 120 s spawn limit, so it was
+  # red while every fixture passed. That also breaks the per-mutant ceiling
+  # (BL-1541). Each fixture is its own standing shell-lane row, which is
+  # where the end-to-end pass is proven. Scenario 02 keeps the contract
+  # this feature exists for: one derived copy list, used by every fixture.
 
   # BL-671 next-added-load-file-breaks-one-place-02
   Scenario: a new lib load-filed by operator_runtime.bb breaks one fixture location, not nine

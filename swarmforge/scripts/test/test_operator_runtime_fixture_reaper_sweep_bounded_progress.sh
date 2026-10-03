@@ -17,6 +17,10 @@ check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi
 
 make_project_fixture() {
   local d; d="$(mktemp -d)"
+  # BL-1517: operator_runtime.bb refuses a project-root that is not a git
+  # checkout; init_git_fixture_root (operator_runtime_sandbox.sh) inits and
+  # proves it (BL-1390).
+  init_git_fixture_root "$d" || exit 1
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
   copy_operator_runtime_sandbox "$SRC" "$d/swarmforge/scripts"
   printf '%s' "$d"
@@ -53,9 +57,12 @@ RUNTIME_LOG="$PROJECT/.swarmforge/operator/runtime.log"
 mkdir -p "$REAP_ROOT/aps-a-fresh" "$REAP_ROOT/aps-b-fresh" \
   "$REAP_ROOT/aps-c-stale" "$REAP_ROOT/aps-d-stale" "$REAP_ROOT/aps-e-stale"
 
-(cd "$REAP_ROOT/aps-c-stale" && exec sleep 30) & LIVE_PIDS+=("$!"); C_PID=$!
-(cd "$REAP_ROOT/aps-d-stale" && exec sleep 30) & LIVE_PIDS+=("$!"); D_PID=$!
-(cd "$REAP_ROOT/aps-e-stale" && exec sleep 30) & LIVE_PIDS+=("$!"); E_PID=$!
+# sleep 600, not 30: one operator_runtime tick took about 25 s on the WSL
+# host (2026-10-03), so a 30 s sleep had exited by itself before tick 2's
+# "survives" check. The cleanup trap above kills every LIVE_PIDS entry.
+(cd "$REAP_ROOT/aps-c-stale" && exec sleep 600) & LIVE_PIDS+=("$!"); C_PID=$!
+(cd "$REAP_ROOT/aps-d-stale" && exec sleep 600) & LIVE_PIDS+=("$!"); D_PID=$!
+(cd "$REAP_ROOT/aps-e-stale" && exec sleep 600) & LIVE_PIDS+=("$!"); E_PID=$!
 
 for _ in 1 2 3 4 5; do
   [[ -e "/proc/$C_PID/cwd" && -e "/proc/$D_PID/cwd" && -e "/proc/$E_PID/cwd" ]] && break

@@ -41,6 +41,11 @@ const ALLOWED_EXACT_PATHS = new Set([
   'swarmforge/scripts/test/test_launch_onboarder.sh',
   'swarmforge/scripts/test/test_onboarder_supervisor_ignores_old_heartbeat.sh',
   'swarmforge/scripts/test/test_stop_ancillary_services_onboarder_dual_clear.sh',
+  // The standing-red register names each red test file by its real path
+  // (QA's hold matches on the exact path), and BL-684's own feature file
+  // keeps the old word in its filename. Added 2026-10-03 when that feature
+  // gained a register row.
+  'backlog/standing-reds.tsv',
 ]);
 
 /**

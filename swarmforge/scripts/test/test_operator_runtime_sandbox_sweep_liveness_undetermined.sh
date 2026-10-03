@@ -28,6 +28,10 @@ make_project_fixture() {
   # only mutate the subshell's copy and silently fail to register the dir.
   # Callers must append the returned path to TMP_DIRS themselves.
   local d; d="$(mktemp -d)"
+  # BL-1517: operator_runtime.bb refuses a project-root that is not a git
+  # checkout; init_git_fixture_root (operator_runtime_sandbox.sh) inits and
+  # proves it (BL-1390).
+  init_git_fixture_root "$d" || exit 1
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
   copy_operator_runtime_sandbox "$SRC" "$d/swarmforge/scripts"
   printf '%s' "$d"
