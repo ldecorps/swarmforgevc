@@ -1,0 +1,107 @@
+id: BL-1938
+title: "A local seat's tuning report pairs each request with its own model's load - BL-1851 labels a request with the latest Ollama load of any model, so on a server that also loads another model the request can print that model's layers and KV cache as its own; pair by the request's model tag (its manifest names the blob each load line carries) and print unknown serving when no load of that model exists"
+milestone: M8
+type: defect
+severity: medium
+# medium: a wrong served label is a real defect, but a contained one. QA saw
+# no cross-model pairing in the 2026-10-03 data (the 16 GB card holds one
+# large model at a time), and it goes live once a task outside the swarm
+# shares the Ollama server, which is what BL-1861 exists to allow.
+status: todo
+epic: local-llm-swarm
+priority: 25
+direction: queue-jump
+depends_on: [BL-1851]
+mutation_cost: low
+# low: one pairing function and one manifest read in a Babashka lib (no
+# mutation lane, BL-472), each covered by a lib test row.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one pairing function and one manifest read beside unchanged code; nothing to deduplicate"
+  architect: "the pairing stays inside BL-1851's report lib; no boundary moves"
+  hardender: "Babashka has no mutation lane (BL-472) and the report writes no durable state"
+
+acceptance: specs/features/BL-1938-a-local-seats-tuning-report-pairs-each-request-with-its-own-models-load.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1938TuningReportPairsByModelSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A spec gap QA raised on BL-1851 (note 003790, 2026-10-03). No choice is
+  posed: a request is labelled only by a load of its own model, and reads
+  unknown serving otherwise, which is BL-1851's own invariant 2 (a field
+  no record carries prints as unknown, never a guess). FIRM: BL-1851 ships
+  as minted, and this slice follows it.
+
+invariants:
+  - "A request is labelled only by a load whose model blob is the blob its own model tag's manifest names; when there is no such load, or the tag resolves to no blob, it reads unknown serving, never another model's load."
+  - "The report stays read-only: resolving a tag reads a manifest file and never runs ollama, calls its API or writes anything."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1938 feature 2/2.
+  2. `bb swarmforge/scripts/local_seat_tuning_report_lib_test_runner.bb`:
+     ALL PASS, with a row for a request whose tag has no manifest
+     (unknown serving).
+  3. Live and read-only: `bb swarmforge/scripts/local_seat_tuning_report_cli.bb
+     <root> --seat coder --since 2026-10-03`. Every group's served label is
+     a load whose `starting llama-server` line names blob
+     sha256-64b53b64c7... (the manifest of `ista-iq3s-coder:latest`), or
+     reads unknown serving. Measured at mint: `~/.ollama/models/manifests/registry.ollama.ai/library/ista-iq3s-coder/latest`
+     names that digest, the live serve.log loads it, and the coder's qwen
+     records name `ista-iq3s-coder:latest` (392 of them in one session).
+
+source: |
+  QA note 003790, 2026-10-03 21:53Z, to specifier and coordinator:
+  "BL-1851 spec-gap: served pairs a request with any model's last load; by
+  model?" QA evidence (QA worktree): backlog/evidence/BL-1851-QA-20261003.md,
+  last paragraph: "served-at-or-before pairs a request with the latest
+  Ollama load of ANY model before it, as the ticket's text says ... on a
+  host serving several models concurrently the paired load can be another
+  model's. Each api_response record carries the request's own model;
+  keying the pairing by model is a spec call. Not observed in today's
+  data."
+
+notes: |
+  Minted 2026-10-03 by the specifier on QA note 003790. The specifier
+  decided the spec call (pair by model) rather than putting it to the
+  human: unknown over a guessed label is BL-1851's own invariant 2.
+  Minted as a follow-up and not amended into BL-1851, which is back at the
+  coder for QA's D1 and D2: the gap was not observed in live data, and
+  widening a bounced parcel slows it.
+
+description: |
+  ## What is wrong
+
+  `served-at-or-before` in `swarmforge/scripts/local_seat_tuning_report_lib.bb`
+  (BL-1851) pairs a request with the latest Ollama load of ANY model at or
+  before the request's time. One Ollama server can load more than one
+  model: a second seat, the host-agent chat, or a task outside the swarm
+  on the server BL-1861 leaves running. A request can then print another
+  model's layers and KV cache as how its own model was served.
+
+  The data to pair correctly is on disk:
+  - each request record carries its model tag (`"model":"ista-iq3s-coder:latest"`);
+  - each `starting llama-server` line in the Ollama log carries
+    `--model <models>/blobs/sha256-<hex>`;
+  - the tag's manifest, `<models>/manifests/registry.ollama.ai/library/<name>/<tag>`,
+    names that blob in its `application/vnd.ollama.image.model` layer, as
+    `sha256:<hex>`.
+
+  ## What is wanted
+
+  The report pairs each request with the latest load of its own model at or
+  before it. A request whose model has no such load, or whose tag resolves
+  to no blob, is served as "unknown serving".
+
+  ## How (direction, not mandate)
+
+  - Read the models directory from the load line's own `--model` path (the
+    parent of `blobs/`). Never from `OLLAMA_MODELS` or a home-directory
+    guess: on this host, the launcher's `OLLAMA_MODELS` and the live
+    server's blob path name different directories.
+  - Parse the blob digest per load in `parse-ollama-loads` (BL-1842's lib
+    owns the log, BL-1811), and resolve a tag once per report run.
+  - The how-to (`docs/how-to/BL-1851-local-seat-tuning-report.md`, its
+    sources table) says the pairing is by model.
