@@ -44,16 +44,29 @@
     {:intent :start :ticket work-ticket}
     :else {:intent :skip :reason :no-work}))
 
+(defn foreign-checkout?
+  "BL-1904: true when `root` (the checkout the take-up would move, its git
+   toplevel) is not `own-root` (the running role's roles.tsv worktree), both
+   compared as canonical paths. A role with no registered worktree (nil) is
+   never foreign: no row is not evidence of a wrong checkout."
+  [root own-root]
+  (boolean
+   (and own-root
+        (not= (str (fs/canonicalize root)) (str (fs/canonicalize own-root))))))
+
 (defn move-decision
   "Whether to move onto target. Stays when nothing is resolved, when HEAD
    is already at (or, for a handed-off parcel, past) the target, or when
    the line already carries the ticket's own unlanded work. Never moves a
-   worktree with uncommitted tracked changes: {:action :blocked :paths}."
-  [{:keys [target at-or-past-target? own-line? dirty-paths]}]
+   checkout that is not the running role's own (BL-1904): {:action
+   :foreign}. Never moves a worktree with uncommitted tracked changes:
+   {:action :blocked :paths}."
+  [{:keys [target at-or-past-target? own-line? dirty-paths foreign-checkout?]}]
   (cond
     (nil? target) {:action :stay}
     at-or-past-target? {:action :stay}
     own-line? {:action :stay}
+    foreign-checkout? {:action :foreign}
     (seq dirty-paths) {:action :blocked :paths (vec dirty-paths)}
     :else {:action :move :target target}))
 
@@ -167,13 +180,20 @@
   "Moves the worktree at :root onto the parcel's line per :intent (from
    parcel-intent). Prints one PARCEL_LINE line when it moves or refuses;
    silent when it stays or skips. Keeps the head it leaves under a
-   parcel-backup ref first, and never moves a dirty worktree."
-  [{:keys [root role intent] :as facts}]
+   parcel-backup ref first, and never moves a dirty worktree. :own-root,
+   the running role's roles.tsv worktree, is optional; when given, a :root
+   that is a different checkout is never moved (BL-1904)."
+  [{:keys [root role intent own-root] :as facts}]
   (when (#{:take-up :start} (:intent intent))
     (let [resolved (resolve-target facts)
-          decision (move-decision (assoc resolved :dirty-paths (dirty-tracked-paths root)))]
+          decision (move-decision (assoc resolved
+                                         :dirty-paths (dirty-tracked-paths root)
+                                         :foreign-checkout? (foreign-checkout? root own-root)))]
       (case (:action decision)
         :stay nil
+        :foreign
+        (println (str "PARCEL_LINE: " root " is not " role "'s own worktree (" own-root
+                      "); the parcel was not taken up there."))
         :blocked
         (println (str "PARCEL_LINE: uncommitted changes to tracked files ("
                       (str/join ", " (:paths decision))
