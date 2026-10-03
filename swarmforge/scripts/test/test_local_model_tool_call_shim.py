@@ -141,6 +141,19 @@ class NudgeTests(unittest.TestCase):
             self.assertTrue(shim.needs_nudge({"messages": [self.WAKE]}, completion(text)), text)
         self.assertFalse(shim.needs_nudge({"messages": [self.WAKE]}, completion("The outlet's tests passed.")))
 
+    def test_a_question_to_the_user_is_nudged(self) -> None:
+        # The live coder seat's own last turns on 2026-10-03 before two stalls.
+        for text in ("It seems that the task is already in progress, and I should focus on implementing "
+                     "BL-1916. Before proceeding, I need to understand the specific details of BL-1916. "
+                     "Could you please provide more information about the task or the specific changes required?",
+                     "I have read the README.md file. Next, I will proceed with implementing BL-1916 from the "
+                     "backlog/active/ directory. Please provide the specific instructions or tasks related to "
+                     "BL-1916 so I can begin the implementation."):
+            self.assertTrue(shim.needs_nudge({"messages": [self.WAKE]}, completion(text)), text)
+        idle = {"messages": [{"role": "tool", "tool_call_id": "c1", "content": "NO_TASK"}]}
+        self.assertFalse(shim.needs_nudge(idle, completion("No task. Could you send me one?")))
+        self.assertFalse(shim.needs_nudge({"messages": [self.WAKE]}, completion("The parcel is forwarded.")))
+
     def test_an_idle_seat_is_never_nudged(self) -> None:
         idle = {"messages": [{"role": "tool", "tool_call_id": "c1", "content": "NO_TASK"}]}
         self.assertFalse(shim.needs_nudge(idle, completion(self.ANNOUNCE)))

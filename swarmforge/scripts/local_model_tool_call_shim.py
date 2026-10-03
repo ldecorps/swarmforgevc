@@ -197,11 +197,17 @@ _ANNOUNCE = re.compile(
     r"(?i)(?:^|[.!?:]\s+|\n)\s*(?:(?:now|next|first|then),?\s+)?"
     r"(?:i\s+will|i'll|i\s+am\s+going\s+to|i'm\s+going\s+to|let\s+me|let['’]s|let\s+us)\b"
 )
+# A seat has no one to answer it: "Could you please provide more
+# information about the task?" stalls it exactly like an announcement does.
+_ASKS_USER = re.compile(
+    r"(?i)\b(?:could|can|would)\s+you\b|\bplease\s+(?:provide|clarify|specify|confirm|share|tell|let\s+me\s+know)\b"
+)
 NUDGE = "Call the tool now. Reply with the tool call only."
 
 
 def needs_nudge(request: dict[str, Any], completion: dict[str, Any]) -> bool:
-    """True when the reply announces an action and calls no tool (BL-1920).
+    """True when the reply announces an action, or asks the user for input,
+    and calls no tool (BL-1920; the question case 2026-10-03).
 
     A seat that once ended a turn on "I will now run X" and no call saw that
     turn in its history and kept announcing: 3 of 3 replays of the live
@@ -215,7 +221,7 @@ def needs_nudge(request: dict[str, Any], completion: dict[str, Any]) -> bool:
     if message.get("tool_calls") or choice.get("finish_reason") not in (None, "stop"):
         return False
     text = str(message.get("content") or "")
-    if not text.strip() or "NO_TASK" in text or not _ANNOUNCE.search(text):
+    if not text.strip() or "NO_TASK" in text or not (_ANNOUNCE.search(text) or _ASKS_USER.search(text)):
         return False
     messages = request.get("messages") or []
     last = messages[-1] if messages else {}
