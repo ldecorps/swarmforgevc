@@ -1,0 +1,131 @@
+id: BL-1928
+title: "A worktree seat runs origin main's swarm tooling whatever its parcel's commit, so a tooling hotfix reaches a seat holding an older parcel"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - since BL-1871 every tooling
+# hotfix misses each seat holding a parcel cut before it. On 2026-10-03 the
+# coder ran pre-hotfix tooling on BL-1858's bounce line and the human had to
+# rule the parcel requeued (SUP-17, 12:44Z).
+status: todo
+epic: landing-is-a-merge
+priority: 5
+depends_on: []
+mutation_cost: medium
+# medium: either option touches a shared take-up or tool entry path that
+# every worktree seat runs on every turn.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one entry path changes beside unchanged code; envelope and mutation_cost are medium, not high"
+
+acceptance: specs/features/BL-1928-a-seat-runs-origin-mains-tooling-whatever-its-parcels-commit.feature
+
+human_approval: pending
+approval_context: >
+  FIRM: the defect - since BL-1871 a seat runs ./swarmforge/scripts from the
+  worktree it just moved onto the parcel's commit, so a hotfix landed on
+  origin main after that commit never reaches it. FIRM: the three scenarios
+  and the parcel line staying BL-1871-pure (no other ticket's commit). The
+  ASK: where a seat's tooling comes from. Option A changes how seats call
+  their tools and keeps parcel lines untouched. Option B keeps the call
+  sites and refreshes each line with origin main at take-up.
+ruling_options:
+  - A - seats call the master checkout's tooling with the worktree as their working directory, as the daemons and the step handlers already do (recommended)
+  - B - every take-up merges origin main into the parcel's line after moving onto it
+ruling_tradeoffs:
+  - Pros - a hotfix binds on every seat at its very next command, mid-parcel included, with no merge on any line, so lines stay as pure as BL-1870 wants. Cons - every seat entry point and kickoff text changes path, and the wrapper scripts must stop resolving the worktree from their own location (ready_for_next.sh cds into its own dir today). Recommended because the daemons and specs/pipeline handlers already run main's ready_for_next_task.bb with cwd in another checkout, so the shape is proven.
+  - Pros - one change inside take-up and no seat-facing text changes. Cons - every stage adds a merge of main to the line, a conflict at take-up strands the seat, and a hotfix landing mid-parcel still waits for the next stage's take-up, as b12d063001 (12:31Z) did for the coder's BL-1858 parcel on 2026-10-03.
+
+invariants:
+  - "A worktree seat's tool commands (ready_for_next, the served task text, swarm_handoff, done_with_current) never run a version older than origin main's at the seat's take-up."
+  - "A parcel's line keeps the parcel commit as an ancestor and carries no commit naming another ticket (BL-1871)."
+  - "A master-resident role's shared checkout is never moved or merged by this change."
+
+source: |
+  Raised in the human's 2026-10-03 dogfood loop (root intake
+  backlog/archive/INTAKE-coder2-tool-calls-20261003.md), verbatim (Article 5.3):
+
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  The human's ruling on SUP-17, 2026-10-03 12:44Z, verbatim:
+
+  > Requeue it, run A/B as planned
+
+  It answered the specifier's ask after QA's 10:49Z bounce of BL-1858
+  (9ae037c77a) reached the qwen2.5 coder ahead of BL-1916's bounce. The
+  specifier's accepted recommendations were: requeue BL-1858, put the coder
+  on today's tooling, and mint this lasting fix with its design choice open.
+
+description: |
+  ## What is wrong
+
+  BL-1871's take-up moves a task-mode role's worktree onto the parcel's
+  commit (parcel_line_lib.bb take-up!, `git switch -C <branch> <commit>`).
+  Every worktree seat then runs `./swarmforge/scripts/ready_for_next.sh`,
+  `swarm_handoff.sh` and `done_with_current.sh` from that worktree (the
+  kickoff in each .swarmforge/launch/<role>.sh and every role card names the
+  relative path). So the tooling a seat runs is the tooling at its parcel's
+  commit. A tooling hotfix landed on origin main after that commit is
+  invisible to the seat for the whole parcel.
+
+  Measured 2026-10-03: QA's bounce of BL-1858 at 9ae037c77a (committed
+  10:47Z) lacked five tooling hotfixes landed on origin main before the coder
+  took it up at 12:12Z (4b0e9adb96, e69b66a68d, 5a89725e03, aec0daba54,
+  e2e2287822), and a sixth, b12d063001, landed at 12:31Z while the coder
+  worked the parcel. The coder worked the bounce under that tooling. Before
+  BL-1871 a role branch merged main on every parcel, so its tooling was
+  never far behind. The daemons run from the master checkout and are not
+  affected; neither are the specifier and the coordinator.
+
+  ## What is wanted
+
+  A seat that takes up a parcel is served by origin main's tooling,
+  whatever commit the parcel sits on, and the parcel's line still holds only
+  its own ticket's commits. The human picks the mechanism (ruling_options);
+  the scenarios hold under either.
+
+  ## How (direction, not mandate)
+
+  - A: the launch kickoff, the role cards and the served task text name the
+    master checkout's absolute scripts path; the .sh wrappers run the bb
+    dispatchers with the caller's cwd instead of cd-ing into their own dir.
+    specs/pipeline/steps/bl1871ParcelLineTakeUpSteps.js already runs the
+    master's ready_for_next_task.bb with cwd in a fixture worktree.
+  - B: take-up! runs `git merge origin/main` after a :moved outcome, refuses
+    with a PARCEL_LINE line on a conflict and aborts the merge.
+  - After the ruling the specifier adds the chosen option's call site as
+    required_wiring before promotion.
+
+  ## What each stage checks
+
+  - Coder: the three scenarios with a step handler registered as
+    bl1928SeatToolingFromOriginMainSteps; BL-1871's feature still 9 of 9.
+  - Architect: the invariants as three passes; under A, every tool entry
+    point a seat can reach resolves its worktree from cwd, never its own path.
+  - Hardender: Babashka and shell have no Stryker lane (BL-472); a
+    hand-mutant pass on the changed entry path, evidence recording the
+    degraded fallback.
+  - Documenter: docs/reference/BL-1871-parcel-line-take-up.md and any how-to
+    naming a seat's tool path.
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1928-a-seat-runs-origin-mains-tooling-whatever-its-parcels-commit.feature`
+     passes 3 of 3.
+  2. `node specs/pipeline/cli.js specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`
+     passes (measured at mint on HEAD fb62eaa9e8: 9 of 9 ok).
+  3. Read from the gather row: `npm test` and `npm run test:properties` green.
+  4. Live, after the land: the next worktree seat to take up a parcel cut
+     before the land runs origin main's tooling. Under A its pane shows the
+     absolute master scripts path; under B its line carries a merge of
+     origin main right after the PARCEL_LINE move.
+
+notes: |
+  - Minted 2026-10-03 by the specifier, after the SUP-17 ruling.
+  - Interim by hand, the same day: the coder's in_process BL-1858 bounce
+    (003771) was requeued behind BL-1916's (fresh copy
+    00_20261003T125306Z_003771, old copy in abandoned/); the coder's line
+    was moved onto BL-1916's parcel f09cf2dfce (old head 127768f186 kept
+    under refs/swarmforge/parcel-backup/coder/20261003T125331.000Z) and
+    origin main merged in (611844ce66); the seat was respawned at 12:54Z.
+  - required_wiring is declared once the ruling names the call site.
