@@ -126,6 +126,19 @@
     (finally (fs/delete-tree root))))
 
 ;; ── report ───────────────────────────────────────────────────────────────
+;; ── land-command (BL-1901) ───────────────────────────────────────────────
+(let [entry {:task "BL-9001" :commit sha}
+      merge (lander-lib/land-command :merge "/wt" entry)
+      step (lander-lib/land-command :land-step "/wt" entry)]
+  (assert= "the default path runs the merge path, which falls back itself"
+           true (and (str/starts-with? merge "bb ") (str/includes? merge "land_merge_path.bb")
+                     (str/ends-with? merge (str "\"/wt\" \"BL-9001\" \"" sha "\""))))
+  (assert= ":land-step runs the land step directly, as before BL-1901"
+           true (and (str/starts-with? step "bash ") (str/includes? step "land_main_publish.sh")
+                     (str/ends-with? step (str "\"/wt\" \"--land\" \"BL-9001\" \"" sha "\""))))
+  (assert= "an issue ref rides at the end of either command"
+           true (str/ends-with? (lander-lib/land-command :merge "/wt" (assoc entry :issue "GH-7")) "\"GH-7\"")))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (binding [*out* *err*] (println f)))

@@ -1,5 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 3, 2026 (BL-1901: a queued parcel line whose
+every commit since `origin/main` names only the landing ticket, or is a
+merge whose other parents are already on `origin/main` and whose own
+subject names no ticket or only the landing one, now lands as one merge
+of `origin/main` plus a fast-forward push, instead of the land step's
+cherry-pick rebuild — all 53 land records on 2026-10-01 and 2026-10-02
+were rebuilds, and BL-1887's took an hour. The lander (BL-1872) tries
+this merge path first; a line it declines (unclean, a dirty lander
+worktree, the lock not obtained, a detached-HEAD checkout that fails, a
+built commit missing the queued commit or `origin/main`, a merge
+conflict, the push race lost twice, or the land step's own registry pass
+— standing-reds.tsv, the property allowlist, suite-poles.tsv — would
+retire a row the landing ticket owns or restore a row an open other
+ticket owns) hands the same commit to `land_main_publish.sh --land`
+unchanged. The land record's `path` field says which one ran: `merge` or
+`land-step`. The land step itself, QA's queue command, and which parcels
+arrive clean are all untouched — the human's ruling A on BL-1870 ("should
+not be much more than a git merge"); the land step's own rebuild
+machinery stays on the epic as BL-1870's remaining line. How-to:
+`docs/how-to/BL-1872-lander-daemon-queue-and-log.md` ("A clean line lands
+as a merge, not a rebuild (BL-1901)" and "A clean line still declines
+when the registry pass would change the tree" sections). Acceptance:
+`specs/features/BL-1901-a-clean-parcel-line-lands-as-a-merge-of-origin-main.feature`.
+No new extension command or setting; no diagram edit — swarm-internal
+land-step tooling.)
+Prior entry —
+
 **Last Updated:** October 2, 2026 (BL-1836: the closing ceremony lands the
 documenter's own pure-add briefing commit the moment it exists on any tick
 in the briefing phase, not only at the hard deadline, and no longer

@@ -264,7 +264,7 @@ land_rematch_commit() {
 land_record_rematch() {
   local rematched="$1" source="$2" task="$3" ticket=""
   ticket="$(grep -oE '^(BL|GH)-[0-9]+' <<<"$task" || true)"
-  bb "$SCRIPT_DIR/record_land_approval.bb" "$ROOT" "$rematched" "$source" ${ticket:+"$ticket"} 2>&1 || true
+  bb "$SCRIPT_DIR/record_land_approval.bb" "$ROOT" "$rematched" "$source" "$ticket" land-step 2>&1 || true
 }
 
 run_land() {

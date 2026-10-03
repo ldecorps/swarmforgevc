@@ -2636,7 +2636,10 @@
    own owner column is the landing ticket."
   "REGISTER_ROW_RETIRED")
 
-(def ^:private registry-specs
+;; BL-1901: public, with registry-data-lines and git-show, so the merge
+;; path declines on exactly the rows this pass would change - one
+;; definition of the register rules, never a second.
+(def registry-specs
   "Row identity is the `file` column; owner is column 3 (standing-reds.tsv),
    the `owner BL-<n>` token in the rationale column (the allowlist -
    BL-1428's mirror shape), or column 2 (the pole register, BL-1598's own
@@ -2662,7 +2665,7 @@
   [line]
   (or (str/blank? line) (str/starts-with? line "#")))
 
-(defn- registry-data-lines
+(defn registry-data-lines
   "Non-blank, non-comment lines - a registry's own header/comment lines
    never carry an owner (owner-fn returns nil for them), but skipping them
    up front keeps rows-to-restore's candidate set exactly the rows that
@@ -2714,7 +2717,7 @@
            :when (and owner (= owner task-ticket-id) (retirable? line))]
        line))))
 
-(defn- git-show [root ref path]
+(defn git-show [root ref path]
   "{:ok? bool :content string-or-nil}. :ok? false when ref itself cannot be
    resolved (a genuine read failure, not the ordinary case of the path
    simply not existing at a valid ref - a registry file that has never
@@ -2786,14 +2789,17 @@
                      (into retired
                            (map (fn [line] {:registry path :file (row-key-fn line) :owner (owner-fn line)}) retire))))))))))
 
-(defn- append-land-approval! [root c src task-ticket-id]
+(defn- append-land-approval! [root c src task-ticket-id path]
   (let [dir (fs/path root ".swarmforge" "land-approvals")
         month (subs (str (java.time.Instant/now)) 0 7)
         file (fs/path dir (str month ".jsonl"))
         line (str "{\"at\":\"" (str (java.time.Instant/now)) "\""
                   ",\"ticket\":\"" (or task-ticket-id "") "\""
                   ",\"commit\":\"" c "\""
-                  ",\"source\":\"" src "\"}\n")]
+                  ",\"source\":\"" src "\""
+                  ;; BL-1901: which land path published it (merge or land-step).
+                  (when path (str ",\"path\":\"" path "\""))
+                  "}\n")]
     (fs/create-dirs dir)
     ;; append, never truncate - a second land this month must not erase the
     ;; first and stop the predicate approving everything landed earlier.
@@ -2827,7 +2833,7 @@
    throws - a land must not die because its bookkeeping did, and an
    unrecorded land degrades to exactly today's behaviour (the override),
    never to a wrong approval."
-  [{:keys [root commit source task-ticket-id]}]
+  [{:keys [root commit source task-ticket-id path]}]
   (let [short (fn [sha] (when (and sha (>= (count (str sha)) 7))
                           (subs (str sha) 0 (min 10 (count (str sha))))))
         c (short commit)
@@ -2840,7 +2846,7 @@
         ;; unresolvable root writes nothing and says so - never a guessed path,
         ;; and the land still succeeds on the sanctioned override.
         (if-let [shared (shared-target-root root)]
-          (append-land-approval! shared c src task-ticket-id)
+          (append-land-approval! shared c src task-ticket-id path)
           {:ok? false
            :reason (str "land-approval record not written: the shared target root could not be resolved from "
                         root " - refusing to guess a path (BL-1339)")})

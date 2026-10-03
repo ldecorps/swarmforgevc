@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=01f0a951e8a9df7b8e5f6b02fafbe6136e49bda3bf345300615235edfacd0f7e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-02T23:24:26.805321068Z","feature_name":"BL-1901 A parcel line that carries only its own ticket lands as a merge of origin/main and a fast-forward push","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1901-a-clean-parcel-line-lands-as-a-merge-of-origin-main.feature","background_hash":"a0bc7266d4770150282e45aae97207a30d168e7f94604c9c2b01e75abeedffab","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a line the merge path does not accept goes through the land step as before","scenario_hash":"d4451ccb23d13be55e2df4ee3f01848947df0dcac286fe04000e5827e353b076","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-10-02T23:24:26.805321068Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1901 A parcel line that carries only its own ticket lands as a merge of origin/main and a fast-forward push
 
   The human's ruling A on BL-1870 (2026-10-01): landing a parcel that
@@ -42,3 +47,19 @@ Feature: BL-1901 A parcel line that carries only its own ticket lands as a merge
       | also carries an unlanded BL-9002 commit                    |
       | also carries a commit that names no ticket and is no merge |
       | conflicts with origin/main when merged                     |
+
+  # BL-1901 a-land-never-leaves-the-owners-row-04
+  Scenario: a land never leaves the landing ticket's own register row on origin/main
+    Given origin/main's backlog/standing-reds.tsv carries a row owned by BL-9001
+    And the lander queue holds an entry for BL-9001 whose line carries only BL-9001 commits on top of origin/main
+    When the lander sweep runs until the queue is empty
+    Then BL-9001's work is on origin/main
+    And origin/main's backlog/standing-reds.tsv has no row owned by BL-9001
+
+  # BL-1901 a-land-keeps-another-open-tickets-row-05
+  Scenario: a land never drops another open ticket's register row from origin/main
+    Given origin/main's backlog/standing-reds.tsv carries a row owned by BL-9002, an open ticket
+    And the lander queue holds an entry for BL-9001 whose line deletes that row
+    When the lander sweep runs until the queue is empty
+    Then BL-9001's work is on origin/main
+    And origin/main's backlog/standing-reds.tsv still has the row owned by BL-9002
