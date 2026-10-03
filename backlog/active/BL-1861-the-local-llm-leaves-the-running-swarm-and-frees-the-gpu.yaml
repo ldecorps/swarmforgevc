@@ -174,3 +174,8 @@ notes: |
   stage_skip_reasons.
 
 assigned_to: coder
+bounce_count: 3
+bounce_history:
+  - { at: 2026-10-03, by: hardender, blamed: coder, class: behavior, commit: 06e19d336e, evidence: backlog/evidence/BL-1861-bounce-20261003.md }
+  - { at: 2026-10-03, by: hardender, blamed: coder, class: behavior, commit: 6d599d2ec0, evidence: backlog/evidence/BL-1861-bounce-20261003.md }
+  - { at: 2026-10-03, by: QA, blamed: documenter, class: behavior, commit: 1cf30cfacf, evidence: backlog/evidence/BL-1861-QA-20261003.md }

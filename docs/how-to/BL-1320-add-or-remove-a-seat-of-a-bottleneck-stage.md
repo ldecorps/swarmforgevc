@@ -102,6 +102,17 @@ roster rows and its live session go. **Not built yet:** the inverse
 (re-adding a retired seat mid-shift, without a full relaunch) — until it
 exists, bringing a seat back is the normal next-launch path above.
 
+### Taking every local-model seat out, and freeing its GPU (BL-1861)
+
+`retire_seat.sh` above takes out one named seat but leaves its model
+loaded. When the reason to drop a local-model seat is the GPU itself —
+giving the card to a task outside the swarm — use
+[`local_llm.sh remove`](BL-1861-remove-the-local-llm-and-free-the-gpu.md)
+instead: it finds every `local-model` seat in the live roster itself
+(never a hardcoded seat name), takes all of them out the same way
+`retire_seat.sh` does, and then unloads each seat's model from Ollama so
+the GPU memory is actually freed, not just the seat's pane.
+
 ## Which model tier to add
 
 The tier you add depends on WHAT the constraint is, not on how busy the stage

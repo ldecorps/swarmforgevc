@@ -429,6 +429,17 @@
 %% (default 11439), SWARMFORGE_LOCAL_MODEL_SHIM=off sends the seat to
 %% OLLAMA directly. Its log lands at
 %% .swarmforge/local-model-shim/shim.log.
+%% BL-1861 (2026-10-03): local_llm.sh remove (local_llm_cli.bb) takes every
+%% live local-model seat out of every roster copy — refusing, changing
+%% nothing, when any of them is a bare seat (no @) — then unloads each
+%% removed seat's model from the OLLAMA endpoint its own launch script
+%% names (a bounded wait polling /api/ps; another loaded model and the
+%% server itself are left alone). It writes .swarmforge/local-llm/
+%% removed.json (per removed seat its roles.tsv/sessions.tsv row and line
+%% position; per model its endpoint and the VRAM Ollama reported before
+%% the unload) BEFORE touching any roster, so a re-run with no local-model
+%% seat left retries the record's own models' unload first. A removed
+%% seat's held parcels are reported, never moved.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -462,6 +473,7 @@ flowchart TB
   subgraph SUBSTRATE["tmux Substrate"]
     SOCKET[".swarmforge/tmux-socket"]
     PANES["One tmux pane per pipeline role\n(coordinator, specifier, coder, cleaner,\narchitect, hardender, documenter, QA)"]
+    LOCALLLM["local_llm.sh remove / local_llm_cli.bb\n(BL-1861: human-run verb — takes every\nlive local-model seat out of every\nroster copy, refuses on a bare seat,\nreports (never moves) its parcels)"]
   end
 
   subgraph SWARMSTATE[".swarmforge/ State (files, shared;\nlives in the MASTER checkout - linked\nworktrees carry none, BL-966)"]
@@ -478,6 +490,7 @@ flowchart TB
     ACPDIR["acp/<role>.json (BL-1081: structured seat\nsnapshot — stop reason, idle, permission;\nvibe spike seat only today)"]
     OLLAMASTATE["ollama/serve.json (BL-1703: launch-time\nancillary record — owner (external |\nswarm-owned), pid, startedAt, endpoint;\nread by BL-1704's stop path)"]
     SHIMSTATE["local-model-shim/shim.log\n(BL-1917: the started/reused shim's\nown log; rewritten=1 per turn it\nturned text into a real tool call)"]
+    LOCALLLMSTATE["local-llm/removed.json\n(BL-1861: per removed seat, its\nroles.tsv/sessions.tsv row and line\nposition; per model, its endpoint and\nthe VRAM Ollama reported before the\nunload; the removal time — read by\nBL-1862/BL-1863/BL-1864)"]
     PEERQUESTIONS["peer-questions/ (BL-1754: one-shot\nread-only role-to-role question/answer\nrecords; never a claimed parcel)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
@@ -502,6 +515,9 @@ flowchart TB
   PANES -->|a local-model seat's OpenAI-compat\nrequests: SWARMFORGE_LOCAL_MODEL_SHIM_PORT\n(default 11439; =off bypasses, seat\ntargets OLLAMA directly) (BL-1917)| SHIM
   SHIM -->|forwards unchanged, except an\nunstreamed tool-declaring chat\ncompletion| OLLAMA
   SHIM -->|appends rewritten=0/1 per turn| SHIMSTATE
+  LOCALLLM -->|writes the record BEFORE touching\nany roster (BL-1861)| LOCALLLMSTATE
+  LOCALLLM -->|takes every local-model seat out of\nevery roster copy, kills its session\nlast (reuses retire_seat_lib.bb)| ROLESTSV
+  LOCALLLM -->|unloads each removed seat's model\n(keep_alive: 0, polls /api/ps) from\nthe endpoint its launch script names;\nanother loaded model, and the server\nitself, are left alone| OLLAMA
   SUBSTRATE -->|ensure_ollama_ancillary_for_launch:\nprobes before any seat starts,\nstarts if silent, refuses if never\nanswers (BL-1703)| OLLAMA
   SUBSTRATE -->|writes owner/pid/startedAt| OLLAMASTATE
   OLLAMASTATE -->|handoffd.bb ollama-crash-restart\nsweep: probes the recorded endpoint\nevery poll cycle while the record\nexists; never signals a live ollama\nserve process (BL-1711)| OLLAMA
@@ -566,8 +582,8 @@ flowchart TB
   classDef gh fill:#57606a,color:#fff,stroke:#32383f;
   class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,METRICSGATE,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL,NAMEDMODEL host;
   class TILES webview;
-  class SOCKET,PANES substrate;
-  class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR,ACPDIR,SHIMSTATE state;
+  class SOCKET,PANES,LOCALLLM substrate;
+  class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR,ACPDIR,SHIMSTATE,LOCALLLMSTATE state;
   class TARGETREPO,GH gh;
   class MODELSTORE,OLLAMA,SHIM state;
 %% BL-726 (2026-08-27): BL-718 acceptance step handlers wired
