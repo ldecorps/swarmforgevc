@@ -384,6 +384,19 @@ class LiveShimTests(unittest.TestCase):
         _path, sent = FakeOllama.seen[-1]
         self.assertEqual((sent["max_tokens"], sent["stream"]), (shim.COMPACTION_OUTPUT_CAP, False))
 
+    def test_a_compaction_reaches_ollama_with_thinking_off(self) -> None:
+        self.post({"model": "capped", "think": True,
+                   "messages": [{"role": "system", "content": SUMMARIZER}, {"role": "user", "content": "history"}]})
+        _path, sent = FakeOllama.seen[-1]
+        self.assertEqual((sent["think"], sent["reasoning_effort"]), (False, "none"))
+
+    def test_a_tool_request_keeps_the_clients_thinking_knobs(self) -> None:
+        tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+        self.post({"model": "m", "tools": tools, "messages": [{"role": "user", "content": "read it"}]})
+        _path, sent = FakeOllama.seen[-1]
+        self.assertNotIn("think", sent)
+        self.assertNotIn("reasoning_effort", sent)
+
     def test_a_model_with_no_num_predict_keeps_the_client_budget(self) -> None:
         self.post({"model": "m", "max_tokens": 13000, "messages": [{"role": "user", "content": "hi"}]})
         self.assertEqual(FakeOllama.seen[-1][1]["max_tokens"], 13000)

@@ -39,7 +39,12 @@ summaries at about 26 tokens/s, so each compaction took 146-188 s and the
 coder spent 76% of its model time compacting. The cap is the 900 words the
 PreCompact hook asks for; the hook puts <next_step> first, so a cut loses
 only the tail sections, and qwen's cache-sharing path drops a snapshot that
-never closes.
+never closes. The side-query also goes up with thinking off: it reached
+Ollama without the seat's think:false, iq3 spent all 1200 tokens in hidden
+reasoning, five compactions in a row came back empty
+(COMPRESSION_FAILED_EMPTY_SUMMARY), and the seat hit qwen's hard limit.
+Replayed: 4329 chars of reasoning and no content with thinking on; a
+<state_snapshot> opening with <next_step> with it off.
 
 Usage:
   local_model_tool_call_shim.py serve  --port <n> --upstream <http://host:port/v1>
@@ -76,6 +81,7 @@ COMPACTION_MARKERS = (
     "First, reason in your <analysis> block. Then, produce the <state_snapshot> XML.",
 )
 SNAPSHOT_OPEN, SNAPSHOT_CLOSE = "<state_snapshot>", "</state_snapshot>"
+COMPACTION_NO_THINKING = {"think": False, "reasoning_effort": "none"}
 
 _TAGGED = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _FENCED = re.compile(r"```[A-Za-z0-9_-]*[ \t]*\n?(.*?)```", re.DOTALL)
@@ -551,13 +557,18 @@ class ShimHandler(BaseHTTPRequestHandler):
         model_cap = self._output_cap(request.get("model"))
         cap = min(COMPACTION_OUTPUT_CAP, model_cap) if model_cap else COMPACTION_OUTPUT_CAP
         capped, lowered = compaction_budget(request, cap)
+        capped = {**capped, **COMPACTION_NO_THINKING}
         status, payload = self._parsed(*self._call_upstream(capped))
         closed = False
         if status == 200 and isinstance(payload, dict):
             payload, closed = close_cut_snapshot(payload)
-        finish = ((payload.get("choices") or [{}])[0] or {}).get("finish_reason") if isinstance(payload, dict) else None
+        choice = ((payload.get("choices") or [{}])[0] or {}) if isinstance(payload, dict) else {}
+        message = choice.get("message") or {}
+        head = str(message.get("content") or "").lstrip()[:24].replace("\n", " ")
+        reasoning = len(str(message.get("reasoning") or message.get("reasoning_content") or ""))
         _log(f"compaction model={request.get('model')} status={status} budget={lowered}->"
-             f"{capped.get('max_tokens', capped.get('max_completion_tokens'))} finish={finish} closed={closed}")
+             f"{capped.get('max_tokens', capped.get('max_completion_tokens'))} client_think={request.get('think')!r} "
+             f"finish={choice.get('finish_reason')} closed={closed} reasoning_chars={reasoning} head={head!r}")
         return status, payload
 
     def _shim_chat(self, request: dict[str, Any]) -> None:
