@@ -1049,3 +1049,10 @@
   stamp_ticket: BL-1957
   human_decision: null
   decided_at: null
+- commit: 14680e2eef
+  subject: "hotfix: babysitter's 3-hour stuck clock counts only the seat's own commits for the ticket, never a merge of main"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1955
+  human_decision: null
+  decided_at: null

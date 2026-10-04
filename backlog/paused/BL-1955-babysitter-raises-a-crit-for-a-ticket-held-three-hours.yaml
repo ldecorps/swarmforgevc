@@ -53,6 +53,9 @@ notes: |
   Minted 2026-10-04 by the specifier.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 74c3769083 linked to BL-1955.
+  Also stamps off 14680e2eef (the clock counts only the seat's own commits
+  for the ticket, never a merge of main - the human's "Go"). Review it
+  against its commit message. Hotfix ledger: 14680e2eef linked to BL-1955.
 
 description: |
   ## Status: hotfix 74c3769083 landed the fix
