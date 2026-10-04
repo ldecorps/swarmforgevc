@@ -2,7 +2,8 @@ id: BL-1932
 title: "On a deterministic-coordinator pack, swarm ensure, the mono-router topology and babysitterd never respawn, flag or repair the absent coordinator seat, even with a stale coordinator launch script on disk"
 milestone: M8
 type: feature
-status: todo
+status: done
+closed_as: split-into-BL-1961,BL-1962,BL-1963
 epic: local-llm-swarm
 priority: 2
 direction: queue-jump
@@ -13,7 +14,9 @@ required_stages: [coder, architect, hardender, documenter, qa]
 stage_skip_reasons:
   cleaner: "a feature with medium mutation_cost and envelope; the change sits beside unchanged code"
 
-acceptance: specs/features/BL-1932-nothing-revives-a-deterministic-packs-coordinator-seat.feature
+# Its four scenarios moved verbatim on the 2026-10-04 split: 03 to BL-1961,
+# 01 and 04 to BL-1962, 02 to BL-1963. The feature file was removed.
+acceptance: specs/features/BL-1962-swarm-ensure-never-respawns-a-deterministic-packs-coordinator.feature
 
 human_approval: approved
 approval_context: >
@@ -82,6 +85,11 @@ qa_e2e_procedure: |
   2. `bash swarmforge/scripts/test/test_swarm_ensure.sh`, `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` and `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb` pass.
 
 notes: |
+  Retired 2026-10-04 by the specifier, split into BL-1961 (router topology,
+  scenario 03), BL-1962 (swarm ensure, scenarios 01 and 04; depends on
+  BL-1961) and BL-1963 (babysitter, scenario 02; depends on BL-1961). The
+  coder (iq3) held it 8 minutes through 2 compactions with no edit; the
+  coordinator pulled it (a25e918070) under the BAU split rule (5b277c03cd).
   - Minted 2026-10-03 by the specifier at the human's "prioritize the epic
     about the 100% iq3 monorouter with determinstic coordinator", from the
     census backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
@@ -96,4 +104,3 @@ notes: |
   - 2026-10-03 18:3xZ coordinator: queue-jump promoted, assigned_to coder,
     routed (dispatch_trail confirms DISPATCHED).
 
-assigned_to: coder

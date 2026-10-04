@@ -1,0 +1,93 @@
+id: BL-1961
+title: "On a pack declaring config coordinator_mode deterministic, the mono-router topology never counts the coordinator as a standing session (BL-1932 split, slice 1 of 3)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two pure functions gain one argument; nothing to refactor"
+  architect: "the spec pins the one judgment call (a live coordinator is left alone, not torn down)"
+  hardender: "bb has no Stryker lane (BL-472); a pure decision that writes no state, both branches pinned by tests"
+  documenter: "no living doc describes ensure or the babysitter repairing the coordinator (docs/ grep for pane-coordinator, 2026-10-04: none)"
+acceptance: specs/features/BL-1961-the-router-topology-never-stands-a-deterministic-packs-coordinator.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1932 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: BL-1932's router-topology path (scenario 03), its scenario text verbatim. No choice is posed.
+
+invariants:
+  - "On a pack declaring config coordinator_mode deterministic, topology-action never returns :ensure-standing or :teardown-illicit for the coordinator."
+  - "A pack without the declaration classifies every role exactly as before."
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1961-the-router-topology-never-stands-a-deterministic-packs-coordinator.feature` passes 1 of 1.
+  2. `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` passes.
+
+source: |
+  Split from BL-1932 on 2026-10-04 (BAU split rule, 5b277c03cd). The human,
+  specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1932's own source, verbatim:
+
+  The human, specifier pane, 2026-10-03 ~18:05Z, verbatim (Article 5.3):
+
+  > Ok so now can you prioritize the epic about the 100% iq3 monorouter with determinstic coordinator. And when it's ready, start it.
+
+  The epic's 2026-09-30 intake (backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md),
+  verbatim:
+
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  and its 19:16 BST addendum:
+
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  BL-1125's remaining slice "Deterministic-coordinator seatless boot (after
+  BL-1846 and BL-1847)" asked for a census and a split by it; the census is
+  backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+  This slice is the keep-alive path (census group B).
+
+notes: |
+  Split from BL-1932 on 2026-10-04 after the coder (iq3) held it 8 minutes
+  through 2 compactions with no edit: each compaction's next step was still
+  "read the remaining files", because the three keep-alive paths (ensure,
+  babysitter, router topology) each sit in a 1000+ line file and one window
+  holds about one survey. Coordinator pull a25e918070. Approval inherited
+  from BL-1932 (split, no new scope).
+  Where to read: swarmforge/scripts/mono_router_lib.bb is 829 lines; read
+  only lines 112-140 (classify-role ~112, should-have-standing-session?
+  ~124, topology-action ~129). Its tests: mono_router_lib_test_runner.bb
+  is 1122 lines; read lines 30-50 (the existing topology cases) and add
+  yours beside them. The step handler reads the fixture pack's mode with
+  coordinator_config_lib.bb deterministic-coordinator? (~line 91).
+  Step handler: specs/pipeline/steps/bl1961RouterTopologyStandsOnlyTheResidentSteps.js,
+  registered in specs/pipeline/steps/index.js.
+
+description: |
+  ## What is wanted
+
+  `should-have-standing-session?` and `topology-action` in
+  `mono_router_lib.bb` take the pack's deterministic flag as an extra
+  argument, defaulting to false, so every existing caller and test is
+  unchanged. With the flag set, the coordinator is never a standing
+  session: absent, it is `:dormant-ok`, never `:ensure-standing`. A
+  coordinator session that is alive anyway is also `:dormant-ok`: tearing
+  a live seat down is not this ticket's to decide.
+
+  BL-1962 (swarm ensure) and BL-1963 (babysitter) pass the flag in; this
+  slice only adds it.
+
+  ## What the coder checks
+
+  The scenario; both new branches (absent and alive) and the unchanged
+  default in mono_router_lib_test_runner.bb.

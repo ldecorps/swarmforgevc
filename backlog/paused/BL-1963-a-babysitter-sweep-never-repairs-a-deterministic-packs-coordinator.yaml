@@ -1,0 +1,91 @@
+id: BL-1963
+title: "On a pack declaring config coordinator_mode deterministic, a babysitter sweep neither flags nor repairs the missing coordinator pane (BL-1932 split, slice 3 of 3)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+depends_on: [BL-1961]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one predicate gains the mode; nothing to refactor"
+  architect: "the decision is BL-1961's; this slice passes a flag to it"
+  hardender: "bb has no Stryker lane (BL-472); the scenario and the existing missing-session case pin both branches"
+  documenter: "no living doc describes ensure or the babysitter repairing the coordinator (docs/ grep for pane-coordinator, 2026-10-04: none)"
+acceptance: specs/features/BL-1963-a-babysitter-sweep-never-repairs-a-deterministic-packs-coordinator.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1932 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: BL-1932's babysitter path (scenario 02), its scenario text verbatim. No choice is posed.
+
+invariants:
+  - "On a pack declaring config coordinator_mode deterministic, a babysitter sweep neither raises pane-coordinator nor emits a repair for the coordinator."
+  - "A pack without the declaration still gets the CRIT and the repair for a missing coordinator."
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1963-a-babysitter-sweep-never-repairs-a-deterministic-packs-coordinator.feature` passes 1 of 1.
+  2. `bash swarmforge/scripts/test/test_babysitter_check.sh` and `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb` pass.
+
+source: |
+  Split from BL-1932 on 2026-10-04 (BAU split rule, 5b277c03cd). The human,
+  specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1932's own source, verbatim:
+
+  The human, specifier pane, 2026-10-03 ~18:05Z, verbatim (Article 5.3):
+
+  > Ok so now can you prioritize the epic about the 100% iq3 monorouter with determinstic coordinator. And when it's ready, start it.
+
+  The epic's 2026-09-30 intake (backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md),
+  verbatim:
+
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  and its 19:16 BST addendum:
+
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  BL-1125's remaining slice "Deterministic-coordinator seatless boot (after
+  BL-1846 and BL-1847)" asked for a census and a split by it; the census is
+  backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+  This slice is the keep-alive path (census group B).
+
+notes: |
+  Split from BL-1932 on 2026-10-04 after the coder (iq3) held it 8 minutes
+  through 2 compactions with no edit: each compaction's next step was still
+  "read the remaining files", because the three keep-alive paths (ensure,
+  babysitter, router topology) each sit in a 1000+ line file and one window
+  holds about one survey. Coordinator pull a25e918070. Approval inherited
+  from BL-1932 (split, no new scope).
+  Where to read: swarmforge/scripts/babysitter_check.bb is 1555 lines;
+  never read it whole. should-stand-role? is at ~239-249; the router check
+  it sits beside reads the conf text at ~222-237; its one caller is the
+  per-role stamping pass at ~1332. babysitterd_sweep_lib_test_runner.bb is
+  1148 lines: read ~70-90 (BL-1017's missing standing session case). Step
+  handler: specs/pipeline/steps/bl1963BabysitterRaisesNoCoordinatorFindingSteps.js,
+  registered in specs/pipeline/steps/index.js.
+
+description: |
+  ## What is wanted
+
+  `should-stand-role?` in babysitter_check.bb gets the pack's mode, read
+  once per sweep beside the router check. On a deterministic pack the
+  coordinator is not expected to stand: on a router pack it passes the flag
+  to BL-1961's `should-have-standing-session?`, and on any other pack it
+  returns false for the coordinator. With `:should-stand?` false the sweep
+  raises no `pane-coordinator` finding and emits no repair; check that
+  `check-live-session` in babysitterd_sweep_lib.bb already behaves so
+  rather than changing it.
+
+  ## What the coder checks
+
+  The scenario; test_babysitter_check.sh and
+  babysitterd_sweep_lib_test_runner.bb still pass, including the missing
+  standing session case for a pack without the declaration.

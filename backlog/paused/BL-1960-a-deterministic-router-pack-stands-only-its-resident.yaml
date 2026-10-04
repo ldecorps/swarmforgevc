@@ -37,10 +37,30 @@ qa_e2e_procedure: |
   4. `grep -E '^config coordinator_(mode|agent|model|effort)' swarmforge/packs/ollama-ista-local-model-mono-router.conf` prints only `config coordinator_mode deterministic`.
 
 source: |
-  Split from BL-1931 (see that ticket's source for the human's directives,
-  verbatim). The human, specifier pane, 2026-10-04, verbatim:
+  Split from BL-1931 on 2026-10-04 (BAU split rule, 5b277c03cd). The human,
+  specifier pane, 2026-10-04, verbatim:
 
   > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1931's own source, verbatim:
+
+  The human, specifier pane, 2026-10-03 ~18:05Z, verbatim (Article 5.3):
+
+  > Ok so now can you prioritize the epic about the 100% iq3 monorouter with determinstic coordinator. And when it's ready, start it.
+
+  The epic's 2026-09-30 intake (backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md),
+  verbatim:
+
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  and its 19:16 BST addendum:
+
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  BL-1125's remaining slice "Deterministic-coordinator seatless boot (after
+  BL-1846 and BL-1847)" asked for a census and a split by it; the census is
+  backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+  This slice is the launch path (census group A).
 
 notes: |
   Split from BL-1931 on 2026-10-04 after the coder (iq3) held it 2h43m with

@@ -1,0 +1,93 @@
+id: BL-1962
+title: "On a pack declaring config coordinator_mode deterministic, swarm ensure never respawns the coordinator seat and exits zero, and a pack without it still gets its coordinator back (BL-1932 split, slice 2 of 3)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: queue-jump
+depends_on: [BL-1961]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "a flag threaded through one run; nothing to refactor"
+  hardender: "bb has no Stryker lane (BL-472); both branches of each skip are pinned by the two scenarios"
+  documenter: "no living doc describes ensure or the babysitter repairing the coordinator (docs/ grep for pane-coordinator, 2026-10-04: none)"
+acceptance: specs/features/BL-1962-swarm-ensure-never-respawns-a-deterministic-packs-coordinator.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1932 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: BL-1932's ensure path (scenarios 01 and 04), its scenario text verbatim. No choice is posed.
+
+invariants:
+  - "On a pack declaring config coordinator_mode deterministic, swarm ensure creates no swarmforge-coordinator session, router pack or not."
+  - "A pack without the declaration still gets a missing coordinator session back."
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1962-swarm-ensure-never-respawns-a-deterministic-packs-coordinator.feature` passes 2 of 2.
+  2. `bash swarmforge/scripts/test/test_swarm_ensure.sh` and `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` pass.
+
+source: |
+  Split from BL-1932 on 2026-10-04 (BAU split rule, 5b277c03cd). The human,
+  specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1932's own source, verbatim:
+
+  The human, specifier pane, 2026-10-03 ~18:05Z, verbatim (Article 5.3):
+
+  > Ok so now can you prioritize the epic about the 100% iq3 monorouter with determinstic coordinator. And when it's ready, start it.
+
+  The epic's 2026-09-30 intake (backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md),
+  verbatim:
+
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  and its 19:16 BST addendum:
+
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  BL-1125's remaining slice "Deterministic-coordinator seatless boot (after
+  BL-1846 and BL-1847)" asked for a census and a split by it; the census is
+  backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+  This slice is the keep-alive path (census group B).
+
+notes: |
+  Split from BL-1932 on 2026-10-04 after the coder (iq3) held it 8 minutes
+  through 2 compactions with no edit: each compaction's next step was still
+  "read the remaining files", because the three keep-alive paths (ensure,
+  babysitter, router topology) each sit in a 1000+ line file and one window
+  holds about one survey. Coordinator pull a25e918070. Approval inherited
+  from BL-1932 (split, no new scope).
+  Where to read: swarmforge/scripts/swarm_ensure.bb is 1057 lines; never
+  read it whole. The conf text is already read in the router check at
+  ~183-195; ensure-mono-router-role! at ~578-595 calls topology-action at
+  ~587; ensure-rc-role! is at ~803; the -main role loop branches at ~1003
+  (router -> ensure-mono-router-role!, else ensure-role! "agent:<role>").
+  test_swarm_ensure.sh is 1735 lines: grep for `coordinator` (the
+  launch-contract coordinator case is at ~426-439) and add a fixture case
+  beside it. Step handler: specs/pipeline/steps/bl1962EnsureNeverRespawnsTheCoordinatorSteps.js,
+  registered in specs/pipeline/steps/index.js.
+
+description: |
+  ## What is wanted
+
+  `swarm ensure` reads the pack's mode once per run
+  (coordinator_config_lib.bb `deterministic-coordinator?` on the conf text
+  it already reads) and, on a deterministic pack, never creates the
+  coordinator's session: on a router pack it passes the flag to BL-1961's
+  `topology-action`; on any other pack it skips `ensure-role!` for the
+  coordinator. Ensure exits zero and its report has no FAILED or FIXED
+  coordinator line. A pack without the declaration still gets a missing
+  coordinator back.
+
+  ## What each stage checks
+
+  - Coder: the two scenarios; test_swarm_ensure.sh passes; that
+    ensure-rc-role! creates nothing for the coordinator either.
+  - Architect: the two invariants; ensure's launch-contract gate
+    (launch_contract_lib) still behaves on a deterministic pack.
