@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: landing-is-a-merge
 priority: 4
-direction: human-requested
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 # low: two pack-conf declarations, one ceremony entry and its tests.
@@ -89,3 +89,16 @@ notes: |
   already declares `task`. A relaunch from the pack makes it true. While
   a batch seat is live, the merge-up note is how it syncs, so retiring it
   early would strand that seat's branch.
+  2026-10-04 ~09:10Z: precondition met. After the 08:28Z relaunch
+  .swarmforge/roles.tsv reads task for the cleaner, the architect and the
+  hardender; deprecate-check returned allow. The human, specifier pane,
+  verbatim: "queue-jump BL-1902". It followed the iq3 coder spending about
+  1.5 h rebuilding BL-1851 from the architect's reverse copy (hotfix
+  92f53eee1b, BL-1924). The live pack still declares cleaner back-one and
+  architect back-all, so every forward from those two drops a reverse copy
+  on an earlier seat until this lands and the swarm relaunches.
+  Land hazard: main's working tree carries the human's uncommitted
+  full-forge.conf edit (the coder seat lines, a few lines above the
+  cleaner and architect windows this parcel changes). Raised with the
+  human on 2026-10-04; it must be committed or set aside before the land
+  updates main's checkout, or the fast-forward refuses the dirty file.
