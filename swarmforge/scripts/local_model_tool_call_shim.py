@@ -31,6 +31,16 @@ iq3's declared 4096 never bound: its tool-less compression summaries ran 8-14k
 tokens and took about 89% of the coder's wall clock. A model with no
 num_predict, or an /api/show that fails, is left unclamped.
 
+qwen's compression side-query (its summarizer system prompt, or the directive
+it sends last) goes upstream unstreamed with its budget capped at
+COMPACTION_OUTPUT_CAP, and a summary cut at that cap gets its
+</state_snapshot> back (2026-10-04 hotfix). iq3 wrote 2.7-3.8k-token
+summaries at about 26 tokens/s, so each compaction took 146-188 s and the
+coder spent 76% of its model time compacting. The cap is the 900 words the
+PreCompact hook asks for; the hook puts <next_step> first, so a cut loses
+only the tail sections, and qwen's cache-sharing path drops a snapshot that
+never closes.
+
 Usage:
   local_model_tool_call_shim.py serve  --port <n> --upstream <http://host:port/v1>
   local_model_tool_call_shim.py ensure --port <n> --upstream <http://host:port/v1> --log <path>
@@ -60,6 +70,12 @@ HEALTH_PATH = "/shim/health"
 HOP_BY_HOP = {"host", "content-length", "connection", "transfer-encoding", "accept-encoding", "keep-alive"}
 OUTPUT_BUDGET_KEYS = ("max_tokens", "max_completion_tokens")
 OUTPUT_CAP_TTL_S = 300.0
+COMPACTION_OUTPUT_CAP = 1200
+COMPACTION_MARKERS = (
+    "You are the component that summarizes a conversation",
+    "First, reason in your <analysis> block. Then, produce the <state_snapshot> XML.",
+)
+SNAPSHOT_OPEN, SNAPSHOT_CLOSE = "<state_snapshot>", "</state_snapshot>"
 
 _TAGGED = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _FENCED = re.compile(r"```[A-Za-z0-9_-]*[ \t]*\n?(.*?)```", re.DOTALL)
@@ -324,6 +340,48 @@ def clamp_output_budget(request: dict[str, Any], cap: int | None) -> tuple[dict[
     return out, lowered
 
 
+def _message_text(message: Any) -> str:
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(str(part.get("text") or "") for part in content if isinstance(part, dict))
+    return ""
+
+
+def is_compaction_request(request: dict[str, Any]) -> bool:
+    """True for qwen's compression side-query: a system message carrying its
+    summarizer prompt, or a last message carrying its request directive. The
+    history in between is never read, since a summary or a file the seat
+    read can quote either marker."""
+    messages = [m for m in (request.get("messages") or []) if isinstance(m, dict)]
+    candidates = [m for m in messages if m.get("role") == "system"] + messages[-1:]
+    return any(marker in _message_text(m) for m in candidates for marker in COMPACTION_MARKERS)
+
+
+def compaction_budget(request: dict[str, Any], cap: int) -> tuple[dict[str, Any], int | None]:
+    """The request with every output budget at most cap, and max_tokens set to
+    cap when it names none; the largest value lowered, as clamp_output_budget."""
+    out, lowered = clamp_output_budget(request, cap)
+    if not any(isinstance(request.get(k), int) and not isinstance(request.get(k), bool) for k in OUTPUT_BUDGET_KEYS):
+        out = {**out, "max_tokens": cap}
+    return out, lowered
+
+
+def close_cut_snapshot(completion: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """A reply cut at its budget whose <state_snapshot> opened and never
+    closed, with the closing tag appended; True when it was appended."""
+    choice = (completion.get("choices") or [{}])[0] or {}
+    message = choice.get("message") or {}
+    text = message.get("content")
+    if choice.get("finish_reason") != "length" or not isinstance(text, str):
+        return completion, False
+    if SNAPSHOT_OPEN not in text or SNAPSHOT_CLOSE in text[text.index(SNAPSHOT_OPEN):]:
+        return completion, False
+    closed = {**message, "content": text.rstrip() + "\n" + SNAPSHOT_CLOSE}
+    return {**completion, "choices": [{**choice, "message": closed}] + list(completion["choices"][1:])}, True
+
+
 def upstream_root(upstream: str) -> str:
     root = upstream.rstrip("/")
     return root[: -len("/v1")] if root.endswith("/v1") else root
@@ -361,6 +419,9 @@ class ShimHandler(BaseHTTPRequestHandler):
                 request = json.loads(body or b"{}")
             except ValueError:
                 request = None
+            if isinstance(request, dict) and is_compaction_request(request):
+                self._respond(request, self._compact)
+                return
             if isinstance(request, dict) and declared_tool_names(request):
                 self._shim_chat(request)
                 return
@@ -484,9 +545,27 @@ class ShimHandler(BaseHTTPRequestHandler):
              + (f" budget={lowered}->{clamped.get('max_tokens', clamped.get('max_completion_tokens'))}" if lowered is not None else ""))
         return status, payload
 
+    def _compact(self, request: dict[str, Any]) -> tuple[int, Any]:
+        """qwen's compression side-query, its budget capped and a cut summary
+        closed. Nothing else in the request changes."""
+        model_cap = self._output_cap(request.get("model"))
+        cap = min(COMPACTION_OUTPUT_CAP, model_cap) if model_cap else COMPACTION_OUTPUT_CAP
+        capped, lowered = compaction_budget(request, cap)
+        status, payload = self._parsed(*self._call_upstream(capped))
+        closed = False
+        if status == 200 and isinstance(payload, dict):
+            payload, closed = close_cut_snapshot(payload)
+        finish = ((payload.get("choices") or [{}])[0] or {}).get("finish_reason") if isinstance(payload, dict) else None
+        _log(f"compaction model={request.get('model')} status={status} budget={lowered}->"
+             f"{capped.get('max_tokens', capped.get('max_completion_tokens'))} finish={finish} closed={closed}")
+        return status, payload
+
     def _shim_chat(self, request: dict[str, Any]) -> None:
+        self._respond(request, self._complete)
+
+    def _respond(self, request: dict[str, Any], complete: Callable[[dict[str, Any]], tuple[int, Any]]) -> None:
         if not request.get("stream"):
-            status, payload = self._complete(request)
+            status, payload = complete(request)
             self._send_json(status, payload)
             return
         self.send_response(200)
@@ -495,7 +574,7 @@ class ShimHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         box: dict[str, tuple[int, Any]] = {}
-        worker = threading.Thread(target=lambda: box.setdefault("r", self._complete(request)), daemon=True)
+        worker = threading.Thread(target=lambda: box.setdefault("r", complete(request)), daemon=True)
         worker.start()
         while worker.is_alive():
             worker.join(self.keepalive_s)

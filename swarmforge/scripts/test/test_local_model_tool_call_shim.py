@@ -221,6 +221,49 @@ class OutputBudgetTests(unittest.TestCase):
         self.assertEqual(shim.clamp_output_budget({"max_tokens": 13000}, None), ({"max_tokens": 13000}, None))
 
 
+SUMMARIZER = shim.COMPACTION_MARKERS[0] + " ... produce the summary."
+CUT = "<state_snapshot>\n    <next_step>\n        Fix D1 in local_seat_report_lib.bb.\n    </next_step>\n    <current_work>\n        Reading"
+
+
+def cut_completion(content: str) -> dict:
+    out = completion(content)
+    out["choices"][0]["finish_reason"] = "length"
+    return out
+
+
+class CompactionTests(unittest.TestCase):
+    """2026-10-04: a compaction summary is capped, and closed when cut."""
+
+    def test_the_summarizer_system_prompt_or_the_last_directive_marks_a_compaction(self) -> None:
+        self.assertTrue(shim.is_compaction_request({"messages": [
+            {"role": "system", "content": SUMMARIZER}, {"role": "user", "content": "history"}]}))
+        self.assertTrue(shim.is_compaction_request({"messages": [
+            {"role": "user", "content": "history"},
+            {"role": "user", "content": [{"type": "text", "text": shim.COMPACTION_MARKERS[1]}]}]}))
+
+    def test_a_marker_quoted_in_the_history_is_not_a_compaction(self) -> None:
+        self.assertFalse(shim.is_compaction_request({"messages": [
+            {"role": "system", "content": "You are a SwarmForge agent."},
+            {"role": "user", "content": SUMMARIZER},
+            {"role": "user", "content": "go on"}]}))
+        self.assertFalse(shim.is_compaction_request({"messages": []}))
+
+    def test_the_budget_is_capped_and_added_when_absent(self) -> None:
+        capped, lowered = shim.compaction_budget({"max_tokens": 9000}, 1200)
+        self.assertEqual((capped["max_tokens"], lowered), (1200, 9000))
+        added, lowered = shim.compaction_budget({"messages": []}, 1200)
+        self.assertEqual((added["max_tokens"], lowered), (1200, None))
+        kept, lowered = shim.compaction_budget({"max_tokens": 800}, 1200)
+        self.assertEqual((kept["max_tokens"], lowered), (800, None))
+
+    def test_a_cut_snapshot_is_closed_and_nothing_else_is(self) -> None:
+        closed, did = shim.close_cut_snapshot(cut_completion(CUT))
+        self.assertTrue(did)
+        self.assertTrue(closed["choices"][0]["message"]["content"].endswith("Reading\n</state_snapshot>"))
+        for reply in (completion(CUT), cut_completion(CUT + "\n</state_snapshot>"), cut_completion("no snapshot")):
+            self.assertEqual(shim.close_cut_snapshot(reply), (reply, False))
+
+
 class FakeOllama(BaseHTTPRequestHandler):
     seen: list = []
 
@@ -246,7 +289,9 @@ class FakeOllama(BaseHTTPRequestHandler):
             return
         FakeOllama.seen.append((self.path, body))
         last = (body.get("messages") or [{}])[-1]
-        if last.get("content") == "announce, please":
+        if shim.is_compaction_request(body):
+            self._reply(cut_completion(CUT))
+        elif last.get("content") == "announce, please":
             self._reply(completion("I will now run the ready_for_next.sh script."))
         else:
             self._reply(completion(FENCED))
@@ -326,6 +371,18 @@ class LiveShimTests(unittest.TestCase):
         self.post({"model": "capped", "max_tokens": 13000,
                    "messages": [{"role": "system", "content": "summarize the history"}]})
         self.assertEqual(FakeOllama.seen[-1][1]["max_tokens"], 4096)
+
+    def test_a_streamed_compaction_reaches_ollama_capped_and_comes_back_closed(self) -> None:
+        raw = self.post({"model": "capped", "max_tokens": 9000, "stream": True,
+                         "messages": [{"role": "system", "content": SUMMARIZER},
+                                      {"role": "user", "content": "the history"}]}).decode()
+        events = [line[len("data: "):] for line in raw.splitlines() if line.startswith("data: ")]
+        self.assertEqual(events[-1], "[DONE]")
+        chunks = [json.loads(e) for e in events[:-1]]
+        self.assertTrue(chunks[0]["choices"][0]["delta"]["content"].endswith("</state_snapshot>"))
+        self.assertEqual(chunks[1]["choices"][0]["finish_reason"], "length")
+        _path, sent = FakeOllama.seen[-1]
+        self.assertEqual((sent["max_tokens"], sent["stream"]), (shim.COMPACTION_OUTPUT_CAP, False))
 
     def test_a_model_with_no_num_predict_keeps_the_client_budget(self) -> None:
         self.post({"model": "m", "max_tokens": 13000, "messages": [{"role": "user", "content": "hi"}]})
