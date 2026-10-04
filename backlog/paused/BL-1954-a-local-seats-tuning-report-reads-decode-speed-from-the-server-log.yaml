@@ -1,0 +1,105 @@
+id: BL-1954
+title: "A local seat's tuning report reads decode speed from llama-server's own eval rates and prints time to first token and prefill speed as unknown for a reply the shim delivered in one burst - BL-1851's client-side formulas read 1783-11233 tokens/s on live iq3 records (real: about 25)"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real fault, contained - a diagnostic report prints wrong speed
+# figures; no seat's work is degraded by it.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: [BL-1851]
+mutation_cost: low
+# low: a burst predicate and one more reader over a log segment the lib
+# already isolates per load; no mutation lane for Babashka (BL-472).
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a predicate and a reader beside BL-1851's own; nothing to deduplicate"
+  architect: "the report's inputs stay the qwen telemetry and the server log BL-1851 already reads; no boundary moves"
+  hardender: "Babashka has no mutation lane (BL-472) and the report writes no durable state"
+
+acceptance: specs/features/BL-1954-a-local-seats-tuning-report-reads-decode-speed-from-the-server-log.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1954TuningReportServerSpeedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  The follow-up the specifier promised in its ruling A on QA's peer
+  question (BL-1851 lands as specified; this slice owns the speed figures).
+  FIRM: the report's grouping, compression and token figures are untouched;
+  only the speed figures change source. The one-burst threshold (a reply
+  whose duration minus time to first token is 50 ms or less) is direction,
+  not mandate.
+
+invariants:
+  - "A speed figure no record can support prints as unknown, never as a number."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1954 feature all pass.
+  2. `bb swarmforge/scripts/test/local_seat_tuning_report_lib_test_runner.bb`:
+     all pass.
+  3. Live and read-only:
+     `bb swarmforge/scripts/local_seat_tuning_report_cli.bb /home/carillon/swarmforgevc --seat coder`
+     prints every group's decode median between 15 and 35 tokens per second
+     (iq3 measured 22-27 on 2026-10-04) and its time to first token and
+     prefill speed as unknown where the group's replies came through the
+     shim. Measured on BL-1851's parcel (QA, 2026-10-04): decode medians
+     1783, 9076, 10416 and 11233 tokens per second.
+
+source: |
+  QA note 003797, 2026-10-04 12:44Z: "mint BL-1851 follow-up: decode/ttft
+  wrong behind shim (peer ruling A, QA evid)".
+  QA's peer question (.swarmforge/peer-questions/1791117802552-QA-to-specifier.json),
+  verbatim in part: "576 of 597 ui_telemetry api_response rows have
+  duration_ms - ttft_ms <= 50 ms (e.g. ttft 6547, duration 6557, 74 output
+  tokens), because swarmforge/scripts/local_model_tool_call_shim.py
+  delivers each reply in one burst."
+  The specifier's ruling A, verbatim in part: "I'll mint a follow-up in my
+  next pass. It will make the report take decode speed from Ollama's
+  tokens/s, and print ttft and prefill as unknown, or label them clearly,
+  whenever duration minus ttft shows the reply came back in one burst
+  through the shim."
+
+notes: |
+  Minted 2026-10-04 by the specifier on QA note 003797.
+  depends_on BL-1851: this changes BL-1851's local_seat_tuning_report_lib.bb,
+  which must land first.
+  Correction to the ruling's text: parse-ollama-loads carries no speed;
+  parse-ollama-load (the latest load only) reads one eval rate. The per-load
+  segment parse-ollama-loads already isolates is where the eval lines live.
+
+description: |
+  ## What is wanted
+
+  BL-1851's per-request-metrics compute prefill as input tokens over time
+  to first token, and decode as output tokens over duration minus time to
+  first token. A local-model seat's replies reach qwen through the
+  tool-call shim, which asks Ollama without streaming and hands the reply
+  back in one burst, so qwen's time to first token covers the whole
+  generation. On the live coder records 576 of 597 replies came back within
+  50 ms of their first token, and the report printed decode medians of
+  1783-11233 tokens per second.
+
+  - A reply whose duration minus time to first token is 50 ms or less is a
+    one-burst reply. Its time to first token and prefill speed count as
+    unknown, and the group reports how many one-burst replies it holds.
+  - A group's decode speed is the median of the llama-server eval rates
+    (`print_timing ... eval time = ... tokens per second`) in the server log
+    segments of the loads that served it; parse-ollama-loads already cuts
+    the log into one segment per load. With no eval line, a streamed reply
+    keeps today's client-side figure, and a one-burst reply's is unknown.
+
+  ## How (direction, not mandate)
+
+  Keep the burst predicate pure in local_seat_tuning_report_lib.bb next to
+  per-request-metrics; read the eval rates from each load segment in
+  local_seat_report_lib.bb beside load-segment-facts.
+
+  ## Scope
+
+  local_seat_tuning_report_lib.bb, local_seat_report_lib.bb, their test
+  runners, the step handler bl1954TuningReportServerSpeedSteps (registered in
+  the same parcel), and BL-1851's how-to (documenter).
