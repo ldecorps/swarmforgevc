@@ -102,5 +102,11 @@ notes: |
   cleaner and architect windows this parcel changes). Raised with the
   human on 2026-10-04; it must be committed or set aside before the land
   updates main's checkout, or the fast-forward refuses the dirty file.
+  Specifier prose (BL-798) landed at activation in 75bd29d1bf: QA.prompt
+  sends no merge-up broadcast from now on (QA told by note), Article 1.8,
+  2.5, workflow.prompt and PIPELINE.md step 5 follow, and Article 2.3
+  marks the reverse hops "Until BL-1902 lands and the swarm relaunches".
+  Nothing the coder builds changes. After the land, QA's retire trigger
+  should fire on that marker: Article 2.3 then drops the interim sentence.
 
 assigned_to: coder
