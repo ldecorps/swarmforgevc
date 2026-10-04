@@ -107,3 +107,5 @@ description: |
   - The docs: `docs/how-to/BL-1052-local-model-seat-launch.md` (around
     line 265) lists what a seat's `.qwen/settings.json` carries; the
     PreCompact hook joins that list, with why.
+
+assigned_to: coder
