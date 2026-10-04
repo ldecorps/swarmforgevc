@@ -164,6 +164,18 @@ notes: |
     - Whether the gate applies to ALL .bb or only swarmforge/scripts/*.bb.
     - Whether to gate at hardener parity (100% cov, no survivors, CRAP<=6) or a
       lower bar for fork/substrate scripts initially.
+  2026-10-04 (specifier, cleaner note 001342 "Consider BL-472"): evidence
+  for the gate. BL-1902's Babashka property check P3
+  (swarmforge/scripts/test/bl1360_ceremony_handoff_property_runner.bb)
+  passed while vacuous through two QA passes; QA found it only by
+  hand-mutating ceremony_handoff_lib.bb (bookkeep priority 00 -> 50), and
+  the mutant survived (backlog/evidence/BL-1902-QA-20261004-2.md D2). The
+  same day four hotfix stamp-offs (BL-1949, BL-1952, BL-1970, BL-1971)
+  skipped the hardener because .bb and shell have no mutation lane.
+  Unchanged: not promotable under the human's 2026-09-30 standing
+  directive (iq3/local-llm tickets or high/critical defects only) unless
+  the human queue-jumps it, and the open questions above still need the
+  pickup spec before the coder starts.
 
 acceptance: |
   No net-new product behavior of its own; this is a fork-tooling infra item. When
