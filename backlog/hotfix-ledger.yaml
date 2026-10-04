@@ -1056,3 +1056,10 @@
   stamp_ticket: BL-1955
   human_decision: null
   decided_at: null
+- commit: 1f3b61b9b3
+  subject: "hotfix: a local-model seat's qwen skips the heuristic loop dialog and allows 300 tool calls a turn"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
