@@ -1070,3 +1070,17 @@
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
+- commit: 3b7090f7c4
+  subject: "hotfix: a local seat sends its git_handoff before done_with_current, which can restart it"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1924
+  human_decision: null
+  decided_at: null
+- commit: d138a71f19
+  subject: "hotfix: the shim reads a compaction only from a system message or a last USER message, never a tool result"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
