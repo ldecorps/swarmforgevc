@@ -1014,3 +1014,10 @@
   stamp_ticket: BL-1953
   human_decision: null
   decided_at: null
+- commit: 4a689cc4ea
+  subject: "hotfix: a land QA queued for a ticket is QA's completion evidence (QA no longer sends a merge-up note)"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1902
+  human_decision: null
+  decided_at: null

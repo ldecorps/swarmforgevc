@@ -110,5 +110,10 @@ notes: |
   marks the reverse hops "Until BL-1902 lands and the swarm relaunches".
   Nothing the coder builds changes. After the land, QA's retire trigger
   should fire on that marker: Article 2.3 then drops the interim sentence.
+  2026-10-04 also stamps off hotfix 4a689cc4ea (QA note 003793): with the
+  broadcast retired QA sent no note naming the ticket, so BL-1642's gate
+  needed --no-op on every approval; a land QA queued for the ticket now
+  counts as its evidence. Review it against its commit message; nothing
+  this parcel builds changes.
 
 assigned_to: coder
