@@ -1,0 +1,69 @@
+id: BL-1951
+title: "Stamp-off for hotfix eb5fc34a08: /help names the Control-topic /gpu quiet"
+milestone: M8
+type: defect
+severity: low
+# low: the verb already worked; only the Host /help line was missing.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one help string and the snapshot test that pins it.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one help line; nothing to deduplicate"
+  architect: "no boundary moves; /gpu stays a Control-topic verb"
+  hardender: "the help snapshot test covers the line; no new durable state"
+
+acceptance: specs/features/BL-423-telegram-swarm-control-verbs.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix eb5fc34a08, landed because the human asked for the
+  help update to be a hotfix on 2026-10-04. No choice is posed. FIRM: the
+  review decides whether the change stands; the coder never re-applies it.
+
+invariants:
+  - "The /help line names /gpu as Control-topic only, with the three durations and /gpu off."
+  - "The line does not describe /gpu as an intake pause."
+
+qa_e2e_procedure: |
+  1. From extension/: `npx vitest run test/telegramCursorBridgeCore.test.js`.
+     The test "formatHelpMessage mentions all operator commands" passes,
+     and its expected text contains the /gpu line.
+  2. On the Host topic, after the Cursor bridge has restarted onto
+     eb5fc34a08, /help includes that same /gpu line.
+
+source: |
+  The human, via Cursor, 2026-10-04, verbatim (Article 5.3):
+
+  > Can you update help
+
+  > Hotfix it. Fill in a stampoff. Redeploy
+
+notes: |
+  Minted 2026-10-04 with hotfix eb5fc34a08.
+  Hotfix ledger: eb5fc34a08 linked to BL-1951.
+  The verb itself is hotfix 1bbc66bc1d, stamp-off BL-1950. This parcel
+  reviews only the help line.
+
+description: |
+  ## Status: hotfix eb5fc34a08 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  /gpu was live in the Control topic and absent from /help, so the command
+  list did not say it existed, how long it lasts, or that it is not the
+  intake pause.
+
+  ## What landed
+
+  Host /help now has one line under /pause and /resume: /gpu is
+  Control-topic only, offers 30 min, 1 hr, or 2 hr, clears with /gpu off,
+  does not freeze intake, and babysitter does not treat the stop as a
+  stall. The Host operator how-to says the same.

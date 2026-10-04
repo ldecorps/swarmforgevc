@@ -937,3 +937,10 @@
   stamp_ticket: BL-1950
   human_decision: null
   decided_at: null
+- commit: eb5fc34a08
+  subject: "hotfix: /help names the Control-topic /gpu quiet"
+  detected_at: 2026-10-04
+  state: stamp-open
+  stamp_ticket: BL-1951
+  human_decision: null
+  decided_at: null
