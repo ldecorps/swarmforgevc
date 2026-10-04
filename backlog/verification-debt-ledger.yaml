@@ -187,3 +187,8 @@
   role: QA
   description: "qa-gather's straggler check exited 0 before and after on the hardener's live detach_job Stryker run (pgid 5437, backendSwitch.js); attributed by hand via /proc args, not a QA orphan"
   detected_at: 2026-10-04
+- category: gherkin-mutation-stamp-presence
+  ticket: BL-1858
+  role: QA
+  description: "checked by hand that the ticket's acceptance feature (2 Scenario Outlines, hardender in required_stages) carries no '# mutation-stamp'/manifest: both hardening passes skipped BL-113's Gherkin run and every gate passed the parcel; bounced to hardender"
+  detected_at: 2026-10-04
