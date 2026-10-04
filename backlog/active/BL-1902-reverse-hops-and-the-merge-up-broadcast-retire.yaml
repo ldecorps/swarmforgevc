@@ -115,5 +115,13 @@ notes: |
   needed --no-op on every approval; a land QA queued for the ticket now
   counts as its evidence. Review it against its commit message; nothing
   this parcel builds changes.
+  2026-10-04 (specifier, QA note 003802, D4 of the QA bounce 92252b8361):
+  the spec missed BL-1360's feature, which composed the merge-up ceremony.
+  Its scenarios 01 and 02 and the merge-up Examples row are retired on
+  main (retired, not reworded; P2 of the BL-1360 property runner still
+  pins the cap for every live ceremony); the feature reads 3/3 on main.
+  The coder merges main before the D1 pass: scenarios 03 and 04 move to a
+  live ceremony in the BL-1360 handler, which may drop the step
+  definitions only 01 and 02 used.
 
 assigned_to: coder
