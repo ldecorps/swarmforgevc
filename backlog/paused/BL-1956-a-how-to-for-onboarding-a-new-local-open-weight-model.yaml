@@ -1,0 +1,100 @@
+id: BL-1956
+title: "A how-to for onboarding a new local open-weight model as a swarm seat - the iq3 story from pull to a seat that finishes tickets, written so the next model costs hours, not days"
+milestone: M8
+type: chore
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one new how-to and one index line; no code.
+slice_size_envelope: low
+required_stages: [documenter, qa]
+stage_skip_reasons:
+  coder: "documentation only; nothing to build"
+  cleaner: "no code"
+  architect: "no boundary moves; the how-to describes what landed"
+  hardender: "no code to mutate"
+
+# Not a claim of ownership over BL-757's contract (BL-1251): the docs
+# orphan check that proves the new how-to is linked from docs/index.md.
+acceptance: specs/features/BL-757-pilot-orphan-checker-never-run-against-real-tree.feature
+
+human_approval: pending
+approval_context: >
+  Your ask, held until you judge iq3 stable: tap Approve then, and the
+  documenter writes it. FIRM: one how-to under docs/how-to/, linked from
+  docs/index.md, telling the iq3 onboarding story and the steps for the next
+  model, from the commits and tickets listed in the description.
+
+invariants: []
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-757 feature all pass.
+     Measured at mint on 897e5f4d62: 7/7.
+  2. The new how-to exists under docs/how-to/ and docs/index.md links it.
+  3. Read it against the description's checklist: each numbered topic has a
+     section, and every command, setting and file it names exists at the
+     parcel's commit.
+
+source: |
+  The human, specifier pane, 2026-10-04, verbatim (Article 5.3):
+
+  > When iq3 is stablizie, tell documentor to write a how around onboarding a new local olen weight midel. It has been painful so we need to recors tge story for next time.
+
+notes: |
+  Minted 2026-10-04 by the specifier. Held at human_approval: pending on
+  purpose: the human's "when iq3 is stabilized" is the trigger, and the
+  Approvals tap is how they give it.
+
+description: |
+  ## What is wanted
+
+  One how-to, docs/how-to/BL-1956-onboarding-a-local-open-weight-model.md,
+  linked from docs/index.md, that tells the iq3 story as a runbook: what
+  broke, in the order it broke, and what to do for the next model. Every
+  number below is in the named commit's message (`git show <sha>`).
+
+  1. Build the model: the pack Modelfile, num_ctx and num_predict, the
+     two-step build that drops the vision projector, and the undo
+     (e5ed22d36f; swarmforge/packs/ista-iq3s-coder.Modelfile).
+  2. Size the window: read KV per token and free VRAM from the load log,
+     llama-server's 1 GiB margin, qwen's trigger min(0.85W, W-33000) and its
+     dead zone (BL-1840), cache-shared compaction from ~61k, and the
+     benchmark that chose 73728 (e5ed22d36f).
+  3. Serve it: flash attention and q8_0 KV; the hybrid model's prompt cache
+     and when it re-processes the whole prompt.
+  4. Launch the seat: the local-model agent token, the tool-call shim and
+     think:false (BL-1917..BL-1927), the short seat prompt and auto memory
+     off (4afdfbb6bf), the qwen settings writer's keys - maxRecentFilesTo
+     Retain 0 (3e66c4af7c), the PreCompact hook (380481d3be, BL-1949), the
+     pinned loading phrase (1209273032), contextWindowSize.
+  5. Compaction: the summary's shape, the shim's 1200-token cap, the
+     no-analysis rewrite and the analysis-only salvage (c44825d8e4,
+     7d47d8bf63), and the false lead d955df1ca4 (why: replay with the
+     client's real request knobs).
+  6. The card: loop.note's rules a small model needs, and why the card is
+     line-independent while the dispatcher follows the parcel line
+     (84150aeb87).
+  7. Pipeline mail a small model mishandles: reverse copies and merge-up
+     notes (92f53eee1b, 9988960599, BL-1924), and a fresh session per
+     parcel (8612eb313d).
+  8. Supervision: the 3-hour stuck CRIT (74c3769083, BL-1955), handoffd's
+     chase-respawn and the busy detector (1209273032), and the /gpu pause
+     that does not hold (1bbc66bc1d, BL-1950).
+  9. Telling progress from churn: the qwen session jsonl (compaction
+     records, repeated snapshot text, tool tally), the shim's compaction
+     log line, and llama-server's print_timing lines.
+  10. A symptom -> cause -> fix table for everything above.
+
+  ## How (direction, not mandate)
+
+  Story first, then steps. The commit messages carry the measurements; the
+  tickets (BL-1052, BL-1829, BL-1838, BL-1840, BL-1916..BL-1927, BL-1949,
+  BL-1952, BL-1955) carry the reviews.
+
+  ## Scope
+
+  The new how-to and its docs/index.md line; a link from the BL-1052 how-to
+  if it fits.

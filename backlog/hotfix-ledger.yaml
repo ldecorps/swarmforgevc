@@ -1035,3 +1035,17 @@
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
+- commit: 1209273032
+  subject: "hotfix: a local-model seat's qwen shows one fixed loading phrase, so handoffd's busy check reads it mid-turn"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
+- commit: 897e5f4d62
+  subject: "hotfix: BL-757's step handler builds its gate deps from the shared contract-checked base"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1957
+  human_decision: null
+  decided_at: null

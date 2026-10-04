@@ -1,0 +1,69 @@
+id: BL-1957
+title: "Stamp-off for hotfix 897e5f4d62: BL-757's step handler builds its landing-gate deps from the shared contract-checked base (scenarios 05 and 06 failed with deps.checkOriginMainLanding is not a function)"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is high at first sighting (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 5
+depends_on: []
+mutation_cost: low
+# low: a test-side handler change of three lines.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "three lines in a step handler; nothing to refactor"
+  architect: "test-side only; no boundary moves"
+  hardender: "a step handler has no mutation lane"
+  documenter: "no living doc names the handler"
+
+# Not a claim of ownership over BL-757's contract (BL-1251): the feature
+# this handler drives.
+acceptance: specs/features/BL-757-pilot-orphan-checker-never-run-against-real-tree.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a standing-red hotfix the specifier found and landed under
+  the human's 2026-10-01 rule (hotfix the red, mint its stamp-off). No
+  choice is posed. FIRM: the coder reviews it and never re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-757 feature all pass.
+     Measured at mint on 897e5f4d62: 7/7 (5/7 before).
+
+source: |
+  Found by the specifier on 2026-10-04 while measuring BL-757's feature at
+  BL-1956's mint: "deps.checkOriginMainLanding is not a function".
+
+notes: |
+  Minted 2026-10-04 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 897e5f4d62 linked to BL-1957. No register row was added:
+  the red was fixed in the same pass.
+
+description: |
+  ## Status: hotfix 897e5f4d62 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  specs/pipeline/steps/bl757RealTreeOrphanGateSteps.js hand-built its own
+  landing-gate deps, so it never got checkOriginMainLanding when the gate
+  grew it. Scenarios 05 and 06 failed at "When the pilot runs the landing
+  gate". BL-1667 found and fixed the same rot in bl755's handler.
+
+  ## What the hotfix changed
+
+  baseDeps starts from makeAcceptanceGateDeps
+  (extension/test/helpers/pilotAcceptanceGateDeps.js, BL-1229) and layers
+  the fixture's own overrides on top.
+
+  ## What the coder checks
+
+  The change against the description; grep the other step handlers for a
+  hand-built landing-gate deps object and report any in the evidence as a
+  note to the specifier. Evidence: backlog/evidence/BL-1957-coder-<date>.md.

@@ -133,6 +133,8 @@ notes: |
   projector; the shim strips call prose on a compaction so a
   cache-shared one hits the prompt cache). Review it against its
   commit message. Hotfix ledger: e5ed22d36f linked to BL-1952.
+  Also stamps off 1209273032 (the pinned qwen loading phrase, so handoffd's
+  busy check reads a mid-turn seat busy). Hotfix ledger: 1209273032 linked.
 
 description: |
   ## Status: hotfix 3e66c4af7c landed the fix
