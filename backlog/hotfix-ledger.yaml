@@ -986,3 +986,17 @@
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
+- commit: 9988960599
+  subject: "hotfix: a task-mode seat is told a merge-up or branch-behind note carries no work"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1924
+  human_decision: null
+  decided_at: null
+- commit: 84150aeb87
+  subject: "hotfix: the local-model card says a reverse copy or a merge-up note carries no work"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1924
+  human_decision: null
+  decided_at: null

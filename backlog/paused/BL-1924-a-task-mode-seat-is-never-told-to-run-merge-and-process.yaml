@@ -166,5 +166,6 @@ notes: |
     BL-1924. Live: the coder seat runs its own line's handoff_lib.bb, so
     the fix reaches it only once that line holds 92f53eee1b; freeing the
     seat from the reverse copy it held was sent to the coordinator.
+  - 2026-10-04 also stamps off 9988960599 (print-task: a merge-up or branch-behind note carries no work in task mode) and 84150aeb87 (the same rule, and the reverse-copy one, in local-model loop.note, which every seat reads from master). Review both against their commit messages.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1924; that file
     carries the human's uncommitted edits, so it was left alone.
