@@ -390,11 +390,14 @@ def _message_text(message: Any) -> str:
 
 def is_compaction_request(request: dict[str, Any]) -> bool:
     """True for qwen's compression side-query: a system message carrying its
-    summarizer prompt, or a last message carrying its request directive. The
-    history in between is never read, since a summary or a file the seat
-    read can quote either marker."""
+    summarizer prompt, or a last USER message carrying its request directive.
+    The history in between is never read, since a summary or a file the seat
+    read can quote either marker - and neither is a last message that is a
+    tool result: on 2026-10-04 the coder read this file for BL-1936 and its
+    next ordinary turn was capped as a compaction."""
     messages = [m for m in (request.get("messages") or []) if isinstance(m, dict)]
-    candidates = [m for m in messages if m.get("role") == "system"] + messages[-1:]
+    last = [m for m in messages[-1:] if m.get("role") == "user"]
+    candidates = [m for m in messages if m.get("role") == "system"] + last
     return any(marker in _message_text(m) for m in candidates for marker in COMPACTION_MARKERS)
 
 

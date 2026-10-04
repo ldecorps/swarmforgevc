@@ -261,6 +261,16 @@ class CompactionTests(unittest.TestCase):
             {"role": "user", "content": "go on"}]}))
         self.assertFalse(shim.is_compaction_request({"messages": []}))
 
+    def test_a_last_tool_result_quoting_a_marker_is_not_a_compaction(self) -> None:
+        # 2026-10-04: the coder read this shim's source for BL-1936; the
+        # tool result carried both markers and its next turn was capped.
+        source = "COMPACTION_MARKERS = (\n    \"" + "\",\n    \"".join(shim.COMPACTION_MARKERS) + "\",\n)"
+        self.assertFalse(shim.is_compaction_request({"messages": [
+            {"role": "system", "content": "You are a SwarmForge agent."},
+            {"role": "user", "content": "review the shim"},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function"}]},
+            {"role": "tool", "tool_call_id": "c1", "content": source}]}))
+
     def test_the_budget_is_capped_and_added_when_absent(self) -> None:
         capped, lowered = shim.compaction_budget({"max_tokens": 9000}, 1200)
         self.assertEqual((capped["max_tokens"], lowered), (1200, 9000))
