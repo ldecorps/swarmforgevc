@@ -103,3 +103,5 @@ notes: |
     not this ticket's.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1918; that file
     carries the human's uncommitted edits, so it was left alone.
+
+assigned_to: coder
