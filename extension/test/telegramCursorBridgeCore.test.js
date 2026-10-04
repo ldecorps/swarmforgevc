@@ -866,6 +866,7 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '/redeploy all — soft confirm, then bounce cursor bridge, front desk, and mini app bridge',
       '/pause — soft confirm; freeze new promotion until /resume (in-flight continues; useful on flaky data)',
       '/resume — soft confirm; allow promotion again',
+      '/gpu — Control topic: quiet the local-model GPU for 30 min, 1 hr, or 2 hr. /gpu off brings it back. Not an intake pause; babysitter will not treat the stop as a stall.',
       '/syncenv /compile /pull — soft confirm (one Confirm tap)',
       '/stop /start /restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
       '/doctor /tunnel /conf — read-only checks',

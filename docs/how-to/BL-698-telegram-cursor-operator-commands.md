@@ -86,6 +86,8 @@ Hard confirm on Host (two-step), then:
 
 Control topic aliases the same slash forms (plus bare `ambulance …`). `/kill-all` on Control maps to emergency stop.
 
+`/gpu` is Control-topic only. It posts 30 min / 1 hr / 2 hr and stops the local-model seats for that long. `/gpu off` (or Fans back on) clears it. It does not freeze intake, and babysitter does not treat the stopped seat as a stall.
+
 ## Diagrams
 
 - [Cursor Remote flow](../diagrams/cursor-remote-flow.mmd)
