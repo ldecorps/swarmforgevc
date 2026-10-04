@@ -1083,6 +1083,32 @@
   (assert-true "print-task: a batch seat still merges a reverse copy's payload"
                (str/includes? (with-out-str (handoff-lib/print-task rc)) "1) Execute the PAYLOAD (merge_and_process")))
 
+;; ── print-task gives a merge-up note no work (2026-10-04) ────────────────
+;; Served QA's BL-1861 merge-up note, the iq3 coder counted QA-branch
+;; commits with grep until qwen's loop detector halted its turn.
+(let [d (mk-tmp-dir)
+      note-file (fn [name message]
+                  (let [f (str (fs/path d name))]
+                    (spit f (str "id: 20261004T000000Z_000001_from_QA\nfrom: QA\nto: coder\npriority: 00\ntype: note\n"
+                                 "message: " message "\n\n" message "\n"))
+                    f))
+      qa (note-file "00_a_from_QA_to_coder_for_coder.handoff" "BL-1861 QA-approved 1a69e2f1a2 - merge your branch up to QA's")
+      behind (note-file "10_b_from_coordinator_to_coder_for_coder.handoff" "branch behind add3cc152f: branch cannot fast-forward to landed commit - merge up")
+      work (note-file "10_c_from_coordinator_to_coder_for_coder.handoff" "Work BL-1931: merge main first, then read backlog/active")
+      printed (fn [f] (with-out-str (handoff-lib/print-task f {:task-mode? true :take-up :stay})))]
+  (assert-true "merge-up-note-message?: QA's merge-up broadcast" (handoff-lib/merge-up-note-message? "BL-1861 QA-approved 1a69e2f1a2 - merge your branch up to QA's"))
+  (assert-true "merge-up-note-message?: the sweep's branch-behind note" (handoff-lib/merge-up-note-message? "branch behind 04c45d4494: dirty worktree - merge up"))
+  (assert-false "merge-up-note-message?: a Work note" (handoff-lib/merge-up-note-message? "Work BL-1931: merge main first, then read backlog/active"))
+  (assert-false "merge-up-note-message?: blank" (handoff-lib/merge-up-note-message? nil))
+  (doseq [[label f] [["QA merge-up" qa] ["branch-behind" behind]]]
+    (let [out (printed f)]
+      (assert-true (str "print-task: a task-mode " label " note says it carries no work") (str/includes? out "It carries no work for you in task mode"))
+      (assert-true (str "print-task: a task-mode " label " note names done_with_current as the step") (str/includes? out "2) Run now: swarmforge/scripts/done_with_current.sh"))
+      (assert-false (str "print-task: a task-mode " label " note is never told to act on its payload") (str/includes? out "act on it per your role prompt"))))
+  (assert-true "print-task: a Work note still gets the act-on-it steps" (str/includes? (printed work) "act on it per your role prompt"))
+  (assert-true "print-task: a batch seat (one-arity) still acts on a merge-up note"
+               (str/includes? (with-out-str (handoff-lib/print-task qa)) "act on it per your role prompt")))
+
 ;; ── print-task names the served ticket's file (2026-10-03) ──────────────
 ;; "Implement BL-1916 from backlog/active/" sent a local seat to README.md,
 ;; then to asking the user, then to a guessed backlog/active/BL-1916.md.

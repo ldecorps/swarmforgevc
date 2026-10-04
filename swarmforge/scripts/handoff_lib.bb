@@ -221,6 +221,16 @@
   [file]
   (= "true" (header-field file "non-forwarding")))
 
+(defn merge-up-note-message?
+  "True for QA's merge-up broadcast or the post-QA sweep's branch-behind
+   note (post_qa_branch_sweep_lib's surface-notice): both ask a seat to merge
+   its branch up. A task-mode seat merges nothing for either (BL-1871): its
+   take-up moves it onto each parcel's own line."
+  [message]
+  (let [m (str/trim (str message))]
+    (boolean (or (str/includes? m "merge your branch up to QA's")
+                 (re-matches #"branch behind \S+: .+ - merge up" m)))))
+
 (defn body [file]
   (let [[_ body] (str/split (slurp (str file)) #"\n\n" 2)]
     (or body "")))
@@ -2055,7 +2065,17 @@
     ;; ready_for_next.sh against the instruction, or inventing infra "fixes"
     ;; - because nothing told it how to finish. Name the remedy inline, the
     ;; same way the git_handoff branch already does.
-    (when (and (= "note" typ) (not not-taken-up?))
+    ;; 2026-10-04: served QA's BL-1861 merge-up note after forwarding BL-1851,
+    ;; the iq3 coder read "act on it" and counted QA-branch commits with grep
+    ;; until qwen's loop detector halted the turn. Its card never says that a
+    ;; task-mode seat merges nothing for a merge-up note.
+    (when (and (= "note" typ) (not not-taken-up?) task-mode?
+               (merge-up-note-message? (header-field file "message")))
+      (println "1) This is a merge-up note. It carries no work for you in task mode: ready_for_next.sh puts your worktree on each parcel's own line (BL-1871). Do not merge, fetch or inspect any branch for it.")
+      (println "2) Run now: swarmforge/scripts/done_with_current.sh   (no arguments)")
+      (println "USE YOUR TOOLS NOW. Narrating or re-printing this TASK is not progress."))
+    (when (and (= "note" typ) (not not-taken-up?)
+               (not (and task-mode? (merge-up-note-message? (header-field file "message")))))
       (println "1) Read the PAYLOAD and act on it per your role prompt if it asks for something")
       (when ticket-file
         (println (str "   The ticket it names is " ticket-file " - read it with read_file.")))
