@@ -979,3 +979,10 @@
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
+- commit: 7d47d8bf63
+  subject: "hotfix: the shim drops qwen's ask for an <analysis> block from a compaction, and wraps an analysis-only reply as the snapshot"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
