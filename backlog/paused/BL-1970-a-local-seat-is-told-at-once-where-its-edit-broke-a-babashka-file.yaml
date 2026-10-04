@@ -1,5 +1,5 @@
 id: BL-1970
-title: "A local-model seat is told in the same turn where its edit broke a Babashka file - a qwen PostToolUse hook reads the edited file and hands back the reader's open-form line and column, because the iq3 coder spent 20+ minutes on BL-1902 counting parens by hand while the reader had named the spot"
+title: "Stamp-off for hotfix 52a004ed93: a local-model seat is told in the same turn where its edit broke a Babashka file - a qwen PostToolUse hook reads the edited file and hands back the reader's open-form line and column, because the iq3 coder spent 20+ minutes on BL-1902 counting parens by hand while the reader had named the spot"
 milestone: M8
 type: defect
 severity: high
@@ -28,9 +28,11 @@ required_wiring:
 
 human_approval: approved
 approval_context: >
-  A defect the swarm builds itself, at the human's word in the specifier
-  pane (2026-10-04, verbatim in source). No choice is posed. FIRM: the hook
-  only adds context after an edit; it never blocks, undoes or rewrites one.
+  Stamp-off of a hotfix the specifier landed at the human's word in the
+  specifier pane (2026-10-04, verbatim in source). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it. The hook only adds context after an edit; it never
+  blocks, undoes or rewrites one.
 
 invariants:
   - "The hook never blocks, undoes or changes an edit: it only adds context, and only when the edited file is Clojure source that no longer reads."
@@ -38,11 +40,11 @@ invariants:
 
 qa_e2e_procedure: |
   1. Read from the gather's acceptance row: the BL-1970 feature passes 4 of 4.
-  2. Run the shell test the parcel adds for the hook and the settings
-     entry (named in the coder's commit): every line PASS, exit 0.
+  2. `bash swarmforge/scripts/test/test_bl1970_local_model_edit_hook.sh`:
+     11 PASS lines, exit 0. Measured at the hotfix (52a004ed93): 11.
   3. `bash swarmforge/scripts/test/test_bl1949_local_model_precompact_hook.sh`:
      every line PASS, exit 0 (the PreCompact registration is untouched).
-     Measured at mint (2026-10-04): 12 PASS lines.
+     Measured at the hotfix (52a004ed93): 12 PASS lines.
   4. Live and read-only, after the coder seat's next launch: its
      `.worktrees/coder/.qwen/settings.json` names the hook under
      `hooks.PostToolUse`, and in the first qwen session where the seat
@@ -58,6 +60,13 @@ source: |
 
   > Avoid hacks, have swarm to fix itself
 
+  The specifier read that as "no hotfix" and minted this as a plain
+  ticket; the human, verbatim:
+
+  > Doing a hot fix is to fix the process. A hotfix is not a hack.
+
+  > File a smapt off
+
   Observed by the specifier, 2026-10-04: the iq3 coder took BL-1902 at
   18:32:49Z (qwen session b7db90b8) and by 18:48Z had left the form at
   line 239 of swarmforge/scripts/test/bl1360_ceremony_handoff_property_runner.bb
@@ -67,10 +76,11 @@ source: |
   match ( at [239,1]" inside a stack trace each time.
 
 notes: |
-  Minted 2026-10-04 by the specifier under the human's "Avoid hacks, have
-  swarm to fix itself": the fix is a hook the swarm builds, not a line in
-  loop.note. BL-1902 is left on the seat, and the swarm's own stuck-seat
-  path (BAU 5b277c03cd) handles it if the seat does not recover.
+  Minted 2026-10-04 by the specifier as a plain ticket (820e58925c), then
+  turned into the stamp-off of hotfix 52a004ed93 the same pass at the
+  human's "A hotfix is not a hack" / "File a smapt off". The fix is a
+  mechanical hook, not a line in loop.note. BL-1902 is left on the seat;
+  the hook reaches it at its next launch.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Where to read: swarmforge/scripts/local_model_precompact_hook.sh (24
   lines, read it whole) is the model hook. In swarmforge/scripts/swarmforge.sh
@@ -86,6 +96,14 @@ notes: |
   the seat's hooks (BL-1949's paragraph).
 
 description: |
+  ## Status: hotfix 52a004ed93 landed the fix
+
+  The coder reviews it and never re-applies it (the BL-1858 and BL-1868
+  shape): read the commit, run its test, and write the step handler for
+  this ticket's four scenarios, which the hotfix did not add. A review
+  that finds the change wrong says so in a note to the specifier rather
+  than rewriting it.
+
   ## What is wanted
 
   After a local-model seat's edit or write_file, if the file is Clojure
@@ -107,6 +125,7 @@ description: |
 
   ## What each stage checks
 
-  - Coder: the four scenarios; the BL-1949 shell test still passes.
+  - Coder: review 52a004ed93; the step handler and the four scenarios;
+    test_bl1970_local_model_edit_hook.sh and the BL-1949 shell test pass.
   - Documenter: the local-model seat launch how-to names the edit hook
     beside the PreCompact one.

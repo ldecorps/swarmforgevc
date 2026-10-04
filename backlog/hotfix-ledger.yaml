@@ -1098,3 +1098,10 @@
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
+- commit: 52a004ed93
+  subject: "hotfix: a local-model seat is told in the same turn where its edit broke a Babashka file"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1970
+  human_decision: null
+  decided_at: null
