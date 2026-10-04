@@ -102,6 +102,8 @@ notes: |
   cleaner and architect windows this parcel changes). Raised with the
   human on 2026-10-04; it must be committed or set aside before the land
   updates main's checkout, or the fast-forward refuses the dirty file.
+  Cleared 2026-10-04: the human said "commit my pack edit"; it was
+  committed as-is, in the commit that adds this line.
   Specifier prose (BL-798) landed at activation in 75bd29d1bf: QA.prompt
   sends no merge-up broadcast from now on (QA told by note), Article 1.8,
   2.5, workflow.prompt and PIPELINE.md step 5 follow, and Article 2.3
