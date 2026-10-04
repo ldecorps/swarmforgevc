@@ -5,7 +5,8 @@ type: defect
 severity: high
 # high: the seat stalled after every turn that carried text beside its
 # call - the dogfood loop's fourth observation (intake loop step 2).
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1920
 epic: local-llm-swarm
 priority: 4
 direction: queue-jump
@@ -111,3 +112,7 @@ notes: |
     healthy shim with the same upstream, whatever its version.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1919; that file
     carries the human's uncommitted edits, so it was left alone.
+  - Retired 2026-10-04 at the closing-ceremony lean pass (Consolidation
+    Authority BL-680): absorbed by BL-1920, which now stamps off this
+    ticket's hotfix with the same root cause, file, acceptance and test.
+    Its source quotations and notes live on verbatim in BL-1920.

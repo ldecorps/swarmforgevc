@@ -752,7 +752,7 @@
   subject: "Hotfix: a local-model seat's history reaches the model with its own tool calls showing"
   detected_at: 2026-10-03
   state: pending
-  stamp_ticket: BL-1919
+  stamp_ticket: BL-1920
   human_decision: null
   decided_at: null
 - commit: 0eb5958ab6
@@ -773,7 +773,7 @@
   subject: "Hotfix: a local-model seat's 'Let's ...' plan with no tool call is nudged like 'I will ...' is"
   detected_at: 2026-10-03
   state: pending
-  stamp_ticket: BL-1923
+  stamp_ticket: BL-1920
   human_decision: null
   decided_at: null
 - commit: 4b0e9adb96

@@ -6,7 +6,8 @@ severity: high
 # high: the coder seat stalled on every such reply until handoffd's chase
 # respawned it (10 chase-respawns since 10:09Z) - observation 6 of the
 # dogfood loop (intake loop step 2).
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1920
 epic: local-llm-swarm
 priority: 5
 direction: queue-jump
@@ -106,3 +107,7 @@ notes: |
     (79c8fd098c). Not fixed here; see backlog/evidence/BL-1923-dogfood-observation-6-7-20261003.md.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1923; that file
     carries the human's uncommitted edits, so it was left alone.
+  - Retired 2026-10-04 at the closing-ceremony lean pass (Consolidation
+    Authority BL-680): absorbed by BL-1920, which now stamps off this
+    ticket's hotfix with the same root cause, file, acceptance and test.
+    Its source quotations and notes live on verbatim in BL-1920.
