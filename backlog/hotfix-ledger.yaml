@@ -1000,3 +1000,10 @@
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
+- commit: 8612eb313d
+  subject: "hotfix: a local-model seat starts each parcel in a fresh qwen session"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
