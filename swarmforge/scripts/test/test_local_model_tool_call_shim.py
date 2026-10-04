@@ -414,6 +414,20 @@ class LiveShimTests(unittest.TestCase):
         _path, sent = FakeOllama.seen[-1]
         self.assertEqual(sent["messages"][-1]["content"], shim.NO_ANALYSIS_DIRECTIVE)
 
+    def test_a_compaction_reaches_ollama_with_the_chats_stripped_history(self) -> None:
+        call = [{"id": "call_a", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
+        tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+        self.post({"model": "capped", "tools": tools, "messages": [
+            {"role": "system", "content": "You are a SwarmForge agent."},
+            {"role": "user", "content": "go"},
+            {"role": "assistant", "content": "I'll read the card.", "tool_calls": call},
+            {"role": "tool", "tool_call_id": "call_a", "content": "card"},
+            {"role": "user", "content": "Do not call tools. " + shim.COMPACTION_MARKERS[1]}]})
+        _path, sent = FakeOllama.seen[-1]
+        self.assertEqual(sent["messages"][2]["content"], "")
+        self.assertEqual(sent["messages"][-1]["content"], "Do not call tools. " + shim.NO_ANALYSIS_DIRECTIVE)
+        self.assertEqual(sent["max_tokens"], shim.COMPACTION_OUTPUT_CAP)
+
     def test_a_compaction_reaches_ollama_with_thinking_off(self) -> None:
         self.post({"model": "capped", "think": True,
                    "messages": [{"role": "system", "content": SUMMARIZER}, {"role": "user", "content": "history"}]})

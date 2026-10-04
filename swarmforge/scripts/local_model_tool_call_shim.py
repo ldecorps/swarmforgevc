@@ -603,7 +603,12 @@ class ShimHandler(BaseHTTPRequestHandler):
         closed. Nothing else in the request changes."""
         model_cap = self._output_cap(request.get("model"))
         cap = min(COMPACTION_OUTPUT_CAP, model_cap) if model_cap else COMPACTION_OUTPUT_CAP
-        capped, lowered = compaction_budget(without_analysis_request(request), cap)
+        # 2026-10-04: the same history the cached conversation was sent with
+        # (text beside a tool call stripped, as _complete does), so qwen's
+        # cache-shared compaction - eligible once the window passes ~61k -
+        # reuses Ollama's prompt cache instead of re-reading ~20k tokens.
+        shared, _ = history_without_call_prose(without_analysis_request(request))
+        capped, lowered = compaction_budget(shared, cap)
         capped = {**capped, **COMPACTION_NO_THINKING}
         status, payload = self._parsed(*self._call_upstream(capped))
         closed = salvaged = False
