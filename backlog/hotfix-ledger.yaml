@@ -1084,3 +1084,10 @@
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
+- commit: b5ef5c8e94
+  subject: "hotfix: a local seat runs ready_for_next.sh in its worktree, never in the master checkout its card lives in"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1924
+  human_decision: null
+  decided_at: null

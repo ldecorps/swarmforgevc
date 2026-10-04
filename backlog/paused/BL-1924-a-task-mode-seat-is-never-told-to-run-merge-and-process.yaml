@@ -168,5 +168,6 @@ notes: |
     seat from the reverse copy it held was sent to the coordinator.
   - 2026-10-04 also stamps off 9988960599 (print-task: a merge-up or branch-behind note carries no work in task mode) and 84150aeb87 (the same rule, and the reverse-copy one, in local-model loop.note, which every seat reads from master). Review both against their commit messages.
   - 2026-10-04 also stamps off 3b7090f7c4 (local-model loop.note sends the git_handoff before done_with_current: run first, it served the next parcel, the per-parcel fresh session restarted the seat and BL-1934's forward was lost). Review it against its commit message; the coder's live card was recomposed.
+  - 2026-10-04 also stamps off b5ef5c8e94 (local-model loop.note step 1: run ready_for_next.sh in the worktree you start in, never cd to the master checkout the card lives in; a session for BL-1456 had cd'd to master, hit BRANCH_DRIFT_DETECTED and drifted onto BL-1949 for 10 minutes). Review it against its commit message.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1924; that file
     carries the human's uncommitted edits, so it was left alone.
