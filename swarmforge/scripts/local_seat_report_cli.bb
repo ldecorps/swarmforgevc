@@ -52,31 +52,6 @@
          (map #(slurp (str %))))
     []))
 
-(defn- mtime-ms [path]
-  (try (fs/file-time->millis (fs/last-modified-time path)) (catch Exception _ nil)))
-
-(defn- default-ollama-log
-  "BL-1842 D1: existence alone picked a stale log over a live one once two
-   candidate logs exist (the swarm's own `.swarmforge/ollama/serve.log` and
-   an operator-launched `.swarmforge/ollama-serve-operator.log`) - the live
-   server keeps writing to whichever one its own process actually opened,
-   and a prior server's log can sit on disk, present but frozen, forever
-   after. Pick the one with the newer mtime; existence alone (one candidate
-   missing) still falls back to whichever exists."
-  [project-root]
-  (let [swarm-log (fs/path project-root ".swarmforge" "ollama" "serve.log")
-        operator-log (fs/path project-root ".swarmforge" "ollama-serve-operator.log")
-        swarm-exists? (fs/exists? swarm-log)
-        operator-exists? (fs/exists? operator-log)]
-    (str (cond
-           (and swarm-exists? operator-exists?)
-           (if (>= (or (mtime-ms swarm-log) 0) (or (mtime-ms operator-log) 0))
-             swarm-log
-             operator-log)
-
-           swarm-exists? swarm-log
-           :else operator-log))))
-
 (defn- pid-cwd
   "worktree-path a running pid's CURRENT WORKING DIRECTORY resolves to, or
    nil (pid gone, permission denied, or - off Linux - no /proc at all)."
@@ -124,7 +99,7 @@
   (let [qwen-home (or qwen-home (str (fs/path (System/getProperty "user.home") ".qwen")))
         qwen-usage-dir (or qwen-usage-dir (str (fs/path qwen-home "usage")))
         qwen-projects-dir (or qwen-projects-dir (str (fs/path qwen-home "projects")))
-        ollama-log (or ollama-log (default-ollama-log project-root))
+        ollama-log (or ollama-log (local-seat-report-lib/default-ollama-log project-root))
         usage-entries (local-seat-report-lib/parse-usage-entries (usage-file-contents qwen-usage-dir))
         session-ids (local-seat-report-lib/recent-session-ids usage-entries (or sessions 1))
         worktree-path (local-seat-report-lib/seat-worktree-path project-root seat)

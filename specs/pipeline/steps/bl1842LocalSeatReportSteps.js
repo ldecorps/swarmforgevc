@@ -105,12 +105,29 @@ function registerSteps(registry) {
       ctx.expectedOutputTokens = lines.length ? Array.from({ length: n }, (_, i) => 20 + i).reduce((a, b) => a + b, 0) : 0;
       ctx.expectedReasoningTokens = n ? Array.from({ length: n }, (_, i) => 5 + i).reduce((a, b) => a + b, 0) : 0;
 
+      // BL-1851 bounce-lesson fix (2026-10-03): the real record nests these
+      // fields under systemPayload - verified against live session files.
+      // A top-level tokensBefore/apiError (the old fixture's shape) never
+      // occurs in a real record and would no longer be counted after
+      // local_seat_report_lib.bb's own parse-session-events fix.
       const chatRows = [];
       for (let i = 0; i < Number(compressions); i += 1) {
-        chatRows.push(JSON.stringify({ type: 'system', subtype: 'chat_compression', tokensBefore: 9000, tokensAfter: 1200 }));
+        chatRows.push(
+          JSON.stringify({
+            type: 'system',
+            subtype: 'chat_compression',
+            systemPayload: { info: { originalTokenCount: 9000, newTokenCount: 1200 } },
+          })
+        );
       }
       for (let i = 0; i < Number(apiErrors); i += 1) {
-        chatRows.push(JSON.stringify({ type: 'system', subtype: 'ui_telemetry', apiError: true }));
+        chatRows.push(
+          JSON.stringify({
+            type: 'system',
+            subtype: 'ui_telemetry',
+            systemPayload: { uiEvent: { 'event.name': 'qwen-code.api_error' } },
+          })
+        );
       }
       fs.writeFileSync(path.join(ctx.chatDir, `${ctx.sessionId}.jsonl`), chatRows.join('\n') + (chatRows.length ? '\n' : ''));
     }

@@ -612,5 +612,6 @@ lander_lib_test_runner.bb	standing
 land_merge_path_lib_test_runner.bb	standing
 local_seat_settings_snapshot_lib_test_runner.bb	standing
 test_bl1850_seat_settings_snapshot_via_launch_script.sh	standing
+local_seat_tuning_report_lib_test_runner.bb	standing
 local_llm_lib_test_runner.bb	standing
 test_bl1861_local_llm_remove.sh	standing

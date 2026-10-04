@@ -147,3 +147,6 @@ notes: |
   possible-synonym findings are that one pattern, kept on purpose.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-03, by: QA, blamed: coder, class: behavior, commit: 5a01a396ad, evidence: backlog/evidence/BL-1851-QA-20261003.md }
