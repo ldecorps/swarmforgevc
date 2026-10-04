@@ -2,7 +2,8 @@ id: BL-1933
 title: "On a deterministic-coordinator router pack, nothing meant for the coordinator - a wake, a babysitter nudge or a closing context clear - is typed into the resident's pane"
 milestone: M8
 type: feature
-status: todo
+status: done
+closed_as: split-into-BL-1964,BL-1965,BL-1966
 epic: local-llm-swarm
 priority: 3
 direction: queue-jump
@@ -13,7 +14,9 @@ required_stages: [coder, architect, hardender, documenter, qa]
 stage_skip_reasons:
   cleaner: "a feature with medium mutation_cost and envelope; the change sits beside unchanged code"
 
-acceptance: specs/features/BL-1933-a-deterministic-router-pack-wakes-no-one-for-the-coordinator.feature
+# Its four scenarios moved verbatim on the 2026-10-04 split: 01 and 04 to
+# BL-1964, 02 to BL-1965, 03 to BL-1966. The feature file was removed.
+acceptance: specs/features/BL-1964-a-deterministic-router-packs-coordinator-resolves-to-no-wake-session.feature
 
 human_approval: approved
 approval_context: >
@@ -82,6 +85,12 @@ qa_e2e_procedure: |
   2. `bb swarmforge/scripts/test/handoff_wake_session_test_runner.bb`, `bb swarmforge/scripts/test/closing_context_clear_test_runner.bb` and `bb swarmforge/scripts/test/babysitter_nudge_lib_test_runner.bb` pass.
 
 notes: |
+  Retired 2026-10-04 by the specifier, split into BL-1964 (wake-session
+  resolver, scenarios 01 and 04), BL-1965 (closing clear, scenario 02;
+  depends on BL-1964) and BL-1966 (babysitter nudge, scenario 03; depends
+  on BL-1964). The coder (iq3) held it 14 minutes through 3 compactions
+  with no edit; the coordinator pulled it (9277c01642) under the BAU split
+  rule (5b277c03cd).
   - Minted 2026-10-03 by the specifier at the human's "prioritize the epic
     about the 100% iq3 monorouter with determinstic coordinator", from the
     census backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
@@ -96,4 +105,3 @@ notes: |
   - 2026-10-03 18:3xZ coordinator: queue-jump promoted, assigned_to coder,
     routed (dispatch_trail confirms DISPATCHED).
 
-assigned_to: coder

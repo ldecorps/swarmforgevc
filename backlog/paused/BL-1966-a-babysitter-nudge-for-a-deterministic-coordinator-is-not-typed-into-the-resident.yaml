@@ -1,0 +1,90 @@
+id: BL-1966
+title: "On a router pack declaring config coordinator_mode deterministic, a babysitter nudge for the coordinator is not typed into the resident and is not retried every sweep (BL-1933 split, slice 3 of 3)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 3
+direction: queue-jump
+depends_on: [BL-1964]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one more case arm; nothing to refactor"
+  architect: "the decision is BL-1964's; this slice records a nudge with nowhere to go"
+  documenter: "no living doc describes the router wake redirect (docs/ grep, 2026-10-04: only a dated briefing)"
+acceptance: specs/features/BL-1966-a-babysitter-nudge-for-a-deterministic-coordinator-is-not-typed-into-the-resident.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1933 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: BL-1933's babysitter-nudge path (scenario 03), its scenario text verbatim. No choice is posed.
+
+invariants:
+  - "On a router pack declaring config coordinator_mode deterministic, nothing addressed to the coordinator by the babysitter is typed into the resident's pane."
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1966-a-babysitter-nudge-for-a-deterministic-coordinator-is-not-typed-into-the-resident.feature` passes 1 of 1.
+  2. `bb swarmforge/scripts/test/babysitter_nudge_lib_test_runner.bb` and `bash swarmforge/scripts/test/test_babysitter_check.sh` pass.
+
+source: |
+  Split from BL-1933 on 2026-10-04 (BAU split rule, 5b277c03cd). The human,
+  specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1933's own source, verbatim:
+
+  The human, specifier pane, 2026-10-03 ~18:05Z, verbatim (Article 5.3):
+
+  > Ok so now can you prioritize the epic about the 100% iq3 monorouter with determinstic coordinator. And when it's ready, start it.
+
+  The epic's 2026-09-30 intake (backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md),
+  verbatim:
+
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  and its 19:16 BST addendum:
+
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  BL-1125's remaining slice "Deterministic-coordinator seatless boot (after
+  BL-1846 and BL-1847)" asked for a census and a split by it; the census is
+  backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+  This slice is the wake and inject path (census group C).
+
+notes: |
+  Split from BL-1933 on 2026-10-04 after the coder (iq3) held it 14 minutes
+  through 3 compactions with no edit, the last two with the same next
+  step: each cycle re-read handoff_lib, nine ranges of handoffd.bb, the
+  babysitter and the step-handler templates before it could write.
+  Coordinator pull 9277c01642. Approval inherited from BL-1933 (split, no
+  new scope). Step-handler templates the coder found: specs/pipeline/steps/bl1847DeterministicCoordinatorMailSteps.js
+  and specs/pipeline/steps/lib/socketFixtureRoot.js.
+  Where to read: babysitter_nudge_lib.bb is 148 lines; nudge-resident! at
+  ~81-100 already returns :no-session when wake-session is nil (line ~94).
+  babysitter_check.bb is 1555 lines; read only 1530-1552: the nudge case
+  writes the dedup state only on :nudged, so a :no-session nudge is retried
+  every sweep. Tests: babysitter_nudge_lib_test_runner.bb (53 lines),
+  test_babysitter_check.sh. Hardener kept: the fix writes the dedup state
+  (BL-959, a hand-mutant pass is the only gate on a write). Step handler:
+  specs/pipeline/steps/bl1966CoordinatorNudgeIsNotTypedIntoTheResidentSteps.js,
+  registered in specs/pipeline/steps/index.js.
+
+description: |
+  ## What is wanted
+
+  With the coordinator resolving to no wake session (BL-1964),
+  `nudge-resident!` returns `:no-session` and types nothing. The babysitter
+  then records the finding as handled (writes the dedup state, as it does
+  for `:nudged`) so the same finding is not attempted again on the next
+  sweep, and logs one line naming the coordinator and `no-session`.
+
+  ## What each stage checks
+
+  - Coder: the scenario; babysitter_nudge_lib_test_runner.bb and
+    test_babysitter_check.sh pass.
+  - Hardender: a hand-mutant pass on the new dedup write (BL-472 fallback
+    recorded).
