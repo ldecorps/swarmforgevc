@@ -1,0 +1,112 @@
+id: BL-1979
+title: "A feature file scaffolds its own step handler: one command writes specs/pipeline/steps/<Name>Steps.js with a feature-scoped stub per step text, so a seat starts from a file to fill in - the iq3 coder spent over half an hour on BL-1970 reading the runner and one example handler without writing a line"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: one Node script beside resolve_contract_steps.js, reusing the
+# runner's own parser and registry; its tests run on fixture features.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new script reusing the runner's parser and registry; nothing to deduplicate"
+  architect: "a developer tool beside specs/pipeline/scripts/resolve_contract_steps.js; the runner and discovery are unchanged"
+  hardender: "pipeline JavaScript outside extension/ has no Stryker lane; the unit tests and the five scenarios cover it"
+
+acceptance: specs/features/BL-1979-a-feature-file-scaffolds-its-own-step-handler.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1979ScaffoldStepHandlerSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233); scaffold it with the tool itself'
+
+human_approval: approved
+approval_context: >
+  The specifier proposed the scaffold as the process fix for the iq3 coder
+  stalling on BL-1970's step handler; the human approved it in the
+  specifier pane on 2026-10-04 (verbatim in source). No choice is posed.
+  FIRM: the scaffold reuses the runner's own parser and registry, writes
+  only a new file, and never overwrites one.
+
+invariants:
+  - "The scaffold writes only a new file and never overwrites one, and every step text the feature's parser reports resolves to a stub scoped to that feature."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1979 feature passes 5 of 5.
+  2. Read from the gather's unit row: the scaffold's unit test passes.
+  3. In a scratch clone: run the scaffold on
+     specs/features/BL-1970-a-local-seat-is-told-at-once-where-its-edit-broke-a-babashka-file.feature
+     with a handler name of your choosing ending in Steps; run that
+     feature with `node specs/pipeline/cli.js <feature>`: each scenario
+     fails naming its first step as not implemented. Delete the scratch
+     file.
+  4. Read the parcel's own handler: its header says it began from the
+     scaffold's output.
+
+source: |
+  The human, specifier pane (Claude Code), 2026-10-04 ~22:05Z, verbatim
+  (Article 5.3), asked:
+
+  > Why is iq3 doing ? Reading ...
+
+  The specifier found the iq3 coder on BL-1970 alternating two reads
+  (specs/pipeline/test/steps/gherkinMutationSteps.test.js lines 1-25 and
+  specs/pipeline/steps/bl1902ReverseHopsAndMergeUpRetireSteps.js lines
+  1-40) about thirty times each since 21:57Z, after reading the runner's
+  index.js, stepRegistry.js, runnerAdapter.js, generate.js, runtime.js and
+  cli.js, with no edit since its session began at 21:32Z and 44 repeat
+  notes ignored; BL-1970's coder work is mostly a new step handler. It
+  proposed a scaffold as the process fix. The human, verbatim:
+
+  > Process fix, that's my boy :)
+
+notes: |
+  Minted 2026-10-04 by the specifier; approved by the human in the
+  specifier pane (source).
+  The contract the scaffold must produce (read at mint): a top-level
+  specs/pipeline/steps/<Name>Steps.js (BL-1371 discovers files by that
+  name; docs/how-to/BL-1371-step-handlers-register-by-discovery.md)
+  exporting { registerSteps }; registerSteps(registry) calls
+  registry.defineScoped(regex, fn, FEATURE) once per step text, FEATURE
+  being the feature's own name (specs/pipeline/stepRegistry.js:
+  define/defineScoped/resolve). See
+  specs/pipeline/steps/bl1902ReverseHopsAndMergeUpRetireSteps.js lines
+  47-60 for the shape.
+  Where to read: specs/pipeline/runnerAdapter.js's parseFeatureFile (the
+  parser every acceptance run uses - reuse it, never parse Gherkin by
+  hand) and specs/pipeline/scripts/resolve_contract_steps.js (resolves a
+  feature's steps against a registry without running them - scenario 02
+  can use it). Put the tool beside it, e.g.
+  specs/pipeline/scripts/scaffold_step_handler.js
+  <feature-file> <Name>Steps.
+  Escape regex metacharacters in step text; a <placeholder> becomes a
+  capture group; a stub throws an Error whose message starts "not
+  implemented:" and names the step.
+  The specifier's own half (BL-798): once this lands, the coder role
+  prompt and swarmforge/roles/local-model/loop.note gain one line - "a
+  new step handler starts from the scaffold" - landed by the specifier on
+  main in the same pass as QA's land note, never before (a card pointing
+  at a tool that does not exist yet would send the seat looking for it).
+  BL-1970 is in flight and stalled on exactly this; the specifier asked
+  the coordinator to decide whether to pull it behind this ticket.
+
+description: |
+  ## What is wanted
+
+  One command, given a feature file and a handler name ending in Steps,
+  writes specs/pipeline/steps/<Name>Steps.js: a header naming the feature,
+  the FEATURE constant, and registerSteps defining one stub per distinct
+  step text in the feature (Background included), each scoped to the
+  feature's name, each step with a <placeholder> matching every Examples
+  value and handing the value to its stub. Each stub fails with "not
+  implemented: <step text>". The command refuses, changing nothing, when
+  the file already exists or the name does not end in Steps.
+
+  ## What each stage checks
+
+  - Coder: the five scenarios and a unit test; this ticket's own handler
+    starts from the scaffold's output.
+  - Documenter: docs/how-to/BL-1371-step-handlers-register-by-discovery.md
+    names the scaffold as the way a new handler starts.
