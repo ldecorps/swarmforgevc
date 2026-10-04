@@ -1,0 +1,124 @@
+id: BL-1974
+title: "The fixture sweep never selects a live run's fixture from a partial ps line - BL-1287's invariant-1 property went red in QA's loaded property lane (creatorAlive=true, selected=true); the sweep reads COLUMNS-cut ps lines, a spawner's pre-exec bash -c line and a failed ps as an unknown or dead creator"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (QA's unowned-red note 003806), and
+# the defect it points at kills a live sibling run's fixture (the BL-1385 /
+# BL-1390 class: a sweep that destroys runs it does not own).
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: the line filter and the liveness probe in one test helper,
+# fixtureTunnelName.js; each scenario drives the selector with a fake ps.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "small changes inside one helper"
+  architect: "test-harness code; the sweep's own contract (BL-1287) is unchanged"
+  hardender: "test-side only: the helper lives under extension/test/helpers"
+  documenter: "no living doc describes the sweep's ps reading"
+
+acceptance: specs/features/BL-1974-the-fixture-sweep-never-selects-a-live-runs-fixture-from-a-partial-ps-line.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1974SweepReadsWholePsLinesSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  The owner of a standing red QA reported in note 003806 (2026-10-04). No
+  choice is posed. FIRM: a fixture whose creating run is alive is never
+  selected, and one whose creator has exited still is (BL-1287's
+  invariants 1 and 2 both stand).
+
+invariants:
+  - "The sweep selects a fixture only from a whole ps line of the fixture's own process, and never when it could not establish that the creating run is gone."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1974 feature passes 4 of 4.
+  2. Read from the gather's property row: bl1287FixtureSweepScopingInvariants
+     passes. If the property lane still shows it red, the parcel does not
+     close the red: say so in a note to the specifier.
+  3. Read from the gather's unit row: npm test is green.
+  4. Read backlog/standing-reds.tsv on the parcel: the property row for
+     bl1287FixtureSweepScopingInvariants names BL-1974; after the land the
+     land step has retired it (BL-1631).
+
+source: |
+  QA note 003806 to the specifier, 2026-10-04 21:16Z: "unowned-red bl1287
+  inv1 + bl1877 reach (BL-1902 QA run); verbatim in 270d6503e0". QA's
+  evidence backlog/evidence/BL-1902-QA-20261004-2.md (73e60a6151),
+  verbatim:
+
+  - `extension/test/bl1287FixtureSweepScopingInvariants.property.test.js`:
+    `FAIL ... > property (invariant 1): a fixture is selected only when its creating run is no longer alive, whatever its tunnel name looks like`
+    / `Error: Property failed after 8 tests` / `Caused by: AssertionError: creatorAlive=true: expected selected=false, got true`
+
+  Both files were green in QA's earlier gathers tonight (BL-1902 first
+  pass, BL-1950, BL-1951).
+
+notes: |
+  Minted 2026-10-04 by the specifier as the owner of the bl1287 red, with
+  a property row in backlog/standing-reds.tsv. Not hotfixed in the same
+  pass because the cause is not found, so a fix could not be shown to
+  close the red (the rule's "more than one sitting" case). The bl1877 red
+  in the same note was hotfixed (bdb172641b, stamp-off BL-1973).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  What the specifier measured at mint (2026-10-04, master checkout):
+  - The creator-pid regex (CREATOR_PID_RE, /\brun\s+sfvc-test-(\d+)-/)
+    takes the first number after "run sfvc-test-", so the random label
+    cannot mislead it.
+  - With creatorAlive=true the creator is the test's own process, so
+    process.kill(pid, 0) succeeds; "dead" can only come from
+    isProcessAlive's `ps -o stat=` call throwing (its catch reads every
+    failure as "gone"), or "unknown" from creatingPidFor returning null.
+  - ps honours COLUMNS: a 246-character command line read with
+    `ps -eo pid=,args=` comes back 81 characters at COLUMNS=80. COLUMNS is
+    not exported to any agent or vitest process seen at mint, so this is
+    a demonstrated hazard, not a confirmed cause.
+  - The spawner race (spawnFakeCloudflared returns the backgrounded pid
+    before its exec; until then ps shows the bash -c line with "$1"
+    tunnel ... run "$3", which passes the line filter and carries no pid):
+    0 of 80 probes caught it, idle or with all 20 cores saturated.
+  The scenarios close all three paths, so the red cannot recur through
+  any of them; the review says whether one of them matches what QA saw.
+  Where to read: extension/test/helpers/fixtureTunnelName.js -
+  CREATOR_PID_RE at ~73, creatingPidFor ~78, isProcessAlive ~95 (it calls
+  node's execFileSync directly; the selector takes an injected one at
+  ~133), leakedFixtureTunnelPids ~133-152. The property test:
+  extension/test/bl1287FixtureSweepScopingInvariants.property.test.js
+  (invariant 1 at ~44). Fixture spawner:
+  extension/test/helpers/bl1287FixtureSweepFixture.js ~28.
+  required_stages: test-side only is [coder, qa].
+
+description: |
+  ## What is wanted
+
+  The leaked-fixture sweep never selects a fixture whose creating run is
+  alive because of how ps showed it:
+
+  - It reads ps command lines whole, whatever COLUMNS says.
+  - A line that is a shell's -c command (a fixture's spawner before its
+    exec) is not a fixture line.
+  - When ps cannot be run to ask for the creator's state, the creator is
+    not read as gone.
+
+  A fixture whose creating run has exited is still selected (BL-1287
+  invariant 2), and BL-1287's own property tests still pass.
+
+  ## How (direction, not mandate)
+
+  - `ps -ww` (or an empty COLUMNS in the child's env) for every ps the
+    sweep runs.
+  - Tell "ps ran and found no such pid" (exit status 1, empty output) from
+    "ps could not run" (an error with a code, or a signal) in
+    isProcessAlive; only the first is "gone".
+  - Drive the scenarios through the selector's injected execFileSync with
+    canned ps output; inject the liveness probe the same way if needed.
+
+  ## What each stage checks
+
+  - Coder: the four scenarios; BL-1287's unit and property tests pass.

@@ -1119,3 +1119,10 @@
   stamp_ticket: BL-1971
   human_decision: null
   decided_at: null
+- commit: bdb172641b
+  subject: "hotfix: the BL-1877 reach property draws on a fixed seed, so its transitive floor never fails at random"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1973
+  human_decision: null
+  decided_at: null

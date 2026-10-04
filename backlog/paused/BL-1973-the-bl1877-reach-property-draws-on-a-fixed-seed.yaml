@@ -1,0 +1,79 @@
+id: BL-1973
+title: "Stamp-off for hotfix bdb172641b: the BL-1877 reach property draws on a fixed seed, so its transitive-draw floor never turns the property lane red at random (2% of unseeded runs did)"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (QA's unowned-red note 003806) -
+# the property lane went red at random about once in fifty runs.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one options object in one property test file.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one line in a test file"
+  architect: "a test's own draw seed; no boundary moves"
+  hardender: "test-side only; the review re-runs the file's own mutant check"
+  documenter: "no living doc describes the test's draws"
+
+# Not a claim of ownership over BL-1877's contract (BL-1251): the feature of
+# the ticket whose property file this hotfix seeds.
+acceptance: specs/features/BL-1877-a-commit-runs-only-the-property-files-its-change-reaches.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a standing-red hotfix the specifier landed on QA's
+  unowned-red note 003806 (2026-10-04), under the human's 2026-10-01 "hotfix
+  the defect and mint a stampoff". No choice is posed. FIRM: the review
+  decides whether the change stands; the coder never re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  1. Read from the gather's property row: bl1877PropertyReachNeverSkips
+     passes (measured at the hotfix bdb172641b: 1/1).
+  2. Read the coder's committed review evidence: it records the mutant run
+     the file's header names (computeReach's reverse walk cut to direct
+     importers) failing on seed 18770, and the floor's draw counts.
+
+source: |
+  QA note 003806 to the specifier, 2026-10-04 21:16Z: "unowned-red bl1287
+  inv1 + bl1877 reach (BL-1902 QA run); verbatim in 270d6503e0". QA's
+  evidence backlog/evidence/BL-1902-QA-20261004-2.md (73e60a6151),
+  verbatim:
+
+  - `extension/test/bl1877PropertyReachNeverSkips.property.test.js`:
+    `FAIL ... > BL-1877/BL-654 invariant: a reached property file is never skipped`
+    / `AssertionError: transitive draws: 4`
+
+  The human's standing rule, verbatim (2026-10-01): "Also, update your
+  prompt / c9 stitution: instead of minting a red, hotfix the defect and
+  mint a stampoff."
+
+notes: |
+  Minted 2026-10-04 by the specifier as the stamp-off of hotfix bdb172641b
+  (committed with SWARMFORGE_ROLE=QA: extension/test/ is QA-only on main).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Measured at the hotfix: the generator's 60 draws, sampled over seeds
+  0-1999, fall below the floor of 5 transitive draws on 40 seeds (2%; the
+  lowest draws 2, the median 10); seed 18770 draws 14. Not re-measured at
+  the hotfix: the mutant check in the file's header. The review runs it.
+  The bl1287 red in the same note is owned by BL-1974 (cause not found).
+  required_stages: test-side only is [coder, qa].
+
+description: |
+  ## Status: hotfix bdb172641b landed the fix
+
+  The coder reviews it and never re-applies it (the BL-1858 and BL-1868
+  shape): read the commit, run the file, and run the mutant the file's
+  header names (computeReach's reverse walk cut to direct importers, in a
+  scratch copy) to confirm the seeded draws still fail it. A review that
+  finds the change wrong says so in a note to the specifier.
+
+  ## What each stage checks
+
+  - Coder: the review and the mutant run, recorded in committed evidence.
