@@ -135,3 +135,5 @@ description: |
     test_bl1971_local_model_repeat_guard.sh passes.
   - Documenter: the local-model seat launch how-to names the repeat guard
     beside the PreCompact and edit hooks.
+
+assigned_to: coder
