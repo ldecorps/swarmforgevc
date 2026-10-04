@@ -1,0 +1,99 @@
+id: BL-1967
+title: "A closing ceremony run records the window it folded - from the previous run's window end to the real instant it ran - and the night path hands it that real instant, never a synthetic midnight (BL-1456 split, slice 1 of 2)"
+milestone: M8
+type: defect
+severity: high
+# high: inherited from BL-1456 - the ceremony packet silently drops ~90% of a shift's lifecycle signal.
+status: todo
+epic: lean-aware-coordinator
+priority: 57
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+
+acceptance: specs/features/BL-1967-a-ceremony-run-records-the-real-window-it-folded.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1967CeremonyRunRecordsItsWindowSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1456 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: BL-1456's window half (scenarios 04 and 07), its scenario text verbatim. No choice is posed.
+
+invariants:
+  - "Consecutive ceremony runs record windows that tile the timeline: each starts where the previous run's window ended and ends at the real instant the run happened, never at a synthetic midnight."
+
+qa_e2e_procedure: |
+  In a scratch clone (fixture root, never the live repo):
+  1. `node specs/pipeline/cli.js specs/features/BL-1967-a-ceremony-run-records-the-real-window-it-folded.feature` passes 2 of 2.
+  2. Seed `.swarmforge/lean/ceremony/<D>.json` as a completed run whose
+     window ends at D 04:25Z, run `node extension/out/tools/night-closing-ceremony-run.js --target <root> --sleep-path finish-shift --now <ms for D+1 04:25Z>`
+     with whatever `--conf` the runner needs, and read
+     `.swarmforge/lean/ceremony/<D+1>.json`: the window runs D 04:25Z to
+     D+1 04:25Z and `deliveredAt` is D+1T04:25Z, not midnight.
+
+source: |
+  Split from BL-1456 on 2026-10-04 (BAU split rule, 5b277c03cd). The human,
+  specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1456's own source, verbatim:
+
+  Closing-ceremony packet 2026-09-07
+  (`.swarmforge/lean/ceremony/2026-09-07.json`), delivered to the
+  specifier by coordinator note at 04:36:05Z, empty of every lifecycle
+  signal on a night the morning briefing counted 35 swarm deaths and 13
+  closures. Lean pass outcome `process_ticket` -> BL-1456; evidence
+  backlog/evidence/closing-ceremony-2026-09-07-specifier.md.
+
+notes: |
+  Split from BL-1456 on 2026-10-04 after the coder (iq3) held it 18 minutes
+  through 2 compactions with no edit and the same next step: each cycle
+  re-read four whole TypeScript files (closingCeremony.ts,
+  night-closing-ceremony-run.ts and both test files, ~40k tokens) before
+  its first edit. Approval inherited from BL-1456 (split, no new scope).
+  BL-1456's full description (the measured table, the How, the Docs list)
+  stays in backlog/done/BL-1456-*.yaml; read the parts this slice names.
+  Where to read: extension/src/metrics/closingCeremonyRun.ts is 250 lines;
+  runClosingCeremony at ~197 (shiftKey at 198, deliveredAt at ~226 and
+  ~242). The CeremonyRun interface is in extension/src/quality/closingCeremony.ts
+  at ~117 (read 110-135 only; that file is 571 lines). The night path:
+  extension/src/tools/night-closing-ceremony-run.ts (691 lines) - read only
+  ~315-335, where deliverLeanPacket and recordEmptyOutcome pass
+  `${shiftKey}T00:00:00Z` (lines ~322 and ~328). Tests:
+  extension/test/closingCeremonyRun.test.js. Step handler:
+  specs/pipeline/steps/bl1967CeremonyRunRecordsItsWindowSteps.js,
+  registered in specs/pipeline/steps/index.js.
+
+description: |
+  ## What is wanted
+
+  `runClosingCeremony` records the window the run covers on its
+  `CeremonyRun` (`windowStart`/`windowEnd`): it starts where the previous
+  run's window ended and ends at the real instant the run happens. Runs
+  already on disk carry no window: the first post-fix run starts at the
+  newest prior run's `deliveredAt` - never the whole ledger. The night
+  path's `deliverLeanPacket` and `recordEmptyOutcome` pass the real `nowMs`
+  instant, not `${shiftKey}T00:00:00Z`. The run's key may stay the caller's
+  local day key; if it is derived from the instant instead, a
+  `finish-shift` between 00:00 and 01:00 local in BST lands on the previous
+  UTC date - pick one, test it.
+
+  This slice changes which window a run RECORDS, not which events it
+  folds: BL-1968 makes the fold use it.
+
+  ## What each stage checks
+
+  - Coder: the two scenarios; closingCeremonyRun.test.js and the night
+    path's tests pass.
+  - Hardender: mutation on the window computation.
+  - Documenter: docs/reference/BL-820-closing-ceremony-lean-pass.md's
+    Storage section gains the window field.

@@ -7,7 +7,7 @@ epic: lean-aware-coordinator
 priority: 54
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-819, BL-820, BL-1365, BL-1528, BL-1551, BL-1782, BL-1783, BL-1784, BL-1880]
+decomposes_into: [BL-819, BL-820, BL-1365, BL-1528, BL-1551, BL-1782, BL-1783, BL-1784, BL-1880, BL-1967, BL-1968]
 source: |
   Raw intake `backlog/INTAKE-lean-aware-coordinator.md` (human via Cursor
   2026-08-05 ~09:55 CEST, amended ~09:58 for the shift-closing ceremony),
@@ -187,5 +187,11 @@ notes: |
   BL-1327's 2026-09-02 proposal-only ruling and BL-1056's "no autonomous
   seat mutation", so it is minted with its own ask once the advice has run
   for a while.
+
+  2026-10-04 (specifier): BL-1456 (the ceremony folds every event since
+  the previous run) split under the BAU split rule (5b277c03cd) after the
+  iq3 coder held it 18 minutes with no edit: BL-1967 (a run records its
+  real window) then BL-1968 (the fold goes by append order, depends on
+  BL-1967). BL-1456 was never listed here; both slices are.
 
 mutation_cost: high

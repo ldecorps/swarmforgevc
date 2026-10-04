@@ -1,0 +1,119 @@
+id: BL-1968
+title: "The closing ceremony folds every lifecycle event appended since the previous run - by append order, never by the date in its stamp - and the first run on record folds the whole ledger (BL-1456 split, slice 2 of 2)"
+milestone: M8
+type: defect
+severity: high
+# high: inherited from BL-1456 - the ceremony packet silently drops ~90% of a shift's lifecycle signal.
+status: todo
+epic: lean-aware-coordinator
+priority: 57
+direction: swarm-reported
+depends_on: [BL-1967]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a targeted fix; nothing to refactor"
+  architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
+
+acceptance: specs/features/BL-1968-the-ceremony-folds-every-event-appended-since-the-previous-run.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1968CeremonyFoldsPastThePreviousRunSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1456 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: BL-1456's fold half (scenarios 01, 02, 03, 05 and 06), its scenario text verbatim. No choice is posed.
+
+invariants:
+  - "Every lifecycle ledger event is folded by exactly one ceremony run - the first run after it was appended - regardless of the date in its at stamp; no event is folded twice and none is skipped (binds every run after this lands; the single migration run is named in the evidence with its folded count)."
+
+qa_e2e_procedure: |
+  In a scratch clone (fixture root, never the live repo):
+  1. `node specs/pipeline/cli.js specs/features/BL-1968-the-ceremony-folds-every-event-appended-since-the-previous-run.feature` passes 5 of 5.
+  2. Seed `.swarmforge/lean/<D>.jsonl` with stage_transition events at
+     03:00Z and 21:00Z on day D and, appended last, a bounce event stamped
+     `<D>T00:00:00.000Z`; seed `.swarmforge/lean/ceremony/<D>.json` as a
+     completed run whose window ends at D 04:25Z having folded only the
+     03:00Z line. Run `node extension/out/tools/night-closing-ceremony-run.js --target <root> --sleep-path finish-shift --now <ms for D+1 04:25Z>`
+     and read `.swarmforge/lean/ceremony/<D+1>.json`: `pathTaken` names the
+     21:00Z transition's role, `bounceClasses` counts the midnight-stamped
+     bounce, and the 03:00Z transition is absent from dwell.
+  3. Run again one minute later: no second fold.
+  4. Fresh root, no prior run, events on three different days: the first
+     run folds all of them.
+  5. After land, on the live swarm: the next night ceremony's packet's
+     ticket set matches `git log --since=<windowStart> --until=<windowEnd> -- backlog/`
+     for its window.
+
+source: |
+  Split from BL-1456 on 2026-10-04 (BAU split rule, 5b277c03cd). The human,
+  specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1456's own source, verbatim:
+
+  Closing-ceremony packet 2026-09-07
+  (`.swarmforge/lean/ceremony/2026-09-07.json`), delivered to the
+  specifier by coordinator note at 04:36:05Z, empty of every lifecycle
+  signal on a night the morning briefing counted 35 swarm deaths and 13
+  closures. Lean pass outcome `process_ticket` -> BL-1456; evidence
+  backlog/evidence/closing-ceremony-2026-09-07-specifier.md.
+
+notes: |
+  Split from BL-1456 on 2026-10-04 after the coder (iq3) held it 18 minutes
+  through 2 compactions with no edit and the same next step: each cycle
+  re-read four whole TypeScript files (closingCeremony.ts,
+  night-closing-ceremony-run.ts and both test files, ~40k tokens) before
+  its first edit. Approval inherited from BL-1456 (split, no new scope).
+  BL-1456's full description (the measured table, the How, the Docs list)
+  stays in backlog/done/BL-1456-*.yaml; read the parts this slice names.
+  Where to read: extension/src/quality/closingCeremony.ts is 571 lines;
+  read ~130-150 (the fold comment and eventsForShiftKey at ~139) and
+  ~430-470 (buildClosingCeremonyPacket). extension/src/metrics/closingCeremonyRun.ts
+  (250 lines) at ~197-250, where the run reads the ledger and BL-1967's
+  window. extension/src/metrics/leanLedgerStore.ts (101 lines): the
+  idempotent appender appendLeanLedgerEventIfNew and the header comment to
+  retire. Tests: extension/test/closingCeremony.test.js. Step handler:
+  specs/pipeline/steps/bl1968CeremonyFoldsPastThePreviousRunSteps.js,
+  registered in specs/pipeline/steps/index.js.
+
+description: |
+  ## What is wanted
+
+  A ledger event belongs to the first ceremony run after it is appended,
+  whatever its `at` stamp says (every bounce event is stamped at midnight
+  of its date, extension/src/metrics/leanLedgerComposeBounce.ts). The fold
+  goes by append order from where the previous run stopped, so no event is
+  folded twice and none is skipped. The first run on record folds the
+  whole ledger; a previous run from before BL-1967 carries no record of
+  where it stopped, so the first post-fix run starts at that run's
+  `deliveredAt` (it may re-see the few events that run folded) - never the
+  whole ledger; name that migration run and its folded count in the
+  evidence. An empty window keeps the explicit empty outcome.
+
+  ## How (direction, not mandate)
+
+  - The ledger files are append-only JSONL with an idempotent appender. A
+    per-file cursor on the run - lines already folded per
+    `<yyyy-MM-dd>.jsonl` - lets the next run fold every line past it,
+    without reading a stamp and without a new field on the event. A
+    `recordedAt` stamp on every event is the other honest route.
+  - `shiftWorkedSinceLastCeremony`, `isEmptyCeremonyPacket` and the
+    determinism candidates (BL-1365) are untouched.
+  - Retire the "calendar-day bucketing, no shift boundary exists yet"
+    sentences in closingCeremony.ts's fold comment and the
+    leanLedgerStore.ts header ("re-bucketing is a mechanical follow-up").
+    The per-day file bucketing itself stays.
+
+  ## What each stage checks
+
+  - Coder: the five scenarios; closingCeremony.test.js passes.
+  - Hardender: mutation on the fold.
+  - Documenter: docs/reference/BL-820-closing-ceremony-lean-pass.md ("a
+    pure fold over one shift's worth of ledger events" - define the
+    window) and docs/reference/BL-819-ticket-lifecycle-ledger.md lines
+    40-43 (the "shift boundary that doesn't exist yet" clause).

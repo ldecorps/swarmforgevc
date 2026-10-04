@@ -12,7 +12,8 @@ severity: high
 # the measure of the human's 2026-10-02 "make the swarm churn much faster".
 # The mint's medium reasoning still holds in part: the ledger is
 # append-only, so nothing is lost.
-status: todo
+status: done
+closed_as: split-into-BL-1967,BL-1968
 epic: lean-aware-coordinator
 priority: 57
 direction: swarm-reported
@@ -27,7 +28,9 @@ stage_skip_reasons:
   cleaner: "a targeted fix; nothing to refactor"
   architect: "the spec fixes the design; QA checks it and the property test of any declared invariant"
 
-acceptance: specs/features/BL-1456-the-ceremony-folds-every-event-since-the-previous-run.feature
+# Its seven scenarios moved verbatim on the 2026-10-04 split: 04 and 07 to
+# BL-1967, 01, 02, 03, 05 and 06 to BL-1968. The feature file was removed.
+acceptance: specs/features/BL-1968-the-ceremony-folds-every-event-appended-since-the-previous-run.feature
 
 required_wiring:
   - 'specs/pipeline/steps/bl1456CeremonyFoldWindowSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
@@ -189,6 +192,12 @@ source: |
   backlog/evidence/closing-ceremony-2026-09-07-specifier.md.
 
 notes: |
+  Retired 2026-10-04 by the specifier, split into BL-1967 (the run records
+  its real window; scenarios 04 and 07) and BL-1968 (the fold goes by
+  append order; scenarios 01, 02, 03, 05 and 06; depends on BL-1967). The
+  coder (iq3) held it 18 minutes through 2 compactions with no edit and
+  the same next step; the coordinator pulled it under the BAU split rule
+  (5b277c03cd).
   Minted 2026-09-07 by the specifier as the closing-ceremony 2026-09-07
   outcome. The feature file was drafted by the prior specifier session at
   09:10:07 local and orphaned by the 09:10:34 swarm relaunch (every role
@@ -223,4 +232,3 @@ notes: |
   unchanged (the fold is by UTC date) and only worse, so the scenarios
   stand as written. deprecate-check: allow.
 
-assigned_to: coder
