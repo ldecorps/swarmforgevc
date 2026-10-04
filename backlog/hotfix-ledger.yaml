@@ -1007,3 +1007,10 @@
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
+- commit: 35a8448e4c
+  subject: "hotfix: drop BL-1851's suite-manifest row that BL-1929's land carried onto main without its runner"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1953
+  human_decision: null
+  decided_at: null

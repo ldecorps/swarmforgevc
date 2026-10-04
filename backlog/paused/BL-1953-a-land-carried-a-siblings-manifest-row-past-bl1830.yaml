@@ -1,0 +1,84 @@
+id: BL-1953
+title: "Stamp-off for hotfix 35a8448e4c: BL-1929's land carried BL-1851's suite-manifest row onto main without its runner (main red at fd4c492d3b), past BL-1830's shared-own-path guard - the hotfix drops the row; the review finds why BL-1830 did not stop it"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is high at first sighting (2026-09-05).
+status: todo
+epic: swarm-reliability
+priority: 5
+depends_on: []
+mutation_cost: low
+# low: one manifest line removed; the review reads, it builds nothing.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one manifest line removed; nothing to refactor"
+  architect: "no boundary moves; a guard gap found in review leaves as a note to the specifier"
+  hardender: "a tsv row has no mutation lane and writes no state"
+  documenter: "no living doc names the row"
+
+# Not a claim of ownership over BL-1830's contract (BL-1251): the guard
+# this land got past.
+acceptance: specs/features/BL-1830-a-land-never-publishes-a-siblings-lines-in-a-shared-own-path.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a standing-red hotfix the specifier landed on QA note 003794,
+  under the human's 2026-10-01 rule (hotfix the red, mint its stamp-off).
+  No choice is posed. FIRM: the coder reviews the hotfix and never
+  re-applies it.
+
+invariants:
+  - "Every row of swarmforge/scripts/test/suite-manifest.tsv on main names a file main holds."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1830 feature all pass.
+     Measured at mint on 35a8448e4c: 3/3.
+  2. `bash swarmforge/scripts/check_test_file_registration.sh`: exit 0.
+  3. Every manifest row names an existing file:
+     `python3 -c "import os;r=[l.split(chr(9))[0] for l in open('swarmforge/scripts/test/suite-manifest.tsv') if l.strip() and not l.startswith('#')];print([f for f in r if not os.path.exists('swarmforge/scripts/test/'+f)])"`
+     prints `[]`.
+  4. Read the coder's evidence: it names why BL-1830's guard let the row
+     through, or that it could not tell, and a note to the specifier when a
+     guard gap is real.
+
+source: |
+  QA note 003794, 2026-10-04 12:08Z, to the specifier and the coordinator:
+  "main red fd4c492d3b: BL-1929 land added BL-1851 suite-manifest row, no runner".
+
+notes: |
+  Minted 2026-10-04 by the specifier on QA note 003794.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 35a8448e4c linked to BL-1953. No standing-red register row
+  was added: the red was fixed in the same pass.
+
+description: |
+  ## Status: hotfix 35a8448e4c landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  The iq3 coder worked BL-1929 on a line that also held BL-1851's work,
+  and resolved a suite-manifest.tsv merge conflict on it. BL-1929's land
+  (fd4c492d3b, a tip-pure replay) took suite-manifest.tsv whole and
+  published the row `local_seat_tuning_report_lib_test_runner.bb
+  standing`, which is BL-1851's (its commit 4afccb0400 adds the row and
+  the runner). BL-1851 has not landed, so main named a runner it lacks,
+  and run_bb_suite.sh failed with MISSING. BL-1830 exists to stop exactly
+  this, and its feature still passes.
+
+  ## What the hotfix changed
+
+  The row is removed from main's manifest. BL-1851's land brings the row
+  back with its runner.
+
+  ## What the coder checks
+
+  The hotfix against the description and the invariant, then why BL-1830's
+  guard let the row through: was the row inside BL-1929's own diff (the
+  merge resolution), or is BL-1851's line invisible to the guard because
+  it is in flight rather than queued to land? Evidence:
+  backlog/evidence/BL-1953-coder-<date>.md. A guard gap goes to the
+  specifier as a note; it is not built in this parcel.
