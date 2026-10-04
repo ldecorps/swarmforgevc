@@ -88,7 +88,7 @@ clear_mailboxes() {
 write_roles coder cleaner architect hardender documenter coordinator specifier QA
 
 DRY="$ROOT/dry.txt"
-run_ceremony merge-up --ticket "$TICKET" --commit "$COMMIT_ABBREV" --dry-run > "$DRY"
+run_ceremony bookkeep --ticket "$TICKET" --commit "$COMMIT_ABBREV" --dry-run > "$DRY"
 grep -q '^type: note$' "$DRY" || fail "the dry run did not print a note draft: $(cat "$DRY")"
 grep -q "^message: .*$TICKET.*$COMMIT_ABBREV" "$DRY" \
   || fail "the dry run's message names neither the ticket nor the commit: $(cat "$DRY")"
@@ -99,6 +99,9 @@ pass "--dry-run prints the composed draft and sends nothing"
 # the composer's own list drives the loop, so a ceremony added later without
 # a working dry run fails here rather than shipping unexercised.
 CEREMONIES="$(run_ceremony merge-sideways --ticket "$TICKET" 2>&1 | sed -n 's/.*defined ceremonies are //p' | tr ',' ' ' || true)"
+# BL-1902: the merge-up broadcast is retired, so the defined list must not
+# offer it - the refusal text is the composer's own list, parsed back.
+[[ " $CEREMONIES " != *" merge-up "* ]] || fail "the composer still offers the retired merge-up ceremony: $CEREMONIES"
 [[ -n "$CEREMONIES" ]] || fail "the composer would not name its defined ceremonies"
 for name in $CEREMONIES; do
   OUT="$(run_ceremony "$name" --ticket "$TICKET" --commit "$COMMIT_ABBREV" --dry-run)"     || fail "the '$name' ceremony could not be composed at all"
@@ -141,16 +144,18 @@ pass "a composed ceremony reaches the mailbox through swarm_handoff.sh, tool-sta
 clear_mailboxes
 write_roles coder cleaner architect documenter coordinator specifier QA   # no hardender
 
+# The retired merge-up broadcast is the refusal vehicle: the composer no
+# longer defines it, so the send is refused BEFORE any recipient is
+# validated - the gate's own words for an undefined ceremony, not a
+# hand-rolled recipient list.
 set +e
 run_ceremony merge-up --ticket "$TICKET" --commit "$COMMIT_ABBREV" >"$ROOT/out.txt" 2>"$ROOT/err.txt"
 STATUS=$?
 set -e
 
-[[ $STATUS -ne 0 ]] || fail "an unknown recipient was accepted"
-grep -q "HANDOFF INVALID" "$ROOT/err.txt" \
-  || fail "the gate's refusal never reached the sender: $(cat "$ROOT/err.txt")"
-grep -q "Unknown recipient role 'hardender'." "$ROOT/err.txt" \
-  || fail "the refusal does not say which recipient was unknown: $(cat "$ROOT/err.txt")"
+[[ $STATUS -ne 0 ]] || fail "the retired merge-up ceremony was accepted"
+grep -q "unknown ceremony 'merge-up'" "$ROOT/err.txt" \
+  || fail "the composer's refusal never reached the sender: $(cat "$ROOT/err.txt")"
 [[ -z "$(mailbox_files)" ]] || fail "a refused ceremony still delivered: $(mailbox_files)"
 pass "a send-time refusal reaches the sender unchanged and delivers nothing"
 
@@ -167,7 +172,7 @@ STATUS=$?
 set -e
 
 [[ $STATUS -ne 0 ]] || fail "an undefined ceremony name was accepted"
-for known in merge-up bookkeep spec-ready; do
+for known in bookkeep spec-ready; do
   grep -q -- "$known" "$ROOT/err.txt" \
     || fail "the refusal does not offer the defined ceremony '$known': $(cat "$ROOT/err.txt")"
 done
@@ -180,11 +185,11 @@ pass "an unknown ceremony name is refused against the defined list"
 
 clear_mailboxes
 set +e
-run_ceremony merge-up --ticket "$TICKET" >"$ROOT/out.txt" 2>"$ROOT/err.txt"
+run_ceremony bookkeep --ticket "$TICKET" >"$ROOT/out.txt" 2>"$ROOT/err.txt"
 STATUS=$?
 set -e
 
-[[ $STATUS -ne 0 ]] || fail "merge-up sent with no commit"
+[[ $STATUS -ne 0 ]] || fail "bookkeep sent with no commit"
 grep -q -- "--commit" "$ROOT/err.txt" || fail "the refusal does not name the missing option: $(cat "$ROOT/err.txt")"
 [[ -z "$(mailbox_files)" ]] || fail "a ceremony missing a fact still delivered: $(mailbox_files)"
 pass "a ceremony missing one of its facts is refused before any send"

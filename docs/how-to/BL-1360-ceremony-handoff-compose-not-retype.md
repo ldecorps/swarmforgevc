@@ -2,13 +2,10 @@
 
 ## What it is
 
-Three pipeline sends carry no judgement at all — only a ticket id and (for
-two of them) an approved commit vary, everything else is already fixed by
+Two pipeline sends carry no judgement at all — only a ticket id and (for
+one of them) an approved commit vary, everything else is already fixed by
 `swarmforge/handoff-protocol.md`:
 
-- **`merge-up`** — QA's broadcast telling every worktree role
-  (`coder,cleaner,architect,hardender,documenter`) to merge up to the
-  approved commit, priority `00`.
 - **`bookkeep`** — QA telling the coordinator to move the ticket to done and
   promote the next, priority `00`.
 - **`spec-ready`** — the specifier telling the coordinator a paused ticket is
@@ -21,17 +18,21 @@ message against the 80-character note cap with `wc -c`. Observed
 these notes. `ceremony_handoff.sh` composes the draft from one definition
 instead.
 
+A third ceremony, `merge-up` — QA's broadcast telling every worktree role
+to merge up to the approved commit — retired with BL-1902: a role on
+parcel lines (BL-1871) merges nothing, so a broadcast whose only effect on
+each recipient was to be completed is a handoff no one sends any more.
+
 ## Usage
 
 ```
 swarmforge/scripts/ceremony_handoff.sh <ceremony> --ticket BL-042 [--commit a1b2c3d4e5] [--dry-run]
 ```
 
-`<ceremony>` is one of `merge-up`, `bookkeep`, `spec-ready`. `merge-up` and
-`bookkeep` need both `--ticket` and `--commit`; `spec-ready` needs only
-`--ticket`. `--dry-run` prints the composed draft and sends nothing —
-useful for checking the composition once instead of re-deriving it every
-time.
+`<ceremony>` is one of `bookkeep`, `spec-ready`. `bookkeep` needs both
+`--ticket` and `--commit`; `spec-ready` needs only `--ticket`. `--dry-run`
+prints the composed draft and sends nothing — useful for checking the
+composition once instead of re-deriving it every time.
 
 ## It is a front end, never a second way into a mailbox
 
@@ -55,21 +56,19 @@ the ceremony is sent as an ordinary note instead.
 
 ## The recipient list has one definition
 
-`handoff-protocol.md` documents the `merge-up` and `bookkeep` recipient
-lists and priorities; a test parses that document and asserts
+`handoff-protocol.md` documents the `bookkeep` recipient list and
+priority; a test parses that document and asserts
 `ceremony_handoff_lib.bb`'s `ceremonies` map agrees with it, rather than
 restating the claim as a comment that could drift (BL-897). `spec-ready`
-isn't defined in the protocol document, so only the two the document does
-define are pinned this way.
+isn't defined in the protocol document, so only `bookkeep` is pinned this
+way.
 
 ## Out of scope
 
 The commit half of "commit and hand off" — `ceremony_handoff.sh` composes
 and sends only; staging changes on an agent's behalf is a separate slice
-(BL-667's remaining `commit --only <declared paths>` work). Whether the
-merge-up broadcast should exist at all (BL-668's sweep did not eliminate
-it — see `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
-and related BL-668 tickets). Updating role prompts to make this the
-standard route is the specifier's to land, not part of this build.
+(BL-667's remaining `commit --only <declared paths>` work). Updating role
+prompts to make this the standard route is the specifier's to land, not
+part of this build.
 
 Acceptance: `specs/features/BL-1360-a-ceremony-handoff-is-composed-not-retyped.feature`.

@@ -15,7 +15,9 @@
 ;;      handoff-protocol.md defines agree with the lib, read by PARSING that
 ;;      document rather than restating its values here (BL-897: a constant
 ;;      mirrored across a boundary needs a test asserting both literals
-;;      agree).
+;;      agree). The merge-up broadcast retired with BL-1902, so P3 pins the
+;;      bookkeep ceremony only; the document's merge-up section is the
+;;      documenter's to retire.
 ;;
 ;; Toolchain note, as ambulance_lib_property_runner.bb records: the BL-654
 ;; contract's "*.property.test.js / vitest.properties.config.mjs" home is a
@@ -92,7 +94,7 @@
           ;; A refusal must be a refusal: no half-composed draft rides along.
           (when draft (report! "P2" seed input "a refusal still produced a draft")))
       (do
-        (swap! p2-outcomes conj (if (str/ends-with? message "- merge up") :terse :roomy))
+        (swap! p2-outcomes conj (if (str/ends-with? message "- bookkeep") :terse :roomy))
         (when (str/includes? message "\n")
           (report! "P2" seed input (str "message is not a single line: " (pr-str message))))
         (when (> (count message) ceremony-handoff-lib/message-max-chars)
@@ -145,37 +147,25 @@
 
 (defn- backticked [text] (map second (re-seq #"`([^`]+)`" text)))
 
-(let [section (protocol-section "**QA → worktree roles:**")]
+(let [section (protocol-section "**Lander → coordinator:**")]
   (if-not section
-    (swap! failures conj "FAIL P3: handoff-protocol.md no longer documents the QA merge-up broadcast; the lib's recipient list is now unpinned.")
-    (let [quoted (backticked section)
-          documented-list (first (filter #(and (str/includes? % ",")
-                                               (not (str/includes? % " ")))
-                                         quoted))
-          documented-recipients (when documented-list (str/split documented-list #","))
-          lib-recipients (get-in ceremony-handoff-lib/ceremonies ["merge-up" :to])
-          lib-priority (get-in ceremony-handoff-lib/ceremonies ["merge-up" :priority])]
-      (when-not documented-recipients
-        (swap! failures conj (str "FAIL P3: no comma-separated recipient list found in the documented merge-up step: " (pr-str quoted))))
-      (when (and documented-recipients (not= documented-recipients lib-recipients))
-        (swap! failures conj (str "FAIL P3 merge-up recipients disagree with handoff-protocol.md\n  document: "
-                                  (pr-str documented-recipients) "\n  lib:      " (pr-str lib-recipients))))
-      (when-not (some #{lib-priority} quoted)
-        (swap! failures conj (str "FAIL P3 merge-up priority " (pr-str lib-priority)
-                                  " is not the one handoff-protocol.md states: " (pr-str quoted)))))))
-
-(let [section (protocol-section "**QA → coordinator:**")]
-  (if-not section
-    (swap! failures conj "FAIL P3: handoff-protocol.md no longer documents the QA bookkeeping send; the lib's bookkeep ceremony is now unpinned.")
+    (swap! failures conj "FAIL P3: handoff-protocol.md no longer documents the lander bookkeeping send; the lib's bookkeep ceremony is now unpinned.")
     (let [quoted (backticked section)
           lib (get ceremony-handoff-lib/ceremonies "bookkeep")]
       ;; the recipient is in the step's own heading, which is why the heading
       ;; is what this looks at rather than a backticked list.
       (when-not (= ["coordinator"] (:to lib))
-        (swap! failures conj (str "FAIL P3 bookkeep recipients disagree with the documented 'QA → coordinator' step: " (pr-str (:to lib)))))
-      (when-not (some #{(:priority lib)} quoted)
+        (swap! failures conj (str "FAIL P3 bookkeep recipients disagree with the documented 'Lander → coordinator' step: " (pr-str (:to lib)))))
+      ;; The document states the bookkeep note's priority in backticked form
+      ;; ("priority `00`") inside the Lander → coordinator step; the step's
+      ;; other backticked values are the message template and the backlog
+      ;; paths, so the priority is pinned by the document's own `priority`
+      ;; wording in that section rather than by scanning the whole document
+      ;; (a literal `00` elsewhere, e.g. the sweep's note, must not satisfy
+      ;; this pin).
+      (when-not (re-find (re-pattern (str "(?s)priority\\s+`" (:priority lib) "`")) section)
         (swap! failures conj (str "FAIL P3 bookkeep priority " (pr-str (:priority lib))
-                                  " is not the one handoff-protocol.md states: " (pr-str quoted)))))))
+                                  " is not the one handoff-protocol.md states in the Lander → coordinator step: " (pr-str quoted)))))))
 
 ;; And the cap itself, which the lib holds as a number and the document states
 ;; in prose. BL-897 again: two literals, one assertion that they agree.
@@ -287,16 +277,15 @@
                       (report! "P1" s input
                                (str "delivered copy " (fs/file-name f) " lacks the tool-stamped header "
                                     h " - it did not come through swarm_handoff.sh:\n" content))))))
-              ;; the specifier is never a merge-up recipient
-              (when (and (= "merge-up" ceremony)
-                         (some #(str/includes? (str %) "/specifier/") delivered))
-                (report! "P1" s input "the specifier received a merge-up broadcast")))
+              ;; the specifier is never a ceremony recipient
+              (when (some #(str/includes? (str %) "/specifier/") delivered)
+                (report! "P1" s input "the specifier received a ceremony copy")))
             ;; A refusal is allowed - what is not allowed is a refusal that
             ;; still put something in a mailbox.
             (when (seq delivered)
               (report! "P1" s input (str "a refused send still delivered " (pr-str (map str delivered))
-                                         "\n" out err)))))
-        (recur (inc i) s3)))))
+                                         "\n" out err))))
+      (recur (inc i) s3))))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 

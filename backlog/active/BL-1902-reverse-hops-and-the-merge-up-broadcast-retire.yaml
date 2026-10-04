@@ -132,4 +132,14 @@ notes: |
   changes for 03 and 04 stand, and steps only 01 and 02 used may stay or
   go. Check: BL-1360's feature 3/3 on the merged tree.
 
+abandoned_commits: [978d23945f, 3cbdc86d71]
+# Pre-merge documenter D2/D3 doc-fix commits, built on coder's D1 commit
+# 2084f0ab38 before it merged main (see note above). Reapplied cleanly as
+# e7638f0fb2 on the post-main-merge lineage; the pre-merge commits are
+# stranded, not forwarded again.
+
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-10-04, by: QA, blamed: coder, class: acceptance, commit: 92252b8361, evidence: backlog/evidence/BL-1902-QA-20261004.md }
+  - { at: 2026-10-04, by: QA, blamed: coder, class: unit, commit: 34fc19e1c8, evidence: backlog/evidence/BL-1902-QA-20261004-2.md }

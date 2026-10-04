@@ -7,8 +7,8 @@
 # real mailbox skeleton, everything under one mktemp root.
 #
 # Modes:
-#   merge-up | bookkeep   compose and SEND that ceremony; report where it landed
-#   gate-refusal          a roles.tsv missing one merge-up recipient, so the
+#   bookkeep              compose and SEND that ceremony; report where it landed
+#   gate-refusal          a roles.tsv missing the bookkeep recipient, so the
 #                         send-time recipient validation refuses - the composer
 #                         must pass that refusal through and deliver nothing
 #   unknown               a ceremony name the composer does not define
@@ -19,7 +19,7 @@
 
 set -uo pipefail
 
-MODE="${1:?usage: bl1360CeremonyHandoffCli.sh <merge-up|bookkeep|gate-refusal|unknown>}"
+MODE="${1:?usage: bl1360CeremonyHandoffCli.sh <bookkeep|gate-refusal|unknown>}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 CEREMONY="$REPO_ROOT/swarmforge/scripts/ceremony_handoff.sh"
@@ -42,13 +42,13 @@ echo "$ROOT/fake.sock" > "$ROOT/.swarmforge/tmux-socket"
 mkdir -p "$ROOT/.swarmforge/handoffs/QA/outbox/tmp" "$ROOT/.swarmforge/handoffs/QA/sent"
 
 # Every role the pipeline has a worktree for, plus the specifier - which must
-# be present and reachable, so that "the specifier is not a recipient" is a
+# be present and reachable, so that "no worktree role is a recipient" is a
 # statement about the ceremony's definition and not about a missing row.
 ALL_ROLES=(coder cleaner architect hardender documenter coordinator specifier)
-# gate-refusal drops one merge-up recipient from roles.tsv so the REAL
+# gate-refusal drops the bookkeep recipient from roles.tsv so the REAL
 # send-time recipient validation refuses. Nothing about the composer changes.
 if [[ "$MODE" == "gate-refusal" ]]; then
-  KNOWN_ROLES=(coder cleaner architect documenter coordinator specifier)
+  KNOWN_ROLES=(coder cleaner architect hardender documenter specifier)
 else
   KNOWN_ROLES=("${ALL_ROLES[@]}")
 fi
@@ -77,8 +77,7 @@ git -C "$ROOT" add -A
 git -C "$ROOT" commit -q -m "BL-9360-fixture: a swarm root a ceremony can be sent from"
 
 case "$MODE" in
-  merge-up|gate-refusal) NAME="merge-up" ;;
-  bookkeep)              NAME="bookkeep" ;;
+  bookkeep|gate-refusal) NAME="bookkeep" ;;
   unknown)               NAME="merge-sideways" ;;
   *) echo "unknown mode: $MODE" >&2; exit 2 ;;
 esac
