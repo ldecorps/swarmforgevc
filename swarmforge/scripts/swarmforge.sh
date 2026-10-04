@@ -2118,6 +2118,13 @@ EOF
 # enter_plan_mode, exit_plan_mode and propose_goal each wait for a human in
 # the pane: a nudged coder seat called ask_user_question and sat on "Waiting
 # for user confirmation..." with no one there to answer.
+# 2026-10-04: model.chatCompression.maxRecentFilesToRetain 0. qwen's default
+# re-attached the 5 most recently read files' full text after every
+# compaction: 24-36k chars against a 6k-char summary, leaving the iq3 coder
+# 22-25.6k of a 27852 trigger. The seat re-read those same files at once,
+# so each counted twice, and a two-file read hit "Context is too large to
+# send safely after automatic compression" (35318 > 30852.8), which stops
+# the seat until a human presses Ctrl+Y.
 write_local_model_qwen_settings() {
   local worktree="$1"
   local model="${2:-}"
@@ -2141,6 +2148,9 @@ write_local_model_qwen_settings() {
   },
   "hooks": {
     "PreCompact": [{"matcher": "", "hooks": [{"type": "command", "command": "bash '__SWARMFORGE_PRECOMPACT_HOOK__'", "name": "swarmforge-bounded-compaction", "timeout": 10000}]}]
+  },
+  "model": {
+    "chatCompression": {"maxRecentFilesToRetain": 0}
   }
 }
 JSON

@@ -51,6 +51,13 @@ print(hooks[0]["command"])
 [[ -f "$HOOK" ]] || fail "the hook the settings name does not exist: $HOOK"
 pass "the settings register the master checkout's PreCompact hook for every trigger"
 
+python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["model"]["chatCompression"]["maxRecentFilesToRetain"] == 0, d.get("model")
+' "$SETTINGS" || fail "settings.json does not set model.chatCompression.maxRecentFilesToRetain to 0"
+pass "the settings stop qwen re-attaching recently read files after a compaction"
+
 grep -q '__SWARMFORGE_PRECOMPACT_HOOK__' "$SETTINGS" && fail "the hook placeholder survived into the settings"
 pass "no placeholder is left in the written settings"
 
@@ -67,6 +74,13 @@ d = json.load(open(sys.argv[1]))
 assert d["hooks"]["PreCompact"][0]["hooks"][0]["command"] == sys.argv[2]
 ' "$SETTINGS" "bash '$HOOK'" || fail "the provider entry merge dropped the PreCompact hook"
 pass "the provider entry merge keeps the hook"
+python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["model"]["chatCompression"]["maxRecentFilesToRetain"] == 0, d.get("model")
+' "$SETTINGS" || fail "the provider entry merge dropped maxRecentFilesToRetain"
+pass "the provider entry merge keeps maxRecentFilesToRetain 0"
+
 
 out="$(bash "$HOOK" </dev/null)"
 python3 -c '
