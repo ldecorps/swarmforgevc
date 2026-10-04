@@ -92,6 +92,14 @@ qa_e2e_procedure: |
   3. `grep -E '^config coordinator_(mode|agent|model|effort)' swarmforge/packs/ollama-ista-local-model-mono-router.conf` prints only `config coordinator_mode deterministic`.
 
 notes: |
+  Where to read (2026-10-04, specifier, for a small-window seat; notes only,
+  the contract is unchanged): swarmforge/scripts/swarmforge.sh is 150 KB, so
+  grep for the name and read about 60 lines from there, never the file:
+  provision_coordinator() at line ~1235 (called at ~1188); is_sequential_dormant
+  at ~1303; create_role_session at ~1635 and its role loop at ~1678;
+  write_role_launch_script at ~2194. The mode predicate is
+  coordinator_config_lib.bb deterministic-coordinator? (line ~91). The
+  fixture template is test_coordinator_provisioned_infrastructure.sh:162-178.
   - Minted 2026-10-03 by the specifier at the human's "prioritize the epic
     about the 100% iq3 monorouter with determinstic coordinator", from the
     census backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
