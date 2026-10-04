@@ -1105,3 +1105,10 @@
   stamp_ticket: BL-1970
   human_decision: null
   decided_at: null
+- commit: 66bd85171f
+  subject: "hotfix: a local-model seat's third identical tool call with nothing changed in between is refused"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1971
+  human_decision: null
+  decided_at: null
