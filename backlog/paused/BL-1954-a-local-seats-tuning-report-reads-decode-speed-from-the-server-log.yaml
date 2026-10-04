@@ -25,7 +25,7 @@ acceptance: specs/features/BL-1954-a-local-seats-tuning-report-reads-decode-spee
 required_wiring:
   - 'specs/pipeline/steps/bl1954TuningReportServerSpeedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The follow-up the specifier promised in its ruling A on QA's peer
   question (BL-1851 lands as specified; this slice owns the speed figures).
