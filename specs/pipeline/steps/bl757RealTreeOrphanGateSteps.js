@@ -15,6 +15,12 @@ const {
   ORPHANED_AUTHORED_DOC_REFUSAL,
 } = require(path.join(EXT_DIR, 'out', 'tools', 'pilotAcceptanceGate'));
 const { computeDocsStructure } = require(path.join(EXT_DIR, 'out', 'docs', 'docsStructure'));
+// 2026-10-04 (standing red found minting BL-1956): this file hand-built
+// its own deps, so it never got checkOriginMainLanding when the gate grew
+// it - scenarios 05 and 06 failed with "deps.checkOriginMainLanding is not
+// a function". Same fix as BL-1667: start from the shared, contract-checked
+// base (BL-1229) and layer this fixture's overrides on top.
+const { makeAcceptanceGateDeps } = require(path.join(EXT_DIR, 'test', 'helpers', 'pilotAcceptanceGateDeps.js'));
 const {
   filterNonAllowlistedOrphans,
   loadKnownOrphanAllowlist,
@@ -69,7 +75,7 @@ function orphanOutcome(ctx) {
 function baseDeps(ctx) {
   ensureCtx(ctx);
   let executedFeaturePath;
-  return {
+  return makeAcceptanceGateDeps({
     readAcceptanceDeclaration: () => ctx.acceptanceDeclaration,
     resolveFeatureFilePath: (declaration) => resolveFeatureFilePath(ctx.repoRootFixture, declaration),
     isLifecycleTeardownTicket: () => false,
@@ -107,7 +113,7 @@ function baseDeps(ctx) {
     },
     getLandedCommit: () => 'e'.repeat(40),
     now: () => '2026-08-27T00:00:00.000Z',
-  };
+  });
 }
 
 async function runGate(ctx) {
