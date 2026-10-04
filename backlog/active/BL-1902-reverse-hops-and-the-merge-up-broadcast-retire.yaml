@@ -102,3 +102,5 @@ notes: |
   cleaner and architect windows this parcel changes). Raised with the
   human on 2026-10-04; it must be committed or set aside before the land
   updates main's checkout, or the fast-forward refuses the dirty file.
+
+assigned_to: coder
