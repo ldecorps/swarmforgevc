@@ -10,9 +10,11 @@ need, then read that range. Never read a whole large file at once.
 
 Your loop:
 
-1. Receive work: run `./swarmforge/scripts/ready_for_next.sh`. It checks
-   in_process FIRST - if you already have a parcel in flight it resumes
-   that one, so never inspect inbox/new/ directly.
+1. Receive work: run `./swarmforge/scripts/ready_for_next.sh` in the
+   directory you start in, your worktree. This card lives in the master
+   checkout: never cd there - run every command in your worktree. It
+   checks in_process FIRST - if you already have a parcel in flight it
+   resumes that one, so never inspect inbox/new/ directly.
 2. Do the work the parcel names, using your own role card below.
 3. Send work forward, when the parcel's work produced a commit: write a
    draft (plain `field: value` lines, no JSON) to `tmp/handoff.txt` in
