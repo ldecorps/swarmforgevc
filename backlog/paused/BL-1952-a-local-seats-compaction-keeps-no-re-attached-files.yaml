@@ -129,6 +129,10 @@ notes: |
   Also stamps off 8612eb313d (a local-model seat starts each parcel in a
   fresh qwen session, the human's "Go"); review it against its commit
   message. Hotfix ledger: 8612eb313d linked to BL-1952.
+  Also stamps off e5ed22d36f (iq3 serves 73728 without its vision
+  projector; the shim strips call prose on a compaction so a
+  cache-shared one hits the prompt cache). Review it against its
+  commit message. Hotfix ledger: e5ed22d36f linked to BL-1952.
 
 description: |
   ## Status: hotfix 3e66c4af7c landed the fix

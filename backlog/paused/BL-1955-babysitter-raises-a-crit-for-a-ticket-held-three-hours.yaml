@@ -1,0 +1,87 @@
+id: BL-1955
+title: "Stamp-off for hotfix 74c3769083: babysitter raises a CRIT for a ticket held 3 hours with no commit, spinner or not (the human's change, after iq3 sat 9 hours unnoticed; Work-note parcels covered)"
+milestone: M8
+type: defect
+severity: high
+# high: a broken health signal - a seat held a ticket for 9 hours and no
+# check escalated, so the operator never woke.
+status: todo
+epic: swarm-reliability
+priority: 5
+depends_on: []
+mutation_cost: low
+# low: one pure check, one gatherer and a ticket-id reader, each with tests;
+# no mutation lane for Babashka (BL-472).
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one check beside the existing ones; nothing to deduplicate"
+  architect: "rides the existing sweep's finding list and CRIT escalation; no boundary moves"
+  hardender: "Babashka has no mutation lane (BL-472); the check writes no durable state"
+  documenter: "the hotfix already updated the BL-611 runbook, the BL-653 wake model and docs/index.md"
+
+# Not a claim of ownership over BL-1109's contract (BL-1251): a sibling
+# babysitter check over the same in_process parcels.
+acceptance: specs/features/BL-1109-babysitter-starved-ignores-idle-owner-in-process.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of the human's own babysitter change, committed by the
+  specifier at the human's word ("Own my change"). No choice is posed.
+  FIRM: the coder reviews it and never re-applies it.
+
+invariants:
+  - "A seat whose HEAD has not moved for 180 minutes since it claimed a ticket raises a CRIT whatever its pane shows, except during a control pause or a GPU quiet."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1109 feature all pass.
+     Measured at mint on 74c3769083: 6/6.
+  2. `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`: ok.
+  3. `bash swarmforge/scripts/test/test_babysitter_check.sh`: ALL PASS.
+  4. Read-only: `.swarmforge/operator/babysitter.log` carries no
+     `seat-stuck-` CRIT for a seat that committed within 180 minutes of its
+     claim; if one fired since 74c3769083, its seat's HEAD had not moved.
+
+source: |
+  The human, specifier pane, 2026-10-04, verbatim (Article 5.3):
+
+  > Yes well: last shift, iq3 got stucknforn9 hours and the babysitter / opeartor pair did nothing about it.
+
+  and, handing the uncommitted change over: "Own my change".
+
+notes: |
+  Minted 2026-10-04 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 74c3769083 linked to BL-1955.
+
+description: |
+  ## Status: hotfix 74c3769083 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  Check 5 and the claim-reclaim ladder read a live spinner as work, and a
+  rotating status phrase changes the pane hash every sweep, so check 7
+  (busy but frozen) never sees three identical hashes. A seat could hold
+  one ticket for hours with HEAD never moving and no check fired; the
+  operator wakes only on a CRIT. The iq3 coder held BL-1858 that way for
+  about 9 hours on the 2026-10-03 shift.
+
+  ## What the hotfix changed
+
+  - babysitterd_sweep_lib.bb check-seat-ticket-stuck (check 5b): a held
+    parcel whose seat HEAD is still the claim commit 180 minutes after
+    claimAtMs (else dequeued_at) is one CRIT seat-stuck-<role> per role;
+    none during a control pause or for a GPU-quiet seat.
+  - babysitter_check.bb held-seat-tickets gathers each in_process parcel's
+    ticket, claim clock and HEAD baseline.
+  - held-ticket-id (the specifier's addition) also reads a coordinator
+    Work note's ticket from its message, which carries no task header.
+  - The BL-611 runbook, the BL-653 wake model and docs/index.md say so.
+
+  ## What the coder checks
+
+  The change against the description and the invariant, and the test
+  cases in babysitterd_sweep_lib_test_runner.bb. Evidence:
+  backlog/evidence/BL-1955-coder-<date>.md.

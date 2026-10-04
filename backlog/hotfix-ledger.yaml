@@ -1021,3 +1021,17 @@
   stamp_ticket: BL-1902
   human_decision: null
   decided_at: null
+- commit: 74c3769083
+  subject: "hotfix: babysitter raises a CRIT for a ticket held 3 hours with no commit, spinner or not"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1955
+  human_decision: null
+  decided_at: null
+- commit: e5ed22d36f
+  subject: "hotfix: iq3 serves a 73728 window without its vision projector, and the shim keeps a compaction on the cached prefix"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
