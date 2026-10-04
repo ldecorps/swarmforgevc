@@ -147,6 +147,9 @@ notes: |
   window plus 15000 to qwen, so iq3 compacts at 55728, not 40728; one tool
   batch capped at 24000 chars; the shim logs WINDOW_FULL; the Modelfile's
   num_ctx is the one place the window is written). Hotfix ledger linked.
+  Also stamps off d138a71f19 (the shim reads a compaction only from a
+  system message or a last user message, never a tool result that quotes
+  a marker; its test fails on the old code). Hotfix ledger linked.
 
 description: |
   ## Status: hotfix 3e66c4af7c landed the fix

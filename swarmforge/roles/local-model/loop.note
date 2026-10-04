@@ -10,20 +10,24 @@ need, then read that range. Never read a whole large file at once.
 
 Your loop:
 
-1. Receive work: run `./swarmforge/scripts/ready_for_next.sh`. It checks
-   in_process FIRST - if you already have a parcel in flight it resumes
-   that one, so never inspect inbox/new/ directly.
+1. Receive work: run `./swarmforge/scripts/ready_for_next.sh` in the
+   directory you start in, your worktree. This card lives in the master
+   checkout: never cd there - run every command in your worktree. It
+   checks in_process FIRST - if you already have a parcel in flight it
+   resumes that one, so never inspect inbox/new/ directly.
 2. Do the work the parcel names, using your own role card below.
-3. Finish the CURRENT parcel: run `swarmforge/scripts/done_with_current.sh`
-   with no arguments. It may hand you the next parcel in the same output -
-   read that output, never call it twice, never re-run ready_for_next.sh
-   right after it.
-4. Send work forward: write a draft (plain `field: value` lines, no JSON)
-   to `tmp/handoff.txt` in your assigned worktree, then run
+3. Send work forward, when the parcel's work produced a commit: write a
+   draft (plain `field: value` lines, no JSON) to `tmp/handoff.txt` in
+   your assigned worktree, then run
    `swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt`. Never write
    directly into inbox/new/ - that delivers no wake-up. A `git_handoff`
    draft may print `AUDIT_REQUIRED` on its first send: re-check your work
    against the task, then run the exact same command again to queue it.
+4. Only then finish the CURRENT parcel: run
+   `swarmforge/scripts/done_with_current.sh` with no arguments. It may
+   hand you the next parcel and restart your session, so a handoff you
+   have not queued yet is lost: never run it before step 3. Read its
+   output, never call it twice, never re-run ready_for_next.sh after it.
 
 Rules that apply the whole time:
 

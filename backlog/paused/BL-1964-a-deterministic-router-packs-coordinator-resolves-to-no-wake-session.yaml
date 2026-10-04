@@ -1,0 +1,94 @@
+id: BL-1964
+title: "On a router pack declaring config coordinator_mode deterministic, the coordinator resolves to no wake session while every dormant role still resolves to the resident (BL-1933 split, slice 1 of 3)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 3
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "one cond branch and one conf read; nothing to refactor"
+  hardender: "bb has no Stryker lane (BL-472); the decision writes no state and both scenarios pin both branches"
+  documenter: "no living doc describes the router wake redirect (docs/ grep, 2026-10-04: only a dated briefing)"
+acceptance: specs/features/BL-1964-a-deterministic-router-packs-coordinator-resolves-to-no-wake-session.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1933 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: BL-1933's resolver path (scenarios 01 and 04), its scenario text verbatim. No choice is posed.
+
+invariants:
+  - "On a router pack declaring config coordinator_mode deterministic, wake-session returns no session for the coordinator."
+  - "Every other dormant role still resolves to the resident's session."
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1964-a-deterministic-router-packs-coordinator-resolves-to-no-wake-session.feature` passes 2 of 2.
+  2. `bb swarmforge/scripts/test/handoff_wake_session_test_runner.bb` passes.
+
+source: |
+  Split from BL-1933 on 2026-10-04 (BAU split rule, 5b277c03cd). The human,
+  specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1933's own source, verbatim:
+
+  The human, specifier pane, 2026-10-03 ~18:05Z, verbatim (Article 5.3):
+
+  > Ok so now can you prioritize the epic about the 100% iq3 monorouter with determinstic coordinator. And when it's ready, start it.
+
+  The epic's 2026-09-30 intake (backlog/archive/INTAKE-local-monorouter-on-demand-coordinator-20260930.md),
+  verbatim:
+
+  > alternatively, we could try to have no coordinator at all, or just one deamon that would do the same job. Or a coordinator that starts only when needed. So basically we would have resident, and then it can either call up a ephemeral second role, or invoke the coordinator to pass the parcel. Can you mint an intake for specifier to mull a solution over ?
+
+  and its 19:16 BST addendum:
+
+  > it would be really great if the solution could consist in having a deterministic coordinator. In fact, when all goes well, the mono router does not need a coordinator does it?
+
+  BL-1125's remaining slice "Deterministic-coordinator seatless boot (after
+  BL-1846 and BL-1847)" asked for a census and a split by it; the census is
+  backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md.
+  This slice is the wake and inject path (census group C).
+
+notes: |
+  Split from BL-1933 on 2026-10-04 after the coder (iq3) held it 14 minutes
+  through 3 compactions with no edit, the last two with the same next
+  step: each cycle re-read handoff_lib, nine ranges of handoffd.bb, the
+  babysitter and the step-handler templates before it could write.
+  Coordinator pull 9277c01642. Approval inherited from BL-1933 (split, no
+  new scope). Step-handler templates the coder found: specs/pipeline/steps/bl1847DeterministicCoordinatorMailSteps.js
+  and specs/pipeline/steps/lib/socketFixtureRoot.js.
+  Where to read: swarmforge/scripts/handoff_lib.bb is 2162 lines; read only
+  1262-1300 (resolve-wake-session at 1262, a pure decision taking
+  {configured-session configured-exists? resident-session resident-exists?
+  rotation-router-pack?}; wake-session at 1283 is its IO wrapper) and
+  1412-1425 (rotation-router-pack?). The mode: coordinator_config_lib.bb
+  deterministic-coordinator? (~line 91) on the conf text. Tests:
+  swarmforge/scripts/test/handoff_wake_session_test_runner.bb (161 lines).
+  Step handler: specs/pipeline/steps/bl1964CoordinatorResolvesToNoWakeSessionSteps.js,
+  registered in specs/pipeline/steps/index.js.
+
+description: |
+  ## What is wanted
+
+  `resolve-wake-session` takes one more key, the pack's deterministic flag,
+  and returns no session for the coordinator when it is set and the
+  coordinator has no session of its own (mirroring BL-614, which already
+  keeps the coordinator out of rotation). `wake-session` reads the pack's
+  mode for it. Every other recipient resolves exactly as before, so a
+  dormant role still wakes the resident.
+
+  BL-1965 (closing clear) and BL-1966 (babysitter nudge) reach the resident
+  through `wake-session`; this slice changes only the resolver.
+
+  ## What each stage checks
+
+  - Coder: the two scenarios; handoff_wake_session_test_runner.bb passes.
+  - Architect: the two invariants; every other wake-session caller in
+    handoffd.bb treats a nil session as "nobody to wake".
