@@ -1,0 +1,140 @@
+id: BL-1969
+title: "./swarm ensure leaves a GPU-quiet local-model seat down until the /gpu pause ends - today its per-role loop recreates every missing session, so babysitter's swarm-starved repair (or any other ensure) during a pause starts qwen and puts the model back on the GPU"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. It needs an ensure to run inside a pause (a
+# swarm starved for three sweeps, a control-plane repair, or a hand run);
+# QA reproduced it against the pure lib, and no live pause has broken yet.
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one check ahead of the per-role branch in swarm_ensure.bb, reading
+# two predicates gpu_pause_lib.bb already exports, plus its docstring.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one check and a docstring; nothing to deduplicate"
+  architect: "ensure reads a predicate babysitter already reads; no boundary moves"
+  hardender: "Babashka has no mutation lane (BL-472) and the check writes no durable state"
+
+acceptance: specs/features/BL-1969-swarm-ensure-leaves-a-gpu-quiet-seat-down-until-the-pause-ends.feature
+
+required_wiring:
+  - 'swarmforge/scripts/swarm_ensure.bb::gpu_pause_lib.bb::ensure loads the pause predicate babysitter already reads'
+  - 'specs/pipeline/steps/bl1969EnsureLeavesGpuQuietSeatDownSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  FIRM: while the /gpu pause is active, no ./swarm ensure started by
+  babysitter recreates a local-model seat's session; every other seat is
+  ensured as before; the seat comes back on the first ensure after the
+  pause ends. The one choice is whether a ./swarm ensure the operator runs
+  by hand during a pause also leaves the seat down. The scenarios are
+  written for A; B changes their When to an ensure started by babysitter,
+  and the specifier amends them before promotion.
+ruling_options:
+  - A - every ./swarm ensure honours the pause, a hand run too, and /gpu off ends the pause early (recommended)
+  - B - only ensures babysitter starts honour the pause, and a hand ./swarm ensure brings the seat back
+ruling_tradeoffs:
+  - Pros - one rule in the one place sessions are recreated, so no caller of ensure added later can reopen the hole, and /gpu off already ends a pause early. Cons - an operator who runs ./swarm ensure by hand during a pause, to fix something else, sees the seat stay down until the pause ends or /gpu off. Recommended because the pause is a promise to the operator's other GPU task, and this hole is an unforeseen caller.
+  - Pros - a hand ./swarm ensure keeps meaning bring everything back. Cons - babysitter has to pass a flag to ensure, and every other automatic caller (cron freshness, the control-plane repair, a future one) has to remember it, which is the shape of the hole QA found.
+
+invariants:
+  - "While pause-active? holds, no ./swarm ensure recreates a session for a seat whose roles.tsv agent is local-model, in the standing and the mono-router branch alike, and every other seat is ensured exactly as before."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1969 feature passes 3 of 3.
+  2. `bash swarmforge/scripts/test/test_swarm_ensure.sh` passes as before.
+  3. Read the diff of swarmforge/scripts/swarm_ensure.bb: the pause check
+     sits ahead of the router/standing branch in -main's per-role loop, so
+     both branches see it.
+  4. In a scratch fixture (never the live swarm): write
+     `.swarmforge/operator/gpu-pause.json` as
+     `{"active":true,"untilMs":<now + 30 min>}`, run babysitter's pure
+     swarm-starved check as QA did for BL-1950 (a gpu-quiet coder with no
+     session, three idle claude seats, 1 active ticket, prev-streak 2): it
+     still returns the CRIT and `{:action :ensure-control-plane}`, since
+     the swarm IS starved. Then run `./swarm ensure` against that fixture:
+     the coder seat's session stays absent and the report names it
+     GPU-paused.
+  5. Read swarmforge/scripts/gpu_pause_lib.bb's header and the runbook's
+     "A timed GPU quiet is not a stall" section: each names the readers
+     that exist.
+
+source: |
+  QA note 003800 to the specifier, 2026-10-04 18:49Z: "FYI BL-1950 QA
+  detail c6251ae959: starved ensure ignores gpu marker; docstring".
+  backlog/evidence/BL-1950-QA-20261004.md (c6251ae959), "Observations
+  outside this ticket's invariants", verbatim:
+
+  - **Swarm-starved can still restart the seat.** Its `./swarm ensure` repair
+    does not read the marker. It fires only when active tickets exist and no
+    parcel is held or pending anywhere (`motion-in-process?` treats any held
+    claim as motion), so it is a true starved-swarm recovery, not the paused
+    seat read as stalled. Its side effect is to recreate the coder session
+    inside the pause. Reproduced against the pure lib: a gpu-quiet coder with
+    its session missing, three idle claude seats, 1 active ticket and
+    prev-streak 2 gives `CRIT swarm-starved` and
+    `[{:action :ensure-control-plane}]`.
+  - **A docstring names a reader that does not exist.** `gpu_pause_lib.bb` says
+    "Babysitter and the claim-idle ladder read this same predicate". The
+    claim-idle ladder (handoffd / `chase_sweep_lib.bb`) does not read it. What
+    stops reclaims during the pause is BL-1649's `:paused-agent-absent`, which
+    resets the claim clock while qwen is dead. The behavior holds; the stated
+    mechanism is wrong.
+
+notes: |
+  Minted 2026-10-04 by the specifier on QA note 003800, after BL-1950
+  (the /gpu verb's stamp-off) closed. The second QA observation (the
+  docstring) is folded in: the fix makes ensure a reader of the same
+  predicate, so the docstring's reader list changes in the same parcel.
+  Where to read: swarmforge/scripts/swarm_ensure.bb is 1057 lines. Read
+  -main's per-role loop at ~995-1015 (the `(mapcat (fn [{:keys [role
+  session] :as row}] ...` that branches on `router?`), role-agent-token at
+  ~223, and ensure-component! at ~513 for the shape of a result row. The
+  predicates are gpu-pause-lib/pause-active? and local-model-seat? in
+  swarmforge/scripts/gpu_pause_lib.bb (40 lines; read it whole);
+  babysitter_check.bb reads the marker at ~184 (read-gpu-pause) - mirror
+  that read. Fixture harness: swarmforge/scripts/test/test_swarm_ensure.sh
+  drives ensure with a fake tmux; the step handler can use the same
+  injection. Docs: docs/how-to/BL-611-babysitterd-runbook.md ~544-557 says
+  "The repair that would call ./swarm ensure and start qwen again does not
+  fire", which is false for check 10 (swarm-starved); it names ensure
+  itself as the place the pause holds once this lands.
+  required_stages: Babashka production code is [coder, qa]; documenter is
+  added because the runbook and the gpu_pause_lib header describe the
+  readers.
+
+description: |
+  ## What is wanted
+
+  While the /gpu pause is active, ./swarm ensure leaves every seat whose
+  roles.tsv agent is local-model without a session, and its report names
+  that seat GPU-paused (not failed, not repaired). Every other seat,
+  including the master-resident ones, is ensured as before. Once
+  `untilMs` has passed, or /gpu off cleared the marker, the next ensure
+  recreates the seat as it does today.
+
+  Babysitter's swarm-starved finding stays as it is: a starved swarm is
+  still starved, and its ensure still restarts the rest of the control
+  plane. Only the quiet seat stays down.
+
+  ## How (direction, not mandate)
+
+  - One check in -main's per-role loop, ahead of the `router?` branch,
+    reading the marker the way babysitter_check.bb's read-gpu-pause does
+    and calling gpu-pause-lib/pause-active? and local-model-seat? on the
+    row's agent token.
+  - gpu_pause_lib.bb's header: babysitter and ./swarm ensure read the
+    predicate; reclaims stop during a pause because of BL-1649's
+    `:paused-agent-absent`, not the claim-idle ladder.
+
+  ## What each stage checks
+
+  - Coder: the three scenarios; test_swarm_ensure.sh passes.
+  - Documenter: the runbook's GPU-quiet section and the gpu_pause_lib
+    header name the readers that exist.
