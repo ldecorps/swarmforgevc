@@ -1052,6 +1052,37 @@
       (assert-false (str "print-task: a refused take-up of a " label " gives no work or completion steps")
                     (or (str/includes? out "2) Implement") (str/includes? out "done_with_current.sh"))))))
 
+;; ── print-task gives a reverse copy no work (2026-10-04) ─────────────────
+;; Served the architect's non-forwarding copy of BL-1851, the iq3 coder was
+;; told to read the spec, implement it and forward it. The copy is never
+;; taken up, so it rebuilt the shipped ticket on BL-1858's line.
+(let [d (mk-tmp-dir)
+      rc (str (fs/path d "00_r_from_architect_to_coder_for_coder.handoff"))
+      fwd (str (fs/path d "00_f_from_coordinator_to_coder_for_coder.handoff"))]
+  (spit rc (str/replace-first (git-handoff-content "abcdef0123" "BL-9001")
+                              "created_at:" "non-forwarding: true\ncreated_at:"))
+  (spit fwd (git-handoff-content "abcdef0123" "BL-9001"))
+  (assert-true "fixture: the reverse copy carries the marker" (handoff-lib/non-forwarding? rc))
+  (let [out (with-redefs [handoff-lib/current-role (constantly "coder@iq3")]
+              (with-out-str (handoff-lib/print-task rc {:task-mode? true :take-up :stay :next-stage "architect"
+                                                        :ticket-file "/x/backlog/active/BL-9001-a.yaml"})))
+        plain (with-redefs [handoff-lib/current-role (constantly "coder@iq3")]
+                (with-out-str (handoff-lib/print-task fwd {:task-mode? true :take-up :moved :next-stage "architect"})))]
+    (assert-true "print-task: a task-mode reverse copy says it carries no work"
+                 (str/includes? out "It carries no work for you"))
+    (assert-true "print-task: a task-mode reverse copy names done_with_current as the one step"
+                 (str/includes? out "2) Run now: swarmforge/scripts/done_with_current.sh"))
+    (doseq [[label needle] [["read or implement the ticket" "2) Read "] ["implement the ticket" "Implement BL-9001"]
+                            ["commit" "3) Commit"] ["forward" "Forward it to"] ["write a draft" "tmp/handoff.txt"]]]
+      (assert-false (str "print-task: a task-mode reverse copy is never told to " label)
+                    (str/includes? out needle)))
+    (assert-true "print-task: a forward parcel still gets the forward steps"
+                 (str/includes? plain "4) Forward it to architect"))
+    (assert-false "print-task: a forward parcel is not called a reverse copy"
+                  (str/includes? plain "reverse copy")))
+  (assert-true "print-task: a batch seat still merges a reverse copy's payload"
+               (str/includes? (with-out-str (handoff-lib/print-task rc)) "1) Execute the PAYLOAD (merge_and_process")))
+
 ;; ── print-task names the served ticket's file (2026-10-03) ──────────────
 ;; "Implement BL-1916 from backlog/active/" sent a local seat to README.md,
 ;; then to asking the user, then to a guessed backlog/active/BL-1916.md.

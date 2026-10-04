@@ -2021,7 +2021,17 @@
         (println "ACTION: This parcel is in_process but was NOT taken up - read the PARCEL_LINE line above.")
         (println "Do not start its work on this tree. Fix what PARCEL_LINE names, then run ready_for_next.sh again."))
       (println "ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it."))
-    (when (and (= "git_handoff" typ) (not not-taken-up?))
+    ;; 2026-10-04: a reverse copy (Article 2.4) carries no work in task mode
+    ;; (BL-1871) and is never taken up, but this branch told the iq3 coder
+    ;; "2) Read BL-1851's spec - then implement it ... 4) Forward it". The
+    ;; seat rebuilt a shipped ticket on another ticket's line until its
+    ;; window livelocked in compaction (27 compactions, no write).
+    (when (and (= "git_handoff" typ) (not not-taken-up?) task-mode? (non-forwarding? file))
+      (println "1) This is a reverse copy (non-forwarding: true). It carries no work for you: do not read or implement its ticket, and do not merge, commit or forward anything for it. Ignore the PAYLOAD's merge_and_process and replay lines.")
+      (println "2) Run now: swarmforge/scripts/done_with_current.sh   (no arguments)")
+      (println "USE YOUR TOOLS NOW. Narrating or re-printing this TASK is not progress."))
+    (when (and (= "git_handoff" typ) (not not-taken-up?)
+               (not (and task-mode? (non-forwarding? file))))
       (if task-mode?
         (println "1) ready_for_next.sh already put this worktree on the parcel's line (BL-1871): there is nothing to merge, and merge_and_process is not a shell command - do not run it.")
         (println "1) Execute the PAYLOAD (merge_and_process …) in this worktree."))
