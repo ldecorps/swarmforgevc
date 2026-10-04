@@ -172,3 +172,8 @@
   description: "judged the 9-10 tile phone grid's tile-head fit from residentSpyUiHtml.ts CSS and row-height arithmetic (~126px a row at 700px), no live Telegram/Bubble tunnel to see the crop; recorded by the specifier for the art-director (note 000027)"
   detected_at: 2026-10-03
   evidence: docs/design/briefs/2026-10-03-bl1858-live-grid-ten-tile-phone-row-crowding.md
+- category: stryker-dry-run-timeout-fallback
+  ticket: BL-1858
+  role: hardender
+  description: "Scoped Stryker run on backendSwitch.ts (211 mutants) timed out on dry run once (5-min ceiling, load ~9/20 cores), then on retry with --dryRunTimeoutMinutes 12 was reaped by handoffd_supervisor at its registration expiry mid-run (128/142 tested, 21 survived, host load 7-13/20 cores): stood in with hand-mutation verification of the D1/D3 bounce-fix's new code (modelLine break removal, agent-undefined guard, quote-strip regex, conf-fallback deletion) - all 4 confirmed real gaps, closed with failing-then-passing tests; matches this same file's prior hardener pass (array-of-tuples/agent-name-literal false/equivalent survivors documented 2026-10-03)."
+  detected_at: 2026-10-04
