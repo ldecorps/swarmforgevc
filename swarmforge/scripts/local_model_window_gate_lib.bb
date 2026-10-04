@@ -116,6 +116,31 @@
 
 (def dead-zone-reference-trigger (qwen-compaction-trigger dead-zone-reference-window))
 
+;; 2026-10-04 hotfix (the human: "Does it need to compact this early in?",
+;; then "Go"): behind the tool-call shim a compaction summary is capped at
+;; COMPACTION_OUTPUT_CAP (local_model_tool_call_shim.py), so most of qwen's
+;; qwen-compact-max-output-tokens reserve is never written. A seat behind
+;; the shim declares its served window plus shim-reclaim-tokens to qwen, and
+;; its trigger moves up by that much (73728 served: 40728 -> 55728), still
+;; 18000 under what Ollama serves. That gap holds the worst overshoot before
+;; qwen checks again: the last reply (the Modelfile's num_predict, 4096 for
+;; iq3), one tool batch (the seat settings' toolOutputBatchBudget, 24000
+;; chars, about 8000 tokens) and the shim-capped compaction call, about 2k
+;; short of the edge. The shim logs WINDOW_FULL if a prompt reaches it.
+(def shim-reclaim-tokens 15000)
+
+(defn declared-window
+  "The window a seat declares to qwen for `served` (the Modelfile's num_ctx,
+   read from Ollama - the one place the value is written): lifted by
+   shim-reclaim-tokens when the seat is behind the shim and `served` already
+   holds qwen's whole reserve (max-output + buffer), else `served` itself.
+   A smaller window is never lifted: there the lift lands in the dead zone,
+   or below 18000 sets qwen's trigger above what Ollama serves."
+  [served behind-shim?]
+  (if (and behind-shim? (pos? (- served qwen-compact-max-output-tokens qwen-compact-buffer-tokens)))
+    (+ served shim-reclaim-tokens)
+    served))
+
 ;; Derived, never hardcoded: the window at which the trigger climbs back up
 ;; to dead-zone-reference-trigger (60852 today) - the same formula, read
 ;; backwards from the reserved-tokens branch.

@@ -59,8 +59,12 @@
             ;; BL-1917: the entry's baseUrl is the seat's own URL (its
             ;; tool-call shim) when given; the window is still read from the
             ;; endpoint itself, which answers before any pane starts.
+            behind-shim? (not (or (str/blank? (str base-url)) (= base-url endpoint-url)))
+            ;; 2026-10-04 hotfix: behind the shim qwen is told a larger
+            ;; window than Ollama serves (declared-window says why).
             merged (local-model-qwen-provider-lib/merge-provider-entry
-                    existing model (if (str/blank? (str base-url)) endpoint-url base-url) window)]
+                    existing model (if behind-shim? base-url endpoint-url)
+                    (local-model-window-gate-lib/declared-window window behind-shim?))]
         (fs/create-dirs (fs/parent (fs/path settings-file)))
         (spit (str settings-file) (json/generate-string merged {:pretty true}))
         :written))))

@@ -208,6 +208,19 @@ class OutputBudgetTests(unittest.TestCase):
         self.assertIsNone(shim.num_predict_of({"error": "model not found"}))
         self.assertIsNone(shim.num_predict_of(None))
 
+    def test_num_ctx_is_read_from_the_show_parameters(self) -> None:
+        self.assertEqual(shim.num_ctx_of({"parameters": "num_ctx     73728\nnum_predict 4096"}), 73728)
+        self.assertIsNone(shim.num_ctx_of({"parameters": "num_predict 4096"}))
+        self.assertIsNone(shim.num_ctx_of(None))
+
+    def test_window_full_flags_a_prompt_at_the_served_edge_only(self) -> None:
+        edge = 73728 - shim.WINDOW_FULL_MARGIN
+        self.assertEqual(shim.window_full({"usage": {"prompt_tokens": edge}}, 73728), edge)
+        self.assertIsNone(shim.window_full({"usage": {"prompt_tokens": edge - 1}}, 73728))
+        self.assertIsNone(shim.window_full({"usage": {"prompt_tokens": 80000}}, None))
+        self.assertIsNone(shim.window_full({"choices": []}, 73728))
+        self.assertIsNone(shim.window_full("not json", 73728))
+
     def test_a_budget_above_the_cap_is_lowered_and_nothing_else_moves(self) -> None:
         request = {"model": "x", "max_tokens": 13000, "max_completion_tokens": 9000, "temperature": 0.3}
         out, lowered = shim.clamp_output_budget(request, 4096)

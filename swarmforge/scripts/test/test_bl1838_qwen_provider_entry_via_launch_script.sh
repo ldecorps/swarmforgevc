@@ -77,8 +77,13 @@ d = json.load(open("'"$SETTINGS"'"))
 providers = (d.get("modelProviders") or {}).get("openai") or []
 print(providers[0]["generationConfig"]["contextWindowSize"] if providers else "")
 ')"
-[[ "$WINDOW" == "65536" ]] || fail "expected contextWindowSize 65536 (the context-length fallback), got: '$WINDOW'"
-pass "the entry is budgeted to SWARMFORGE_OLLAMA_CONTEXT_LENGTH when the served window is unreachable"
+# 2026-10-04 hotfix: the launch path puts the seat behind the tool-call shim,
+# so qwen is told the fallback window as declared-window lifts it - read
+# from the lib, never retyped here.
+EXPECTED="$(bb -e "(load-file \"$SCRIPT_DIR/../local_model_window_gate_lib.bb\") (println (local-model-window-gate-lib/declared-window 65536 true))")"
+[[ "$EXPECTED" -gt 65536 ]] || fail "expected declared-window to lift 65536 behind the shim, got: '$EXPECTED'"
+[[ "$WINDOW" == "$EXPECTED" ]] || fail "expected contextWindowSize $EXPECTED (the context-length fallback, lifted behind the shim), got: '$WINDOW'"
+pass "the entry is budgeted to SWARMFORGE_OLLAMA_CONTEXT_LENGTH when the served window is unreachable, lifted behind the shim"
 
 # 2026-10-04 hotfix: the seat's qwen runs on the short seat prompt.
 LAUNCH="$ROOT/.swarmforge/launch/coder.sh"

@@ -36,7 +36,7 @@ FROM hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S
 # overhead now measures ~12.9k prompt tokens on the first turn (BL-1801's
 # fit check passes at 32768). The dead-zone gate refuses 49152, but only a
 # full ./swarm launch runs it; a one-seat launch-script regeneration did not.
-# 73728 without the vision projector (2026-10-04, specifier; the human:
+# The window below, without the vision projector (2026-10-04, specifier; the human:
 # "find the sweet spot for the context window ... the size at which the
 # coder churns the fastest", then "Ok for the bigger window"). Measured on
 # the RTX 5060 Ti 16 GB with q8_0 KV: only 16 of the 64 layers keep a KV
@@ -44,22 +44,25 @@ FROM hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S
 # so without the projector the KV budget is ~73.7k tokens. 65536 and 73728
 # run 100% on the GPU at today's speed (decode 27.4 tok/s at 2k, 22.7 at
 # 34k; prefill ~800 tok/s). 81920 put 2 of 65 layers on the CPU (decode
-# 16.1 -> 10.6) and 98304 4 layers (9.9 -> 6.3). qwen compacts at 40728
-# here (27852 at 32768), and from ~61k up it can share the prompt cache for
-# a compaction. The projector (0.93 GB + 248 MiB CLIP compute) is what
-# 73728 needs; the coder read no image in 62 sessions. FROM the hf tag
-# pulls the projector, so apply in two steps (the second FROM names only
-# the weights blob, the first FROM line of the dumped Modelfile):
+# 16.1 -> 10.6) and 98304 4 layers (9.9 -> 6.3). The PARAMETER lines below
+# are the one place the window is written: the launch reads it back from
+# Ollama, and local_model_window_gate_lib.bb derives qwen's declared window
+# and compaction trigger from it (behind the shim qwen compacts 18000 under
+# it, from ~61k up sharing the prompt cache). The projector (0.93 GB +
+# 248 MiB CLIP compute) is what this window needs; the coder read no image
+# in 62 sessions. FROM the hf tag pulls the projector, so apply in two
+# steps (the second FROM names only the weights blob, the first FROM line of
+# the dumped Modelfile, and copies this file's PARAMETER lines):
 #   ollama create ista-iq3s-coder-vision:latest -f swarmforge/packs/ista-iq3s-coder.Modelfile
 #   W=$(ollama show --modelfile ista-iq3s-coder-vision:latest | awk '/^FROM \//{print $2; exit}')
-#   printf 'FROM %s\nTEMPLATE {{ .Prompt }}\nPARAMETER num_ctx 73728\nPARAMETER num_predict 4096\n' "$W" > tmp/iq3.Modelfile
+#   { sed "s|^FROM .*|FROM $W|" swarmforge/packs/ista-iq3s-coder.Modelfile; echo 'TEMPLATE {{ .Prompt }}'; } > tmp/iq3.Modelfile
 #   ollama create ista-iq3s-coder:latest -f tmp/iq3.Modelfile
-# The -vision build is a build source only: at 73728 with its projector it
-# spills to the CPU. Kept without vision on trial (the human: "let's try &
+# The -vision build is a build source only: at this window with its
+# projector it spills to the CPU. Kept without vision on trial (the human: "let's try &
 # see over time if not having vision is an issue"). If vision is needed:
 # with the projector only ~38k fits at q8_0, inside qwen's dead zone, so
 # that means back to 32768; untested, OLLAMA_KV_CACHE_TYPE=q4_0 halves KV
-# to ~17 KiB/token and should fit 73728 WITH the projector, at some cost to
+# to ~17 KiB/token and should fit this window WITH the projector, at some cost to
 # long-context recall, for every model the server runs.
 PARAMETER num_ctx 73728
 PARAMETER num_predict 4096

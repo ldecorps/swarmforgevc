@@ -78,6 +78,22 @@
 (assert= "60852 does not flag (back up to the reference trigger)" false (local-model-window-gate-lib/in-dead-zone? 60852))
 (assert= "65536 does not flag" false (local-model-window-gate-lib/in-dead-zone? 65536))
 
+;; ── 2026-10-04 hotfix: declared-window ──────────────────────────────────────
+(let [dw local-model-window-gate-lib/declared-window
+      trigger local-model-window-gate-lib/qwen-compaction-trigger
+      reclaim local-model-window-gate-lib/shim-reclaim-tokens]
+  (assert= "behind the shim, 73728 is lifted by the reclaim" (+ 73728 reclaim) (dw 73728 true))
+  (assert= "the lifted trigger is 55728, up from 40728" [55728 40728] [(trigger (dw 73728 true)) (trigger 73728)])
+  (assert= "not behind the shim, the served window is declared as is" 73728 (dw 73728 false))
+  (assert= "32768 is never lifted: the lift would land in the dead zone" 32768 (dw 32768 true))
+  (assert= "16384 is never lifted: qwen would compact above the served window" 16384 (dw 16384 true))
+  (assert-true* "every lift raises qwen's trigger"
+                (every? #(let [d (dw % true)] (or (= d %) (> (trigger d) (trigger %))))
+                        (range 16384 262145 1024)))
+  (assert-true* "every lift keeps qwen's trigger at least 18000 under the served window"
+                (every? #(let [d (dw % true)] (or (= d %) (<= (trigger d) (- % 18000))))
+                        (range 16384 262145 1024))))
+
 ;; boundary: just inside the dead zone at both edges.
 (assert= "33001 flags (one past the reference window)" true (local-model-window-gate-lib/in-dead-zone? 33001))
 (assert= "33000 does not flag (the pct branch still applies there)" false (local-model-window-gate-lib/in-dead-zone? 33000))

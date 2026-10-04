@@ -2144,6 +2144,10 @@ EOF
 # works a whole parcel in one turn, so the default 100-call cap halts big
 # tickets too; 300 keeps a backstop. qwen's always-on guards (identical
 # consecutive calls, repeated shell inspection) stay on.
+# 2026-10-04: tools.toolOutputBatchBudget 24000 chars (qwen's default is
+# 200000). Behind the shim a seat declares a larger window than Ollama
+# serves (local_model_window_gate_lib.bb declared-window), and one tool
+# batch is part of the overshoot that window must still hold.
 write_local_model_qwen_settings() {
   local worktree="$1"
   local model="${2:-}"
@@ -2160,7 +2164,8 @@ write_local_model_qwen_settings() {
   "excludeTools": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal", "ask_user_question", "enter_plan_mode", "exit_plan_mode", "propose_goal"],
   "tools": {
     "core": ["run_shell_command", "read_file", "write_file", "edit", "glob", "grep_search"],
-    "exclude": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal", "ask_user_question", "enter_plan_mode", "exit_plan_mode", "propose_goal"]
+    "exclude": ["agent", "enter_worktree", "exit_worktree", "get_goal", "list_agents", "record_artifact", "report_findings", "send_message", "skill", "task_stop", "tool_search", "update_goal", "ask_user_question", "enter_plan_mode", "exit_plan_mode", "propose_goal"],
+    "toolOutputBatchBudget": 24000
   },
   "permissions": {
     "deny": ["Bash(sudo *)", "Bash(apt *)", "Bash(apt-get *)", "Bash(pip install *)", "Bash(pip3 install *)"]

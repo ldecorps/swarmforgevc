@@ -81,6 +81,9 @@ HOP_BY_HOP = {"host", "content-length", "connection", "transfer-encoding", "acce
 OUTPUT_BUDGET_KEYS = ("max_tokens", "max_completion_tokens")
 OUTPUT_CAP_TTL_S = 300.0
 COMPACTION_OUTPUT_CAP = 1200
+# 2026-10-04: a prompt this close to the served window was cut, or nearly:
+# Ollama drops the front of a prompt longer than num_ctx without an error.
+WINDOW_FULL_MARGIN = 1024
 COMPACTION_MARKERS = (
     "You are the component that summarizes a conversation",
     "First, reason in your <analysis> block. Then, produce the <state_snapshot> XML.",
@@ -325,16 +328,37 @@ def completion_to_chunks(completion: dict[str, Any], include_usage: bool) -> lis
     return chunks
 
 
-def num_predict_of(show: Any) -> int | None:
-    """The positive num_predict an Ollama /api/show answer declares, else None
-    (absent, unreadable, or -1/-2, which Ollama reads as unlimited)."""
+def _positive_param(show: Any, name: str) -> int | None:
     params = show.get("parameters") if isinstance(show, dict) else None
     for line in str(params or "").splitlines():
         parts = line.split()
-        if len(parts) == 2 and parts[0] == "num_predict" and re.fullmatch(r"-?\d+", parts[1]):
+        if len(parts) == 2 and parts[0] == name and re.fullmatch(r"-?\d+", parts[1]):
             value = int(parts[1])
             return value if value > 0 else None
     return None
+
+
+def num_predict_of(show: Any) -> int | None:
+    """The positive num_predict an Ollama /api/show answer declares, else None
+    (absent, unreadable, or -1/-2, which Ollama reads as unlimited)."""
+    return _positive_param(show, "num_predict")
+
+
+def num_ctx_of(show: Any) -> int | None:
+    """The window the model is served with (its Modelfile's num_ctx), else None."""
+    return _positive_param(show, "num_ctx")
+
+
+def window_full(completion: Any, num_ctx: int | None) -> int | None:
+    """The completion's prompt_tokens when they reach WINDOW_FULL_MARGIN of the
+    served window, else None. A seat behind the shim declares a larger window
+    to qwen than Ollama serves (local_model_window_gate_lib.bb declared-window),
+    so this is the one place an overshoot can be seen."""
+    usage = completion.get("usage") if isinstance(completion, dict) else None
+    prompt = usage.get("prompt_tokens") if isinstance(usage, dict) else None
+    if not num_ctx or not isinstance(prompt, int):
+        return None
+    return prompt if prompt >= num_ctx - WINDOW_FULL_MARGIN else None
 
 
 def clamp_output_budget(request: dict[str, Any], cap: int | None) -> tuple[dict[str, Any], int | None]:
@@ -485,12 +509,12 @@ class ShimHandler(BaseHTTPRequestHandler):
                     _log(f"passthrough model={request.get('model')} budget={lowered}->{clamped.get('max_tokens', clamped.get('max_completion_tokens'))}")
         self._passthrough(body)
 
-    def _output_cap(self, model: Any) -> int | None:
-        """The model's Modelfile num_predict, cached for OUTPUT_CAP_TTL_S so an
-        `ollama create` is picked up without a restart. A failed lookup is not
-        cached and leaves the request unclamped."""
+    def _limits(self, model: Any) -> tuple[int | None, int | None]:
+        """The model's Modelfile (num_predict, num_ctx), cached for
+        OUTPUT_CAP_TTL_S so an `ollama create` is picked up without a restart.
+        A failed lookup is not cached and leaves the request unclamped."""
         if not isinstance(model, str) or not model:
-            return None
+            return None, None
         cached = self.output_caps.get(model)
         if cached and time.monotonic() - cached[1] < OUTPUT_CAP_TTL_S:
             return cached[0]
@@ -500,11 +524,22 @@ class ShimHandler(BaseHTTPRequestHandler):
         )
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
-                cap = num_predict_of(json.loads(resp.read() or b"{}"))
+                show = json.loads(resp.read() or b"{}")
         except (urllib.error.URLError, OSError, ValueError):
-            return None
-        self.output_caps[model] = (cap, time.monotonic())
-        return cap
+            return None, None
+        limits = (num_predict_of(show), num_ctx_of(show))
+        self.output_caps[model] = (limits, time.monotonic())
+        return limits
+
+    def _output_cap(self, model: Any) -> int | None:
+        return self._limits(model)[0]
+
+    def _log_window_full(self, kind: str, model: Any, payload: Any) -> None:
+        num_ctx = self._limits(model)[1]
+        prompt = window_full(payload, num_ctx)
+        if prompt is not None:
+            _log(f"WINDOW_FULL {kind} model={model} prompt_tokens={prompt} num_ctx={num_ctx} "
+                 "- Ollama may have cut the front of this prompt")
 
     def _read_body(self) -> bytes:
         length = int(self.headers.get("content-length") or 0)
@@ -593,6 +628,7 @@ class ShimHandler(BaseHTTPRequestHandler):
                     payload, ok = merge_nudged(payload, nudged)
                 nudge = "ok" if ok else "no-call"
         finish = ((payload.get("choices") or [{}])[0] or {}).get("finish_reason") if isinstance(payload, dict) else None
+        self._log_window_full("chat", request.get("model"), payload)
         _log(f"chat model={request.get('model')} status={status} tools={len(request.get('tools') or [])} "
              f"history_stripped={stripped} rewritten={rewritten} nudge={nudge} finish={finish}"
              + (f" budget={lowered}->{clamped.get('max_tokens', clamped.get('max_completion_tokens'))}" if lowered is not None else ""))
@@ -615,6 +651,7 @@ class ShimHandler(BaseHTTPRequestHandler):
         if status == 200 and isinstance(payload, dict):
             payload, salvaged = salvage_analysis_only(payload)
             payload, closed = close_cut_snapshot(payload)
+        self._log_window_full("compaction", request.get("model"), payload)
         choice = ((payload.get("choices") or [{}])[0] or {}) if isinstance(payload, dict) else {}
         message = choice.get("message") or {}
         head = str(message.get("content") or "").lstrip()[:24].replace("\n", " ")
