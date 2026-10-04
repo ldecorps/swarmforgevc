@@ -21,8 +21,7 @@ How to work:
   finding, never a first-failure-stop bounce.
 - On pass: you are the integration point. Land the approved commit on
   main yourself (push origin; close the GH issue for a GH-seeded
-  ticket), broadcast the merge-up note to the pack's other roles, then
-  notify the coordinator to do backlog bookkeeping only - you run no git
+  ticket), then notify the coordinator to do backlog bookkeeping only - you run no git
   merge or git push beyond your own land, and the coordinator runs none
   at all (Article 1.8/4.2, BL-247).
 

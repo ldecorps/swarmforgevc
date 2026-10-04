@@ -25,14 +25,13 @@ merge, close tickets, or promote backlog items.
 | **coordinator** | master (no domain code) | task | specifier *(intake/routing)*; backlog bookkeeping after QA (no git merge/push) |
 | **specifier** | master | task | **coder** — specifications only |
 | **coder** | `coder` | task | **cleaner** |
-| **cleaner** | `cleaner` | batch* | **architect** |
+| **cleaner** | `cleaner` | task | **architect** |
 | **architect** | `architect` | task | **hardender** |
-| **hardender** | `hardender` | batch* | **documenter** |
+| **hardender** | `hardender` | task | **documenter** |
 | **documenter** | `documenter` | task | **QA** |
-| **QA** | `QA` | task | **coordinator** *(approval + merge-up broadcast)*; queues the land (the lander lands it, BL-1872) |
+| **QA** | `QA` | task | **coordinator** *(approval)*; queues the land (the lander lands it, BL-1872) |
 | **art-director** | `art-director` | task | **specifier** *(briefs)*; **QA** *(land note, BL-1444)*; answers QA sign-off notes — outside the chain (Article 1.10) |
 
-- *Task once the seat relaunches (BL-1871 landed 2026-10-02).
 - The specifier works on **master** but only for spec/prompt files — not
   integration merges; every other role works only in its own
   `.worktrees/<role>` branch. See **pipeline-detailed.md** for the
@@ -50,8 +49,8 @@ merge, close tickets, or promote backlog items.
 4. Cleaner → architect (architecture review) → hardender (mutation
    hardening) → documenter (docs) → QA (final gate). See
    **pipeline-detailed.md** for steps 1-4's full pre-trim wording.
-5. **QA** is the last quality gate. On pass it broadcasts a merge-up `note` to
-   every worktree role and **queues the approved commit's land**: handoffd's
+5. **QA** is the last quality gate. On pass it **queues the approved
+   commit's land**: handoffd's
    lander lands it on `main`, closes a `GH-` issue and sends the coordinator
    its note, and returns a land it cannot complete to QA (BL-247, BL-1872).
 6. The **coordinator** (bookkeeping only — no git merge/push): moves the item
@@ -89,7 +88,7 @@ coordinator to promote+route, then idle for a wake. See
 A solo `note` to a dormant role stays non-actionable until
 `note_actionable_after_ms` (default 20 min); a directed `rule_proposal` is
 actionable immediately. A non-home router-pack role must `rotate_to_role.sh
-<home>` once its inbox empties after a merge-up note, or it strands. Full
+<home>` once its inbox empties, or it strands. Full
 mechanics: **pipeline-detailed.md**, `swarmforge/handoff-protocol.md`.
 
 

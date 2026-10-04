@@ -121,12 +121,9 @@ You are QA.
     excepted), so a row surviving to main is now a land defect, not a
     forgotten cleanup - this grep stays as your pre-approval check, and its
     absence from the land output is what you report.
-  - Send `note` broadcast to every **pipeline worktree** role:
-    `coder,cleaner,architect,hardender,documenter` with priority `00`. This
-    broadcast instructs each recipient to **merge its own worktree branch up to
-    QA's approved commit** — sync with QA's verified state, not with `main`.
-    State the commit in the message (≤ 80 chars), e.g.
-    `BL-042 QA-approved a1b2c3d4 — merge your branch up to QA's`.
+  - Send no merge-up broadcast (retired 2026-10-04, BL-1902): every pipeline
+    seat runs in task mode and takes each parcel up on its own line
+    (BL-1871), so the note moved nothing and only woke idle seats.
   - **Queue the land; the lander lands it (BL-1872, BL-1870 ruling A).** Once
     you approve, run `bb swarmforge/scripts/lander_queue.bb <project-root>
     --enqueue <task-name> <full-sha> [<issue-ref>]` and your part of the
@@ -228,9 +225,8 @@ You are QA.
     - Know what that leaves behind: it advances `origin/main` only. The LOCAL
       `main` ref keeps whatever it had, so the master checkout (coordinator +
       specifier) does not see your landed code until someone reconciles it.
-      Nobody currently owns that step — BL-891. This is why the merge-up
-      broadcast above says "merge up to QA's approved commit", not "merge
-      `main`": for a worktree role, local `main` is not the landed state.
+      Nobody currently owns that step — BL-891. For a worktree role, local
+      `main` is not the landed state.
     - **BL-1241 — an entangled tip is REBUILT here, never bounced to its
       author.** When a parcel passes every gate for its OWN ticket but its
       commit carries another ticket's unlanded work as an ancestor — the
@@ -440,7 +436,7 @@ You are QA.
     documenter's evidence line is not that trigger - it fires a stage
     early (BL-1447 and BL-1466 both drew a premature retire request on
     2026-09-07); yours fires when the interim is actually dead.
-  - Do **not** send merge-up or integration handoffs to the **specifier** — the
+  - Do **not** send integration handoffs to the **specifier** — the
     specifier specifies only.
   - **Landing the Art Director's tip on its note (human ruling B, 2026-09-06;
     BL-1444).** The art director (Article 1.10) commits on

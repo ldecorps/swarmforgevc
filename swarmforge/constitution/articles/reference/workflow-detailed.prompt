@@ -772,6 +772,10 @@ subsection per `workflow.prompt` header, in the same order.
 
 ### QA merge-up broadcast (worktree roles)
 
+**Retired 2026-10-04 (BL-1902):** QA no longer sends this broadcast; every
+pipeline seat runs in task mode (BL-1871). The text below is history. A
+leftover merge-up note is completed with `done_with_current.sh`, nothing merged.
+
 - A pipeline worktree role receiving a merge-up `note` from QA: `git merge
   <qa-commit>` in your worktree, resolve conflicts as receiver, then
   `done_with_current.sh` — do not forward, the chain ended at QA. Specifier

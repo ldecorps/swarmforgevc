@@ -67,8 +67,7 @@
 - **Worktree**: `.worktrees/QA`.
 - **Responsibilities**:
   - Runs final tests and quality checks.
-  - On pass: broadcasts merge-up to the worktree roles and **queues the
-    approved commit's land**; handoffd's lander pushes it, closes a `GH-`
+  - On pass: **queues the approved commit's land**; handoffd's lander pushes it, closes a `GH-`
     issue, notifies the coordinator, and returns a land it cannot complete
     to QA (BL-1872). QA is the
     integration point (BL-247).

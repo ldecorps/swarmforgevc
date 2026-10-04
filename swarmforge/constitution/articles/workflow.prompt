@@ -103,11 +103,10 @@
   --left-right --count main...origin/main` before trusting either, and
   read the one that is ahead (BL-891). See **workflow-detailed.prompt**.
 
-## QA merge-up broadcast (worktree roles)
-- A worktree role's QA merge-up `note`: in task mode merge nothing
-  (BL-1871); a batch seat runs `git merge <qa-commit>`, resolves
-  conflicts, then `done_with_current.sh`. Never forward it. Specifier and coordinator are not
-  recipients (BL-247). See **workflow-detailed.prompt**.
+## QA merge-up notes (retired, BL-1902)
+- QA no longer broadcasts them. One left in a worktree role's mailbox:
+  in task mode merge nothing (BL-1871), complete it with
+  `done_with_current.sh`, never forward it. See **workflow-detailed.prompt**.
 
 ## Announcements, Commit Messages, Temporary Files
 - Announcements/check-in comments: no role bylines. Every git commit

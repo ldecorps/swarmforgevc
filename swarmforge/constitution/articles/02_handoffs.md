@@ -45,31 +45,28 @@ to every caller — a script sender with no agent to read and resubmit
 speaks the same two-call protocol itself via `handoff_lib.bb`'s
 `queue-git-handoff!`.
 
-**Reverse hops.** Pack windows may declare `forward-only` (default),
-`back-one`, or `back-all` after the receive mode. On a queued `git_handoff`,
-the helper also writes priority-`00` `non-forwarding: true` copies to the
-previous role (`back-one`) or all earlier pipeline roles (`back-all`),
-never to `coordinator`. Agents draft only the forward `to:`; reverses are
-helper-synthesized. The last non-coordinator pack role's forward
-`git_handoff` is also stamped `non-forwarding: true` (terminal).
+**Reverse hops.** A pack window may declare `back-one` or `back-all`
+(default `forward-only`): a queued `git_handoff` then also writes
+priority-`00` `non-forwarding: true` copies to the previous or all earlier
+roles, never `coordinator`; agents draft only the forward `to:`. Until
+BL-1902 lands and the swarm relaunches, the live cleaner and architect
+declare them. The last non-coordinator role's forward is also stamped
+`non-forwarding: true` (terminal).
 
 ## 2.4 Receiving Rules
 Use `ready_for_next.sh` to receive work (checks `in_process/` first). Batch
-roles process several parcels at once (the live cleaner and hardener,
-until they relaunch). A parcel stuck in `inbox/new/` >10 minutes: the coordinator
-must chase it. See **02-handoffs-detailed.md**.
+roles process several parcels at once. A parcel stuck in `inbox/new/` >10
+minutes: the coordinator must chase it. See **02-handoffs-detailed.md**.
 
 A `non-forwarding: true` inbound sends no `git_handoff` (refused while it is
 `in_process`). In task mode merge nothing (parcel lines, BL-1871). A batch
 seat is **merge-only**: merge the payload, then `done_with_current.sh`.
 
 ## 2.5 Merge-Up Protocol
-The full sequence (QA broadcast → land on `main` → coordinator bookkeeping)
-is stated in `PIPELINE.md` steps 5–6 — not repeated here. Draft-format
-mechanics: 2.2/2.3 above. See **02-handoffs-detailed.md**.
-
-A QA merge-up **note** moves nothing in task mode (BL-1871); a batch seat
-still merges it.
+The sequence (QA queues the land → lander lands on `main` → coordinator
+bookkeeping) is `PIPELINE.md` steps 5–6. QA sends no merge-up broadcast
+(BL-1902); one left in a mailbox moves nothing in task mode (BL-1871). See
+**02-handoffs-detailed.md**.
 
 ## 2.6 Multi-Ticket Batch Forwards Carry Every Ticket ID
 - A `git_handoff` names ONE ticket. When a batch role's committed work
