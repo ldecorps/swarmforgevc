@@ -129,3 +129,5 @@ description: |
     test_bl1970_local_model_edit_hook.sh and the BL-1949 shell test pass.
   - Documenter: the local-model seat launch how-to names the edit hook
     beside the PreCompact one.
+
+assigned_to: coder
