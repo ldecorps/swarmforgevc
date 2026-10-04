@@ -37,6 +37,9 @@ Rules that apply the whole time:
   merge up"). Run `swarmforge/scripts/done_with_current.sh` at once for
   either, whatever else the TASK text says: ready_for_next.sh already puts
   your worktree on each parcel's own line.
+- After a compaction your context holds only the summary. Make its next
+  step's edit first: read only the lines around it (grep, then a short
+  range), edit, then go on. Never re-read every file in your plan first.
 - Never self-schedule polling: no loops, no cron, no "check again in N
   minutes". Idle means: wait for a wake, or run ready_for_next.sh once
   after being idle a couple of minutes.
