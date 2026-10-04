@@ -179,6 +179,24 @@ test('BL-609: crowded-grid pre rule is a relative step below the chosen size', (
   );
 });
 
+test('BL-1858 D3: the 9/10-tile crowded step packs .pane-head and the grid tile content, without touching -7/-8', () => {
+  const html = getResidentSpyUiHtml();
+  // The new sibling rule tightens the tile head for -9/-10 only.
+  assert.match(
+    html,
+    /\.split\.pane-count-9 \.pane-head,\s*\.split\.pane-count-10 \.pane-head\s*\{\s*padding:\s*10px 8px;\s*gap:\s*6px;\s*\}/
+  );
+  // ...and steps the grid tile's visible content one font step down.
+  assert.match(
+    html,
+    /\.split\.pane-count-9 \.pane-grid-model,[\s\S]*?\.split\.pane-count-10 \.pane-grid-age\s*\{\s*font-size:\s*calc\(clamp\(8px, 2\.8vw, 10px\)\s*-\s*2px\);\s*\}/
+  );
+  // Additive only: the -7/-8 crowded values are unchanged.
+  assert.match(html, /\.split\.pane-count-7 \.pane-title,\s*\.split\.pane-count-8 \.pane-title,\s*\.split\.pane-count-9 \.pane-title,\s*\.split\.pane-count-10 \.pane-title \{ font-size: 11px; \}/);
+  assert.doesNotMatch(html, /\.split\.pane-count-7 \.pane-head|\.split\.pane-count-8 \.pane-head/);
+  assert.doesNotMatch(html, /\.split\.pane-count-7 \.pane-grid-model|\.split\.pane-count-8 \.pane-grid-model/);
+});
+
 test('BL-609: +/- control lives outside #fs-head and survives a fullscreen refresh', async () => {
   const claimAt = Date.now() - 90_000;
   const dom = renderScreen(() =>
@@ -301,6 +319,46 @@ test('BL-1046: a single held parcel does not show a batch +N badge', async () =>
   const col = dom.window.document.querySelector('.pane-col[data-pane-id="QA"]');
   assert.equal(col.querySelector('.pane-grid-ticket-id')?.textContent, 'BL-1041');
   assert.equal(col.querySelector('.pane-grid-more'), null);
+  dom.window.close();
+});
+
+test('BL-1858: grid tile shows the seat\'s model under the role name', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        {
+          id: 'coder@2',
+          label: 'Coder@2',
+          pane: pane({ roleLabel: 'Coder@2', modelLabel: 'Qwen2.5 Coder 14B' }),
+        },
+      ],
+    })
+  );
+  await flush();
+  const col = dom.window.document.querySelector('.pane-col[data-pane-id="coder@2"]');
+  assert.equal(col.querySelector('.pane-grid-model')?.textContent, 'Qwen2.5 Coder 14B');
+  dom.window.close();
+});
+
+test('BL-1858: an unavailable pane shows no model, even when the payload still carries one', async () => {
+  const dom = renderScreen(() =>
+    residentPaneResponse({
+      available: true,
+      monoRouterLayout: false,
+      panes: [
+        {
+          id: 'coder@2',
+          label: 'Coder@2',
+          pane: { available: false, roleLabel: 'Coder@2', modelLabel: 'Qwen2.5 Coder 14B' },
+        },
+      ],
+    })
+  );
+  await flush();
+  const col = dom.window.document.querySelector('.pane-col[data-pane-id="coder@2"]');
+  assert.equal(col.querySelector('.pane-grid-model'), null);
   dom.window.close();
 });
 

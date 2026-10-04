@@ -68,6 +68,21 @@ test('readRoleModelId falls back to swarmforge.conf when settings file is absent
   assert.equal(readRoleModelId(tmp, 'coder'), 'claude-sonnet-5');
 });
 
+test('readRoleModelId reads --model from an unrecognized-agent launch script via the whole-script fallback (BL-1858 D1)', () => {
+  const tmp = mkTmp();
+  fs.mkdirSync(path.join(tmp, '.swarmforge', 'launch'), { recursive: true });
+  // No known agent token (cursor-agent/copilot/codex/aider/gemini/vibe/grok/
+  // qwen/claude) anywhere in this script, so detectLaunchScriptAgent finds
+  // none and findAgentCommandLine has no agent line to search for -
+  // readLaunchScriptModel must still fall back to matching --model over the
+  // whole script rather than losing the value.
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    '#!/bin/bash\nsome-future-cli --model future-model-x --flag value\n'
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'future-model-x');
+});
+
 test('readRoleModelId prefers launch script --model over swarmforge.conf for aider roles', () => {
   const tmp = mkTmp();
   const launchDir = path.join(tmp, '.swarmforge', 'launch');
@@ -82,6 +97,84 @@ test('readRoleModelId prefers launch script --model over swarmforge.conf for aid
     'window coder claude coder --model claude-sonnet-5\n'
   );
   assert.equal(readRoleModelId(tmp, 'coder'), 'openai/qwen3.7-plus');
+});
+
+test('readRoleModelId reads the qwen model from the agent line, not the snapshot CLI line (BL-1858 D1)', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5' });
+  // Real two-line launch shape since BL-1850: the local-seat settings
+  // snapshot CLI line (quoted --model tag) precedes the qwen command line.
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    [
+      '#!/bin/bash',
+      "bb '/tmp/scripts/local_seat_settings_snapshot_cli.bb' '/tmp/wt' --seat 'coder' --model 'qwen2.5-coder-14b-q5km' --endpoint-url 'http://127.0.0.1:8080/v1' --card '/tmp/card.md' --worktree '/tmp/wt' >/dev/null 2>>'/tmp/state/launch/coder.seat-settings.log' || true",
+      'qwen --auth-type openai -y --model qwen2.5-coder-14b-q5km -i "Use read_file now to read \'/tmp/card.md\' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root)."',
+      '',
+    ].join('\n')
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'qwen2.5-coder-14b-q5km');
+});
+
+test('readRoleModelId shows no model when a non-Claude launch script names no --model (BL-1858 D3)', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5' });
+  // Real launch shape: the snapshot CLI line carries a quoted --model tag,
+  // the qwen agent line carries none. The stale claude settings file must
+  // not win the tile label - the seat runs its agent's default model.
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    [
+      '#!/bin/bash',
+      "bb '/tmp/scripts/local_seat_settings_snapshot_cli.bb' '/tmp/wt' --seat 'coder' --model 'qwen2.5-coder-14b-q5km' --endpoint-url 'http://127.0.0.1:8080/v1' --card '/tmp/card.md' --worktree '/tmp/wt' >/dev/null 2>>'/tmp/state/launch/coder.seat-settings.log' || true",
+      'qwen --auth-type openai -y -i "Use read_file now to read \'/tmp/card.md\' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root)."',
+      '',
+    ].join('\n')
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), undefined);
+});
+
+test('readRoleModelId falls back to swarmforge.conf when a non-Claude launch script names no --model (BL-1858 D3)', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5' });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    '#!/bin/bash\nqwen --auth-type openai -y -i "go"\n'
+  );
+  fs.mkdirSync(path.join(tmp, 'swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'swarmforge', 'swarmforge.conf'),
+    'window coder claude coder --model conf-fallback-model\n'
+  );
+  // The stale claude settings file (claude-sonnet-5) must still lose to the
+  // conf fallback - prefersLaunchOverClaudeSettings skips it even when the
+  // launch script itself names no model.
+  assert.equal(readRoleModelId(tmp, 'coder'), 'conf-fallback-model');
+});
+
+test('readRoleModelId reads a double-quoted --model tag from the agent line (BL-1858 D1)', () => {
+  const tmp = mkTmp();
+  fs.mkdirSync(path.join(tmp, '.swarmforge', 'launch'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    '#!/bin/bash\naider --model "openai/qwen3.7-plus" --openai-api-base https://example/v1\n'
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'openai/qwen3.7-plus');
+});
+
+test('readRoleModelId takes the FIRST agent-line --model when the agent pattern matches more than one line (BL-1858 D1)', () => {
+  const tmp = mkTmp();
+  fs.mkdirSync(path.join(tmp, '.swarmforge', 'launch'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    [
+      '#!/bin/bash',
+      'aider --model first-model --openai-api-base https://example/v1',
+      'aider --model second-model --openai-api-base https://example/v1',
+      '',
+    ].join('\n')
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'first-model');
 });
 
 test('readRoleModelId prefers aider launch script over stale claude settings file', () => {
@@ -102,6 +195,26 @@ test('readRoleModelId prefers cursor-agent launch script over stale claude setti
     "#!/bin/bash\ncursor-agent --model auto --force --trust --workspace '/tmp/wt'\n"
   );
   assert.equal(readRoleModelId(tmp, 'coder'), 'cursor/auto');
+});
+
+test('readRoleModelId namespaces a copilot launch script\'s bare auto model to copilot/auto', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp, 'coder', { model: 'claude-opus-5' });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    '#!/bin/bash\ncopilot --model auto\n'
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'copilot/auto');
+});
+
+test('readRoleModelId leaves a bare auto model unnamespaced for an agent outside the auto-alias set', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp, 'coder', { model: 'claude-opus-5' });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    '#!/bin/bash\ngemini --model auto\n'
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'auto');
 });
 
 test('switchRoleModel rewrites the model field, preserving every other field unchanged', () => {

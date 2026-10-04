@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 3, 2026 (BL-1858: Bubble's live grid now shows a
+tile for every live seat, not only one `sessions.tsv` already listed.
+`sessions.tsv` is written only by a full `./swarm` launch; a seat enabled
+afterwards by editing `roles.tsv` and running `./swarm ensure` (e.g. the
+`coder@2` local-model seat) got a live tmux session and no row there,
+and art-director had no row either on 2026-10-01.
+`tmuxClient.ts`'s `readRosterSwarmRoles` now takes every `roles.tsv` seat
+plus any `sessions.tsv` seat `roles.tsv` lacks; `captureLiveScreenPanes`
+uses it intersected with live tmux sessions. A numbered seat
+(`coder@2`) sits right after its base role's tile
+(`orderLiveScreenRoles`/`seatBaseRole`), the grid steps to a tighter font
+at 9-10 tiles, and every tile head names its seat's model under the role
+name — a local-model Ollama qwen-coder tag is formatted as
+`Qwen2.5 Coder 14B` rather than passed through raw. Out of scope: the VS
+Code tiles, launcher readiness, and the Mini App resident pane still
+read `sessions.tsv` alone. How-to:
+`docs/how-to/BL-775-bubble-live-screen-shell.md` ("Every live seat gets a
+tile, not just the ones `./swarm` launched with (BL-1858)" section).
+Acceptance:
+`specs/features/BL-1858-bubbles-live-grid-shows-a-tile-for-every-live-seat.feature`.
+No new extension command or setting; no diagram edit — the diagram
+registry's triggers (architecture boundary, pipeline topology, handoff
+lifecycle, front-desk flow) are untouched by this Bubble-grid-only fix.)
+
+Prior entry —
+
 **Last Updated:** October 3, 2026 (BL-1848: the babysitter sweep now
 watches every local model Ollama has loaded against two limits, read-only.
 Too big for the GPU: the model's `size_vram` (`/api/ps`) is below its
@@ -19,6 +45,7 @@ Acceptance:
 `specs/features/BL-1848-a-local-models-served-window-is-watched-against-its-work-and-the-gpu.feature`.
 No new extension command or setting; no diagram edit — babysitter-internal
 sweep logic.)
+
 Prior entry —
 
 **Last Updated:** October 3, 2026 (BL-1901: a queued parcel line whose

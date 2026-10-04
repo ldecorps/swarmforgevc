@@ -11,7 +11,8 @@
 ;; IO-near code calls the module that owns the domain answer, here the
 ;; other way around - the domain answer lives here, IO stays at the edge).
 (ns local-seat-report-lib
-  (:require [cheshire.core :as json]
+  (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 ;; ── qwen usage (token-usage-<yyyy-mm>.jsonl): one row per request ──────────
@@ -81,28 +82,160 @@
 
 ;; ── qwen session chat file: "system" rows for compressions/api errors ──────
 
+(defn- ui-event [row]
+  (get-in row [:systemPayload :uiEvent]))
+
+(defn- ui-event-name [row]
+  (get (ui-event row) (keyword "event.name")))
+
 (defn parse-session-events
   "chat-jsonl: the raw jsonl string of a session's own chat file (may be
    nil/blank when the file does not exist - never read here, only parsed).
    Returns {:turns (non-\"system\" rows - the actual conversation turns,
    distinct from :requests, a count of qwen usage/telemetry rows, which
    can outnumber turns on a retry) :compressions [{:tokens-before
-   :tokens-after} ...] :api-errors N}."
+   :tokens-after :timestamp} ...] :api-errors N :api-responses [{:timestamp
+   :ttft-ms :duration-ms :input-tokens :output-tokens :thinking-tokens} ...]
+   :tool-calls [{:timestamp :function-name :success?} ...]}.
+
+   BL-1851 bounce-lesson fix: a chat_compression row's own token counts
+   live at systemPayload.info.originalTokenCount/newTokenCount, never a
+   top-level tokensBefore/tokensAfter (no real record has ever carried
+   that shape - verified against every chat_compression row in every
+   session file on this host: tokensBefore absent in 100% of them,
+   originalTokenCount present in 100%). An API error is its own ui_event
+   (qwen-code.api_error), never an apiError:true flag on an api_response
+   row (no real record carries that flag either). Both wrong field reads
+   always silently returned nil/0 - local_seat_report_cli.bb has been
+   printing 'Compressions: N (->, ->, ...)' with no real numbers since
+   BL-1842 shipped. :api-responses/:tool-calls are new (BL-1851 needs
+   per-request timing/tool-outcome data BL-1842 never exposed) - reading
+   them here, in the one pass this file already makes over the same
+   rows, is what BL-1811 and this ticket's own 'do not write a second
+   parser for the same records' direction ask for."
   [chat-jsonl]
   (let [all-rows (->> (str/split-lines (str chat-jsonl))
                        (remove str/blank?)
                        (keep (fn [line] (try (json/parse-string line true) (catch Exception _ nil)))))
         system-rows (filter #(= "system" (:type %)) all-rows)
         turns (count (remove #(= "system" (:type %)) all-rows))
+        telemetry-rows (filter #(= "ui_telemetry" (:subtype %)) system-rows)
         compressions (->> system-rows
                           (filter #(= "chat_compression" (:subtype %)))
-                          (map (fn [row] {:tokens-before (:tokensBefore row) :tokens-after (:tokensAfter row)})))
-        api-errors (count (filter #(and (= "ui_telemetry" (:subtype %)) (true? (:apiError %))) system-rows))]
+                          (map (fn [row]
+                                 (let [info (get-in row [:systemPayload :info])]
+                                   {:tokens-before (:originalTokenCount info)
+                                    :tokens-after (:newTokenCount info)
+                                    :timestamp (:timestamp row)}))))
+        api-errors (count (filter #(= "qwen-code.api_error" (ui-event-name %)) telemetry-rows))
+        api-responses (->> telemetry-rows
+                           (filter #(= "qwen-code.api_response" (ui-event-name %)))
+                           (map (fn [row]
+                                  (let [e (ui-event row)]
+                                    {:timestamp (:timestamp row)
+                                     :ttft-ms (:ttft_ms e)
+                                     :duration-ms (:duration_ms e)
+                                     :input-tokens (:input_token_count e)
+                                     :output-tokens (:output_token_count e)
+                                     :thinking-tokens (:thoughts_token_count e)}))))
+        tool-calls (->> telemetry-rows
+                        (filter #(= "qwen-code.tool_call" (ui-event-name %)))
+                        (map (fn [row]
+                               (let [e (ui-event row)]
+                                 {:timestamp (:timestamp row)
+                                  :function-name (:function_name e)
+                                  :success? (true? (:success e))}))))]
     {:turns turns
      :compressions (vec compressions)
-     :api-errors api-errors}))
+     :api-errors api-errors
+     :api-responses (vec api-responses)
+     :tool-calls (vec tool-calls)}))
 
 ;; ── Ollama server log: how the model is served, and whether it is live ─────
+
+(defn- mtime-ms
+  "A file's last-modified time as epoch ms, or nil when it does not exist
+   (a report never crashes on a missing log - the caller falls back to
+   existence, not to an exception)."
+  [path]
+  (when (fs/exists? path) (fs/file-time->millis (fs/last-modified-time path))))
+
+(defn default-ollama-log
+  "The Ollama server log to read for a seat's worktree: the seat's own
+   swarm log (<project-root>/.swarmforge/ollama/serve.log) when it exists,
+   otherwise the operator's log (<project-root>/.swarmforge/ollama-serve-operator.log)
+   when that exists, otherwise nil. When BOTH exist, the one with the
+   NEWER mtime wins - a seat that switched to its own swarm log keeps
+   reading it even though the operator log is still on disk, and a seat
+   that has not started its own server yet still gets the operator log
+   that was actually serving it. (BL-1851 bounce-lesson fix: this used to
+   live private in local_seat_report_cli.bb, so the tuning report CLI
+   could not reuse it and hardcoded the operator path instead - the
+   ticket's own 'one parser, reuse the BL-1842 lib' direction.)"
+  [project-root]
+  (let [swarm (str (fs/path project-root ".swarmforge" "ollama" "serve.log"))
+        operator (str (fs/path project-root ".swarmforge" "ollama-serve-operator.log"))
+        swarm-ms (mtime-ms swarm)
+        operator-ms (mtime-ms operator)]
+    (cond
+      (and swarm-ms operator-ms) (if (>= swarm-ms operator-ms) swarm operator)
+      swarm-ms swarm
+      operator-ms operator
+      :else nil)))
+
+(defn- parse-log-offset-ms
+  "An Ollama server-log timestamp (time=2026-10-03T13:27:39.128+01:00,
+   OffsetDateTime shape - never Instant/parse, which rejects a non-Z
+   offset outright) to epoch ms, or nil on any parse failure."
+  [ts]
+  (try (.toEpochMilli (.toInstant (java.time.OffsetDateTime/parse ts))) (catch Exception _ nil)))
+
+(defn- load-segment-facts
+  "The same layers/kv-cache-type reading parse-ollama-load does, scoped to
+   one segment's own text - the segment's LAST match, mirroring that
+   function's own 'later supersedes earlier' rule at the segment level
+   (llama.cpp sometimes logs offload progress more than once per load)."
+  [segment-text]
+  (let [layers (last (re-seq #"load_tensors: offloaded (\d+)/(\d+) layers to GPU" segment-text))
+        kv (last (re-seq #"llama_kv_cache:.*\(([a-z0-9_]+)\)" segment-text))]
+    {:layers-on-gpu (when layers (Long/parseLong (second layers)))
+     :layers-total (when layers (Long/parseLong (nth layers 2)))
+     :kv-cache-type (when kv (second kv))}))
+
+(defn parse-ollama-loads
+  "BL-1851: every model load over the log's lifetime, oldest first - a
+   seat's server log can carry several (a restart, a settings change
+   applied by relaunching). llama-server itself runs with
+   --no-log-timestamps (its own load_tensors:/llama_kv_cache: lines carry
+   no timestamp at all - confirmed against a live log), but Ollama's own
+   wrapper logs a timestamped 'starting llama-server' line immediately
+   before each one starts, which is what anchors a load in time here.
+   Each load's own facts are read from the text between its own
+   'starting llama-server' line and the next one (or EOF for the last) -
+   never from the whole log, which would let an EARLIER load's own
+   offload line leak into a LATER load's facts.
+
+   {:at-ms :layers-on-gpu :layers-total :kv-cache-type} per load. A
+   segment with no load_tensors line of its own (started but never
+   finished loading, e.g. a discovery timeout) is dropped - it never
+   actually served a request, so it is not a load this function reports."
+  [log-text]
+  (let [text (str log-text)
+        marker #"(?m)^time=(\S+).*msg=\"starting llama-server\""
+        matcher (re-matcher marker text)
+        starts (loop [acc []]
+                 (if (.find matcher)
+                   (recur (conj acc [(.start matcher) (.group matcher 1)]))
+                   acc))
+        bounds (map vector starts (concat (rest (map first starts)) [(count text)]))]
+    (->> bounds
+         (keep (fn [[[start ts] end]]
+                 (let [at-ms (parse-log-offset-ms ts)
+                       segment (subs text start end)
+                       facts (load-segment-facts segment)]
+                   (when (and at-ms (:layers-on-gpu facts))
+                     (assoc facts :at-ms at-ms)))))
+         vec)))
 
 (defn parse-ollama-load
   "The LATEST load line-group in the server log (later loads, e.g. after a
