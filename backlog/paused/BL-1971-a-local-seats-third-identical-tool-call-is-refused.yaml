@@ -1,0 +1,137 @@
+id: BL-1971
+title: "Stamp-off for hotfixes 66bd85171f and d19171aeb6: a local-model seat's third identical tool call, with no edit, compaction, commit or handoff in between, comes back with a REPEAT note naming its last summary's next step - the iq3 coder re-ran the same thirteen git log/show commands for ten minutes on BL-1951 while its own summaries said to stop and hand off"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the only coder seat livelocks with
+# its GPU busy and no edit, and qwen's own loop check is off on these seats.
+status: todo
+epic: local-llm-swarm
+priority: 4
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one Babashka hook script and one more hooks entry in the settings
+# writer; no mutation lane for Babashka or shell (BL-472).
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new hook script and one settings entry beside the other hooks; nothing to deduplicate"
+  architect: "the guard rides qwen's own PreToolUse extension point inside the existing settings writer, as BL-1970's edit hook does; no boundary moves"
+  hardender: "Babashka and shell have no mutation lane (BL-472) and the guard writes no durable state; the shell test covers each branch"
+
+# Not a claim of ownership over BL-1840's contract (BL-1251): the qwen
+# compaction feature the local-model seat hooks sit beside.
+acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed at the human's word in the
+  specifier pane (2026-10-04, verbatim in source). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it. The guard never refuses a call; it never warns about an
+  edit or a state-changing command, and an unreadable transcript adds
+  nothing.
+
+invariants:
+  - "The guard never refuses a call; it warns only when the same tool with the same arguments ran twice already since the last edit, write_file, compaction or state-changing shell command, and never about an edit, a write or a state-changing command."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1840 feature all pass.
+     Measured at the hotfix (66bd85171f): 7/7.
+  2. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     10 PASS lines, exit 0 (at d19171aeb6).
+  3. `bash swarmforge/scripts/test/test_bl1970_local_model_edit_hook.sh` and
+     `bash swarmforge/scripts/test/test_bl1949_local_model_precompact_hook.sh`:
+     every line PASS, exit 0 (the other hooks are untouched).
+  4. Live and read-only: the coder seat's settings name the guard in a
+     `hooks.PostToolUse` group with matcher "" and no `hooks.PreToolUse`
+     (applied live 2026-10-04 20:29Z). In
+     `~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/<session>.jsonl`
+     for any session after that, a tool_result carrying "REPEAT: you have
+     now made" is followed by a different call, and the pane never shows
+     qwen's "Keep loop detection enabled" dialog after one.
+
+source: |
+  The human, specifier pane (Claude Code), 2026-10-04 ~20:14Z, verbatim
+  (Article 5.3):
+
+  > Iq3 is stuck with 1951?
+
+  Earlier the same evening, on the edit-hook hotfix (BL-1970), verbatim:
+
+  > Doing a hot fix is to fix the process. A hotfix is not a hack.
+
+  Observed by the specifier: the coder took the BL-1951 bounce at
+  19:40:56Z (qwen session ef906943). Both compaction summaries, at
+  19:52:28Z and 20:03:49Z, named the right next step ("Stop the ancestry
+  trace ... no code change is needed ... write tmp/handoff.txt ... to:
+  documenter"); the test at 7363bac1e0 already carries the /gpu line. From
+  20:04Z the seat re-ran the same thirteen `git log ... && git show`
+  commands in a cycle, each up to seven times, with 0 edits in 33 minutes.
+
+notes: |
+  Minted 2026-10-04 by the specifier as the stamp-off of hotfix 66bd85171f.
+  Also stamps off d19171aeb6, which repairs it the same evening: the first
+  guard REFUSED the third identical call (PreToolUse deny). Live from
+  20:23Z the coder re-sent the refused call every five seconds, which
+  tripped qwen's always-on check for consecutive identical tool calls
+  (skipLoopDetection does not turn it off); its interactive loop dialog
+  halted the one-shot seat's turn by 20:26Z. d19171aeb6 makes it a
+  PostToolUse warning: the call runs and its result carries a REPEAT note
+  with the count and the latest compaction's next step. Re-applied live
+  at 20:29:19Z (PreToolUse removed, PostToolUse group added, respawn).
+  Hotfix ledger links both.
+  Live result, 2026-10-04 (session 45a9da03, BL-1951): the REPEAT notes
+  reached the model and it ignored all four, re-running one identical
+  command six times in a row (20:39:55-20:44:29Z) until qwen's own
+  consecutive-identical check raised its loop dialog at ~20:45Z and the
+  turn halted. The warning no longer causes that halt (d19171aeb6), but
+  it did not change iq3's course either; the seat was chasing a false
+  bounce (BL-1972). The review judges the guard on that evidence.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Replayed on the coder's own transcripts at the hotfix: the BL-1951 loop
+  (session ef906943) is refused from 20:07:03Z, 3 minutes in; the BL-1902
+  session that committed 385b19e860 (907f3c09) is refused 0 times; the
+  BL-1902 paren loop (b7db90b8) is refused 28 times, every refusal an
+  identical node paren-count script with no edit between. Applied live at
+  20:20:29Z: the coder's .qwen/settings.json gained hooks.PreToolUse and
+  the seat was respawned with ensure's own command.
+  Where to read: swarmforge/scripts/local_model_repeat_guard.bb (~130
+  lines, read it whole); swarmforge/scripts/swarmforge.sh only
+  write_local_model_qwen_settings at ~2151-2205 (the hooks block and the
+  sed that fills the hook paths). Test:
+  swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh.
+  required_stages: shell/Babashka production code is [coder, qa];
+  documenter is added because docs/how-to/BL-1052-local-model-seat-launch.md
+  documents the seat's hooks.
+
+description: |
+  ## Status: hotfixes 66bd85171f and d19171aeb6 landed the fix
+
+  The coder reviews it and never re-applies it (the BL-1858 and BL-1868
+  shape): read the commit, run its test, and check the guard against the
+  invariant. A review that finds the change wrong says so in a note to the
+  specifier rather than rewriting it.
+
+  ## What the hotfix does
+
+  A qwen PostToolUse hook on every tool reads the session transcript and
+  warns about a call made twice already, with the same arguments (its
+  description, is_background and timeout ignored), since the last edit,
+  write_file, compaction, or shell command that changes the repo or the
+  mailbox (git commit, merge, checkout, switch, restore, reset, rebase,
+  cherry-pick, revert, stash; swarm_handoff.sh, done_with_current.sh,
+  ready_for_next.sh). The call still runs; its result carries a REPEAT
+  note with the count and the next step the latest compaction summary
+  named. It never refuses: a refusal made the seat re-send the identical
+  call until qwen's own loop dialog halted it (d19171aeb6 says why). qwen
+  writes a turn's calls before running them, so the in-flight call is not
+  counted against itself.
+
+  ## What each stage checks
+
+  - Coder: review 66bd85171f and d19171aeb6 against the invariant;
+    test_bl1971_local_model_repeat_guard.sh passes.
+  - Documenter: the local-model seat launch how-to names the repeat guard
+    beside the PreCompact and edit hooks.

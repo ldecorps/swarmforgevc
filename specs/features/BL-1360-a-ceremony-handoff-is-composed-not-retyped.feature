@@ -6,10 +6,10 @@
 Feature: A ceremony handoff is composed, not retyped
 
   Several pipeline handoffs carry no judgement at all. The QA merge-up
-  broadcast has a fixed recipient list, a fixed priority and a fixed message
-  template; only the ticket id and the approved commit vary. The QA-to-
-  coordinator bookkeeping note and the specifier's spec-ready note are the
-  same shape.
+  broadcast had a fixed recipient list, a fixed priority and a fixed message
+  template; only the ticket id and the approved commit varied. BL-1902
+  retired that broadcast. The QA-to-coordinator bookkeeping note and the
+  specifier's spec-ready note are the same shape.
 
   Today each of those is hand-assembled: the role writes a draft file by hand,
   re-reads handoff-protocol.md to confirm the recipient list and whether `to:`
@@ -26,20 +26,12 @@ Feature: A ceremony handoff is composed, not retyped
   Background:
     Given a role is sending a named pipeline ceremony
 
-  # BL-1360 a-ceremony-handoff-is-composed-not-retyped-01
-  Scenario: the merge-up broadcast is composed from one recipient definition
-    Given QA has an approved commit for a ticket
-    When the merge-up ceremony is composed
-    Then every pipeline worktree role is a recipient
-    And the specifier is not a recipient
-    And the ceremony is sent at priority 00
+  # BL-1360 a-ceremony-handoff-is-composed-not-retyped-01 RETIRED by BL-1902
+  # (2026-10-04): the merge-up broadcast it composed no longer exists.
 
-  # BL-1360 a-ceremony-handoff-is-composed-not-retyped-02
-  Scenario: a composed message fits the note cap by construction
-    Given QA has an approved commit for a ticket
-    When the merge-up ceremony is composed
-    Then the message is a single line of at most 80 characters
-    And the message names the ticket and the commit in full
+  # BL-1360 a-ceremony-handoff-is-composed-not-retyped-02 RETIRED by BL-1902
+  # (2026-10-04): it composed only the merge-up ceremony; the cap for every
+  # live ceremony stays pinned by bl1360_ceremony_handoff_property_runner.bb P2.
 
   # BL-1360 a-ceremony-handoff-is-composed-not-retyped-03
   Scenario: composing never bypasses a send-time gate
@@ -63,5 +55,4 @@ Feature: A ceremony handoff is composed, not retyped
 
     Examples:
       | ceremony  |
-      | merge-up  |
       | bookkeep  |

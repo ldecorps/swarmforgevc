@@ -197,3 +197,8 @@
   role: QA
   description: "checked by hand that the ticket's acceptance feature (2 Scenario Outlines, hardender in required_stages) carries no '# mutation-stamp'/manifest: both hardening passes skipped BL-113's Gherkin run and every gate passed the parcel; bounced to hardender"
   detected_at: 2026-10-04
+- category: qwen-session-snapshot-tally
+  ticket: BL-1949
+  role: QA
+  description: "tallied by hand, over the iq3 coder's qwen chat jsonl, how many chat_compression snapshots open <state_snapshot> with <next_step> and close it (qa_e2e step 3); no tool reads a seat's compaction snapshots"
+  detected_at: 2026-10-04

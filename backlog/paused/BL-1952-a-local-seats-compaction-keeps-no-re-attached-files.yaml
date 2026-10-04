@@ -150,6 +150,14 @@ notes: |
   Also stamps off d138a71f19 (the shim reads a compaction only from a
   system message or a last user message, never a tool result that quotes
   a marker; its test fails on the old code). Hotfix ledger linked.
+  Also stamps off e0246ab913 (2026-10-04, on QA note 003799: the
+  PreCompact hook asks for <next_step> as ONE edit plus <next_edit_lines>,
+  the at most 15 lines it replaces, and loop.note tells the seat to make
+  that edit before re-reading its plan; BL-1932, BL-1933 and BL-1456 each
+  re-read whole files after every compaction and made no edit). Review it
+  against its commit message. Live check: the coder's first compaction
+  after 2026-10-04 15:57Z carries <next_edit_lines>, and its next tool
+  call edits or reads a short range, not a whole file. Hotfix ledger linked.
 
 description: |
   ## Status: hotfix 3e66c4af7c landed the fix

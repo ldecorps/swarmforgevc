@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-04 (BL-1936: the shim clamps max_tokens to the Modelfile's num_predict)
+Last Updated: 2026-10-03 (BL-1917: requests go through a tool-call shim)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -179,18 +179,6 @@ dependencies) now sits between a local-model seat and Ollama:
 | `SWARMFORGE_LOCAL_MODEL_SHIM_PORT` | the shim's own loopback port | `11439` |
 | `SWARMFORGE_LOCAL_MODEL_SHIM` | `off` sends the seat to Ollama's endpoint directly, bypassing the shim | `on` |
 
-**The Modelfile's `num_predict` is the binding reply cap (BL-1936).** Ollama
-lets a request's `max_tokens` override the Modelfile, and the qwen client
-sends a large one, so a declared `num_predict` (iq3's 4096, qwen2.5's 2048)
-never bound on its own — a compression summary could run 8-14k tokens and
-eat most of a turn's wall clock. `clamp_output_budget` lowers `max_tokens`
-and `max_completion_tokens` above the model's own `num_predict` (read once
-from Ollama's `/api/show`, cached 300 s so an `ollama create` is picked up
-without a shim restart) on both the tool path and the tool-less
-passthrough; it never raises or adds a budget, and a model with no
-`num_predict`, or a failed lookup, is left unclamped. A lowered request logs
-`budget=<sent>-><cap>`.
-
 ### Ollama is stopped by the swarm (BL-1704)
 
 Both `stop_ancillary_services.sh` (the full-stack stop) and
@@ -296,7 +284,18 @@ in it:
   ("hard limit" below the true limit). With neither a served window nor a
   configured context length available, no provider entry is written and
   one warning line names the seat — never a guessed value.
-
+- **BL-1949's PreCompact hook** (`hooks.PreCompact`) — every local-model
+  seat's settings register the master checkout's
+  `swarmforge/scripts/local_model_precompact_hook.sh` (never the seat's
+  worktree copy, which follows whatever parcel line the seat holds) for
+  every compaction trigger. qwen appends the hook's `additionalContext`
+  to its compaction prompt, so the summary the seat resumes from is
+  bounded: no `<analysis>` block, `<next_step>` first, the whole snapshot
+  under 900 words, and `</state_snapshot>` closed. Without it, a summary
+  that hits the model's output cap is cut off before the three sections
+  the agent resumes from (coordinator note 016208: 0 of 24 snapshots in
+  one coder session closed). The hook changes only the instructions qwen
+  appends — never when qwen compacts or what history it compacts.
 
 ### The window gate refuses qwen's compaction dead zone (BL-1840)
 

@@ -115,5 +115,21 @@ notes: |
   needed --no-op on every approval; a land QA queued for the ticket now
   counts as its evidence. Review it against its commit message; nothing
   this parcel builds changes.
+  2026-10-04 (specifier, QA note 003802, D4 of the QA bounce 92252b8361):
+  the spec missed BL-1360's feature, which composed the merge-up ceremony.
+  Its scenarios 01 and 02 and the merge-up Examples row are retired on
+  main (retired, not reworded; P2 of the BL-1360 property runner still
+  pins the cap for every live ceremony); the feature reads 3/3 on main.
+  The coder merges main before the D1 pass: scenarios 03 and 04 move to a
+  live ceremony in the BL-1360 handler, which may drop the step
+  definitions only 01 and 02 used.
+  2026-10-04 20:58Z (specifier): the coder's D1 commit 2084f0ab38 was
+  built without merging main, so it lacks 7b74ad6bc7 and REWORDS BL-1360
+  scenarios 01 and 02 to bookkeep instead of leaving them retired.
+  Merging it with main conflicts in that feature file. The next holder
+  merges main and resolves the feature by taking main's side (01, 02 and
+  the merge-up row retired, 03-05 as on main); the handler and driver
+  changes for 03 and 04 stand, and steps only 01 and 02 used may stay or
+  go. Check: BL-1360's feature 3/3 on the merged tree.
 
 assigned_to: coder

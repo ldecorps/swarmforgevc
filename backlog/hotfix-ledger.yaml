@@ -1091,3 +1091,31 @@
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
+- commit: e0246ab913
+  subject: "hotfix: a local seat's compaction summary names ONE next edit with the lines it replaces, and the seat makes that edit before re-reading its plan"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
+- commit: 52a004ed93
+  subject: "hotfix: a local-model seat is told in the same turn where its edit broke a Babashka file"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1970
+  human_decision: null
+  decided_at: null
+- commit: 66bd85171f
+  subject: "hotfix: a local-model seat's third identical tool call with nothing changed in between is refused"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1971
+  human_decision: null
+  decided_at: null
+- commit: d19171aeb6
+  subject: "hotfix: the repeat guard warns with the call's result instead of refusing it"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1971
+  human_decision: null
+  decided_at: null
