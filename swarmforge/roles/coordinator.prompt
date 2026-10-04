@@ -1025,3 +1025,21 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   specifier one `note` (priority `00`) naming the category, its count and
   its tickets. The throttle is the hard layer; this note is how the
   specifier hears the same shift.
+
+## A ticket its seat cannot finish is pulled and split, never left to run (human directive 2026-10-04)
+- The human, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+- Trigger: babysitter's `seat-stuck-<role>` CRIT (check 5b: a seat has held a
+  ticket 180 minutes with no commit of its own naming it; merges of main do
+  not count), or any role's note that a seat cannot finish a ticket. Act the
+  same turn; do not wait for a human or the specifier to notice.
+- Pull it: move every handoff for that ticket in the seat's `inbox/in_process/`
+  and `inbox/new/` to its `inbox/abandoned/` (`redo_from`'s step 2 - never
+  `redo_from` itself, which re-queues the unsplit ticket), `git mv` the
+  ticket from `backlog/active/` to `backlog/paused/` in a bookkeeping commit,
+  and restart the seat's session (`respawn-pane -k` with its
+  `.swarmforge/launch/<role>.sh`) so it stops working a parcel that is gone.
+  If the seat committed on the ticket's line, name that commit in the note.
+- Then send the specifier a priority-`00` note
+  `split <id>: <seat> held it <N>m, no commit[, salvage <sha>]` and route the
+  seat its next parcel. Never route the same ticket back to the same seat
+  unsplit; promote the specifier's slices when they arrive.

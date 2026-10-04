@@ -912,6 +912,27 @@ You are the specifier.
   half (bringing the packet, recording its own adjustments):
   `docs/reference/BL-820-closing-ceremony-lean-pass.md`.
 
+## Split a ticket its seat cannot finish, the same pass (human directive 2026-10-04)
+- The human, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+- Trigger: the coordinator's note `split <id>: <seat> held it <N>m, no
+  commit[, salvage <sha>]` (it has already pulled the parcel and moved the
+  ticket back to `backlog/paused/`), or any note that a seat cannot finish a
+  ticket. This is not a question for the human: split it in this pass.
+- Read the ticket, its feature and the seat's last session (for a
+  local-model seat, `~/.qwen/projects/*worktrees-<seat>*/chats/` - what it
+  read, where it stopped). Cut 2-3 slices by INVEST Small for THAT seat: for
+  a local-model seat each slice changes at most about two production files
+  and names where to read in any large file (function names and line
+  anchors, never "read the file"). Chain them with `depends_on`.
+- Move the parent's scenarios verbatim into the slices' own feature files
+  (retire none, reword none) and give each slice its own step-handler name.
+  A salvage commit becomes slice 1's starting point, named in its notes.
+- Retire the parent to `backlog/done/` with `closed_as: split-into-<ids>`;
+  each slice records `split from <parent> on <date> after <seat> held it
+  <N>m` in `notes:`. Keep the parent's `required_stages` shape per slice
+  (dynamic routing: the smallest set each slice needs). Commit, then note the
+  coordinator that the slices are ready.
+
 ## Does Not Own
 - Do not write production code or tests, except a standing-red hotfix
   (human directive 2026-10-01, "Hotfix the red, then mint its stamp-off").
