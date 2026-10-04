@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-03 (BL-1917: requests go through a tool-call shim)
+Last Updated: 2026-10-04 (BL-1936: the shim clamps max_tokens to the Modelfile's num_predict)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -178,6 +178,18 @@ dependencies) now sits between a local-model seat and Ollama:
 |---|---|---|
 | `SWARMFORGE_LOCAL_MODEL_SHIM_PORT` | the shim's own loopback port | `11439` |
 | `SWARMFORGE_LOCAL_MODEL_SHIM` | `off` sends the seat to Ollama's endpoint directly, bypassing the shim | `on` |
+
+**The Modelfile's `num_predict` is the binding reply cap (BL-1936).** Ollama
+lets a request's `max_tokens` override the Modelfile, and the qwen client
+sends a large one, so a declared `num_predict` (iq3's 4096, qwen2.5's 2048)
+never bound on its own — a compression summary could run 8-14k tokens and
+eat most of a turn's wall clock. `clamp_output_budget` lowers `max_tokens`
+and `max_completion_tokens` above the model's own `num_predict` (read once
+from Ollama's `/api/show`, cached 300 s so an `ollama create` is picked up
+without a shim restart) on both the tool path and the tool-less
+passthrough; it never raises or adds a budget, and a model with no
+`num_predict`, or a failed lookup, is left unclamped. A lowered request logs
+`budget=<sent>-><cap>`.
 
 ### Ollama is stopped by the swarm (BL-1704)
 
