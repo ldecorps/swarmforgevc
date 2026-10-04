@@ -1,0 +1,124 @@
+id: BL-1978
+title: "Spike, time-boxed: iq3 restores a cache checkpoint at the shared prompt prefix after a compaction or a new session, instead of re-processing the whole prompt - 289 forced full re-prefills cost 89 minutes of prefill in 46 hours"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained - per-commit wall time (the human's 2026-10-02
+# "make the swarm churn much faster"), about 13 minutes a day if the lever
+# works; nothing breaks while it does not.
+status: todo
+epic: local-llm-swarm
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: an optional warm-up call in the shim behind a flag file, with its
+# unit test; or nothing kept, and the evidence alone.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one guarded call in the shim, or nothing kept"
+  architect: "rides the shim's existing upstream call; no boundary moves"
+  hardender: "Python has no mutation lane (BL-472's slices build the Babashka one)"
+  documenter: "only if the warm-up is kept does a doc change; the coder adds one line to the local-model seat launch how-to then"
+
+# Not a claim of ownership over BL-1840's contract (BL-1251): the qwen
+# compaction feature this spike must leave green.
+acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature
+
+human_approval: approved
+ruling_provenance: specifier-pane
+approval_context: >
+  The human chose "Spec a time-boxed spike (Recommended)" in the specifier
+  pane on 2026-10-04, from options that named this exact shape (verbatim in
+  notes). FIRM: nothing the shim forwards changes; the warm-up is an extra
+  upstream call whose answer is never returned to qwen; if it does not
+  produce a restore at the shared prefix, it is removed.
+
+invariants:
+  - "Every request qwen sends reaches Ollama exactly as before; the warm-up only adds a separate call whose answer qwen never sees."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1840 feature all pass
+     (measured at mint, 2026-10-04: 7/7).
+  2. `python3 swarmforge/scripts/test/test_local_model_tool_call_shim.py`
+     passes, including the warm-up test if the warm-up was kept.
+  3. Read the coder's committed evidence: the baseline and the trial
+     counts (method in notes), and the verdict - kept or removed. If
+     kept, the trial shows at least one post-compaction or new-session
+     request restoring a checkpoint at or below the shared prefix where
+     the baseline shows "forcing full prompt re-processing".
+
+source: |
+  QA note 003809 to the specifier, 2026-10-04 21:54Z, verbatim: "iq3
+  cache: 83 session-start full re-prefills (no ckpt<=4973 LCP); human ok".
+  The specifier asked the human what "human ok" meant; the human chose,
+  in the specifier pane (Claude Code), 2026-10-04, verbatim:
+
+  > Spec a time-boxed spike (Recommended)
+
+  The option read: "Medium defect: try a prefix-warming request from the
+  shim (and any Ollama checkpoint setting) on one live session; keep it
+  only if the server log shows restores at the shared prefix. Saves
+  roughly 28% of ~89 min of re-prefill per 46 h, if it works."
+
+notes: |
+  Minted 2026-10-04 by the specifier on QA note 003809 and the human's
+  pane choice (source). human_approval approved with ruling_provenance
+  specifier-pane, as BL-1877 recorded its pane approval; a reply choosing
+  otherwise re-pends it.
+  Measured at mint from .swarmforge/ollama/serve.log (from 2026-10-03
+  00:13 to 2026-10-04 ~22:55 local): 303 "forcing full prompt
+  re-processing due to lack of cache data (likely due to SWA or
+  hybrid/recurrent memory ...)" lines; 289 of them were checked against an
+  LCP of at most 5000 tokens, and their prompt evals total 5358 s (median
+  17708 tokens, 21 s each). iq3's qwen35 architecture keeps recurrent state
+  the cache cannot rewind, so the server restores only from a saved
+  checkpoint at or below the LCP; the stable prefix (qwen's system prompt
+  and tools) is about 4973 tokens and the earliest checkpoint a session
+  makes sits at 5109, just past it - e.g. task 171273: "checking checkpoint
+  with [5109, 5109] against 4973...", then the forced re-process.
+  Measurement method (save as a tmp/ script; read-only): for each task id,
+  join "task N | forcing full prompt re-processing", "task N | checking
+  checkpoint with [..] against LCP" and the next "prompt eval time = X ms /
+  T tokens"; count the forced ones with LCP <= 5000 and sum X. A restore
+  shows as a restored-checkpoint line for the task instead of the forced
+  line.
+  Steps, in order, with a stop rule (the spike's time box):
+  1. Baseline: run the method over the log since the shim's last restart.
+  2. Lever A, Ollama: check whether the installed Ollama exposes a
+     checkpoint position or spacing setting (its env vars and `ollama
+     serve --help`); if one would put a checkpoint at or below the shared
+     prefix, record it - setting it is the operator's, not this parcel's.
+  3. Lever B, the shim: behind the flag file
+     .swarmforge/local-model-shim/prefix-warm.on (read on every request, so
+     no restart is needed to try it), when a request's system message
+     differs from the last one the shim forwarded (a new session), first
+     send Ollama one extra call with only that system message (and the
+     tools) and max_tokens 1, discard its answer, then forward the request
+     unchanged. Unit-test both halves: the extra call's shape, and the
+     forwarded request byte-identical with the flag on or off.
+  4. Trial: create the flag file, let the seat's next compaction or new
+     session happen, and run the method again over that window.
+  5. Stop rule: if step 4 shows no restore at or below the shared prefix,
+     remove Lever B's code, keep the evidence, and say so; the ticket
+     closes on the measurement. If it shows restores, keep the code and the
+     flag file, and add one line to docs/how-to/BL-1052-local-model-seat-launch.md.
+  Where to read: swarmforge/scripts/local_model_tool_call_shim.py (759
+  lines) - _call_upstream at ~590 and _complete at ~615 only; the tests in
+  swarmforge/scripts/test/test_local_model_tool_call_shim.py (484 lines),
+  read the class around one existing upstream-call test.
+
+description: |
+  ## What is wanted
+
+  Find out whether iq3 can resume from a cache checkpoint at the shared
+  prompt prefix after a compaction or at a new session, instead of
+  re-processing the whole prompt, and keep the change only if it does.
+  The evidence names the baseline, the lever tried, the trial result and
+  the verdict, using the method in notes. Nothing qwen sends changes.
+
+  ## What each stage checks
+
+  - Coder: the five steps in notes, in order, with the stop rule; the shim
+    tests pass either way.
