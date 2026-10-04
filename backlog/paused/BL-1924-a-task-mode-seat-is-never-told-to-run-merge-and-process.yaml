@@ -1,22 +1,24 @@
 id: BL-1924
-title: "Stamp-off for hotfix 4b0e9adb96: a task-mode seat's served parcel says the worktree is already on the parcel's line instead of \"Execute the PAYLOAD (merge_and_process ...)\", and a refused take-up says to fix it and ask again instead of \"Do NOT run ready_for_next.sh again\""
+title: "Stamp-off for hotfixes 4b0e9adb96 and 92f53eee1b: a task-mode seat's served parcel says the worktree is already on the parcel's line instead of \"Execute the PAYLOAD (merge_and_process ...)\", a refused take-up says to fix it and ask again instead of \"Do NOT run ready_for_next.sh again\", and a task-mode reverse copy is told to run done_with_current instead of to implement and forward its ticket"
 milestone: M8
 type: defect
 severity: high
 # high: the instruction sent a local seat to run the lander's
 # land_merge_path.bb with guessed arguments (observation 7 of the dogfood
 # loop), and a refused take-up carried two contradicting instructions.
+# Still high after the 2026-10-04 fold: the reverse-copy text kept the iq3
+# coder rebuilding a shipped ticket for about 1.5 h with no write.
 status: todo
 epic: local-llm-swarm
 priority: 5
 direction: queue-jump
 mutation_cost: low
-# low: one returned keyword, one arity and two text branches, with tests.
+# low: one returned keyword, one arity and three text branches, with tests.
 slice_size_envelope: low
 required_stages: [coder, documenter, qa]
 stage_skip_reasons:
   cleaner: "small additions beside unchanged code; nothing to refactor"
-  architect: "the take-up decision is unchanged; only the text printed after it follows its outcome"
+  architect: "the take-up decision is unchanged; only the text printed after it follows its outcome and the parcel's reverse-copy marker"
   hardender: "Babashka has no mutation lane (BL-472) and the change writes no state"
 
 # Not a claim of ownership over BL-1871's contract (BL-1251): the take-up
@@ -29,10 +31,13 @@ approval_context: >
   dogfood loop ("have specifier implementing them"). No choice is posed.
   FIRM: the review decides whether the change stands; the coder never
   re-applies it; a batch seat keeps the merge_and_process instruction.
+  Widened 2026-10-04 to also stamp off 92f53eee1b (same function, same
+  test runner), auto-approved on the same carve-out.
 
 invariants:
   - "A batch seat's served git_handoff still says to execute the merge_and_process payload; only a task-mode serving drops it."
   - "A parcel served after a refused take-up never says not to run ready_for_next.sh again, and gives no work or done_with_current steps."
+  - "A task-mode reverse copy (non-forwarding: true) is served one step, done_with_current.sh, and never a read, implement, commit, draft or forward step."
 
 source: |
   Root intake backlog/archive/INTAKE-coder2-tool-calls-20261003.md. The
@@ -53,8 +58,13 @@ source: |
   swarmforge/scripts for *merge*, chmod +x'd land_merge_path.bb, ran it
   three times with guessed arguments, and opened it in nano.
 
+  Folded in 2026-10-04 with hotfix 92f53eee1b. The human, asking the
+  specifier about the iq3 coder's pane, 2026-10-04, verbatim (Article 5.3):
+
+  > is there a ticket for this? this compression is probably not a good sign is it?
+
 description: |
-  ## Status: hotfix 4b0e9adb96 landed the fix
+  ## Status: hotfixes 4b0e9adb96 and 92f53eee1b landed the fix
 
   This parcel is its stamp-off: review it, do not re-apply it.
 
@@ -84,15 +94,41 @@ description: |
     again, and no work or done_with_current steps follow it. The batch
     helper's one-arity call prints today's text, since a batch seat merges.
 
+  ## Second hotfix (92f53eee1b): a reverse copy gets no work
+
+  print-task gave a task-mode non-forwarding git_handoff (Article 2.4) the
+  same steps as a forward parcel: "2) Read <ticket> ... then implement
+  it" and "4) Forward it to <next stage>". Since BL-1871 a reverse copy
+  carries no work in task mode and is never taken up, so the seat stays
+  on its current line. On 2026-10-04 the iq3 coder, served the
+  architect's reverse copy of BL-1851 (22aab9b028) at 06:07Z, rebuilt
+  that already-shipped ticket from scratch on BL-1858's line, where none
+  of its code exists. qwen compacted 15 times before the 07:18Z session
+  end and 7 more in the first 22 minutes after the 08:28Z relaunch. The
+  last three summaries were byte-identical, no file was written, and
+  QA's real BL-1851 bounce (d0d925e71b) waited in the inbox behind it.
+  The four reference files the seat kept re-reading (about 8.5k tokens)
+  do not fit beside its prompt floor under qwen's 27852-token trigger,
+  so each compaction dropped them and the seat read them again.
+
+  The hotfix: in task mode a reverse copy prints one step, run
+  done_with_current.sh (which completes a non-forwarding parcel with no
+  reason, BL-1609), and says to ignore the payload's merge_and_process
+  and replay lines. Forward parcels print as before. The batch helper's
+  one-arity call also prints as before, since a batch seat still merges
+  a reverse copy.
+
   ## What each stage checks
 
   - Coder: the change against the description and both invariants, and
     the new cases in handoff_lib_test_runner.bb and
-    parcel_line_lib_test_runner.bb. Evidence:
+    parcel_line_lib_test_runner.bb, including the 2026-10-04 reverse-copy
+    block (it fails six ways against the pre-92f53eee1b lib). Evidence:
     backlog/evidence/BL-1924-coder-<date>.md.
   - Documenter: docs/how-to/BL-1871-parcel-line-take-up.md shows the
     PARCEL_LINE lines but not the ACTION text served under them; add what
-    a task-mode seat is told after a move, a stay, and a refusal, including
+    a task-mode seat is told after a move, a stay, and a refusal, and for
+    a reverse copy (92f53eee1b), including
     step 2's named ticket file (e69b66a68d, reviewed under BL-1925) and
     steps 3 to 5's printed forward command (aec0daba54, reviewed under
     BL-1927); both of those tickets leave their documentation to this pass.
@@ -101,10 +137,16 @@ qa_e2e_procedure: |
   1. `bb swarmforge/scripts/test/handoff_lib_test_runner.bb` ends "ALL TESTS PASSED".
   2. `bb swarmforge/scripts/test/parcel_line_lib_test_runner.bb` ends "ALL PASS: parcel_line_lib.bb".
   3. `node specs/pipeline/cli.js specs/features/BL-1871-a-role-takes-up-a-ticket-on-its-own-line.feature`
-     passes (measured at mint on HEAD 4b0e9adb96: 9 of 9 ok).
+     passes (measured at mint on HEAD 4b0e9adb96: 9 of 9 ok; re-measured
+     2026-10-04 on HEAD 92f53eee1b: 9 of 9 ok).
   4. In the coder seat's qwen transcript after 2026-10-03 11:34:49Z (its
      respawn onto this code), no run_shell_command runs merge_and_process
      or land_merge_path.bb.
+  5. The first reverse copy (non-forwarding: true) served to the coder seat
+     on a line that holds 92f53eee1b: its qwen transcript shows
+     done_with_current.sh run with no read_file of that ticket's YAML, no
+     commit and no swarm_handoff before it. Read-only; if none has been
+     served by the time QA runs, record it as not yet observed.
 
 notes: |
   - Minted 2026-10-03 by the specifier, observation 7 of the dogfood loop.
@@ -117,5 +159,12 @@ notes: |
     within one sweep, twice, while ready_for_next_task.bb (not
     daemon-executed) kept the new two-arity call. The fix was landed as
     one commit for that reason.
+  - 2026-10-04: folded hotfix 92f53eee1b in rather than mint a twin. It
+    changes the same print-task in the same file and runner, and a second
+    paused ticket on handoff_lib.bb would collide with this one under
+    Concurrent Work Orthogonality. Hotfix ledger: 92f53eee1b linked to
+    BL-1924. Live: the coder seat runs its own line's handoff_lib.bb, so
+    the fix reaches it only once that line holds 92f53eee1b; freeing the
+    seat from the reverse copy it held was sent to the coordinator.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1924; that file
     carries the human's uncommitted edits, so it was left alone.

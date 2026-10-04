@@ -944,3 +944,10 @@
   stamp_ticket: BL-1951
   human_decision: null
   decided_at: null
+- commit: 92f53eee1b
+  subject: "hotfix: a task-mode reverse copy is told to run done_with_current, never to implement its ticket"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1924
+  human_decision: null
+  decided_at: null
