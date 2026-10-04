@@ -3,7 +3,8 @@ title: "Pin + install + wire the Babashka mutation/CRAP/DRY hardening toolchain 
 milestone: M8
 type: chore
 severity: low
-status: todo
+status: done
+closed_as: split-into-BL-1975,BL-1976,BL-1977
 epic: code-quality-gates
 priority: 113
 direction: swarm-proposed
@@ -176,6 +177,15 @@ notes: |
   directive (iq3/local-llm tickets or high/critical defects only) unless
   the human queue-jumps it, and the open questions above still need the
   pickup spec before the coder starts.
+  Retired 2026-10-04 by the specifier at the human's "Qjump 472", split
+  into BL-1975 (pinned JDK and Clojure CLI, user-local; queue-jump),
+  BL-1976 (the three tools vendored at pinned commits, plus the runner
+  and CRAP measurements; depends BL-1975) and BL-1977 (the on-touch gate
+  in the hardener; depends BL-1976). The ruling recorded here ("Provision
+  a JVM and Clojure CLI on swarm hosts, then build pin install and wire")
+  and the 2026-09-02 pickup's Q2/Q3 disposition carry into the slices.
+  The human, same pass, verbatim: "And pick which ever test framework runs
+  the fatser in case you can chose" - BL-1976 measures it, BL-1977 wires it.
 
 acceptance: |
   No net-new product behavior of its own; this is a fork-tooling infra item. When

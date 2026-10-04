@@ -1,0 +1,109 @@
+id: BL-1976
+title: "clj-mutate, crap4clj and dry4clj are vendored at pinned commits and run on a swarm .bb file with the pinned JVM, and the faster test runner for mutants is measured - BL-472 slice 2 of 3"
+milestone: M8
+type: chore
+status: todo
+epic: code-quality-gates
+priority: 3
+direction: swarm-proposed
+depends_on: [BL-1975]
+mutation_cost: low
+# low: one install script and three lock entries; its scenarios run against
+# fixture git repositories.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one new script and three lock entries; nothing to deduplicate"
+  architect: "vendoring beside swarmforge/vendor/aps/; no swarm boundary moves"
+  hardender: "shell has no mutation lane yet (this epic builds the Babashka one)"
+  documenter: "BL-1977 lands the docs once the gate is real"
+
+acceptance: specs/features/BL-1976-the-babashka-quality-tools-are-vendored-at-pinned-commits.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1976BbQualityToolsVendoredSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-472 (approved; ruling "Provision a JVM and Clojure CLI
+  on swarm hosts, then build pin install and wire"), split on 2026-10-04 at
+  the human's "Qjump 472". The test-runner measurement carries the human's
+  same-day "pick which ever test framework runs the fatser". No choice is
+  posed.
+
+invariants:
+  - "A tool is vendored only at the exact commit the lock file names."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1976 feature passes 3 of 3.
+  2. Live, on this host, with BL-1975's environment file sourced: run the
+     install the parcel adds, then each tool on one swarm library -
+     `bb mutate swarmforge/scripts/gpu_pause_lib.bb --scan` from the
+     vendored clj-mutate, crap4clj on swarmforge/scripts, dry4clj on
+     swarmforge/scripts - each prints a report and exits as its README
+     says.
+  3. Read the coder's committed evidence: the runner measurement in
+     "What is wanted", with both wall-clock times and which runner
+     BL-1977 should use.
+
+source: |
+  Split from BL-472 on 2026-10-04 at the human's queue-jump. The human,
+  specifier pane (Claude Code), 2026-10-04, verbatim (Article 5.3):
+
+  > Qjump 472
+
+  > And pick which ever test framework runs the fatser in case you can chose
+
+  BL-472's ruling: "Provision a JVM and Clojure CLI on swarm hosts, then
+  build pin install and wire".
+
+notes: |
+  Split from BL-472 on 2026-10-04 (slice 2 of 3). Approval inherited.
+  Pins measured at mint (upstream HEAD, 2026-10-04): clj-mutate
+  cea397da5b10b27372e36b6764728c952058e802, crap4clj
+  e90be2e7aa02c2ec5d6544e9cecddc6b73ad3e4d, dry4clj
+  5994ef2bcaaae8d12bcd0afb4f091ae09083228c. Pin these unless the coder finds
+  a reason not to and says it in evidence (bumping a pin later is a human
+  commit).
+  What the READMEs say (read at mint): clj-mutate runs under Babashka
+  (`bb mutate <file>`) and takes any `--test-command` that returns a
+  conventional exit status, plus `--no-coverage` and `--since-last-run`
+  (differential); its default runner is Speclj. crap4clj's README shows
+  `bb crap --source-root swarmforge/scripts --use-existing-coverage` and
+  notes covered .bb files must declare an ns and tests must exercise them
+  in the Cloverage process (tests that launch a separate bb process do not
+  count). dry4clj runs as `clj -M:dry4clj <files>`.
+  Where to read: swarmforge/scripts/install_aps_tools.sh (52 lines) is the
+  model; swarmforge.lock.json's aps entry is the lock shape. Give the
+  script a source-repository seam so the step handler uses fixture repos.
+
+description: |
+  ## What is wanted
+
+  The three tools are pinned by commit in swarmforge.lock.json and vendored
+  under swarmforge/vendor/ by an install script modelled on
+  install_aps_tools.sh: verify the checked-out commit against the pin before
+  anything moves into place, idempotent on a re-run. With BL-1975's
+  environment file sourced, each runs on a swarm .bb file.
+
+  The faster mutant runner, measured (the human: "pick which ever test
+  framework runs the fatser in case you can chose"): run clj-mutate on
+  swarmforge/scripts/gpu_pause_lib.bb twice, once with
+  `--test-command "bb swarmforge/scripts/test/gpu_pause_lib_test_runner.bb"`
+  (Babashka) and once with the same test file run by the JVM Clojure CLI,
+  and record both wall-clock times and the mutant counts in committed
+  evidence. BL-1977 wires the faster one; if one cannot run at all, say so
+  and why.
+
+  CRAP feasibility, measured: run crap4clj on gpu_pause_lib.bb with
+  BL-1975's JVM and record whether it produces a CRAP score per function.
+  Its README says covered .bb files must declare an ns and that tests which
+  launch a separate bb process do not count toward Cloverage coverage, and
+  the swarm's runners are separate bb processes. BL-1977 wires CRAP only if
+  this shows a score; otherwise its gate reports CRAP as unavailable with
+  this evidence's reason.
+
+  ## What each stage checks
+
+  - Coder: the three scenarios; the runner and CRAP measurements in
+    evidence.

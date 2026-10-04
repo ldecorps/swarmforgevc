@@ -1,0 +1,107 @@
+id: BL-1977
+title: "The hardener gates changed Babashka code on touch: clj-mutate and dry4clj on the swarmforge/scripts/*.bb libraries a change touches, judging only the forms it touched, mutants run by the faster runner BL-1976 measured - BL-472 slice 3 of 3"
+milestone: M8
+type: chore
+status: todo
+epic: code-quality-gates
+priority: 3
+direction: swarm-proposed
+depends_on: [BL-1976]
+mutation_cost: medium
+# medium: a gate script and its pure decision lib; the scenarios inject
+# tool reports, and the hardener runs the real gate on the gate's own lib.
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a new script and its lib; nothing to deduplicate yet"
+  architect: "the gate is one more hardener check beside mutation_cooldown_gate.bb; no boundary moves"
+
+acceptance: specs/features/BL-1977-the-hardener-gates-changed-babashka-code-on-touch.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1977BbQualityGateSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-472 (approved; ruling "Provision a JVM and Clojure CLI
+  on swarm hosts, then build pin install and wire"), split on 2026-10-04 at
+  the human's "Qjump 472". Scope and bar are BL-472's own pickup
+  disposition of 2026-09-02 (swarmforge/scripts/*.bb outside test/,
+  on-touch, per BL-428). No choice is posed.
+
+invariants:
+  - "The gate judges only forms the change touched in swarmforge/scripts/*.bb outside test/, and never passes a touched form with a surviving mutant or new duplication."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1977 feature passes 6 of 6.
+  2. Read the hardener's committed evidence: the gate run on the gate's own
+     library at the parcel commit, with its verdict and timing.
+  3. Live, in a scratch clone (never the live worktree), with BL-1975's
+     environment file sourced: change one line of a form in
+     swarmforge/scripts/gpu_pause_lib.bb so its runner no longer catches
+     it (e.g. flip a comparison the runner does not cover), commit, and
+     run the gate on that commit: it fails naming the mutant. Revert: it
+     passes.
+
+source: |
+  Split from BL-472 on 2026-10-04 at the human's queue-jump. The human,
+  specifier pane (Claude Code), 2026-10-04, verbatim (Article 5.3):
+
+  > Qjump 472
+
+  > And pick which ever test framework runs the fatser in case you can chose
+
+  BL-472's ruling: "Provision a JVM and Clojure CLI on swarm hosts, then
+  build pin install and wire". Evidence the same day:
+  backlog/evidence/BL-1902-QA-20261004-2.md D2 (a Babashka property check
+  passed while vacuous; QA's hand mutant survived).
+
+notes: |
+  Split from BL-472 on 2026-10-04 (slice 3 of 3). Approval inherited.
+  Inputs from BL-1976's evidence: which mutant runner is faster (wire that
+  one: the human's "pick which ever test framework runs the fatser"), and
+  whether crap4clj scores a swarm library. If it does, the gate also fails
+  a touched function with CRAP above 6; if not, the gate reports CRAP as
+  unavailable with BL-1976's reason, and that is not a failure.
+  Runner mapping: swarmforge/scripts/<lib>.bb is tested by
+  swarmforge/scripts/test/<lib>_test_runner.bb where one exists
+  (gpu_pause_lib.bb -> gpu_pause_lib_test_runner.bb). A touched library
+  with no runner is recorded with hardening_debt_ledger_update.bb and does
+  not fail the gate (on-touch, never a big-bang flip - BL-472's
+  "FIRST-PASS COST").
+  Where to read: swarmforge/scripts/mutation_cooldown_gate.bb is the
+  sibling hardener check; swarmforge/scripts/hardening_debt_ledger_update.bb
+  for the debt row. clj-mutate's `--lines` and `--since-last-run` select
+  forms; its `--test-command` takes the runner.
+  The specifier's own half (BL-798): engineering.prompt's Startup Tools
+  bullet (Babashka "NO mutation/CRAP/DRY wired (BL-472 deferred)") and
+  hardender.prompt's .bb pass are amended on main by the specifier when
+  this ticket is promoted, with "Until BL-1977 lands" interim wording,
+  and the holder is told.
+
+description: |
+  ## What is wanted
+
+  A gate the hardener runs on a parcel: for each library under
+  swarmforge/scripts (not test/) the change touched, run clj-mutate on the
+  touched forms, each mutant judged by that library's own test runner, and
+  dry4clj on the touched files. It fails when a touched form keeps a
+  surviving mutant or the change adds duplication, naming each one. Forms
+  the change did not touch are not judged. A touched library with no
+  runner passes with a debt row. Every tool runs with BL-1975's pinned
+  toolchain and BL-1976's vendored tools.
+
+  ## How (direction, not mandate)
+
+  - A pure decision lib over the tools' reports and the change's touched
+    line ranges, unit-tested on canned reports; a thin CLI that gathers the
+    diff, runs the tools and prints the verdict.
+  - The same office-hours, host-load and cooldown guards the TS Stryker
+    pass already obeys.
+
+  ## What each stage checks
+
+  - Coder: the six scenarios; the lib's unit runner.
+  - Hardender: runs the new gate on the gate's own lib and commits the
+    verdict and timing.
+  - Documenter: the hardener's how-to/runbook names the gate.

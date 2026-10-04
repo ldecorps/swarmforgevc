@@ -1,0 +1,90 @@
+id: BL-1975
+title: "A pinned JDK and Clojure CLI install user-locally on a swarm host, verified by sha256, with one environment file callers source - BL-472 slice 1 of 3, so the Babashka quality tools can resolve their deps"
+milestone: M8
+type: chore
+status: todo
+epic: code-quality-gates
+priority: 3
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one install script beside install_aps_tools.sh and one lock entry;
+# its scenarios run against a fake download source.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one new script and one lock entry; nothing to deduplicate"
+  architect: "a host install script beside install_aps_tools.sh; no swarm boundary moves"
+  hardender: "shell has no mutation lane yet (this epic builds the Babashka one)"
+  documenter: "BL-1977 lands the docs once the gate is real; this slice only installs"
+
+acceptance: specs/features/BL-1975-a-pinned-jdk-and-clojure-cli-install-user-locally.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1975JvmToolchainInstallSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-472 (approved; the human's ruling "Provision a JVM and
+  Clojure CLI on swarm hosts, then build pin install and wire"), split on
+  2026-10-04 at the human's "Qjump 472". No new scope. No choice is posed.
+
+invariants:
+  - "Nothing is installed unless every archive's sha256 matches the lock file's pin, and the install never runs sudo or a package manager."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1975 feature passes 4 of 4.
+  2. Live, on this host (network): run the install script the parcel adds.
+     Then source the environment file it writes and run `java -version`
+     and `clojure -M -e '(println :ok)'`: both report the pinned versions,
+     and `which java` is under the user-local tool directory.
+  3. Run the install a second time: it downloads nothing (its output says
+     so) and exits 0.
+  4. In one of the three tool repos pinned by BL-1976 (or a scratch clone
+     of github.com/unclebob/dry4clj), with the environment file sourced,
+     `bb tasks` lists tasks instead of failing with "Couldn't find 'java'".
+
+source: |
+  Split from BL-472 on 2026-10-04 at the human's queue-jump. The human,
+  specifier pane (Claude Code), 2026-10-04, verbatim (Article 5.3):
+
+  > Qjump 472
+
+  > And pick which ever test framework runs the fatser in case you can chose
+
+  BL-472's ruling (human_ruling, ruling_provenance tapped):
+  "Provision a JVM and Clojure CLI on swarm hosts, then build pin install
+  and wire". BL-472's own source: hardener rule_proposal 2026-07-16
+  (20260716T231815Z_000346), raised during BL-433 hardening.
+
+notes: |
+  Split from BL-472 on 2026-10-04 (slice 1 of 3: BL-1975 toolchain, BL-1976
+  the three tools, BL-1977 the gate). Approval inherited, no new scope.
+  Where to read: swarmforge/scripts/install_aps_tools.sh (52 lines, read it
+  whole) is the model - pin read from swarmforge.lock.json, verify before
+  anything moves into place, idempotent. swarmforge.lock.json's
+  secondary_host_substrate entry shows how the repo pins an install by
+  exact version. Pick the JDK (an LTS Temurin build is the obvious one) and
+  the Clojure CLI version, and record both with their sha256 in a new lock
+  entry; name the user-local directory in the lock entry too. Give the
+  script a download-source seam (an env var or argument) so the step
+  handler serves fixture archives instead of the network.
+  Hosts: this one is the one that runs the hardener. A secondary host
+  (BL-101) runs the same script when it is provisioned; nothing here
+  changes that host now.
+
+description: |
+  ## What is wanted
+
+  A script installs a pinned JDK and the Clojure CLI into a user-local
+  directory on a swarm host. Each download is checked against the sha256
+  the lock file pins before anything is unpacked into place; a mismatch
+  stops the install with nothing installed. Running it again downloads
+  nothing. It writes one environment file that sets JAVA_HOME and puts the
+  pinned java and clojure first on PATH, which BL-1976 and BL-1977 source,
+  so the toolchain they use is always the pinned one, never whatever the
+  shell happens to find. No sudo, no package manager.
+
+  ## What each stage checks
+
+  - Coder: the four scenarios.
