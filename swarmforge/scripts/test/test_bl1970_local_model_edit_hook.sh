@@ -42,9 +42,8 @@ edit_hook_registered() {
   python3 -c '
 import json, sys
 d = json.load(open(sys.argv[1]))
-groups = d["hooks"]["PostToolUse"]
-assert len(groups) == 1, groups
-assert groups[0]["matcher"] == "edit|write_file", groups
+groups = [g for g in d["hooks"]["PostToolUse"] if g["matcher"] == "edit|write_file"]
+assert len(groups) == 1, d["hooks"]["PostToolUse"]
 hooks = groups[0]["hooks"]
 assert len(hooks) == 1 and hooks[0]["type"] == "command", hooks
 assert hooks[0]["command"] == sys.argv[2], hooks

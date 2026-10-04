@@ -1,6 +1,6 @@
 #!/usr/bin/env bb
-;; local_model_repeat_guard.bb - the qwen PreToolUse hook a local-model
-;; seat's .qwen/settings.json runs before every tool call
+;; local_model_repeat_guard.bb - the qwen PostToolUse hook a local-model
+;; seat's .qwen/settings.json runs after every tool call
 ;; (write_local_model_qwen_settings in swarmforge.sh registers it).
 ;;
 ;; Why (2026-10-04): the iq3 coder, holding a BL-1951 bounce it had already
@@ -10,21 +10,30 @@
 ;; tmp/handoff.txt". qwen's own loop detection is off on these seats
 ;; (skipLoopDetection): its dialog halts a one-shot seat's turn for good.
 ;;
-;; This refuses a tool call that the seat has already made, with the same
+;; When the seat makes a tool call it has already made, with the same
 ;; arguments, twice since the last thing that can change what the call
-;; returns: an edit or write_file, a compaction (the seat's context lost the
-;; output), or a shell command that changes the repo or the mailbox (a
+;; returns - an edit or write_file, a compaction (the seat's context lost
+;; the output), or a shell command that changes the repo or the mailbox (a
 ;; commit, merge, checkout, restore, reset, rebase, or one of the handoff
-;; scripts). The refusal reaches the model as the tool's error and the turn
-;; goes on. Edits and the state-changing commands themselves are never
-;; refused, and an unreadable transcript or event refuses nothing.
+;; scripts) - this answers with additionalContext, which qwen hands the
+;; model with the call's result: the call is a repeat, its output has not
+;; changed, and the next step the latest compaction summary named. Edits
+;; and the state-changing commands are never warned about, and an
+;; unreadable transcript or event adds nothing.
+;;
+;; It warns rather than refuses. The first version (66bd85171f) refused the
+;; call as a PreToolUse deny; the iq3 coder then re-sent the identical call
+;; every five seconds, which tripped qwen's always-on check for consecutive
+;; identical tool calls (skipLoopDetection does not turn it off), and its
+;; interactive loop dialog halted the one-shot seat's turn (20:25Z). A
+;; result the model already has gives it nothing to retry.
 
 (ns local-model-repeat-guard
   (:require [cheshire.core :as json]
             [clojure.string :as str]))
 
 (def max-repeats
-  "Identical calls allowed in one window; the next one is refused."
+  "Identical calls in one window before the next one is warned about."
   2)
 
 (def edit-tools #{"edit" "write_file"})
@@ -48,6 +57,12 @@
            (let [command (str (get args "command"))]
              (some #(str/includes? command %) state-changing-commands)))))
 
+(defn next-step-of
+  "The <next_step> text a compaction summary names, or nil."
+  [payload]
+  (let [text (->> (tree-seq coll? seq payload) (filter string?) (str/join "\n"))]
+    (some-> (re-find #"(?s)<next_step>(.*?)</next_step>" text) second str/trim not-empty)))
+
 (defn transcript-entries
   "Tool calls and compactions in transcript order, from qwen's session JSONL
    lines; each call carries :record, the index of the assistant record that
@@ -61,7 +76,7 @@
                 (not (map? record)) []
                 (and (= "system" (get record "type"))
                      (= "chat_compression" (get record "subtype")))
-                [{:kind :compaction}]
+                [{:kind :compaction :next-step (next-step-of (get record "systemPayload"))}]
                 (= "assistant" (get record "type"))
                 (for [part (get-in record ["message" "parts"])
                       :let [call (get part "functionCall")]
@@ -93,17 +108,22 @@
         window (reverse (take-while (complement resets-window?) (rseq entries)))]
     (count (filter #(and (= :call (:kind %)) (= k (call-key (:name %) (:args %)))) window))))
 
-(defn refusal
-  "The reason to refuse the call, or nil to let it run."
+(defn latest-next-step [entries]
+  (some :next-step (reverse (filter #(= :compaction (:kind %)) entries))))
+
+(defn warning
+  "The note to hand the model with this call's result, or nil."
   [entries name args]
   (when-not (resets-window? {:kind :call :name name :args args})
     (let [n (prior-repeats entries name args)]
       (when (>= n max-repeats)
-        (str "Refused: you already made this exact " name " call " n
-             " times since your last edit, commit or compaction, and nothing it reads has changed,"
-             " so it would print the same output again. That output is in your history above."
-             " Do not repeat it. Take the next step your plan names instead:"
-             " an edit, a commit, the handoff, or done_with_current.sh.")))))
+        (str "REPEAT: you have now made this exact " name " call " (inc n)
+             " times since your last edit, commit or compaction. Nothing it reads has changed,"
+             " so its output is the same as before. Do not make this call again."
+             " Take the next step your plan names: an edit, a commit, the handoff, or done_with_current.sh."
+             (when-let [step (latest-next-step entries)]
+               (str " Your last summary named this next step: "
+                    (subs step 0 (min 600 (count step))))))))))
 
 (defn answer [event read-lines]
   (let [name (get event "tool_name")
@@ -111,10 +131,9 @@
         path (get event "transcript_path")]
     (when (and (string? name) (string? path))
       (when-let [lines (try (read-lines path) (catch Exception _ nil))]
-        (when-let [reason (refusal (transcript-entries lines) name args)]
-          (json/generate-string {"hookSpecificOutput" {"hookEventName" "PreToolUse"
-                                                       "permissionDecision" "deny"
-                                                       "permissionDecisionReason" reason}}))))))
+        (when-let [note (warning (transcript-entries lines) name args)]
+          (json/generate-string {"hookSpecificOutput" {"hookEventName" "PostToolUse"
+                                                       "additionalContext" note}}))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (let [event (try (json/parse-string (slurp *in*)) (catch Exception _ nil))]
