@@ -930,3 +930,10 @@
   stamp_ticket: BL-1949
   human_decision: null
   decided_at: null
+- commit: 1bbc66bc1d
+  subject: "hotfix: a Telegram /gpu verb quiets the local-model GPU for a bounded period"
+  detected_at: 2026-10-04
+  state: stamp-open
+  stamp_ticket: BL-1950
+  human_decision: null
+  decided_at: null

@@ -1,0 +1,84 @@
+id: BL-1950
+title: "Stamp-off for hotfix 1bbc66bc1d: a Telegram /gpu verb quiets the local-model seats for a bounded period, and babysitter does not read that quiet as a stalled agent"
+milestone: M8
+type: defect
+severity: high
+# high: the live coder seat was spinning the GPU fans, and a half-launch
+# repair would have started qwen again the moment the seat was stopped.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: a pure duration predicate, a gatherer stamp, and early returns in
+# existing babysitter checks. The Telegram wiring is a new verb on the
+# existing control-topic decision table.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "the verb and the quiet stamp are each one place; nothing to deduplicate"
+  architect: "gpu-pause.json is a sibling of control-pause.json and does not move a boundary"
+  hardender: "the new decisions are table rows on the existing control core; the bb tests cover the predicate and the sweep skips"
+
+acceptance: specs/features/BL-423-telegram-swarm-control-verbs.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfix 1bbc66bc1d, landed because the human asked for it
+  directly on 2026-10-04. No choice is posed. FIRM: the review decides
+  whether the change stands; the coder never re-applies it.
+
+invariants:
+  - "A GPU pause is always bounded: 30 minutes, 1 hour, or 2 hours. A marker with no untilMs is not active."
+  - "The marker is not the intake pause. New work can still be promoted while the GPU is quiet."
+  - "While the marker is active, a local-model seat with no qwen process produces no half-launch repair, no stuck-parcel warning, no frozen-pane warning, and no claim-risk finding."
+  - "The marker is written before qwen is stopped, so a sweep that lands in the gap does not relaunch the seat."
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/gpu_pause_lib_test_runner.bb` prints ok and exits 0.
+  2. `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb` prints ok and exits 0. The gpu-quiet cases are in that file.
+  3. From extension/: `npx vitest run test/telegramControlCore.test.js` — the /gpu cases pass with the rest of the file.
+  4. Read-only: `.swarmforge/operator/gpu-pause.json` is a different file from `control-pause.json`. While a pause is armed, the next babysitter sweep log has no `ensure-session` repair for a role whose roles.tsv agent is local-model.
+
+source: |
+  The human, via Cursor, 2026-10-04, verbatim (Article 5.3):
+
+  > The gpu is very noisy: in you add a telegram verb to pause it for a period of time. Taking care that this pause should not be seen by babysitter as a stalled agent. Hot fix + mint a stampoff
+
+notes: |
+  Minted 2026-10-04 with hotfix 1bbc66bc1d.
+  Hotfix ledger: 1bbc66bc1d linked to BL-1950.
+  The front-desk bot is a long-running process. /gpu is live after that
+  process is rebuilt and restarted. Until then the same quiet is
+  `bb swarmforge/scripts/gpu_pause_cli.bb <project-root> arm 30m|1h|2h`
+  and `clear`.
+
+description: |
+  ## Status: hotfix 1bbc66bc1d landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  The local-model coder seat keeps a model resident on the GPU, and the
+  fans stay loud for as long as that model is loaded. Stopping the seat
+  by hand is not enough: babysitter's half-launch check treats a pane
+  with no qwen as a fault and its repair starts the seat again, which
+  loads the model and brings the fans back.
+
+  ## What landed
+
+  /gpu in the control topic posts 30 minutes, 1 hour, and 2 hours.
+  Fans back on, and the text `/gpu off`, clear the marker. Arming writes
+  `.swarmforge/operator/gpu-pause.json` first, then stops qwen under each
+  local-model pane, asks Ollama to unload the model, and stops a
+  leftover llama-server. ollama serve stays up. The marker is not
+  control-pause.json, so intake is not frozen.
+
+  While pause-active? is true, babysitter stamps every local-model role
+  :gpu-quiet?. Check 1 returns no finding and no ensure-session repair.
+  The remote-control unavailable note, the stuck-parcel warning, the
+  busy-but-frozen warning, and that role's claim-risk finding are
+  skipped the same way. When untilMs passes, the next sweep sees an
+  ordinary missing process and repairs the seat.
