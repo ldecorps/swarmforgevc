@@ -236,8 +236,10 @@
         ;; git_handoff - qa-stage? is ANDed in here so a non-QA role's
         ;; decision never sees this flag true, keeping BL-1609's rule
         ;; byte-identical for every other role.
+        ;; 2026-10-04: or a land QA queued for the ticket (QA note 003793).
         qa-note-evidenced? (boolean (and ticket-id (forward-evidence-lib/qa-stage?)
-                                          (forward-evidence-lib/sent-note-names-ticket-since? ticket-id since)))]
+                                          (or (forward-evidence-lib/sent-note-names-ticket-since? ticket-id since)
+                                              (forward-evidence-lib/lander-queued-ticket-since? ticket-id since))))]
     (case (forward-evidence-lib/forward-completion-decision
            {:forwarding? (forward-evidence-lib/forwarding-inbound? source-file)
             :master-resident? (forward-evidence-lib/master-resident?)

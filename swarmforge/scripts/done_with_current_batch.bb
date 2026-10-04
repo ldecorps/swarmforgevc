@@ -32,7 +32,8 @@
         ;; batch path today, but the decision core's input is gathered the
         ;; same way here so neither call site drifts onto its own copy.
         qa-note-evidenced? (boolean (and ticket-id (forward-evidence-lib/qa-stage?)
-                                          (forward-evidence-lib/sent-note-names-ticket-since? ticket-id since)))]
+                                          (or (forward-evidence-lib/sent-note-names-ticket-since? ticket-id since)
+                                              (forward-evidence-lib/lander-queued-ticket-since? ticket-id since))))]
     {:file source-file
      :ticket-id ticket-id
      :decision (forward-evidence-lib/forward-completion-decision

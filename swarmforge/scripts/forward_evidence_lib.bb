@@ -19,7 +19,8 @@
 ;; and referred to as forward-evidence-lib/foo.
 
 (ns forward-evidence-lib
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
@@ -124,6 +125,35 @@
                   {:task (handoff-lib/header-field f "task")
                    :message (handoff-lib/header-field f "message")})))))
    since-iso))
+
+(defn lander-entry-names-ticket-since?
+  "Pure: does any parsed lander-queue entry (lander_queue.bb's
+   {:task :enqueued-at ...} map) name ticket-id and carry an :enqueued-at
+   (epoch ms) at or after since-ms?"
+  [entries ticket-id since-ms]
+  (boolean
+   (some (fn [m]
+           (and (map? m)
+                (= ticket-id (pipeline-stage-lib/extract-ticket-id (str (:task m))))
+                (number? (:enqueued-at m))
+                (>= (:enqueued-at m) since-ms)))
+         entries)))
+
+(defn lander-queued-ticket-since?
+  "2026-10-04 (QA note 003793): QA's approval is now queuing the land
+   (BL-1872, lander_queue.bb --enqueue), and since the merge-up broadcast
+   retired (BL-1902's activation prose, 75bd29d1bf) QA sends no note naming
+   the ticket, so every approval needed --no-op. An entry for ticket-id in
+   <root>/.swarmforge/lander/queue enqueued at or after since-iso is QA's
+   evidence too. An unreadable entry or a missing queue reads as none."
+  [ticket-id since-iso]
+  (let [dir (fs/path (handoff-lib/target-root) ".swarmforge" "lander" "queue")
+        since-ms (try (.toEpochMilli (java.time.Instant/parse (str since-iso))) (catch Exception _ 0))]
+    (lander-entry-names-ticket-since?
+     (when (fs/directory? dir)
+       (keep (fn [f] (try (edn/read-string (slurp (str f))) (catch Exception _ nil)))
+             (fs/glob dir "*.edn")))
+     ticket-id since-ms)))
 
 (defn inbound-window-start
   "BL-1645: the evidence window's lower bound for completing an inbound -

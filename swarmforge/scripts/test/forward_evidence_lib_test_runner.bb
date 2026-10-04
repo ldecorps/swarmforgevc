@@ -19,6 +19,34 @@
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
+;; ── a land QA queued is QA's evidence (2026-10-04, QA note 003793) ──────
+(let [entry {:task "BL-9001" :enqueued-at 2000 :sha "abcdef0123"}]
+  (assert= "lander: an entry for the ticket at or after the window counts" true
+           (forward-evidence-lib/lander-entry-names-ticket-since? [entry] "BL-9001" 2000))
+  (assert= "lander: an entry before the window does not count" false
+           (forward-evidence-lib/lander-entry-names-ticket-since? [entry] "BL-9001" 2001))
+  (assert= "lander: another ticket's entry does not count" false
+           (forward-evidence-lib/lander-entry-names-ticket-since? [entry] "BL-9002" 0))
+  (assert= "lander: no entries, junk and a missing stamp count as none" false
+           (forward-evidence-lib/lander-entry-names-ticket-since? [nil "junk" {:task "BL-9001"}] "BL-9001" 0)))
+(let [root (str (fs/create-temp-dir {:prefix "fwd-evidence-lander-"}))
+      q (fs/path root ".swarmforge" "lander" "queue")]
+  (try
+    (fs/create-dirs q)
+    (spit (str (fs/path q "BL-9001-abcdef0123.edn")) (pr-str {:task "BL-9001" :enqueued-at 1791115391237}))
+    (spit (str (fs/path q "broken.edn")) "{:task")
+    (with-redefs [handoff-lib/target-root (constantly root)]
+      (assert= "lander reader: an entry after the window counts" true
+               (forward-evidence-lib/lander-queued-ticket-since? "BL-9001" "2026-10-04T12:00:00.000000001Z"))
+      (assert= "lander reader: a window after the entry does not" false
+               (forward-evidence-lib/lander-queued-ticket-since? "BL-9001" "2026-10-04T13:00:00Z"))
+      (assert= "lander reader: a broken entry is skipped, not fatal" false
+               (forward-evidence-lib/lander-queued-ticket-since? "BL-9002" "1970-01-01T00:00:00Z")))
+    (with-redefs [handoff-lib/target-root (constantly (str (fs/path root "nowhere")))]
+      (assert= "lander reader: no queue dir reads as none" false
+               (forward-evidence-lib/lander-queued-ticket-since? "BL-9001" "1970-01-01T00:00:00Z")))
+    (finally (fs/delete-tree root))))
+
 ;; ── forward-completion-decision ──────────────────────────────────────────
 
 (assert= "01: forwarding, no evidence, no reason -> refuse"
