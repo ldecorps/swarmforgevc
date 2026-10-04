@@ -27,7 +27,10 @@ required_wiring:
   - 'swarmforge/scripts/swarm_ensure.bb::gpu_pause_lib.bb::ensure loads the pause predicate babysitter already reads'
   - 'specs/pipeline/steps/bl1969EnsureLeavesGpuQuietSeatDownSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - every ./swarm ensure honours the pause, a hand run too, and /gpu off ends the pause early (recommended)
+ruling_provenance: specifier-pane
 approval_context: >
   FIRM: while the /gpu pause is active, no ./swarm ensure started by
   babysitter recreates a local-model seat's session; every other seat is
@@ -108,6 +111,11 @@ notes: |
   required_stages: Babashka production code is [coder, qa]; documenter is
   added because the runbook and the gpu_pause_lib header describe the
   readers.
+  2026-10-04 (specifier): the human ruled in the specifier pane (Claude
+  Code), right after the mint, verbatim: "Ensure". Read as A: the check
+  lives in ./swarm ensure, so every ensure honours the pause, a hand run
+  too. The scenarios are written for A and stand. The specifier told the
+  human; a reply naming B re-pends the ticket for the rewrite.
 
 description: |
   ## What is wanted
