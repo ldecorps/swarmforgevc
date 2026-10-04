@@ -182,3 +182,8 @@
   role: QA
   description: "LAND_REPLAY fd4c492d3b carried BL-1851's suite-manifest.tsv row (a path BL-1929 never changed; ridden via the coder's untagged sync merge 441a212d95) while excluding its runner; found by hand with suite_inventory_cli.bb on a git-archive of origin/main vs parent 8612eb313d - main's standing bb suite refuses every run"
   detected_at: 2026-10-04
+- category: straggler-owner-attribution
+  ticket: BL-1929
+  role: QA
+  description: "qa-gather's straggler check exited 0 before and after on the hardener's live detach_job Stryker run (pgid 5437, backendSwitch.js); attributed by hand via /proc args, not a QA orphan"
+  detected_at: 2026-10-04
