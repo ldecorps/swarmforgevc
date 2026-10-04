@@ -82,6 +82,13 @@ notes: |
   with the count and the latest compaction's next step. Re-applied live
   at 20:29:19Z (PreToolUse removed, PostToolUse group added, respawn).
   Hotfix ledger links both.
+  Live result, 2026-10-04 (session 45a9da03, BL-1951): the REPEAT notes
+  reached the model and it ignored all four, re-running one identical
+  command six times in a row (20:39:55-20:44:29Z) until qwen's own
+  consecutive-identical check raised its loop dialog at ~20:45Z and the
+  turn halted. The warning no longer causes that halt (d19171aeb6), but
+  it did not change iq3's course either; the seat was chasing a false
+  bounce (BL-1972). The review judges the guard on that evidence.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Replayed on the coder's own transcripts at the hotfix: the BL-1951 loop
   (session ef906943) is refused from 20:07:03Z, 3 minutes in; the BL-1902
