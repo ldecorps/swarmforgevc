@@ -540,6 +540,21 @@ glob (BL-1109).
 Acceptance feature:
 [`specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature`](../../specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature).
 
+## A timed GPU quiet is not a stall
+
+`/gpu` in the control topic (30 minutes, 1 hour, or 2 hours) writes
+`.swarmforge/operator/gpu-pause.json` and then stops the local-model seats
+and unloads the model. While `pause-active?` is true, every role whose
+`roles.tsv` agent is `local-model` is stamped `:gpu-quiet?`. That stamp
+makes check 1 (half-launch), check 2 (remote-control unavailable), check 5
+(stuck parcel), check 7 (busy-but-frozen), and the claim-risk finding
+return nothing for that role. The repair that would call `./swarm ensure`
+and start qwen again does not fire, so the fans stay down until `untilMs`.
+After that instant the next sweep sees an ordinary missing process and
+repairs the seat. Clearing the marker (`/gpu off` or Fans back on) does
+the same on the next sweep. This marker is not the intake pause
+(`control-pause.json`); new work can still be promoted.
+
 ## Swarm-starved counts live in_process even when the owner looks idle (BL-1109)
 
 Check 10 used to treat an `in_process` claim as motion only when

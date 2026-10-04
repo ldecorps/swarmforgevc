@@ -37,6 +37,9 @@ export type ControlDecision =
   | { action: 'post-pause-menu' }
   | { action: 'apply-pause'; durationMs: number | undefined }
   | { action: 'resume-now' }
+  | { action: 'post-gpu-menu' }
+  | { action: 'apply-gpu-pause'; durationMs: number }
+  | { action: 'resume-gpu' }
   | { action: 'engage-ambulance'; ticket: string }
   | { action: 'release-ambulance' }
   | { action: 'execute-shared-operator'; verb: string; args?: string };
@@ -58,12 +61,22 @@ export const CONTROL_CALLBACK_DATA = {
   pause1h: 'control:pause-1h',
   pause4h: 'control:pause-4h',
   pauseUntilResume: 'control:pause-until-resume',
+  gpu30m: 'control:gpu-30m',
+  gpu1h: 'control:gpu-1h',
+  gpu2h: 'control:gpu-2h',
+  gpuResume: 'control:gpu-resume',
 } as const;
 
 const PAUSE_DURATIONS_MS: Record<string, number> = {
   'pause-15m': 15 * 60 * 1000,
   'pause-1h': 60 * 60 * 1000,
   'pause-4h': 4 * 60 * 60 * 1000,
+};
+
+export const GPU_PAUSE_DURATIONS_MS: Record<string, number> = {
+  'gpu-30m': 30 * 60 * 1000,
+  'gpu-1h': 60 * 60 * 1000,
+  'gpu-2h': 2 * 60 * 60 * 1000,
 };
 
 // BL-655: bare "ambulance <BL-id>" / "ambulance off" - deliberately NOT
@@ -87,6 +100,12 @@ function decideControlTextAction(text: string): ControlDecision {
   }
   if (lower === '/pause') {
     return { action: 'post-pause-menu' };
+  }
+  if (lower === '/gpu') {
+    return { action: 'post-gpu-menu' };
+  }
+  if (lower === '/gpu off') {
+    return { action: 'resume-gpu' };
   }
   if (lower === 'ambulance off' || lower === '/ambulance off') {
     return { action: 'release-ambulance' };
@@ -141,6 +160,10 @@ const CONTROL_CALLBACK_HANDLERS: Record<string, ControlCallbackHandler> = {
   'pause-15m': () => ({ action: 'apply-pause', durationMs: PAUSE_DURATIONS_MS['pause-15m'] }),
   'pause-1h': () => ({ action: 'apply-pause', durationMs: PAUSE_DURATIONS_MS['pause-1h'] }),
   'pause-4h': () => ({ action: 'apply-pause', durationMs: PAUSE_DURATIONS_MS['pause-4h'] }),
+  'gpu-30m': () => ({ action: 'apply-gpu-pause', durationMs: GPU_PAUSE_DURATIONS_MS['gpu-30m'] }),
+  'gpu-1h': () => ({ action: 'apply-gpu-pause', durationMs: GPU_PAUSE_DURATIONS_MS['gpu-1h'] }),
+  'gpu-2h': () => ({ action: 'apply-gpu-pause', durationMs: GPU_PAUSE_DURATIONS_MS['gpu-2h'] }),
+  'gpu-resume': () => ({ action: 'resume-gpu' }),
 };
 
 function decideControlCallbackAction(data: string, pendingConfirm: PendingControlConfirm, pauseState: PauseState): ControlDecision {

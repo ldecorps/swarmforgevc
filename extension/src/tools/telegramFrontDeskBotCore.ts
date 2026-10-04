@@ -1102,6 +1102,9 @@ export interface PollAdapters {
   postControlRestartConfirm?: () => Promise<void>;
   postControlCancelled?: () => Promise<void>;
   postControlPauseMenu?: () => Promise<void>;
+  postGpuPauseMenu?: () => Promise<void>;
+  applyGpuPause?: (durationMs: number) => Promise<void>;
+  resumeGpu?: () => Promise<void>;
   // BL-423: the three destructive/relaunch effects - each owns its own
   // real teardown/relaunch mechanism (kill_all_swarm.sh's socket-scoped
   // reap for the two stop modes, the existing bounce-sentinel/bounce-ack
@@ -2670,7 +2673,7 @@ async function attemptVoiceDelivery(
 // the same exhaustiveness guarantee a switch's `default: assertNever` gives.
 type ControlDecisionEffect = (adapters: PollAdapters) => Promise<void>;
 
-const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause' | 'engage-ambulance' | 'execute-shared-operator'>, ControlDecisionEffect> = {
+const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause' | 'apply-gpu-pause' | 'engage-ambulance' | 'execute-shared-operator'>, ControlDecisionEffect> = {
   ignore: async () => {},
   refuse: async () => {},
   'prompt-stop-modes': async (adapters) => {
@@ -2700,6 +2703,12 @@ const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply
   'post-pause-menu': async (adapters) => {
     await adapters.postControlPauseMenu?.();
   },
+  'post-gpu-menu': async (adapters) => {
+    await adapters.postGpuPauseMenu?.();
+  },
+  'resume-gpu': async (adapters) => {
+    await adapters.resumeGpu?.();
+  },
   'resume-now': async (adapters) => {
     await adapters.resumeNow?.();
   },
@@ -2711,6 +2720,10 @@ const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply
 async function applyControlDecision(decision: ControlDecision, adapters: PollAdapters): Promise<void> {
   if (decision.action === 'apply-pause') {
     await adapters.applyPause?.(decision.durationMs);
+    return;
+  }
+  if (decision.action === 'apply-gpu-pause') {
+    await adapters.applyGpuPause?.(decision.durationMs);
     return;
   }
   if (decision.action === 'engage-ambulance') {

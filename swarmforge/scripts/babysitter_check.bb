@@ -31,6 +31,7 @@
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "babysitterd_sweep_lib.bb")))
+(load-file (str (fs/path script-dir "gpu_pause_lib.bb")))
 ;; BL-1018: the ONE definition of what a single-role repair may resolve to.
 (load-file (str (fs/path script-dir "single_role_repair_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
@@ -179,6 +180,12 @@
       {:exit 127 :out "" :err (or (.getMessage e) "exec-failed") :spawn-failed? true})))
 
 ;; ── tmux socket + roles ──────────────────────────────────────────────────
+
+(defn read-gpu-pause []
+  (let [f (fs/path state-dir "operator" "gpu-pause.json")]
+    (when (fs/exists? f)
+      (try (json/parse-string (slurp (str f)) true)
+           (catch Exception _ nil)))))
 
 (defn read-tmux-socket []
   (let [f (fs/path state-dir "tmux-socket")]
@@ -816,14 +823,15 @@
 ;; parcels (stuck and starved must gather the same set).
 (def stuck-in-process-glob "{,**/}inbox/in_process/{*.handoff,*/*.handoff}")
 
-(defn stuck-parcels [busy-by-role]
+(defn stuck-parcels [busy-by-role gpu-quiet-roles]
   (->> (glob-handoffs stuck-in-process-glob)
        (keep (fn [p]
                (when-let [age-min (file-age-min p)]
                  (when (> age-min stuck-min)
                    (let [role (owning-role-for-path p)]
                      {:name (fs/file-name p) :age-min age-min
-                      :owner-busy? (boolean (get busy-by-role role false))})))))
+                      :owner-busy? (boolean (get busy-by-role role false))
+                      :gpu-quiet? (boolean (contains? gpu-quiet-roles role))})))))
        vec))
 
 (defn pending-claims []
@@ -1305,6 +1313,13 @@
                             {:now-ms sweep-now-ms
                              :last-repair-ms (get cp-prior "last-ms")
                              :repair-attempts (get cp-prior "attempts" 0)})
+        gpu-pause-active? (gpu-pause-lib/pause-active? (or (read-gpu-pause) {}) sweep-now-ms)
+        roles (mapv #(if (and gpu-pause-active?
+                              (= (:expected-agent %) "local-model"))
+                       (assoc % :gpu-quiet? true)
+                       %)
+                    roles)
+        gpu-quiet-roles (set (map :role (filter :gpu-quiet? roles)))
         snapshot
         {:now-ms (now-ms)
          :roles (mapv #(dissoc % :pane-text) roles)
@@ -1316,7 +1331,7 @@
          :handoffd-log-age-secs (file-age-secs (fs/path state-dir "daemon" "handoffd.log"))
          :handoffd-max-age-secs heartbeat-max-secs
          :failed-count (count-failed-box)
-         :stuck-parcels (stuck-parcels busy-by-role)
+         :stuck-parcels (stuck-parcels busy-by-role gpu-quiet-roles)
          ;; BL-802: nil (truly unavailable) flows through unmasked — no
          ;; fabricated default that would silently suppress a real low-memory
          ;; finding. check-memory-floor reports UNAVAILABLE on nil.

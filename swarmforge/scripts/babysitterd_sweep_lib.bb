@@ -135,10 +135,16 @@
   ;;   - process-gather-failed? stays repair-free — that branch is UNAVAILABLE,
   ;;     not a proven absence (BL-802 cry-wolf guard).
   [{:keys [role pane-exists? has-claude-process? process-gather-failed? should-stand?
-           expected-process expected-agent]
+           expected-process expected-agent gpu-quiet?]
     :as opts
     :or {should-stand? true}}]
   (cond
+    ;; A /gpu pause stopped this local-model seat on purpose. A missing
+    ;; process here is the quiet, not a half-launch: repairing it would
+    ;; start qwen and spin the GPU back up before the pause ends.
+    gpu-quiet?
+    nil
+
     (and (not pane-exists?) (not should-stand?))
     nil
 
@@ -183,9 +189,12 @@
    BL-1070: when the liveness gate is unmet (agent absent, gather ok), emit
    UNAVAILABLE naming that the check could not run — never go quiet (inv 3)."
   [{:keys [role pane-exists? has-claude-process? has-remote-control? rc-applicable?
-           process-gather-failed?]
+           process-gather-failed? gpu-quiet?]
     :or {rc-applicable? true}}]
   (cond
+    gpu-quiet?
+    nil
+
     (not (and pane-exists? rc-applicable?))
     nil
 
@@ -241,8 +250,8 @@
 (defn check-stuck-in-process
   [stuck-parcels]
   (vec
-   (for [{:keys [name age-min owner-busy?]} (or stuck-parcels [])
-         :when (not owner-busy?)]
+   (for [{:keys [name age-min owner-busy? gpu-quiet?]} (or stuck-parcels [])
+         :when (and (not owner-busy?) (not gpu-quiet?))]
      {:key (str "stuck-" (subs (str name) 0 (min 40 (count (str name)))))
       :severity "WARN"
       :message (str "in_process parcel older than 30m (age=" age-min "m): " name)})))
@@ -258,7 +267,10 @@
 ;; ── check 7: busy-but-frozen ──────────────────────────────────────────────────
 
 (defn check-busy-frozen
-  [{:keys [role busy? hash-history acp?]}]
+  [{:keys [role busy? hash-history acp? gpu-quiet?]}]
+  ;; A /gpu pause leaves the pane without a live turn. That is the quiet,
+  ;; not a hung footer.
+  (when-not gpu-quiet?
   ;; BL-1081: this check is two pane-text heuristics stacked - a "busy" footer
   ;; and a pane hash unchanged across three sweeps - and each is defeated in a
   ;; different way by exactly the traps this ticket exists to remove: a
@@ -280,7 +292,7 @@
                  (>= (count history) 3)
                  (apply = (take-last 3 history)))
         {:key (str "frozen-" role) :severity "WARN"
-         :message (str "swarmforge-" role ": busy footer shown but pane content unchanged for 3 sweeps — possible hung turn")}))))
+         :message (str "swarmforge-" role ": busy footer shown but pane content unchanged for 3 sweeps — possible hung turn")})))))
 
 ;; ── check 7b: an ACP seat's own control state (BL-1081) ───────────────────
 
@@ -919,7 +931,10 @@
         stuck-findings (check-stuck-in-process stuck-parcels)
         memory-finding (check-memory-floor {:available-mb available-mb :floor-mb mem-floor-mb})
         local-window-findings (check-local-window-fit local-windows now-ms)
-        claim-findings (map check-claim-risk (or claim-risks []))
+        gpu-quiet-roles (set (map :role (filter :gpu-quiet? roles)))
+        claim-findings (map check-claim-risk
+                            (remove #(contains? gpu-quiet-roles (:role %))
+                                    (or claim-risks [])))
         rotate-finding (check-rotate-not-honored
                         (when rotate-note
                           (assoc rotate-note :paused? paused? :rotation-router? rotation-router?)))

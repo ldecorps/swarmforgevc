@@ -109,7 +109,8 @@ flow_watchdog_test_runner.bb	standing
 forward_evidence_lib_test_runner.bb	standing
 front_desk_supervisor_lib_test_runner.bb	standing
 gh25_role_ask_escalation_test_runner.bb	standing		
-gherkin_lint_gate_lib_test_runner.bb	standing		
+gherkin_lint_gate_lib_test_runner.bb	standing
+gpu_pause_lib_test_runner.bb	standing		
 handoff_draft_root_guard_lib_test_runner.bb	standing		
 handoff_lib_test_runner.bb	standing		
 handoff_wake_session_test_runner.bb	standing		

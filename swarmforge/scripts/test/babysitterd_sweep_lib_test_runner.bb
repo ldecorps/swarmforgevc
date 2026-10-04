@@ -290,6 +290,29 @@
              (let [fs (sw/check-stuck-in-process [{:name "busy-owner" :age-min 60 :owner-busy? true}
                                                    {:name "idle-owner" :age-min 60 :owner-busy? false}])]
                (= ["stuck-idle-owner"] (mapv :key fs))))
+(assert= "a gpu-quiet local seat's old parcel is not a stall"
+         []
+         (sw/check-stuck-in-process [{:name "old-coder" :age-min 90 :owner-busy? false :gpu-quiet? true}]))
+(assert-nil "a gpu-quiet local seat with no process is not a half-launch"
+            (sw/check-live-session {:role "coder" :pane-exists? true :has-claude-process? false
+                                    :should-stand? true :gpu-quiet? true :expected-agent "local-model"}))
+(assert-nil "a gpu-quiet local seat is not a frozen pane"
+            (sw/check-busy-frozen {:role "coder" :busy? true :gpu-quiet? true
+                                   :hash-history ["a" "a" "a"]}))
+(assert-true "a gpu-quiet role's claim-risk does not reach assemble-findings"
+             (not-any? #(= "claim-risk-coder" (:key %))
+                       (:findings (sw/assemble-findings
+                                   {:roles [{:role "coder" :pane-exists? true :has-claude-process? false
+                                             :gpu-quiet? true :expected-agent "local-model"
+                                             :menu-blocked? false :busy? false :hash-history []}]
+                                    :now-ms 1 :handoffd-alive? true :handoffd-supervisor-alive? true
+                                    :handoffd-log-age-secs 1 :failed-count 0
+                                    :stuck-parcels [{:name "old" :age-min 90 :gpu-quiet? true}]
+                                    :available-mb 4000 :mem-floor-mb 1500
+                                    :claim-risks [{:role "coder" :severity "critical" :reclaims 8}]
+                                    :pause {:active? false} :active-ticket-count 1
+                                    :any-pane-busy? false :prev-streak 0
+                                    :pending-claims [] :in-process-claims []}))))
 
 ;; ── check 6: menu-blocked-pane ───────────────────────────────────────────────
 (assert-nil "no menu block produces no finding"

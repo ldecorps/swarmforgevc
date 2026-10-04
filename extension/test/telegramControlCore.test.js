@@ -199,6 +199,33 @@ test('BL-423: a resume-now tap while not actually paused is ignored, never a fab
   assert.deepEqual(decision, { action: 'ignore' });
 });
 
+// ── /gpu ──────────────────────────────────────────────────────────────
+
+test('an authorised /gpu in the control topic posts the quiet menu, unloading nothing yet', () => {
+  const decision = decideControlEventAction(textEvent('/gpu'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'post-gpu-menu' });
+});
+
+test('/gpu off clears the GPU pause without a second confirm', () => {
+  const decision = decideControlEventAction(textEvent('/gpu off'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'resume-gpu' });
+});
+
+test('picking 30 min arms a GPU pause with the 30-minute duration', () => {
+  const decision = decideControlEventAction(callbackEvent(CONTROL_CALLBACK_DATA.gpu30m), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'apply-gpu-pause', durationMs: 30 * 60 * 1000 });
+});
+
+test('picking 2 hr arms a GPU pause with the 2-hour duration', () => {
+  const decision = decideControlEventAction(callbackEvent(CONTROL_CALLBACK_DATA.gpu2h), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'apply-gpu-pause', durationMs: 2 * 60 * 60 * 1000 });
+});
+
+test('Fans back on clears the GPU pause even when intake is not paused', () => {
+  const decision = decideControlEventAction(callbackEvent(CONTROL_CALLBACK_DATA.gpuResume), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'resume-gpu' });
+});
+
 // ── unrecognized callback data ────────────────────────────────────────
 
 test('BL-423: an unrecognized control callback verb is ignored, never crashes', () => {

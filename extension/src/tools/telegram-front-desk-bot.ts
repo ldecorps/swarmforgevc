@@ -2229,6 +2229,67 @@ export function resumeNowButtons(): InlineKeyboardButton[][] {
   return [[{ text: 'Resume now', callbackData: CONTROL_CALLBACK_DATA.resumeNow }]];
 }
 
+export function gpuPauseMenuButtons(): InlineKeyboardButton[][] {
+  return [
+    [
+      { text: '30 min', callbackData: CONTROL_CALLBACK_DATA.gpu30m },
+      { text: '1 hr', callbackData: CONTROL_CALLBACK_DATA.gpu1h },
+      { text: '2 hr', callbackData: CONTROL_CALLBACK_DATA.gpu2h },
+    ],
+    [{ text: 'Fans back on', callbackData: CONTROL_CALLBACK_DATA.gpuResume }],
+  ];
+}
+
+function gpuPauseToken(durationMs: number): string {
+  if (durationMs === 30 * 60 * 1000) return '30m';
+  if (durationMs === 2 * 60 * 60 * 1000) return '2h';
+  return '1h';
+}
+
+export async function applyGpuPause(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  durationMs: number,
+  postFn?: TelegramPostFn
+): Promise<void> {
+  const cli = path.join(targetPath, 'swarmforge', 'scripts', 'gpu_pause_cli.bb');
+  const token = gpuPauseToken(durationMs);
+  let detail = `GPU quiet for ${token}. Local-model seats stop; babysitter will not treat that as a stall.`;
+  try {
+    const { stdout } = await execFileAsync('bb', [cli, targetPath, 'arm', token], { timeout: 20000 });
+    const line = String(stdout || '').trim();
+    if (line) detail = line;
+  } catch (err) {
+    detail = `GPU pause marker failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  await postControlMessage(botToken, chatId, controlTopicId, detail, gpuPauseMenuButtons().slice(1), postFn);
+}
+
+export async function resumeGpu(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  postFn?: TelegramPostFn
+): Promise<void> {
+  const cli = path.join(targetPath, 'swarmforge', 'scripts', 'gpu_pause_cli.bb');
+  try {
+    await execFileAsync('bb', [cli, targetPath, 'clear'], { timeout: 10000 });
+  } catch {
+    // The receipt still tells the human the clear was attempted.
+  }
+  await postControlMessage(
+    botToken,
+    chatId,
+    controlTopicId,
+    'GPU pause cleared. Babysitter will bring the local-model seats back on its next sweep.',
+    undefined,
+    postFn
+  );
+}
+
 export function killAllSwarmScriptPath(targetPath: string): string {
   return path.join(targetPath, 'swarmforge', 'scripts', 'kill_all_swarm.sh');
 }
@@ -2796,6 +2857,24 @@ function buildPollAdapters(
     postControlPauseMenu: async () => {
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
       await postControlMessage(botToken, chatId, controlTopicId, 'Pause new work intake for how long?', pauseMenuButtons());
+    },
+    postGpuPauseMenu: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await postControlMessage(
+        botToken,
+        chatId,
+        controlTopicId,
+        'Quiet the GPU for how long? Local-model seats stop. Claude seats keep running. Babysitter will not call the stop a stall.',
+        gpuPauseMenuButtons()
+      );
+    },
+    applyGpuPause: async (durationMs) => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await applyGpuPause(targetPath, botToken, chatId, controlTopicId, durationMs);
+    },
+    resumeGpu: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await resumeGpu(targetPath, botToken, chatId, controlTopicId);
     },
     executeEmergencyStop: async () => {
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
