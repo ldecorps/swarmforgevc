@@ -1091,3 +1091,10 @@
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
+- commit: e0246ab913
+  subject: "hotfix: a local seat's compaction summary names ONE next edit with the lines it replaces, and the seat makes that edit before re-reading its plan"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
