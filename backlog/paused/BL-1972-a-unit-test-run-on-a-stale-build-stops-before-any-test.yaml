@@ -1,0 +1,113 @@
+id: BL-1972
+title: "A unit test run on a stale extension/out/ stops before any test, naming the stale source file and npm run compile - a direct npx vitest run on an uncompiled worktree produced a false BL-1951 bounce that the iq3 coder spent over an hour trying to explain"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. A stale build reads as a real red, and a
+# role that bounces on it costs a whole round trip for a defect that does
+# not exist (BL-1951, 2026-10-04).
+status: todo
+epic: local-llm-swarm
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one small pure check (source mtime against compiled mtime) and one
+# globalSetup entry; the check's own unit tests run on fake stats.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one small helper and one config line; nothing to deduplicate"
+  architect: "a test-harness guard inside the existing vitest configuration; no production boundary moves"
+  documenter: "no living doc describes how a direct vitest run treats out/; the engineering guardrail already says to compile first"
+
+acceptance: specs/features/BL-1972-a-unit-test-run-on-a-stale-build-stops-before-any-test.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1972StaleBuildStopsTheRunSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A defect found by the specifier while answering the human's "Iq3 is
+  stuck with 1951?" (2026-10-04). No choice is posed. FIRM: a run whose
+  compiled output is newer than its sources is never stopped, including
+  inside a Stryker sandbox.
+
+invariants:
+  - "The check stops a run only when a source file under extension/src is newer than its compiled file under extension/out or that file is missing, and never stops a run whose out/ was compiled after its sources, a Stryker sandbox included."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1972 feature passes 3 of 3.
+  2. Read from the gather's unit row: `npm test` is green (it compiles
+     first, so the check passes on it).
+  3. In a scratch clone of the parcel (never the live worktree): run
+     `npm run compile`, then `touch src/tools/telegramCursorBridgeCore.ts`,
+     then `npx vitest run test/telegramCursorBridgeCore.test.js` from
+     `extension/`: it stops before any test, naming that file and
+     `npm run compile`. Run `npm run compile` again: the same command
+     passes.
+  4. Read the hardener's committed evidence: it records the dry-run line
+     of one Stryker run inside a sandbox with the check in place, green.
+
+source: |
+  The human, specifier pane (Claude Code), 2026-10-04 ~20:14Z, verbatim
+  (Article 5.3):
+
+  > Iq3 is stuck with 1951?
+
+  Found by the specifier: the documenter's BL-1951 bounce (7363bac1e0,
+  backlog/evidence/BL-1951-bounce-20261004.md) names the failing command
+  `npx vitest run test/telegramCursorBridgeCore.test.js -t
+  "formatHelpMessage mentions all operator commands"` and an assertion diff
+  whose "- /gpu" line (legend "+ actual - expected") is in the EXPECTED
+  text, not the output. At the commit it cites (8b97504041), and at the
+  hotfix eb5fc34a08, both extension/src/tools/telegramCursorBridgeCore.ts
+  and the test carry the /gpu line; the test loads ../out/. The
+  documenter's out/ predated the hotfix. The iq3 coder found nothing to fix
+  from 19:41Z and then spiralled through commit history trying to explain
+  the bounce (hotfixes 66bd85171f/d19171aeb6, BL-1971, came out of it).
+
+notes: |
+  Minted 2026-10-04 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Not a hotfix: extension/test/ is QA-only on main
+  (check_pipeline_code_on_main.sh), and the check sits in front of every
+  Stryker run, so it gets a hardener pass.
+  Where to read: extension/vitest.config.mjs (globalSetup at ~90, already
+  ./test/helpers/bl1039TemplateGlobalTeardown.js - a second entry beside
+  it), extension/package.json scripts (test and test:properties compile
+  first). Check whether the vitest.*.stryker.config.mjs files spread the
+  base config before deciding where the entry goes; the invariant binds
+  either way. Step handler:
+  specs/pipeline/steps/bl1972StaleBuildStopsTheRunSteps.js, registered in
+  specs/pipeline/steps/index.js.
+  required_stages: test-side is [coder, qa]; hardender is added because
+  the check runs in front of every mutation sandbox.
+
+description: |
+  ## What is wanted
+
+  When the default unit test configuration (the one `npx vitest run
+  <file>` uses from extension/) starts, it checks that every source file
+  under extension/src has a compiled file under extension/out written
+  after it. If one does not, the run stops before any test with a message
+  naming the stale or missing file and `npm run compile`. A run whose
+  out/ is current goes on with nothing printed. `npm test` and `npm run
+  test:properties` compile first, so they never see it.
+
+  The hardener's evidence records the dry-run line of one Stryker run
+  inside a sandbox with the check in place, green.
+
+  ## How (direction, not mandate)
+
+  - A pure function over the source and compiled paths and an injected
+    stat, unit-tested on fake times; a globalSetup entry calls it with the
+    real file system.
+  - Map a source file to its compiled path the way tsconfig's rootDir and
+    outDir do; read them from tsconfig rather than hard-coding them.
+
+  ## What each stage checks
+
+  - Coder: the three scenarios; the check's own unit tests; npm test green.
+  - Hardender: mutation on the check; one Stryker dry run inside a sandbox
+    stays green.
