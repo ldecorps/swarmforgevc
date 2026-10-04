@@ -1,5 +1,5 @@
 id: BL-1952
-title: "Stamp-off for hotfix 3e66c4af7c: a local-model seat's qwen settings stop re-attaching recently read files after a compaction (maxRecentFilesToRetain 0) - the iq3 coder's post-compaction history carried 24-36k chars of files it re-read at once, and a two-file read stopped the seat on qwen's hard limit until a human pressed Ctrl+Y"
+title: "Stamp-off for hotfixes 3e66c4af7c, c44825d8e4 and 4afdfbb6bf: a local-model seat's context budget - no re-attached files after a compaction (a two-file read had stopped the iq3 coder on qwen's hard limit), compaction summaries capped at 1200 tokens and closed when cut (76% of its model time went to compacting), and a short seat system prompt with auto memory off (its first request fell from 12487 to 4761 tokens)"
 milestone: M8
 type: defect
 severity: high
@@ -12,14 +12,15 @@ priority: 5
 direction: queue-jump
 depends_on: [BL-1949]
 mutation_cost: low
-# low: one settings key in an existing heredoc writer, with two test
-# assertions; no mutation lane for shell (BL-472).
+# low: two settings keys and one export in the launcher, one 1680-char
+# prompt file, and one request branch in the shim, each with tests; no
+# mutation lane for shell or Python (BL-472).
 slice_size_envelope: low
 required_stages: [coder, documenter, qa]
 stage_skip_reasons:
-  cleaner: "one JSON key and a comment in an existing writer; nothing to deduplicate"
-  architect: "the key rides qwen's own chatCompression setting inside the settings writer; no boundary moves"
-  hardender: "shell has no mutation lane (BL-472) and the writer's output is covered key by key by the shell test"
+  cleaner: "small additions beside unchanged code in three files; nothing to deduplicate"
+  architect: "each change rides an extension point qwen or the shim already has (chatCompression, memory, QWEN_SYSTEM_MD, the shim's request routing); no boundary moves"
+  hardender: "shell and Python have no mutation lane (BL-472); the tests cover each key, the export and each shim branch"
 
 # Not a claim of ownership over BL-1840's contract (BL-1251): the qwen
 # compaction feature this hotfix sits beside, as BL-1949's does.
@@ -31,11 +32,14 @@ approval_context: >
   sent a screenshot of the stopped coder pane, under the human's 2026-10-03
   dogfood loop ("have specifier implementing them"). No choice is posed.
   FIRM: the review decides whether the change stands; the coder never
-  re-applies it. The served window is unchanged (32768).
+  re-applies it. The served window is unchanged (32768). Widened
+  2026-10-04 to stamp off c44825d8e4 and 4afdfbb6bf, the human's "do B and
+  C", auto-approved on the same carve-out.
 
 invariants:
   - "The setting changes only what qwen keeps in the history after a compaction, never when qwen compacts, the served window or the provider entry."
-  - "Every local-model seat's written .qwen/settings.json carries model.chatCompression.maxRecentFilesToRetain 0, and the provider entry merge keeps it."
+  - "Every local-model seat's written .qwen/settings.json carries model.chatCompression.maxRecentFilesToRetain 0 and memory.enableManagedAutoMemory false, and the provider entry merge keeps both."
+  - "A request the shim does not recognise as qwen's compression side-query reaches Ollama exactly as it did before c44825d8e4."
 
 qa_e2e_procedure: |
   1. Read from the gather's acceptance row: the BL-1840 feature all pass.
@@ -55,6 +59,19 @@ qa_e2e_procedure: |
      b5bca0b5 (before the hotfix): all three compressions re-attached
      24-36k chars of files, and the error fired at 09:21Z. If no session
      has compacted by the time QA runs, record step 4 as not yet observed.
+  5. `python3 -m unittest swarmforge/scripts/test/test_local_model_tool_call_shim.py`:
+     OK (36 tests at mint).
+  6. `bash swarmforge/scripts/test/test_bl1838_qwen_provider_entry_via_launch_script.sh`:
+     ends "ALL PASS".
+  7. Live and read-only: `.swarmforge/local-model-shim/shim.log` carries
+     `compaction model=ista-iq3s-coder:latest ... ->1200` lines after the
+     shim's 2026-10-04 restart, and the coder session's `api_response`
+     records for those compactions show output_token_count at most 1200.
+     Measured at mint (before): 2707-3794 output tokens, 146-188 s each.
+  8. Live and read-only: the first coder qwen session started after its
+     launch script gained QWEN_SYSTEM_MD (2026-10-04 ~10:05Z) opens with an
+     `api_response` whose input_token_count is under 6000. Measured at mint:
+     12487 before; 4761 on a replay of the seat's captured first request.
 
 source: |
   The human sent the specifier a screenshot of the coder pane, 2026-10-04
@@ -67,6 +84,11 @@ source: |
   verbatim (Article 5.3):
 
   > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+  Widened the same day. The human, specifier pane, verbatim: "coder is
+  still spending most of its time compacting. when will the hotfix take
+  effect?" Offered A (raise the window, theirs to rule), B (a short qwen
+  system prompt) and C (cap the compaction summary), the human: "do B and C".
 
 notes: |
   Minted 2026-10-04 by the specifier on the human's screenshot.
@@ -82,6 +104,14 @@ notes: |
   qwen session reads it. The next full launch writes it through
   write_local_model_qwen_settings. The seat holds QA's BL-1851 bounce
   (003789) on BL-1851's own line, which holds origin/main.
+  2026-10-04 ~10:05Z, B and C live: the seat's settings gained the memory
+  key and .swarmforge/launch/coder.sh the QWEN_SYSTEM_MD export by hand
+  (backups tmp/coder-qwen-settings.backup-20261004-sysmd.json and
+  tmp/coder-launch.backup-20261004-sysmd.sh in the master checkout). The
+  coder was mid-edit on BL-1851 with uncommitted changes, so it was NOT
+  respawned: B takes effect at its next session start. The shim was
+  restarted for C once it had no upstream request open.
+  Hotfix ledger: c44825d8e4 and 4afdfbb6bf linked to BL-1952.
 
 description: |
   ## Status: hotfix 3e66c4af7c landed the fix
@@ -114,11 +144,37 @@ description: |
     and that the provider entry merge keeps it. The first assertion fails
     with KeyError against the pre-hotfix writer.
 
+  ## Second and third hotfixes: c44825d8e4 (C) and 4afdfbb6bf (B)
+
+  With no files re-attached the coder still spent 790 of 1033 model
+  seconds (76%) compacting, and made no edit in 15 minutes. Two causes:
+
+  - Its fixed prompt was 12487 tokens (qwen's base prompt 17.5k chars, its
+    auto-memory section 6.2k, tool declarations 15k), and the bounce's
+    five files were 57 KB, about 15k tokens: more than the 27852-token
+    trigger before it could write. B: the launch script exports
+    QWEN_SYSTEM_MD, the master checkout's
+    swarmforge/roles/local-model/qwen-system.md (1680 chars), which
+    replaces qwen's base prompt, and the settings writer adds
+    memory.enableManagedAutoMemory false. A captured first request falls
+    to 4761 tokens; 3 of 3 replays through the shim still call read_file
+    on the card with no text.
+  - Each summary was 2.7-3.8k tokens at about 26 tokens/s, 146-188 s. C:
+    the shim knows qwen's compression side-query by its summarizer system
+    prompt or the directive qwen sends last (never by the history
+    between), sends it upstream unstreamed with its budget capped at 1200,
+    and appends </state_snapshot> to a summary cut at the cap. qwen's own
+    compaction budget here is about 10k, so it keeps a capped summary; its
+    cache-sharing path drops an unclosed one. The PreCompact hook now
+    names the 1200-token cap.
+
   ## What each stage checks
 
-  - Coder: the change against the description and both invariants, and the
-    two new PASS lines. Evidence: backlog/evidence/BL-1952-coder-<date>.md.
-  - Documenter: the BL-1052 how-to lists the keys the settings writer
-    writes (near its .qwen/settings.json section); add this one and why.
-</content>
-</invoke>
+  - Coder: all three changes against the description and the three
+    invariants, and the new test cases (test_bl1949's four lines,
+    test_bl1838's export line, the shim's CompactionTests and its streamed
+    compaction case). Evidence: backlog/evidence/BL-1952-coder-<date>.md.
+  - Documenter: docs/how-to/BL-1052-local-model-seat-launch.md lists the
+    keys the settings writer writes and describes the shim; add the two
+    settings keys, the QWEN_SYSTEM_MD export and its prompt file, and the
+    shim's compaction cap, each with why.

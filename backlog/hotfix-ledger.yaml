@@ -958,3 +958,17 @@
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
+- commit: c44825d8e4
+  subject: "hotfix: the tool-call shim caps a local seat's compaction summary at 1200 tokens and closes a cut one"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
+- commit: 4afdfbb6bf
+  subject: "hotfix: a local-model seat's qwen runs on a short seat prompt with managed auto memory off"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
