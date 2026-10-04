@@ -2136,6 +2136,14 @@ EOF
 # handoffd chase-respawned the iq3 coder mid-ticket at 10:24 and 13:19Z
 # (busy=false), throwing its context away. One fixed "<word>..." phrase is
 # the frame shape the detector already reads busy.
+# 2026-10-04: model.skipLoopDetection true and maxToolCallsPerTurn 300. qwen's
+# heuristic loop check read the iq3 coder's exploration of the 150 KB
+# swarmforge.sh for BL-1931 (16 reads of different ranges, then a pause) as
+# a loop and raised an interactive keep/disable dialog nobody answers; it
+# fell through to "The request has been halted" and the seat idled. A seat
+# works a whole parcel in one turn, so the default 100-call cap halts big
+# tickets too; 300 keeps a backstop. qwen's always-on guards (identical
+# consecutive calls, repeated shell inspection) stay on.
 write_local_model_qwen_settings() {
   local worktree="$1"
   local model="${2:-}"
@@ -2161,7 +2169,9 @@ write_local_model_qwen_settings() {
     "PreCompact": [{"matcher": "", "hooks": [{"type": "command", "command": "bash '__SWARMFORGE_PRECOMPACT_HOOK__'", "name": "swarmforge-bounded-compaction", "timeout": 10000}]}]
   },
   "model": {
-    "chatCompression": {"maxRecentFilesToRetain": 0}
+    "chatCompression": {"maxRecentFilesToRetain": 0},
+    "skipLoopDetection": true,
+    "maxToolCallsPerTurn": 300
   },
   "memory": {"enableManagedAutoMemory": false},
   "ui": {"customWittyPhrases": ["Working..."]}

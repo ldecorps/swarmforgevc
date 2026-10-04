@@ -72,6 +72,13 @@ assert d["ui"]["customWittyPhrases"] == ["Working..."], d.get("ui")
 ' "$SETTINGS" || fail "settings.json does not pin qwen's loading phrase to Working..."
 pass "the settings pin qwen's loading phrase to one the busy detector reads"
 
+python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1]))["model"]
+assert m["skipLoopDetection"] is True and m["maxToolCallsPerTurn"] == 300, m
+' "$SETTINGS" || fail "settings.json does not turn off qwen's heuristic loop dialog and raise the per-turn cap"
+pass "the settings turn off qwen's heuristic loop dialog and raise the per-turn cap to 300"
+
 grep -q '__SWARMFORGE_PRECOMPACT_HOOK__' "$SETTINGS" && fail "the hook placeholder survived into the settings"
 pass "no placeholder is left in the written settings"
 
@@ -106,6 +113,12 @@ d = json.load(open(sys.argv[1]))
 assert d["ui"]["customWittyPhrases"] == ["Working..."], d.get("ui")
 ' "$SETTINGS" || fail "the provider entry merge dropped customWittyPhrases"
 pass "the provider entry merge keeps the pinned loading phrase"
+python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1]))["model"]
+assert m["skipLoopDetection"] is True and m["maxToolCallsPerTurn"] == 300, m
+' "$SETTINGS" || fail "the provider entry merge dropped the loop settings"
+pass "the provider entry merge keeps the loop settings"
 
 
 out="$(bash "$HOOK" </dev/null)"
