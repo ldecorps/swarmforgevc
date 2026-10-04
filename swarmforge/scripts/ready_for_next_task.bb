@@ -54,6 +54,25 @@
              (idle-clear-fullness-cli/should-respawn? (handoff-lib/current-role)))
     (handoff-lib/respawn-self! (handoff-lib/current-role))))
 
+(defn maybe-fresh-session-for-parcel!
+  "2026-10-04: a local-model seat served a parcel at the idle boundary
+   restarts in a fresh session; the parcel waits in in_process and the
+   launch script's resume note sends the new session to it."
+  [take-up]
+  (let [role (handoff-lib/current-role)]
+    (when (handoff-lib/fresh-session-at-parcel-boundary?
+           {:idle-boundary? (boolean idle-boundary?)
+            :agent (:agent (handoff-lib/load-role-info role))
+            :take-up take-up
+            :switch (System/getenv "SWARMFORGE_LOCAL_PARCEL_RESPAWN")})
+      (println "FRESH_SESSION: this local-model seat restarts now so the parcel above starts in a fresh session; it waits in in_process.")
+      (flush)
+      (try
+        (handoff-lib/respawn-pane-fresh! role (System/getenv "TMUX_PANE"))
+        (catch Exception e
+          (println (str "FRESH_SESSION: restart skipped (" (.getMessage e) "); carry on with the parcel above."))
+          (flush))))))
+
 ;; ── BL-550: non-home resident strands after a merge-up note ───────────────
 ;; Pure decision lives in mono-router-lib/rotate-home?; this reads conf text
 ;; and prints ROTATE_HOME (instead of NO_TASK) so ready_for_next.sh can hand
@@ -672,8 +691,9 @@
                                                      (origin-new-dir-for target-file))
                         (let [take-up (take-up-parcel-line! target-file)]
                           (apply-effort-for-task! target-file pack-conf)
-                          (handoff-lib/print-task target-file (task-print-opts target-file take-up)))
-                        (print-merge-main-first-hint! target-file))
+                          (handoff-lib/print-task target-file (task-print-opts target-file take-up))
+                          (print-merge-main-first-hint! target-file)
+                          (maybe-fresh-session-for-parcel! take-up)))
                       (recur (rest candidates)))))))))))))
 
 (when (= *file* (System/getProperty "babashka.file"))

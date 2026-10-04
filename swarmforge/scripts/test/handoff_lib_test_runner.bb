@@ -1109,6 +1109,32 @@
   (assert-true "print-task: a batch seat (one-arity) still acts on a merge-up note"
                (str/includes? (with-out-str (handoff-lib/print-task qa)) "act on it per your role prompt")))
 
+;; ── a local-model seat starts each parcel in a fresh session (2026-10-04) ──
+(let [base {:idle-boundary? true :agent "local-model" :take-up :moved :switch nil}]
+  (assert-true "fresh-session: a local seat served a parcel at the idle boundary restarts"
+               (handoff-lib/fresh-session-at-parcel-boundary? base))
+  (assert-true "fresh-session: a take-up that stayed still restarts" (handoff-lib/fresh-session-at-parcel-boundary? (assoc base :take-up :stay)))
+  (assert-true "fresh-session: a parcel that needs no take-up still restarts" (handoff-lib/fresh-session-at-parcel-boundary? (assoc base :take-up nil)))
+  (assert-false "fresh-session: never outside the idle boundary (a plain ready_for_next)" (handoff-lib/fresh-session-at-parcel-boundary? (assoc base :idle-boundary? false)))
+  (assert-false "fresh-session: never for a claude seat" (handoff-lib/fresh-session-at-parcel-boundary? (assoc base :agent "claude")))
+  (assert-false "fresh-session: never after a refused take-up" (handoff-lib/fresh-session-at-parcel-boundary? (assoc base :take-up :refused)))
+  (assert-false "fresh-session: the switch turns it off" (handoff-lib/fresh-session-at-parcel-boundary? (assoc base :switch " OFF ")))
+  (assert-true "fresh-session: any other switch value leaves it on" (handoff-lib/fresh-session-at-parcel-boundary? (assoc base :switch "on"))))
+(let [calls (atom [])]
+  (with-redefs [daemon-cycle-guard-lib/sh! (fn [& args] (swap! calls conj (vec args)) {:exit 0 :out "" :err ""})
+                handoff-lib/tmux-socket (constantly "/sock")
+                handoff-lib/launch-script-path (fn [r] (str "/root/.swarmforge/launch/" r ".sh"))
+                handoff-lib/openrouter-pane-env-args (constantly [])
+                handoff-lib/recompose-role-prompt! (fn [& _] (throw (ex-info "must not recompose" {})))]
+    (assert= "respawn-pane-fresh!: nil and no tmux call without a pane" nil (handoff-lib/respawn-pane-fresh! "coder" ""))
+    (assert= "respawn-pane-fresh!: no tmux call without a pane" [] @calls)
+    (handoff-lib/respawn-pane-fresh! "coder" "%8")
+    (let [args (first @calls)]
+      (assert= "respawn-pane-fresh!: respawn-pane -k on the given pane"
+               ["tmux" "-S" "/sock" "respawn-pane" "-k" "-t" "%8"] (vec (take 7 args)))
+      (assert-true "respawn-pane-fresh!: runs the role's launch script"
+                   (str/includes? (last args) "/root/.swarmforge/launch/coder.sh")))))
+
 ;; ── print-task names the served ticket's file (2026-10-03) ──────────────
 ;; "Implement BL-1916 from backlog/active/" sent a local seat to README.md,
 ;; then to asking the user, then to a guessed backlog/active/BL-1916.md.

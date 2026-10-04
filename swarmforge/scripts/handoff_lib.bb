@@ -1347,6 +1347,36 @@
         (write-mono-router-active-role! role-name))
       result)))
 
+;; ── A local-model seat starts each parcel in a fresh session (2026-10-04) ──
+;; The human, asked whether iq3 should compact after each ticket: "Go" on a
+;; fresh qwen session per parcel instead. 4 of 6 compaction summaries in the
+;; iq3 coder's 11:00Z session mixed two tickets: each parcel started with the
+;; last one's history in its 32k window. This is a separate path from the
+;; BL-089 idle-clear (NO_TASK only, fullness-gated, the human's 2026-08-28
+;; ruling, unchanged): it fires only when the idle boundary served a parcel.
+(defn fresh-session-at-parcel-boundary?
+  "Pure: restart the seat's session before the parcel it was just served
+   when done_with_current's hand-over (the idle boundary) claimed one for a
+   local-model seat, the take-up was not refused (a refused take-up needs
+   the session that knows its own uncommitted changes), and the
+   SWARMFORGE_LOCAL_PARCEL_RESPAWN switch is not off."
+  [{:keys [idle-boundary? agent take-up switch]}]
+  (boolean (and idle-boundary?
+                (= "local-model" agent)
+                (not= :refused take-up)
+                (not= "off" (some-> switch str/trim str/lower-case)))))
+
+(defn respawn-pane-fresh!
+  "Respawns pane with role-name's persisted launch script, recomposing
+   nothing: the composer runs from the seat's own parcel line, which can be
+   older than master, and recomposing there would write an older card over
+   the live one. Returns the tmux result, or nil when there is no pane."
+  [role-name pane]
+  (when-not (str/blank? pane)
+    (apply daemon-cycle-guard-lib/sh! (concat ["tmux" "-S" (tmux-socket) "respawn-pane" "-k"]
+                                              (openrouter-pane-env-args)
+                                              ["-t" pane (shell-quote-lib/launch-command (launch-script-path role-name))]))))
+
 ;; ── BL-518: mono-router rotation ────────────────────────────────────────────
 ;; respawn-self! re-execs the CURRENT role's launch script (idle-boundary
 ;; refresh). respawn-as! re-execs a DIFFERENT role's launch script in the same
