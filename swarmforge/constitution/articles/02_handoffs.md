@@ -48,10 +48,9 @@ speaks the same two-call protocol itself via `handoff_lib.bb`'s
 **Reverse hops.** A pack window may declare `back-one` or `back-all`
 (default `forward-only`): a queued `git_handoff` then also writes
 priority-`00` `non-forwarding: true` copies to the previous or all earlier
-roles, never `coordinator`; agents draft only the forward `to:`. Until
-BL-1902 lands and the swarm relaunches, the live cleaner and architect
-declare them. The last non-coordinator role's forward is also stamped
-`non-forwarding: true` (terminal).
+roles, never `coordinator`; agents draft only the forward `to:`. The last
+non-coordinator role's forward is also stamped `non-forwarding: true`
+(terminal).
 
 ## 2.4 Receiving Rules
 Use `ready_for_next.sh` to receive work (checks `in_process/` first). Batch
