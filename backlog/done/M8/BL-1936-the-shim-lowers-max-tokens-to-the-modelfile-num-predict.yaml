@@ -34,7 +34,7 @@ approval_context: >
 
 invariants:
   - "A chat completion reaches Ollama with no max_tokens or max_completion_tokens above the model's Modelfile num_predict, on the tool path and the tool-less passthrough alike."
-  - "The shim never raises or adds an output budget, and leaves the request unclamped when the model declares no positive num_predict or the lookup fails."
+  - "Outside qwen's compression side-query, the shim never raises or adds an output budget, and leaves the request unclamped when the model declares no positive num_predict or the lookup fails."
 
 source: |
   Coordinator note 016121 (2026-10-03 20:28Z): "CRIT shim never clamps
@@ -110,5 +110,13 @@ notes: |
     amended.
   - The evidence file says the client is Claude Code; the iq3 seat runs the
     qwen CLI (0.24.7), which sends the max_tokens.
+  - 2026-10-04 (specifier, QA note 003798, after the land 430435c114):
+    invariant 2 now reads "Outside qwen's compression side-query".
+    Hotfix c44825d8e4 (stamped off by BL-1952) gives that side-query its
+    own budget: max_tokens at min(1200, num_predict), added when the
+    request names none and kept when the num_predict lookup fails.
+    BL-1952's invariant 3 holds every other request to the behaviour
+    before c44825d8e4, which is what this invariant states. The wording
+    changed; the landed parcel and its tests did not.
 
 assigned_to: coder

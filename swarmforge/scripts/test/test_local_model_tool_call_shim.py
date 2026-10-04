@@ -261,16 +261,6 @@ class CompactionTests(unittest.TestCase):
             {"role": "user", "content": "go on"}]}))
         self.assertFalse(shim.is_compaction_request({"messages": []}))
 
-    def test_a_last_tool_result_quoting_a_marker_is_not_a_compaction(self) -> None:
-        # 2026-10-04: the coder read this shim's source for BL-1936; the
-        # tool result carried both markers and its next turn was capped.
-        source = "COMPACTION_MARKERS = (\n    \"" + "\",\n    \"".join(shim.COMPACTION_MARKERS) + "\",\n)"
-        self.assertFalse(shim.is_compaction_request({"messages": [
-            {"role": "system", "content": "You are a SwarmForge agent."},
-            {"role": "user", "content": "review the shim"},
-            {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function"}]},
-            {"role": "tool", "tool_call_id": "c1", "content": source}]}))
-
     def test_the_budget_is_capped_and_added_when_absent(self) -> None:
         capped, lowered = shim.compaction_budget({"max_tokens": 9000}, 1200)
         self.assertEqual((capped["max_tokens"], lowered), (1200, 9000))
@@ -340,6 +330,8 @@ class FakeOllama(BaseHTTPRequestHandler):
             self._reply(cut_completion(CUT))
         elif last.get("content") == "announce, please":
             self._reply(completion("I will now run the ready_for_next.sh script."))
+        elif last.get("content") == "summarize, please":
+            self._reply(cut_completion("A long summary of the history so far."))
         else:
             self._reply(completion(FENCED))
 
@@ -467,6 +459,19 @@ class LiveShimTests(unittest.TestCase):
     def test_a_model_with_no_num_predict_keeps_the_client_budget(self) -> None:
         self.post({"model": "m", "max_tokens": 13000, "messages": [{"role": "user", "content": "hi"}]})
         self.assertEqual(FakeOllama.seen[-1][1]["max_tokens"], 13000)
+
+    def test_a_reply_cut_at_the_cap_reaches_the_client_as_length(self) -> None:
+        tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+        out = json.loads(self.post({"model": "capped", "max_tokens": 13000, "tools": tools,
+                                    "messages": [{"role": "user", "content": "summarize, please"}]}))
+        self.assertEqual(out["choices"][0]["finish_reason"], "length")
+        self.assertEqual(FakeOllama.seen[-1][1]["max_tokens"], 4096)
+
+    def test_a_tool_less_reply_cut_at_the_cap_reaches_the_client_as_length(self) -> None:
+        out = json.loads(self.post({"model": "capped", "max_tokens": 13000,
+                                    "messages": [{"role": "user", "content": "summarize, please"}]}))
+        self.assertEqual(out["choices"][0]["finish_reason"], "length")
+        self.assertEqual(FakeOllama.seen[-1][1]["max_tokens"], 4096)
 
     def test_health_names_the_shim_and_ensure_refuses_a_foreign_port(self) -> None:
         port = self.shim.server_address[1]

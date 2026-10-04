@@ -284,7 +284,18 @@ in it:
   ("hard limit" below the true limit). With neither a served window nor a
   configured context length available, no provider entry is written and
   one warning line names the seat — never a guessed value.
-
+- **BL-1949's PreCompact hook** (`hooks.PreCompact`) — every local-model
+  seat's settings register the master checkout's
+  `swarmforge/scripts/local_model_precompact_hook.sh` (never the seat's
+  worktree copy, which follows whatever parcel line the seat holds) for
+  every compaction trigger. qwen appends the hook's `additionalContext`
+  to its compaction prompt, so the summary the seat resumes from is
+  bounded: no `<analysis>` block, `<next_step>` first, the whole snapshot
+  under 900 words, and `</state_snapshot>` closed. Without it, a summary
+  that hits the model's output cap is cut off before the three sections
+  the agent resumes from (coordinator note 016208: 0 of 24 snapshots in
+  one coder session closed). The hook changes only the instructions qwen
+  appends — never when qwen compacts or what history it compacts.
 
 ### The window gate refuses qwen's compaction dead zone (BL-1840)
 
