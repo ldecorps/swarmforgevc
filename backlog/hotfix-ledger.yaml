@@ -923,3 +923,10 @@
   stamp_ticket: BL-1936
   human_decision: null
   decided_at: null
+- commit: 380481d3be
+  subject: "hotfix: a local-model seat's compaction summary puts next_step first and fits the output cap"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1949
+  human_decision: null
+  decided_at: null

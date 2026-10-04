@@ -1,0 +1,109 @@
+id: BL-1949
+title: "Stamp-off for hotfix 380481d3be: a local-model seat's compaction summary puts next_step first and fits the output cap - every iq3 compaction was cut off at the shim's 4096-token cap before <next_step>, so the coder lost its place every ~4 minutes and never forwarded BL-1858; a qwen PreCompact hook now asks for no analysis block, the resume sections first, and under 900 words"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the iq3 coder held BL-1858 for 11 h
+# and forwarded nothing in its last 6 (coordinator note 016208).
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one bash hook that prints a fixed JSON line, and ten lines in
+# write_local_model_qwen_settings; no mutation lane for shell (BL-472).
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new hook script and ten lines in an existing writer; nothing to deduplicate"
+  architect: "the hook rides qwen's own PreCompact extension point inside the settings writer; no boundary moves"
+  hardender: "shell has no mutation lane (BL-472) and the hook writes no durable state; the shell test covers every line"
+
+# Not a claim of ownership over BL-1840's contract (BL-1251): the qwen
+# compaction feature this hotfix sits beside.
+acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed on coordinator note 016208
+  (2026-10-04), under the human's 2026-10-03 dogfood loop ("have specifier
+  implementing them"). No choice is posed. FIRM: the review decides whether
+  the change stands; the coder never re-applies it.
+
+invariants:
+  - "The hook changes only the instructions qwen appends to its compaction prompt, never when qwen compacts or what history it compacts."
+  - "Every local-model seat's written .qwen/settings.json names the master checkout's hook, and the provider entry merge keeps it."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1840 feature all pass.
+     Measured at mint (2026-10-04): 7/7.
+  2. `bash swarmforge/scripts/test/test_bl1949_local_model_precompact_hook.sh`:
+     five PASS lines, exit 0.
+  3. Live and read-only, on the iq3 coder seat's first qwen session that
+     started after 2026-10-04 07:40 BST (its settings carry the hook from
+     then): in `~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/<session>.jsonl`,
+     the `chat_compression` records' `compressedHistory[0]` text opens its
+     `<state_snapshot>` with `<next_step>` and contains `</state_snapshot>`.
+     Measured at mint on session ebb63560 (before the hotfix): 0 of 24
+     snapshots closed. If iq3 ignores the instruction, report it: the
+     review fails and the specifier ranks the next lever.
+
+source: |
+  Coordinator note 016208, 2026-10-04 06:04Z, to the specifier:
+  "BL-1858 pulled from coder@iq3: 11h, 3h+ no commits, clean status".
+  The human, via Cursor, 2026-10-03, verbatim (Article 5.3):
+
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+notes: |
+  Minted 2026-10-04 by the specifier on coordinator note 016208.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 380481d3be linked to BL-1949. The live seat's
+  .worktrees/coder/.qwen/settings.json was given the same hook by hand at
+  07:40 BST (backup tmp/coder-qwen-settings.backup-20261004.json); the next
+  full launch writes it through write_local_model_qwen_settings.
+
+description: |
+  ## Status: hotfix 380481d3be landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  Between 23:45Z on 2026-10-03 and 06:01Z on 2026-10-04 the iq3 coder's
+  qwen sessions compacted 76 times, about every 4 minutes. qwen compacts at
+  27852 tokens of a 32768 window, and the seat's prompt floor is about
+  12.5k, so about 10k of room was left. Every compaction call hit the
+  shim's 4096-token cap (e44f9cdfc7) and ran about 180 s: 32 such calls
+  took 5773 of 7223 model seconds in one session (80%).
+
+  Worse, none of the 24 snapshots in session ebb63560 closed
+  `</state_snapshot>`. qwen's compaction prompt asks for an `<analysis>`
+  block first, then nine sections with `<pending_tasks>`, `<current_work>`
+  and `<next_step>` last, after `<files_and_code_sections>` with "full
+  code snippets". Every summary was cut off before the three sections the
+  agent resumes from. The seat re-read the same files (residentSpyUiHtml.ts
+  39 times, swarmforge.sh 25, QA's evidence 23) and never ran
+  swarm_handoff.sh.
+
+  ## What the hotfix changed
+
+  - `swarmforge/scripts/local_model_precompact_hook.sh` prints a qwen
+    PreCompact `additionalContext`: no `<analysis>` block, `<next_step>`,
+    `<current_work>` and `<pending_tasks>` first, the snapshot under 900
+    words, files as path plus one line, and close `</state_snapshot>`.
+    qwen appends it to the compaction prompt as "Additional Instructions"
+    (`buildCompressionSystemPrompt`).
+  - `write_local_model_qwen_settings` (swarmforge.sh) registers the hook,
+    the master checkout's own copy, for every trigger.
+  - `swarmforge/scripts/test/test_bl1949_local_model_precompact_hook.sh`,
+    registered standing.
+
+  ## What the review checks
+
+  - The hook text is accurate and bounded (under qwen's 4000-character
+    limit), and the writer leaves no placeholder in the settings.
+  - The docs: `docs/how-to/BL-1052-local-model-seat-launch.md` (around
+    line 265) lists what a seat's `.qwen/settings.json` carries; the
+    PreCompact hook joins that list, with why.
