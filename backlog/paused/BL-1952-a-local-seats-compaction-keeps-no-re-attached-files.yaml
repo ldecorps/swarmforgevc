@@ -77,6 +77,12 @@ qa_e2e_procedure: |
      launch script gained QWEN_SYSTEM_MD (2026-10-04 ~10:05Z) opens with an
      `api_response` whose input_token_count is under 6000. Measured at mint:
      12487 before; 4761 on a replay of the seat's captured first request.
+  9. 427b3a1b1f (declared window): `bb swarmforge/scripts/test/local_model_window_gate_lib_test_runner.bb`
+     prints ALL PASS; the coder's .qwen/settings.json gives
+     ista-iq3s-coder:latest contextWindowSize 88728 (served 73728) and
+     tools.toolOutputBatchBudget 24000; after the shim's next restart,
+     `grep -c WINDOW_FULL .swarmforge/local-model-shim/shim.log` is 0 and
+     .swarmforge/ollama/serve.log has no truncation line at limit=73728.
 
 source: |
   The human sent the specifier a screenshot of the coder pane, 2026-10-04
@@ -137,6 +143,10 @@ notes: |
   busy check reads a mid-turn seat busy). Hotfix ledger: 1209273032 linked.
   Also stamps off 1f3b61b9b3 (heuristic loop dialog off, 300 tool calls a
   turn, always-on loop guards kept). Hotfix ledger: 1f3b61b9b3 linked.
+  Also stamps off 427b3a1b1f (behind the shim a seat declares its served
+  window plus 15000 to qwen, so iq3 compacts at 55728, not 40728; one tool
+  batch capped at 24000 chars; the shim logs WINDOW_FULL; the Modelfile's
+  num_ctx is the one place the window is written). Hotfix ledger linked.
 
 description: |
   ## Status: hotfix 3e66c4af7c landed the fix
