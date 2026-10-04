@@ -1,0 +1,124 @@
+id: BL-1952
+title: "Stamp-off for hotfix 3e66c4af7c: a local-model seat's qwen settings stop re-attaching recently read files after a compaction (maxRecentFilesToRetain 0) - the iq3 coder's post-compaction history carried 24-36k chars of files it re-read at once, and a two-file read stopped the seat on qwen's hard limit until a human pressed Ctrl+Y"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault that stops a seat dead. The iq3 coder sat on "Context
+# is too large to send safely after automatic compression" mid-bounce on
+# BL-1851, and nothing resumes it but a keypress or a respawn.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: queue-jump
+depends_on: [BL-1949]
+mutation_cost: low
+# low: one settings key in an existing heredoc writer, with two test
+# assertions; no mutation lane for shell (BL-472).
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one JSON key and a comment in an existing writer; nothing to deduplicate"
+  architect: "the key rides qwen's own chatCompression setting inside the settings writer; no boundary moves"
+  hardender: "shell has no mutation lane (BL-472) and the writer's output is covered key by key by the shell test"
+
+# Not a claim of ownership over BL-1840's contract (BL-1251): the qwen
+# compaction feature this hotfix sits beside, as BL-1949's does.
+acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed on 2026-10-04 after the human
+  sent a screenshot of the stopped coder pane, under the human's 2026-10-03
+  dogfood loop ("have specifier implementing them"). No choice is posed.
+  FIRM: the review decides whether the change stands; the coder never
+  re-applies it. The served window is unchanged (32768).
+
+invariants:
+  - "The setting changes only what qwen keeps in the history after a compaction, never when qwen compacts, the served window or the provider entry."
+  - "Every local-model seat's written .qwen/settings.json carries model.chatCompression.maxRecentFilesToRetain 0, and the provider entry merge keeps it."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1840 feature all pass.
+     Measured at mint (2026-10-04, HEAD 3e66c4af7c): 7/7.
+  2. `bash swarmforge/scripts/test/test_bl1949_local_model_precompact_hook.sh`:
+     seven PASS lines, exit 0. Two of them are this hotfix's ("the settings
+     stop qwen re-attaching recently read files after a compaction", "the
+     provider entry merge keeps maxRecentFilesToRetain 0").
+  3. `bash swarmforge/scripts/test/test_bl1829_local_model_qwen_settings.sh`:
+     ends "ALL PASS".
+  4. Live and read-only, on the iq3 coder seat's first qwen session that
+     started after 2026-10-04 09:26:34Z (its respawn onto the patched
+     settings): in `~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/<session>.jsonl`,
+     no `chat_compression` record's `compressedHistory` carries a part
+     whose text starts "Recently accessed file", and no record carries
+     "Context is too large to send safely". Measured at mint on session
+     b5bca0b5 (before the hotfix): all three compressions re-attached
+     24-36k chars of files, and the error fired at 09:21Z. If no session
+     has compacted by the time QA runs, record step 4 as not yet observed.
+
+source: |
+  The human sent the specifier a screenshot of the coder pane, 2026-10-04
+  ~09:24Z, with no text: three compactions in four minutes on BL-1851's
+  bounce, then "[API Error: Context is too large to send safely after
+  automatic compression. Estimated prompt tokens: 35318; hard limit:
+  30852.8; compression status: COMPRESSED. Start a new session or reduce
+  the resumed history before continuing.] (Press Ctrl+Y to retry)".
+  The standing loop it belongs to, the human via Cursor, 2026-10-03,
+  verbatim (Article 5.3):
+
+  > Have the swarm observe, raise high severity defect, have specifier implementing them, repeat, until the point where coder2.5 is capable of working.
+
+notes: |
+  Minted 2026-10-04 by the specifier on the human's screenshot.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 3e66c4af7c linked to BL-1952.
+  Not folded into BL-1949, which changes the same writer and test file:
+  BL-1949 is already active, and an active ticket is never consolidated
+  (BL-317/BL-325). depends_on [BL-1949] keeps the two off the test file at
+  once; the coordinator's orthogonality check would hold it anyway.
+  Live: .worktrees/coder/.qwen/settings.json was given the key by hand at
+  09:25Z (backup tmp/coder-qwen-settings.backup-20261004-retain.json in the
+  master checkout), and the coder pane was respawned at 09:26:34Z so a new
+  qwen session reads it. The next full launch writes it through
+  write_local_model_qwen_settings. The seat holds QA's BL-1851 bounce
+  (003789) on BL-1851's own line, which holds origin/main.
+
+description: |
+  ## Status: hotfix 3e66c4af7c landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  qwen's chatCompression default, maxRecentFilesToRetain 5, re-attaches
+  the full text of the five most recently read files to the history after
+  every compaction. In the iq3 coder's session b5bca0b5 (QA's BL-1851
+  bounce) those parts were 24284, 26360 and 36031 chars against summaries
+  of 5.5-6.5k chars. That left 22324-25598 tokens after each compaction,
+  against a 27852-token trigger in a 32768 window. The seat re-read the
+  same files at once (read_file of local_seat_tuning_report_lib.bb right
+  after it came back embedded), so each file counted twice. At 09:21Z one
+  call read two files, and qwen refused the next request: estimated
+  35318 tokens against a hard limit of 30852.8. qwen does not recover from
+  that error alone; the seat waits for Ctrl+Y, and a retry sends the same
+  history.
+
+  ## What the hotfix changed
+
+  - swarmforge.sh, write_local_model_qwen_settings: the written
+    `.qwen/settings.json` gains `"model": {"chatCompression":
+    {"maxRecentFilesToRetain": 0}}`, so a compaction keeps the summary and
+    the most recent turn, and the seat re-reads what it needs. A comment
+    above the function records why.
+  - test_bl1949_local_model_precompact_hook.sh: asserts the key is written
+    and that the provider entry merge keeps it. The first assertion fails
+    with KeyError against the pre-hotfix writer.
+
+  ## What each stage checks
+
+  - Coder: the change against the description and both invariants, and the
+    two new PASS lines. Evidence: backlog/evidence/BL-1952-coder-<date>.md.
+  - Documenter: the BL-1052 how-to lists the keys the settings writer
+    writes (near its .qwen/settings.json section); add this one and why.
+</content>
+</invoke>

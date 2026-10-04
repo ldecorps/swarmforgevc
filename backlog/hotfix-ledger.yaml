@@ -951,3 +951,10 @@
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
+- commit: 3e66c4af7c
+  subject: "hotfix: a local-model seat's qwen settings stop re-attaching recently read files after a compaction"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
