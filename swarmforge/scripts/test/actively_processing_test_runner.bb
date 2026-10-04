@@ -98,6 +98,19 @@
 (assert-idle "nil capture" nil)
 (assert-idle "empty capture" "")
 
+
+;; qwen-pinned-phrase (2026-10-04): a local-model seat's qwen shows one fixed
+;; loading phrase (write_local_model_qwen_settings ui.customWittyPhrases), so
+;; its mid-turn frame always reads busy; a random joke phrase carrying its own
+;; parentheses read idle and let handoffd chase-respawn the seat mid-ticket.
+(let [footer "  Enter to steer · Ctrl+Q to queue · YOLO mode (shift + tab to cycle)"
+      pinned (str "  ✓ Read swarmforge/scripts/swarmforge.sh\n  .  Working...  (13m 9s · ↑ 3.6k tokens · esc to cancel)\n" footer)
+      joke (str "  ✓ Read swarmforge/scripts/swarmforge.sh\n  . Have you tried turning it off and on again? (The loading screen, not me.) (2m 15s · ↑ 43 tokens · esc to cancel)\n" footer)]
+  (when-not (chase-sweep-lib/actively-processing? pinned)
+    (swap! failures conj "FAIL: qwen-pinned-phrase: the pinned Working... frame must read busy"))
+  (when (chase-sweep-lib/actively-processing? joke)
+    (swap! failures conj "FAIL: qwen-pinned-phrase: the parenthesised joke frame now reads busy - drop the pin's rationale or this case")))
+
 (when (seq @failures)
   (doseq [f @failures] (println f))
   (System/exit 1))

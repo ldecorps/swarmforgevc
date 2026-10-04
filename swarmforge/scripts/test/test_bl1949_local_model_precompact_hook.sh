@@ -65,6 +65,13 @@ assert d["memory"]["enableManagedAutoMemory"] is False, d.get("memory")
 ' "$SETTINGS" || fail "settings.json does not switch qwen's managed auto memory off"
 pass "the settings switch qwen's managed auto memory off"
 
+python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["ui"]["customWittyPhrases"] == ["Working..."], d.get("ui")
+' "$SETTINGS" || fail "settings.json does not pin qwen's loading phrase to Working..."
+pass "the settings pin qwen's loading phrase to one the busy detector reads"
+
 grep -q '__SWARMFORGE_PRECOMPACT_HOOK__' "$SETTINGS" && fail "the hook placeholder survived into the settings"
 pass "no placeholder is left in the written settings"
 
@@ -93,6 +100,12 @@ d = json.load(open(sys.argv[1]))
 assert d["memory"]["enableManagedAutoMemory"] is False, d.get("memory")
 ' "$SETTINGS" || fail "the provider entry merge dropped enableManagedAutoMemory"
 pass "the provider entry merge keeps managed auto memory off"
+python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["ui"]["customWittyPhrases"] == ["Working..."], d.get("ui")
+' "$SETTINGS" || fail "the provider entry merge dropped customWittyPhrases"
+pass "the provider entry merge keeps the pinned loading phrase"
 
 
 out="$(bash "$HOOK" </dev/null)"

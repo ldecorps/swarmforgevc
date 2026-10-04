@@ -2129,6 +2129,13 @@ EOF
 # section added 6.2k chars to every request of a seat that has no use for
 # it; with QWEN_SYSTEM_MD (the launch script exports it, see
 # local_model_guard) a seat's first request fell from 12487 to 4761 tokens.
+# 2026-10-04: ui.customWittyPhrases ["Working..."]. qwen's rotating joke
+# phrases can carry their own parentheses ("... (The loading screen, not
+# me.) (2m 15s ·") or wrap the elapsed time onto the next line, and
+# chase_sweep_lib's actively-processing? then reads a mid-turn seat idle:
+# handoffd chase-respawned the iq3 coder mid-ticket at 10:24 and 13:19Z
+# (busy=false), throwing its context away. One fixed "<word>..." phrase is
+# the frame shape the detector already reads busy.
 write_local_model_qwen_settings() {
   local worktree="$1"
   local model="${2:-}"
@@ -2156,7 +2163,8 @@ write_local_model_qwen_settings() {
   "model": {
     "chatCompression": {"maxRecentFilesToRetain": 0}
   },
-  "memory": {"enableManagedAutoMemory": false}
+  "memory": {"enableManagedAutoMemory": false},
+  "ui": {"customWittyPhrases": ["Working..."]}
 }
 JSON
   # 2026-10-04 hotfix: every compaction summary was cut off at the model's
