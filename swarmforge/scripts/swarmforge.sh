@@ -2172,7 +2172,8 @@ write_local_model_qwen_settings() {
   },
   "hooks": {
     "PreCompact": [{"matcher": "", "hooks": [{"type": "command", "command": "bash '__SWARMFORGE_PRECOMPACT_HOOK__'", "name": "swarmforge-bounded-compaction", "timeout": 10000}]}],
-    "PostToolUse": [{"matcher": "edit|write_file", "hooks": [{"type": "command", "command": "bb '__SWARMFORGE_EDIT_HOOK__'", "name": "swarmforge-edit-reads", "timeout": 10000}]}]
+    "PostToolUse": [{"matcher": "edit|write_file", "hooks": [{"type": "command", "command": "bb '__SWARMFORGE_EDIT_HOOK__'", "name": "swarmforge-edit-reads", "timeout": 10000}]}],
+    "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "bb '__SWARMFORGE_REPEAT_GUARD__'", "name": "swarmforge-repeat-guard", "timeout": 10000}]}]
   },
   "model": {
     "chatCompression": {"maxRecentFilesToRetain": 0},
@@ -2188,10 +2189,13 @@ JSON
   # The hook is the master checkout's own script, never the seat's worktree
   # copy, which follows whatever parcel line the seat holds. BL-1970: the
   # edit hook answers an edit that leaves Clojure source unreadable with the
-  # reader's line and column (local_model_edit_hook.bb says why).
+  # reader's line and column (local_model_edit_hook.bb says why). BL-1971:
+  # the repeat guard refuses a third identical tool call with nothing that
+  # could change its output in between (local_model_repeat_guard.bb).
   local settings_text
   settings_text="$(sed -e "s|__SWARMFORGE_PRECOMPACT_HOOK__|$SCRIPT_DIR/local_model_precompact_hook.sh|" \
-    -e "s|__SWARMFORGE_EDIT_HOOK__|$SCRIPT_DIR/local_model_edit_hook.bb|" "$worktree/.qwen/settings.json")"
+    -e "s|__SWARMFORGE_EDIT_HOOK__|$SCRIPT_DIR/local_model_edit_hook.bb|" \
+    -e "s|__SWARMFORGE_REPEAT_GUARD__|$SCRIPT_DIR/local_model_repeat_guard.bb|" "$worktree/.qwen/settings.json")"
   printf '%s\n' "$settings_text" > "$worktree/.qwen/settings.json"
   if [[ -n "$model" && -n "$endpoint_url" ]]; then
     # zsh does not word-split an unquoted ${var:+...} substitution the way
