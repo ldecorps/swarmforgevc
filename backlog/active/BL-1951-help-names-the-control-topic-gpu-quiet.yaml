@@ -5,6 +5,7 @@ type: defect
 severity: low
 # low: the verb already worked; only the Host /help line was missing.
 status: todo
+assigned_to: coder
 epic: local-llm-swarm
 priority: 5
 direction: queue-jump
@@ -67,3 +68,5 @@ description: |
   Control-topic only, offers 30 min, 1 hr, or 2 hr, clears with /gpu off,
   does not freeze intake, and babysitter does not treat the stop as a
   stall. The Host operator how-to says the same.
+
+assigned_to: coder
