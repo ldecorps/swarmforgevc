@@ -58,6 +58,13 @@ assert d["model"]["chatCompression"]["maxRecentFilesToRetain"] == 0, d.get("mode
 ' "$SETTINGS" || fail "settings.json does not set model.chatCompression.maxRecentFilesToRetain to 0"
 pass "the settings stop qwen re-attaching recently read files after a compaction"
 
+python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["memory"]["enableManagedAutoMemory"] is False, d.get("memory")
+' "$SETTINGS" || fail "settings.json does not switch qwen's managed auto memory off"
+pass "the settings switch qwen's managed auto memory off"
+
 grep -q '__SWARMFORGE_PRECOMPACT_HOOK__' "$SETTINGS" && fail "the hook placeholder survived into the settings"
 pass "no placeholder is left in the written settings"
 
@@ -80,6 +87,12 @@ d = json.load(open(sys.argv[1]))
 assert d["model"]["chatCompression"]["maxRecentFilesToRetain"] == 0, d.get("model")
 ' "$SETTINGS" || fail "the provider entry merge dropped maxRecentFilesToRetain"
 pass "the provider entry merge keeps maxRecentFilesToRetain 0"
+python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["memory"]["enableManagedAutoMemory"] is False, d.get("memory")
+' "$SETTINGS" || fail "the provider entry merge dropped enableManagedAutoMemory"
+pass "the provider entry merge keeps managed auto memory off"
 
 
 out="$(bash "$HOOK" </dev/null)"

@@ -80,4 +80,12 @@ print(providers[0]["generationConfig"]["contextWindowSize"] if providers else ""
 [[ "$WINDOW" == "65536" ]] || fail "expected contextWindowSize 65536 (the context-length fallback), got: '$WINDOW'"
 pass "the entry is budgeted to SWARMFORGE_OLLAMA_CONTEXT_LENGTH when the served window is unreachable"
 
+# 2026-10-04 hotfix: the seat's qwen runs on the short seat prompt.
+LAUNCH="$ROOT/.swarmforge/launch/coder.sh"
+SYSTEM_MD="$(sed -n "s/^export QWEN_SYSTEM_MD='\\(.*\\)'$/\\1/p" "$LAUNCH")"
+[[ -n "$SYSTEM_MD" ]] || fail "the launch script exports no QWEN_SYSTEM_MD: $(cat "$LAUNCH")"
+[[ "$SYSTEM_MD" == "$(cd "$(dirname "$SWARMFORGE_SH")/.." && pwd)/roles/local-model/qwen-system.md" ]] || fail "QWEN_SYSTEM_MD names $SYSTEM_MD, not the checkout's roles/local-model/qwen-system.md"
+[[ -s "$SYSTEM_MD" ]] || fail "the seat prompt QWEN_SYSTEM_MD names is missing or empty: $SYSTEM_MD"
+pass "the launch script points qwen at the checkout's short seat prompt"
+
 echo "ALL PASS: BL-1838 provider entry via the real write_role_launch_script path"

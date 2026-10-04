@@ -2125,6 +2125,10 @@ EOF
 # so each counted twice, and a two-file read hit "Context is too large to
 # send safely after automatic compression" (35318 > 30852.8), which stops
 # the seat until a human presses Ctrl+Y.
+# 2026-10-04: memory.enableManagedAutoMemory false. qwen's auto-memory
+# section added 6.2k chars to every request of a seat that has no use for
+# it; with QWEN_SYSTEM_MD (the launch script exports it, see
+# local_model_guard) a seat's first request fell from 12487 to 4761 tokens.
 write_local_model_qwen_settings() {
   local worktree="$1"
   local model="${2:-}"
@@ -2151,7 +2155,8 @@ write_local_model_qwen_settings() {
   },
   "model": {
     "chatCompression": {"maxRecentFilesToRetain": 0}
-  }
+  },
+  "memory": {"enableManagedAutoMemory": false}
 }
 JSON
   # 2026-10-04 hotfix: every compaction summary was cut off at the model's
@@ -2500,6 +2505,13 @@ RESUMECHECK
     fi
     local_model_guard+="export OPENAI_API_BASE='${seat_url}'
 export OPENAI_BASE_URL='${seat_url}'
+"
+    # 2026-10-04 hotfix: qwen's own base prompt (17.5k chars) replaced by a
+    # short seat prompt, the master checkout's copy. Its 12.5k-token floor
+    # plus a 15k-token working set passed the 27852-token compaction trigger,
+    # so the iq3 coder re-read its files after every compaction and never
+    # wrote. Replayed 3/3: the seat's first request still calls read_file.
+    local_model_guard+="export QWEN_SYSTEM_MD='${SCRIPT_DIR%/scripts}/roles/local-model/qwen-system.md'
 "
     # Hotfix 2026-10-03: BL-1840's dead-zone gate also runs when ONE seat's
     # launch script is (re)written, not only on a full ./swarm launch
