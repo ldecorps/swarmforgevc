@@ -1,16 +1,19 @@
 ;; ceremony_handoff_lib.bb — BL-1360: the fixed pipeline sends, composed from
 ;; one definition instead of retyped.
 ;;
-;; Three handoffs carry no judgement at all. The QA merge-up broadcast has a
-;; fixed recipient list, a fixed priority and a fixed message; only the ticket
-;; id and the approved commit vary. The QA→coordinator bookkeeping note and the
-;; specifier's spec-ready note are the same shape. Each was nonetheless
-;; hand-assembled every time: the role wrote the draft by hand, re-read
-;; handoff-protocol.md to confirm the recipient list and whether `to:` takes a
-;; comma-separated list, and measured the message with `wc -c` against the
-;; 80-character cap before daring to send. Observed 2026-09-03: one QA seat
-;; spent 16m06s and 58.6k tokens doing exactly that, for two notes whose every
-;; field but two was already fixed.
+;; Two handoffs carry no judgement at all. The QA→coordinator bookkeeping note
+;; and the specifier's spec-ready note have a fixed recipient, a fixed
+;; priority and a fixed message; only the ticket id (and, for bookkeep, the
+;; approved commit) vary. Each was nonetheless hand-assembled every time: the
+;; role wrote the draft by hand, re-read handoff-protocol.md to confirm the
+;; recipient list and whether `to:` takes a comma-separated list, and measured
+;; the message with `wc -c` against the 80-character cap before daring to send.
+;; Observed 2026-09-03: one QA seat spent 16m06s and 58.6k tokens doing exactly
+;; that, for two notes whose every field but two was already fixed.
+;;
+;; The QA merge-up broadcast retired with BL-1902: a role on parcel lines
+;; merges nothing, so a broadcast whose only effect on each recipient is to be
+;; completed is a handoff no one should send.
 ;;
 ;; The hand-counting was redundant - swarm_handoff.bb already refuses an
 ;; over-cap message and names the measured length - but it was not irrational:
@@ -31,27 +34,17 @@
 (def message-max-chars 80)
 
 ;; The ONE definition of each ceremony's recipients and priority (invariant 3).
-;; `handoff-protocol.md` documents merge-up and bookkeep; the test runner
-;; PARSES that document and asserts these agree with it, rather than restating
-;; the claim in a comment - a "kept in sync" note across that boundary is not a
-;; gate (BL-897).
+;; `handoff-protocol.md` documents bookkeep; the test runner PARSES that
+;; document and asserts these agree with it, rather than restating the claim
+;; in a comment - a "kept in sync" note across that boundary is not a gate
+;; (BL-897).
 ;;
 ;; `message-forms` are tried longest-prose first. Truncation is never an
 ;; option: the ticket id and the commit are the two facts the recipient acts
 ;; on, so a message that will not fit is shortened in its PROSE, and if even
 ;; the shortest form will not fit the compose fails rather than cutting either.
 (def ceremonies
-  {"merge-up"
-   {:to ["coder" "cleaner" "architect" "hardender" "documenter"]
-    :priority "00"
-    :needs [:ticket :commit]
-    :summary "QA's broadcast telling each worktree role to merge up to the approved commit"
-    :message-forms [(fn [{:keys [ticket commit]}]
-                      (str ticket " QA-approved " commit " - merge your branch up to QA's"))
-                    (fn [{:keys [ticket commit]}]
-                      (str ticket " QA-approved " commit " - merge up"))]}
-
-   "bookkeep"
+  {"bookkeep"
    {:to ["coordinator"]
     :priority "00"
     :needs [:ticket :commit]

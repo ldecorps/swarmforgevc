@@ -226,9 +226,13 @@ lost. Three refinements:
   work, in which case it stays, so a re-sent `Work` note never strands
   work the coder has not yet forwarded.
 
-A non-forwarding copy (a reverse hop) and QA's merge-up `note` carry no work
-to move onto and leave the worktree untouched; the role completes them as
-usual. The **specifier's and coordinator's shared master checkout is never
+A non-forwarding copy (a reverse hop) carries no work to move onto and
+leaves the worktree untouched; the role completes it as usual. (BL-1902:
+no live pack window declares `back-one`/`back-all` any longer, and QA's
+merge-up broadcast is retired — see "QA approval and the land" below — so
+neither kind of parcel is generated today; the machinery that would
+process one if a pack window declared it again is otherwise unchanged.)
+The **specifier's and coordinator's shared master checkout is never
 moved** — the two roles have no single branch identity for a move to resolve
 against, so a `git_handoff` addressed to either is processed as before (a
 merge the agent runs by hand, if anything is sent to master at all; in
@@ -312,35 +316,46 @@ the field on any other message type, is refused as an unknown header. First
 sender: the post-QA branch sweep's non-dirty-worktree reasons, per the human's
 BL-1361 ruling ("wake only for a dirty worktree and defer the other reasons").
 
-### QA approval and merge-up (full pack)
+### QA approval and the land (BL-1872, BL-1902)
 
-After the final QA gate passes on a parcel:
+After the final QA gate passes on a parcel, QA **queues the approved
+commit's land** — it no longer merges/fast-forwards `main` or pushes
+origin itself (BL-1872 retired that; "QA is the integration point" now
+means QA is the gate the land is queued from, not the role that runs
+`git push`):
 
-1. **QA → worktree roles:** `note` broadcast to
-   `coder,cleaner,architect,hardender,documenter` with priority `00`, instructing
-   each recipient to merge its own worktree branch up to QA's approved commit
-   (not to `main`). Example message:
-   `BL-042 QA-approved a1b2c3d4e5 — merge your branch up to QA's`.
-2. **QA lands `main`:** QA's approved commit is the verified, integrated result,
-   so QA merges/fast-forwards `main` to it and pushes origin (same session; never
-   force-push), and closes the GitHub issue for a `GH-`-seeded ticket
-   (`issue_done.sh`). QA is the integration point (BL-247).
-3. **QA → coordinator:** a `note` with priority `00` — never a `git_handoff`
-   (BL-1565: refused at send; the coordinator holds no code, and a stamped
-   `git_handoff` is completed merge-only under Article 2.4 and the close is
-   lost). Message `QA-approved <task> landed <sha> - bookkeep to done`: the
-   QA-approved commit (10-char abbrev) and stable task/backlog id, so the
-   coordinator does the backlog bookkeeping.
-4. **Worktree roles:** on receiving the merge-up `note`, run
-   `git merge <qa-commit>` (or `--no-ff`) in your worktree, resolve conflicts
-   if any, then `done_with_current.sh`. Do not forward the parcel — QA already
-   closed the pipeline chain.
-5. **Coordinator:** on receiving QA approval, move the ticket from
-   `backlog/active/` to `backlog/done/` and promote the next paused item if below
-   `active_backlog_max_depth`. The coordinator runs NO git merge or push (BL-247).
+1. **QA → land queue:** QA records the approved commit for handoffd's
+   lander, which lands it on `main`, pushes origin, and closes the GitHub
+   issue for a `GH-`-seeded ticket. A land the lander cannot complete is
+   returned to QA (BL-1872).
+2. **Lander → coordinator:** on a successful land, the lander sends the
+   coordinator's bookkeeping `note` itself — `QA-approved <task> landed
+   <sha> - bookkeep to done` (the QA-approved commit's 10-char abbrev and
+   stable task/backlog id), at priority `00` — so the coordinator moves
+   the ticket from `backlog/active/` to `backlog/done/` and promotes the
+   next paused item if below `active_backlog_max_depth`. The coordinator
+   runs NO git merge or push (BL-247).
+3. **Worktree roles do nothing on approval.** QA sends **no merge-up
+   broadcast** (BL-1902, retired): a role on a parcel line (BL-1871) never
+   merges, so there is nothing for a `coder`/`cleaner`/`architect`/
+   `hardener`/`documenter` seat to do when a ticket it once held lands —
+   its own line already carried only that ticket's commits. A merge-up
+   `note` left in a worktree role's mailbox from before this retirement
+   (or re-sent by mistake) is completed with `done_with_current.sh` and
+   never acted on (Article 2.3, BL-1871).
 
-The **specifier** is excluded from the merge-up broadcast and does not perform
-integration merges — it specifies only.
+The **specifier** was already excluded from the old merge-up broadcast and
+still performs no integration merges — it specifies only.
+
+Before BL-1902, QA merged/fast-forwarded `main` by hand and broadcast a
+`note` to the five worktree roles instructing each to `git merge
+<qa-commit>` into its own long-lived branch; a role on a parcel line
+merges nothing, so that broadcast's only effect had become waking a role
+that would immediately complete it as a no-op. BL-1902 removed the
+`merge-up` ceremony from `ceremony_handoff_lib.bb` and dropped the pack's
+`back-one`/`back-all` declarations for the same reason (see "Reverse hops"
+mechanics below) — the full before/after mechanics it replaced are no
+longer live.
 
 See `swarmforge/PIPELINE.md` and `swarmforge/roles/QA.prompt` /
 `swarmforge/roles/coordinator.prompt` for role-specific wording.
@@ -604,7 +619,11 @@ Mechanics (`duplicate_chain_guard_lib.bb`):
   time.
 - **A `non-forwarding: true` parcel is skipped, not counted** (BL-1302). A
   `back-one`/`back-all` reverse hop (2.3 "Reverse hops") plants exactly this
-  marker in one or more earlier mailboxes on every ordinary forward; its
+  marker in one or more earlier mailboxes on every ordinary forward *when a
+  pack window declares one* — since BL-1902, no window in the live
+  `full-forge.conf` does, so no reverse copy is produced today; the guard
+  and `reverse_hop_lib.bb` are unchanged underneath and apply again the
+  moment a window redeclares `back-one`/`back-all`. Its
   recipient is merge-only (Article 2.4) and can never start a competing
   chain, so it must not block the very forward that synthesized it. The
   check is `handoff-lib/non-forwarding?`, the one shared spelling of the
