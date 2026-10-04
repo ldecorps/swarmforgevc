@@ -2138,9 +2138,19 @@ write_local_model_qwen_settings() {
   },
   "permissions": {
     "deny": ["Bash(sudo *)", "Bash(apt *)", "Bash(apt-get *)", "Bash(pip install *)", "Bash(pip3 install *)"]
+  },
+  "hooks": {
+    "PreCompact": [{"matcher": "", "hooks": [{"type": "command", "command": "bash '__SWARMFORGE_PRECOMPACT_HOOK__'", "name": "swarmforge-bounded-compaction", "timeout": 10000}]}]
   }
 }
 JSON
+  # 2026-10-04 hotfix: every compaction summary was cut off at the model's
+  # output cap before <next_step> (local_model_precompact_hook.sh says why).
+  # The hook is the master checkout's own script, never the seat's worktree
+  # copy, which follows whatever parcel line the seat holds.
+  local settings_text
+  settings_text="$(sed "s|__SWARMFORGE_PRECOMPACT_HOOK__|$SCRIPT_DIR/local_model_precompact_hook.sh|" "$worktree/.qwen/settings.json")"
+  printf '%s\n' "$settings_text" > "$worktree/.qwen/settings.json"
   if [[ -n "$model" && -n "$endpoint_url" ]]; then
     # zsh does not word-split an unquoted ${var:+...} substitution the way
     # bash does (a conditional two-token flag+value would arrive as ONE
