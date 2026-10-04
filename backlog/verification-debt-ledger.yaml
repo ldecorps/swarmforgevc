@@ -177,3 +177,8 @@
   role: hardender
   description: "Scoped Stryker run on backendSwitch.ts (211 mutants) timed out on dry run once (5-min ceiling, load ~9/20 cores), then on retry with --dryRunTimeoutMinutes 12 was reaped by handoffd_supervisor at its registration expiry mid-run (128/142 tested, 21 survived, host load 7-13/20 cores): stood in with hand-mutation verification of the D1/D3 bounce-fix's new code (modelLine break removal, agent-undefined guard, quote-strip regex, conf-fallback deletion) - all 4 confirmed real gaps, closed with failing-then-passing tests; matches this same file's prior hardener pass (array-of-tuples/agent-name-literal false/equivalent survivors documented 2026-10-03)."
   detected_at: 2026-10-04
+- category: land-path-ownership
+  ticket: BL-1929
+  role: QA
+  description: "LAND_REPLAY fd4c492d3b carried BL-1851's suite-manifest.tsv row (a path BL-1929 never changed; ridden via the coder's untagged sync merge 441a212d95) while excluding its runner; found by hand with suite_inventory_cli.bb on a git-archive of origin/main vs parent 8612eb313d - main's standing bb suite refuses every run"
+  detected_at: 2026-10-04
