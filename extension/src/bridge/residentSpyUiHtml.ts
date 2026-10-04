@@ -334,6 +334,24 @@ export function renderLiveScreenBody(): string {
   .split.pane-count-10 pre {
     font-size: calc(var(--pane-font-size) - ${PANE_FONT_CROWDED_DELTA_PX}px);
   }
+  /* BL-1858 D3: the 9/10-tile phone row also packs the tile head tighter -
+     the grid tile's visible content (.pane-kind, model, ticket, age) lives
+     in .pane-head, which the -7/-8 step never covered. */
+  .split.pane-count-9 .pane-head,
+  .split.pane-count-10 .pane-head {
+    padding: 10px 8px;
+    gap: 6px;
+  }
+  .split.pane-count-9 .pane-grid-model,
+  .split.pane-count-10 .pane-grid-model,
+  .split.pane-count-9 .pane-grid-ticket-id,
+  .split.pane-count-10 .pane-grid-ticket-id,
+  .split.pane-count-9 .pane-grid-slug,
+  .split.pane-count-10 .pane-grid-slug,
+  .split.pane-count-9 .pane-grid-age,
+  .split.pane-count-10 .pane-grid-age {
+    font-size: calc(clamp(8px, 2.8vw, 10px) - ${PANE_FONT_CROWDED_DELTA_PX}px);
+  }
   .pane-fullscreen {
     display: none;
     position: fixed;

@@ -45,6 +45,39 @@ than the evidence it has:
   offline banner text was reworded ("Swarm is idle — no live panes right
   now") so a quiet swarm doesn't read as broken.
 
+## Every live seat gets a tile, not just the ones `./swarm` launched with (BL-1858)
+
+`sessions.tsv` is written only by `swarmforge.sh`'s `write_sessions_file`,
+at a full `./swarm` launch; a seat enabled afterwards by editing
+`roles.tsv` and running `./swarm ensure` (the usual way to swap in a
+local-model seat such as `coder@2`) gets a live tmux session but no
+`sessions.tsv` row, and art-director had no row either on 2026-10-01. The
+grid used to read only `sessions.tsv`, so a
+roster could run ten seats and show eight tiles.
+
+`tmuxClient.ts`'s `readRosterSwarmRoles` fixes this: every `roles.tsv`
+row (`parseRosterLine`), then every `sessions.tsv` seat `roles.tsv`
+lacks. `readLiveRosterSwarmRoles` intersects that with live tmux
+sessions, and `captureLiveScreenPanes` (`residentPaneLive.ts`) uses it
+instead of the old `sessions.tsv`-only roster. The invariant: the live
+grid has exactly one tile per seat either file lists whose tmux session
+is live, and none for a live session neither lists.
+
+A numbered seat (`coder@2`) sits right after its base role's tile
+(`seatBaseRole('coder@2')` → `'coder'`), via `orderLiveScreenRoles`, not
+wherever it happens to fall in roster order. The served page
+(`residentSpyUiHtml.ts`) steps to a tighter font at 9 and 10 tiles so a
+full local-model roster still fits: two columns on a phone, five on a
+wide screen.
+
+Each tile head also names the seat's own model under the role name
+(`pane.modelLabel`), Claude seats included (`Sonnet 5`, `Opus 5.5`), not
+only the local-model seat. `backendSwitch.ts`'s launch-script detection
+recognises a line starting `qwen` (the Ollama local-model launcher);
+`modelDisplayName.ts` formats an Ollama qwen-coder tag
+(`qwen2.5-coder-14b-q5km:latest`) as `Qwen2.5 Coder 14B` rather than
+passing the raw tag through.
+
 ## Cast, navigation, refresh — the locked decisions this page honours
 
 Carried from `INTAKE-bubble-live-screen-coordinator-resident.md`
@@ -58,9 +91,13 @@ stream in this version.
 
 ```bash
 cd extension
-npm test -- residentSpyUiHtml bridgeServer residentPaneLive bl775BubbleLiveScreenShell
+npm test -- residentSpyUiHtml bridgeServer residentPaneLive bl775BubbleLiveScreenShell \
+  tmuxClient backendSwitch bl1858LiveGridRoster
 node ../specs/pipeline/scripts/run_acceptance.sh \
   ../specs/features/BL-775-bubble-live-screen-shell.feature
+node ../specs/pipeline/scripts/run_acceptance.sh \
+  ../specs/features/BL-1858-bubbles-live-grid-shows-a-tile-for-every-live-seat.feature
 ```
 
-Acceptance: `specs/features/BL-775-bubble-live-screen-shell.feature`.
+Acceptance: `specs/features/BL-775-bubble-live-screen-shell.feature`,
+`specs/features/BL-1858-bubbles-live-grid-shows-a-tile-for-every-live-seat.feature`.

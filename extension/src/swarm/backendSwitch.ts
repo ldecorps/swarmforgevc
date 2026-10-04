@@ -41,6 +41,69 @@ export function readCurrentModel(targetPath: string, role: string): string | und
   return typeof model === 'string' ? model : undefined;
 }
 
+// Checked in order; the first match wins. BL-1858's qwen entry must stay
+// ahead of claude: every launch script (Claude ones too) sources
+// qwen_launch_guard_lib.sh, so a bare \bqwen\b would match a claude seat -
+// anchoring at line start to the actual command line avoids that.
+const LAUNCH_SCRIPT_AGENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bcursor-agent\b/, 'cursor'],
+  [/\bcopilot\b/, 'copilot'],
+  [/\bcodex\b/, 'codex'],
+  [/\baider\b/, 'aider'],
+  [/\bgemini\b/, 'gemini'],
+  [/\bvibe\b/, 'vibe'],
+  [/\bgrok\b/, 'grok'],
+  [/^\s*qwen\s/m, 'qwen'],
+  [/\bclaude\b/, 'claude'],
+];
+
+function detectLaunchScriptAgent(script: string): string | undefined {
+  for (const [pattern, agent] of LAUNCH_SCRIPT_AGENT_PATTERNS) {
+    if (pattern.test(script)) {
+      return agent;
+    }
+  }
+  return undefined;
+}
+
+// copilot and cursor both print a bare "auto" --model value that only means
+// something once namespaced to the agent that emitted it.
+const AUTO_MODEL_AGENTS: ReadonlySet<string> = new Set(['copilot', 'cursor']);
+
+function resolveAutoModelAlias(model: string | undefined, agent: string | undefined): string | undefined {
+  if (model === 'auto' && agent !== undefined && AUTO_MODEL_AGENTS.has(agent)) {
+    return `${agent}/auto`;
+  }
+  return model;
+}
+
+// BL-1858 D1: since BL-1850 the launch script's FIRST --model belongs to
+// the local-seat settings snapshot CLI (a quoted tag), not the agent.
+// Returns the detected agent's own command line (its FIRST match, in script
+// order), or undefined when the agent has no recognizable line of its own -
+// the caller then falls back to matching --model over the whole script.
+function findAgentCommandLine(script: string, agent: string | undefined): string | undefined {
+  // .find() safely returns undefined when agent is undefined; no separate
+  // guard needed.
+  const agentPattern = LAUNCH_SCRIPT_AGENT_PATTERNS.find(([, a]) => a === agent)?.[0];
+  if (agentPattern === undefined) {
+    return undefined;
+  }
+  for (const line of script.split('\n')) {
+    if (agentPattern.test(line)) {
+      return line;
+    }
+  }
+  return undefined;
+}
+
+// A --model value may be shell-quoted on the agent's own command line
+// (e.g. the snapshot-CLI line BL-1850 added); strip one leading and one
+// trailing quote char. Unquoted values (the common case) pass through.
+function stripShellQuotes(value: string): string {
+  return value.replace(/^['"]|['"]$/g, '');
+}
+
 // Non-Claude seats (aider / cursor-agent / …) encode the live model in the
 // launch script's --model flag; that is ground truth for what tmux is actually
 // running. Stale *.claude-settings.json files may remain from prior
@@ -54,27 +117,15 @@ function readLaunchScriptModel(
       path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`),
       'utf8'
     );
-    const agent =
-      script.match(/\bcursor-agent\b/) ? 'cursor' :
-      script.match(/\bcopilot\b/) ? 'copilot' :
-      script.match(/\bcodex\b/) ? 'codex' :
-      script.match(/\baider\b/) ? 'aider' :
-      script.match(/\bgemini\b/) ? 'gemini' :
-      script.match(/\bvibe\b/) ? 'vibe' :
-      script.match(/\bgrok\b/) ? 'grok' :
-      // BL-1858: a qwen seat's command line; every launch script sources
-      // qwen_launch_guard_lib.sh, so a bare \bqwen\b would match a claude seat.
-      script.match(/^\s*qwen\s/m) ? 'qwen' :
-      script.match(/\bclaude\b/) ? 'claude' :
-      undefined;
+    const agent = detectLaunchScriptAgent(script);
     const prefersLaunchOverClaudeSettings = agent !== undefined && agent !== 'claude';
-    const match = script.match(/--model\s+(\S+)/);
-    let model = match?.[1];
-    if (model === 'auto' && agent === 'copilot') {
-      model = 'copilot/auto';
-    } else if (model === 'auto' && agent === 'cursor') {
-      model = 'cursor/auto';
-    }
+    const modelLine = findAgentCommandLine(script, agent);
+    const match = (modelLine ?? script).match(/--model\s+(\S+)/);
+    const rawModel = match?.[1];
+    const model = resolveAutoModelAlias(
+      rawModel !== undefined ? stripShellQuotes(rawModel) : undefined,
+      agent
+    );
     return { model, prefersLaunchOverClaudeSettings };
   } catch {
     return { prefersLaunchOverClaudeSettings: false };
@@ -105,10 +156,15 @@ function readConfiguredModelFromConf(targetPath: string, role: string): string |
 // Non-Claude launch script first (ignores stale claude settings from prior
 // backends), then live claude settings file, then launch script --model for
 // other agents, then swarmforge.conf's window line as a last-resort fallback.
+// BL-1858 D3: a non-Claude launch script that names NO --model is ground
+// truth for "no model" - the seat runs whatever its agent's default is, and
+// a stale *.claude-settings.json from a prior Claude-backed launch must not
+// win the tile label. Only when the launch script is absent or unreadable
+// do we fall through to the Claude settings file.
 export function readRoleModelId(targetPath: string, role: string): string | undefined {
   const launch = readLaunchScriptModel(targetPath, role);
-  if (launch.prefersLaunchOverClaudeSettings && launch.model) {
-    return launch.model;
+  if (launch.prefersLaunchOverClaudeSettings) {
+    return launch.model ?? readConfiguredModelFromConf(targetPath, role);
   }
   return (
     readCurrentModel(targetPath, role) ??

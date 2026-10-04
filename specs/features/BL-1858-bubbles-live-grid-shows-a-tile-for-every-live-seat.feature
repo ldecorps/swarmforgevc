@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=1df47cdb8c66d011935d2d91cb8ea17ff82c78a771630c586d28012363bd5221
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-04T12:39:27.461390522Z","feature_name":"Bubble's live grid shows a tile for every live seat","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1858-bubbles-live-grid-shows-a-tile-for-every-live-seat.feature","background_hash":"ba2f51fa683bbe317015c2591e699ae360f795a96b895ffa27173c028fc537b8","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A live seat missing from sessions.tsv still gets its own tile","scenario_hash":"365231f0b705ea7df33402217426fa509cc903e7fcca7007e7c83ae00fa15322","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-10-04T12:39:14.187612339Z"},{"index":4,"name":"A local-model seat's tile names its qwen model under the role name","scenario_hash":"8880b3e256bb7046822ca2ae27839aa9449328c2bfbca08595ad9fbc92dae991","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-10-04T12:39:14.187612339Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble's live grid shows a tile for every live seat
   Bubble's live screen draws one tile per seat. It used to take its seats
   from the launch-time session list (.swarmforge/sessions.tsv) alone, but
@@ -58,3 +63,10 @@ Feature: Bubble's live grid shows a tile for every live seat
       | model                         | shown             |
       | qwen2.5-coder-14b-q5km:latest | Qwen2.5 Coder 14B |
       | qwen3-coder:30b               | Qwen3 Coder 30B   |
+
+  # BL-1858 live-grid-tile-per-live-seat-06
+  Scenario: A seat whose launch script names no model shows no model under its role name
+    Given coder@2's launch script starts qwen with no --model flag
+    And a leftover Claude settings file for coder@2 names the model "claude-sonnet-5"
+    When Bubble's live screen page renders the captured panes
+    Then the tile for seat "coder@2" names no model under its role name
