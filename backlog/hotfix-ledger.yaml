@@ -1112,3 +1112,10 @@
   stamp_ticket: BL-1971
   human_decision: null
   decided_at: null
+- commit: d19171aeb6
+  subject: "hotfix: the repeat guard warns with the call's result instead of refusing it"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1971
+  human_decision: null
+  decided_at: null

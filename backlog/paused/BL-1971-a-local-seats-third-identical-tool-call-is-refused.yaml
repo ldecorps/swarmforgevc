@@ -1,5 +1,5 @@
 id: BL-1971
-title: "Stamp-off for hotfix 66bd85171f: a local-model seat's third identical tool call, with no edit, compaction, commit or handoff in between, is refused - the iq3 coder re-ran the same thirteen git log/show commands for ten minutes on BL-1951 while its own summaries said to stop and hand off"
+title: "Stamp-off for hotfixes 66bd85171f and d19171aeb6: a local-model seat's third identical tool call, with no edit, compaction, commit or handoff in between, comes back with a REPEAT note naming its last summary's next step - the iq3 coder re-ran the same thirteen git log/show commands for ten minutes on BL-1951 while its own summaries said to stop and hand off"
 milestone: M8
 type: defect
 severity: high
@@ -29,26 +29,28 @@ approval_context: >
   Stamp-off of a hotfix the specifier landed at the human's word in the
   specifier pane (2026-10-04, verbatim in source). No choice is posed.
   FIRM: the review decides whether the change stands; the coder never
-  re-applies it. The guard never refuses an edit or a state-changing
-  command, and an unreadable transcript refuses nothing.
+  re-applies it. The guard never refuses a call; it never warns about an
+  edit or a state-changing command, and an unreadable transcript adds
+  nothing.
 
 invariants:
-  - "The guard refuses a call only when the same tool with the same arguments ran twice already since the last edit, write_file, compaction or state-changing shell command; it never refuses an edit, a write or a state-changing command."
+  - "The guard never refuses a call; it warns only when the same tool with the same arguments ran twice already since the last edit, write_file, compaction or state-changing shell command, and never about an edit, a write or a state-changing command."
 
 qa_e2e_procedure: |
   1. Read from the gather's acceptance row: the BL-1840 feature all pass.
      Measured at the hotfix (66bd85171f): 7/7.
   2. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
-     9 PASS lines, exit 0.
+     10 PASS lines, exit 0 (at d19171aeb6).
   3. `bash swarmforge/scripts/test/test_bl1970_local_model_edit_hook.sh` and
      `bash swarmforge/scripts/test/test_bl1949_local_model_precompact_hook.sh`:
      every line PASS, exit 0 (the other hooks are untouched).
-  4. Live and read-only: the coder seat's settings name the guard under
-     `hooks.PreToolUse` (applied live 2026-10-04 20:20Z). In
+  4. Live and read-only: the coder seat's settings name the guard in a
+     `hooks.PostToolUse` group with matcher "" and no `hooks.PreToolUse`
+     (applied live 2026-10-04 20:29Z). In
      `~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/<session>.jsonl`
-     for any session after that, no tool call with the same arguments
-     appears more than three times between two edits. If the guard
-     refused a call, the next call in that session is a different one.
+     for any session after that, a tool_result carrying "REPEAT: you have
+     now made" is followed by a different call, and the pane never shows
+     qwen's "Keep loop detection enabled" dialog after one.
 
 source: |
   The human, specifier pane (Claude Code), 2026-10-04 ~20:14Z, verbatim
@@ -70,6 +72,16 @@ source: |
 
 notes: |
   Minted 2026-10-04 by the specifier as the stamp-off of hotfix 66bd85171f.
+  Also stamps off d19171aeb6, which repairs it the same evening: the first
+  guard REFUSED the third identical call (PreToolUse deny). Live from
+  20:23Z the coder re-sent the refused call every five seconds, which
+  tripped qwen's always-on check for consecutive identical tool calls
+  (skipLoopDetection does not turn it off); its interactive loop dialog
+  halted the one-shot seat's turn by 20:26Z. d19171aeb6 makes it a
+  PostToolUse warning: the call runs and its result carries a REPEAT note
+  with the count and the latest compaction's next step. Re-applied live
+  at 20:29:19Z (PreToolUse removed, PostToolUse group added, respawn).
+  Hotfix ledger links both.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Replayed on the coder's own transcripts at the hotfix: the BL-1951 loop
   (session ef906943) is refused from 20:07:03Z, 3 minutes in; the BL-1902
@@ -88,7 +100,7 @@ notes: |
   documents the seat's hooks.
 
 description: |
-  ## Status: hotfix 66bd85171f landed the fix
+  ## Status: hotfixes 66bd85171f and d19171aeb6 landed the fix
 
   The coder reviews it and never re-applies it (the BL-1858 and BL-1868
   shape): read the commit, run its test, and check the guard against the
@@ -97,19 +109,22 @@ description: |
 
   ## What the hotfix does
 
-  A qwen PreToolUse hook on every tool reads the session transcript and
-  refuses a call made twice already, with the same arguments (its
+  A qwen PostToolUse hook on every tool reads the session transcript and
+  warns about a call made twice already, with the same arguments (its
   description, is_background and timeout ignored), since the last edit,
   write_file, compaction, or shell command that changes the repo or the
   mailbox (git commit, merge, checkout, switch, restore, reset, rebase,
   cherry-pick, revert, stash; swarm_handoff.sh, done_with_current.sh,
-  ready_for_next.sh). The refusal reaches the model as the tool's error
-  and the turn goes on. qwen writes a turn's calls before running them, so
-  the in-flight call is not counted against itself.
+  ready_for_next.sh). The call still runs; its result carries a REPEAT
+  note with the count and the next step the latest compaction summary
+  named. It never refuses: a refusal made the seat re-send the identical
+  call until qwen's own loop dialog halted it (d19171aeb6 says why). qwen
+  writes a turn's calls before running them, so the in-flight call is not
+  counted against itself.
 
   ## What each stage checks
 
-  - Coder: review 66bd85171f against the invariant;
+  - Coder: review 66bd85171f and d19171aeb6 against the invariant;
     test_bl1971_local_model_repeat_guard.sh passes.
   - Documenter: the local-model seat launch how-to names the repeat guard
     beside the PreCompact and edit hooks.
