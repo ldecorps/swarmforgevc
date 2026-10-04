@@ -1,0 +1,95 @@
+id: BL-1959
+title: "Launching a pack that declares config coordinator_mode deterministic keeps the coordinator's roles.tsv row and mailbox but creates no coordinator session and writes no coordinator launch script (BL-1931 split, slice 2 of 3)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 1
+direction: queue-jump
+depends_on: [BL-1958]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a medium slice beside unchanged code, as BL-1931 declared"
+
+acceptance: specs/features/BL-1959-a-deterministic-pack-launch-keeps-the-coordinator-row-and-starts-no-seat.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1931 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: this is BL-1931's launch path and its scenarios 01 and 03,
+  verbatim. FIRM, from BL-1931: the coordinator's roles.tsv row and mailbox
+  stay (QA approvals, handoffd delivery and BL-1847's relay route by
+  them); only the seat goes, and only on a pack that declares the mode.
+
+invariants:
+  - "On a pack declaring config coordinator_mode deterministic, no code path creates a swarmforge-coordinator session or writes .swarmforge/launch/coordinator.sh at launch."
+  - "The coordinator roles.tsv row and its mailbox directories exist on every pack, deterministic or not."
+  - "A pack without the declaration launches exactly as before."
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1959-a-deterministic-pack-launch-keeps-the-coordinator-row-and-starts-no-seat.feature` passes 2 of 2.
+  2. `bash swarmforge/scripts/test/test_coordinator_provisioned_infrastructure.sh`
+     and `bash swarmforge/scripts/test/test_rotation_sequential_pack.sh` pass.
+
+source: |
+  Split from BL-1931 (see that ticket's source for the human's directives,
+  verbatim, and backlog/evidence/BL-1931-seatless-coordinator-boot-census-20261003.md).
+  The human, specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+notes: |
+  Split from BL-1931 on 2026-10-04 after the coder (iq3) held it 2h43m with
+  no edit (BAU split rule, 5b277c03cd; coordinator pull 862dcce3d6).
+  Approval inherited from BL-1931 (split, no new scope). Scenarios 01 and 02
+  are BL-1931's 01 and 03, verbatim, with the same Background.
+  Where to read: swarmforge/scripts/swarmforge.sh is 150 KB, so grep for
+  the name and read about 40 lines from there, never the file.
+  provision_coordinator() at ~1235 (called at ~1188) registers the row:
+  keep that. The launch loops that must skip the coordinator on this pack,
+  each starting with `is_sequential_dormant "$i"`: create_role_session at
+  ~3092, launch_role at ~3139, the router dormant launch-script loop at
+  ~3164, the terminal window loop at ~3210. write_role_launch_script is at
+  ~2204. COORDINATOR_MODE comes from resolve_coordinator_config (BL-1958).
+  Fixture template: test_coordinator_provisioned_infrastructure.sh:162-178.
+  Step handler: specs/pipeline/steps/bl1959DeterministicPackLaunchKeepsTheCoordinatorRowSteps.js,
+  registered in specs/pipeline/steps/index.js.
+  No required_wiring: the scenarios drive the real launch path.
+
+description: |
+  ## What is wrong
+
+  On a pack declaring `config coordinator_mode deterministic` (BL-1846,
+  BL-1847) the launcher still provisions the coordinator seat:
+  `provision_coordinator` registers and starts it like any role, and the
+  session and launch loops create its session and write
+  `.swarmforge/launch/coordinator.sh`. On the all-local pack that seat is a
+  second qwen client on the one GPU slot; on 2026-09-30 it spent 32
+  minutes walking .swarmforge/ while the resident waited.
+
+  ## What is wanted
+
+  On such a pack, launch keeps the coordinator as a roster row and a
+  mailbox and starts no seat. Removing the row breaks QA approvals
+  (`swarm_handoff.bb` refuses `to: coordinator`), handoffd delivery and
+  BL-1847's relay, so the row stays and only the session and the launch
+  script go.
+
+  ## How (direction, not mandate)
+
+  A predicate beside `is_sequential_dormant` (true for the coordinator's
+  index when COORDINATOR_MODE is deterministic) that each launch loop
+  checks where it checks dormancy.
+
+  ## What each stage checks
+
+  - Coder: the two scenarios; test_coordinator_provisioned_infrastructure.sh
+    and test_rotation_sequential_pack.sh still pass.
+  - Architect: the three invariants; that nothing removes the row.
+  - Hardener: no Stryker lane for bb/shell (BL-472); a hand-mutant pass on
+    the mode check, evidence records the degraded fallback.
+  - Documenter: docs naming the coordinator as always provisioned
+    (BL-1931 census "Prose" list, docs side).

@@ -1,0 +1,80 @@
+id: BL-1958
+title: "coordinator_config_cli.bb prints the pack's coordinator mode as a fourth field and swarmforge.sh reads it into COORDINATOR_MODE (BL-1931 split, slice 1 of 3)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: one printed field and one shell split; two files and their test.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one field added beside three; nothing to refactor"
+  architect: "no boundary moves; the shell keeps calling the same CLI"
+  hardender: "bb and shell have no Stryker lane (BL-472) and the field writes no state"
+  documenter: "no living doc names the CLI's fields"
+
+# Not a claim of ownership over BL-1846's contract (BL-1251): BL-1846 built
+# the mode this field exposes to the shell.
+acceptance: specs/features/BL-1846-a-deterministic-coordinator-promotes-and-routes-the-next-ticket-itself.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1931 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: BL-1931's How named this field. No choice is posed.
+
+invariants:
+  - "For every conf, COORDINATOR_MODEL, COORDINATOR_EFFORT and COORDINATOR_AGENT resolve to the same values as before this change."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1846 feature all pass.
+     Measured at mint on 862dcce3d6: 4 of 4 tests.
+  2. `bash swarmforge/scripts/test/test_coordinator_config_cli.sh` prints
+     ALL PASS, including a case for `config coordinator_mode deterministic`.
+  3. `bash swarmforge/scripts/test/test_coordinator_provider_configurable.sh`
+     passes (it reads COORDINATOR_AGENT, which a fourth field must not
+     swallow).
+  4. `printf 'config coordinator_mode deterministic\n' > tmp/m.conf && bb
+     swarmforge/scripts/coordinator_config_cli.bb tmp/m.conf` prints
+     `claude-sonnet-5`, `high`, `claude`, `deterministic`, tab-separated.
+
+source: |
+  Split from BL-1931 (see that ticket's source for the human's directives,
+  verbatim). The human, specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+notes: |
+  Split from BL-1931 on 2026-10-04 after the coder (iq3) held it 2h43m with
+  no edit (BAU split rule, 5b277c03cd; coordinator pull 862dcce3d6).
+  Approval inherited from BL-1931 (split, no new scope).
+  Where to read: coordinator_config_cli.bb is 34 lines, read it whole.
+  swarmforge/scripts/swarmforge.sh is 150 KB: read only lines 1205-1226
+  (resolve_coordinator_config at ~1218), never the file. The mode reader is
+  coordinator-config-lib/coordinator-mode in coordinator_config_lib.bb
+  (~line 88; default "model"). The test is
+  swarmforge/scripts/test/test_coordinator_config_cli.sh (32 lines).
+
+description: |
+  ## What is wanted
+
+  `coordinator_config_cli.bb <conf>` prints a fourth tab-separated field,
+  the pack's coordinator mode: `coordinator-config-lib/coordinator-mode`,
+  which is `model` unless the conf declares `config coordinator_mode
+  deterministic`. `resolve_coordinator_config` in swarmforge.sh splits the
+  four fields and sets `COORDINATOR_MODE` beside the three it sets today.
+  BL-1959 reads `COORDINATOR_MODE` to skip the coordinator seat; this slice
+  only exposes it.
+
+  ## What the coder checks
+
+  - test_coordinator_config_cli.sh: the three existing expectations gain
+    the fourth field (`model`), and a new case declares the mode and
+    expects `deterministic`.
+  - COORDINATOR_AGENT still ends at the third field: today it is
+    everything after the second tab, so it would swallow the new field.
+  - The usage comment at the top of the CLI names four fields.

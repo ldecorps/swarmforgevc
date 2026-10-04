@@ -2,7 +2,8 @@ id: BL-1931
 title: "A pack declaring config coordinator_mode deterministic keeps the coordinator's roster row and mailbox but boots no coordinator seat, and the all-local iq3 mono-router pack declares it"
 milestone: M8
 type: feature
-status: todo
+status: done
+closed_as: split-into-BL-1958,BL-1959,BL-1960
 epic: local-llm-swarm
 priority: 1
 direction: queue-jump
@@ -13,7 +14,9 @@ required_stages: [coder, architect, hardender, documenter, qa]
 stage_skip_reasons:
   cleaner: "a feature with medium mutation_cost and envelope; the change sits beside unchanged code"
 
-acceptance: specs/features/BL-1931-a-deterministic-pack-boots-no-coordinator-seat.feature
+# Its three scenarios moved verbatim on the 2026-10-04 split: 01 and 03 to
+# BL-1959's feature, 02 to BL-1960's. The feature file was removed.
+acceptance: specs/features/BL-1959-a-deterministic-pack-launch-keeps-the-coordinator-row-and-starts-no-seat.feature
 
 human_approval: approved
 approval_context: >
@@ -92,6 +95,11 @@ qa_e2e_procedure: |
   3. `grep -E '^config coordinator_(mode|agent|model|effort)' swarmforge/packs/ollama-ista-local-model-mono-router.conf` prints only `config coordinator_mode deterministic`.
 
 notes: |
+  Retired 2026-10-04 by the specifier, split into BL-1958 (CLI mode field),
+  BL-1959 (launch keeps the row, starts no seat; scenarios 01 and 03) and
+  BL-1960 (router pack stands only its resident and the pack declares the
+  mode; scenario 02). The coder (iq3) held it 2h43m with no edit; the
+  coordinator pulled it (862dcce3d6) under the BAU split rule (5b277c03cd).
   Where to read (2026-10-04, specifier, for a small-window seat; notes only,
   the contract is unchanged): swarmforge/scripts/swarmforge.sh is 150 KB, so
   grep for the name and read about 60 lines from there, never the file:
@@ -118,4 +126,3 @@ notes: |
     activates, through the boot prefix budget gate, and records the commit
     here. Landed ce8d3ebdcc (2026-10-03, after activation; boot prefix
     43997/44000). Nothing the parcel builds changes.
-assigned_to: coder

@@ -932,6 +932,12 @@ You are the specifier.
   <N>m` in `notes:`. Keep the parent's `required_stages` shape per slice
   (dynamic routing: the smallest set each slice needs). Commit, then note the
   coordinator that the slices are ready.
+- A slice of an approved parent mints `human_approval: approved`, saying in
+  `approval_context` that it is inherited from the parent with no new scope.
+  A slice that adds anything the parent did not ask for mints `pending`. Move
+  the parent's `.feature` file's scenarios out and `git rm` the file, so a
+  closed ticket leaves no feature without a step handler. BL-1931 into
+  BL-1958..BL-1960 is the first split.
 
 ## Does Not Own
 - Do not write production code or tests, except a standing-red hotfix

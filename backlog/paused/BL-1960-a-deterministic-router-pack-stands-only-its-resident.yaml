@@ -1,0 +1,78 @@
+id: BL-1960
+title: "A deterministic rotation-router pack stands only its resident session, and the all-local iq3 mono-router pack declares config coordinator_mode deterministic (BL-1931 split, slice 3 of 3)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 1
+direction: queue-jump
+depends_on: [BL-1959]
+mutation_cost: low
+# low: a pack conf edit and, at most, a dormancy check in one shell function.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a conf edit and at most a few shell lines; nothing to refactor"
+  architect: "BL-1959's architect reviews the launch boundary; this slice moves none"
+  hardender: "bb and shell have no Stryker lane (BL-472); a pack conf writes no state"
+  documenter: "BL-1959's documenter covers the seatless coordinator docs"
+
+acceptance: specs/features/BL-1960-a-deterministic-router-pack-stands-only-its-resident.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1931 (approved), split on 2026-10-04 under the human's
+  "We should make the splitting of ticket if coder cant manage BAU". No new
+  scope: BL-1931's scenario 02, verbatim, and its FIRM pack edit: the
+  all-local pack declares the mode and drops its coordinator_agent,
+  coordinator_model and coordinator_effort lines.
+
+invariants:
+  - "A pack without the declaration launches exactly as before."
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1960-a-deterministic-router-pack-stands-only-its-resident.feature` passes 1 of 1.
+  2. `node specs/pipeline/cli.js specs/features/BL-1959-a-deterministic-pack-launch-keeps-the-coordinator-row-and-starts-no-seat.feature` still passes 2 of 2.
+  3. `bash swarmforge/scripts/test/test_rotation_sequential_pack.sh` passes.
+  4. `grep -E '^config coordinator_(mode|agent|model|effort)' swarmforge/packs/ollama-ista-local-model-mono-router.conf` prints only `config coordinator_mode deterministic`.
+
+source: |
+  Split from BL-1931 (see that ticket's source for the human's directives,
+  verbatim). The human, specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+notes: |
+  Split from BL-1931 on 2026-10-04 after the coder (iq3) held it 2h43m with
+  no edit (BAU split rule, 5b277c03cd; coordinator pull 862dcce3d6).
+  Approval inherited from BL-1931 (split, no new scope). Scenario 01 is
+  BL-1931's 02, verbatim, with the same Background.
+  It may pass on BL-1959's code alone: BL-1959 keeps the coordinator's row
+  last, so is_sequential_dormant (swarmforge.sh ~1303) still leaves QA
+  dormant. If so, this slice's code is the step handler and the pack edit;
+  write that in the evidence rather than adding a check nothing needs.
+  Where to read: swarmforge.sh lines 1296-1312 only (is_sequential_dormant).
+  The pack is swarmforge/packs/ollama-ista-local-model-mono-router.conf;
+  its coordinator_* lines are at ~18-20.
+  Step handler: specs/pipeline/steps/bl1960DeterministicRouterPackStandsOnlyItsResidentSteps.js,
+  registered in specs/pipeline/steps/index.js.
+
+description: |
+  ## What is wanted
+
+  On a rotation-router pack that declares `config coordinator_mode
+  deterministic`, launch creates exactly one role session: the resident's.
+  `is_sequential_dormant` treats the last-registered role (the coordinator)
+  as the standing infrastructure seat; with no coordinator seat (BL-1959),
+  no other role may become a second standing session.
+
+  The all-local pack `swarmforge/packs/ollama-ista-local-model-mono-router.conf`
+  declares `config coordinator_mode deterministic` and drops its
+  `coordinator_agent`, `coordinator_model` and `coordinator_effort` lines
+  (otherwise `check_local_model_seat_windows` still checks a coordinator
+  card).
+
+  ## What the coder checks
+
+  The scenario; test_rotation_sequential_pack.sh still passes; the pack's
+  coordinator_* lines per the procedure's step 4.
