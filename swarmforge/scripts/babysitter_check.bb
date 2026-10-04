@@ -868,10 +868,11 @@
 
 (defn held-seat-tickets
   "One map per in_process parcel that names a BL- ticket. Dwell is minutes
-   since claimAtMs when the sidecar has one (that clock restarts when HEAD
-   advances), else since dequeued_at. head-unchanged? compares the claim
-   commit (else received_at_head) to the seat worktree's HEAD. A missing
-   baseline or an unreadable HEAD is not 'unchanged'."
+   since the later of the claim (dequeued_at) and the seat's last own commit
+   naming the ticket (2026-10-04: claimAtMs restarts whenever HEAD moves,
+   and a seat told to merge main first moved it without working, so the
+   3-hour CRIT could never fire). A seat with no readable worktree falls
+   back to the old claim-commit vs HEAD comparison."
   [role-rows busy-by-role now-ms gpu-quiet-roles]
   (let [worktree-by-role (into {} (keep (fn [{:keys [role worktree]}]
                                           (when (and role (not (str/blank? (str worktree))))
@@ -884,14 +885,18 @@
                                                                      (handoff-header p "message"))]
                    (when (and role ticket)
                      (let [side (claim-sidecar p)
+                           dir (get worktree-by-role role)
+                           stage (first (str/split (str role) #"@"))
+                           claim-ms (babysitterd-sweep-lib/parse-instant-ms (handoff-header p "dequeued_at"))
+                           own-ms (when dir (babysitter-assess-lib/worktree-last-own-ticket-commit-ms dir ticket stage))
                            baseline (or (:claimCommit side)
                                         (handoff-header p "received_at_head"))
-                           taken-ms (or (when-let [ms (:claimAtMs side)]
-                                          (try (long ms) (catch Exception _ nil)))
-                                        (babysitterd-sweep-lib/parse-instant-ms
-                                         (handoff-header p "dequeued_at")))
-                           head (when-let [dir (get worktree-by-role role)]
-                                  (babysitter-assess-lib/worktree-head-commit-10 dir))
+                           taken-ms (if (and dir claim-ms)
+                                      (babysitterd-sweep-lib/progress-origin-ms claim-ms own-ms)
+                                      (or (when-let [ms (:claimAtMs side)]
+                                            (try (long ms) (catch Exception _ nil)))
+                                          claim-ms))
+                           head (when dir (babysitter-assess-lib/worktree-head-commit-10 dir))
                            dwell (babysitterd-sweep-lib/dwell-min now-ms taken-ms)]
                        (when dwell
                          {:role role
@@ -899,7 +904,9 @@
                           :dwell-min dwell
                           :busy? (boolean (get busy-by-role role false))
                           :gpu-quiet? (boolean (contains? gpu-quiet-roles role))
-                          :head-unchanged? (babysitterd-sweep-lib/same-commit? baseline head)}))))))
+                          :head-unchanged? (if (and dir claim-ms)
+                                             true
+                                             (babysitterd-sweep-lib/same-commit? baseline head))}))))))
          vec)))
 
 (defn in-process-claims [busy-by-role]

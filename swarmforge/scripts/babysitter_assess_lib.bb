@@ -34,6 +34,25 @@
 (defn sidecar-handoff-path [sidecar-path]
   (str/replace (str sidecar-path) #"\.claim-progress\.json$" ""))
 
+(defn worktree-last-own-ticket-commit-ms
+  "Epoch ms of the newest non-merge commit on the worktree's HEAD whose
+   message names ticket (not a longer id such as BL-19310) AND carries the
+   seat's own byline (`By <stage>.`), or nil. Merging main moves HEAD
+   without any work on the ticket, and the coordinator's own commits name
+   the ticket too (\"BL-1931: record assigned_to ...\") under its byline, so
+   neither counts as the seat's progress (2026-10-04)."
+  [worktree-dir ticket stage]
+  (try
+    (let [{:keys [out exit]} (process/sh ["git" "log" "-1" "--no-merges" "--all-match" "-E"
+                                          (str "--grep=" ticket "([^0-9]|$)")
+                                          (str "--grep=^By " stage "\\.$")
+                                          "--format=%ct" "HEAD"]
+                                         {:dir worktree-dir})
+          secs (str/trim (str out))]
+      (when (and (zero? exit) (re-matches #"\d+" secs))
+        (* 1000 (Long/parseLong secs))))
+    (catch Exception _ nil)))
+
 (defn worktree-head-commit-10
   "10-char HEAD of a worktree, or \"\" on error. Uses process/sh (captures
    stdout by default) rather than process/shell, which without :out :string

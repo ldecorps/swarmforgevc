@@ -307,6 +307,16 @@
   (or (some->> task str (re-find #"BL-\d+"))
       (some->> message str (re-find #"^\s*Work (BL-\d+)") second)))
 
+(defn progress-origin-ms
+  "Where a held ticket's stuck clock starts: the claim (the parcel's
+   dequeued_at), or the seat's last own commit for the ticket when that is
+   later. A merge of main is not progress, so it never restarts the clock."
+  [claim-ms last-own-commit-ms]
+  (cond
+    (and (number? claim-ms) (number? last-own-commit-ms)) (max claim-ms last-own-commit-ms)
+    (number? claim-ms) claim-ms
+    :else last-own-commit-ms))
+
 (defn check-seat-ticket-stuck
   "held-tickets: {:role :task :dwell-min :head-unchanged? :busy?}, already
    resolved by the gatherer. One CRIT per role, for the longest unchanged

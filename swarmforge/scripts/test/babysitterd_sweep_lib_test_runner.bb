@@ -1134,6 +1134,12 @@
 (assert= "held-ticket-id: a merge-up note names no held ticket" nil (sw/held-ticket-id nil "BL-1861 QA-approved 1a69e2f1a2 - merge your branch up to QA's"))
 (assert= "held-ticket-id: neither header" nil (sw/held-ticket-id nil nil))
 
+;; progress-origin-ms: a merge of main never restarts the stuck clock (2026-10-04)
+(assert= "progress-origin-ms: no own commit -> the claim" 1000 (sw/progress-origin-ms 1000 nil))
+(assert= "progress-origin-ms: a later own commit restarts it" 5000 (sw/progress-origin-ms 1000 5000))
+(assert= "progress-origin-ms: an own commit before the claim does not" 1000 (sw/progress-origin-ms 1000 500))
+(assert= "progress-origin-ms: neither" nil (sw/progress-origin-ms nil nil))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

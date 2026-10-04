@@ -165,6 +165,28 @@
                       :config claim-progress-lib/default-config
                       :progress {:claimCommit "aaaa" :claimAtMs (System/currentTimeMillis) :reclaims 0}})))
 
+;; worktree-last-own-ticket-commit-ms (2026-10-04): only the seat's own
+;; non-merge commits naming the ticket count as progress.
+(let [repo (str (fs/create-temp-dir {:prefix "bl-own-commit-"}))
+      git! (fn [& args] (apply babashka.process/sh (concat ["git" "-C" repo] args)))
+      commit! (fn [msg ts] (babashka.process/sh ["git" "-C" repo "-c" "user.email=t@t" "-c" "user.name=t" "commit" "-q" "--allow-empty" "-m" msg]
+                                                {:extra-env {"GIT_COMMITTER_DATE" (str ts " +0000") "GIT_AUTHOR_DATE" (str ts " +0000")}}))]
+  (try
+    (git! "init" "-q")
+    (commit! "base" 1791100000)
+    (assert= "own commit: none yet" nil (babysitter-assess-lib/worktree-last-own-ticket-commit-ms repo "BL-1931" "coder"))
+    (commit! "BL-1931: record assigned_to coder after routing\n\nBy coordinator." 1791102000)
+    (commit! "BL-19310: another ticket\n\nBy coder." 1791103000)
+    (assert= "own commit: the coordinator's and a longer id's do not count" nil
+             (babysitter-assess-lib/worktree-last-own-ticket-commit-ms repo "BL-1931" "coder"))
+    (commit! "BL-1931: the launcher boots no coordinator seat\n\nBy coder." 1791104000)
+    (commit! "hotfix: someone else's\n\nBy specifier." 1791105000)
+    (assert= "own commit: the seat's own BL-1931 commit" 1791104000000
+             (babysitter-assess-lib/worktree-last-own-ticket-commit-ms repo "BL-1931" "coder"))
+    (assert= "own commit: an unreadable worktree is nil" nil
+             (babysitter-assess-lib/worktree-last-own-ticket-commit-ms "/nonexistent-own-commit-dir" "BL-1931" "coder"))
+    (finally (fs/delete-tree repo))))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
