@@ -1,5 +1,5 @@
 id: BL-1952
-title: "Stamp-off for hotfixes 3e66c4af7c, c44825d8e4 and 4afdfbb6bf: a local-model seat's context budget - no re-attached files after a compaction (a two-file read had stopped the iq3 coder on qwen's hard limit), compaction summaries capped at 1200 tokens and closed when cut (76% of its model time went to compacting), and a short seat system prompt with auto memory off (its first request fell from 12487 to 4761 tokens)"
+title: "Stamp-off for hotfixes 3e66c4af7c, c44825d8e4, d955df1ca4 and 4afdfbb6bf: a local-model seat's context budget - no re-attached files after a compaction (a two-file read had stopped the iq3 coder on qwen's hard limit), compaction summaries capped at 1200 tokens, closed when cut and generated with thinking off (76% of its model time went to compacting), and a short seat system prompt with auto memory off (its first request fell from 12487 to 4761 tokens)"
 milestone: M8
 type: defect
 severity: high
@@ -34,7 +34,8 @@ approval_context: >
   FIRM: the review decides whether the change stands; the coder never
   re-applies it. The served window is unchanged (32768). Widened
   2026-10-04 to stamp off c44825d8e4 and 4afdfbb6bf, the human's "do B and
-  C", auto-approved on the same carve-out.
+  C", and d955df1ca4, which repairs c44825d8e4's regression; all
+  auto-approved on the same carve-out.
 
 invariants:
   - "The setting changes only what qwen keeps in the history after a compaction, never when qwen compacts, the served window or the provider entry."
@@ -68,6 +69,9 @@ qa_e2e_procedure: |
      shim's 2026-10-04 restart, and the coder session's `api_response`
      records for those compactions show output_token_count at most 1200.
      Measured at mint (before): 2707-3794 output tokens, 146-188 s each.
+     Since d955df1ca4 each line also carries reasoning_chars=0 and a head
+     starting '<state_snapshot>', and the session's chat_compression
+     records show compressionStatus 1, never COMPRESSION_FAILED_EMPTY_SUMMARY.
   8. Live and read-only: the first coder qwen session started after its
      launch script gained QWEN_SYSTEM_MD (2026-10-04 ~10:05Z) opens with an
      `api_response` whose input_token_count is under 6000. Measured at mint:
@@ -112,6 +116,12 @@ notes: |
   respawned: B takes effect at its next session start. The shim was
   restarted for C once it had no upstream request open.
   Hotfix ledger: c44825d8e4 and 4afdfbb6bf linked to BL-1952.
+  2026-10-04 10:31:40Z: d955df1ca4 live (shim restarted in a request gap)
+  and the coder respawned, at the human's earlier "feel free to kill it":
+  the session had failed three compactions, after which qwen stops
+  compacting. The coder's uncommitted BL-1851 work stayed in its worktree;
+  backups tmp/coder-bl1851-wip-20261004.patch and -20261004b.patch in the
+  master checkout. Hotfix ledger: d955df1ca4 linked to BL-1952.
 
 description: |
   ## Status: hotfix 3e66c4af7c landed the fix
@@ -168,12 +178,28 @@ description: |
     cache-sharing path drops an unclosed one. The PreCompact hook now
     names the 1200-token cap.
 
+  ## Fourth hotfix: d955df1ca4 repairs c44825d8e4
+
+  Under the 1200-token cap, the fresh session after the 10:15Z respawn
+  failed five compactions in a row (10:18-10:22Z): each reply was cut at
+  the cap with no content, qwen recorded COMPRESSION_FAILED_EMPTY_SUMMARY,
+  stopped compacting after three, and the seat hit the hard limit again
+  (31809 > 30852.8). The side-query reaches Ollama without the seat's
+  think:false, and iq3 thinks by default. A replay of a 20.5k-token
+  compaction built from the live session: thinking on, 4329 chars of
+  reasoning and no content; think:false, a <state_snapshot> opening with
+  <next_step>. The shim now sends the side-query with think:false and
+  reasoning_effort none, and logs the client's think value, the reasoning
+  length and the reply's first characters. Tool requests keep the
+  client's own knobs (a test guards invariant 3). The thinking was also
+  inside the 2.7-3.8k-token summaries measured before c44825d8e4.
+
   ## What each stage checks
 
   - Coder: all three changes against the description and the three
     invariants, and the new test cases (test_bl1949's four lines,
-    test_bl1838's export line, the shim's CompactionTests and its streamed
-    compaction case). Evidence: backlog/evidence/BL-1952-coder-<date>.md.
+    test_bl1838's export line, the shim's CompactionTests, its streamed
+    compaction case, and its thinking-off and tool-knob cases). Evidence: backlog/evidence/BL-1952-coder-<date>.md.
   - Documenter: docs/how-to/BL-1052-local-model-seat-launch.md lists the
     keys the settings writer writes and describes the shim; add the two
     settings keys, the QWEN_SYSTEM_MD export and its prompt file, and the

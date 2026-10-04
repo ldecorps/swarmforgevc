@@ -972,3 +972,10 @@
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
+- commit: d955df1ca4
+  subject: "hotfix: the shim sends a local seat's compaction side-query with thinking off"
+  detected_at: 2026-10-04
+  state: pending
+  stamp_ticket: BL-1952
+  human_decision: null
+  decided_at: null
