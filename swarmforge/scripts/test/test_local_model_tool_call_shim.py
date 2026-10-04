@@ -256,6 +256,30 @@ class CompactionTests(unittest.TestCase):
         kept, lowered = shim.compaction_budget({"max_tokens": 800}, 1200)
         self.assertEqual((kept["max_tokens"], lowered), (800, None))
 
+    def test_the_side_query_loses_its_ask_for_analysis(self) -> None:
+        system = ("You are the component that summarizes a conversation.\n\n"
+                  "First, wrap your reasoning in an <analysis> block. Inside it, walk through it all.\n\n"
+                  "Then produce the final summary as the EXACT XML structure below.")
+        request = {"max_tokens": 9000, "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": shim.COMPACTION_MARKERS[1] + " (history)"},
+            {"role": "assistant", "content": "earlier"},
+            {"role": "user", "content": [{"type": "text", "text": "Do not call tools. " + shim.COMPACTION_MARKERS[1]}]}]}
+        out = shim.without_analysis_request(request)
+        self.assertNotIn("wrap your reasoning", out["messages"][0]["content"])
+        self.assertIn("Do not write an <analysis> block.\n\nThen produce the final summary", out["messages"][0]["content"])
+        self.assertEqual(out["messages"][-1]["content"][0]["text"], "Do not call tools. " + shim.NO_ANALYSIS_DIRECTIVE)
+        self.assertEqual(out["messages"][1:3], request["messages"][1:3])
+        self.assertEqual(request["messages"][0]["content"], system)
+
+    def test_an_analysis_only_reply_becomes_a_snapshot(self) -> None:
+        wrapped, did = shim.salvage_analysis_only(cut_completion("<analysis>\nChronological: read D1, edited lib"))
+        text = wrapped["choices"][0]["message"]["content"]
+        self.assertTrue(did)
+        self.assertEqual(text, "<state_snapshot>\n<current_work>\nChronological: read D1, edited lib\n</current_work>\n</state_snapshot>")
+        for reply in (cut_completion(CUT), completion("no tags at all"), cut_completion("<analysis></analysis>")):
+            self.assertEqual(shim.salvage_analysis_only(reply), (reply, False))
+
     def test_a_cut_snapshot_is_closed_and_nothing_else_is(self) -> None:
         closed, did = shim.close_cut_snapshot(cut_completion(CUT))
         self.assertTrue(did)
@@ -383,6 +407,12 @@ class LiveShimTests(unittest.TestCase):
         self.assertEqual(chunks[1]["choices"][0]["finish_reason"], "length")
         _path, sent = FakeOllama.seen[-1]
         self.assertEqual((sent["max_tokens"], sent["stream"]), (shim.COMPACTION_OUTPUT_CAP, False))
+
+    def test_a_compaction_reaches_ollama_without_the_analysis_directive(self) -> None:
+        self.post({"model": "capped", "messages": [{"role": "system", "content": SUMMARIZER},
+                                                   {"role": "user", "content": shim.COMPACTION_MARKERS[1]}]})
+        _path, sent = FakeOllama.seen[-1]
+        self.assertEqual(sent["messages"][-1]["content"], shim.NO_ANALYSIS_DIRECTIVE)
 
     def test_a_compaction_reaches_ollama_with_thinking_off(self) -> None:
         self.post({"model": "capped", "think": True,

@@ -44,7 +44,12 @@ Ollama without the seat's think:false, iq3 spent all 1200 tokens in hidden
 reasoning, five compactions in a row came back empty
 (COMPRESSION_FAILED_EMPTY_SUMMARY), and the seat hit qwen's hard limit.
 Replayed: 4329 chars of reasoning and no content with thinking on; a
-<state_snapshot> opening with <next_step> with it off.
+<state_snapshot> opening with <next_step> with it off. qwen does send
+think:false, though (the shim logs client_think=False): the empty summaries
+were replies that opened with qwen's requested <analysis> block and spent
+the cap on it, and qwen strips that block. So the side-query also loses
+qwen's ask for <analysis> first, and a reply that is still analysis only is
+wrapped as the snapshot's <current_work> rather than returned empty.
 
 Usage:
   local_model_tool_call_shim.py serve  --port <n> --upstream <http://host:port/v1>
@@ -82,6 +87,10 @@ COMPACTION_MARKERS = (
 )
 SNAPSHOT_OPEN, SNAPSHOT_CLOSE = "<state_snapshot>", "</state_snapshot>"
 COMPACTION_NO_THINKING = {"think": False, "reasoning_effort": "none"}
+NO_ANALYSIS_DIRECTIVE = ("Produce the <state_snapshot> XML now: start your reply with <state_snapshot> "
+                         "and then <next_step>, and write no <analysis> block.")
+_ANALYSIS_PARAGRAPH = re.compile(r"First, wrap your reasoning in an <analysis> block\..*?(?=\n\nThen produce)", re.DOTALL)
+_ANALYSIS_TAGS = re.compile(r"</?analysis>")
 
 _TAGGED = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _FENCED = re.compile(r"```[A-Za-z0-9_-]*[ \t]*\n?(.*?)```", re.DOTALL)
@@ -374,6 +383,44 @@ def compaction_budget(request: dict[str, Any], cap: int) -> tuple[dict[str, Any]
     return out, lowered
 
 
+def _rewritten_text(text: str) -> str:
+    text = _ANALYSIS_PARAGRAPH.sub("Do not write an <analysis> block.", text)
+    return text.replace(COMPACTION_MARKERS[1], NO_ANALYSIS_DIRECTIVE)
+
+
+def without_analysis_request(request: dict[str, Any]) -> dict[str, Any]:
+    """The side-query with qwen's ask for an <analysis> block first taken out
+    of its system messages and its last message, where qwen puts it."""
+    messages = list(request.get("messages") or [])
+    for i, message in enumerate(messages):
+        if not isinstance(message, dict) or (message.get("role") != "system" and i != len(messages) - 1):
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            messages[i] = {**message, "content": _rewritten_text(content)}
+        elif isinstance(content, list):
+            messages[i] = {**message, "content": [
+                {**part, "text": _rewritten_text(part["text"])} if isinstance(part, dict) and isinstance(part.get("text"), str) else part
+                for part in content]}
+    return {**request, "messages": messages}
+
+
+def salvage_analysis_only(completion: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """A reply holding analysis and no <state_snapshot>, with that analysis
+    wrapped as the snapshot's <current_work> (qwen strips an <analysis>
+    block, so returned as is it summarises to nothing); True when wrapped."""
+    choice = (completion.get("choices") or [{}])[0] or {}
+    message = choice.get("message") or {}
+    text = message.get("content")
+    if not isinstance(text, str) or SNAPSHOT_OPEN in text or "<analysis>" not in text:
+        return completion, False
+    notes = _ANALYSIS_TAGS.sub("", text).strip()
+    if not notes:
+        return completion, False
+    wrapped = f"{SNAPSHOT_OPEN}\n<current_work>\n{notes}\n</current_work>\n{SNAPSHOT_CLOSE}"
+    return {**completion, "choices": [{**choice, "message": {**message, "content": wrapped}}] + list(completion["choices"][1:])}, True
+
+
 def close_cut_snapshot(completion: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """A reply cut at its budget whose <state_snapshot> opened and never
     closed, with the closing tag appended; True when it was appended."""
@@ -556,11 +603,12 @@ class ShimHandler(BaseHTTPRequestHandler):
         closed. Nothing else in the request changes."""
         model_cap = self._output_cap(request.get("model"))
         cap = min(COMPACTION_OUTPUT_CAP, model_cap) if model_cap else COMPACTION_OUTPUT_CAP
-        capped, lowered = compaction_budget(request, cap)
+        capped, lowered = compaction_budget(without_analysis_request(request), cap)
         capped = {**capped, **COMPACTION_NO_THINKING}
         status, payload = self._parsed(*self._call_upstream(capped))
-        closed = False
+        closed = salvaged = False
         if status == 200 and isinstance(payload, dict):
+            payload, salvaged = salvage_analysis_only(payload)
             payload, closed = close_cut_snapshot(payload)
         choice = ((payload.get("choices") or [{}])[0] or {}) if isinstance(payload, dict) else {}
         message = choice.get("message") or {}
@@ -568,7 +616,7 @@ class ShimHandler(BaseHTTPRequestHandler):
         reasoning = len(str(message.get("reasoning") or message.get("reasoning_content") or ""))
         _log(f"compaction model={request.get('model')} status={status} budget={lowered}->"
              f"{capped.get('max_tokens', capped.get('max_completion_tokens'))} client_think={request.get('think')!r} "
-             f"finish={choice.get('finish_reason')} closed={closed} reasoning_chars={reasoning} head={head!r}")
+             f"finish={choice.get('finish_reason')} closed={closed} salvaged={salvaged} reasoning_chars={reasoning} head={head!r}")
         return status, payload
 
     def _shim_chat(self, request: dict[str, Any]) -> None:
