@@ -296,6 +296,21 @@ in it:
   the agent resumes from (coordinator note 016208: 0 of 24 snapshots in
   one coder session closed). The hook changes only the instructions qwen
   appends — never when qwen compacts or what history it compacts.
+- **BL-1970's edit hook** (`hooks.PostToolUse`, matcher `edit|write_file`)
+  — every local-model seat's settings register the master checkout's
+  `swarmforge/scripts/local_model_edit_hook.bb` the same way (never the
+  seat's worktree copy). After an `edit` or `write_file` call, the hook
+  reads the edited file; if it is Clojure source (`.bb`, `.clj`, `.cljc`,
+  `.cljs`, `.edn`) and a delimiter no longer closes, its
+  `additionalContext` names the file and the reader's own line and
+  column for the open form, in the same turn as the edit. It prints
+  nothing for a file that reads, for any other kind of file, or for a
+  reader error that is not a delimiter error. The hook only adds
+  context: it never blocks, undoes, or rewrites the edit. Without it,
+  the iq3 coder spent over twenty minutes and two compactions counting
+  parentheses by hand on a form the reader had already named (BL-1902,
+  `bl1360_ceremony_handoff_property_runner.bb:239`, "EOF while reading,
+  expected ) to match ( at [239,1]").
 
 ### The window gate refuses qwen's compaction dead zone (BL-1840)
 
