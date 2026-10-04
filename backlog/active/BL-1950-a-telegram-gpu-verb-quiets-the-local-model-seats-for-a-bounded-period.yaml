@@ -6,6 +6,7 @@ severity: high
 # high: the live coder seat was spinning the GPU fans, and a half-launch
 # repair would have started qwen again the moment the seat was stopped.
 status: todo
+assigned_to: coder
 epic: local-llm-swarm
 priority: 5
 direction: queue-jump
@@ -82,3 +83,5 @@ description: |
   busy-but-frozen warning, and that role's claim-risk finding are
   skipped the same way. When untilMs passes, the next sweep sees an
   ordinary missing process and repairs the seat.
+
+assigned_to: coder
