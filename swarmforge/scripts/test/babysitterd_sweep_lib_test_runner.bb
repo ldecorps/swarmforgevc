@@ -314,6 +314,91 @@
                                     :any-pane-busy? false :prev-streak 0
                                     :pending-claims [] :in-process-claims []}))))
 
+;; ── check 5b: ticket held in a seat for several hours ───────────────────────
+;; The 30-minute check above goes silent while the pane spinner is up, and
+;; that same spinner freezes claim reclaims, so the operator (CRIT only)
+;; never hears about a multi-hour dwell. This check ignores the spinner.
+(assert= "a ticket held under the 3h threshold is not seat-stuck, even with HEAD unchanged and a spinner"
+         []
+         (sw/check-seat-ticket-stuck
+          [{:role "coder" :task "BL-1851" :dwell-min 179 :head-unchanged? true :busy? true}]
+          false))
+(assert-true "three hours with no commit is a CRIT even while the pane spinner is live"
+             (let [fs (sw/check-seat-ticket-stuck
+                       [{:role "coder" :task "BL-1851" :dwell-min 180 :head-unchanged? true :busy? true}]
+                       false)]
+               (and (= 1 (count fs))
+                    (= "CRIT" (:severity (first fs)))
+                    (= "seat-stuck-coder" (:key (first fs)))
+                    (str/includes? (:message (first fs)) "BL-1851")
+                    (str/includes? (:message (first fs)) "spinner"))))
+(assert= "a commit since the claim clears the finding, however long the ticket has been held"
+         []
+         (sw/check-seat-ticket-stuck
+          [{:role "coder" :task "BL-1851" :dwell-min 400 :head-unchanged? false :busy? true}]
+          false))
+(assert= "a control pause is not a stuck seat"
+         []
+         (sw/check-seat-ticket-stuck
+          [{:role "coder" :task "BL-1851" :dwell-min 400 :head-unchanged? true :busy? false}]
+          true))
+(assert-true "two tickets in one seat report the longer unchanged claim once"
+             (let [fs (sw/check-seat-ticket-stuck
+                       [{:role "coder" :task "BL-1" :dwell-min 200 :head-unchanged? true :busy? true}
+                        {:role "coder" :task "BL-2" :dwell-min 300 :head-unchanged? true :busy? true}]
+                       false)]
+               (and (= 1 (count fs))
+                    (str/includes? (:message (first fs)) "BL-2"))))
+(assert-true "a 10-char claim commit matches a full HEAD, and a blank baseline is not unchanged"
+             (and (sw/same-commit? "7dc4b0f3f9" "7dc4b0f3f9abcdef")
+                  (not (sw/same-commit? "" "7dc4b0f3f9"))
+                  (not (sw/same-commit? "7dc4b0f3f9" nil))))
+(assert= "dwell-min is whole minutes, and a future or missing clock is nil"
+         [180 nil]
+         [(sw/dwell-min 180000000 169200000) (sw/dwell-min 1000 2000)])
+(assert= "parse-instant-ms reads a handoff dequeued_at and refuses garbage"
+         [1791094115000 nil]
+         [(sw/parse-instant-ms "2026-10-04T06:08:35Z")
+          (sw/parse-instant-ms "not-a-time")])
+(assert-true "a seat-stuck CRIT reaches assemble-findings and is operator-escalation eligible"
+             (let [fs (:findings (sw/assemble-findings
+                                  {:roles [] :now-ms 1 :handoffd-alive? true
+                                   :handoffd-supervisor-alive? true :handoffd-log-age-secs 1
+                                   :failed-count 0 :stuck-parcels [] :available-mb 4000
+                                   :mem-floor-mb 1500 :claim-risks [] :pause {:active? false}
+                                   :active-ticket-count 1 :any-pane-busy? true :prev-streak 0
+                                   :pending-claims [] :in-process-claims []
+                                   :held-seat-tickets [{:role "coder" :task "BL-1851"
+                                                        :dwell-min 200 :head-unchanged? true
+                                                        :busy? true}]}))
+                   f (first (filter #(= "seat-stuck-coder" (:key %)) fs))]
+               (and f (sw/escalation-eligible? f) (sw/nudge-eligible? f))))
+(assert-true "assemble-findings drops seat-stuck for a gpu-quiet local seat"
+             (not-any? #(= "seat-stuck-coder" (:key %))
+                       (:findings (sw/assemble-findings
+                                   {:roles [] :now-ms 1 :handoffd-alive? true
+                                    :handoffd-supervisor-alive? true :handoffd-log-age-secs 1
+                                    :failed-count 0 :stuck-parcels [] :available-mb 4000
+                                    :mem-floor-mb 1500 :claim-risks [] :pause {:active? false}
+                                    :active-ticket-count 1 :any-pane-busy? true :prev-streak 0
+                                    :pending-claims [] :in-process-claims []
+                                    :held-seat-tickets [{:role "coder" :task "BL-1851"
+                                                         :dwell-min 200 :head-unchanged? true
+                                                         :busy? true :gpu-quiet? true}]}))))
+(assert-true "assemble-findings drops seat-stuck while a control pause is active"
+             (not-any? #(= "seat-stuck-coder" (:key %))
+                       (:findings (sw/assemble-findings
+                                   {:roles [] :now-ms 1 :handoffd-alive? true
+                                    :handoffd-supervisor-alive? true :handoffd-log-age-secs 1
+                                    :failed-count 0 :stuck-parcels [] :available-mb 4000
+                                    :mem-floor-mb 1500 :claim-risks []
+                                    :pause {:active? true :until-ms 9}
+                                    :active-ticket-count 1 :any-pane-busy? true :prev-streak 0
+                                    :pending-claims [] :in-process-claims []
+                                    :held-seat-tickets [{:role "coder" :task "BL-1851"
+                                                         :dwell-min 200 :head-unchanged? true
+                                                         :busy? true}]}))))
+
 ;; ── check 6: menu-blocked-pane ───────────────────────────────────────────────
 (assert-nil "no menu block produces no finding"
             (sw/check-menu-blocked {:role "coder" :menu-blocked? false}))
@@ -1041,6 +1126,13 @@
              (not-any? #(str/starts-with? (str (:key %)) "local-window-")
                        (:findings (sw/assemble-findings
                                    {:roles [] :now-ms bl1848-now :available-mb 9000 :mem-floor-mb 1500}))))
+
+;; held-ticket-id: a Work note carries its ticket in message, not task (2026-10-04)
+(assert= "held-ticket-id: a git_handoff's task header" "BL-1858" (sw/held-ticket-id "BL-1858" nil))
+(assert= "held-ticket-id: a bounce task keeps only the id" "BL-1851" (sw/held-ticket-id "BL-1851 [behavior: x]" nil))
+(assert= "held-ticket-id: a Work note's message" "BL-1931" (sw/held-ticket-id nil "Work BL-1931: merge main first, then read backlog/active"))
+(assert= "held-ticket-id: a merge-up note names no held ticket" nil (sw/held-ticket-id nil "BL-1861 QA-approved 1a69e2f1a2 - merge your branch up to QA's"))
+(assert= "held-ticket-id: neither header" nil (sw/held-ticket-id nil nil))
 
 (when (seq @failures)
   (binding [*out* *err*]

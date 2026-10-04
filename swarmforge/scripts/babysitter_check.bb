@@ -204,6 +204,7 @@
                     ;; Absent agent column defaults to claude — pre-agent-column
                     ;; fixtures and classic packs stay unchanged.
                     {:role (get cols 0)
+                     :worktree (get cols 2)
                      :session (get cols 3)
                      :agent (let [a (get cols 5)]
                               (if (str/blank? a) "claude" a))})))
@@ -843,6 +844,64 @@
 
 ;; ── in-process claims for check 10 (BL-1109: same glob as stuck-in-process) ─
 
+(defn handoff-header
+  "First header line `field: value` in a handoff, or nil. Stops at the blank
+   line that ends the header block. A read failure is nil, never a throw
+   that would abort the sweep."
+  [path field]
+  (try
+    (let [prefix (str field ": ")]
+      (some (fn [line]
+              (when (str/starts-with? line prefix)
+                (str/trim (subs line (count prefix)))))
+            (take-while #(not (str/blank? %))
+                        (str/split-lines (slurp (str path))))))
+    (catch Exception _ nil)))
+
+(defn claim-sidecar
+  "The claim-progress sidecar beside an in_process handoff, or nil."
+  [handoff-path]
+  (let [sidecar (str handoff-path ".claim-progress.json")]
+    (when (fs/exists? sidecar)
+      (try (json/parse-string (slurp sidecar) true)
+           (catch Exception _ nil)))))
+
+(defn held-seat-tickets
+  "One map per in_process parcel that names a BL- ticket. Dwell is minutes
+   since claimAtMs when the sidecar has one (that clock restarts when HEAD
+   advances), else since dequeued_at. head-unchanged? compares the claim
+   commit (else received_at_head) to the seat worktree's HEAD. A missing
+   baseline or an unreadable HEAD is not 'unchanged'."
+  [role-rows busy-by-role now-ms gpu-quiet-roles]
+  (let [worktree-by-role (into {} (keep (fn [{:keys [role worktree]}]
+                                          (when (and role (not (str/blank? (str worktree))))
+                                            [role worktree]))
+                                        role-rows))]
+    (->> (glob-handoffs stuck-in-process-glob)
+         (keep (fn [p]
+                 (let [role (owning-role-for-path p)
+                       ticket (babysitterd-sweep-lib/held-ticket-id (handoff-header p "task")
+                                                                     (handoff-header p "message"))]
+                   (when (and role ticket)
+                     (let [side (claim-sidecar p)
+                           baseline (or (:claimCommit side)
+                                        (handoff-header p "received_at_head"))
+                           taken-ms (or (when-let [ms (:claimAtMs side)]
+                                          (try (long ms) (catch Exception _ nil)))
+                                        (babysitterd-sweep-lib/parse-instant-ms
+                                         (handoff-header p "dequeued_at")))
+                           head (when-let [dir (get worktree-by-role role)]
+                                  (babysitter-assess-lib/worktree-head-commit-10 dir))
+                           dwell (babysitterd-sweep-lib/dwell-min now-ms taken-ms)]
+                       (when dwell
+                         {:role role
+                          :task ticket
+                          :dwell-min dwell
+                          :busy? (boolean (get busy-by-role role false))
+                          :gpu-quiet? (boolean (contains? gpu-quiet-roles role))
+                          :head-unchanged? (babysitterd-sweep-lib/same-commit? baseline head)}))))))
+         vec)))
+
 (defn in-process-claims [busy-by-role]
   (->> (glob-handoffs stuck-in-process-glob)
        (keep (fn [p]
@@ -1332,6 +1391,7 @@
          :handoffd-max-age-secs heartbeat-max-secs
          :failed-count (count-failed-box)
          :stuck-parcels (stuck-parcels busy-by-role gpu-quiet-roles)
+         :held-seat-tickets (held-seat-tickets role-rows busy-by-role sweep-now-ms gpu-quiet-roles)
          ;; BL-802: nil (truly unavailable) flows through unmasked — no
          ;; fabricated default that would silently suppress a real low-memory
          ;; finding. check-memory-floor reports UNAVAILABLE on nil.

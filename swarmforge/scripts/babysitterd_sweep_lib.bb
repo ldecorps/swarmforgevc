@@ -256,6 +256,80 @@
       :severity "WARN"
       :message (str "in_process parcel older than 30m (age=" age-min "m): " name)})))
 
+;; ── check 5b: a ticket held in a seat for several hours ─────────────────────
+;; Check 5 and the claim-reclaim ladder both treat a live spinner as proof of
+;; work. A rotating status phrase also changes the pane hash every sweep, so
+;; check 7 (busy-but-frozen) never accumulates three identical hashes. A seat
+;; can therefore hold one ticket for hours, HEAD never moving, and every
+;; existing check stays quiet — and the operator only wakes on CRIT.
+;;
+;; This check does not look at the pane. The clock is time since the claim
+;; sidecar's claimAtMs (reset when HEAD advances; else the parcel's
+;; dequeued_at). Three hours with that commit still at HEAD is a stuck ticket,
+;; spinner or not. A control pause is planned quiet, not a stuck seat.
+
+(def seat-ticket-stuck-min 180)
+
+(defn parse-instant-ms
+  "ISO-8601 instant to epoch millis, or nil. Never throws."
+  [s]
+  (try
+    (some-> s str str/trim not-empty java.time.Instant/parse .toEpochMilli)
+    (catch Exception _ nil)))
+
+(defn dwell-min
+  "Whole minutes from taken-ms to now-ms, or nil when either instant is missing
+   or the claim clock is in the future."
+  [now-ms taken-ms]
+  (when (and (number? now-ms) (number? taken-ms) (>= now-ms taken-ms))
+    (quot (- now-ms taken-ms) 60000)))
+
+(defn same-commit?
+  "True when two git shas name the same commit. Compares equal strings and
+   either side as a prefix of the other, so a 10-char claimCommit matches a
+   full HEAD and the reverse. Blank on either side is not a match — a missing
+   baseline must not read as 'unchanged'."
+  [a b]
+  (let [a (str/trim (str (or a "")))
+        b (str/trim (str (or b "")))]
+    (and (not (str/blank? a))
+         (not (str/blank? b))
+         (or (= a b)
+             (str/starts-with? a b)
+             (str/starts-with? b a)))))
+
+(defn held-ticket-id
+  "The BL- ticket a held parcel works: its task header, else a coordinator
+   Work note's message (\"Work BL-1931: merge main first...\", which carries
+   no task header). Any other note (a merge-up, a branch-behind) names no
+   held ticket: it carries no work."
+  [task message]
+  (or (some->> task str (re-find #"BL-\d+"))
+      (some->> message str (re-find #"^\s*Work (BL-\d+)") second)))
+
+(defn check-seat-ticket-stuck
+  "held-tickets: {:role :task :dwell-min :head-unchanged? :busy?}, already
+   resolved by the gatherer. One CRIT per role, for the longest unchanged
+   claim at or past seat-ticket-stuck-min. paused? suppresses the check."
+  [held-tickets paused?]
+  (if paused?
+    []
+    (vec
+     (for [[role items] (group-by :role (remove :gpu-quiet? (or held-tickets [])))
+           :let [stuck (->> items
+                            (filter :head-unchanged?)
+                            (filter #(>= (long (or (:dwell-min %) 0)) seat-ticket-stuck-min))
+                            (sort-by :dwell-min >)
+                            first)]
+           :when stuck]
+       {:key (str "seat-stuck-" role)
+        :severity "CRIT"
+        :message (str role " has held " (:task stuck) " for " (:dwell-min stuck)
+                      "m with no commit since the claim"
+                      (when (:busy? stuck)
+                        " — the pane spinner is not progress")
+                      " (threshold " seat-ticket-stuck-min "m)")}))))
+
 ;; ── check 6: menu-blocked-pane ────────────────────────────────────────────────
 
 (defn check-menu-blocked
@@ -862,6 +936,7 @@
 ;; :control-plane-classification :launch-scripts-present?
 ;; :control-plane-repair-allowed? :socket-path (BL-958 babysitter ownership).
 ;; :deadlock-active? :ahead :behind :reason :overlapping-paths (BL-1187).
+;; :held-seat-tickets (check 5b: multi-hour ticket dwell, spinner ignored).
 
 (defn assemble-findings
   [{:keys [roles handoffd-alive? handoffd-supervisor-alive? handoffd-log-age-secs
@@ -876,7 +951,7 @@
            control-plane-classification launch-scripts-present?
            control-plane-repair-allowed? socket-path control-plane-error
            deadlock-active? ahead behind reason overlapping-paths
-           local-windows]}]
+           local-windows held-seat-tickets]}]
   (let [paused? (boolean (:active? pause))
         control-plane-finding (check-control-plane
                                {:control-plane-classification control-plane-classification
@@ -929,6 +1004,7 @@
                            :max-age-secs handoffd-max-age-secs})
         dead-letter-finding (check-dead-letter {:failed-count failed-count})
         stuck-findings (check-stuck-in-process stuck-parcels)
+        seat-stuck-findings (check-seat-ticket-stuck held-seat-tickets paused?)
         memory-finding (check-memory-floor {:available-mb available-mb :floor-mb mem-floor-mb})
         local-window-findings (check-local-window-fit local-windows now-ms)
         gpu-quiet-roles (set (map :role (filter :gpu-quiet? roles)))
@@ -965,6 +1041,7 @@
                                       role-findings
                                       [handoffd-finding dead-letter-finding]
                                       stuck-findings
+                                      seat-stuck-findings
                                       [memory-finding]
                                       local-window-findings
                                       claim-findings
