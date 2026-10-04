@@ -199,3 +199,5 @@ notes: |
       as spaces). The specifier restored the file in the coder worktree and
       preserved BL-1861's stray TDD runner on refs/heads/swarmforge-coder-bl1861-wip
       (79c8fd098c). Not fixed here; see backlog/evidence/BL-1923-dogfood-observation-6-7-20261003.md.
+
+assigned_to: coder
