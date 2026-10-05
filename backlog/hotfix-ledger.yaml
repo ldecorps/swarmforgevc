@@ -1294,3 +1294,10 @@
   stamp_ticket: BL-2007
   human_decision: null
   decided_at: null
+- commit: 04c0556285
+  subject: "HOTFIX: BL-1061's leaked-fixture scenario names its fixture with a dead creator pid and waits for the swept process to exit"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2007
+  human_decision: null
+  decided_at: null
