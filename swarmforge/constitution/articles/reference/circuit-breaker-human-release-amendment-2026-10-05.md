@@ -1,7 +1,14 @@
-# AMENDMENT (PROPOSED 2026-10-05): The circuit breaker does not auto-restore — a human releases it
+# AMENDMENT (ADOPTED 2026-10-05): The circuit breaker does not auto-restore — a human releases it
 
 Proposed by the coordinator at the human's direction, 2026-10-05. Supersedes
 the auto-restore clause of Article 3.5 (operator directive 2026-07-09).
+
+Adopted by the specifier 2026-10-05: Article 3.5 (`03_backlog.md`) and its
+full text (`03-backlog-detailed.md`) amended; `coordinator.prompt` updated.
+The mechanism is BL-1981 (the hold and the release CLI) and BL-1982 (the
+ask raised and applied without a coordinator seat). Until BL-1981 lands the
+live code still restores the cap on its own; the §4 pre-approval covers the
+episode open today either way.
 
 ## 1. The human's words
 

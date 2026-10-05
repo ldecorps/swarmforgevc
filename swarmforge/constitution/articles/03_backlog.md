@@ -44,9 +44,10 @@
   register over 10, oldest over 7 days, or any unowned — BL-1429) above
   trend baseline, the coordinator lowers `active_backlog_max_depth`: drop to
   `1` if **degraded** (signals elevated, pipeline moving), `0` if **severe**
-  (stalled/transport down). Restore the prior cap once signals normalize —
-  never leave the throttle engaged after recovery (operator directive
-  2026-07-09). See **03-backlog-detailed.md**.
+  (stalled/transport down). Normal signals never auto-restore the cap: ask
+  the human once, hold the throttle until released (2026-10-05,
+  **circuit-breaker-human-release-amendment-2026-10-05.md**). See
+  **03-backlog-detailed.md**.
 
 ## 3.6 Deprecator Freshness Gate (operator directive 2026-08-27)
 - Before EVERY promotion of a paused item into `backlog/active/` — same

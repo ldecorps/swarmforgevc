@@ -15,10 +15,31 @@ On-demand elaboration for `03_backlog.md`. Not inlined at boot.
     stabilize one ticket at a time.
   - **Severe** (pipeline stalled or transport down): drop to `0` — freeze new
     promotion entirely until the fault is cleared.
-- Restore the prior cap once the signals return to baseline; do not leave the
-  throttle engaged after recovery.
+- ~~Restore the prior cap once the signals return to baseline; do not leave the
+  throttle engaged after recovery.~~ Retired 2026-10-05 by
+  **circuit-breaker-human-release-amendment-2026-10-05.md** (human: "Once
+  cap 1 is reached, ask if it is safe to release the cap."). In its place:
+  - Signals back at baseline do not, by themselves, lift the throttle. The
+    cap stays at the lowest value the episode reached (`1` or `0`) until a
+    human releases it.
+  - When the triggering signals read back at baseline, the coordinator asks
+    the human ONE question (`role_ask.bb --role coordinator`) naming the
+    signal that tripped the throttle, its current reading, how long it has
+    read normal, and the prior cap it would restore.
+  - A release restores the prior cap the same turn. Any other answer keeps
+    the throttle at the value the human gives, recorded on the throttle
+    state so a later shift does not re-ask for the same episode.
+  - A release recorded while the signal is still elevated is a
+    pre-approval for that episode: the cap follows the live signal and is
+    restored when it clears, without a question. It never carries over to
+    a later episode.
+  - A cause clearing (e.g. a transport outage ending) is noticed without a
+    human, but the cap still needs the human's release to climb off `0`/`1`.
+  - Mechanism: BL-1981 (the hold and the release CLI), BL-1982 (the ask
+    raised and applied without a coordinator seat).
 - Rationale: piling tickets into a broken pipeline compounds recovery work.
-  (Operator directive 2026-07-09.)
+  (Operator directive 2026-07-09.) A quiet pipeline is not proof it is safe
+  to resume full throughput (human, 2026-10-05).
 
 ## 3.6 Deprecator Freshness Gate — full text
 

@@ -1,0 +1,153 @@
+id: BL-1982
+title: "The throttle release question reaches the human without a coordinator seat: effective_backlog_depth_cli.bb raises ONE role_ask question to the coordinator topic when BL-1981 reports an episode awaiting release, and applies a tapped Release/Keep answer through BL-1981's release CLI on a later run"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-self-optimization
+priority: 6
+depends_on: [BL-1981]
+mutation_cost: medium
+# medium: an ask-and-apply step in the depth CLI's run (bb), shelling
+# role_ask.bb, deliver-role-answer.js and BL-1981's release CLI, plus one
+# step handler. No new store: the ask is recorded on BL-1981's episode.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one ask-and-apply step in one CLI; nothing large enough to leave duplication behind"
+
+acceptance: specs/features/BL-1982-the-throttle-release-question-reaches-the-human-without-a-coordinator-seat.feature
+
+# Handler pin per BL-233/BL-1371. No consumer anchor: the scenarios drive the
+# real effective_backlog_depth_cli.bb, which every promotion decision already
+# calls, so the acceptance run proves the wiring (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1982ThrottleReleaseAskSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  The second half of the human's 2026-10-05 circuit-breaker directive
+  ("Once cap 1 is reached, ask if it is safe to release the cap"). FIRM -
+  the ask is raised by the depth CLI itself, so a pack with no coordinator
+  seat still asks you. FIRM - one question per episode, to the
+  coordinator's own Telegram topic, with two buttons: "Release the cap"
+  and "Keep the throttle". FIRM - a tap is applied on the next promotion
+  decision; a typed reply is kept on the episode and the cap stays held
+  until someone records an answer. FIRM - it never asks while the
+  coordinator has another question pending, and never touches that
+  question's answer.
+
+invariants:
+  - "At most one throttle question is raised per episode."
+  - "The depth CLI consumes a coordinator answer only when the coordinator's pending question is the throttle question it raised for the open episode."
+
+source: |
+  Constitution amendment
+  swarmforge/constitution/articles/reference/circuit-breaker-human-release-amendment-2026-10-05.md
+  (coordinator 6a84d814e5 + e8d5dcd2a4, adopted by the specifier
+  2026-10-05), section 2. Human, to the coordinator, 2026-10-05, verbatim
+  as the amendment records it (lightly cleaned up from source): "Change
+  logic around circuit breaker cap 1. Once cap 1 is reached, ask if it is
+  safe to release the cap. The idea is that we prevent issues from piling
+  up. The swarm is working ok, it is not safe to resume churning at full
+  throttle [just because signals look normal again]."
+
+description: |
+  ## What is wrong
+
+  BL-1981 holds the throttled cap after its signal clears and reports the
+  episode awaiting release, but nothing asks the human. coordinator.prompt
+  tells the coordinator seat to raise the question by hand, which leaves
+  two gaps: a pack declaring `config coordinator_mode deterministic`
+  (BL-1846, BL-1931) has no coordinator seat at all, so its cap would stay
+  held with no one asked; and a seat that misses the file's state asks
+  nobody either.
+
+  ## What is wanted
+
+  1. When a run of `effective_backlog_depth_cli.bb` finds the open episode
+     awaiting release and no question recorded for it, it raises ONE
+     question with `bb swarmforge/scripts/role_ask.bb <root> --role
+     coordinator`. The question names the signal that opened the episode,
+     how long it has read normal, and the configured cap a release
+     restores; its options are exactly "Release the cap" and "Keep the
+     throttle". The ask is recorded on the episode with the pending
+     question's `asked_at_ms` (scenario 01).
+  2. A later run never raises a second question for the same episode
+     (scenario 02, invariant 1).
+  3. While the coordinator has any other question pending, the run asks
+     nothing, records nothing, and leaves that question and its answer
+     untouched. A later run asks once the slot is free (scenario 03,
+     invariant 2).
+  4. When the coordinator's pending question is this episode's question
+     and an answer for it is recorded, the run consumes it through
+     `node extension/out/tools/deliver-role-answer.js --role coordinator`
+     (the only sanctioned reader, BL-1201) and applies it with BL-1981's
+     release CLI, `--by human`: "Release the cap" is a release, "Keep the
+     throttle" is a keep at the held cap (scenario 04).
+  5. Any other reply text is recorded on the episode and the cap stays
+     held; the episode still reads awaiting release, now carrying the
+     reply, so the coordinator seat or the human can record an answer with
+     the release CLI by hand (scenario 05).
+  6. The printed cap is always BL-1981's decision for that run. A failed
+     ask or apply (a CLI missing, node missing) is logged to stderr the
+     way `refresh-recommendation!` already logs, and never changes the
+     printed cap.
+
+  ## How (direction, not mandate)
+
+  - Anchors: `swarmforge/scripts/effective_backlog_depth_cli.bb`
+    (`-main` and `refresh-recommendation!`, about lines 44-61) is where
+    the run happens; a small bb lib beside it is fine if the CLI grows.
+    The pending marker is `.swarmforge/operator/role-awaiting/coordinator.json`
+    (`asked_at_ms`). Compare it with the recorded ask before calling
+    deliver-role-answer, never after: deliver consumes on a match.
+  - On a pack whose coordinator pane is live, the front-desk bot may put a
+    tapped answer straight into the pane and clear the marker; the seat
+    then applies it with the release CLI per coordinator.prompt, and this
+    run finds nothing to consume. That is expected, not a failure.
+  - Fixtures under mkdtemp, proven with `rev-parse --git-common-dir`
+    (BL-1390); the fixture's `extension/` is a symlink to this checkout's
+    compiled one. Record a tapped or typed answer through the real
+    dormant-role path, `enqueueRoleAnswerNote` in
+    `extension/src/tools/telegram-front-desk-bot.ts` (about line 1882),
+    with a recording fake for its `runHandoff` seam.
+  - Step handler `specs/pipeline/steps/bl1982ThrottleReleaseAskSteps.js`,
+    discovered from its own file (BL-1371). Steps whose text repeats
+    BL-1981's or BL-1429's word for word are registered with
+    `registry.defineScoped(pattern, handler, featureName)` (BL-425).
+
+out_of_scope: |
+  - The hold, the episode and the release CLI themselves: BL-1981.
+  - Re-asking after a long silence, or a reminder: not asked for.
+  - Relaying a typed reply anywhere: the bot's dormant leg already queues
+    it to the coordinator's mailbox, which a deterministic pack relays to
+    the operator topic (BL-1847).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1982-the-throttle-release-question-reaches-the-human-without-a-coordinator-seat.feature`:
+     6 of 6 ok (5 scenarios, scenario 04 has two rows). Measured 0 at
+     mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-1981-a-cleared-throttle-signal-holds-the-cap-until-a-human-releases-it.feature`:
+     7 of 7 ok. Not runnable at mint (BL-1981 unbuilt); BL-1981's own
+     land is its baseline.
+  3. `node specs/pipeline/cli.js specs/features/BL-1429-standing-reds-throttle-intake.feature`:
+     8 of 8 ok. Measured 8 of 8 ok on main at mint (e8d5dcd2a4).
+  4. Read the unit rows from the gather's run; do not re-run them.
+
+notes: |
+  Minted 2026-10-05 by the specifier from the coordinator's
+  circuit-breaker-human-release parcel (6a84d814e5, e8d5dcd2a4), split
+  1:2 with BL-1981 for INVEST Small. depends_on BL-1981: this ticket
+  calls its release CLI and reads its episode.
+  Prose: coordinator.prompt's interim text says "until BL-1982 lands" the
+  seat raises the question by hand. QA's retire trigger: at this ticket's
+  land the specifier rewrites that sentence to "the depth CLI asks; apply
+  an answer that reaches your pane with the release CLI".
+  Dynamic routing: feature, Babashka production that writes durable state
+  (the ask on the episode), so architect, hardender (BL-959 hand-mutant
+  pass on the write) and documenter stay. Documenter: extend BL-1981's
+  how-to with the ask.
+  Not in either class the 2026-09-30 standing promotion directive admits
+  (local-llm/iq3 tickets, or high/critical defects): the human's direct
+  request, so the coordinator decides how it reaches the front.
