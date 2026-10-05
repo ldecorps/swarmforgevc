@@ -12,7 +12,10 @@
 // sources - the fresh cases below must return an empty list.
 
 const assert = require('node:assert/strict');
-const { staleSourceFiles, parseTsconfigJson } = require('./helpers/staleBuildGuard');
+const fs = require('node:fs');
+const path = require('node:path');
+const { staleSourceFiles, parseTsconfigJson, isStrykerSandbox, assertBuildIsFresh } = require('./helpers/staleBuildGuard');
+const { mkSharedTmpDir } = require('./helpers/tmpDir');
 
 // A stat fn over a fixed mtime table: paths not in the table throw ENOENT
 // (the "compiled missing" case).
@@ -87,6 +90,65 @@ test('BL-1972: every stale/missing source is named, in pair order', () => {
     'out/c.js': 2000, // fresh
   });
   assert.deepEqual(staleSourceFiles(pairs, stat), ['src/a.ts', 'src/b.ts']);
+});
+
+test('BL-1972: isStrykerSandbox recognizes a .stryker-tmp sandbox root and not a normal root', () => {
+  assert.equal(isStrykerSandbox('/repo/.stryker-tmp/sandbox-abc123'), true);
+  assert.equal(isStrykerSandbox('/repo/extension'), false);
+  assert.equal(isStrykerSandbox('/repo/.stryker-tmp'), true);
+  // A directory merely named like the marker elsewhere is not a sandbox.
+  assert.equal(isStrykerSandbox('/repo/extension/.stryker-tmp-notes'), false);
+});
+
+// A fake tree for the mapping seam: one source file under src/, nothing
+// else. The tsconfig read is a real readFileSync of the fake root, so the
+// fixture writes one there.
+function fakeReaddir(root) {
+  return (dir) => {
+    if (path.resolve(dir) === path.resolve(path.join(root, 'src'))) {
+      return [{ name: 'a.ts', isDirectory: () => false }];
+    }
+    return [];
+  };
+}
+
+function writeFakeTsconfig(root) {
+  fs.writeFileSync(
+    path.join(root, 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { rootDir: 'src', outDir: 'out' } })
+  );
+}
+
+test('BL-1972: the check skips entirely inside a Stryker sandbox, even when the sandbox mtimes read stale', () => {
+  // The sandbox root carries .stryker-tmp in its path; the injected stat
+  // table makes every source newer than its compiled file - the exact
+  // crash the hardener reproduced (fillSandbox's concurrent copies land
+  // sources after their compiled files). The check must NOT throw there.
+  const sandboxRoot = path.join('/repo', '.stryker-tmp', 'sandbox-abc123');
+  const stat = statFromTable({
+    [path.join(sandboxRoot, 'src', 'a.ts')]: 2000,
+    [path.join(sandboxRoot, 'out', 'a.js')]: 1000, // source newer: would be stale outside a sandbox
+  });
+  assert.doesNotThrow(() => assertBuildIsFresh(sandboxRoot, stat, fakeReaddir(sandboxRoot)));
+});
+
+test('BL-1972: the check still stops a stale run outside a sandbox', () => {
+  // The fake root must be a real directory (the tsconfig readFileSync is
+  // real); the src/out contents come from the injected readdir/stat seams.
+  const root = mkSharedTmpDir('bl1972-fake-extension-');
+  try {
+    writeFakeTsconfig(root);
+    const stat = statFromTable({
+      [path.join(root, 'src', 'a.ts')]: 2000,
+      [path.join(root, 'out', 'a.js')]: 1000, // source newer: stale
+    });
+    assert.throws(
+      () => assertBuildIsFresh(root, stat, fakeReaddir(root)),
+      (err) => err.message.includes('a.ts') && err.message.includes('npm run compile')
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('BL-1972: parseTsconfigJson strips // comments and parses the rest', () => {

@@ -62,14 +62,16 @@ function parseTsconfigJson(text) {
 // Reads rootDir/outDir from extension/tsconfig.json (resolved relative to
 // the extension root this file sits under) and maps each source file under
 // rootDir to its compiled path under outDir. Returns [{ source, compiled }].
-function sourceToCompiledPairs(extensionRoot) {
+// `readdirFn` is injectable (defaults to fs.readdirSync) so the unit test
+// can drive the mapping on a fake tree without touching the real one.
+function sourceToCompiledPairs(extensionRoot, readdirFn = (dir) => fs.readdirSync(dir, { withFileTypes: true })) {
   const tsconfigPath = path.join(extensionRoot, 'tsconfig.json');
   const tsconfig = parseTsconfigJson(fs.readFileSync(tsconfigPath, 'utf8'));
   const rootDir = path.join(extensionRoot, tsconfig.compilerOptions.rootDir);
   const outDir = path.join(extensionRoot, tsconfig.compilerOptions.outDir);
   const pairs = [];
   const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    for (const entry of readdirFn(dir)) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full);
@@ -121,11 +123,34 @@ function staleSourceFiles(pairs, statFn) {
 // the build is stale; returns nothing when fresh. Runs once in the main
 // process before any worker, so a throw stops the run before any test.
 //
+// Stryker's sandbox copies every project file with plain concurrent writes
+// (fillSandbox in @stryker-mutator/core's sandbox.ts) - no mtime ordering is
+// preserved, so a source copy can land newer than its compiled copy even
+// when the real tree is fresh. mtime comparison is unobservable inside a
+// sandbox, so the check skips entirely there (the FIRM invariant: never
+// stop a run whose out/ was compiled after its sources, a Stryker sandbox
+// included). The sandbox's own files live under .stryker-tmp/sandbox-<id>/
+// (this project's configured and default tempDirName), so a path-based
+// check on the extension root is the recognition - the same marker other
+// accepted rules in this project use for .stryker-tmp.
+function isStrykerSandbox(extensionRoot) {
+  const parts = path.resolve(extensionRoot).split(path.sep);
+  return parts.includes('.stryker-tmp');
+}
+
 // `statFn` is injectable (defaults to fs.statSync) so the acceptance step
 // handlers can drive the SAME entry against a fixture tree with controlled
 // mtimes rather than the real extension/out/.
-function assertBuildIsFresh(extensionRoot = path.join(__dirname, '..', '..'), statFn = (p) => fs.statSync(p)) {
-  const pairs = sourceToCompiledPairs(extensionRoot);
+function assertBuildIsFresh(
+  extensionRoot = path.join(__dirname, '..', '..'),
+  statFn = (p) => fs.statSync(p),
+  readdirFn = (dir) => fs.readdirSync(dir, { withFileTypes: true })
+) {
+  if (isStrykerSandbox(extensionRoot)) {
+    // Inside a Stryker sandbox mtime ordering is unobservable - skip.
+    return;
+  }
+  const pairs = sourceToCompiledPairs(extensionRoot, readdirFn);
   const stale = staleSourceFiles(pairs, statFn);
   if (stale.length > 0) {
     const names = stale.map((s) => path.relative(extensionRoot, s)).join(', ');
@@ -135,4 +160,4 @@ function assertBuildIsFresh(extensionRoot = path.join(__dirname, '..', '..'), st
   }
 }
 
-module.exports = { parseTsconfigJson, sourceToCompiledPairs, staleSourceFiles, assertBuildIsFresh };
+module.exports = { parseTsconfigJson, sourceToCompiledPairs, staleSourceFiles, isStrykerSandbox, assertBuildIsFresh };
