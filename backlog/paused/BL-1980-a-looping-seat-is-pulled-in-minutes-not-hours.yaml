@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 severity: high
 # high: a live fault degrading behaviour - the only coder seat sits looping
-# or halted until the 180-minute dwell clock fires, and nothing else moves.
+# or halted until the 60-minute dwell clock fires, and nothing else moves.
 status: todo
 epic: local-llm-swarm
 priority: 2
@@ -65,7 +65,7 @@ notes: |
   Why this lever: no text in a tool result changed iq3's course (54 REPEAT
   notes, 0 loops broken), and qwen's loop dialog halts a one-shot seat's
   turn for good. A seat in either state makes no more progress, yet check
-  5b waits 180 minutes. Firing the same CRIT on the loop's own evidence
+  5b waits 60 minutes (180 until hotfix 9b4ccdd827, 2026-10-05). Firing the same CRIT on the loop's own evidence
   starts the coordinator's existing BAU (pull to paused, restart, note the
   specifier) in minutes; the specifier then looks for the capability the
   seat was missing (BL-1979 came out of exactly that), not only a split.
@@ -82,12 +82,16 @@ notes: |
   local model has neither signal, so the check is unchanged for it.
   The specifier's own half: none required (the coordinator's BAU already
   keys on the CRIT).
+  2026-10-05: check 5b now fires at 60 minutes (hotfix 9b4ccdd827), so the
+  "no CRIT" fixtures (scenarios 03, 04) must hold a dwell under 60
+  minutes, or the dwell CRIT fires on its own. Narrative re-tensed the same
+  pass; no scenario changed.
 
 description: |
   ## What is wanted
 
   Babysitter's seat-stuck CRIT for a seat holding a ticket with no commit
-  since its claim fires, in addition to the 180-minute dwell, when:
+  since its claim fires, in addition to the 60-minute dwell, when:
 
   - qwen's loop-detection dialog is on the seat's pane (the turn has
     halted), or

@@ -1043,7 +1043,9 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
 ## A ticket its seat cannot finish is pulled and split, never left to run (human directive 2026-10-04)
 - The human, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
 - Trigger: babysitter's `seat-stuck-<role>` CRIT (check 5b: a seat has held a
-  ticket 180 minutes with no commit of its own naming it; merges of main do
+  ticket 60 minutes with no commit of its own naming it - 180 until hotfix
+  9b4ccdd827, the human 2026-10-05: "180m is way too much. Bring this back to
+  60m."; merges of main do
   not count), or any role's note that a seat cannot finish a ticket. Act the
   same turn; do not wait for a human or the specifier to notice.
 - Pull it: move every handoff for that ticket in the seat's `inbox/in_process/`

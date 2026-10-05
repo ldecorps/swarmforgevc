@@ -1,5 +1,5 @@
 id: BL-1955
-title: "Stamp-off for hotfix 74c3769083: babysitter raises a CRIT for a ticket held 3 hours with no commit, spinner or not (the human's change, after iq3 sat 9 hours unnoticed; Work-note parcels covered)"
+title: "Stamp-off for hotfix 74c3769083: babysitter raises a CRIT for a ticket held 3 hours with no commit, spinner or not (the human's change, after iq3 sat 9 hours unnoticed; Work-note parcels covered), lowered to 60 minutes by hotfix 9b4ccdd827"
 milestone: M8
 type: defect
 severity: high
@@ -31,7 +31,7 @@ approval_context: >
   FIRM: the coder reviews it and never re-applies it.
 
 invariants:
-  - "A seat whose HEAD has not moved for 180 minutes since it claimed a ticket raises a CRIT whatever its pane shows, except during a control pause or a GPU quiet."
+  - "A seat whose HEAD has not moved for 60 minutes since it claimed a ticket raises a CRIT whatever its pane shows, except during a control pause or a GPU quiet."
 
 qa_e2e_procedure: |
   1. Read from the gather's acceptance row: the BL-1109 feature all pass.
@@ -39,8 +39,8 @@ qa_e2e_procedure: |
   2. `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`: ok.
   3. `bash swarmforge/scripts/test/test_babysitter_check.sh`: ALL PASS.
   4. Read-only: `.swarmforge/operator/babysitter.log` carries no
-     `seat-stuck-` CRIT for a seat that committed within 180 minutes of its
-     claim; if one fired since 74c3769083, its seat's HEAD had not moved.
+     `seat-stuck-` CRIT for a seat that committed within 60 minutes of its
+     claim; if one fired since 9b4ccdd827, its seat's HEAD had not moved.
 
 source: |
   The human, specifier pane, 2026-10-04, verbatim (Article 5.3):
@@ -49,6 +49,11 @@ source: |
 
   and, handing the uncommitted change over: "Own my change".
 
+  The human, coordinator pane, 2026-10-05, verbatim (Article 5.3), on the
+  threshold:
+
+  > 180m is way too much. Bring this back to 60m.
+
 notes: |
   Minted 2026-10-04 by the specifier.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
@@ -56,6 +61,12 @@ notes: |
   Also stamps off 14680e2eef (the clock counts only the seat's own commits
   for the ticket, never a merge of main - the human's "Go"). Review it
   against its commit message. Hotfix ledger: 14680e2eef linked to BL-1955.
+  2026-10-05: also stamps off 9b4ccdd827 (seat-ticket-stuck-min 180 -> 60, the
+  human's "Bring this back to 60m", relayed by coordinator note 016439):
+  the constant, its test runner's 59/60 boundary, the BL-611 runbook, the
+  BL-653 wake model and docs/index.md. Invariant and QA step 4 now read 60.
+  Hotfix ledger: 9b4ccdd827 linked to BL-1955. Approval kept: no new scope beyond
+  the human's own number, and no choice is posed.
 
 description: |
   ## Status: hotfix 74c3769083 landed the fix
@@ -82,6 +93,8 @@ description: |
   - held-ticket-id (the specifier's addition) also reads a coordinator
     Work note's ticket from its message, which carries no task header.
   - The BL-611 runbook, the BL-653 wake model and docs/index.md say so.
+  - Hotfix 9b4ccdd827 (2026-10-05) lowered the threshold to 60 minutes, the
+    human's number; the docs above now say 60.
 
   ## What the coder checks
 

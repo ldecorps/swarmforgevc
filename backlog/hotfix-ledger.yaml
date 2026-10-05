@@ -1126,3 +1126,10 @@
   stamp_ticket: BL-1973
   human_decision: null
   decided_at: null
+- commit: 9b4ccdd827
+  subject: "hotfix: babysitter's seat-stuck CRIT (check 5b) fires at 60 minutes with no commit, not 180"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1955
+  human_decision: null
+  decided_at: null
