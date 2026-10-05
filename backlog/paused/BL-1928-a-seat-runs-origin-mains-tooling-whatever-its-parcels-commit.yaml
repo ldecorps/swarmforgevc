@@ -7,7 +7,7 @@ severity: high
 # hotfix misses each seat holding a parcel cut before it. On 2026-10-03 the
 # coder ran pre-hotfix tooling on BL-1858's bounce line and the human had to
 # rule the parcel requeued (SUP-17, 12:44Z).
-status: todo
+status: blocked
 epic: landing-is-a-merge
 priority: 5
 depends_on: []
@@ -137,6 +137,12 @@ notes: |
     next ask. It is the property option A was chosen for (its trade-off line:
     "binds on every seat at its very next command, mid-parcel included"), so
     no re-pend.
+  - 2026-10-05 11:26Z: pulled from active per specifier note (016529
+    reply) - too big for iq3 (ruling A = 3 wrappers+kickoff+cards).
+    Marked status: blocked (rather than todo) so the promotion CLI does
+    not immediately re-pick this same ticket for the slot it just
+    vacated - a first attempt at this pull hit exactly that (coordinator
+    mistake, self-corrected same pass). Awaiting specifier split.
   - No required_wiring, deliberately: under A the call sites are new paths
     (kickoff text, card, served steps, wrapper scripts) whose literals do not
     exist yet, so any anchor would be a placeholder (BL-874). The scenarios
