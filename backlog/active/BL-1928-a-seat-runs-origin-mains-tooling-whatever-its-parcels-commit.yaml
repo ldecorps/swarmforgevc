@@ -141,3 +141,5 @@ notes: |
     (kickoff text, card, served steps, wrapper scripts) whose literals do not
     exist yet, so any anchor would be a placeholder (BL-874). The scenarios
     drive ready_for_next itself, which exercises the wiring end to end.
+
+assigned_to: coder
