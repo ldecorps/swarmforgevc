@@ -5,7 +5,7 @@ type: defect
 severity: high
 # high: a live fault degrading behaviour - every iq3 forward to QA was
 # refused once and cost the one-shot seat an edit and a re-send.
-status: blocked
+status: todo
 epic: local-llm-swarm
 priority: 2
 depends_on: []
@@ -42,11 +42,10 @@ qa_e2e_procedure: |
      (measured at 44c9f3f535: 3 PASS lines).
   2. `bash swarmforge/scripts/test/test_swarm_handoff_refuses_coordinator_git_handoff.sh`:
      ALL PASS (measured at 44c9f3f535).
-  3. Read the iq3 coder pane or session: no "Unknown recipient role 'qa'"
-     after the coder's first take-up that merged 44c9f3f535.
-  4. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
-     ALL PASS lines, no FAIL (measured at 4949a2d37e: 16 PASS).
-  5. Read the coder's committed review evidence.
+  3. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     no FAIL (measured at 4949a2d37e: 16 PASS; later hotfixes on main add
+     cases, so a higher count is fine).
+  4. Read the coder's committed review evidence.
 
 source: |
   The human, specifier pane, 2026-10-05, verbatim (Article 5.3):
@@ -108,10 +107,17 @@ description: |
   - Live at once: the hook runs the master checkout's guard. The card line
     reaches the seat at its next session.
 
-  ## What the coder checks
+  ## What the coder does (all of it)
 
-  The change against the description and the invariant. Evidence:
-  backlog/evidence/BL-1994-coder-<date>.md.
+  1. Run qa_e2e_procedure steps 1, 2 and 3 once each, in your worktree.
+  2. Read `git show 44c9f3f535` and `git show 4949a2d37e` against the two
+     sections above and the invariants.
+  3. Write backlog/evidence/BL-1994-coder-<date>.md: the three results and
+     one line per hotfix saying whether it matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+  Nothing else: no log, pane or mailbox reading. The live seat is the
+  specifier's spy loop's to watch.
 
 notes: |
   Minted 2026-10-05 by the specifier, the same pass as hotfix 44c9f3f535, as
@@ -126,5 +132,14 @@ notes: |
   nothing to salvage. Awaiting specifier split/simplify.
   Folded in 2026-10-05 while still paused: hotfix 4949a2d37e (repeat guard
   cycle note + empty-grep hint), ledger-linked to BL-1994.
+  2026-10-05 13:5xZ specifier, on coordinator note 016584 ("split BL-1994:
+  iq3 loop-halted, 60m no commit"): simplified, not split. iq3 had run all
+  three tests green by 13:41Z; it then took the old QA step 3 ("read the
+  iq3 coder pane or session") as its own, searched the shim log and every
+  mailbox directory, and repeated one ls until qwen's loop dialog halted
+  it. That step is retired (test_mailbox_only_delivery.sh already proves
+  the behaviour; the spy loop watches the live seat), the coder's work is
+  now four numbered steps, and hotfix 66377274b7 (BL-1998) puts the same
+  rule in the card. May re-promote as is.
 
 assigned_to: coder
