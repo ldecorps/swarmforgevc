@@ -22,13 +22,25 @@ function mkdirp(p) {
   fs.mkdirSync(p, { recursive: true });
 }
 
+// BL-1964 QA bounce D1: the pack conf lives where a real `--pack` launch
+// persists it (swarm-identity's active_backlog_max_depth_conf_path, via
+// backlog_depth_lib.bb's conf-file-path) - never the tracked swarmforge/
+// swarmforge.conf, which this fixture deliberately leaves declaring
+// NEITHER rotation nor coordinator_mode, so a probe that fell back to
+// reading it would see the wrong (false/non-router) answer.
+const PACK_CONF_RELPATH = path.join('swarmforge', 'packs', 'det.conf');
+
 function writeConf(ctx) {
   const lines = [];
   if (ctx.deterministicMode) {
     lines.push('config coordinator_mode deterministic');
   }
   lines.push('config rotation router');
-  fs.writeFileSync(path.join(ctx.root, 'swarmforge', 'swarmforge.conf'), `${lines.join('\n')}\n`);
+  fs.mkdirSync(path.join(ctx.root, 'swarmforge', 'packs'), { recursive: true });
+  fs.writeFileSync(path.join(ctx.root, PACK_CONF_RELPATH), `${lines.join('\n')}\n`);
+  // The tracked default: declares neither directive, so reading it instead
+  // of the effective pack conf fails the deterministic/router checks both.
+  fs.writeFileSync(path.join(ctx.root, 'swarmforge', 'swarmforge.conf'), 'config swarm_name bl1964-fixture\n');
 }
 
 function writeRolesTsv(ctx) {
@@ -43,34 +55,23 @@ function writeRolesTsv(ctx) {
 function writeSwarmIdentity(ctx) {
   fs.writeFileSync(
     path.join(ctx.root, '.swarmforge', 'swarm-identity'),
-    `rotation\trouter\n`
+    `rotation\trouter\n` + `active_backlog_max_depth_conf_path\t${PACK_CONF_RELPATH}\n`
   );
 }
 
 function runResolveProbe(ctx, session) {
-  // Drive the REAL resolve-wake-session (the pure decision) with the
-  // fixture's live state. The fixture has no live tmux sessions, so
-  // session-exists? is false for every name. The deterministic flag and
-  // rotation-router-pack? are read from the fixture's own conf and
-  // swarm-identity files through handoff_lib.bb's real readers.
+  // Drive the REAL wake-session (the IO wrapper under test, not just its
+  // pure resolve-wake-session half - BL-1964 QA bounce D2) against the
+  // fixture's own project root, via set-project-root! exactly as a real
+  // pipeline role's own process does. The fixture has no live tmux
+  // sessions, so session-exists? is false for every name on this socket.
   const bbScript = `
-    (ns probe (:require [babashka.fs :as fs]))
     (load-file "${path.join(SCRIPTS_DIR, 'handoff_lib.bb')}")
-    (let [socket "${path.join(ctx.root, 'fake.sock')}"
-          resident (handoff-lib/mono-router-resident-session)
-          conf-path (str (fs/path "${ctx.root}" "swarmforge" "swarmforge.conf"))
-          deterministic? (when (fs/exists? conf-path)
-                           (coordinator-config-lib/deterministic-coordinator? (slurp conf-path)))]
-      (let [result (handoff-lib/resolve-wake-session
-                    {:configured-session "${session}"
-                     :configured-exists? false
-                     :resident-session resident
-                     :resident-exists? true
-                     :rotation-router-pack? (handoff-lib/rotation-router-pack?)
-                     :deterministic-coordinator? deterministic?})]
-        (if (nil? result)
-          (println "nil")
-          (println result))))
+    (handoff-lib/set-project-root! "${ctx.root}")
+    (let [result (handoff-lib/wake-session "${path.join(ctx.root, 'fake.sock')}" "${session}")]
+      (if (nil? result)
+        (println "nil")
+        (println result)))
   `;
   const probePath = path.join(ctx.root, 'probe.bb');
   fs.writeFileSync(probePath, bbScript);

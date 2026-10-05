@@ -1302,9 +1302,16 @@
    is never remapped to another role's live pane."
   [socket configured-session]
   (let [resident (mono-router-resident-session)
-        conf-path (str (fs/path (target-root) "swarmforge" "swarmforge.conf"))
-        deterministic? (when (fs/exists? conf-path)
-                         (coordinator-config-lib/deterministic-coordinator? (slurp conf-path)))]
+        ;; BL-1964 (QA bounce D1): the EFFECTIVE (launched) conf, never the
+        ;; tracked swarmforge/swarmforge.conf - a pack launched with --pack
+        ;; (the deterministic router shape this ticket exists for) persists
+        ;; a different path into .swarmforge/swarm-identity at launch time,
+        ;; and the tracked default declares neither rotation nor
+        ;; coordinator_mode. Same reader handoffd.bb's coordinator-mail-
+        ;; sweep!/open-slot sweep already use for this exact flag.
+        conf-text (try (slurp (str (backlog-depth-lib/conf-file-path (target-root))))
+                       (catch Exception _ nil))
+        deterministic? (coordinator-config-lib/deterministic-coordinator? conf-text)]
     (resolve-wake-session
      {:configured-session configured-session
       :configured-exists? (session-exists? socket configured-session)
