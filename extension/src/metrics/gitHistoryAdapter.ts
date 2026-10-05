@@ -61,19 +61,28 @@ export function parseGitLog(output: string): GitLogEntry[] {
 // failure mode; the catch now also logs a diagnostic to stderr identifying
 // the failure and its cause, so an overflow past even this larger cap fails
 // loudly instead of rendering a plausible-looking empty result.
+// BL-1873: sinceIso optionally scopes the walk to commits at/after that
+// instant (git's own `--since`), so a caller that only needs a trailing
+// window (e.g. the rework observatory's 28-day baseline+live span) never
+// pays for walking the WHOLE backlog/ history - 1671 done records cost
+// 11.4s of a 12.0s run at every promotion decision before this. Omitted
+// (every pre-existing call site), the walk is unscoped, byte-for-byte the
+// prior behaviour.
 export function runGitLog(
   targetPath: string,
   pathspec: string,
   ref: string = 'HEAD',
-  maxBuffer: number = 64 * 1024 * 1024
+  maxBuffer: number = 64 * 1024 * 1024,
+  sinceIso?: string
 ): GitLogEntry[] {
+  const args = ['-C', targetPath, 'log', ref, '--format=COMMIT%x09%H%x09%cI', '--name-status', '-M', '--reverse'];
+  if (sinceIso) {
+    args.push(`--since=${sinceIso}`);
+  }
+  args.push('--', pathspec);
   let output: string;
   try {
-    output = execFileSync(
-      'git',
-      ['-C', targetPath, 'log', ref, '--format=COMMIT%x09%H%x09%cI', '--name-status', '-M', '--reverse', '--', pathspec],
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer }
-    );
+    output = execFileSync('git', args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(
@@ -167,6 +176,32 @@ export function deriveTicketLifecycles(entries: GitLogEntry[]): Map<string, Tick
     result.set(ticketId, { ticketId, specDateIso, closeDateIso: closeDates.get(ticketId) ?? null });
   }
   return result;
+}
+
+// BL-1873: a ticket's close date alone, requiring only its arrival under
+// backlog/done/ to be visible - unlike deriveTicketLifecycles above, this
+// never requires also seeing the ticket's ORIGINAL spec arrival. A caller
+// that scopes runGitLog with `--since` to a trailing window (the rework
+// observatory's own baseline+live span) still correctly picks up a ticket
+// whose promotion predates the window but whose close lands inside it -
+// deriveTicketLifecycles would silently drop that ticket entirely (its
+// specDates entry, and therefore its whole result-map row, requires the
+// spec arrival to be in the scanned range).
+export function deriveCloseDates(entries: GitLogEntry[]): Map<string, string> {
+  const sorted = [...entries].sort((a, b) => Date.parse(a.dateIso) - Date.parse(b.dateIso));
+  const closeDates = new Map<string, string>();
+  for (const entry of sorted) {
+    for (const change of entry.changes) {
+      if (!isArrival(change.status) || !isDonePath(change.path)) {
+        continue;
+      }
+      const ticketId = extractTicketId(change.path);
+      if (ticketId && !closeDates.has(ticketId)) {
+        closeDates.set(ticketId, entry.dateIso);
+      }
+    }
+  }
+  return closeDates;
 }
 
 // BL-094: recent-activity's "merges to main" - a distinct git-log shape

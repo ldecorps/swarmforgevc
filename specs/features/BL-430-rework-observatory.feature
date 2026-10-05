@@ -52,3 +52,21 @@ Scenario: Bounce evidence is read from the main ref, not a worktree checkout
   And that evidence file is absent from the current worktree checkout
   When the observatory computes the rework signal
   Then that bounce is counted in the rework rate
+
+# BL-430 rework-observatory-07 (added by BL-1873: a recorded bounce, never pass evidence)
+Scenario Outline: only a recorded bounce makes a closed ticket count as reworked
+  Given a ticket closed inside the live window whose record shows <record>
+  When the observatory computes the rework signal
+  Then that ticket <counts> as reworked
+
+  Examples:
+    | record                                               | counts         |
+    | only QA and architect pass evidence                  | does not count |
+    | bounce_count 1 on its ticket YAML                    | does count     |
+    | an evidence file named BL-9001-qa-bounce-20261001.md | does count     |
+
+# BL-430 rework-observatory-08 (added by BL-1873: only the windows' history is read)
+Scenario: history older than the baseline window is never read
+  Given a backlog history with 300 commits before the baseline window and 3 inside it
+  When the observatory computes the rework signal
+  Then the history it reads holds only the commits inside its two windows

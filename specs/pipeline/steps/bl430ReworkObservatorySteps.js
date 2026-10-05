@@ -15,6 +15,7 @@ const { execFileSync } = require('node:child_process');
 
 const REWORK_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'out', 'metrics', 'reworkObservatory.js');
 const SOURCE_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'out', 'metrics', 'reworkObservatorySource.js');
+const GIT_HISTORY_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'out', 'metrics', 'gitHistoryAdapter.js');
 
 const WINDOW_START = Date.parse('2026-07-08T00:00:00Z');
 const WINDOW_END = Date.parse('2026-07-15T00:00:00Z');
@@ -181,6 +182,105 @@ function registerSteps(registry) {
   registry.define(/^that bounce is counted in the rework rate$/, (ctx) => {
     if (ctx.signal.reworkRate !== 1) {
       throw new Error(`expected the single completed ticket's bounce to be counted (rate 1), got ${JSON.stringify(ctx.signal)}`);
+    }
+  });
+
+  // ── rework-observatory-07 (BL-1873: a recorded bounce, never pass evidence) ──
+  registry.define(/^a ticket closed inside the live window whose record shows (.+)$/, (ctx, record) => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-rework-observatory-07-'));
+    git(repo, ['init', '-q']);
+    git(repo, ['config', 'user.email', 't@t']);
+    git(repo, ['config', 'user.name', 't']);
+    git(repo, ['checkout', '-q', '-b', 'main']);
+
+    const bounceCountYaml = record === 'bounce_count 1 on its ticket YAML' ? 'bounce_count: 1\n' : '';
+    mkdirp(path.join(repo, 'backlog', 'active'));
+    fs.writeFileSync(path.join(repo, 'backlog', 'active', 'BL-9001.yaml'), `id: BL-9001\n${bounceCountYaml}`);
+    git(repo, ['add', '.']);
+    git(repo, ['commit', '-q', '-m', 'promote'], '2026-07-10T08:00:00');
+
+    mkdirp(path.join(repo, 'backlog', 'done'));
+    git(repo, ['mv', 'backlog/active/BL-9001.yaml', 'backlog/done/BL-9001.yaml']);
+    git(repo, ['commit', '-q', '-m', 'close'], '2026-07-10T09:00:00');
+
+    if (record === 'only QA and architect pass evidence') {
+      mkdirp(path.join(repo, 'backlog', 'evidence'));
+      fs.writeFileSync(path.join(repo, 'backlog', 'evidence', 'BL-9001-QA-20261001.md'), '# pass\n');
+      fs.writeFileSync(path.join(repo, 'backlog', 'evidence', 'BL-9001-architect-20261001.md'), '# pass\n');
+      git(repo, ['add', '.']);
+      git(repo, ['commit', '-q', '-m', 'pass evidence'], '2026-07-10T10:00:00');
+    } else if (record === 'an evidence file named BL-9001-qa-bounce-20261001.md') {
+      mkdirp(path.join(repo, 'backlog', 'evidence'));
+      fs.writeFileSync(path.join(repo, 'backlog', 'evidence', 'BL-9001-qa-bounce-20261001.md'), '# bounce\n');
+      git(repo, ['add', '.']);
+      git(repo, ['commit', '-q', '-m', 'bounce evidence'], '2026-07-10T10:00:00');
+    }
+    // 'bounce_count 1 on its ticket YAML' needs no evidence file at all.
+
+    ctx.realGitRepo = repo;
+    ctx.windowStartMs = Date.parse('2026-07-08T00:00:00Z');
+    ctx.windowEndMs = Date.parse('2026-07-15T00:00:00Z');
+    ctx.baselineStartMs = Date.parse('2026-07-01T00:00:00Z');
+  });
+
+  registry.define(/^that ticket (does count|does not count) as reworked$/, (ctx, counts) => {
+    const expectedRate = counts === 'does count' ? 1 : 0;
+    if (ctx.signal.reworkRate !== expectedRate) {
+      throw new Error(
+        `expected a rework rate of ${expectedRate} for the single fixture ticket (${counts}), got ${JSON.stringify(ctx.signal)}`
+      );
+    }
+  });
+
+  // ── rework-observatory-08 (BL-1873: only the windows' history is read) ───
+  registry.define(/^a backlog history with 300 commits before the baseline window and 3 inside it$/, (ctx) => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-rework-observatory-08-'));
+    git(repo, ['init', '-q']);
+    git(repo, ['config', 'user.email', 't@t']);
+    git(repo, ['config', 'user.name', 't']);
+    git(repo, ['checkout', '-q', '-b', 'main']);
+
+    ctx.windowStartMs = Date.parse('2026-07-08T00:00:00Z');
+    ctx.windowEndMs = Date.parse('2026-07-15T00:00:00Z');
+    ctx.baselineStartMs = Date.parse('2026-07-01T00:00:00Z');
+
+    // 300 commits, all dated well before baselineStartMs - one bash
+    // invocation, never 300 separate node->execFileSync->git spawns.
+    const oldDateIso = '2026-05-01T00:00:00';
+    execFileSync(
+      'bash',
+      [
+        '-c',
+        'mkdir -p backlog/done; for i in $(seq 1 300); do echo "x" > "backlog/done/BL-OLD-$i.yaml"; git add -A; git commit -q -m "old $i"; done',
+      ],
+      { cwd: repo, env: { ...process.env, GIT_AUTHOR_DATE: oldDateIso, GIT_COMMITTER_DATE: oldDateIso }, stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+
+    // 3 commits inside the combined baseline+live span.
+    for (let i = 1; i <= 3; i += 1) {
+      mkdirp(path.join(repo, 'backlog', 'done'));
+      fs.writeFileSync(path.join(repo, 'backlog', 'done', `BL-NEW-${i}.yaml`), 'x\n');
+      git(repo, ['add', '-A']);
+      git(repo, ['commit', '-q', '-m', `new ${i}`], '2026-07-05T00:00:00');
+    }
+
+    ctx.realGitRepo = repo;
+  });
+
+  registry.define(/^the history it reads holds only the commits inside its two windows$/, (ctx) => {
+    // Count what the walk itself returns - never measure it with a clock
+    // (BL-1873's own direction). Scoped with the SAME baselineStartMs
+    // loadCompletedTicketRecords/runObservatory pass, through the same
+    // exported seam (runGitLog), proving the walk itself is trimmed, not
+    // just inferring it from a derived aggregate.
+    const { runGitLog } = require(GIT_HISTORY_MODULE);
+    const unscoped = runGitLog(ctx.realGitRepo, 'backlog', 'main');
+    if (unscoped.length !== 303) {
+      throw new Error(`test setup bug: expected 303 total commits touching backlog/, got ${unscoped.length}`);
+    }
+    const scoped = runGitLog(ctx.realGitRepo, 'backlog', 'main', undefined, new Date(ctx.baselineStartMs).toISOString());
+    if (scoped.length !== 3) {
+      throw new Error(`expected the scoped walk to return only the 3 in-window commits, got ${scoped.length}`);
     }
   });
 }

@@ -73,7 +73,9 @@ export function runObservatory(targetPath: string, roles: RoleWorktree[], nowMs:
   const windowStartMs = nowMs - WINDOW_DAYS * DAY_MS;
   const baselineStartMs = windowStartMs - BASELINE_WINDOW_DAYS * DAY_MS;
 
-  const records = loadCompletedTicketRecords(targetPath, roles);
+  // BL-1873: scope the history walk to the two trailing windows only -
+  // nothing before baselineStartMs can ever land in either window.
+  const records = loadCompletedTicketRecords(targetPath, roles, baselineStartMs);
   const signal = computeReworkSignal(records, windowStartMs, nowMs, baselineStartMs);
 
   persistReworkSignal(targetPath, {

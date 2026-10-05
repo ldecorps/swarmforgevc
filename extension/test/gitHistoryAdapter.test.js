@@ -7,6 +7,7 @@ const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 const {
   parseGitLog,
   deriveTicketLifecycles,
+  deriveCloseDates,
   parseMergeLog,
   runGitLog,
   isTicketRemainingAtDayEnd,
@@ -152,6 +153,26 @@ test('runGitLog, called with only its default maxBuffer (no explicit override), 
   assert.equal(entries[0].changes.length, 3000);
 });
 
+test('runGitLog, given a sinceIso, excludes commits older than it (BL-1873: scoping the walk to a trailing window)', () => {
+  const dir = mkTmpDir('sfvc-git-history-adapter-since-');
+  copySeededRepoInto(dir);
+  const commit = (fileName, dateIso) => {
+    fs.writeFileSync(path.join(dir, fileName), '1');
+    const env = { ...process.env, GIT_AUTHOR_DATE: dateIso, GIT_COMMITTER_DATE: dateIso };
+    execSync(`git add ${fileName}`, { cwd: dir, env, stdio: 'pipe' });
+    execSync(`git commit -q -m "add ${fileName}"`, { cwd: dir, env, stdio: 'pipe' });
+  };
+  commit('old.txt', '2026-01-01T00:00:00Z');
+  commit('recent.txt', '2026-02-01T00:00:00Z');
+
+  const unscoped = runGitLog(dir, '.');
+  assert.ok(unscoped.some((e) => e.changes.some((c) => c.path === 'old.txt')), 'setup: the old commit must be visible unscoped');
+
+  const scoped = runGitLog(dir, '.', 'HEAD', undefined, '2026-01-15T00:00:00Z');
+  assert.ok(!scoped.some((e) => e.changes.some((c) => c.path === 'old.txt')), 'the old commit must be excluded once scoped');
+  assert.ok(scoped.some((e) => e.changes.some((c) => c.path === 'recent.txt')), 'the recent commit must still be included');
+});
+
 test('runGitLog returns [] and logs a diagnostic to stderr when the read overflows an explicit maxBuffer (ENOBUFS), instead of throwing', () => {
   const dir = initTestRepo();
   const originalStderrWrite = process.stderr.write.bind(process.stderr);
@@ -253,6 +274,75 @@ test('deriveTicketLifecycles leaves closeDateIso null for a ticket never seen un
   const output = [commitLine('aaa', '2026-01-01T00:00:00Z'), 'A\tbacklog/active/BL-001-example.yaml', ''].join('\n');
   const lifecycles = deriveTicketLifecycles(parseGitLog(output));
   assert.equal(lifecycles.get('BL-001').closeDateIso, null);
+});
+
+// ── deriveCloseDates (pure, over a provided entry list) ──────────────────
+// BL-1873: unlike deriveTicketLifecycles above, this never requires also
+// seeing the ticket's ORIGINAL spec arrival - a caller that scopes
+// runGitLog to a trailing window must still pick up a ticket whose
+// promotion predates the window but whose close lands inside it.
+
+test('deriveCloseDates records the close date once the ticket file arrives under backlog/done/', () => {
+  const output = [
+    commitLine('aaa', '2026-01-01T00:00:00Z'),
+    'A\tbacklog/active/BL-001-example.yaml',
+    '',
+    commitLine('bbb', '2026-01-10T00:00:00Z'),
+    'R100\tbacklog/active/BL-001-example.yaml\tbacklog/done/BL-001-example.yaml',
+    '',
+  ].join('\n');
+  const closeDates = deriveCloseDates(parseGitLog(output));
+  assert.equal(closeDates.get('BL-001'), '2026-01-10T00:00:00Z');
+});
+
+test('deriveCloseDates records a close date even with NO spec/promotion arrival visible at all (the scoped-history case this exists for)', () => {
+  // Only the close commit is present - as if runGitLog had been scoped
+  // with --since to a window that starts after this ticket's promotion.
+  const output = [commitLine('bbb', '2026-01-10T00:00:00Z'), 'A\tbacklog/done/BL-001-example.yaml', ''].join('\n');
+  const closeDates = deriveCloseDates(parseGitLog(output));
+  assert.equal(closeDates.get('BL-001'), '2026-01-10T00:00:00Z');
+});
+
+test('deriveCloseDates handles a milestone subfolder path under backlog/done/', () => {
+  const output = [commitLine('bbb', '2026-01-10T00:00:00Z'), 'A\tbacklog/done/M2/BL-001-example.yaml', ''].join('\n');
+  const closeDates = deriveCloseDates(parseGitLog(output));
+  assert.equal(closeDates.get('BL-001'), '2026-01-10T00:00:00Z');
+});
+
+test('deriveCloseDates keeps the earliest close date if a ticket is re-milestoned (moved again within done/)', () => {
+  const output = [
+    commitLine('bbb', '2026-01-10T00:00:00Z'),
+    'A\tbacklog/done/BL-001-example.yaml',
+    '',
+    commitLine('ccc', '2026-01-15T00:00:00Z'),
+    'R100\tbacklog/done/BL-001-example.yaml\tbacklog/done/M2/BL-001-example.yaml',
+    '',
+  ].join('\n');
+  const closeDates = deriveCloseDates(parseGitLog(output));
+  assert.equal(closeDates.get('BL-001'), '2026-01-10T00:00:00Z');
+});
+
+test('deriveCloseDates keeps the earliest close date even if entries arrive out of chronological order', () => {
+  const output = [
+    commitLine('ccc', '2026-01-15T00:00:00Z'),
+    'A\tbacklog/done/M2/BL-001-example.yaml',
+    '',
+    commitLine('bbb', '2026-01-10T00:00:00Z'),
+    'A\tbacklog/done/BL-001-example.yaml',
+    '',
+  ].join('\n');
+  const closeDates = deriveCloseDates(parseGitLog(output));
+  assert.equal(closeDates.get('BL-001'), '2026-01-10T00:00:00Z');
+});
+
+test('deriveCloseDates omits a ticket never seen under backlog/done/ (a spec-only arrival contributes nothing)', () => {
+  const output = [commitLine('aaa', '2026-01-01T00:00:00Z'), 'A\tbacklog/active/BL-001-example.yaml', ''].join('\n');
+  const closeDates = deriveCloseDates(parseGitLog(output));
+  assert.equal(closeDates.has('BL-001'), false);
+});
+
+test('deriveCloseDates returns an empty map for no entries', () => {
+  assert.deepEqual(deriveCloseDates([]), new Map());
 });
 
 test('isTicketRemainingAtDayEnd: not yet specced by day end is never remaining', () => {

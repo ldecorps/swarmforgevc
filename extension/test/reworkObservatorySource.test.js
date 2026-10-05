@@ -141,6 +141,113 @@ test('a ticket with a live backward handoff is bounced and attributed to the rol
   assert.equal(bl400.bouncedFromRole, 'architect');
 });
 
+// ── BL-1873: only a recorded bounce counts, never routine pass evidence ──
+
+test('BL-1873: a ticket with only routine pass evidence (QA/architect, no "bounce" in the name) is not bounced', () => {
+  const repo = mkTmp();
+  initRepoOnMain(repo);
+
+  writeTicket(repo, 'active', 'BL-600.yaml');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-600'], '2026-07-02T08:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'done'));
+  git(repo, ['mv', 'backlog/active/BL-600.yaml', 'backlog/done/BL-600.yaml']);
+  git(repo, ['commit', '-q', '-m', 'close BL-600'], '2026-07-02T12:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'evidence'));
+  fs.writeFileSync(path.join(repo, 'backlog', 'evidence', 'BL-600-QA-20260702.md'), '# pass\n');
+  fs.writeFileSync(path.join(repo, 'backlog', 'evidence', 'BL-600-architect-20260702.md'), '# pass\n');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'BL-600 pass evidence'], '2026-07-02T13:00:00');
+
+  const records = loadCompletedTicketRecords(repo, []);
+  const bl600 = records.find((r) => r.ticketId === 'BL-600');
+  assert.ok(bl600, 'expected BL-600 in the completed set');
+  assert.equal(bl600.bounced, false, 'routine pass evidence alone must never count as a bounce');
+});
+
+test('BL-1873: a bounce_count above 0 on the ticket YAML counts as a bounce, with no evidence file at all', () => {
+  const repo = mkTmp();
+  initRepoOnMain(repo);
+
+  writeTicket(repo, 'active', 'BL-700.yaml', 'bounce_count: 1\n');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-700'], '2026-07-02T08:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'done'));
+  git(repo, ['mv', 'backlog/active/BL-700.yaml', 'backlog/done/BL-700.yaml']);
+  git(repo, ['commit', '-q', '-m', 'close BL-700'], '2026-07-02T12:00:00');
+
+  const records = loadCompletedTicketRecords(repo, []);
+  const bl700 = records.find((r) => r.ticketId === 'BL-700');
+  assert.ok(bl700);
+  assert.equal(bl700.bounced, true);
+});
+
+test('BL-1873: an evidence file whose name contains "bounce" counts, even with bounce_count absent/zero', () => {
+  const repo = mkTmp();
+  initRepoOnMain(repo);
+
+  writeTicket(repo, 'active', 'BL-800.yaml');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-800'], '2026-07-02T08:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'done'));
+  git(repo, ['mv', 'backlog/active/BL-800.yaml', 'backlog/done/BL-800.yaml']);
+  git(repo, ['commit', '-q', '-m', 'close BL-800'], '2026-07-02T12:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'evidence'));
+  fs.writeFileSync(path.join(repo, 'backlog', 'evidence', 'BL-800-qa-bounce-20260702.md'), '# bounce\n');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'BL-800 bounce evidence'], '2026-07-02T13:00:00');
+
+  const records = loadCompletedTicketRecords(repo, []);
+  const bl800 = records.find((r) => r.ticketId === 'BL-800');
+  assert.ok(bl800);
+  assert.equal(bl800.bounced, true);
+});
+
+// ── BL-1873: the history walk is scoped to a trailing window via sinceMs ──
+
+test('BL-1873: a ticket closed inside the scoped window still gets its close date and class even though its promotion predates the window', () => {
+  const repo = mkTmp();
+  initRepoOnMain(repo);
+
+  writeTicket(repo, 'active', 'BL-900.yaml', 'mutation_cost: low\n');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-900'], '2026-01-01T08:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'done'));
+  git(repo, ['mv', 'backlog/active/BL-900.yaml', 'backlog/done/BL-900.yaml']);
+  git(repo, ['commit', '-q', '-m', 'close BL-900'], '2026-07-02T12:00:00');
+
+  // sinceMs lands AFTER the promotion commit but before the close commit -
+  // the promotion's own arrival is invisible to the scoped walk.
+  const sinceMs = Date.parse('2026-06-01T00:00:00Z');
+  const records = loadCompletedTicketRecords(repo, [], sinceMs);
+  const bl900 = records.find((r) => r.ticketId === 'BL-900');
+  assert.ok(bl900, 'expected BL-900 to still be recorded even though its promotion is outside the scoped window');
+  assert.equal(bl900.ticketClass, 'low');
+});
+
+test('BL-1873: a ticket closed BEFORE the scoped window is excluded entirely', () => {
+  const repo = mkTmp();
+  initRepoOnMain(repo);
+
+  writeTicket(repo, 'active', 'BL-901.yaml');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-901'], '2026-01-01T08:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'done'));
+  git(repo, ['mv', 'backlog/active/BL-901.yaml', 'backlog/done/BL-901.yaml']);
+  git(repo, ['commit', '-q', '-m', 'close BL-901'], '2026-01-02T12:00:00');
+
+  const sinceMs = Date.parse('2026-06-01T00:00:00Z'); // after the close commit
+  const records = loadCompletedTicketRecords(repo, [], sinceMs);
+  assert.equal(records.find((r) => r.ticketId === 'BL-901'), undefined);
+});
+
 test('a ticket with neither a live handoff nor evidence is not bounced', () => {
   const repo = mkTmp();
   initRepoOnMain(repo);
