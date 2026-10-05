@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-05 (BL-1952: context-budget hotfixes — no re-attached files, a short seat prompt, a capped compaction summary)
+Last Updated: 2026-10-05 (BL-1991: a seat that skips its named write is restarted on it)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -417,6 +417,48 @@ in it:
   (`skipLoopDetection` does not turn that one off) and halted the
   one-shot seat's turn. Hotfix d19171aeb6 made it this warning instead:
   a result the model already has gives it nothing to retry.
+
+### A seat that skips its named write is restarted on it (BL-1991)
+
+The same `local_model_repeat_guard.bb` hook also watches for a seat that
+answers a compaction's own instructions by reading instead of writing: on
+2026-10-05 the iq3 coder's BL-1928 turn ran 261 model steps (185
+`read_file`, 63 shell commands, 6 compactions, 0 edits) — five
+compaction summaries in a row named the same `<next_step>` (write a
+named file), and each was answered with more reads.
+
+When the latest compaction's `<next_step>` names a write or an edit of a
+file, and the seat then makes **three** tool calls that are not that
+write, the hook ends qwen — its own parent process — instead of only
+warning. It leaves a pending override message (that next step, plus an
+instruction to write the named file and not read it first) under
+`.swarmforge/local-seat-restart/<in_process handoff file>.json.msg|.json`,
+keyed by the parcel's own in-process handoff file so the count survives
+a restart but starts fresh for a different parcel. **At most two**
+restarts per parcel; a seat that makes the named write before the third
+non-write call is left alone, and none are triggered once the write has
+already happened since that compaction. A missing `cwd`/`in_process`
+dir on the hook's own event leaves the whole restart path inert — never
+a fallback to the hook process's own cwd, which in an earlier draft let
+a stray test invocation write real state and kill a real seat's process
+in this very worktree.
+
+The generated local-model launch script's `qwen` invocations both end
+`|| true` (both the first kickoff and the loop's own relaunch) so a
+qwen process the hook killed for a restart — a non-zero or signalled
+exit — never trips the script's own `set -euo pipefail` before the
+pending-override check runs; an earlier version aborted the whole
+script on exactly the exit this feature produces, silently defeating
+itself on its own trigger. After qwen exits for any reason, the script
+checks for a pending override and, only when one exists, relaunches
+qwen with it as the sole message, consuming the file so an ordinary
+exit never loops.
+
+No tool call is ever refused by this check, same invariant as the
+repeat guard above — a restart ends the whole process rather than
+denying one call, and `skipLoopDetection` stays on. The third miss
+(leaving the parcel in `in_process` and notifying so another coder seat
+can take it) is a separate feature, BL-1992.
 
 ### The window gate refuses qwen's compaction dead zone (BL-1840)
 
