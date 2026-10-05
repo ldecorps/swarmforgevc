@@ -37,10 +37,15 @@ dropped — see `unrecognizedChaserTelemetryTypes` in the same file.
 ## Storage
 
 - **Ledger file:** `.swarmforge/lean/<yyyy-MM-dd>.jsonl` — one
-  `LeanLedgerEvent` JSON object per line, bucketed by calendar day (the same
-  granularity `bounceStore.ts`/the cost-health sidecar already use; see
-  `leanLedgerStore.ts`'s header for why day-bucketing was chosen over a
-  shift boundary that doesn't exist yet as a computable hook).
+  `LeanLedgerEvent` JSON object per line, named by calendar day (the same
+  granularity `bounceStore.ts`/the cost-health sidecar already use). The
+  day is only a FILE NAME, not a read-time filter: a reader returns every
+  event in append order across all files, and the closing ceremony
+  ([BL-820](BL-820-closing-ceremony-lean-pass.md), BL-1968) tracks what it
+  already folded with a per-file line cursor, never by matching an
+  event's own `at` date stamp — a bounce event is always stamped at
+  midnight of its date regardless of when it was actually recorded, so a
+  date-stamp filter silently dropped most of a shift's lifecycle signal.
 - **Per-ticket snapshot:** a pure fold of that ticket's own events, refreshed
   on every write. The JSONL stays the only writer — the snapshot is never an
   independent source of truth.
