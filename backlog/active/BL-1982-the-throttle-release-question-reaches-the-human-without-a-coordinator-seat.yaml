@@ -48,8 +48,11 @@ source: |
   as the amendment records it (lightly cleaned up from source): "Change
   logic around circuit breaker cap 1. Once cap 1 is reached, ask if it is
   safe to release the cap. The idea is that we prevent issues from piling
-  up. The swarm is working ok, it is not safe to resume churning at full
-  throttle [just because signals look normal again]."
+  up. The swarm is working ok, it is safe to resume churning at full
+  throttle." (Corrected 2026-10-05: first transcribed "it is not safe ...
+  [just because signals look normal again]"; the "not" was the human's
+  n-for-space typo "isnsafe", and asked, they answered: "I meant IS safe".
+  Nothing this ticket builds changes.)
 
 description: |
   ## What is wrong
@@ -136,6 +139,9 @@ qa_e2e_procedure: |
   4. Read the unit rows from the gather's run; do not re-run them.
 
 notes: |
+  2026-10-05 specifier: source quote corrected (the human's "I meant IS safe",
+  root intake INTAKE-operator-question-1791180347341). Bookkeeping only:
+  nothing to build changes, so no rebuild note was sent.
   Minted 2026-10-05 by the specifier from the coordinator's
   circuit-breaker-human-release parcel (6a84d814e5, e8d5dcd2a4), split
   1:2 with BL-1981 for INVEST Small. depends_on BL-1981: this ticket

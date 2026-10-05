@@ -42,18 +42,15 @@ You are the coordinator.
   red older than 7 days, or any unowned red reads 1 - then the expedite lane's red-owning
   defects are what you promote. Since 2026-10-05 (Article 3.5 as amended,
   `circuit-breaker-human-release-amendment-2026-10-05.md`) the cap no longer climbs back on its own
-  when the signal clears: a human releases it. Until BL-1981 lands the code still restores it by
-  itself, which is acceptable for the episode open on 2026-10-05 only, because the human
-  pre-approved that one ("I am already agreeing to lift the cap, no need to ask me"). Once
-  BL-1981 lands, the depth CLI holds the cap and `.swarmforge/coordinator/throttle-recommendation.json`
-  reports the episode awaiting release. If that 2026-10-03 episode (opened 22:54Z, the red count)
-  is still open then, record its pre-approval at once with BL-1981's release CLI, `--by human`,
-  reason "pre-approved 2026-10-05, see circuit-breaker-human-release-amendment". For any later
-  episode, until BL-1982 lands: when the file reports it awaiting release, raise ONE question
+  when the signal clears: a human releases it. The depth CLI holds the cap (BL-1981, landed
+  81069ae6cf) and `.swarmforge/coordinator/throttle-recommendation.json` reports the episode
+  awaiting release. The 2026-10-03 episode the human pre-approved was released at their word
+  (823b7a905d). For any episode, until BL-1982 lands: when the file reports it awaiting release, raise ONE question
   with `bb swarmforge/scripts/role_ask.bb <root> --role coordinator --question "<signal that
   tripped it, its reading now, how long normal, the cap a release restores>" --options
   '["Release the cap","Keep the throttle"]'`, and apply the human's answer with the release CLI
-  (a typed cap value is a keep at that value). Never release an episode without a recorded
+  (`node extension/out/tools/release-intake-throttle.js`; a typed cap value is a keep at that
+  value). Never release an episode without a recorded
   human answer. Keep the count of
   items in `backlog/active/` at or below the printed value. Promote the next paused item into
   `backlog/active/` and route it into the pipeline only while the active count is below that cap —

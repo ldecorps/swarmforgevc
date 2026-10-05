@@ -38,8 +38,9 @@ On-demand elaboration for `03_backlog.md`. Not inlined at boot.
   - Mechanism: BL-1981 (the hold and the release CLI), BL-1982 (the ask
     raised and applied without a coordinator seat).
 - Rationale: piling tickets into a broken pipeline compounds recovery work.
-  (Operator directive 2026-07-09.) A quiet pipeline is not proof it is safe
-  to resume full throughput (human, 2026-10-05).
+  (Operator directive 2026-07-09.) Whether to resume full throughput is the
+  human's call, not the signal's (human, 2026-10-05: "Once cap 1 is
+  reached, ask if it is safe to release the cap.").
 
 ## 3.6 Deprecator Freshness Gate — full text
 
