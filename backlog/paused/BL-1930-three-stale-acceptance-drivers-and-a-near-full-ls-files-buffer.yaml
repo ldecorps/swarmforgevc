@@ -1,39 +1,46 @@
 id: BL-1930
-title: "Stamp-off for hotfixes ae5d0646a0, 56910c695b, da781b0fef and 1dbe9de8e1: BL-1307's and BL-1293's drivers answer the self-audit, BL-1529's script-sender census counts eight, and two whole-repo git ls-files readers take a 64 MiB buffer"
+title: "Stamp-off for seven test-side hotfixes (four stamp-offs folded 2026-10-05): ae5d0646a0, 56910c695b, da781b0fef, 1dbe9de8e1 (self-audit drivers, script-sender census, 64 MiB ls-files buffers), 35a8448e4c (a stray suite-manifest row, was BL-1953), 897e5f4d62 (BL-757 handler gate deps, was BL-1957), bdb172641b (BL-1877 reach property on a fixed seed, was BL-1973)"
 milestone: M8
 type: defect
 severity: high
 # high: a standing red on main is high at first sighting (Article 3.2.4,
 # 2026-09-05) - three acceptance features were red with no register row,
-# and bl1699 was ~36 KB from ENOBUFS on main.
+# and bl1699 was ~36 KB from ENOBUFS on main. The three folded stamp-offs
+# were each high for the same reason.
 status: todo
 epic: swarm-reliability
 priority: 5
 depends_on: []
 mutation_cost: low
 # low: test-side only - two driver send calls, one census scenario and its
-# step, two exec option lines.
-slice_size_envelope: low
+# step, two exec option lines, one manifest row, one handler's deps, one
+# property seed.
+slice_size_envelope: medium
+# medium since 2026-10-05: seven small reviews in one parcel (was four).
 required_stages: [coder, qa]
 stage_skip_reasons:
-  cleaner: "four one-place changes to test code; nothing to refactor"
+  cleaner: "seven one-place changes to test code and the suite manifest; nothing to refactor"
   architect: "test-side only; no production boundary moves"
   hardender: "test-side only; there is no production code to mutate"
-  documenter: "no living doc describes these drivers or buffers"
+  documenter: "no living doc describes these drivers, buffers, the manifest row, the handler deps or the seed"
 
 # Not a claim of ownership over BL-1529's contract (BL-1251): the feature
-# whose census scenario hotfix da781b0fef amended.
+# whose census scenario hotfix da781b0fef amended. The BL-1307, BL-1293,
+# BL-1830, BL-757 and BL-1877 checks ride qa_e2e_procedure.
 acceptance: specs/features/BL-1529-a-script-originated-git-handoff-is-never-swallowed-by-the-audit.feature
 
 human_approval: approved
 approval_context: >
-  Stamp-off of four test-side hotfixes landed under the standing human
+  Stamp-off of seven test-side hotfixes landed under the standing human
   directive of 2026-10-01 ("instead of minting a red, hotfix the defect and
-  mint a stampoff"). No choice is posed. FIRM: the review decides whether
-  each change stands; the coder never re-applies them.
+  mint a stampoff"). Four stamp-offs (BL-1930, BL-1953, BL-1957, BL-1973),
+  each already approved, were folded into this one on 2026-10-05 at the
+  human's ruling, with no new scope. No choice is posed. FIRM: the review
+  decides whether each change stands; the coder never re-applies them.
 
 invariants:
   - "Every acceptance driver whose scenario expects a git_handoff to be allowed sends it through the two-call self-audit helper; a gate refusal is still read from the first call."
+  - "Every row of swarmforge/scripts/test/suite-manifest.tsv on main names a file main holds."
 
 source: |
   The human, 2026-10-01, verbatim (Article 5.3):
@@ -45,12 +52,51 @@ source: |
   feature whose driver sends through swarm_handoff, and by QA note 003781
   (bl1699's buffer, seen on BL-1916's second QA pass).
 
+  Folded in from BL-1953 (its source, verbatim):
+
+  QA note 003794, 2026-10-04 12:08Z, to the specifier and the coordinator:
+  "main red fd4c492d3b: BL-1929 land added BL-1851 suite-manifest row, no runner".
+
+  Folded in from BL-1957 (its source, verbatim):
+
+  Found by the specifier on 2026-10-04 while measuring BL-757's feature at
+  BL-1956's mint: "deps.checkOriginMainLanding is not a function".
+
+  Folded in from BL-1973 (its source, verbatim):
+
+  QA note 003806 to the specifier, 2026-10-04 21:16Z: "unowned-red bl1287
+  inv1 + bl1877 reach (BL-1902 QA run); verbatim in 270d6503e0". QA's
+  evidence backlog/evidence/BL-1902-QA-20261004-2.md (73e60a6151),
+  verbatim:
+
+  - `extension/test/bl1877PropertyReachNeverSkips.property.test.js`:
+    `FAIL ... > BL-1877/BL-654 invariant: a reached property file is never skipped`
+    / `AssertionError: transitive draws: 4`
+
+  The human's standing rule, verbatim (2026-10-01): "Also, update your
+  prompt / c9 stitution: instead of minting a red, hotfix the defect and
+  mint a stampoff."
+
+  The consolidation: the human, specifier pane, 2026-10-05, verbatim
+  (Article 5.3):
+
+  > Is there no chance to cinsolidate tge pilenof hitfixes?
+
+  and, asked how, chose "Merge the 18 paused stamps".
+
 description: |
-  ## Status: four hotfixes landed the fix
+  ## Status: seven hotfixes landed the fix
 
-  This parcel is their stamp-off: review them, do not re-apply them.
+  This parcel is their stamp-off: review them, do not re-apply them. Four
+  stamp-offs were folded into this one on 2026-10-05; each section below
+  keeps its own ticket's text word for word. One evidence file covers all
+  seven, one heading per hotfix: backlog/evidence/BL-1930-coder-<date>.md
+  (the BL-1953, BL-1957 and BL-1973 evidence paths named below are
+  superseded by it).
 
-  ## What was wrong
+  ## Hotfixes ae5d0646a0, 56910c695b, da781b0fef, 1dbe9de8e1
+
+  ### What was wrong
 
   - BL-1307's and BL-1293's step handlers ran swarm_handoff.bb once and
     read any non-zero exit as a refusal. Since BL-1529 the first valid call
@@ -71,7 +117,7 @@ description: |
     KB from ENOBUFS. BL-1916's second QA pass saw bl1699 go red once 64 KB
     of venv paths were committed.
 
-  ## What the hotfixes changed
+  ### What the hotfixes changed
 
   - ae5d0646a0, 56910c695b: both drivers send through
     specs/pipeline/steps/lib/sendGitHandoffTwoCall.js (BL-1602's helper).
@@ -87,21 +133,123 @@ description: |
     `grep -rn "ls-files" extension/test/*.js specs/pipeline/steps/*.js | grep -E "execFileSync|spawnSync|execSync" | grep -v maxBuffer`,
     plus bl1699's multi-line call).
 
-  ## What each stage checks
+  ### What each stage checks
 
   - Coder: each hotfix against this description and the invariant; the
     census above re-run; and whether any other driver that expects an
     allowed git_handoff still sends once (the mint sweep found none among
     the 20 features it ran). Evidence: backlog/evidence/BL-1930-coder-<date>.md.
 
+  ## Hotfix 35a8448e4c (was BL-1953)
+
+  ### What was wrong
+
+  The iq3 coder worked BL-1929 on a line that also held BL-1851's work,
+  and resolved a suite-manifest.tsv merge conflict on it. BL-1929's land
+  (fd4c492d3b, a tip-pure replay) took suite-manifest.tsv whole and
+  published the row `local_seat_tuning_report_lib_test_runner.bb
+  standing`, which is BL-1851's (its commit 4afccb0400 adds the row and
+  the runner). BL-1851 has not landed, so main named a runner it lacks,
+  and run_bb_suite.sh failed with MISSING. BL-1830 exists to stop exactly
+  this, and its feature still passes.
+
+  ### What the hotfix changed
+
+  The row is removed from main's manifest. BL-1851's land brings the row
+  back with its runner.
+
+  ### What the coder checks
+
+  The hotfix against the description and the invariant, then why BL-1830's
+  guard let the row through: was the row inside BL-1929's own diff (the
+  merge resolution), or is BL-1851's line invisible to the guard because
+  it is in flight rather than queued to land? Evidence:
+  backlog/evidence/BL-1953-coder-<date>.md. A guard gap goes to the
+  specifier as a note; it is not built in this parcel.
+
+  ## Hotfix 897e5f4d62 (was BL-1957)
+
+  ### What was wrong
+
+  specs/pipeline/steps/bl757RealTreeOrphanGateSteps.js hand-built its own
+  landing-gate deps, so it never got checkOriginMainLanding when the gate
+  grew it. Scenarios 05 and 06 failed at "When the pilot runs the landing
+  gate". BL-1667 found and fixed the same rot in bl755's handler.
+
+  ### What the hotfix changed
+
+  baseDeps starts from makeAcceptanceGateDeps
+  (extension/test/helpers/pilotAcceptanceGateDeps.js, BL-1229) and layers
+  the fixture's own overrides on top.
+
+  ### What the coder checks
+
+  The change against the description; grep the other step handlers for a
+  hand-built landing-gate deps object and report any in the evidence as a
+  note to the specifier. Evidence: backlog/evidence/BL-1957-coder-<date>.md.
+
+  ## Hotfix bdb172641b (was BL-1973)
+
+  The coder reviews it and never re-applies it (the BL-1858 and BL-1868
+  shape): read the commit, run the file, and run the mutant the file's
+  header names (computeReach's reverse walk cut to direct importers, in a
+  scratch copy) to confirm the seeded draws still fail it. A review that
+  finds the change wrong says so in a note to the specifier.
+
+  ### What each stage checks
+
+  - Coder: the review and the mutant run, recorded in committed evidence.
+
 qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). Steps 1-4 were
+  BL-1930's, 5-8 BL-1953's, 9 BL-1957's, 10-11 BL-1973's.
   1. `node specs/pipeline/cli.js specs/features/BL-1307-*.feature` passes (measured at mint: 6 of 6 ok).
   2. `node specs/pipeline/cli.js specs/features/BL-1293-*.feature` passes (measured at mint: 6 of 6 ok).
   3. `node specs/pipeline/cli.js specs/features/BL-1529-a-script-originated-git-handoff-is-never-swallowed-by-the-audit.feature` passes (measured at mint: 7 of 7 ok).
   4. Read from the gather row's `npm run test:properties`: bl1699AiderBootstrapNoRepoPaths.property.test.js passes (2 of 2 at mint).
+  5. Read from the gather's acceptance row: the BL-1830 feature all pass.
+     Measured at mint on 35a8448e4c: 3/3.
+  6. `bash swarmforge/scripts/check_test_file_registration.sh`: exit 0.
+  7. Every manifest row names an existing file:
+     `python3 -c "import os;r=[l.split(chr(9))[0] for l in open('swarmforge/scripts/test/suite-manifest.tsv') if l.strip() and not l.startswith('#')];print([f for f in r if not os.path.exists('swarmforge/scripts/test/'+f)])"`
+     prints `[]`.
+  8. Read the coder's evidence: it names why BL-1830's guard let the row
+     through, or that it could not tell, and a note to the specifier when a
+     guard gap is real.
+  9. Read from the gather's acceptance row: the BL-757 feature all pass.
+     Measured at mint on 897e5f4d62: 7/7 (5/7 before).
+  10. Read from the gather's property row: bl1877PropertyReachNeverSkips
+      passes (measured at the hotfix bdb172641b: 1/1).
+  11. Read the coder's committed review evidence: it records the mutant run
+      the file's header names (computeReach's reverse walk cut to direct
+      importers) failing on seed 18770, and the floor's draw counts.
 
 notes: |
   - Minted 2026-10-03 by the specifier: four test-side hotfixes, one
     stamp-off (the BL-1905 shape). No register rows were added: each red
     was fixed in the pass that found it (amendment §6).
   - AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  - 2026-10-05: absorbed BL-1953, BL-1957 and BL-1973 (N:1 merge under the
+    specifier's Consolidation Authority, at the human's ruling quoted in
+    source:). Each retired to backlog/done/ closed_as superseded-by-BL-1930;
+    hotfix ledger entries 35a8448e4c, 897e5f4d62 and bdb172641b re-linked
+    to BL-1930. All four were [coder, qa], test-side or manifest-only,
+    severity high and auto-approved, so the merge adds no stage and no
+    scope. Their own notes, verbatim:
+  - (BL-1953) Minted 2026-10-04 by the specifier on QA note 003794.
+    AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+    Hotfix ledger: 35a8448e4c linked to BL-1953. No standing-red register row
+    was added: the red was fixed in the same pass.
+  - (BL-1957) Minted 2026-10-04 by the specifier.
+    AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+    Hotfix ledger: 897e5f4d62 linked to BL-1957. No register row was added:
+    the red was fixed in the same pass.
+  - (BL-1973) Minted 2026-10-04 by the specifier as the stamp-off of hotfix bdb172641b
+    (committed with SWARMFORGE_ROLE=QA: extension/test/ is QA-only on main).
+    AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+    Measured at the hotfix: the generator's 60 draws, sampled over seeds
+    0-1999, fall below the floor of 5 transitive draws on 40 seeds (2%; the
+    lowest draws 2, the median 10); seed 18770 draws 14. Not re-measured at
+    the hotfix: the mutant check in the file's header. The review runs it.
+    The bl1287 red in the same note is owned by BL-1974 (cause not found).
+    required_stages: test-side only is [coder, qa].

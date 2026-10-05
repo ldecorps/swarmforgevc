@@ -6,6 +6,7 @@ severity: high
 # high: a standing red at first sighting (QA's unowned-red note 003806) -
 # the property lane went red at random about once in fifty runs.
 status: todo
+closed_as: superseded-by-BL-1930
 epic: code-quality-gates
 priority: 8
 direction: swarm-reported
@@ -55,6 +56,9 @@ source: |
   mint a stampoff."
 
 notes: |
+  2026-10-05: folded into BL-1930 (N:1 merge of stamp-offs at the human's
+  ruling "Merge the 18 paused stamps"); review it there. Hotfix ledger
+  entry re-linked to BL-1930.
   Minted 2026-10-04 by the specifier as the stamp-off of hotfix bdb172641b
   (committed with SWARMFORGE_ROLE=QA: extension/test/ is QA-only on main).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.

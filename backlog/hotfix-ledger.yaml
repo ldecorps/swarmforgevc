@@ -1011,7 +1011,7 @@
   subject: "hotfix: drop BL-1851's suite-manifest row that BL-1929's land carried onto main without its runner"
   detected_at: 2026-10-04
   state: pending
-  stamp_ticket: BL-1953
+  stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
 - commit: 4a689cc4ea
@@ -1046,7 +1046,7 @@
   subject: "hotfix: BL-757's step handler builds its gate deps from the shared contract-checked base"
   detected_at: 2026-10-04
   state: pending
-  stamp_ticket: BL-1957
+  stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
 - commit: 14680e2eef
@@ -1123,7 +1123,7 @@
   subject: "hotfix: the BL-1877 reach property draws on a fixed seed, so its transitive floor never fails at random"
   detected_at: 2026-10-04
   state: pending
-  stamp_ticket: BL-1973
+  stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
 - commit: 9b4ccdd827
