@@ -80,3 +80,5 @@ notes: |
   was routed to the coder (note 016580), so this does not fold into it.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 66377274b7 linked to BL-1998.
+
+assigned_to: coder
