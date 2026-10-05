@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 severity: high
 # high: inherited from BL-1456 - the ceremony packet silently drops ~90% of a shift's lifecycle signal.
-status: todo
+status: blocked
 epic: lean-aware-coordinator
 priority: 58
 direction: swarm-reported
@@ -80,6 +80,16 @@ notes: |
   retire. Tests: extension/test/closingCeremony.test.js. Step handler:
   specs/pipeline/steps/bl1968CeremonyFoldsPastThePreviousRunSteps.js,
   registered in specs/pipeline/steps/index.js.
+
+  2026-10-05 ~15:40Z: pulled from active - loop-halted at the 60m check,
+  but with 7 files of real uncommitted progress (234 insertions, 46
+  deletions): closingCeremonyRun.ts, closingCeremonyStore.ts,
+  leanLedgerStore.ts, closingCeremony.ts, and three test files. The halt
+  itself happened on a ReadFile for a nonexistent
+  specs/pipeline/steps/stepRegistry.js, mid a search for
+  composeBounceEvents. Worth checking the respawned seat's worktree-drift
+  stash for salvage (same pattern as BL-1958/BL-1980) before re-deriving
+  from scratch.
 
 description: |
   ## What is wanted
