@@ -174,6 +174,37 @@
               (str "That file has " lines " lines, and a whole read fills your window fast."
                    " Next time grep -n for the name you need, then read_file with offset and limit (about 100 lines)."))))))))
 
+(def read-commands
+  "Shell commands that only read the paths they name."
+  #{"ls" "cat" "head" "tail" "wc" "grep" "find" "stat"})
+
+(defn missing-shell-path
+  "The first path a read-only shell command names that does not exist under
+   dir, or nil. Quoted text (grep patterns), options, globs, URLs and
+   redirect targets are never read as paths. On 2026-10-05 the iq3 coder
+   grepped and listed specs/pipeline/features/, which does not exist (the
+   features live in specs/features/), then repeated the same grep over
+   specs/pipeline/ until the repeat note fired."
+  [cmd dir]
+  (let [unquoted (-> cmd (str/replace #"'[^']*'" " ") (str/replace #"\"[^\"]*\"" " "))]
+    (some (fn [segment]
+            (let [words (remove str/blank? (str/split (str/trim segment) #"\s+"))]
+              (when (contains? read-commands (first words))
+                (some (fn [w]
+                        (when (and (re-matches #"[A-Za-z0-9._][A-Za-z0-9._/-]*/[A-Za-z0-9._/-]*" w)
+                                   (not (.exists (java.io.File. ^String dir ^String w))))
+                          w))
+                      (rest words)))))
+          (str/split unquoted #"&&|\|\||;|\||>"))))
+
+(defn shell-path-hint
+  [name args cwd]
+  (let [cmd (when (map? args) (get args "command"))]
+    (when (and (= name "run_shell_command") (string? cmd) (string? cwd))
+      (when-let [p (missing-shell-path cmd cwd)]
+        (str "`" p "` does not exist here. Find files with `git ls-files | grep <name>` instead of guessing a directory"
+             " (features live in specs/features/, step handlers in specs/pipeline/steps/).")))))
+
 (defn npm-hint
   "npm runs from extension/: the repo root has no package.json."
   [name args]
@@ -189,8 +220,10 @@
       (let [repeat-note (when (string? path)
                           (when-let [lines (try (read-lines path) (catch Exception _ nil))]
                             (warning (transcript-entries lines) name args)))
+            cwd (or (get event "cwd") (System/getProperty "user.dir"))
             notes (remove nil? [repeat-note (offset-hint name args) (sleep-hint name args)
-                                (read-hint name args) (npm-hint name args)])]
+                                (read-hint name args) (npm-hint name args)
+                                (shell-path-hint name args cwd)])]
         (when (seq notes)
           (json/generate-string {"hookSpecificOutput" {"hookEventName" "PostToolUse"
                                                        "additionalContext" (str/join " " notes)}}))))))

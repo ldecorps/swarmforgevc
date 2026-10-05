@@ -164,6 +164,20 @@ out="$(decide "$ROOT/missing.jsonl" run_shell_command '{"command":"cd extension 
 [[ -z "$out" ]] || fail "npm from extension/ got a note: $out"
 pass "a whole read of a big file, a guessed path and npm from the root each get a hint; a ranged read, a small file and npm in extension/ get none (2026-10-05)"
 
+decide_in() { # dir tool_name tool_input -> the hook run with cwd in dir
+  python3 -c 'import json,sys; print(json.dumps({"tool_name":sys.argv[1],"tool_input":json.loads(sys.argv[2]),"transcript_path":sys.argv[3],"cwd":sys.argv[4],"hook_event_name":"PostToolUse"}))' "$2" "$3" "$ROOT/missing.jsonl" "$1" | bb "$GUARD"
+}
+mkdir -p "$ROOT/specs/features" "$ROOT/specs/pipeline/steps"; touch "$ROOT/specs/features/BL-531-x.feature"
+out="$(decide_in "$ROOT" run_shell_command '{"command":"ls specs/pipeline/features/ | grep -i 531"}')"
+[[ "$out" == *"specs/pipeline/features/"*"does not exist here"* ]] || fail "an ls of a missing directory got no hint: $out"
+out="$(decide_in "$ROOT" run_shell_command '{"command":"grep -n \"a/b pattern\" specs/features/BL-531-x.feature"}')"
+[[ -z "$out" ]] || fail "a grep with a slash in its quoted pattern and an existing path got a note: $out"
+out="$(decide_in "$ROOT" run_shell_command '{"command":"git log -3 --format=%s"}')"
+[[ -z "$out" ]] || fail "a command that names no path got a note: $out"
+out="$(decide_in "$ROOT" run_shell_command '{"command":"cat specs/features/BL-531-x.feature > tmp/new/out.txt"}')"
+[[ -z "$out" ]] || fail "a redirect target was read as a path: $out"
+pass "a read-only shell command naming a path that does not exist is told so; quoted patterns, redirects and existing paths are not (2026-10-05)"
+
 printf 'not json\n{"type":"assistant"}\n' > "$T"
 out="$(decide "$T" run_shell_command "$LOG")"
 [[ -z "$out" ]] || fail "a transcript with no readable calls added something: $out"
