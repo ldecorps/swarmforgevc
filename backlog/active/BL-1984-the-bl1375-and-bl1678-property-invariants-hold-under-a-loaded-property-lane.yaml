@@ -102,3 +102,5 @@ notes: |
   sitting; a blind timeout raise could miss the real failure.
   Register rows added the same pass: property bl1375 and property bl1678,
   both owned by BL-1984. Holder note sent to QA the same pass.
+
+assigned_to: coder
