@@ -93,3 +93,6 @@ description: |
   - Architect: the two invariants; every other wake-session caller in
     handoffd.bb treats a nil session as "nobody to wake".
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-05, by: QA, blamed: coder, class: behavior, commit: 54c4613d3d, evidence: backlog/evidence/BL-1964-QA-20261005.md }
