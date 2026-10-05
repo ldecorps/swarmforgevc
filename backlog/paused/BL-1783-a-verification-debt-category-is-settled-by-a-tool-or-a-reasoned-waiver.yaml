@@ -1,7 +1,7 @@
 id: BL-1783
 title: "A verification-debt category leaves the unowned state only by being settled: --discharge marks every outstanding row with discharged_at and a committed discharged_evidence file once a tool makes the check mechanical, and --waive marks them with waived_at, waived_by and a non-blank reason when the check is not worth a tool. Settling never removes a row, touches only the named category, and a hand check recorded after a settle counts again from one"
 milestone: M8
-status: todo
+status: blocked
 type: feature
 epic: lean-aware-coordinator
 priority: 79
@@ -113,6 +113,13 @@ notes: |
   with a reason). Estimable (two verbs on a lib that exists by then, with
   BL-1439's --discharge as the template). Small (4 scenarios). Testable
   (mkdtemp git fixture).
+
+  2026-10-05 ~22:30Z: pulled from active - loop-halted (identical
+  old_string/new_string Edit on verification_debt_ledger_update.bb,
+  threshold 60m). Real uncommitted progress across 3 files (224
+  insertions): verification_debt_ledger_lib_test_runner.bb,
+  verification_debt_ledger_lib.bb, verification_debt_ledger_update.bb.
+  Worth checking the respawned seat's worktree-drift stash for salvage.
   2026-10-01 (specifier): required_stages set to
   [coder, architect, hardender, documenter, qa]
   under the human's dynamic-routing directive, verbatim: "Makr sure
