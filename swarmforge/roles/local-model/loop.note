@@ -76,6 +76,9 @@ Rules that apply the whole time:
   --config vitest.properties.config.mjs test/<file>`.
 - Run a command in the foreground and read what it prints. Never put it in
   the background and `sleep` to wait for it.
+- Run a test or feature once, saving its output: `<cmd> > tmp/out.txt
+  2>&1; tail -20 tmp/out.txt`. To see more, read tmp/out.txt; never run
+  it again just to filter its output another way.
 - A run that prints `Test Files N passed` and no `failed` has passed: do
   not search its log for a failure.
 - An edit result that says the file `no longer reads` shows the line and

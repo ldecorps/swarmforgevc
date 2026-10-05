@@ -181,6 +181,32 @@
              " Neither version is the fix. Before you edit this file again, find where it is"
              " really wrong: read the error your last edit's result names, or run the file or its test.")))))
 
+(defn- command-base
+  "A shell command without the filters piped after it: the part before the
+   first `|` that is not `||`, trimmed."
+  [cmd]
+  (str/trim (first (str/split (str cmd) #"(?<!\|)\|(?!\|)"))))
+
+(defn rerun-hint
+  "On 2026-10-05 the iq3 coder, reviewing BL-1990, ran one feature four
+   times and a 90-second test twice, each time only to filter the same
+   output another way (`| tail -3`, `| grep passed`, `| tail -12`)."
+  [entries name args]
+  (let [cmd (when (map? args) (get args "command"))]
+    (when (and (= name "run_shell_command") (string? cmd) (str/includes? cmd "|")
+               (not (resets-window? {:kind :call :name name :args args})))
+      (let [base (command-base cmd)
+            k (call-key name args)
+            window (->> (rseq (without-in-flight (vec entries) k))
+                        (take-while (complement resets-window?))
+                        (filter #(and (= :call (:kind %)) (= "run_shell_command" (:name %)))))]
+        (when (and (not (str/blank? base))
+                   (some #(let [c (str (get (:args %) "command"))]
+                            (and (not= c cmd) (= base (command-base c))))
+                         window))
+          (str "You already ran `" base "` with another filter, and its output has not changed."
+               " Next time run it once as `" base " > tmp/out.txt 2>&1`, then read or grep tmp/out.txt."))))))
+
 (defn empty-grep-hint
   "A grep that prints nothing gives a model nothing to stop on: the cycle
    above was four greps whose output was (empty) every time."
@@ -290,8 +316,9 @@
             repeat-note (when entries (warning entries name args))
             loop-note (when entries (cycle-note entries name args))
             undo (when entries (undo-note entries name args))
+            rerun (when entries (rerun-hint entries name args))
             cwd (or (get event "cwd") (System/getProperty "user.dir"))
-            notes (remove nil? [repeat-note loop-note undo
+            notes (remove nil? [repeat-note loop-note undo rerun
                                 (empty-grep-hint name args (get event "tool_response"))
                                 (offset-hint name args) (sleep-hint name args)
                                 (read-hint name args) (npm-hint name args)
