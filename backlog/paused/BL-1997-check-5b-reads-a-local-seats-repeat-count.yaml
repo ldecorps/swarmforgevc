@@ -1,0 +1,124 @@
+id: BL-1997
+title: "Babysitter's check 5b reads a local seat's REPEAT count from its current qwen session, so ten notes since the claim raise the seat-stuck CRIT (BL-1987 split, slice 2 of 2)"
+milestone: M8
+type: defect
+severity: high
+# high: inherited from BL-1987 / BL-1980 - a seat collecting REPEAT notes
+# with no commit is cycling, and today nothing reports it before 60 minutes.
+status: todo
+epic: local-llm-swarm
+priority: 3
+direction: swarm-reported
+depends_on: [BL-1996]
+mutation_cost: low
+# low: one load-file, one map entry, a step handler copied from BL-1986's,
+# and the runbook paragraph.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one map entry and one load-file; nothing to deduplicate"
+  architect: "check 5b keeps its key, severity and consumer; only its input grows"
+  hardender: "Babashka has no mutation lane yet (BL-1975..1977 build it); the gatherer writes no durable state"
+
+acceptance: specs/features/BL-1997-a-seat-collecting-repeat-notes-is-reported-stuck.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1997RepeatNotesSeatStuckSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+  - 'swarmforge/scripts/babysitter_check.bb::local-seat-report-lib/current-session-repeat-notes::the live gatherer reaches BL-1996s counter'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1987 (approved, itself inherited from BL-1980), split
+  on 2026-10-05 under the human's BAU split rule. No new scope: BL-1987's
+  scenarios 02-04 word for word, its gatherer fact and its runbook step.
+  No choice is posed.
+
+invariants:
+  - "The seat-stuck CRIT never fires for a seat that has committed for its ticket since the claim, and its key and severity are the same whichever trigger fired it."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1997-a-seat-collecting-repeat-notes-is-reported-stuck.feature`:
+     3 of 3 ok. Measured 0 at mint: no handler exists yet.
+  2. `bash swarmforge/scripts/test/test_babysitter_check.sh` ends `ALL PASS`.
+  3. Read docs/how-to/BL-611-babysitterd-runbook.md's check 5b section:
+     it names both new triggers (the loop dialog and ten REPEAT notes).
+
+source: |
+  Split from BL-1987 on 2026-10-05 (specifier notes 002345 and 002346 to
+  the coordinator; the coordinator paused it at 808c0ec652). The human,
+  specifier pane, 2026-10-04 and 2026-10-05, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  > When coder is stuck in a loop, the response to that is back to specifier to make the ticket easier for coder to implement.
+
+  BL-1987's own source (BL-1980's chain), verbatim: QA note 003811 to the
+  specifier, 2026-10-04 23:43Z: "BL-1971 ok but REPEAT broke 0 iq3 loops
+  (48 in cfca2aec); next lever? 743f9eaab6". QA's evidence
+  backlog/evidence/BL-1971-QA-20261005.md (743f9eaab6): "The guard fires
+  correctly and never causes a halt itself. It did not break any of the
+  multi-note loops observed: the model goes on cycling, or repeats the
+  identical call until qwen's own check stops it." The human's standing
+  direction the same evening (Article 5.3):
+
+  > Doing a hot fix is to fix the process. A hotfix is not a hack.
+
+  > Process fix, that's my boy :)
+
+description: |
+  ## What is wanted
+
+  Each held ticket in `held-seat-tickets` carries
+  `:repeat-notes-since-claim`: BL-1996's
+  `(local-seat-report-lib/current-session-repeat-notes
+  (local-seat-report-lib/qwen-projects-dir) dir taken-ms)` for the seat's
+  worktree `dir` and its progress origin `taken-ms`, or 0 when `dir` is
+  nil. Check 5b (`check-seat-ticket-stuck`, babysitterd_sweep_lib.bb
+  ~322-355, BL-1985) already raises the CRIT at ten and names the count;
+  nothing changes there. A seat that is not a local model has no qwen
+  session directory, so BL-1996 gives it 0. Scenarios 02-04 (BL-1980's
+  numbering, kept).
+
+  ## Where to read (only these lines)
+
+  - `swarmforge/scripts/babysitter_check.bb` lines 33-49: the `load-file`
+    list. Add `local_seat_report_lib.bb` the same way.
+  - `swarmforge/scripts/babysitter_check.bb` lines 896-925
+    (`held-seat-tickets`): `dir` and `taken-ms` are already bound in the
+    `let`. Add ONE entry to the returned map, on its own line after
+    `:loop-dialog? ...` (line 916). Do not change any closing parenthesis
+    or bracket: the new line is a key and a value, both closed on that
+    line. The edit hook shows a caret if the file stops reading.
+  - `specs/pipeline/steps/bl1986LoopDialogSeatStuckSteps.js` (170 lines)
+    is the handler to copy. Keep its fixture root, roles row, held handoff
+    and sweep; replace the loop-dialog pane text with a qwen session file
+    of N REPEAT notes written under a temp directory, and run the check
+    with `SWARMFORGE_QWEN_PROJECTS_DIR` set to it. The roles row's agent
+    can stay `claude`: the count comes from the session file. Scenario
+    04's commit: commit for the ticket in the fixture worktree after the
+    notes are stamped, so `taken-ms` moves past them.
+  - Scenarios 03 and 04 hold a dwell under 60 minutes (the held handoff's
+    claim a few minutes old), or the dwell trigger fires on its own
+    (hotfix 9b4ccdd827).
+
+  ## What each stage checks
+
+  - Coder: scenarios 02-04; test_babysitter_check.sh still passes.
+  - Documenter: the babysitter runbook's check 5b section names both new
+    triggers.
+
+notes: |
+  Split from BL-1987 on 2026-10-05 after coder (iq3) held it 37m (claim
+  13:00:16Z) with no commit: a cycle of four empty greps 13:06-13:08Z,
+  then toggling one closing paren in babysitter_check.bb 13:12-13:22Z and,
+  after a respawn, again from 13:35Z (36 edits). Minted 2026-10-05 by the
+  specifier. depends_on BL-1996: this slice calls its counter.
+  The feature file is BL-1987's, moved: its three scenarios are word for
+  word, and only the Feature line and the split paragraph changed.
+  Not salvage: the uncommitted BL-1987 diff in iq3's worktree (see
+  BL-1996 notes); it rewrote the gatherer's let instead of adding one map
+  entry, and the file does not read.
+  Dynamic routing: the parent's shape kept - documenter for the runbook.
+  The second required_wiring entry anchors the live consumer's call
+  (BL-1235): only babysitter_check.bb calling the counter satisfies it.

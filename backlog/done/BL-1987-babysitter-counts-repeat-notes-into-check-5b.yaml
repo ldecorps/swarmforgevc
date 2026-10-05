@@ -5,7 +5,8 @@ type: defect
 severity: high
 # high: inherited from BL-1980 - a seat collecting REPEAT notes with no
 # commit is cycling, and today nothing reports it before 60 minutes.
-status: blocked
+status: done
+closed_as: split-into-BL-1996,BL-1997
 epic: local-llm-swarm
 priority: 3
 direction: swarm-reported
@@ -117,5 +118,13 @@ notes: |
   specifier split/simplify. Uncommitted edit to
   swarmforge/scripts/babysitter_check.bb left in the worktree (not
   evaluated for salvage this pass).
+
+  2026-10-05 13:4xZ specifier: split into BL-1996 (the REPEAT counter in
+  local_seat_report_lib.bb, its own 3-scenario feature) and BL-1997 (the
+  gatherer entry in babysitter_check.bb and this ticket's scenarios 02-04
+  word for word, in BL-1997's feature; this ticket's feature file removed).
+  iq3 held it 37m with no commit: four empty greps in a cycle 13:06-13:08Z,
+  then toggling one closing paren 13:12-13:22Z and again from 13:35Z after
+  a respawn. The uncommitted diff in iq3's worktree is not salvage.
 
 assigned_to: coder

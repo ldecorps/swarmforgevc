@@ -1,0 +1,144 @@
+id: BL-1996
+title: "local_seat_report_lib counts the real REPEAT notes in a local seat's current qwen session since an origin, never the phrase quoted in a file the seat read (BL-1987 split, slice 1 of 2)"
+milestone: M8
+type: defect
+severity: high
+# high: inherited from BL-1987 / BL-1980 - a seat collecting REPEAT notes
+# with no commit is cycling, and today nothing reports it before 60 minutes.
+status: todo
+epic: local-llm-swarm
+priority: 3
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: three small functions in one lib file and a thin step handler.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "three small functions beside the lib's own session parsers; nothing to deduplicate"
+  architect: "a pure counter and a file lookup inside an existing lib; no boundary moves"
+  hardender: "Babashka has no mutation lane yet (BL-1975..1977 build it); the counter writes no durable state"
+  documenter: "BL-1997 documents check 5b's REPEAT trigger in the runbook; this slice adds no behaviour a living doc describes"
+
+acceptance: specs/features/BL-1996-a-local-seats-repeat-notes-are-counted-from-its-origin.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1996RepeatNoteCounterSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1987 (approved, itself inherited from BL-1980), split
+  on 2026-10-05 under the human's BAU split rule. No new scope: the three
+  scenarios restate BL-1987's own description of the count ("the number of
+  REPEAT notes in that seat's current qwen session stamped at or after the
+  ticket's progress origin"; "A seat that is not a local model has no
+  session, so its count is 0"), and its QA replay step moves here. No
+  choice is posed.
+
+invariants:
+  - "The count reads only tool-result records stamped at or after the origin, and counts a record only when a line of its output starts with the guard's note text."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1996-a-local-seats-repeat-notes-are-counted-from-its-origin.feature`:
+     3 of 3 ok. Measured 0 at mint: no handler exists yet.
+  2. Replay, read-only (BL-1987's step 3, moved here): run the parcel's
+     `repeat-notes-since` over these sessions in
+     ~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/.
+     Measured at mint with the line-start pattern below:
+     - cfca2aec-* from 2026-10-04T21:50:04Z (BL-1970's claim): 46, the
+       tenth note stamped 21:58:17Z (the dwell clock would have waited
+       until 00:50Z).
+     - de07ec69-* from 2026-10-05T13:00:16Z (BL-1987's claim): 13. A plain
+       substring count of the phrase reads 20 there: the seat read the
+       ticket and the guard's source.
+  3. Read the coder's committed evidence.
+
+source: |
+  Split from BL-1987 on 2026-10-05 (specifier notes 002345 and 002346 to
+  the coordinator; the coordinator paused it at 808c0ec652). The human,
+  specifier pane, 2026-10-04 and 2026-10-05, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  > When coder is stuck in a loop, the response to that is back to specifier to make the ticket easier for coder to implement.
+
+  BL-1987's own source (BL-1980's chain), verbatim: QA note 003811 to the
+  specifier, 2026-10-04 23:43Z: "BL-1971 ok but REPEAT broke 0 iq3 loops
+  (48 in cfca2aec); next lever? 743f9eaab6". QA's evidence
+  backlog/evidence/BL-1971-QA-20261005.md (743f9eaab6): "The guard fires
+  correctly and never causes a halt itself. It did not break any of the
+  multi-note loops observed: the model goes on cycling, or repeats the
+  identical call until qwen's own check stops it." The human's standing
+  direction the same evening (Article 5.3):
+
+  > Doing a hot fix is to fix the process. A hotfix is not a hack.
+
+  > Process fix, that's my boy :)
+
+description: |
+  ## What is wanted
+
+  Three functions in `swarmforge/scripts/local_seat_report_lib.bb`, which
+  BL-1997 will call from check 5b:
+
+  1. `repeat-notes-since [chat-jsonl origin-ms]`: the number of records in
+     a qwen session's jsonl text that are tool results (`"type":
+     "tool_result"`), stamped (`timestamp`) at or after `origin-ms`, and
+     whose output has a LINE that starts `REPEAT: you have now made this
+     exact <tool> call <N> times` (regex
+     `(?m)^REPEAT: you have now made this exact [a-z_]+ call [0-9]+ times`).
+     0 for nil or blank text; a line that does not parse is skipped.
+     Scenarios 01 and 02.
+  2. `qwen-projects-dir []`: the env var `SWARMFORGE_QWEN_PROJECTS_DIR`
+     when set, else `~/.qwen/projects`.
+  3. `current-session-repeat-notes [projects-dir worktree origin-ms]`: the
+     newest `*.jsonl` by modification time in
+     `<projects-dir>/<(qwen-cwd-key worktree)>/chats/`, counted with (1).
+     0 when that directory does not exist. Scenario 03.
+
+  ## Where to read (only these lines)
+
+  - `swarmforge/scripts/local_seat_report_lib.bb`: `qwen-cwd-key` (~296)
+    is the directory key; put the three functions right after it. The
+    lib's `:require` block at the top already has `babashka.fs`,
+    `cheshire.core` and `clojure.string`; check with `grep -n require`.
+  - Where a note sits in a real record (measured on session de07ec69): in
+    `message.parts[0].functionResponse.response.output`, after a blank
+    line at the end of the tool's output. The same output can contain the
+    phrase elsewhere when the seat read a file that quotes it, which is
+    why the match is a line START with the call count.
+  - `specs/pipeline/steps/bl970BusyGateSteps.js` (77 lines) is the handler
+    shape to copy: `load-file` the lib with `bb -e`, call one function,
+    assert on what it prints. Write each scenario's session text into a
+    temp directory in the handler. Do not keep fixture files in the repo.
+  - The steps put their numbers in the step text: parse them in the
+    handler (`the count is (\d+)`), never hardcode them.
+
+  ## How (direction, not mandate)
+
+  - Read the records with `cheshire.core/parse-string` one line at a time,
+    the way `parse-session-events` (~91) does, and parse the timestamp with
+    `java.time.Instant/parse`.
+
+  ## What each stage checks
+
+  - Coder: scenarios 01-03 ok; the replay in qa_e2e_procedure step 2 gives
+    46 and 13.
+
+notes: |
+  Split from BL-1987 on 2026-10-05 after coder (iq3) held it 37m (claim
+  13:00:16Z) with no commit: a cycle of four empty greps 13:06-13:08Z,
+  then toggling one closing paren in babysitter_check.bb 13:12-13:22Z and,
+  after a respawn, again from 13:35Z (36 edits). Minted 2026-10-05 by the
+  specifier. BL-1997 depends on this slice.
+  Not salvage: the uncommitted BL-1987 diff in iq3's worktree. Its counter
+  parses the whole file as one JSON value, reads `:message :content`, and
+  matches the phrase at the start of the text, so it counts nothing real;
+  its wiring calls `stuck-in-process-path`, which does not exist, and the
+  file does not read.
+  Dynamic routing: Babashka production code with no durable write, so
+  [coder, qa].
+  IR-DRY: the three "the count is N" steps are one step pattern with the
+  number in the text (no step tables, BL-1851); the checker's
+  near-duplicate findings on them are intended.

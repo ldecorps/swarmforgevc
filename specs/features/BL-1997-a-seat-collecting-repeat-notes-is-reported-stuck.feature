@@ -1,4 +1,4 @@
-Feature: BL-1987 A seat collecting REPEAT notes with no commit is reported stuck
+Feature: BL-1997 A seat collecting REPEAT notes with no commit is reported stuck
 
   Babysitter's seat-stuck CRIT (check 5b) is what makes the coordinator pull
   a ticket a seat cannot finish, restart the seat and send it to the
@@ -12,9 +12,11 @@ Feature: BL-1987 A seat collecting REPEAT notes with no commit is reported stuck
   further progress, and a seat collecting REPEAT notes with no commit is
   cycling, so both are stuck long before 60 minutes.
 
-  Split from BL-1980 on 2026-10-05 (slice 3 of 3): this feature is the
-  REPEAT count. BL-1985 widens the check; BL-1986 reads the loop dialog.
-  The scenarios below are BL-1980's, word for word.
+  Split from BL-1980 on 2026-10-05 (slice 3 of 3, BL-1987), and split
+  again from BL-1987 the same day (slice 2 of 2): BL-1996 counts the notes
+  in a seat's session; this feature wires that count into check 5b.
+  BL-1985 widened the check; BL-1986 reads the loop dialog. The scenarios
+  below are BL-1980's, word for word.
 
   Background:
     Given a local-model seat holding a ticket with no commit since its claim
