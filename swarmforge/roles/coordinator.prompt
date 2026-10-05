@@ -99,6 +99,11 @@ You are the coordinator.
   `backlog/evidence/<active id>-qa-unowned-red-*.md` "waits on" line — a
   hold whose red now has an owner in `backlog/standing-reds.tsv` needs QA
   told `<id>: <red> owned by <owner> (<sha>) - resume land` (BL-1555/BL-1564).
+  A hold whose red has NO owner yet is already the specifier's: QA sends
+  the specifier its own `unowned-red` note with the hold (QA.prompt). Send
+  no "mint owner for <red>" note of your own; check `git log -5 --oneline`
+  for the specifier's HOTFIX/Mint commit first (2026-10-05: four such
+  notes each arrived after the red was already hotfixed and stamped).
   (3) Only then the resident's pane. Text after `❯` in an idle pane is the
   TUI's own render — a dim next-prompt suggestion or a stale repaint of a
   prompt already submitted — never an instruction the resident typed and
