@@ -90,3 +90,5 @@ notes: |
   had passed QA and BL-2012 was active, so this does not fold into either.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: fe08621a87 linked to BL-2013.
+
+assigned_to: coder
