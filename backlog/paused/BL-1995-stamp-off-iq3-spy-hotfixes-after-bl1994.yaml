@@ -1,0 +1,106 @@
+id: BL-1995
+title: "Stamp-off for the iq3 spy-loop hotfixes after BL-1994 went active, starting with dfd15ebfb8: the local-seat edit hook shows a stray closing delimiter at its own line and column, and the repeat guard names an edit that undoes an earlier one"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the only easy-tier coder seat
+# toggled one paren for ten minutes on BL-1987 and needed a respawn.
+status: todo
+epic: local-llm-swarm
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one note function in each of two hooks, one card line, fixture tests.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two small note functions and one card line; nothing to refactor"
+  architect: "both hooks keep their event and output shapes; each only adds text to additionalContext"
+  hardender: "Babashka has no Stryker lane (BL-472) and neither hook writes durable state"
+  documenter: "each hook's header comment is the living description; no how-to names these notes"
+
+# Not a claim of ownership over BL-1970's contract (BL-1251): the edit hook's
+# own feature, which this ticket's first hotfix extends and must keep green.
+acceptance: specs/features/BL-1970-a-local-seat-is-told-at-once-where-its-edit-broke-a-babashka-file.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier lands under the human's 2026-10-05
+  direction "We have to fix iq3. Spy on it every 10 minutes. If its gone
+  wrong, hotfix it, and respawn." No choice is posed. FIRM: the coder
+  reviews them and never re-applies them; later spy-loop hotfixes fold in
+  here while this ticket is paused.
+
+invariants:
+  - "Neither hook ever refuses, undoes or changes a tool call; each only adds text to additionalContext."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_bl1970_local_model_edit_hook.sh`:
+     no FAIL (measured at dfd15ebfb8: 12 PASS).
+  2. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     no FAIL (measured at dfd15ebfb8: 17 PASS).
+  3. `node specs/pipeline/cli.js specs/features/BL-1970-a-local-seat-is-told-at-once-where-its-edit-broke-a-babashka-file.feature`:
+     4 of 4 ok (measured at dfd15ebfb8).
+  4. Read the coder's committed review evidence.
+
+source: |
+  The human, specifier pane, 2026-10-05, verbatim (Article 5.3):
+
+  > We have to fix iq3. Spy on it every 10 minutes. If its gone wrong, hotfix it, and respawn. Repeat until iq3 is functioning normally.
+
+  The fault (iq3 session de07ec69, 13:12-13:22Z, BL-1987): 15 edits in 5
+  minutes, then more, each adding or removing one closing paren at the end
+  of line 1343 of swarmforge/scripts/babysitter_check.bb. Every edit result
+  carried the edit hook's "Unmatched delimiter: ), expected: ] to match [ at
+  [1317 8]"; the stray ) was at [1344 56], which no message named.
+
+description: |
+  ## Status: hotfixes dfd15ebfb8 and 9d6eb54daa landed the fix
+
+  This parcel is their stamp-off: review them, do not re-apply them. Later
+  hotfixes from the same spy loop fold in below while this is paused.
+
+  ## What was wrong
+
+  The edit hook (BL-1970) passed on only the reader's message, which names
+  where the unclosed bracket OPENED. For a stray closer, the place to fix is
+  where the reader met it, and the message never said where that was. An
+  edit also resets the repeat guard's window, so an edit that undid the one
+  before it was never warned about.
+
+  ## What the hotfixes changed
+
+  - dfd15ebfb8 `swarmforge/scripts/local_model_edit_hook.bb`:
+    `delimiter-error` returns the reader's row and column with its message;
+    `stray-closer-note` shows an unmatched closer's line and column, the
+    line itself and a caret under the character, and says to fix it there.
+    An unclosed form (EOF) gets no such note.
+  - dfd15ebfb8 `swarmforge/scripts/local_model_repeat_guard.bb`: `undo-note`
+    warns an edit that puts back what an earlier edit of the same file
+    replaced, with the number of flips.
+  - dfd15ebfb8 tests: test_bl1970 shows a stray `)` at line 2 column 9 with
+    its caret and gives an unclosed form no stray note; test_bl1971 warns a
+    reversing edit and counts 2 and 4 flips, and warns neither a first edit
+    nor a reversal of another file's edit.
+  - 9d6eb54daa `swarmforge/roles/local-model/loop.note`: an edit result that
+    says the file no longer reads names the one character to change next;
+    never re-edit the line just changed.
+  - Applied live: both hooks run from the master checkout; the card reached
+    the seat at its 13:23Z respawn.
+  - The stuck session ignored both notes for ten minutes; the respawn ended
+    it. Whether the notes prevent the next toggle is the spy loop's to see.
+
+  ## What the coder checks
+
+  The change against the description and the invariant. Evidence:
+  backlog/evidence/BL-1995-coder-<date>.md.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfixes dfd15ebfb8
+  and 9d6eb54daa, as the next collecting stamp-off for the human's 10-minute
+  iq3 spy loop (cron job a0ad2beb in the specifier's session). BL-1994 went
+  active and was routed to the coder (note 016575), so these do not fold
+  into it.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: dfd15ebfb8 and 9d6eb54daa linked to BL-1995.

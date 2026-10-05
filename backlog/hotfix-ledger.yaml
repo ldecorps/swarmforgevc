@@ -1203,3 +1203,17 @@
   stamp_ticket: BL-1994
   human_decision: null
   decided_at: null
+- commit: dfd15ebfb8
+  subject: "hotfix: the local-seat edit hook shows a stray closing delimiter at its own line, and the repeat guard names an edit that undoes an earlier one"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1995
+  human_decision: null
+  decided_at: null
+- commit: 9d6eb54daa
+  subject: "hotfix: the iq3 card says an edit result's no-longer-reads caret names the one character to change next"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1995
+  human_decision: null
+  decided_at: null
