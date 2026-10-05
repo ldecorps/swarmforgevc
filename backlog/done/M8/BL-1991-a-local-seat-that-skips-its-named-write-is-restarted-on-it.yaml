@@ -136,3 +136,5 @@ notes: |
   the coder's choice and moves a boundary), hardender (BL-959 hand-mutant
   pass on the write) and documenter (the local-seat launch how-to,
   docs/how-to/BL-1052-local-model-seat-launch.md) stay.
+
+assigned_to: coder

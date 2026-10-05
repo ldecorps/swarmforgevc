@@ -153,7 +153,11 @@ test(
           reach.loudStop += 1;
         }
       }),
-      { numRuns: 400 }
+      // Seeded (2026-10-05 hotfix): unseeded, 400 draws fell below the
+      // landed-before-the-deadline floor of 5 on 0.7% of runs (2 of 300 seeds;
+      // mean 11.2, lowest 4) - QA's BL-1939 gather drew 4. Seed 1 draws 11
+      // (the other two floors: 207 and 40).
+      { numRuns: 400, seed: 1 }
     );
     assert.ok(reach.stopAfterDeadlineLand >= 5, `landed on the stopping tick: ${JSON.stringify(reach)}`);
     assert.ok(reach.landBeforeDeadline >= 5, `landed before the deadline: ${JSON.stringify(reach)}`);

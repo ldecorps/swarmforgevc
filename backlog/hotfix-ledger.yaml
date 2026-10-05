@@ -1308,3 +1308,10 @@
   stamp_ticket: BL-2008
   human_decision: null
   decided_at: null
+- commit: e0cfdfc95a
+  subject: "HOTFIX: the bl1836 ceremony property draws on a fixed seed, and the fake agent tree waits for its claude child's own argv0 - two flaky reds QA found on BL-1939"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2010
+  human_decision: null
+  decided_at: null
