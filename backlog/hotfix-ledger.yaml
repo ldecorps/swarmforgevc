@@ -1140,3 +1140,10 @@
   stamp_ticket: BL-1988
   human_decision: null
   decided_at: null
+- commit: cd9f7cb39a
+  subject: "hotfix: a local seat's read_file at offset 1 is told offset counts from 0, and its card says so"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1989
+  human_decision: null
+  decided_at: null
