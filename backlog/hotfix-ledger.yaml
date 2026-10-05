@@ -1189,3 +1189,10 @@
   stamp_ticket: BL-1993
   human_decision: null
   decided_at: null
+- commit: 44c9f3f535
+  subject: "hotfix: swarm_handoff sends a recipient written in the wrong case (to: qa) under the roster's spelling"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1994
+  human_decision: null
+  decided_at: null
