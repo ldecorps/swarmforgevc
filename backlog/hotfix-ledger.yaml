@@ -1280,3 +1280,10 @@
   stamp_ticket: BL-2005
   human_decision: null
   decided_at: null
+- commit: dfa78c6ead
+  subject: "HOTFIX: BL-754's step handler answers the handoff self-audit, so its feature is green again"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2006
+  human_decision: null
+  decided_at: null
