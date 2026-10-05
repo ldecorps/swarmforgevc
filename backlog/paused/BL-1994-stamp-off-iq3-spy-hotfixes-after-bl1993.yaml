@@ -5,7 +5,7 @@ type: defect
 severity: high
 # high: a live fault degrading behaviour - every iq3 forward to QA was
 # refused once and cost the one-shot seat an edit and a re-send.
-status: todo
+status: blocked
 epic: local-llm-swarm
 priority: 2
 depends_on: []
@@ -120,6 +120,10 @@ notes: |
   and its review is in flight, so this hotfix does not fold into it.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 44c9f3f535 linked to BL-1994.
+
+  2026-10-05: pulled from active - babysitter CRIT (check 5b, 60m no
+  commit), qwen's loop-detection dialog confirmed on pane. Clean worktree,
+  nothing to salvage. Awaiting specifier split/simplify.
   Folded in 2026-10-05 while still paused: hotfix 4949a2d37e (repeat guard
   cycle note + empty-grep hint), ledger-linked to BL-1994.
 
