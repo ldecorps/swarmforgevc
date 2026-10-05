@@ -1,4 +1,4 @@
-Feature: BL-1980 A looping local-model seat is reported stuck in minutes, not hours
+Feature: BL-1986 A seat whose pane shows qwen's loop dialog is reported stuck at once
 
   Babysitter's seat-stuck CRIT (check 5b) is what makes the coordinator pull
   a ticket a seat cannot finish, restart the seat and send it to the
@@ -12,6 +12,10 @@ Feature: BL-1980 A looping local-model seat is reported stuck in minutes, not ho
   further progress, and a seat collecting REPEAT notes with no commit is
   cycling, so both are stuck long before 60 minutes.
 
+  Split from BL-1980 on 2026-10-05 (slice 2 of 3): this feature is the loop
+  dialog. BL-1985 widens the check; BL-1987 counts the REPEAT notes. The
+  scenario below is BL-1980's, word for word.
+
   Background:
     Given a local-model seat holding a ticket with no commit since its claim
 
@@ -20,22 +24,3 @@ Feature: BL-1980 A looping local-model seat is reported stuck in minutes, not ho
     Given qwen's loop-detection dialog is on that seat's pane
     When babysitter sweeps
     Then it raises the seat-stuck CRIT for that seat, naming the loop dialog
-
-  # BL-1980 ten-repeat-notes-report-the-seat-stuck-02
-  Scenario: ten REPEAT notes since the claim raise the seat-stuck CRIT
-    Given the seat's current session carries 10 REPEAT notes since the claim
-    When babysitter sweeps
-    Then it raises the seat-stuck CRIT for that seat, naming the REPEAT count
-
-  # BL-1980 nine-repeat-notes-do-not-03
-  Scenario: nine REPEAT notes since the claim do not
-    Given the seat's current session carries 9 REPEAT notes since the claim
-    When babysitter sweeps
-    Then it raises no seat-stuck CRIT for that seat
-
-  # BL-1980 a-commit-after-the-notes-resets-the-count-04
-  Scenario: a commit for the ticket after the REPEAT notes is progress
-    Given the seat's current session carries 10 REPEAT notes since the claim
-    And the seat then commits for the ticket
-    When babysitter sweeps
-    Then it raises no seat-stuck CRIT for that seat

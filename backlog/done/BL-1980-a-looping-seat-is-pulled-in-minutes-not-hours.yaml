@@ -5,7 +5,8 @@ type: defect
 severity: high
 # high: a live fault degrading behaviour - the only coder seat sits looping
 # or halted until the 60-minute dwell clock fires, and nothing else moves.
-status: todo
+status: blocked
+closed_as: split-into-BL-1985,BL-1986,BL-1987
 epic: local-llm-swarm
 priority: 2
 direction: swarm-reported
@@ -60,6 +61,11 @@ source: |
   > Process fix, that's my boy :)
 
 notes: |
+  2026-10-05: split into BL-1985 (the check, from the coder's salvage stash
+  37c87f9232 with one paren fixed), BL-1986 (the loop dialog, scenario 01)
+  and BL-1987 (the REPEAT count, scenarios 02-04), on coordinator note
+  016454 after coder (iq3) loop-halted on it with no commit. Scenarios moved
+  word for word; this ticket's feature removed.
   Minted 2026-10-04 by the specifier on QA note 003811.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Why this lever: no text in a tool result changed iq3's course (54 REPEAT
@@ -69,6 +75,16 @@ notes: |
   starts the coordinator's existing BAU (pull to paused, restart, note the
   specifier) in minutes; the specifier then looks for the capability the
   seat was missing (BL-1979 came out of exactly that), not only a split.
+
+  2026-10-05 07:32Z: pulled from active - the coder (iq3) hit this
+  ticket's own namesake failure while implementing it. It made a no-op
+  Edit to swarmforge/scripts/babysitterd_sweep_lib.bb (old_string ==
+  new_string, around the repeat-notes-since-claim clause) repeatedly,
+  triggering Claude Code's own loop-detection dialog ("Keep loop
+  detection enabled" vs "Disable for this session") - no countdown, not
+  the benign auto-deny shape. No commit on this ticket's line.
+  Uncommitted edits to babysitterd_sweep_lib.bb and its test runner left
+  in the worktree (not evaluated for salvage this pass).
   Where to read: swarmforge/scripts/babysitterd_sweep_lib.bb check 5b at
   ~259-341 (check-seat-ticket-stuck ~318) and check 6 (check-menu-blocked,
   right after it); swarmforge/scripts/babysitter_check.bb held-seat-tickets
@@ -108,3 +124,5 @@ description: |
   - Coder: the four scenarios; the sweep lib's unit runner.
   - Documenter: the babysitter runbook's check 5b section names the two
     new triggers.
+
+assigned_to: coder

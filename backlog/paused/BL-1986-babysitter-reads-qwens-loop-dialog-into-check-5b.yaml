@@ -1,0 +1,100 @@
+id: BL-1986
+title: "Babysitter reads qwen's loop dialog on a seat's pane into check 5b, so a halted local seat is reported stuck at once (BL-1980 split, slice 2 of 3)"
+milestone: M8
+type: defect
+severity: high
+# high: inherited from BL-1980 - a halted one-shot seat makes no further
+# progress, and today nothing reports it before the 60-minute dwell clock.
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: swarm-reported
+depends_on: [BL-1985]
+mutation_cost: low
+# low: one fact per held ticket in the gatherer, read from pane text the
+# gatherer already captures.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one fact added to an existing gatherer; nothing to deduplicate"
+  architect: "check 5b keeps its key, severity and consumer; only its input grows"
+  hardender: "Babashka has no mutation lane yet (BL-1975..1977 build it); the gatherer writes no durable state"
+  documenter: "the runbook names both new triggers once both are live, in BL-1987"
+
+acceptance: specs/features/BL-1986-a-seat-whose-pane-shows-qwens-loop-dialog-is-reported-stuck.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1986LoopDialogSeatStuckSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1980 (approved), split on 2026-10-05 under the human's
+  BAU split rule. No new scope: BL-1980's loop-dialog trigger and its
+  scenario 01, word for word. No choice is posed.
+
+invariants:
+  - "The seat-stuck CRIT never fires for a seat that has committed for its ticket since the claim, and its key and severity are the same whichever trigger fired it."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1986-a-seat-whose-pane-shows-qwens-loop-dialog-is-reported-stuck.feature`:
+     1 of 1 ok. Measured 0 at mint: no handler exists yet.
+  2. `bash swarmforge/scripts/test/test_babysitter_check.sh` ends `ALL PASS`.
+  3. `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb` prints ok.
+
+source: |
+  Split from BL-1980 on 2026-10-05 (coordinator note 016454: "split
+  BL-1980: iq3 loop-halted on its own namesake ticket, no commit"). The
+  human, specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1980's own source, verbatim:
+
+  QA note 003811 to the specifier, 2026-10-04 23:43Z, verbatim: "BL-1971 ok
+  but REPEAT broke 0 iq3 loops (48 in cfca2aec); next lever? 743f9eaab6".
+  QA's evidence backlog/evidence/BL-1971-QA-20261005.md (743f9eaab6),
+  verbatim: "The guard fires correctly and never causes a halt itself. It
+  did not break any of the multi-note loops observed: the model goes on
+  cycling, or repeats the identical call until qwen's own check stops it."
+  The human's standing direction the same evening, verbatim (Article 5.3):
+
+  > Doing a hot fix is to fix the process. A hotfix is not a hack.
+
+  > Process fix, that's my boy :)
+
+description: |
+  ## What is wanted
+
+  Each held ticket the gatherer reports carries `:loop-dialog?`: true when
+  that seat's pane shows qwen's loop-detection dialog. BL-1985's check then
+  raises the seat-stuck CRIT at once, naming the loop dialog (scenario 01).
+  The dialog's own text includes "A potential loop was detected" and its
+  option "Keep loop detection enabled"; either one on the pane is enough.
+
+  ## Where to read (only these lines)
+
+  - `swarmforge/scripts/babysitter_check.bb` `gather-role` (~323-375): it
+    already captures each seat's pane into `pane-text` (~338, the last 40
+    lines) and returns it with the role map.
+  - The same file at ~1277: `busy-by-role` is built from those role maps.
+    Build `loop-dialog-by-role` the same way, beside it.
+  - `held-seat-tickets` (~869-910) and its one call at ~1401: pass the new
+    map in and add `:loop-dialog? (boolean (get loop-dialog-by-role role false))`
+    to each ticket map, next to `:busy?`.
+  - `swarmforge/scripts/test/test_babysitter_check.sh` shows how fixtures
+    drive the gatherer without a live tmux; copy its shape for the step
+    handler.
+
+  ## What each stage checks
+
+  - Coder: scenario 01; test_babysitter_check.sh and the sweep lib runner
+    still pass.
+
+notes: |
+  Split from BL-1980 on 2026-10-05 after coder (iq3) loop-halted on it
+  with no commit (pulled at e0927f15f6). Approval inherited from BL-1980
+  (split, no new scope).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  depends_on BL-1985: the check must read :loop-dialog? before the
+  gatherer supplies it, or scenario 01 cannot pass.

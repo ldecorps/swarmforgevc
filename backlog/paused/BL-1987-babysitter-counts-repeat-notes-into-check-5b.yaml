@@ -1,0 +1,112 @@
+id: BL-1987
+title: "Babysitter counts the REPEAT notes in a local seat's current qwen session since the claim into check 5b, so a cycling seat is reported stuck at ten (BL-1980 split, slice 3 of 3)"
+milestone: M8
+type: defect
+severity: high
+# high: inherited from BL-1980 - a seat collecting REPEAT notes with no
+# commit is cycling, and today nothing reports it before 60 minutes.
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: swarm-reported
+depends_on: [BL-1986]
+mutation_cost: low
+# low: one counter over a session file the report lib already parses, one
+# fact per held ticket, and the runbook paragraph.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one counter and one gatherer fact; nothing to deduplicate"
+  architect: "check 5b keeps its key, severity and consumer; only its input grows"
+  hardender: "Babashka has no mutation lane yet (BL-1975..1977 build it); the counter writes no durable state"
+
+acceptance: specs/features/BL-1987-a-seat-collecting-repeat-notes-is-reported-stuck.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1987RepeatNotesSeatStuckSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1980 (approved), split on 2026-10-05 under the human's
+  BAU split rule. No new scope: BL-1980's REPEAT-count trigger, its
+  scenarios 02-04 word for word, and its runbook step. No choice is posed.
+
+invariants:
+  - "The seat-stuck CRIT never fires for a seat that has committed for its ticket since the claim, and its key and severity are the same whichever trigger fired it."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1987-a-seat-collecting-repeat-notes-is-reported-stuck.feature`:
+     3 of 3 ok. Measured 0 at mint: no handler exists yet.
+  2. `bash swarmforge/scripts/test/test_babysitter_check.sh` ends `ALL PASS`.
+  3. Replay, read-only (BL-1980's step 3): run the parcel's REPEAT counter
+     over session cfca2aec-* in ~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/
+     with BL-1970's claim time (2026-10-04T21:50:04Z): it reaches 10 at
+     about 21:58Z, where the dwell clock would have waited until 00:50Z.
+  4. Read docs/how-to/BL-611-babysitterd-runbook.md's check 5b section:
+     it names both new triggers (the loop dialog and ten REPEAT notes).
+
+source: |
+  Split from BL-1980 on 2026-10-05 (coordinator note 016454: "split
+  BL-1980: iq3 loop-halted on its own namesake ticket, no commit"). The
+  human, specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1980's own source, verbatim:
+
+  QA note 003811 to the specifier, 2026-10-04 23:43Z, verbatim: "BL-1971 ok
+  but REPEAT broke 0 iq3 loops (48 in cfca2aec); next lever? 743f9eaab6".
+  QA's evidence backlog/evidence/BL-1971-QA-20261005.md (743f9eaab6),
+  verbatim: "The guard fires correctly and never causes a halt itself. It
+  did not break any of the multi-note loops observed: the model goes on
+  cycling, or repeats the identical call until qwen's own check stops it."
+  The human's standing direction the same evening, verbatim (Article 5.3):
+
+  > Doing a hot fix is to fix the process. A hotfix is not a hack.
+
+  > Process fix, that's my boy :)
+
+description: |
+  ## What is wanted
+
+  Each held ticket of a local-model seat carries
+  `:repeat-notes-since-claim`: the number of REPEAT notes in that seat's
+  current qwen session stamped at or after the ticket's progress origin
+  (the same origin `held-seat-tickets` already computes for the dwell).
+  BL-1985's check then raises the seat-stuck CRIT at ten, naming the count
+  (scenario 02); nine do not (scenario 03); a commit for the ticket after
+  the notes is progress (scenario 04). A seat that is not a local model has
+  no session, so its count is 0 and nothing changes for it.
+
+  ## Where to read (only these lines)
+
+  - `swarmforge/scripts/babysitter_check.bb` `held-seat-tickets`
+    (~869-910): `taken-ms` is the progress origin; add the count there,
+    next to BL-1986's `:loop-dialog?`.
+  - A seat's qwen sessions are `~/.qwen/projects/<worktree path with / and
+    . as ->/chats/*.jsonl`; the current session is the newest one.
+    `swarmforge/scripts/local_seat_report_lib.bb` already parses these
+    files (`parse-session-events` ~91, `latest-session-id` ~42): reuse it,
+    do not re-parse by hand.
+  - A REPEAT note's text starts `REPEAT: you have now made` (written by
+    `swarmforge/scripts/local_model_repeat_guard.bb`, ~120). Count the
+    records carrying it with a timestamp at or after the origin. Confirm
+    where the note sits in a real record on session cfca2aec before writing
+    the counter (QA step 3 replays it).
+  - Scenarios 03 and 04's fixtures hold a dwell under 60 minutes, or the
+    dwell trigger fires on its own (hotfix 9b4ccdd827).
+
+  ## What each stage checks
+
+  - Coder: scenarios 02-04; test_babysitter_check.sh still passes.
+  - Documenter: the babysitter runbook's check 5b section names both new
+    triggers.
+
+notes: |
+  Split from BL-1980 on 2026-10-05 after coder (iq3) loop-halted on it
+  with no commit (pulled at e0927f15f6). Approval inherited from BL-1980
+  (split, no new scope).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  depends_on BL-1986: both slices change held-seat-tickets, so they land
+  in order.

@@ -171,3 +171,5 @@ notes: |
   - 2026-10-04 also stamps off b5ef5c8e94 (local-model loop.note step 1: run ready_for_next.sh in the worktree you start in, never cd to the master checkout the card lives in; a session for BL-1456 had cd'd to master, hit BRANCH_DRIFT_DETECTED and drifted onto BL-1949 for 10 minutes). Review it against its commit message.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1924; that file
     carries the human's uncommitted edits, so it was left alone.
+
+assigned_to: coder

@@ -109,3 +109,5 @@ notes: |
     left in the coder worktree; it is the seat's, from its BL-1916 parcel.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1926; that file
     carries the human's uncommitted edits, so it was left alone.
+
+assigned_to: coder
