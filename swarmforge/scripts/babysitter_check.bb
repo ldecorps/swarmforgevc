@@ -32,6 +32,8 @@
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "babysitterd_sweep_lib.bb")))
 (load-file (str (fs/path script-dir "gpu_pause_lib.bb")))
+;; BL-1997: the local-seat REPEAT-notes counter check 5b's new map entry calls.
+(load-file (str (fs/path script-dir "local_seat_report_lib.bb")))
 ;; BL-1018: the ONE definition of what a single-role repair may resolve to.
 (load-file (str (fs/path script-dir "single_role_repair_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
@@ -914,6 +916,16 @@
                           :dwell-min dwell
                           :busy? (boolean (get busy-by-role role false))
                           :loop-dialog? (boolean (get loop-dialog-by-role role false))
+                          ;; BL-1997: the seat's REPEAT notes since its progress
+                          ;; origin, from its current qwen session (BL-1996's
+                          ;; counter) - 0 for a seat with no worktree or no
+                          ;; qwen session (not a local model).
+                          :repeat-notes-since-claim (if dir
+                                                     (local-seat-report-lib/current-session-repeat-notes
+                                                      (local-seat-report-lib/qwen-projects-dir)
+                                                      dir
+                                                      taken-ms)
+                                                     0)
                           :gpu-quiet? (boolean (contains? gpu-quiet-roles role))
                           :head-unchanged? (if (and dir claim-ms)
                                              true
