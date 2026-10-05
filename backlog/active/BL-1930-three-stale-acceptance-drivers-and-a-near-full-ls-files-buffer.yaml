@@ -253,3 +253,5 @@ notes: |
     the hotfix: the mutant check in the file's header. The review runs it.
     The bl1287 red in the same note is owned by BL-1974 (cause not found).
     required_stages: test-side only is [coder, qa].
+
+assigned_to: coder

@@ -1,0 +1,1 @@
+{"id":"BL-1989","messages":[{"seq":0,"ts":1791192377529,"author":"swarm","type":"outbound","text":"BL-1989 🎵 in progress — Stamp-off for hotfix cd9f7cb39a: a local seat's read_file at offset 1 is told offset counts from 0 (repeat-guard hint and a card rule), after the iq3 coder read one file at offset 1 seven times, never saw line 1, and was halted by qwen's loop check"}]}

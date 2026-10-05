@@ -320,9 +320,13 @@
     :else last-own-commit-ms))
 
 (defn check-seat-ticket-stuck
-  "held-tickets: {:role :task :dwell-min :head-unchanged? :busy?}, already
-   resolved by the gatherer. One CRIT per role, for the longest unchanged
-   claim at or past seat-ticket-stuck-min. paused? suppresses the check."
+  "held-tickets: {:role :task :dwell-min :head-unchanged? :busy?
+   :loop-dialog? :repeat-notes-since-claim}, already resolved by the
+   gatherer. One CRIT per role, for the longest unchanged claim that is
+   stuck: dwell at or past seat-ticket-stuck-min, or a loop-detection
+   dialog on the pane, or ten or more REPEAT notes since the claim
+   (BL-1980). The message names which trigger(s) fired. paused? suppresses
+   the check."
   [held-tickets paused?]
   (if paused?
     []
@@ -330,17 +334,25 @@
      (for [[role items] (group-by :role (remove :gpu-quiet? (or held-tickets [])))
            :let [stuck (->> items
                             (filter :head-unchanged?)
-                            (filter #(>= (long (or (:dwell-min %) 0)) seat-ticket-stuck-min))
+                            (filter #(or (>= (long (or (:dwell-min %) 0)) seat-ticket-stuck-min)
+                                        (:loop-dialog? %)
+                                        (>= (long (or (:repeat-notes-since-claim %) 0)) 10)))
                             (sort-by :dwell-min >)
                             first)]
            :when stuck]
-       {:key (str "seat-stuck-" role)
-        :severity "CRIT"
-        :message (str role " has held " (:task stuck) " for " (:dwell-min stuck)
-                      "m with no commit since the claim"
-                      (when (:busy? stuck)
-                        " — the pane spinner is not progress")
-                      " (threshold " seat-ticket-stuck-min "m)")}))))
+       (let [dwell (long (or (:dwell-min stuck) 0))
+             repeats (long (or (:repeat-notes-since-claim stuck) 0))
+             triggers (cond-> []
+                        (>= dwell seat-ticket-stuck-min) (conj (str "no commit for " dwell "m"))
+                        (:loop-dialog? stuck) (conj "qwen's loop dialog is on the pane")
+                        (>= repeats 10) (conj (str repeats " REPEAT notes since the claim")))]
+         {:key (str "seat-stuck-" role)
+          :severity "CRIT"
+          :message (str role " has held " (:task stuck) " with no commit since the claim: "
+                        (str/join ", " triggers)
+                        (when (:busy? stuck)
+                          " — the pane spinner is not progress")
+                        " (threshold " seat-ticket-stuck-min "m)")})))))
 
 ;; ── check 6: menu-blocked-pane ────────────────────────────────────────────────
 

@@ -1,0 +1,132 @@
+id: BL-1989
+title: "Stamp-off for hotfix cd9f7cb39a: a local seat's read_file at offset 1 is told offset counts from 0 (repeat-guard hint and a card rule), after the iq3 coder read one file at offset 1 seven times, never saw line 1, and was halted by qwen's loop check; also hotfix 0d780b2462 (a seat that sleeps to wait is told to run in the foreground, and the card says run one property file, not the 15-minute lane)"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the only coder seat looped and
+# was halted on 2026-10-05 09:09Z.
+status: todo
+epic: local-llm-swarm
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one pure function, one call site, one card line, all with tests.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one small function beside the existing warning; nothing to deduplicate"
+  architect: "the hook keeps its event, its PostToolUse shape and its warn-never-refuse posture"
+  hardender: "Babashka has no mutation lane yet (BL-1975..1977 build it); the hook writes no durable state"
+  documenter: "the card line is the living doc for the seat; no other doc describes read_file's offset"
+
+# Not a claim of ownership over BL-1840's contract (BL-1251): the local-seat
+# feature BL-1971's stamp-off pointed at for the same hook.
+acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed at the human's "Yes" in the
+  specifier pane (2026-10-05), under the standing iq3 hotfix direction. No
+  choice is posed. FIRM: the coder reviews it and never re-applies it.
+
+invariants:
+  - "The repeat guard still only warns: it never refuses a call, and an unreadable event adds nothing."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`
+     prints every PASS line, including "a read_file at offset 1 is told
+     offset counts from 0" (measured at the hotfix: all pass).
+  2. `bb swarmforge/scripts/test/bl1798_local_model_compact_card_property_runner.bb`
+     prints ALL PROPERTIES HOLD, and
+     `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` prints ALL
+     PASS (both measured at the hotfix).
+  3. The guard test also prints "a shell command that sleeps is told to run
+     the command in the foreground instead" (measured at 0d780b2462).
+  4. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1845LocalSeatQwenInteractiveInvariants.property.test.js`
+     passes, the card's one-file command (measured: 2 of 2 in 14 s).
+  5. Read the coder's evidence: it names the qwen session where the seat
+     next read a file at offset 1, and whether the hint changed its next
+     call, or that no such call has happened yet.
+
+source: |
+  The human, specifier pane, 2026-10-05, verbatim: "Iq3 is loop9ng again.
+  Could this have to do with cache prompting?", then "Promp caching", then,
+  told the cause was read_file's 0-based offset and offered the fix: "Yes,
+  fine tune prompt caching".
+  The loop: session ae9769f1 (coder worktree), 09:08:31Z-09:09:04Z,
+  read_file on extension/test/helpers/propertyLaneContentionBudget.js at
+  offset 1 with limit 10, 5, 3, 2, 1, 1, 1, 1 ("Showing lines 2-11", ...
+  "2-2"), then qwen's "A potential loop was detected".
+
+description: |
+  ## Status: hotfix cd9f7cb39a landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  qwen's read_file offset counts from 0, so offset 1 starts at line 2. The
+  iq3 coder wanted the top of a file, asked for offset 1 seven times,
+  shrinking the limit each time, never saw line 1, and qwen's loop check
+  halted the turn. The repeat guard warned only on the fourth identical
+  call, because the limit changed every time. The seat's card said
+  nothing about the offset.
+
+  It was not prompt caching. The results reached the model each time (its
+  request changed in reply), the shim logged history_stripped=0 and
+  rewritten=0, and llama.cpp's prompt cache reuses only an exact prefix.
+  Measured on the 73728-token server the same day: 3874 requests spent
+  2279 s in prompt processing; the 43 full re-processes (session starts,
+  about 5.7k tokens each) cost 269 s.
+
+  ## What the hotfix changed
+
+  - `swarmforge/scripts/local_model_repeat_guard.bb`: `offset-hint` adds
+    "read_file's offset counts from 0: offset 1 starts at line 2. For line
+    1, use offset 0." to any read_file at offset 1, alone or beside the
+    REPEAT note. It needs no transcript.
+  - `swarmforge/roles/local-model/loop.note`: one rule naming the 0-based
+    offset.
+  - `swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`: four
+    cases (offset 1 hinted, offset 0 not, a repeated offset-1 read gets
+    both notes, and the hint with no transcript).
+
+  ## Hotfix 0d780b2462 (folded in 2026-10-05)
+
+  The iq3 coder looped again at 10:29Z reviewing BL-1927: it ran a
+  property file with mocha (the wrong runner), backgrounded the whole
+  property lane (~15 min) three times and polled it with sleep 90 to
+  sleep 300 for 35 minutes; the lane passed (516 files, 1426 tests), and
+  it grepped the passing log for a failure four times until qwen halted it.
+
+  - `local_model_repeat_guard.bb`: `sleep-hint` tells any shell command
+    that sleeps to run the command in the foreground instead.
+  - `loop.note`: run ONE property file with `cd extension && npm run
+    compile && npx vitest run --config vitest.properties.config.mjs
+    test/<file>`, never the lane; never background-and-sleep; a run that
+    prints `Test Files N passed` and no `failed` has passed.
+
+  ## What the coder checks
+
+  The change against the description and the invariant. Evidence:
+  backlog/evidence/BL-1989-coder-<date>.md.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix cd9f7cb39a.
+  Also stamps off 0d780b2462 (same guard file and card, after the human's
+  "Iq3 went in a loop again", 2026-10-05), folded in while the Work note
+  was still unread in the coder's inbox. Hotfix ledger: 0d780b2462 linked
+  to BL-1989.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Prompt-caching review, same pass (no change made): llama-server runs
+  with --context-shift --keep 4 (Ollama 0.32.15's default), a single slot
+  and an 8 GiB RAM prompt cache. Context shift fires only at 73728 tokens;
+  qwen compacts at about 55.7k behind the shim (427b3a1b1f). Ollama accepts
+  a per-request "shift": false, but on this one-shot seat a loud overflow
+  error ends the session, so it trades possible amnesia for a crash; left
+  as is. The local-qwen Telegram seat (BL-1235) shares the model through
+  /api/generate and swaps the coder out of the single slot (55 calls in the
+  log; one at 09:07:40Z); the RAM cache restores the coder's state.
+
+assigned_to: coder

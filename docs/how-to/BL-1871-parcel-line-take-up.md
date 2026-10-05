@@ -65,6 +65,62 @@ PARCEL_LINE: /home/carillon/swarmforgevc/.worktrees/QA is not coder's own worktr
 When nothing moves (parcel carries no work, or the role is already at or
 past the target), the claim path prints nothing extra.
 
+## What the ACTION block says, under each PARCEL_LINE outcome (BL-1924)
+
+`print-task` prints the PARCEL_LINE outcome above, then an ACTION block that
+follows it — it never tells a task-mode seat to run `merge_and_process` as a
+shell command, and never contradicts a refusal by also saying "do not ask
+again". The task helper (`ready_for_next_task.bb`) passes `{:task-mode? true
+:take-up <take-up! outcome>}` plus the served ticket file and next stage to
+`print-task`; a batch seat's one-arity call never passes these, so it always
+gets the pre-BL-1924 text below.
+
+- **A forwarding `git_handoff`, take-up `:moved` or `:stay` (task mode)**:
+  step 1 says ready_for_next.sh already put the worktree on the parcel's
+  line, that there is nothing to merge, and that `merge_and_process` is not
+  a shell command. Step 2 names the ticket file to `read_file` (when one was
+  found under `backlog/active/`) and says to implement it. Step 3 says to
+  commit only the changed paths, `git add <path>` for each, never
+  `git add .`, with a message ending `By <role>.`. Step 4 names the next
+  stage and prints the one shell command that writes `tmp/handoff.txt`
+  (`type: git_handoff`, `to: <next-stage>`, `priority: 00` — `50` only when
+  the sending role is `coder`, `task: <ticket id>`, `commit:` read live from
+  `git rev-parse HEAD`), then says to run `swarm_handoff.sh tmp/handoff.txt`
+  and that a printed `AUDIT_REQUIRED` means re-running that same command.
+  Step 5 says to run `done_with_current.sh`.
+- **The same, batch mode (one-arity `print-task` call, e.g.
+  `ready_for_next_batch.bb`)**: step 1 says "Execute the PAYLOAD
+  (merge_and_process …) in this worktree." — unchanged, since a batch seat
+  really does merge several tickets onto one shared branch. Step 3 is the
+  generic "Commit, git_handoff to the next role, then done_with_current /
+  ready_for_next." — no per-ticket file name or forward command.
+- **Take-up `:refused` (either mode)**: the ACTION block is exactly two
+  lines — "This parcel is in_process but was NOT taken up - read the
+  PARCEL_LINE line above." and "Do not start its work on this tree. Fix what
+  PARCEL_LINE names, then run ready_for_next.sh again." No numbered steps,
+  no work steps, no `done_with_current.sh` step — a refusal is a dead end
+  until the blocking cause (an uncommitted path, a foreign checkout) is
+  cleared.
+- **A non-forwarding (reverse-copy) `git_handoff`, task mode, taken up**:
+  since BL-1871 a reverse copy carries no work and is never taken up, so
+  `print-task` prints exactly two steps: "This is a reverse copy
+  (non-forwarding: true). It carries no work for you: do not read or
+  implement its ticket, and do not merge, commit or forward anything for
+  it. Ignore the PAYLOAD's merge_and_process and replay lines." and "Run
+  now: swarmforge/scripts/done_with_current.sh". No ticket file, no
+  implement step, no commit step, no forward step. A batch seat still
+  merges a reverse copy's payload, so the batch one-arity call prints the
+  ordinary merge_and_process text instead.
+- **QA's merge-up `note`, task mode**: step 1 says the note carries no work
+  in task mode because ready_for_next.sh already put the worktree on each
+  parcel's own line, and says not to merge, fetch, or inspect any branch for
+  it. Step 2 says to run `done_with_current.sh`.
+- **Any other `note` (either mode)**: step 1 says to read the PAYLOAD and
+  act on it per the role's own prompt; when a ticket file was resolved for
+  the note, it names that file and says to read it with `read_file`. Steps 2
+  and 3 say to run `done_with_current.sh` when there is nothing further to
+  do, then run `ready_for_next.sh` for the next parcel.
+
 ## No commit is ever lost
 
 Before any move, the head being left is kept under
