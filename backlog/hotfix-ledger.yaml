@@ -1175,3 +1175,10 @@
   stamp_ticket: BL-1990
   human_decision: null
   decided_at: null
+- commit: 32b322a836
+  subject: "hotfix: a local seat's read-only shell command naming a missing path gets a hint; its card says where things live"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1989
+  human_decision: null
+  decided_at: null
