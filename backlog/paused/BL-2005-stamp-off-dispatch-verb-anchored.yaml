@@ -23,7 +23,7 @@ stage_skip_reasons:
 # trail's feature, which this change must keep green.
 acceptance: specs/features/BL-1097-the-router-re-routes-a-ticket-that-has-already-been-worked.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Stamp-off of a hotfix the specifier landed on coordinator note 016664
   ("diff regex still unanchored: chase_sweep_lib
