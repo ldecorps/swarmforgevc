@@ -125,6 +125,53 @@
                (str " Your last summary named this next step: "
                     (subs step 0 (min 600 (count step))))))))))
 
+(def cycle-min-run
+  "Calls in a row, each a repeat of one already made in the window, before
+   the seat is told it is going round a cycle."
+  6)
+
+(defn repeat-run
+  "How many keys in a row, ending with the last, each repeat a key that
+   comes earlier in `keys`."
+  [keys]
+  (loop [i (dec (count keys)) run 0]
+    (if (and (>= i 0) (some #(= (nth keys i) %) (subvec keys 0 i)))
+      (recur (dec i) (inc run))
+      run)))
+
+(defn cycle-note
+  "The per-call REPEAT note did not stop the iq3 coder on 2026-10-05: it went
+   round four greps (one helper name, four files that do not define it) three
+   times, each call warned, for no edit. A run of repeats is a cycle, and
+   this names it."
+  [entries name args]
+  (when-not (resets-window? {:kind :call :name name :args args})
+    (let [k (call-key name args)
+          entries (without-in-flight (vec entries) k)
+          window (->> (rseq entries)
+                      (take-while (complement resets-window?))
+                      reverse
+                      (filter #(= :call (:kind %)))
+                      (mapv #(call-key (:name %) (:args %))))
+          keys (conj window k)
+          run (repeat-run keys)]
+      (when (>= run cycle-min-run)
+        (str "LOOP: your last " run " calls each repeat a call you already made since your last edit:"
+             " you are going round a cycle of " (count (distinct (take-last run keys))) " calls."
+             " Running them again cannot show you anything new. Stop searching:"
+             " make the edit your ticket needs now with what you already have, then run its test.")))))
+
+(defn empty-grep-hint
+  "A grep that prints nothing gives a model nothing to stop on: the cycle
+   above was four greps whose output was (empty) every time."
+  [name args response]
+  (let [cmd (when (map? args) (get args "command"))]
+    (when (and (= name "run_shell_command") (string? cmd)
+               (re-find #"(^|[\s|;&(])grep\s" cmd)
+               (some #(re-find #"(?m)^Output: \(empty\)" %)
+                     (filter string? (tree-seq coll? seq response))))
+      "grep found nothing: what it searched for is not in those files. Do not search them for it again; use what an earlier search found, or write the code.")))
+
 (defn offset-hint
   "read_file's offset counts from 0, so offset 1 starts at line 2. A model
    asking for offset 1 almost always wanted line 1: on 2026-10-05 the iq3
@@ -217,11 +264,15 @@
         args (get event "tool_input")
         path (get event "transcript_path")]
     (when (string? name)
-      (let [repeat-note (when (string? path)
-                          (when-let [lines (try (read-lines path) (catch Exception _ nil))]
-                            (warning (transcript-entries lines) name args)))
+      (let [entries (when (string? path)
+                      (when-let [lines (try (read-lines path) (catch Exception _ nil))]
+                        (transcript-entries lines)))
+            repeat-note (when entries (warning entries name args))
+            loop-note (when entries (cycle-note entries name args))
             cwd (or (get event "cwd") (System/getProperty "user.dir"))
-            notes (remove nil? [repeat-note (offset-hint name args) (sleep-hint name args)
+            notes (remove nil? [repeat-note loop-note
+                                (empty-grep-hint name args (get event "tool_response"))
+                                (offset-hint name args) (sleep-hint name args)
                                 (read-hint name args) (npm-hint name args)
                                 (shell-path-hint name args cwd)])]
         (when (seq notes)

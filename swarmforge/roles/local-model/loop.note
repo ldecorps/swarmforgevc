@@ -61,6 +61,9 @@ Rules that apply the whole time:
   swarmforge/scripts/. There is no specs/pipeline/features/.
 - Find a file before you read it: `git ls-files | grep <name>`. Never
   guess a path.
+- A grep that prints nothing means the name is not in those files: do not
+  search them again. When a helper exists in several files, use the first
+  copy you found; never read every copy to compare them.
 - Every read_file of a file over ~200 lines takes offset and limit (about
   100 lines): grep -n first. Every whole read costs your window, and a full
   window compacts and loses what you read.
