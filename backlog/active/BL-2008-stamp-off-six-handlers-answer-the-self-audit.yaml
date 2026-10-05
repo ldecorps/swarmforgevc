@@ -101,3 +101,5 @@ notes: |
   BL-2007 (two unrelated reds).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 0c1de3028c linked to BL-2008.
+
+assigned_to: coder
