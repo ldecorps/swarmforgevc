@@ -98,3 +98,5 @@ description: |
   - COORDINATOR_AGENT still ends at the third field: today it is
     everything after the second tab, so it would swallow the new field.
   - The usage comment at the top of the CLI names four fields.
+
+assigned_to: coder
