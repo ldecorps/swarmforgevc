@@ -91,7 +91,9 @@ test('exactly one number is enforceable, and every refusal names it', () => {
       // boundary offsets are always drawn, and the wider band still lands
       // inside the 42000..44000 gap where the second, hidden ceiling lived.
       fc.oneof(
-        fc.constantFrom(-1, 0, 1),
+        // RETIRED_CEILING - budget: a tree measuring exactly the retired
+        // ceiling, whose own size the verdict names (2026-10-05).
+        fc.constantFrom(-1, 0, 1, RETIRED_CEILING - budget),
         fc.integer({ min: -(budget - RETIRED_CEILING) - 500, max: 2000 })
       ),
       (offset) => {
@@ -112,9 +114,13 @@ test('exactly one number is enforceable, and every refusal names it', () => {
 
           // ...and names no other. 42000 was enforceable and unnamed; that
           // is the whole defect.
+          // The verdict's own "<measured>/<budget>" pair is not a second
+          // budget: a tree that measures exactly 42000 prints "42000/44000"
+          // (QA's BL-2008 gather drew it). Only text outside that pair counts.
           if (budget !== RETIRED_CEILING) {
+            const rest = stdout.replace(`${size}/${budget}`, '');
             assert.ok(
-              !stdout.includes(String(RETIRED_CEILING)),
+              !rest.includes(String(RETIRED_CEILING)),
               `verdict names a second budget ${RETIRED_CEILING}: ${stdout}`
             );
           }
