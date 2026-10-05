@@ -145,6 +145,42 @@
                (re-find #"(^|[;&|]\s*)sleep\s+\d" cmd))
       "Do not sleep to wait for a command: run it in the foreground (add `timeout <seconds>` if it can hang) and read what it prints.")))
 
+(def big-file-lines
+  "A read of more lines than this without a limit is a whole-file read."
+  300)
+
+(defn- read-path [args]
+  (when (map? args)
+    (let [p (or (get args "file_path") (get args "absolute_path"))]
+      (when (and (string? p) (not (str/blank? p))) p))))
+
+(defn read-hint
+  "A local seat fills its window with tool output: on 2026-10-05 the iq3
+   coder's session made 163 read_file calls totalling 903k characters,
+   re-read one 25k-character file whole four times, and compacted every 3-5
+   minutes. It also read 11 paths it had guessed and that did not exist.
+   Warn-only, like every note here."
+  [name args]
+  (when (= name "read_file")
+    (when-let [p (read-path args)]
+      (let [f (java.io.File. ^String p)]
+        (if-not (.exists f)
+          (str "That path does not exist. Find a file before reading it: run `git ls-files | grep "
+               (.getName f) "` instead of guessing a path.")
+          (let [limit (get args "limit")
+                lines (try (count (str/split-lines (slurp f))) (catch Exception _ 0))]
+            (when (and (> lines big-file-lines)
+                       (not (and (number? limit) (<= limit big-file-lines))))
+              (str "That file has " lines " lines, and a whole read fills your window fast."
+                   " Next time grep -n for the name you need, then read_file with offset and limit (about 100 lines)."))))))))
+
+(defn npm-hint
+  "npm runs from extension/: the repo root has no package.json."
+  [name args]
+  (let [cmd (when (map? args) (get args "command"))]
+    (when (and (= name "run_shell_command") (string? cmd) (re-find #"^\s*npm\s" cmd))
+      "npm runs from extension/, never the repo root: use `cd extension && npm ...`.")))
+
 (defn answer [event read-lines]
   (let [name (get event "tool_name")
         args (get event "tool_input")
@@ -153,7 +189,8 @@
       (let [repeat-note (when (string? path)
                           (when-let [lines (try (read-lines path) (catch Exception _ nil))]
                             (warning (transcript-entries lines) name args)))
-            notes (remove nil? [repeat-note (offset-hint name args) (sleep-hint name args)])]
+            notes (remove nil? [repeat-note (offset-hint name args) (sleep-hint name args)
+                                (read-hint name args) (npm-hint name args)])]
         (when (seq notes)
           (json/generate-string {"hookSpecificOutput" {"hookEventName" "PostToolUse"
                                                        "additionalContext" (str/join " " notes)}}))))))
