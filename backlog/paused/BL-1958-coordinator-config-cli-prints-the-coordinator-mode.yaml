@@ -41,6 +41,7 @@ qa_e2e_procedure: |
   4. `printf 'config coordinator_mode deterministic\n' > tmp/m.conf && bb
      swarmforge/scripts/coordinator_config_cli.bb tmp/m.conf` prints
      `claude-sonnet-5`, `high`, `claude`, `deterministic`, tab-separated.
+  5. The Status section's command 3 prints `copilot deterministic`.
 
 source: |
   Split from BL-1931 on 2026-10-04 (BAU split rule, 5b277c03cd). The human,
@@ -91,7 +92,75 @@ notes: |
   split and the resolve_coordinator_config wiring may need a smaller/more
   explicit slice for iq3 specifically, not just a time-based retry.
 
+  2026-10-05 specifier, on coordinator note 016440 ("split BL-1958: iq3
+  held it, 2x loop-halt, no commit, simplify"): AMENDED, not split. The
+  human saw the coder had made the change; the stash 6071affbf3 holds it.
+  Applied to a scratch copy of HEAD abaaaffa68, the CLI test passed and
+  the provider test failed on one misordered strip in
+  resolve_coordinator_config, which the coder's probes could not find:
+  it sourced the zsh script under bash, then stash-cycled. A split cannot
+  help, since the CLI's fourth field without the shell fix makes
+  COORDINATOR_AGENT read "claude<TAB>model" on main. The Status section
+  now names the salvage, the exact corrected function (verified: both
+  tests ALL PASS, probe prints copilot deterministic), three commands to
+  run once each, and what not to do. Approval kept: no new scope.
+
 description: |
+  ## Status (2026-10-05): the change already exists - finish it, do not re-derive it
+
+  Your own work from the last attempt is saved in git stash commit
+  6071affbf3 ("worktree-drift-20261005T064600Z"). In `.worktrees/coder`,
+  run `git stash apply 6071affbf3` once. It restores three files:
+
+  - `swarmforge/scripts/coordinator_config_cli.bb`: correct as it is (the
+    fourth field).
+  - `swarmforge/scripts/test/test_coordinator_config_cli.sh`: correct as
+    it is (ALL PASS on a scratch copy, specifier, 2026-10-05).
+  - `swarmforge/scripts/swarmforge.sh`: ONE function is wrong. In
+    `resolve_coordinator_config` (about line 1221) the stashed body strips
+    a field before it reads `COORDINATOR_EFFORT`, so `COORDINATOR_AGENT`
+    reads `model` and the provider test fails with "Unsupported agent
+    'model' for role 'coordinator'". Replace the function with exactly
+    this (verified: both tests ALL PASS):
+
+        resolve_coordinator_config() {
+          local resolved rest
+          resolved="$(bb "$SCRIPT_DIR/coordinator_config_cli.bb" "$CONFIG_FILE")"
+          rest="${resolved#*$'\t'}"
+          COORDINATOR_MODEL="${resolved%%$'\t'*}"
+          COORDINATOR_EFFORT="${rest%%$'\t'*}"
+          rest="${rest#*$'\t'}"
+          COORDINATOR_AGENT="${rest%%$'\t'*}"
+          COORDINATOR_MODE="${rest#*$'\t'}"
+        }
+
+    Keep the stash's BL-1958 comment lines above the function.
+
+  Then run these three commands, ONCE each, and commit if all three give
+  the expected output:
+
+  1. `bash swarmforge/scripts/test/test_coordinator_config_cli.sh` ends
+     `ALL PASS`.
+  2. `bash swarmforge/scripts/test/test_coordinator_provider_configurable.sh`
+     ends `ALL PASS`.
+  3. `mkdir -p tmp/p && printf 'config coordinator_mode deterministic\nconfig coordinator_agent copilot\n' > tmp/p/m.conf && SWARMFORGE_CONFIG=$PWD/tmp/p/m.conf zsh -c 'source swarmforge/scripts/swarmforge.sh . 2>/dev/null; resolve_coordinator_config; print -r -- "$COORDINATOR_AGENT $COORDINATOR_MODE"'`
+     prints `copilot deterministic`. Then `rm -r tmp/p`.
+
+  Do NOT, on this ticket:
+  - source swarmforge.sh with `bash -c`. It is a zsh script; under bash
+    it errors and proves nothing. Use `zsh -c` exactly as command 3 does.
+  - run `git stash`, `git stash pop` or `git stash push` to compare before
+    and after. The tests above are the comparison.
+  - write probe scripts, and never under /tmp. Command 3 is the only probe.
+  - read swarmforge.sh beyond lines 1205-1232.
+
+  If `git stash apply 6071affbf3` fails, make the three edits by hand: the
+  CLI appends `"\t" (coordinator-config-lib/coordinator-mode conf-text)`
+  after the agent in its `str`, and its usage comment names four fields;
+  the test's three expected strings each gain `\tmodel`, plus one case
+  for `config coordinator_mode deterministic` expecting
+  `claude-sonnet-5\thigh\tclaude\tdeterministic`; and the function above.
+
   ## What is wanted
 
   `coordinator_config_cli.bb <conf>` prints a fourth tab-separated field,
