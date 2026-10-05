@@ -1,0 +1,1 @@
+{"id":"BL-1994","messages":[{"seq":0,"ts":1791206360935,"author":"swarm","type":"outbound","text":"BL-1994 🎵 in progress — Stamp-off for the iq3 spy-loop hotfixes after BL-1993 went active, starting with 44c9f3f535: swarm_handoff accepts a recipient written in the wrong case (`to: qa`) under the roster's spelling instead of refusing it as an unknown role"}]}
