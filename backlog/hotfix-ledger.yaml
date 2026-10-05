@@ -1273,3 +1273,10 @@
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
+- commit: 6b5f524550
+  subject: "hotfix: a note counts as a dispatch only when its capitalised Spec/Work verb opens the message or a sentence"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2005
+  human_decision: null
+  decided_at: null
