@@ -1,0 +1,110 @@
+id: BL-1988
+title: "Stamp-off for hotfix 02f834ec44: a stamp-off's 'no decision without a human' check passes a ledger row decided exactly as HEAD's committed ledger records it, so the human's certification of QA-passed stamp-offs (8ce721bc4f) no longer turns four property files and five step handlers red"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main at first sighting (2026-09-05 rule) - QA held
+# BL-1925 on bl1323, bl1324 and bl1346, and five acceptance features shared
+# the same check.
+status: todo
+epic: swarm-reliability
+priority: 3
+depends_on: []
+mutation_cost: low
+# low: test-side only - one helper and nine call sites.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one shared helper replaces three assertions at each of nine sites; nothing left to deduplicate"
+  architect: "test-side only; no production boundary moves"
+  hardender: "test-side only; there is no production code to mutate"
+  documenter: "no living doc describes these stamp-off checks"
+
+# Not a claim of ownership over BL-1323's contract (BL-1251): the feature
+# whose property file QA named first. The other eight sites ride
+# qa_e2e_procedure.
+acceptance: specs/features/BL-1323-main-sync-deadlock-hints-name-overlaps-and-teach-swarm-heal.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a test-side hotfix for a red the specifier caused and fixed
+  in the same pass, under the human's 2026-10-01 rule (hotfix the red, mint
+  its stamp-off). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants:
+  - "A test or a stamp-off parcel never leaves a decision in the hotfix ledger that HEAD's committed ledger does not carry as a human's."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's property row: bl1323StampOffInvariants,
+     bl1324ClaudeSeatQwenCloudContextWindowInvariants, bl1333StampOffInvariants
+     and bl1346RcRepairStampInvariants pass (measured at the hotfix on a clean
+     clone: 12 of 12).
+  2. `node specs/pipeline/cli.js` on the BL-1333, BL-1342, BL-1346, BL-1560
+     and BL-1563 features: BL-1333 8/8, BL-1342 9/9, BL-1346 5/5, BL-1560 16/16, BL-1563 16/16 (measured at the hotfix on a clean clone)
+  3. Read the coder's committed review evidence: it records the helper's
+     three cases (undecided passes; a decision HEAD carries as a human's
+     passes; a decision HEAD does not carry fails) and the wording note
+     below.
+
+source: |
+  QA note 003816 to the specifier, 2026-10-05 08:04Z: "BL-1925 held:
+  unowned-red bl1323/bl1324/bl1346 props, ledger decided rows".
+  The human, specifier pane, 2026-10-05, asked "Is there no chance to
+  cinsolidate tge pilenof hitfixes?" and chose "Certify all QA-passed";
+  the specifier recorded those decisions in 8ce721bc4f, which is what
+  turned these checks red. The human's standing rule, verbatim
+  (2026-10-01): "Also, update your prompt / c9 stitution: instead of
+  minting a red, hotfix the defect and mint a stampoff."
+
+description: |
+  ## Status: hotfix 02f834ec44 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  Every stamp-off's "no green suite writes a decision" check read its
+  reviewed commit's LIVE ledger row and required human_decision and
+  decided_at to be null forever. That is true only until a human decides.
+  The human's certification of the 98 QA-passed hotfix entries
+  (8ce721bc4f) decided those rows, so the checks failed on main: the
+  property files bl1323, bl1324, bl1333 and bl1346, and the step handlers
+  of the BL-1333, BL-1342, BL-1346, BL-1560 and BL-1563 features. QA held
+  BL-1925 on the first three.
+
+  ## What the hotfix changed
+
+  - New `extension/test/helpers/hotfixLedgerDecision.js`:
+    `uncommittedDecision(repoRoot, ledgerText, commit)` returns null when
+    the row is undecided, or decided exactly as `git show
+    HEAD:backlog/hotfix-ledger.yaml` records it with a human_decision of
+    approved or waived; otherwise the message to fail with. Only
+    hotfix_ledger_update.bb --decide writes a decision, at a human's word,
+    and it lands as a commit; BL-848's sweep never writes one.
+  - The nine sites call it in place of their three null assertions.
+    Everything else they check is unchanged: bl1323's run of its feature
+    must still leave the ledger byte-identical, bl1324's parcel-artifact
+    face and stamp_ticket link, and bl1560/bl1563's "the review never
+    modifies the ledger" porcelain check.
+
+  ## What the coder checks
+
+  The helper against the invariant, and each of the nine sites against
+  its old assertions. Also note, for the specifier, that the five
+  features' step wording ("still reads pending", "carries no human
+  decision") now describes the in-flight review, not a certified row; say
+  whether you think they should be reworded or left. Evidence:
+  backlog/evidence/BL-1988-coder-<date>.md.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix 02f834ec44
+  (committed with SWARMFORGE_ROLE=QA: extension/test/ and
+  specs/pipeline/steps/ are QA-only on main). The specifier's own
+  certification commit caused the red; the hotfix ran on a clean local
+  clone of HEAD with the fix applied: the four property files 12 of 12,
+  and BL-1333 8/8, BL-1342 9/9, BL-1346 5/5, BL-1560 16/16, BL-1563 16/16 (measured at the hotfix on a clean clone).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  No register rows were added: the red was fixed in the same pass.
+  Holder note sent to QA for BL-1925 (parcel ddf5a19d8a) the same pass.
