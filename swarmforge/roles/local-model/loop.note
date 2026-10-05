@@ -53,6 +53,10 @@ Rules that apply the whole time:
   of working in the wrong place.
 - Run one command at a time and read what it printed before the next: a
   later step usually depends on an earlier step's output.
+- Where things live: features in specs/features/<ID>-<slug>.feature,
+  step handlers in specs/pipeline/steps/, unit and property tests in
+  extension/test/, TypeScript in extension/src/, Babashka and shell in
+  swarmforge/scripts/. There is no specs/pipeline/features/.
 - Find a file before you read it: `git ls-files | grep <name>`. Never
   guess a path.
 - Every read_file of a file over ~200 lines takes offset and limit (about
