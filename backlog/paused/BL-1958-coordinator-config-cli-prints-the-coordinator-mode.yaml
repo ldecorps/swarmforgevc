@@ -2,7 +2,7 @@ id: BL-1958
 title: "coordinator_config_cli.bb prints the pack's coordinator mode as a fourth field and swarmforge.sh reads it into COORDINATOR_MODE (BL-1931 split, slice 1 of 3)"
 milestone: M8
 type: feature
-status: todo
+status: blocked
 epic: local-llm-swarm
 priority: 1
 direction: queue-jump
@@ -78,6 +78,18 @@ notes: |
   coordinator-config-lib/coordinator-mode in coordinator_config_lib.bb
   (~line 88; default "model"). The test is
   swarmforge/scripts/test/test_coordinator_config_cli.sh (32 lines).
+
+  2026-10-05: pulled from active a second time. The coder (iq3) hit two
+  loop-detection halts in under an hour on this same slice - first
+  repeatedly writing near-identical bash field-split debug scripts
+  (test_split17.sh .. test_split49.sh), then after a respawn, repeatedly
+  git-stash/probe/pop cycling on resolve_coordinator_config - with no
+  commit either time. Human directive (2026-10-05, verbatim): "When
+  coder is stuck in a loop, the response to that is back to specifier to
+  make the ticket easier for coder to implement." This is now the second
+  pull of the same underlying work (BL-1931 -> BL-1958): the 4-field tab
+  split and the resolve_coordinator_config wiring may need a smaller/more
+  explicit slice for iq3 specifically, not just a time-based retry.
 
 description: |
   ## What is wanted
