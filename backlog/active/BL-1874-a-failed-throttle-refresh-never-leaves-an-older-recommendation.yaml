@@ -132,3 +132,5 @@ notes: |
   2026-10-01 amendment (from hardender note 001656 on BL-1869): this
   ticket's hardener pass also discharges BL-1869's mutation row, which the
   cooldown gate deferred the day the hotfix landed.
+
+assigned_to: coder
