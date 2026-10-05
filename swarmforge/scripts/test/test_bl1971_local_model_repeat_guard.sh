@@ -196,6 +196,22 @@ out="$(decide "$T" run_shell_command "$(g b)")"
 [[ "$out" != *"LOOP:"* ]] || fail "repeats from before an edit were counted into a cycle: $out"
 pass "six calls in a row that each repeat one already made since the last edit get a note naming the cycle; five, a broken run, or an edit between get none (2026-10-05)"
 
+E4='{"file_path":"/w/x.bb","old_string":"a)))]","new_string":"a))))]"}'
+E5='{"file_path":"/w/x.bb","old_string":"a))))]","new_string":"a)))]"}'
+{ call edit "$E4"; call edit "$E5"; } > "$T"
+out="$(decide "$T" edit "$E5")"
+[[ "$out" == *"UNDO: this edit puts back"*"flipped these lines 2 times"* ]] || fail "an edit that reverses the one before got no undo note: $out"
+{ call edit "$E4"; call edit "$E5"; call edit "$E4"; call edit "$E5"; } > "$T"
+out="$(decide "$T" edit "$E5")"
+[[ "$out" == *"flipped these lines 4 times"* ]] || fail "the undo note does not count the flips: $out"
+{ call edit "$E4"; } > "$T"
+out="$(decide "$T" edit "$E4")"
+[[ -z "$out" ]] || fail "a first edit got a note: $out"
+{ call edit '{"file_path":"/w/y.bb","old_string":"a)))]","new_string":"a))))]"}'; call edit "$E5"; } > "$T"
+out="$(decide "$T" edit "$E5")"
+[[ -z "$out" ]] || fail "an edit that reverses an edit of another file got a note: $out"
+pass "an edit that puts back what an earlier edit of the same file replaced is told so and counted; a first edit or another file's edit is not (2026-10-05)"
+
 decide_resp() { # tool_input llm_content
   python3 -c 'import json,sys; print(json.dumps({"tool_name":"run_shell_command","tool_input":json.loads(sys.argv[1]),"tool_response":{"llmContent":sys.argv[2],"returnDisplay":""},"transcript_path":sys.argv[3],"hook_event_name":"PostToolUse"}))' "$1" "$2" "$ROOT/missing.jsonl" | bb "$GUARD"
 }

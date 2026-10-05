@@ -161,6 +161,26 @@
              " Running them again cannot show you anything new. Stop searching:"
              " make the edit your ticket needs now with what you already have, then run its test.")))))
 
+(defn undo-note
+  "Edits reset the repeat window, so an edit that undoes an earlier one is
+   never a repeat: on 2026-10-05 the iq3 coder, on BL-1987, added and
+   removed one closing paren on the same line fifteen times in five minutes
+   while the edit hook named the same reader error after every edit."
+  [entries name args]
+  (when (and (= name "edit") (map? args))
+    (let [{:strs [file_path old_string new_string]} args
+          pair (fn [e] [(get (:args e) "old_string") (get (:args e) "new_string")])
+          prior (->> (without-in-flight (vec entries) (call-key name args))
+                     (filter #(and (= :call (:kind %)) (= "edit" (:name %))
+                                   (= file_path (get (:args %) "file_path")))))
+          reversed (count (filter #(= [new_string old_string] (pair %)) prior))
+          same (count (filter #(= [old_string new_string] (pair %)) prior))]
+      (when (pos? reversed)
+        (str "UNDO: this edit puts back what an earlier edit of this file replaced"
+             " (you have now flipped these lines " (+ reversed same 1) " times)."
+             " Neither version is the fix. Before you edit this file again, find where it is"
+             " really wrong: read the error your last edit's result names, or run the file or its test.")))))
+
 (defn empty-grep-hint
   "A grep that prints nothing gives a model nothing to stop on: the cycle
    above was four greps whose output was (empty) every time."
@@ -269,8 +289,9 @@
                         (transcript-entries lines)))
             repeat-note (when entries (warning entries name args))
             loop-note (when entries (cycle-note entries name args))
+            undo (when entries (undo-note entries name args))
             cwd (or (get event "cwd") (System/getProperty "user.dir"))
-            notes (remove nil? [repeat-note loop-note
+            notes (remove nil? [repeat-note loop-note undo
                                 (empty-grep-hint name args (get event "tool_response"))
                                 (offset-hint name args) (sleep-hint name args)
                                 (read-hint name args) (npm-hint name args)
