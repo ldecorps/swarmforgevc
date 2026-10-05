@@ -5,6 +5,7 @@ type: defect
 severity: high
 # high: a standing red on main is high at first sighting (2026-09-05).
 status: todo
+closed_as: superseded-by-BL-1930
 epic: swarm-reliability
 priority: 5
 depends_on: []
@@ -39,6 +40,9 @@ source: |
   BL-1956's mint: "deps.checkOriginMainLanding is not a function".
 
 notes: |
+  2026-10-05: folded into BL-1930 (N:1 merge of stamp-offs at the human's
+  ruling "Merge the 18 paused stamps"); review it there. Hotfix ledger
+  entry re-linked to BL-1930.
   Minted 2026-10-04 by the specifier.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 897e5f4d62 linked to BL-1957. No register row was added:

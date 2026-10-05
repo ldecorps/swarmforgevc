@@ -202,3 +202,8 @@
   role: QA
   description: "tallied by hand, over the iq3 coder's qwen chat jsonl, how many chat_compression snapshots open <state_snapshot> with <next_step> and close it (qa_e2e step 3); no tool reads a seat's compaction snapshots"
   detected_at: 2026-10-04
+- category: register-join-unidentified-red-triage
+  ticket: BL-1958
+  role: QA
+  description: "qa-gather register_join read the unit red 'unidentified'; by hand: .vitest-report.json success/0 failed, so exit 1 was BL-1599's work ratchet (613108ms > 605000ms) from .test-durations.jsonl; lane excerpt also lost the 2 property FAIL messages"
+  detected_at: 2026-10-05

@@ -5,7 +5,7 @@ type: defect
 severity: high
 # high: a live fault degrading behaviour - the only coder seat sits looping
 # or halted until the 60-minute dwell clock fires, and nothing else moves.
-status: todo
+status: blocked
 epic: local-llm-swarm
 priority: 2
 direction: swarm-reported
@@ -69,6 +69,16 @@ notes: |
   starts the coordinator's existing BAU (pull to paused, restart, note the
   specifier) in minutes; the specifier then looks for the capability the
   seat was missing (BL-1979 came out of exactly that), not only a split.
+
+  2026-10-05 07:32Z: pulled from active - the coder (iq3) hit this
+  ticket's own namesake failure while implementing it. It made a no-op
+  Edit to swarmforge/scripts/babysitterd_sweep_lib.bb (old_string ==
+  new_string, around the repeat-notes-since-claim clause) repeatedly,
+  triggering Claude Code's own loop-detection dialog ("Keep loop
+  detection enabled" vs "Disable for this session") - no countdown, not
+  the benign auto-deny shape. No commit on this ticket's line.
+  Uncommitted edits to babysitterd_sweep_lib.bb and its test runner left
+  in the worktree (not evaluated for salvage this pass).
   Where to read: swarmforge/scripts/babysitterd_sweep_lib.bb check 5b at
   ~259-341 (check-seat-ticket-stuck ~318) and check 6 (check-menu-blocked,
   right after it); swarmforge/scripts/babysitter_check.bb held-seat-tickets
@@ -108,3 +118,5 @@ description: |
   - Coder: the four scenarios; the sweep lib's unit runner.
   - Documenter: the babysitter runbook's check 5b section names the two
     new triggers.
+
+assigned_to: coder

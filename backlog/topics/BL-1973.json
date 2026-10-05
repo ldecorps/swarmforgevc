@@ -1,0 +1,1 @@
+{"id":"BL-1973","messages":[{"seq":0,"ts":1791185140427,"author":"swarm","type":"outbound","text":"BL-1973 ✅ done — Stamp-off for hotfix bdb172641b: the BL-1877 reach property draws on a fixed seed, so its transitive-draw floor never turns the property lane red at random (2% of unseeded runs did)"}]}
