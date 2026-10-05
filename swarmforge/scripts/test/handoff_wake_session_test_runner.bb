@@ -116,6 +116,52 @@
            :resident-exists? false
            :rotation-router-pack? false}))
 
+;; ── BL-1964: deterministic coordinator resolves to no wake session ───────
+;; On a rotation-router pack declaring config coordinator_mode deterministic,
+;; the coordinator (which has no session of its own under BL-1959) resolves
+;; to nil - no wake anywhere. Every other dormant role still remaps to the
+;; resident.
+
+(assert= "deterministic pack: coordinator with no session resolves to nil"
+         nil
+         (handoff-lib/resolve-wake-session
+          {:configured-session "swarmforge-coordinator"
+           :configured-exists? false
+           :resident-session "swarmforge-coder"
+           :resident-exists? true
+           :rotation-router-pack? true
+           :deterministic-coordinator? true}))
+
+(assert= "deterministic pack: dormant cleaner still remaps to resident"
+         "swarmforge-coder"
+         (handoff-lib/resolve-wake-session
+          {:configured-session "swarmforge-cleaner"
+           :configured-exists? false
+           :resident-session "swarmforge-coder"
+           :resident-exists? true
+           :rotation-router-pack? true
+           :deterministic-coordinator? true}))
+
+(assert= "non-deterministic pack: coordinator with no session still remaps to resident"
+         "swarmforge-coder"
+         (handoff-lib/resolve-wake-session
+          {:configured-session "swarmforge-coordinator"
+           :configured-exists? false
+           :resident-session "swarmforge-coder"
+           :resident-exists? true
+           :rotation-router-pack? true
+           :deterministic-coordinator? false}))
+
+(assert= "deterministic pack: coordinator WITH a session still wakes itself"
+         "swarmforge-coordinator"
+         (handoff-lib/resolve-wake-session
+          {:configured-session "swarmforge-coordinator"
+           :configured-exists? true
+           :resident-session "swarmforge-coder"
+           :resident-exists? true
+           :rotation-router-pack? true
+           :deterministic-coordinator? true}))
+
 ;; ── roles.tsv resident session parse ──────────────────────────────────────
 
 (assert= "first non-coordinator session is the mono-router resident"
