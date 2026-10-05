@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-03 (BL-1917: requests go through a tool-call shim)
+Last Updated: 2026-10-05 (BL-1952: context-budget hotfixes — no re-attached files, a short seat prompt, a capped compaction summary)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -114,6 +114,24 @@ shape but is never reached for a local-model seat (its bootstrap style
 is `:embedded`, not the bootstrap-step style that function serves), so
 it is left as-is.
 
+### A local-model seat runs with a short system prompt (BL-1952)
+
+qwen's own base prompt (about 17.5k characters) plus its tool
+declarations (about 15k characters) left a seat's fixed, every-request
+overhead at 12487 tokens before it had read a single ticket file — more
+than a 1200-char compaction-dead-zone bounce could fit under the
+27852-token compaction trigger before the seat even had room to write.
+
+The generated launch script exports `QWEN_SYSTEM_MD`, pointing at the
+master checkout's `swarmforge/roles/local-model/qwen-system.md` (1680
+chars) — never the worktree's own copy, so it doesn't drift with
+whatever parcel line the seat holds. qwen reads that export and replaces
+its own base prompt with the named file's contents instead of appending
+to it. A captured first request fell from 12487 to 4761 tokens with this
+and the managed-auto-memory key above both set; the seat still calls
+`read_file` on its card as usual, since the short prompt replaces qwen's
+own boilerplate, not the role's own kickoff or card.
+
 ### Ollama is started by the swarm (BL-1703)
 
 Before any seat starts, the launch path probes the local endpoint for any
@@ -178,6 +196,54 @@ dependencies) now sits between a local-model seat and Ollama:
 |---|---|---|
 | `SWARMFORGE_LOCAL_MODEL_SHIM_PORT` | the shim's own loopback port | `11439` |
 | `SWARMFORGE_LOCAL_MODEL_SHIM` | `off` sends the seat to Ollama's endpoint directly, bypassing the shim | `on` |
+
+### The shim caps a compaction summary, drops the ask for `<analysis>`, and runs it with thinking off (BL-1952)
+
+qwen's own compaction side-query — the request it sends itself to
+summarize the chat before a compaction — is not exempt from the shim's
+usual request path, and three of its properties cost the seat most of
+its model time with no edit made: a summary ran 2.7-3.8k output tokens at
+about 26 tokens/s (146-188 s each); the reply often opened `<analysis>
+Chronological ...`, spent its whole budget there and never reached
+`<state_snapshot>` (qwen strips an `<analysis>` block, so a reply that
+never leaves it summarises to nothing); and a reply cut at its budget
+mid-`<state_snapshot>` left that tag open.
+
+`is_compaction_request` recognises the side-query by its summarizer
+system prompt or the directive qwen sends as its last message — never by
+reading the history between them, so a prior summary or a file the seat
+read that happens to quote either marker is not mistaken for a new
+compaction. A recognised request is sent upstream unstreamed through
+`_compact`, which applies, in order:
+
+- **`without_analysis_request`** — rewrites the paragraph asking for an
+  `<analysis>` block (in the system messages and the last message, where
+  qwen puts it) into `NO_ANALYSIS_DIRECTIVE`, asking the reply to start at
+  `<state_snapshot>`/`<next_step>` instead. The history in between, and
+  the original (non-compaction) request shape, are untouched.
+- **`compaction_budget`** — caps the output budget at `COMPACTION_OUTPUT_CAP`
+  (1200 tokens), setting `max_tokens` to the cap when the request named
+  none.
+- **`COMPACTION_NO_THINKING`** (`think: False, reasoning_effort: "none"`)
+  merged into the capped request, so the model's reasoning budget goes to
+  the summary itself, not hidden thinking. `_compact` logs the client's own
+  `think` value, the reply's reasoning length, and the reply's first 24
+  characters (`head=`) — this is a diagnostic, not a behavior fix on its
+  own: a replay that first seemed to need `think:false` turned out to
+  already receive it; the real cause was the `<analysis>` block above.
+- **`salvage_analysis_only`** — a reply that is still analysis only (no
+  `<state_snapshot>` tag at all) is wrapped as the snapshot's
+  `<current_work>` instead of returned as-is, so a stubborn analysis-only
+  reply still gives the seat a snapshot to resume from (logged
+  `salvaged=True`) rather than compacting to nothing.
+- **`close_cut_snapshot`** — a reply cut at the budget cap whose
+  `<state_snapshot>` opened and never closed gets its closing tag
+  appended, so a capped summary is never left malformed.
+
+None of this touches a request the shim does not recognise as the
+compaction side-query: a tool-calling request keeps the client's own
+`think`/`reasoning_effort` knobs exactly as before this hotfix (the same
+path the tool-call rewriting above already used).
 
 ### Ollama is stopped by the swarm (BL-1704)
 
@@ -284,6 +350,26 @@ in it:
   ("hard limit" below the true limit). With neither a served window nor a
   configured context length available, no provider entry is written and
   one warning line names the seat — never a guessed value.
+- **BL-1952's compaction-retention key**
+  (`model.chatCompression.maxRecentFilesToRetain: 0`) — qwen's default,
+  `5`, re-attaches the full text of the five most recently read files to
+  the chat history after every compaction; the iq3 coder's bounce session
+  re-attached 24-36k chars (more than its compacted summary) across three
+  compactions, leaving 22324-25598 tokens after each one against a
+  27852-token trigger in a 32768 window, and one call that re-read two
+  files at once was refused outright: "Context is too large to send
+  safely after automatic compression" — a stall qwen does not recover
+  from itself; the seat waits for Ctrl+Y, and a retry resends the same
+  history. `0` keeps only the compaction's own summary and the most
+  recent turn; the seat re-reads a file it still needs. `context.
+  autoCompactThreshold` is never written: the hardener proved it inert at
+  every window in the BL-1840 dead zone below and earlier than qwen's own
+  default elsewhere.
+- **BL-1952's managed-auto-memory key**
+  (`memory.enableManagedAutoMemory: false`) — qwen's auto-memory section
+  added about 6.2k characters to every request's fixed prompt; off, with
+  BL-1952's short system prompt below, a captured first request fell from
+  12487 to 4761 tokens.
 - **BL-1949's PreCompact hook** (`hooks.PreCompact`) — every local-model
   seat's settings register the master checkout's
   `swarmforge/scripts/local_model_precompact_hook.sh` (never the seat's
