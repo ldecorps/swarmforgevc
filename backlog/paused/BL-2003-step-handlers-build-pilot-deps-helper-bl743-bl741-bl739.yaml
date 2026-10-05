@@ -22,7 +22,7 @@ stage_skip_reasons:
 
 acceptance: specs/features/BL-743-bl627-pilot-missed-mkdtemp-convention.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   From coder note 000083 on BL-1930 (evidence fb616cc534): six step
   handlers still hand-build the pilot landing gate's deps object, the shape
