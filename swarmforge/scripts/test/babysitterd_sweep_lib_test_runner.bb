@@ -399,6 +399,47 @@
                                                          :dwell-min 200 :head-unchanged? true
                                                          :busy? true}]}))))
 
+;; BL-1980: a looping seat is pulled in minutes, not hours
+(assert-true "BL-1980: a loop-detection dialog on the pane is a CRIT at 5m dwell"
+             (let [fs (sw/check-seat-ticket-stuck
+                       [{:role "coder" :task "BL-1980" :dwell-min 5 :head-unchanged? true
+                        :busy? false :loop-dialog? true}]
+                       false)]
+               (and (= 1 (count fs))
+                    (= "CRIT" (:severity (first fs)))
+                    (= "seat-stuck-coder" (:key (first fs)))
+                    (str/includes? (:message (first fs)) "loop dialog"))))
+(assert-true "BL-1980: ten REPEAT notes since the claim are a CRIT at 5m dwell"
+             (let [fs (sw/check-seat-ticket-stuck
+                       [{:role "coder" :task "BL-1980" :dwell-min 5 :head-unchanged? true
+                        :busy? false :repeat-notes-since-claim 10}]
+                       false)]
+               (and (= 1 (count fs))
+                    (= "CRIT" (:severity (first fs)))
+                    (= "seat-stuck-coder" (:key (first fs)))
+                    (str/includes? (:message (first fs)) "10"))))
+(assert= "BL-1980: nine REPEAT notes, no dialog, under the dwell threshold is not stuck"
+         []
+         (sw/check-seat-ticket-stuck
+          [{:role "coder" :task "BL-1980" :dwell-min 5 :head-unchanged? true
+           :busy? false :repeat-notes-since-claim 9}]
+          false))
+(assert= "BL-1980: ten REPEAT notes but a commit since the claim is not stuck"
+         []
+         (sw/check-seat-ticket-stuck
+          [{:role "coder" :task "BL-1980" :dwell-min 5 :head-unchanged? false
+           :busy? false :repeat-notes-since-claim 10}]
+          false))
+(assert-true "BL-1980: dwell past the threshold plus a dialog still reports one CRIT, not two"
+             (let [fs (sw/check-seat-ticket-stuck
+                       [{:role "coder" :task "BL-1980" :dwell-min 60 :head-unchanged? true
+                        :busy? true :loop-dialog? true}]
+                       false)]
+               (and (= 1 (count fs))
+                    (= "CRIT" (:severity (first fs)))
+                    (= "seat-stuck-coder" (:key (first fs)))
+                    (str/includes? (:message (first fs)) "loop dialog"))))
+
 ;; ── check 6: menu-blocked-pane ───────────────────────────────────────────────
 (assert-nil "no menu block produces no finding"
             (sw/check-menu-blocked {:role "coder" :menu-blocked? false}))
