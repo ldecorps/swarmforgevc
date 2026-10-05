@@ -105,3 +105,5 @@ notes: |
   Hotfix ledger: 7376655875 linked to BL-2011.
   Folded in 2026-10-05 while still paused: hotfix 6a6165cb58 (schema doc
   names needsApproval), ledger-linked to BL-2011; holder note to coder@2.
+
+assigned_to: coder
