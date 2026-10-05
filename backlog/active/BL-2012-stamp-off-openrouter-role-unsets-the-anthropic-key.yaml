@@ -94,3 +94,5 @@ notes: |
   .swarmforge/launch/*.sh points at openrouter.ai.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 78e9346416 linked to BL-2012.
+
+assigned_to: coder
