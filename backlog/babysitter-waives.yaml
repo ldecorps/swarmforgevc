@@ -215,6 +215,11 @@
   reason: "legitimate operator hotfix (Hotfix-Certification: pending), tracked in backlog/hotfix-ledger.yaml state=stamp-open, stamp ticket BL-1714 (backlog/paused/), awaiting human decision"
   waived_at: 2026-09-25
 
+- key: pipeline-code-on-main-7376655875b267ee38e11b5137bd26d33bed7c41
+  waived_by: coordinator
+  reason: "sanctioned hotfix (SUP-17 ruling), already in hotfix-ledger.yaml with stamp_ticket BL-2011 pending"
+  waived_at: 2026-10-05
+
 - key: pipeline-code-on-main-7671b0b71754d2ed882341ddff1637ba2727905d
   waived_by: coordinator
   reason: "Standing-directive hotfix (amendment aa6dacc938): red-first, stamp-off second. Another SHA folded into the same stamp_ticket BL-1910 (telegramFrontDeskBotCli BL-1203 property test budget/fixture fix) - paused, ready for promotion."

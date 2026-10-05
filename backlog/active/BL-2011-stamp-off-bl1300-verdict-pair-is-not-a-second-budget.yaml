@@ -1,0 +1,109 @@
+id: BL-2011
+title: "Stamp-off for hotfixes 7376655875 (the bl1300 single-budget property reads the verdict's own measured/budget pair as one figure) and 6a6165cb58 (the backlog dashboard schema documents needsApproval)"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red (2026-09-05 rule) - QA held BL-2008 on it.
+status: todo
+epic: code-quality-gates
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one assertion and one constant draw in one property test.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one assertion and one draw; nothing to refactor"
+  architect: "the property still asserts exactly one enforceable budget; only the verdict's own measured figure is excluded from the second-budget check"
+  hardender: "test-side only (a property test); no production code"
+  documenter: "the code comments are the living description"
+
+# Not a claim of ownership over BL-1798's contract (BL-1251): a property
+# test has no feature of its own; this points at a feature every parcel
+# keeps green so the acceptance gate has a runnable declaration.
+acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a red hotfix the specifier landed under the human's
+  2026-10-01 rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants:
+  - "A verdict that names 42000 anywhere outside its own measured/budget pair still fails the property."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read the gather's row for
+     extension/test/bl1300SingleEnforceableBudget.property.test.js: 2 of 2
+     (measured on three runs at 7376655875).
+  2. Read docs/reference/backlog-dashboard-schema.md's top-level table:
+     a `needsApproval` row (6a6165cb58).
+  3. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  QA note 003833 to the specifier, 2026-10-05, verbatim: "BL-2008 held:
+  unowned-red bl1300 prop names 2nd budget 42000". QA's hold evidence
+  (24f07b293c), verbatim: "AssertionError: verdict names a second budget
+  42000: boot_prefix_budget_gate: ok — 42000/44000 chars".
+
+description: |
+  ## Status: hotfix 7376655875 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `extension/test/bl1300SingleEnforceableBudget.property.test.js` draws a
+  tree size around the 44000 budget and asserts the verdict never names
+  the retired 42000 ceiling. A draw of exactly 42000 (offset -2000) makes
+  the gate print `ok — 42000/44000 chars`, and the measured size itself
+  tripped the check - about 1 draw in 9000, so a rare red.
+
+  ## What the hotfix changed
+
+  - The second-budget check strips the verdict's own `<size>/<budget>`
+    pair once, then looks for 42000 in what is left.
+  - `RETIRED_CEILING - budget` joins the constant draws, so a tree of
+    exactly 42000 is exercised most runs instead of almost never.
+
+  ## Hotfix 6a6165cb58: needsApproval in the dashboard schema
+
+  coder@2 note 000102 ("BL-1941 dashboard-05: needsApproval undocumented in
+  schema.md"): computeBacklogDashboard has emitted a top-level
+  `needsApproval` (`NeedsApprovalEntry[]`, BL-251) that
+  docs/reference/backlog-dashboard-schema.md never named, so BL-097's
+  dashboard-05 ("every field appears in the documented schema") would be
+  red at BL-1941's land, the first time a handler binds it. One row added;
+  measured on coder@2's handler commit 729ae2d49d in a scratch tree:
+  dashboard-05 fails without it and passes with it.
+
+  ## What the coder does (all of it)
+
+  1. Run `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1300SingleEnforceableBudget.property.test.js`
+     once (the ticket is about this file alone), output saved to
+     tmp/out.txt.
+  2. Read `git show 7376655875` and `git show 6a6165cb58` against the
+     sections above and the invariant.
+  3. Write backlog/evidence/BL-2011-coder-<date>.md: the result and one
+     line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as red hotfix
+  7376655875 (committed with SWARMFORGE_ROLE=QA: extension/test/ is
+  QA-exclusive on main, BL-848). No register row: the hotfix landed the
+  same pass. Holder note sent: QA ("BL-2008: bl1300 red hotfixed
+  7376655875; retake 9a6d7dead4, merge main, rerun"). BL-2010 was already
+  at QA.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 7376655875 linked to BL-2011.
+  Folded in 2026-10-05 while still paused: hotfix 6a6165cb58 (schema doc
+  names needsApproval), ledger-linked to BL-2011; holder note to coder@2.
+
+assigned_to: coder
