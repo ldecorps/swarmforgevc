@@ -125,15 +125,28 @@
                (str " Your last summary named this next step: "
                     (subs step 0 (min 600 (count step))))))))))
 
+(defn offset-hint
+  "read_file's offset counts from 0, so offset 1 starts at line 2. A model
+   asking for offset 1 almost always wanted line 1: on 2026-10-05 the iq3
+   coder read one file at offset 1 seven times, shrinking the limit each
+   time, never saw line 1, and qwen's loop check halted it."
+  [name args]
+  (let [o (when (map? args) (get args "offset"))]
+    (when (and (= name "read_file") (number? o) (== o 1))
+      "read_file's offset counts from 0: offset 1 starts at line 2. For line 1, use offset 0.")))
+
 (defn answer [event read-lines]
   (let [name (get event "tool_name")
         args (get event "tool_input")
         path (get event "transcript_path")]
-    (when (and (string? name) (string? path))
-      (when-let [lines (try (read-lines path) (catch Exception _ nil))]
-        (when-let [note (warning (transcript-entries lines) name args)]
+    (when (string? name)
+      (let [repeat-note (when (string? path)
+                          (when-let [lines (try (read-lines path) (catch Exception _ nil))]
+                            (warning (transcript-entries lines) name args)))
+            notes (remove nil? [repeat-note (offset-hint name args)])]
+        (when (seq notes)
           (json/generate-string {"hookSpecificOutput" {"hookEventName" "PostToolUse"
-                                                       "additionalContext" note}}))))))
+                                                       "additionalContext" (str/join " " notes)}}))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (let [event (try (json/parse-string (slurp *in*)) (catch Exception _ nil))]
