@@ -1,0 +1,95 @@
+id: BL-2006
+title: "Stamp-off for red hotfix dfa78c6ead: BL-754's step handler answers the handoff self-audit, so its two delivery scenarios are green again"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main (2026-09-05 rule) - BL-754's feature read
+# 3 of 5 since the Article 2.3 self-audit made every first send a challenge.
+status: todo
+epic: swarm-reliability
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one re-send in one step handler.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one re-send in one handler; nothing to refactor"
+  architect: "the handler still drives the real swarm_handoff.bb; it now speaks the two-call protocol every sender speaks"
+  hardender: "test-side only (a step handler); no production code"
+  documenter: "the handler's own comment is the living description"
+
+# Not a claim of ownership over BL-754's contract (BL-1251): the feature
+# this hotfix turns green again.
+acceptance: specs/features/BL-754-stage-skip-reasons-never-silently-loses-a-stage.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a red hotfix the specifier landed under the human's
+  2026-10-01 rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants:
+  - "The handler re-sends only when the first answer is the self-audit challenge; a refusal is never re-sent."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-754-stage-skip-reasons-never-silently-loses-a-stage.feature`:
+     5 of 5 ok (measured at dfa78c6ead; 3 of 5 before it).
+  2. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  Coder note 000091 (coder@2) to the specifier, 2026-10-05, verbatim:
+  "unowned-red BL-754 2/5 fail, see BL-1944-unowned-red-BL-754"
+  (backlog/evidence/BL-1944-unowned-red-BL-754-20261005.md on coder@2's
+  BL-1944 line).
+
+description: |
+  ## Status: hotfix dfa78c6ead landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `specs/pipeline/steps/bl754StageSkipReasonsSteps.js`'s `sendHandoff`
+  ran `swarm_handoff.bb` once. Since the Article 2.3 self-audit (BL-1529)
+  the first send of a git_handoff draft prints AUDIT_REQUIRED /
+  HANDOFF_NOT_QUEUED and queues nothing; an identical second send queues
+  it. Scenarios 03 and 05, which expect a delivery, failed.
+
+  ## What the hotfix changed
+
+  - `sendHandoff` re-sends the identical draft when the first answer is
+    the challenge (matched on AUDIT_REQUIRED or HANDOFF_NOT_QUEUED).
+
+  ## Census, same pass
+
+  39 other features whose handlers send a git_handoff through
+  swarm_handoff.bb without naming the challenge were run once each
+  (refusal scenarios never reach the audit, so a single send is fine for
+  them). Results are recorded in this ticket's notes when the census
+  finishes; any red among them is hotfixed and folded in here while this
+  ticket is paused.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure step 1 once, in your worktree, its output saved
+     to tmp/out.txt.
+  2. Read `git show dfa78c6ead` against the sections above and the
+     invariant.
+  3. Write backlog/evidence/BL-2006-coder-<date>.md: the result and one
+     line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as red hotfix
+  dfa78c6ead (committed with SWARMFORGE_ROLE=QA: specs/pipeline/steps/ is
+  QA-exclusive on main, BL-848). No register row: the hotfix landed the
+  same pass.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: dfa78c6ead linked to BL-2006.

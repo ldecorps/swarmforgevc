@@ -1,5 +1,5 @@
-id: BL-1939
-title: "The closed features of the pilot prompt and Telegram operator features run against step handlers - BL-699, BL-700, BL-701, BL-704, BL-705 closed with acceptance features no step handler binds, so every scenario fails if run, and each holds a standing-red register row; bind them as written"
+id: BL-1946
+title: "The closed features of the launcher, pane and inbox-view features run against step handlers - BL-116, BL-142, BL-143, BL-210, BL-212 closed with acceptance features no step handler binds, so every scenario fails if run, and each holds a standing-red register row; bind them as written"
 milestone: M8
 type: defect
 severity: high
@@ -7,11 +7,11 @@ severity: high
 # the register they sit in throttles intake (human ruling A, 2026-10-03).
 status: todo
 epic: code-quality-gates
-priority: 7
+priority: 9
 direction: normal
 depends_on: []
 mutation_cost: low
-# low: test-side only, 9 existing scenarios to bind against shipped code.
+# low: test-side only, 14 existing scenarios to bind against shipped code.
 slice_size_envelope: medium
 required_stages: [coder, qa]
 stage_skip_reasons:
@@ -22,16 +22,16 @@ stage_skip_reasons:
 
 # Not a claim of ownership over the closed tickets' contracts (BL-1251): this
 # ticket binds features they left unbound and changes none of their scenarios.
-acceptance: specs/features/BL-699-pilot-quality-bounce-backs.feature
+acceptance: specs/features/BL-116-launch-path-probe-and-log.feature
 
 # One handler per feature, each discovered from its own file (BL-1371); the
 # pre-QA gate checks every one lands in this parcel (BL-233).
 required_wiring:
-  - 'specs/pipeline/steps/bl699PilotQualityBounceBacksSteps.js::registerSteps::binds BL-699-pilot-quality-bounce-backs.feature (discovered by suffix, BL-1371)'
-  - 'specs/pipeline/steps/bl700PilotTelegramStatusPostsSteps.js::registerSteps::binds BL-700-pilot-telegram-status-posts.feature (discovered by suffix, BL-1371)'
-  - 'specs/pipeline/steps/bl701PilotOrphanCleanupSteps.js::registerSteps::binds BL-701-pilot-orphan-cleanup-stage-boundaries.feature (discovered by suffix, BL-1371)'
-  - 'specs/pipeline/steps/bl704OperatorShiftsHolidaysSteps.js::registerSteps::binds BL-704-operator-shifts-holidays-docs.feature (discovered by suffix, BL-1371)'
-  - 'specs/pipeline/steps/bl705LetsTalkChiptunesSteps.js::registerSteps::binds BL-705-lets-talk-more-chiptunes.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl116LaunchPathProbeSteps.js::registerSteps::binds BL-116-launch-path-probe-and-log.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl142AgentBrandAbstractionSteps.js::registerSteps::binds BL-142-agent-brand-abstraction-layer.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl143InboxSidecarsHiddenSteps.js::registerSteps::binds BL-143-coordinator-inbox-view-hides-sidecars-by-default.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl210PaneTailerActivitySteps.js::registerSteps::binds BL-210-paneTailer-emitActivityEvents-crap.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl212SpawnRegistryContractSteps.js::registerSteps::binds BL-212-deflake-spawn-registry-01.feature (discovered by suffix, BL-1371)'
 
 human_approval: approved
 approval_context: >
@@ -46,16 +46,16 @@ invariants:
   - "Every handler builds its own fixtures under mkdtemp and never reads or writes this checkout's git, backlog or .swarmforge (BL-1390)."
 
 qa_e2e_procedure: |
-  1. Read from the gather's acceptance row: `specs/features/BL-699-pilot-quality-bounce-backs.feature` all pass.
-  2. `node specs/pipeline/cli.js specs/features/BL-700-pilot-telegram-status-posts.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
-  3. `node specs/pipeline/cli.js specs/features/BL-701-pilot-orphan-cleanup-stage-boundaries.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
-  4. `node specs/pipeline/cli.js specs/features/BL-704-operator-shifts-holidays-docs.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
-  5. `node specs/pipeline/cli.js specs/features/BL-705-lets-talk-more-chiptunes.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
+  1. Read from the gather's acceptance row: `specs/features/BL-116-launch-path-probe-and-log.feature` all pass.
+  2. `node specs/pipeline/cli.js specs/features/BL-142-agent-brand-abstraction-layer.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
+  3. `node specs/pipeline/cli.js specs/features/BL-143-coordinator-inbox-view-hides-sidecars-by-default.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
+  4. `node specs/pipeline/cli.js specs/features/BL-210-paneTailer-emitActivityEvents-crap.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
+  5. `node specs/pipeline/cli.js specs/features/BL-212-deflake-spawn-registry-01.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
   6. `git diff <parcel>^..<parcel> --stat`: only new files under
      `specs/pipeline/steps/` (and this ticket's evidence); no `.feature`, no
      `extension/src` or `swarmforge/scripts` path.
   7. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
-     carries one row per feature above naming BL-1939. After the land the rows
+     carries one row per feature above naming BL-1946. After the land the rows
      are gone (BL-1631 retires them); check on origin/main.
 
 source: |
@@ -83,11 +83,11 @@ description: |
   One step-handler file per feature, binding every remaining step as
   written, so each feature passes against the shipped code:
 
-  - `specs/features/BL-699-pilot-quality-bounce-backs.feature` (4 scenarios): composePilotExpeditorPrompt (pure) + the expedite-lock gate on a mkdtemp lock; S.
-  - `specs/features/BL-700-pilot-telegram-status-posts.feature` (1 scenarios): formatPilot*Status helpers (scenario 04); S.
-  - `specs/features/BL-701-pilot-orphan-cleanup-stage-boundaries.feature` (1 scenarios): the STAGE-BOUNDARY CLEANUP block of the pilot prompt (scenario 01); S.
-  - `specs/features/BL-704-operator-shifts-holidays-docs.feature` (2 scenarios): holiday refusal via handleInboundDecision (M) and the shift/holiday round-trip via executeOperatorVerb (S).
-  - `specs/features/BL-705-lets-talk-more-chiptunes.feature` (1 scenarios): getLetsTalkChiptunesCatalog (chip-01); S.
+  - `specs/features/BL-116-launch-path-probe-and-log.feature` (3 scenarios): swarmLauncher probeLoginShellPath/augmentPath/launchSwarm with fakes; S.
+  - `specs/features/BL-142-agent-brand-abstraction-layer.feature` (3 scenarios): agentPaneState provider registry + detection functions; S.
+  - `specs/features/BL-143-coordinator-inbox-view-hides-sidecars-by-default.feature` (4 scenarios): inboxVisibility.computeRoleQueueView + queue-status CLI --debug (today's wording, BL-323); S.
+  - `specs/features/BL-210-paneTailer-emitActivityEvents-crap.feature` (3 scenarios): paneTailer decideRoleActivity (S); the class with fakeTmux + fakeScheduler (M).
+  - `specs/features/BL-212-deflake-spawn-registry-01.feature` (1 scenarios): launchSwarm with an injected spawnFn, readTrackedJobs; M.
 
   ## How (direction, not mandate)
 
@@ -102,3 +102,5 @@ description: |
   - A scenario that fails on its merits once bound is a real defect in
     shipped behaviour. Send the specifier a note naming the scenario and the
     observed value, and keep binding the rest. Never edit a scenario to pass.
+
+assigned_to: coder

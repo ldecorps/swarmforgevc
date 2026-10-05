@@ -1,0 +1,98 @@
+id: BL-2005
+title: "Stamp-off for hotfix 6b5f524550: a note counts as a dispatch only when its capitalised Spec/Work verb opens the message or a sentence, so a mention-only note never reads as routing a ticket"
+milestone: M8
+type: defect
+severity: medium
+# medium: a mention read as a dispatch hides a starved ticket from the
+# dispatch-gap sweep (the BL-1203/BL-1223 class); contained, no halt.
+status: todo
+epic: swarm-reliability
+priority: 3
+depends_on: []
+mutation_cost: low
+# low: one regex and ten runner cases.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one pattern definition; nothing to refactor"
+  architect: "dispatch-trail-ticket-id keeps its contract; only what counts as a verb-first Spec/Work note narrows"
+  hardender: "Babashka has no Stryker lane (BL-472) and the pattern writes no durable state"
+  documenter: "the pattern's own comment is the living description"
+
+# Not a claim of ownership over BL-1097's contract (BL-1251): the dispatch
+# trail's feature, which this change must keep green.
+acceptance: specs/features/BL-1097-the-router-re-routes-a-ticket-that-has-already-been-worked.feature
+
+human_approval: pending
+approval_context: >
+  Stamp-off of a hotfix the specifier landed on coordinator note 016664
+  ("diff regex still unanchored: chase_sweep_lib
+  spec-work-ticket-id-pattern"). A medium defect, so not auto-approved:
+  the ask is whether this review may run. FIRM: the coder reviews the
+  hotfix and never re-applies it.
+
+invariants:
+  - "Every message the old pattern matched and the new one does not is a mention, never a dispatch, and no message changes which ticket id it yields."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bb swarmforge/scripts/test/bl1097_router_dispatch_trail_test_runner.bb`:
+     ALL PASS (measured at 6b5f524550; its 10 new cases had 4 red before).
+  2. `bb swarmforge/scripts/test/dispatch_gap_test_runner.bb`: ALL PASS
+     (measured at 6b5f524550).
+  3. `bb swarmforge/scripts/test/bl1097_router_no_op_origination_property_runner.bb`:
+     ALL PASS (measured at 6b5f524550).
+  4. `node specs/pipeline/cli.js specs/features/BL-1097-the-router-re-routes-a-ticket-that-has-already-been-worked.feature`:
+     4 of 4 ok (measured at 6b5f524550).
+  5. Read the coder's committed review evidence.
+
+source: |
+  Coordinator note 016664 to the specifier, 2026-10-05, verbatim: "diff
+  regex still unanchored: chase_sweep_lib spec-work-ticket-id-pattern".
+  It followed 016662 ("gate bug: Work-note regex unanchored, matches
+  mention not dispatch") on the pull pattern the specifier added to
+  coordinator.prompt (fixed by 8eac9d2543, BL-1999).
+
+description: |
+  ## Status: hotfix 6b5f524550 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `swarmforge/scripts/chase_sweep_lib.bb`'s `spec-work-ticket-id-pattern`
+  was `(?i)\b(?:Spec|Work)\s+(BL|GH)-?(\d+)\b`: case-blind and matched
+  anywhere. `dispatch-trail-ticket-id` reads a note's `message:` through
+  it, so "Human reservation controls: do not work BL-1082", the
+  specifier's "New spec BL-205 ready in backlog/paused/" and "BL-296
+  landed; spec BL-297: ..." each counted as dispatching the ticket they
+  mention.
+
+  ## What the hotfix changed
+
+  - The pattern is `(?:^|[.:;!]\s+)(?:Spec|Work)\s+(?i:(BL|GH))-?(\d+)\b`:
+    the verb is case-sensitive and opens the message or a sentence; the
+    prefix stays case-blind (BL-503).
+  - Measured over 13975 distinct `message:` lines in every mailbox: 1063
+    old matches, 1051 new; the 12 dropped are all mentions; none gained;
+    no message yields a different id.
+  - `swarmforge/scripts/test/bl1097_router_dispatch_trail_test_runner.bb`:
+    ten cases (five dispatches incl. a mid-message "Supersede stale holds.
+    Work BL-1082" and a lower-case id; five mentions that must give nil).
+  - handoffd uses the new pattern from its next load of the lib.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure steps 1-4 once each, in your worktree.
+  2. Read `git show 6b5f524550` against the sections above and the
+     invariant.
+  3. Write backlog/evidence/BL-2005-coder-<date>.md: the four results and
+     one line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix 6b5f524550,
+  as its own stamp-off rather than a seventh fold into BL-1999 (a review
+  too large for one seat, the BL-1930 lesson). Severity medium, so it
+  mints human_approval pending.
+  Hotfix ledger: 6b5f524550 linked to BL-2005.

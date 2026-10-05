@@ -1259,3 +1259,31 @@
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
+- commit: f87e90ddf5
+  subject: "hotfix: a pull abandons a Work note found by its message, not only by task:, and a local seat never runs redo_from when its ticket is already forwarded"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1999
+  human_decision: null
+  decided_at: null
+- commit: 8eac9d2543
+  subject: "hotfix: the pull's Work-note pattern is anchored to the dispatch shape (message: Work <id>[-:]), so a note that only mentions the ticket is not abandoned"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1999
+  human_decision: null
+  decided_at: null
+- commit: 6b5f524550
+  subject: "hotfix: a note counts as a dispatch only when its capitalised Spec/Work verb opens the message or a sentence"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2005
+  human_decision: null
+  decided_at: null
+- commit: dfa78c6ead
+  subject: "HOTFIX: BL-754's step handler answers the handoff self-audit, so its feature is green again"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2006
+  human_decision: null
+  decided_at: null

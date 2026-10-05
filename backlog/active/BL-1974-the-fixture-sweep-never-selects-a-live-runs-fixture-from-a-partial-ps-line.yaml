@@ -122,3 +122,5 @@ description: |
   ## What each stage checks
 
   - Coder: the four scenarios; BL-1287's unit and property tests pass.
+
+assigned_to: coder

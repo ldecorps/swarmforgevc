@@ -1055,7 +1055,12 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   not count), or any role's note that a seat cannot finish a ticket. Act the
   same turn; do not wait for a human or the specifier to notice.
 - Pull it: move every handoff for that ticket in the seat's `inbox/in_process/`
-  and `inbox/new/` to its `inbox/abandoned/` (`redo_from`'s step 2 - never
+  and `inbox/new/` to its `inbox/abandoned/` - a `Work <id>` note names the
+  ticket only in its `message:`, so find them with `grep -lE '^(task: <id>$|message: Work <id>[-:])'`
+  (anchored to the dispatch shape, so a note that only mentions the ticket
+  stays), never by `task:` alone (2026-10-05: the BL-1968 pull left its Work note
+  in `new/`, iq3 took it two minutes later and worked the ticket beside
+  coder@2 for 55 minutes) (`redo_from`'s step 2 - never
   `redo_from` itself, which re-queues the unsplit ticket), `git mv` the
   ticket from `backlog/active/` to `backlog/paused/` in a bookkeeping commit,
   and restart the seat's session (`respawn-pane -k` with its
