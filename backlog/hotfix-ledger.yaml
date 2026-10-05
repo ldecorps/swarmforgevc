@@ -86,10 +86,10 @@
 - commit: f6b6aef25e
   subject: "Land Cursor hotfix: babysitter auto-heal for control-plane-missing on WSL."
   detected_at: 2026-08-22
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1071
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 61c62f5794
   subject: "Land Cursor hotfix: prefer tmux >=3.7 on WSL to stop control-plane segfaults."
   detected_at: 2026-08-22
@@ -107,178 +107,178 @@
 - commit: 27273f2b0a
   subject: "Land Cursor hotfix: main-sync deadlock breaker, cursor-forge, board UX, plan confirm."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1113
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: a3bf11b533
   subject: "Fix main_sync_status_cli ahead/behind swap (match handoffd rev-list)."
   detected_at: 2026-08-25
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1115
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 646ffe85d
   subject: "Fix Pipeline Board: emit &#160; so Telegram renders NBSP as a space."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1117
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: b81334b107
   subject: "Support resident-pane path credentials when proxies drop query strings."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1116
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 4d5375fdad
   subject: "Skip duplicate approval asks when a live-topic ask is already recorded."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1116
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: ae983877c4
   subject: "Route Let's Talk by provider; bridge can run ancillary front desk."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1116
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: d6214efe6f
   subject: "Read seat models from launch scripts for non-Claude agents."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1116
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: f88913a3df
   subject: "Add ACP host client state machine for structured seat driving (BL-1081)."
   detected_at: 2026-08-24
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1116
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: fbf6f1a909
   subject: "Land Cursor hotfix: babysitterd start/end heartbeat + cursor-forge pack parse."
   detected_at: 2026-08-25
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1136
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: ca45facb4
   subject: "Hotfix: restore handoffd startup (BL-669 load-file + sweep order)."
   detected_at: 2026-08-26
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1150
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 7380d80686
   subject: "Allow concurrent hotfix stamp Yes/No asks on Approvals via Telegram."
   detected_at: 2026-08-26
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1152
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 3f4f69ec1b
   subject: "Recover once when an expedite stage exits without verdict.json."
   detected_at: 2026-08-28
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1254
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 70c5e0e5b0
   subject: "After no-verdict recovery, bounce the same stage instead of failing the ticket."
   detected_at: 2026-08-28
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1254
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 5de352ed1d
   subject: "Refuse synthesized no-verdict bounces; recover twice with escalated prompts."
   detected_at: 2026-08-28
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1254
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 2ec06b6ef1
   subject: "Own getUpdates when the front-desk inbound feeder is dead."
   detected_at: 2026-08-28
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1253
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 2b67f4b1a2
   subject: "Freeze the Telegram pipeline board while the pack is asleep."
   detected_at: 2026-08-29
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1283
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 3d70c0f4ec
   subject: "Yield chase rotate when preferred role is already seated."
   detected_at: 2026-08-31
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1321
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 4ed88430b2
   subject: "Hotfix bob mono-router onto Token Plan qwen3.8-max with a real 1M Claude Code window."
   detected_at: 2026-09-01
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1324
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 9c94735f03
   subject: "Make main-sync deadlock operator hints name overlaps and ./swarm heal."
   detected_at: 2026-09-01
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1323
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: db7e3f2bda
   subject: "Restaff bob BoB starting cast: Anthropic seats, coder on qwen3.8-max."
   detected_at: 2026-09-01
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1326
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 441fd35112
   subject: "Restaff bob BoB starting cast: Anthropic seats, coder on qwen3.8-max."
   detected_at: 2026-09-02
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1330
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: d5739d84cc
   subject: "master_main_reconcile_lib: an overlapping dirty path that already matches origin/main's content no longer blocks reconciliation"
   detected_at: 2026-09-02
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1333
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: f57795b6d2
   subject: "Hotfix: reconcile auto-resolves a dirty overlap whose content already matches origin/main"
   detected_at: 2026-09-02
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1333
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 27d6ab8630
   subject: "Hotfix: handoffd survives a vanished outbox parcel; supervisor grants a startup grace window"
   detected_at: 2026-09-02
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1342
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 195de28861
   subject: "Hotfix: swarm ensure's RC repair no longer respawns a stale-marker role into the specifier pane on a standing pack"
   detected_at: 2026-09-02
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1346
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 6e05b02dd3
   subject: "Hotfix: wake dedup is seat-aware (fresh-target) and the resident wake budget is consumed only by a landed wake."
   detected_at: 2026-09-09
@@ -310,10 +310,10 @@
 - commit: 5bdf93beed
   subject: "Mono-router: spawn an ephemeral consult session instead of stranding a departing role's mail"
   detected_at: 2026-09-12
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1752
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 92ecf4aea3
   subject: "Hotfix: mono-router resident rotates to the seat it forwarded its parcel to"
   detected_at: 2026-09-13
@@ -324,24 +324,24 @@
 - commit: 1fc9065605
   subject: "Hotfix: seats stop hunting for ready_for_next.sh at the worktree root"
   detected_at: 2026-09-14
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1560
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 0b727b286c
   subject: "Hotfix: idle resident with no parcel to follow rotates to the router's target"
   detected_at: 2026-09-14
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1563
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: a27d082c2d
   subject: "Night-closing-ceremony: documenter gets an ephemeral session when rotate is refused, so the morning briefing actually gets written"
   detected_at: 2026-09-16
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1753
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: bab1f918c8
   subject: "Hotfix: withoutEmbeddedSource scans comments, regex literals and all three quoting forms in one pass"
   detected_at: 2026-09-17
@@ -359,45 +359,45 @@
 - commit: 7d109d3b2e
   subject: "Hotfix: never consult-spawn a competing session on a single-inference-slot pack"
   detected_at: 2026-09-23
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1752
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 22a2a9fc7f
   subject: "Fix self-contradictory fallback in the in-process-resume STOP banner"
   detected_at: 2026-09-23
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1707
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 7ba57573ff
   subject: "Add coder-stop_banner_compliance and coder-tool_capability_denial safety competencies"
   detected_at: 2026-09-23
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1707
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: e94b78a7a3
   subject: "Withdraw coder-tool_capability_denial from the certification gate"
   detected_at: 2026-09-23
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1707
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: ab1d4cb2bd
   subject: "Aider seats read repo-root model settings by absolute path; log LLM requests"
   detected_at: 2026-09-23
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1708
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: d0dd4d36b7
   subject: "qwen2.5-coder mono-router: serve the model's native 32k window, hold the repo map"
   detected_at: 2026-09-23
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1708
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: a45dc5865d
   subject: "Give a swarm's coordinator a project-scoped Remote Control name via the existing swarm_name identity"
   detected_at: 2026-09-25
@@ -415,10 +415,10 @@
 - commit: db4da5c573
   subject: "BL-1772: --push re-points the QA branch after LAND_PUBLISHED"
   detected_at: 2026-09-26
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1772
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: e5a03ee6c7
   subject: "Onboarding opens the new swarm's Coordinator topic, so it can reach the human"
   detected_at: 2026-09-26
@@ -436,122 +436,122 @@
 - commit: cb8d502fec
   subject: "Hotfix: a respawn no longer rewires a local-Ollama seat to Cerebras/Perplexity"
   detected_at: 2026-09-28
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1793
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 4183cd29ca
   subject: "Hotfix: a skipped post-land re-point is retried once the tree is clean"
   detected_at: 2026-09-29
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1803
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 2cdb259806
   subject: "Hotfix: the coder@iq3 local-model seat launches and fits its window"
   detected_at: 2026-09-30
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1839
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 7f38e5d7fe
   subject: "Hotfix: coder@iq3 runs its 49152 window on the GPU and cannot overflow it with one reply"
   detected_at: 2026-09-30
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1839
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 91c208a923
   subject: "Hotfix: correct the ista-iq3s Modelfile's claim that num_predict caps a coder@iq3 reply"
   detected_at: 2026-09-30
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1839
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: c885d0c071
   subject: "Hotfix: a local-model seat's qwen runs interactive, so its pane shows its work and takes typed input"
   detected_at: 2026-09-30
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1845
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: c54b9060a6
   subject: "Hotfix: Bubble's live grid shows a tile for every live seat, so coder@2 and art-director appear"
   detected_at: 2026-10-01
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1858
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 93d6f69ba0
   subject: "Hotfix: each live-grid tile names its seat's model under the role name, so coder@2 reads Qwen2.5 Coder 14B"
   detected_at: 2026-10-01
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1858
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 51591aab4a
   subject: "Hotfix: the throttle and briefing rework verdicts refresh BL-430's observatory before diagnosing, so a July snapshot stops alarming"
   detected_at: 2026-10-01
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1869
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: a2173a96ea
   subject: "Hotfix: a land cited on a tip already identical to origin/main answers that nothing is left to replay, so BL-1343 scenario 05 is green again"
   detected_at: 2026-10-01
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1868
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 2c805e9b0b
   subject: "Hotfix: BL-526's console-menu steps check today's menu, so its feature is green again after 41 days red"
   detected_at: 2026-10-01
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1859
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 39391485f0
   subject: "Hotfix: BL-1712's register-row step holds before and after its land, so scenario 04 is green on main again"
   detected_at: 2026-10-01
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1860
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 4d089d21e5
   subject: "Hotfix: BL-1640's shell fixture records the briefing as sent on the simulated day, so its feature and shell test are green again"
   detected_at: 2026-10-01
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1836
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 1323266735
   subject: "Hotfix: bl1061's production-tunnel binding scan reads through the tolerant walk, so a vanished bl868 fixture no longer turns the property file red"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1849
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 635570352e
   subject: "Hotfix: 13 step handlers sweep their stale fixtures before their own first step, not while the full registry is built, so bl800 stops spending ~6 s listing /tmp"
   detected_at: 2026-10-02
-  state: awaiting-human
+  state: certified
   stamp_ticket: BL-1866
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: c7ee0fb192
   subject: "Hotfix: the passenger scenarios BL-1830's rebuild made obsolete are retired, so BL-1375, BL-1465 and BL-1466 are green on main again"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1876
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 6dad026320
   subject: "Hotfix: BL-1389's passenger scenario 03, made obsolete by BL-1830's rebuild, is retired, so BL-1389 is green on main again"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1876
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: aa6dacc938
   subject: "Specifier prompt + standing-red amendment §6: hotfix the red, then mint its stamp-off (human directive 2026-10-01)"
   detected_at: 2026-10-01
@@ -562,129 +562,129 @@
 - commit: 83d5e34527
   subject: "Hotfix: BL-247's land and close steps check today's QA and coordinator wording, so its feature is green on main again"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1878
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 9868dcfd5f
   subject: "Hotfix: a commit runs only the property files its staged change reaches, so a one-module commit's property check takes seconds instead of about 7 minutes"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1877
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 8d1c41e427
   subject: "Hotfix: three commit-guard features read live state their fixtures should own, so BL-1252, BL-1175 and BL-1407 are green on main again"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1879
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 81a2c737c2
   subject: "Hotfix: four features the coder found red on main are green again - BL-529, BL-998, BL-1316 and BL-1317"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1882
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 7f5cd31fe6
   subject: "Hotfix: a killed background child no longer runs the shell tests' tmp cleanup, so test_finish_shift_lib.sh case 08 is green again; its case 02 stops sharing fixed /tmp paths between runs"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1883
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 8b1c763709
   subject: "Hotfix: five shell tests red on main since the host move and later guards are green again - daemon log freshness, bridge headless, onboarder launch, BL-1159 and BL-763"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1886
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 364dabfd66
   subject: "Hotfix: six features red on main with no register row are green again - BL-739, BL-741, BL-753, BL-758, BL-633 and BL-1638"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1888
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 89935d52d0
   subject: "Hotfix: test_bl1366_land_is_one_command.sh's killed-land case signals the land itself, so it is green on main again"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1890
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 7964654efc
   subject: "Hotfix: the BL-1728 property test reads the git-fixture helpers where 8b1c763709 moved them, so it is green on main again"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1886
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 6d8a61c1dd
   subject: "Hotfix: BL-681's steps read Article 5.3 as worded since BL-1227's trim, so its feature is green on main again"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1891
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 8ed4173ce4
   subject: "Hotfix: confirmPoleAloneOutcomeShapes.test.js spawns vitest three times, not four, so it fits the 7 s per-file budget again"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1893
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 6424d253d7
   subject: "Hotfix: BL-1366 scenario 01 reads the e2e's published-commit line as BL-1716 reworded it, so BL-1366's feature is green on main again"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1894
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 36c869209a
   subject: "Hotfix: the specifier prompt's epic-sweep sentence reads 'Correct any depends_on entries' again, so BL-680 scenario 04 is green"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1896
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 3771562541
   subject: "Hotfix: bl1871ParcelLineTakeUp's first invariant test runs a fixed example that reaches move, blocked and work-on-top before its ten random draws"
   detected_at: 2026-10-02
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1899
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 099be7db00
   subject: "Hotfix: is_qa_ancestor.sh reads the lander queue, so lander lands stop reading unapproved and the master-main reconcile merge can go through"
   detected_at: 2026-10-02
-  state: pending
+  state: certified
   stamp_ticket: BL-1900
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 224074e2a7
   subject: "Hotfix: BL-231 battery fixture sends with the two-call protocol and dispatches its own scripts copy"
   detected_at: 2026-10-02
-  state: pending
+  state: certified
   stamp_ticket: BL-1905
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 1b7d4e4bbe
   subject: "Hotfix: BL-1566 scenario 06 parks QA's withheld git_handoff with --no-op"
   detected_at: 2026-10-02
-  state: pending
+  state: certified
   stamp_ticket: BL-1905
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 5df467b09a
   subject: "Hotfix: three supervisor test fixtures copy their bb load-file closure instead of a hand list"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1907
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 1877b935a2
   subject: "Register hotfix-ledger entries for BL-231 and BL-1566 hotfixes"
   detected_at: 2026-10-02
@@ -695,73 +695,73 @@
 - commit: 8bd8940741
   subject: "Hotfix: thirteen operator_runtime shell fixtures are git checkouts again, two wait as long as this host's ticks take, and BL-671's and BL-684's step handlers follow the derived helpers"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1908
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 9bbd0f461c
   subject: "Hotfix: five acceptance features red on main follow the contracts that moved under their step handlers - BL-1633, BL-1761, BL-914, BL-969 and BL-935"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1910
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: b7db6f9ed1
   subject: "Hotfix: the two property files that held BL-1897's QA pass are green - bl1892's reach floor is constructed and bl1529 runs each identical cell once"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1910
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: d39ed089f0
   subject: "Hotfix: aDroppedMessageMustNotParkTheOffsetSteps requires its three compiled modules and its sibling handler on first use, so it loads inside the 400 ms per-handler budget"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1910
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 7671b0b717
   subject: "Hotfix: telegramFrontDeskBotCli's BL-1203 property tests get a 180 s base budget and the second test its own fixture root, so a slow first test can no longer fail both"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1910
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: e022e33baf
   subject: "Hotfix: the local coder seat's model is served at its 32768 window, not Ollama's 4096 default"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1916
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 102d854f87
   subject: "Hotfix: a local-model seat's tool call written as text becomes a real tool call"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1917
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: f9c3e4e1da
   subject: "Hotfix: a local-model seat's kickoff names the tool and the first command"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1918
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 0d44613b74
   subject: "Hotfix: a local-model seat's history reaches the model with its own tool calls showing"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1920
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 0eb5958ab6
   subject: "Hotfix: a local-model seat's reply that announces an action and calls no tool is asked once more to make the call"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1920
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 3c03fb2e4f
   subject: "Hotfix: confirmPoleAloneOutcomeShapes.test.js spawns vitest twice, not three times, so it fits the 7 s per-file budget with headroom"
   detected_at: 2026-10-03
@@ -772,10 +772,10 @@
 - commit: 59a376845a
   subject: "Hotfix: a local-model seat's 'Let's ...' plan with no tool call is nudged like 'I will ...' is"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1920
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 4b0e9adb96
   subject: "Hotfix: a task-mode seat is never told to run merge_and_process, and a refused take-up never says 'do not ask again'"
   detected_at: 2026-10-03
@@ -842,31 +842,31 @@
 - commit: fb62eaa9e8
   subject: "Hotfix: a local-model seat can never run sudo, apt or pip install"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1929
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 358be6be62
   subject: "Hotfix: a Python virtualenv (venv/, .venv/) is ignored by git"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1929
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 479155f733
   subject: "Hotfix: the qwen2.5 coder model caps a reply at 2048 tokens (num_predict)"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1929
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 52a5036fa8
   subject: "Hotfix: swarm_handoff refuses a git_handoff naming a ticket other than the sender's in-process parcel"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1929
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: ae5d0646a0
   subject: "Hotfix: BL-1307's acceptance driver answers the self-audit challenge (3 scenarios red since BL-1529)"
   detected_at: 2026-10-03
@@ -898,52 +898,52 @@
 - commit: ff104fc258
   subject: "Hotfix: iq3 is served at 32768 again, out of qwen's compaction dead zone (it compacted on every turn at 49152)"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1929
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: d65a268de5
   subject: "Hotfix: writing one local-model seat's launch script runs BL-1840's dead-zone gate too"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1929
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 033dd1780c
   subject: "hotfix: busy detector reads a live frame with inner punctuation as busy"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1934
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: e44f9cdfc7
   subject: "hotfix: the shim lowers every max_tokens to the model's Modelfile num_predict"
   detected_at: 2026-10-03
-  state: pending
+  state: certified
   stamp_ticket: BL-1936
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 380481d3be
   subject: "hotfix: a local-model seat's compaction summary puts next_step first and fits the output cap"
   detected_at: 2026-10-04
-  state: pending
+  state: certified
   stamp_ticket: BL-1949
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 1bbc66bc1d
   subject: "hotfix: a Telegram /gpu verb quiets the local-model GPU for a bounded period"
   detected_at: 2026-10-04
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1950
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: eb5fc34a08
   subject: "hotfix: /help names the Control-topic /gpu quiet"
   detected_at: 2026-10-04
-  state: stamp-open
+  state: certified
   stamp_ticket: BL-1951
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 92f53eee1b
   subject: "hotfix: a task-mode reverse copy is told to run done_with_current, never to implement its ticket"
   detected_at: 2026-10-04
@@ -1017,10 +1017,10 @@
 - commit: 4a689cc4ea
   subject: "hotfix: a land QA queued for a ticket is QA's completion evidence (QA no longer sends a merge-up note)"
   detected_at: 2026-10-04
-  state: pending
+  state: certified
   stamp_ticket: BL-1902
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 74c3769083
   subject: "hotfix: babysitter raises a CRIT for a ticket held 3 hours with no commit, spinner or not"
   detected_at: 2026-10-04
@@ -1101,24 +1101,24 @@
 - commit: 52a004ed93
   subject: "hotfix: a local-model seat is told in the same turn where its edit broke a Babashka file"
   detected_at: 2026-10-04
-  state: pending
+  state: certified
   stamp_ticket: BL-1970
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: 66bd85171f
   subject: "hotfix: a local-model seat's third identical tool call with nothing changed in between is refused"
   detected_at: 2026-10-04
-  state: pending
+  state: certified
   stamp_ticket: BL-1971
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: d19171aeb6
   subject: "hotfix: the repeat guard warns with the call's result instead of refusing it"
   detected_at: 2026-10-04
-  state: pending
+  state: certified
   stamp_ticket: BL-1971
-  human_decision: null
-  decided_at: null
+  human_decision: approved
+  decided_at: 2026-10-05
 - commit: bdb172641b
   subject: "hotfix: the BL-1877 reach property draws on a fixed seed, so its transitive floor never fails at random"
   detected_at: 2026-10-04
