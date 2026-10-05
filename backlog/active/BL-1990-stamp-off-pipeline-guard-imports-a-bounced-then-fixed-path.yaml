@@ -132,3 +132,5 @@ notes: |
   Hotfix ledger: 8f2643f123 linked to BL-1990.
   Also stamps off 1cec236e2d (the predicate-level move, the same day).
   Hotfix ledger: 1cec236e2d linked to BL-1990.
+
+assigned_to: coder
