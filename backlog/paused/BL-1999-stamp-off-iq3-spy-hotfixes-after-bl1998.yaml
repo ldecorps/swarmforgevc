@@ -99,12 +99,30 @@ description: |
     the ticket says to add does not exist yet; one empty grep confirms it,
     then write it, never search other files for it.
 
+  ## Hotfix f87e90ddf5: a pull finds Work notes by message; a seat never runs redo_from
+
+  The 15:52Z pull of BL-1968 abandoned its git_handoff (task: BL-1968) but
+  left the Work BL-1968 note (no task: header) in iq3's inbox/new; iq3 took
+  it at 15:54Z, worked the ticket beside coder@2 for 55 minutes, and when
+  its forward was refused because coder@2's parcel was live at the
+  hardener, ran `redo_from.sh BL-1968 hardender`, which abandoned that
+  parcel and re-queued the same commit.
+
+  - `swarmforge/roles/coordinator.prompt` (the BAU pull): find a ticket's
+    handoffs by `task:` OR `message:`. Follow-up 8eac9d2543 (coordinator
+    note 016662, "Work-note regex unanchored, matches mention not
+    dispatch"): the pattern is `^(task: <id>$|message: Work <id>[-:])`,
+    so a note that only mentions the ticket is not abandoned.
+  - `swarmforge/roles/local-model/loop.note` step 3: a refused forward on a
+    live parcel means another seat forwarded it - done_with_current.sh and
+    stop; never redo_from.sh or reroute.sh.
+
   ## What the coder does (all of it)
 
   1. Run qa_e2e_procedure steps 1 and 2 once each, in your worktree.
-  2. Read `git show 9db627f908`, `git show e36702e90d` and
-     `git show 0a506c792b` against the three sections above and the
-     invariant.
+  2. Read `git show 9db627f908`, `git show e36702e90d`,
+     `git show 0a506c792b`, `git show f87e90ddf5` and `git show 8eac9d2543`
+     against the four sections above and the invariant.
   3. Write backlog/evidence/BL-1999-coder-<date>.md: the two results and
      one line per hotfix saying whether it matches its description.
   4. Commit that file, forward to QA, run done_with_current.sh.
@@ -120,3 +138,7 @@ notes: |
   e36702e90d (empty-grep hint over a piped run), ledger-linked to BL-1999.
   Folded in 2026-10-05 while still paused (approval pending): hotfix
   0a506c792b (card: names to add do not exist yet), ledger-linked.
+  Folded in 2026-10-05 while still paused (approved, unrouted): hotfix
+  f87e90ddf5 (pull finds Work notes by message; seat never runs
+  redo_from), ledger-linked; and its follow-up 8eac9d2543 (anchored
+  Work-note pattern), ledger-linked.
