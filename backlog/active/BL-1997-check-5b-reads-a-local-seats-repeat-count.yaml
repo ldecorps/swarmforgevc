@@ -122,3 +122,5 @@ notes: |
   Dynamic routing: the parent's shape kept - documenter for the runbook.
   The second required_wiring entry anchors the live consumer's call
   (BL-1235): only babysitter_check.bb calling the counter satisfies it.
+
+assigned_to: coder
