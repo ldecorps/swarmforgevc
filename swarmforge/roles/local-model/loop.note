@@ -64,6 +64,9 @@ Rules that apply the whole time:
   swarmforge/scripts/. There is no specs/pipeline/features/.
 - Find a file before you read it: `git ls-files | grep <name>`. Never
   guess a path.
+- A function, key or env var your ticket says to ADD does not exist yet:
+  one grep that finds nothing confirms it. Then write it; never search
+  other files for it, and never read files the ticket does not name.
 - A grep that prints nothing means the name is not in those files: do not
   search them again. When a helper exists in several files, use the first
   copy you found; never read every copy to compare them.
