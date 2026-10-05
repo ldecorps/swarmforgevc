@@ -301,6 +301,65 @@
   [path]
   (str/replace path #"[/.]" "-"))
 
+;; ── BL-1996: REPEAT notes since a seat's progress origin ──────────────────
+;; Check 5b (BL-1985/BL-1997) raises the seat-stuck CRIT on this count. A
+;; REPEAT note is the LINE local_model_repeat_guard.bb appends to a tool
+;; result's own output: "REPEAT: you have now made this exact <tool> call
+;; <N> times". A tool result that only QUOTES the phrase elsewhere in text
+;; it read (the guard's own source, a ticket, another session file) is not
+;; a note - matching a line START, not a substring search, is what tells
+;; the two apart.
+
+(def repeat-note-line-pattern
+  #"(?m)^REPEAT: you have now made this exact [a-z_]+ call [0-9]+ times")
+
+(defn- tool-result-output [row]
+  (get-in row [:message :parts 0 :functionResponse :response :output]))
+
+(defn- instant-ms [iso]
+  (try (.toEpochMilli (java.time.Instant/parse iso)) (catch Exception _ nil)))
+
+(defn repeat-notes-since
+  "The number of tool_result records in chat-jsonl (a qwen session's raw
+   jsonl text) stamped at or after origin-ms whose output has a line
+   starting with the repeat guard's own note text. 0 for nil or blank
+   chat-jsonl; a jsonl line that does not parse, or a record with no
+   parseable timestamp, is skipped (never counted, never thrown on)."
+  [chat-jsonl origin-ms]
+  (->> (str/split-lines (str chat-jsonl))
+       (remove str/blank?)
+       (keep (fn [line] (try (json/parse-string line true) (catch Exception _ nil))))
+       (filter #(= "tool_result" (:type %)))
+       (filter (fn [row] (when-let [ms (instant-ms (:timestamp row))] (>= ms origin-ms))))
+       (filter (fn [row] (some-> (tool-result-output row) (->> (re-find repeat-note-line-pattern)) boolean)))
+       count))
+
+(defn qwen-projects-dir
+  "Where qwen writes its session chat files - SWARMFORGE_QWEN_PROJECTS_DIR
+   when set (this variable is new here; nothing else reads it yet), else
+   ~/.qwen/projects."
+  []
+  (or (System/getenv "SWARMFORGE_QWEN_PROJECTS_DIR")
+      (str (fs/path (System/getProperty "user.home") ".qwen" "projects"))))
+
+(defn current-session-repeat-notes
+  "repeat-notes-since over the newest *.jsonl file (by modification time)
+   under <projects-dir>/<qwen-cwd-key worktree>/chats/ - the seat's
+   current qwen session. 0 when that chats directory does not exist (no
+   session yet, or a seat that is not a local model at all - it has no
+   qwen session to count)."
+  [projects-dir worktree origin-ms]
+  (let [chats-dir (fs/path projects-dir (qwen-cwd-key worktree) "chats")]
+    (if-not (fs/exists? chats-dir)
+      0
+      (let [newest (->> (fs/list-dir chats-dir)
+                         (filter #(str/ends-with? (str %) ".jsonl"))
+                         (sort-by #(fs/file-time->millis (fs/last-modified-time %)))
+                         last)]
+        (if newest
+          (repeat-notes-since (slurp (str newest)) origin-ms)
+          0)))))
+
 (defn summarise
   "The whole report as data, never printed here (the CLI owns rendering -
    this function has no *out* dependency so it is trivially testable).
