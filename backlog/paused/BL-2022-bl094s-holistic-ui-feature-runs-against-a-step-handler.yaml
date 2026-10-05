@@ -1,0 +1,84 @@
+id: BL-2022
+title: "BL-094's holistic dev-state UI feature runs against a step handler - all 5 of its scenarios fail on main with no step handler matched (16 of its 17 step lines bind nothing), and the BL-1937 census missed it because one step happens to bind"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main (2026-09-05 rule: high at first sighting).
+status: todo
+epic: swarm-reliability
+priority: 20
+depends_on: []
+mutation_cost: medium
+# medium: one step handler driving the bridge server through an existing
+# test seam; the same shape as BL-1937's BL-096 handler.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one new step handler file"
+  architect: "test-side only; the behaviour is shipped"
+  hardender: "test-side only; no production code changes"
+  documenter: "no living doc changes; the feature is the contract"
+acceptance: specs/features/BL-094-holistic-dev-state-web-ui.feature
+
+invariants: []
+
+required_wiring:
+  - 'specs/pipeline/steps/bl094HolisticDevStateWebUiSteps.js::registerSteps::the handler lands in the same parcel (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  No choice is posed. A standing red minted high under the 2026-09-05 rule.
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-094-holistic-dev-state-web-ui.feature` has five
+  scenarios; 16 of its 17 step lines match no handler, so it fails 0/5
+  with "no step handler matched" ("When a browser with the bearer token
+  opens the bridge root URL", "Given active tickets exist, some carrying
+  a swarm assignment field", ...). BL-094 closed without a binding. The
+  BL-1937 census (2026-10-03) counted only features with NO bound step,
+  so it missed this one: one generic step binds elsewhere. Found
+  2026-10-06 by the specifier measuring BL-2020's bounded sample (the
+  first five features in name order).
+
+  ## What is wanted
+
+  A step handler, `specs/pipeline/steps/bl094HolisticDevStateWebUiSteps.js`,
+  that binds every step of the feature as written, so it passes 5/5
+  against the shipped code. If a scenario's behaviour is no longer
+  shipped, stop and send the specifier a `spec-gap` note naming the
+  scenario rather than binding it to something else.
+
+  ## How (direction, not mandate)
+
+  Mirror BL-1937's `bl096VelocityBurndownMetricsSteps.js`: drive compiled
+  modules in-process; for the bridge, reuse the bridge-server test seam an
+  existing bearer-token handler uses (e.g. `deviceRegistrySteps.js`)
+  rather than binding a port by hand; register with `defineScoped` under
+  BL-094's `Feature:` name so its generic steps never answer another
+  feature (BL-1277). Remove the register row in the same parcel only if
+  the land step does not (BL-1631 retires it at land).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run.
+  1. `node specs/pipeline/cli.js specs/features/BL-094-holistic-dev-state-web-ui.feature`:
+     5 ok, 0 fail (measured 0/5 at mint, main 2026-10-06).
+  2. While this ticket is open the register row naming
+     BL-094-holistic-dev-state-web-ui.feature is present and owned by
+     BL-2022; after the land, check on origin/main that it is gone.
+
+source: |
+  Human directive 2026-09-05 ("we should not sweep failing tests under the
+  carpet"). The human, 2026-10-01, verbatim: "Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff."
+  Not hotfixed in the pass that found it: binding a 17-step feature
+  against the bridge server is a sitting of its own (the rule's
+  more-than-one-sitting exception).
+
+notes: |
+  Minted 2026-10-06 by the specifier, the same pass as the register row.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Census method that found it (re-runnable): the BL-1937 registry walk,
+  but counting a feature with ANY unresolved scenario step, joined to
+  closed tickets and to the register - 5 closed-ticket features, none
+  registered: this one (BL-2022) and four owned by BL-2023.

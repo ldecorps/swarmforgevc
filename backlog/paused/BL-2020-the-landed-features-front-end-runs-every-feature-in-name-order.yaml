@@ -1,0 +1,100 @@
+id: BL-2020
+title: "The landed-features front-end lists every feature under a directory in name order and runs each through run_acceptance.sh on BL-2019's recorded lane runner, one duration row per feature - slice 2 of BL-1625"
+milestone: M8
+type: feature
+status: todo
+epic: unit-suite-speed
+priority: 30
+direction: swarm-reported
+depends_on: [BL-2019]
+mutation_cost: low
+# low: one thin bash front-end that builds a list and calls BL-2019's
+# runner, and one step handler over two tiny mkdtemp fixture features.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one new thin script; nothing to refactor"
+  architect: "a list builder over BL-2019's runner, whose contract and invariants the architect reviewed there"
+  hardender: "writes nothing itself - the runner writes the rows and is hardened in BL-2019; bash has no mutation lane (BL-472)"
+  documenter: "BL-2021, the last slice, documents the lane and both front-ends"
+acceptance: specs/features/BL-2020-the-landed-features-front-end-runs-every-feature-in-name-order.feature
+
+invariants: []
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2020LandedFeaturesFrontEndSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1625 (approved), split 2026-10-06 with no new scope.
+  FIRM (BL-1625): no full run of the real population inside the parcel -
+  only a bounded sample, alone on the host; the first full run is the
+  nightly-slot census after landing, and each red it names is an
+  unowned-red note to the specifier.
+
+description: |
+  ## What is wanted
+
+  A new script, `specs/pipeline/scripts/run_all_acceptance.sh`:
+
+      run_all_acceptance.sh [--limit N] [--steps <module>] [--durations <path>] [features-dir]
+
+  - `features-dir` defaults to `specs/features`; `--durations` defaults to
+    `specs/pipeline/.acceptance-durations.jsonl` (add that path to
+    `.gitignore` next to `extension/.test-durations.jsonl`).
+  - It lists `*.feature` in that directory in name order (`LC_ALL=C sort`)
+    and writes one list line per feature:
+    `<feature>` TAB `bash specs/pipeline/scripts/run_acceptance.sh <feature> <outDir>[ <module>]`,
+    where `<outDir>` is a fresh per-run directory under mkdtemp so
+    generated entry points never collide, and `<module>` is `--steps` when
+    given (run_acceptance.sh's own third argument).
+  - Then it calls `bash swarmforge/scripts/test/run_recorded_lane.sh --lane acceptance --list <list> --durations <path>`,
+    forwarding `--limit`, and exits with the runner's status.
+
+  And the step handler `specs/pipeline/steps/bl2020LandedFeaturesFrontEndSteps.js`
+  for the feature's scenario 02:
+  - The fixture directory holds two features in a mkdtemp dir
+    (`trackedTmpRoot`), each one scenario with the single step
+    `Given a thing`, e.g. `Feature: fixture alpha` and `Feature: fixture
+    beta`. Pass `--steps specs/pipeline/test/fixtures/noopSteps.js` (it
+    registers `a thing`) and a `--durations` file in the mkdtemp dir, so
+    the real registry and the real durations file are never involved.
+  - "Exactly those two, in name order" is read from the durations file's
+    `file` fields.
+  - Register with `registry.defineScoped(re, fn, FEATURE)`.
+
+qa_e2e_procedure: |
+  On the parcel commit, with extension/out compiled, ONE run each.
+  1. `node specs/pipeline/cli.js specs/features/BL-2020-the-landed-features-front-end-runs-every-feature-in-name-order.feature`:
+     1 ok, 0 fail.
+  2. Alone on the host (no unit or property lane beside it):
+     `bash specs/pipeline/scripts/run_all_acceptance.sh --limit 5` -> five
+     new rows in specs/pipeline/.acceptance-durations.jsonl and a verdict.
+     Measured at mint by running the same five features one at a time
+     (host 1-minute load 20.5): BL-092 4 ok, BL-096 8 ok, BL-097 6 ok,
+     BL-100 5 ok, each 2-5 s; BL-094-holistic-dev-state-web-ui.feature
+     red 0/5, as the register row owned by BL-2022 describes - so expect
+     exit 1 naming exactly that feature. Record the five rows' ms and the
+     extrapolated full-run wall (mean ms x the feature count).
+  3. `git status --short` shows the durations file ignored, not untracked.
+
+source: |
+  Split from BL-1625 on 2026-10-06 (coordinator note 016842). The human
+  sentences BL-1625 carried, verbatim (Article 5.3): human directive
+  2026-09-05 ("we should not sweep failing tests under the carpet"); human
+  intake 2026-09-17 ("tests run for hours", BL-1618/1619 - hence
+  measurement first, bounded samples in the parcel, and never beside
+  another lane).
+
+  The human, 2026-10-04, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  split from BL-1625 on 2026-10-06 after coder (iq3) held it ~40m (see
+  BL-2019's notes).
+  Where to read: specs/pipeline/scripts/run_acceptance.sh (21 lines,
+  whole) and specs/pipeline/test/fixtures/noopSteps.js (8 lines). Nothing
+  else in specs/pipeline/ is needed.
+  BL-1630 (done) made a run_acceptance.sh call seconds, not 20 s.
+  INVEST: Independent of BL-2021 (both need only BL-2019). Small (one
+  script, one handler, one scenario). Testable (mkdtemp fixtures).
