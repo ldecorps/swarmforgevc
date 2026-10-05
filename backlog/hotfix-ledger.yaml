@@ -1329,3 +1329,10 @@
   stamp_ticket: BL-2011
   human_decision: null
   decided_at: null
+- commit: 78e9346416
+  subject: "hotfix: an OpenRouter-routed claude role's launch script unsets ANTHROPIC_API_KEY, so a profile-exported Anthropic key never rides into a harness pointed at OpenRouter"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2012
+  human_decision: null
+  decided_at: null
