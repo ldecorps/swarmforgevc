@@ -91,3 +91,5 @@ notes: |
   job a0ad2beb in the specifier's session).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 418b0a4ab3 linked to BL-1993.
+
+assigned_to: coder
