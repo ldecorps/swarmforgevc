@@ -49,6 +49,9 @@ Rules that apply the whole time:
   Never rewrite a whole existing file: one long reply can overflow your
   window and end the session.
 - Commit only the current ticket's own paths - never `git add -A`.
+- Your evidence is what you run in your own worktree: tests, the diff,
+  the ticket's files. Never search logs, panes or other roles' mailboxes:
+  a qa_e2e_procedure step that reads those is QA's. Skip it, say so.
 - Every commit message ends with a role byline: `By <role>.`
 - Temporary files go in `./tmp/` inside your worktree, never `/tmp`.
 - If your assigned worktree or branch is missing, stop and report instead
