@@ -5,7 +5,7 @@ type: defect
 severity: high
 # high: inherited from BL-1980 - a seat collecting REPEAT notes with no
 # commit is cycling, and today nothing reports it before 60 minutes.
-status: todo
+status: blocked
 epic: local-llm-swarm
 priority: 2
 direction: swarm-reported
@@ -110,5 +110,12 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   depends_on BL-1986: both slices change held-seat-tickets, so they land
   in order.
+
+  2026-10-05 ~13:12Z: pulled from active per specifier note - iq3
+  loop-halted twice (13:06Z and 13:12Z) on this ticket despite respawn
+  between attempts, zero commits either time. Status: blocked, awaiting
+  specifier split/simplify. Uncommitted edit to
+  swarmforge/scripts/babysitter_check.bb left in the worktree (not
+  evaluated for salvage this pass).
 
 assigned_to: coder
