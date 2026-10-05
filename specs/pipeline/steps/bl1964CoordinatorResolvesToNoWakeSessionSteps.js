@@ -8,7 +8,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFileSync } = require('node:child_process');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 const { track } = require('./lib/fixtureReaper');
 
@@ -59,6 +59,17 @@ function writeSwarmIdentity(ctx) {
   );
 }
 
+// BL-1964 QA bounce D1/D2: the fixture's standing sessions are REAL tmux
+// sessions on the fixture's own socket - the real wake-session's
+// session-exists? reads them, so the resolver's configured-exists? /
+// resident-exists? inputs are what the fixture actually stands, never a
+// hard-coded expectation. The socket path is fixture-owned (fake.sock in
+// the root), so the shared reaper's killTmuxServer never touches a live
+// swarm socket.
+function startTmuxSession(ctx, name) {
+  execFileSync('tmux', ['-S', ctx.sock, 'new-session', '-d', '-s', name]);
+}
+
 function runResolveProbe(ctx, session) {
   // Drive the REAL wake-session (the IO wrapper under test, not just its
   // pure resolve-wake-session half - BL-1964 QA bounce D2) against the
@@ -97,10 +108,10 @@ function registerSteps(registry) {
       mkdirp(path.join(root, 'swarmforge'));
 
       const sock = path.join(root, 'fake.sock');
-      fs.writeFileSync(sock, '');
       fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), sock);
 
       ctx.root = root;
+      ctx.sock = sock;
       ctx.deterministicMode = true;
       writeConf(ctx);
       writeRolesTsv(ctx);
@@ -109,10 +120,12 @@ function registerSteps(registry) {
   );
 
   scoped(/^the resident's session is standing and there is no coordinator session$/, (ctx) => {
-    // The fixture has no live tmux sessions at all. The resolver's pure
-    // decision is what we test: configured-exists? is false for every
-    // name, and the resident's existence is established by the
-    // roles.tsv row (the fixture's standing pane).
+    // The resident stands as a REAL tmux session on the fixture's own
+    // socket (BL-1964 QA bounce D1): the real wake-session's
+    // session-exists? reads it, so resident-exists? is what the fixture
+    // actually stands. No coordinator session is started, so
+    // configured-exists? is false for it.
+    startTmuxSession(ctx, 'swarmforge-coder');
     ctx.residentSession = 'swarmforge-coder';
   });
 
@@ -123,23 +136,29 @@ function registerSteps(registry) {
   });
 
   scoped(/^a coordinator session exists$/, (ctx) => {
-    ctx.coordinatorSessionExists = true;
+    // BL-1964 QA bounce D2: the coordinator's own session is a REAL tmux
+    // session on the fixture's socket, so the real wake-session's
+    // configured-exists? reads it - the resolver's first branch applies
+    // because the fixture stands it, never because the handler hard-codes
+    // the expected answer.
+    startTmuxSession(ctx, 'swarmforge-coordinator');
   });
 
   // ── When ────────────────────────────────────────────────────────────
   scoped(/^the wake session for the coordinator is resolved$/, (ctx) => {
-    if (ctx.coordinatorSessionExists) {
-      // Scenario 2: the coordinator has a session of its own, so the
-      // resolver's first branch (configured-exists? → configured-session)
-      // applies regardless of the deterministic flag.
-      ctx.coordinatorWake = 'swarmforge-coordinator';
-    } else {
-      ctx.coordinatorWake = runResolveProbe(ctx, 'swarmforge-coordinator');
-    }
+    ctx.coordinatorWake = runResolveProbe(ctx, 'swarmforge-coordinator');
   });
 
   scoped(/^the wake session for a dormant cleaner is the resident's$/, (ctx) => {
+    // BL-1964 QA bounce D1: the step's own name IS the assertion - the
+    // real wake-session must return the resident's session for the
+    // dormant cleaner (invariant 2).
     ctx.cleanerWake = runResolveProbe(ctx, 'swarmforge-cleaner');
+    if (ctx.cleanerWake !== ctx.residentSession) {
+      throw new Error(
+        `expected the resident session ${ctx.residentSession} for the dormant cleaner; got: ${ctx.cleanerWake}`
+      );
+    }
   });
 
   // ── Then ────────────────────────────────────────────────────────────
@@ -147,14 +166,6 @@ function registerSteps(registry) {
     if (ctx.coordinatorWake !== 'nil') {
       throw new Error(
         `expected no session (nil) for the coordinator; got: ${ctx.coordinatorWake}`
-      );
-    }
-  });
-
-  scoped(/^the wake session is the resident's$/, (ctx) => {
-    if (ctx.cleanerWake !== ctx.residentSession) {
-      throw new Error(
-        `expected the resident session ${ctx.residentSession} for the dormant cleaner; got: ${ctx.cleanerWake}`
       );
     }
   });
