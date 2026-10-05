@@ -14,6 +14,8 @@ const {
   SUITE_WORK_BUDGET_MS,
   SUITE_WORK_TOLERANCE,
   OPERATOR_WALL_CEILING_MS,
+  isUnderHostLoad,
+  decideSuiteWorkExit,
 } = require('../out/tools/check-suite-duration-budget');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'check-suite-duration-budget.js');
@@ -173,6 +175,96 @@ test('formatSuiteWorkVerdict: exact text for an over-tolerance verdict', () => {
     text,
     'suite work over tolerance: 590.0s work (budget 550.0s, 10 forks, slowest file 5.0s) -> expected wall 59.0s, 46.0s from the 13.0s operator ceiling'
   );
+});
+
+// ── isUnderHostLoad / decideSuiteWorkExit (pure) — BL-1983 ──────────────────
+
+test('isUnderHostLoad: the threshold is half the logical cores, at or above counts as loaded', () => {
+  assert.equal(isUnderHostLoad(10, 20), true);
+  assert.equal(isUnderHostLoad(9.9, 20), false);
+  assert.equal(isUnderHostLoad(15, 20), true);
+});
+
+test('isUnderHostLoad: zero cores never reads as loaded (no divide-by-zero true)', () => {
+  assert.equal(isUnderHostLoad(5, 0), false);
+});
+
+// Pins the ticket's own Scenario Outline table (the-ratchet-exit-depends-
+// on-the-load-01) via classifySuiteWork's real verdict, not a restated one.
+for (const [work, load, exit, marks] of [
+  [613108, 15, 0, true],
+  [613108, 10, 0, true],
+  [613108, 9.9, 1, false],
+  [540000, 2, 0, false],
+]) {
+  test(`decideSuiteWorkExit: work=${work} load=${load} on a 20-core host -> exit ${exit}, marks=${marks}`, () => {
+    const verdict = classifySuiteWork(work);
+    const decision = decideSuiteWorkExit(verdict, load, 20);
+    assert.equal(decision.exitCode, exit);
+    assert.equal(decision.unmeasuredUnderLoad, marks);
+  });
+}
+
+test('decideSuiteWorkExit: a run below the load threshold gets exactly BL-1599\'s verdict and exit code (the declared invariant)', () => {
+  // over-budget, under-tolerance, and ok all stand unchanged under a quiet host.
+  assert.deepEqual(decideSuiteWorkExit('over-budget', 1, 20), { exitCode: 1, unmeasuredUnderLoad: false });
+  assert.deepEqual(decideSuiteWorkExit('over-tolerance', 1, 20), { exitCode: 0, unmeasuredUnderLoad: false });
+  assert.deepEqual(decideSuiteWorkExit('ok', 1, 20), { exitCode: 0, unmeasuredUnderLoad: false });
+});
+
+test('decideSuiteWorkExit: ok and over-tolerance are never marked, even at high load', () => {
+  assert.deepEqual(decideSuiteWorkExit('ok', 20, 20), { exitCode: 0, unmeasuredUnderLoad: false });
+  assert.deepEqual(decideSuiteWorkExit('over-tolerance', 20, 20), { exitCode: 0, unmeasuredUnderLoad: false });
+});
+
+test('formatSuiteWorkVerdict: an over-budget run under host load is marked, not REFUSED, and exits 0', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(613108, 1, 69900), 15, 20);
+  assert.match(text, /^suite work unmeasured under host load:/);
+  assert.doesNotMatch(text, /REFUSED/);
+  assert.match(text, /5m load 15\.0 >= half of 20 cores/);
+});
+
+test('formatSuiteWorkVerdict: the same over-budget run below the load threshold still reads REFUSED', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(613108, 1, 69900), 9.9, 20);
+  assert.match(text, /^suite work REFUSED:/);
+  assert.doesNotMatch(text, /unmeasured under host load/);
+});
+
+test('formatSuiteWorkVerdict: omitting load/cores prints exactly as before BL-1983 (every pre-existing call site)', () => {
+  const withLoad = formatSuiteWorkVerdict(buildSuiteWorkVerdict(300000, 7, 25000), 1, 20);
+  const withoutLoad = formatSuiteWorkVerdict(buildSuiteWorkVerdict(300000, 7, 25000));
+  assert.equal(withLoad, withoutLoad);
+  assert.doesNotMatch(withoutLoad, /unmeasured under host load/);
+});
+
+// BL-1983 hardening: loadAvg5 and cores are two INDEPENDENTLY optional
+// parameters in the type signature, but every real caller passes both or
+// neither (they come from the same os.loadavg()/os.cpus() read). `undefined`
+// cannot discriminate a dropped `typeof X === 'number'` guard here:
+// isUnderHostLoad's own `cores > 0` check already reads false for an
+// undefined cores/loadAvg5, so the guard and its removal agree on that
+// input - the guard's actual job is rejecting a value that is NOT a number
+// but WOULD coerce truthily through `>=`, e.g. the numeric string "15"
+// (`"15" >= 10` is `true` by JS's numeric coercion). Pin that shape: a
+// non-number-typed but arithmetically-passing load/cores value must never
+// mark, exactly like a clean `undefined`. (Closes 4 Stryker survivors at
+// check-suite-duration-budget.js:140.)
+test('formatSuiteWorkVerdict: a numeric-STRING loadAvg5 never marks, even though it would coerce past the threshold', () => {
+  const v = buildSuiteWorkVerdict(613108, 1, 69900);
+  assert.equal(isUnderHostLoad('15', 20), true, 'sanity: a numeric string DOES coerce truthily through isUnderHostLoad');
+  const text = formatSuiteWorkVerdict(v, '15', 20);
+  assert.equal(text, formatSuiteWorkVerdict(v));
+  assert.match(text, /^suite work REFUSED:/);
+  assert.doesNotMatch(text, /unmeasured under host load/);
+});
+
+test('formatSuiteWorkVerdict: a numeric-STRING cores never marks, even though it would coerce past the threshold', () => {
+  const v = buildSuiteWorkVerdict(613108, 1, 69900);
+  assert.equal(isUnderHostLoad(15, '20'), true, 'sanity: a numeric string DOES coerce truthily through isUnderHostLoad');
+  const text = formatSuiteWorkVerdict(v, 15, '20');
+  assert.equal(text, formatSuiteWorkVerdict(v));
+  assert.match(text, /^suite work REFUSED:/);
+  assert.doesNotMatch(text, /unmeasured under host load/);
 });
 
 // ── main() (thin CLI wrapper, in-process) ───────────────────────────────────

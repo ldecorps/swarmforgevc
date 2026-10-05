@@ -43,6 +43,8 @@ test('buildRecord shapes a pass record with finished_at, test_count, result, dur
     watchFiles: 0,
     budgetVerdict: 'ok',
     workBudgetVerdict: 'ok',
+    loadAvg5: 1.5,
+    cores: 8,
   });
   assert.deepEqual(rec, {
     finished_at: '2026-07-03T10:00:00.000Z',
@@ -55,7 +57,30 @@ test('buildRecord shapes a pass record with finished_at, test_count, result, dur
     watch_files: 0,
     budget_verdict: 'ok',
     work_budget_verdict: 'ok',
+    load_avg_5m: 1.5,
+    cores: 8,
   });
+});
+
+// BL-1983: every duration record carries the load and core count it was
+// measured at.
+test('buildRecord carries load_avg_5m and cores independently of every other field', () => {
+  const rec = buildRecord({
+    finishedAt: '2026-10-05T07:23:42.000Z',
+    testCount: 1161,
+    exitCode: 0,
+    durationMs: 391647,
+    poleMs: 4800,
+    workMs: 613108,
+    newOffenders: 0,
+    watchFiles: 0,
+    budgetVerdict: 'ok',
+    workBudgetVerdict: 'over-budget',
+    loadAvg5: 15,
+    cores: 20,
+  });
+  assert.equal(rec.load_avg_5m, 15);
+  assert.equal(rec.cores, 20);
 });
 
 test('buildRecord marks a non-zero exit code as fail', () => {

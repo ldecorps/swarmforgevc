@@ -7,8 +7,10 @@ Feature: BL-1599 The unit suite work ratchet holds the line
   The whole-suite gate holds a wall-clock number that jitters with host
   load, so it only surfaces and has read over budget since July. The lane
   budget decision delegated to the specifier on 2026-09-16 is summed
-  per-file work, fork-independent and stable across hosts: a committed
-  550000 ms budget with a 10 percent tolerance, refused above it, lowered
+  per-file work, fork-independent of the suite's own wall clock - believed
+  stable across hosts until BL-1983 found it jitters with host load too: a
+  committed 550000 ms budget with a 10 percent tolerance, refused above it
+  (BL-1983: unless the host was under load when it was measured), lowered
   only. This feature is that refusal, the derived expected wall printed on
   every run with the distance to the operator's 13 s ceiling, and the
   committed number itself.
