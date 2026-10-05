@@ -1350,3 +1350,10 @@
   stamp_ticket: BL-2014
   human_decision: null
   decided_at: null
+- commit: 4a4063fdc0
+  subject: "hotfix: tmux fakes in five shell tests and three step handlers read the exact-match target =NAME as NAME, as tmux does (the reds hotfix 77584c4c11 left)"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2014
+  human_decision: null
+  decided_at: null

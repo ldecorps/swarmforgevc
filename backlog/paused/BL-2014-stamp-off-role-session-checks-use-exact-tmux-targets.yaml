@@ -1,5 +1,5 @@
 id: BL-2014
-title: "Stamp-off for hotfix 77584c4c11: role-session tmux checks use the exact-match target (=NAME), so a missing seat is never read as present through a sibling whose name it prefixes - and never repaired by respawning that sibling"
+title: "Stamp-off for hotfixes 77584c4c11 and 4a4063fdc0: role-session tmux checks use the exact-match target (=NAME), so a missing seat is never read as present through a sibling whose name it prefixes - and never repaired by respawning that sibling"
 milestone: M8
 type: defect
 severity: high
@@ -42,7 +42,16 @@ qa_e2e_procedure: |
   2. `bash swarmforge/scripts/test/test_swarm_ensure.sh`: ALL PASS (51
      at 77584c4c11).
   3. `bash swarmforge/scripts/test/test_babysitter_check.sh`: ALL PASS (20).
-  4. Read the coder's committed review evidence.
+  4. 4a4063fdc0's five shell tests, each ALL PASS / rc 0 (measured at
+     4a4063fdc0): test_handoffd_bl812_cwd_invariant_root_resolution.sh (9),
+     test_consult_spawn_cli.sh (4), test_chase_departing_mid_parcel_gate.sh
+     (13), test_handoffd_aged_note_rotate_wiring.sh (2),
+     test_handoffd_ambulance_wiring.sh (6).
+  5. Its three features, run with `node specs/pipeline/cli.js`
+     (measured at 4a4063fdc0): BL-648 7 ok; BL-938 4 ok; BL-571 3 ok and
+     scenario 03 red, which was red before 77584c4c11 and is owned by its
+     own register row (see notes).
+  6. Read the coder's committed review evidence.
 
 source: |
   The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
@@ -89,6 +98,23 @@ description: |
     file, logged "swarmforge-coder: tmux session missing" and its repair
     created iq3's session under its own name; coder@2 kept its own.
 
+  ## The follow-up hotfix 4a4063fdc0 (the reds 77584c4c11 left)
+
+  77584c4c11 fixed the fakes in test_swarm_ensure.sh but not the others.
+  Every fake tmux that compared the `-t` value literally then read each
+  session as absent. Red at 77584c4c11 and green on 77584c4c11^:
+  test_handoffd_bl812_cwd_invariant_root_resolution.sh 02 (coder@2's
+  unowned-red note 000117), test_consult_spawn_cli.sh 02,
+  test_handoffd_aged_note_rotate_wiring.sh A,
+  test_handoffd_ambulance_wiring.sh 05, and features BL-571 (01, 02),
+  BL-648 (06) and BL-938 (02, 04). test_chase_departing_mid_parcel_gate.sh
+  stayed green, but its case 08 read SESSION_MISSING as present, so it
+  passed vacuously. 4a4063fdc0 makes each fake strip a leading `=` the way
+  tmux does (`${arg#=}`). The sweep: every file under
+  swarmforge/scripts/test, specs/pipeline/steps and extension/test naming
+  has-session, kill-session or list-panes (16 shell/bb tests run, 19 step
+  handlers read).
+
   ## Out of scope (named, not built)
 
   - A seat-identity check (a session running another role's launch script
@@ -98,9 +124,9 @@ description: |
 
   ## What the coder does (all of it)
 
-  1. Run qa_e2e_procedure steps 1-3 once each, outputs saved under tmp/.
-  2. Read `git show 77584c4c11` against the sections above and the
-     invariant.
+  1. Run qa_e2e_procedure steps 1-5 once each, outputs saved under tmp/.
+  2. Read `git show 77584c4c11` and `git show 4a4063fdc0` against the
+     sections above and the invariant.
   3. Write backlog/evidence/BL-2014-coder-<date>.md: the three results and
      one line saying whether the hotfix matches its description.
   4. Commit that file, forward to QA, run done_with_current.sh.
@@ -112,3 +138,6 @@ notes: |
   review-only stamp-off of a shell/bb fix that writes no durable state.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 77584c4c11 linked to BL-2014.
+  2026-10-05 ~23:30Z (specifier): amended to stamp-off 4a4063fdc0 too, the
+  test-fake reds 77584c4c11 left (coder@2 note 000117); one ticket, two
+  SHAs, both linked in the hotfix ledger. Still [coder, qa]: test-side.
