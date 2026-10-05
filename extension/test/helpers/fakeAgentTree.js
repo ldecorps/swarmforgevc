@@ -34,7 +34,11 @@ function shellScriptSource(binDir) {
 // shellPid appears, so callers never race the shell's own async spawn of
 // its claude standin. Throws on timeout rather than proceeding against a
 // tree that never grew the expected child.
-function waitForChildPid(shellPid, timeoutMs = 3000) {
+// The child must already show its own argv0 (basename "claude"), not the
+// parent's: between fork and exec a child carries the parent's args (`node
+// ...`), and returning on that instant let listProcessTree read "node"
+// (QA, 2026-10-05: "expected a claude-named child ..., got ... node").
+function waitForChildPid(shellPid, timeoutMs = 3000, argv0 = 'claude') {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const table = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,args='], { encoding: 'utf8' });
@@ -42,7 +46,7 @@ function waitForChildPid(shellPid, timeoutMs = 3000) {
       .split('\n')
       .some((line) => {
         const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
-        return match && Number(match[2]) === shellPid;
+        return match && Number(match[2]) === shellPid && path.basename(match[3].split(/\s+/)[0]) === argv0;
       });
     if (hasChild) {
       return;
