@@ -92,3 +92,4 @@ description: |
   - Coder: the two scenarios; handoff_wake_session_test_runner.bb passes.
   - Architect: the two invariants; every other wake-session caller in
     handoffd.bb treats a nil session as "nobody to wake".
+assigned_to: coder
