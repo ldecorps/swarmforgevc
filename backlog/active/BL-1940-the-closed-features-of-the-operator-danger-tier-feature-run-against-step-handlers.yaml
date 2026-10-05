@@ -1,5 +1,5 @@
-id: BL-1946
-title: "The closed features of the launcher, pane and inbox-view features run against step handlers - BL-116, BL-142, BL-143, BL-210, BL-212 closed with acceptance features no step handler binds, so every scenario fails if run, and each holds a standing-red register row; bind them as written"
+id: BL-1940
+title: "The closed features of the operator danger-tier feature run against step handlers - BL-702 closed with acceptance features no step handler binds, so every scenario fails if run, and each holds a standing-red register row; bind them as written"
 milestone: M8
 type: defect
 severity: high
@@ -7,11 +7,11 @@ severity: high
 # the register they sit in throttles intake (human ruling A, 2026-10-03).
 status: todo
 epic: code-quality-gates
-priority: 9
+priority: 10
 direction: normal
 depends_on: []
-mutation_cost: low
-# low: test-side only, 14 existing scenarios to bind against shipped code.
+mutation_cost: medium
+# medium: test-side only, 12 existing scenarios to bind against shipped code.
 slice_size_envelope: medium
 required_stages: [coder, qa]
 stage_skip_reasons:
@@ -22,16 +22,12 @@ stage_skip_reasons:
 
 # Not a claim of ownership over the closed tickets' contracts (BL-1251): this
 # ticket binds features they left unbound and changes none of their scenarios.
-acceptance: specs/features/BL-116-launch-path-probe-and-log.feature
+acceptance: specs/features/BL-702-operator-parse-env-reload-danger-tiers.feature
 
 # One handler per feature, each discovered from its own file (BL-1371); the
 # pre-QA gate checks every one lands in this parcel (BL-233).
 required_wiring:
-  - 'specs/pipeline/steps/bl116LaunchPathProbeSteps.js::registerSteps::binds BL-116-launch-path-probe-and-log.feature (discovered by suffix, BL-1371)'
-  - 'specs/pipeline/steps/bl142AgentBrandAbstractionSteps.js::registerSteps::binds BL-142-agent-brand-abstraction-layer.feature (discovered by suffix, BL-1371)'
-  - 'specs/pipeline/steps/bl143InboxSidecarsHiddenSteps.js::registerSteps::binds BL-143-coordinator-inbox-view-hides-sidecars-by-default.feature (discovered by suffix, BL-1371)'
-  - 'specs/pipeline/steps/bl210PaneTailerActivitySteps.js::registerSteps::binds BL-210-paneTailer-emitActivityEvents-crap.feature (discovered by suffix, BL-1371)'
-  - 'specs/pipeline/steps/bl212SpawnRegistryContractSteps.js::registerSteps::binds BL-212-deflake-spawn-registry-01.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl702OperatorDangerTiersSteps.js::registerSteps::binds BL-702-operator-parse-env-reload-danger-tiers.feature (discovered by suffix, BL-1371)'
 
 human_approval: approved
 approval_context: >
@@ -46,16 +42,13 @@ invariants:
   - "Every handler builds its own fixtures under mkdtemp and never reads or writes this checkout's git, backlog or .swarmforge (BL-1390)."
 
 qa_e2e_procedure: |
-  1. Read from the gather's acceptance row: `specs/features/BL-116-launch-path-probe-and-log.feature` all pass.
-  2. `node specs/pipeline/cli.js specs/features/BL-142-agent-brand-abstraction-layer.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
-  3. `node specs/pipeline/cli.js specs/features/BL-143-coordinator-inbox-view-hides-sidecars-by-default.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
-  4. `node specs/pipeline/cli.js specs/features/BL-210-paneTailer-emitActivityEvents-crap.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
-  5. `node specs/pipeline/cli.js specs/features/BL-212-deflake-spawn-registry-01.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
-  6. `git diff <parcel>^..<parcel> --stat`: only new files under
+  1. Read from the gather's acceptance row: `specs/features/BL-702-operator-parse-env-reload-danger-tiers.feature` all pass.
+
+  2. `git diff <parcel>^..<parcel> --stat`: only new files under
      `specs/pipeline/steps/` (and this ticket's evidence); no `.feature`, no
      `extension/src` or `swarmforge/scripts` path.
-  7. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
-     carries one row per feature above naming BL-1946. After the land the rows
+  3. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
+     carries one row per feature above naming BL-1940. After the land the rows
      are gone (BL-1631 retires them); check on origin/main.
 
 source: |
@@ -83,11 +76,7 @@ description: |
   One step-handler file per feature, binding every remaining step as
   written, so each feature passes against the shipped code:
 
-  - `specs/features/BL-116-launch-path-probe-and-log.feature` (3 scenarios): swarmLauncher probeLoginShellPath/augmentPath/launchSwarm with fakes; S.
-  - `specs/features/BL-142-agent-brand-abstraction-layer.feature` (3 scenarios): agentPaneState provider registry + detection functions; S.
-  - `specs/features/BL-143-coordinator-inbox-view-hides-sidecars-by-default.feature` (4 scenarios): inboxVisibility.computeRoleQueueView + queue-status CLI --debug (today's wording, BL-323); S.
-  - `specs/features/BL-210-paneTailer-emitActivityEvents-crap.feature` (3 scenarios): paneTailer decideRoleActivity (S); the class with fakeTmux + fakeScheduler (M).
-  - `specs/features/BL-212-deflake-spawn-registry-01.feature` (1 scenarios): launchSwarm with an injected spawnFn, readTrackedJobs; M.
+  - `specs/features/BL-702-operator-parse-env-reload-danger-tiers.feature` (12 scenarios): telegramCursorBridgeCore/OperatorCore deciders (S) and executeOperatorVerb on a mkdtemp repo with stub scripts (M); 'Cursor Remote' in a Given/When names the topic now displayed as Host.
 
   ## How (direction, not mandate)
 
@@ -102,3 +91,5 @@ description: |
   - A scenario that fails on its merits once bound is a real defect in
     shipped behaviour. Send the specifier a note naming the scenario and the
     observed value, and keep binding the rest. Never edit a scenario to pass.
+
+assigned_to: coder

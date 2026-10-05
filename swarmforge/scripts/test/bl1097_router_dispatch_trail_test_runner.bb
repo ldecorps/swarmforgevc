@@ -197,6 +197,27 @@
            true
            (boolean (re-find #"ticket-dispatch-verdict-in[\s\S]*?\"DISPATCHED\"" cli-src))))
 
+;; ── 2026-10-05: a note's message counts as a dispatch only when its Spec/Work
+;; verb opens the message or a sentence (coordinator note 016664). The
+;; unanchored, case-blind pattern read "do not work BL-1082" and the
+;; specifier's "New spec BL-205 ready" as dispatches. Measured over 13975
+;; distinct mailbox messages: 12 old matches dropped, all mentions; none
+;; gained; no id changed.
+
+(doseq [[msg expected] [["Work BL-1987: merge main first, then read backlog/active" "BL-1987"]
+                        ["Spec BL-538 for coder" "BL-538"]
+                        ["Supersede stale holds. Work BL-1082 then BL-1052" "BL-1082"]
+                        ["BL-1077 paused. Work BL-1082, BL-1052, BL-1053" "BL-1082"]
+                        ["Work bl-493: lower-case id" "BL-493"]
+                        ["Human reservation controls: do not work BL-1082, BL-1052" nil]
+                        ["New spec BL-205 ready in backlog/paused/" nil]
+                        ["BL-296 landed; spec BL-297: Concierge topic map" nil]
+                        ["After chase: claim Work BL-1174 in new/" nil]
+                        ["Rework BL-12 later" nil]]]
+  (assert= (str "dispatch-verb-anchored: " msg)
+           expected
+           (chase-sweep-lib/dispatch-trail-ticket-id {:message msg :to "coder"})))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 
 (if (seq @failures)

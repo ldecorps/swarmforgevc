@@ -195,7 +195,10 @@ describe('BL-1232 invariant 2: the picker never anchors two labels inside the ga
           return true;
         }
       ),
-      { numRuns: 120 }
+      // Seeded (2026-10-05 hotfix): unseeded, 120 draws fell below the
+      // discriminating floor of 40 on 0.2% of runs (4 of 2000 seeds; mean 56,
+      // lowest 33) - QA's BL-1944 gather drew 39. Seed 10 draws 63.
+      { numRuns: 120, seed: 10 }
     );
     // If the clustered layouts stopped being ones index-thirds gets wrong, the
     // property above would still pass and would no longer be about anything.

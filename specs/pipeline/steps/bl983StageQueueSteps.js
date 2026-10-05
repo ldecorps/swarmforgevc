@@ -213,7 +213,14 @@ function registerSteps(registry) {
   scoped(/^no seat of its own stage is addressed$/, (ctx) => {
     try {
       const content = fs.readFileSync(ctx.forwarded, 'utf8');
-      assert.ok(!content.includes('@'), `no seat id may appear anywhere in the parcel (invariant 3):\n${content}`);
+      // BL-1637 (2026-09-19) stamps the sending seat as `from_seat:`, a
+      // reserved, tool-stamped audit header its completion gate reads; it
+      // never addresses or routes the parcel. Every other line - from:, to:,
+      // recipient:, role:, the body - must still carry no seat id. This
+      // check read the whole parcel and was red from BL-1637's land until
+      // 2026-10-05.
+      const addressed = content.split('\n').filter((l) => !/^from_seat: /.test(l)).join('\n');
+      assert.ok(!addressed.includes('@'), `no seat id may appear in the parcel outside BL-1637's from_seat audit header (invariant 3):\n${content}`);
       assert.ok(!path.basename(ctx.forwarded).includes('@'), `no seat id may appear in the filename: ${ctx.forwarded}`);
       assert.match(content, /^from: coder$/m, 'the from header must be the STAGE');
     } finally {

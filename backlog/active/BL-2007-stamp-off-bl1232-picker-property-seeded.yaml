@@ -1,0 +1,115 @@
+id: BL-2007
+title: "Stamp-off for red hotfixes d994ee6d63 (the BL-1232 picker property draws on a fixed seed) and 04c0556285 (BL-1061's leaked-fixture scenario names a dead creator and waits for the swept process to exit)"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red (2026-09-05 rule) - QA held BL-1944 on it.
+status: todo
+epic: code-quality-gates
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one seed in one property test.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one seed; nothing to refactor"
+  architect: "the floor and the oracle are unchanged; only the draw is pinned"
+  hardender: "test-side only (a property test); no production code"
+  documenter: "the seed's own comment is the living description"
+
+# Not a claim of ownership over BL-1798's contract (BL-1251): a property
+# test has no feature of its own; this points at a feature every parcel
+# keeps green so the acceptance gate has a runnable declaration.
+acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a red hotfix the specifier landed under the human's
+  2026-10-01 rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants:
+  - "The floor (40 discriminating layouts) and the property's oracle are unchanged; only the seed is added."
+  - "BL-1061's scenario still requires the sweep to select and end the leaked fixture; only the fixture's creator and the wait for its exit change."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read the property gather's row for
+     extension/test/bl1232ShiftVelocityChartInvariants.property.test.js:
+     6 of 6 (measured at d994ee6d63).
+  2. `node specs/pipeline/cli.js specs/features/BL-1061-tunnel-ownership-fixture-binds-a-live-tunnel-name.feature`:
+     5 of 5 ok (measured 6 of 6 runs green at 04c0556285; 4 of 5 on main
+     before it).
+  3. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  QA note 003828 to the specifier, 2026-10-05, verbatim: "BL-1944 held:
+  unowned-red bl1232 prop reach floor 39<40 (BL-1583?)".
+
+description: |
+  ## Status: hotfix d994ee6d63 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `extension/test/bl1232ShiftVelocityChartInvariants.property.test.js`'s
+  "clears the gap on clustered layouts where index-thirds would not" drew
+  120 unseeded cases and required at least 40 of them to be layouts
+  index-thirds would crowd. Sampling the same generator over 2000 seeds:
+  mean 56, lowest 33, 4 seeds (0.2%) below 40. QA's gather drew 39.
+
+  ## What the hotfix changed
+
+  - `{ numRuns: 120, seed: 10 }`: seed 10 draws 63 discriminating layouts
+    (checked with the test's own two-argument fc.assert shape). The same
+    remedy as bdb172641b (BL-1877, stamp-off BL-1973). BL-1583 is the epic
+    for constructing such floors instead of sampling them.
+
+  ## Hotfix 04c0556285: BL-1061's leaked fixture
+
+  BL-1061 scenario 04 ("a fixture leaked by an earlier run is swept before
+  the table is read") was red on main, reported by coder@2 note 000095
+  (evidence BL-1974-unowned-red-BL-1061-20261005.md on its BL-1974 line).
+
+  - `specs/pipeline/steps/bl1061TunnelFixtureIsolationSteps.js`: the
+    leaked fixture is named `nameWithCreator(deadPid())` (bl1287's helper)
+    instead of `fixtureTunnelName()`, which encodes the live test process,
+    so the sweep kept it; it passed only while the sweep mis-selected a
+    spawner's pre-exec line (BL-1974's own bug).
+  - The "no longer alive" step polls up to 3 s and counts a zombie as gone
+    (`isRunning`, /proc state, falling back to kill(pid, 0) where /proc is
+    absent): checked once right after the kill, it failed about one run in
+    three.
+
+  ## What the coder does (all of it)
+
+  1. Run `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1232ShiftVelocityChartInvariants.property.test.js`
+     once (the ticket is about this file alone), its output saved to
+     tmp/out.txt.
+  2. Also run qa_e2e_procedure step 2 once. Read `git show d994ee6d63`
+     and `git show 04c0556285` against the sections above and the
+     invariant.
+  3. Write backlog/evidence/BL-2007-coder-<date>.md: the two results and
+     one line per hotfix saying whether it matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as red hotfix
+  d994ee6d63 (committed with SWARMFORGE_ROLE=QA: extension/test/ is
+  QA-exclusive on main, BL-848). No register row: the hotfix landed the
+  same pass. Holder note sent: QA ("BL-1944: bl1232 red hotfixed
+  d994ee6d63; retake c6a65323ed, merge main, rerun"). BL-2006, the open
+  stamp-off, was already active.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: d994ee6d63 linked to BL-2007.
+  Folded in 2026-10-05 while still paused: red hotfix 04c0556285 (BL-1061
+  leaked fixture), ledger-linked to BL-2007; holder note to coder@2.
+
+assigned_to: coder

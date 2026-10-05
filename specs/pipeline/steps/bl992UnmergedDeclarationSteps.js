@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { spawnHandoffSend } = require('./lib/answerHandoffAudit');
 const { afterEach } = require('node:test');
 
 const FEATURE = 'A declaration the sender has not merged is still read';
@@ -91,7 +92,7 @@ function send(ctx, { from, to, task }) {
   ctx.commit = ctx.commit || git(ctx.root, ['rev-parse', '--short=10', 'HEAD']);
   const draft = path.join(ctx.root, 'draft.txt');
   fs.writeFileSync(draft, `type: git_handoff\nto: ${to}\npriority: 50\ntask: ${task || ctx.task}\ncommit: ${ctx.commit}\n`);
-  const res = spawnSync('bb', [SWARM_HANDOFF, 'draft.txt'], {
+  const res = spawnHandoffSend('bb', [SWARM_HANDOFF, 'draft.txt'], {
     cwd: ctx.root,
     encoding: 'utf8',
     timeout: 60000,

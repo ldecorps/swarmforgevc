@@ -1,0 +1,89 @@
+id: BL-2009
+title: "The mutation pass BL-1968's hardener deferred runs on closingCeremonyRun.ts, closingCeremonyStore.ts and closingCeremony.ts, and its debt row is discharged with committed evidence"
+milestone: M8
+type: defect
+severity: medium
+# medium: owed hardening on landed code; the debt row's owner closed, so the
+# row read unowned and throttled intake to 1 (2026-10-05).
+status: todo
+epic: code-quality-gates
+priority: 3
+depends_on: []
+not_before: 2026-10-06
+# The three files changed on main on 2026-10-05; mutation_cooldown_gate.bb
+# refuses a file changed within mutation_cooldown_days (1).
+mutation_cost: medium
+# medium: a scoped Stryker run over three files and the survivor triage.
+slice_size_envelope: low
+required_stages: [hardender, qa]
+stage_skip_reasons:
+  coder: "no code to write; the pass runs the deferred gate on code BL-1968 already landed"
+  cleaner: "no code change to clean"
+  architect: "no design change; the gate runs on landed code"
+  documenter: "the ledger row and its evidence are the record"
+
+# Not a claim of ownership over BL-1968's contract (BL-1251): the feature
+# of the code this pass mutates, which must stay green.
+acceptance: specs/features/BL-1968-the-ceremony-folds-every-event-appended-since-the-previous-run.feature
+
+human_approval: approved
+approval_context: >
+  Owner of the hardening-debt row BL-1968's hardener deferred on 2026-10-05
+  (cooldown: the files had just been committed). BL-1968 closed, so the row
+  read unowned and the register throttled intake to 1; this ticket is its
+  open owner. The ask is whether the deferred pass may run. FIRM: a
+  survivor's reason is "killed in this pass", "accepted equivalent with
+  the code-level proof", or "first-run debt, owned by <ticket id>".
+
+invariants:
+  - "The ledger row is discharged only with a committed evidence file of a completed run, and every survivor in it carries one of the three accepted reasons."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read the hardener's committed evidence: the scoped run's verdict line
+     and one reason per survivor (killed / equivalent with proof /
+     first-run debt owned by a named ticket).
+  2. `bb swarmforge/scripts/hardening_debt_ledger_read.bb <project-root>`:
+     the BL-1968 mutation row reads discharged with that evidence path.
+  3. `node specs/pipeline/cli.js specs/features/BL-1968-the-ceremony-folds-every-event-appended-since-the-previous-run.feature`:
+     no fail.
+
+source: |
+  Coordinator note 016687 to the specifier, 2026-10-05, verbatim: "cap
+  throttled to 1 again, not sync lag, not unowned-closed row". The register
+  (standing_red_register_cli.bb) named one unowned row: lane hardening,
+  file set extension/src/metrics/closingCeremonyRun.ts,
+  extension/src/metrics/closingCeremonyStore.ts,
+  extension/src/quality/closingCeremony.ts, ticket BL-1968 (in done/).
+  Its ledger row (backlog/hardening-debt-ledger.yaml), verbatim: reason
+  "BL-149 cooldown gate: skip-cooldown, file_age_days 0.20 <
+  mutation_cooldown_days 1 (freshly committed by coder this pass)", load
+  "13.63", detected_at 2026-10-05.
+
+description: |
+  ## What is wanted
+
+  The hardener runs the mutation gate BL-1968's pass deferred, on the three
+  files above, once the cooldown allows (not before 2026-10-06), and
+  discharges the ledger row with
+  `bb swarmforge/scripts/hardening_debt_ledger_update.bb <project-root> --discharge BL-1968 mutation --evidence <path>`.
+  The same commit removes this ticket's `hardening` row from
+  `backlog/standing-reds.tsv` (a register row leaves in the commit that
+  discharges it).
+
+  ## How (direction, not mandate)
+
+  - Scope Stryker to the compiled files (`--mutate` over
+    `out/metrics/closingCeremonyRun.js`, `out/metrics/closingCeremonyStore.js`,
+    `out/quality/closingCeremony.js`), per the hardener card.
+  - Survivors the pass cannot kill get one of the three reasons in the
+    invariant; first-run debt names an owner ticket (mint it via a note to
+    the specifier, the 2026-09-10 rule).
+
+notes: |
+  Minted 2026-10-05 by the specifier on coordinator note 016687, with its
+  register row (lane hardening, the three-file set, owner BL-2009) in the
+  same commit, so the row reads owned and the throttle lifts. Same shape as
+  BL-1874's ownership of BL-1869's deferred pass. Severity medium (owed
+  hardening, not a red), so it mints human_approval pending; a paused owner
+  already counts as open for the register.

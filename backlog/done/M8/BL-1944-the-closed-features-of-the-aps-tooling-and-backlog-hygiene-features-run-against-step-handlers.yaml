@@ -1,5 +1,5 @@
-id: BL-1940
-title: "The closed features of the operator danger-tier feature run against step handlers - BL-702 closed with acceptance features no step handler binds, so every scenario fails if run, and each holds a standing-red register row; bind them as written"
+id: BL-1944
+title: "The closed features of the APS tooling and backlog hygiene features run against step handlers - BL-111, BL-112, BL-544, BL-661 closed with acceptance features no step handler binds, so every scenario fails if run, and each holds a standing-red register row; bind them as written"
 milestone: M8
 type: defect
 severity: high
@@ -7,11 +7,11 @@ severity: high
 # the register they sit in throttles intake (human ruling A, 2026-10-03).
 status: todo
 epic: code-quality-gates
-priority: 10
+priority: 8
 direction: normal
 depends_on: []
-mutation_cost: medium
-# medium: test-side only, 12 existing scenarios to bind against shipped code.
+mutation_cost: low
+# low: test-side only, 13 existing scenarios to bind against shipped code.
 slice_size_envelope: medium
 required_stages: [coder, qa]
 stage_skip_reasons:
@@ -22,12 +22,15 @@ stage_skip_reasons:
 
 # Not a claim of ownership over the closed tickets' contracts (BL-1251): this
 # ticket binds features they left unbound and changes none of their scenarios.
-acceptance: specs/features/BL-702-operator-parse-env-reload-danger-tiers.feature
+acceptance: specs/features/BL-111-aps-stage1-feature-files.feature
 
 # One handler per feature, each discovered from its own file (BL-1371); the
 # pre-QA gate checks every one lands in this parcel (BL-233).
 required_wiring:
-  - 'specs/pipeline/steps/bl702OperatorDangerTiersSteps.js::registerSteps::binds BL-702-operator-parse-env-reload-danger-tiers.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl111ApsFeatureFilesLintGateSteps.js::registerSteps::binds BL-111-aps-stage1-feature-files.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl112ApsExecutableAcceptanceSteps.js::registerSteps::binds BL-112-aps-stage2-executable-acceptance.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl544EpicMilestoneHygieneSteps.js::registerSteps::binds BL-544-specifier-epic-milestone-hygiene.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl661FlowStyleSkipReasonsSteps.js::registerSteps::binds BL-661-stage-skip-reasons-flow-style-unreadable-by-lib.feature (discovered by suffix, BL-1371)'
 
 human_approval: approved
 approval_context: >
@@ -42,13 +45,15 @@ invariants:
   - "Every handler builds its own fixtures under mkdtemp and never reads or writes this checkout's git, backlog or .swarmforge (BL-1390)."
 
 qa_e2e_procedure: |
-  1. Read from the gather's acceptance row: `specs/features/BL-702-operator-parse-env-reload-danger-tiers.feature` all pass.
-
-  2. `git diff <parcel>^..<parcel> --stat`: only new files under
+  1. Read from the gather's acceptance row: `specs/features/BL-111-aps-stage1-feature-files.feature` all pass.
+  2. `node specs/pipeline/cli.js specs/features/BL-112-aps-stage2-executable-acceptance.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
+  3. `node specs/pipeline/cli.js specs/features/BL-544-specifier-epic-milestone-hygiene.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
+  4. `node specs/pipeline/cli.js specs/features/BL-661-stage-skip-reasons-flow-style-unreadable-by-lib.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
+  5. `git diff <parcel>^..<parcel> --stat`: only new files under
      `specs/pipeline/steps/` (and this ticket's evidence); no `.feature`, no
      `extension/src` or `swarmforge/scripts` path.
-  3. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
-     carries one row per feature above naming BL-1940. After the land the rows
+  6. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
+     carries one row per feature above naming BL-1944. After the land the rows
      are gone (BL-1631 retires them); check on origin/main.
 
 source: |
@@ -76,7 +81,10 @@ description: |
   One step-handler file per feature, binding every remaining step as
   written, so each feature passes against the shipped code:
 
-  - `specs/features/BL-702-operator-parse-env-reload-danger-tiers.feature` (12 scenarios): telegramCursorBridgeCore/OperatorCore deciders (S) and executeOperatorVerb on a mkdtemp repo with stub scripts (M); 'Cursor Remote' in a Given/When names the topic now displayed as Host.
+  - `specs/features/BL-111-aps-stage1-feature-files.feature` (3 scenarios): gherkin_lint_gate.sh on the vendored parser (S); migrate_gherkin_to_features.bb on a fixture backlog (M).
+  - `specs/features/BL-112-aps-stage2-executable-acceptance.feature` (3 scenarios): specs/pipeline runnerAdapter/generate/runtime test themselves; S.
+  - `specs/features/BL-544-specifier-epic-milestone-hygiene.feature` (2 scenarios): specifier_backlog_hygiene_gate.bb with BACKLOG_HYGIENE_ROOT seams (bl1105 pattern); S.
+  - `specs/features/BL-661-stage-skip-reasons-flow-style-unreadable-by-lib.feature` (5 scenarios): required_stages_lib read-stage-skip-reasons (S) and swarm_handoff route-required-stages on the bl754 fixture (M).
 
   ## How (direction, not mandate)
 
@@ -91,3 +99,5 @@ description: |
   - A scenario that fails on its merits once bound is a real defect in
     shipped behaviour. Send the specifier a note naming the scenario and the
     observed value, and keep binding the rest. Never edit a scenario to pass.
+
+assigned_to: coder

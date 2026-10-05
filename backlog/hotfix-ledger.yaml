@@ -1259,3 +1259,52 @@
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
+- commit: f87e90ddf5
+  subject: "hotfix: a pull abandons a Work note found by its message, not only by task:, and a local seat never runs redo_from when its ticket is already forwarded"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1999
+  human_decision: null
+  decided_at: null
+- commit: 8eac9d2543
+  subject: "hotfix: the pull's Work-note pattern is anchored to the dispatch shape (message: Work <id>[-:]), so a note that only mentions the ticket is not abandoned"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1999
+  human_decision: null
+  decided_at: null
+- commit: 6b5f524550
+  subject: "hotfix: a note counts as a dispatch only when its capitalised Spec/Work verb opens the message or a sentence"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2005
+  human_decision: null
+  decided_at: null
+- commit: dfa78c6ead
+  subject: "HOTFIX: BL-754's step handler answers the handoff self-audit, so its feature is green again"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2006
+  human_decision: null
+  decided_at: null
+- commit: d994ee6d63
+  subject: "HOTFIX: the BL-1232 picker property draws on a fixed seed, so its discriminating floor never fails at random"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2007
+  human_decision: null
+  decided_at: null
+- commit: 04c0556285
+  subject: "HOTFIX: BL-1061's leaked-fixture scenario names its fixture with a dead creator pid and waits for the swept process to exit"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2007
+  human_decision: null
+  decided_at: null
+- commit: 0c1de3028c
+  subject: "HOTFIX: six step handlers answer the handoff self-audit or read BL-1637's from_seat as audit metadata - BL-748, BL-951, BL-953, BL-983, BL-991, BL-992 green again"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2008
+  human_decision: null
+  decided_at: null

@@ -1,0 +1,105 @@
+id: BL-2008
+title: "Stamp-off for red hotfix 0c1de3028c: six step handlers answer the handoff self-audit or read BL-1637's from_seat as audit metadata, turning BL-748, BL-951, BL-953, BL-983, BL-991 and BL-992 green"
+milestone: M8
+type: defect
+severity: high
+# high: six standing reds on main (2026-09-05 rule), unowned until this pass.
+status: todo
+epic: swarm-reliability
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one 24-line helper, five one-line call swaps, one filtered check.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "the shared helper is itself the deduplication; nothing further to clean"
+  architect: "the handlers still drive the real swarm_handoff.bb; they now speak the two-call protocol every sender speaks"
+  hardender: "test-side only (step handlers and a step lib); no production code"
+  documenter: "the helper's own header is the living description"
+
+# Not a claim of ownership over BL-951's contract (BL-1251): one of the six
+# features this hotfix turns green; the procedure runs all six.
+acceptance: specs/features/BL-951-stage-skips-are-recorded-whatever-the-ticket-declares.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a red hotfix the specifier landed under the human's
+  2026-10-01 rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants:
+  - "A handler re-sends a draft only when the first answer is the self-audit challenge; a refusal is never re-sent."
+  - "BL-983's step still requires every line of the parcel except BL-1637's from_seat header, and the filename, to carry no seat id."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule). Measured at
+  0c1de3028c; before it, each was red on main.
+  1. `node specs/pipeline/cli.js specs/features/BL-748-routing-skip-recording-failure-never-withholds-delivery.feature`: 4 of 4 (was 0/4).
+  2. `node specs/pipeline/cli.js specs/features/BL-951-stage-skips-are-recorded-whatever-the-ticket-declares.feature`: 6 of 6 (was 0/6).
+  3. `node specs/pipeline/cli.js specs/features/BL-953-handoff-commit-must-belong-to-its-task-ticket.feature`: 8 of 8 (was 4/8).
+  4. `node specs/pipeline/cli.js specs/features/BL-983-stage-mailbox-delivers-to-one-idle-seat.feature`: 5 of 5 (was 4/5).
+  5. `node specs/pipeline/cli.js specs/features/BL-991-a-declared-stage-is-never-jumped.feature`: 10 of 10 (was 0/10).
+  6. `node specs/pipeline/cli.js specs/features/BL-992-a-declaration-the-sender-has-not-merged-is-still-read.feature`: 5 of 5 (was 0/5).
+  7. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  Found by the specifier's census after coder@2 note 000091 ("unowned-red
+  BL-754 2/5 fail, see BL-1944-unowned-red-BL-754"; fixed by dfa78c6ead,
+  BL-2006): every feature whose handler sends a git_handoff through
+  swarm_handoff.bb without naming the challenge, run once.
+
+description: |
+  ## Status: hotfix 0c1de3028c landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## The census
+
+  39 features whose handlers send a git_handoff through the real
+  swarm_handoff.bb without naming AUDIT_REQUIRED / HANDOFF_NOT_QUEUED, run
+  once each: 32 green; BL-606 green but slow (18/18 in 204 s - it timed out
+  only under the census's 300 s ceiling with the host loaded); six red,
+  none in the standing-red register.
+
+  ## What was wrong, and what the hotfix changed
+
+  - BL-748, BL-951, BL-953, BL-991, BL-992: each handler sent once. Since
+    the Article 2.3 self-audit (BL-1529) the first send queues nothing; the
+    output carried AUDIT_REQUIRED exactly once per failing scenario. New
+    `specs/pipeline/steps/lib/answerHandoffAudit.js` `spawnHandoffSend`
+    re-sends the identical draft only on the challenge; the five handlers
+    call it instead of `spawnSync`.
+  - BL-983: "no seat of its own stage is addressed" asserted no `@`
+    anywhere in the parcel; BL-1637 (2026-09-19) deliberately stamps the
+    reserved, tool-stamped `from_seat:` header that a seat's completion
+    gate reads. The step now drops that header line before the check and
+    still requires from:/to:/recipient:/role:/body and the filename to be
+    seat-free. Per BL-1006, the later deliberate ticket retires the
+    assertion it falsifies; BL-1637 missed it.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure steps 1-6 once each, in your worktree, each
+     output saved to its own file under tmp/.
+  2. Read `git show 0c1de3028c` against the sections above and the
+     invariants.
+  3. Write backlog/evidence/BL-2008-coder-<date>.md: the six results and
+     one line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as red hotfix
+  0c1de3028c (committed with SWARMFORGE_ROLE=QA: specs/pipeline/steps/ is
+  QA-exclusive on main, BL-848). No register rows: the hotfix landed the
+  same pass. A separate stamp-off from BL-2006 (BL-754, active) and
+  BL-2007 (two unrelated reds).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 0c1de3028c linked to BL-2008.
+
+assigned_to: coder

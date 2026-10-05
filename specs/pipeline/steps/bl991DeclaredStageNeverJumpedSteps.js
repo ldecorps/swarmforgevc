@@ -22,6 +22,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { spawnHandoffSend } = require('./lib/answerHandoffAudit');
 const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -109,7 +110,7 @@ function send(ctx, from, to) {
       'config required_stages_routing_enabled false\n'
     );
   }
-  const res = spawnSync('bb', [SWARM_HANDOFF, 'draft.txt'], { cwd: ctx.root, encoding: 'utf8', env });
+  const res = spawnHandoffSend('bb', [SWARM_HANDOFF, 'draft.txt'], { cwd: ctx.root, encoding: 'utf8', env });
   const out = `${res.stdout || ''}${res.stderr || ''}`;
   assert.equal(res.status, 0, `expected the send to succeed, got exit ${res.status}:\n${out}`);
   const matches = out.match(/:(\/[^\s]*\.handoff)/g);

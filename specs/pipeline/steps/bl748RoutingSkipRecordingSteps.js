@@ -8,6 +8,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { spawnHandoffSend } = require('./lib/answerHandoffAudit');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_HANDOFF = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_handoff.bb');
@@ -115,7 +116,7 @@ function sendHandoff(ctx, { from, to }) {
     SWARMFORGE_REQUIRED_STAGES_ROUTING: '1',
   };
   delete env.SWARMFORGE_SKIP_DAEMON;
-  const result = spawnSync('bb', [SWARM_HANDOFF, draftName], {
+  const result = spawnHandoffSend('bb', [SWARM_HANDOFF, draftName], {
     cwd: ctx.targetPath,
     encoding: 'utf8',
     env,
