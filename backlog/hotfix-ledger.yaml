@@ -1154,3 +1154,17 @@
   stamp_ticket: BL-1989
   human_decision: null
   decided_at: null
+- commit: 8f2643f123
+  subject: "hotfix: the pipeline-code guard imports a bounced commit's path when the same ticket's later QA-approved commit carries it unchanged"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1990
+  human_decision: null
+  decided_at: null
+- commit: 1a95154e5c
+  subject: "hotfix: a local seat gets hints for guessed paths, whole reads of big files and npm from the root; its card says so"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1989
+  human_decision: null
+  decided_at: null
