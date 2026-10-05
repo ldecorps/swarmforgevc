@@ -1,0 +1,1 @@
+{"id":"BL-1995","messages":[{"seq":0,"ts":1791207049728,"author":"swarm","type":"outbound","text":"BL-1995 🎵 in progress — Stamp-off for the iq3 spy-loop hotfixes after BL-1994 went active, starting with dfd15ebfb8: the local-seat edit hook shows a stray closing delimiter at its own line and column, and the repeat guard names an edit that undoes an earlier one"}]}
