@@ -113,3 +113,6 @@ description: |
     stays green.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-05, by: hardender, blamed: coder, class: invariant-unencoded, commit: a0b390f7e0, evidence: backlog/evidence/BL-1972-bounce-20261005.md }
