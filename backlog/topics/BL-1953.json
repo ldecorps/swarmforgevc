@@ -1,0 +1,1 @@
+{"id":"BL-1953","messages":[{"seq":0,"ts":1791185114507,"author":"swarm","type":"outbound","text":"BL-1953 ✅ done — Stamp-off for hotfix 35a8448e4c: BL-1929's land carried BL-1851's suite-manifest row onto main without its runner (main red at fd4c492d3b), past BL-1830's shared-own-path guard - the hotfix drops the row; the review finds why BL-1830 did not stop it"}]}
