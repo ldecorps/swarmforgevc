@@ -73,12 +73,28 @@ description: |
   - Live at once for the hook; the card line reaches the seat at its next
     session.
 
+  ## Hotfix e36702e90d: the empty-grep hint reads a piped grep right
+
+  14:12:57Z the iq3 coder's `node specs/pipeline/cli.js <BL-925 feature> |
+  grep '^# (tests|pass|fail)'` printed nothing because the run ended at the
+  runner's 300 s ceiling with no summary (a red, fixed by 3024ccb56c /
+  BL-2000). 4949a2d37e's hint said "not in those files", which reads as if
+  the feature had no tests.
+
+  - `swarmforge/scripts/local_model_repeat_guard.bb` `empty-grep-hint`: a
+    grep after a pipe from anything but `git ls-files`, `ls`, `find` or
+    `cat` says the command may not have printed what was expected and to
+    run it once into tmp/out.txt; a grep over files keeps the old wording.
+  - test_bl1971: an empty grep over a feature run's output gets the new
+    wording and not the old one.
+
   ## What the coder does (all of it)
 
   1. Run qa_e2e_procedure steps 1 and 2 once each, in your worktree.
-  2. Read `git show 9db627f908` against the section above and the invariant.
+  2. Read `git show 9db627f908` and `git show e36702e90d` against the two
+     sections above and the invariant.
   3. Write backlog/evidence/BL-1999-coder-<date>.md: the two results and
-     one line saying whether the hotfix matches its description.
+     one line per hotfix saying whether it matches its description.
   4. Commit that file, forward to QA, run done_with_current.sh.
 
 notes: |
@@ -88,3 +104,5 @@ notes: |
   mints human_approval pending, not under the 2026-09-17 auto-approve
   carve-out.
   Hotfix ledger: 9db627f908 linked to BL-1999.
+  Folded in 2026-10-05 while still paused (approval pending): hotfix
+  e36702e90d (empty-grep hint over a piped run), ledger-linked to BL-1999.
