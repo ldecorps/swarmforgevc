@@ -149,3 +149,5 @@ notes: |
     lacks it"). One owner, no second ticket.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1927; that file
     carries the human's uncommitted edits, so it was left alone.
+
+assigned_to: coder
