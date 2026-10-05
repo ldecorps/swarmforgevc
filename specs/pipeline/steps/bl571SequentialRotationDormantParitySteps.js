@@ -92,6 +92,12 @@ if [[ "$sock_cmd" == "respawn-pane" ]]; then
   echo "RESPAWN $*" >> "${ctx.respawnLog}"
   exit 0
 fi
+# A MISSING session is repaired by creating it (single_role_repair_lib's
+# new-session branch); only a present one is respawned. Both are repairs.
+if [[ "$sock_cmd" == "new-session" ]]; then
+  echo "CREATE $*" >> "${ctx.respawnLog}"
+  exit 0
+fi
 exit 0
 `;
   fs.writeFileSync(path.join(root, 'bin', 'tmux'), tmux);

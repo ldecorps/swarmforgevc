@@ -472,11 +472,13 @@ pass "BL-215: a configured-but-keyless daemon warns loudly (naming RESEND_API_KE
 
 # ── BL-1491: a halt records itself on the kill-all-audit log and the
 #    availability ledger, through the REAL supervisor (not a fake adapter).
-#    No tmux socket file at all (this ticket's own qa_e2e_procedure), so
-#    halt-swarm!'s tmux cleanup path is never reached - isolates this check
-#    from BL-1498's unrelated real-tmux/PATH-shadowing environment issue. ──
+#    The fixture keeps its tmux-socket file: since BL-1688 (2026-09-22) a
+#    supervisor with no tmux-socket skips ("no swarm to supervise") and
+#    never halts, so deleting it - as this case first did, to keep
+#    halt-swarm!'s cleanup off real tmux - left the case red. The cleanup
+#    reaches only the fake tmux on PATH, as in cases 01 and 05 (ZDOTDIR
+#    keeps a shell profile from shadowing it, BL-1498). ──
 make_fixture
-rm -f "$ROOT/.swarmforge/tmux-socket" "$ROOT/fake.sock"
 trap 'stop_daemon; rm -rf "$ROOT" "$ZDOTDIR"' EXIT
 echo "999999" > "$DAEMON_DIR/handoffd.pid"   # dead pid
 unset RESEND_API_KEY
