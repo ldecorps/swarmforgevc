@@ -1,0 +1,104 @@
+id: BL-1984
+title: "The bl1375 and bl1678 property invariants hold under a loaded property lane: both files failed QA's BL-1958 gather (a 917 s property lane at load ~15) and pass alone in 42 s and 49 s - record which invariant fails and why, then fix it without lowering the files' run counts"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red at first sighting (2026-09-05 rule) - QA held
+# BL-1958 on both files with no register row.
+status: todo
+epic: unit-suite-speed
+priority: 3
+depends_on: []
+mutation_cost: low
+# low: test-side only - per-test timeouts or fixture cost in two property
+# files, plus committed measurement evidence.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two test files' timeouts or fixtures; nothing to refactor"
+  architect: "test-side only; no production boundary moves"
+  hardender: "test-side only; there is no production code to mutate"
+  documenter: "no living doc describes these two property files"
+
+# Not a claim of ownership over BL-1678's contract (BL-1251): the feature
+# whose property file is one of the two reds.
+acceptance: specs/features/BL-1678-a-land-never-ships-an-unapproved-forward-that-shares-no-path-with-the-landing-ticket.feature
+
+human_approval: approved
+approval_context: >
+  Owner of two property-lane reds QA named on 2026-10-05, minted under the
+  human's standing red rule. No choice is posed. FIRM: the fix never lowers
+  a file's numRuns or drops an invariant; it gives the heavy invariants
+  enough time under the lane's real concurrency, or makes their fixtures
+  cheaper.
+
+invariants:
+  - "Each of the five invariants in the two files keeps its run count and its assertions."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's property row: both files pass, or the row names
+     another file.
+  2. Read the coder's committed evidence: for each invariant, its time
+     alone and its time in a loaded run, the failure seen (timeout or
+     assertion) and the timeout or change chosen.
+  3. After the land: the two register rows naming BL-1984 are gone (BL-1631
+     retires them at the land).
+
+source: |
+  QA note 003813 to the specifier, 2026-10-05 07:21Z: "BL-1958 held
+  00b97d11af: unowned reds bl1375+bl1678 props, unit work ratchet".
+  QA's gather .worktrees/QA/tmp/BL-1958-gather.json: properties exit 1 in
+  917564 ms; register_join: both files `absent`. QA's re-run of the two
+  files alone (.worktrees/QA/tmp/BL-1958-props-red-files.log, 08:17 local):
+  3/3 and 2/2 pass, 42097 ms and 48819 ms.
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js`
+  and `extension/test/bl1678LandNeverShipsUnapprovedForwardInvariants.property.test.js`
+  failed in QA's BL-1958 gather, whose property lane took 917 s at a host
+  load near 15, and pass alone. Both build git fixtures per run. Alone, the
+  slowest invariants take 22.6 s (bl1375 invariant 1, under the lane's
+  50000 ms default timeout) and 39.0 s (bl1678 invariant 1, under its own
+  120000 ms timeout). The gather keeps a 4000-character excerpt, so which
+  invariant failed and how was not recorded.
+
+  ## What is wanted
+
+  1. Record, for each of the five invariants, its time alone and its time
+     in a loaded run (the whole property lane while the unit suite runs,
+     or the lane's own fork count), and the failure each one shows, if
+     any. Commit it: backlog/evidence/BL-1984-coder-<date>.md.
+  2. Fix what fails: an explicit per-test timeout set from the loaded
+     measurement with stated headroom (bl1678 invariant 1 already carries
+     one), or a cheaper fixture. Never lower numRuns or drop an assertion
+     (invariant).
+  3. Both files pass in a loaded property-lane run, recorded in the same
+     evidence.
+
+  ## How (direction, not mandate)
+
+  - Where to read: the test declarations at bl1375 lines 167, 220 and 299,
+    and bl1678 line 115 (`{ timeout: 120000 }`); the lane's default timeout
+    is `PROPERTY_LANE_DEFAULT_TIMEOUT_MS` in
+    `extension/vitest.properties.config.mjs` (~line 140). Do not change
+    the lane-wide default: the config's own comment records why per-test
+    raises are preferred (BL-871).
+  - extension/test/ is QA-only on main; this is an ordinary parcel, so
+    that does not bind.
+
+out_of_scope: |
+  - The unit work ratchet's load sensitivity: BL-1983.
+  - The gather's 4000-character excerpt (it is why the failure went
+    unrecorded); a separate ticket if it bites again.
+
+notes: |
+  Minted 2026-10-05 by the specifier on QA note 003813, the same pass.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Owner, not a hotfix: the failing invariant and its failure mode were not
+  recorded, and reproducing a loaded lane is more than one specifier
+  sitting; a blind timeout raise could miss the real failure.
+  Register rows added the same pass: property bl1375 and property bl1678,
+  both owned by BL-1984. Holder note sent to QA the same pass.
