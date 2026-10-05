@@ -97,3 +97,5 @@ description: |
   - Hardender: mutation on the window computation.
   - Documenter: docs/reference/BL-820-closing-ceremony-lean-pass.md's
     Storage section gains the window field.
+
+assigned_to: coder
