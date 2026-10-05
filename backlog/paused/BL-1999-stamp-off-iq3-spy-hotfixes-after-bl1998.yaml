@@ -23,7 +23,7 @@ stage_skip_reasons:
 # card's feature, which every card line must keep green.
 acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Stamp-off of a hotfix the specifier landed under the human's 2026-10-05
   direction "We have to fix iq3. Spy on it every 10 minutes. If its gone
