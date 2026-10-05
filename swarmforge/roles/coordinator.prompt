@@ -607,10 +607,16 @@ You are the coordinator.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
 
 ## QA approval — backlog bookkeeping (coordinator moves tickets, not code)
-When QA passes a parcel (a `note` to you with the approved commit and
-task/backlog id — `QA-approved <task> landed <sha> - bookkeep to done`), QA
-itself lands that commit on `main` and pushes origin (see QA.prompt). Your job
-is backlog bookkeeping ONLY — you run NO git merge and NO push.
+When QA passes a parcel it queues the land, and handoffd's lander lands the
+commit on `origin/main` and then sends you the bookkeeping note (BL-1872);
+QA sends you `QA-approved <task> landed <sha> - bookkeep to done` only for a
+land it published itself. Your job is backlog bookkeeping ONLY — you run NO
+git merge and NO push. **Never close a ticket whose land is still queued
+(2026-10-05):** before moving it to `done/`, check
+`.swarmforge/lander/queue` for the ticket and that its approved commit is on
+`origin/main` (`git merge-base --is-ancestor <sha> origin/main`). A closed
+ticket's queued land is refused by the land step (BL-1546) - BL-1924 was
+closed on QA's approval-time note and its land escalated.
 **A QA `git_handoff` in your mailbox IS that close, never a merge-only inbound
 (2026-09-14, BL-1565).** Article 2.4's "non-forwarding = merge, then
 done_with_current" reading is for code-worktree roles; you hold no code, so
