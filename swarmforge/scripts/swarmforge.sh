@@ -2475,14 +2475,24 @@ RESUMECHECK
       # sorts first there (measured: "android/"), cat/rm on it both fail,
       # and the loop never terminates. An array assignment has no such
       # fallback: an empty match is an empty array, checked directly.
-      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"Use read_file now to read '$prompt_file' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\${LOCAL_RESUME_NOTE}\"
+      # Architect bounce 2026-10-05 (evidence BL-1991-architect-bounce-
+      # 20261005.md): the generated launch script runs under `set -euo
+      # pipefail` (this function's fixed template header). The repeat
+      # guard's end-qwen-process! kills qwen with a non-zero/signalled
+      # exit - exactly the condition `set -e` reacts to - so WITHOUT the
+      # `|| true` below, a killed-for-restart qwen aborted the whole
+      # script before the pending_msgs check ever ran: the one case this
+      # feature exists to handle silently defeated it. Both qwen calls
+      # need this, not only the first - the loop's own relaunch can also
+      # be the next one the guard kills.
+      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"Use read_file now to read '$prompt_file' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\${LOCAL_RESUME_NOTE}\" || true
 local -a pending_msgs
 pending_msgs=('$restart_dir'/*.msg(N))
 while [[ \${#pending_msgs[@]} -gt 0 ]]; do
   pending_msg=\"\${pending_msgs[1]}\"
   override_text=\"\$(cat \"\$pending_msg\")\"
   rm -f \"\$pending_msg\"
-  qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\$override_text\"
+  qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\$override_text\" || true
   pending_msgs=('$restart_dir'/*.msg(N))
 done"
       ;;
