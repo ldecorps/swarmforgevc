@@ -26,7 +26,7 @@ stage_skip_reasons:
 # of the code this pass mutates, which must stay green.
 acceptance: specs/features/BL-1968-the-ceremony-folds-every-event-appended-since-the-previous-run.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Owner of the hardening-debt row BL-1968's hardener deferred on 2026-10-05
   (cooldown: the files had just been committed). BL-1968 closed, so the row
