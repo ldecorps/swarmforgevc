@@ -1,0 +1,84 @@
+id: BL-1992
+title: "A third missed write releases the parcel to another coder seat: after BL-1991's two restarts, a local seat that again skips the write its compaction named loses the parcel from in_process and the coordinator gets a note naming the ticket"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+depends_on: [BL-1991]
+mutation_cost: medium
+# medium: one more branch in BL-1991's decision, a mailbox move and a note.
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one branch beside BL-1991's decision; nothing to refactor"
+
+acceptance: specs/features/BL-1992-a-third-missed-write-releases-the-parcel-to-another-coder-seat.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1992ThirdMissReleasesParcelSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  The third-miss half of the human's 2026-10-05 trial (source:, verbatim
+  in BL-1991). FIRM: no third restart; the parcel leaves in_process; a note
+  names the ticket so another coder seat can take it; a seat that writes on
+  its last chance keeps its parcel. The note goes to the coordinator,
+  which routes work.
+
+invariants:
+  - "No hook ever refuses a tool call."
+  - "A parcel leaves a seat's in_process for a missed write only on the third miss, and only with a note to the coordinator naming its ticket."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1992-a-third-missed-write-releases-the-parcel-to-another-coder-seat.feature`:
+     2 of 2 ok. Measured 0 at mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-restarted-on-it.feature`:
+     4 of 4 ok (BL-1991's land is the baseline).
+
+source: |
+  Operator intake .swarmforge/operator/INTAKE-iq3-coder-restart-20261005.md
+  (coordinator note 016541), "The trial", verbatim: "On the third miss, do
+  not restart: the parcel must leave `in_process`, and a note must name the
+  ticket so the other coder seat can take it." The whole intake is
+  verbatim in BL-1991's source:.
+
+description: |
+  ## What is wanted
+
+  1. A seat BL-1991 already restarted twice on its parcel, which again
+     makes three tool calls that are not the named write, is not
+     restarted. The parcel leaves its in_process, and the coordinator gets
+     a note naming the parcel's ticket so another coder seat can take it
+     (scenario 01).
+  2. A seat that writes the named file on its last chance keeps its parcel
+     and no note is sent (scenario 02).
+
+  ## How (direction, not mandate)
+
+  - The branch sits beside BL-1991's decision, in whatever file BL-1991
+    put it.
+  - Move the parcel out of in_process the way the coordinator's pull
+    already does (in_process to the seat's inbox/abandoned), so nothing
+    keeps routing it to this seat.
+  - Send the note through `swarmforge/scripts/swarm_handoff.sh` (a `note`
+    to coordinator, at most 80 characters, naming the ticket id).
+  - Step handler `specs/pipeline/steps/bl1992ThirdMissReleasesParcelSteps.js`
+    (BL-1371). Its steps repeat BL-1991's text word for word, so register
+    them with `registry.defineScoped(pattern, handler, featureName)`
+    (BL-425).
+
+out_of_scope: |
+  - Which coder seat takes the released ticket: the coordinator routes it.
+  - The seat working on after its ticket was parked as blocked: a separate
+    fault (the intake's own words).
+
+notes: |
+  Minted 2026-10-05 by the specifier from the operator intake
+  INTAKE-iq3-coder-restart-20261005.md (coordinator note 016541), split
+  1:2 with BL-1991 for INVEST Small. depends_on BL-1991: this branch
+  extends its decision and reads its restart count.
+  Dynamic routing: feature, Babashka/shell production that moves a parcel
+  and sends a note, so architect, hardender (hand-mutant pass on the move)
+  and documenter stay.

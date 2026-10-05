@@ -114,3 +114,5 @@ description: |
   - If a scenario fails on its merits once bound, that is a real defect in
     shipped behaviour. Send the specifier a note naming the scenario and
     the observed value. Never edit the scenario to pass.
+
+assigned_to: coder

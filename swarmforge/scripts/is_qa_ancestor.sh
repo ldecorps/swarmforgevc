@@ -90,14 +90,49 @@ fi
 # exactly when the full sha starts with it (records abbreviate to whatever
 # length the recorder used, so prefix match, never string equality).
 match_bounce_token() {
-  local token="$1" message="$2"
+  local token="$1" message="$2" by
   case "$FULL_SHA" in
     "$token"*)
+      [[ -n "$SUPERSEDED_BY" ]] && return 0
+      if by="$(bounce_superseded_by)"; then
+        SUPERSEDED_BY="$by"
+        return 0
+      fi
       echo "bounced: $SHORT_SHA $message (recorded as $token) - a bounced parcel never reads as approved (BL-952)" >&2
       return 1
       ;;
   esac
   return 0
+}
+
+# 2026-10-05: since landing is a merge (BL-1870 ruling A, BL-1872) a
+# bounced-then-fixed parcel lands its whole line, so its bounced first try
+# reaches main as an ancestor of the approved fix. That first try still
+# never approves anything on its own (BL-952); its bounce is SUPERSEDED when
+# a LATER commit of the SAME ticket, on the ancestry path from it to
+# swarmforge-QA, origin/main or a lander-queued tip, is itself approved -
+# QA approved the fixed line. Same ticket only, so one ticket's approval
+# never covers another's commit (BL-1096). The candidate's verdict runs in
+# a subshell: answer_one's globals are this sha's. Without it, BL-1972's
+# land wedged main's reconcile and the Article 4.2 detector re-fired on its
+# bounced first try every sweep (coordinator notes 016529, 016537).
+bounce_superseded_by() {
+  local ticket base c
+  ticket="$(git log -1 --format=%s "$FULL_SHA" 2>/dev/null | grep -oE '^(BL|GH)-[0-9]+' || true)"
+  [[ -n "$ticket" ]] || return 1
+  # shellcheck disable=SC2086 # one sha per word
+  for base in swarmforge-QA origin/main $QUEUE_TIPS; do
+    git rev-parse -q --verify "${base}^{commit}" >/dev/null 2>&1 || continue
+    while IFS= read -r c; do
+      [[ -n "$c" && "$c" != "$FULL_SHA" ]] || continue
+      git log -1 --format=%s "$c" 2>/dev/null | grep -qE "^${ticket}([^0-9]|$)" || continue
+      if ( answer_one "$c" ) >/dev/null 2>&1; then
+        printf '%s' "${c:0:10}"
+        return 0
+      fi
+    done < <(git rev-list --ancestry-path "$FULL_SHA..$base" 2>/dev/null | head -n 200)
+  done
+  return 1
 }
 
 # ── verdict stores, read ONCE (BL-1086) ───────────────────────────────────
@@ -124,6 +159,10 @@ LAND_PROBLEM=""
 # BL-1872: commits reachable from a lander-queued tip (see below).
 QUEUE_REACH=""
 QUEUE_DIR=""
+QUEUE_TIPS=""
+# 2026-10-05: set by match_bounce_token when a bounce is superseded (see
+# bounce_superseded_by); reset at the start of every answer_one.
+SUPERSEDED_BY=""
 
 collect_verdict_stores() {
   # ── bounce verdict: the JSONL store record-bounce.js appends ────────────
@@ -309,6 +348,7 @@ collect_verdict_stores() {
     tips="$(cat "$QUEUE_DIR"/*.edn 2>/dev/null \
               | grep -oE ':commit "[0-9a-fA-F]{40}"' \
               | sed -E 's/:commit "([0-9a-fA-F]+)"/\1/' || true)"
+    QUEUE_TIPS="$tips"
     if [[ -n "$tips" ]]; then
       # shellcheck disable=SC2086 # one sha per word
       QUEUE_REACH="$(git rev-list $tips ^swarmforge-QA 2>/dev/null || true)"
@@ -402,6 +442,7 @@ answer_one() {
     return 2
   fi
   SHORT_SHA="$(printf '%s' "$FULL_SHA" | cut -c1-10)"
+  SUPERSEDED_BY=""
 
   while read -r token f; do
     [[ -n "$token" ]] || continue
@@ -412,6 +453,11 @@ answer_one() {
     [[ -n "$token" ]] || continue
     match_bounce_token "$token" "appears in a ticket's bounce_history" || return 1
   done <<< "$YAML_TOKENS"
+
+  if [[ -n "$SUPERSEDED_BY" ]]; then
+    echo "approved: $SHORT_SHA was bounced, but the bounce is superseded by $SUPERSEDED_BY, a later QA-approved commit of the same ticket (2026-10-05)" >&2
+    return 0
+  fi
 
   # The bounce stores have had their say; only now does an unconsultable
   # expedite store make this sha undeterminable.

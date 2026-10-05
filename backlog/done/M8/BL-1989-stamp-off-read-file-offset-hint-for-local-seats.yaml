@@ -1,5 +1,5 @@
 id: BL-1989
-title: "Stamp-off for hotfix cd9f7cb39a: a local seat's read_file at offset 1 is told offset counts from 0 (repeat-guard hint and a card rule), after the iq3 coder read one file at offset 1 seven times, never saw line 1, and was halted by qwen's loop check; also hotfix 0d780b2462 (a seat that sleeps to wait is told to run in the foreground, and the card says run one property file, not the 15-minute lane)"
+title: "Stamp-off for hotfix cd9f7cb39a: a local seat's read_file at offset 1 is told offset counts from 0 (repeat-guard hint and a card rule), after the iq3 coder read one file at offset 1 seven times, never saw line 1, and was halted by qwen's loop check; also hotfix 0d780b2462 (a seat that sleeps to wait is told to run in the foreground, and the card says run one property file, not the 15-minute lane); and hotfix 1a95154e5c (hints for guessed paths, whole reads of big files and npm from the root); and hotfix 32b322a836 (a shell command naming a missing path, and a card line on where things live)"
 milestone: M8
 type: defect
 severity: high
@@ -45,7 +45,11 @@ qa_e2e_procedure: |
      the command in the foreground instead" (measured at 0d780b2462).
   4. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1845LocalSeatQwenInteractiveInvariants.property.test.js`
      passes, the card's one-file command (measured: 2 of 2 in 14 s).
-  5. Read the coder's evidence: it names the qwen session where the seat
+  5. The guard test prints "a whole read of a big file, a guessed path and
+     npm from the root each get a hint" (measured at 1a95154e5c: 13/13).
+  6. The guard test prints "a read-only shell command naming a path that
+     does not exist is told so" (measured at 32b322a836: 14/14).
+  7. Read the coder's evidence: it names the qwen session where the seat
      next read a file at offset 1, and whether the hint changed its next
      call, or that no such call has happened yet.
 
@@ -107,6 +111,36 @@ description: |
     test/<file>`, never the lane; never background-and-sleep; a run that
     prints `Test Files N passed` and no `failed` has passed.
 
+  ## Hotfix 1a95154e5c (folded in 2026-10-05)
+
+  The human: iq3 shows "a lot of file not found, or not a git repository
+  errors" and compacts very often while its pane shows low context.
+  Measured: 11 read_file calls on guessed paths, npm run from the repo
+  root, and 163 read_file calls totalling 903k characters in one session
+  (one 25k-character file read whole four times), refilling 7.6k to 54.9k
+  tokens in 3 minutes, so qwen compacted every 3-5 minutes at about 56k.
+
+  - `local_model_repeat_guard.bb`: `read-hint` (a missing path: find it
+    with `git ls-files | grep <name>`; a read of a file over 300 lines with
+    no limit: grep -n, then about 100 lines) and `npm-hint` (npm runs from
+    extension/).
+  - `loop.note`: find a file before reading it; read big files in parts;
+    npm runs from extension/.
+
+  ## Hotfix 32b322a836 (folded in 2026-10-05, after take-up)
+
+  The human: "Just saw a ls cannot access from iq3". On BL-1930 at 12:05Z
+  the iq3 coder grepped and listed specs/pipeline/features/, which does
+  not exist (features live in specs/features/), then repeated an identical
+  grep over specs/pipeline/ four times and never looked in specs/features/.
+
+  - `local_model_repeat_guard.bb`: `shell-path-hint` tells a read-only
+    shell command (ls, cat, head, tail, wc, grep, find, stat) that names a
+    path missing under the hook's cwd that it does not exist. Quoted text,
+    options, globs, URLs and redirect targets are never read as paths.
+  - `loop.note`: where things live, and that there is no
+    specs/pipeline/features/.
+
   ## What the coder checks
 
   The change against the description and the invariant. Evidence:
@@ -118,6 +152,12 @@ notes: |
   "Iq3 went in a loop again", 2026-10-05), folded in while the Work note
   was still unread in the coder's inbox. Hotfix ledger: 0d780b2462 linked
   to BL-1989.
+  Also stamps off 1a95154e5c (the human's "a lot of file not found ...
+  compacting very often", 2026-10-05), folded in while Work note 016500 was
+  still unread. Hotfix ledger: 1a95154e5c linked to BL-1989.
+  Also stamps off 32b322a836, folded in after coder@2 took the parcel up
+  (11:59:41Z); a priority-00 note told coder@2 to merge main and re-read.
+  Hotfix ledger: 32b322a836 linked to BL-1989.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Prompt-caching review, same pass (no change made): llama-server runs
   with --context-shift --keep 4 (Ollama 0.32.15's default), a single slot

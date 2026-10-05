@@ -133,3 +133,5 @@ notes: |
   BL-1599's narrative ("stable across hosts") becomes false at this land:
   re-tense that sentence in specs/features/BL-1599-the-unit-suite-work-ratchet-holds-the-line.feature
   in this parcel (BL-1006); no BL-1599 scenario changes.
+
+assigned_to: coder

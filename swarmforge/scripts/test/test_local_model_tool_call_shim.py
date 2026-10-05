@@ -11,6 +11,7 @@ import json
 import sys
 import threading
 import unittest
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -301,15 +302,19 @@ class CompactionTests(unittest.TestCase):
             self.assertEqual(shim.close_cut_snapshot(reply), (reply, False))
 
 
+BAD_CALL_ERROR = {"error": {"message": 'llama-server returned invalid tool call arguments for "run_shell_command": unexpected end of JSON input'}}
+
+
 class FakeOllama(BaseHTTPRequestHandler):
     seen: list = []
+    bad_calls: dict = {}
 
     def log_message(self, *_a) -> None:
         pass
 
-    def _reply(self, payload: dict) -> None:
+    def _reply(self, payload: dict, status: int = 200) -> None:
         data = json.dumps(payload).encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -330,6 +335,13 @@ class FakeOllama(BaseHTTPRequestHandler):
             self._reply(cut_completion(CUT))
         elif last.get("content") == "announce, please":
             self._reply(completion("I will now run the ready_for_next.sh script."))
+        elif last.get("content") in ("bad call once", "bad call always"):
+            n = FakeOllama.bad_calls.get(last["content"], 0) + 1
+            FakeOllama.bad_calls[last["content"]] = n
+            if last["content"] == "bad call always" or n == 1:
+                self._reply(BAD_CALL_ERROR, 500)
+            else:
+                self._reply(completion(FENCED))
         elif last.get("content") == "summarize, please":
             self._reply(cut_completion("A long summary of the history so far."))
         else:
@@ -478,6 +490,31 @@ class LiveShimTests(unittest.TestCase):
         self.assertEqual(shim.probe(port), {"shim": shim.NAME, "upstream": self.upstream_url})
         self.assertEqual(shim.ensure(port, self.upstream_url, "/dev/null"), 0)
         self.assertEqual(shim.ensure(self.upstream.server_address[1], self.upstream_url, "/dev/null"), 1)
+
+
+class BadToolCallTests(unittest.TestCase):
+    def test_only_a_parse_failure_counts(self) -> None:
+        self.assertTrue(shim.is_bad_tool_call(500, BAD_CALL_ERROR))
+        self.assertFalse(shim.is_bad_tool_call(500, {"error": {"message": "model not found"}}))
+        self.assertFalse(shim.is_bad_tool_call(200, BAD_CALL_ERROR))
+
+
+class BadToolCallLiveTests(LiveShimTests):
+    def test_a_bad_tool_call_is_retried_and_the_seat_gets_a_real_call(self) -> None:
+        tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+        FakeOllama.bad_calls.pop("bad call once", None)
+        raw = self.post({"model": "m", "messages": [{"role": "user", "content": "bad call once"}], "tools": tools})
+        reply = json.loads(raw)
+        self.assertEqual(reply["choices"][0]["message"]["tool_calls"][0]["function"]["name"], "read_file")
+        self.assertEqual(FakeOllama.bad_calls["bad call once"], 2)
+
+    def test_a_bad_tool_call_that_persists_still_returns_the_error(self) -> None:
+        tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+        FakeOllama.bad_calls.pop("bad call always", None)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post({"model": "m", "messages": [{"role": "user", "content": "bad call always"}], "tools": tools})
+        self.assertEqual(caught.exception.code, 500)
+        self.assertEqual(FakeOllama.bad_calls["bad call always"], 1 + shim.BAD_TOOL_CALL_RETRIES)
 
 
 if __name__ == "__main__":

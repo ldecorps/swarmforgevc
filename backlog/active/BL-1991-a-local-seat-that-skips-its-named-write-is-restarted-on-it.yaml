@@ -1,0 +1,138 @@
+id: BL-1991
+title: "A local seat that skips the write its compaction named is restarted on that write: after three tool calls that are not the named write, its qwen process ends and a fresh one starts with only that next step as its message, at most twice per parcel (the human's trial, after the iq3 coder made 0 edits in 261 steps on BL-1928)"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 2
+depends_on: []
+mutation_cost: medium
+# medium: a decision over the transcript the repeat-guard hook already
+# reads, a durable per-parcel restart count, and a relaunch with an
+# override message.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one decision beside the existing hook and one launch change; nothing large enough to leave duplication behind"
+
+acceptance: specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-restarted-on-it.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1991SkippedWriteRestartSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  The human's own trial, relayed by the operator intake of 2026-10-05
+  (source:). FIRM, from the intake: the trigger (the latest compaction's
+  next step names a write or an edit, then three tool calls that are not
+  that write), the fresh turn's only message (that next step, told to write
+  the named file and not to read a file it is about to create), at most two
+  restarts per parcel, and a seat that writes first left alone. FIRM: no
+  tool call is ever refused, and skipLoopDetection stays on. The coder
+  chooses hook or launcher. The third miss is BL-1992.
+
+invariants:
+  - "No hook ever refuses a tool call: the repeat guard and this check stay warnings or restarts, never a deny."
+  - "A parcel's seat is restarted at most twice for a missed write, and never after it made the named write since that compaction."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-restarted-on-it.feature`:
+     4 of 4 ok. Measured 0 at mint: no handler exists yet.
+  2. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     every case passes (13/13 at mint).
+  3. Read the coder's evidence: the restart replayed against session
+     72f67fe0-cfdb-4072-8fa6-72ecbd998241's transcript (in
+     ~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/)
+     fires on the third non-write call after a compaction whose next step
+     names bl1928SeatToolingFromOriginMainSteps.js.
+
+source: |
+  Operator intake .swarmforge/operator/INTAKE-iq3-coder-restart-20261005.md
+  ("Source: human via Cursor. Suggest one trial. Do not re-open the
+  investigation from scratch."), relayed by coordinator note 016541. Its
+  sections, verbatim:
+
+  ## What happened
+
+  `ready_for_next.sh` served BL-1928. The seat merged main, then did not write. By 12:48Z the same turn was 261 model steps: 185 `read_file`, 63 shell commands, 6 compactions, 0 edits. `swarmforge.sh` was read 86 times, in 120-line windows. Five compaction summaries name the same next step: write `specs/pipeline/steps/bl1928SeatToolingFromOriginMainSteps.js`. The model answered each one by reading more. The repeat guard wrote 17 `REPEAT` notes, including a fifth identical read and a third identical `grep` of `print-task` in `handoff_lib.bb`. It is still in that turn.
+
+  ## The trial
+
+  When the latest compaction `<next_step>` names a write or an edit, and the seat then makes three tool calls that are not that write, end the qwen process and start a fresh one. The new turn's user message is only that next step, plus an instruction to write the named file and not to read a file it is about to create. Allow two such restarts per parcel. On the third miss, do not restart: the parcel must leave `in_process`, and a note must name the ticket so the other coder seat can take it.
+
+  A seat that writes before the third non-write call is left alone.
+
+  ## Do not try these again
+
+  They are already measured failures, not open design options.
+
+  - Do not turn `skipLoopDetection` back off. On 2026-10-04 the heuristic called 16 reads of different ranges of `swarmforge.sh` a loop, raised a keep/disable dialog nobody answers, and the one-shot turn died at "The request has been halted".
+  - Do not make the repeat guard deny the call. Hotfix `66bd85171f` did that. The seat re-sent the denied call every five seconds, which tripped qwen's always-on identical-call halt (`skipLoopDetection` does not disable that one). The guard stays a warning.
+
+  How the restart is built (hook versus launcher) is the coder's. The behavior above is the trial.
+
+  ## Out of this slice
+
+  The seat kept working after the ticket was parked as blocked. That is a separate fault. Do not bundle it here.
+
+description: |
+  ## What is wanted
+
+  1. A local coder seat whose latest compaction names a write or an edit
+     as its next step, and which then makes three tool calls that are not
+     that write, has its qwen process ended and a fresh one started
+     (scenario 01). The parcel stays in its in_process: nothing is
+     completed or handed off.
+  2. The fresh turn's only user message is that next step, plus an
+     instruction to write the named file and not to read a file it is
+     about to create (scenario 01).
+  3. A seat that makes the named write before its third other call is
+     left alone (scenario 02). A next step that names no write or edit
+     never restarts the seat (scenario 04).
+  4. At most two such restarts per parcel; the count is durable, so a
+     restart does not reset it (scenario 03). The third miss is BL-1992.
+
+  ## How (direction, not mandate)
+
+  - Where to read (only these lines):
+    `swarmforge/scripts/local_model_repeat_guard.bb` - `next-step-of`
+    (~61), `transcript-entries` (~66), `latest-next-step` (~111) and
+    `answer` (~184). The PostToolUse hook already sees every tool call
+    and reads the transcript, so counting the calls since the latest
+    compaction and deciding belong beside it. `edit-tools` (~39) names
+    the write tools.
+  - `swarmforge/scripts/swarmforge.sh` lines 2434-2461 build the local
+    seat's qwen kickoff (`launch_body ... -i "Use read_file now ..."`).
+    One shape: the hook writes the override message and the parcel's
+    restart count under `.swarmforge/` and ends qwen; the launch script
+    relaunches qwen with the override message when one is waiting. Read
+    no other part of swarmforge.sh.
+  - "The named write" is a write_file or edit whose path is the file the
+    next step names.
+  - Step handler `specs/pipeline/steps/bl1991SkippedWriteRestartSteps.js`
+    (BL-1371). Fixture transcripts and a fake process controller; never
+    the live seat.
+
+out_of_scope: |
+  - The third miss (the parcel leaves in_process, a note names the
+    ticket): BL-1992.
+  - The seat working on after its ticket was parked as blocked: a separate
+    fault, not bundled here (the intake's own words).
+  - Turning skipLoopDetection off, or making any hook deny a call.
+
+notes: |
+  Minted 2026-10-05 by the specifier from the operator intake
+  INTAKE-iq3-coder-restart-20261005.md (coordinator note 016541), split
+  1:2 for INVEST Small: this ticket is the restart, BL-1992 the third miss.
+  The intake archives to .swarmforge/operator/archive/ the same pass and
+  points at both.
+  The intake also corrects the specifier's 11:55Z timer check ("no loop,
+  13.5% context"): that check counted qwen's loop dialog, which
+  skipLoopDetection turns off for this seat, so a no-write turn like this
+  one never raises it.
+  Dynamic routing: feature, Babashka and shell production that writes
+  durable state (the restart count), so architect (hook or launcher is
+  the coder's choice and moves a boundary), hardender (BL-959 hand-mutant
+  pass on the write) and documenter (the local-seat launch how-to,
+  docs/how-to/BL-1052-local-model-seat-launch.md) stay.

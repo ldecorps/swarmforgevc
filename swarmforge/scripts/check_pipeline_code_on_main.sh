@@ -82,6 +82,9 @@ pipeline_path_import_exempt() {
   local path_anchor
   path_anchor="$(git log -1 --format=%H "$merge_head" -- "$f" 2>/dev/null || true)"
   [[ -n "$path_anchor" ]] || return 1
+  # A bounced anchor superseded by its ticket's approved fix reads approved
+  # inside is_qa_ancestor.sh itself (2026-10-05), never a second definition
+  # here (BL-925 invariant 2).
   "$REPO_ROOT/swarmforge/scripts/is_qa_ancestor.sh" "$path_anchor" 2>/dev/null || return 1
   [[ -z "$(git diff --cached "$merge_head" -- "$f")" ]] || return 1
   return 0

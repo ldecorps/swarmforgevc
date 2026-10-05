@@ -290,6 +290,11 @@
   reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-a0b390f7e04cad3e837ce9c8c8ef0688b6da4c3e
+  waived_by: coordinator
+  reason: "false positive per Operator adjudication 2026-10-05T11:30Z - bounce on BL-1972 was remediated (fix c734239556, hardender+QA re-passed clean, landed d088d44813) - see backlog/evidence/babysitter-article42-bl1972-a0b390f7e0-bounce-superseded-false-positive-20261005.md"
+  waived_at: 2026-10-05
+
 - key: pipeline-code-on-main-a21f9b2233db1285249c98c9a8e011058684e69d
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"

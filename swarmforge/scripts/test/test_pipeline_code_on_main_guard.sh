@@ -486,6 +486,56 @@ echo "$OUT1096BOUNCE" | grep -E "extension/src/published\.ts|specs/pipeline/step
 rm -rf "$ROOT/.swarmforge/bounces"
 pass "BL-1096 per-path: last touched by a commit QA published and then bounced → refused"
 
+# ── 2026-10-05 bounced-then-fixed: since landing is a merge, a path the
+# bounced first try introduced and the fix left alone is imported when a
+# LATER QA-approved commit of the SAME ticket carries it unchanged (BL-1972
+# wedged main's reconcile this way). A different ticket's approval never
+# covers it (BL-1096).
+make_bounced_then_fixed_origin() {
+  local fix_ticket="$1"
+  git -C "$ROOT" branch -f published-tip main >/dev/null
+  git -C "$ROOT" checkout -q published-tip
+  mkdir -p "$ROOT/extension/src" "$ROOT/specs/pipeline/steps"
+  echo "first try" > "$ROOT/extension/src/first-try.ts"
+  echo "first try step" > "$ROOT/specs/pipeline/steps/first-try.js"
+  git -C "$ROOT" add extension/src/first-try.ts specs/pipeline/steps/first-try.js
+  git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "BL-9001: first try"
+  FIRST_TRY="$(git -C "$ROOT" rev-parse HEAD)"
+  echo "the fix" > "$ROOT/extension/src/fix.ts"
+  git -C "$ROOT" add extension/src/fix.ts
+  git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "$fix_ticket: fix after the bounce"
+  git -C "$ROOT" branch -f "$QA_REF" published-tip >/dev/null
+  git -C "$ROOT" checkout -q main
+  mkdir -p "$ROOT/.swarmforge/bounces"
+  printf '{"at":"2026-10-05T00:00:00Z","commit":"%s","by":"hardender","role":"coder","failure_class":"correctness","ticket":"BL-9001"}\n' "${FIRST_TRY:0:10}" \
+    > "$ROOT/.swarmforge/bounces/2026-10.jsonl"
+}
+
+reset_bl925_fixture
+make_bounced_then_fixed_origin "BL-9001"
+make_ahead_bookkeeping_commit "fixed-same-ticket"
+set +e
+OUTFIXED="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUSFIXED=$?
+set -e
+[[ "$STATUSFIXED" -eq 0 ]] || fail "bounced-then-fixed: expected the merge when a later QA-approved commit of the same ticket carries the path, got: $OUTFIXED"
+[[ -f "$ROOT/extension/src/first-try.ts" ]] || fail "bounced-then-fixed: the first try's file is missing after the merge"
+rm -rf "$ROOT/.swarmforge/bounces"
+pass "bounced-then-fixed: a path from a bounced first try is imported when the same ticket's later QA-approved commit carries it unchanged"
+
+reset_bl925_fixture
+make_bounced_then_fixed_origin "BL-9002"
+make_ahead_bookkeeping_commit "fixed-other-ticket"
+set +e
+OUTOTHER="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUSOTHER=$?
+set -e
+[[ "$STATUSOTHER" -ne 0 ]] || fail "bounced-then-fixed other ticket: expected refusal when only a different ticket's commit is approved"
+echo "$OUTOTHER" | grep "extension/src/first-try.ts" >/dev/null || fail "bounced-then-fixed other ticket: must name the bounced path, got: $OUTOTHER"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+rm -rf "$ROOT/.swarmforge/bounces"
+pass "bounced-then-fixed: a different ticket's approval never covers the bounced commit's path"
+
 # ── BL-1096 per-path: absent from incoming history → refused ──────────────
 reset_bl925_fixture
 make_multi_hop_published_origin

@@ -1154,3 +1154,38 @@
   stamp_ticket: BL-1989
   human_decision: null
   decided_at: null
+- commit: 8f2643f123
+  subject: "hotfix: the pipeline-code guard imports a bounced commit's path when the same ticket's later QA-approved commit carries it unchanged"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1990
+  human_decision: null
+  decided_at: null
+- commit: 1a95154e5c
+  subject: "hotfix: a local seat gets hints for guessed paths, whole reads of big files and npm from the root; its card says so"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1989
+  human_decision: null
+  decided_at: null
+- commit: 1cec236e2d
+  subject: "hotfix: is_qa_ancestor reads a bounce as superseded when a later commit of the same ticket is approved; the guard's own carrier goes"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1990
+  human_decision: null
+  decided_at: null
+- commit: 32b322a836
+  subject: "hotfix: a local seat's read-only shell command naming a missing path gets a hint; its card says where things live"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1989
+  human_decision: null
+  decided_at: null
+- commit: 418b0a4ab3
+  subject: "hotfix: the local-model shim retries a request when llama-server rejects the model's tool call as broken JSON"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1993
+  human_decision: null
+  decided_at: null

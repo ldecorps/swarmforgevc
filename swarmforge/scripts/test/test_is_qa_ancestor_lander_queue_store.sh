@@ -109,6 +109,41 @@ rm -f "$QUEUE/BL-1-${QUEUED:0:10}.edn"
 run_predicate "$QUEUED"
 check "a retracted (unqueued) commit is NOT approved" '[[ $EXIT_CODE -eq 1 ]]'
 
+# 2026-10-05: a bounce superseded by the same ticket's approved fix. Since
+# landing is a merge, a bounced-then-fixed parcel lands its whole line, so
+# the bounced first try reaches main as an ancestor of the approved fix.
+# Stage only the commit's own file: the verdict stores exist by now, and
+# mk_commit's add -A would sweep .swarmforge/ into these commits.
+mk_commit_only() { # <file> <subject> -> echoes the sha
+  mkdir -p "$ROOT/specs/pipeline/steps"
+  printf '%s\n' "$2" > "$ROOT/specs/pipeline/steps/$1"
+  g add "specs/pipeline/steps/$1"
+  g commit -q -m "$2"
+  g rev-parse HEAD
+}
+g checkout -q --detach "$BASE"
+FIRST_TRY="$(mk_commit_only first.js 'BL-5: first try, bounced')"
+FIXED="$(mk_commit_only fixed.js 'BL-5: fix after the bounce')"
+g checkout -q --detach "$BASE"
+OTHER_FIRST="$(mk_commit_only other-first.js 'BL-6: first try, bounced')"
+OTHER_TICKET_TIP="$(mk_commit_only other-tip.js 'BL-7: another ticket built on top')"
+g checkout -q main
+printf '{:id "BL-5-%s", :task "BL-5", :commit "%s", :issue nil, :status :queued}\n' "${FIXED:0:10}" "$FIXED" > "$QUEUE/BL-5-${FIXED:0:10}.edn"
+printf '{:id "BL-7-%s", :task "BL-7", :commit "%s", :issue nil, :status :queued}\n' "${OTHER_TICKET_TIP:0:10}" "$OTHER_TICKET_TIP" > "$QUEUE/BL-7-${OTHER_TICKET_TIP:0:10}.edn"
+printf '{"at":"2026-10-05T00:00:00Z","by":"hardender","commit":"%s","evidence":"x"}\n{"at":"2026-10-05T00:00:00Z","by":"hardender","commit":"%s","evidence":"x"}\n' "${FIRST_TRY:0:10}" "${OTHER_FIRST:0:10}" \
+  >> "$ROOT/.swarmforge/bounces/2026-10.jsonl"
+
+run_predicate "$FIRST_TRY"
+check "a bounced first try is approved once a later commit of the same ticket is approved" '[[ $EXIT_CODE -eq 0 ]]'
+check "the approval names the superseding commit" '[[ "$OUT" == *"superseded by ${FIXED:0:10}"* ]]'
+
+run_predicate "$OTHER_FIRST"
+check "a different ticket's approved descendant does not supersede a bounce" '[[ $EXIT_CODE -eq 1 ]]'
+check "that refusal still names the bounce" '[[ "$OUT" == *"bounced:"* ]]'
+
+run_predicate "$BOUNCED_QUEUED"
+check "a bounced commit with no same-ticket approved descendant still reads bounced" '[[ $EXIT_CODE -eq 1 ]]'
+
 # Batch mode answers the same way.
 printf '{:id "BL-1-%s", :task "BL-1", :commit "%s", :issue nil, :status :landed}\n' "${QUEUED:0:10}" "$QUEUED" > "$QUEUE/BL-1-${QUEUED:0:10}.edn"
 set +e

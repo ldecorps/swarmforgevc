@@ -1,0 +1,134 @@
+id: BL-1990
+title: "Stamp-off for hotfixes 8f2643f123 and 1cec236e2d: a bounced commit reads superseded in is_qa_ancestor.sh when a later commit of the same ticket is approved, after BL-1972's bounced-then-fixed land wedged main's reconcile and re-fired the Article 4.2 detector every sweep"
+milestone: M8
+type: defect
+severity: high
+# high: main's reconcile was wedged (every absorb merge of origin/main
+# refused), stranding every master-resident commit; and every
+# bounced-then-fixed land would wedge it again.
+status: todo
+epic: swarm-reliability
+priority: 3
+depends_on: []
+mutation_cost: low
+# low: one shell function and two fixture cases; no mutation lane for shell.
+slice_size_envelope: low
+required_stages: [coder, architect, qa]
+stage_skip_reasons:
+  cleaner: "one function beside the existing exemption; nothing to refactor"
+  hardender: "shell has no Stryker lane (BL-472) and the guard writes no durable state"
+  documenter: "no living doc describes the per-path import exemption beyond the script's own comment"
+
+# Not a claim of ownership over BL-1096's contract (BL-1251): the feature
+# for the per-path import exemption this hotfix extends.
+acceptance: specs/features/BL-1096-qa-import-exemption-anchors-per-path-not-the-merge-tip.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed the same pass to unwedge
+  main's reconcile, under the human's 2026-10-01 rule (hotfix the red,
+  mint its stamp-off). No choice is posed. FIRM: the coder and the
+  architect review it and never re-apply it; the architect's pass is the
+  independent check that it opens no hole BL-952 or BL-1096 closed.
+
+invariants:
+  - "A bounced commit never approves a path on its own: a path whose last incoming touch is bounced is imported only when a later commit of the same ticket on the incoming side is approved and carries the identical blob."
+  - "One ticket's approval never imports another ticket's path (BL-1096)."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_pipeline_code_on_main_guard.sh`:
+     every case passes, including "bounced-then-fixed: a path from a
+     bounced first try is imported ...", "a different ticket's approval
+     never covers ..." and "published then bounced -> refused" (measured
+     at 8f2643f123: 28/28).
+  2. `bash swarmforge/scripts/test/test_pre_merge_commit_hook.sh` ends ALL
+     PASS (measured at 8f2643f123).
+  3. `node specs/pipeline/cli.js` on the BL-632, BL-925, BL-1096 and BL-952
+     features: all pass (measured at 1cec236e2d: 11/11, 8/8, 7/7, 10/10).
+  4. The is_qa_ancestor store tests all pass: lander-queue 15/15 (three
+     supersession cases), expedite 14/14, land-replay 16/16, yaml 4/4, and
+     test_invariant2_qa_definition_lib.sh 9/9 (measured at 1cec236e2d).
+  5. `bash swarmforge/scripts/is_qa_ancestor.sh a0b390f7e0` prints
+     "approved: ... superseded by c905258f89" (measured at 1cec236e2d).
+  6. Read the architect's evidence: one pass per invariant.
+
+source: |
+  Coordinator note 016529 to the specifier, 2026-10-05 11:25Z: "reconcile
+  stuck ahead4/behind10 3x, merge-abort-no-merge-head, not escalating".
+  handoffd.log 11:27:23Z, verbatim: "master-main-reconcile merge-failed
+  Commit refused: staged change touches pipeline code on `main`: -
+  extension/test/helpers/bl1972StaleBuildGuardSetup.js -
+  specs/pipeline/steps/bl1972StaleBuildStopsTheRunSteps.js".
+  `is_qa_ancestor.sh a0b390f7e0`: "bounced: a0b390f7e0 has a QA bounce
+  verdict on file ... a bounced parcel never reads as approved (BL-952)".
+  The human's standing rule, verbatim (2026-10-01): "Also, update your
+  prompt / c9 stitution: instead of minting a red, hotfix the defect and
+  mint a stampoff."
+
+description: |
+  ## Status: hotfix 8f2643f123 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  Since landing is a merge (BL-1870 ruling A, BL-1872), a
+  bounced-then-fixed parcel lands its whole line on origin/main. BL-1972's
+  first try a0b390f7e0 was bounced by the hardener; the fix c734239556
+  descends from it and leaves two of its files untouched. Every absorb
+  merge of origin/main into the master checkout then ran
+  check_pipeline_code_on_main.sh, which anchors each pipeline path on the
+  last incoming commit that touched it (BL-1096): a0b390f7e0, which BL-952
+  rightly never reads as approved. The merge was refused every tick, the
+  sweep fell back to "merge-abort-no-merge-head" and then
+  "local-ahead-refused", and main sat diverged (up to 14 ahead and 14
+  behind) with every master-resident commit stranded.
+
+  ## What the hotfixes changed
+
+  1cec236e2d (2026-10-05, coordinator note 016537: "systemic: no
+  bounce-superseded row, Art4.2 re-fires forever post-fix") moved the rule
+  into the shared predicate and replaced the guard-level carrier below:
+  `is_qa_ancestor.sh` gains `bounce_superseded_by()`. A commit with a bounce
+  verdict reads "approved: ... bounce superseded by <sha>" when a LATER
+  commit of the SAME ticket, on the ancestry path to swarmforge-QA,
+  origin/main or a lander-queued tip, is itself approved (its verdict runs
+  in a subshell). Every consumer now agrees, babysitter's Article 4.2
+  detector included (it raised a CRIT on a0b390f7e0 every sweep, escalated
+  to the operator). `check_pipeline_code_on_main.sh` drops 8f2643f123's
+  carrier: one definition of approval (BL-925 invariant 2). The guard
+  test's two new cases now pass through the predicate.
+
+  The first hotfix, 8f2643f123, as landed:
+
+  `check_pipeline_code_on_main.sh`: `same_ticket_approved_carrier()`. When
+  a path's anchor is not approved, the path is still imported if a later
+  commit on the ancestry path from the anchor to the incoming tip leads
+  with the same ticket id, carries the identical blob for that path, and
+  is approved by is_qa_ancestor.sh. It looks at no more than 200 commits.
+  Same ticket only (BL-1096); a bounced commit still approves nothing on
+  its own (BL-952). `test_pipeline_code_on_main_guard.sh` gains a
+  same-ticket case (imported) and a different-ticket case (refused). With
+  the fix live in the working tree the daemon's next reconcile merged at
+  11:36:05Z.
+
+  ## What each stage checks
+
+  - Coder: the change against the description and both invariants, and
+    the guard's cost on a long ancestry path. Evidence:
+    backlog/evidence/BL-1990-coder-<date>.md.
+  - Architect: one pass per invariant: can any commit read approved through
+    this supersession that QA never approved, including a ticket id reused
+    by an unrelated commit subject, and is the 200-commit bound right for
+    every consumer (the land step, the close guard, expedite)?
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix 8f2643f123.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  No register row: the wedge was fixed in the same pass. The 10-04 wedge
+  (master-reconcile-died-mid-merge, a died merge's leftovers) had the same
+  symptom and a different cause.
+  Hotfix ledger: 8f2643f123 linked to BL-1990.
+  Also stamps off 1cec236e2d (the predicate-level move, the same day).
+  Hotfix ledger: 1cec236e2d linked to BL-1990.
