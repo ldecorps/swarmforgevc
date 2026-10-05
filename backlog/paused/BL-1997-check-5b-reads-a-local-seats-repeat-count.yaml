@@ -5,7 +5,7 @@ type: defect
 severity: high
 # high: inherited from BL-1987 / BL-1980 - a seat collecting REPEAT notes
 # with no commit is cycling, and today nothing reports it before 60 minutes.
-status: todo
+status: blocked
 epic: local-llm-swarm
 priority: 3
 direction: swarm-reported
@@ -116,6 +116,17 @@ notes: |
   specifier. depends_on BL-1996: this slice calls its counter.
   The feature file is BL-1987's, moved: its three scenarios are word for
   word, and only the Feature line and the split paragraph changed.
+
+  2026-10-05 ~18:42Z: pulled from active - babysitter CRIT (60m no commit,
+  spinner not treated as progress). Real uncommitted work exists: 10 lines
+  in swarmforge/scripts/babysitter_check.bb, plus a new untracked
+  specs/pipeline/steps/bl1997RepeatNotesSeatStuckSteps.js. This is the
+  FOURTH loop/stall in the babysitter_check.bb repeat-notes/check-5b area
+  today (BL-1980, BL-1987 x2, now BL-1996's sibling BL-1997) - per the
+  standing watch note on this pattern, worth checking the respawned seat's
+  worktree-drift stash for salvage before re-deriving, and considering
+  whether this area should just route to coder@2 by default going
+  forward.
   Not salvage: the uncommitted BL-1987 diff in iq3's worktree (see
   BL-1996 notes); it rewrote the gatherer's let instead of adding one map
   entry, and the file does not read.
