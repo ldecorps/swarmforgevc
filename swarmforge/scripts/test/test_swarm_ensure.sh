@@ -530,6 +530,8 @@ printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
 # disk (the router launcher pre-generates one per pipeline role at startup);
 # a live resident to rotate onto is confirmed via the "swarmforge-coder"
 # has-session/list-panes branches below.
+# A target may carry tmux's exact-match prefix "=" (role-session checks use
+# it since 2026-10-05); the fakes strip it the way tmux does.
 touch "$ROOT/.swarmforge/launch/specifier.sh"
 RESPAWN_LOG="$ROOT/respawns"
 : > "$RESPAWN_LOG"
@@ -537,7 +539,7 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   case "\$target" in
     swarmforge-coder|swarmforge-coordinator) exit 0 ;;
     *) exit 1 ;;
@@ -583,7 +585,7 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   case "\$target" in
     swarmforge-coder|swarmforge-coordinator) exit 0 ;;
     *) exit 1 ;;
@@ -751,7 +753,7 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   case "\$target" in
     swarmforge-coder|swarmforge-coordinator) exit 0 ;;
     *) exit 1 ;;
@@ -796,7 +798,7 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   [[ "\$target" == "swarmforge-coordinator" ]] && exit 0
   exit 1
 fi
@@ -844,12 +846,12 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   [[ "\$target" == "swarmforge-architect" ]] && exit 1
   exit 0
 fi
 if [[ "\$sock_cmd" == "list-panes" ]]; then
-  target="\$5"
+  target="\${5#=}"
   if [[ "\$target" == "swarmforge-architect" ]]; then
     exit 1
   fi
@@ -929,7 +931,7 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   case "\$target" in
     swarmforge-coder|swarmforge-coordinator) exit 0 ;;
     swarmforge-specifier) [[ -f "$KILLED_FLAG" ]] && exit 1 || exit 0 ;;
@@ -941,7 +943,7 @@ if [[ "\$sock_cmd" == "list-panes" ]]; then
   exit 0
 fi
 if [[ "\$sock_cmd" == "kill-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   echo "KILL \$target" >> "$KILL_LOG"
   [[ "\$target" == "swarmforge-specifier" ]] && touch "$KILLED_FLAG"
   exit 0
@@ -974,7 +976,7 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   case "\$target" in
     swarmforge-coder|swarmforge-coordinator|swarmforge-specifier) exit 0 ;;
     *) exit 1 ;;
@@ -985,7 +987,7 @@ if [[ "\$sock_cmd" == "list-panes" ]]; then
   exit 0
 fi
 if [[ "\$sock_cmd" == "kill-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   echo "KILL \$target" >> "$KILL_LOG"
   exit 0
 fi
@@ -1031,7 +1033,7 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   case "\$target" in
     swarmforge-coder) [[ -f "$CODER_CREATED" ]] && exit 0 || exit 1 ;;
     swarmforge-coordinator) exit 0 ;;
@@ -1039,7 +1041,7 @@ if [[ "\$sock_cmd" == "has-session" ]]; then
   esac
 fi
 if [[ "\$sock_cmd" == "list-panes" ]]; then
-  target="\$5"
+  target="\${5#=}"
   if [[ "\$target" == "swarmforge-coder" && ! -f "$CODER_CREATED" ]]; then
     exit 1
   fi
@@ -1320,7 +1322,7 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   case "\$target" in
     swarmforge-coder|swarmforge-coordinator) exit 0 ;;
     *) exit 1 ;;
@@ -1384,7 +1386,7 @@ cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
+  target="\${5#=}"
   case "\$target" in
     swarmforge-specifier|swarmforge-coder|swarmforge-coordinator) exit 0 ;;
     *) exit 1 ;;

@@ -3114,9 +3114,11 @@ stop_handoff_daemon
 local_session=""
 for local_session in "${SESSIONS[@]}"; do
   [[ -n "$local_session" ]] || continue
-  if tmux -S "$TMUX_SOCKET" has-session -t "$local_session" 2>/dev/null; then
+  # Exact match (=NAME): a bare -t resolves by prefix and could kill
+  # swarmforge-coder@2 while looking for swarmforge-coder (2026-10-05).
+  if tmux -S "$TMUX_SOCKET" has-session -t "=$local_session" 2>/dev/null; then
     echo -e "${YELLOW}Existing SwarmForge session found: ${local_session}. Killing it...${RESET}"
-    tmux -S "$TMUX_SOCKET" kill-session -t "$local_session"
+    tmux -S "$TMUX_SOCKET" kill-session -t "=$local_session"
   fi
 done
 
