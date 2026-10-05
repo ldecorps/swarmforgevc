@@ -2,7 +2,7 @@ id: BL-1958
 title: "coordinator_config_cli.bb prints the pack's coordinator mode as a fourth field and swarmforge.sh reads it into COORDINATOR_MODE (BL-1931 split, slice 1 of 3)"
 milestone: M8
 type: feature
-status: blocked
+status: todo
 epic: local-llm-swarm
 priority: 1
 direction: queue-jump
