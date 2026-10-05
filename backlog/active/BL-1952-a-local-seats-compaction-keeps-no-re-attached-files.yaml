@@ -252,3 +252,5 @@ description: |
     keys the settings writer writes and describes the shim; add the two
     settings keys, the QWEN_SYSTEM_MD export and its prompt file, and the
     shim's compaction cap, each with why.
+
+assigned_to: coder
