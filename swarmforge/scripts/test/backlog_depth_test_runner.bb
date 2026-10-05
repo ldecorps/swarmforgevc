@@ -364,6 +364,46 @@
            nil
            (backlog-depth-lib/read-recommended-cap root)))
 
+;; ── read-held-cap / min-recommended-cap (BL-1981, Article 3.5's 2026-10-05
+;;    amendment: a cleared signal holds the cap until a human releases it) ──
+
+(defn write-throttle-recommendation-with-held! [root recommended-cap held-cap]
+  (fs/create-dirs (fs/path root ".swarmforge" "coordinator"))
+  (spit (str (backlog-depth-lib/throttle-recommendation-path root))
+        (json/generate-string {:recommendedCap recommended-cap :heldCap held-cap})))
+
+(let [root (mk-tmp)]
+  (assert= "read-held-cap degrades to nil when no recommendation file has ever been written (never a crash)"
+           nil
+           (backlog-depth-lib/read-held-cap root)))
+
+(let [root (mk-tmp)]
+  (write-throttle-recommendation-with-held! root nil 1)
+  (assert= "read-held-cap reads a real persisted hold even while the raw recommendation itself has cleared"
+           1
+           (backlog-depth-lib/read-held-cap root)))
+
+(let [root (mk-tmp)]
+  (write-throttle-recommendation-with-held! root nil nil)
+  (assert= "read-held-cap reads an explicit null heldCap as nil (no hold), never a crash on JSON null"
+           nil
+           (backlog-depth-lib/read-held-cap root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root ".swarmforge" "coordinator"))
+  (spit (str (backlog-depth-lib/throttle-recommendation-path root))
+        (json/generate-string {:heldCap "one"}))
+  (assert= "read-held-cap degrades to nil for a present-but-wrong-type heldCap (string, not int)"
+           nil
+           (backlog-depth-lib/read-held-cap root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root ".swarmforge" "coordinator"))
+  (spit (str (backlog-depth-lib/throttle-recommendation-path root)) "not json")
+  (assert= "read-held-cap degrades to nil for a malformed/corrupt recommendation file"
+           nil
+           (backlog-depth-lib/read-held-cap root)))
+
 ;; Break-then-fix (the wiring-test-with-a-new-on-disk-input rule): prove the
 ;; end-to-end read is genuinely load-bearing, not just a default that
 ;; happens to match with no fixture at all.
@@ -380,6 +420,34 @@
   (write-throttle-recommendation! root nil)
   (assert= "read-effective-max-depth-03: once the recommendation clears, the effective cap restores to the configured value"
            3
+           (backlog-depth-lib/read-effective-max-depth root)))
+
+;; BL-1981 wiring proof (break-then-fix): a held cap keeps the effective
+;; depth down even once the raw recommendation itself has cleared to nil -
+;; the exact Article 3.5 amendment this ticket makes (a cleared signal
+;; holds, it does not restore itself).
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 6\n")
+  (write-throttle-recommendation-with-held! root nil 1)
+  (assert= "throttle-hold-wiring-01: a held cap keeps the effective depth down even though the raw recommendation has cleared"
+           1
+           (backlog-depth-lib/read-effective-max-depth root))
+  (write-throttle-recommendation-with-held! root nil nil)
+  (assert= "throttle-hold-wiring-02: once the hold itself is lifted (heldCap nil, e.g. after a release), the effective cap restores"
+           6
+           (backlog-depth-lib/read-effective-max-depth root)))
+
+;; A live (still-elevated) recommendation must never be raised by a looser
+;; held value recorded for the SAME episode (e.g. a keep at 3 while the
+;; live signal still says 1) - min-recommended-cap's own never-raise
+;; contract, exercised through the real end-to-end read.
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 6\n")
+  (write-throttle-recommendation-with-held! root 1 3)
+  (assert= "throttle-hold-wiring-03: a looser held value never lifts the cap above a still-live, stricter recommendation"
+           1
            (backlog-depth-lib/read-effective-max-depth root)))
 
 ;; PAUSE WIRING PROOF (BL-423, break-then-fix): places a LIVE pause marker

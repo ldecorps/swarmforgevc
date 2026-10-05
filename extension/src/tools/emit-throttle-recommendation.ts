@@ -30,6 +30,7 @@ import { computeStandingRedRecommendation, describeStandingRedSignal, StandingRe
 import { atomicWrite, atomicAppend } from '../util/atomicWrite';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 import { refreshReworkSignal } from './rework-observatory';
+import { readEffectiveConfigValue } from '../util/swarmforgeConfig';
 
 export interface EmitThrottleRecommendationArgs {
   targetRepoPath: string;
@@ -64,6 +65,49 @@ export interface ThrottleRecommendation {
   // TRANSITIONS, not the standing state).
   standingRed: StandingRedRecommendation | null;
   updated_at: string;
+  // BL-1981: the EFFECTIVE floor a throttle hold imposes on top of the
+  // raw recommendedCap above - null when no episode is open, or once a
+  // release has lifted it. backlog_depth_lib.bb folds this in via the SAME
+  // never-raise min() recommendedCap already uses, never by overwriting
+  // recommendedCap itself: recommendedCap stays the raw, honest signal
+  // (BL-1429's own "the recommendation is withdrawn" contract, unchanged).
+  heldCap: number | null;
+  episode: ThrottleEpisode | null;
+}
+
+export interface ThrottleEpisodeAnswer {
+  kind: 'release' | 'keep';
+  // Only present for 'keep' - the cap the human chose to hold at.
+  value?: number;
+  by: string;
+  at: string;
+  reason?: string;
+}
+
+// BL-1981: Article 3.5's amendment - a cleared signal no longer restores
+// the cap by itself; the human does, via release-intake-throttle.js. One
+// episode spans from the first run whose OWN fresh recommendation lowers
+// the cap (never a stale on-disk one, BL-432 scenario 06/BL-1874) until a
+// RELEASE answer's cap has actually been restored (the raw signal cleared
+// too) - a KEEP answer never closes the episode on its own (requirement 5:
+// "stops the episode reading as awaiting release, so nobody asks again",
+// never "the hold goes away").
+export interface ThrottleEpisode {
+  openedAtIso: string;
+  // Human-readable phrase naming what opened it (describeStandingRedSignal's
+  // own wording, or a generic rework-diagnosis phrase) - purely for the
+  // coordinator/human-facing report; never re-derives the binding-cause
+  // comparison describeChangeReason below already owns.
+  openingSignal: string;
+  configuredCapAtOpen: number;
+  // The LOWEST cap this episode has reached across every tick, including
+  // after the signal clears (invariant 2: a severe 0 that eases to a
+  // degraded 1 stays at 0).
+  lowestCapReached: number;
+  // Set the first time the raw recommendation clears (goes null) while
+  // this episode is open; null while the signal is still live.
+  clearedAtIso: string | null;
+  answer: ThrottleEpisodeAnswer | null;
 }
 
 // Article 3.5's own "never raise" rule, applied across BL-432's rework
@@ -82,7 +126,9 @@ function minRecommendedCap(a: number | null, b: number | null): number | null {
 // Pure given the signal - the SAME diagnose -> classify -> map pipeline
 // reworkDiagnosis.ts's own exports already establish, composed here once
 // rather than re-derived at each call site (this CLI's main() and its own
-// tests both need the identical composition).
+// tests both need the identical composition). heldCap/episode are left
+// null here: this function knows nothing of prior ticks' episode state -
+// emitThrottleRecommendation below folds those in from disk.
 export function computeThrottleRecommendation(targetRepoPath: string, nowMs: number = Date.now()): ThrottleRecommendation {
   const signal = readReworkSignal(targetRepoPath);
   const verdict = signal ? diagnoseReworkSignal(signal) : null;
@@ -96,7 +142,96 @@ export function computeThrottleRecommendation(targetRepoPath: string, nowMs: num
     baselineRate: verdict?.baselineRate ?? null,
     standingRed,
     updated_at: new Date(nowMs).toISOString(),
+    heldCap: null,
+    episode: null,
   };
+}
+
+// BL-1981: mirrors backlog_depth_lib.bb's own default-max-depth (5) and
+// conf-file-path resolution (readEffectiveConfigValue already ports the
+// identity-overridden-pack-conf lookup) - needed here only to name
+// configuredCapAtOpen/the release target in the episode report; the
+// EFFECTIVE fold against the live active-depth cap still happens once,
+// on the bb side, via read-max-depth.
+const DEFAULT_CONFIGURED_CAP = 5;
+
+function readConfiguredCap(targetRepoPath: string): number {
+  const raw = readEffectiveConfigValue(targetRepoPath, 'active_backlog_max_depth');
+  const parsed = raw !== undefined ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) ? parsed : DEFAULT_CONFIGURED_CAP;
+}
+
+// Human-readable phrase naming what is CURRENTLY binding rec's own
+// recommendedCap - used only to label a freshly OPENED episode; never the
+// same comparison describeChangeReason's clearing branch makes against the
+// PRIOR tick (a different question: what was binding a moment ago).
+function bindingSignalName(rec: ThrottleRecommendation): string {
+  const reworkCap = recommendedCapForSeverity(rec.severity);
+  const standingCap = rec.standingRed?.recommendedCap ?? null;
+  if (standingCap !== null && (reworkCap === null || standingCap <= reworkCap)) {
+    return describeStandingRedSignal(rec.standingRed!.signal);
+  }
+  return rec.severity === 'severe' ? 'a severe rework diagnosis' : 'a degraded rework diagnosis';
+}
+
+// Pure: the episode state machine (BL-1981). rawCap is THIS tick's fresh
+// recommendedCap (never a stale on-disk value - BL-432 scenario 06/BL-1874
+// already guarantee computeThrottleRecommendation itself never trusts
+// one, so an episode can only ever open off a genuinely live signal).
+export function updateThrottleEpisode(
+  prior: ThrottleEpisode | null,
+  rawCap: number | null,
+  configuredCap: number,
+  nowIso: string,
+  rec: ThrottleRecommendation
+): ThrottleEpisode | null {
+  // A RELEASED episode closes once the raw signal it was answering has
+  // actually withdrawn - requirement 5: "the episode closes once that
+  // recommendation is withdrawn".
+  if (prior && prior.answer?.kind === 'release' && rawCap === null) {
+    return null;
+  }
+
+  if (!prior) {
+    if (rawCap !== null && rawCap < configuredCap) {
+      return {
+        openedAtIso: nowIso,
+        openingSignal: bindingSignalName(rec),
+        configuredCapAtOpen: configuredCap,
+        lowestCapReached: rawCap,
+        clearedAtIso: null,
+        answer: null,
+      };
+    }
+    return null;
+  }
+
+  let episode = prior;
+  if (rawCap !== null) {
+    // Invariant 2: the lowest cap this episode ever reached, across every
+    // severity change - a severe 0 that eases to a degraded 1 stays at 0.
+    episode = { ...episode, lowestCapReached: Math.min(episode.lowestCapReached, rawCap) };
+  } else if (!episode.clearedAtIso) {
+    episode = { ...episode, clearedAtIso: nowIso };
+  }
+  return episode;
+}
+
+// Pure: the EFFECTIVE floor an open episode imposes right now - null once
+// a release has lifted the hold (the live signal alone governs from then
+// on), the human-chosen value for a keep, or the lowest cap reached so far
+// while unanswered.
+export function heldCapForEpisode(episode: ThrottleEpisode | null): number | null {
+  if (!episode) {
+    return null;
+  }
+  if (episode.answer?.kind === 'release') {
+    return null;
+  }
+  if (episode.answer?.kind === 'keep') {
+    return episode.answer.value ?? null;
+  }
+  return episode.lowestCapReached;
 }
 
 function readPriorRecommendation(targetRepoPath: string): ThrottleRecommendation | null {
@@ -132,7 +267,14 @@ export interface ThrottleChangeLogEntry {
 // (the pre-BL-1429 shape: rework severity cleared, no standing-red block
 // at all, or standing-red present but never binding) keeps the original
 // generic wording unchanged.
-function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecommendation | null): string {
+// BL-1981: the clearing branch no longer says "restoring the configured
+// cap" for an episode still open and unanswered - Article 3.5's amendment
+// means a cleared signal holds, it does not restore itself. The WHICH-
+// SIGNAL-CLEARED naming (the architect-bounce fix above) is preserved
+// verbatim, just wrapped in the new "held" wording when a hold applies;
+// an episode that has already closed (answered-and-withdrawn) or never
+// opened falls through to the original restoring wording unchanged.
+function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecommendation | null, episode: ThrottleEpisode | null): string {
   if (rec.recommendedCap !== null) {
     const reworkCap = recommendedCapForSeverity(rec.severity);
     const standingCap = rec.standingRed?.recommendedCap ?? null;
@@ -144,14 +286,20 @@ function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecomm
     }
     return `degraded rework diagnosis (rate ${rec.reworkRate} vs baseline ${rec.baselineRate}) - stabilizing to one`;
   }
-  if (prior) {
-    const priorReworkCap = recommendedCapForSeverity(prior.severity);
-    const priorStandingCap = prior.standingRed?.recommendedCap ?? null;
-    if (priorStandingCap !== null && (priorReworkCap === null || priorStandingCap <= priorReworkCap)) {
-      return `${describeStandingRedSignal(prior.standingRed!.signal)} cleared - restoring the configured cap`;
+  const clearedPhrase = (() => {
+    if (prior) {
+      const priorReworkCap = recommendedCapForSeverity(prior.severity);
+      const priorStandingCap = prior.standingRed?.recommendedCap ?? null;
+      if (priorStandingCap !== null && (priorReworkCap === null || priorStandingCap <= priorReworkCap)) {
+        return `${describeStandingRedSignal(prior.standingRed!.signal)} cleared`;
+      }
     }
+    return 'rework diagnosis cleared';
+  })();
+  if (episode && episode.answer === null) {
+    return `held at ${episode.lowestCapReached} for a human release (${clearedPhrase})`;
   }
-  return 'rework diagnosis cleared - restoring the configured cap';
+  return `${clearedPhrase} - restoring the configured cap`;
 }
 
 // Acceptance scenario 05: every CHANGE to the recommended cap is logged - a
@@ -165,17 +313,24 @@ export function emitThrottleRecommendation(targetRepoPath: string, nowMs: number
   const recommendation = computeThrottleRecommendation(targetRepoPath, nowMs);
   const prior = readPriorRecommendation(targetRepoPath);
   const priorCap = prior?.recommendedCap ?? null;
+  const configuredCap = readConfiguredCap(targetRepoPath);
+  const episode = updateThrottleEpisode(prior?.episode ?? null, recommendation.recommendedCap, configuredCap, recommendation.updated_at, recommendation);
+  const fullRecommendation: ThrottleRecommendation = {
+    ...recommendation,
+    heldCap: heldCapForEpisode(episode),
+    episode,
+  };
   if (priorCap !== recommendation.recommendedCap) {
     const entry: ThrottleChangeLogEntry = {
       ts: recommendation.updated_at,
       from: priorCap,
       to: recommendation.recommendedCap,
-      reason: describeChangeReason(recommendation, prior),
+      reason: describeChangeReason(recommendation, prior, episode),
     };
     atomicAppend(throttleChangeLogPath(targetRepoPath), JSON.stringify(entry) + '\n');
   }
-  atomicWrite(throttleRecommendationPath(targetRepoPath), JSON.stringify(recommendation));
-  return recommendation;
+  atomicWrite(throttleRecommendationPath(targetRepoPath), JSON.stringify(fullRecommendation));
+  return fullRecommendation;
 }
 
 export const main = makeArgsGuardedMain(

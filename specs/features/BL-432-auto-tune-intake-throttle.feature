@@ -5,9 +5,11 @@ Feature: The swarm auto-throttles its own intake when it diagnoses too much rewo
 # not-picked-up-while-.draft convention) now that its dependencies are satisfied.
 #
 # This is the slice that closes the observe -> diagnose -> act loop. It moves exactly ONE knob — the
-# Article 3.5 intake throttle — as an effective cap = min(configured, recommended). Scenario 03 (restore
-# on recovery) and scenario 04 (never raise above configured) are the two guards that keep an auto-tuner
-# from becoming its own suboptimality.
+# Article 3.5 intake throttle — as an effective cap = min(configured, recommended). Scenario 04 (never
+# raise above configured) is the guard that keeps an auto-tuner from becoming its own suboptimality.
+# Scenario 03 (restore on recovery) was retired 2026-10-05 (BL-1981, Article 3.5's amendment): a cleared
+# signal no longer restores the cap by itself - it holds at the lowest cap the episode reached until a
+# human releases it. BL-1981's own feature carries that coverage now.
 
 Background:
   Given a configured active-depth cap and a rework diagnosis
@@ -24,13 +26,6 @@ Scenario: A severe rework diagnosis lowers the effective cap to zero
   When the coordinator decides whether to promote the next item
   Then the effective active-depth cap is zero
   And no new item is promoted
-
-# BL-432 auto-tune-intake-throttle-03
-Scenario: When the diagnosis clears, the effective cap returns to the configured value
-  Given the rework diagnosis had lowered the effective cap
-  When the rework diagnosis returns to baseline
-  And the coordinator decides whether to promote the next item
-  Then the effective active-depth cap is the configured value
 
 # BL-432 auto-tune-intake-throttle-04
 Scenario: The recommendation only ever lowers the cap, never raises it
