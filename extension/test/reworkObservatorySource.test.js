@@ -208,6 +208,61 @@ test('BL-1873: an evidence file whose name contains "bounce" counts, even with b
   assert.equal(bl800.bounced, true);
 });
 
+// BL-1873 hardening: a scoped Stryker run found the null-rejecting filter
+// in bounceEvidenceTicketIdSet survived - every existing "bounce"-named
+// fixture filename parses to a valid ticket id, so no test ever exercises
+// the case where it does not. Without the filter, mapping a null through
+// `.toUpperCase()` would throw; with the filter removed but the mutant
+// test harness stubbing differently it could also silently corrupt the
+// set - either way, nothing proves a genuinely unparseable bounce-named
+// file is skipped rather than crashing or polluting the result.
+test('BL-1873: a bounce-named evidence file whose basename does not parse to a ticket id is skipped, not crashed on or counted', () => {
+  const repo = mkTmp();
+  initRepoOnMain(repo);
+
+  writeTicket(repo, 'active', 'BL-801.yaml');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-801'], '2026-07-02T08:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'done'));
+  git(repo, ['mv', 'backlog/active/BL-801.yaml', 'backlog/done/BL-801.yaml']);
+  git(repo, ['commit', '-q', '-m', 'close BL-801'], '2026-07-02T12:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'evidence'));
+  // Contains "bounce" but no BL-### pattern at all - extractTicketId
+  // returns null for this one.
+  fs.writeFileSync(path.join(repo, 'backlog', 'evidence', 'general-bounce-notes.md'), '# notes\n');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'unrelated bounce notes'], '2026-07-02T13:00:00');
+
+  const records = loadCompletedTicketRecords(repo, []); // must not throw
+  const bl801 = records.find((r) => r.ticketId === 'BL-801');
+  assert.ok(bl801, 'expected BL-801 in the completed set');
+  assert.equal(bl801.bounced, false, 'an unparseable bounce-named file must never be mistaken for a bounce on some other ticket');
+});
+
+// BL-1873 hardening: a scoped Stryker run found BOUNCE_COUNT_PATTERN's own
+// `^` anchor survived removal - every fixture's YAML has bounce_count on
+// its own line with nothing before it, so the anchor's own job (reject a
+// MID-LINE match) is never exercised.
+test('BL-1873: bounce_count is read only when it starts its own line, never a mid-line mention (e.g. inside a comment)', () => {
+  const repo = mkTmp();
+  initRepoOnMain(repo);
+
+  writeTicket(repo, 'active', 'BL-802.yaml', '# a note mentioning bounce_count: 9 in passing, not a real field\nbounce_count: 0\n');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-802'], '2026-07-02T08:00:00');
+
+  mkdirp(path.join(repo, 'backlog', 'done'));
+  git(repo, ['mv', 'backlog/active/BL-802.yaml', 'backlog/done/BL-802.yaml']);
+  git(repo, ['commit', '-q', '-m', 'close BL-802'], '2026-07-02T12:00:00');
+
+  const records = loadCompletedTicketRecords(repo, []);
+  const bl802 = records.find((r) => r.ticketId === 'BL-802');
+  assert.ok(bl802);
+  assert.equal(bl802.bounced, false, 'the mid-line mention of bounce_count: 9 must never be read as the real field (which is 0)');
+});
+
 // ── BL-1873: the history walk is scoped to a trailing window via sinceMs ──
 
 test('BL-1873: a ticket closed inside the scoped window still gets its close date and class even though its promotion predates the window', () => {

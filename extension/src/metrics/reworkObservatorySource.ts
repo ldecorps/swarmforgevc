@@ -102,6 +102,21 @@ function bounceEvidenceTicketIdSet(targetPath: string, ref: string): Set<string>
   );
 }
 
+// BL-1873 (hardener split, BL-956 differential complexity gate: inlining
+// this 3-way check into loadCompletedTicketRecords's own return took it
+// from complexity 6 on main to 7 - extracted so the caller stays at its
+// own baseline). A closed ticket is bounced on ANY of: a live backward
+// handoff (roleByTicket), a bounce-named evidence file, or bounce_count
+// above 0 on its ticket YAML.
+function isBounced(
+  ticketId: string,
+  roleByTicket: Map<string, string>,
+  bounceEvidenceTicketIds: Set<string>,
+  meta: TicketYamlMeta
+): boolean {
+  return roleByTicket.has(ticketId) || bounceEvidenceTicketIds.has(ticketId.toUpperCase()) || meta.bounceCount > 0;
+}
+
 // BL-1873: sinceMs optionally scopes the backlog/ history walk to commits
 // at/after that instant (the caller's own trailing-window start) - a
 // ticket whose promotion predates sinceMs but whose close lands inside the
@@ -121,7 +136,7 @@ export function loadCompletedTicketRecords(targetPath: string, roles: RoleWorktr
     records.push({
       ticketId,
       completedAtMs: Date.parse(closeDateIso),
-      bounced: roleByTicket.has(ticketId) || bounceEvidenceTicketIds.has(ticketId.toUpperCase()) || meta.bounceCount > 0,
+      bounced: isBounced(ticketId, roleByTicket, bounceEvidenceTicketIds, meta),
       bouncedFromRole: roleByTicket.get(ticketId) ?? null,
       ticketClass: meta.ticketClass,
     });
