@@ -24,7 +24,7 @@ required_wiring:
   - 'specs/pipeline/steps/bl2004LandStopsOnMissingRunnerSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
   - 'swarmforge/scripts/land_main_publish.sh::suite_inventory_cli.bb::the live publish script runs the inventory over the commit it lands'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   From coder note 000083 on BL-1930 (evidence fb616cc534), which names a
   gap in BL-1830's sibling detection: another ticket's lines folded into

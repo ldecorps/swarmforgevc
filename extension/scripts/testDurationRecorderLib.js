@@ -22,7 +22,11 @@ function listTestFiles(testDir) {
 // | 'over-budget') rides beside BL-1598's budget_verdict (the per-file
 // guard's), independent of it - see check-suite-duration-budget.ts's
 // classifySuiteWork.
-function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, workMs, newOffenders, watchFiles, budgetVerdict, workBudgetVerdict }) {
+// BL-1983: loadAvg5/cores carry the 5-minute load average and logical core
+// count the run's work total was measured at, on every record - so a
+// later reader can tell an inflated-by-load number from a genuine
+// regression without re-running anything.
+function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, workMs, newOffenders, watchFiles, budgetVerdict, workBudgetVerdict, loadAvg5, cores }) {
   return {
     finished_at: finishedAt,
     test_count: testCount,
@@ -34,6 +38,8 @@ function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, work
     watch_files: watchFiles,
     budget_verdict: budgetVerdict,
     work_budget_verdict: workBudgetVerdict,
+    load_avg_5m: loadAvg5,
+    cores: cores,
   };
 }
 

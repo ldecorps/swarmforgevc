@@ -52,6 +52,7 @@ const {
   formatSuiteBudgetVerdict,
   buildSuiteWorkVerdict,
   formatSuiteWorkVerdict,
+  decideSuiteWorkExit,
 } = require('../out/tools/check-suite-duration-budget');
 const { runGuardAgainstReport, printGuardReport, PER_FILE_DURATION_BUDGET_MS } = require('../out/tools/check-suite-file-budget');
 const { resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('../out/tools/vitest-worker-memory-budget');
@@ -248,8 +249,14 @@ function main() {
   // so a lowered budget in check-suite-duration-budget.ts applies here
   // with no second edit) on every npm test run - the live consumer.
   const workVerdict = buildSuiteWorkVerdict(workMs, forks, poleMs);
-  console.log(formatSuiteWorkVerdict(workVerdict));
-  const workExitCode = workVerdict.verdict === 'over-budget' ? 1 : 0;
+  // BL-1983: read fresh, at decision time - the earlier read above (for
+  // the fork pool) is a different moment and a different purpose; this
+  // run's own work total was measured across the whole run that just
+  // finished, so the load that could have inflated it is the load NOW.
+  const loadAvg5 = os.loadavg()[1];
+  const cores = os.cpus().length;
+  console.log(formatSuiteWorkVerdict(workVerdict, loadAvg5, cores));
+  const workExitCode = decideSuiteWorkExit(workVerdict.verdict, loadAvg5, cores).exitCode;
 
   appendRecord(
     LOG_PATH,
@@ -264,6 +271,8 @@ function main() {
       watchFiles: guardVerdict.watchFiles.length,
       budgetVerdict: guardVerdict.verdict,
       workBudgetVerdict: workVerdict.verdict,
+      loadAvg5,
+      cores,
     })
   );
 

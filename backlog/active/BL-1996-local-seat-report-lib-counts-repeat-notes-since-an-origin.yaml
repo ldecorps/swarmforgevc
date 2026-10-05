@@ -77,10 +77,19 @@ source: |
   > Process fix, that's my boy :)
 
 description: |
+  ## Nothing to find: you write all of it
+
+  `repeat-notes-since`, `qwen-projects-dir`, `current-session-repeat-notes`
+  and the env var `SWARMFORGE_QWEN_PROJECTS_DIR` do NOT exist anywhere yet.
+  A grep for them finding nothing is the expected answer, not a clue to
+  follow. Do not open `babysitter_check.bb`, `babysitterd_sweep_lib.bb` or
+  any `*_cli.bb`: nothing calls these functions until BL-1997, and that is
+  not this slice. The only files you change are the lib and your new step
+  handler.
+
   ## What is wanted
 
-  Three functions in `swarmforge/scripts/local_seat_report_lib.bb`, which
-  BL-1997 will call from check 5b:
+  Three NEW functions in `swarmforge/scripts/local_seat_report_lib.bb`:
 
   1. `repeat-notes-since [chat-jsonl origin-ms]`: the number of records in
      a qwen session's jsonl text that are tool results (`"type":
@@ -90,8 +99,9 @@ description: |
      `(?m)^REPEAT: you have now made this exact [a-z_]+ call [0-9]+ times`).
      0 for nil or blank text; a line that does not parse is skipped.
      Scenarios 01 and 02.
-  2. `qwen-projects-dir []`: the env var `SWARMFORGE_QWEN_PROJECTS_DIR`
-     when set, else `~/.qwen/projects`.
+  2. `qwen-projects-dir []`: `(or (System/getenv
+     "SWARMFORGE_QWEN_PROJECTS_DIR") <home>/.qwen/projects)` - you are
+     introducing this variable; nothing else reads it yet.
   3. `current-session-repeat-notes [projects-dir worktree origin-ms]`: the
      newest `*.jsonl` by modification time in
      `<projects-dir>/<(qwen-cwd-key worktree)>/chats/`, counted with (1).
@@ -126,6 +136,13 @@ description: |
   - Coder: scenarios 01-03 ok; the replay in qa_e2e_procedure step 2 gives
     46 and 13.
 
+  ## A worked record (for your handler's fixture)
+
+  One jsonl line that counts (a real note, stamped after the origin):
+  `{"type":"tool_result","timestamp":"2026-10-05T13:07:30.000Z","message":{"parts":[{"functionResponse":{"response":{"output":"Command: x\nOutput: (empty)\n\nREPEAT: you have now made this exact run_shell_command call 3 times since your last edit"}}}]}}`
+  The same line with the output text `grep -n "REPEAT: you have now made" f`
+  quoted inside it does not count (scenario 02).
+
 notes: |
   Split from BL-1987 on 2026-10-05 after coder (iq3) held it 37m (claim
   13:00:16Z) with no commit: a cycle of four empty greps 13:06-13:08Z,
@@ -137,8 +154,29 @@ notes: |
   matches the phrase at the start of the text, so it counts nothing real;
   its wiring calls `stuck-in-process-path`, which does not exist, and the
   file does not read.
+
+  2026-10-05 ~15:08Z: pulled from active, loop-halted again at the 60m
+  check (second consecutive loop-halt on this same babysitter_check.bb
+  repeat-notes area, after BL-1987's two halts). THIRD split attempt on
+  this underlying work in one day (BL-1980 -> BL-1987 -> BL-1996). Worth
+  considering whether this code area needs the specifier's exact-fix
+  salvage approach (as for BL-1958) or a direct route to coder@2, rather
+  than another re-split - re-splitting hasn't broken the pattern so far.
   Dynamic routing: Babashka production code with no durable write, so
   [coder, qa].
+  2026-10-05 15:1xZ specifier, on coordinator note 016619 ("split BL-1996:
+  3rd loop-halt same work, consider exact-fix not resplit"): amended, not
+  split. Session 52a34a75 (14:57-15:04Z) never wrote: it searched the repo
+  four ways for SWARMFORGE_QWEN_PROJECTS_DIR, the variable this ticket
+  asks it to ADD, then read babysitter_check.bb and babysitterd_sweep_lib.bb
+  (BL-1997's files) for where it was used, and repeated one grep five
+  times until qwen's loop dialog halted it. The ticket now says up front
+  that every name is new and which files not to open, and carries one
+  worked jsonl record; hotfix 0a506c792b puts the same rule in the card.
+  Recommended to the coordinator: route this ticket to coder@2 (third halt
+  on this work in a day); iq3 keeps the card rule for its next tickets.
   IR-DRY: the three "the count is N" steps are one step pattern with the
   number in the text (no step tables, BL-1851); the checker's
   near-duplicate findings on them are intended.
+
+assigned_to: coder
