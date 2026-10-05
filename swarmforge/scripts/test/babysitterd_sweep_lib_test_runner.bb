@@ -314,18 +314,18 @@
                                     :any-pane-busy? false :prev-streak 0
                                     :pending-claims [] :in-process-claims []}))))
 
-;; ── check 5b: ticket held in a seat for several hours ───────────────────────
+;; ── check 5b: ticket held in a seat for an hour with no commit ─────────────
 ;; The 30-minute check above goes silent while the pane spinner is up, and
 ;; that same spinner freezes claim reclaims, so the operator (CRIT only)
-;; never hears about a multi-hour dwell. This check ignores the spinner.
-(assert= "a ticket held under the 3h threshold is not seat-stuck, even with HEAD unchanged and a spinner"
+;; never hears about an hour-long dwell. This check ignores the spinner.
+(assert= "a ticket held under the 60m threshold is not seat-stuck, even with HEAD unchanged and a spinner"
          []
          (sw/check-seat-ticket-stuck
-          [{:role "coder" :task "BL-1851" :dwell-min 179 :head-unchanged? true :busy? true}]
+          [{:role "coder" :task "BL-1851" :dwell-min 59 :head-unchanged? true :busy? true}]
           false))
-(assert-true "three hours with no commit is a CRIT even while the pane spinner is live"
+(assert-true "sixty minutes with no commit is a CRIT even while the pane spinner is live"
              (let [fs (sw/check-seat-ticket-stuck
-                       [{:role "coder" :task "BL-1851" :dwell-min 180 :head-unchanged? true :busy? true}]
+                       [{:role "coder" :task "BL-1851" :dwell-min 60 :head-unchanged? true :busy? true}]
                        false)]
                (and (= 1 (count fs))
                     (= "CRIT" (:severity (first fs)))

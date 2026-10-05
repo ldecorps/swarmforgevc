@@ -256,7 +256,7 @@
       :severity "WARN"
       :message (str "in_process parcel older than 30m (age=" age-min "m): " name)})))
 
-;; ── check 5b: a ticket held in a seat for several hours ─────────────────────
+;; ── check 5b: a ticket held in a seat for an hour with no commit ───────────
 ;; Check 5 and the claim-reclaim ladder both treat a live spinner as proof of
 ;; work. A rotating status phrase also changes the pane hash every sweep, so
 ;; check 7 (busy-but-frozen) never accumulates three identical hashes. A seat
@@ -265,10 +265,12 @@
 ;;
 ;; This check does not look at the pane. The clock is time since the claim
 ;; sidecar's claimAtMs (reset when HEAD advances; else the parcel's
-;; dequeued_at). Three hours with that commit still at HEAD is a stuck ticket,
+;; dequeued_at). An hour with that commit still at HEAD is a stuck ticket,
 ;; spinner or not. A control pause is planned quiet, not a stuck seat.
 
-(def seat-ticket-stuck-min 180)
+;; 60, not 180: the human, 2026-10-05, "180m is way too much. Bring this
+;; back to 60m." (74c3769083 shipped 180.)
+(def seat-ticket-stuck-min 60)
 
 (defn parse-instant-ms
   "ISO-8601 instant to epoch millis, or nil. Never throws."
@@ -946,7 +948,7 @@
 ;; :control-plane-classification :launch-scripts-present?
 ;; :control-plane-repair-allowed? :socket-path (BL-958 babysitter ownership).
 ;; :deadlock-active? :ahead :behind :reason :overlapping-paths (BL-1187).
-;; :held-seat-tickets (check 5b: multi-hour ticket dwell, spinner ignored).
+;; :held-seat-tickets (check 5b: hour-long ticket dwell, spinner ignored).
 
 (defn assemble-findings
   [{:keys [roles handoffd-alive? handoffd-supervisor-alive? handoffd-log-age-secs
