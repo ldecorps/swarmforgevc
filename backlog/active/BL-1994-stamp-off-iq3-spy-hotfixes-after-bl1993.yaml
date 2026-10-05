@@ -122,3 +122,5 @@ notes: |
   Hotfix ledger: 44c9f3f535 linked to BL-1994.
   Folded in 2026-10-05 while still paused: hotfix 4949a2d37e (repeat guard
   cycle note + empty-grep hint), ledger-linked to BL-1994.
+
+assigned_to: coder
