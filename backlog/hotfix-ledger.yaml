@@ -1343,3 +1343,10 @@
   stamp_ticket: BL-2013
   human_decision: null
   decided_at: null
+- commit: 77584c4c11
+  subject: "hotfix: role-session tmux checks use the exact-match target (=NAME), so a missing seat is never read as present through a sibling whose name it prefixes"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2014
+  human_decision: null
+  decided_at: null
