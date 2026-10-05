@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const {
   buildClosingCeremonyPacket,
-  eventsForShiftKey,
+  eventsSincePreviousRun,
   isEmptyCeremonyPacket,
   isKnownCeremonyOutcomeType,
   isKnownCeremonyAdjustmentKind,
@@ -30,11 +30,45 @@ function event(overrides = {}) {
   };
 }
 
-// ── eventsForShiftKey / shift scoping ──────────────────────────────────
+// ── eventsSincePreviousRun: the fold follows append order, not the date stamp ──
 
-test('eventsForShiftKey keeps only events whose `at` date matches the shift key', () => {
-  const events = [event({ at: '2026-08-08T09:00:00.000Z' }), event({ at: '2026-08-07T09:00:00.000Z' })];
-  assert.deepEqual(eventsForShiftKey(events, '2026-08-08'), [events[0]]);
+test('eventsSincePreviousRun with no previous run returns every event, in order', () => {
+  const events = [event({ at: '2026-08-07T09:00:00.000Z' }), event({ at: '2026-08-08T09:00:00.000Z' })];
+  assert.deepEqual(eventsSincePreviousRun(events, null), events);
+});
+
+test('eventsSincePreviousRun returns only the lines past the previous run\'s per-file cursor', () => {
+  const a = event({ at: '2026-08-08T09:00:00.000Z' });
+  const b = event({ at: '2026-08-08T09:05:00.000Z' });
+  const c = event({ at: '2026-08-09T09:00:00.000Z' });
+  const previousRun = { foldedLineCounts: { '2026-08-08.jsonl': 1 } };
+  assert.deepEqual(eventsSincePreviousRun([a, b, c], previousRun), [b, c]);
+});
+
+test('eventsSincePreviousRun keeps an event stamped on the previous day when it was appended after the cursor', () => {
+  const a = event({ at: '2026-08-08T09:00:00.000Z' });
+  const b = event({ at: '2026-08-08T23:30:00.000Z' }); // same file, appended after the cursor
+  const previousRun = { foldedLineCounts: { '2026-08-08.jsonl': 1 } };
+  assert.deepEqual(eventsSincePreviousRun([a, b], previousRun), [b]);
+});
+
+test('eventsSincePreviousRun with a pre-BL-1967 cursor-less run skips every file before its own day, never the whole ledger', () => {
+  const before = event({ at: '2026-08-06T09:00:00.000Z' });
+  const boundaryDayEarlier = event({ at: '2026-08-08T01:00:00.000Z' });
+  const boundaryDayLater = event({ at: '2026-08-08T09:00:00.000Z' });
+  const after = event({ at: '2026-08-09T09:00:00.000Z' });
+  const previousRun = { foldedLineCounts: null, windowEnd: '2026-08-08T04:25:00.000Z' };
+  assert.deepEqual(
+    eventsSincePreviousRun([before, boundaryDayEarlier, boundaryDayLater, after], previousRun),
+    [boundaryDayEarlier, boundaryDayLater, after]
+  );
+});
+
+test('eventsSincePreviousRun with a cursor-less run falls back to deliveredAt when windowEnd is absent', () => {
+  const before = event({ at: '2026-08-06T09:00:00.000Z' });
+  const after = event({ at: '2026-08-08T09:00:00.000Z' });
+  const previousRun = { foldedLineCounts: undefined, deliveredAt: '2026-08-08T04:25:00.000Z' };
+  assert.deepEqual(eventsSincePreviousRun([before, after], previousRun), [after]);
 });
 
 // ── buildClosingCeremonyPacket: each named field ───────────────────────
@@ -150,21 +184,28 @@ test('packet names stalls - counted per role+eventType', () => {
   ]);
 });
 
-test('packet excludes tickets from other shifts (only the requested day)', () => {
+test('packet folds every event appended since the previous run, even across calendar days', () => {
   const events = [
     event({ role: 'coder', at: '2026-08-08T09:00:00.000Z' }),
     event({ role: 'yesterday-only-role', at: '2026-08-07T09:00:00.000Z' }),
   ];
   const packet = buildClosingCeremonyPacket('2026-08-08', events);
-  assert.ok(!packet.pathTaken.includes('yesterday-only-role'));
+  assert.deepEqual(packet.pathTaken, ['coder', 'yesterday-only-role'], 'no previous run: the whole ledger is folded, date stamps decide nothing');
 });
 
-test('packet contains no raw log transcript - closed field shape only', () => {
-  const packet = buildClosingCeremonyPacket('2026-08-08', [event()]);
-  assert.deepEqual(
-    Object.keys(packet).sort(),
-    ['bounceClasses', 'determinismCandidates', 'dwellHotspots', 'hypotheses', 'pathTaken', 'qualityRecommendations', 'shiftKey', 'skipReasons', 'stalls'].sort()
-  );
+test('packet folds only the events past the previous run\'s cursor', () => {
+  const folded = event({ role: 'coder', at: '2026-08-08T09:00:00.000Z' });
+  const fresh = event({ role: 'cleaner', at: '2026-08-08T09:05:00.000Z' });
+  const packet = buildClosingCeremonyPacket('2026-08-08', [folded, fresh], {}, [], { foldedLineCounts: { '2026-08-08.jsonl': 1 } });
+  assert.deepEqual(packet.pathTaken, ['cleaner'], 'the cursor\'s line is never folded twice');
+  assert.deepEqual(packet.leanLedgerEvents, [fresh]);
+});
+
+test('packet names the events it folded, in append order', () => {
+  const a = event({ role: 'coder', at: '2026-08-08T09:00:00.000Z' });
+  const b = event({ role: 'cleaner', at: '2026-08-08T09:05:00.000Z' });
+  const packet = buildClosingCeremonyPacket('2026-08-08', [a, b]);
+  assert.deepEqual(packet.leanLedgerEvents, [a, b]);
 });
 
 // ── BL-1119: per-role quality dial from lean signals ───────────────────

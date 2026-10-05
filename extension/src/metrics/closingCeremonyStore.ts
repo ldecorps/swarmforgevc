@@ -33,7 +33,17 @@ function isCeremonyRunShape(value: unknown): value is CeremonyRun {
     return false;
   }
   const run = value as Partial<CeremonyRun>;
-  return typeof run.shiftKey === 'string' && typeof run.packet === 'object' && run.packet !== null && Array.isArray(run.adjustments);
+  return (
+    typeof run.shiftKey === 'string' &&
+    typeof run.packet === 'object' &&
+    run.packet !== null &&
+    Array.isArray(run.adjustments) &&
+    // BL-1968: the fold cursor is optional on disk (pre-BL-1968 runs carry
+    // none); when present it must be a plain object of line counts.
+    (run.foldedLineCounts === undefined ||
+      run.foldedLineCounts === null ||
+      (typeof run.foldedLineCounts === 'object' && !Array.isArray(run.foldedLineCounts)))
+  );
 }
 
 export function readCeremonyRun(targetPath: string, shiftKey: string): CeremonyRun | null {
@@ -43,7 +53,13 @@ export function readCeremonyRun(targetPath: string, shiftKey: string): CeremonyR
   } catch {
     return null;
   }
-  return isCeremonyRunShape(raw) ? raw : null;
+  if (!isCeremonyRunShape(raw)) {
+    return null;
+  }
+  // BL-1968: normalize the optional fold cursor to null when the on-disk
+  // record predates the field, so callers never see `undefined`.
+  const run = raw as CeremonyRun;
+  return { ...run, foldedLineCounts: run.foldedLineCounts ?? null };
 }
 
 export function writeCeremonyRun(targetPath: string, run: CeremonyRun): void {
