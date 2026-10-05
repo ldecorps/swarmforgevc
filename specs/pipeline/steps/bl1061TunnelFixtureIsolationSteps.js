@@ -36,6 +36,7 @@ const {
   assertFixtureTunnelName,
   leakedFixtureTunnelPids,
 } = require(path.join(EXT_TEST, 'helpers', 'fixtureTunnelName'));
+const { nameWithCreator, deadPid } = require(path.join(EXT_TEST, 'helpers', 'bl1287FixtureSweepFixture'));
 
 const PRODUCTION_NAME = 'swarmforge-bubble';
 // The pre-existing process, as `ps -o pid=,args=` prints it. A LINE, never a
@@ -81,6 +82,16 @@ function isAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
+// Alive and not a zombie. Linux reads the state from /proc; elsewhere (no
+// /proc) it falls back to isAlive.
+function isRunning(pid) {
+  try {
+    return !/^\d+ \(.*\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8'));
+  } catch {
+    return isAlive(pid);
+  }
+}
+
 function decideOrphans(name, lines) {
   const res = spawnSync('bash', [LIB, 'decide-orphans', name], {
     input: `${lines.join('\n')}\n`, encoding: 'utf8',
@@ -106,7 +117,12 @@ function registerSteps(registry) {
   scoped(/^a fixture process leaked by an earlier run is still alive$/, (ctx) => {
     // A real process, because scenario 03 is about a real sweep. It is under
     // a temp path, so the sweep finds it the way it finds any leaked fixture.
-    ctx.leakedPid = spawnFixtureTunnel(fixtureTunnelName('leaked-earlier-run'));
+    // A fixture leaked by an EARLIER run carries that run's pid, which is
+    // gone: fixtureTunnelName() always encodes this live test process, so
+    // the sweep (correctly) treats it as a live run's and keeps it. Until
+    // 2026-10-05 the scenario passed only because the sweep selected a
+    // spawner's pre-exec line as having no known creator (BL-1974).
+    ctx.leakedPid = spawnFixtureTunnel(nameWithCreator(deadPid()));
     assert.ok(isAlive(ctx.leakedPid), 'the leaked-fixture stand-in did not start');
   });
 
@@ -200,7 +216,16 @@ function registerSteps(registry) {
   scoped(/^the leaked fixture is no longer alive$/, (ctx) => {
     assert.ok(ctx.swept.includes(ctx.leakedPid),
       `the sweep did not select the leaked fixture pid ${ctx.leakedPid}`);
-    assert.equal(isAlive(ctx.leakedPid), false, 'the leaked fixture survived the sweep');
+    // A signalled process exits asynchronously, and until it is reaped it is
+    // a zombie that still answers kill(pid, 0): poll briefly, counting a
+    // zombie as gone. Checked once, right after the sweep, this read the
+    // leaked fixture as alive on about one run in three (2026-10-05).
+    let alive = isRunning(ctx.leakedPid);
+    for (let i = 0; alive && i < 30; i += 1) {
+      spawnSync('sleep', ['0.1']);
+      alive = isRunning(ctx.leakedPid);
+    }
+    assert.equal(alive, false, 'the leaked fixture survived the sweep');
   });
 
   scoped(/^the suite fails and its message names "(.+)"$/, (ctx, name) => {
