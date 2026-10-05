@@ -1,5 +1,5 @@
 id: BL-1989
-title: "Stamp-off for hotfix cd9f7cb39a: a local seat's read_file at offset 1 is told offset counts from 0 (repeat-guard hint and a card rule), after the iq3 coder read one file at offset 1 seven times, never saw line 1, and was halted by qwen's loop check"
+title: "Stamp-off for hotfix cd9f7cb39a: a local seat's read_file at offset 1 is told offset counts from 0 (repeat-guard hint and a card rule), after the iq3 coder read one file at offset 1 seven times, never saw line 1, and was halted by qwen's loop check; also hotfix 0d780b2462 (a seat that sleeps to wait is told to run in the foreground, and the card says run one property file, not the 15-minute lane)"
 milestone: M8
 type: defect
 severity: high
@@ -41,7 +41,11 @@ qa_e2e_procedure: |
      prints ALL PROPERTIES HOLD, and
      `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` prints ALL
      PASS (both measured at the hotfix).
-  3. Read the coder's evidence: it names the qwen session where the seat
+  3. The guard test also prints "a shell command that sleeps is told to run
+     the command in the foreground instead" (measured at 0d780b2462).
+  4. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1845LocalSeatQwenInteractiveInvariants.property.test.js`
+     passes, the card's one-file command (measured: 2 of 2 in 14 s).
+  5. Read the coder's evidence: it names the qwen session where the seat
      next read a file at offset 1, and whether the hint changed its next
      call, or that no such call has happened yet.
 
@@ -88,6 +92,21 @@ description: |
     cases (offset 1 hinted, offset 0 not, a repeated offset-1 read gets
     both notes, and the hint with no transcript).
 
+  ## Hotfix 0d780b2462 (folded in 2026-10-05)
+
+  The iq3 coder looped again at 10:29Z reviewing BL-1927: it ran a
+  property file with mocha (the wrong runner), backgrounded the whole
+  property lane (~15 min) three times and polled it with sleep 90 to
+  sleep 300 for 35 minutes; the lane passed (516 files, 1426 tests), and
+  it grepped the passing log for a failure four times until qwen halted it.
+
+  - `local_model_repeat_guard.bb`: `sleep-hint` tells any shell command
+    that sleeps to run the command in the foreground instead.
+  - `loop.note`: run ONE property file with `cd extension && npm run
+    compile && npx vitest run --config vitest.properties.config.mjs
+    test/<file>`, never the lane; never background-and-sleep; a run that
+    prints `Test Files N passed` and no `failed` has passed.
+
   ## What the coder checks
 
   The change against the description and the invariant. Evidence:
@@ -95,6 +114,10 @@ description: |
 
 notes: |
   Minted 2026-10-05 by the specifier, the same pass as hotfix cd9f7cb39a.
+  Also stamps off 0d780b2462 (same guard file and card, after the human's
+  "Iq3 went in a loop again", 2026-10-05), folded in while the Work note
+  was still unread in the coder's inbox. Hotfix ledger: 0d780b2462 linked
+  to BL-1989.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Prompt-caching review, same pass (no change made): llama-server runs
   with --context-shift --keep 4 (Ollama 0.32.15's default), a single slot
