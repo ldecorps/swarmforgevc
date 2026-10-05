@@ -7,7 +7,11 @@ epic: local-llm-swarm
 priority: 3
 direction: queue-jump
 depends_on: []
-mutation_cost: low
+mutation_cost: medium
+# medium (raised 2026-10-05 from low, at promotion): the slice needs a NEW
+# step handler (bl1961RouterTopologyStandsOnlyTheResidentSteps.js), which the
+# easy-tier local seat has stalled on all day (BL-1968, BL-1997); medium
+# keeps it on coder@2 (BL-1001) until BL-1979's handler scaffold lands.
 slice_size_envelope: low
 required_stages: [coder, qa]
 stage_skip_reasons:
