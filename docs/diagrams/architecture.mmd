@@ -472,7 +472,7 @@ flowchart TB
 
   subgraph SUBSTRATE["tmux Substrate"]
     SOCKET[".swarmforge/tmux-socket"]
-    PANES["One tmux pane per pipeline role\n(coordinator, specifier, coder, cleaner,\narchitect, hardender, documenter, QA)"]
+    PANES["One tmux pane per pipeline role\n(coordinator, specifier, coder, cleaner,\narchitect, hardender, documenter, QA) -\nBL-1959: a pack declaring config\ncoordinator_mode deterministic starts\nno coordinator session/pane; its\nroles.tsv row and mailbox still exist"]
     LOCALLLM["local_llm.sh remove / local_llm_cli.bb\n(BL-1861: human-run verb — takes every\nlive local-model seat out of every\nroster copy, refuses on a bare seat,\nreports (never moves) its parcels)"]
   end
 
@@ -609,3 +609,10 @@ flowchart TB
 %% BL-1185 (2026-08-27): Work notes without task: still attribute
 %% mutation_cost via Work BL-… message (supersede_lib task-name-from-content);
 %% BL-1167 (2026-08-27): when stage seats share the same pack --model,
+%% BL-1959 (2026-10-06): a pack declaring `config coordinator_mode
+%% deterministic` (BL-1846/1847/1931) keeps the coordinator's roles.tsv
+%% row and mailbox on every launch, but creates no coordinator tmux
+%% session/pane and writes no .swarmforge/launch/coordinator.sh - only
+%% the seat goes, via a predicate beside is_sequential_dormant at the
+%% session/launch-script/terminal-window launch loops. A pack that does
+%% not declare the line is unaffected.
