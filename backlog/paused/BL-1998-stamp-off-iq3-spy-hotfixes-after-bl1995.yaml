@@ -1,0 +1,82 @@
+id: BL-1998
+title: "Stamp-off for the iq3 spy-loop hotfixes after BL-1995 went active, starting with 66377274b7: the iq3 card says a coder's evidence is what it runs in its own worktree, never a search of logs, panes or other roles' mailboxes"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the only easy-tier coder seat's
+# turn on BL-1994 halted on qwen's loop dialog and needed a respawn.
+status: todo
+epic: local-llm-swarm
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one card line, checked by the card property runner.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one card line; nothing to refactor"
+  architect: "the card's composition is unchanged; one rule line is added"
+  hardender: "a prose card line has no mutation lane and writes no state"
+  documenter: "the card is the living description of the seat's rules"
+
+# Not a claim of ownership over BL-1798's contract (BL-1251): the compact
+# card's feature, which every card line must keep green.
+acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier lands under the human's 2026-10-05
+  direction "We have to fix iq3. Spy on it every 10 minutes. If its gone
+  wrong, hotfix it, and respawn." No choice is posed. FIRM: the coder
+  reviews them and never re-applies them; later spy-loop hotfixes fold in
+  here while this ticket is paused.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature`:
+     8 of 8 ok (measured at 66377274b7).
+  2. `bb swarmforge/scripts/test/bl1798_local_model_compact_card_property_runner.bb`:
+     ALL PROPERTIES HOLD (measured at 66377274b7).
+  3. Read the coder's committed review evidence.
+
+source: |
+  The human, specifier pane, 2026-10-05, verbatim (Article 5.3):
+
+  > We have to fix iq3. Spy on it every 10 minutes. If its gone wrong, hotfix it, and respawn. Repeat until iq3 is functioning normally.
+
+  The fault (iq3 session fd2a4c47, 13:41-13:43Z, BL-1994): after its
+  tests passed, the coder took BL-1994's QA step "Read the iq3 coder pane
+  or session: no Unknown recipient role 'qa'" as its own, grepped the shim
+  log, listed every mailbox directory under .swarmforge/handoffs, and ran
+  one identical ls five times; qwen's loop dialog halted the turn ("A
+  potential loop was detected ... The request has been halted.").
+
+description: |
+  ## Status: hotfix 66377274b7 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it. Later
+  hotfixes from the same spy loop fold in below while this is paused.
+
+  ## What the hotfix changed
+
+  - `swarmforge/roles/local-model/loop.note`: a coder's evidence is what it
+    runs in its own worktree (tests, the diff, the ticket's files); it never
+    searches logs, panes or other roles' mailboxes, and a qa_e2e_procedure
+    step that reads those is QA's, skipped and said so.
+  - Applied live: the card was recomposed and the seat respawned at
+    13:48:21Z; its first call read the card.
+
+  ## What the coder checks
+
+  The line against the fault above; the card checks in qa_e2e_procedure.
+  Evidence: backlog/evidence/BL-1998-coder-<date>.md.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix 66377274b7,
+  as the next collecting stamp-off for the human's 10-minute iq3 spy loop
+  (cron job a0ad2beb in the specifier's session). BL-1995 went active and
+  was routed to the coder (note 016580), so this does not fold into it.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 66377274b7 linked to BL-1998.

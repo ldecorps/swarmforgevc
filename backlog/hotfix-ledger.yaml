@@ -1217,3 +1217,10 @@
   stamp_ticket: BL-1995
   human_decision: null
   decided_at: null
+- commit: 66377274b7
+  subject: "hotfix: the iq3 card says a coder's evidence is what it runs in its own worktree, never a search of logs, panes or other roles' mailboxes"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1998
+  human_decision: null
+  decided_at: null
