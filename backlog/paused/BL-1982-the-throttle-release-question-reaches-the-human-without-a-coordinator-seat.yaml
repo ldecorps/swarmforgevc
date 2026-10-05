@@ -23,7 +23,7 @@ acceptance: specs/features/BL-1982-the-throttle-release-question-reaches-the-hum
 required_wiring:
   - 'specs/pipeline/steps/bl1982ThrottleReleaseAskSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The second half of the human's 2026-10-05 circuit-breaker directive
   ("Once cap 1 is reached, ask if it is safe to release the cap"). FIRM -
