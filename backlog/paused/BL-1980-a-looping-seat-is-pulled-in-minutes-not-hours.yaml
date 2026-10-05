@@ -1,0 +1,106 @@
+id: BL-1980
+title: "A looping local-model seat is reported stuck in minutes, not hours: babysitter's seat-stuck CRIT also fires on qwen's loop dialog or ten REPEAT notes since the claim with no commit, so the coordinator's pull-and-restart BAU runs at once - the iq3 coder sat looping or halted for over an hour twice on 2026-10-04"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the only coder seat sits looping
+# or halted until the 180-minute dwell clock fires, and nothing else moves.
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two facts added per held ticket in the gatherer and one more clause
+# in check-seat-ticket-stuck; both covered on fixtures.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one clause in an existing check and two gatherer facts; nothing to deduplicate"
+  architect: "check 5b keeps its key, severity and consumer; only its trigger widens"
+  hardender: "Babashka has no mutation lane yet (BL-1975..1977 build it); the check writes no durable state"
+
+acceptance: specs/features/BL-1980-a-looping-seat-is-pulled-in-minutes-not-hours.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1980LoopingSeatReportedStuckSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  Minted on QA's request for the next lever after BL-1971 (QA note 003811).
+  No choice is posed. FIRM: the CRIT keeps its key (seat-stuck-<role>), so
+  the coordinator's existing BAU acts on it unchanged; a commit for the
+  ticket since the claim always suppresses it.
+
+invariants:
+  - "The seat-stuck CRIT never fires for a seat that has committed for its ticket since the claim, and its key and severity are the same whichever trigger fired it."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-1980 feature passes 4 of 4.
+  2. Read from the gather's bb row (or run it): the babysitter sweep lib's
+     unit runner passes.
+  3. Replay, read-only: run the parcel's REPEAT counter over session
+     cfca2aec-* in ~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/
+     with BL-1970's claim time (2026-10-04T21:50:04Z): it reaches 10 at
+     about 21:58Z, where the dwell clock would have waited until 00:50Z.
+  4. Read docs/how-to/BL-611-babysitterd-runbook.md's check 5b section:
+     it names both new triggers.
+
+source: |
+  QA note 003811 to the specifier, 2026-10-04 23:43Z, verbatim: "BL-1971 ok
+  but REPEAT broke 0 iq3 loops (48 in cfca2aec); next lever? 743f9eaab6".
+  QA's evidence backlog/evidence/BL-1971-QA-20261005.md (743f9eaab6),
+  verbatim: "The guard fires correctly and never causes a halt itself. It
+  did not break any of the multi-note loops observed: the model goes on
+  cycling, or repeats the identical call until qwen's own check stops it."
+  The human's standing direction the same evening, verbatim (Article 5.3):
+
+  > Doing a hot fix is to fix the process. A hotfix is not a hack.
+
+  > Process fix, that's my boy :)
+
+notes: |
+  Minted 2026-10-04 by the specifier on QA note 003811.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Why this lever: no text in a tool result changed iq3's course (54 REPEAT
+  notes, 0 loops broken), and qwen's loop dialog halts a one-shot seat's
+  turn for good. A seat in either state makes no more progress, yet check
+  5b waits 180 minutes. Firing the same CRIT on the loop's own evidence
+  starts the coordinator's existing BAU (pull to paused, restart, note the
+  specifier) in minutes; the specifier then looks for the capability the
+  seat was missing (BL-1979 came out of exactly that), not only a split.
+  Where to read: swarmforge/scripts/babysitterd_sweep_lib.bb check 5b at
+  ~259-341 (check-seat-ticket-stuck ~318) and check 6 (check-menu-blocked,
+  right after it); swarmforge/scripts/babysitter_check.bb held-seat-tickets
+  ~869-915, which already resolves the claim and the seat's last own
+  commit. The loop dialog's own text includes "A potential loop was
+  detected" (seen in the coder pane 2026-10-04 20:26Z and 22:03Z). A
+  seat's qwen sessions are ~/.qwen/projects/<worktree path with / and .
+  as ->/chats/*.jsonl; a REPEAT note is a tool_result record whose text
+  starts "REPEAT: you have now made" (local_model_repeat_guard.bb); count
+  those stamped at or after the progress origin. A seat that is not a
+  local model has neither signal, so the check is unchanged for it.
+  The specifier's own half: none required (the coordinator's BAU already
+  keys on the CRIT).
+
+description: |
+  ## What is wanted
+
+  Babysitter's seat-stuck CRIT for a seat holding a ticket with no commit
+  since its claim fires, in addition to the 180-minute dwell, when:
+
+  - qwen's loop-detection dialog is on the seat's pane (the turn has
+    halted), or
+  - the seat's current qwen session carries at least 10 REPEAT notes
+    stamped since the claim.
+
+  The CRIT's message names which trigger fired (the dialog, or the REPEAT
+  count), and its key and severity are unchanged, so the coordinator's
+  BAU acts on it as it does today. A commit for the ticket after the claim
+  suppresses all three triggers.
+
+  ## What each stage checks
+
+  - Coder: the four scenarios; the sweep lib's unit runner.
+  - Documenter: the babysitter runbook's check 5b section names the two
+    new triggers.
