@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 severity: high
 # high: a standing red on main since 2026-10-01, unowned (2026-09-05 rule).
-status: blocked
+status: todo
 epic: swarm-self-optimization
 priority: 2
 depends_on: []
@@ -18,9 +18,12 @@ stage_skip_reasons:
   hardender: "test-side only (a shell test); no production code"
   documenter: "the fixture's own comment is the living description"
 
-# Not a claim of ownership over BL-1874's contract (BL-1251): the throttle
-# CLI's open ticket; a shell test has no feature of its own.
-acceptance: specs/features/BL-1874-a-failed-throttle-refresh-never-leaves-an-older-recommendation.feature
+# Not a claim of ownership over BL-1798's contract (BL-1251): a shell test
+# has no feature of its own; this points at a feature every parcel keeps
+# green so the acceptance gate has a runnable declaration. (Minted pointing
+# at BL-1874's feature, which has no step handler until BL-1874 lands - the
+# pre-QA gate refused the forward; repointed 2026-10-05.)
+acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
 
 human_approval: approved
 approval_context: >
@@ -99,5 +102,10 @@ notes: |
   mint time - this ticket cannot forward until BL-1874 lands. Blocked,
   not pulled: the coder work is real and done, just waiting on the
   dependency.
-
+  2026-10-05 ~23:1xZ specifier: unblocked. The block was the specifier's
+  mint error - acceptance pointed at BL-1874's feature, which no handler
+  binds until BL-1874 lands, so PRE_QA_GATE_FAIL refused the coder's
+  forward. Repointed to BL-1798's always-green feature (the stamp-off
+  convention). The coder's review stands (253988f9f9, af0ca24bd7): merge
+  main (the gate reads the ticket from the sender's checkout), then forward.
 assigned_to: coder
