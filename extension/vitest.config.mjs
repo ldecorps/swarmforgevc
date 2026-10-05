@@ -87,7 +87,17 @@ export default defineConfig({
     // seeded and left behind (a worker is recycled/killed, never exits
     // normally, so sharedRepoFixture.js's own mkProcessTmpDir exit hook
     // never fires for it).
-    globalSetup: ['./test/helpers/bl1039TemplateGlobalTeardown.js'],
+    // BL-1972: runs once in the MAIN process, BEFORE any worker is spawned,
+    // and throws (stopping the run before any test) when extension/out/ is
+    // stale - a source under src/ newer than its compiled file under out/,
+    // or a missing compiled file. A fresh build (npm test's own compile
+    // step, or a Stryker sandbox compiled before mutating) passes clean.
+    // Inherited by vitest.stryker.config.mjs's `...cfg.test` spread, so the
+    // Stryker sandbox run is covered by the same entry.
+    globalSetup: [
+      './test/helpers/bl1972StaleBuildGuardSetup.js',
+      './test/helpers/bl1039TemplateGlobalTeardown.js',
+    ],
     // BL-422: an unbounded `vitest run` sizes its worker pool to the CPU
     // count (20 on the reference host) with no per-worker heap limit - one
     // run ballooned four workers to ~13GB and drove the kernel OOM-killer
