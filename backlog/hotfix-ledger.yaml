@@ -1287,3 +1287,10 @@
   stamp_ticket: BL-2006
   human_decision: null
   decided_at: null
+- commit: d994ee6d63
+  subject: "HOTFIX: the BL-1232 picker property draws on a fixed seed, so its discriminating floor never fails at random"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2007
+  human_decision: null
+  decided_at: null
