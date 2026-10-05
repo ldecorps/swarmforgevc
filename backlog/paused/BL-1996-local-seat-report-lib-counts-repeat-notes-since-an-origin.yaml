@@ -5,7 +5,7 @@ type: defect
 severity: high
 # high: inherited from BL-1987 / BL-1980 - a seat collecting REPEAT notes
 # with no commit is cycling, and today nothing reports it before 60 minutes.
-status: todo
+status: blocked
 epic: local-llm-swarm
 priority: 3
 direction: swarm-reported
@@ -137,6 +137,14 @@ notes: |
   matches the phrase at the start of the text, so it counts nothing real;
   its wiring calls `stuck-in-process-path`, which does not exist, and the
   file does not read.
+
+  2026-10-05 ~15:08Z: pulled from active, loop-halted again at the 60m
+  check (second consecutive loop-halt on this same babysitter_check.bb
+  repeat-notes area, after BL-1987's two halts). THIRD split attempt on
+  this underlying work in one day (BL-1980 -> BL-1987 -> BL-1996). Worth
+  considering whether this code area needs the specifier's exact-fix
+  salvage approach (as for BL-1958) or a direct route to coder@2, rather
+  than another re-split - re-splitting hasn't broken the pattern so far.
   Dynamic routing: Babashka production code with no durable write, so
   [coder, qa].
   IR-DRY: the three "the count is N" steps are one step pattern with the
