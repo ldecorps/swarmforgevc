@@ -20,7 +20,7 @@ acceptance: specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-re
 required_wiring:
   - 'specs/pipeline/steps/bl1991SkippedWriteRestartSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The human's own trial, relayed by the operator intake of 2026-10-05
   (source:). FIRM, from the intake: the trigger (the latest compaction's
