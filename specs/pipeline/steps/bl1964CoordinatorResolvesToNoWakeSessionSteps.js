@@ -74,12 +74,13 @@ function runResolveProbe(ctx, session) {
   // Drive the REAL wake-session (the IO wrapper under test, not just its
   // pure resolve-wake-session half - BL-1964 QA bounce D2) against the
   // fixture's own project root, via set-project-root! exactly as a real
-  // pipeline role's own process does. The fixture has no live tmux
-  // sessions, so session-exists? is false for every name on this socket.
+  // pipeline role's own process does. session-exists? reads the fixture's
+  // own socket, so the resolver's existence inputs are whatever the
+  // fixture actually stands (BL-1964 QA bounce D1/D2).
   const bbScript = `
     (load-file "${path.join(SCRIPTS_DIR, 'handoff_lib.bb')}")
     (handoff-lib/set-project-root! "${ctx.root}")
-    (let [result (handoff-lib/wake-session "${path.join(ctx.root, 'fake.sock')}" "${session}")]
+    (let [result (handoff-lib/wake-session "${ctx.sock}" "${session}")]
       (if (nil? result)
         (println "nil")
         (println result)))
