@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 severity: high
 # high: a standing red on main since 2026-10-01, unowned (2026-09-05 rule).
-status: todo
+status: blocked
 epic: swarm-self-optimization
 priority: 2
 depends_on: []
@@ -90,5 +90,14 @@ notes: |
   had passed QA and BL-2012 was active, so this does not fold into either.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: fe08621a87 linked to BL-2013.
+
+  2026-10-05 ~23:05Z: coder review pass (253988f9f9, ALL PASS on
+  test_effective_backlog_depth_cli.sh) was clean, but forward to QA
+  refused PRE_QA_GATE_FAIL: the acceptance field points to BL-1874's
+  feature file, and BL-1874 itself is still active/unstarted (no step
+  handlers exist for 2 of its scenarios). Missing depends_on: BL-1874 at
+  mint time - this ticket cannot forward until BL-1874 lands. Blocked,
+  not pulled: the coder work is real and done, just waiting on the
+  dependency.
 
 assigned_to: coder
