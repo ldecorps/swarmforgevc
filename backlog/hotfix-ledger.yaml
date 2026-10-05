@@ -1322,3 +1322,10 @@
   stamp_ticket: BL-2011
   human_decision: null
   decided_at: null
+- commit: 6a6165cb58
+  subject: "hotfix: the backlog dashboard schema documents needsApproval, so BL-097's 'every field appears in the documented schema' scenario passes once BL-1941 binds it"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2011
+  human_decision: null
+  decided_at: null

@@ -1,5 +1,5 @@
 id: BL-2011
-title: "Stamp-off for red hotfix 7376655875: the bl1300 single-budget property reads the verdict's own measured/budget pair as one figure, never as a second budget"
+title: "Stamp-off for hotfixes 7376655875 (the bl1300 single-budget property reads the verdict's own measured/budget pair as one figure) and 6a6165cb58 (the backlog dashboard schema documents needsApproval)"
 milestone: M8
 type: defect
 severity: high
@@ -38,7 +38,9 @@ qa_e2e_procedure: |
   1. Read the gather's row for
      extension/test/bl1300SingleEnforceableBudget.property.test.js: 2 of 2
      (measured on three runs at 7376655875).
-  2. Read the coder's committed review evidence.
+  2. Read docs/reference/backlog-dashboard-schema.md's top-level table:
+     a `needsApproval` row (6a6165cb58).
+  3. Read the coder's committed review evidence.
 
 source: |
   The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
@@ -70,13 +72,24 @@ description: |
   - `RETIRED_CEILING - budget` joins the constant draws, so a tree of
     exactly 42000 is exercised most runs instead of almost never.
 
+  ## Hotfix 6a6165cb58: needsApproval in the dashboard schema
+
+  coder@2 note 000102 ("BL-1941 dashboard-05: needsApproval undocumented in
+  schema.md"): computeBacklogDashboard has emitted a top-level
+  `needsApproval` (`NeedsApprovalEntry[]`, BL-251) that
+  docs/reference/backlog-dashboard-schema.md never named, so BL-097's
+  dashboard-05 ("every field appears in the documented schema") would be
+  red at BL-1941's land, the first time a handler binds it. One row added;
+  measured on coder@2's handler commit 729ae2d49d in a scratch tree:
+  dashboard-05 fails without it and passes with it.
+
   ## What the coder does (all of it)
 
   1. Run `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1300SingleEnforceableBudget.property.test.js`
      once (the ticket is about this file alone), output saved to
      tmp/out.txt.
-  2. Read `git show 7376655875` against the sections above and the
-     invariant.
+  2. Read `git show 7376655875` and `git show 6a6165cb58` against the
+     sections above and the invariant.
   3. Write backlog/evidence/BL-2011-coder-<date>.md: the result and one
      line saying whether the hotfix matches its description.
   4. Commit that file, forward to QA, run done_with_current.sh.
@@ -90,3 +103,5 @@ notes: |
   at QA.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 7376655875 linked to BL-2011.
+  Folded in 2026-10-05 while still paused: hotfix 6a6165cb58 (schema doc
+  names needsApproval), ledger-linked to BL-2011; holder note to coder@2.
