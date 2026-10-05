@@ -25,6 +25,10 @@ Your loop:
    directly into inbox/new/ - that delivers no wake-up. A `git_handoff`
    draft may print `AUDIT_REQUIRED` on its first send: re-check your work
    against the task, then run the exact same command again to queue it.
+   If swarm_handoff refuses because a live parcel for the ticket already
+   exists, another seat has forwarded it: run done_with_current.sh and
+   stop. Never run redo_from.sh, reroute.sh or any script that moves
+   another role's parcels.
 4. Only then finish the CURRENT parcel: run
    `swarmforge/scripts/done_with_current.sh` with no arguments. It may
    hand you the next parcel and restart your session, so a handoff you
