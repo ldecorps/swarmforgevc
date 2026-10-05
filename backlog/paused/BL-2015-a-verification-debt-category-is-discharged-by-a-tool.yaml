@@ -1,0 +1,134 @@
+id: BL-2015
+title: "A verification-debt category is discharged by a tool: --discharge marks every outstanding row of the named category with discharged_at, discharged_by and a committed discharged_evidence file, and the reader counts only outstanding rows - slice 1 of BL-1783, built from the iq3 seat's salvage plus five named fixes"
+milestone: M8
+status: todo
+type: feature
+epic: lean-aware-coordinator
+priority: 79
+depends_on: [BL-1782]
+mutation_cost: low
+# low: the lib is complete in the salvage; four line-level fixes to the
+# recorder CLI, two to the reader, and one step handler for one scenario.
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, qa]
+stage_skip_reasons:
+  cleaner: "slice envelope low; the architect and hardener passes cover structure"
+  documenter: "the how-to describes the settle verbs once both exist; BL-2017, the last slice, carries the doc update"
+acceptance: specs/features/BL-2015-a-verification-debt-category-is-discharged-by-a-tool.feature
+
+invariants:
+  - "A settle verb never removes a row or rewrites a row's recorded fields; it only adds the settle fields, so what was hand-checked stays readable next to how it was settled."
+  - "A settle verb changes only outstanding rows of the category it names; rows of every other category, and rows already settled, are byte-identical before and after."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2015VerificationDebtDischargeSteps.js::registerSteps::the handler file lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1783 (approved), split 2026-10-05 with no new scope.
+  FIRM (from the intake): discharge tracking in the hardening-debt ledger's
+  pattern. Chosen at BL-1783's mint, open to amendment: a settle applies to
+  the whole category, not one row; anyone may run the verb, and the row
+  records who did.
+
+description: |
+  ## Why
+
+  BL-1782's reader reports a category unowned at its threshold. Once the
+  tool that makes the check mechanical ships and its ticket closes, the
+  category would read unowned again forever unless the ledger can record
+  that the debt was paid. This slice adds that record: a discharge. (The
+  waiver is BL-2016's scenario, the refusals BL-2017's; the code for both
+  verbs arrives here because the salvage already holds it.)
+
+  ## Start from the salvage - most of the work is done
+
+  The iq3 seat's uncommitted work is pinned at
+  `refs/swarmforge/salvage/BL-1783` (e679139bad). Everything you need,
+  including the exact diffs, is in
+  `backlog/evidence/BL-2015-salvage-and-fixes-20261005.md`. Read that file
+  first.
+
+  1. Restore the three salvage files (the command is in the evidence file):
+     the lib (complete), its test runner (ALL PASS), and the recorder CLI.
+  2. Apply the five fixes, exactly as the evidence file's diffs show:
+     - `verification_debt_ledger_update.bb`, `commit-ledger!`: `nil)))`
+       becomes `nil))))` (without it `-main` is never defined).
+     - same file, end of the `--discharge` branch: `(System/exit 1))))))`
+       becomes `(System/exit 1)))))`.
+     - same file: `fs/file?` becomes `fs/regular-file?`, and that refusal
+       reads `evidence file "<path>" is not a file under the project root`.
+     - same file, `parse-opts`: add `"--by"` -> `:by` and `"--reason"` ->
+       `:reason`, next to the `"--on"` line.
+     - `verification_debt_ledger_read.bb`: the per-category `count` is
+       `(vdl/outstanding-count rows category)`, and `->json-row` emits
+       `discharged_at`, `discharged_by`, `discharged_evidence`, `waived_at`,
+       `waived_by`, `waive_reason` when present.
+     After step 2, `bb swarmforge/scripts/verification_debt_ledger_update.bb`
+     with no arguments must print the usage line, not an error.
+  3. Add the step handler `specs/pipeline/steps/bl2015VerificationDebtDischargeSteps.js`
+     for the feature's Background and scenario 01. Copy the helpers from
+     `specs/pipeline/steps/bl1782VerificationDebtLedgerSteps.js` lines 1-107
+     (mkFixtureRepo, record, readLedger); register every step with
+     `registry.defineScoped(re, fn, FEATURE)` where FEATURE is this
+     feature's exact `Feature:` line text after `Feature: `. The ledger
+     "committed at HEAD" is read with `git show HEAD:backlog/verification-debt-ledger.yaml`.
+
+  ## Scope
+  - `swarmforge/scripts/verification_debt_ledger_lib.bb`, `_update.bb`,
+    `_read.bb`, `test/verification_debt_ledger_lib_test_runner.bb`.
+  - The feature file and its step handler.
+
+  ## Not in scope
+  - Scenarios 02-04 of BL-1783 (BL-2016, BL-2017). The intake throttle
+    (BL-1784).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2015-a-verification-debt-category-is-discharged-by-a-tool.feature`:
+     1 ok, 0 fail.
+  2. `bb swarmforge/scripts/test/verification_debt_ledger_lib_test_runner.bb`:
+     ALL PASS (measured on the salvage tree at mint).
+  3. `node specs/pipeline/cli.js specs/features/BL-1782-hand-verifications-are-recorded-in-a-verification-debt-ledger.feature`:
+     `# pass 13`, `# fail 0` (measured at mint with the five fixes applied,
+     in a scratch copy with the repository's ledger).
+  4. In a mkdtemp `git init` scratch repo (never the live checkout), record
+     three rows in one category and two in another, discharge the first
+     with a committed evidence file, and diff the ledger before and after:
+     only the three rows gained the discharge fields and nothing else
+     changed (invariants 1 and 2).
+  5. `git diff origin/main -- backlog/verification-debt-ledger.yaml` on the
+     parcel commit is empty.
+
+source: |
+  Split from BL-1783 on 2026-10-05 (coordinator note 016828, "split
+  BL-1783: loop-halt w/ 3-file diff, check stash for salvage"). BL-1783's
+  source, carried verbatim (Article 5.3):
+
+  Raw intake `backlog/INTAKE-mechanize-recurring-llm-verification-20260926.md`
+  (human via Claude Code, 2026-09-26), split 1:3 by the specifier the same
+  day. BL-1782 is the ledger, this ticket settles a category, and BL-1784
+  is the throttle. The human's two sentences, verbatim (Article 5.3):
+  "I think we should have tool removing llm work wherever it makes sense"
+  "this principle should be a core responsibility of the lean coordinator. Or
+  is there a way to enforce this rule even harder on the swarm engine?"
+  The intake's own proposal, which this slice builds: "until either a tool
+  ships (row discharged, evidence linked, same pattern as
+  hardening-debt-ledger's discharged_at/discharged_evidence) or the ticket
+  owner explicitly waives it."
+
+  The human, 2026-10-04, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+
+notes: |
+  Minted 2026-10-05 by the specifier.
+  split from BL-1783 on 2026-10-05 after coder (iq3) held it 44m: Work note
+  dispatched 22:06Z, loop-halted on verification_debt_ledger_update.bb
+  (identical old_string/new_string Edit - the missing paren of defect 1),
+  stashed 22:50:47Z. Salvage pinned refs/swarmforge/salvage/BL-1783.
+  Where to read: the evidence file first; update.bb is ~180 lines, read
+  lines 56-70 (parse-opts) and 83-160 (commit-ledger! and the two verbs);
+  read.bb lines 60-90 only.
+  INVEST: Independent (depends on BL-1782, landed). Small (one scenario,
+  salvage plus five line fixes, one handler). Testable (mkdtemp fixture).
+  Stages: production bb writing a committed ledger, so hardender stays
+  (BL-959); architect stays for the two invariants.

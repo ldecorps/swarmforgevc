@@ -1,7 +1,8 @@
 id: BL-1783
 title: "A verification-debt category leaves the unowned state only by being settled: --discharge marks every outstanding row with discharged_at and a committed discharged_evidence file once a tool makes the check mechanical, and --waive marks them with waived_at, waived_by and a non-blank reason when the check is not worth a tool. Settling never removes a row, touches only the named category, and a hand check recorded after a settle counts again from one"
 milestone: M8
-status: blocked
+status: done
+closed_as: split-into-BL-2015,BL-2016,BL-2017
 type: feature
 epic: lean-aware-coordinator
 priority: 79
@@ -13,7 +14,7 @@ slice_size_envelope: low
 required_stages: [coder, architect, hardender, documenter, qa]
 stage_skip_reasons:
   cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
-acceptance: specs/features/BL-1783-a-verification-debt-category-is-settled-by-a-tool-or-a-reasoned-waiver.feature
+acceptance: specs/features/BL-2015-a-verification-debt-category-is-discharged-by-a-tool.feature
 
 invariants:
   - "A settle verb never removes a row or rewrites a row's recorded fields; it only adds the settle fields, so what was hand-checked stays readable next to how it was settled."
@@ -106,6 +107,13 @@ source: |
   owner explicitly waives it."
 
 notes: |
+  2026-10-05 (specifier): retired, split into BL-2015 (discharge, built from
+  the iq3 salvage refs/swarmforge/salvage/BL-1783 plus five named fixes),
+  BL-2016 (waiver + counts-again handler) and BL-2017 (refusals handler +
+  how-to), after the coder (iq3) held it 44m and loop-halted (coordinator
+  note 016828). Its four scenarios moved verbatim into the slices' feature
+  files; this ticket's feature file is removed. BL-1784 now depends on the
+  three slices.
   Minted 2026-09-26 by the specifier (claude-opus-5-5 seat).
   INVEST: Independent (depends_on BL-1782 only, which must land first).
   Negotiable (the How is direction). Valuable (a category whose tool
