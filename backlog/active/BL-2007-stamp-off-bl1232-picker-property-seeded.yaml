@@ -111,3 +111,5 @@ notes: |
   Hotfix ledger: d994ee6d63 linked to BL-2007.
   Folded in 2026-10-05 while still paused: red hotfix 04c0556285 (BL-1061
   leaked fixture), ledger-linked to BL-2007; holder note to coder@2.
+
+assigned_to: coder
