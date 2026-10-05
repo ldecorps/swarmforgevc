@@ -59,7 +59,31 @@ sufficient, by itself, to lift the throttle. The new rule:
 - This is a promotion-gate change only; it does not touch Article 3.2.4
   ordering, the onboarding contract gate, or the deprecator freshness gate.
 
-## 4. Implementation note for the specifier
+## 4. Standing pre-approval for the episode in flight right now (2026-10-05)
+
+Human, same conversation, replying to the coordinator confirming this
+amendment was routed: "Once it's implemented: I am already agreeing to
+lift the cap, no need to ask me."
+
+This is scoped: a pre-answer for the throttle episode already open when
+this amendment was proposed — `.swarmforge/coordinator/throttle-changes.jsonl`
+shows the cap dropped to `1` at `2026-10-03T22:54:28.074Z`, reason
+"standing-red register signal (the red count) - stabilizing to one", and
+it has not yet cleared. For *that* episode specifically: once the
+standing-red-register signal that tripped it reads back at baseline, the
+coordinator restores the prior cap without raising the `role_ask.bb`
+question — the human has already answered it. Record the restoration in
+`throttle-changes.jsonl` as usual, noting "pre-approved 2026-10-05, see
+circuit-breaker-human-release-amendment" as the reason, so the trail shows
+why no question was asked.
+
+This is NOT a blanket revocation of §2's ask-first rule for *future*
+throttle episodes — a new episode, tripped by a new signal spike after
+this one clears, still gets the one clarifying question. The human may
+choose to give the same standing pre-approval again at that time, but it
+is not assumed.
+
+## 5. Implementation note for the specifier
 
 - `03_backlog.md` Article 3.5's inlined summary line needs its last
   sentence replaced (see §2 above) and a pointer added to this file.
