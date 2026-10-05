@@ -132,3 +132,5 @@ notes: |
     role|constitution, against its card's "do NOT read" rule.
   - Deferred edit: BL-1125's decomposes_into should gain BL-1925; that file
     carries the human's uncommitted edits, so it was left alone.
+
+assigned_to: coder
