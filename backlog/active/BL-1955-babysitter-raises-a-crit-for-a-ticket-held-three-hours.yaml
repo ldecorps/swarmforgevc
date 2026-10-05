@@ -101,3 +101,5 @@ description: |
   The change against the description and the invariant, and the test
   cases in babysitterd_sweep_lib_test_runner.bb. Evidence:
   backlog/evidence/BL-1955-coder-<date>.md.
+
+assigned_to: coder
