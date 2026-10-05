@@ -1168,3 +1168,10 @@
   stamp_ticket: BL-1989
   human_decision: null
   decided_at: null
+- commit: 1cec236e2d
+  subject: "hotfix: is_qa_ancestor reads a bounce as superseded when a later commit of the same ticket is approved; the guard's own carrier goes"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1990
+  human_decision: null
+  decided_at: null
