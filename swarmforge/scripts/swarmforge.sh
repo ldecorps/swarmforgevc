@@ -2457,8 +2457,34 @@ RESUMECHECK
       # never read its card that session - so never saw the handoff draft
       # it then could not write. Card first, resume note after: read_file on
       # the card 3 of 3.
+      # BL-1991: when the PostToolUse repeat guard ends qwen for a missed
+      # named write, it leaves exactly one pending override message under
+      # .swarmforge/local-seat-restart/<in_process file>.json.msg (the
+      # hook's own job, read nowhere else here). The loop below is the
+      # other half: after qwen exits for ANY reason, look for a pending
+      # override and, only when one exists, relaunch qwen with THAT as its
+      # sole message instead of the normal card-read kickoff; consume the
+      # file so an ordinary exit (nothing pending) never loops. The hook
+      # itself caps restarts per parcel at two - this loop adds no cap of
+      # its own and trusts that one.
       local qwen_cli="$(swarm_only_strip_seat_tier "$extra_cli")"
-      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"Use read_file now to read '$prompt_file' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\${LOCAL_RESUME_NOTE}\""
+      local restart_dir="$role_worktree/.swarmforge/local-seat-restart"
+      # BL-1991: the (N) qualifier makes an empty glob vanish rather than
+      # error - but handed to `ls` with no path argument at all, that falls
+      # back to listing THIS SHELL's cwd, so pending_msg becomes whatever
+      # sorts first there (measured: "android/"), cat/rm on it both fail,
+      # and the loop never terminates. An array assignment has no such
+      # fallback: an empty match is an empty array, checked directly.
+      launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"Use read_file now to read '$prompt_file' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\${LOCAL_RESUME_NOTE}\"
+local -a pending_msgs
+pending_msgs=('$restart_dir'/*.msg(N))
+while [[ \${#pending_msgs[@]} -gt 0 ]]; do
+  pending_msg=\"\${pending_msgs[1]}\"
+  override_text=\"\$(cat \"\$pending_msg\")\"
+  rm -f \"\$pending_msg\"
+  qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\$override_text\"
+  pending_msgs=('$restart_dir'/*.msg(N))
+done"
       ;;
     *)
       # BL-1080: same Unsupported agent wording + how-to pointer as validate_agent.

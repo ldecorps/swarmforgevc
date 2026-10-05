@@ -30,6 +30,7 @@
 
 (ns local-model-repeat-guard
   (:require [cheshire.core :as json]
+            [clojure.java.io :as io]
             [clojure.string :as str]))
 
 (def max-repeats
@@ -110,6 +111,122 @@
 
 (defn latest-next-step [entries]
   (some :next-step (reverse (filter #(= :compaction (:kind %)) entries))))
+
+;; ── BL-1991: restart a seat that skips the write its compaction named ──
+;;
+;; On 2026-10-05 the iq3 coder, holding BL-1928, merged main and never
+;; wrote: one turn ran 261 model steps across six compactions, every one of
+;; them naming the same next step (write a named file), and the model
+;; answered each by reading more. qwen's loop check is off for this seat
+;; (skipLoopDetection), so nothing ended the turn. The human's trial: when
+;; the latest compaction names a write or an edit and the seat then makes
+;; three tool calls that are not that write, end qwen and start a fresh one
+;; whose only message is that next step. A seat that writes first is left
+;; alone, and a parcel gets at most two such restarts - the third miss is
+;; BL-1992, not this hook's job. No tool call is ever refused.
+
+(def max-restarts
+  "A parcel is restarted at most this many times for a missed write."
+  2)
+
+(defn named-write-path
+  "The file path a next-step's text names as a write or an edit, or nil
+   when it names neither a write/edit verb or no file path at all (scenario
+   04: a next step that names no write never restarts the seat)."
+  [next-step]
+  (when (and next-step (re-find #"(?i)\b(write|writes|edit|edits)\b" next-step))
+    (some-> (re-find #"[A-Za-z0-9_.][A-Za-z0-9_./-]*/[A-Za-z0-9_./-]*\.[A-Za-z0-9]+" next-step)
+            str/trim)))
+
+(defn- named-write-call? [path entry]
+  (and (= :call (:kind entry))
+       (contains? edit-tools (:name entry))
+       (= path (get (:args entry) "file_path"))))
+
+(defn calls-since-compaction
+  "Entries strictly after the latest compaction; every entry when there is
+   none."
+  [entries]
+  (let [v (vec entries)
+        idx (->> (map-indexed vector v)
+                 (filter #(= :compaction (:kind (second %))))
+                 last
+                 first)]
+    (if idx (subvec v (inc idx)) v)))
+
+(defn restart-decision
+  "{:next-step :path}, or nil, for this in-flight call: the latest
+   compaction must name a write/edit path, that write must not already
+   have happened since that compaction, this call must not be that write,
+   it must be the third such call since that compaction, and the parcel
+   must not already have used both of its restarts."
+  [entries name args restart-count]
+  (let [step (latest-next-step entries)
+        path (named-write-path step)]
+    (when path
+      (let [stripped (without-in-flight (vec entries) (call-key name args))
+            since (calls-since-compaction stripped)
+            already-written? (some #(named-write-call? path %) since)
+            other (count (remove #(named-write-call? path %)
+                                  (filter #(= :call (:kind %)) since)))
+            this-write? (and (contains? edit-tools name)
+                              (= path (get args "file_path")))]
+        (when (and (not already-written?)
+                   (not this-write?)
+                   (>= (inc other) 3)
+                   (< restart-count max-restarts))
+          {:next-step step :path path})))))
+
+(defn- in-process-handoff-name
+  "The name of this role's current in_process handoff file - stable across
+   a restart (the parcel is never completed or handed off), so it is the
+   restart count's key: a later, different parcel's different file name
+   starts fresh with no reset needed. nil when there is none (no restart
+   state applies outside a real parcel)."
+  [cwd]
+  (let [dir (io/file cwd ".swarmforge" "handoffs" "inbox" "in_process")]
+    (when (.isDirectory dir)
+      (some->> (.listFiles dir)
+               (filter #(.isFile %))
+               (map #(.getName %))
+               sort
+               first))))
+
+(defn restart-state-file
+  "Where this parcel's durable restart count lives, or nil outside a real
+   parcel."
+  [cwd]
+  (when-let [k (in-process-handoff-name cwd)]
+    (io/file cwd ".swarmforge" "local-seat-restart" (str k ".json"))))
+
+(defn read-restart-count [state-file]
+  (if (and state-file (.exists ^java.io.File state-file))
+    (try (or (get (json/parse-string (slurp state-file)) "restarts") 0)
+         (catch Exception _ 0))
+    0))
+
+(defn override-message
+  "The fresh turn's only user message: the named next step, told to write
+   the named file and not to read it first (it may not exist yet)."
+  [next-step path]
+  (str next-step "\n\nWrite " path " now. Do not read " path
+       " first - it does not exist yet."))
+
+(defn write-restart-request!
+  "Bumps the durable restart count and writes the pending override message
+   under .swarmforge/ for the launcher to relaunch qwen with."
+  [state-file next-step path restart-count]
+  (io/make-parents ^java.io.File state-file)
+  (spit state-file (json/generate-string {"restarts" (inc restart-count)}))
+  (spit (io/file (str state-file ".msg")) (override-message next-step path)))
+
+(defn end-qwen-process!
+  "Ends this hook's parent process - qwen spawns the PostToolUse hook as a
+   direct child for every call. A fresh qwen relaunch is the launcher's
+   job, reading the pending override this writes (BL-1991)."
+  []
+  (when-let [parent (.orElse (.parent (java.lang.ProcessHandle/current)) nil)]
+    (.destroy ^java.lang.ProcessHandle parent)))
 
 (defn warning
   "The note to hand the model with this call's result, or nil."
@@ -312,27 +429,46 @@
     (when (and (= name "run_shell_command") (string? cmd) (re-find #"^\s*npm\s" cmd))
       "npm runs from extension/, never the repo root: use `cd extension && npm ...`.")))
 
-(defn answer [event read-lines]
-  (let [name (get event "tool_name")
-        args (get event "tool_input")
-        path (get event "transcript_path")]
-    (when (string? name)
-      (let [entries (when (string? path)
-                      (when-let [lines (try (read-lines path) (catch Exception _ nil))]
-                        (transcript-entries lines)))
-            repeat-note (when entries (warning entries name args))
-            loop-note (when entries (cycle-note entries name args))
-            undo (when entries (undo-note entries name args))
-            rerun (when entries (rerun-hint entries name args))
-            cwd (or (get event "cwd") (System/getProperty "user.dir"))
-            notes (remove nil? [repeat-note loop-note undo rerun
-                                (empty-grep-hint name args (get event "tool_response"))
-                                (offset-hint name args) (sleep-hint name args)
-                                (read-hint name args) (npm-hint name args)
-                                (shell-path-hint name args cwd)])]
-        (when (seq notes)
-          (json/generate-string {"hookSpecificOutput" {"hookEventName" "PostToolUse"
-                                                       "additionalContext" (str/join " " notes)}}))))))
+(defn- notes-response [event entries name args cwd]
+  (let [repeat-note (when entries (warning entries name args))
+        loop-note (when entries (cycle-note entries name args))
+        undo (when entries (undo-note entries name args))
+        rerun (when entries (rerun-hint entries name args))
+        notes (remove nil? [repeat-note loop-note undo rerun
+                            (empty-grep-hint name args (get event "tool_response"))
+                            (offset-hint name args) (sleep-hint name args)
+                            (read-hint name args) (npm-hint name args)
+                            (shell-path-hint name args cwd)])]
+    (when (seq notes)
+      (json/generate-string {"hookSpecificOutput" {"hookEventName" "PostToolUse"
+                                                   "additionalContext" (str/join " " notes)}}))))
+
+(defn answer
+  ([event read-lines] (answer event read-lines end-qwen-process!))
+  ([event read-lines kill-fn]
+   (let [name (get event "tool_name")
+         args (get event "tool_input")
+         path (get event "transcript_path")
+         cwd (or (get event "cwd") (System/getProperty "user.dir"))
+         ;; BL-1991: restart state/kill is a real, consequential side effect
+         ;; - unlike the notes below, it must NEVER fall back to this
+         ;; process's own working directory. Only a cwd the event itself
+         ;; names (as every real qwen PostToolUse event does) can be a
+         ;; seat's actual worktree; anything else leaves restart inert.
+         restart-cwd (get event "cwd")]
+     (when (string? name)
+       (let [entries (when (string? path)
+                       (when-let [lines (try (read-lines path) (catch Exception _ nil))]
+                         (transcript-entries lines)))
+             state-file (when (and entries (string? restart-cwd)) (restart-state-file restart-cwd))
+             restart-count (read-restart-count state-file)
+             restart (when state-file (restart-decision entries name args restart-count))]
+         (if restart
+           (do
+             (write-restart-request! state-file (:next-step restart) (:path restart) restart-count)
+             (kill-fn)
+             nil)
+           (notes-response event entries name args cwd)))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (let [event (try (json/parse-string (slurp *in*)) (catch Exception _ nil))]
