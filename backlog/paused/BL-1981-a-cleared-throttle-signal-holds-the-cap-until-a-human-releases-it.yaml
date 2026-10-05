@@ -1,0 +1,186 @@
+id: BL-1981
+title: "A cleared throttle signal holds the cap until a human releases it: effective_backlog_depth_cli.bb keeps the lowest cap a throttle episode reached after its signal clears, and only a human answer recorded with a new release CLI (release, or keep at N) lifts it - Article 3.5 as amended 2026-10-05"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-self-optimization
+priority: 5
+depends_on: []
+mutation_cost: medium
+# medium: a hold folded into the effective cap (emit-throttle-recommendation.ts
+# or backlog_depth_lib.bb, the coder's call), one new release CLI, one step
+# handler, and one retired BL-432 scenario.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one hold and one small CLI; nothing large enough to leave duplication behind"
+
+acceptance: specs/features/BL-1981-a-cleared-throttle-signal-holds-the-cap-until-a-human-releases-it.feature
+
+# Handler pin per BL-233/BL-1371. No consumer anchor: the scenarios drive the
+# real effective_backlog_depth_cli.bb, the entry point coordinator.prompt
+# already calls before every promotion, so the acceptance run proves the
+# wiring (BL-1235: an anchor on this parcel's own symbol would gate nothing).
+required_wiring:
+  - 'specs/pipeline/steps/bl1981ThrottleHumanReleaseSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Implements the human's own 2026-10-05 directive (quoted in the feature
+  and in source:), adopted as Article 3.5's amendment the same day. FIRM -
+  a cleared signal no longer restores the cap by itself; the effective cap
+  holds at the lowest value the episode reached until a human answer is
+  recorded. FIRM - a release restores the configured cap; a keep holds the
+  value the human gave; neither ever lifts the cap above a live signal's
+  recommendation. FIRM - a release recorded while the signal is elevated
+  is a pre-approval for that episode only, never for a later one. Raising
+  the question to you is the sibling BL-1982; until it lands the
+  coordinator asks you by hand.
+
+invariants:
+  - "The effective cap is never above min(configured, the run's own fresh recommendation); a recorded answer only ends or sets the hold, it never lifts a live signal's cap."
+  - "Within one episode the effective cap never rises above the lowest cap that episode reached until a human answer is recorded for that episode."
+  - "An answer recorded for one episode never applies to any later episode."
+
+source: |
+  Constitution amendment
+  swarmforge/constitution/articles/reference/circuit-breaker-human-release-amendment-2026-10-05.md
+  (coordinator 6a84d814e5 + e8d5dcd2a4, adopted by the specifier
+  2026-10-05). Human, to the coordinator, 2026-10-05, verbatim as the
+  amendment records it (lightly cleaned up from source): "Change logic
+  around circuit breaker cap 1. Once cap 1 is reached, ask if it is safe
+  to release the cap. The idea is that we prevent issues from piling up.
+  The swarm is working ok, it is not safe to resume churning at full
+  throttle [just because signals look normal again]." And, same
+  conversation: "Once it's implemented: I am already agreeing to lift the
+  cap, no need to ask me."
+
+description: |
+  ## What is wrong
+
+  Article 3.5 now says normal signals never restore the throttled cap by
+  themselves: the human releases it. The code still restores it.
+  `effective_backlog_depth_cli.bb` prints min(configured, recommended),
+  and `emit-throttle-recommendation.ts` withdraws the recommendation the
+  run its signal clears, so the cap is back at the configured value on the
+  very next promotion decision. The change log shows it doing so:
+  2026-09-25 12:39Z "the red count cleared - restoring the configured
+  cap", 2026-10-01 22:49Z "an unowned red cleared - restoring the
+  configured cap".
+
+  ## What is wanted
+
+  1. A throttle episode opens on the first run of the throttle CLI whose
+     OWN fresh recommendation lowers the cap. A recommendation left on
+     disk by an earlier run never opens one (BL-432 scenario 06, BL-1874).
+  2. While the episode has no recorded human answer, the effective cap is
+     the lowest cap the episode reached, also after the signal clears
+     (scenario 01). Read the lowest across signals too: a severe 0 that
+     eases to a degraded 1 stays at 0 (invariant 2; unit or property
+     test, no scenario).
+  3. The recommendation file reports the episode: awaiting release when
+     its signal has cleared and no answer is recorded, naming the signal
+     that opened it, when it cleared, and the configured cap a release
+     restores (scenarios 01, 06). The coordinator, and BL-1982 after it,
+     read this to ask the human. The raw recommendation is still withdrawn
+     and logged as cleared, as BL-1429 scenario 03 asserts.
+  4. The change log gets a line when the hold begins ("held at 1 for a
+     human release", naming the cleared signal) and one for every
+     recorded answer, naming who gave it (scenarios 01, 02).
+  5. A release CLI records the human's answer on the episode, durably:
+     `node extension/out/tools/release-intake-throttle.js <project-root>
+     --by <who> (--release | --keep <N>) [--reason <text>]`. This name and
+     these flags are the interface coordinator.prompt and BL-1982 call;
+     keep them. A release ends the hold: the cap follows min(configured,
+     the live recommendation) and the episode closes once that
+     recommendation is withdrawn (scenarios 02, 03, 05). A keep holds the
+     cap at N, bounded by the same min, and stops the episode reading as
+     awaiting release, so nobody asks again (scenario 04). With no open
+     episode the CLI refuses with a message saying so and exits non-zero.
+  6. Retire BL-432 scenario 03 ("When the diagnosis clears, the effective
+     cap returns to the configured value") from
+     `specs/features/BL-432-auto-tune-intake-throttle.feature`: retire,
+     never reword, since this feature's scenarios are the coverage
+     (BL-1006). Re-tense that feature's header comment, which names
+     scenario 03 as the restore-on-recovery guard. BL-432 scenarios 01,
+     02, 04, 05, 06 and all of BL-1429 stay green.
+
+  ## How (direction, not mandate)
+
+  - Where the hold lives is your call. Two shapes fit: fold it into
+    `emitThrottleRecommendation` in
+    `extension/src/tools/emit-throttle-recommendation.ts` (about line
+    158; `describeChangeReason` at about line 124 writes the log reason)
+    and publish a held cap the bb side reads, or keep a hold state file
+    and fold it in `swarmforge/scripts/backlog_depth_lib.bb`
+    (`read-recommended-cap` about line 197, `effective-max-depth` about
+    line 211). Either way the effective cap is min(configured,
+    recommended, held).
+  - The hold state is durable state under `.swarmforge/coordinator/`
+    beside `throttle-recommendation.json`, written atomically
+    (`atomicWrite`).
+  - Fixtures under mkdtemp, proven with `rev-parse --git-common-dir`
+    (BL-1390); the fixture's `extension/` is a symlink to this checkout's
+    compiled one, as BL-432's handler does. Drive the real
+    `effective_backlog_depth_cli.bb` for "the depth CLI runs" and the
+    real compiled release CLI for "the release CLI records".
+  - Step handler `specs/pipeline/steps/bl1981ThrottleHumanReleaseSteps.js`,
+    discovered from its own file (BL-1371). "the register has fallen back
+    under every threshold" repeats BL-1429's step text word for word, so
+    register it with `registry.defineScoped(pattern, handler,
+    featureName)` (BL-425); BL-1429's own steps stay untouched.
+
+out_of_scope: |
+  - Raising the question to the human and applying the tapped answer
+    without a coordinator seat: BL-1982.
+  - The signals and thresholds that open an episode (Article 3.5's list,
+    BL-432, BL-1429, BL-1784): unchanged.
+  - A standing pre-approval for episodes not yet open: the human said it
+    is not assumed.
+  - headroom_cap_raise_cli.bb (BL-1128) raising the configured cap: the
+    held cap still binds through the min, so no change there.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1981-a-cleared-throttle-signal-holds-the-cap-until-a-human-releases-it.feature`:
+     7 of 7 ok (6 scenarios, scenario 05 has two rows). Measured 0 at
+     mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-432-auto-tune-intake-throttle.feature`:
+     5 of 5 ok, scenario 03 gone. Measured 6 of 6 ok on main at mint
+     (e8d5dcd2a4).
+  3. `node specs/pipeline/cli.js specs/features/BL-1429-standing-reds-throttle-intake.feature`:
+     8 of 8 ok. Measured 8 of 8 ok on main at mint (e8d5dcd2a4).
+  4. Read the unit and property rows for the hold from the gather's run;
+     do not re-run them.
+  5. After the land, on the live root: `bb
+     swarmforge/scripts/effective_backlog_depth_cli.bb .` and read
+     `.swarmforge/coordinator/throttle-recommendation.json`. If the
+     2026-10-03 episode is still open, the file shows it, and the
+     coordinator records its pre-approval (coordinator.prompt).
+
+notes: |
+  Minted 2026-10-05 by the specifier from the coordinator's
+  circuit-breaker-human-release parcel (6a84d814e5, e8d5dcd2a4), the same
+  pass the amendment was adopted. Split 1:2 for INVEST Small: this ticket
+  is the hold and the release CLI; BL-1982 raises the question and applies
+  a tapped answer with no coordinator seat. The two land in that order
+  (BL-1982 depends_on this one).
+  Prose already landed on main by the specifier this pass (BL-798):
+  Article 3.5 in 03_backlog.md, its full text in 03-backlog-detailed.md,
+  the amendment marked ADOPTED, and coordinator.prompt's interim "Until
+  BL-1981 lands" text, which tells the coordinator to record the human's
+  pre-approval for the 2026-10-03 episode with this ticket's CLI once it
+  lands. QA's retire trigger: at this ticket's land the specifier retires
+  that interim sentence.
+  Orthogonality: BL-1874 and BL-1784 (both paused) also change
+  emit-throttle-recommendation.ts; do not run them concurrently with this
+  one. Whichever lands second reads the other's change. If this lands
+  first, BL-1874's fixture (a severe 0 seeded on disk) must still read
+  min(configured, standing-red), which item 1 above guarantees.
+  Dynamic routing: feature, TypeScript production, so architect,
+  hardender and documenter stay. Documenter: a how-to for releasing the
+  throttle linked from docs/index.md, and the architecture diagram's
+  `.swarmforge/` state trigger if the coder adds a state file.
+  Not in either class the 2026-09-30 standing promotion directive admits
+  (local-llm/iq3 tickets, or high/critical defects): the human's direct
+  request, so the coordinator decides how it reaches the front.
