@@ -1215,13 +1215,18 @@ parse_config() {
 # BL-319: a third tab-separated field, coordinator_agent, resolves the
 # coordinator's PROVIDER the same way - absent/blank falls back to claude,
 # preserving every existing pack's exact prior behavior unchanged.
+# BL-1958: a fourth field, coordinator_mode, resolves the pack's
+# coordinator mode the same way - absent/blank falls back to "model",
+# preserving every existing pack's exact prior behavior unchanged.
 resolve_coordinator_config() {
   local resolved rest
   resolved="$(bb "$SCRIPT_DIR/coordinator_config_cli.bb" "$CONFIG_FILE")"
   rest="${resolved#*$'\t'}"
   COORDINATOR_MODEL="${resolved%%$'\t'*}"
   COORDINATOR_EFFORT="${rest%%$'\t'*}"
-  COORDINATOR_AGENT="${rest#*$'\t'}"
+  rest="${rest#*$'\t'}"
+  COORDINATOR_AGENT="${rest%%$'\t'*}"
+  COORDINATOR_MODE="${rest#*$'\t'}"
 }
 
 # BL-319: --model/--dangerously-skip-permissions/--effort are Claude-
