@@ -6,8 +6,8 @@
 ;; effective config file, rather than re-implementing the parse in bash.
 ;;
 ;; Usage: coordinator_config_cli.bb <conf-path>
-;; Prints "<model>\t<effort>\t<agent>" (falling back to the shared
-;; Sonnet/high/claude defaults when the conf file is absent/unparseable)
+;; Prints "<model>\t<effort>\t<agent>\t<mode>" (falling back to the shared
+;; Sonnet/high/claude/model defaults when the conf file is absent/unparseable)
 ;; and exits 0.
 
 (ns coordinator-config-cli
@@ -29,6 +29,8 @@
                    "\t"
                    (coordinator-config-lib/coordinator-effort conf-text)
                    "\t"
-                   (coordinator-config-lib/coordinator-agent conf-text)))))
+                   (coordinator-config-lib/coordinator-agent conf-text)
+                   "\t"
+                   (coordinator-config-lib/coordinator-mode conf-text)))))
 
 (apply -main *command-line-args*)

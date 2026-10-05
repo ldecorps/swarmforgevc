@@ -24,6 +24,9 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const HOTFIX = '1fc9065605';
 const CLI = path.join(__dirname, 'lib', 'bl1560ToolMissHealCli.bb');
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
+// 2026-10-05 hotfix (QA note 003816): a decision HEAD's committed ledger
+// carries is the human's (--decide), so it passes; any other decision fails.
+const { uncommittedDecision } = require(path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'hotfixLedgerDecision.js'));
 const TOOL_MISS_HEAL_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'tool_miss_heal_lib.bb');
 const TEST_RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'tool_miss_heal_lib_test_runner.bb');
 const SWARMFORGE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarmforge.sh');
@@ -349,9 +352,7 @@ function registerSteps(registry) {
     // is null and decided_at is null. The row legitimately moves through
     // pending -> stamp-open while the parcel travels, so the literal state
     // pending is not asserted here (BL-1560 cleaner D1, 2026-09-14).
-    assert.doesNotMatch(entry, /state:\s*(certified|waived)\b/, `a decided state appears on the row: ${entry}`);
-    assert.match(entry, /human_decision:\s*null/, `ledger row already carries a human decision: ${entry}`);
-    assert.match(entry, /decided_at:\s*null/, `a decision timestamp was written without a human: ${entry}`);
+    assert.equal(uncommittedDecision(REPO_ROOT, ledger, HOTFIX), null, entry);
     assert.equal(
       git('status', '--porcelain', '--', 'backlog/hotfix-ledger.yaml').trim(),
       '',

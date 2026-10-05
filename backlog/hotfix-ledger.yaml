@@ -1133,3 +1133,10 @@
   stamp_ticket: BL-1955
   human_decision: null
   decided_at: null
+- commit: 02f834ec44
+  subject: "hotfix: a stamp-off's no-decision check passes a ledger row decided as HEAD's committed ledger records it, so certified rows stop turning nine checks red"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1988
+  human_decision: null
+  decided_at: null

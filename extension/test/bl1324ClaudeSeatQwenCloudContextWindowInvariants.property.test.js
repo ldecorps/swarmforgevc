@@ -38,6 +38,7 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 const SWARMFORGE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarmforge.sh');
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
 const HOTFIX_COMMIT = '4ed88430b2';
+const { uncommittedDecision } = require('./helpers/hotfixLedgerDecision');
 const CONTEXT_VAR = 'CLAUDE_CODE_MAX_CONTEXT_TOKENS';
 const TOKEN_PLAN_HOST = 'token-plan.ap-southeast-1.maas.aliyuncs.com';
 const REMAP_CALL = 'qwen_guard_map_anthropic_compat';
@@ -277,10 +278,13 @@ describe('BL-1324 stamp-off invariants', () => {
 
     fc.assert(
       fc.property(fc.constantFrom('certified', 'waived'), (verdict) => {
-        assert.doesNotMatch(
-          ledgerRow(),
-          new RegExp(`state:\\s*${verdict}\\b`),
-          `the ledger row for ${HOTFIX_COMMIT} reads "${verdict}" with no recorded human decision (BL-848)`
+        // 2026-10-05 hotfix (QA note 003816): a decision HEAD's committed
+        // ledger carries is the human's (--decide), so it passes; a "${verdict}"
+        // with no committed human decision behind it still fails.
+        assert.equal(
+          uncommittedDecision(REPO_ROOT, fs.readFileSync(LEDGER, 'utf8'), HOTFIX_COMMIT),
+          null,
+          `the ledger row for ${HOTFIX_COMMIT} carries a decision (checked for "${verdict}") no human recorded (BL-848)`
         );
         // No parcel artifact may BE a hotfix ledger carrying a decided row
         // for the reviewed commit. (Empty today - the parcel ships no ledger
@@ -304,8 +308,7 @@ describe('BL-1324 stamp-off invariants', () => {
     );
 
     const row = ledgerRow();
-    assert.match(row, /human_decision:\s*null/, 'human_decision is not null - a decision was recorded by a test run');
-    assert.match(row, /decided_at:\s*null/, 'decided_at is not null');
+    assert.equal(uncommittedDecision(REPO_ROOT, fs.readFileSync(LEDGER, 'utf8'), HOTFIX_COMMIT), null, 'a decision was recorded by a test run');
     assert.match(row, /stamp_ticket:\s*BL-1324/, 'the ledger row no longer links this stamp-off ticket');
   });
 

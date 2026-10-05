@@ -413,6 +413,14 @@ You are QA.
       `source:` carries the issue URL), close the loop now:
       `swarmforge/scripts/issue_done.sh <source-url> <merge-commit>`. It never
       blocks — a missing `gh` auth prints a SKIP line and exits 0; not an error.
+  - **Only after a land YOU published** (a land the lander returned to you,
+    or a hand land under an adjudication): notify the coordinator as below.
+    **After a queued land, send the coordinator nothing (2026-10-05).** The
+    lander sends the bookkeeping note once the commit is on `origin/main`,
+    and its land record is what opens the close gate (BL-1898). A note at
+    approval time closes the ticket before its land, and the land step then
+    refuses it as closed (BL-1546): BL-1924 escalated exactly that way on
+    2026-10-05, its approved commit still off `origin/main`.
   - Notify the **`coordinator`** with a `note` (priority `00`) — never a
     `git_handoff` (2026-09-14, BL-1565). The coordinator holds no code
     worktree (Article 1.1); the helper stamps a QA→coordinator `git_handoff`

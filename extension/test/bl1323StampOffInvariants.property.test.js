@@ -27,6 +27,7 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { uncommittedDecision } = require('./helpers/hotfixLedgerDecision');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -105,10 +106,10 @@ test('BL-1323/BL-654 invariant 2: no green suite writes a decision into the hotf
   // stamp-open, awaiting-human and so on as the parcel travels; asserting one
   // of those strings made this test fail on a lifecycle step that broke
   // nothing. Assert the decision fields themselves.
-  const DECIDED_STATES = /state:\s*(certified|waived)\b/;
-  assert.ok(!DECIDED_STATES.test(thisRow), `a decided state appears on a row no human has decided:\n${thisRow}`);
-  assert.ok(/human_decision: null/.test(thisRow), `a decision was written without a human:\n${thisRow}`);
-  assert.ok(/decided_at: null/.test(thisRow), `a decision timestamp was written without a human:\n${thisRow}`);
+  // 2026-10-05 hotfix (QA note 003816): a decision HEAD's committed ledger
+  // carries is the human's (--decide), so it passes; any other decision fails.
+  assert.ok(thisRow.length > 0, `no ledger row for ${HOTFIX}`);
+  assert.equal(uncommittedDecision(REPO_ROOT, before, HOTFIX), null);
 
   // And the suite itself is inert on the ledger: running the reviewing
   // acceptance feature leaves the file byte-identical.
