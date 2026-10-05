@@ -7,7 +7,7 @@ severity: high
 # the register they sit in throttles intake (human ruling A, 2026-10-03).
 status: todo
 epic: code-quality-gates
-priority: 10
+priority: 11
 direction: normal
 depends_on: []
 mutation_cost: medium

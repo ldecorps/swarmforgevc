@@ -8,7 +8,7 @@ severity: medium
 # QA reproduced it against the pure lib, and no live pause has broken yet.
 status: todo
 epic: local-llm-swarm
-priority: 20
+priority: 21
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

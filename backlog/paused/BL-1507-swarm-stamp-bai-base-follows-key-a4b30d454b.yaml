@@ -9,7 +9,7 @@ severity: medium
 # nothing is degraded today.
 status: todo
 epic: swarm-reliability
-priority: 72
+priority: 73
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

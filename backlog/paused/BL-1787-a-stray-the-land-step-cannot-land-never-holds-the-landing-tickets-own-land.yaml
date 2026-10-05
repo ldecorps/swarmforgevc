@@ -9,7 +9,7 @@ severity: medium
 # class: each new stray shape nobody has a ground for stops every land until
 # someone writes one (09-19 BL-1636, 09-20 BL-1657, 09-26 a225d85d8b).
 epic: swarm-reliability
-priority: 67
+priority: 68
 depends_on: []
 mutation_cost: low
 # low: one branch in land_step_lib.bb replay!'s stray loop plus one CLI

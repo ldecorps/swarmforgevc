@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: boy-scout
-priority: 27
+priority: 28
 depends_on: []
 decomposes_into: [BL-1014, BL-1015]
 mutation_cost: high

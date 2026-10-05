@@ -12,7 +12,7 @@ severity: medium
 # corrected.
 status: todo
 epic: disaster-recovery-loop
-priority: 68
+priority: 69
 direction: operator-found
 depends_on: []
 mutation_cost: low

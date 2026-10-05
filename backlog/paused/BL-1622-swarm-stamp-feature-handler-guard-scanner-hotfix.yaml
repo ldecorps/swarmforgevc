@@ -10,7 +10,7 @@ severity: medium
 # the expedite lane.
 status: todo
 epic: code-quality-gates
-priority: 63
+priority: 64
 direction: human-directive
 depends_on: []
 mutation_cost: medium

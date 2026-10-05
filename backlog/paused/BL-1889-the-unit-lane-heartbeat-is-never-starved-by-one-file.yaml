@@ -7,7 +7,7 @@ severity: medium
 # re-run clears it, and no code under test is wrong.
 status: todo
 epic: swarm-reliability
-priority: 20
+priority: 21
 depends_on: []
 mutation_cost: low
 # low: test-side changes to the file(s) found; no product code.

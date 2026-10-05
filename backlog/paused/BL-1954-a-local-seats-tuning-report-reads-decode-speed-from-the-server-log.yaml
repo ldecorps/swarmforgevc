@@ -7,7 +7,7 @@ severity: medium
 # figures; no seat's work is degraded by it.
 status: todo
 epic: local-llm-swarm
-priority: 5
+priority: 6
 direction: queue-jump
 depends_on: [BL-1851]
 mutation_cost: low

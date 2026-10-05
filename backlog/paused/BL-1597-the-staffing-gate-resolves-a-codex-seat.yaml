@@ -9,7 +9,7 @@ severity: medium
 # proven at the gate. Not high: no standing red, no live fault.
 status: todo
 epic: swarm-reliability
-priority: 65
+priority: 66
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

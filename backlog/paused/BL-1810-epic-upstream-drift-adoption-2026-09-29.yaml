@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: upstream-drift-adoption
-priority: 81
+priority: 82
 direction: human-requested
 depends_on: []
 decomposes_into: [BL-1811, BL-1812, BL-1813]

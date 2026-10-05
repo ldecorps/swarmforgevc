@@ -8,7 +8,7 @@ severity: medium
 # most recently 2026-09-26 and 2026-09-27) ships unreadable on the phone; no
 # safety signal is broken and no data is lost. Not a standing red.
 epic: art-direction
-priority: 46
+priority: 47
 depends_on: []
 mutation_cost: low
 # low: Babashka has no mutation/CRAP/DRY wired (BL-472); the change is one

@@ -7,7 +7,7 @@ severity: medium
 # target, the swarm has run on one) every land and bounded run would fail.
 status: todo
 epic: landing-is-a-merge
-priority: 12
+priority: 13
 depends_on: []
 mutation_cost: low
 # low: two Babashka call sites and one shared helper; no Stryker lane for bb

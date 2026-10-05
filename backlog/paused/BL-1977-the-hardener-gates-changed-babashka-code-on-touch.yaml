@@ -4,7 +4,7 @@ milestone: M8
 type: chore
 status: todo
 epic: code-quality-gates
-priority: 3
+priority: 4
 direction: swarm-proposed
 depends_on: [BL-1976]
 mutation_cost: medium

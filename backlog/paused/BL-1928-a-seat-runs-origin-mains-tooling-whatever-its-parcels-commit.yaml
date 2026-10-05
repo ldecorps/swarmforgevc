@@ -9,7 +9,7 @@ severity: high
 # rule the parcel requeued (SUP-17, 12:44Z).
 status: blocked
 epic: landing-is-a-merge
-priority: 5
+priority: 6
 depends_on: []
 mutation_cost: medium
 # medium: either option touches a shared take-up or tool entry path that

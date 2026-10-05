@@ -4,7 +4,7 @@ type: feature
 milestone: M8
 status: todo
 epic: telegram-intake-builder
-priority: 88
+priority: 89
 # priority 21 under an epic tracker at 0: the gate sorts by epic priority,
 # then own priority, then id (BL-900). Only the local-llm-swarm epic shares
 # epic priority 0, and its slices' own priorities run 0..20, so every one of

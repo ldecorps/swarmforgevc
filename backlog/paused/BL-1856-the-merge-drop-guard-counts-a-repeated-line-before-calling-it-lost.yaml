@@ -8,7 +8,7 @@ severity: medium
 # exists (backlog/evidence/BL-1845-specifier-merge-drop-guard-boilerplate-separator-adjudication-20261001.md).
 status: todo
 epic: swarm-reliability
-priority: 25
+priority: 26
 depends_on: []
 mutation_cost: low
 # low: one pure function and its caller in a bb lib, and two bb runners.

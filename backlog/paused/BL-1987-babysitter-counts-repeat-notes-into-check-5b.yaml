@@ -7,7 +7,7 @@ severity: high
 # commit is cycling, and today nothing reports it before 60 minutes.
 status: blocked
 epic: local-llm-swarm
-priority: 2
+priority: 3
 direction: swarm-reported
 depends_on: [BL-1986]
 mutation_cost: low

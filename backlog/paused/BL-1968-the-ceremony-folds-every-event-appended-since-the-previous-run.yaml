@@ -6,7 +6,7 @@ severity: high
 # high: inherited from BL-1456 - the ceremony packet silently drops ~90% of a shift's lifecycle signal.
 status: todo
 epic: lean-aware-coordinator
-priority: 57
+priority: 58
 direction: swarm-reported
 depends_on: [BL-1967]
 mutation_cost: low

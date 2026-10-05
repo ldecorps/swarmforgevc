@@ -10,7 +10,7 @@ severity: medium
 # name. Not high: nothing is degraded while no file crosses the cap.
 status: todo
 epic: code-quality-gates
-priority: 45
+priority: 46
 direction: human-intake
 depends_on: []
 # BL-1651 (done) built the per-file ceiling (propertyLaneHeapGuardSetup.js)

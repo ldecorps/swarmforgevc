@@ -9,7 +9,7 @@ severity: medium
 # that slice depends on this one.
 status: todo
 epic: landing-is-a-merge
-priority: 4
+priority: 5
 depends_on: []
 mutation_cost: low
 # low: one predicate in one shell guard, plus its test rows.

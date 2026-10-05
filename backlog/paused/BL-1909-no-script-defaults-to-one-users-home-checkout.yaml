@@ -10,7 +10,7 @@ severity: medium
 # script's root explicitly, so its default bites only on a hand run.
 status: todo
 epic: swarm-reliability
-priority: 40
+priority: 41
 depends_on: []
 mutation_cost: low
 # low: two shell defaults and a step handler; no Stryker lane for shell.

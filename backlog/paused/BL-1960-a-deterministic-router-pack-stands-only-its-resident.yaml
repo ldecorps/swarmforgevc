@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: local-llm-swarm
-priority: 1
+priority: 2
 direction: queue-jump
 depends_on: [BL-1959]
 mutation_cost: low

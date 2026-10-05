@@ -9,7 +9,7 @@ severity: medium
 # pass runs the feature.
 status: todo
 epic: code-quality-gates
-priority: 20
+priority: 21
 depends_on: [BL-1869]
 # BL-1869 rewrote the handler and is landing. The fix edits that rewrite.
 mutation_cost: low

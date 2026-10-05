@@ -9,7 +9,7 @@ severity: medium
 # running swarm is affected. Not high: one manual answer recovers it.
 status: todo
 epic: onboarding-target-repo
-priority: 38
+priority: 40
 direction: operator-found
 depends_on: []
 mutation_cost: low

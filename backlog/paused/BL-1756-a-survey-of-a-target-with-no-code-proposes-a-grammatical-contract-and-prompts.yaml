@@ -10,7 +10,7 @@ severity: medium
 # swarm is degraded.
 status: todo
 epic: onboarding-target-repo
-priority: 23
+priority: 25
 direction: operator-found
 depends_on: []
 mutation_cost: medium

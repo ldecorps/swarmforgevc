@@ -8,7 +8,7 @@ severity: medium
 # real hotfix is missed and no gate is wrong.
 status: todo
 epic: swarm-reliability
-priority: 20
+priority: 21
 depends_on: []
 mutation_cost: low
 # low: one Babashka predicate and its tests; no Stryker lane for bb

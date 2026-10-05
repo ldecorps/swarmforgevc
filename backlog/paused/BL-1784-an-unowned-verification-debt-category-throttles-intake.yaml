@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: feature
 epic: lean-aware-coordinator
-priority: 79
+priority: 80
 depends_on: [BL-1782, BL-1783]
 mutation_cost: medium
 # medium: a new TypeScript signal module in the Stryker lane

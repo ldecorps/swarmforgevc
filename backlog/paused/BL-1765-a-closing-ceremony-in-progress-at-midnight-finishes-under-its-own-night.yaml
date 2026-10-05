@@ -9,7 +9,7 @@ severity: medium
 # 09:00; an evening shift closed by hand late at night hits it.
 status: todo
 epic: swarm-reliability
-priority: 11
+priority: 12
 direction: specifier-found
 depends_on: [BL-1836]
 mutation_cost: low

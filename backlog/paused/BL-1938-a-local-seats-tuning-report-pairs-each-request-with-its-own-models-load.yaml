@@ -9,7 +9,7 @@ severity: medium
 # shares the Ollama server, which is what BL-1861 exists to allow.
 status: todo
 epic: local-llm-swarm
-priority: 25
+priority: 26
 direction: queue-jump
 depends_on: [BL-1851]
 mutation_cost: low

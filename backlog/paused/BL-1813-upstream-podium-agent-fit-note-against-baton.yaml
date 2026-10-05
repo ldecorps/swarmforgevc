@@ -4,7 +4,7 @@ milestone: M8
 type: chore
 status: todo
 epic: upstream-drift-adoption
-priority: 83
+priority: 84
 direction: human-requested
 depends_on: []
 # BL-1811 and BL-1812 need not land first: the entry names them by id,

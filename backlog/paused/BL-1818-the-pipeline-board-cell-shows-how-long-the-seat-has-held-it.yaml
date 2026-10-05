@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: pipeline-board
-priority: 84
+priority: 85
 direction: human-intake
 depends_on: []
 mutation_cost: medium

@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-self-optimization
-priority: 6
+priority: 7
 depends_on: [BL-1981]
 mutation_cost: medium
 # medium: an ask-and-apply step in the depth CLI's run (bb), shelling

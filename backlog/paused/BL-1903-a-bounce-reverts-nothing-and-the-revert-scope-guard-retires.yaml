@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: landing-is-a-merge
-priority: 4
+priority: 5
 direction: human-requested
 depends_on: [BL-1902]
 mutation_cost: low

@@ -8,7 +8,7 @@ severity: medium
 # only because the host refuses a file changed within 3 days.
 status: todo
 epic: local-llm-swarm
-priority: 20
+priority: 21
 direction: swarm-reported
 depends_on: [BL-1934]
 not_before: 2026-10-07

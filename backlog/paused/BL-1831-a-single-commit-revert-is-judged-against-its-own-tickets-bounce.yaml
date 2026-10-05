@@ -9,7 +9,7 @@ severity: medium
 # no silent loss, no standing red.
 status: todo
 epic: swarm-reliability
-priority: 85
+priority: 86
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

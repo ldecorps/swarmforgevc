@@ -4,7 +4,7 @@ milestone: M8
 type: chore
 status: todo
 epic: upstream-drift-adoption
-priority: 82
+priority: 83
 direction: human-requested
 depends_on: []
 mutation_cost: low

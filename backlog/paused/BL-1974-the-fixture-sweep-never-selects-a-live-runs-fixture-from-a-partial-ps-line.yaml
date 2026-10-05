@@ -8,7 +8,7 @@ severity: high
 # BL-1390 class: a sweep that destroys runs it does not own).
 status: todo
 epic: code-quality-gates
-priority: 8
+priority: 9
 direction: swarm-reported
 depends_on: []
 mutation_cost: low

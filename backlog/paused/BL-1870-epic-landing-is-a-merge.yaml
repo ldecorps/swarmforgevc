@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: landing-is-a-merge
-priority: 0
+priority: 2
 direction: human-requested
 depends_on: []
 decomposes_into: [BL-1871, BL-1872, BL-1887, BL-1892, BL-1895, BL-1898, BL-1900, BL-1901, BL-1902, BL-1903, BL-1912, BL-1913, BL-1914, BL-1915]
