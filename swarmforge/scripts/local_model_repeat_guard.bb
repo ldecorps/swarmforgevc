@@ -216,7 +216,14 @@
                (re-find #"(^|[\s|;&(])grep\s" cmd)
                (some #(re-find #"(?m)^Output: \(empty\)" %)
                      (filter string? (tree-seq coll? seq response))))
-      "grep found nothing: what it searched for is not in those files. Do not search them for it again; use what an earlier search found, or write the code.")))
+      (let [base (command-base cmd)]
+        (if (or (= base (str/trim cmd)) (re-find #"^(git ls-files|ls|find|cat)\b" base))
+          "grep found nothing: what it searched for is not in those files. Do not search them for it again; use what an earlier search found, or write the code."
+          ;; 2026-10-05: `node .../cli.js <feature> | grep '^# (tests|pass|fail)'`
+          ;; printed nothing because the run ended with no summary; "not in
+          ;; those files" read as if the feature had no tests.
+          (str "grep found nothing in the output of `" base "`: that command may not have printed"
+               " what you expected at all. Run it once as `" base " > tmp/out.txt 2>&1` and read the end of tmp/out.txt."))))))
 
 (defn offset-hint
   "read_file's offset counts from 0, so offset 1 starts at line 2. A model
