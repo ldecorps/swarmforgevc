@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { spawnHandoffSend } = require('./lib/answerHandoffAudit');
 const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -75,7 +76,7 @@ function writeTicket(ctx, declaration) {
 function send(ctx, { from, to }) {
   const draft = path.join(ctx.root, 'draft.txt');
   fs.writeFileSync(draft, `type: git_handoff\nto: ${to}\npriority: 50\ntask: BL-951-probe\ncommit: ${ctx.commit}\n`);
-  const res = spawnSync('bb', [SWARM_HANDOFF, 'draft.txt'], {
+  const res = spawnHandoffSend('bb', [SWARM_HANDOFF, 'draft.txt'], {
     cwd: ctx.root,
     encoding: 'utf8',
     env: {

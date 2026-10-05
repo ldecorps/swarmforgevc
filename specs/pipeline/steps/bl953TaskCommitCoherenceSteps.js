@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { spawnHandoffSend } = require('./lib/answerHandoffAudit');
 const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -107,7 +108,7 @@ function send(ctx, { from, to, draft }) {
   const env = { ...process.env, SWARMFORGE_ROLE: from, SWARMFORGE_SKIP_SYNC_INJECT: '1' };
   delete env.SWARMFORGE_CONFIG;
   if (ctx.stubBin) env.PATH = `${ctx.stubBin}:${env.PATH}`;
-  const res = spawnSync('bb', [SWARM_HANDOFF, 'draft.txt'], { cwd: ctx.root, encoding: 'utf8', env });
+  const res = spawnHandoffSend('bb', [SWARM_HANDOFF, 'draft.txt'], { cwd: ctx.root, encoding: 'utf8', env });
   ctx.result = { exitCode: res.status ?? 99, output: `${res.stdout || ''}${res.stderr || ''}` };
 }
 
