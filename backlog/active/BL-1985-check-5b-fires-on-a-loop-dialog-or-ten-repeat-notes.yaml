@@ -154,3 +154,5 @@ notes: |
   runner printed ok and test_babysitter_check.sh ALL PASS. The pane showed
   repeated no-op Edits (old == new) around the same clause, which is the
   paren the model could not find.
+
+assigned_to: coder
