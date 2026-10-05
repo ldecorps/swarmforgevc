@@ -2678,7 +2678,11 @@ export OPENAI_BASE_URL='${seat_url}'
       # and authenticate with OPENROUTER_API_KEY, which arrives in the pane env
       # via respawn-pane -e (see launch_role) and is never written into this
       # file - same BL-130 secrets rule as the MISTRAL/OPENAI provider keys.
-      billing_guard=$'export ANTHROPIC_BASE_URL=\'https://openrouter.ai/api\'\nexport ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"\n'
+      # 2026-10-05: ANTHROPIC_API_KEY is unset as well (BL-523 scenario 02;
+      # ancillary_provider_pane_exports already does it for the pack path) -
+      # a key re-exported by the user's shell profile would otherwise ride
+      # into a harness pointed at OpenRouter.
+      billing_guard=$'unset ANTHROPIC_API_KEY\nexport ANTHROPIC_BASE_URL=\'https://openrouter.ai/api\'\nexport ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"\n'
     else
       billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
     fi

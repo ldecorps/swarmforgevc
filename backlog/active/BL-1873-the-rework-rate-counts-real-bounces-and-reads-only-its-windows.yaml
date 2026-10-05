@@ -147,3 +147,5 @@ notes: |
   Minted 2026-10-01 by the specifier from coder note 002301 (BL-1869
   probes a and b), the same pass. Medium, not auto-approved. Dynamic
   routing: TypeScript production, so coder, hardender, QA.
+
+assigned_to: coder

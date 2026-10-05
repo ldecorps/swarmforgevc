@@ -83,6 +83,12 @@ grep -q "ANTHROPIC_BASE_URL='https://openrouter.ai/api'" "$DOC2" \
 grep -q 'ANTHROPIC_AUTH_TOKEN="\$OPENROUTER_API_KEY"' "$DOC2" \
   || fail "02: expected AUTH_TOKEN to reference OPENROUTER_API_KEY env, not a literal"
 grep -q "test-or-secret" "$DOC2" && fail "02: secret value leaked into OpenRouter launch script"
+# 2026-10-05 (BL-523 scenario 02, bound by BL-1948): an Anthropic key the
+# shell profile re-exports must not ride into a harness pointed at OpenRouter.
+grep -qx "unset ANTHROPIC_API_KEY" "$DOC2" \
+  || fail "02: the OpenRouter documenter's launch script must unset ANTHROPIC_API_KEY, got: $(grep -E 'ANTHROPIC' "$DOC2" || true)"
+grep -q "unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN" "$DOC2" \
+  && fail "02: the OpenRouter documenter must keep ANTHROPIC_AUTH_TOKEN (it carries OPENROUTER_API_KEY)"
 grep -q "unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN" "$ARCH2" \
   || fail "02: architect (not in list) must keep first-party unset guard"
 grep -q "openrouter.ai" "$ARCH2" && fail "02: architect must not get OpenRouter URL"

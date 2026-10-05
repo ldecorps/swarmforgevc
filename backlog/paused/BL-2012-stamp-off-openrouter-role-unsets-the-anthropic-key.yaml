@@ -1,0 +1,96 @@
+id: BL-2012
+title: "Stamp-off for hotfix 78e9346416: an OpenRouter-routed claude role's launch script unsets ANTHROPIC_API_KEY, so a profile-exported Anthropic key never rides into a harness pointed at OpenRouter"
+milestone: M8
+type: defect
+severity: high
+# high: a credential-routing fault (an Anthropic key held by a harness
+# pointed at a third-party endpoint). Dormant on 2026-10-05: no live env
+# sets SWARMFORGE_OPENROUTER_ROLES, so no seat was exposed.
+status: todo
+epic: swarm-reliability
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one unset line in one guard string, two test assertions.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one line in one guard string; nothing to refactor"
+  architect: "the OpenRouter guard keeps its endpoint and token; it now matches the pack path's unset"
+  hardender: "shell production code with no Stryker lane; the change writes no durable state and the test's new assertion fails without it"
+  documenter: "the guard's own comment is the living description"
+
+# Not a claim of ownership over BL-523's contract (BL-1251): the feature
+# BL-1948 binds, whose scenario 02 this hotfix satisfies.
+acceptance: specs/features/BL-523-openrouter-provider-support.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews it and never re-applies it.
+
+invariants:
+  - "An OpenRouter-routed claude role's launch script unsets ANTHROPIC_API_KEY and keeps ANTHROPIC_AUTH_TOKEN set from OPENROUTER_API_KEY; every other claude role's guard is unchanged."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_openrouter_provider_support.sh`:
+     6 PASS, no FAIL (measured at 78e9346416; its new 02 assertion fails on
+     the tree before it).
+  2. `bash swarmforge/scripts/test/test_bl1049_provider_env_scrub.sh`:
+     11 PASS (measured at 78e9346416).
+  3. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  coder@2 note 000109 to the specifier, 2026-10-05, verbatim: "BL-1948
+  scenario 02: ANTHROPIC_API_KEY not unset for OpenRouter role".
+
+description: |
+  ## Status: hotfix 78e9346416 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `swarmforge/scripts/swarmforge.sh`'s billing guard for a role in
+  `SWARMFORGE_OPENROUTER_ROLES` (BL-523) exported
+  `ANTHROPIC_BASE_URL='https://openrouter.ai/api'` and
+  `ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"` but left `ANTHROPIC_API_KEY`
+  alone. Every other claude role's guard unsets it, and the pack path
+  (`ancillary_provider_lib.sh` `ancillary_provider_pane_exports`) unsets
+  it for OpenRouter too. The user's shell profile re-exports real keys
+  into panes, so such a seat could start holding the Anthropic key against
+  a third-party endpoint. BL-523's scenario 02 required the unset; the
+  feature had no handler until BL-1948, so nothing ever ran it.
+
+  ## What the hotfix changed
+
+  - The guard string now begins `unset ANTHROPIC_API_KEY`, then the two
+    exports as before.
+  - `swarmforge/scripts/test/test_openrouter_provider_support.sh` case 02:
+    the OpenRouter documenter's launch script has the exact line
+    `unset ANTHROPIC_API_KEY` and not the first-party
+    `unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN`.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure steps 1 and 2 once each, outputs saved under
+     tmp/.
+  2. Read `git show 78e9346416` against the sections above and the
+     invariant.
+  3. Write backlog/evidence/BL-2012-coder-<date>.md: the two results and
+     one line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix 78e9346416.
+  Dormant check the same pass: .swarmforge/swarm.env, perplexity.env and
+  mistral-vibe.env unset or empty SWARMFORGE_OPENROUTER_ROLES and no
+  .swarmforge/launch/*.sh points at openrouter.ai.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 78e9346416 linked to BL-2012.

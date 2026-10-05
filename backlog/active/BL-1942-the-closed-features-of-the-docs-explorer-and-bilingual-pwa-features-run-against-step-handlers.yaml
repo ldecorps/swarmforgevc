@@ -1,5 +1,5 @@
-id: BL-1948
-title: "The closed features of the OpenRouter provider feature run against step handlers - BL-523 closed with acceptance features no step handler binds, so every scenario fails if run, and each holds a standing-red register row; bind them as written"
+id: BL-1942
+title: "The closed features of the docs explorer and bilingual PWA features run against step handlers - BL-117, BL-118 closed with acceptance features no step handler binds, so every scenario fails if run, and each holds a standing-red register row; bind them as written"
 milestone: M8
 type: defect
 severity: high
@@ -7,11 +7,11 @@ severity: high
 # the register they sit in throttles intake (human ruling A, 2026-10-03).
 status: todo
 epic: code-quality-gates
-priority: 14
+priority: 12
 direction: normal
 depends_on: []
 mutation_cost: medium
-# medium: test-side only, 5 existing scenarios to bind against shipped code.
+# medium: test-side only, 11 existing scenarios to bind against shipped code.
 slice_size_envelope: medium
 required_stages: [coder, qa]
 stage_skip_reasons:
@@ -22,12 +22,13 @@ stage_skip_reasons:
 
 # Not a claim of ownership over the closed tickets' contracts (BL-1251): this
 # ticket binds features they left unbound and changes none of their scenarios.
-acceptance: specs/features/BL-523-openrouter-provider-support.feature
+acceptance: specs/features/BL-117-pwa-docs-drilldown-explorer.feature
 
 # One handler per feature, each discovered from its own file (BL-1371); the
 # pre-QA gate checks every one lands in this parcel (BL-233).
 required_wiring:
-  - 'specs/pipeline/steps/bl523OpenRouterProviderSteps.js::registerSteps::binds BL-523-openrouter-provider-support.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl117PwaDocsDrilldownSteps.js::registerSteps::binds BL-117-pwa-docs-drilldown-explorer.feature (discovered by suffix, BL-1371)'
+  - 'specs/pipeline/steps/bl118PwaBilingualFrenchSteps.js::registerSteps::binds BL-118-pwa-bilingual-french.feature (discovered by suffix, BL-1371)'
 
 human_approval: approved
 approval_context: >
@@ -42,13 +43,13 @@ invariants:
   - "Every handler builds its own fixtures under mkdtemp and never reads or writes this checkout's git, backlog or .swarmforge (BL-1390)."
 
 qa_e2e_procedure: |
-  1. Read from the gather's acceptance row: `specs/features/BL-523-openrouter-provider-support.feature` all pass.
-
-  2. `git diff <parcel>^..<parcel> --stat`: only new files under
+  1. Read from the gather's acceptance row: `specs/features/BL-117-pwa-docs-drilldown-explorer.feature` all pass.
+  2. `node specs/pipeline/cli.js specs/features/BL-118-pwa-bilingual-french.feature`: all pass. Measured at mint (2026-10-04): every scenario fails with no step handler matched.
+  3. `git diff <parcel>^..<parcel> --stat`: only new files under
      `specs/pipeline/steps/` (and this ticket's evidence); no `.feature`, no
      `extension/src` or `swarmforge/scripts` path.
-  3. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
-     carries one row per feature above naming BL-1948. After the land the rows
+  4. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
+     carries one row per feature above naming BL-1942. After the land the rows
      are gone (BL-1631 retires them); check on origin/main.
 
 source: |
@@ -76,7 +77,8 @@ description: |
   One step-handler file per feature, binding every remaining step as
   written, so each feature passes against the shipped code:
 
-  - `specs/features/BL-523-openrouter-provider-support.feature` (5 scenarios): swarmforge.sh write_role_launch_script in a mkdtemp via zsh; scenario 02's ANTHROPIC_API_KEY unset for an OpenRouter role looks unimplemented - bind as written, report a red; M.
+  - `specs/features/BL-117-pwa-docs-drilldown-explorer.feature` (4 scenarios): computeDocsTree (S); jsdom docs explorer (M).
+  - `specs/features/BL-118-pwa-bilingual-french.feature` (7 scenarios): i18n translate session with a fake MT engine + jsdom locale harness; M.
 
   ## How (direction, not mandate)
 
@@ -91,3 +93,5 @@ description: |
   - A scenario that fails on its merits once bound is a real defect in
     shipped behaviour. Send the specifier a note naming the scenario and the
     observed value, and keep binding the rest. Never edit a scenario to pass.
+
+assigned_to: coder
