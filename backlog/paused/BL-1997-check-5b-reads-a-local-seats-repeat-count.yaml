@@ -5,14 +5,16 @@ type: defect
 severity: high
 # high: inherited from BL-1987 / BL-1980 - a seat collecting REPEAT notes
 # with no commit is cycling, and today nothing reports it before 60 minutes.
-status: blocked
+status: todo
 epic: local-llm-swarm
 priority: 3
 direction: swarm-reported
 depends_on: [BL-1996]
-mutation_cost: low
-# low: one load-file, one map entry, a step handler copied from BL-1986's,
-# and the runbook paragraph.
+mutation_cost: medium
+# medium (raised 2026-10-05 from low): four local-seat stalls in this code
+# area today (BL-1980, BL-1987, BL-1996, BL-1997), the last on the
+# 170-line handler copy; medium keeps it off the easy-tier local seat
+# (BL-1001) so coder@2 takes it. The salvage holds the map entry already.
 slice_size_envelope: low
 required_stages: [coder, documenter, qa]
 stage_skip_reasons:
@@ -67,6 +69,19 @@ source: |
   > Process fix, that's my boy :)
 
 description: |
+  ## Start from the salvage (2026-10-05)
+
+  `refs/swarmforge/salvage/BL-1997` (0ded699725, iq3's drift stash of
+  18:43Z) holds the map entry in `held-seat-tickets`, exactly as wanted
+  below, and the file reads (edamame clean). Apply it with
+  `git diff 0ded699725^1 0ded699725 -- swarmforge/scripts/babysitter_check.bb | git apply`
+  after merging main. What it does NOT have, and what is left:
+  1. the `load-file` of `local_seat_report_lib.bb` beside the others
+     (lines 33-49) - without it the new call does not resolve;
+  2. the step handler `bl1997RepeatNotesSeatStuckSteps.js` (copy
+     `bl1986LoopDialogSeatStuckSteps.js`, as below);
+  3. the runbook paragraph (documenter).
+
   ## What is wanted
 
   Each held ticket in `held-seat-tickets` carries
@@ -133,5 +148,12 @@ notes: |
   Dynamic routing: the parent's shape kept - documenter for the runbook.
   The second required_wiring entry anchors the live consumer's call
   (BL-1235): only babysitter_check.bb calling the counter satisfies it.
-
+  2026-10-05 19:5xZ specifier, on coordinator note 016714 ("split BL-1997:
+  4th stall same area today, consider coder@2 default"): amended, not
+  split. iq3's stash (pinned refs/swarmforge/salvage/BL-1997 = 0ded699725)
+  has the one map entry and reads; it lacks the load-file, the handler and
+  the runbook line. mutation_cost raised to medium so the tier routing
+  (BL-1001) gives it to coder@2, the coordinator's suggested default for
+  this area; BL-1979 (the handler scaffold) is the fix that would let a
+  local seat take handler work again.
 assigned_to: coder
