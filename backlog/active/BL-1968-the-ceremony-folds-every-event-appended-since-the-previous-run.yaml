@@ -81,7 +81,52 @@ notes: |
   specs/pipeline/steps/bl1968CeremonyFoldsPastThePreviousRunSteps.js,
   registered in specs/pipeline/steps/index.js.
 
+  2026-10-05 ~15:40Z: pulled from active - loop-halted at the 60m check,
+  but with 7 files of real uncommitted progress (234 insertions, 46
+  deletions): closingCeremonyRun.ts, closingCeremonyStore.ts,
+  leanLedgerStore.ts, closingCeremony.ts, and three test files. The halt
+  itself happened on a ReadFile for a nonexistent
+  specs/pipeline/steps/stepRegistry.js, mid a search for
+  composeBounceEvents. Worth checking the respawned seat's worktree-drift
+  stash for salvage (same pattern as BL-1958/BL-1980) before re-deriving
+  from scratch.
+  2026-10-05 15:5xZ specifier, on coordinator note 016625 ("split BL-1968:
+  loop-halt w/ 7-file diff, check stash for salvage"): amended, not split.
+  iq3 session 1cdf9dc6 (15:06-15:53Z) did the production fold and unit
+  tests in its first 32 minutes (compile + tests green by 15:36Z), then
+  spent 15 minutes and most of its 7 compactions reading the pipeline's
+  own internals to learn how to write the step handler from nothing, until
+  qwen's loop dialog halted it. The drift guard stashed the diff
+  (stash@{0} worktree-drift-20261005T155335Z); pinned as
+  refs/swarmforge/salvage/BL-1968 = 476d893422. A split would leave the
+  production slice with no runnable acceptance, so the ticket instead
+  starts from the salvage and names the sibling handler to copy.
+  Recommended to the coordinator: route the remainder to coder@2, and
+  promote BL-1979 (the handler scaffold, approved) so a local seat stops
+  having to invent a handler.
+
 description: |
+  ## Start from the salvage (2026-10-05)
+
+  `refs/swarmforge/salvage/BL-1968` (476d893422) holds the first attempt's
+  uncommitted work: the fold by append order in closingCeremony.ts,
+  closingCeremonyRun.ts, closingCeremonyStore.ts and leanLedgerStore.ts,
+  and the unit tests in closingCeremony.test.js, closingCeremonyRun.test.js
+  and closingCeremonyStore.test.js. Measured by the specifier in a scratch
+  copy: `tsc` clean, the three test files 97/97. Restore it with
+  `git checkout 476d893422 -- extension/src/metrics extension/src/quality/closingCeremony.ts extension/test/closingCeremony.test.js extension/test/closingCeremonyRun.test.js extension/test/closingCeremonyStore.test.js`
+  after merging main, then check it against "What is wanted" below
+  (the migration run from a pre-BL-1967 run's `deliveredAt` especially).
+
+  What is NOT done: the step handler
+  `specs/pipeline/steps/bl1968CeremonyFoldsPastThePreviousRunSteps.js` for
+  the five scenarios. Copy the shape of its sibling
+  `specs/pipeline/steps/bl1967CeremonyRunRecordsItsWindowSteps.js` (202
+  lines, same feature family): its requires, its fixture ledger and its
+  `registry.defineScoped(pattern, handler, FEATURE)` calls. Do not read
+  specs/pipeline/stepRegistry.js, runtime.js, generate.js, cli.js or
+  runnerAdapter.js: the sibling already shows everything a handler needs.
+
   ## What is wanted
 
   A ledger event belongs to the first ceremony run after it is appended,
@@ -117,3 +162,5 @@ description: |
     pure fold over one shift's worth of ledger events" - define the
     window) and docs/reference/BL-819-ticket-lifecycle-ledger.md lines
     40-43 (the "shift boundary that doesn't exist yet" clause).
+
+assigned_to: coder

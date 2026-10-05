@@ -10,6 +10,7 @@ const { landPilotedTicket } = require('../../../extension/out/tools/pilotAccepta
 
 const EXTENSION_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const GATE_TS = path.join(EXTENSION_DIR, 'src', 'tools', 'pilotAcceptanceGate.ts');
+const DEPS_HELPER = path.join(EXTENSION_DIR, 'test', 'helpers', 'pilotAcceptanceGateDeps.js');
 
 // The 15 files that actually CALL landPilotedTicket (verified via
 // `grep -rl "landPilotedTicket(" extension/test/*.test.js` - two files
@@ -81,7 +82,15 @@ function registerSteps(registry) {
   });
 
   scoped(/^the stub supplies "([^"]+)"$/, (ctx, member) => {
-    const missing = ctx.bl1221.sources.filter((s) => !s.text.includes(member));
+    // BL-1229 (2026-09-05) moved callers onto the shared helper
+    // makeAcceptanceGateDeps, which supplies every required member: a caller
+    // that builds its stub through the helper supplies the member when the
+    // helper does. Read only the literal key, this check went red on seven
+    // correct callers and stayed red until 2026-10-05.
+    const helperSupplies = fs.readFileSync(DEPS_HELPER, 'utf8').includes(member);
+    const missing = ctx.bl1221.sources.filter(
+      (s) => !s.text.includes(member) && !(helperSupplies && s.text.includes('makeAcceptanceGateDeps'))
+    );
     if (missing.length > 0) {
       throw new Error(`expected every one of the ${ctx.bl1221.sources.length} caller files to supply "${member}", missing in:\n${missing.map((s) => s.file).join('\n')}`);
     }

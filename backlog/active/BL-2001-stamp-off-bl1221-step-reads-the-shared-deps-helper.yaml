@@ -1,0 +1,90 @@
+id: BL-2001
+title: "Stamp-off for red hotfix cbca1b5edb: BL-1221's step counts a caller that builds its deps stub through makeAcceptanceGateDeps as supplying a member the helper supplies"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main (2026-09-05 rule) - BL-1221's feature read
+# 2 of 3 since BL-1229 moved its callers onto the shared helper.
+status: todo
+epic: code-quality-gates
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one condition in one step handler.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one condition in one handler; nothing to refactor"
+  architect: "the check still reads the real caller files; only what counts as supplying a member widens"
+  hardender: "test-side only (a step handler); no production code"
+  documenter: "the handler's own comment is the living description"
+
+# Not a claim of ownership over BL-1221's contract (BL-1251): the feature
+# this hotfix turns green again.
+acceptance: specs/features/BL-1221-pilot-gate-deps-stubs-missing-required-orphan-docs-check.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a red hotfix the specifier landed under the human's
+  2026-10-01 rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants:
+  - "A caller that neither names the member nor builds its stub through makeAcceptanceGateDeps is still reported missing."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1221-pilot-gate-deps-stubs-missing-required-orphan-docs-check.feature`:
+     3 of 3 ok (measured at cbca1b5edb; 2 of 3 before it).
+  2. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  Found 2026-10-05 by the specifier measuring the pilot-gate step handlers
+  named in coder note 000083 ("BL-1930: BL-1830 sibling-detect gap + 6
+  hand-built pilot deps - see evidence", backlog/evidence/BL-1930-coder-20261005.md
+  at fb616cc534).
+
+description: |
+  ## Status: hotfix cbca1b5edb landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `specs/pipeline/steps/bl1221PilotGateDepsStubsSteps.js`'s step "the stub
+  supplies <member>" required each of 15 caller test files to contain the
+  literal member name. BL-1229 (2026-09-05) moved seven of them onto the
+  shared `makeAcceptanceGateDeps` helper
+  (extension/test/helpers/pilotAcceptanceGateDeps.js), which supplies every
+  required member, so the step reported seven correct callers missing.
+
+  ## What the hotfix changed
+
+  - A caller counts as supplying a member when its text names it, or when
+    it calls `makeAcceptanceGateDeps` and the helper's text names it
+    (`DEPS_HELPER`, read once per step).
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure step 1 once, in your worktree, its output saved
+     to tmp/out.txt.
+  2. Read `git show cbca1b5edb` against the sections above and the
+     invariant.
+  3. Write backlog/evidence/BL-2001-coder-<date>.md: the result and one
+     line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as red hotfix
+  cbca1b5edb (committed with SWARMFORGE_ROLE=QA: specs/pipeline/steps/ is
+  QA-exclusive on main, BL-848). No register row: the hotfix landed the
+  same pass. BL-2000, the open stamp-off, was already active.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: cbca1b5edb linked to BL-2001.
+
+assigned_to: coder

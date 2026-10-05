@@ -1245,3 +1245,17 @@
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
+- commit: cbca1b5edb
+  subject: "HOTFIX: BL-1221's step counts a caller that builds its deps stub through makeAcceptanceGateDeps as supplying a member the helper supplies"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2001
+  human_decision: null
+  decided_at: null
+- commit: 0a506c792b
+  subject: "hotfix: the iq3 card says a name the ticket says to add does not exist yet - one empty grep confirms it, then write it"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1999
+  human_decision: null
+  decided_at: null

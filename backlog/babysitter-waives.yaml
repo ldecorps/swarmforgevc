@@ -60,6 +60,11 @@
   reason: "Direct hotfix fixing an unowned standing red (BL-526 console-menu feature, 41 days red); stamp ticket BL-1859 (severity high, human_approval approved) already minted to own it, paused per hotfix-ledger.yaml"
   waived_at: 2026-10-01
 
+- key: pipeline-code-on-main-3024ccb56c752e1d5572dea92d6c7f46643dbaa8
+  waived_by: coordinator
+  reason: "sanctioned hotfix (SUP-17 ruling), already in hotfix-ledger.yaml with stamp_ticket BL-2000 pending"
+  waived_at: 2026-10-05
+
 - key: pipeline-code-on-main-34caaa3a7085005b3dffa2053e40868e394c8dd6
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
@@ -349,6 +354,11 @@
   waived_by: coordinator
   reason: "Direct hotfix retiring passenger scenarios obsoleted by BL-1830 (BL-1375/BL-1465/BL-1466); stamp ticket BL-1876 (severity high, human_approval approved) already minted to own it, paused"
   waived_at: 2026-10-02
+
+- key: pipeline-code-on-main-cbca1b5edb552b1cf9b1a61f37a78554a2397d74
+  waived_by: coordinator
+  reason: "legitimate hotfix per standing directive (fixes BL-1221 red on main, well documented), not yet recorded in hotfix-ledger.yaml - flagged to specifier"
+  waived_at: 2026-10-05
 
 - key: pipeline-code-on-main-cc7fcf8fdab7838f28db3731f8599e67aaf24cef
   waived_by: coordinator

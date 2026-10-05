@@ -96,3 +96,5 @@ notes: |
   BL-925 red (300s ceiling), hotfix 3024ccb56c - merge main, rerun it").
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 3024ccb56c linked to BL-2000.
+
+assigned_to: coder
