@@ -1231,3 +1231,10 @@
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
+- commit: 3024ccb56c
+  subject: "HOTFIX: the BL-925 step handler runs the pipeline-code guard suite once per process, so its feature fits the runner's 300 s ceiling again"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2000
+  human_decision: null
+  decided_at: null
