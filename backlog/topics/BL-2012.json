@@ -1,0 +1,1 @@
+{"id":"BL-2012","messages":[{"seq":0,"ts":1791231759702,"author":"swarm","type":"outbound","text":"BL-2012 🎵 in progress — Stamp-off for hotfix 78e9346416: an OpenRouter-routed claude role's launch script unsets ANTHROPIC_API_KEY, so a profile-exported Anthropic key never rides into a harness pointed at OpenRouter"}]}
