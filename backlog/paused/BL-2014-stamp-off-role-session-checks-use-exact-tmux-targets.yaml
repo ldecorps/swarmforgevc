@@ -48,9 +48,9 @@ qa_e2e_procedure: |
      (13), test_handoffd_aged_note_rotate_wiring.sh (2),
      test_handoffd_ambulance_wiring.sh (6).
   5. Its three features, run with `node specs/pipeline/cli.js`
-     (measured at 4a4063fdc0): BL-648 7 ok; BL-938 4 ok; BL-571 3 ok and
-     scenario 03 red, which was red before 77584c4c11 and is owned by its
-     own register row (see notes).
+     (measured at c15a0f21aa): BL-648 7 ok; BL-938 4 ok; BL-571 4 ok.
+     BL-571's scenario 03 was red before 77584c4c11 for its own reason;
+     hotfix c15a0f21aa fixed it, and BL-2018 stamps that one off.
   6. Read the coder's committed review evidence.
 
 source: |

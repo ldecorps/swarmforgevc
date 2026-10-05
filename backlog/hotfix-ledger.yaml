@@ -1357,3 +1357,10 @@
   stamp_ticket: BL-2014
   human_decision: null
   decided_at: null
+- commit: c15a0f21aa
+  subject: "hotfix: two unowned reds the bl812 sweep found - BL-571 scenario 03 counts a created session as a repair, and the supervisor test's BL-1491 case keeps its tmux-socket so the halt runs"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2018
+  human_decision: null
+  decided_at: null
