@@ -104,3 +104,5 @@ notes: |
   into it.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: dfd15ebfb8 and 9d6eb54daa linked to BL-1995.
+
+assigned_to: coder
