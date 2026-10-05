@@ -18,7 +18,7 @@ acceptance: specs/features/BL-1992-a-third-missed-write-releases-the-parcel-to-a
 required_wiring:
   - 'specs/pipeline/steps/bl1992ThirdMissReleasesParcelSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The third-miss half of the human's 2026-10-05 trial (source:, verbatim
   in BL-1991). FIRM: no third restart; the parcel leaves in_process; a note
