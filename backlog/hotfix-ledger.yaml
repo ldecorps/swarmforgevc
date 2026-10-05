@@ -1266,3 +1266,10 @@
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
+- commit: 8eac9d2543
+  subject: "hotfix: the pull's Work-note pattern is anchored to the dispatch shape (message: Work <id>[-:]), so a note that only mentions the ticket is not abandoned"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1999
+  human_decision: null
+  decided_at: null
