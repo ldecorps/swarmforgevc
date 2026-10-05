@@ -29,7 +29,8 @@ if [[ "${args[0]:-}" == "-S" ]]; then
   case "$sub" in
     has-session)
       # -t NAME is always args[4] in this CLI's own calls.
-      name="${args[4]:-}"
+      # tmux reads an exact-match target "=NAME" as NAME (77584c4c11).
+      name="${args[4]:-}"; name="${name#=}"
       [[ -f "$TMUX_STATE_DIR/$name.exists" ]] && exit 0
       exit 1
       ;;

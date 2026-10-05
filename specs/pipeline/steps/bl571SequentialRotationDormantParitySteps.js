@@ -72,7 +72,7 @@ function mkFixture(ctx) {
   const tmux = `#!/usr/bin/env bash
 sock_cmd="$3"
 if [[ "$sock_cmd" == "has-session" ]]; then
-  target="$5"
+  target="\${5#=}"
   case "$target" in
     swarmforge-coder|swarmforge-coordinator) exit 0 ;;
     *) exit 1 ;;
@@ -82,7 +82,7 @@ if [[ "$sock_cmd" == "list-panes" ]]; then
   # pane_dead probe: only sessions that exist can answer - a missing
   # session fails, exactly as real tmux does (drives the classic-pack
   # repair path in scenario 02)
-  target="$5"
+  target="\${5#=}"
   case "$target" in
     swarmforge-coder|swarmforge-coordinator) echo "0"; exit 0 ;;
     *) exit 1 ;;

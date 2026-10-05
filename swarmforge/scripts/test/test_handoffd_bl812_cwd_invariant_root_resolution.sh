@@ -66,7 +66,8 @@ echo "\$*" >> "$CALLS_LOG"
 case " \$* " in
   *" has-session "*)
     case " \$* " in
-      *" swarmforge-coder "*|*" swarmforge-coordinator "*) exit 0 ;;
+      # tmux reads an exact-match target "=NAME" as NAME (77584c4c11).
+      *" swarmforge-coder "*|*" =swarmforge-coder "*|*" swarmforge-coordinator "*|*" =swarmforge-coordinator "*) exit 0 ;;
       *) exit 1 ;;
     esac
     ;;
