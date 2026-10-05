@@ -118,6 +118,16 @@ export interface CeremonyRun {
   shiftKey: string;
   packet: CeremonyPacket;
   deliveredAt: string;
+  /**
+   * BL-1967: the window this run covers. windowStart is where the previous
+   * run's window ended (or, for the first run recorded after this field
+   * existed, that prior run's deliveredAt) - null only when no prior run
+   * exists at all. windowEnd always equals deliveredAt: the real instant
+   * this run happened, never a synthetic midnight. A run recorded before
+   * this field existed carries neither at runtime despite the static type.
+   */
+  windowStart: string | null;
+  windowEnd: string;
   outcome: CeremonyOutcome | null;
   adjustments: CeremonyAdjustment[];
   failedAt: string | null;

@@ -70,6 +70,8 @@ interface CeremonyRun {
   shiftKey: string;
   packet: CeremonyPacket;
   deliveredAt: string;
+  windowStart: string | null;              // BL-1967: see below
+  windowEnd: string;                        // BL-1967: always equals deliveredAt
   outcome: CeremonyOutcome | null;         // { type, ref, recordedAt }
   adjustments: CeremonyAdjustment[];       // { kind, detail, record, recordedAt }
   failedAt: string | null;
@@ -80,6 +82,31 @@ interface CeremonyRun {
 `CeremonyOutcome.type` is one of `process_ticket | spec_gate_tweak |
 no_change`. `CeremonyAdjustment.kind` is one of `promotion_order |
 throttle_posture`. Both closed vocabularies — no passthrough.
+
+### A run records the real window it covers, not a synthetic midnight (BL-1967)
+
+`windowEnd` always equals `deliveredAt` — the real instant the run
+happened. `windowStart` is where the previous run's window ended (or,
+for the first run recorded after this field existed, that prior run's
+own `deliveredAt`), so consecutive runs tile the timeline with no gap and
+no overlap; it is `null` only when no prior run exists at all. The
+lookup (`newestCeremonyRunBefore`) finds the previous run regardless of
+its `outcome` or `failedAt` state — a failed or auto-no-change run still
+covers a real window the next run must tile onto. A run recorded before
+this field existed carries neither `windowStart` nor `windowEnd` at
+runtime despite the static type.
+
+Before this, the night path's `deliverLeanPacket`/`recordEmptyOutcome`
+passed `${shiftKey}T00:00:00Z` as the run's instant — a packet delivered
+hours into a shift, or empty-outcome-recorded well after it, both read
+as having happened at midnight. `runClosingCeremony`'s `shiftKey` stays
+an explicit optional parameter (defaulting to the real instant's own UTC
+date) so the night path can keep its own local-day key for the run's
+file name and fold scope, while the recorded instant — and so
+`windowStart`/`windowEnd` — is always the real `nowMs` the run executed
+at. This slice changes only which window a run *records*; which events
+the fold actually reads by that window is a separate slice
+(BL-1968).
 
 ### A refused packet note is a FAILED run at write time, not a pending one (BL-1528)
 
