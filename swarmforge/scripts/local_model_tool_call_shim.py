@@ -462,6 +462,24 @@ def close_cut_snapshot(completion: dict[str, Any]) -> tuple[dict[str, Any], bool
     return {**completion, "choices": [{**choice, "message": closed}] + list(completion["choices"][1:])}, True
 
 
+# 2026-10-05: llama-server sometimes rejects a tool call the model wrote as
+# broken JSON ("llama-server returned invalid tool call arguments for ...:
+# unexpected end of JSON input") and Ollama answers 500. qwen then stops the
+# turn at "Press Ctrl+Y to retry", which a one-shot seat can never press, so
+# the iq3 coder sat halted on BL-1930 from 12:27Z. The model samples, so the
+# same request usually comes back well formed: the shim retries it.
+BAD_TOOL_CALL_RETRIES = 2
+
+
+def is_bad_tool_call(status: int, payload: Any) -> bool:
+    """True for an upstream failure caused by a tool call llama-server could
+    not parse, never for any other error."""
+    if status < 500:
+        return False
+    text = payload if isinstance(payload, str) else json.dumps(payload)
+    return "invalid tool call arguments" in text
+
+
 def upstream_root(upstream: str) -> str:
     root = upstream.rstrip("/")
     return root[: -len("/v1")] if root.endswith("/v1") else root
@@ -619,6 +637,10 @@ class ShimHandler(BaseHTTPRequestHandler):
         clamped, lowered = clamp_output_budget(request, self._output_cap(request.get("model")))
         upstream_request, stripped = history_without_call_prose(clamped)
         status, payload = self._parsed(*self._call_upstream(upstream_request))
+        retries = 0
+        while is_bad_tool_call(status, payload) and retries < BAD_TOOL_CALL_RETRIES:
+            retries += 1
+            status, payload = self._parsed(*self._call_upstream(upstream_request))
         rewritten, nudge = 0, "none"
         if status == 200 and isinstance(payload, dict):
             payload, rewritten = rewrite_completion(payload, names)
@@ -634,6 +656,7 @@ class ShimHandler(BaseHTTPRequestHandler):
         self._log_window_full("chat", request.get("model"), payload)
         _log(f"chat model={request.get('model')} status={status} tools={len(request.get('tools') or [])} "
              f"history_stripped={stripped} rewritten={rewritten} nudge={nudge} finish={finish}"
+             + (f" bad_call_retries={retries}" if retries else "")
              + (f" budget={lowered}->{clamped.get('max_tokens', clamped.get('max_completion_tokens'))}" if lowered is not None else ""))
         return status, payload
 

@@ -73,4 +73,41 @@ find "$ROOT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -qui
 grep -q "delivered-mailbox-only" "$ROOT/.swarmforge/daemon/handoffd.log" || fail "daemon must log delivered-mailbox-only"
 
 pass "mailbox-only delivery without tmux inject"
+
+# 2026-10-05: a recipient written in the wrong case is sent under the
+# roster's spelling (the iq3 coder kept drafting `to: qa`); an unknown one is
+# still refused.
+printf 'QA\tmaster\t%s\tswarmforge-QA\tQA\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+mkdir -p "$ROOT/.swarmforge/handoffs/QA/inbox/new"
+cat > "$DRAFT" <<'EOF'
+type: note
+to: qa
+priority: 50
+message: case probe
+EOF
+(
+  cd "$ROOT"
+  export SWARMFORGE_ROLE=coordinator SWARMFORGE_MAILBOX_ONLY=1 SWARMFORGE_SKIP_SYNC_INJECT=1
+  PATH="$FAKE_BIN:$PATH" bb "$SWARM_HANDOFF" "$DRAFT"
+) > "$ROOT/out-case.txt" 2>&1 || fail "a lowercase recipient was refused: $(cat "$ROOT/out-case.txt")"
+grep -q "HANDOFF QUEUED" "$ROOT/out-case.txt" || fail "a lowercase recipient was not queued: $(cat "$ROOT/out-case.txt")"
+case_parcel="$(grep -l "^message: case probe" "$ROOT/.swarmforge/handoffs/coordinator/outbox/"*.handoff)"
+grep -qx "to: QA" "$case_parcel" || fail "the queued parcel does not name the roster's spelling QA: $(cat "$case_parcel")"
+pass "a recipient in the wrong case is queued under the roster's spelling"
+
+cat > "$DRAFT" <<'EOF'
+type: note
+to: nobody
+priority: 50
+message: unknown probe
+EOF
+rc=0
+(
+  cd "$ROOT"
+  export SWARMFORGE_ROLE=coordinator SWARMFORGE_MAILBOX_ONLY=1 SWARMFORGE_SKIP_SYNC_INJECT=1
+  PATH="$FAKE_BIN:$PATH" bb "$SWARM_HANDOFF" "$DRAFT"
+) > "$ROOT/out-unknown.txt" 2>&1 || rc=$?
+[[ $rc -ne 0 ]] && grep -q "Unknown recipient role 'nobody'" "$ROOT/out-unknown.txt" \
+  || fail "an unknown recipient was not refused: $(cat "$ROOT/out-unknown.txt")"
+pass "an unknown recipient is still refused"
 echo "ALL PASS"

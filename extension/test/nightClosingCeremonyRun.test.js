@@ -141,6 +141,37 @@ test('BL-1393: a sleep after no shift of work records an empty outcome and sends
   assert.ok(!kinds.includes('lean'), 'no packet is delivered');
 });
 
+// ── BL-1967: deliverLeanPacket/recordEmptyOutcome receive the real instant ──
+
+test('BL-1967: record-empty-outcome hands deps the real nowMs, never a value derived from shiftKey', () => {
+  const nowMs = FIXED_NOW_MS + 12345;
+  let seenNowMs = null;
+  const { deps } = makeDeps({
+    workedAShift: () => false,
+    recordEmptyOutcome: (_t, _shiftKey, passedNowMs) => {
+      seenNowMs = passedNowMs;
+      return [];
+    },
+  });
+  runNightClosingCeremony('/tmp/bl1967-empty', '/tmp/conf', nowMs, deps, false, 'finish-shift');
+  assert.equal(seenNowMs, nowMs);
+});
+
+test('BL-1967: lean-packet hands deps the real nowMs too, on the already-briefed shortcut path', () => {
+  const nowMs = FIXED_NOW_MS + 54321;
+  let seenNowMs = null;
+  const { deps } = makeDeps({
+    workedAShift: () => true,
+    briefingSent: () => true,
+    deliverLeanPacket: (_t, _shiftKey, passedNowMs) => {
+      seenNowMs = passedNowMs;
+      return [];
+    },
+  });
+  runNightClosingCeremony('/tmp/bl1967-lean', '/tmp/conf', nowMs, deps, false, 'finish-shift');
+  assert.equal(seenNowMs, nowMs);
+});
+
 // ── BL-1528: a lean-packet send's own outcome is surfaced and folded into state ──
 
 test('BL-1528: a loud code from deliverLeanPacket is surfaced through deps.surface and joins loudSurfaces', () => {
