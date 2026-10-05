@@ -38,6 +38,7 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_cli.bb');
@@ -112,7 +113,7 @@ function buildInvariant1Fixture(ownPaths, siblingPaths, position) {
   return root;
 }
 
-test('BL-1678/BL-654 invariant 1: an unapproved forward never rides, whichever paths it touches or where its commit sits', { timeout: 120000 }, () => {
+test('BL-1678/BL-654 invariant 1: an unapproved forward never rides, whichever paths it touches or where its commit sits', { timeout: propertyLaneTimeoutMs(120000) }, () => {
   const positions = ['before', 'between', 'after'];
   const ownCounts = [1, 2, 3];
   const cells = positions.length * ownCounts.length;
