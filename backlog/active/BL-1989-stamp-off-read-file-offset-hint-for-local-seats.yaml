@@ -105,3 +105,5 @@ notes: |
   as is. The local-qwen Telegram seat (BL-1235) shares the model through
   /api/generate and swaps the coder out of the single slot (55 calls in the
   log; one at 09:07:40Z); the RAM cache restores the coder's state.
+
+assigned_to: coder
