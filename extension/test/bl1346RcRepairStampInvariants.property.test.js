@@ -34,6 +34,7 @@ const {
   callSharedDecision,
 } = require('../../specs/pipeline/steps/lib/bl1346RcRepairStampFixture');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { uncommittedDecision } = require('./helpers/hotfixLedgerDecision');
 
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
 const REVIEWED_COMMIT = '195de28861';
@@ -188,7 +189,7 @@ test('BL-1346/BL-654 invariant 3: the stamp-off parcel never edits the code it r
   const rest = ledger.slice(start + 1);
   const end = rest.indexOf('\n- commit:');
   const row = end === -1 ? rest : rest.slice(0, end);
-  assert.doesNotMatch(row, /state:\s*(certified|waived)\b/, `a decided state appears on the row:\n${row}`);
-  assert.match(row, /human_decision: null/, `a decision was written without a human:\n${row}`);
-  assert.match(row, /decided_at: null/, `a decision timestamp was written without a human:\n${row}`);
+  // 2026-10-05 hotfix (QA note 003816): a decision HEAD's committed ledger
+  // carries is the human's (--decide), so it passes; any other decision fails.
+  assert.equal(uncommittedDecision(REPO_ROOT, ledger, REVIEWED_COMMIT), null, row);
 });

@@ -30,6 +30,9 @@ const {
 
 const FEATURE = 'Stamp-off review of the reconcile redundant-overlap hotfix';
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
+// 2026-10-05 hotfix (QA note 003816): a decision HEAD's committed ledger
+// carries is the human's (--decide), so it passes; any other decision fails.
+const { uncommittedDecision } = require(path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'hotfixLedgerDecision.js'));
 const REVIEWED_COMMITS = ['f57795b6d2', 'd5739d84cc'];
 
 // Scenario Outline cells are validated against these explicit values rather
@@ -392,9 +395,7 @@ function registerSteps(registry) {
       // "pending" is the row's UNDECIDED state, not one literal spelling of
       // it: a row legitimately moves through stamp-open and back while the
       // parcel travels. What must not appear is a decision no human made.
-      assert.doesNotMatch(row, /state:\s*(certified|waived)\b/, `a decided state appears on ${commit}:\n${row}`);
-      assert.match(row, /human_decision: null/, `a decision was written without a human on ${commit}:\n${row}`);
-      assert.match(row, /decided_at: null/, `a decision timestamp was written without a human on ${commit}:\n${row}`);
+      assert.equal(uncommittedDecision(REPO_ROOT, ledger, commit), null, row);
     }
   });
 }

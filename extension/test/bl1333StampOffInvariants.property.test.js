@@ -29,6 +29,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { uncommittedDecision } = require('./helpers/hotfixLedgerDecision');
 const {
   REPO_ROOT,
   makeFixture,
@@ -298,7 +299,8 @@ test('BL-1333/BL-654 invariant 3: the stamp-off parcel never edits the code it r
     const rest = ledger.slice(start + 1);
     const end = rest.indexOf('\n- commit:');
     const row = end === -1 ? rest : rest.slice(0, end);
-    assert.doesNotMatch(row, /state:\s*(certified|waived)\b/, `a decided state appears on ${commit}:\n${row}`);
-    assert.match(row, /human_decision: null/, `a decision was written without a human on ${commit}:\n${row}`);
+    // 2026-10-05 hotfix (QA note 003816): a decision HEAD's committed ledger
+    // carries is the human's (--decide), so it passes; any other decision fails.
+    assert.equal(uncommittedDecision(REPO_ROOT, ledger, commit), null, row);
   }
 });

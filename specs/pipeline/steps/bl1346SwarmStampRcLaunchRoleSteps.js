@@ -29,6 +29,9 @@ const {
 const FEATURE = 'Stamp-off review of the RC-repair stale-marker hotfix';
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
 const REVIEWED_COMMIT = '195de28861';
+// 2026-10-05 hotfix (QA note 003816): a decision HEAD's committed ledger
+// carries is the human's (--decide), so it passes; any other decision fails.
+const { uncommittedDecision } = require(path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'hotfixLedgerDecision.js'));
 
 // The leftover marker every scenario carries: a role other than the pane's
 // own, exactly the `coordinator` left over from a prior router run.
@@ -168,9 +171,7 @@ function registerSteps(registry) {
     const row = end === -1 ? rest : rest.slice(0, end);
     // "pending" is the row's UNDECIDED state, not one literal spelling: the
     // row legitimately moves through stamp-open while the parcel travels.
-    assert.doesNotMatch(row, /state:\s*(certified|waived)\b/, `a decided state appears on the row:\n${row}`);
-    assert.match(row, /human_decision: null/, `a decision was written without a human:\n${row}`);
-    assert.match(row, /decided_at: null/, `a decision timestamp was written without a human:\n${row}`);
+    assert.equal(uncommittedDecision(REPO_ROOT, ledger, REVIEWED_COMMIT), null, row);
   });
 }
 
