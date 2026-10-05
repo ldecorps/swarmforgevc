@@ -98,3 +98,5 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   depends_on BL-1985: the check must read :loop-dialog? before the
   gatherer supplies it, or scenario 01 cannot pass.
+
+assigned_to: coder
