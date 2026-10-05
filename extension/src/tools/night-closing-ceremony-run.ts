@@ -49,10 +49,13 @@ export type RunDeps = {
    * undeliverable packet send) so the caller can surface them AND fold them
    * into the written night state's `loudSurfaces` - the pure state machine
    * cannot predict these ahead of the send, unlike its own `surface` actions.
+   * BL-1967: nowMs is the real instant this tick is running at, recorded as
+   * the ceremony run's deliveredAt/windowEnd - never a synthetic midnight
+   * derived from shiftKey.
    */
-  deliverLeanPacket: (target: string, shiftKey: string) => string[];
+  deliverLeanPacket: (target: string, shiftKey: string, nowMs: number) => string[];
   /** BL-1393: a sleep after no work still ends in a recorded outcome. BL-1528: see deliverLeanPacket. */
-  recordEmptyOutcome: (target: string, shiftKey: string) => string[];
+  recordEmptyOutcome: (target: string, shiftKey: string, nowMs: number) => string[];
   /**
    * BL-1393: has the swarm worked a shift since the last ceremony? True when a
    * shift-start stamp is newer than the newest recorded ceremony outcome.
@@ -242,7 +245,7 @@ function landBriefingIfDue(target: string, prev: LiveState | null, nightKey: str
 
 // BL-1528: returns the loud codes a 'lean-packet'/'record-empty-outcome'
 // action's own send outcome produced - [] for every other kind.
-function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: boolean): string[] {
+function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: boolean, nowMs: number): string[] {
   if (dryRun) {
     return [];
   }
@@ -263,9 +266,9 @@ function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: 
       deps.instructBriefing(target, action.dayKey);
       return [];
     case 'lean-packet':
-      return surfaceLoudCodes(target, deps, deps.deliverLeanPacket(target, action.shiftKey));
+      return surfaceLoudCodes(target, deps, deps.deliverLeanPacket(target, action.shiftKey, nowMs));
     case 'record-empty-outcome':
-      return surfaceLoudCodes(target, deps, deps.recordEmptyOutcome(target, action.shiftKey));
+      return surfaceLoudCodes(target, deps, deps.recordEmptyOutcome(target, action.shiftKey, nowMs));
     case 'night-stop':
       deps.nightStop(target);
       return [];
@@ -314,18 +317,21 @@ export function buildRealDeps(): RunDeps {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       atomicWrite(file, `${JSON.stringify({ heldParcelIds: held, at: Date.now() }, null, 2)}\n`);
     },
-    deliverLeanPacket: (target, shiftKey) => {
+    deliverLeanPacket: (target, shiftKey, nowMs) => {
       // The BL-820 pass itself, unchanged: it folds the lifecycle ledger into
       // the shift packet and delivers it to the specifier, or records an
       // explicit no-change outcome for an empty shift. BL-1528: a refused
-      // send is reported back as a loud code, never thrown.
-      const result = runClosingCeremony(target, `${shiftKey}T00:00:00Z`, { sendNote: sendNoteViaHandoff });
+      // send is reported back as a loud code, never thrown. BL-1967: the
+      // real instant this tick ran at, not a synthetic midnight - shiftKey
+      // (the night path's own local day key) is passed through unchanged so
+      // the run's file/fold key never moves off it.
+      const result = runClosingCeremony(target, new Date(nowMs).toISOString(), { sendNote: sendNoteViaHandoff }, 'specifier', shiftKey);
       return closingCeremonyLoudCodes(result);
     },
-    recordEmptyOutcome: (target, shiftKey) => {
+    recordEmptyOutcome: (target, shiftKey, nowMs) => {
       // Same recorder, same store: a sleep after no work is one auto_no_change
       // run, distinguishable from a ceremony that never happened at all.
-      const result = runClosingCeremony(target, `${shiftKey}T00:00:00Z`, { sendNote: sendNoteViaHandoff });
+      const result = runClosingCeremony(target, new Date(nowMs).toISOString(), { sendNote: sendNoteViaHandoff }, 'specifier', shiftKey);
       return closingCeremonyLoudCodes(result);
     },
     workedAShift: (target) => shiftWorkedSinceLastCeremony(target),
@@ -664,7 +670,7 @@ export function runNightClosingCeremony(
   const { state, actions } = advanceNightClosingCeremony(prev, obs);
   const runtimeLoudCodes: string[] = [];
   for (const action of actions) {
-    runtimeLoudCodes.push(...applyAction(target, action, deps, dryRun));
+    runtimeLoudCodes.push(...applyAction(target, action, deps, dryRun, nowMs));
   }
   // BL-1528: a send's own outcome (unlike a 'surface' action) is unknown
   // until applyAction runs it, so these codes join loudSurfaces here rather

@@ -11,7 +11,14 @@ import * as path from 'path';
 import { readLeanLedgerEvents } from './leanLedgerStore';
 import { readPersistedRitualLedger } from './ritualLedgerProducer';
 import { determinismCandidatesFromLedger } from './ritualLedger';
-import { readCeremonyRun, writeCeremonyRun, findOpenCeremonyRunsBefore, finalizeCeremonyRunAsFailed, ceremonyRunFilePath } from './closingCeremonyStore';
+import {
+  readCeremonyRun,
+  writeCeremonyRun,
+  findOpenCeremonyRunsBefore,
+  finalizeCeremonyRunAsFailed,
+  ceremonyRunFilePath,
+  newestCeremonyRunBefore,
+} from './closingCeremonyStore';
 import {
   CeremonyRun,
   CeremonyDeterminismCandidate,
@@ -81,6 +88,16 @@ function trySendNote(targetPath: string, draft: string, deps: Pick<ClosingCeremo
   } catch (err) {
     return errorMessage(err);
   }
+}
+
+/**
+ * BL-1967: where this run's window starts - the previous run's window end
+ * (falling back to its deliveredAt for a run recorded before this field
+ * existed), or null when no prior run exists at all to start from.
+ */
+function resolveWindowStart(targetPath: string, shiftKey: string): string | null {
+  const previous = newestCeremonyRunBefore(targetPath, shiftKey);
+  return previous ? previous.windowEnd ?? previous.deliveredAt : null;
 }
 
 /**
@@ -194,9 +211,20 @@ function resolveDeterminismCandidates(
 // Human decision 5: "the packet reaches the specifier, not only the
 // briefing" - this delivers a note addressed to `to`, never merely writes
 // under docs/briefings/.
-export function runClosingCeremony(targetPath: string, nowIso: string, deps: ClosingCeremonyRunDeps, to = 'specifier'): ClosingCeremonyRunResult {
-  const shiftKey = nowIso.slice(0, 10);
-
+/**
+ * BL-1967: `shiftKey` defaults to nowIso's own UTC date (unchanged
+ * behavior), but a caller may pass an explicit one that diverges from it -
+ * the night path's own local day key, so a finish-shift just after local
+ * midnight keeps its usual file/fold key even when the real instant's UTC
+ * date has already rolled over.
+ */
+export function runClosingCeremony(
+  targetPath: string,
+  nowIso: string,
+  deps: ClosingCeremonyRunDeps,
+  to = 'specifier',
+  shiftKey: string = nowIso.slice(0, 10)
+): ClosingCeremonyRunResult {
   // "A silent ceremony is a failed ceremony" (human decision 4): before this
   // shift's own pass runs, finalize any earlier shift left pending - a
   // ceremony that produced nothing must never sit indistinguishable from
@@ -207,6 +235,8 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
   if (existing) {
     return { shiftKey, status: 'already_exists', run: existing, finalizedFailed, finalizedFailedUndeliverable };
   }
+
+  const windowStart = resolveWindowStart(targetPath, shiftKey);
 
   const allEvents = readLeanLedgerEvents(targetPath);
   const windowModels = (deps.readWindowModels ?? readWindowModelsFromTarget)(targetPath);
@@ -224,6 +254,8 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
       shiftKey,
       packet,
       deliveredAt: nowIso,
+      windowStart,
+      windowEnd: nowIso,
       outcome: { type: 'no_change', ref: null, recordedAt: nowIso },
       adjustments: [],
       failedAt: null,
@@ -239,7 +271,7 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
   // computation (path.relative/path.join), so it needs no file on disk yet.
   const packetRelPath = path.relative(targetPath, ceremonyRunFilePath(targetPath, shiftKey));
   const draft = buildClosingCeremonyNoteDraft(to, packetRelPath);
-  const pendingRun: CeremonyRun = { shiftKey, packet, deliveredAt: nowIso, outcome: null, adjustments: [], failedAt: null, deliveryFailure: null };
+  const pendingRun: CeremonyRun = { shiftKey, packet, deliveredAt: nowIso, windowStart, windowEnd: nowIso, outcome: null, adjustments: [], failedAt: null, deliveryFailure: null };
   const failure = trySendNote(targetPath, draft, deps);
   if (failure) {
     const failedRun = finalizeCeremonyRunAsFailed(targetPath, pendingRun, nowIso, failure);
