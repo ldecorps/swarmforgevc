@@ -116,16 +116,24 @@ function sendHandoff(ctx) {
     draft,
     `type: git_handoff\nto: QA\npriority: 50\ntask: ${ctx.ticketId}\ncommit: ${ctx.commit}\n`
   );
-  const res = spawnSync('bb', [SWARM_HANDOFF, 'draft.txt'], {
-    cwd: ctx.root,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      SWARMFORGE_ROLE: 'coder',
-      SWARMFORGE_SKIP_SYNC_INJECT: '1',
-      SWARMFORGE_REQUIRED_STAGES_ROUTING: '1',
-    },
-  });
+  const send = () =>
+    spawnSync('bb', [SWARM_HANDOFF, 'draft.txt'], {
+      cwd: ctx.root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        SWARMFORGE_ROLE: 'coder',
+        SWARMFORGE_SKIP_SYNC_INJECT: '1',
+        SWARMFORGE_REQUIRED_STAGES_ROUTING: '1',
+      },
+    });
+  // Article 2.3 self-audit (BL-1529): the first send of a git_handoff draft
+  // is a challenge that queues nothing; the identical second send queues it.
+  // A single send left scenarios 03 and 05 red on main until 2026-10-05.
+  let res = send();
+  if (/AUDIT_REQUIRED|HANDOFF_NOT_QUEUED/.test(`${res.stdout || ''}${res.stderr || ''}`)) {
+    res = send();
+  }
   ctx.lastSend = {
     status: res.status,
     out: `${res.stdout || ''}${res.stderr || ''}`,
