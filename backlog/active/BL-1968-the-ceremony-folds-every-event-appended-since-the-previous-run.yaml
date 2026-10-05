@@ -117,3 +117,5 @@ description: |
     pure fold over one shift's worth of ledger events" - define the
     window) and docs/reference/BL-819-ticket-lifecycle-ledger.md lines
     40-43 (the "shift boundary that doesn't exist yet" clause).
+
+assigned_to: coder
