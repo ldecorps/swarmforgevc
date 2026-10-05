@@ -1,0 +1,100 @@
+id: BL-2004
+title: "The lander stops a land whose tree's suite manifest names a runner the tree does not hold, before anything is pushed"
+milestone: M8
+type: defect
+severity: medium
+# medium: it has happened once (fd4c492d3b turned main red on 2026-10-04,
+# fixed by hotfix 35a8448e4c); nothing stops it happening again.
+status: todo
+epic: swarm-reliability
+priority: 4
+depends_on: []
+mutation_cost: medium
+# medium: a new stop in land_main_publish.sh, the path that pushes main.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one check before the publish step; nothing to deduplicate"
+  architect: "the check reuses suite_inventory_cli as is and adds one LAND_STOPPED reason; no boundary moves"
+  documenter: "BL-1872's how-to describes LAND_STOPPED generically and the refusal note to QA carries the reason line"
+
+acceptance: specs/features/BL-2004-a-land-whose-suite-manifest-names-a-missing-runner-is-stopped.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2004LandStopsOnMissingRunnerSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+  - 'swarmforge/scripts/land_main_publish.sh::suite_inventory_cli.bb::the live publish script runs the inventory over the commit it lands'
+
+human_approval: pending
+approval_context: >
+  From coder note 000083 on BL-1930 (evidence fb616cc534), which names a
+  gap in BL-1830's sibling detection: another ticket's lines folded into
+  the landing ticket's own commit during a conflict resolution are
+  invisible to it. This ticket does not close that gap in general (no
+  signal exists for it); it stops the one consequence that turned main red,
+  a manifest row whose runner is missing, at the last step before the push.
+  The ask: may it be built. FIRM: the check runs on the tree of the commit
+  being landed, never on the lander's working tree.
+
+invariants:
+  - "A land is published only when suite_inventory_cli exits 0 on the tree of the exact commit being pushed."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2004-a-land-whose-suite-manifest-names-a-missing-runner-is-stopped.feature`:
+     2 of 2 ok. Measured 0 at mint: no handler exists yet.
+  2. `bash swarmforge/scripts/test/land_main_publish_test_runner.sh`: no FAIL.
+  3. Read the hardener's evidence: a hand-mutant that skips the check, or
+     ignores its exit code, is killed by scenario 01.
+
+source: |
+  Coder note 000083 to the specifier, 2026-10-05, verbatim: "BL-1930:
+  BL-1830 sibling-detect gap + 6 hand-built pilot deps - see evidence".
+  backlog/evidence/BL-1930-coder-20261005.md (fb616cc534), verbatim: "This
+  is a real gap: commit-based sibling detection cannot see content that
+  was manually folded into another ticket's own commit during conflict
+  resolution, rather than arriving as a separate sibling commit on a
+  shared path. **Note to the specifier, not fixed here**: BL-1830's guard
+  has no signal for "this line matches another in-flight ticket's own
+  working-tree content" when that content was absorbed into the landing
+  ticket's own commit rather than committed separately."
+
+description: |
+  ## What is wanted
+
+  Before `swarmforge/scripts/land_main_publish.sh` publishes a land, it
+  runs `swarmforge/scripts/test/suite_inventory_cli.bb` over the
+  `swarmforge/scripts/test/` tree of the commit it is about to push. A
+  non-zero exit stops the land with a `LAND_STOPPED:` line that carries the
+  inventory's own FAIL lines, and nothing is pushed; the lander already
+  turns a LAND_STOPPED line into a refusal note to QA
+  (`lander_lib.bb` `outcome`). Exit 0 lets the land go on unchanged.
+
+  Measured at mint: the inventory exits 1 on fd4c492d3b's tree with "FAIL:
+  in the manifest but not in the tree:
+  local_seat_tuning_report_lib_test_runner.bb", and 0 on main ("595 test
+  file(s), 591 standing, 4 excluded with a dated reason").
+
+  ## Where to read (only these lines)
+
+  - `swarmforge/scripts/land_main_publish.sh` ~285-320: the land step's
+    verdict, the commit it names (`land_sha`), then the publish step. The
+    check goes between them, in the same style as the LAND_STOPPED returns
+    at ~288-301.
+  - `swarmforge/scripts/test/suite_inventory_cli.bb` lines 1-10: usage
+    `suite_inventory_cli.bb [test-tree-dir]`; exit 0 agree, 1 discrepancy,
+    2 unreadable manifest.
+
+  ## How (direction, not mandate)
+
+  - Read the commit's tree without touching any worktree: `git archive
+    <sha> swarmforge/scripts/test` into a temp directory removed on exit.
+  - The step handler can drive the check against a fixture git repository
+    whose commit's manifest names a missing runner, the way
+    `land_main_publish_test_runner.sh`'s fixtures do, without a full land.
+
+notes: |
+  Minted 2026-10-05 by the specifier from coder note 000083. The general
+  sibling-absorption gap is named in approval_context and left open: no
+  signal for it exists, and this ticket stops its only observed harm.
+  Dynamic routing: shell/Babashka production code on the path that pushes
+  main, so hardender for the hand-mutant pass on the stop.

@@ -1,0 +1,86 @@
+id: BL-2002
+title: "Step handlers bl1221, bl758 and bl753 build the pilot landing gate's deps through makeAcceptanceGateDeps, not a hand-built object (slice 1 of 2)"
+milestone: M8
+type: defect
+severity: low
+# low: latent - each feature is green today; each hand-built object fails
+# with "deps.X is not a function" the next time the gate grows a required
+# dep key (BL-1667 and hotfix 897e5f4d62 both hit exactly that).
+status: todo
+epic: code-quality-gates
+priority: 5
+depends_on: []
+mutation_cost: low
+# low: three mechanical test-side edits, each checked by its own feature.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "the change is itself the deduplication; nothing further to clean"
+  architect: "the handlers keep driving the real gate; only where their deps object comes from changes"
+  hardender: "test-side only (step handlers); no production code"
+  documenter: "no living doc describes how a step handler builds its deps"
+
+acceptance: specs/features/BL-1221-pilot-gate-deps-stubs-missing-required-orphan-docs-check.feature
+
+human_approval: pending
+approval_context: >
+  From coder note 000083 on BL-1930 (evidence fb616cc534): six step
+  handlers still hand-build the pilot landing gate's deps object, the shape
+  BL-1957's hotfix 897e5f4d62 fixed in bl757/bl755. The ask: may this
+  latent-rot migration run (a low defect, so it waits behind the 09-30
+  promotion rule). Nothing else is open; BL-757's handler shows the shape.
+
+invariants:
+  - "Every scenario of the three features still drives the real landPilotedTicket through the handler's deps, with the handler's own overrides layered over the helper's defaults."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1221-pilot-gate-deps-stubs-missing-required-orphan-docs-check.feature`: 3 of 3 ok.
+  2. `node specs/pipeline/cli.js specs/features/BL-758-pilot-inject-role-prompts-per-hat.feature`: 6 of 6 ok.
+  3. `node specs/pipeline/cli.js specs/features/BL-753-pilot-unreachable-step-handler-untested-behavior.feature`: 5 of 5 ok.
+  4. Read the coder's committed evidence.
+
+source: |
+  Coder note 000083 to the specifier, 2026-10-05, verbatim: "BL-1930:
+  BL-1830 sibling-detect gap + 6 hand-built pilot deps - see evidence".
+  backlog/evidence/BL-1930-coder-20261005.md (fb616cc534), verbatim:
+  "Found six more, all with the same shape the BL-757/bl755 rot had:
+  `bl1221PilotGateDepsStubsSteps.js`, `bl758PilotInjectRolePromptsPerHatSteps.js`,
+  `bl753PilotUnreachableStepHandlerUntestedBehaviorSteps.js`,
+  `bl743PilotMkdtempConventionSteps.js`, `bl741PilotCrapGateSteps.js`,
+  `bl739PilotVacuousPropertyGateSteps.js`. Each is a latent "deps.X is not
+  a function" failure the next time the real landing gate grows a
+  required dep key".
+
+description: |
+  ## What is wanted
+
+  In each of these step handlers, the object passed to `landPilotedTicket`
+  as its deps is built by `makeAcceptanceGateDeps({ ...overrides })`
+  (extension/test/helpers/pilotAcceptanceGateDeps.js) instead of an object
+  literal that lists every member by hand:
+  - `specs/pipeline/steps/bl1221PilotGateDepsStubsSteps.js` (`benignDeps`)
+  - `specs/pipeline/steps/bl758PilotInjectRolePromptsPerHatSteps.js`
+  - `specs/pipeline/steps/bl753PilotUnreachableStepHandlerUntestedBehaviorSteps.js`
+
+  ## Where to read (only these lines)
+
+  - `specs/pipeline/steps/bl757RealTreeOrphanGateSteps.js` lines 23 and
+    75-100: the require and `baseDeps(ctx)` - the shape to copy.
+  - In each handler, `grep -n checkOriginMainLanding` finds the hand-built
+    object. Keep the members whose values differ from the helper's
+    defaults as overrides; drop the rest.
+
+  ## What the coder does (all of it)
+
+  1. Edit the three handlers, one at a time, running that handler's
+     feature (qa_e2e_procedure) after each, its output saved to
+     tmp/out.txt.
+  2. Write backlog/evidence/BL-2002-coder-<date>.md: the three results.
+  3. Commit, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier from coder note 000083, split 1:2 for
+  INVEST Small on a local seat (three handlers each). Features measured at
+  mint (after red hotfix cbca1b5edb): BL-1221 3/3, BL-758 6/6, BL-753 5/5.
+  Dynamic routing: test-side only, so [coder, qa].
