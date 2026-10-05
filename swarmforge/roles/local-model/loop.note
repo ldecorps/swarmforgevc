@@ -75,6 +75,9 @@ Rules that apply the whole time:
   the background and `sleep` to wait for it.
 - A run that prints `Test Files N passed` and no `failed` has passed: do
   not search its log for a failure.
+- An edit result that says the file `no longer reads` shows the line and
+  column at fault with a `^` under it: your next edit changes that
+  character and nothing else. Never re-edit the line you just changed.
 - read_file's offset counts from 0: offset 0 starts at line 1, offset N
   at line N+1. To see the top of a file, use offset 0.
 - write_file and edit take a literal path: `$(date +%Y%m%d)` or `~` in a
