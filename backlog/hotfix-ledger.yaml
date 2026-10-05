@@ -1315,3 +1315,10 @@
   stamp_ticket: BL-2010
   human_decision: null
   decided_at: null
+- commit: 7376655875
+  subject: "HOTFIX: the bl1300 single-budget property reads the verdict's own measured/budget pair as one figure, never as a second budget"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2011
+  human_decision: null
+  decided_at: null
