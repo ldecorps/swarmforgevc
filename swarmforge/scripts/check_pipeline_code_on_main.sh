@@ -76,40 +76,16 @@ done < <(git diff --cached --name-only)
 # side — never the merge tip standing in for every path (BL-1096).
 # Staged content must still match the incoming parent blob (BL-925).
 # Fail closed when the path has no incoming commit or the predicate is not 0.
-#
-# 2026-10-05 (hotfix): since landing is a merge (BL-1870 ruling A, BL-1872)
-# a bounced-then-fixed parcel lands its whole line, so a path the bounced
-# first try introduced and the fix left alone is last touched by the bounced
-# commit, and BL-952 rightly never reads that commit as approved. It is
-# still imported when a LATER commit of the SAME ticket on the incoming side
-# is approved and carries the identical blob: QA approved the fixed line,
-# this path included. Same ticket only, so one ticket's approval never
-# covers another's path (BL-1096); a bounced commit still approves nothing
-# on its own (BL-952). BL-1972's land wedged main's reconcile this way.
-same_ticket_approved_carrier() {
-  local f="$1" merge_head="$2" anchor="$3" ticket blob c
-  ticket="$(git log -1 --format=%s "$anchor" 2>/dev/null | grep -oE '^(BL|GH)-[0-9]+' || true)"
-  [[ -n "$ticket" ]] || return 1
-  blob="$(git rev-parse -q --verify "$merge_head:$f" 2>/dev/null || true)"
-  [[ -n "$blob" ]] || return 1
-  while IFS= read -r c; do
-    [[ -n "$c" ]] || continue
-    git log -1 --format=%s "$c" 2>/dev/null | grep -qE "^${ticket}([^0-9]|$)" || continue
-    [[ "$(git rev-parse -q --verify "$c:$f" 2>/dev/null || true)" == "$blob" ]] || continue
-    "$REPO_ROOT/swarmforge/scripts/is_qa_ancestor.sh" "$c" 2>/dev/null && return 0
-  done < <(git rev-list --ancestry-path "$anchor..$merge_head" 2>/dev/null | head -n 200)
-  return 1
-}
-
 pipeline_path_import_exempt() {
   local f="$1"
   local merge_head="$2"
   local path_anchor
   path_anchor="$(git log -1 --format=%H "$merge_head" -- "$f" 2>/dev/null || true)"
   [[ -n "$path_anchor" ]] || return 1
-  if ! "$REPO_ROOT/swarmforge/scripts/is_qa_ancestor.sh" "$path_anchor" 2>/dev/null; then
-    same_ticket_approved_carrier "$f" "$merge_head" "$path_anchor" || return 1
-  fi
+  # A bounced anchor superseded by its ticket's approved fix reads approved
+  # inside is_qa_ancestor.sh itself (2026-10-05), never a second definition
+  # here (BL-925 invariant 2).
+  "$REPO_ROOT/swarmforge/scripts/is_qa_ancestor.sh" "$path_anchor" 2>/dev/null || return 1
   [[ -z "$(git diff --cached "$merge_head" -- "$f")" ]] || return 1
   return 0
 }
