@@ -9,6 +9,7 @@ const {
   writeCeremonyRun,
   listCeremonyRuns,
   findOpenCeremonyRunsBefore,
+  newestCeremonyRunBefore,
   finalizeCeremonyRunAsFailed,
   recordCeremonyOutcome,
   recordCeremonyAdjustment,
@@ -111,6 +112,29 @@ test('findOpenCeremonyRunsBefore returns only pending runs strictly before the g
     findOpenCeremonyRunsBefore(target, '2026-08-08').map((r) => r.shiftKey),
     ['2026-08-06']
   );
+});
+
+// ── BL-1967: newestCeremonyRunBefore ────────────────────────────────────
+
+test('newestCeremonyRunBefore returns the run with the largest shift key strictly before the given one', () => {
+  const target = mkTmp();
+  writeCeremonyRun(target, run('2026-08-05'));
+  writeCeremonyRun(target, run('2026-08-07'));
+  writeCeremonyRun(target, run('2026-08-08'));
+  assert.equal(newestCeremonyRunBefore(target, '2026-08-08').shiftKey, '2026-08-07');
+});
+
+test('newestCeremonyRunBefore returns null when no run precedes the given shift key', () => {
+  const target = mkTmp();
+  writeCeremonyRun(target, run('2026-08-08'));
+  assert.equal(newestCeremonyRunBefore(target, '2026-08-08'), null);
+  assert.equal(newestCeremonyRunBefore(target, '2026-08-01'), null);
+});
+
+test('newestCeremonyRunBefore considers a failed run just as much as a pending or complete one', () => {
+  const target = mkTmp();
+  writeCeremonyRun(target, run('2026-08-06', { failedAt: '2026-08-06T23:00:00.000Z' }));
+  assert.equal(newestCeremonyRunBefore(target, '2026-08-08').shiftKey, '2026-08-06');
 });
 
 test('finalizeCeremonyRunAsFailed sets failedAt and persists it', () => {

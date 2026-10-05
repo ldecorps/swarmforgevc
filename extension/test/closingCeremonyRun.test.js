@@ -3,10 +3,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { runClosingCeremony, readOpenTicketTextsFromTarget, closingCeremonyLoudCodes } = require('../out/metrics/closingCeremonyRun');
-const { readCeremonyRun } = require('../out/metrics/closingCeremonyStore');
+const { readCeremonyRun, writeCeremonyRun } = require('../out/metrics/closingCeremonyStore');
 const { appendLeanLedgerEventIfNew } = require('../out/metrics/leanLedgerStore');
 const { recordCeremonyOutcome } = require('../out/metrics/closingCeremonyStore');
 const { writeRitualLedger } = require('../out/metrics/ritualLedgerProducer');
+const { buildClosingCeremonyPacket } = require('../out/quality/closingCeremony');
 
 // BL-820: the orchestrator "the shift-close path reaches its lean step"
 // actually runs - composed from leanLedgerStore.ts's ledger and
@@ -215,6 +216,107 @@ test('BL-1528: a refused stale-run failure note finalizes the run failed and is 
   const stale = readCeremonyRun(target, '2026-08-06');
   assert.ok(stale.failedAt, 'expected the stale run to still be finalized as failed');
   assert.deepEqual(closingCeremonyLoudCodes(result), ['closing-ceremony-failure-undeliverable 2026-08-06']);
+});
+
+// ── BL-1967: the run records the window it folded ──────────────────────
+
+test('BL-1967: a run with no prior run at all records windowStart null and windowEnd at the real instant', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-900',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-08T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  const { deps } = fakeDeps();
+  const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  assert.equal(result.run.windowStart, null);
+  assert.equal(result.run.windowEnd, '2026-08-08T22:00:00.000Z');
+});
+
+test("BL-1967: an empty shift's auto no-change run also records a window, never left unset", () => {
+  const target = mkTmp();
+  const { deps } = fakeDeps();
+  const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  assert.equal(result.status, 'auto_no_change');
+  assert.equal(result.run.windowStart, null);
+  assert.equal(result.run.windowEnd, '2026-08-08T22:00:00.000Z');
+});
+
+test("BL-1967: a second run's window starts exactly where the first run's window ended", () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-900',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-08T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-901',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-10T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  const { deps } = fakeDeps();
+  const first = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  const second = runClosingCeremony(target, '2026-08-10T04:25:00.000Z', deps);
+  assert.equal(second.run.windowStart, first.run.windowEnd);
+  assert.equal(second.run.windowStart, '2026-08-08T22:00:00.000Z');
+  assert.equal(second.run.windowEnd, '2026-08-10T04:25:00.000Z');
+});
+
+test('BL-1967: a legacy prior run with no window field falls back to its deliveredAt', () => {
+  const target = mkTmp();
+  writeCeremonyRun(target, {
+    shiftKey: '2026-08-08',
+    packet: buildClosingCeremonyPacket('2026-08-08', []),
+    deliveredAt: '2026-08-08T22:00:00.000Z',
+    outcome: { type: 'no_change', ref: null, recordedAt: '2026-08-08T22:00:00.000Z' },
+    adjustments: [],
+    failedAt: null,
+    deliveryFailure: null,
+    // no windowStart/windowEnd: simulates a run recorded before this field existed
+  });
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-900',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-10T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  const { deps } = fakeDeps();
+  const result = runClosingCeremony(target, '2026-08-10T04:25:00.000Z', deps);
+  assert.equal(result.run.windowStart, '2026-08-08T22:00:00.000Z');
+  assert.equal(result.run.windowEnd, '2026-08-10T04:25:00.000Z');
+});
+
+test("BL-1967: an explicit shiftKey overrides the date nowIso would otherwise imply - the night path's local day key", () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-900',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-08T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  const { deps } = fakeDeps();
+  // nowIso's own UTC date is 2026-08-09; the caller passes 2026-08-08 as the
+  // local day key (e.g. a finish-shift just after local midnight in BST).
+  const result = runClosingCeremony(target, '2026-08-09T23:30:00.000Z', deps, 'specifier', '2026-08-08');
+  assert.equal(result.shiftKey, '2026-08-08');
+  assert.equal(result.run.shiftKey, '2026-08-08');
+  assert.equal(result.run.deliveredAt, '2026-08-09T23:30:00.000Z');
+  assert.equal(result.run.windowEnd, '2026-08-09T23:30:00.000Z');
+  assert.ok(readCeremonyRun(target, '2026-08-08'), "expected the run stored under the overridden shiftKey, not nowIso's own UTC date");
+  assert.equal(readCeremonyRun(target, '2026-08-09'), null, "must not ALSO write under nowIso's own UTC date");
 });
 
 test('BL-1119: runClosingCeremony with auto window model holds despite stalls (wired path)', () => {

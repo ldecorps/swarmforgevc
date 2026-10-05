@@ -77,6 +77,14 @@ export function findOpenCeremonyRunsBefore(targetPath: string, shiftKey: string)
   return listCeremonyRuns(targetPath).filter((r) => r.shiftKey < shiftKey && ceremonyRunState(r) === 'pending');
 }
 
+// BL-1967: the most recently recorded run strictly before shiftKey, state
+// irrelevant - a failed or auto_no_change run still covers a real window
+// the next run must tile onto, never skip past.
+export function newestCeremonyRunBefore(targetPath: string, shiftKey: string): CeremonyRun | null {
+  const prior = listCeremonyRuns(targetPath).filter((r) => r.shiftKey < shiftKey);
+  return prior.length > 0 ? prior[prior.length - 1] : null;
+}
+
 export function finalizeCeremonyRunAsFailed(
   targetPath: string,
   run: CeremonyRun,
