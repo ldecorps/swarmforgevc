@@ -212,6 +212,22 @@ out="$(decide "$T" edit "$E5")"
 [[ -z "$out" ]] || fail "an edit that reverses an edit of another file got a note: $out"
 pass "an edit that puts back what an earlier edit of the same file replaced is told so and counted; a first edit or another file's edit is not (2026-10-05)"
 
+F1='{"command":"node specs/pipeline/cli.js specs/features/BL-632-x.feature 2>&1 | tail -3"}'
+F2='{"command":"node specs/pipeline/cli.js specs/features/BL-632-x.feature 2>&1 | grep -E passed"}'
+{ call run_shell_command "$F1"; call run_shell_command "$F2"; } > "$T"
+out="$(decide "$T" run_shell_command "$F2")"
+[[ "$out" == *"You already ran \`node specs/pipeline/cli.js specs/features/BL-632-x.feature 2>&1\` with another filter"*"> tmp/out.txt 2>&1"* ]] || fail "a command re-run with only another filter got no hint: $out"
+{ call run_shell_command "$F1"; } > "$T"
+out="$(decide "$T" run_shell_command "$F1")"
+[[ -z "$out" ]] || fail "a first filtered run got a note: $out"
+{ call run_shell_command "$F1"; reset_edit; call run_shell_command "$F2"; } > "$T"
+out="$(decide "$T" run_shell_command "$F2")"
+[[ "$out" != *"You already ran"* ]] || fail "a re-run after an edit got the re-run hint: $out"
+{ call run_shell_command '{"command":"git log --oneline | head -3"}'; call run_shell_command '{"command":"git status || true | head -3"}'; } > "$T"
+out="$(decide "$T" run_shell_command '{"command":"git status || true | head -3"}')"
+[[ "$out" != *"You already ran"* ]] || fail "different commands were taken for one re-run: $out"
+pass "a command re-run only to filter its output another way is told to save it once; a first run, a run after an edit, or another command is not (2026-10-05)"
+
 decide_resp() { # tool_input llm_content
   python3 -c 'import json,sys; print(json.dumps({"tool_name":"run_shell_command","tool_input":json.loads(sys.argv[1]),"tool_response":{"llmContent":sys.argv[2],"returnDisplay":""},"transcript_path":sys.argv[3],"hook_event_name":"PostToolUse"}))' "$1" "$2" "$ROOT/missing.jsonl" | bb "$GUARD"
 }
@@ -223,6 +239,8 @@ out="$(decide_resp '{"command":"git ls-files | grep -i bl1987"}' "$EMPTY")"
 [[ "$out" == *"grep found nothing"* ]] || fail "a piped grep with empty output got no hint: $out"
 out="$(decide_resp "{\"command\":\"grep -n parse-instant-ms $BIG\"}" "$FOUND")"
 [[ -z "$out" ]] || fail "a grep that found something got a note: $out"
+out="$(decide_resp '{"command":"node specs/pipeline/cli.js specs/features/BL-925-x.feature 2>&1 | grep -E \"^# tests\""}' "$EMPTY")"
+[[ "$out" == *"grep found nothing in the output of"*"tmp/out.txt"* && "$out" != *"not in those files"* ]] || fail "an empty grep over a run's output was told the name is not in those files: $out"
 out="$(decide_resp '{"command":"git diff --stat"}' "$EMPTY")"
 [[ -z "$out" ]] || fail "a command that is not a grep got the grep hint: $out"
 pass "a grep that prints nothing is told the name is not in those files; a grep that finds something, or another empty command, is not (2026-10-05)"

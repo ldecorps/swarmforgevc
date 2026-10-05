@@ -49,9 +49,19 @@ function runGuardTest() {
   return { status: result.status, stdout: (result.stdout || '') + (result.stderr || '') };
 }
 
+// One run per process, shared by every scenario: the suite takes no input
+// from a scenario, so each scenario re-running it reads the same output.
+// 2026-10-05: the suite had grown to ~39 s, and eight scenarios each
+// running it overran the feature runner's 300 s ceiling - the feature
+// timed out with no result at all, under any load.
+let processResult = null;
+
 function ensureResult(ctx) {
   if (!ctx.bl925.result) {
-    ctx.bl925.result = runGuardTest();
+    if (!processResult) {
+      processResult = runGuardTest();
+    }
+    ctx.bl925.result = processResult;
   }
   return ctx.bl925.result;
 }

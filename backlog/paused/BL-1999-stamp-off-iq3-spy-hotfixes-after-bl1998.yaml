@@ -1,0 +1,108 @@
+id: BL-1999
+title: "Stamp-off for the iq3 spy-loop hotfixes after BL-1998 went active, starting with 9db627f908: the repeat guard tells a command re-run only to filter its output another way to save it once, and the card says so"
+milestone: M8
+type: defect
+severity: medium
+# medium: wall time, not a halt - about four minutes of a twelve-minute
+# review spent re-running one feature and one test under other filters.
+status: todo
+epic: local-llm-swarm
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one hint function, one card line, fixture tests.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one hint function and one card line; nothing to refactor"
+  architect: "the guard keeps its event and output shapes; one more warn-only note"
+  hardender: "Babashka has no Stryker lane (BL-472) and the hook writes no durable state"
+  documenter: "the guard's header and the card are the living descriptions"
+
+# Not a claim of ownership over BL-1798's contract (BL-1251): the compact
+# card's feature, which every card line must keep green.
+acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
+
+human_approval: pending
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-05
+  direction "We have to fix iq3. Spy on it every 10 minutes. If its gone
+  wrong, hotfix it, and respawn." A medium defect, so not auto-approved:
+  the ask is whether this review may run. FIRM: the coder reviews the
+  hotfix and never re-applies it.
+
+invariants:
+  - "The repeat guard never refuses a tool call; the re-run note fires only when the part before the first pipe was already run in the window with a different full command."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     no FAIL (measured at 9db627f908: 18 PASS; later hotfixes add cases).
+  2. `node specs/pipeline/cli.js specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature`:
+     8 of 8 ok (measured at 66377274b7, before this card line; re-measure
+     on the parcel).
+  3. Read the coder's committed review evidence.
+
+source: |
+  The human, specifier pane, 2026-10-05, verbatim (Article 5.3):
+
+  > We have to fix iq3. Spy on it every 10 minutes. If its gone wrong, hotfix it, and respawn. Repeat until iq3 is functioning normally.
+
+  The fault (iq3 session 45d73777, 13:56-14:03Z, BL-1990): the BL-632
+  feature run four times (`| tail -3`, `| grep -E '^# (passed|failed)'`,
+  `| grep -E 'passed|failed'`, `| tail -12`) and
+  test_pipeline_code_on_main_guard.sh twice, each only to view the same
+  output another way.
+
+description: |
+  ## Status: hotfix 9db627f908 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What the hotfix changed
+
+  - `swarmforge/scripts/local_model_repeat_guard.bb`: `command-base` (the
+    command before the first `|` that is not `||`) and `rerun-hint` (a
+    shell command whose base was already run in the window with a
+    different full command is told to run it once into tmp/out.txt).
+  - `swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`: a
+    re-run under another filter gets the hint; a first run, a re-run after
+    an edit, and two different commands get none.
+  - `swarmforge/roles/local-model/loop.note`: run a test or feature once
+    with its output saved to tmp/out.txt; read the file instead of re-running.
+  - Live at once for the hook; the card line reaches the seat at its next
+    session.
+
+  ## Hotfix e36702e90d: the empty-grep hint reads a piped grep right
+
+  14:12:57Z the iq3 coder's `node specs/pipeline/cli.js <BL-925 feature> |
+  grep '^# (tests|pass|fail)'` printed nothing because the run ended at the
+  runner's 300 s ceiling with no summary (a red, fixed by 3024ccb56c /
+  BL-2000). 4949a2d37e's hint said "not in those files", which reads as if
+  the feature had no tests.
+
+  - `swarmforge/scripts/local_model_repeat_guard.bb` `empty-grep-hint`: a
+    grep after a pipe from anything but `git ls-files`, `ls`, `find` or
+    `cat` says the command may not have printed what was expected and to
+    run it once into tmp/out.txt; a grep over files keeps the old wording.
+  - test_bl1971: an empty grep over a feature run's output gets the new
+    wording and not the old one.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure steps 1 and 2 once each, in your worktree.
+  2. Read `git show 9db627f908` and `git show e36702e90d` against the two
+     sections above and the invariant.
+  3. Write backlog/evidence/BL-1999-coder-<date>.md: the two results and
+     one line per hotfix saying whether it matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix 9db627f908.
+  BL-1998 went active and was routed to the coder (note 016585), so this
+  does not fold into it. Severity medium (wall time, not a halt), so it
+  mints human_approval pending, not under the 2026-09-17 auto-approve
+  carve-out.
+  Hotfix ledger: 9db627f908 linked to BL-1999.
+  Folded in 2026-10-05 while still paused (approval pending): hotfix
+  e36702e90d (empty-grep hint over a piped run), ledger-linked to BL-1999.

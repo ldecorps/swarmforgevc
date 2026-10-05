@@ -1,0 +1,98 @@
+id: BL-2000
+title: "Stamp-off for red hotfix 3024ccb56c: the BL-925 step handler runs the pipeline-code guard suite once per process, so its feature fits the runner's 300 s ceiling again"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main (2026-09-05 rule) - the BL-925 feature ended
+# at 300 s with no result, and it gated the iq3 coder's BL-1990 review.
+status: todo
+epic: local-llm-swarm
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: a module-level cache of one spawnSync result in one step handler.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one cached value in one handler; nothing to refactor"
+  architect: "the handler still drives the real guard suite; only how often it runs changes"
+  hardender: "test-side only (a step handler); no production code"
+  documenter: "the handler's own comment is the living description"
+
+# Not a claim of ownership over BL-925's contract (BL-1251): the feature
+# this hotfix makes runnable again.
+acceptance: specs/features/BL-925-reconcile-merge-of-qa-published-tip-completes.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a red hotfix the specifier landed under the human's
+  2026-10-01 rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants:
+  - "Every BL-925 scenario still reads the output of a real run of test_pipeline_code_on_main_guard.sh, never a stub."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-925-reconcile-merge-of-qa-published-tip-completes.feature`:
+     8 of 8 ok (measured at 3024ccb56c: 27 s; before it, three runs ended
+     at 300 s with no result).
+  2. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  Found by the specifier's iq3 spy loop, 2026-10-05: the iq3 coder,
+  reviewing BL-1990, ran the BL-925 feature three times (13:02:48 with a
+  glob, 14:07:57, 14:13:02 with timeout 600000); each ended at 300 s with
+  only a MaxListenersExceededWarning and no TAP result. The specifier's
+  own run at 14:13Z did the same (rc=1, 300 s, 0 ok lines).
+
+description: |
+  ## Status: hotfix 3024ccb56c landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `specs/pipeline/steps/bl925ReconcileMergeOfPublishedTipSteps.js` ran
+  `swarmforge/scripts/test/test_pipeline_code_on_main_guard.sh` once per
+  scenario (memoized per scenario only). The suite takes no input from a
+  scenario and had grown to ~39 s alone (28 cases); eight scenarios each
+  running it passed the feature runner's 300 s ceiling on a quiet host,
+  and the runner killed the whole feature before any result printed.
+
+  ## What the hotfix changed
+
+  - `processResult`: one run per process, shared by every scenario; each
+    scenario still records it in `ctx.bl925.result`.
+
+  ## Seen in the same pass, not fixed here
+
+  - BL-952's feature failed once (9/10) on an after-hook ENOTEMPTY
+    removing its fixture's `.swarmforge/daemon` directory, then passed
+    10/10 twice. A cleanup race to watch, not a red today.
+  - BL-1096 (7/7, 26 s) and BL-632 (11/11, 7 s) drive the same suite and
+    fit.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure step 1 once, in your worktree, its output saved
+     to tmp/out.txt.
+  2. Read `git show 3024ccb56c` against the sections above and the
+     invariant.
+  3. Write backlog/evidence/BL-2000-coder-<date>.md: the result and one
+     line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as red hotfix
+  3024ccb56c (committed with SWARMFORGE_ROLE=QA: specs/pipeline/steps/ is
+  QA-exclusive on main, BL-848). No register row: the hotfix landed the
+  same pass. Holder notes sent: coder 002351 and QA 002352 ("BL-1990:
+  BL-925 red (300s ceiling), hotfix 3024ccb56c - merge main, rerun it").
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 3024ccb56c linked to BL-2000.

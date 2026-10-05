@@ -1224,3 +1224,24 @@
   stamp_ticket: BL-1998
   human_decision: null
   decided_at: null
+- commit: 9db627f908
+  subject: "hotfix: the local-seat repeat guard tells a command re-run only to filter its output another way to save it once, and the card says so"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1999
+  human_decision: null
+  decided_at: null
+- commit: 3024ccb56c
+  subject: "HOTFIX: the BL-925 step handler runs the pipeline-code guard suite once per process, so its feature fits the runner's 300 s ceiling again"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-2000
+  human_decision: null
+  decided_at: null
+- commit: e36702e90d
+  subject: "hotfix: the repeat guard's empty-grep hint tells a grep over a command's output to read that output whole, not that the name is not in those files"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1999
+  human_decision: null
+  decided_at: null
