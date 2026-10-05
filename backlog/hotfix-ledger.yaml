@@ -1196,3 +1196,10 @@
   stamp_ticket: BL-1994
   human_decision: null
   decided_at: null
+- commit: 4949a2d37e
+  subject: "hotfix: the local-seat repeat guard names a cycle of repeated calls and tells an empty grep it found nothing"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1994
+  human_decision: null
+  decided_at: null

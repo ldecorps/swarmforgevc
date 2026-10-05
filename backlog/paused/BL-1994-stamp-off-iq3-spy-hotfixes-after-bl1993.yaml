@@ -34,6 +34,7 @@ approval_context: >
 
 invariants:
   - "A recipient is rewritten only to the one roster role equal to it ignoring case; an exact match, an unknown name and an ambiguous name reach validation unchanged."
+  - "The repeat guard never refuses a tool call; its LOOP note fires only on a run of at least cycle-min-run calls that each repeat one made since the last edit, commit or compaction."
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
@@ -43,7 +44,9 @@ qa_e2e_procedure: |
      ALL PASS (measured at 44c9f3f535).
   3. Read the iq3 coder pane or session: no "Unknown recipient role 'qa'"
      after the coder's first take-up that merged 44c9f3f535.
-  4. Read the coder's committed review evidence.
+  4. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     ALL PASS lines, no FAIL (measured at 4949a2d37e: 16 PASS).
+  5. Read the coder's committed review evidence.
 
 source: |
   The human, specifier pane, 2026-10-05, verbatim (Article 5.3):
@@ -83,6 +86,28 @@ description: |
   - Reaches a seat when its worktree merges main (each seat runs its own
     worktree's swarm_handoff.sh).
 
+  ## Hotfix 4949a2d37e: the repeat guard names a cycle and an empty grep
+
+  13:06-13:08Z the iq3 coder, on BL-1987, went round four greps for
+  `parse-instant-ms` in four files that do not define it, output `(empty)`
+  every time: 22 calls, each past the third warned REPEAT, until a
+  compaction broke it. The per-call note does not stop a cycle of several
+  different calls.
+
+  - `swarmforge/scripts/local_model_repeat_guard.bb`: `cycle-note` (six
+    calls in a row, each a repeat of one made since the last reset, get a
+    LOOP note naming the cycle and the edit to make) and `empty-grep-hint`
+    (a grep whose `tool_response` reads `Output: (empty)` is told the name
+    is not in those files). Both warn only, beside the existing notes.
+  - `swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`: six
+    repeats over four calls name a cycle of 4; five, a run broken by a new
+    call, or an edit between name none; an empty grep (plain or piped) gets
+    the hint; a grep that finds something, or an empty non-grep, gets none.
+  - `swarmforge/roles/local-model/loop.note`: an empty grep means the name
+    is not there; use the first copy of a helper, never compare every copy.
+  - Live at once: the hook runs the master checkout's guard. The card line
+    reaches the seat at its next session.
+
   ## What the coder checks
 
   The change against the description and the invariant. Evidence:
@@ -95,3 +120,5 @@ notes: |
   and its review is in flight, so this hotfix does not fold into it.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: 44c9f3f535 linked to BL-1994.
+  Folded in 2026-10-05 while still paused: hotfix 4949a2d37e (repeat guard
+  cycle note + empty-grep hint), ledger-linked to BL-1994.
