@@ -92,7 +92,15 @@ function creatingPidFor(psLine) {
 // text to match against (only a bare creator pid), so liveness is instead
 // confirmed by process state (`ps -o stat=`) rather than by identity -  a
 // zombie's state is always `Z`, whatever its command line says.
-function isProcessAlive(pid) {
+//
+// BL-1974: `execFileSync` is injectable (default the real one) so the ps
+// call can be driven with canned output/errors in tests - the same seam
+// leakedFixtureTunnelPids already takes for its own ps call, now threaded
+// through here too. `-ww` disables ps's terminal-width line truncation
+// (COLUMNS), though `stat=` output is never long enough to be at real
+// risk - applied for consistency with every other ps call this module
+// makes, per the ticket's own "every ps the sweep runs" direction.
+function isProcessAlive(pid, execFileSync = nodeExecFileSync) {
   if (!Number.isInteger(pid) || pid <= 0) {
     // process.kill(0, 0) signals THIS process's own process group, and a
     // negative pid signals a group too - never the single-process question
@@ -105,12 +113,22 @@ function isProcessAlive(pid) {
     return false;
   }
   try {
-    const stat = nodeExecFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+    const stat = execFileSync('ps', ['-ww', '-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' }).trim();
     return stat.length > 0 && !stat.startsWith('Z');
-  } catch {
-    // ps found nothing for this pid - it exited between the kill(0) probe
-    // above and this check, i.e. it is gone, not alive.
-    return false;
+  } catch (err) {
+    // ps RAN and reported no matching pid - exit status 1, nothing on
+    // stdout - is the only shape that confirms "gone" (it exited between
+    // the kill(0) probe above and this check). Any other failure (ps
+    // itself could not be found/run, an unexpected exit status, a
+    // signal) means liveness could NOT be established, and BL-1974's own
+    // invariant is that an unknown state is never read as gone - the
+    // fail-safe direction is "alive" (protected), not "dead" (selected).
+    const status = err && typeof err.status === 'number' ? err.status : null;
+    const stdout = err && err.stdout != null ? String(err.stdout).trim() : '';
+    if (status === 1 && stdout === '') {
+      return false;
+    }
+    return true;
   }
 }
 
@@ -130,22 +148,39 @@ function isProcessAlive(pid) {
  * real one is an installed binary, so a temp-path match cannot reach it
  * however the names collide (invariant 3).
  */
+// BL-1974: a fixture's spawner backgrounds the real cloudflared binary and
+// returns its pid before that child has execed into it (spawnFakeCloudflared's
+// own `"$1" ... & echo $!` shape) - until it does, ps shows the SPAWNING
+// shell's own "bash -c '"$1" tunnel ... run "$3"' ..." command line, which
+// still matches the cloudflared/run text checks below (the literal argument
+// string quotes both) but is not a fixture process at all: signaling it
+// would hit the shell mid race, not the tunnel. Recognized by its own
+// command starting with a shell invoked via -c, excluded before either
+// text check runs.
+const SHELL_DASH_C_RE = /^\d+\s+(?:\S*\/)?(?:bash|sh|zsh|dash)\s+-c\b/;
+
 function leakedFixtureTunnelPids(execFileSync) {
   const tmp = os.tmpdir();
   let out = '';
   try {
-    out = execFileSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8' });
+    // -ww: never truncate to the caller's COLUMNS. A 246-character real
+    // cloudflared command line reads back as 81 characters at COLUMNS=80
+    // otherwise - long enough to cut the tunnel name's own creator-pid
+    // digits off the end, which is read as "no known creator" (selected)
+    // for a fixture whose creating run is very much alive.
+    out = execFileSync('ps', ['-ww', '-eo', 'pid=,args='], { encoding: 'utf8' });
   } catch {
     return [];
   }
   return out
     .split('\n')
     .map((line) => line.trim())
+    .filter((line) => !SHELL_DASH_C_RE.test(line))
     .filter((line) => line.includes(`${tmp}/`) && /\bcloudflared\b/.test(line) && / run \S/.test(line))
     .filter((line) => {
       const creatorPid = creatingPidFor(line);
       if (creatorPid === null) return true;
-      return !isProcessAlive(creatorPid);
+      return !isProcessAlive(creatorPid, execFileSync);
     })
     .map((line) => Number(line.split(/\s+/)[0]))
     .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
