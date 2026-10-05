@@ -111,3 +111,5 @@ description: |
   - Coder: the three scenarios; the check's own unit tests; npm test green.
   - Hardender: mutation on the check; one Stryker dry run inside a sandbox
     stays green.
+
+assigned_to: coder
