@@ -1,0 +1,95 @@
+id: BL-2018
+title: "Stamp-off for hotfix c15a0f21aa: two unowned reds - BL-571 scenario 03's fake tmux counts a created session as a repair, and test_handoffd_supervisor.sh's BL-1491 case keeps its tmux-socket so the supervisor halts"
+milestone: M8
+type: defect
+severity: high
+# high: two standing reds on main with no register row (standing-red rule,
+# 2026-09-05: a red is high at first sighting).
+status: todo
+epic: swarm-reliability
+priority: 1
+depends_on: []
+mutation_cost: low
+# low: review only - read one commit, run one feature and one shell test.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two test-side edits; nothing to refactor"
+  architect: "test fixtures only; no production boundary moves"
+  hardender: "test-side only; no production code changed"
+  documenter: "no living doc describes either fixture"
+
+# Not a claim of ownership over BL-571's contract (BL-1251): this
+# stamp-off's own review runs that feature, which the hotfix made green.
+acceptance: specs/features/BL-571-sequential-rotation-dormant-parity.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews it and never re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-571-sequential-rotation-dormant-parity.feature`:
+     4 ok, 0 fail (measured at c15a0f21aa; scenario 03 was red before it).
+  2. `bash swarmforge/scripts/test/test_handoffd_supervisor.sh`: every
+     line PASS, rc 0, both BL-1491 lines included (measured at c15a0f21aa;
+     "kill-all-audit.log was never written" before it).
+  3. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  Found 2026-10-05 by the specifier's sweep after coder@2's unowned-red
+  note 000117 ("unowned-red: test_handoffd_bl812_cwd_invariant_root_resolution.sh
+  #02 on main"): every test faking tmux was run on main and on
+  77584c4c11^. These two failed on both, so they were not 77584c4c11's
+  (that one's reds are BL-2014's), and neither had a register row.
+
+description: |
+  ## Status: hotfix c15a0f21aa landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  - BL-571 scenario 03, "a classic pack still repairs its missing
+    middle-role sessions": swarm ensure repairs a MISSING session by
+    creating it (`single_role_repair_lib.bb`'s new-session branch); only a
+    present session is respawned. The step handler's fake tmux logged
+    only `respawn-pane`, so it saw no repair while ensure reported each
+    role repaired.
+  - `test_handoffd_supervisor.sh`, the BL-1491 case: it deleted the
+    fixture's tmux-socket to keep `halt-swarm!`'s cleanup off real tmux.
+    Since BL-1688 (95360d8b00, 2026-09-22) a supervisor with no
+    tmux-socket logs "no swarm to supervise" and never halts, so no audit
+    row and no availability stop record were written.
+
+  ## What the hotfix changed
+
+  - `specs/pipeline/steps/bl571SequentialRotationDormantParitySteps.js`:
+    the fake also logs `new-session` as a repair. Scenarios 01 and 02
+    assert NO repair for dormant roles, and still pass.
+  - `swarmforge/scripts/test/test_handoffd_supervisor.sh`: the BL-1491
+    case keeps the socket; the halt's cleanup reaches only the fake tmux
+    on PATH, as cases 01 and 05 already do. Checked after the run: every
+    live seat still UP, no new row in the live kill-all-audit log.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure steps 1 and 2 once each, outputs under tmp/.
+  2. Read `git show c15a0f21aa` against the two sections above.
+  3. Write backlog/evidence/BL-2018-coder-<date>.md: the two results and
+     one line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix c15a0f21aa.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: c15a0f21aa linked to BL-2018. No register row was added:
+  both reds were fixed in the pass that found them.

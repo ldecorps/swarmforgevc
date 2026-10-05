@@ -1,0 +1,97 @@
+id: BL-2017
+title: "A verification-debt settle that cannot be grounded is refused and writes nothing - slice 3 of BL-1783, a step handler over BL-2015's refusals, plus the how-to for both settle verbs"
+milestone: M8
+status: todo
+type: feature
+epic: lean-aware-coordinator
+priority: 79
+depends_on: [BL-2015]
+mutation_cost: low
+# low: test-side - one step handler for one five-row outline - and one
+# how-to section.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "test-side only: one new step handler file"
+  architect: "no production code changes; BL-2015's architect pass reviewed the verbs"
+  hardender: "test-side only; the verbs' mutation pass is BL-2015's"
+acceptance: specs/features/BL-2017-a-verification-debt-settle-that-cannot-be-grounded-is-refused.feature
+
+invariants: []
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2017VerificationDebtSettleRefusalSteps.js::registerSteps::the handler file lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1783 (approved), split 2026-10-05 with no new scope.
+  Chosen at BL-1783's mint: a waiver must name who waived it and why, with
+  a blank reason refused; a discharge needs a committed evidence file.
+
+description: |
+  ## Why
+
+  A settle that cannot name its evidence, its author or its reason would
+  close a category with nothing behind it. BL-2015 ships the refusals;
+  this slice gates them, and documents both settle verbs now that they
+  exist.
+
+  ## What is wanted
+
+  1. `specs/pipeline/steps/bl2017VerificationDebtSettleRefusalSteps.js`,
+     the step handler for this feature's Background and its five-row
+     Scenario Outline. The step splits `<arguments>` on spaces; the token
+     `BLANK` stands for an empty argument. "Writes nothing" means the
+     ledger's last commit (`git log -1 --format=%H -- backlog/verification-debt-ledger.yaml`)
+     is the same before and after. No production change is expected: a
+     refusal that does not name its reason is a BL-2015 defect; send the
+     specifier a note naming it rather than patching the CLI here.
+  2. The documenter replaces the BL-1783 pointer in
+     `docs/how-to/BL-1782-verification-debt-ledger.md` (around line 90)
+     with how to discharge and how to waive a category: the two commands,
+     what each requires, and that a later hand check counts again from one.
+
+  How (direction, not mandate): start from BL-2015's handler for the
+  Background and the helpers; register with
+  `registry.defineScoped(re, fn, FEATURE)` where FEATURE is this feature's
+  exact `Feature:` text.
+
+  ## Scope
+  - The feature file, its step handler, and the how-to section.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2017-a-verification-debt-settle-that-cannot-be-grounded-is-refused.feature`:
+     5 ok, 0 fail.
+  2. Read `docs/how-to/BL-1782-verification-debt-ledger.md`: it shows the
+     `--discharge` and `--waive` commands as the CLI accepts them, and no
+     longer says settling is BL-1783's.
+
+source: |
+  Split from BL-1783 on 2026-10-05 (coordinator note 016828). BL-1783's
+  source, carried verbatim (Article 5.3):
+
+  Raw intake `backlog/INTAKE-mechanize-recurring-llm-verification-20260926.md`
+  (human via Claude Code, 2026-09-26), split 1:3 by the specifier the same
+  day. BL-1782 is the ledger, this ticket settles a category, and BL-1784
+  is the throttle. The human's two sentences, verbatim (Article 5.3):
+  "I think we should have tool removing llm work wherever it makes sense"
+  "this principle should be a core responsibility of the lean coordinator. Or
+  is there a way to enforce this rule even harder on the swarm engine?"
+  The intake's own proposal, which this slice builds: "until either a tool
+  ships (row discharged, evidence linked, same pattern as
+  hardening-debt-ledger's discharged_at/discharged_evidence) or the ticket
+  owner explicitly waives it."
+
+  The human, 2026-10-04, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+
+notes: |
+  Minted 2026-10-05 by the specifier.
+  split from BL-1783 on 2026-10-05 after coder (iq3) held it 44m (loop-halt
+  on verification_debt_ledger_update.bb; see BL-2015's notes).
+  Refusal messages measured at mint against the fixed scripts (BL-2015's
+  evidence file): each row's reason text appears in the CLI's stderr.
+  Where to read: BL-2015's handler, whole; the CLI's refusals are in
+  swarmforge/scripts/verification_debt_ledger_update.bb lines 135-175 only.
+  INVEST: Independent of BL-2016 (both depend on BL-2015 only). Small (one
+  handler, one doc section). Testable (mkdtemp fixture).

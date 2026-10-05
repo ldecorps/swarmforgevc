@@ -2,7 +2,7 @@ id: BL-1625
 title: "Two registered test populations are no role's lane - the shell suite manifest's 518 standing tests and the 1294 landed feature files under specs/features/ - so test_bl1388_land_step_guard_fixture.sh was red on main for thirteen days (BL-1624) and four landed promotion and portability features for three to four weeks (BL-1626, BL-1627) before incidental hand runs found them; one recorded lane runner executes a listed population one item at a time, appends one duration row per completed item, prints a verdict naming every red and the slowest, and exits with the suite's status, behind a shell-manifest front-end and a landed-features front-end - the recorder half, changing no lane set, with each population's first full run the census in the nightly slot after landing, never inside the parcel (absorbs BL-1628)"
 milestone: M8
 type: feature
-status: todo
+status: blocked
 epic: unit-suite-speed
 priority: 30
 direction: swarm-reported
@@ -258,4 +258,8 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+
+  2026-10-06 ~00:40Z: pulled from active - loop-halted (repeated
+  identical shell check on suite-manifest.tsv's bl1688 row format,
+  threshold 60m). Clean worktree, nothing to salvage.
 assigned_to: coder

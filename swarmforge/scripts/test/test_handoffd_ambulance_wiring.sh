@@ -166,7 +166,8 @@ echo "\$*" >> "$TMUX_LOG_B"
 target=""
 prev=""
 for arg in "\$@"; do
-  if [[ "\$prev" == "-t" ]]; then target="\$arg"; fi
+  # tmux reads an exact-match target "=NAME" as NAME (77584c4c11).
+  if [[ "\$prev" == "-t" ]]; then target="\${arg#=}"; fi
   prev="\$arg"
 done
 if [[ "\$*" == *"has-session"* ]]; then

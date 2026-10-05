@@ -59,7 +59,7 @@ echo "$*" >> "$TMUX_LOG"
 target=""
 prev=""
 for arg in "$@"; do
-  if [[ "$prev" == "-t" ]]; then target="$arg"; fi
+  if [[ "$prev" == "-t" ]]; then target="\${arg#=}"; fi
   prev="$arg"
 done
 if [[ "$*" == *"has-session"* ]]; then

@@ -1,0 +1,96 @@
+id: BL-2016
+title: "A verification-debt category is waived with who and why, and a hand check recorded after any settle counts again from one - slice 2 of BL-1783, a step handler over BL-2015's verbs"
+milestone: M8
+status: todo
+type: feature
+epic: lean-aware-coordinator
+priority: 79
+depends_on: [BL-2015]
+mutation_cost: low
+# low: test-side only - one step handler for three scenario runs; the
+# --waive verb and the reader land in BL-2015.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "test-side only: one new step handler file"
+  architect: "no production code changes; BL-2015's architect pass reviewed the verbs and the invariants"
+  hardender: "test-side only; the verbs' mutation pass is BL-2015's"
+  documenter: "BL-2017, the last slice, carries the how-to update for both verbs"
+acceptance: specs/features/BL-2016-a-verification-debt-category-is-waived-and-a-later-check-counts-again.feature
+
+invariants: []
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2016VerificationDebtWaiveSteps.js::registerSteps::the handler file lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1783 (approved), split 2026-10-05 with no new scope.
+  Chosen at BL-1783's mint, open to amendment: a waiver must name who
+  waived it and why, with a blank reason refused; a hand check recorded
+  after a settle is new debt and counts again from one.
+
+description: |
+  ## Why
+
+  BL-2015 ships both settle verbs and the reader's outstanding-only count,
+  gated by the discharge scenario. This slice gates the other two
+  behaviours BL-1783 asked for: a waiver settles a category with who and
+  why, and a hand check recorded after either kind of settle is new debt
+  that counts from one.
+
+  ## What is wanted
+
+  `specs/pipeline/steps/bl2016VerificationDebtWaiveSteps.js`, the step
+  handler for this feature's Background, scenario 02 and scenario 04
+  (both Examples rows). No production change is expected: if a step fails
+  against BL-2015's code, that is a BL-2015 defect, and the coder sends the
+  specifier a note naming it rather than patching the verbs here.
+
+  How (direction, not mandate): start from BL-2015's handler
+  (`bl2015VerificationDebtDischargeSteps.js`), which already implements the
+  Background and the reader steps; copy what you need into this file and
+  register with `registry.defineScoped(re, fn, FEATURE)` where FEATURE is
+  this feature's exact `Feature:` text. The `<settle>` placeholder is
+  validated against an explicit KNOWN_VALUES of `discharge` and `waiver`
+  (engineering rule: no passthrough). For `discharge`, settle with the
+  Background's committed evidence file; for `waiver`, with any non-blank
+  reason.
+
+  ## Scope
+  - The feature file and its step handler. Nothing else.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2016-a-verification-debt-category-is-waived-and-a-later-check-counts-again.feature`:
+     3 ok (scenario 02 and both rows of 04), 0 fail.
+  2. `git diff <BL-2015's land>..<parcel> --stat` touches only the feature
+     and the handler.
+
+source: |
+  Split from BL-1783 on 2026-10-05 (coordinator note 016828). BL-1783's
+  source, carried verbatim (Article 5.3):
+
+  Raw intake `backlog/INTAKE-mechanize-recurring-llm-verification-20260926.md`
+  (human via Claude Code, 2026-09-26), split 1:3 by the specifier the same
+  day. BL-1782 is the ledger, this ticket settles a category, and BL-1784
+  is the throttle. The human's two sentences, verbatim (Article 5.3):
+  "I think we should have tool removing llm work wherever it makes sense"
+  "this principle should be a core responsibility of the lean coordinator. Or
+  is there a way to enforce this rule even harder on the swarm engine?"
+  The intake's own proposal, which this slice builds: "until either a tool
+  ships (row discharged, evidence linked, same pattern as
+  hardening-debt-ledger's discharged_at/discharged_evidence) or the ticket
+  owner explicitly waives it."
+
+  The human, 2026-10-04, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+
+notes: |
+  Minted 2026-10-05 by the specifier.
+  split from BL-1783 on 2026-10-05 after coder (iq3) held it 44m (loop-halt
+  on verification_debt_ledger_update.bb; see BL-2015's notes).
+  Where to read: BL-2015's handler, whole (it is small); the reader's JSON
+  shape is in swarmforge/scripts/verification_debt_ledger_read.bb lines
+  60-95 only.
+  INVEST: Independent of BL-2017 (both depend on BL-2015 only). Small (one
+  handler). Testable (mkdtemp fixture).

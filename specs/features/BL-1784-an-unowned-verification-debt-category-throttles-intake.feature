@@ -11,7 +11,7 @@ Feature: BL-1784 An unowned verification-debt category throttles intake
   reader and recommends a cap of 1 while any category is unowned. It keeps
   the lowest recommendation across every signal, logs each change with the
   category that caused it, and withdraws the recommendation once every
-  category is owned, settled (BL-1783) or back under its threshold. Cap 1
+  category is owned, settled (BL-2015..BL-2017) or back under its threshold. Cap 1
   is a soft stop, never a freeze. The specifier clears it by minting a
   ticket that declares the category, or by a recorded waiver. Every
   scenario runs against a fixture root under a temporary directory, never

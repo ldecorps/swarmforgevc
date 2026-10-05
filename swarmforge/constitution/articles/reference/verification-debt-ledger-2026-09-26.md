@@ -11,7 +11,7 @@ So the noticing is done by a register instead. Roles record, a script
 counts, and the throttle enforces. It is the third register in the family
 of `backlog/standing-reds.tsv` and `backlog/hardening-debt-ledger.yaml`.
 
-Tickets: BL-1782 (ledger, recorder, reader), BL-1783 (discharge and waive),
+Tickets: BL-1782 (ledger, recorder, reader), BL-1783 (discharge and waive; split 2026-10-05 into BL-2015..BL-2017),
 BL-1784 (an unowned category throttles intake to 1). **Until BL-1782 lands,
 `swarmforge/scripts/verification_debt_ledger_update.bb` does not exist and
 there is nothing to record.** Keep writing what you checked by hand in your

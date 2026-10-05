@@ -42,7 +42,7 @@ function writeFakeTmux(fixtureDir) {
   // on one should fail loudly, not silently succeed.
   fs.writeFileSync(
     tmuxPath,
-    `#!/usr/bin/env bash\nset -euo pipefail\nif [[ "\${*}" == *"has-session"* ]]; then\n  session="\${@: -1}"\n  grep -qxF "$session" "${aliveFile}" && exit 0 || exit 1\nfi\nexit 1\n`
+    `#!/usr/bin/env bash\nset -euo pipefail\nif [[ "\${*}" == *"has-session"* ]]; then\n  session="\${@: -1}"\n  session="\${session#=}"\n  grep -qxF "$session" "${aliveFile}" && exit 0 || exit 1\nfi\nexit 1\n`
   );
   fs.chmodSync(tmuxPath, 0o755);
   return { fakeBinDir, aliveFile };

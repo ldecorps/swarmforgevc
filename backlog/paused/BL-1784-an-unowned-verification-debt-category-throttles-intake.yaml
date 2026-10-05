@@ -5,7 +5,7 @@ status: todo
 type: feature
 epic: lean-aware-coordinator
 priority: 80
-depends_on: [BL-1782, BL-1783]
+depends_on: [BL-1782, BL-2015, BL-2016, BL-2017]
 mutation_cost: medium
 # medium: a new TypeScript signal module in the Stryker lane
 # (standingRedSignal.ts is ~140 lines) plus a fold in
@@ -111,6 +111,8 @@ source: |
   on an unowned row".
 
 notes: |
+  2026-10-05 (specifier): depends_on BL-1783 replaced by its split
+  BL-2015, BL-2016, BL-2017 (BL-1783 retired, closed_as split).
   Minted 2026-09-26 by the specifier (claude-opus-5-5 seat).
   Not a ruling_options ticket. The intake proposes one behaviour (the
   unowned-red throttle), and the only alternative considered, a grace
