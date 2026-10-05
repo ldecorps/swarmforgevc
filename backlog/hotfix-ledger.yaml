@@ -1259,3 +1259,10 @@
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
+- commit: f87e90ddf5
+  subject: "hotfix: a pull abandons a Work note found by its message, not only by task:, and a local seat never runs redo_from when its ticket is already forwarded"
+  detected_at: 2026-10-05
+  state: pending
+  stamp_ticket: BL-1999
+  human_decision: null
+  decided_at: null
