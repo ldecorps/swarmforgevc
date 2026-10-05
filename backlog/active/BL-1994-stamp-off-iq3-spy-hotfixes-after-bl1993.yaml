@@ -1,0 +1,126 @@
+id: BL-1994
+title: "Stamp-off for the iq3 spy-loop hotfixes after BL-1993 went active, starting with 44c9f3f535: swarm_handoff accepts a recipient written in the wrong case (`to: qa`) under the roster's spelling instead of refusing it as an unknown role"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - every iq3 forward to QA was
+# refused once and cost the one-shot seat an edit and a re-send.
+status: todo
+epic: local-llm-swarm
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one helper pair and one rebinding in swarm_handoff.bb, with a fixture test.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two small helpers and one rebinding; nothing to refactor"
+  architect: "the draft format and validation order are unchanged; only the spelling of a known recipient is normalised"
+  hardender: "Babashka has no Stryker lane (BL-472) and the change writes no durable state"
+  documenter: "handoff-protocol.md already names roles as the roster spells them; no doc describes the refusal"
+
+# Not a claim of ownership over BL-1840's contract (BL-1251): the local-seat
+# feature BL-1971's, BL-1989's and BL-1993's stamp-offs point at for the same seat.
+acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier lands under the human's 2026-10-05
+  direction "We have to fix iq3. Spy on it every 10 minutes. If its gone
+  wrong, hotfix it, and respawn." and "I see this updare very often (qa
+  lowercase). Can you hotfix?" No choice is posed. FIRM: the coder reviews
+  them and never re-applies them; later spy-loop hotfixes fold in here while
+  this ticket is paused.
+
+invariants:
+  - "A recipient is rewritten only to the one roster role equal to it ignoring case; an exact match, an unknown name and an ambiguous name reach validation unchanged."
+  - "The repeat guard never refuses a tool call; its LOOP note fires only on a run of at least cycle-min-run calls that each repeat one made since the last edit, commit or compaction."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_mailbox_only_delivery.sh`: ALL PASS
+     (measured at 44c9f3f535: 3 PASS lines).
+  2. `bash swarmforge/scripts/test/test_swarm_handoff_refuses_coordinator_git_handoff.sh`:
+     ALL PASS (measured at 44c9f3f535).
+  3. Read the iq3 coder pane or session: no "Unknown recipient role 'qa'"
+     after the coder's first take-up that merged 44c9f3f535.
+  4. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     ALL PASS lines, no FAIL (measured at 4949a2d37e: 16 PASS).
+  5. Read the coder's committed review evidence.
+
+source: |
+  The human, specifier pane, 2026-10-05, verbatim (Article 5.3):
+
+  > We have to fix iq3. Spy on it every 10 minutes. If its gone wrong, hotfix it, and respawn. Repeat until iq3 is functioning normally.
+
+  > I see this updare very often (qa lowercase). Can you hotfix?
+
+  The fault (iq3 pane, about 12:50Z, BL-1993's own forward): `Edit tmp/handoff.txt`
+  `- to: qa` / `+ to: QA`, after swarm_handoff refused the first send with
+  "Unknown recipient role 'qa'.". The ticket's required_stages spell the
+  stage `qa`; the roster spells it `QA`.
+
+description: |
+  ## Status: hotfix 44c9f3f535 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it. Later
+  hotfixes from the same spy loop fold in below while this is paused.
+
+  ## What was wrong
+
+  The iq3 coder writes its own handoff draft and copies the next stage from
+  the ticket's `required_stages`, which spell it `qa`. `swarm_handoff.bb`
+  matched recipients against `roles.tsv` case-sensitively, refused `qa` as
+  an unknown role, and the seat spent an edit and a re-send on every
+  forward to QA.
+
+  ## What the hotfix changed
+
+  - `swarmforge/scripts/swarm_handoff.bb`: `canonical-role` (the roster's
+    spelling when exactly one role matches ignoring case, else unchanged)
+    and `canonical-to`, applied to the draft's `to:` right after
+    `parse-draft` in `-main`, before the BL-1565 guard and `validate`.
+  - `swarmforge/scripts/test/test_mailbox_only_delivery.sh`: `to: qa` is
+    queued with `to: QA` in the parcel; `to: nobody` is still refused as an
+    unknown recipient. The case test fails with the rebinding removed.
+  - Reaches a seat when its worktree merges main (each seat runs its own
+    worktree's swarm_handoff.sh).
+
+  ## Hotfix 4949a2d37e: the repeat guard names a cycle and an empty grep
+
+  13:06-13:08Z the iq3 coder, on BL-1987, went round four greps for
+  `parse-instant-ms` in four files that do not define it, output `(empty)`
+  every time: 22 calls, each past the third warned REPEAT, until a
+  compaction broke it. The per-call note does not stop a cycle of several
+  different calls.
+
+  - `swarmforge/scripts/local_model_repeat_guard.bb`: `cycle-note` (six
+    calls in a row, each a repeat of one made since the last reset, get a
+    LOOP note naming the cycle and the edit to make) and `empty-grep-hint`
+    (a grep whose `tool_response` reads `Output: (empty)` is told the name
+    is not in those files). Both warn only, beside the existing notes.
+  - `swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`: six
+    repeats over four calls name a cycle of 4; five, a run broken by a new
+    call, or an edit between name none; an empty grep (plain or piped) gets
+    the hint; a grep that finds something, or an empty non-grep, gets none.
+  - `swarmforge/roles/local-model/loop.note`: an empty grep means the name
+    is not there; use the first copy of a helper, never compare every copy.
+  - Live at once: the hook runs the master checkout's guard. The card line
+    reaches the seat at its next session.
+
+  ## What the coder checks
+
+  The change against the description and the invariant. Evidence:
+  backlog/evidence/BL-1994-coder-<date>.md.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix 44c9f3f535, as
+  the next collecting stamp-off for the human's 10-minute iq3 spy loop (cron
+  job a0ad2beb in the specifier's session). BL-1993 went active at 3009670f1e
+  and its review is in flight, so this hotfix does not fold into it.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 44c9f3f535 linked to BL-1994.
+  Folded in 2026-10-05 while still paused: hotfix 4949a2d37e (repeat guard
+  cycle note + empty-grep hint), ledger-linked to BL-1994.
+
+assigned_to: coder

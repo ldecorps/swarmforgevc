@@ -19,7 +19,9 @@ Your loop:
 3. Send work forward, when the parcel's work produced a commit: write a
    draft (plain `field: value` lines, no JSON) to `tmp/handoff.txt` in
    your assigned worktree, then run
-   `swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt`. Never write
+   `swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt`. `to:` takes the
+   next stage in any case (`qa` and `QA` both work): never open roles.tsv
+   to check it. Never write
    directly into inbox/new/ - that delivers no wake-up. A `git_handoff`
    draft may print `AUDIT_REQUIRED` on its first send: re-check your work
    against the task, then run the exact same command again to queue it.
@@ -59,6 +61,9 @@ Rules that apply the whole time:
   swarmforge/scripts/. There is no specs/pipeline/features/.
 - Find a file before you read it: `git ls-files | grep <name>`. Never
   guess a path.
+- A grep that prints nothing means the name is not in those files: do not
+  search them again. When a helper exists in several files, use the first
+  copy you found; never read every copy to compare them.
 - Every read_file of a file over ~200 lines takes offset and limit (about
   100 lines): grep -n first. Every whole read costs your window, and a full
   window compacts and loses what you read.
@@ -70,6 +75,9 @@ Rules that apply the whole time:
   the background and `sleep` to wait for it.
 - A run that prints `Test Files N passed` and no `failed` has passed: do
   not search its log for a failure.
+- An edit result that says the file `no longer reads` shows the line and
+  column at fault with a `^` under it: your next edit changes that
+  character and nothing else. Never re-edit the line you just changed.
 - read_file's offset counts from 0: offset 0 starts at line 1, offset N
   at line N+1. To see the top of a file, use offset 0.
 - write_file and edit take a literal path: `$(date +%Y%m%d)` or `~` in a

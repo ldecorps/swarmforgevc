@@ -47,14 +47,30 @@
         (when (or (contains? data :edamame/expected-delimiter)
                   (contains? data :edamame/opened-delimiter)
                   (str/starts-with? (str (ex-message ex)) "Unmatched delimiter"))
-          (ex-message ex))))))
+          {:message (ex-message ex) :row (:row data) :col (:col data)})))))
+
+(defn stray-closer-note
+  "Where an unmatched closing delimiter sits, with its line and a caret.
+   Why (2026-10-05): the iq3 coder, on BL-1987, read \"expected: ] to match
+   [ at [1317 8]\" as a count to fix on the line it had just edited, and
+   added and removed one paren there fifteen times in five minutes. The
+   stray ) was on the next line, at [1344 55], and no message said so."
+  [text {:keys [message row col]}]
+  (when (and (str/starts-with? (str message) "Unmatched delimiter")
+             (pos-int? row) (pos-int? col))
+    (when-let [line (get (vec (str/split-lines text)) (dec row))]
+      (str "The closing delimiter that has nothing open to close is at line " row
+           " column " col ":\n" line "\n" (apply str (repeat (dec col) " ")) "^\n"
+           "Fix it there: remove it, or add what the reader expected before it."
+           " The line you just edited is not the problem unless it is that line. "))))
 
 (defn context-for
   "The additionalContext for an edited path, or nil when there is none."
   [path]
   (when (and path (lisp-source? path) (fs/regular-file? path))
-    (when-let [message (delimiter-error (slurp (str path)))]
+    (when-let [{:keys [message] :as error} (delimiter-error (slurp (str path)))]
       (str path " no longer reads: " message ". "
+           (stray-closer-note (slurp (str path)) error)
            "The reader names the line and column of the form that does not close. "
            "Read a short range from that line, fix that form, and run the file again. "
            "Do not count parentheses by hand."))))

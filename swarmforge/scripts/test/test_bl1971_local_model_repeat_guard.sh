@@ -178,6 +178,55 @@ out="$(decide_in "$ROOT" run_shell_command '{"command":"cat specs/features/BL-53
 [[ -z "$out" ]] || fail "a redirect target was read as a path: $out"
 pass "a read-only shell command naming a path that does not exist is told so; quoted patterns, redirects and existing paths are not (2026-10-05)"
 
+g() { printf '{"command":"grep -n \\"defn parse-instant-ms\\" swarmforge/scripts/%s.bb"}' "$1"; }
+{ for pass_no in 1 2; do for f in a b c d; do call run_shell_command "$(g $f)"; done; done
+  call run_shell_command "$(g a)"; call run_shell_command "$(g b)"; } > "$T"
+out="$(decide "$T" run_shell_command "$(g b)")"
+[[ "$out" == *"LOOP: your last 6 calls"*"a cycle of 4 calls"* ]] || fail "six repeats in a row over four calls got no cycle note: $out"
+{ for pass_no in 1 2; do for f in a b c d; do call run_shell_command "$(g $f)"; done; done; call run_shell_command "$(g a)"; } > "$T"
+out="$(decide "$T" run_shell_command "$(g a)")"
+[[ "$out" != *"LOOP:"* ]] || fail "five repeats in a row got a cycle note: $out"
+{ for f in a b c d a b; do call run_shell_command "$(g $f)"; done; call run_shell_command "$(g x)"
+  for f in a b c d; do call run_shell_command "$(g $f)"; done; } > "$T"
+out="$(decide "$T" run_shell_command "$(g d)")"
+[[ "$out" != *"LOOP:"* ]] || fail "a run broken by a new call got a cycle note: $out"
+{ for f in a b c d; do call run_shell_command "$(g $f)"; done; reset_edit
+  for f in a b c d a b; do call run_shell_command "$(g $f)"; done; } > "$T"
+out="$(decide "$T" run_shell_command "$(g b)")"
+[[ "$out" != *"LOOP:"* ]] || fail "repeats from before an edit were counted into a cycle: $out"
+pass "six calls in a row that each repeat one already made since the last edit get a note naming the cycle; five, a broken run, or an edit between get none (2026-10-05)"
+
+E4='{"file_path":"/w/x.bb","old_string":"a)))]","new_string":"a))))]"}'
+E5='{"file_path":"/w/x.bb","old_string":"a))))]","new_string":"a)))]"}'
+{ call edit "$E4"; call edit "$E5"; } > "$T"
+out="$(decide "$T" edit "$E5")"
+[[ "$out" == *"UNDO: this edit puts back"*"flipped these lines 2 times"* ]] || fail "an edit that reverses the one before got no undo note: $out"
+{ call edit "$E4"; call edit "$E5"; call edit "$E4"; call edit "$E5"; } > "$T"
+out="$(decide "$T" edit "$E5")"
+[[ "$out" == *"flipped these lines 4 times"* ]] || fail "the undo note does not count the flips: $out"
+{ call edit "$E4"; } > "$T"
+out="$(decide "$T" edit "$E4")"
+[[ -z "$out" ]] || fail "a first edit got a note: $out"
+{ call edit '{"file_path":"/w/y.bb","old_string":"a)))]","new_string":"a))))]"}'; call edit "$E5"; } > "$T"
+out="$(decide "$T" edit "$E5")"
+[[ -z "$out" ]] || fail "an edit that reverses an edit of another file got a note: $out"
+pass "an edit that puts back what an earlier edit of the same file replaced is told so and counted; a first edit or another file's edit is not (2026-10-05)"
+
+decide_resp() { # tool_input llm_content
+  python3 -c 'import json,sys; print(json.dumps({"tool_name":"run_shell_command","tool_input":json.loads(sys.argv[1]),"tool_response":{"llmContent":sys.argv[2],"returnDisplay":""},"transcript_path":sys.argv[3],"hook_event_name":"PostToolUse"}))' "$1" "$2" "$ROOT/missing.jsonl" | bb "$GUARD"
+}
+EMPTY=$'Command: x\nDirectory: (root)\nOutput: (empty)\nError: (none)\nExit Code: 1'
+FOUND=$'Command: x\nDirectory: (root)\nOutput: 52:(defn parse-instant-ms\nError: (none)\nExit Code: 0'
+out="$(decide_resp "$(g a)" "$EMPTY")"
+[[ "$out" == *"grep found nothing"* ]] || fail "a grep with empty output got no hint: $out"
+out="$(decide_resp '{"command":"git ls-files | grep -i bl1987"}' "$EMPTY")"
+[[ "$out" == *"grep found nothing"* ]] || fail "a piped grep with empty output got no hint: $out"
+out="$(decide_resp "{\"command\":\"grep -n parse-instant-ms $BIG\"}" "$FOUND")"
+[[ -z "$out" ]] || fail "a grep that found something got a note: $out"
+out="$(decide_resp '{"command":"git diff --stat"}' "$EMPTY")"
+[[ -z "$out" ]] || fail "a command that is not a grep got the grep hint: $out"
+pass "a grep that prints nothing is told the name is not in those files; a grep that finds something, or another empty command, is not (2026-10-05)"
+
 printf 'not json\n{"type":"assistant"}\n' > "$T"
 out="$(decide "$T" run_shell_command "$LOG")"
 [[ -z "$out" ]] || fail "a transcript with no readable calls added something: $out"

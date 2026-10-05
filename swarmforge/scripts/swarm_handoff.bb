@@ -142,6 +142,28 @@
           (= role (first (str/split line #"\t"))))
         (str/split-lines (slurp (str (roles-file))))))
 
+(defn canonical-role
+  "The roster's own spelling of `role` when the roster has no exact match but
+   exactly one role equal to it ignoring case; otherwise `role` unchanged, so
+   validation still refuses an unknown name. On 2026-10-05 the iq3 coder kept
+   drafting `to: qa` (ticket required_stages spell it lowercase), was refused
+   as an unknown role, and spent an edit and a re-send on every forward."
+  [role]
+  (if (or (str/blank? role) (role-known? role))
+    role
+    (let [matches (->> (str/split-lines (slurp (str (roles-file))))
+                       (map #(first (str/split % #"\t")))
+                       (remove str/blank?)
+                       (filter #(= (str/lower-case %) (str/lower-case role)))
+                       distinct)]
+      (if (= 1 (count matches)) (first matches) role))))
+
+(defn canonical-to
+  "`to:` with each recipient in the roster's spelling (canonical-role)."
+  [to]
+  (when to
+    (str/join "," (map canonical-role (str/split to #"," -1)))))
+
 (defn sender-role []
   ;; BL-983 (invariant 3): a SEAT's outward identity is its STAGE - the
   ;; from:/role: headers, the filename, routing and every guard see the
@@ -1266,6 +1288,7 @@
       (when-not (role-known? sender)
         (exit! 1 (str "Unknown sender role: " sender)))
       (let [{:keys [headers ordered errors]} (parse-draft draft)
+            headers (cond-> headers (get headers "to") (update "to" canonical-to))
             ;; BL-1565: refuse a git_handoff naming the coordinator BEFORE
             ;; `validate` runs at all - a refusal needs no git repository
             ;; and no tmux socket: `validate` tries to canonicalize `commit:`

@@ -95,6 +95,16 @@ out="$(event write_file "$STRAY" | bb "$HOOK")"
 [[ "$out" == *"$STRAY"* && "$out" == *"expected: ] to match [ at [2 5]"* ]] || fail "a write that leaves an .edn file with a stray delimiter was not answered: $out"
 pass "a write that leaves an EDN file with a mismatched delimiter is answered too"
 
+out="$(event write_file "$STRAY" | bb "$HOOK")"
+python3 -c '
+import json, sys
+c = json.loads(sys.argv[1])["hookSpecificOutput"]["additionalContext"]
+assert "at line 2 column 9:\n :b [2 3)}\n        ^\n" in c, c
+' "$out" || fail "a stray closing delimiter was not shown at its own line and column with a caret: $out"
+out="$(event edit "$BROKEN" | bb "$HOOK")"
+[[ "$out" != *"has nothing open to close"* ]] || fail "an unclosed form was told about a stray closer: $out"
+pass "a stray closing delimiter is shown at its own line and column with a caret; an unclosed form is not (2026-10-05)"
+
 GOOD="$ROOT/good.bb"
 printf '#!/usr/bin/env bb\n(ns fixture (:require [clojure.string :as str]))\n(defn g [s] (str/upper-case s))\n(def r #"a(b)c")\n(def k ::str/thing)\n(def t #inst "2026-10-04")\n' > "$GOOD"
 out="$(event edit "$GOOD" | bb "$HOOK")"

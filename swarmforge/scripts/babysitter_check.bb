@@ -295,6 +295,13 @@
 
 (def menu-pattern #"Do you want|Do you trust|❯ 1\.|\(y/n\)|Enter to confirm|to select")
 
+;; BL-1986: qwen's own loop-detection dialog halts a one-shot local-model
+;; seat's turn for good - either line on the pane is enough to know it fired.
+(def loop-dialog-pattern #"A potential loop was detected|Keep loop detection enabled")
+
+(defn loop-dialog? [pane-text]
+  (boolean (re-find loop-dialog-pattern (str pane-text))))
+
 (defn strip-spinner [text]
   (->> (str/split-lines (str text))
        (remove #(re-find #"✻|✽|✶|✳|·|tokens|for [0-9]+m?[0-9]*s" %))
@@ -872,8 +879,11 @@
    naming the ticket (2026-10-04: claimAtMs restarts whenever HEAD moves,
    and a seat told to merge main first moved it without working, so the
    3-hour CRIT could never fire). A seat with no readable worktree falls
-   back to the old claim-commit vs HEAD comparison."
-  [role-rows busy-by-role now-ms gpu-quiet-roles]
+   back to the old claim-commit vs HEAD comparison. BL-1986: loop-dialog?
+   names whether qwen's loop-detection dialog is on that seat's pane right
+   now - check-seat-ticket-stuck (babysitterd_sweep_lib.bb) raises its CRIT
+   at once on this fact alone, dwell or no dwell."
+  [role-rows busy-by-role loop-dialog-by-role now-ms gpu-quiet-roles]
   (let [worktree-by-role (into {} (keep (fn [{:keys [role worktree]}]
                                           (when (and role (not (str/blank? (str worktree))))
                                             [role worktree]))
@@ -903,6 +913,7 @@
                           :task ticket
                           :dwell-min dwell
                           :busy? (boolean (get busy-by-role role false))
+                          :loop-dialog? (boolean (get loop-dialog-by-role role false))
                           :gpu-quiet? (boolean (contains? gpu-quiet-roles role))
                           :head-unchanged? (if (and dir claim-ms)
                                              true
@@ -1275,6 +1286,7 @@
         ps-output (ps-snapshot)
         roles (mapv (partial gather-role socket ps-output) role-rows)
         busy-by-role (into {} (map (juxt :role :busy?) roles))
+        loop-dialog-by-role (into {} (map (juxt :role #(loop-dialog? (:pane-text %))) roles))
         any-pane-busy? (boolean (some :busy? roles))
         pause (read-pause)
         claim-risks (try (babysitter-assess-lib/scan-claim-risks project-root)
@@ -1398,7 +1410,7 @@
          :handoffd-max-age-secs heartbeat-max-secs
          :failed-count (count-failed-box)
          :stuck-parcels (stuck-parcels busy-by-role gpu-quiet-roles)
-         :held-seat-tickets (held-seat-tickets role-rows busy-by-role sweep-now-ms gpu-quiet-roles)
+         :held-seat-tickets (held-seat-tickets role-rows busy-by-role loop-dialog-by-role sweep-now-ms gpu-quiet-roles)
          ;; BL-802: nil (truly unavailable) flows through unmasked — no
          ;; fabricated default that would silently suppress a real low-memory
          ;; finding. check-memory-floor reports UNAVAILABLE on nil.
