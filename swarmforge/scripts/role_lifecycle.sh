@@ -57,8 +57,8 @@ zsh -c "
             \"\${RECEIVE_MODES[\$i]}\" \"\${IDLE_CLEAR_FLAGS[\$i]}\"
           ;;
         kill-session)
-          if tmux -S \"\$TMUX_SOCKET\" has-session -t \"\${SESSIONS[\$i]}\" 2>/dev/null; then
-            tmux -S \"\$TMUX_SOCKET\" kill-session -t \"\${SESSIONS[\$i]}\"
+          if tmux -S \"\$TMUX_SOCKET\" has-session -t \"=\${SESSIONS[\$i]}\" 2>/dev/null; then
+            tmux -S \"\$TMUX_SOCKET\" kill-session -t \"=\${SESSIONS[\$i]}\"
           fi
           ;;
         unpark)

@@ -1252,7 +1252,7 @@
   [socket session]
   (and (not (str/blank? socket))
        (not (str/blank? session))
-       (zero? (:exit (daemon-cycle-guard-lib/sh! "tmux" "-S" socket "has-session" "-t" session)))))
+       (zero? (:exit (daemon-cycle-guard-lib/sh! "tmux" "-S" socket "has-session" "-t" (str "=" session))))))
 
 ;; BL-1719: forward reference - rotation-router-pack? is defined further
 ;; down this same file (it depends on mono-router-lib, loaded above but

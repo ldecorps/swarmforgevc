@@ -205,7 +205,9 @@
 (defn session-exists?
   "True when tmux has a session of this name on the project socket."
   [socket session]
-  (zero? (:exit (process/sh {:continue true} "tmux" "-S" socket "has-session" "-t" session))))
+  (zero? (:exit (process/sh {:continue true} "tmux" "-S" socket "has-session" "-t" (str "=" session)))))
+;; ^ exact match (=NAME): a bare -t resolves by prefix, so a missing
+;; swarmforge-coder read present while swarmforge-coder@2 lived (2026-10-05).
 
 (defn pane-alive?
   "A configured role's pane is healthy when its session exists and its pane
@@ -215,7 +217,7 @@
    launched role; both need the identical repair (respawn from the
    persisted launch script)."
   [socket session]
-  (let [result (process/sh {:continue true} "tmux" "-S" socket "list-panes" "-t" session
+  (let [result (process/sh {:continue true} "tmux" "-S" socket "list-panes" "-t" (str "=" session)
                             "-F" "#{pane_dead}")]
     (and (zero? (:exit result))
          (not (str/includes? (:out result) "1")))))
@@ -309,7 +311,7 @@
 
 (defn kill-session! [socket session]
   (process/sh {:continue true}
-              "tmux" "-S" socket "kill-session" "-t" session))
+              "tmux" "-S" socket "kill-session" "-t" (str "=" session)))
 
 (defn ensure-standing-role!
   "BL-1018: ONE resolved command either way - a missing session is created

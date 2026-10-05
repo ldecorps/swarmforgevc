@@ -141,7 +141,7 @@
   [sock session]
   (boolean
    (and sock session
-        (zero? (:exit (process/sh "tmux" "-S" sock "has-session" "-t" session))))))
+        (zero? (:exit (process/sh "tmux" "-S" sock "has-session" "-t" (str "=" session)))))))
 
 (defn- pane-pid
   [sock session]

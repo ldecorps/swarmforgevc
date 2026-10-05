@@ -1,0 +1,114 @@
+id: BL-2014
+title: "Stamp-off for hotfix 77584c4c11: role-session tmux checks use the exact-match target (=NAME), so a missing seat is never read as present through a sibling whose name it prefixes - and never repaired by respawning that sibling"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault - a repair path killed a live seat (coder@2) mid-turn
+# four times on 2026-10-05 (18:57Z to 21:48Z), lost its in-flight work, and
+# reported the missing seat FIXED. Not critical: the swarm stayed up.
+status: todo
+epic: swarm-reliability
+priority: 1
+depends_on: []
+mutation_cost: low
+# low: review only - read one commit, run three shell tests once each.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  hardender: "Babashka/shell fix that writes no durable state (no Stryker lane, BL-472); the new test's prefix precondition is the gate"
+  cleaner: "one argument shape per call site; nothing to refactor"
+  architect: "the repair library's present/missing branches are unchanged; only the presence predicate they are fed becomes exact"
+  documenter: "the evidence file and the code comments are the record; no living doc describes tmux target resolution"
+
+# Not a claim of ownership over BL-1798's contract (BL-1251): shell and
+# Babashka tests have no feature of their own; this points at a feature
+# every parcel keeps green so the acceptance gate has a runnable declaration.
+acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews it and never re-applies it.
+
+invariants:
+  - "No role-session presence check, kill or pane listing resolves a role's session name by prefix; with the exact session present, every repair still targets it."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_tmux_exact_session_presence.sh`:
+     ALL PASS (measured at 77584c4c11; it drives the real handoff-lib
+     predicate against a scratch tmux server holding only `sfx-coder@2`).
+  2. `bash swarmforge/scripts/test/test_swarm_ensure.sh`: ALL PASS (51
+     at 77584c4c11).
+  3. `bash swarmforge/scripts/test/test_babysitter_check.sh`: ALL PASS (20).
+  4. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  Coordinator note 016810 to the specifier, 2026-10-05, verbatim:
+  "defect: swarm_ensure reports coder FIXED but session never exists".
+  Operator evidence backlog/evidence/session-repair-prefix-match-killed-coder2-20261005.md
+  (18:57Z diagnosis, verbatim): "`tmux has-session -t NAME` matches by
+  **prefix**, so with only `swarmforge-coder@2` alive,
+  `has-session -t swarmforge-coder` exits 0 and the session reads
+  \"present\"."
+
+description: |
+  ## Status: hotfix 77584c4c11 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  tmux resolves a bare `-t NAME` by prefix. With the iq3 seat's
+  `swarmforge-coder` session gone and `swarmforge-coder@2` alive,
+  `has-session -t swarmforge-coder` succeeded, so the babysitter's
+  single-role repair and `swarm ensure` took the respawn branch, and
+  `respawn-pane -k -t swarmforge-coder` landed in coder@2's pane: it killed
+  coder@2 mid-turn and started iq3's launch script under coder@2's name,
+  then reported the missing seat FIXED. Four times on 2026-10-05.
+
+  ## What the hotfix changed
+
+  - Exact `=NAME` targets in: `babysitter_check.bb` `pane-exists?`;
+    `swarm_ensure.bb` `session-exists?`, `kill-session!` and the pane-alive
+    `list-panes`; `swarm_status.bb` `session-present?`; `handoff_lib.bb`
+    `session-exists?`; `swarmforge.sh`'s launch-time has-session/kill; and
+    `role_lifecycle.sh`'s has-session/kill.
+  - With the exact session present a bare `-t` still resolves to it
+    (verified on tmux 3.7b), so the respawn and capture paths that run
+    after a presence check stay correct.
+  - New `swarmforge/scripts/test/test_tmux_exact_session_presence.sh`
+    (registered standing); `test_swarm_ensure.sh`'s fakes strip a leading
+    `=` from their target the way tmux does.
+  - Seen working live: at 21:58:35Z the babysitter, reading the patched
+    file, logged "swarmforge-coder: tmux session missing" and its repair
+    created iq3's session under its own name; coder@2 kept its own.
+
+  ## Out of scope (named, not built)
+
+  - A seat-identity check (a session running another role's launch script
+    reads healthy today) - the evidence file's second recommendation.
+  - Other `tmux -t <role session>` sites that only run after an exact
+    presence check (capture, send-keys).
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure steps 1-3 once each, outputs saved under tmp/.
+  2. Read `git show 77584c4c11` against the sections above and the
+     invariant.
+  3. Write backlog/evidence/BL-2014-coder-<date>.md: the three results and
+     one line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix 77584c4c11.
+  Severity high (a repair killed a live seat mid-turn four times), so it
+  mints approved under the auto-approve carve-out. Stages [coder, qa]: a
+  review-only stamp-off of a shell/bb fix that writes no durable state.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 77584c4c11 linked to BL-2014.

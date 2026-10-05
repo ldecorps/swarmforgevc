@@ -121,10 +121,36 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 if [[ -f "$REPO_ROOT/extension/out/tools/emit-throttle-recommendation.js" ]]; then
   ROOT="$(mk_fixture 3)"
   ln -s "$REPO_ROOT/extension" "$ROOT/extension"
-  mkdir -p "$ROOT/.swarmforge/telemetry"
-  cat > "$ROOT/.swarmforge/telemetry/observatory-signals.json" <<'EOF'
-{"signals":[{"kind":"rework-rate","version":1,"computedAtIso":"2026-07-16T00:00:00Z","signal":{"hasSample":true,"sampleCount":10,"reworkRate":0.5,"baselineRate":0.1,"topRole":null,"topTicketClass":null}}]}
-EOF
+  # 2026-10-05: the CLI refreshes the rework signal from git history before
+  # diagnosing (hotfix 51591aab4a, 2026-10-01), so a hand-written
+  # observatory-signals.json is overwritten with "no sample" on a non-git
+  # fixture and the cap never drops - this case was red from that hotfix
+  # until today. Build the history instead: on main, 10 tickets closed in
+  # the last 14 days (5 with bounce evidence) and 10 closed in the 14 days
+  # before (1 with bounce evidence) - rate 0.5 against a 0.1 baseline, the
+  # same severe signal the old fixture hand-wrote. Dates use git's raw
+  # "<epoch> +0000" form, portable to macOS (no date -d).
+  git -C "$ROOT" init -q -b main
+  # BL-1390: prove the fixture is its own repository before any mutating
+  # git command - a failed init under a TMPDIR inside a checkout would
+  # otherwise commit into that checkout.
+  [[ "$(git -C "$ROOT" rev-parse --show-toplevel)" == "$(cd "$ROOT" && pwd -P)" ]] \
+    || fail "live wiring: the fixture root is not its own git repository"
+  git -C "$ROOT" config user.email test@test
+  git -C "$ROOT" config user.name test
+  mkdir -p "$ROOT/backlog/done" "$ROOT/backlog/evidence"
+  NOW_S="$(date +%s)"
+  close_fixture_ticket() { # id days-ago bounced(0|1)
+    local when=$(( NOW_S - $2 * 86400 ))
+    printf 'id: %s\n' "$1" > "$ROOT/backlog/done/$1-fixture.yaml"
+    if [[ "$3" == 1 ]]; then printf 'bounce\n' > "$ROOT/backlog/evidence/$1-bounce.md"; fi
+    git -C "$ROOT" add backlog >/dev/null
+    GIT_AUTHOR_DATE="$when +0000" GIT_COMMITTER_DATE="$when +0000" git -C "$ROOT" commit -q -m "close $1"
+  }
+  for n in 1 2 3 4 5 6 7 8 9 10; do
+    close_fixture_ticket "BL-91$(printf '%02d' $n)" "$n" "$(( n <= 5 ? 1 : 0 ))"
+    close_fixture_ticket "BL-92$(printf '%02d' $n)" "$(( 14 + n ))" "$(( n == 1 ? 1 : 0 ))"
+  done
   # BL-966: stdout only - the no-identity fall-through now (correctly)
   # writes its notice to stderr for this identity-less fixture root.
   OUT="$(bb "$CLI" "$ROOT" 2>/dev/null)"

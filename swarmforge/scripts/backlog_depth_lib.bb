@@ -208,6 +208,21 @@
       (when (int? cap) cap))
     (catch Exception _ nil)))
 
+(defn read-held-cap
+  "BL-1981 (Article 3.5's 2026-10-05 amendment): the effective floor an
+   open throttle-hold episode imposes on top of read-recommended-cap above
+   - nil once no episode is open or a release has lifted it, same
+   degrade-never-crash posture as read-recommended-cap. extension/src/
+   tools/emit-throttle-recommendation.ts computes and persists this field
+   (heldCap) every tick; this never re-derives the episode state machine
+   here - Babashka has no way to import the compiled TS that owns it."
+  [project-root]
+  (try
+    (let [parsed (json/parse-string (slurp (str (throttle-recommendation-path project-root))) true)
+          held (:heldCap parsed)]
+      (when (int? held) held))
+    (catch Exception _ nil)))
+
 (defn effective-max-depth
   "Pure: the promotion gate's actual ceiling - min(configured, recommended),
    with two guards neither ticket text nor a bare `min` alone gets right:
@@ -302,15 +317,29 @@
          (str " until " (format-pause-until-instant until-ms))
          " until operator resumes")))
 
+(defn- min-recommended-cap
+  "Article 3.5's own 'never raise' rule, applied between the live
+   recommendation and a held floor (BL-1981): nil means 'no constraint
+   from this one', so it never wins against a real number from the other -
+   mirrors emit-throttle-recommendation.ts's own minRecommendedCap."
+  [a b]
+  (cond
+    (nil? a) b
+    (nil? b) a
+    :else (min a b)))
+
 (defn read-effective-max-depth
   "The impure end-to-end read: configured cap (read-max-depth) folded with
-   the currently-recommended throttle (read-recommended-cap) and a live
-   pause (read-pause-state + pause-active?, real clock - this IS the real
-   boundary, pause-active? itself stays fully injected/tested) via
-   effective-max-depth above - the ONE value the coordinator's promotion
-   decision should ever compare an active count against."
+   the currently-recommended throttle (read-recommended-cap), a human-hold
+   floor (read-held-cap, BL-1981 - Article 3.5's 2026-10-05 amendment: a
+   cleared signal holds the cap until a human releases it, never
+   restoring itself), and a live pause (read-pause-state + pause-active?,
+   real clock - this IS the real boundary, pause-active? itself stays
+   fully injected/tested) via effective-max-depth above - the ONE value
+   the coordinator's promotion decision should ever compare an active
+   count against."
   [project-root]
   (effective-max-depth
    (read-max-depth project-root)
-   (read-recommended-cap project-root)
+   (min-recommended-cap (read-recommended-cap project-root) (read-held-cap project-root))
    (pause-active? (read-pause-state project-root) (System/currentTimeMillis))))

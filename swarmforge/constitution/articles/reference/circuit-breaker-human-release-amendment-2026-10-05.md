@@ -6,9 +6,16 @@ the auto-restore clause of Article 3.5 (operator directive 2026-07-09).
 Adopted by the specifier 2026-10-05: Article 3.5 (`03_backlog.md`) and its
 full text (`03-backlog-detailed.md`) amended; `coordinator.prompt` updated.
 The mechanism is BL-1981 (the hold and the release CLI) and BL-1982 (the
-ask raised and applied without a coordinator seat). Until BL-1981 lands the
-live code still restores the cap on its own; the §4 pre-approval covers the
-episode open today either way.
+ask raised and applied without a coordinator seat). BL-1981 landed
+81069ae6cf: the depth CLI now holds the cap until a human releases it. The
+§4 episode was released at the human's word (823b7a905d).
+
+Corrected 2026-10-05 by the specifier (root intake
+INTAKE-operator-question-1791180347341): §1 first quoted the human as "it is
+not safe to resume churning at full throttle", and §2's rationale leaned on
+that. The "not" was the human's n-for-space typo ("isnsafe"). Asked, the
+human answered verbatim: "I meant IS safe". §1 now quotes what they meant;
+§2's rationale rests on their second sentence. The mechanism did not change.
 
 ## 1. The human's words
 
@@ -16,8 +23,11 @@ Human, to the coordinator, 2026-10-05 (lightly cleaned up from source):
 
 > "Change logic around circuit breaker cap 1. Once cap 1 is reached, ask if
 > it is safe to release the cap. The idea is that we prevent issues from
-> piling up. The swarm is working ok, it is not safe to resume churning at
-> full throttle [just because signals look normal again]."
+> piling up. The swarm is working ok, it is safe to resume churning at
+> full throttle."
+
+The human, asked whether "isnsafe" in that last sentence meant "is not
+safe": "I meant IS safe".
 
 ## 2. What changes
 
@@ -50,11 +60,12 @@ sufficient, by itself, to lift the throttle. The new rule:
   a second normalize event while the first question is unanswered does not
   queue a second ask; it just means the answer, once given, is evaluated
   against current signals, not stale ones.
-- Rationale (the human's own words above): a quiet pipeline is not proof
-  it is safe to resume full throughput — the throttle exists to stop
-  issues piling up while the swarm works through what triggered it, and
-  silently reopening the gate the instant the number looks clean defeats
-  that purpose.
+- Rationale (the human's own words above: "Once cap 1 is reached, ask if
+  it is safe to release the cap. The idea is that we prevent issues from
+  piling up."): whether to resume full throughput is the human's call, not
+  the signal's. The throttle exists to stop issues piling up while the
+  swarm works through what triggered it, and reopening the gate without
+  asking, the instant the number looks clean, takes that call away.
 
 ## 3. What does not change
 

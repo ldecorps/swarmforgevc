@@ -250,8 +250,12 @@
     (mono-router-lib/should-have-standing-session? ordered-roles role)
     true))
 
+;; Exact match (`=NAME`): tmux resolves a bare -t by PREFIX, so with only
+;; swarmforge-coder@2 alive `has-session -t swarmforge-coder` succeeded and
+;; the repair respawned coder@2 in iq3's place (2026-10-05, evidence
+;; session-repair-prefix-match-killed-coder2-20261005.md).
 (defn pane-exists? [socket session]
-  (and socket (zero? (:exit (sh! "tmux" "-S" socket "has-session" "-t" session)))))
+  (and socket (zero? (:exit (sh! "tmux" "-S" socket "has-session" "-t" (str "=" session))))))
 
 (defn pane-pid [socket session]
   (when (and socket (pane-exists? socket session))

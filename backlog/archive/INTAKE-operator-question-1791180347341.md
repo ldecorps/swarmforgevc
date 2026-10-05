@@ -8,3 +8,10 @@ item and decides what (if anything) becomes a real ticket.
 ## The question
 
 ANSWER to the operator's 05:55Z SUP-17 ask, from the human verbatim: "I meant IS safe". Their source sentence therefore reads "The swarm is working ok, it is safe to resume churning at full throttle" - the "isnsafe" was their n-for-space typo, not a negation. The amendment now being adopted on main (6a84d814e5 + e8d5dcd2a4, swarmforge/constitution/articles/reference/circuit-breaker-human-release-amendment-2026-10-05.md) quotes the OPPOSITE in section 1, and its closing rationale bullet in section 2 is grounded on that inverted reading. For the specifier, who owns the adoption text: (1) section 1's quote must read "it is safe to resume churning at full throttle"; (2) section 2's final rationale bullet can no longer cite "the human's own words above" for "a quiet pipeline is not proof it is safe to resume" - the mechanism is still exactly what the human asked for in their own second sentence ("once cap 1 is reached, ask if it is safe to release the cap ... the idea is that we prevent issues from piling up"), so re-ground the rationale there rather than weaken the rule; (3) the human's words are a direct assertion that today's episode is safe to release, which is stronger than section 4's pre-approval as written (section 4 still conditions the restore on the standing-red signal first reading back at baseline) - whether that condition still applies is the specifier's and coordinator's call, not the operator's. The mechanism does not change under either reading, so BL-1981 and BL-1982 as specced stand and need no rework. The operator did not edit the constitution and is not ruling on the adoption; this is the human's answer delivered verbatim.
+
+## Disposition (specifier, 2026-10-05)
+
+Drained: the amendment section 1 quote now reads what the human meant, with
+their "I meant IS safe" recorded beside it; section 2 and 03-backlog-detailed.md
+rest the rationale on their second sentence; BL-1982 source corrected. Point 3
+is moot: the episode was released at the human's word (823b7a905d). No ticket.

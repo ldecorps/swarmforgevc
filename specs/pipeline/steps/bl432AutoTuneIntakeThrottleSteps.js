@@ -198,20 +198,8 @@ function registerSteps(registry) {
     assert.equal(ctx.effectiveCap, 0, 'a cap of zero means the coordinator promotion gate can never open');
   });
 
-  // ── auto-tune-intake-throttle-03 ────────────────────────────────────────
-  registry.define(/^the rework diagnosis had lowered the effective cap$/, (ctx) => {
-    buildDegradedHistory(ctx);
-    decidePromotion(ctx); // bakes the recommendation onto disk, exactly as a prior real promotion decision would have
-    assert.equal(ctx.effectiveCap, 1, 'setup: expected the degraded recommendation already in effect');
-  });
-
-  registry.define(/^the rework diagnosis returns to baseline$/, (ctx) => {
-    // One more clean close inside the live window dilutes 1-bounced-of-1
-    // (rate 1.0) down to 1-of-2 (rate 0.5) - at/below 2x the 1/3 baseline
-    // (0.667), clearing the verdict (reworkDiagnosis.ts's own `<=` guard).
-    closeTicket(ctx, { daysAgo: 4, bounced: false });
-  });
-
+  // Shared by auto-tune-intake-throttle-04 (BL-1981 retired scenario 03,
+  // 2026-10-05 - a cleared signal no longer restores the cap by itself).
   registry.define(/^the effective active-depth cap is the configured value$/, (ctx) => {
     assert.equal(ctx.effectiveCap, ctx.configuredCap);
   });

@@ -112,3 +112,4 @@ description: |
     the mode check, evidence records the degraded fallback.
   - Documenter: docs naming the coordinator as always provisioned
     (BL-1931 census "Prose" list, docs side).
+assigned_to: coder
