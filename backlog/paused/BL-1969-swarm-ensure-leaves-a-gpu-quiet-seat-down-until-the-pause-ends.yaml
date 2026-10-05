@@ -91,6 +91,11 @@ source: |
     mechanism is wrong.
 
 notes: |
+  2026-10-05 (specifier, shift-end consolidation sweep): BL-1962 adds a
+  "leave this seat down" rule ahead of the respawn in the same per-role
+  loop of swarm_ensure.bb. Whichever lands second extends the first one's
+  rule rather than adding a second branch (closing-ceremony lean pass
+  2026-10-05).
   Minted 2026-10-04 by the specifier on QA note 003800, after BL-1950
   (the /gpu verb's stamp-off) closed. The second QA observation (the
   docstring) is folded in: the fix makes ensure a reader of the same

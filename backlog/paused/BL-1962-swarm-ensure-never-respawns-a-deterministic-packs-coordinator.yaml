@@ -57,6 +57,11 @@ source: |
   This slice is the keep-alive path (census group B).
 
 notes: |
+  2026-10-05 (specifier, shift-end consolidation sweep): BL-1969 adds a
+  "leave this seat down" rule ahead of the respawn in the same per-role
+  loop of swarm_ensure.bb. Whichever lands second extends the first one's
+  rule rather than adding a second branch (closing-ceremony lean pass
+  2026-10-05).
   Split from BL-1932 on 2026-10-04 after the coder (iq3) held it 8 minutes
   through 2 compactions with no edit: each compaction's next step was still
   "read the remaining files", because the three keep-alive paths (ensure,
