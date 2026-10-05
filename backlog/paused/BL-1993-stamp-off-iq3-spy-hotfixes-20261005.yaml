@@ -1,0 +1,93 @@
+id: BL-1993
+title: "Stamp-off for the iq3 spy-loop hotfixes of 2026-10-05, starting with 418b0a4ab3: the local-model shim retries a request when llama-server rejects the model's tool call as broken JSON, instead of halting the one-shot seat at Press Ctrl+Y"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the only coder seat's turn died
+# at 12:27Z on one malformed tool call and could not resume.
+status: todo
+epic: local-llm-swarm
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one helper and one retry loop in the shim, with unit and live tests.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one helper and one loop; nothing to refactor"
+  architect: "the shim keeps its request and reply shapes; only a parse-failure 5xx is retried"
+  hardender: "Python has no Stryker lane here and the retry writes no durable state"
+  documenter: "the shim's own docstring is the living description; no how-to names its error path"
+
+# Not a claim of ownership over BL-1840's contract (BL-1251): the local-seat
+# feature BL-1971's and BL-1989's stamp-offs point at for the same seat.
+acceptance: specs/features/BL-1840-a-local-model-seats-qwen-compresses-only-when-the-history-nears-the-served-window.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier lands under the human's 2026-10-05
+  direction "We have to fix iq3. Spy on it every 10 minutes. If its gone
+  wrong, hotfix it, and respawn." No choice is posed. FIRM: the coder
+  reviews them and never re-applies them; later spy-loop hotfixes fold in
+  here while this ticket is paused.
+
+invariants:
+  - "The shim retries only an upstream failure caused by a tool call llama-server could not parse, at most BAD_TOOL_CALL_RETRIES times, and passes every other error through unchanged."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `python3 -m unittest swarmforge/scripts/test/test_local_model_tool_call_shim.py`:
+     OK (measured at 418b0a4ab3: 64 tests).
+  2. Read the shim log (.swarmforge/local-model-shim/shim.log, local time):
+     any line with `bad_call_retries=` after 2026-10-05 12:31Z, and whether
+     its status is 200.
+  3. Read the coder's committed review evidence.
+
+source: |
+  The human, specifier pane, 2026-10-05, verbatim (Article 5.3):
+
+  > We have to fix iq3. Spy on it every 10 minutes. If its gone wrong, hotfix it, and respawn. Repeat until iq3 is functioning normally.
+
+  The fault (iq3 pane, 12:27Z): "API Error: llama-server returned invalid
+  tool call arguments for "run_shell_command": unexpected end of JSON
+  input (Press Ctrl+Y to retry)"; shim log 13:27:36 local: "chat
+  model=ista-iq3s-coder:latest status=500 ... finish=None". QA note 003824:
+  "iq3 coder looping: same git log x8 since 12:23:58Z, 17m no commit".
+
+description: |
+  ## Status: hotfix 418b0a4ab3 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it. Later
+  hotfixes from the same spy loop fold in below while this is paused.
+
+  ## What was wrong
+
+  llama-server rejected a tool call the iq3 model wrote as broken JSON,
+  Ollama answered 500, the shim relayed it, and qwen stopped the turn at
+  "Press Ctrl+Y to retry". A one-shot seat never presses it, so the seat
+  sat halted holding BL-1930 from 12:27Z.
+
+  ## What the hotfix changed
+
+  - `swarmforge/scripts/local_model_tool_call_shim.py`: `is_bad_tool_call()`
+    (a 5xx whose body says "invalid tool call arguments", nothing else) and
+    up to `BAD_TOOL_CALL_RETRIES` = 2 retries of the same request in
+    `_complete`; the chat log line gains `bad_call_retries=N`.
+  - `swarmforge/scripts/test/test_local_model_tool_call_shim.py`: a parse
+    failure is the only retried error; a bad call once is retried into a
+    real tool call; a bad call that persists still returns the 500 after
+    1+2 requests.
+  - Applied live 12:31Z: the old shim stopped, the seat respawned, and its
+    launch script's `ensure` started the new shim.
+
+  ## What the coder checks
+
+  The change against the description and the invariant. Evidence:
+  backlog/evidence/BL-1993-coder-<date>.md.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as hotfix 418b0a4ab3,
+  as the collecting stamp-off for the human's 10-minute iq3 spy loop (cron
+  job a0ad2beb in the specifier's session).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 418b0a4ab3 linked to BL-1993.
