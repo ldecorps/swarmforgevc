@@ -1,0 +1,1 @@
+{"id":"BL-1957","messages":[{"seq":0,"ts":1791185127096,"author":"swarm","type":"outbound","text":"BL-1957 ✅ done — Stamp-off for hotfix 897e5f4d62: BL-757's step handler builds its landing-gate deps from the shared contract-checked base (scenarios 05 and 06 failed with deps.checkOriginMainLanding is not a function)"}]}
