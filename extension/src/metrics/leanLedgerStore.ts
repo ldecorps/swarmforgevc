@@ -2,23 +2,11 @@
 // lifecycle ledger - .swarmforge/lean/<yyyy-MM-dd>.jsonl, one line per
 // LeanLedgerEvent, plus a per-ticket latest-snapshot file folded from it.
 //
-// Bucketing granularity: the ticket's own text says "one JSONL append-only
-// ledger per shift". Measured against this repo's actual state (BL-820's
-// own finding, 2026-08-06): there is no shift-close hook, no finish-shift/
-// closing-ceremony/bedtime code path anywhere, and
-// .swarmforge/operator/continuous-shifts.json has carried
-// `scheduledStop: false` since 2026-08-04 - "shift" names a label
-// (day/evening/night), not a computable boundary. Inventing a shift-
-// boundary detector here would be exactly the kind of new producer
-// "reuse before invent" (BL-819's own out_of_scope) forbids. This store
-// instead buckets by CALENDAR DAY, the same granularity every other
-// durable store in this repo already uses for "how much data accumulated
-// recently" (bounceStore.ts/qaBounceStore.ts bucket by month; the cost &
-// health sidecar and morning briefing are both per calendar day under
-// docs/briefings/<yyyy-MM-dd>.*). When BL-820 lands a real shift boundary,
-// re-bucketing to it is a mechanical follow-up, not a redesign - every
-// reader here already takes a target path and returns parsed events, never
-// a raw file list a shift-aware caller would need to know about.
+// File names are calendar-day buckets (the same granularity every other
+// durable store in this repo uses for "how much data accumulated recently"),
+// but the day is only a FILE NAME: readers return every event in append
+// order across all files, and the closing ceremony (BL-1968) tracks what it
+// already folded with a per-file line cursor, never with date stamps.
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicAppend, atomicWrite } from '../util/atomicWrite';

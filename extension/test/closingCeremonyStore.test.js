@@ -37,6 +37,7 @@ function run(shiftKey, overrides = {}) {
     outcome: null,
     adjustments: [],
     failedAt: null,
+    foldedLineCounts: null,
     ...overrides,
   };
 }
@@ -165,6 +166,21 @@ test('finalizeCeremonyRunAsFailed with no reason leaves deliveryFailure at whate
   writeCeremonyRun(target, r);
   const failed = finalizeCeremonyRunAsFailed(target, r, '2026-08-08T00:00:00.000Z');
   assert.equal(failed.deliveryFailure, null);
+});
+
+// BL-1968: the per-file fold cursor rides on the run record and survives a
+// round-trip through the store.
+test('writeCeremonyRun then readCeremonyRun round-trips foldedLineCounts exactly', () => {
+  const target = mkTmp();
+  const r = run('2026-08-08', { foldedLineCounts: { '2026-08-07.jsonl': 4, '2026-08-08.jsonl': 2 } });
+  writeCeremonyRun(target, r);
+  assert.deepEqual(readCeremonyRun(target, '2026-08-08').foldedLineCounts, { '2026-08-07.jsonl': 4, '2026-08-08.jsonl': 2 });
+});
+
+test('a run written without foldedLineCounts reads back with foldedLineCounts null', () => {
+  const target = mkTmp();
+  writeCeremonyRun(target, run('2026-08-08'));
+  assert.equal(readCeremonyRun(target, '2026-08-08').foldedLineCounts, null);
 });
 
 // ── recordCeremonyOutcome ────────────────────────────────────────────

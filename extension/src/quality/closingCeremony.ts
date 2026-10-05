@@ -99,6 +99,13 @@ export interface CeremonyDeterminismCandidate {
 
 export interface CeremonyPacket {
   shiftKey: string;
+  /**
+   * BL-1968: the exact ledger events this packet folded - the window between
+   * the previous run's per-file cursor and this run's own, in append order.
+   * Readers (the note, the run file, the tests) see what the fold actually
+   * saw, not a re-derivation from the whole ledger.
+   */
+  leanLedgerEvents: LeanLedgerEvent[];
   pathTaken: string[];
   dwellHotspots: CeremonyDwellHotspot[];
   bounceClasses: CeremonyBounceClass[];
@@ -139,15 +146,72 @@ export interface CeremonyRun {
    * them, never a fourth state.
    */
   deliveryFailure: string | null;
+  /**
+   * BL-1968: the per-file fold cursor - how many lines of each
+   * .swarmforge/lean/<yyyy-MM-dd>.jsonl file this run folded, keyed by the
+   * file's name. The next run folds every line past these counts, in
+   * append order (file order, then line order), never by the events' date
+   * stamps. A run recorded before this field existed carries no cursor at
+   * runtime despite the static type: the next run then folds the whole
+   * ledger from the start.
+   */
+  foldedLineCounts: Record<string, number> | null;
 }
 
-// ── packet: a pure fold over one shift's worth of ledger events ───────────
+// ── packet: a pure fold over the events appended since the previous run ──
 
-// "Shift" is calendar-day bucketing, the same granularity
-// leanLedgerStore.ts's own events are already bucketed at (see that file's
-// header comment for why - no real shift boundary exists yet).
-export function eventsForShiftKey(events: LeanLedgerEvent[], shiftKey: string): LeanLedgerEvent[] {
-  return events.filter((e) => e.at.slice(0, 10) === shiftKey);
+// BL-1968 (hardener split, BL-956 differential complexity gate: the two
+// modes inlined into one function took eventsSincePreviousRun to
+// complexity 11 - split into one helper per mode so each stays legible and
+// independently testable). A previous run that happened but carries no
+// cursor (recorded before this field existed, i.e. before BL-1967/BL-1968)
+// approximates a cursor from that run's own windowEnd/deliveredAt day -
+// every file strictly before that day is skipped entirely (never the whole
+// ledger again, which would silently re-deliver every event ever logged),
+// and that boundary day's own file is refolded from its start (it may
+// re-see the few events that run already folded - the ticket's own
+// accepted approximation, since a run from before this field existed has
+// no real per-line position to recover). Every later day is unaffected
+// either way.
+function eventsSinceMigrationBoundary(allEvents: LeanLedgerEvent[], previousRun: { windowEnd?: string | null; deliveredAt?: string }): LeanLedgerEvent[] {
+  const boundaryDay = (previousRun.windowEnd ?? previousRun.deliveredAt ?? '').slice(0, 10);
+  return boundaryDay ? allEvents.filter((event) => event.at.slice(0, 10) >= boundaryDay) : allEvents;
+}
+
+// The per-file cursor (foldedLineCounts, keyed by the .jsonl file name)
+// says how many lines of each file the previous run already folded;
+// everything past those counts, in file order then line order, is this
+// run's window - the fold follows the ledger's APPEND ORDER, never the
+// events' date stamps.
+function eventsSinceCursor(allEvents: LeanLedgerEvent[], counts: Record<string, number>): LeanLedgerEvent[] {
+  const out: LeanLedgerEvent[] = [];
+  let file = '';
+  let lineInFile = 0;
+  for (const event of allEvents) {
+    const name = `${event.at.slice(0, 10)}.jsonl`;
+    if (name !== file) {
+      file = name;
+      lineInFile = 0;
+    }
+    lineInFile += 1;
+    if (lineInFile > (counts[name] ?? 0)) {
+      out.push(event);
+    }
+  }
+  return out;
+}
+
+// No previous run at all folds the whole ledger from the start (the first
+// run on record) - eventsSinceCursor with an empty cursor already does
+// exactly that, so there is no third branch to maintain.
+export function eventsSincePreviousRun(
+  allEvents: LeanLedgerEvent[],
+  previousRun: { foldedLineCounts?: Record<string, number> | null; windowEnd?: string | null; deliveredAt?: string } | null
+): LeanLedgerEvent[] {
+  if (previousRun && previousRun.foldedLineCounts == null) {
+    return eventsSinceMigrationBoundary(allEvents, previousRun);
+  }
+  return eventsSinceCursor(allEvents, previousRun?.foldedLineCounts ?? {});
 }
 
 function firstSeenOrder(values: string[]): string[] {
@@ -444,9 +508,15 @@ export function buildClosingCeremonyPacket(
   // BL-1365: passed IN, never computed here - the ceremony reads the ledger's
   // current state (invariant 1). Defaulted so every existing caller is
   // unchanged and a packet without a ledger is simply candidate-free.
-  determinismCandidates: CeremonyDeterminismCandidate[] = []
+  determinismCandidates: CeremonyDeterminismCandidate[] = [],
+  // BL-1968: the previous run's per-file fold cursor (null for the first
+  // run on record, which folds the whole ledger). A previous run WITHOUT a
+  // cursor - recorded before this field existed - is not the same as no
+  // previous run at all: see eventsSincePreviousRun for the migration
+  // fallback this windowEnd/deliveredAt makes possible.
+  previousRun: { foldedLineCounts?: Record<string, number> | null; windowEnd?: string | null; deliveredAt?: string } | null = null
 ): CeremonyPacket {
-  const events = eventsForShiftKey(allEvents, shiftKey);
+  const events = eventsSincePreviousRun(allEvents, previousRun);
 
   const pathTaken = computePathTaken(events);
   const dwellHotspots = computeDwellHotspots(events);
@@ -458,6 +528,7 @@ export function buildClosingCeremonyPacket(
 
   return {
     shiftKey,
+    leanLedgerEvents: events,
     pathTaken,
     dwellHotspots,
     bounceClasses,

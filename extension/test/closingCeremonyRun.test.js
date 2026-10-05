@@ -468,3 +468,90 @@ test('BL-1365: an injected deps.readOpenTicketTexts is honored in place of the r
   assert.equal(result.status, 'auto_no_change');
   assert.deepEqual(result.run.packet.determinismCandidates, []);
 });
+
+// ── BL-1968: the fold follows the ledger's append order, not the date stamp ──
+
+function ev(ticket, at) {
+  return {
+    ticket,
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at,
+    role: 'coder',
+    data: { processingMs: 1000 },
+  };
+}
+
+test('BL-1968: an event appended after the previous run is folded by the next run', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, ev('BL-900', '2026-08-08T09:00:00.000Z'));
+  const { deps } = fakeDeps();
+  const first = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  assert.equal(first.status, 'created');
+
+  appendLeanLedgerEventIfNew(target, ev('BL-901', '2026-08-09T09:00:00.000Z'));
+  const second = runClosingCeremony(target, '2026-08-09T22:00:00.000Z', deps);
+  assert.equal(second.status, 'created');
+  assert.deepEqual(
+    second.run.packet.leanLedgerEvents.map((e) => e.ticket),
+    ['BL-901'],
+    'the second run must fold exactly the event appended after the first run'
+  );
+});
+
+test('BL-1968: an event already folded by the previous run is never folded again', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, ev('BL-900', '2026-08-08T09:00:00.000Z'));
+  const { deps } = fakeDeps();
+  const first = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  assert.deepEqual(first.run.packet.leanLedgerEvents.map((e) => e.ticket), ['BL-900']);
+
+  const second = runClosingCeremony(target, '2026-08-09T22:00:00.000Z', deps);
+  assert.equal(second.status, 'auto_no_change', 'nothing new since the first run');
+  assert.deepEqual(second.run.packet.leanLedgerEvents, [], 'the first run\'s event must not be folded a second time');
+});
+
+test('BL-1968: an event stamped on the previous calendar day but appended after the previous run is still folded', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, ev('BL-900', '2026-08-08T09:00:00.000Z'));
+  const { deps } = fakeDeps();
+  const first = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  assert.equal(first.status, 'created');
+
+  // Stamped 2026-08-08 (the previous run's own day) but appended AFTER that
+  // run - the old date-stamp filter would have dropped it.
+  appendLeanLedgerEventIfNew(target, ev('BL-901', '2026-08-08T23:30:00.000Z'));
+  const second = runClosingCeremony(target, '2026-08-09T22:00:00.000Z', deps);
+  assert.equal(second.status, 'created');
+  assert.deepEqual(
+    second.run.packet.leanLedgerEvents.map((e) => e.ticket),
+    ['BL-901'],
+    'append order, not the date stamp, decides what the fold sees'
+  );
+});
+
+test('BL-1968: the first run folds the whole ledger, every file, in append order', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, ev('BL-900', '2026-08-06T09:00:00.000Z'));
+  appendLeanLedgerEventIfNew(target, ev('BL-901', '2026-08-07T09:00:00.000Z'));
+  appendLeanLedgerEventIfNew(target, ev('BL-902', '2026-08-08T09:00:00.000Z'));
+  const { deps } = fakeDeps();
+  const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  assert.equal(result.status, 'created');
+  assert.deepEqual(
+    result.run.packet.leanLedgerEvents.map((e) => e.ticket),
+    ['BL-900', 'BL-901', 'BL-902'],
+    'no previous run: every event in the ledger is folded, in append order'
+  );
+});
+
+test('BL-1968: a run with no new events keeps the explicit empty outcome', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, ev('BL-900', '2026-08-08T09:00:00.000Z'));
+  const { deps } = fakeDeps();
+  runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  const second = runClosingCeremony(target, '2026-08-09T22:00:00.000Z', deps);
+  assert.equal(second.status, 'auto_no_change');
+  assert.equal(second.run.outcome.type, 'no_change');
+  assert.equal(second.run.outcome.ref, null);
+});

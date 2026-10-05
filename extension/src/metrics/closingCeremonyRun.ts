@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readLeanLedgerEvents } from './leanLedgerStore';
+import { LeanLedgerEvent } from '../quality/leanLedger';
 import { readPersistedRitualLedger } from './ritualLedgerProducer';
 import { determinismCandidatesFromLedger } from './ritualLedger';
 import {
@@ -95,9 +96,22 @@ function trySendNote(targetPath: string, draft: string, deps: Pick<ClosingCeremo
  * (falling back to its deliveredAt for a run recorded before this field
  * existed), or null when no prior run exists at all to start from.
  */
-function resolveWindowStart(targetPath: string, shiftKey: string): string | null {
-  const previous = newestCeremonyRunBefore(targetPath, shiftKey);
-  return previous ? previous.windowEnd ?? previous.deliveredAt : null;
+function resolveWindowStart(previousRun: CeremonyRun | null): string | null {
+  return previousRun ? previousRun.windowEnd ?? previousRun.deliveredAt : null;
+}
+
+// BL-1968 (hardener split, BL-956 differential complexity gate: inlining
+// this loop into runClosingCeremony took it from complexity 5 on main
+// (post-BL-1967) to 7 - extracted so the caller stays at its own
+// baseline). The cursor this run leaves behind: every file's total line
+// count, so the next run folds exactly what was appended after this one.
+function computeFoldedLineCounts(allEvents: LeanLedgerEvent[]): Record<string, number> {
+  const foldedLineCounts: Record<string, number> = {};
+  for (const event of allEvents) {
+    const name = `${event.at.slice(0, 10)}.jsonl`;
+    foldedLineCounts[name] = (foldedLineCounts[name] ?? 0) + 1;
+  }
+  return foldedLineCounts;
 }
 
 /**
@@ -236,14 +250,21 @@ export function runClosingCeremony(
     return { shiftKey, status: 'already_exists', run: existing, finalizedFailed, finalizedFailedUndeliverable };
   }
 
-  const windowStart = resolveWindowStart(targetPath, shiftKey);
+  const previousRun = newestCeremonyRunBefore(targetPath, shiftKey);
+  const windowStart = resolveWindowStart(previousRun);
 
   const allEvents = readLeanLedgerEvents(targetPath);
   const windowModels = (deps.readWindowModels ?? readWindowModelsFromTarget)(targetPath);
 
   const determinismCandidates = resolveDeterminismCandidates(targetPath, deps);
 
-  const packet = buildClosingCeremonyPacket(shiftKey, allEvents, windowModels, determinismCandidates);
+  // BL-1968: the fold follows the ledger's append order - everything past
+  // the previous run's per-file cursor (or the whole ledger for the first
+  // run / a cursor-less pre-BL-1967 run), never a re-filter by date stamp.
+  const packet = buildClosingCeremonyPacket(shiftKey, allEvents, windowModels, determinismCandidates, previousRun);
+  // The cursor this run leaves behind: every file's total line count, so
+  // the next run folds exactly what was appended after this one.
+  const foldedLineCounts = computeFoldedLineCounts(allEvents);
 
   // Scenario "empty-shift-still-produces-an-explicit-no-change": nothing
   // happened this shift, so there is nothing for the specifier to evaluate -
@@ -260,6 +281,7 @@ export function runClosingCeremony(
       adjustments: [],
       failedAt: null,
       deliveryFailure: null,
+      foldedLineCounts,
     };
     writeCeremonyRun(targetPath, run);
     return { shiftKey, status: 'auto_no_change', run, finalizedFailed, finalizedFailedUndeliverable };
@@ -271,7 +293,7 @@ export function runClosingCeremony(
   // computation (path.relative/path.join), so it needs no file on disk yet.
   const packetRelPath = path.relative(targetPath, ceremonyRunFilePath(targetPath, shiftKey));
   const draft = buildClosingCeremonyNoteDraft(to, packetRelPath);
-  const pendingRun: CeremonyRun = { shiftKey, packet, deliveredAt: nowIso, windowStart, windowEnd: nowIso, outcome: null, adjustments: [], failedAt: null, deliveryFailure: null };
+  const pendingRun: CeremonyRun = { shiftKey, packet, deliveredAt: nowIso, windowStart, windowEnd: nowIso, outcome: null, adjustments: [], failedAt: null, deliveryFailure: null, foldedLineCounts };
   const failure = trySendNote(targetPath, draft, deps);
   if (failure) {
     const failedRun = finalizeCeremonyRunAsFailed(targetPath, pendingRun, nowIso, failure);

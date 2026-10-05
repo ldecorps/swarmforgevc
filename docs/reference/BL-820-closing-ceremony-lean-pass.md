@@ -57,6 +57,7 @@ first — never an in-memory copy carried across calls.
 ```ts
 interface CeremonyPacket {
   shiftKey: string;
+  leanLedgerEvents: LeanLedgerEvent[];     // BL-1968: the exact events this packet folded
   pathTaken: string[];
   dwellHotspots: CeremonyDwellHotspot[];   // { role, totalMs }
   bounceClasses: CeremonyBounceClass[];    // { failureClass, count }
@@ -76,6 +77,7 @@ interface CeremonyRun {
   adjustments: CeremonyAdjustment[];       // { kind, detail, record, recordedAt }
   failedAt: string | null;
   deliveryFailure?: string | null;         // BL-1528: refusal text, or null
+  foldedLineCounts: Record<string, number> | null; // BL-1968: see below
 }
 ```
 
@@ -105,8 +107,45 @@ date) so the night path can keep its own local-day key for the run's
 file name and fold scope, while the recorded instant — and so
 `windowStart`/`windowEnd` — is always the real `nowMs` the run executed
 at. This slice changes only which window a run *records*; which events
-the fold actually reads by that window is a separate slice
-(BL-1968).
+the fold actually reads is BL-1968, below.
+
+### The packet folds every ledger event appended since the previous run, by append order — never by date stamp (BL-1968)
+
+"A pure fold over the events appended since the previous run" replaces
+the pre-BL-1968 "pure fold over one shift's worth of ledger events": the
+fold no longer filters [BL-819](BL-819-ticket-lifecycle-ledger.md)'s
+events by matching an event's `at` date stamp to the run's `shiftKey`.
+That filter silently dropped most of a shift's lifecycle signal — a
+bounce event is always stamped at midnight of its date
+(`extension/src/metrics/leanLedgerComposeBounce.ts`), never the instant
+it was actually recorded, and a day's real events can span the full 24h
+while a run only ever covers the hours since its last run.
+
+Instead, `CeremonyRun.foldedLineCounts` is a per-`.jsonl`-file append-order
+cursor: how many lines of each `.swarmforge/lean/<yyyy-MM-dd>.jsonl` file
+the run folded, keyed by file name. The next run's `eventsSincePreviousRun`
+folds every line past those counts, in file order then line order —
+never by re-reading a date stamp, and with no new field on the event
+itself. Three cases:
+
+- **No previous run at all** (the first run on record): folds the whole
+  ledger from the start.
+- **A previous run that carries a cursor**: folds exactly the lines past
+  it — no event folded twice, none skipped.
+- **A previous run that carries no cursor** (recorded before this field
+  existed, i.e. before BL-1967/BL-1968): approximated from that run's own
+  `windowEnd`/`deliveredAt` day — every file strictly before that day is
+  skipped entirely (never the whole ledger again), and the boundary day's
+  own file is refolded from its start (it may re-see the few events that
+  run already folded; the ticket's own accepted approximation, since a
+  pre-fix run recorded no real per-line position to recover).
+
+`CeremonyPacket.leanLedgerEvents` carries the exact events this fold saw,
+so a reader (the specifier's note, the run file, a test) sees what was
+actually folded rather than re-deriving it from the whole ledger.
+`shiftWorkedSinceLastCeremony`, `isEmptyCeremonyPacket`, and the
+determinism candidates (BL-1365) are unchanged by this slice — an empty
+fold window still keeps the explicit empty-outcome path above.
 
 ### A refused packet note is a FAILED run at write time, not a pending one (BL-1528)
 
