@@ -1,0 +1,92 @@
+id: BL-2013
+title: "Stamp-off for red hotfix fe08621a87: the effective-depth live-wiring case builds a git history the real throttle CLI refreshes from, so a severe rework signal drops the cap to 0 end to end again"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main since 2026-10-01, unowned (2026-09-05 rule).
+status: todo
+epic: swarm-self-optimization
+priority: 2
+depends_on: []
+mutation_cost: low
+# low: one fixture in one shell test.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one fixture block; nothing to refactor"
+  architect: "the case still shells the real compiled CLI end to end; only the fixture now carries the git history the CLI reads"
+  hardender: "test-side only (a shell test); no production code"
+  documenter: "the fixture's own comment is the living description"
+
+# Not a claim of ownership over BL-1874's contract (BL-1251): the throttle
+# CLI's open ticket; a shell test has no feature of its own.
+acceptance: specs/features/BL-1874-a-failed-throttle-refresh-never-leaves-an-older-recommendation.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a red hotfix the specifier landed under the human's
+  2026-10-01 rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants:
+  - "The live-wiring case still runs the real compiled emit-throttle-recommendation.js end to end, and its fixture commits only into its own repository."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_effective_backlog_depth_cli.sh`:
+     ALL PASS (measured at fe08621a87; its live-wiring case was red since
+     51591aab4a).
+  2. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  Architect note 003146 to the specifier, 2026-10-05, verbatim:
+  "test_effective_backlog_depth_cli.sh "live wiring" FAILs pre-existing,
+  untracked".
+
+description: |
+  ## Status: hotfix fe08621a87 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  Hotfix 51591aab4a (2026-10-01) made emit-throttle-recommendation refresh
+  the rework signal from git history (`refreshReworkSignal`) before
+  diagnosing. `test_effective_backlog_depth_cli.sh`'s live-wiring case
+  hand-wrote `.swarmforge/telemetry/observatory-signals.json` in a fixture
+  that is not a git repository, so the refresh overwrote it with "no
+  sample", no recommendation was made, and the effective cap stayed 3 where
+  the case expects 0.
+
+  ## What the hotfix changed
+
+  - The fixture is a git repository on `main`: 10 tickets closed into
+    `backlog/done/` in the last 14 days (5 with a
+    `backlog/evidence/<id>-bounce.md`) and 10 in the 14 days before (1
+    bounced) - rate 0.5 against a 0.1 baseline, the severe signal the old
+    fixture hand-wrote.
+  - Commit dates use git's raw `<epoch> +0000` form (no `date -d`), so the
+    test stays portable to macOS.
+  - A BL-1390 check proves the fixture is its own repository before any
+    commit.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure step 1 once, its output saved to tmp/out.txt.
+  2. Read `git show fe08621a87` against the sections above and the
+     invariant.
+  3. Write backlog/evidence/BL-2013-coder-<date>.md: the result and one
+     line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-05 by the specifier, the same pass as red hotfix
+  fe08621a87. No register row: the hotfix landed the same pass. BL-2011
+  had passed QA and BL-2012 was active, so this does not fold into either.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: fe08621a87 linked to BL-2013.
