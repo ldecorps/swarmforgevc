@@ -1,0 +1,156 @@
+id: BL-1985
+title: "Check 5b's pure check fires on qwen's loop dialog or ten REPEAT notes since the claim (BL-1980 split, slice 1 of 3): the coder's own salvage in stash 37c87f9232, with its one unbalanced paren fixed - finish it, do not re-derive it"
+milestone: M8
+type: defect
+severity: high
+# high: inherited from BL-1980 - a live fault degrading behaviour (the only
+# coder seat sits looping or halted until the dwell clock fires).
+status: todo
+epic: local-llm-swarm
+priority: 2
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one pure function and five runner cases, both already written.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one clause widened in an existing check; nothing to deduplicate"
+  architect: "check 5b keeps its key, severity and consumer; only its trigger widens"
+  hardender: "Babashka has no mutation lane yet (BL-1975..1977 build it); the check writes no durable state"
+  documenter: "the runbook names the new triggers once they are live, in BL-1987"
+
+# Not a claim of ownership over BL-1109's contract (BL-1251): a sibling
+# babysitter check over the same in_process parcels, as BL-1955 points.
+# BL-1980's own scenarios need the gatherer and move to BL-1986/BL-1987.
+acceptance: specs/features/BL-1109-babysitter-starved-ignores-idle-owner-in-process.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1980 (approved), split on 2026-10-05 under the human's
+  BAU split rule. No new scope: this is BL-1980's check-seat-ticket-stuck
+  clause, exactly as its description asks. No choice is posed.
+
+invariants:
+  - "The seat-stuck CRIT never fires for a seat that has committed for its ticket since the claim, and its key and severity are the same whichever trigger fired it."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
+     prints `babysitterd_sweep_lib_test_runner: ok` (measured on a scratch
+     copy of HEAD e0927f15f6 with the salvage and the function below: ok).
+  2. `bash swarmforge/scripts/test/test_babysitter_check.sh` ends
+     `ALL PASS` (same scratch copy: ALL PASS).
+  3. Read from the gather's acceptance row: the BL-1109 feature all pass.
+
+source: |
+  Split from BL-1980 on 2026-10-05 (coordinator note 016454: "split
+  BL-1980: iq3 loop-halted on its own namesake ticket, no commit"). The
+  human, specifier pane, 2026-10-04, verbatim:
+
+  > We should make the "splitting of ticket if coder cant manage" BAU.
+
+  BL-1980's own source, verbatim:
+
+  QA note 003811 to the specifier, 2026-10-04 23:43Z, verbatim: "BL-1971 ok
+  but REPEAT broke 0 iq3 loops (48 in cfca2aec); next lever? 743f9eaab6".
+  QA's evidence backlog/evidence/BL-1971-QA-20261005.md (743f9eaab6),
+  verbatim: "The guard fires correctly and never causes a halt itself. It
+  did not break any of the multi-note loops observed: the model goes on
+  cycling, or repeats the identical call until qwen's own check stops it."
+  The human's standing direction the same evening, verbatim (Article 5.3):
+
+  > Doing a hot fix is to fix the process. A hotfix is not a hack.
+
+  > Process fix, that's my boy :)
+
+description: |
+  ## Status: the change already exists - finish it, do not re-derive it
+
+  Your own work from the BL-1980 attempt is saved in git stash commit
+  37c87f9232 ("worktree-drift-20261005T072935Z"). In `.worktrees/coder`,
+  run `git stash apply 37c87f9232` once. It restores two files:
+
+  - `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`: its
+    five new BL-1980 cases are right as they stand. Keep them.
+  - `swarmforge/scripts/babysitterd_sweep_lib.bb`: ONE function does not
+    load. In `check-seat-ticket-stuck` (about line 322) the trigger vector
+    closes one paren early: `(when (>= ... seat-ticket-stuck-min))` ends
+    the `when` before its string, so bb stops with "Unmatched delimiter".
+    Replace the whole function, from `(defn check-seat-ticket-stuck` to the
+    line before `;; ── check 6`, with exactly this (verified: the runner
+    prints ok, test_babysitter_check.sh ALL PASS):
+
+        (defn check-seat-ticket-stuck
+          "held-tickets: {:role :task :dwell-min :head-unchanged? :busy?
+           :loop-dialog? :repeat-notes-since-claim}, already resolved by the
+           gatherer. One CRIT per role, for the longest unchanged claim that is
+           stuck: dwell at or past seat-ticket-stuck-min, or a loop-detection
+           dialog on the pane, or ten or more REPEAT notes since the claim
+           (BL-1980). The message names which trigger(s) fired. paused? suppresses
+           the check."
+          [held-tickets paused?]
+          (if paused?
+            []
+            (vec
+             (for [[role items] (group-by :role (remove :gpu-quiet? (or held-tickets [])))
+                   :let [stuck (->> items
+                                    (filter :head-unchanged?)
+                                    (filter #(or (>= (long (or (:dwell-min %) 0)) seat-ticket-stuck-min)
+                                                 (:loop-dialog? %)
+                                                 (>= (long (or (:repeat-notes-since-claim %) 0)) 10)))
+                                    (sort-by :dwell-min >)
+                                    first)]
+                   :when stuck]
+               (let [dwell (long (or (:dwell-min stuck) 0))
+                     repeats (long (or (:repeat-notes-since-claim stuck) 0))
+                     triggers (cond-> []
+                                (>= dwell seat-ticket-stuck-min) (conj (str "no commit for " dwell "m"))
+                                (:loop-dialog? stuck) (conj "qwen's loop dialog is on the pane")
+                                (>= repeats 10) (conj (str repeats " REPEAT notes since the claim")))]
+                 {:key (str "seat-stuck-" role)
+                  :severity "CRIT"
+                  :message (str role " has held " (:task stuck) " with no commit since the claim: "
+                                (str/join ", " triggers)
+                                (when (:busy? stuck)
+                                  " — the pane spinner is not progress")
+                                " (threshold " seat-ticket-stuck-min "m)")})))))
+
+  Then run these two commands, ONCE each, and commit if both pass:
+
+  1. `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
+     prints `babysitterd_sweep_lib_test_runner: ok`.
+  2. `bash swarmforge/scripts/test/test_babysitter_check.sh` ends
+     `ALL PASS`.
+
+  Do NOT, on this ticket:
+  - make an Edit whose old and new text are the same. If an edit fails,
+    re-read the lines once, then replace the whole function as above.
+  - run `git stash`, `git stash pop` or `git stash push`.
+  - touch `babysitter_check.bb`: the gatherer is BL-1986 and BL-1987.
+
+  If `git stash apply 37c87f9232` fails, write the function above by hand
+  and add five runner cases under `;; ── check 5b`: a loop dialog at 5m
+  dwell is one CRIT naming "loop dialog"; ten REPEAT notes at 5m dwell is
+  one CRIT naming "10"; nine notes is none; ten notes with HEAD moved is
+  none; 60m dwell plus a dialog is still one CRIT.
+
+  ## What this slice is
+
+  BL-1980's check-seat-ticket-stuck clause only: the check fires on two
+  new facts per held ticket, `:loop-dialog?` and
+  `:repeat-notes-since-claim`. Nothing supplies them until BL-1986 and
+  BL-1987 build the gatherer, so the live sweep is unchanged by this
+  slice alone.
+
+notes: |
+  Split from BL-1980 on 2026-10-05 after coder (iq3) loop-halted on it
+  with no commit (pulled at e0927f15f6, 07:32Z). Approval inherited from
+  BL-1980 (split, no new scope).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Salvage: the coder's stash 37c87f9232 (base 61c14a604c), applied to a
+  scratch copy of HEAD e0927f15f6 by the specifier: the lib failed to
+  parse on one unbalanced paren at line 345; with the function above, the
+  runner printed ok and test_babysitter_check.sh ALL PASS. The pane showed
+  repeated no-op Edits (old == new) around the same clause, which is the
+  paren the model could not find.

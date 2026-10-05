@@ -6,6 +6,7 @@ severity: high
 # high: a live fault degrading behaviour - the only coder seat sits looping
 # or halted until the 60-minute dwell clock fires, and nothing else moves.
 status: blocked
+closed_as: split-into-BL-1985,BL-1986,BL-1987
 epic: local-llm-swarm
 priority: 2
 direction: swarm-reported
@@ -60,6 +61,11 @@ source: |
   > Process fix, that's my boy :)
 
 notes: |
+  2026-10-05: split into BL-1985 (the check, from the coder's salvage stash
+  37c87f9232 with one paren fixed), BL-1986 (the loop dialog, scenario 01)
+  and BL-1987 (the REPEAT count, scenarios 02-04), on coordinator note
+  016454 after coder (iq3) loop-halted on it with no commit. Scenarios moved
+  word for word; this ticket's feature removed.
   Minted 2026-10-04 by the specifier on QA note 003811.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Why this lever: no text in a tool result changed iq3's course (54 REPEAT
