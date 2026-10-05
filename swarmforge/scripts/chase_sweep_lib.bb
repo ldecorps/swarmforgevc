@@ -947,10 +947,14 @@
 ;; leading-only extractor misses them and BL-222 dispatch-gap re-fires a
 ;; redundant "no dispatch on record" auto-route while the Spec note already
 ;; sits in the assignee inbox (live 2026-07-19 BL-538 stall).
+;; 2026-10-05 (coordinator note 016664): the verb is case-sensitive and must
+;; open the message or a sentence, so a mention-only note ("do not work
+;; BL-1082", "New spec BL-205 ready", "BL-296 landed; spec BL-297: ...")
+;; is never read as a dispatch; the prefix stays case-blind (BL-503).
 (def ^:private spec-work-ticket-id-pattern
-  (re-pattern (str "(?i)\\b(?:Spec|Work)\\s+("
+  (re-pattern (str "(?:^|[.:;!]\\s+)(?:Spec|Work)\\s+(?i:("
                    (str/join "|" known-ticket-prefixes)
-                   ")-?(\\d+)\\b")))
+                   "))-?(\\d+)\\b")))
 
 (defn extract-ticket-id
   "The leading <PREFIX>-<digits> token from a task or message field (e.g.
