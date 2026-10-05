@@ -28,6 +28,15 @@ export function ceremonyRunFilePath(targetPath: string, shiftKey: string): strin
   return path.join(ceremonyDir(targetPath), `${shiftKey}.json`);
 }
 
+// BL-1968 (hardener split, BL-956 differential complexity gate: inlining
+// this into isCeremonyRunShape's own return took it from complexity ~6 on
+// main to 10 - extracted so each guard's own complexity stays legible).
+// The fold cursor is optional on disk (pre-BL-1968 runs carry none); when
+// present it must be a plain object of line counts, never an array.
+function isValidFoldedLineCounts(value: unknown): boolean {
+  return value === undefined || value === null || (typeof value === 'object' && !Array.isArray(value));
+}
+
 function isCeremonyRunShape(value: unknown): value is CeremonyRun {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -38,11 +47,7 @@ function isCeremonyRunShape(value: unknown): value is CeremonyRun {
     typeof run.packet === 'object' &&
     run.packet !== null &&
     Array.isArray(run.adjustments) &&
-    // BL-1968: the fold cursor is optional on disk (pre-BL-1968 runs carry
-    // none); when present it must be a plain object of line counts.
-    (run.foldedLineCounts === undefined ||
-      run.foldedLineCounts === null ||
-      (typeof run.foldedLineCounts === 'object' && !Array.isArray(run.foldedLineCounts)))
+    isValidFoldedLineCounts(run.foldedLineCounts)
   );
 }
 

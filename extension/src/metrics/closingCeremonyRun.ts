@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readLeanLedgerEvents } from './leanLedgerStore';
+import { LeanLedgerEvent } from '../quality/leanLedger';
 import { readPersistedRitualLedger } from './ritualLedgerProducer';
 import { determinismCandidatesFromLedger } from './ritualLedger';
 import {
@@ -97,6 +98,20 @@ function trySendNote(targetPath: string, draft: string, deps: Pick<ClosingCeremo
  */
 function resolveWindowStart(previousRun: CeremonyRun | null): string | null {
   return previousRun ? previousRun.windowEnd ?? previousRun.deliveredAt : null;
+}
+
+// BL-1968 (hardener split, BL-956 differential complexity gate: inlining
+// this loop into runClosingCeremony took it from complexity 5 on main
+// (post-BL-1967) to 7 - extracted so the caller stays at its own
+// baseline). The cursor this run leaves behind: every file's total line
+// count, so the next run folds exactly what was appended after this one.
+function computeFoldedLineCounts(allEvents: LeanLedgerEvent[]): Record<string, number> {
+  const foldedLineCounts: Record<string, number> = {};
+  for (const event of allEvents) {
+    const name = `${event.at.slice(0, 10)}.jsonl`;
+    foldedLineCounts[name] = (foldedLineCounts[name] ?? 0) + 1;
+  }
+  return foldedLineCounts;
 }
 
 /**
@@ -249,11 +264,7 @@ export function runClosingCeremony(
   const packet = buildClosingCeremonyPacket(shiftKey, allEvents, windowModels, determinismCandidates, previousRun);
   // The cursor this run leaves behind: every file's total line count, so
   // the next run folds exactly what was appended after this one.
-  const foldedLineCounts: Record<string, number> = {};
-  for (const event of allEvents) {
-    const name = `${event.at.slice(0, 10)}.jsonl`;
-    foldedLineCounts[name] = (foldedLineCounts[name] ?? 0) + 1;
-  }
+  const foldedLineCounts = computeFoldedLineCounts(allEvents);
 
   // Scenario "empty-shift-still-produces-an-explicit-no-change": nothing
   // happened this shift, so there is nothing for the specifier to evaluate -

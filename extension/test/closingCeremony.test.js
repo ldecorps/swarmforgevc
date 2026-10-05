@@ -208,6 +208,19 @@ test('packet names the events it folded, in append order', () => {
   assert.deepEqual(packet.leanLedgerEvents, [a, b]);
 });
 
+// BL-1968 hardening: this guard existed before BL-1968 ("packet contains no
+// raw log transcript - closed field shape only") and was deleted rather
+// than updated when leanLedgerEvents was added - restored with the new
+// field in the closed set, so a FUTURE field added without updating this
+// test still fails loudly, same as before BL-1968.
+test('packet contains no raw log transcript beyond leanLedgerEvents - closed field shape only', () => {
+  const packet = buildClosingCeremonyPacket('2026-08-08', [event()]);
+  assert.deepEqual(
+    Object.keys(packet).sort(),
+    ['bounceClasses', 'determinismCandidates', 'dwellHotspots', 'hypotheses', 'leanLedgerEvents', 'pathTaken', 'qualityRecommendations', 'shiftKey', 'skipReasons', 'stalls'].sort()
+  );
+});
+
 // ── BL-1119: per-role quality dial from lean signals ───────────────────
 
 test('BL-1119: elevated stalls for a role recommend quality raise citing stalls', () => {

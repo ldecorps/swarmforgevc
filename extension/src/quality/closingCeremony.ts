@@ -160,31 +160,30 @@ export interface CeremonyRun {
 
 // ── packet: a pure fold over the events appended since the previous run ──
 
-// BL-1968: the fold follows the ledger's APPEND ORDER, not the events' date
-// stamps. The per-file cursor (previousRun.foldedLineCounts, keyed by the
-// .jsonl file name) says how many lines of each file the previous run
-// already folded; everything past those counts, in file order then line
-// order, is this run's window. No previous run at all folds the whole
-// ledger from the start (the first run on record). A previous run that DID
-// happen but carries no cursor (recorded before this field existed, i.e.
-// before BL-1967/BL-1968) is NOT the same case: folding the whole ledger
-// again would silently re-deliver every event ever logged. Instead this
+// BL-1968 (hardener split, BL-956 differential complexity gate: the two
+// modes inlined into one function took eventsSincePreviousRun to
+// complexity 11 - split into one helper per mode so each stays legible and
+// independently testable). A previous run that happened but carries no
+// cursor (recorded before this field existed, i.e. before BL-1967/BL-1968)
 // approximates a cursor from that run's own windowEnd/deliveredAt day -
 // every file strictly before that day is skipped entirely (never the whole
-// ledger), and that boundary day's own file is refolded from its start (it
-// may re-see the few events that run already folded - the ticket's own
+// ledger again, which would silently re-deliver every event ever logged),
+// and that boundary day's own file is refolded from its start (it may
+// re-see the few events that run already folded - the ticket's own
 // accepted approximation, since a run from before this field existed has
 // no real per-line position to recover). Every later day is unaffected
-// either way (cursor 0, correctly new).
-export function eventsSincePreviousRun(
-  allEvents: LeanLedgerEvent[],
-  previousRun: { foldedLineCounts?: Record<string, number> | null; windowEnd?: string | null; deliveredAt?: string } | null
-): LeanLedgerEvent[] {
-  if (previousRun && previousRun.foldedLineCounts == null) {
-    const boundaryDay = (previousRun.windowEnd ?? previousRun.deliveredAt ?? '').slice(0, 10);
-    return boundaryDay ? allEvents.filter((event) => event.at.slice(0, 10) >= boundaryDay) : allEvents;
-  }
-  const counts = previousRun?.foldedLineCounts ?? {};
+// either way.
+function eventsSinceMigrationBoundary(allEvents: LeanLedgerEvent[], previousRun: { windowEnd?: string | null; deliveredAt?: string }): LeanLedgerEvent[] {
+  const boundaryDay = (previousRun.windowEnd ?? previousRun.deliveredAt ?? '').slice(0, 10);
+  return boundaryDay ? allEvents.filter((event) => event.at.slice(0, 10) >= boundaryDay) : allEvents;
+}
+
+// The per-file cursor (foldedLineCounts, keyed by the .jsonl file name)
+// says how many lines of each file the previous run already folded;
+// everything past those counts, in file order then line order, is this
+// run's window - the fold follows the ledger's APPEND ORDER, never the
+// events' date stamps.
+function eventsSinceCursor(allEvents: LeanLedgerEvent[], counts: Record<string, number>): LeanLedgerEvent[] {
   const out: LeanLedgerEvent[] = [];
   let file = '';
   let lineInFile = 0;
@@ -200,6 +199,19 @@ export function eventsSincePreviousRun(
     }
   }
   return out;
+}
+
+// No previous run at all folds the whole ledger from the start (the first
+// run on record) - eventsSinceCursor with an empty cursor already does
+// exactly that, so there is no third branch to maintain.
+export function eventsSincePreviousRun(
+  allEvents: LeanLedgerEvent[],
+  previousRun: { foldedLineCounts?: Record<string, number> | null; windowEnd?: string | null; deliveredAt?: string } | null
+): LeanLedgerEvent[] {
+  if (previousRun && previousRun.foldedLineCounts == null) {
+    return eventsSinceMigrationBoundary(allEvents, previousRun);
+  }
+  return eventsSinceCursor(allEvents, previousRun?.foldedLineCounts ?? {});
 }
 
 function firstSeenOrder(values: string[]): string[] {
