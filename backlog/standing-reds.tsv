@@ -34,4 +34,3 @@
 # commit that discharges it).
 hardening	extension/src/metrics/closingCeremonyRun.ts,extension/src/metrics/closingCeremonyStore.ts,extension/src/quality/closingCeremony.ts	BL-2009	2026-10-05	BL-1968's deferred mutation pass (cooldown: files committed 2026-10-05); BL-1968 closed so the ledger row read unowned and throttled intake to 1; owner BL-2009, not before 2026-10-06
 acceptance	specs/features/BL-094-holistic-dev-state-web-ui.feature	BL-2022	2026-10-06	0/5 no step handler matched; missed by BL-1937's census (one step binds)
-acceptance	specs/features/BL-698-telegram-cursor-operator-command-surface.feature	BL-2025	2026-10-06	9 scenarios left after the BL-2023 adjudication, none bound; BL-2025 wires them
