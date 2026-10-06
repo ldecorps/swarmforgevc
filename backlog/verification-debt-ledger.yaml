@@ -237,3 +237,8 @@
   role: QA
   description: "qa-gather's after-run straggler check exited 0 on 2 vitest workers (pids 21466/22687); attributed by hand via /proc cwd to the master checkout's extension/, another role's run, not a QA orphan"
   detected_at: 2026-10-06
+- category: unlaned-pipeline-test-run-by-hand
+  ticket: BL-1979
+  role: QA
+  description: "qa_e2e step 2 says read the scaffold's unit test from the gather's unit row, but specs/pipeline/test runs in no lane (BL-2041); ran both new specs/pipeline/test files by hand with node --test, which is where their mkdtemp leak (D1) showed"
+  detected_at: 2026-10-06
