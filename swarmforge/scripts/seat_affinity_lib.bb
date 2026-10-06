@@ -69,9 +69,11 @@
                                                  readable): claim, and say
                                                  so out loud
    Two independent deferral candidates, either sufficient on its own:
-     - a git_handoff whose task a SIBLING seat has worked (self-affinity
-       wins: a seat that worked the task itself holds the history and
-       claims at once);
+     - a git_handoff OR a note naming a ticket a SIBLING seat has worked
+       (self-affinity wins: a seat that worked the task itself holds the
+       history and claims at once; BL-1843: a note that names a ticket in
+       either wording - `Work BL-…` or `BL-… still todo` - is deferred
+       exactly as a git_handoff for that ticket would be);
      - BL-1655: ANY type reclaimed (held-by-seat non-blank) from a seat
        other than my-seat (self-affinity wins here too: the seat that held
        the claim - whose worktree holds the half-built work - claims its
@@ -86,8 +88,7 @@
            held-by-seat my-seat]}]
   (let [reclaimed-elsewhere? (and (not (str/blank? (str held-by-seat)))
                                    (not= (str held-by-seat) (str my-seat)))
-        rework-candidate? (and (= type "git_handoff")
-                                (not (str/blank? (str task)))
+        rework-candidate? (and (not (str/blank? (str task)))
                                 (not (contains? (set my-tasks) task))
                                 (contains? (set sibling-tasks) task))]
     (if (or reclaimed-elsewhere? rework-candidate?)
