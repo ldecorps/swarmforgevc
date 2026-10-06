@@ -20,9 +20,20 @@ re-running the slow file by hand.
 
 `extension/scripts/recordPropertyDuration.js` wraps the real property-lane
 run — same `vitest.properties.config.mjs`, same files, same order, same
-exit status (invariant: the recorder changes nothing vitest does). On
-every **completed** run, pass or fail, it appends one row to
-`extension/.property-durations.jsonl`:
+exit status (invariant: the recorder changes nothing vitest does on a
+whole-lane run). Any extra argument after `--` is forwarded to vitest
+unchanged, so filtering to one file still works exactly as before this
+recorder existed:
+
+```bash
+npm run test:properties -- test/someFile.property.test.js
+```
+
+A **filtered** run (extraArgs non-empty) still prints the verdict — useful
+when chasing one file by hand — but appends **no** row: a one-file sample
+would otherwise silently mix into the lane-wide trend and census. On every
+**completed, unfiltered, whole-lane** run, pass or fail, it appends one row
+to `extension/.property-durations.jsonl`:
 
 ```json
 {"finished_at":"2026-10-06T02:40:41.260Z","file_count":522,"result":"pass","duration_ms":606044,"work_ms":2706800.67,"pole_ms":126870.05,"pole_file":"test/telegramFrontDeskBotCli.property.test.js"}
@@ -72,11 +83,13 @@ recorder appends on the parcel that lands it.
 ## Verify
 
 ```bash
-cd extension
-npm test                           # the recorder's own pure helpers + wrapper, in-process
-node ../specs/pipeline/scripts/run_acceptance.sh \
-  ../specs/features/BL-1619-the-property-lane-records-its-duration-and-names-its-pole.feature
+(cd extension && npm test)         # the recorder's own pure helpers + wrapper, in-process
+bash specs/pipeline/scripts/run_acceptance.sh \
+  specs/features/BL-1619-the-property-lane-records-its-duration-and-names-its-pole.feature
 ```
+
+(the second command runs from the repo root — the convention every other
+how-to's acceptance snippet uses, not from inside `extension/`.)
 
 Never run the real 320 s+ `npm run test:properties` lane more than once to
 verify a change to the recorder — the acceptance handler and the unit

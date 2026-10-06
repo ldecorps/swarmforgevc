@@ -650,12 +650,17 @@ not as the several separate edits that produced it).
   twin.** `npm run test:properties` (`extension/scripts/recordPropertyDuration.js`,
   BL-1619) appends one row — `finished_at`, `file_count`, `result`,
   `duration_ms`, `work_ms`, `pole_ms`, `pole_file` — to
-  `extension/.property-durations.jsonl` on every COMPLETED run (pass or
-  fail), and prints a verdict naming the pole and every file above half
-  `vitest.properties.config.mjs`'s `testTimeout` (10 s of its flat 20 s), so
-  a pole shows up before it times out under load instead of being found one
-  file at a time when it does. Observation only: a killed or crashed run
-  appends no row, and the recorder changes nothing about which files run,
+  `extension/.property-durations.jsonl` on every COMPLETED, UNFILTERED
+  (whole-lane) run (pass or fail), and prints a verdict naming the pole and
+  every file above half `vitest.properties.config.mjs`'s baseline
+  `testTimeout` (10 s of its flat 20 s), so a pole shows up before it
+  times out under load instead of being found one file at a time when it
+  does. Observation only: every extra argument (`npm run test:properties
+  -- <file>`) is forwarded to vitest unchanged, exactly as before this
+  recorder existed — filtering to one file still prints the verdict but
+  appends no row, so a one-file sample never mixes into the lane-wide
+  trend/census; a killed or crashed whole-lane run likewise appends no
+  row; the recorder otherwise changes nothing about which files run,
   their order, the timeout, or the exit status. No per-file budget or pole
   register exists for this lane yet (BL-791 slice E, minted from this
   recorder's own census) — unlike the unit lane's `backlog/suite-poles.tsv`
