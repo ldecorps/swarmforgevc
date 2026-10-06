@@ -45,9 +45,15 @@ qa_e2e_procedure: |
   1. Read from the gather's acceptance row:
      `specs/features/BL-698-telegram-cursor-operator-command-surface.feature`
      9 of 9 pass (measured at mint: every step after the Background unbound).
-  2. `git diff <parcel>^..<parcel> --stat`: only new or changed files under
-     `specs/pipeline/steps/` (and this ticket's evidence); no `.feature`, no
-     `extension/src` or `swarmforge/scripts` path.
+  2. `git log --no-merges --format= --stat <parcel> --not origin/main`: the
+     parcel's own commits touch only files under `specs/pipeline/steps/`
+     (and this ticket's evidence); no `.feature`, no `extension/src` or
+     `swarmforge/scripts` path. Hotfix 9baca9e777's production change is on
+     origin/main, not in the parcel, so a merge of main does not count.
+  2a. Stamp-off of hotfix 9baca9e777: read its diff (`git show 9baca9e777`),
+     one argument removed in `loadQueueTickets` plus one seeded test in
+     `extension/test/telegramCursorOperatorExec.test.js`; read the gather's
+     `npm test` row green (that file runs in it).
   3. While this ticket is in paused/ or active/, `backlog/standing-reds.tsv`
      carries the BL-698 feature's row naming BL-2025. After the land the row
      is gone (BL-1631 retires it); check on origin/main.
@@ -63,6 +69,17 @@ notes: |
   Minted 2026-10-06 by the specifier, the BL-2023 adjudication pass.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   The feature's register row moved from BL-2023 to this ticket in the mint commit.
+  Amended 2026-10-06 by the specifier on coder2's note 000131 (parcel
+  5402d95eac, 7 of 9 green): scenarios 07 and 08 (/autopilot dry, /land
+  dry) failed on their merits - loadQueueTickets passed <root>/backlog to
+  readBacklogFolders, which joins 'backlog' itself, so both verbs always
+  listed nothing. Hotfixed on main as 9baca9e777 per the 2026-10-01
+  directive; this ticket, the owner of the feature's register row, is its
+  stamp-off. The coder merges main and NEVER re-applies the fix; the
+  feature measured 9 of 9 with 5402d95eac's handler on the hotfix (scratch
+  tree). Invariant 1 still binds the parcel's own commits. Hardener stays
+  skipped: the hotfix removes one argument and adds no mutable expression,
+  and mutation_cooldown_days would refuse the file today anyway.
 
 description: |
   ## What is wrong

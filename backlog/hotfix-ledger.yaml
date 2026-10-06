@@ -1385,3 +1385,10 @@
   stamp_ticket: BL-2036
   human_decision: null
   decided_at: null
+- commit: 9baca9e777
+  subject: "hotfix: /autopilot and /land read <root>/backlog/backlog and always listed nothing - loadQueueTickets passes the repo root to readBacklogFolders"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2025
+  human_decision: null
+  decided_at: null
