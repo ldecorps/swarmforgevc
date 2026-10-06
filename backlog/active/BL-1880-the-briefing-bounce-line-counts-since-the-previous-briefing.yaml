@@ -143,3 +143,5 @@ notes: |
   so it needs its own ask.
   INVEST: one CLI's output, six scenarios, two invariants; the per-model
   record of past bounces was cut to out_of_scope to keep it one sitting.
+
+assigned_to: coder
