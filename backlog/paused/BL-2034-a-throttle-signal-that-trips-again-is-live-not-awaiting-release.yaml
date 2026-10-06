@@ -24,7 +24,7 @@ acceptance: specs/features/BL-2034-a-throttle-signal-that-trips-again-is-live-no
 required_wiring:
   - 'specs/pipeline/steps/bl2034ThrottleRetripSteps.js::registerSteps::binds BL-2034-a-throttle-signal-that-trips-again-is-live-not-awaiting-release.feature (discovered by suffix, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Found by QA on BL-1982's pass (QA evidence O1). No choice is posed.
   FIRM: the lowest cap the episode reached still holds across a re-trip
