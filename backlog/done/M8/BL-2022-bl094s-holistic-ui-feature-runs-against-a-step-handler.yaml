@@ -84,3 +84,6 @@ notes: |
   registered: this one (BL-2022) and four owned by BL-2023.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: acceptance, commit: 0a2575cebe, evidence: backlog/evidence/BL-2022-QA-20261006.md }
