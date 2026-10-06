@@ -1,0 +1,104 @@
+id: BL-2040
+title: "Stamp-off for hotfixes 6038e612b4 and c9132288de: GNU-only grep -qP and three never-firing grep -qE '\\t' checks in two shell tests, BL-227's handler refusing the workflow's ${NUM}, a burndown test resolving BL-1277-scoped steps unscoped, and a test of a handler deleted on 07-11 - plus BL-989's sweep learns the ERE shape"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of standing-red hotfixes (a red is high at first sighting,
+# 2026-09-05); BL-227's feature scenario 02 was red on main.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review two commits, add one assertion to one property test.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one assertion added to one test; nothing to refactor"
+  architect: "test-side only; no production boundary moves"
+  hardender: "test-side only; no production code changed"
+  documenter: "docs/how-to/BL-989-portable-grep-tab-anchors.md already prescribes the printf form the hotfix used"
+
+# Not a claim of ownership over BL-227's contract (BL-1251): hotfix c9132288de
+# changed the handler that binds it, and it is the one feature both hotfixes
+# touch whose scenarios run green on main.
+acceptance: specs/features/BL-227-swarm-intake-commit-step-env-route.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews both and never re-applies them.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node --test specs/pipeline/test/bl989PortableGrepTabAnchor.property.test.js`:
+     every test passes, including the parcel's new ERE-tab assertion
+     (measured at mint on 6038e612b4: 3 of 3 before the new assertion).
+  2. `bash swarmforge/scripts/test/test_bl1861_local_llm_remove.sh` and
+     `bash swarmforge/scripts/test/test_retire_seat_stays_dropped.sh`:
+     ALL SCENARIOS PASSED (measured at mint).
+  3. Read from the gather's acceptance row: the BL-227 feature 2 of 2
+     (measured at mint after c9132288de: 2 of 2; scenario 02 was red before).
+  4. Read the coder's committed review evidence.
+
+source: |
+  coder@2's note 000134, 2026-10-06: "bl989PortableGrepTabAnchor
+  pre-existing red: grep -qP in 2 .sh test files".
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  The reason these went unseen (specs/pipeline/test runs in no lane) is
+  BL-2041's, not this ticket's.
+
+description: |
+  ## Status: hotfixes 6038e612b4 and c9132288de landed the fixes
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong, and what each hotfix changed
+
+  6038e612b4: `test_bl1861_local_llm_remove.sh` (BL-1861) and
+  `test_retire_seat_stays_dropped.sh` (BL-1720) anchored tabs with
+  `grep -qP`, which BL-989's tree sweep refuses (stock macOS grep has no
+  -P). The BL-1861 file's three "still lists a local-model seat" negative
+  checks used `grep -qE '\t...'`. GNU grep 3.11 reads `\t` in an ERE as a
+  literal `t`, so they matched nothing and passed on any roster; the agent
+  shell's grep shim hid it. All eight now build the pattern with `printf`.
+  Both tests pass with the checks live.
+
+  c9132288de: `swarmIntakeEnvRouteSteps.js` required `$NUM`/`$URL` but the
+  workflow has written `${NUM}`/`${URL}` since 9748747792 (2026-07-22),
+  so BL-227's scenario 02 was red on main; it now accepts both.
+  `burndownEtaSteps.test.js` resolved steps BL-1277 had scoped to BL-228's
+  feature without a feature name; it now passes the name.
+  `strykerPwaSandboxSteps.test.js` required a handler BL-267 deleted on
+  2026-07-11 (BL-221's feature runs green on its replacement); retired.
+
+  ## What the coder builds
+
+  BL-989's tree sweep (`specs/pipeline/test/bl989PortableGrepTabAnchor.property.test.js`,
+  test 3) refuses only `grep -P`. Add an assertion that refuses a
+  single-quoted `grep -E` (or `-qE`, `-Ee`...) pattern containing `\t`
+  in `swarmforge/scripts/**/*.sh` outside `*mutation_sweep.sh`, the
+  fail-open shape 6038e612b4 found. Before the hotfix it would have named
+  test_bl1861_local_llm_remove.sh lines 194, 196 and 336. On 6038e612b4 it
+  finds zero; prove it is not vacuous with a fixture string it must flag.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 6038e612b4` and `git show c9132288de` against the section
+     above.
+  2. Add the assertion; run qa_e2e_procedure steps 1-2 once, output under
+     tmp/.
+  3. Write backlog/evidence/BL-2040-coder-<date>.md: the review result and
+     the run results, and commit it with the test change.
+
+assigned_to: coder

@@ -1392,3 +1392,17 @@
   stamp_ticket: BL-2025
   human_decision: null
   decided_at: null
+- commit: 6038e612b4
+  subject: "hotfix: two shell tests anchored tabs with GNU-only grep -qP, red in bl989PortableGrepTabAnchor's tree sweep"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2040
+  human_decision: null
+  decided_at: null
+- commit: c9132288de
+  subject: "hotfix: three specs/pipeline/test files red unseen in no lane"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2040
+  human_decision: null
+  decided_at: null

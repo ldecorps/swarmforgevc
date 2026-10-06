@@ -1,0 +1,110 @@
+id: BL-2041
+title: "specs/pipeline/test runs in no lane, so four of its files went red unseen for weeks (BL-989's grep -P guard, BL-227's and BL-228's handler tests, a test of a deleted handler) - run the directory in the lane QA's gather runs, and make BL-1358's ceiling test survive a concurrent run"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal - a directory of guards and handler
+# failure-branch tests that no lane runs; four files were red on main and
+# nobody saw them until a coder ran the directory by hand on 2026-10-06.
+status: todo
+epic: code-quality-gates
+priority: 10
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: lane wiring in test infrastructure plus one fixture-ownership fix;
+# no production code.
+slice_size_envelope: medium
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one lane entry and one fixture helper; nothing to deduplicate"
+  architect: "test infrastructure only; no production boundary moves"
+  hardender: "no production code changes; the lane itself is the gate"
+  documenter: "no living doc enumerates the unit lane's members; BL-1598's how-to covers the vitest pole register only"
+
+acceptance: specs/features/BL-2041-every-acceptance-pipeline-test-file-runs-in-a-lane-qa-reads.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2041PipelineTestLaneSteps.js::registerSteps::binds BL-2041 feature (discovered by suffix, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Owner of an unseen-red class the specifier found while hotfixing coder@2's
+  note 000134. No choice is posed. FIRM: every *.test.js under
+  specs/pipeline/test (fixtures excluded) runs in a lane QA's gather runs,
+  and BL-1358's ceiling test never deletes a fixture root another run owns.
+
+invariants:
+  - "Every *.test.js under specs/pipeline/test, fixtures excluded, runs in a lane QA's gather runs on every parcel; the census is pinned, never derived alone (BL-1445)."
+  - "No test under specs/pipeline/test removes a temp root another live run owns (BL-1385, BL-1390)."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-2041 feature 3 of 3
+     (measured at mint: every step unbound).
+  2. Read from the gather's `npm test` row (or whichever lane the parcel
+     wired the directory into, named in the coder's evidence) that the
+     specs/pipeline/test files ran and passed: 356 tests in 39 files at
+     mint, after hotfix c9132288de.
+  3. `find specs/pipeline/test -name '*.test.js' -not -path '*/fixtures/*' | wc -l`
+     on the parcel commit: 39, unless the parcel's own evidence names a file
+     added or retired since.
+
+source: |
+  coder@2's note 000134 (2026-10-06): "bl989PortableGrepTabAnchor
+  pre-existing red: grep -qP in 2 .sh test files". The specifier hotfixed it
+  (6038e612b4), then ran the whole directory once: 357 tests, 6 failures in
+  5 files (BL-1358 03, three BL-228 burndown tests, BL-221's Stryker
+  handler test, BL-227's real-workflow test), none in a lane, none in the
+  register. Hotfix c9132288de fixed or retired four of the five files; BL-1358 03
+  passes alone and failed only beside a concurrent run.
+  The human's 2026-09-05 directive, verbatim: "we should not sweep failing
+  tests under the carpet".
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Measured at mint, after hotfix c9132288de: `node --test specs/pipeline/test/*.test.js
+  specs/pipeline/test/steps/*.test.js` 356 of 356 in 21 s on a loaded host.
+  The census grep is in scenario 01 and qa_e2e step 3.
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/test/` holds 39 `node:test` files: the acceptance
+  runner's own tests, guards such as BL-989's portable-grep sweep, and
+  step handlers' failure-branch tests. QA's gather runs `npm test` and
+  `npm run test:properties` from `extension/`. Neither includes this
+  directory, and nothing else runs it. On 2026-10-06 it held four red
+  files nobody had seen (BL-1720 and BL-1861 had put `grep -qP` back into
+  two shell tests; BL-1277 had scoped burndown steps a test still resolved
+  unscoped; the swarm-intake workflow had used `${NUM}` since 2026-07-22;
+  BL-267 deleted a handler on 2026-07-11 that a test still required).
+
+  Separately, `bl1358MutantTimeCeiling.test.js`'s `mkFixture` sweeps every
+  `bl1358-ceiling-*` root in the temp dir before each fixture, so a
+  second run started at the same time deletes the first run's fixture
+  (ENOENT on `c.test.js`, seen 2026-10-06 while coder@2 ran the same
+  directory). Once the directory runs on every role's lane, that race is
+  routine.
+
+  ## What is wanted
+
+  - The directory runs in a lane QA's gather runs, and a failure in any of
+    its files fails that lane and names the file.
+  - BL-1358's ceiling test reaps only roots no live run owns (an owner pid
+    that is dead, or an age bound), per the Test Speed And Isolation rule.
+
+  ## How (direction, not mandate)
+
+  - The cheapest seam is the script `npm test` already runs
+    (`extension/scripts/recordTestDuration.js`): one `node --test` run of
+    the directory after vitest, its exit status folded into the script's.
+    That adds about 21 s. If the coder finds a better seam inside QA's
+    gather (`extension/src/...`), that is production TypeScript and needs
+    the hardener; send the specifier a note first.
+  - `specs/pipeline/steps/lib/fixtureReaper` and the BL-1385/BL-1390 fixes
+    are the precedent for owner-aware reaping.
+  - The step handler builds its fixture lane under mkdtemp for scenario 02;
+    scenario 01 reads the real lane definition on the parcel commit.
+
+assigned_to: coder
