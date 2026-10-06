@@ -104,12 +104,6 @@ test(
 
         const records = resultFiles.map((f) => JSON.parse(fs.readFileSync(f, 'utf8')));
 
-        const peakConcurrent = maxConcurrentSpans(records);
-        assert.ok(
-          peakConcurrent <= WORKER_POOL_SIZE,
-          `expected at most ${WORKER_POOL_SIZE} worker processes alive at once across ${fileCount} files, observed ${peakConcurrent}`
-        );
-
         // BL-1651: the property lane's own per-worker cap is now host-
         // derived (resolvePropertyLaneHeapMB), never the fixed
         // PER_WORKER_HEAP_MB the unit lane still uses - reading os.freemem()
@@ -119,9 +113,24 @@ test(
         // (vitest.properties.config.mjs's "[property-lane-budget]" line) -
         // parsing it from this run's own captured output is the one way to
         // compare against the EXACT cap that run actually spawned with.
-        const printed = result.output.match(/\[property-lane-budget\] forks=\d+ workerHeapMB=(\d+)/);
+        // Hotfix 2026-10-06 (coder@2 note 000151): the fork ceiling is the
+        // same race. Both this process and the spawned config compute
+        // floor(cores - 5-minute load), seconds apart, and under a full
+        // lane's moving load the two readings straddle an integer: this
+        // process resolved 1 (counterexample fileCount=4) while the spawned
+        // run's own ceiling was higher, so a correctly capped run read as
+        // over its cap. The printed forks= is that run's own maxForks (more
+        // than one file is named, so resolveLaneForks returns the ceiling).
+        const printed = result.output.match(/\[property-lane-budget\] forks=(\d+) workerHeapMB=(\d+)/);
         assert.ok(printed, `expected the config's own budget line in the run's output:\n${result.output}`);
-        const resolvedWorkerHeapMB = Number(printed[1]);
+        const resolvedForks = Number(printed[1]);
+        const resolvedWorkerHeapMB = Number(printed[2]);
+
+        const peakConcurrent = maxConcurrentSpans(records);
+        assert.ok(
+          peakConcurrent <= resolvedForks,
+          `expected at most ${resolvedForks} worker processes alive at once (the ceiling this run's own config printed) across ${fileCount} files, observed ${peakConcurrent}`
+        );
 
         for (const { heapLimitMB } of records) {
           assert.ok(
