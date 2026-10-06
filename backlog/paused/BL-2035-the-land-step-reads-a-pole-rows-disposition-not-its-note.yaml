@@ -1,0 +1,102 @@
+id: BL-2035
+title: "The land step reads a pole row's disposition, not its note - land_step_lib.bb's suite-poles retirable?-fn keeps a row whose line matches 'accepted pole', while BL-1629's disposition column decides accepted-ness for the budget check, so the two readers of one rule can disagree"
+milestone: M8
+type: defect
+severity: medium
+# medium: latent. The one accepted row today (bl968) carries both the column
+# and the words, so nothing disagrees yet; the next accepted row without the
+# words would be retired by its rationale ticket's land, and the unit lane
+# would then refuse its file as a new pole.
+status: todo
+epic: unit-suite-speed
+priority: 30
+direction: swarm-reported
+depends_on: [BL-1629]
+mutation_cost: low
+# low: one predicate in one bb registry spec, one handler over fixture lines.
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one predicate changes; nothing to refactor"
+  architect: "no boundary moves; the architect raised this as a follow-up to BL-1629 and named the fix"
+acceptance: specs/features/BL-2035-the-land-step-reads-a-pole-rows-disposition-not-its-note.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2035LandStepPoleDispositionSteps.js::registerSteps::binds BL-2035-the-land-step-reads-a-pole-rows-disposition-not-its-note.feature (discovered by suffix, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A follow-up the architect raised on BL-1629's pass. No choice is posed.
+  FIRM: the land step and the budget check read a pole row's disposition by
+  ONE rule (the fifth field is a disposition only when it is exactly owned
+  or accepted; otherwise the row is owned), and only an accepted row is
+  kept by its owner's land.
+
+invariants:
+  - "For every pole register row the landing ticket owns, the land step keeps it exactly when the budget check reads its disposition as accepted."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's acceptance row:
+     `specs/features/BL-2035-the-land-step-reads-a-pole-rows-disposition-not-its-note.feature`
+     4 of 4 pass (three outline rows and scenario 02; measured at mint: no
+     handler, all red).
+  2. Read the parcel's `backlog/suite-poles.tsv` header comment: it names
+     the disposition column, not the note, as what the land step reads.
+  3. Read the hardener's committed evidence (a hand-mutant pass on the
+     predicate, since the land step writes the register).
+
+source: |
+  Architect note 003157, 2026-10-06: "BL-1629 follow-up: land_step_lib.bb
+  retirable?-fn reads regex not disposition".
+  Engineering Guardrails (BL-897): a constant mirrored across a language
+  boundary needs a test asserting both literals agree. Scenario 02 is that
+  test for the disposition rule.
+
+notes: |
+  Minted 2026-10-06 by the specifier from architect note 003157.
+  Not auto-approved: medium severity.
+  Checked at mint: BL-1629's parcel (e9d9e2e119) writes bl968's row with
+  disposition accepted AND a note still saying "an accepted pole under
+  BL-1629", so BL-1629's own land keeps the row under today's regex. That
+  is why this follows BL-1629 instead of amending it in flight.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/land_step_lib.bb`, `registry-specs` (around line
+  2653), gives `backlog/suite-poles.tsv` the predicate
+  `:retirable?-fn (fn [line] (not (re-find #"(?i)accepted pole" line)))`.
+  `rows-to-retire` uses it to except a row from the land's retirement
+  whatever its owner. It was written when "no dedicated column exists".
+  BL-1629 adds one: `extension/src/tools/check-suite-file-budget.ts`'s
+  `parseRegisterRows` reads the fifth field as the disposition when it is
+  exactly `owned` or `accepted`, and treats a row without it (the legacy
+  5-column form) as owned. So the land step and the budget check decide
+  accepted-ness by different rules.
+
+  ## What is wanted
+
+  - The suite-poles `:retirable?-fn` keeps a row exactly when its fifth
+    tab-separated field is exactly `accepted`. Any other row, including a
+    legacy 5-column row whose note says "accepted pole", is retirable by
+    its owner's land.
+  - The register's header comment says the land step reads the
+    disposition column.
+  - The registry-specs docstring drops "no dedicated column exists".
+
+  ## How (direction, not mandate)
+
+  - The handler `specs/pipeline/steps/bl2035LandStepPoleDispositionSteps.js`
+    calls the real `rows-to-retire` through `bb -e` (load-file
+    `swarmforge/scripts/land_step_lib.bb`) with the suite-poles entry of
+    `registry-specs` and fixture lines. Pass them as EDN on stdin or in a
+    temp file, never by string-building Clojure from fixture text. For
+    scenario 02 it also loads the compiled `parseRegisterRows` from
+    `extension/out/tools/check-suite-file-budget.js` over the same lines.
+    Validate `<shape>`, `<note>` and `<verdict>` against explicit known
+    values.
+  - Documenter: if BL-1629's how-to update describes the land exception by
+    note text, it now names the disposition column.
+
+assigned_to: coder
