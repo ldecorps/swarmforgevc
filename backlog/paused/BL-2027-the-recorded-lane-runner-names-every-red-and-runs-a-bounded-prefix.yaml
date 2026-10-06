@@ -1,0 +1,146 @@
+id: BL-2027
+title: "The recorded lane runner runs a listed population one item at a time, appends one duration row per completed item, names every red in its verdict, exits with the suite's status, and runs a bounded prefix under --limit - slice 1 of BL-2019: one new bash script and one synchronous step handler"
+milestone: M8
+type: feature
+status: todo
+epic: unit-suite-speed
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one new bash script (~60 lines) and one synchronous step handler
+# (~70 lines) over mkdtemp fixture lists of `true` / `false`.
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one new script and one new handler; nothing to refactor"
+  documenter: "the how-to describes the lane once its front-ends exist; BL-2021, the last slice, carries the docs"
+acceptance: specs/features/BL-2027-the-recorded-lane-runner-names-every-red-and-runs-a-bounded-prefix.feature
+
+invariants:
+  - "Every item that completes appends exactly one row, whether it passed or failed; an item that did not complete appends none."
+  - "The runner changes nothing about what it runs: the same files in the population's own order, each item's own exit status - observation only."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2027RecordedLaneRunnerVerdictSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the runner is a new entry
+# point; its callers are BL-2020's and BL-2021's front-ends.
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-2019 (approved, itself inherited from BL-1625), split
+  2026-10-06 with no new scope. FIRM (BL-1625): rows are per ITEM,
+  appended as each completes, so a run killed part-way leaves the rows of
+  the completed items and no more; the runner never runs beside the unit
+  or property lane.
+
+description: |
+  ## What is wanted
+
+  1. A new script, `swarmforge/scripts/test/run_recorded_lane.sh`:
+
+         run_recorded_lane.sh --lane <name> --list <file> --durations <path> [--limit N]
+
+     - Each line of `--list` is `<item>` TAB `<command ...>`. Run the lines
+       in order, one at a time (never in parallel). With `--limit N`, run
+       only the first N lines.
+     - Around each command, take `date +%s%3N` before and after. The moment
+       the command returns, append ONE line to `--durations` with `>>`:
+       `{"finished_at":"<iso>","lane":"<name>","file":"<item>","result":"pass|fail","duration_ms":<n>}`
+       (`result` is `pass` when the command exits 0). Build it with `printf`.
+     - After the last item, print the verdict: a line `passed <n> failed <n>`,
+       then one line `FAILED <item>` per failing item, then up to ten lines
+       `slowest <item> <seconds>s`, then `wall <seconds>s`. Exit 1 when any
+       item failed, else 0.
+     - Use `set -uo pipefail` and capture each item's status
+       (`bash -c "$cmd" || st=$?`). Never `set -e` across the loop
+       (BL-1242), and never `kill` anything.
+
+  2. A new step handler, `specs/pipeline/steps/bl2027RecordedLaneRunnerVerdictSteps.js`,
+     binding this feature's scenarios 04 (two rows) and 05. Its feature is
+     `specs/features/BL-2027-the-recorded-lane-runner-names-every-red-and-runs-a-bounded-prefix.feature`,
+     3 runs in all.
+
+  ## How (direction, not mandate) - everything the handler needs is here
+
+  Read only these, and nothing else under `specs/pipeline/`:
+  `bl1782VerificationDebtLedgerSteps.js` lines 1-40 (file shape) and
+  `bl1740ChaseSweepPauseFromCallerSteps.js` lines 20-31 (the KNOWN_VALUES
+  pattern).
+
+  - File shape: `require` assert, fs, path and `{ spawnSync }`, plus
+    `const { trackedTmpRoot } = require('./lib/fixtureReaper');`. Set
+    `const FEATURE = '<the exact Feature: text after "Feature: ">';`. Write
+    `function registerSteps(registry) { ... }` and end with
+    `module.exports = { registerSteps };`.
+  - **Do not edit `specs/pipeline/steps/index.js`.** Handlers are
+    discovered by the `Steps.js` filename suffix (BL-1371).
+  - Register every step as `registry.defineScoped(/^...$/, (ctx, ...) => {...}, FEATURE)`.
+  - Fixtures: `const dir = trackedTmpRoot('sfvc-bl2027-');`. Write the list
+    file and the durations path inside `dir`. `trackedTmpRoot` deletes its
+    roots when the process exits, so the handler needs **no cleanup code**:
+    no `afterEach`, no `ctx.cleanups` (that does not exist), and no
+    disposables.
+  - Every step is synchronous. Run the runner with
+    `spawnSync('bash', [RUNNER, '--lane', 'fixture', '--list', listPath, '--durations', durPath], { encoding: 'utf8' })`
+    (add `'--limit', '1'` for scenario 05). Keep `status` and `stdout` on
+    `ctx`. `RUNNER` is `path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts', 'test', 'run_recorded_lane.sh')`.
+  - KNOWN_VALUES tables, each with a lookup that throws on any other text:
+    - shape: `both pass` -> lines `a<TAB>true`, `b<TAB>true`;
+      `include one that fails` -> `a<TAB>true`, `b<TAB>false`.
+    - exit: `0` -> 0, `1` -> 1.
+    - names: `names no failing item` -> no `FAILED ` line;
+      `names exactly that item` -> exactly one `FAILED b` line.
+  - Scenario 05's "it runs exactly the first item": the durations file's
+    single row has `"file":"a"`.
+
+  Then run `node specs/pipeline/cli.js <this feature>`: 3 ok, 0 fail. Run
+  `cd extension && npm test` before forwarding. No shell test and no
+  `suite-manifest.tsv` row: the handler drives the real runner.
+
+  ## Not in scope
+
+  - Scenario 03 (one row per completed item, including the killed run) is
+    BL-2028, which depends on this.
+  - The front-ends (BL-2020 features, BL-2021 shell) and the docs (BL-2021).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2027-the-recorded-lane-runner-names-every-red-and-runs-a-bounded-prefix.feature`:
+     3 ok (04 x2, 05), 0 fail. Measured at mint: no handler, all red.
+  2. `git diff <parcel>^..<parcel> --stat` names only the runner, the
+     handler and the parcel's own evidence.
+
+source: |
+  Split from BL-2019 on 2026-10-06 (coordinator note 016875, "split
+  BL-2019: coder held it 60m+, no commit, loop-halt (no salvage)"),
+  BL-2019 itself split from BL-1625. The human sentences BL-1625 carried,
+  verbatim (Article 5.3): human directive 2026-09-05 ("we should not sweep
+  failing tests under the carpet"); human intake 2026-09-17 ("tests run
+  for hours", BL-1618/1619 - hence measurement first, bounded samples in
+  the parcel, and never beside another lane).
+
+  The human, 2026-10-04, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  split from BL-2019 on 2026-10-06 after coder (iq3) held it 12m
+  (routed 01:44Z, pulled 01:56Z; the coordinator's note says 60m+, which
+  is the seat's time without a commit). The loop-detection halt is the
+  trigger (human 2026-10-05: a loop halt means simplify, not only cut for
+  size). Session 09464452, 01:46-01:55Z: 101 tool calls, read about 15
+  files (fixtureReaper, stepRegistry, runtime, cli, five other handlers,
+  suite_inventory), wrote nothing. It then ran the same grep for a
+  `ctx.cleanups` convention six times and halted. BL-2019 had said to
+  read only bl1782's first 40 lines. The simplification: the questions it
+  hunted are answered in the How section (no cleanup code, no index.js
+  edit, synchronous steps, the KNOWN_VALUES pattern by line anchor), and
+  the one asynchronous case (the killed run) moved to BL-2028.
+  Nothing to salvage: worktree clean at the pull, and stash@{0}
+  (01:45:47Z, check-suite-file-budget.ts) is earlier drift, not BL-2019.
+  BL-2019 was queue-jumped by the human (fa0a525e2d), so this is its
+  first slice.
+  INVEST: Independent (no dependency). Small (two new files, three runs).
+  Testable (mkdtemp fixtures, seconds).
+
+assigned_to: coder

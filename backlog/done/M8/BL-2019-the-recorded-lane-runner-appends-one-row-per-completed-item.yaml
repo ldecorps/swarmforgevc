@@ -2,7 +2,8 @@ id: BL-2019
 title: "The recorded lane runner runs a listed population one item at a time, appends one duration row per completed item and none for an incomplete one, names every red in its verdict, exits with the suite's status, and runs a bounded prefix under --limit - slice 1 of BL-1625, one new bash script on fixture lists"
 milestone: M8
 type: feature
-status: todo
+status: done
+closed_as: split-into-BL-2027,BL-2028
 epic: unit-suite-speed
 priority: 30
 direction: swarm-reported
@@ -113,3 +114,8 @@ notes: |
   examples). Testable (mkdtemp fixtures, seconds).
 
 assigned_to: coder
+  Split 2026-10-06 (coordinator note 016875) into BL-2027 (the runner and
+  scenarios 04, 05) and BL-2028 (scenario 03, the killed run included),
+  after coder (iq3) held it 12m and loop-halted on the handler's cleanup
+  conventions. Scenarios moved verbatim; this ticket's feature file is
+  removed. BL-2020 and BL-2021 now depend on BL-2027.

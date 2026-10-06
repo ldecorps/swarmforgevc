@@ -1,21 +1,21 @@
 id: BL-2020
-title: "The landed-features front-end lists every feature under a directory in name order and runs each through run_acceptance.sh on BL-2019's recorded lane runner, one duration row per feature - slice 2 of BL-1625"
+title: "The landed-features front-end lists every feature under a directory in name order and runs each through run_acceptance.sh on BL-2027's recorded lane runner, one duration row per feature - slice 2 of BL-1625"
 milestone: M8
 type: feature
 status: todo
 epic: unit-suite-speed
 priority: 30
 direction: swarm-reported
-depends_on: [BL-2019]
+depends_on: [BL-2027]
 mutation_cost: low
-# low: one thin bash front-end that builds a list and calls BL-2019's
+# low: one thin bash front-end that builds a list and calls BL-2027's
 # runner, and one step handler over two tiny mkdtemp fixture features.
 slice_size_envelope: low
 required_stages: [coder, qa]
 stage_skip_reasons:
   cleaner: "one new thin script; nothing to refactor"
-  architect: "a list builder over BL-2019's runner, whose contract and invariants the architect reviewed there"
-  hardender: "writes nothing itself - the runner writes the rows and is hardened in BL-2019; bash has no mutation lane (BL-472)"
+  architect: "a list builder over BL-2027's runner, whose contract and invariants the architect reviewed there"
+  hardender: "writes nothing itself - the runner writes the rows and is hardened in BL-2027; bash has no mutation lane (BL-472)"
   documenter: "BL-2021, the last slice, documents the lane and both front-ends"
 acceptance: specs/features/BL-2020-the-landed-features-front-end-runs-every-feature-in-name-order.feature
 
@@ -96,5 +96,9 @@ notes: |
   whole) and specs/pipeline/test/fixtures/noopSteps.js (8 lines). Nothing
   else in specs/pipeline/ is needed.
   BL-1630 (done) made a run_acceptance.sh call seconds, not 20 s.
-  INVEST: Independent of BL-2021 (both need only BL-2019). Small (one
+  INVEST: Independent of BL-2021 (both need only BL-2027). Small (one
   script, one handler, one scenario). Testable (mkdtemp fixtures).
+  Repointed 2026-10-06 by the specifier: BL-2019 was split into BL-2027
+  (the runner) and BL-2028 (its scenario 03), so every reference to the
+  runner now reads BL-2027 and depends_on names it; the pointer to
+  BL-2019's notes (the BL-1625 session) stays. Nothing else changed.

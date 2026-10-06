@@ -1,0 +1,113 @@
+id: BL-2028
+title: "The recorded lane runner appends one duration row per completed item and none for an incomplete one, a killed run included - slice 2 of BL-2019: one step handler over BL-2027's runner"
+milestone: M8
+type: feature
+status: todo
+epic: unit-suite-speed
+priority: 30
+direction: swarm-reported
+depends_on: [BL-2027]
+mutation_cost: low
+# low: one new step handler (~80 lines) over BL-2027's runner, three runs,
+# one of them asynchronous.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one new handler file; nothing to refactor"
+  architect: "test-side only; the runner's contract and invariants were reviewed in BL-2027"
+  hardender: "test-side only; the runner that writes the rows is hardened in BL-2027"
+  documenter: "no living doc describes an acceptance binding; BL-2021 carries the lane's docs"
+acceptance: specs/features/BL-2028-the-recorded-lane-runner-appends-one-duration-row-per-completed-item.feature
+
+invariants:
+  - "Every item that completes appends exactly one row, whether it passed or failed; an item that did not complete appends none."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2028RecordedLaneRunnerRowsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-2019 (approved, itself inherited from BL-1625), split
+  2026-10-06 with no new scope. FIRM (BL-1625): rows are per ITEM,
+  appended as each completes, so a run killed part-way leaves the rows of
+  the completed items and no more.
+
+description: |
+  ## What is wanted
+
+  A new step handler, `specs/pipeline/steps/bl2028RecordedLaneRunnerRowsSteps.js`,
+  binding scenario 03 of
+  `specs/features/BL-2028-the-recorded-lane-runner-appends-one-duration-row-per-completed-item.feature`
+  (an outline with three rows) against BL-2027's runner,
+  `swarmforge/scripts/test/run_recorded_lane.sh`. No production change.
+
+  ## How (direction, not mandate) - everything the handler needs is here
+
+  Read only BL-2027's handler,
+  `specs/pipeline/steps/bl2027RecordedLaneRunnerVerdictSteps.js`, and copy
+  its shape: requires (with `{ spawn, spawnSync }` from
+  `node:child_process`), `trackedTmpRoot`, FEATURE (this feature's text),
+  `registerSteps`, KNOWN_VALUES lookups that throw, and the `spawnSync`
+  call. Do not edit `specs/pipeline/steps/index.js`: handlers
+  are discovered by the `Steps.js` suffix (BL-1371).
+
+  - KNOWN_VALUES:
+    - shape: `both pass` -> lines `a<TAB>true`, `b<TAB>true`;
+      `include one that fails` -> `a<TAB>true`, `b<TAB>false`.
+    - runs: `runs that list to the end` -> one synchronous `spawnSync`
+      run; `is killed after the first` -> the killed run below.
+    - rows: `one row per item, both passing` -> 2 rows with results
+      `pass`, `pass`; `one row per item, one failing` -> 2 rows, `pass`,
+      `fail`; `exactly one row` -> 1 row, for item `a`.
+  - Count rows by reading the durations file and `JSON.parse`-ing each
+    non-empty line.
+  - The killed run is the only asynchronous step. The runtime awaits every
+    handler (`specs/pipeline/runtime.js` line 76), so write that step as
+    `async (ctx) => { ... }`:
+    1. Make the second item `sleep 5` instead of its shape's command, so
+       the runner is still inside item b when it is killed.
+    2. `const child = spawn('bash', [RUNNER, '--lane', 'fixture', '--list', listPath, '--durations', durPath], { stdio: 'ignore' });`
+    3. Poll until the durations file holds one row, with a 10 s deadline:
+       `while (rowCount() < 1 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));`
+    4. `child.kill('SIGKILL')`, then `await new Promise((r) => child.once('exit', r));`.
+    Kill only `child`, never the test process. The orphaned `sleep 5`
+    ends on its own.
+  - `trackedTmpRoot` deletes its roots at process exit: no cleanup code.
+
+  Then run `node specs/pipeline/cli.js <this feature>`: 3 ok, 0 fail. Run
+  `cd extension && npm test` before forwarding.
+
+  If a row fails on its merits once bound (for example, a row for `b` in
+  the killed run), the runner is wrong. Send the specifier a note naming
+  the row and what the durations file held. Do not change the runner in
+  this parcel: a runner change needs the hardener, and the specifier adds
+  that stage.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2028-the-recorded-lane-runner-appends-one-duration-row-per-completed-item.feature`:
+     3 ok (03 x3), 0 fail. Measured at mint: no handler, all red.
+  2. `git diff <parcel>^..<parcel> --stat` names only the handler and the
+     parcel's own evidence.
+
+source: |
+  Split from BL-2019 on 2026-10-06 (coordinator note 016875, "split
+  BL-2019: coder held it 60m+, no commit, loop-halt (no salvage)"),
+  BL-2019 itself split from BL-1625. The human sentences BL-1625 carried,
+  verbatim (Article 5.3): human directive 2026-09-05 ("we should not sweep
+  failing tests under the carpet"); human intake 2026-09-17 ("tests run
+  for hours", BL-1618/1619 - hence measurement first, bounded samples in
+  the parcel, and never beside another lane).
+
+  The human, 2026-10-04, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  split from BL-2019 on 2026-10-06 after coder (iq3) held it 12m and
+  loop-halted. BL-2027's notes record the session and the simplification.
+  This slice is the one asynchronous case (spawn, poll, kill), with the
+  recipe written out.
+  INVEST: depends on BL-2027 (the runner). Small (one handler, three
+  runs). Testable (mkdtemp fixtures, seconds).
+
+assigned_to: coder
