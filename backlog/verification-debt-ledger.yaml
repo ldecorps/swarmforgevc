@@ -252,3 +252,8 @@
   role: QA
   description: "qa_e2e step 1 runs specs/pipeline/test/bl989PortableGrepTabAnchor.property.test.js, in no lane (BL-2041); ran it by hand with node --test, plus a hand reach-check of the new sweep regex against the pre-hotfix file"
   detected_at: 2026-10-06
+- category: gather-excerpt-lost-red-message
+  ticket: BL-2041
+  role: QA
+  description: "unit row green but its new node --test summary (qa_e2e 2: 367 tests in 41 files) was outside the gather's tail excerpt (vitest stderr last); ran the lane's exact listPipelineTestFiles once by hand to read 367/367"
+  detected_at: 2026-10-06
