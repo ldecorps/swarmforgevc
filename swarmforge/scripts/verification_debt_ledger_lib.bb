@@ -36,7 +36,14 @@
 
 (def ^:private field->key
   {"category" :category "ticket" :ticket "role" :role
-   "description" :description "detected_at" :detected-at "evidence" :evidence})
+   "description" :description "detected_at" :detected-at "evidence" :evidence
+   ;; BL-1783: settle fields - present only once a category is settled,
+   ;; absent (nil) on every row before then, so the generic parse loop
+   ;; already picks these up with no other change (same shape as
+   ;; hardening_debt_ledger_lib.bb's discharged_at/discharged_evidence).
+   "discharged_at" :discharged-at "discharged_by" :discharged-by
+   "discharged_evidence" :discharged-evidence
+   "waived_at" :waived-at "waived_by" :waived-by "waive_reason" :waive-reason})
 
 (defn- escape-quoted [s]
   (apply str (mapcat (fn [c] (case c \\ "\\\\" \" "\\\"" (str c))) (or s ""))))
@@ -102,13 +109,21 @@
             (recur (rest lines) rows
                    (if (nil? k) current (assoc current k (parse-scalar raw))))))))))
 
-(defn- render-row [{:keys [category ticket role description detected-at evidence]}]
+(defn- render-row [{:keys [category ticket role description detected-at evidence
+                           discharged-at discharged-by discharged-evidence
+                           waived-at waived-by waive-reason]}]
   (str "- category: " category "\n"
        "  ticket: " ticket "\n"
        "  role: " role "\n"
        "  description: \"" (escape-quoted description) "\"\n"
        "  detected_at: " detected-at "\n"
-       (if evidence (str "  evidence: " evidence "\n") "")))
+       (if evidence (str "  evidence: " evidence "\n") "")
+       (if discharged-at (str "  discharged_at: " discharged-at "\n") "")
+       (if discharged-by (str "  discharged_by: " discharged-by "\n") "")
+       (if discharged-evidence (str "  discharged_evidence: " discharged-evidence "\n") "")
+       (if waived-at (str "  waived_at: " waived-at "\n") "")
+       (if waived-by (str "  waived_by: " waived-by "\n") "")
+       (if waive-reason (str "  waive_reason: \"" (escape-quoted waive-reason) "\"\n") "")))
 
 (def ledger-header
   (str "# backlog/verification-debt-ledger.yaml — BL-1782 verification-debt ledger.\n"
@@ -141,13 +156,70 @@
 (defn rows-for-category [rows category]
   (filterv #(= category (:category %)) rows))
 
+(defn- outstanding-row? [row]
+  "A row is outstanding unless it carries a settle field (BL-1783): a
+   discharged or waived row is settled and no longer counts."
+  (not (or (:discharged-at row) (:waived-at row))))
+
+(defn outstanding-rows [rows category]
+  (filterv outstanding-row? (rows-for-category rows category)))
+
 (defn outstanding-count
-  "Every row counts as outstanding in this slice (BL-1783 adds settle)."
+  "Only outstanding rows count (BL-1783): a discharged or waived row no
+   longer counts, so a settled category reads 0 and never unowned. A row
+   recorded after a settle is outstanding and counts from one."
   [rows category]
-  (count (rows-for-category rows category)))
+  (count (outstanding-rows rows category)))
 
 (defn all-categories [rows]
   (vec (distinct (map :category rows))))
+
+;; ── BL-1783: settle - the two ways a category leaves the unowned state ──
+;; A settle verb never removes a row or rewrites a row's recorded fields
+;; (invariant 1): it only ADDS the settle fields to every outstanding row
+;; of the named category, so what was hand-checked stays readable next to
+;; how it was settled. It changes only outstanding rows of the category it
+;; names (invariant 2): rows of every other category, and rows already
+;; settled, are byte-identical before and after. Both refuse (rows
+;; unchanged, :settled? false) rather than silently no-op'ing, the same
+;; posture as hardening_debt_ledger_lib.bb's discharge-debt.
+
+(defn discharge-category
+  "rows, {:category :by :evidence :on} -> {:rows rows' :settled? bool}.
+   Adds discharged_at, discharged_by and discharged_evidence to every
+   outstanding row of the category. Refuses (rows unchanged) with no
+   evidence, or no outstanding row in the category - the evidence-file
+   existence check is the CLI's job (it knows the project root)."
+  [rows {:keys [category by evidence on]}]
+  (if (str/blank? evidence)
+    {:rows rows :settled? false}
+    (let [targets (outstanding-rows rows category)]
+      (if (empty? targets)
+        {:rows rows :settled? false}
+        {:rows (mapv (fn [row]
+                       (if (and (= category (:category row)) (outstanding-row? row))
+                         (assoc row :discharged-at on :discharged-by by :discharged-evidence evidence)
+                         row))
+                     rows)
+         :settled? true}))))
+
+(defn waive-category
+  "rows, {:category :by :reason :on} -> {:rows rows' :settled? bool}.
+   Adds waived_at, waived_by and waive_reason to every outstanding row of
+   the category. Refuses (rows unchanged) with no by, a blank reason, or
+   no outstanding row in the category."
+  [rows {:keys [category by reason on]}]
+  (if (or (str/blank? by) (str/blank? reason))
+    {:rows rows :settled? false}
+    (let [targets (outstanding-rows rows category)]
+      (if (empty? targets)
+        {:rows rows :settled? false}
+        {:rows (mapv (fn [row]
+                       (if (and (= category (:category row)) (outstanding-row? row))
+                         (assoc row :waived-at on :waived-by by :waive-reason reason)
+                         row))
+                     rows)
+         :settled? true}))))
 
 ;; ── conf threshold (same `config <key> <value>` shape as the rest of
 ;;    swarmforge.conf - mutation_cooldown_lib.bb's own parse-conf, kept

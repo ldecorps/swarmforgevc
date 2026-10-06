@@ -16,6 +16,10 @@ function mkdirp(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+function ownedSocket(tmp) {
+  return path.join(tmp, '.swarmforge', 'tmux', 'swarm.sock');
+}
+
 test('buildKillSessionArgs returns tmux kill-session args for each session', () => {
   const args = buildKillSessionArgs('/tmp/swarm.sock', ['swarmforge-coder', 'swarmforge-cleaner']);
   assert.deepEqual(args, [
@@ -40,7 +44,7 @@ test('stopSwarm is an idempotent success when no tmux socket file exists', () =>
 test('stopSwarm succeeds and clears state when sessions.tsv is empty', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/nonexistent/swarm.sock');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
   fs.writeFileSync(path.join(tmp, '.swarmforge', 'sessions.tsv'), '');
   const result = stopSwarm(tmp);
   assert.equal(result.success, true);
@@ -54,7 +58,7 @@ test('stopSwarm succeeds and clears state when sessions.tsv is empty', () => {
 test('stopSwarm succeeds and clears stale state when the socket is dead (crashed swarm)', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/nonexistent/swarm.sock');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
   fs.writeFileSync(
     path.join(tmp, '.swarmforge', 'sessions.tsv'),
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
@@ -70,7 +74,7 @@ test('stopSwarm succeeds and clears stale state when the socket is dead (crashed
 test('stopSwarm tolerates a missing daemon pid file', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/nonexistent/swarm.sock');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
   fs.writeFileSync(
     path.join(tmp, '.swarmforge', 'sessions.tsv'),
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
@@ -83,7 +87,7 @@ test('stopSwarm tolerates a missing daemon pid file', () => {
 test('stopSwarm reports success and the killed session list when tmux kills succeed', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/fake/swarm.sock');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
   fs.writeFileSync(
     path.join(tmp, '.swarmforge', 'sessions.tsv'),
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
@@ -99,10 +103,65 @@ test('stopSwarm reports success and the killed session list when tmux kills succ
   }
 });
 
+test('stopSwarm refuses a worktree pointer at another root socket', () => {
+  const main = mkTmp();
+  const worktree = mkTmp();
+  const foreign = path.join(main, '.swarmforge', 'tmux', 'live.sock');
+  mkdirp(path.dirname(foreign));
+  fs.writeFileSync(foreign, '');
+  mkdirp(path.join(worktree, '.swarmforge'));
+  fs.writeFileSync(path.join(worktree, '.swarmforge', 'tmux-socket'), foreign);
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
+  );
+
+  const fake = installInProcessTmux([{ subcommand: 'kill-server', exitCode: 0 }]);
+  try {
+    const result = stopSwarm(worktree);
+    assert.equal(result.success, true);
+    assert.deepEqual(result.sessionsKilled, []);
+    assert.match(result.message, /outside this root/);
+    assert.deepEqual(fake.calls(), []);
+    assert.equal(fs.existsSync(foreign), true);
+    assert.equal(fs.existsSync(path.join(worktree, '.swarmforge', 'tmux-socket')), false);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('stopSwarm refuses an in-root pointer whose directory is a symlink to another root', () => {
+  const main = mkTmp();
+  const worktree = mkTmp();
+  const mainTmux = path.join(main, '.swarmforge', 'tmux');
+  mkdirp(mainTmux);
+  fs.writeFileSync(path.join(mainTmux, 'live.sock'), '');
+  mkdirp(path.join(worktree, '.swarmforge'));
+  fs.symlinkSync(mainTmux, path.join(worktree, '.swarmforge', 'tmux'));
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'tmux-socket'),
+    path.join(worktree, '.swarmforge', 'tmux', 'live.sock')
+  );
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
+  );
+
+  const fake = installInProcessTmux([{ subcommand: 'kill-server', exitCode: 0 }]);
+  try {
+    const result = stopSwarm(worktree);
+    assert.match(result.message, /outside this root/);
+    assert.deepEqual(fake.calls(), []);
+    assert.equal(fs.existsSync(path.join(mainTmux, 'live.sock')), true);
+  } finally {
+    fake.restore();
+  }
+});
+
 test('stopSwarm sends SIGTERM to a live daemon pid and still succeeds', async () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/fake/swarm.sock');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
   fs.writeFileSync(
     path.join(tmp, '.swarmforge', 'sessions.tsv'),
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
@@ -129,7 +188,7 @@ test('stopSwarm sends SIGTERM to a live daemon pid and still succeeds', async ()
 test('stopSwarm ignores a daemon pid file with non-numeric content', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/fake/swarm.sock');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
   fs.writeFileSync(
     path.join(tmp, '.swarmforge', 'sessions.tsv'),
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
@@ -148,7 +207,7 @@ test('stopSwarm ignores a daemon pid file with non-numeric content', () => {
 test('stopSwarm tolerates a daemon pid file pointing at an already-dead process', async () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/fake/swarm.sock');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
   fs.writeFileSync(
     path.join(tmp, '.swarmforge', 'sessions.tsv'),
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
@@ -176,7 +235,7 @@ test('stopSwarmOnExtensionShutdown is a no-op when target path is missing', () =
 test('stopSwarmOnExtensionShutdown is a no-op for headless swarms', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/fake/swarm.sock');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
   fs.writeFileSync(path.join(tmp, '.swarmforge', 'headless-swarm'), '');
 
   const fake = installInProcessTmux([
@@ -194,7 +253,7 @@ test('stopSwarmOnExtensionShutdown is a no-op for headless swarms', () => {
 test('stopSwarmOnExtensionShutdown tears down a live swarm like stopSwarm', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/fake/swarm.sock');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
   fs.writeFileSync(
     path.join(tmp, '.swarmforge', 'sessions.tsv'),
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'

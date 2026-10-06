@@ -46,10 +46,12 @@ export function drainAgentSessions(targetPath: string): {
   sessionsAttempted: string[];
 } {
   const socketPath = readTmuxSocket(targetPath);
-  if (!socketPath) {
+  if (!socketPath || !socketOwnedByTarget(targetPath, socketPath)) {
     return {
       success: true,
-      message: 'drain-agents: no tmux socket — nothing to drain.',
+      message: socketPath
+        ? 'drain-agents: refused a socket outside this root.'
+        : 'drain-agents: no tmux socket — nothing to drain.',
       sessionsStopped: 0,
       sessionsAttempted: [],
     };
@@ -100,10 +102,43 @@ export function clearSwarmStateFiles(targetPath: string): void {
  */
 export function clearStaleSwarmState(targetPath: string): void {
   const socketPath = readTmuxSocket(targetPath);
-  if (socketPath) {
+  if (socketPath && socketOwnedByTarget(targetPath, socketPath)) {
     runCommand('tmux', ['-S', socketPath, 'kill-server']);
   }
   clearSwarmStateFiles(targetPath);
+}
+
+/**
+ * A worktree's tmux-socket file stores the main checkout's socket path.
+ * kill-server on that path tears down the live swarm. Only a socket under
+ * this target's own .swarmforge/ may be killed. Both sides are compared
+ * physically, so a symlinked directory cannot name another root's socket
+ * as this one's. A socket whose directory is gone has no server behind it;
+ * its nearest existing ancestor is resolved instead, so the comparison
+ * still holds on a host whose temp or home path is itself a symlink.
+ */
+export function socketOwnedByTarget(targetPath: string, socketPath: string): boolean {
+  const root = physicalPath(targetPath);
+  const sockDir = physicalPath(path.dirname(socketPath));
+  const ownedPrefix = path.join(root, '.swarmforge') + path.sep;
+  return (sockDir + path.sep).startsWith(ownedPrefix);
+}
+
+function physicalPath(p: string): string {
+  let head = path.resolve(p);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(head), ...tail);
+    } catch {
+      const parent = path.dirname(head);
+      if (parent === head) {
+        return path.resolve(p);
+      }
+      tail.unshift(path.basename(head));
+      head = parent;
+    }
+  }
 }
 
 function stopHandoffDaemon(targetPath: string): void {
@@ -128,12 +163,14 @@ function stopHandoffDaemon(targetPath: string): void {
  */
 export function stopSwarm(targetPath: string): StopResult {
   const socketPath = readTmuxSocket(targetPath);
-  if (!socketPath) {
+  if (!socketPath || !socketOwnedByTarget(targetPath, socketPath)) {
     clearSwarmStateFiles(targetPath);
     stopHandoffDaemon(targetPath);
     return {
       success: true,
-      message: 'Swarm already stopped (no tmux socket); state cleared.',
+      message: socketPath
+        ? 'Refused to kill a socket outside this root; stale swarm state cleared.'
+        : 'Swarm already stopped (no tmux socket); state cleared.',
       sessionsKilled: [],
     };
   }
@@ -341,7 +378,7 @@ export function stopSwarmCompletely(
   try {
     // Phase 1: Kill tmux sessions
     const socketPath = readTmuxSocket(targetPath);
-    if (socketPath) {
+    if (socketPath && socketOwnedByTarget(targetPath, socketPath)) {
       const roles = readSwarmRoles(targetPath);
       const sessions = roles.map((r) => r.session);
       sessionsAttempted.push(...sessions);
@@ -365,7 +402,9 @@ export function stopSwarmCompletely(
       phases.push({
         name: 'tmux-stop',
         success: true,
-        detail: 'No tmux socket found (already stopped)',
+        detail: socketPath
+          ? 'Refused a socket outside this root'
+          : 'No tmux socket found (already stopped)',
       });
     }
 

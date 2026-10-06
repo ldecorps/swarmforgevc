@@ -192,8 +192,12 @@
         (handoff-lib/stage-sibling-seats)))
 
 (defn- difficulty-allows-claim?
-  "BL-1001: leave the parcel in the stage queue when this seat must not take it."
-  [handoff-file tiers pack-conf]
+  "BL-1001: leave the parcel in the stage queue when this seat must not take it.
+   BL-1843: a seat that worked the parcel's ticket itself (own-tasks) claims
+   it even when an idle easier sibling also could - otherwise prefer-fit
+   defers it to the sibling while the affinity rule defers it back, and it
+   waits out the cross-seat deadline. Never overrides :skip-ineligible."
+  [handoff-file tiers pack-conf own-tasks]
   (let [me (handoff-lib/current-role)
         stage (handoff-lib/seat-stage me)
         cost (mutation-cost-for-task (claim-task-name handoff-file))
@@ -207,7 +211,9 @@
                    :models models
                    :conf-text pack-conf
                    :sibling-states (difficulty-sibling-states tiers)})]
-    (= :claim decision)))
+    (or (= :claim decision)
+        (and (= :defer-better-fit decision)
+             (contains? own-tasks (claim-task-name handoff-file))))))
 
 (defn report-no-task-or-rotate! []
   (let [conf-text (mono-router-conf-text)
@@ -626,7 +632,10 @@
                 decided              (mapv (fn [f]
                                              [f (seat-affinity-lib/rework-claim-decision
                                                  {:type (handoff-lib/header-field f "type")
-                                                  :task (handoff-lib/header-field f "task")
+                                                  ;; BL-1843: a note carries no task: header; claim-task-name
+                                                  ;; reads the ticket its message names, so sibling-rework
+                                                  ;; affinity defers it like the ticket's own parcels.
+                                                  :task (claim-task-name f)
                                                   :sibling-tasks sibling-tasks
                                                   :my-tasks my-tasks
                                                   :enqueued-at (handoff-lib/header-field f "enqueued_at")
@@ -641,6 +650,10 @@
                 ;; BL-1001: drop candidates this seat must not take (tier /
                 ;; prefer-fit). They stay in the stage queue for a peer.
                 tiers                (seat-difficulty-lib/parse-seat-tiers pack-conf)
+                ;; BL-1843: this seat's own worked tickets, read whether or not a
+                ;; sibling worked anything (my-tasks above is only read when one did).
+                own-tasks            (into (set (handoff-lib/worked-task-names-in completed-dir))
+                                           (handoff-lib/worked-task-names-in in-process-dir))
                 ;; BL-1715: a local driver seat that gave a ticket up must
                 ;; never claim it again while it is in the stage - never a
                 ;; deferral (BL-1004's own 30-minute window), permanent.
@@ -652,7 +665,7 @@
                                        (handoff-lib/current-role))
                 claimable            (->> decided
                                           (remove #(= :defer (:action (second %))))
-                                          (filter (fn [[f _]] (difficulty-allows-claim? f tiers pack-conf)))
+                                          (filter (fn [[f _]] (difficulty-allows-claim? f tiers pack-conf own-tasks)))
                                           (remove (fn [[f _]] (contains? given-up-tasks (claim-task-name f))))
                                           vec)]
             (doseq [[f decision] deferred]

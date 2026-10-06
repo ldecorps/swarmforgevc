@@ -70,9 +70,15 @@ function spawnOwnedFixture({ cwd, cmdline }) {
 // A real crash-orphaned process: forks via python3 (same double-detach
 // trick test_handoffd_supervisor_job_reaper.sh already established - Node
 // has no raw fork() of its own), the immediate parent exits so the child
-// genuinely reparents to launchd/init (PPID 1), then execs into `sleep`
+// genuinely reparents to its host's adopter, then execs into `sleep`
 // with argv0 set to the cmdline shape under test. Polls real `ps` until
 // the reparent has actually happened before returning, never assumed.
+// The adopter is launchd/init (PPID 1) or, on a child-subreaper host such
+// as WSL's Relay /init, that subreaper (BL-1907, which taught the reaper
+// the same thing): so "reparented" is "no longer parented to the starter
+// that exited", never "parented to PID 1". Requiring PID 1 made every user
+// of this fixture red on a swarm launched from a Windows terminal
+// (hotfix 2026-10-06).
 async function spawnOrphanFixture({ cwd, cmdline }) {
   const scratch = mkSocketFixtureRoot('bl886-orphan-spawn-');
   const pidFile = path.join(scratch, 'pid');
@@ -92,7 +98,7 @@ async function spawnOrphanFixture({ cwd, cmdline }) {
       '',
     ].join('\n')
   );
-  spawnSync('python3', [script, pidFile, cwd, cmdline], { stdio: 'ignore' });
+  const starter = spawnSync('python3', [script, pidFile, cwd, cmdline], { stdio: 'ignore' });
   const deadline = Date.now() + 5000;
   let pid;
   while (Date.now() < deadline) {
@@ -109,7 +115,7 @@ async function spawnOrphanFixture({ cwd, cmdline }) {
   let reparented = false;
   while (Date.now() < deadline) {
     const ppid = spawnSync('ps', ['-o', 'ppid=', '-p', String(pid)]).stdout.toString().trim();
-    if (ppid === '1') {
+    if (ppid !== '' && ppid !== String(starter.pid)) {
       reparented = true;
       break;
     }
@@ -122,7 +128,7 @@ async function spawnOrphanFixture({ cwd, cmdline }) {
     } catch {
       /* already gone */
     }
-    throw new Error(`bl886: orphan fixture pid ${pid} never reparented to PPID 1`);
+    throw new Error(`bl886: orphan fixture pid ${pid} never reparented away from its starter ${starter.pid}`);
   }
   return { pid };
 }

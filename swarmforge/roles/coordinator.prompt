@@ -1018,17 +1018,19 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   `down`. A seat whose model is generating is working. What each figure
   means: `docs/how-to/BL-1052-local-model-seat-launch.md`, "Judge a seat's
   health from its records, not its pane".
-- Route coder@iq3 only simple tickets (`mutation_cost: low`, one or two
-  files) until BL-1840 and BL-1841 land: each turn costs minutes.
+- The local model is now the bare `coder` seat, declared `--seat-tier
+  easy` (`full-forge.conf`, 0e79c1e26a): BL-1001's tier filter keeps
+  medium/high tickets on coder@2. BL-1840 and BL-1841 have landed.
 - A note you send the coder stage about a ticket leads with
   `Work <id>:` (e.g. `Work BL-1830: still todo - build+forward before
   completing this note`). `to: coder` lands in the stage queue that every
-  coder seat races for, and `Work <id>` is the only wording the seat
-  filters read: BL-1001's tier filter keeps an easy seat off a medium
-  ticket only when it can see the ticket. On 2026-09-30 coder@iq3 claimed
-  reminders worded `BL-1816 still todo ...` and `BL-1830 still todo ...`
-  (medium) while the primary coder held both tickets. Until BL-1843 lands,
-  the seat that worked a ticket gets no first claim on a note about it.
+  coder seat races for. Since BL-1843 (landed 541d376bfe) a note whose
+  message LEADS with `Work <id>` or a bare `<id>` is claimed under
+  BL-1001's tier filter and BL-1004's affinity, like a git_handoff for
+  that ticket; an id later in the message is invisible to both. Before
+  it, on 2026-09-30, coder@iq3 claimed reminders worded `BL-1816 still
+  todo ...` and `BL-1830 still todo ...` (medium) while the primary coder
+  held both tickets.
 
 ## A check you did by hand is a row in the verification-debt ledger (2026-09-26, BL-1782)
 - When your pass needed a check or classification made by hand, one no

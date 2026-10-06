@@ -114,3 +114,6 @@ description: |
     null.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: acceptance, commit: ad7a947f46, evidence: backlog/evidence/BL-2034-QA-20261006.md }
