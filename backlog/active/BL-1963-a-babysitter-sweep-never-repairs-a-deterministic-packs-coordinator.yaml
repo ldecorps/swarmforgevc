@@ -7,6 +7,17 @@ epic: local-llm-swarm
 priority: 3
 direction: queue-jump
 depends_on: [BL-1961]
+abandoned_commits: [f604115bcc]
+# f604115bcc ("BL-1963: babysitter sweep never repairs a deterministic
+# pack's coordinator", By coder) sits on swarmforge-coder, off this
+# parcel's lineage. Its babysitter_check.bb, babysitterd_sweep_lib_test_runner.bb
+# and bl1963BabysitterRaisesNoCoordinatorFindingSteps.js content is
+# byte-identical to this parcel's 7a04052e3b (both built from the same
+# refs/swarmforge/salvage/BL-1963). Its one extra hunk, an in-flight
+# unbalanced-paren fix to supersede_lib.bb, is BL-1843 WIP - out of this
+# ticket's scope, and supersede_lib.bb loads clean in this parcel's own
+# lineage (no such break present), so nothing from f604115bcc is carried
+# forward.
 mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, qa]
