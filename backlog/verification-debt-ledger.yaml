@@ -212,3 +212,8 @@
   role: QA
   description: "qa-gather's after-run straggler check exited 0 on coder2's concurrent npm run test:properties (9 vitest workers); attributed by hand via /proc cwd to .worktrees/coder2/extension, not a QA orphan"
   detected_at: 2026-10-06
+- category: gather-excerpt-lost-red-message
+  ticket: BL-1964
+  role: QA
+  description: "property lane FAIL on bl1905RealDispatcherScan.property.test.js: register_join named the file but the gather's 4000-char excerpt held only BL-871 onTaskUpdate noise, so the assertion/timeout text was lost (BL-1509 needs it verbatim); ran the file once alone (pass, part 1 19.6s of 60s) and scanDir by hand to rule out the parcel"
+  detected_at: 2026-10-06
