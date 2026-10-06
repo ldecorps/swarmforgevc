@@ -688,7 +688,7 @@
 - commit: 1877b935a2
   subject: "Register hotfix-ledger entries for BL-231 and BL-1566 hotfixes"
   detected_at: 2026-10-02
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1881
   human_decision: null
   decided_at: null
@@ -765,7 +765,7 @@
 - commit: 3c03fb2e4f
   subject: "Hotfix: confirmPoleAloneOutcomeShapes.test.js spawns vitest twice, not three times, so it fits the 7 s per-file budget with headroom"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1922
   human_decision: null
   decided_at: null
@@ -779,63 +779,63 @@
 - commit: 4b0e9adb96
   subject: "Hotfix: a task-mode seat is never told to run merge_and_process, and a refused take-up never says 'do not ask again'"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
 - commit: 55182a77c3
   subject: "Hotfix: a local-model seat that stops to ask the user a question is nudged to use its tools"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1925
   human_decision: null
   decided_at: null
 - commit: e69b66a68d
   subject: "Hotfix: a served parcel names its ticket's YAML file instead of 'from backlog/active/'"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1925
   human_decision: null
   decided_at: null
 - commit: 7f95cdc139
   subject: "Hotfix: a local-model seat is never given a tool that waits for a human in its pane"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1925
   human_decision: null
   decided_at: null
 - commit: 5a89725e03
   subject: "Hotfix: a local-model seat runs one tool call per reply, and its card shows the handoff draft it must write"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1926
   human_decision: null
   decided_at: null
 - commit: aec0daba54
   subject: "Hotfix: a served git_handoff's forward step is the exact draft command, swarm_handoff.sh, then done_with_current"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1927
   human_decision: null
   decided_at: null
 - commit: e2e2287822
   subject: "Hotfix: a resumed local-model seat reads its card before it runs ready_for_next.sh"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1927
   human_decision: null
   decided_at: null
 - commit: dca94239f4
   subject: "Hotfix: the BL-1845 property test anchors its mutation on the qwen launch line as e2e2287822 left it"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1927
   human_decision: null
   decided_at: null
 - commit: b12d063001
   subject: "Hotfix: a bounced parcel's task name finds its ticket file and forwards under the bare ticket id"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1927
   human_decision: null
   decided_at: null
@@ -870,28 +870,28 @@
 - commit: ae5d0646a0
   subject: "Hotfix: BL-1307's acceptance driver answers the self-audit challenge (3 scenarios red since BL-1529)"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
 - commit: 56910c695b
   subject: "Hotfix: BL-1293's acceptance driver answers the self-audit challenge (3 scenarios red since BL-1529)"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
 - commit: da781b0fef
   subject: "Hotfix: BL-1529's census of git_handoff-drafting scripts counts eight, naming the two that joined (red since 2026-09-24)"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
 - commit: 1dbe9de8e1
   subject: "Hotfix: the two whole-repo git ls-files readers in tests take a 64 MiB buffer"
   detected_at: 2026-10-03
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
@@ -947,70 +947,70 @@
 - commit: 92f53eee1b
   subject: "hotfix: a task-mode reverse copy is told to run done_with_current, never to implement its ticket"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
 - commit: 3e66c4af7c
   subject: "hotfix: a local-model seat's qwen settings stop re-attaching recently read files after a compaction"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: c44825d8e4
   subject: "hotfix: the tool-call shim caps a local seat's compaction summary at 1200 tokens and closes a cut one"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: 4afdfbb6bf
   subject: "hotfix: a local-model seat's qwen runs on a short seat prompt with managed auto memory off"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: d955df1ca4
   subject: "hotfix: the shim sends a local seat's compaction side-query with thinking off"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: 7d47d8bf63
   subject: "hotfix: the shim drops qwen's ask for an <analysis> block from a compaction, and wraps an analysis-only reply as the snapshot"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: 9988960599
   subject: "hotfix: a task-mode seat is told a merge-up or branch-behind note carries no work"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
 - commit: 84150aeb87
   subject: "hotfix: the local-model card says a reverse copy or a merge-up note carries no work"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
 - commit: 8612eb313d
   subject: "hotfix: a local-model seat starts each parcel in a fresh qwen session"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: 35a8448e4c
   subject: "hotfix: drop BL-1851's suite-manifest row that BL-1929's land carried onto main without its runner"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
@@ -1024,77 +1024,77 @@
 - commit: 74c3769083
   subject: "hotfix: babysitter raises a CRIT for a ticket held 3 hours with no commit, spinner or not"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1955
   human_decision: null
   decided_at: null
 - commit: e5ed22d36f
   subject: "hotfix: iq3 serves a 73728 window without its vision projector, and the shim keeps a compaction on the cached prefix"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: 1209273032
   subject: "hotfix: a local-model seat's qwen shows one fixed loading phrase, so handoffd's busy check reads it mid-turn"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: 897e5f4d62
   subject: "hotfix: BL-757's step handler builds its gate deps from the shared contract-checked base"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
 - commit: 14680e2eef
   subject: "hotfix: babysitter's 3-hour stuck clock counts only the seat's own commits for the ticket, never a merge of main"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1955
   human_decision: null
   decided_at: null
 - commit: 1f3b61b9b3
   subject: "hotfix: a local-model seat's qwen skips the heuristic loop dialog and allows 300 tool calls a turn"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: 427b3a1b1f
   subject: "hotfix: a local seat behind the shim declares a larger window to qwen, so it compacts 18000 under what Ollama serves instead of 33000"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: 3b7090f7c4
   subject: "hotfix: a local seat sends its git_handoff before done_with_current, which can restart it"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
 - commit: d138a71f19
   subject: "hotfix: the shim reads a compaction only from a system message or a last USER message, never a tool result"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
 - commit: b5ef5c8e94
   subject: "hotfix: a local seat runs ready_for_next.sh in its worktree, never in the master checkout its card lives in"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1924
   human_decision: null
   decided_at: null
 - commit: e0246ab913
   subject: "hotfix: a local seat's compaction summary names ONE next edit with the lines it replaces, and the seat makes that edit before re-reading its plan"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1952
   human_decision: null
   decided_at: null
@@ -1122,285 +1122,285 @@
 - commit: bdb172641b
   subject: "hotfix: the BL-1877 reach property draws on a fixed seed, so its transitive floor never fails at random"
   detected_at: 2026-10-04
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1930
   human_decision: null
   decided_at: null
 - commit: 9b4ccdd827
   subject: "hotfix: babysitter's seat-stuck CRIT (check 5b) fires at 60 minutes with no commit, not 180"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1955
   human_decision: null
   decided_at: null
 - commit: 02f834ec44
   subject: "hotfix: a stamp-off's no-decision check passes a ledger row decided as HEAD's committed ledger records it, so certified rows stop turning nine checks red"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1988
   human_decision: null
   decided_at: null
 - commit: cd9f7cb39a
   subject: "hotfix: a local seat's read_file at offset 1 is told offset counts from 0, and its card says so"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1989
   human_decision: null
   decided_at: null
 - commit: 0d780b2462
   subject: "hotfix: a local seat that sleeps to wait is told to run in the foreground; its card says run one property file, not the lane"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1989
   human_decision: null
   decided_at: null
 - commit: 8f2643f123
   subject: "hotfix: the pipeline-code guard imports a bounced commit's path when the same ticket's later QA-approved commit carries it unchanged"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1990
   human_decision: null
   decided_at: null
 - commit: 1a95154e5c
   subject: "hotfix: a local seat gets hints for guessed paths, whole reads of big files and npm from the root; its card says so"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1989
   human_decision: null
   decided_at: null
 - commit: 1cec236e2d
   subject: "hotfix: is_qa_ancestor reads a bounce as superseded when a later commit of the same ticket is approved; the guard's own carrier goes"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1990
   human_decision: null
   decided_at: null
 - commit: 32b322a836
   subject: "hotfix: a local seat's read-only shell command naming a missing path gets a hint; its card says where things live"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1989
   human_decision: null
   decided_at: null
 - commit: 418b0a4ab3
   subject: "hotfix: the local-model shim retries a request when llama-server rejects the model's tool call as broken JSON"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1993
   human_decision: null
   decided_at: null
 - commit: 44c9f3f535
   subject: "hotfix: swarm_handoff sends a recipient written in the wrong case (to: qa) under the roster's spelling"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1994
   human_decision: null
   decided_at: null
 - commit: 4949a2d37e
   subject: "hotfix: the local-seat repeat guard names a cycle of repeated calls and tells an empty grep it found nothing"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1994
   human_decision: null
   decided_at: null
 - commit: dfd15ebfb8
   subject: "hotfix: the local-seat edit hook shows a stray closing delimiter at its own line, and the repeat guard names an edit that undoes an earlier one"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1995
   human_decision: null
   decided_at: null
 - commit: 9d6eb54daa
   subject: "hotfix: the iq3 card says an edit result's no-longer-reads caret names the one character to change next"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1995
   human_decision: null
   decided_at: null
 - commit: 66377274b7
   subject: "hotfix: the iq3 card says a coder's evidence is what it runs in its own worktree, never a search of logs, panes or other roles' mailboxes"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1998
   human_decision: null
   decided_at: null
 - commit: 9db627f908
   subject: "hotfix: the local-seat repeat guard tells a command re-run only to filter its output another way to save it once, and the card says so"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
 - commit: 3024ccb56c
   subject: "HOTFIX: the BL-925 step handler runs the pipeline-code guard suite once per process, so its feature fits the runner's 300 s ceiling again"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2000
   human_decision: null
   decided_at: null
 - commit: e36702e90d
   subject: "hotfix: the repeat guard's empty-grep hint tells a grep over a command's output to read that output whole, not that the name is not in those files"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
 - commit: cbca1b5edb
   subject: "HOTFIX: BL-1221's step counts a caller that builds its deps stub through makeAcceptanceGateDeps as supplying a member the helper supplies"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2001
   human_decision: null
   decided_at: null
 - commit: 0a506c792b
   subject: "hotfix: the iq3 card says a name the ticket says to add does not exist yet - one empty grep confirms it, then write it"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
 - commit: f87e90ddf5
   subject: "hotfix: a pull abandons a Work note found by its message, not only by task:, and a local seat never runs redo_from when its ticket is already forwarded"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
 - commit: 8eac9d2543
   subject: "hotfix: the pull's Work-note pattern is anchored to the dispatch shape (message: Work <id>[-:]), so a note that only mentions the ticket is not abandoned"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1999
   human_decision: null
   decided_at: null
 - commit: 6b5f524550
   subject: "hotfix: a note counts as a dispatch only when its capitalised Spec/Work verb opens the message or a sentence"
   detected_at: 2026-10-05
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-2005
   human_decision: null
   decided_at: null
 - commit: dfa78c6ead
   subject: "HOTFIX: BL-754's step handler answers the handoff self-audit, so its feature is green again"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2006
   human_decision: null
   decided_at: null
 - commit: d994ee6d63
   subject: "HOTFIX: the BL-1232 picker property draws on a fixed seed, so its discriminating floor never fails at random"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2007
   human_decision: null
   decided_at: null
 - commit: 04c0556285
   subject: "HOTFIX: BL-1061's leaked-fixture scenario names its fixture with a dead creator pid and waits for the swept process to exit"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2007
   human_decision: null
   decided_at: null
 - commit: 0c1de3028c
   subject: "HOTFIX: six step handlers answer the handoff self-audit or read BL-1637's from_seat as audit metadata - BL-748, BL-951, BL-953, BL-983, BL-991, BL-992 green again"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2008
   human_decision: null
   decided_at: null
 - commit: e0cfdfc95a
   subject: "HOTFIX: the bl1836 ceremony property draws on a fixed seed, and the fake agent tree waits for its claude child's own argv0 - two flaky reds QA found on BL-1939"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2010
   human_decision: null
   decided_at: null
 - commit: 7376655875
   subject: "HOTFIX: the bl1300 single-budget property reads the verdict's own measured/budget pair as one figure, never as a second budget"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2011
   human_decision: null
   decided_at: null
 - commit: 6a6165cb58
   subject: "hotfix: the backlog dashboard schema documents needsApproval, so BL-097's 'every field appears in the documented schema' scenario passes once BL-1941 binds it"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2011
   human_decision: null
   decided_at: null
 - commit: 78e9346416
   subject: "hotfix: an OpenRouter-routed claude role's launch script unsets ANTHROPIC_API_KEY, so a profile-exported Anthropic key never rides into a harness pointed at OpenRouter"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2012
   human_decision: null
   decided_at: null
 - commit: fe08621a87
   subject: "hotfix: the effective-depth live-wiring case builds a git history the real throttle CLI refreshes from, so a severe rework signal drops the cap to 0 end to end again"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2013
   human_decision: null
   decided_at: null
 - commit: 77584c4c11
   subject: "hotfix: role-session tmux checks use the exact-match target (=NAME), so a missing seat is never read as present through a sibling whose name it prefixes"
   detected_at: 2026-10-05
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2014
   human_decision: null
   decided_at: null
 - commit: 4a4063fdc0
   subject: "hotfix: tmux fakes in five shell tests and three step handlers read the exact-match target =NAME as NAME, as tmux does (the reds hotfix 77584c4c11 left)"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2014
   human_decision: null
   decided_at: null
 - commit: c15a0f21aa
   subject: "hotfix: two unowned reds the bl812 sweep found - BL-571 scenario 03 counts a created session as a repair, and the supervisor test's BL-1491 case keeps its tmux-socket so the halt runs"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2018
   human_decision: null
   decided_at: null
 - commit: aeb9771b84
   subject: "hotfix: c15a0f21aa's fake tmux names new-session, putting bl571's steps in the tmux-reaper guard's scope - adopt fixtureReaper (track at mkFixture, reap before rmSync) as bl958's steps do"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2018
   human_decision: null
   decided_at: null
 - commit: b82ff33bac
   subject: "hotfix: bl1905RealDispatcherScan part 1 spends its 60 s budget deriving 10 dispatcher names by running BL-998's whole guard under bash -x - the guard now stops after step 1b when asked (exit 3, never a pass) and the derivation asks"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2029
   human_decision: null
   decided_at: null
 - commit: 62ef35bcdb
   subject: "hotfix: ambulance-hold-05 bounds its wait for the first chase-rotate at 120 s, not 40 s - the rotate lands on the daemon's third chase sweep, past 40 s on a loaded host"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2036
   human_decision: null
   decided_at: null
 - commit: 9baca9e777
   subject: "hotfix: /autopilot and /land read <root>/backlog/backlog and always listed nothing - loadQueueTickets passes the repo root to readBacklogFolders"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2025
   human_decision: null
   decided_at: null
-- commit: 6038e612b4
-  subject: "hotfix: two shell tests anchored tabs with GNU-only grep -qP, red in bl989PortableGrepTabAnchor's tree sweep"
+- commit: c9132288de
+  subject: "hotfix: three specs/pipeline/test files red unseen in no lane - BL-227's handler refused the workflow's ${NUM}/${URL} (its scenario 02 red on main since 2026-07-22), a burndown test resolved BL-1277-scoped steps unscoped, and a test still required a handler BL-267 deleted on 2026-07-11"
   detected_at: 2026-10-06
   state: pending
   stamp_ticket: BL-2040
   human_decision: null
   decided_at: null
-- commit: c9132288de
-  subject: "hotfix: three specs/pipeline/test files red unseen in no lane"
+- commit: 6038e612b4
+  subject: "hotfix: two shell tests anchored tabs with GNU-only grep -qP, red in bl989PortableGrepTabAnchor's tree sweep - rewritten to the BL-989 printf form, along with three grep -qE '\t' negative checks in the BL-1861 test that could never fire"
   detected_at: 2026-10-06
   state: pending
   stamp_ticket: BL-2040
