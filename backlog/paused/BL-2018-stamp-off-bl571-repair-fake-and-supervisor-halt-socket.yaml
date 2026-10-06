@@ -1,5 +1,5 @@
 id: BL-2018
-title: "Stamp-off for hotfix c15a0f21aa: two unowned reds - BL-571 scenario 03's fake tmux counts a created session as a repair, and test_handoffd_supervisor.sh's BL-1491 case keeps its tmux-socket so the supervisor halts"
+title: "Stamp-off for hotfixes c15a0f21aa and aeb9771b84: two unowned reds - BL-571 scenario 03's fake tmux counts a created session as a repair (and its steps then adopt fixtureReaper), and test_handoffd_supervisor.sh's BL-1491 case keeps its tmux-socket so the supervisor halts"
 milestone: M8
 type: defect
 severity: high
@@ -10,7 +10,7 @@ epic: swarm-reliability
 priority: 1
 depends_on: []
 mutation_cost: low
-# low: review only - read one commit, run one feature and one shell test.
+# low: review only - read two commits, run one feature and one shell test.
 slice_size_envelope: low
 required_stages: [coder, qa]
 stage_skip_reasons:
@@ -38,7 +38,11 @@ qa_e2e_procedure: |
   2. `bash swarmforge/scripts/test/test_handoffd_supervisor.sh`: every
      line PASS, rc 0, both BL-1491 lines included (measured at c15a0f21aa;
      "kill-all-audit.log was never written" before it).
-  3. Read the coder's committed review evidence.
+  3. Read `extension/test/tmuxReaperGuard.test.js` from the gather's unit
+     row (do not re-run it): passed, 15 tests (measured at aeb9771b84;
+     "zero tmux-reaper violations" failed on the bl571 steps at
+     c15a0f21aa).
+  4. Read the coder's committed review evidence.
 
 source: |
   The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
@@ -52,9 +56,9 @@ source: |
   (that one's reds are BL-2014's), and neither had a register row.
 
 description: |
-  ## Status: hotfix c15a0f21aa landed the fix
+  ## Status: hotfixes c15a0f21aa and aeb9771b84 landed the fix
 
-  This parcel is its stamp-off: review it, do not re-apply it.
+  This parcel is their stamp-off: review them, do not re-apply them.
 
   ## What was wrong
 
@@ -80,12 +84,25 @@ description: |
     on PATH, as cases 01 and 05 already do. Checked after the run: every
     live seat still UP, no new row in the live kill-all-audit log.
 
+  ## What the follow-up hotfix aeb9771b84 changed
+
+  c15a0f21aa's `new-session` branch put the bl571 steps in the tmux-reaper
+  guard's scope: the file writes a tmux stub and prepends it to PATH
+  (BL-1032 route 2), and the stub now names a server-creating subcommand.
+  The file never required `./lib/fixtureReaper`, so
+  `extension/test/tmuxReaperGuard.test.js` went red on main (QA note 003840,
+  holding BL-1964). aeb9771b84 adopts the reaper the way
+  `bl958ControlPlaneLossSteps.js` does: `track(root)` in `mkFixture`,
+  `reap(root)` before `rmSync` in `afterEach`. The string stays as it is;
+  rewording it to dodge the guard is the move BL-1032 rules out.
+
   ## What the coder does (all of it)
 
   1. Run qa_e2e_procedure steps 1 and 2 once each, outputs under tmp/.
-  2. Read `git show c15a0f21aa` against the two sections above.
+  2. Read `git show c15a0f21aa` and `git show aeb9771b84` against the
+     three sections above.
   3. Write backlog/evidence/BL-2018-coder-<date>.md: the two results and
-     one line saying whether the hotfix matches its description.
+     one line per hotfix saying whether it matches its description.
   4. Commit that file, forward to QA, run done_with_current.sh.
 
 notes: |
@@ -93,3 +110,8 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: c15a0f21aa linked to BL-2018. No register row was added:
   both reds were fixed in the pass that found them.
+  Amended 2026-10-06 by the specifier (paused, no holder): c15a0f21aa itself
+  turned tmuxReaperGuard.test.js red (QA note 003840, BL-1964 held). Hotfix
+  aeb9771b84 fixed it the same pass; this ticket stamps both, per the
+  2026-10-01 rule (an existing owner becomes the stamp-off, no second
+  ticket). Ledger: aeb9771b84 linked to BL-2018. No register row.

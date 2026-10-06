@@ -1364,3 +1364,10 @@
   stamp_ticket: BL-2018
   human_decision: null
   decided_at: null
+- commit: aeb9771b84
+  subject: "hotfix: c15a0f21aa's fake tmux names new-session, putting bl571's steps in the tmux-reaper guard's scope - adopt fixtureReaper (track at mkFixture, reap before rmSync) as bl958's steps do"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2018
+  human_decision: null
+  decided_at: null
