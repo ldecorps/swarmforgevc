@@ -183,6 +183,14 @@
     (commit! "hotfix: someone else's\n\nBy specifier." 1791105000)
     (assert= "own commit: the seat's own BL-1931 commit" 1791104000000
              (babysitter-assess-lib/worktree-last-own-ticket-commit-ms repo "BL-1931" "coder"))
+    ;; 2026-10-06 (coordinator note 017041): a byline the seat annotated
+    ;; still counts; a longer stage name sharing the prefix does not.
+    (commit! "BL-1931: wire the step handler\n\nBy coder (coordinator-assisted recovery after recurring reset,\nBL-1843 reset investigation)." 1791106000)
+    (assert= "own commit: an annotated byline counts" 1791106000000
+             (babysitter-assess-lib/worktree-last-own-ticket-commit-ms repo "BL-1931" "coder"))
+    (commit! "BL-1931: not this seat\n\nBy coders." 1791107000)
+    (assert= "own commit: a longer stage name does not count" 1791106000000
+             (babysitter-assess-lib/worktree-last-own-ticket-commit-ms repo "BL-1931" "coder"))
     (assert= "own commit: an unreadable worktree is nil" nil
              (babysitter-assess-lib/worktree-last-own-ticket-commit-ms "/nonexistent-own-commit-dir" "BL-1931" "coder"))
     (finally (fs/delete-tree repo))))

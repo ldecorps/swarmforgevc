@@ -37,7 +37,9 @@
 (defn worktree-last-own-ticket-commit-ms
   "Epoch ms of the newest non-merge commit on the worktree's HEAD whose
    message names ticket (not a longer id such as BL-19310) AND carries the
-   seat's own byline (`By <stage>.`), or nil. Merging main moves HEAD
+   seat's own byline (`By <stage>` then any non-name character: `By coder.`
+   and an annotated `By coder (recovery ...)` both count, `By coders.`
+   does not), or nil. Merging main moves HEAD
    without any work on the ticket, and the coordinator's own commits name
    the ticket too (\"BL-1931: record assigned_to ...\") under its byline, so
    neither counts as the seat's progress (2026-10-04)."
@@ -45,7 +47,7 @@
   (try
     (let [{:keys [out exit]} (process/sh ["git" "log" "-1" "--no-merges" "--all-match" "-E"
                                           (str "--grep=" ticket "([^0-9]|$)")
-                                          (str "--grep=^By " stage "\\.$")
+                                          (str "--grep=^By " stage "([^[:alnum:]_-]|$)")
                                           "--format=%ct" "HEAD"]
                                          {:dir worktree-dir})
           secs (str/trim (str out))]
