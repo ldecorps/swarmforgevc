@@ -82,6 +82,10 @@ notes: |
       done_with_current.sh.
   INVEST: depends on BL-2037 (the record). Small for its three call sites
   (one handler, 5 runs). Testable (fixture worktrees and a fake tmux).
+  Phase section landed 2026-10-06 by the specifier after the land
+  (3be279fb5f), in the commit that adds this line, into
+  swarmforge/roles/local-model/loop.note under step 1. Each command
+  is spelled out in full (the noted text abbreviated the later ones).
 
 description: |
   ## What is wanted

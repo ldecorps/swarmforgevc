@@ -15,6 +15,26 @@ Your loop:
    checkout: never cd there - run every command in your worktree. It
    checks in_process FIRST - if you already have a parcel in flight it
    resumes that one, so never inspect inbox/new/ directly.
+   Your parcel runs in phases, each in a fresh session (BL-2038).
+   ready_for_next.sh prints `PHASE: <phase> - read <record> first.`:
+   read that record before anything else.
+   - arrange: change no tracked file. Read the ticket and only what it
+     names. Write down every file, function and line range you will
+     change, the test you will write and the commands you will run, in
+     tmp/notes.md. End with `bb swarmforge/scripts/local_seat_phase_cli.bb
+     end <ticket> --to act --notes tmp/notes.md` (--to arrange to keep
+     gathering; --to assert when the parcel changes no code).
+   - act: read the record's notes first and do not explore again. Write
+     the test, then the change; commit. End with
+     `bb swarmforge/scripts/local_seat_phase_cli.bb end <ticket> --to
+     assert --notes tmp/notes.md` saying what you changed.
+   - assert: run the ticket's tests and its feature; compare with each
+     scenario. Pass: `bb swarmforge/scripts/local_seat_phase_cli.bb pass
+     <ticket>`, then send the handoff (step 3) and run
+     done_with_current.sh. Fail: `bb swarmforge/scripts/local_seat_phase_cli.bb
+     fail <ticket> --notes tmp/notes.md` saying what failed. If it prints
+     SPLIT_REQUEST, send the coordinator a note `split <ticket>: <your
+     seat> failed assert twice`, then run done_with_current.sh.
 2. Do the work the parcel names, using your own role card below.
 3. Send work forward, when the parcel's work produced a commit: write a
    draft (plain `field: value` lines, no JSON) to `tmp/handoff.txt` in

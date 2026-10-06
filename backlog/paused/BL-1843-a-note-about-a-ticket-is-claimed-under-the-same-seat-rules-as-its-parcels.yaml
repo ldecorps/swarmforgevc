@@ -140,8 +140,9 @@ description: |
     completed reminder must not count as having worked a ticket unless the
     seat did (BL-1715 and `--no-work` already exclude declined work).
   - Step handler `specs/pipeline/steps/bl1843NoteSeatRulesSteps.js`,
-    registered in `specs/pipeline/steps/index.js` in the same commit as
-    the feature's first green run (BL-233). `bl1004ReworkClaimSteps.js`
+    discovered from its own file name (BL-1371; never edit
+    `specs/pipeline/steps/index.js`), landing in the same commit as the
+    feature's first green run (BL-233). `bl1004ReworkClaimSteps.js`
     and `bl1001DifficultyAwareSeatRoutingSteps.js` already build a two-seat
     stage fixture. Reuse them. Fixture roots under mkdtemp, `git init`,
     `rev-parse --git-common-dir` first (BL-1390).
