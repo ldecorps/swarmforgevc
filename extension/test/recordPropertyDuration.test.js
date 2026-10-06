@@ -77,6 +77,22 @@ test('runRecorder appends no row and reports a non-zero exit status when vitest 
   assert.equal(readRows(logPath).length, 0);
 });
 
+test('a stale report left on disk by an earlier killed run is never misread as this run\'s own', () => {
+  const { dir, reportPath, logPath } = mkFixture();
+  // An earlier run's leftover report, still sitting at the SAME reportPath
+  // this run will spawn vitest with - the exact shape a killed run leaves
+  // behind if the NEXT run's own unlink-before-spawn guard were missing.
+  fs.writeFileSync(reportPath, JSON.stringify({ testResults: [{ name: 'test/stale.property.test.js', startTime: 0, endTime: 9999 }] }));
+  const vitestBin = writeKilledFakeVitestBin(dir);
+
+  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir });
+
+  assert.notEqual(exitCode, 0);
+  assert.equal(appended, false, 'expected the stale report never to be read as a completed run');
+  assert.equal(readRows(logPath).length, 0);
+  assert.equal(fs.existsSync(reportPath), false, 'expected the stale report to be removed before the killed run could leave it misread');
+});
+
 // BL-1619 scenario 04 ─────────────────────────────────────────────────
 
 test('the recorder changes nothing about which files vitest reports, their order or their result', () => {

@@ -131,6 +131,17 @@ test('the verdict reports no pole and no files above threshold on an empty run',
   assert.match(verdict, /above 10\.0s: none/);
 });
 
+test('a file exactly at the half-timeout threshold is not listed as above it', () => {
+  const durations = [
+    { file: 'test/exactly-at-threshold.property.test.js', durationMs: HALF_TIMEOUT_MS },
+    { file: 'test/just-above-threshold.property.test.js', durationMs: HALF_TIMEOUT_MS + 1 },
+  ];
+  const summary = summarizeDurations(durations);
+  const verdict = formatPropertyDurationVerdict(summary, durations, HALF_TIMEOUT_MS, 11000);
+  assert.doesNotMatch(verdict, /exactly-at-threshold/);
+  assert.match(verdict, /just-above-threshold\.property\.test\.js \(10\.0s\)/);
+});
+
 test('a single fast file is its own pole but never listed above the threshold', () => {
   const durations = [{ file: 'test/fast.property.test.js', durationMs: 500 }];
   const summary = summarizeDurations(durations);
