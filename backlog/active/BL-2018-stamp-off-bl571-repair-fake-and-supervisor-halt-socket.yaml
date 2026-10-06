@@ -117,3 +117,5 @@ notes: |
   ticket). Ledger: aeb9771b84 linked to BL-2018. No register row.
   Release note sent to QA 2026-10-06 (002394): retake BL-1964's parcel
   9847fb86de and merge main.
+
+assigned_to: coder
