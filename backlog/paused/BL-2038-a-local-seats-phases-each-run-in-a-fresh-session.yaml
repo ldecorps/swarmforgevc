@@ -1,0 +1,126 @@
+id: BL-2038
+title: "A local seat's phases each run in a fresh session - ready_for_next.sh names a local-model seat's phase and record when it serves a parcel, ending a phase saves the record and then restarts the seat's session on the same parcel, and done_with_current.sh removes the record - slice 2 of 2, wiring BL-2037's phase record into the seat"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 10
+direction: human-requested
+depends_on: [BL-2037]
+mutation_cost: medium
+# medium: three call sites (serve, end/fail, done) over BL-2037's command,
+# one handler with a fake tmux; the restart reuses respawn-pane-fresh!.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, qa]
+stage_skip_reasons:
+  cleaner: "three small call sites over existing helpers; nothing to deduplicate"
+  documenter: "the seat's card (swarmforge/roles/local-model/loop.note) is the living doc, and the specifier lands it at this ticket's land (notes)"
+acceptance: specs/features/BL-2038-a-local-seats-phases-each-run-in-a-fresh-session.feature
+
+invariants:
+  - "The record is written before the session restarts: no phase move restarts the seat's session until its new state is on disk."
+  - "A seat whose agent is not local-model is never shown a phase, never restarted by a phase move, and keeps its sessions exactly as today."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2038LocalSeatFreshPhaseSessionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+  - 'swarmforge/scripts/ready_for_next_task.bb::local_seat_phase::the serve path is the live consumer that names the phase (BL-1235)'
+
+human_approval: pending
+approval_context: >
+  Your intake (backlog/INTAKE-fight-a-too-small-contect-window-20261006.md),
+  with the three design choices you answered on 2026-10-06: a fresh session
+  at each phase boundary; every parcel is phased; a failed assert goes back
+  to act at most twice, then a split request. This slice wires BL-2037's
+  record into the seat's sessions; the seat's card teaches the phases when
+  it lands.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's acceptance row:
+     `specs/features/BL-2038-a-local-seats-phases-each-run-in-a-fresh-session.feature`
+     5 of 5 pass (01's three rows, 02, 03; measured at mint: no handler,
+     all red).
+  2. Read the hardener's committed evidence (a hand-mutant pass on the
+     save-before-restart order, since the move writes the record).
+  3. After the land: `swarmforge/roles/local-model/loop.note` carries the
+     phase section (the specifier lands it; notes).
+
+source: |
+  The human's intake, verbatim, is in BL-2037's source (Article 5.3: it
+  survives there whole). Its rule, verbatim: "Each scaffolding atrange
+  turns result is persisted and used in the action turn."
+  The human's answers to the specifier, 2026-10-06 (console): Boundary
+  "Fresh session (Recommended)"; Scope "Every parcel (Recommended)"; On
+  failure "Back to act, max 2 (Recommended)".
+  The fresh-session restart this reuses: the human's "Go" on a fresh qwen
+  session per parcel, 2026-10-04 (handoff_lib.bb,
+  fresh-session-at-parcel-boundary?).
+
+notes: |
+  Minted 2026-10-06 by the specifier, slice 2 of the intake's 1:2 split.
+  Specifier deliverable at THIS ticket's land (BL-798: no stage delivers
+  prose the specifier owns): add the phase section below to
+  swarmforge/roles/local-model/loop.note, after step 1 of the loop, and
+  record the commit here. Not before: the live iq3 seat must never be told
+  to run a command that does not exist yet.
+    Your parcel runs in phases, each in a fresh session; ready_for_next.sh
+    prints yours (PHASE: ...) and the record to read first.
+    - arrange: change no tracked file. Read the ticket and only what it
+      names. Write down every file, function and line range you will
+      change, the test you will write and the commands you will run, in
+      tmp/notes.md. End with `bb swarmforge/scripts/local_seat_phase_cli.bb
+      end <ticket> --to act --notes tmp/notes.md` (--to arrange to keep
+      gathering; --to assert when the parcel changes no code).
+    - act: read the record's notes first and do not explore again. Write
+      the test, then the change; commit. End with `end <ticket> --to
+      assert --notes tmp/notes.md` saying what you changed.
+    - assert: run the ticket's tests and its feature; compare with each
+      scenario. Pass: `pass <ticket>`, then send the handoff and run
+      done_with_current.sh. Fail: `fail <ticket> --notes tmp/notes.md`
+      saying what failed. On SPLIT_REQUEST, send the coordinator a note
+      `split <ticket>: <your seat> failed assert twice`, then run
+      done_with_current.sh.
+  INVEST: depends on BL-2037 (the record). Small for its three call sites
+  (one handler, 5 runs). Testable (fixture worktrees and a fake tmux).
+
+description: |
+  ## What is wanted
+
+  - Serve: when `ready_for_next.sh` serves a parcel to a seat whose agent
+    is `local-model`, its output names the parcel's phase and the record's
+    path, from BL-2037's `local_seat_phase_cli.bb show` (a parcel with no
+    record is in `arrange`). A seat on any other agent prints no phase
+    line.
+  - Move: `local_seat_phase_cli.bb end` and `fail`, run by a local-model
+    seat, save the record and only then restart the seat's
+    session on the same parcel. The restart is the existing
+    `handoff-lib/respawn-pane-fresh!` (the per-parcel fresh session,
+    2026-10-04). The parcel stays in the seat's in_process queue, and the
+    launch script's resume note sends the new session to it. `pass` needs
+    no restart: the same session sends the handoff and runs
+    done_with_current.sh.
+  - Done: `done_with_current.sh` removes the completed parcel's record
+    from the seat's worktree.
+
+  ## How (direction, not mandate)
+
+  - Serve: `swarmforge/scripts/ready_for_next_task.bb` already knows the
+    seat's agent (`(:agent (handoff-lib/load-role-info role))`, see
+    `maybe-fresh-session-for-parcel!` around line 57). Print the phase line
+    next to the served TASK.
+  - Move: the restart is the last thing the command does, after the record
+    is written (invariant 1), the way `maybe-fresh-session-for-parcel!`
+    prints, flushes, then respawns. A restart that fails prints why and
+    leaves the seat to carry on in the same session.
+  - Done: `swarmforge/scripts/done_with_current_task.bb` knows the
+    completed parcel's task; delete `.swarmforge/phase/<ticket>.md` in the
+    seat's worktree if it exists.
+  - The handler `specs/pipeline/steps/bl2038LocalSeatFreshPhaseSessionSteps.js`
+    builds a fixture root with a `roles.tsv` row whose agent column is
+    `local-model` or `claude`, an in_process parcel for BL-9001 and a fake
+    `tmux` on PATH that logs `respawn-pane`. A fake tmux naming a
+    server-creating subcommand puts the file in tmuxReaperGuard's scope:
+    require `./lib/fixtureReaper`, `track` the root and `reap` before
+    removing it. Run `npm test` before forwarding.
+
+assigned_to: coder
