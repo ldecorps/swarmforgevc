@@ -167,3 +167,6 @@ notes: |
   and is not at fault.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: behavior, commit: c4d08ba813, evidence: backlog/evidence/BL-2027-QA-20261006.md }
