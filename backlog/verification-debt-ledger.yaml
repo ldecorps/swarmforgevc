@@ -267,3 +267,9 @@
   role: QA
   description: "found by hand that BL-1843's only supersede_lib.bb change rides f604115bcc (subject BL-1963, closed) - the land walk would read it as a closed-owner code stray (LAND_ESCALATE while BL-1787 is paused); bounced for a tip-pure rebuild"
   detected_at: 2026-10-06
+- category: unlaned-property-runner-run-by-hand
+  ticket: BL-2048
+  role: specifier
+  description: "ran all 217 property runners under swarmforge/scripts/test one at a time by hand (no lane runs them, QA note 003876) to census reds and wall for BL-2048/BL-2049"
+  detected_at: 2026-10-06
+  evidence: backlog/evidence/BL-2048-property-runner-census-20261006.md
