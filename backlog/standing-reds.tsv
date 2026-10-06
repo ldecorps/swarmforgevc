@@ -37,5 +37,3 @@ hardening	extension/src/metrics/closingCeremonyRun.ts,extension/src/metrics/clos
 acceptance	specs/features/BL-094-holistic-dev-state-web-ui.feature	BL-2022	2026-10-06	0/5 no step handler matched; missed by BL-1937's census (one step binds)
 acceptance	specs/features/BL-698-telegram-cursor-operator-command-surface.feature	BL-2023	2026-10-06	104/106 steps unbound; wire or retire per specifier adjudication
 acceptance	specs/features/BL-703-operator-hydrate-autopilot-land.feature	BL-2023	2026-10-06	45/46 steps unbound; wire or retire per specifier adjudication
-acceptance	specs/features/BL-1054-a-hydrate-run-boots-on-specifier-and-stays-there.feature	BL-2023	2026-10-06	13/14 steps unbound; wire or retire per specifier adjudication
-acceptance	specs/features/BL-unassigned-active-coordinator-nudge.feature	BL-2023	2026-10-06	6/9 steps unbound; wire or retire per specifier adjudication

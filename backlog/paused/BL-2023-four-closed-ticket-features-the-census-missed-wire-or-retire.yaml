@@ -72,3 +72,9 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   status blocked on purpose: nothing for a coder until the specifier's
   per-feature adjudication mints the slices. Do not promote.
+  Adjudication 2026-10-06, part 1 (specifier, backlog/evidence/BL-2023-unbound-feature-adjudication-20261006.md):
+  BL-unassigned-active-coordinator-nudge RETIRED whole (01 covered by
+  BL-1093 nobody-assignee-01; 02's premise reversed by BL-1804, whose 03 is
+  the corrected scenario); BL-1054 PARKED as .feature.draft (unbuilt debt
+  ticket, the cbf3e77ad9 treatment). Both register rows dropped. BL-698 and
+  BL-703 remain, with their rows owned here.
