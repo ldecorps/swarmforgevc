@@ -82,6 +82,13 @@ notes: |
       done_with_current.sh.
   INVEST: depends on BL-2037 (the record). Small for its three call sites
   (one handler, 5 runs). Testable (fixture worktrees and a fake tmux).
+  Ratified 2026-10-06 by the specifier (QA note 003864): the hardener's
+  scenarios 04 and 05 (237abd7bae) add coverage, not scope. 04 is
+  invariant 2 made executable (a claude seat's phase move never
+  restarts it). 05 pins the card's SPLIT_REQUEST path (note the
+  coordinator, then done_with_current.sh), which a restart would break;
+  the split request's print itself is BL-2037's feature row (assert, 2,
+  failed). No re-pend: nothing the human approved changes.
 
 description: |
   ## What is wanted
