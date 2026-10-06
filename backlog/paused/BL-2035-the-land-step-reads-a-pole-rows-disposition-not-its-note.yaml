@@ -60,6 +60,10 @@ notes: |
   disposition accepted AND a note still saying "an accepted pole under
   BL-1629", so BL-1629's own land keeps the row under today's regex. That
   is why this follows BL-1629 instead of amending it in flight.
+  Updated 2026-10-06 (BL-1629 amended a88858fab0): bl968's row now leaves
+  the register in BL-1629's parcel, so no row is accepted when BL-1629
+  lands. The disagreement stays latent until the first accepted row, most
+  likely BL-2032's renderBriefingDiagramsCli; land this before it.
 
 description: |
   ## What is wrong
