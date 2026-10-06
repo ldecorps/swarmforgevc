@@ -97,6 +97,8 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   Hotfix ledger: b82ff33bac linked to BL-2029. No register row was added:
   the red was fixed in the pass that found it.
+  Release note sent to QA 2026-10-06 (002399): retake BL-1964's parcel
+  f3f32fb05a and merge main.
   Seen, not ticketed: QA's evidence names a tool gap. qa-gather keeps a
   4000-char tail of the lane, so a red's own message is lost when the tail
   is BL-871's allowlisted onTaskUpdate noise.
