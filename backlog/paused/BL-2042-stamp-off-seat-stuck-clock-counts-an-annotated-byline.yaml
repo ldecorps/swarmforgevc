@@ -1,0 +1,90 @@
+id: BL-2042
+title: "Stamp-off for hotfix f1b8d5f2b7: the babysitter's seat-stuck clock counted a seat's commit only when its byline was exactly `By <stage>.`, so an annotated byline never reset it and seat-stuck-coder re-fired seven times on a coder that had committed BL-1843 work"
+milestone: M8
+type: defect
+severity: high
+# high: a broken health signal - a false 60m seat-stuck CRIT on a working
+# seat is the trigger for the pull-and-split routine (2026-10-04 BAU).
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review one commit, run one bb runner.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one regex changed; nothing to refactor"
+  architect: "one git --grep pattern; no boundary moves"
+  hardender: "no durable write; the runner's two new cases pin both sides of the pattern"
+  documenter: "no living doc states the byline match; coder.prompt's byline rule is unchanged"
+
+# Not a claim of ownership over BL-1109's contract (BL-1251): it is the
+# babysitter feature BL-1955 stamped the same clock's first hotfix against.
+acceptance: specs/features/BL-1109-babysitter-starved-ignores-idle-owner-in-process.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-04
+  directive ("hot fix as needed to get iq3 to work"). No choice is posed.
+  FIRM: the coder reviews it and never re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bb swarmforge/scripts/test/babysitter_assess_lib_test_runner.bb`:
+     prints `babysitter_assess_lib_test_runner: ok` (measured at
+     f1b8d5f2b7; on the pre-fix lib the two new cases failed).
+  2. Read from the gather's acceptance row: the BL-1109 feature 6 of 6
+     (measured at mint: 6 of 6).
+  3. Read the coder's committed review evidence.
+
+source: |
+  Coordinator note 017041 (2026-10-06): "defect: byline grep exact-match -
+  read NOTE-seat-stuck-byline.md". The Operator's finding: the 11:09Z CRIT
+  said "no commit for 167m" for a coder seat mid-turn that had committed
+  9811cd59fe (BL-1843) at 10:44:32Z with the byline "By coder
+  (coordinator-assisted recovery after recurring reset, BL-1843 reset
+  investigation, intake 4ab8a693c9)."
+  The human, 2026-10-04, verbatim: "hot fix as needed to get iq3 to work".
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Correction to the hotfix's commit message: on the pre-fix lib the new
+  annotated-byline case read the previous own commit's time
+  (1791104000000), not nil; the runner failed either way.
+
+description: |
+  ## Status: hotfix f1b8d5f2b7 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `babysitter_assess_lib.bb`'s `worktree-last-own-ticket-commit-ms` (the
+  2026-10-04 hotfix 14680e2eef, stamped by BL-1955) counts a commit as the
+  seat's progress only when its message names the ticket and carries the
+  seat's byline. It matched the byline with `--grep=^By <stage>\.$`, so a
+  byline with anything after the stage name never matched. The coder
+  seat's 9811cd59fe ("By coder (coordinator-assisted recovery ...)") left
+  the clock at the 08:22Z claim, and `check-seat-ticket-stuck` raised
+  seat-stuck-coder seven times on 2026-10-06 while the seat was committing.
+
+  ## What the hotfix changed
+
+  The byline pattern is `^By <stage>([^[:alnum:]_-]|$)`: `By coder.` and
+  an annotated `By coder (...)` count, `By coders.` does not. The runner
+  gained both cases. Measured after: the live coder worktree's own-commit
+  time for BL-1843 read 2026-10-06T10:44:32Z, 9811cd59fe's.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show f1b8d5f2b7` against the two sections above.
+  2. Run qa_e2e_procedure step 1 once, output under tmp/.
+  3. Write backlog/evidence/BL-2042-coder-<date>.md: the review result and
+     the run result, and commit it.
+
+assigned_to: coder

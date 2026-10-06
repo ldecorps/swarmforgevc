@@ -1406,3 +1406,10 @@
   stamp_ticket: BL-2040
   human_decision: null
   decided_at: null
+- commit: f1b8d5f2b7
+  subject: "hotfix: the babysitter's seat-stuck clock counted a seat's commit only when its byline was exactly By <stage>."
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2042
+  human_decision: null
+  decided_at: null
