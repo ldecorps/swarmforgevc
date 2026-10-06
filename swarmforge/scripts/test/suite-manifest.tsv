@@ -619,3 +619,4 @@ local_seat_tuning_report_lib_test_runner.bb	standing
 local_llm_lib_test_runner.bb	standing
 test_bl1861_local_llm_remove.sh	standing
 test_tmux_exact_session_presence.sh	standing
+throttle_release_ask_lib_test_runner.bb	standing

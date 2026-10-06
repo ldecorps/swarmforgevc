@@ -63,3 +63,11 @@ Feature: BL-1982 The throttle release question reaches the human without a coord
     When the depth CLI runs on the fixture root
     Then the depth CLI prints 1
     And the throttle recommendation reports the episode awaiting release, carrying the reply "wait until the reds are under five"
+
+  # BL-1982 a-stale-ask-whose-marker-moved-on-is-untouched-06
+  Scenario: a stale ask whose marker has moved on to a different question consumes nothing
+    Given the register has fallen back under every threshold and the depth CLI raised the throttle question
+    And another coordinator question is pending with a tapped answer recorded for it
+    When the depth CLI runs on the fixture root
+    Then the coordinator's pending question is the other question, with its answer still unconsumed
+    And the throttle recommendation reports the episode awaiting release, with no reply recorded

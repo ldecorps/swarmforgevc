@@ -25,7 +25,7 @@ acceptance: specs/features/BL-2030-qa-gathers-straggler-check-counts-only-its-ow
 required_wiring:
   - 'specs/pipeline/steps/bl2030QaGatherStragglerOwnerSteps.js::registerSteps::binds BL-2030-qa-gathers-straggler-check-counts-only-its-own-runs.feature (discovered by suffix, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Owner of the straggler-owner-attribution verification-debt category (3
   rows, QA's, 2026-10-03..06), minted the pass the category went unowned
