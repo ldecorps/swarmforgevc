@@ -87,6 +87,63 @@
 (assert= "a notes: mention never counts as a declaration" #{}
          (verification-debt-ledger-lib/declared-categories "notes: land-path-ownership needs a tool\n"))
 
+;; ── BL-1783: settle (discharge / waive) ───────────────────────────────────
+(let [rows [{:category "a" :ticket "BL-1" :role "QA" :description "x" :detected-at "2026-09-26"}
+            {:category "a" :ticket "BL-2" :role "QA" :description "y" :detected-at "2026-09-26"}
+            {:category "b" :ticket "BL-3" :role "QA" :description "z" :detected-at "2026-09-26"}]]
+  ;; discharge: adds settle fields to every outstanding row of the category
+  (let [{:keys [rows settled?]} (verification-debt-ledger-lib/discharge-category
+                                  rows {:category "a" :by "coder" :evidence "backlog/evidence/BL-9200-tool.md" :on "2026-09-26"})]
+    (assert-true "discharge settles the category" settled?)
+    (assert= "discharge keeps all rows (never removes)" 3 (count rows))
+    (let [a-rows (verification-debt-ledger-lib/rows-for-category rows "a")]
+      (assert= "both a-rows gained discharged_at" 2 (count (filter :discharged-at a-rows)))
+      (assert= "both a-rows gained discharged_by" 2 (count (filter #(= "coder" (:discharged-by %)) a-rows)))
+      (assert= "both a-rows gained discharged_evidence" 2 (count (filter #(= "backlog/evidence/BL-9200-tool.md" (:discharged-evidence %)) a-rows)))
+      ;; invariant 1: recorded fields unchanged
+      (let [r1 (first a-rows)]
+        (assert= "recorded fields survive discharge" "x" (:description r1))
+        (assert= "detected_at survives discharge" "2026-09-26" (:detected-at r1))))
+    (let [b-rows (verification-debt-ledger-lib/rows-for-category rows "b")]
+      (assert= "b-rows untouched by a's discharge" 0 (count (filter :discharged-at b-rows)))))
+  ;; discharge refuses: no evidence
+  (let [{:keys [rows settled?]} (verification-debt-ledger-lib/discharge-category
+                                  rows {:category "b" :by "coder" :evidence nil :on "2026-09-26"})]
+    (assert-true "discharge with no evidence is refused" (not settled?))
+    (assert= "refused discharge changes nothing" 3 (count rows)))
+  ;; discharge refuses: no outstanding row in the category
+  (let [{:keys [rows settled?]} (verification-debt-ledger-lib/discharge-category
+                                  rows {:category "zzz" :by "coder" :evidence "backlog/evidence/BL-9200-tool.md" :on "2026-09-26"})]
+    (assert-true "discharge with no outstanding row is refused" (not settled?)))
+  ;; waive: adds waive fields to every outstanding row of the category
+  (let [{:keys [rows settled?]} (verification-debt-ledger-lib/waive-category
+                                  rows {:category "b" :by "human" :reason "novel shapes" :on "2026-09-26"})]
+    (assert-true "waive settles the category" settled?)
+    (let [b-rows (verification-debt-ledger-lib/rows-for-category rows "b")]
+      (assert= "b-row gained waived_at" 1 (count (filter :waived-at b-rows)))
+      (assert= "b-row gained waived_by" 1 (count (filter #(= "human" (:waived-by %)) b-rows)))
+      (assert= "b-row gained waive_reason" 1 (count (filter #(= "novel shapes" (:waive-reason %)) b-rows)))))
+  ;; waive refuses: blank reason
+  (let [{:keys [rows settled?]} (verification-debt-ledger-lib/waive-category
+                                  rows {:category "b" :by "human" :reason "" :on "2026-09-26"})]
+    (assert-true "waive with a blank reason is refused" (not settled?)))
+  ;; waive refuses: no --by
+  (let [{:keys [rows settled?]} (verification-debt-ledger-lib/waive-category
+                                  rows {:category "b" :by nil :reason "novel shapes" :on "2026-09-26"})]
+    (assert-true "waive with no by is refused" (not settled?)))
+  ;; outstanding-count excludes settled rows
+  (let [{:keys [rows]} (verification-debt-ledger-lib/discharge-category
+                         rows {:category "a" :by "coder" :evidence "backlog/evidence/BL-9200-tool.md" :on "2026-09-26"})]
+    (assert= "discharged rows no longer count as outstanding" 0 (verification-debt-ledger-lib/outstanding-count rows "a"))
+    (assert= "unsettled category still counts" 1 (verification-debt-ledger-lib/outstanding-count rows "b")))
+  ;; a row recorded after a settle is outstanding and counts from one
+  (let [{:keys [rows]} (verification-debt-ledger-lib/discharge-category
+                         rows {:category "a" :by "coder" :evidence "backlog/evidence/BL-9200-tool.md" :on "2026-09-26"})]
+    (let [{:keys [rows]} (verification-debt-ledger-lib/record-verification
+                           rows {:category "a" :ticket "BL-4" :role "QA" :description "new check" :detected-at "2026-09-27"})]
+      (assert= "a row recorded after a settle counts from one" 1 (verification-debt-ledger-lib/outstanding-count rows "a"))
+      (assert= "the new row is outstanding (no settle fields)" nil (:discharged-at (last rows))))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")
