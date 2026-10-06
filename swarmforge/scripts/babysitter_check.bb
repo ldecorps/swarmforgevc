@@ -46,6 +46,10 @@
 (load-file (str (fs/path script-dir "babysitter_waive_lib.bb")))
 (load-file (str (fs/path script-dir "operator_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
+;; BL-1963: the pack's coordinator_mode — read once per sweep beside the
+;; router check, so should-stand-role? can suppress the coordinator on a
+;; deterministic pack without a second conf read.
+(load-file (str (fs/path script-dir "coordinator_config_lib.bb")))
 ;; BL-958: shared control-plane classify / response-policy — babysitterd is
 ;; the owning daemon for :recover via ./swarm ensure.
 (load-file (str (fs/path script-dir "control_plane_lib.bb")))
@@ -244,11 +248,14 @@
    (mono-router-lib/should-have-standing-session? — resident + coordinator
    only, invariant 1: never a hardcoded per-role list). Outside router mode
    every role is expected to stand, unchanged from pre-BL-804 behavior
-   (scenario 05)."
-  [rotation-router? ordered-roles role]
+   (scenario 05). BL-1963: on a deterministic pack the coordinator is never
+   expected to stand — it is a roster row and a mailbox, never a seat."
+  [rotation-router? ordered-roles role deterministic?]
   (if rotation-router?
-    (mono-router-lib/should-have-standing-session? ordered-roles role)
-    true))
+    (mono-router-lib/should-have-standing-session? ordered-roles role deterministic?)
+    (if deterministic?
+      (not (= role "coordinator"))
+      true)))
 
 ;; Exact match (`=NAME`): tmux resolves a bare -t by PREFIX, so with only
 ;; swarmforge-coder@2 alive `has-session -t swarmforge-coder` succeeded and
@@ -1323,6 +1330,17 @@
         ;; the resolved boolean, never a role name, so suppression can never
         ;; be hardcoded per role (invariant 1).
         rotation-router? (rotation-router-mode?)
+        ;; BL-1963: read the pack's coordinator_mode once per sweep, beside
+        ;; the router check, so should-stand-role? can suppress the
+        ;; coordinator on a deterministic pack without a second conf read.
+        deterministic? (let [identity-path (fs/path state-dir "swarm-identity")
+                            identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
+                            conf-path (or (get (mono-router-lib/parse-identity-map (or identity-text ""))
+                                               "active_backlog_max_depth_conf_path")
+                                          default-conf-file)
+                            conf-text (when (and conf-path (fs/exists? conf-path))
+                                       (slurp conf-path))]
+                        (coordinator-config-lib/deterministic-coordinator? (or conf-text "")))
         ordered-roles (mapv :role role-rows)
         resident-home (resident-home-role ordered-roles)
         ;; BL-1345: the marker is a ROTATION-ROUTER cache, and this was the
@@ -1357,7 +1375,7 @@
         sweep-now-ms (now-ms)
         roles (mapv #(let [prior (get repair-state (:role %))]
                        (assoc % :should-stand?
-                                (should-stand-role? rotation-router? ordered-roles (:role %))
+                                (should-stand-role? rotation-router? ordered-roles (:role %) deterministic?)
                                 :now-ms sweep-now-ms
                                 :last-repair-ms (get prior "last-ms")
                                 :repair-attempts (get prior "attempts" 0)))
