@@ -125,6 +125,7 @@ unregistered file at 9000 ms (between budget and 1.5×) — `watch`, named,
 exit 0.
 
 Related: [BL-1007 unit lane contention budget](BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md).
+[The property lane's own duration recorder](BL-1619-property-lane-duration-recorder.md) is this recorder's twin for `*.property.test.js`, with no budget gate of its own yet.
 BL-1600 gave `bl1277UnscopedStepCollisionGuard.test.js` — one of the nine
 files this register lists — BL-1007's contention-relative per-test timeout
 for its own load-dependent wall time; that is orthogonal to this register,
