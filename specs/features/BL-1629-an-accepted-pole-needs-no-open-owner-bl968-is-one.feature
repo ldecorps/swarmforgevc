@@ -2,16 +2,19 @@ Feature: BL-1629 An accepted pole needs no open owner, and bl968 is one
 
   The pole register knows only rows that an open ticket owns and will cut;
   a row reads unowned the day its ticket closes and stale the day its file
-  gets fast. bl968StepRegistryMaterializedTreeGuard.test.js will not get
-  fast: its two full step-registry loads are what it proves, and one load
-  costs over twelve seconds of require time today. This feature is that a
-  register row may carry a disposition - owned, or accepted with a
-  rationale and a re-measure date - that an accepted row is printed on
-  every run and never refused as unowned or new-pole while it is still
-  reported stale when its file gets fast, that a file with no row is still
-  a new pole, and that bl968's row is the first accepted one with its
-  temp-dir sweep scoped to its own runs. bl968's long solo run is QA's e2e
-  step, not a scenario (BL-1541).
+  gets fast. This feature is that a register row may carry a disposition -
+  owned, or accepted with a rationale and a re-measure date - that an
+  accepted row is printed on every run and never refused as unowned or
+  new-pole while it is still reported stale when its file gets fast, and
+  that a file with no row is still a new pole.
+
+  bl968StepRegistryMaterializedTreeGuard.test.js prompted it: its two full
+  step-registry loads cost over twelve seconds of require time when this
+  was specified. BL-1630 (landed 2026-09-21) brought it to under three
+  seconds, so its row leaves the register instead of becoming the first
+  accepted one, and the scenario that asserted it was retired on
+  2026-10-06. The Feature line keeps its original name because the step
+  handler is scoped by it.
 
   # BL-1629 accepted-pole-needs-no-open-owner-01
   Scenario Outline: the reader accepts both row shapes
@@ -37,9 +40,3 @@ Feature: BL-1629 An accepted pole needs no open owner, and bl968 is one
       | an accepted row naming a closed ticket             | 5000     | stale-row   | the file and its ticket               |
       | an owned row naming a closed ticket                | 12600    | unowned-row | the file and its ticket               |
       | no row at all                                      | 12600    | new-pole    | the file                              |
-
-  # BL-1629 accepted-pole-needs-no-open-owner-03
-  Scenario: bl968's row is accepted and its sweep is scoped to its own runs
-    When the real pole register and the source of extension/test/bl968StepRegistryMaterializedTreeGuard.test.js are read
-    Then the bl968 row carries the disposition accepted with a re-measure date
-    And the test builds its temp roots with its own pid in the name and never lists the temp dir itself

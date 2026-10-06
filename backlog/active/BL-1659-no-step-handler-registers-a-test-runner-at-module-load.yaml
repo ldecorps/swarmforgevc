@@ -66,9 +66,12 @@ description: |
   node:test's root with zero registered tests never fires, so the roots
   those 67 handlers create are removed only by BL-1636's age-floored
   reaper. Requiring node:test at load also installs its runner, which
-  prints `TAP version 13 ... 1..0` at exit and adds exit listeners
-  (`MaxListenersExceededWarning: ... 11 exit listeners added`) on every
-  acceptance and property-lane run. BL-1630 named three of these
+  prints `TAP version 13 ... 1..0` at exit on every acceptance and
+  property-lane run. (Amended 2026-10-06: the
+  `MaxListenersExceededWarning: ... 11 exit listeners added` printed
+  beside it is NOT node:test's. coder@2 measured it unchanged, 11
+  listeners, with node:test gone from every handler; it comes from the
+  handlers' own exit cleanup, which is out of scope.) BL-1630 named three of these
   handlers (bl1021, bl1064, bl1069) because only the alphabetically first
   pays node:test's load; the other 72 cost near-zero and were invisible
   to a cost ranking (coder evidence
@@ -90,7 +93,8 @@ description: |
     and its census helper) names any handler whose require loads
     node:test, with no allowlist entry for it once this lands.
   - `node -e "require('./specs/pipeline/steps/index.js')"` prints no TAP
-    line and no MaxListenersExceededWarning.
+    line (amended 2026-10-06: the MaxListenersExceededWarning is out of
+    scope, see above).
 
   ## How (direction, not mandate)
 
@@ -124,8 +128,8 @@ qa_e2e_procedure: >
   handler outside a string literal (bl1220's fixture text and its own
   assertion are the two allowed). (3)
   `cd extension && npx vitest run test/stepHandlerModuleLoadBudget.test.js`
-  once: green. (4) `node -e "require('./specs/pipeline/steps/index.js')" 2>&1 | grep -c 'TAP version\|MaxListeners'`
-  is 0. Never "run it N times".
+  once: green. (4) `node -e "require('./specs/pipeline/steps/index.js')" 2>&1 | grep -c 'TAP version'`
+  is 0 (amended 2026-10-06; the MaxListeners line remains, out of scope). Never "run it N times".
 
 source: |
   Coder note to the specifier, priority 00, 2026-09-20T01:02:51Z (inbound
@@ -157,4 +161,12 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+  Amended 2026-10-06 by the specifier (coder@2 note 000126, evidence
+  BL-1659-coder-spec-gap-maxlisteners-not-caused-by-node-test-20261006.md):
+  scenario 03 asserted no TAP line AND no MaxListenersExceededWarning, but
+  the warning is not node:test's (11 exit listeners before and after the
+  parcel, from the handlers' own exit cleanup, which out_of_scope already
+  excludes). Scenario 03 is retired, never reworded; scenario 05 asserts
+  the TAP half alone, and qa step 4 greps for the TAP line only. The
+  coder built against the old line and is not at fault.
 assigned_to: coder

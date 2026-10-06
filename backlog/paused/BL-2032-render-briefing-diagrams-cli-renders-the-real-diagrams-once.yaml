@@ -62,6 +62,10 @@ notes: |
   Honest size: about 4 s of 383 s summed work. It does not move the
   lane's wall, which renderBriefingBurndownCli (BL-2031) and
   bl1901MergePathLandDeclines set.
+  2026-10-06: once BL-1629 lands, this file (expected about 8 s, its real
+  render being the point) is the likely first row for its `accepted`
+  disposition. Recording that is a register edit for a later pass, not
+  this ticket's scope; BL-2035 should land before it.
 
 description: |
   ## What is wrong
