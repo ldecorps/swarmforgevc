@@ -22,7 +22,7 @@ acceptance: specs/features/BL-2045-a-local-seats-report-can-be-emailed-on-an-eve
 required_wiring:
   - 'specs/pipeline/steps/bl2045LocalSeatReportEmailSteps.js::registerSteps::binds BL-2045 feature (discovered by suffix, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   You answered "Yes - email me iq3 reports on those events" in the
   specifier pane on 2026-10-06 (~13:15Z) to: a CLI emailing the iq3 seat's
