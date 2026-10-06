@@ -142,3 +142,5 @@ notes: |
   f87e90ddf5 (pull finds Work notes by message; seat never runs
   redo_from), ledger-linked; and its follow-up 8eac9d2543 (anchored
   Work-note pattern), ledger-linked.
+
+assigned_to: coder
