@@ -133,3 +133,6 @@ description: |
   that teaches the phases is the specifier's, landed with BL-2038.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: behavior, commit: 46a708b027, evidence: backlog/evidence/BL-2037-QA-20261006.md }
