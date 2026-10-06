@@ -102,3 +102,5 @@ notes: |
   Seen, not ticketed: QA's evidence names a tool gap. qa-gather keeps a
   4000-char tail of the lane, so a red's own message is lost when the tail
   is BL-871's allowlisted onTaskUpdate noise.
+
+assigned_to: coder
