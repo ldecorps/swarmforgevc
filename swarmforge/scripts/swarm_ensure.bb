@@ -1027,12 +1027,18 @@
                                               router?
                                               (ensure-mono-router-role! socket ordered row contract-broken? resident-session deterministic?)
 
-                                              ;; BL-1962: on a deterministic pack, outside router mode
-                                              ;; too, the coordinator is a roster row and a mailbox,
-                                              ;; never a seat - ensure-role! is skipped for it entirely
-                                              ;; rather than respawning a pane nothing expects to stand.
+                                              ;; BL-1962 (QA bounce D1): on a deterministic pack,
+                                              ;; outside router mode too, the coordinator is a
+                                              ;; roster row and a mailbox, never a seat -
+                                              ;; ensure-role! is skipped for it entirely rather than
+                                              ;; respawning a pane nothing expects to stand. :dormant,
+                                              ;; never :healthy - report-line drops the action text
+                                              ;; for :healthy and would print "agent:coordinator:
+                                              ;; HEALTHY" for a seat that does not exist; :dormant
+                                              ;; matches the router branch's own report for the
+                                              ;; identical case.
                                               (and deterministic? (= role "coordinator"))
-                                              {:component (str "agent:" role) :status :healthy
+                                              {:component (str "agent:" role) :status :dormant
                                                :action "deterministic coordinator; no standing session expected"}
 
                                               :else
