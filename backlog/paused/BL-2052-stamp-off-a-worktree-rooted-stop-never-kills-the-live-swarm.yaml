@@ -74,6 +74,10 @@ notes: |
   nobody yet: no test lane unsets TMUX, so a seat's test run that calls
   tmux without -S reaches the live server. The specifier's own full npm test
   on main at about 19:55Z ran with TMUX unset and the swarm survived.
+  Update 2026-10-06 ~20:55Z: the 19:38Z death, and the 20:32:56Z one after
+  this mint, are pinned to procps kill reading bl965's -<pid> as kill(-1),
+  not to this path; see BL-2053 (hotfixes 48d037df88, d0b9440211). This
+  stamp-off stands: the worktree-pointer kill is real (2026-08-29 audit).
   The fix was written by the Cursor agent; the specifier owned and landed
   it, making the ownership check physical (pwd -P, realpathSync) instead of
   a string prefix and adding the ../ and symlinked-dir regression cases.
