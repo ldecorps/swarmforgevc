@@ -70,6 +70,11 @@
   reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-25cb223e0dff2ab2cafc370ef7ee4bc69134e103
+  waived_by: coordinator
+  reason: "Declared hotfix (Hotfix-Certification: pending trailer, By specifier), registered in backlog/hotfix-ledger.yaml and stamped into BL-2051 (paused, awaiting QA review/human certify-or-waive); is_qa_ancestor exits 1 (not a QA land) so BL-848's ledger+stamp-ticket path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
+
 - key: pipeline-code-on-main-2c805e9b0bd455886a2ba8fa1853db283fc48928
   waived_by: coordinator
   reason: "Direct hotfix fixing an unowned standing red (BL-526 console-menu feature, 41 days red); stamp ticket BL-1859 (severity high, human_approval approved) already minted to own it, paused per hotfix-ledger.yaml"
