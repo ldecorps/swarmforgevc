@@ -1,0 +1,134 @@
+id: BL-2039
+title: "The chase sweep chases and respawns the easy coder seat over a stage-queue parcel its tier refuses, and never wakes the hard seat that can claim it - iq3 was respawned twice in 18 minutes mid-BL-1843 over BL-2022's Work note"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - handoffd respawned a working seat
+# twice in 18 minutes (08:39:10Z, 08:57:09Z on 2026-10-06), and the only seat
+# that can claim the parcel is never woken for it.
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: daemon decision logic in one Babashka lib plus its fixture runner;
+# respawn and dead-letter are the outcomes it governs.
+slice_size_envelope: medium
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one decision added beside BL-1004's stage-deferral hold in the same sweep; nothing to deduplicate"
+  architect: "the sweep already reads per-seat state for BL-1004's hold; this follows that seam and moves no boundary"
+
+acceptance: specs/features/BL-2039-the-chase-sweep-never-chases-a-seat-over-a-parcel-its-tier-refuses.feature
+
+# Discovered from its own file by suffix (BL-1371); the pre-QA gate checks
+# it lands in this parcel (BL-233).
+required_wiring:
+  - 'specs/pipeline/steps/bl2039TierAwareChaseSweepSteps.js::registerSteps::binds BL-2039 feature (discovered by suffix, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  The human directed this mint in SUP-17 (quoted in source:). No choice is
+  posed. FIRM: the sweep never wakes, respawns or dead-letters a seat over
+  a parcel the claim loop would refuse that seat; an idle seat of the stage
+  that may claim it is woken; a parcel no seat may claim still alarms.
+
+invariants:
+  - "The sweep never wakes, respawns or dead-letters a seat over a parcel the dispatcher's claim loop would refuse that seat; it reads the claim loop's own decision (seat_difficulty_lib difficulty-claim-decision, ticket cost via handoff-lib active-ticket-mutation-cost), never a second notion (BL-1811)."
+  - "A stage-queue parcel that an idle seat of its stage may claim is never left without a wake to such a seat."
+  - "A parcel no seat of its stage may claim still reaches the dead-letter alarm; it is never held silently."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row:
+     `specs/features/BL-2039-the-chase-sweep-never-chases-a-seat-over-a-parcel-its-tier-refuses.feature`
+     4 of 4 pass (measured at mint: every step unbound).
+  2. `bash swarmforge/scripts/test/test_chase_sweep.sh` and
+     `bash swarmforge/scripts/test/test_handoffd_bl1652_chase_respawn_busy_lane_guard.sh`:
+     ALL PASS (bb runners are not in the gather).
+  3. Read the hardener's evidence: a hand-mutant pass over the new decision
+     (at least: the tier check inverted, the sibling wake dropped, the
+     no-seat-can-claim branch held instead of dead-lettered), each killed.
+  4. After the land, read-only on the live host: `grep "chase-respawn coder "
+     .swarmforge/daemon/handoffd.log` shows no line after the land time whose
+     item names a parcel for a medium or high ticket. If a medium ticket's
+     Work note waits in the coder stage queue while coder@2 is idle, the log
+     shows a wake to coder@2 within one chase interval.
+
+source: |
+  Operator intake backlog/archive/INTAKE-operator-question-1791275605027.md
+  (filed 2026-10-06T08:33:25Z, raw, drained by the specifier). The human,
+  asked in SUP-17 how to fix the stranded coder parcels, answered verbatim:
+  "Mint a high-severity defect ticket for the swarm".
+  Investigation: backlog/evidence/BL-2039-stranded-coder-parcels-investigation-20261006.md.
+
+notes: |
+  Minted 2026-10-06 by the specifier from the Operator's raw intake.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  The intake's premise ("the dispatcher permanently SKIPS two parcels") was
+  checked before minting and is not the defect: the bare coder seat is
+  easy-tier and the two tickets are medium, so BL-1001's claim rule refuses
+  them there by design, and coder@2 claims from the same stage queue in
+  FIFO order (it took 016877 from it at 08:00:24Z). The defect is the
+  chase sweep acting on the wrong seat; see the evidence file.
+  Full chain minus cleaner/architect: hardender because the decision
+  governs respawns and dead-letter writes and has no Stryker lane (BL-472,
+  BL-959); documenter because docs/diagrams/handoff-flow.mmd draws the
+  chase as "recipient idle with pending mail? -> chase sweep wakes it" and
+  docs/how-to/BL-1001-difficulty-aware-coder-seat-routing.md says only
+  "the ticket waits".
+
+description: |
+  ## What is wrong
+
+  A multi-seat stage's shared queue is the mailbox of the seat whose id is
+  the stage name (`handoff_lib.bb` `stage-queue-dir`). On the full-forge
+  pack that seat is `coder`, the iq3 local-model seat, declared
+  `--seat-tier easy`; `coder@2` is `--seat-tier hard`. The dispatcher's
+  claim loop leaves a medium or high ticket's parcel in that queue for
+  coder@2 (BL-1001). The chase sweep (`chase_sweep_lib.bb`
+  `sweep-role-inbox!`) sweeps each role's own `inbox/new/` and acts on
+  the mailbox OWNER, reading no tier. So a parcel waiting for coder@2 is
+  chased against coder, and once past `maxChases` with coder's pane quiet,
+  coder is respawned over it, or, if responsive, the parcel is
+  dead-lettered. coder@2 is never woken for it.
+
+  On 2026-10-06, Work BL-2022 (016946) reached chaseCount 20, and handoffd
+  respawned the coder seat at 08:39:10Z and 08:57:09Z while it held
+  BL-1843 in progress. The intake that reported it read the result as a
+  dispatcher skip.
+
+  ## What is wanted
+
+  - Over a parcel the swept seat may not claim (the claim loop's decision
+    answers `:skip-ineligible` for that seat), the sweep sends that seat no
+    wake, never respawns it and never dead-letters the parcel on its
+    account.
+  - When another seat of the stage may claim it and has nothing in
+    progress, the sweep wakes that seat.
+  - When no seat of the stage may claim it, the parcel goes to the
+    dead-letter alarm with no respawn: a respawn cannot make it claimable,
+    and a human needs to hear about it.
+  - A parcel the swept seat may claim keeps today's ladder exactly.
+
+  ## How (direction, not mandate)
+
+  - BL-1004's `item-deferral-held?` is the precedent: a per-item decision
+    read beside `held?` in `sweep-role-inbox!`, with the stage context read
+    once per role sweep. Reuse `seat_difficulty_lib.bb`'s
+    `difficulty-claim-decision` and `parse-seat-tiers`/`parse-seat-models`,
+    and the ticket cost the claim loop reads
+    (`handoff-lib/active-ticket-mutation-cost` over the parcel's task, as
+    `ready_for_next_task.bb`'s `claim-task-name` resolves it). Do not copy
+    the tier table.
+  - Fail toward today's behaviour: an unreadable conf, roles.tsv or ticket
+    leaves the item on today's ladder, as BL-1004's hold does.
+  - The step handler drives the REAL `run-sweep!` through a bb runner with
+    fake adapters, as `specs/pipeline/steps/bl1652ChaseRespawnBusyGuardSteps.js`
+    does (`chase_sweep_test_runner.bb`). Never a new helper alone: the
+    acceptance must exercise the function handoffd calls. Fixtures under
+    mkdtemp, never this checkout's mailboxes (BL-1390).
+  - The Background's two seats run different models: BL-1167 turns tier
+    rules off for a stage whose seats share one model, and that stays so.
+
+assigned_to: coder
