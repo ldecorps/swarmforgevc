@@ -40,8 +40,10 @@
         So the command is wrapped in `setsid`, making it a process-group
         leader, and the whole GROUP is killed via `kill -KILL -- -<pgid>`.
         The `--` is LOAD-BEARING and its absence is silent: without it
-        `/usr/bin/kill` reads `-<pid>` as an option, exits 0, kills only the
-        leader, and leaves every grandchild running.
+        procps-ng's `/usr/bin/kill` reads `-<pid>` as an option and signals
+        process group -<first digit of pid> instead, with its exit status
+        inverted. A pid starting with 1 is kill(-1): every process the user
+        owns, the live swarm included (2026-10-06 swarm deaths).
      2. Deref-ing the process after destroying it BLOCKS when a surviving
         grandchild still holds the stdout pipe open — EOF never arrives. So
         output goes to FILES rather than :string pipes, and sh!'s bounded
