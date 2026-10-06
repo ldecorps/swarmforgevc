@@ -25,7 +25,7 @@ required_wiring:
   - 'specs/pipeline/steps/bl2038LocalSeatFreshPhaseSessionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
   - 'swarmforge/scripts/ready_for_next_task.bb::local_seat_phase::the serve path is the live consumer that names the phase (BL-1235)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your intake (backlog/INTAKE-fight-a-too-small-contect-window-20261006.md),
   with the three design choices you answered on 2026-10-06: a fresh session
