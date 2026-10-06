@@ -300,6 +300,11 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-9baca9e7771377fcac8a8890ff03213215f2bb98
+  waived_by: coordinator
+  reason: "Sanctioned specifier hotfix (10-01 standing directive: hotfix every red + stamp-off; landing-is-a-merge ruled A). By specifier, Hotfix-Certification: pending (stamp-off ticket to follow). Fixes /autopilot and /land backlog-root double-join bug surfaced by coder note 000131 / BL-698 binding. Not a QA land - is_qa_ancestor exits 1 by design, SUP-17 Article 4.2 re-fire on a sanctioned stamp-off is accepted noise."
+  waived_at: 2026-10-06
+
 - key: pipeline-code-on-main-9bb36c35dd80068b135fca99effeee0fca4e8ac2
   waived_by: coordinator
   reason: "is_qa_ancestor.sh single-hop bug: chain 9bb36c35dd<-328fa64f71<-d945e17a86 verified, d945e17a86 is a real QA-branch ancestor with no bounce veto; land-approval record added at 05:41Z"
