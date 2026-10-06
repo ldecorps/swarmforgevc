@@ -191,17 +191,17 @@ RC_01=$?
 [[ "$RC_01" -eq 0 ]] || fail "01: expected exit 0, got $RC_01: $OUT_01"
 
 for f in "$ROOT/.swarmforge/roles.tsv" "$WT_CODER/.swarmforge/roles.tsv" "$WT_CLEANER/.swarmforge/roles.tsv" "$WT_CODER2/.swarmforge/roles.tsv" "$WT_IQ3/.swarmforge/roles.tsv"; do
-  grep -qE '^coder@2\t|^coder@iq3\t' "$f" && fail "01: $f still lists a local-model seat"
+  grep -qE "$(printf '^coder@2\t|^coder@iq3\t')" "$f" && fail "01: $f still lists a local-model seat"
 done
-grep -qE '\tcoder@2\t|\tcoder@iq3\t' "$ROOT/.swarmforge/sessions.tsv" && fail "01: sessions.tsv still lists a local-model seat"
+grep -qE "$(printf '\tcoder@2\t|\tcoder@iq3\t')" "$ROOT/.swarmforge/sessions.tsv" && fail "01: sessions.tsv still lists a local-model seat"
 pass "01: no roster copy lists coder@2 or coder@iq3"
 
 for f in "$ROOT/.swarmforge/roles.tsv" "$WT_CODER/.swarmforge/roles.tsv" "$WT_CLEANER/.swarmforge/roles.tsv" "$WT_CODER2/.swarmforge/roles.tsv" "$WT_IQ3/.swarmforge/roles.tsv"; do
-  grep -qP '^coder\tcoder\t' "$f" || fail "01: $f lost the sibling seat coder"
-  grep -qP '^cleaner\tcleaner\t' "$f" || fail "01: $f lost the sibling seat cleaner"
-  grep -qP '^coordinator\tcoordinator\t' "$f" || fail "01: $f lost the sibling seat coordinator"
+  grep -q "$(printf '^coder\tcoder\t')" "$f" || fail "01: $f lost the sibling seat coder"
+  grep -q "$(printf '^cleaner\tcleaner\t')" "$f" || fail "01: $f lost the sibling seat cleaner"
+  grep -q "$(printf '^coordinator\tcoordinator\t')" "$f" || fail "01: $f lost the sibling seat coordinator"
 done
-grep -qP '^1\tcoder\t' "$ROOT/.swarmforge/sessions.tsv" || fail "01: sessions.tsv lost coder"
+grep -q "$(printf '^1\tcoder\t')" "$ROOT/.swarmforge/sessions.tsv" || fail "01: sessions.tsv lost coder"
 pass "01: the roster rows of coder, cleaner and coordinator are unchanged"
 
 tmux -S "$SOCK" has-session -t swarmforge-coder@2 2>/dev/null && fail "01: coder@2's session still exists"
@@ -333,7 +333,7 @@ set -e
 echo "$OUT_06" | grep "$MODEL" >/dev/null || fail "06: the refusal does not name $MODEL: $OUT_06"
 pass "06: remove exits non-zero naming $MODEL once the wait bound has passed"
 
-grep -qE '^coder@2\t|^coder@iq3\t' "$ROOT/.swarmforge/roles.tsv" && fail "06: a local-model seat is still in the master roster"
+grep -qE "$(printf '^coder@2\t|^coder@iq3\t')" "$ROOT/.swarmforge/roles.tsv" && fail "06: a local-model seat is still in the master roster"
 pass "06: no roster copy lists coder@2 or coder@iq3"
 
 echo "$OUT_06" | grep -i "run.*remove again" >/dev/null || fail "06: the output does not say to run remove again: $OUT_06"

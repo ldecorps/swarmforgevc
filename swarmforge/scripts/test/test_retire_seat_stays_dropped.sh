@@ -83,7 +83,7 @@ pass "01: no roles.tsv, worktree copy included, lists coder@2"
 # retirement from one that wiped the whole file: assert the SIBLING seat
 # (coder, whose name coder@2 extends) survives in every copy too.
 for f in "$ROOT/.swarmforge/roles.tsv" "$WT_CODER/.swarmforge/roles.tsv" "$WT_CODER2/.swarmforge/roles.tsv" "$WT_ARCHITECT/.swarmforge/roles.tsv"; do
-  grep -qP '^coder\tcoder\t' "$f" || fail "01: $f lost the sibling seat 'coder' - retirement must be surgical, not wholesale"
+  grep -q "$(printf '^coder\tcoder\t')" "$f" || fail "01: $f lost the sibling seat 'coder' - retirement must be surgical, not wholesale"
 done
 pass "01: the sibling seat coder survives in every roles.tsv copy"
 
