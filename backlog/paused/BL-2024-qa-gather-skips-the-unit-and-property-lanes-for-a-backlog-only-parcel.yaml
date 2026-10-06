@@ -28,7 +28,7 @@ required_wiring:
 # is QA, through the report; qa-gather.js already calls gatherQaChecklist,
 # so a qaGather.ts literal would be satisfied by this parcel's own diff.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   This changes what QA's last gate measures, so it needs your yes. FIRM:
   only a parcel whose OWN diff (merge-base with main to the parcel
