@@ -37,7 +37,13 @@ const REPORT_PATH = path.join(ROOT_DIR, '.property-vitest-report.json');
 const VITEST_BIN = path.join(ROOT_DIR, 'node_modules', '.bin', 'vitest');
 const CONFIG_PATH = 'vitest.properties.config.mjs';
 
-function runRecorder({ vitestBin = VITEST_BIN, reportPath = REPORT_PATH, logPath = LOG_PATH, cwd = ROOT_DIR } = {}) {
+function runRecorder({
+  vitestBin = VITEST_BIN,
+  reportPath = REPORT_PATH,
+  logPath = LOG_PATH,
+  cwd = ROOT_DIR,
+  extraArgs = [],
+} = {}) {
   // A stale report from an earlier KILLED run never survives to be
   // misread as this run's own (scenario 03) - vitest's JSON reporter only
   // writes this file on completion, so its absence after the spawn below
@@ -51,12 +57,18 @@ function runRecorder({ vitestBin = VITEST_BIN, reportPath = REPORT_PATH, logPath
   const startedAt = Date.now();
   const result = spawnSync(
     vitestBin,
-    ['run', '--config', CONFIG_PATH, '--reporter=default', '--reporter=json', `--outputFile=${reportPath}`],
+    ['run', '--config', CONFIG_PATH, '--reporter=default', '--reporter=json', `--outputFile=${reportPath}`, ...extraArgs],
     { stdio: 'inherit', cwd }
   );
   const durationMs = Date.now() - startedAt;
   const testExitCode = result.status === null ? 1 : result.status;
 
+  // BL-1619 QA bounce D1: a filtered run (`npm run test:properties -- <file>`,
+  // extraArgs non-empty) is not a whole-lane run - its census and trend
+  // would silently mix a one-file sample into the lane-wide row, so it
+  // appends none, keeping the census and trend whole-lane only. The verdict
+  // is still useful for a human filtering a single file by hand, so it
+  // still prints.
   let appended = false;
   if (fs.existsSync(reportPath)) {
     const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
@@ -65,25 +77,30 @@ function runRecorder({ vitestBin = VITEST_BIN, reportPath = REPORT_PATH, logPath
 
     console.log(formatPropertyDurationVerdict(summary, durations, HALF_TIMEOUT_MS, durationMs));
 
-    appended = appendRecord(
-      logPath,
-      buildRecord({
-        finishedAt: new Date().toISOString(),
-        fileCount: durations.length,
-        exitCode: testExitCode,
-        durationMs,
-        workMs: summary.workMs,
-        poleMs: summary.poleMs,
-        poleFile: summary.poleFile,
-      })
-    );
+    if (extraArgs.length === 0) {
+      appended = appendRecord(
+        logPath,
+        buildRecord({
+          finishedAt: new Date().toISOString(),
+          fileCount: durations.length,
+          exitCode: testExitCode,
+          durationMs,
+          workMs: summary.workMs,
+          poleMs: summary.poleMs,
+          poleFile: summary.poleFile,
+        })
+      );
+    }
   }
 
   return { exitCode: testExitCode, appended };
 }
 
 function main() {
-  const { exitCode } = runRecorder();
+  // BL-1619 QA bounce D1: `npm run test:properties -- <file>` must still
+  // run only <file>, as it did before this recorder existed - forward
+  // every extra argv entry to vitest, after the recorder's own fixed args.
+  const { exitCode } = runRecorder({ extraArgs: process.argv.slice(2) });
   process.exit(exitCode);
 }
 

@@ -15,6 +15,16 @@ const CANNED_RESULTS = [
   { name: 'test/fast.property.test.js', startTime: 0, endTime: 500 },
 ];
 
+// BL-1619 QA bounce D3: the fake also records the FULL argv it received,
+// one per line, to "<outputFile>.argv.txt" - so a caller can prove two
+// invocations (e.g. a direct, hand-built "correct" command and one spawned
+// through the recorder) were given the SAME effective vitest command,
+// including any forwarded file filter or the --config flag. Comparing
+// argv rather than report CONTENT is the point: this fake's canned report
+// never varies with its arguments, so a report-content comparison alone
+// (the pre-bounce shape) cannot catch a recorder that silently drops or
+// mutates an argument - readFakeVitestArgv below is what scenario 04
+// actually asserts against.
 function writeFakeVitestBin(dir, { exitCode = 0 } = {}) {
   const binPath = path.join(dir, 'vitest');
   const report = JSON.stringify({ testResults: CANNED_RESULTS });
@@ -28,11 +38,25 @@ done
 cat > "$out" <<'JSON'
 ${report}
 JSON
+printf '%s\\n' "$@" > "$out.argv.txt"
 exit ${exitCode}
 `;
   fs.writeFileSync(binPath, script);
   fs.chmodSync(binPath, 0o755);
   return binPath;
+}
+
+// Reads back the argv the fake recorded for a given --outputFile path,
+// with the --outputFile=<path> entry itself removed (the two invocations
+// being compared legitimately use different report paths) - what remains
+// is every flag and positional argument the fake was actually spawned
+// with, in the order it received them.
+function readFakeVitestArgv(outputFilePath) {
+  const text = fs.readFileSync(`${outputFilePath}.argv.txt`, 'utf8');
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .filter((arg) => !arg.startsWith('--outputFile='));
 }
 
 // Simulates the real-world shape of scenario 03: the process is killed
@@ -47,4 +71,4 @@ function writeKilledFakeVitestBin(dir) {
   return binPath;
 }
 
-module.exports = { CANNED_RESULTS, writeFakeVitestBin, writeKilledFakeVitestBin };
+module.exports = { CANNED_RESULTS, writeFakeVitestBin, writeKilledFakeVitestBin, readFakeVitestArgv };

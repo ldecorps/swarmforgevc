@@ -16,7 +16,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const { trackedTmpRoot } = require('./lib/fixtureReaper');
-const { writeFakeVitestBin, writeKilledFakeVitestBin } = require('../../../extension/test/helpers/fakePropertyVitest');
+const { writeFakeVitestBin, writeKilledFakeVitestBin, readFakeVitestArgv } = require('../../../extension/test/helpers/fakePropertyVitest');
 const { runRecorder } = require('../../../extension/scripts/recordPropertyDuration');
 const { summarizeDurations, formatPropertyDurationVerdict, HALF_TIMEOUT_MS } = require('../../../extension/scripts/recordPropertyDurationLib');
 const { extractFileDurations } = require('../../../extension/out/tools/check-suite-file-budget');
@@ -145,6 +145,16 @@ function registerSteps(registry) {
   });
 
   // ── property-lane-records-duration-04 ───────────────────────────────────
+  // BL-1619 QA bounce D3: the fake's canned report never varies with its
+  // arguments, so a report-CONTENT comparison alone is vacuous (it cannot
+  // catch a recorder that silently drops or mutates an argument, e.g. the
+  // bounce's own --config-dropping mutant). This also drives BOTH
+  // invocations with a file filter (QA's own "e.g. both with a file
+  // filter") so D1's forwarded-extraArgs fix has real coverage here too -
+  // the ARGV comparison below is what actually proves the recorder
+  // spawned the identical command a correct, hand-built invocation would.
+  const BL1619_FILTER_ARG = 'test/pole.property.test.js';
+
   scoped(/^the same property-lane run with and without the recorder$/, (ctx) => {
     const f = fixture(ctx);
     f.vitestBin = writeFakeVitestBin(f.dir, { exitCode: 0 });
@@ -153,15 +163,36 @@ function registerSteps(registry) {
 
   scoped(/^both complete$/, (ctx) => {
     const f = fixture(ctx);
-    execFileSync(f.vitestBin, ['run', '--config', 'vitest.properties.config.mjs', '--reporter=json', `--outputFile=${f.directReportPath}`]);
+    execFileSync(f.vitestBin, [
+      'run',
+      '--config',
+      'vitest.properties.config.mjs',
+      '--reporter=default',
+      '--reporter=json',
+      `--outputFile=${f.directReportPath}`,
+      BL1619_FILTER_ARG,
+    ]);
     f.directReport = JSON.parse(fs.readFileSync(f.directReportPath, 'utf8'));
-    f.outcome = runRecorder({ vitestBin: f.vitestBin, reportPath: f.reportPath, logPath: f.logPath, cwd: f.dir });
+    f.outcome = runRecorder({
+      vitestBin: f.vitestBin,
+      reportPath: f.reportPath,
+      logPath: f.logPath,
+      cwd: f.dir,
+      extraArgs: [BL1619_FILTER_ARG],
+    });
     f.throughReport = JSON.parse(fs.readFileSync(f.reportPath, 'utf8'));
   });
 
   scoped(/^the set of test files run, their order and the pass\/fail result are identical$/, (ctx) => {
     const f = fixture(ctx);
     assert.deepEqual(f.throughReport.testResults, f.directReport.testResults);
+    const directArgv = readFakeVitestArgv(f.directReportPath);
+    const throughArgv = readFakeVitestArgv(f.reportPath);
+    assert.deepEqual(
+      throughArgv,
+      directArgv,
+      `expected the recorder to spawn the identical argv (including the forwarded filter) a direct invocation would, got through=${JSON.stringify(throughArgv)} direct=${JSON.stringify(directArgv)}`
+    );
   });
 }
 

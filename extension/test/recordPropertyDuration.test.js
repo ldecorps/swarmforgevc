@@ -2,7 +2,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { writeFakeVitestBin, writeKilledFakeVitestBin } = require('./helpers/fakePropertyVitest');
+const { writeFakeVitestBin, writeKilledFakeVitestBin, readFakeVitestArgv } = require('./helpers/fakePropertyVitest');
 const { runRecorder } = require('../scripts/recordPropertyDuration');
 
 function mkFixture() {
@@ -95,22 +95,97 @@ test('a stale report left on disk by an earlier killed run is never misread as t
 
 // BL-1619 scenario 04 ─────────────────────────────────────────────────
 
-test('the recorder changes nothing about which files vitest reports, their order or their result', () => {
-  const { dir } = mkFixture();
+// BL-1619 QA bounce D3: the fake's canned report never varies with its
+// arguments, so comparing REPORT CONTENT alone (the pre-bounce shape,
+// kept below since it is still a true claim) is vacuous - it cannot fail
+// against a recorder that silently drops or mutates an argument (the
+// bounce's own mutant dropped `--config`). The argv comparison is what
+// actually proves the recorder spawns the identical command a correct,
+// hand-built invocation would, including the forwarded extraArgs file
+// filter (QA's own "e.g. both with a file filter").
+function directAndThroughArgv(dir, extraArgs) {
   const vitestBin = writeFakeVitestBin(dir, { exitCode: 0 });
-
-  // Direct: the same stub, invoked the same way `npm run test:properties`
-  // itself would, with no recorder involved at all.
   const { execFileSync } = require('node:child_process');
+
   const directReportPath = path.join(dir, 'direct-report.json');
-  execFileSync(vitestBin, ['run', '--config', 'vitest.properties.config.mjs', '--reporter=json', `--outputFile=${directReportPath}`]);
+  execFileSync(vitestBin, [
+    'run',
+    '--config',
+    'vitest.properties.config.mjs',
+    '--reporter=default',
+    '--reporter=json',
+    `--outputFile=${directReportPath}`,
+    ...extraArgs,
+  ]);
   const directReport = JSON.parse(fs.readFileSync(directReportPath, 'utf8'));
 
-  // Through the recorder.
   const throughReportPath = path.join(dir, 'through-report.json');
   const throughLogPath = path.join(dir, 'through.jsonl');
-  runRecorder({ vitestBin, reportPath: throughReportPath, logPath: throughLogPath, cwd: dir });
+  const outcome = runRecorder({ vitestBin, reportPath: throughReportPath, logPath: throughLogPath, cwd: dir, extraArgs });
   const throughReport = JSON.parse(fs.readFileSync(throughReportPath, 'utf8'));
 
+  return {
+    outcome,
+    directReport,
+    throughReport,
+    directArgv: readFakeVitestArgv(directReportPath),
+    throughArgv: readFakeVitestArgv(throughReportPath),
+  };
+}
+
+test('the recorder changes nothing about which files vitest reports, their order or their result, with a file filter forwarded', () => {
+  const { dir } = mkFixture();
+  const { directReport, throughReport, directArgv, throughArgv } = directAndThroughArgv(dir, ['test/pole.property.test.js']);
+
   assert.deepEqual(throughReport.testResults, directReport.testResults);
+  assert.deepEqual(throughArgv, directArgv, `expected the recorder to spawn the identical argv a direct invocation would, got through=${JSON.stringify(throughArgv)} direct=${JSON.stringify(directArgv)}`);
+});
+
+test('BL-1619 QA bounce D3 non-vacuity: a mutant recorder that drops --config fails the argv comparison', () => {
+  const { dir } = mkFixture();
+  const vitestBin = writeFakeVitestBin(dir, { exitCode: 0 });
+  const { execFileSync } = require('node:child_process');
+
+  const directReportPath = path.join(dir, 'direct-report.json');
+  execFileSync(vitestBin, [
+    'run',
+    '--config',
+    'vitest.properties.config.mjs',
+    '--reporter=default',
+    '--reporter=json',
+    `--outputFile=${directReportPath}`,
+  ]);
+
+  // The mutant: the same spawnSync call, with '--config', CONFIG_PATH
+  // removed - exactly D3's own mutant recorder.
+  const { spawnSync } = require('node:child_process');
+  const mutantReportPath = path.join(dir, 'mutant-report.json');
+  spawnSync(vitestBin, ['run', '--reporter=default', '--reporter=json', `--outputFile=${mutantReportPath}`], { cwd: dir });
+
+  const directArgv = readFakeVitestArgv(directReportPath);
+  const mutantArgv = readFakeVitestArgv(mutantReportPath);
+  assert.notDeepEqual(mutantArgv, directArgv, 'expected the --config-dropping mutant to produce a different argv than the direct, correct invocation');
+});
+
+// BL-1619 QA bounce D1 ───────────────────────────────────────────────
+
+test('runRecorder forwards extraArgs to vitest, as a file filter would be', () => {
+  const { dir, reportPath, logPath } = mkFixture();
+  const vitestBin = writeFakeVitestBin(dir, { exitCode: 0 });
+
+  runRecorder({ vitestBin, reportPath, logPath, cwd: dir, extraArgs: ['test/pole.property.test.js'] });
+
+  const argv = readFakeVitestArgv(reportPath);
+  assert.ok(argv.includes('test/pole.property.test.js'), `expected the filter arg to reach vitest, got: ${JSON.stringify(argv)}`);
+});
+
+test('runRecorder appends no row for a filtered run - the census and trend stay whole-lane only', () => {
+  const { dir, reportPath, logPath } = mkFixture();
+  const vitestBin = writeFakeVitestBin(dir, { exitCode: 0 });
+
+  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir, extraArgs: ['test/pole.property.test.js'] });
+
+  assert.equal(exitCode, 0, 'a filtered run still reports vitest\'s own exit status');
+  assert.equal(appended, false, 'a filtered run must never append a row to the whole-lane log');
+  assert.equal(readRows(logPath).length, 0);
 });
