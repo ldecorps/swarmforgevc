@@ -61,6 +61,10 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "single_role_repair_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "respawn_bootstrap_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
+;; BL-1962: deterministic-coordinator? answers "does this pack declare
+;; config coordinator_mode deterministic", the same conf-read babysitter_check.bb's
+;; own BL-1963 fix shares via this module - never a second reader.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_process_marker_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
@@ -583,10 +587,19 @@
    target is never respawned and never 'respawn refused' - contract-broken?
    only gates the branches that would actually attempt a respawn (:ok's
    dead-pane case and :ensure-standing), never the dormant or teardown-
-   illicit decisions."
-  [socket ordered-roles {:keys [role session]} contract-broken? resident-session]
+   illicit decisions.
+   deterministic? (BL-1962, default false - every existing caller/test
+   unchanged) threads straight to topology-action; on a deterministic pack
+   the coordinator's own :dormant-ok is never a REAL rotate target (BL-1961:
+   it is a roster row and a mailbox, never a seat), so it is reported
+   dormant directly, skipping dormant-rotate-viable?'s launch-script check -
+   the coordinator never gets one under this mode, and that check would
+   otherwise report it :failed."
+  ([socket ordered-roles row contract-broken? resident-session]
+   (ensure-mono-router-role! socket ordered-roles row contract-broken? resident-session false))
+  ([socket ordered-roles {:keys [role session]} contract-broken? resident-session deterministic?]
   (let [alive (session-exists? socket session)
-        action (mono-router-lib/topology-action ordered-roles role alive)
+        action (mono-router-lib/topology-action ordered-roles role alive deterministic?)
         class (mono-router-lib/classify-role ordered-roles role)
         class-name (name class)
         ;; Resident session name stays home (coder), but launch script follows
@@ -615,12 +628,15 @@
                                     (str " as " launch-role))))))
 
       :dormant-ok
-      (let [{:keys [viable? reason]} (dormant-rotate-viable? socket resident-session role)]
-        (if viable?
-          {:component component :status :dormant
-           :action "mono-router rotate target; no standing session"}
-          {:component component :status :failed
-           :action (str "rotate_to_role would fail: " reason)}))
+      (if (and deterministic? (= role "coordinator"))
+        {:component component :status :dormant
+         :action "deterministic coordinator; no standing session expected"}
+        (let [{:keys [viable? reason]} (dormant-rotate-viable? socket resident-session role)]
+          (if viable?
+            {:component component :status :dormant
+             :action "mono-router rotate target; no standing session"}
+            {:component component :status :failed
+             :action (str "rotate_to_role would fail: " reason)})))
 
       :teardown-illicit
       (do
@@ -639,7 +655,7 @@
                            #(ensure-standing-role! socket launch-role session)
                            (str "restored mono-router " class-name " pane"
                                 (when (not= launch-role role)
-                                  (str " as " launch-role))))))))
+                                  (str " as " launch-role)))))))))
 
 ;; ── remote-control (RC) component (BL-514) ──────────────────────────────────
 ;; Verifies each role's live claude process still carries the --remote-control
@@ -976,6 +992,11 @@
         ;; condition ensure exists to repair — so mono-router-ness is decided
         ;; ONLY by the declared conf/identity signal, never inferred from shape.
         router? (rotation-router-mode?)
+        ;; BL-1962: read once per run, beside the router check, reusing
+        ;; effective-conf-text (the launch-contract check's own conf read,
+        ;; above) rather than a second read - on a deterministic pack the
+        ;; coordinator is never ensured, router or not.
+        deterministic? (coordinator-config-lib/deterministic-coordinator? (or (effective-conf-text) ""))
         ;; BL-537: the resident's session name, looked up once so every
         ;; dormant role's rotate-viability check can confirm a live resident
         ;; to rotate onto exists - resident rows are processed first (roles.tsv
@@ -1002,8 +1023,19 @@
                        socket
                        (vec (mapcat (fn [{:keys [role session] :as row}]
                                       (let [agent-result
-                                            (if router?
-                                              (ensure-mono-router-role! socket ordered row contract-broken? resident-session)
+                                            (cond
+                                              router?
+                                              (ensure-mono-router-role! socket ordered row contract-broken? resident-session deterministic?)
+
+                                              ;; BL-1962: on a deterministic pack, outside router mode
+                                              ;; too, the coordinator is a roster row and a mailbox,
+                                              ;; never a seat - ensure-role! is skipped for it entirely
+                                              ;; rather than respawning a pane nothing expects to stand.
+                                              (and deterministic? (= role "coordinator"))
+                                              {:component (str "agent:" role) :status :healthy
+                                               :action "deterministic coordinator; no standing session expected"}
+
+                                              :else
                                               ;; BL-958: ensure-standing-role!, not bare respawn-role!
                                               ;; — after control-plane loss the SESSION is gone too,
                                               ;; and respawn-pane against a missing session can never
