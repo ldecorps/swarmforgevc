@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+// BL-1619: wraps the real property-lane run to append one duration record
+// per COMPLETED run (pass or fail) to extension/.property-durations.jsonl,
+// and prints a verdict naming the pole and every file above half the
+// lane's baseline testTimeout - the recorder half of the BL-078/BL-378
+// mirror for the property lane, observation only (invariant 2): this
+// script changes nothing about which files vitest runs, their order, or
+// the exit status it reports (recordPropertyDurationLib.js owns every
+// pure decision; FIRM/out_of_scope - no budget, no refusal, no register,
+// no work ratchet in this slice, unlike the unit lane's own recorder).
+//
+// Vitest's own stdout/stderr stays inherited, byte-for-byte identical to
+// a bare `vitest run --config vitest.properties.config.mjs` (one extra
+// "JSON report written to..." line from the added --reporter=json, the
+// same additive-reporter technique recordTestDuration.js already uses).
+//
+// main() is a thin wrapper over runRecorder below (engineering.prompt's
+// "CLI main() is a thin wrapper over exported, testable helpers" rule) -
+// every impure seam (which vitest binary to spawn, where its report and
+// the durations log live) is a parameter, injected by the real CLI
+// invocation's own defaults and overridable in-process by the acceptance
+// handler (BL-1541: never the real 320s lane - a fake vitest stub on
+// PATH, never *_FORCE_RESULT env bypasses).
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+const { buildRecord, summarizeDurations, formatPropertyDurationVerdict, HALF_TIMEOUT_MS } = require('./recordPropertyDurationLib');
+const { appendRecord } = require('./testDurationRecorderLib');
+const { extractFileDurations } = require('../out/tools/check-suite-file-budget');
+
+const ROOT_DIR = path.join(__dirname, '..');
+const LOG_PATH = path.join(ROOT_DIR, '.property-durations.jsonl');
+// Its own report file, distinct from the unit lane's .vitest-report.json
+// (recordTestDuration.js) - the two recorders must never clobber each
+// other's report if a pack ever runs both lanes close together.
+const REPORT_PATH = path.join(ROOT_DIR, '.property-vitest-report.json');
+const VITEST_BIN = path.join(ROOT_DIR, 'node_modules', '.bin', 'vitest');
+const CONFIG_PATH = 'vitest.properties.config.mjs';
+
+function runRecorder({ vitestBin = VITEST_BIN, reportPath = REPORT_PATH, logPath = LOG_PATH, cwd = ROOT_DIR } = {}) {
+  // A stale report from an earlier KILLED run never survives to be
+  // misread as this run's own (scenario 03) - vitest's JSON reporter only
+  // writes this file on completion, so its absence after the spawn below
+  // reliably means "this run did not complete."
+  try {
+    fs.unlinkSync(reportPath);
+  } catch {
+    /* nothing to remove */
+  }
+
+  const startedAt = Date.now();
+  const result = spawnSync(
+    vitestBin,
+    ['run', '--config', CONFIG_PATH, '--reporter=default', '--reporter=json', `--outputFile=${reportPath}`],
+    { stdio: 'inherit', cwd }
+  );
+  const durationMs = Date.now() - startedAt;
+  const testExitCode = result.status === null ? 1 : result.status;
+
+  let appended = false;
+  if (fs.existsSync(reportPath)) {
+    const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+    const durations = extractFileDurations(report, cwd);
+    const summary = summarizeDurations(durations);
+
+    console.log(formatPropertyDurationVerdict(summary, durations, HALF_TIMEOUT_MS, durationMs));
+
+    appended = appendRecord(
+      logPath,
+      buildRecord({
+        finishedAt: new Date().toISOString(),
+        fileCount: durations.length,
+        exitCode: testExitCode,
+        durationMs,
+        workMs: summary.workMs,
+        poleMs: summary.poleMs,
+        poleFile: summary.poleFile,
+      })
+    );
+  }
+
+  return { exitCode: testExitCode, appended };
+}
+
+function main() {
+  const { exitCode } = runRecorder();
+  process.exit(exitCode);
+}
+
+module.exports = { runRecorder, VITEST_BIN, REPORT_PATH, LOG_PATH, CONFIG_PATH };
+
+if (require.main === module) {
+  main();
+}

@@ -269,7 +269,7 @@
     "postcompile": "node scripts/stampBuildSha.js",
     "watch": "tsc -watch -p ./",
     "test": "npm run compile && node scripts/recordTestDuration.js",
-    "test:properties": "npm run compile && vitest run --config vitest.properties.config.mjs",
+    "test:properties": "npm run compile && node scripts/recordPropertyDuration.js",
     "tracer-bullet": "npm run compile && node out/tools/tracer-bullet-launcher.js",
     "mutation": "npm run compile && node scripts/ensureStrykerSandboxSiblings.js && node scripts/mutation-concurrency.js run -- stryker run",
     "dry": "jscpd --config .jscpd.json src",
