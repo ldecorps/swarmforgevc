@@ -1181,6 +1181,25 @@
 (assert= "progress-origin-ms: an own commit before the claim does not" 1000 (sw/progress-origin-ms 1000 500))
 (assert= "progress-origin-ms: neither" nil (sw/progress-origin-ms nil nil))
 
+;; ── BL-1963: deterministic pack — coordinator never stands ─────────────────
+;; should-stand-role? gets the pack's coordinator_mode. On a deterministic
+;; pack the coordinator is not expected to stand: no CRIT, no repair.
+;; A pack without the declaration still gets the CRIT and repair.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "coordinator_config_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "mono_router_lib.bb")))
+
+;; Invariant 1: deterministic pack → coordinator should-stand? is false
+(assert-nil "BL-1963: deterministic pack — coordinator missing session is suppressed"
+            (sw/check-live-session {:role "coordinator" :pane-exists? false
+                                     :has-claude-process? false :should-stand? false}))
+
+;; Invariant 2: non-deterministic pack → coordinator still gets CRIT + repair
+(assert-true "BL-1963: non-deterministic pack — coordinator missing session is CRIT with repair"
+             (let [f (sw/check-live-session {:role "coordinator" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true})]
+               (and f (= "CRIT" (:severity f)) (= "pane-coordinator" (:key f))
+                    (= {:action :ensure-session :role "coordinator"} (:repair f)))))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

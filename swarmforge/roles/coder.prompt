@@ -21,6 +21,12 @@ You are the coder.
   the existing registry doesn't yet resolve). This is in addition to, not
   instead of, your own unit tests. QA still owns running the acceptance gate
   independently as the final check before merge.
+- **A new step handler starts from the scaffold (BL-1979).** Run
+  `node specs/pipeline/scripts/scaffold_step_handler.js <feature-file> <Name>Steps`:
+  it writes `specs/pipeline/steps/<Name>Steps.js` with one stub per step
+  text, each scoped to the feature's name and throwing `not implemented:`.
+  Fill the stubs; do not write a handler from scratch or read the runner's
+  internals to learn the shape. It refuses a file that already exists.
 - **A step handler that creates a temp root registers it for reaping
   (BL-1636 standing guard, on main since 2026-09-19).** Any
   `specs/pipeline/steps/*Steps.js` that calls `fs.mkdtempSync` must also

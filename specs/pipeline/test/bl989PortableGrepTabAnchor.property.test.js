@@ -108,4 +108,51 @@ describe('BL-989 portable grep tab anchors', () => {
       `expected zero grep PCRE-flag sites in swarmforge/scripts/*.sh, got:\n${sweep.stdout}`
     );
   });
+
+  it('tree sweep finds no single-quoted grep -E pattern carrying a literal \\t in swarmforge/scripts', () => {
+    // BL-2040: GNU grep reads \t in an ERE as a literal t, so a single-quoted
+    // -E/-qE/-Ee pattern with \t matches nothing and passes on any input
+    // (6038e612b4 found three such dead checks in test_bl1861_local_llm_remove.sh).
+    // The portable form builds the pattern with printf.
+    const sweep = spawnSync(
+      'bash',
+      [
+        '-c',
+        `cd "$1" && grep -rn --include='*.sh' -E "(^|[^#[:alnum:]_])grep[[:space:]]+-[A-Za-z]*E[a-zA-z]*[[:space:]]+'[^']*\\\\\\\\t[^']*'" swarmforge/scripts 2>/dev/null | grep -v 'mutation_sweep\\.sh' | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true`,
+        'x',
+        REPO,
+      ],
+      { encoding: 'utf8' }
+    );
+    assert.equal(sweep.status, 0, sweep.stderr);
+    assert.equal(
+      sweep.stdout.trim(),
+      '',
+      `expected zero single-quoted grep -E patterns with a literal \\t in swarmforge/scripts/*.sh, got:\n${sweep.stdout}`
+    );
+    // Prove the sweep is not vacuous: a fixture line in the fail-open shape
+    // must be flagged.
+    const fixture = path.join(
+      require('node:os').tmpdir(),
+      `bl989-ere-tab-${process.pid}.sh`
+    );
+    fs.writeFileSync(fixture, "grep -qE '^coder@2\\t|^coder@iq3\\t' \"$f\" && fail\n");
+    const probe = spawnSync(
+      'bash',
+      [
+        '-c',
+        `grep -n -E "(^|[^#[:alnum:]_])grep[[:space:]]+-[A-Za-z]*E[a-zA-z]*[[:space:]]+'[^']*\\\\\\\\t[^']*'" "$1"`,
+        'x',
+        fixture,
+      ],
+      { encoding: 'utf8' }
+    );
+    assert.equal(probe.status, 0, probe.stderr);
+    assert.match(
+      probe.stdout,
+      /1:grep -qE '\^coder@2\\t/,
+      'the sweep must flag a single-quoted grep -E pattern containing \\t'
+    );
+    fs.unlinkSync(fixture);
+  });
 });

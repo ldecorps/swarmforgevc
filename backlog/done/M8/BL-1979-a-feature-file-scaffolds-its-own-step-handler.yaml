@@ -91,6 +91,9 @@ notes: |
   at a tool that does not exist yet would send the seat looking for it).
   BL-1970 is in flight and stalled on exactly this; the specifier asked
   the coordinator to decide whether to pull it behind this ticket.
+  Card lines landed 2026-10-06 by the specifier on QA's land note 003862
+  (land 4c8d2a1f61), in the commit that adds this line:
+  swarmforge/roles/coder.prompt and swarmforge/roles/local-model/loop.note.
 
 description: |
   ## What is wanted

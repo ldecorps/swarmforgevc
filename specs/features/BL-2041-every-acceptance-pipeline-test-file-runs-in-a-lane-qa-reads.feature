@@ -17,7 +17,7 @@ Feature: BL-2041 Every acceptance-pipeline test file runs in a lane QA reads
     Given the test files under specs/pipeline/test, fixtures excluded
     When the lane QA's gather runs is executed on the parcel commit
     Then every one of those files runs in it
-    And the census of those files is 39, counted with find specs/pipeline/test -name '*.test.js' -not -path '*/fixtures/*'
+    And the census of those files is 41, counted with find specs/pipeline/test -name '*.test.js' -not -path '*/fixtures/*'
 
   # BL-2041 a-red-file-fails-the-lane-02
   Scenario: a failing test file under specs/pipeline/test fails the lane
