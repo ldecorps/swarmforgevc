@@ -223,7 +223,13 @@ printf 'id: gd\nfrom: hardener\nto: documenter\npriority: 50\ntype: git_handoff\
 PID_B="$(SWARMFORGE_ALLOW_TMP_DAEMON=1 PATH="$FAKE_BIN_B:$PATH" bash -c "cd '$ROOT_B' && exec bb '$HANDOFFD' '$ROOT_B'" > "$ROOT_B/daemon-stdout.log" 2>&1 & echo $!)"
 
 LOG_B="$ROOT_B/.swarmforge/daemon/handoffd.log"
-DEADLINE=$(( $(date +%s) + 40 ))
+# A bound, not a measurement: the loop stops at the first rotate line. The
+# rotate lands on the daemon's THIRD chase sweep (one sweep every 10 poll
+# cycles; the first runs before the parcel has aged), and each sweep's
+# cycle also pays this fixture's unassigned-active nudge (several seconds,
+# no coordinator row). Measured 2026-10-06 at load 11: sweeps at +1 s and
+# +20 s, the third past +40 s, so a 40 s bound failed on a working daemon.
+DEADLINE=$(( $(date +%s) + 120 ))
 while [[ $(date +%s) -lt $DEADLINE ]]; do
   [[ -f "$LOG_B" ]] && grep -qE "chase-rotate (architect|documenter)" "$LOG_B" && break
   sleep 0.5

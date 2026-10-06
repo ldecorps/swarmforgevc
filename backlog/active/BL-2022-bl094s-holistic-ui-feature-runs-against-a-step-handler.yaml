@@ -82,3 +82,5 @@ notes: |
   but counting a feature with ANY unresolved scenario step, joined to
   closed tickets and to the register - 5 closed-ticket features, none
   registered: this one (BL-2022) and four owned by BL-2023.
+
+assigned_to: coder
