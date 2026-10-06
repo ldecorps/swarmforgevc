@@ -395,6 +395,11 @@
   reason: "Direct hotfix retiring passenger scenarios obsoleted by BL-1830 (BL-1375/BL-1465/BL-1466); stamp ticket BL-1876 (severity high, human_approval approved) already minted to own it, paused"
   waived_at: 2026-10-02
 
+- key: pipeline-code-on-main-c9132288dee5abbc2ddd50714e7bb580ec6126b4
+  waived_by: coordinator
+  reason: "Sanctioned specifier hotfix (10-01 standing directive: hotfix every red + stamp-off; landing-is-a-merge ruled A). By specifier, Hotfix-Certification: pending. Fixes 3 pipeline test files red in no lane: BL-227 handler ${NUM}/${URL} refusal, BL-1277 burndown test scoping, BL-267-deleted-handler reference. Not a QA land - is_qa_ancestor exits 1 by design, SUP-17 Article 4.2 re-fire on a sanctioned stamp-off is accepted noise."
+  waived_at: 2026-10-06
+
 - key: pipeline-code-on-main-cbca1b5edb552b1cf9b1a61f37a78554a2397d74
   waived_by: coordinator
   reason: "legitimate hotfix per standing directive (fixes BL-1221 red on main, well documented), not yet recorded in hotfix-ledger.yaml - flagged to specifier"
