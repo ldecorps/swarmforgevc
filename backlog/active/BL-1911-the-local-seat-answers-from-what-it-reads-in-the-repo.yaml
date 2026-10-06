@@ -141,3 +141,5 @@ notes: |
   [coder, architect, hardender, documenter, qa]: a feature in TypeScript
   production code with a security boundary (the secret filter), and a
   how-to that describes the seat.
+
+assigned_to: coder
