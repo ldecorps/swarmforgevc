@@ -80,19 +80,42 @@ export function extractFileDurations(report: VitestJsonReport, projectRoot?: str
   }));
 }
 
+// BL-1629: a row's disposition - 'owned' (BL-1598's original meaning: an
+// OPEN ticket will cut this pole) or 'accepted' (a pole that will not be
+// cut; `ticket` holds the rationale ticket, which MAY be closed, and
+// `note` carries "re-measure: YYYY-MM-DD"). Never persisted as a column
+// value other than these two literals.
+export type PoleDisposition = 'owned' | 'accepted';
+
 // BL-1598: the standing-red register's own shape (BL-1428) - a committed,
 // tab-separated pole register naming an OPEN ticket that owns bringing its
-// file back under budget. 5 columns: file, ticket, first_seen, measured_ms,
-// note. '#'-comment and blank lines skipped, mirroring
-// standing_red_register_lib.bb's own parse.
+// file back under budget. BL-1629 adds an optional 5th column,
+// `disposition`, between measured_ms and note: file, ticket, first_seen,
+// measured_ms, [disposition,] note. '#'-comment and blank lines skipped,
+// mirroring standing_red_register_lib.bb's own parse.
 export interface RegisterRow {
   file: string;
   ticket: string;
   firstSeen: string;
   measuredMs: number;
+  disposition: PoleDisposition;
   note: string;
 }
 
+const POLE_DISPOSITIONS: PoleDisposition[] = ['owned', 'accepted'];
+
+function isPoleDisposition(value: string | undefined): value is PoleDisposition {
+  return POLE_DISPOSITIONS.includes(value as PoleDisposition);
+}
+
+// BL-1629 scenario 01: reads both row shapes - the pre-existing 5-column
+// form (file, ticket, firstSeen, measuredMs, note) with no disposition
+// column at all, and the 6-column form carrying 'owned'/'accepted' as its
+// 5th field. The two are disambiguated on the 5th field's own VALUE
+// (an exact disposition literal) rather than on column count, since a
+// short/absent note already made column count unreliable before this
+// ticket. A row with no 5th field at all (no note either) still reads
+// disposition 'owned', unchanged from before this ticket.
 export function parseRegisterRows(text: string): RegisterRow[] {
   if (!text) return [];
   return text
@@ -100,8 +123,10 @@ export function parseRegisterRows(text: string): RegisterRow[] {
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith('#'))
     .map((line) => {
-      const [file, ticket, firstSeen, measuredMsRaw, ...noteParts] = line.split('\t');
-      return { file, ticket, firstSeen, measuredMs: Number(measuredMsRaw), note: noteParts.join('\t') };
+      const [file, ticket, firstSeen, measuredMsRaw, fifth, ...rest] = line.split('\t');
+      const disposition: PoleDisposition = isPoleDisposition(fifth) ? fifth : 'owned';
+      const noteParts = isPoleDisposition(fifth) ? rest : [fifth, ...rest].filter((p) => p !== undefined);
+      return { file, ticket, firstSeen, measuredMs: Number(measuredMsRaw), disposition, note: noteParts.join('\t') };
     });
 }
 
@@ -127,11 +152,19 @@ export function openTicketIds(backlogDir: string): Set<string> {
   return ids;
 }
 
-export type BudgetVerdictKind = 'ok' | 'watch' | 'stale-row' | 'unowned-row' | 'new-pole' | 'contention';
+// BL-1629: 'accepted' is an accepted row reported every run (never
+// refused as unowned-row or new-pole) - distinct from 'ok', which an
+// OWNED row over budget with an open ticket gets (also reported, never
+// refused, but carries no rationale/re-measure date to print).
+export type BudgetVerdictKind = 'ok' | 'watch' | 'stale-row' | 'unowned-row' | 'new-pole' | 'contention' | 'accepted';
 
 export interface FileVerdict extends BudgetOffender {
   kind: BudgetVerdictKind;
   ticket?: string;
+  // BL-1629: an accepted row's own note ("re-measure: YYYY-MM-DD"),
+  // printed alongside the rationale ticket - undefined for every other
+  // kind.
+  note?: string;
 }
 
 // BL-1633: a would-be new-pole confirmed ALONE (its own solo duration)
@@ -167,7 +200,38 @@ const STALE_ROW_FRACTION = 0.8;
 // means the row contributes NO verdict this run (an owned, non-stale,
 // non-pole row still measuring within budget's middle band, or a row for a
 // file this run never touched).
-function classifyRegisterRow(row: RegisterRow, measured: number | undefined, budgetMs: number, openTickets: Set<string>): FileVerdict | null {
+// BL-1629: an accepted row names no OPEN-ticket requirement at all (its
+// rationale ticket may be closed) - never unowned-row, never new-pole
+// (FIRM). It is still reported stale exactly like an owned row once its
+// file measures under 80% of budget (acceptance ends when the cost
+// does); otherwise it is ALWAYS reported ('accepted'), whether currently
+// over or under the raw budget, so a pole cannot be accepted and
+// forgotten - the one place this differs from an owned row, which stays
+// silent (null) in the healthy middle band.
+// QA bounce D1 (2026-10-06): a row whose file this run never measured
+// (renamed, deleted or excluded) must not go silent either, or an
+// accepted row with a closed rationale ticket is "accepted and
+// forgotten" - the exact failure this ticket exists to prevent. A file
+// not measured this run costs nothing THIS run, so it is reported
+// stale-row (the register's own "the pole this row named is gone"
+// verdict), using the register's last recorded measurement so the
+// printed line still names a real number.
+function classifyAcceptedRow(row: RegisterRow, measured: number | undefined, budgetMs: number): FileVerdict | null {
+  if (measured === undefined) {
+    return { file: row.file, durationMs: row.measuredMs, budgetMs, kind: 'stale-row', ticket: row.ticket };
+  }
+  if (measured < budgetMs * STALE_ROW_FRACTION) {
+    return { file: row.file, durationMs: measured, budgetMs, kind: 'stale-row', ticket: row.ticket };
+  }
+  return { file: row.file, durationMs: measured, budgetMs, kind: 'accepted', ticket: row.ticket, note: row.note };
+}
+
+// BL-1629 hardener extraction: split out of classifyRegisterRow (CRAP-gate
+// reason, same split BL-1598 already used for classifyAcceptedRow) - an
+// OWNED row's own four-way decision (unowned/stale/ok/silent), now that
+// classifyRegisterRow itself also has the accepted-vs-owned dispatch to
+// make.
+function classifyOwnedRow(row: RegisterRow, measured: number | undefined, budgetMs: number, openTickets: Set<string>): FileVerdict | null {
   if (!openTickets.has(row.ticket)) {
     return { file: row.file, durationMs: measured ?? row.measuredMs, budgetMs, kind: 'unowned-row', ticket: row.ticket };
   }
@@ -179,6 +243,13 @@ function classifyRegisterRow(row: RegisterRow, measured: number | undefined, bud
     return { file: row.file, durationMs: measured, budgetMs, kind: 'ok', ticket: row.ticket };
   }
   return null;
+}
+
+function classifyRegisterRow(row: RegisterRow, measured: number | undefined, budgetMs: number, openTickets: Set<string>): FileVerdict | null {
+  if (row.disposition === 'accepted') {
+    return classifyAcceptedRow(row, measured, budgetMs);
+  }
+  return classifyOwnedRow(row, measured, budgetMs, openTickets);
 }
 
 // Priority order matches the amendment's own stated order (2026-09-16, QA's
@@ -323,19 +394,50 @@ export function checkFileDurationBudget(
 // eliminate. BL-1721 FIRM: never the bare in-suite duration alone - each
 // line also names what the confirmation returned, an alone duration
 // (still over budget) or each attempt's own failure reason.
-export function formatBudgetOffenders(offenders: BudgetOffender[]): string {
-  return offenders
-    .map((o) => {
-      const base = `${o.file}: ${(o.durationMs / 1000).toFixed(1)}s exceeds the ${(o.budgetMs / 1000).toFixed(1)}s per-file budget`;
-      if (o.confirmFailures && o.confirmFailures.length > 0) {
-        return `${base} (confirmation failed: ${o.confirmFailures.join('; retry failed: ')})`;
-      }
-      if (o.aloneMs !== undefined) {
-        return `${base} (confirmed alone: ${(o.aloneMs / 1000).toFixed(1)}s, still over budget)`;
-      }
-      return base;
-    })
-    .join('\n');
+// BL-1629: widened to accept a FileVerdict's own optional `kind`/`note` -
+// every real caller already passes FileVerdict[] (registeredPoles,
+// watchFiles, staleRows) except formatGuardReport's own `result.offenders`
+// (strictly BudgetOffender[], never 'accepted' - a new-pole offender is
+// unregistered by definition). An 'accepted' entry prints its rationale
+// ticket and re-measure date instead of the budget-exceeded wording - the
+// one FIRM requirement this ticket adds (an accepted pole is never
+// silent).
+type OffenderLine = BudgetOffender & Partial<Pick<FileVerdict, 'kind' | 'ticket' | 'note'>>;
+
+// BL-1629 hardener extraction (CRAP-gate reason, same split this file's
+// classifyAcceptedRow/classifyRegisterRow already use): the one line an
+// accepted row prints, pulled out of formatBudgetOffenders' own map
+// callback so each half of the kind dispatch carries its own, smaller
+// complexity.
+function formatAcceptedOffenderLine(o: OffenderLine): string {
+  const rationale = o.ticket ? `rationale ${o.ticket}` : 'no rationale ticket';
+  const note = o.note ? `, ${o.note}` : '';
+  return `${o.file}: ${(o.durationMs / 1000).toFixed(1)}s accepted (${rationale}${note})`;
+}
+
+// BL-1629 hardener extraction: the pre-existing (non-accepted) line shapes
+// - confirmation failure, confirmed-alone, or the default/ticket-naming
+// line - unchanged from before this ticket except for the final ticket
+// naming (scenario 02).
+function formatOwnedOffenderLine(o: OffenderLine): string {
+  const base = `${o.file}: ${(o.durationMs / 1000).toFixed(1)}s exceeds the ${(o.budgetMs / 1000).toFixed(1)}s per-file budget`;
+  if (o.confirmFailures && o.confirmFailures.length > 0) {
+    return `${base} (confirmation failed: ${o.confirmFailures.join('; retry failed: ')})`;
+  }
+  if (o.aloneMs !== undefined) {
+    return `${base} (confirmed alone: ${(o.aloneMs / 1000).toFixed(1)}s, still over budget)`;
+  }
+  // BL-1629 scenario 02: a register row's own line (ok/stale-row -
+  // the only two kinds that still reach this default branch with a
+  // ticket) names its ticket too, same as unowned-row's own separate
+  // formatter already does (formatGuardReport's failureLines) - a
+  // reader should never have to cross-reference the register to see
+  // which ticket a reported row belongs to.
+  return o.ticket ? `${base} (ticket ${o.ticket})` : base;
+}
+
+export function formatBudgetOffenders(offenders: OffenderLine[]): string {
+  return offenders.map((o) => (o.kind === 'accepted' ? formatAcceptedOffenderLine(o) : formatOwnedOffenderLine(o))).join('\n');
 }
 
 // BL-1598: reads a run's real vitest JSON report and (when given) the

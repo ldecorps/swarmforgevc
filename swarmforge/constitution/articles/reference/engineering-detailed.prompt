@@ -646,6 +646,22 @@ not as the several separate edits that produced it).
   `isolate:false` suite-wide justified only by an asserted safety claim; the architect had to
   hand-spot-check 8 stateful modules to confirm it held. Proposed by the architect 2026-07-16 scoped
   `engineering`.)
+- **A registered pole whose cost will never be cut is `accepted`, never left `owned` under a
+  ticket that can never close.** `backlog/suite-poles.tsv`'s per-file budget register
+  (BL-1598) gained an optional `disposition` column (BL-1629): `owned` (default, an OPEN
+  ticket will cut it) or `accepted` (a pole that will not be cut — `ticket` names the
+  rationale ticket, which MAY be closed, and `note` carries `re-measure: YYYY-MM-DD`). An
+  accepted row is never refused as `unowned-row` or `new-pole`; it IS still refused
+  `stale-row` once its file measures under 80% of budget, OR when its file is not measured
+  at all this run (using the register's own last recorded measurement rather than staying
+  silent) — acceptance ends when the cost does, and a row can never go unreported behind a
+  possibly-closed rationale ticket. Otherwise it is reported on every run naming its
+  rationale and re-measure date, never silently absorbed like a healthy `owned` row. A file
+  with no row at all is still a `new-pole` regardless: `accepted` only changes what an
+  EXISTING row means. (The motivating case, `bl968StepRegistryMaterializedTreeGuard.test.js`'s
+  two full step-registry loads — BL-968 invariant 1 — came under budget once BL-1630 landed
+  in the same parcel, so its row was RETIRED rather than accepted; the register currently
+  carries no accepted row.)
 - **The property lane measures itself too, the unit lane's `.test-durations.jsonl`
   twin.** `npm run test:properties` (`extension/scripts/recordPropertyDuration.js`,
   BL-1619) appends one row — `finished_at`, `file_count`, `result`,

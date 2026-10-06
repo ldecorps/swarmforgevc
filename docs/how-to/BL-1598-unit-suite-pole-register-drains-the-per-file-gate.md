@@ -79,6 +79,75 @@ deleted, skipped or excluded to satisfy the gate.
 | A file you didn't touch drifts between budget and 1.5× | Nothing blocks; it's named as `watch` — a candidate for BL-791 slice D's inventory, not an emergency |
 | You cut a pole's runtime below 80% of budget | Remove its row in the SAME land — a lingering `stale-row` never blocks but should not sit forever |
 | The owning ticket closes without the pole being cut | The row becomes `unowned-row` and blocks until re-owned or the file is actually fixed |
+| A pole will never be cut (the cost IS the point of the test) | Give its row an `accepted` disposition instead of an owner that would have to stay open forever — see below |
+
+## A pole that will never be cut needs no open owner (BL-1629)
+
+Not every registered file is necessarily heading toward a fix. The
+motivating case, `extension/test/bl968StepRegistryMaterializedTreeGuard.test.js`,
+spawns two full step-registry loads on purpose — BL-968 invariant 1 — and
+at the time this ticket was minted one load alone cost 12.6 s of require
+time across 1189 handlers, with no cut in sight that would bring it under
+the 7000 ms budget without weakening the test it exists to be. Under the
+owned-only model above, the only way to keep such a row from refusing as
+`unowned-row` the day its "owning" ticket closed was a ticket that never
+closes — which is not what an owner ticket means anywhere else in this
+register. (**Amended 2026-10-06, same parcel:** BL-1630 landed in the
+meantime and brought bl968 under 80% of budget — 2.57 s alone, 4.1–4.4 s in
+the lane — so its own row was retired rather than accepted; see below.)
+
+The register's row shape gains an optional 5th column, `disposition`,
+between `measured_ms` and `note`: `file`, `ticket`, `first_seen`,
+`measured_ms`, `[disposition]`, `note`. A row with no 5th column (every
+row before this ticket, and any new row that still omits it) reads as
+`owned` — today's meaning, unchanged. `accepted` means a pole that will
+**not** be cut:
+
+- `ticket` holds the **rationale** ticket that accepted it — this ticket
+  may be closed; an accepted row is never refused as `unowned-row` for
+  that reason, unlike an owned row.
+- `note` carries `re-measure: YYYY-MM-DD` — the date (or landing event)
+  by which the acceptance should be revisited, so acceptance is a
+  recorded, dated act, never a silent, permanent carpet (the 2026-09-05
+  directive this register already follows for owned rows).
+- The verdict is `accepted`, printed on **every** run that touches the
+  file, naming the measured duration, the rationale ticket, and the
+  re-measure date — never silent like a healthy `ok` row, and never
+  `new-pole`. A pole cannot be accepted and then forgotten.
+- An accepted row whose file now measures under 80% of budget still
+  reports `stale-row`, exactly like an owned row — acceptance ends when
+  the cost that justified it does. A row whose file is not measured at
+  all this run (renamed, deleted, or lane-excluded) also reports
+  `stale-row`, using the register's own last recorded measurement — never
+  silently dropped, which would otherwise let an accepted row go
+  unreported indefinitely behind a possibly-closed rationale ticket.
+- A file with **no row at all** is still refused as `new-pole` regardless
+  of disposition: `accepted` only changes what an EXISTING row means, it
+  is never a way to add a pole with no row.
+
+`backlog/suite-poles.tsv` carries **no accepted row yet** — bl968's would
+have been the first, but the specifier retired it in the same parcel that
+built the mechanism (QA note 003855, S1) rather than land a row that would
+read `stale-row` on arrival: accepting a pole only makes sense while it is
+still actually over budget. A future pole whose cost is genuinely
+permanent gets its own row in this shape instead:
+
+```tsv
+<file>	<rationale-ticket>	<first_seen>	<measured_ms>	accepted	<why it will not be cut>; re-measure: YYYY-MM-DD
+```
+
+The land step's row-retirement sweep (BL-1631) still never retires an
+accepted row on the landing ticket's close — only an owned row drains that
+way; an accepted row leaves the register only by a human/specifier edit
+once its re-measure date is reached.
+
+bl968's own two registry-load tests, assertions, and sweep semantics are
+otherwise unchanged by this ticket — its temp-dir sweep now names its own
+process id in the root prefix and drains through `tmpDir.js`'s
+`sweepStaleTmpDirs` (BL-1623), the same pid-scoped sweep mechanism every
+other fixture root in this tree uses, rather than a bare prefix listing of
+the whole system temp directory. It no longer carries a register row at
+all: at 2.57 s alone / 4.1–4.4 s in the lane, it is simply under budget.
 
 ## The recorded trend gains verdict fields (BL-1598)
 
