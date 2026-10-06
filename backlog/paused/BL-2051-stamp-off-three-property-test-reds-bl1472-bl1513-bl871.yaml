@@ -1,5 +1,5 @@
 id: BL-2051
-title: "Stamp-off for hotfixes 435b2de1a9, 372b68930b and 25cb223e0d: three property checks red unseen - BL-1472's runner compared fixture shas BL-1857 added, BL-1513's runner expected the router note BL-1614 replaced, and BL-871 invariant 1 compared a loaded run's concurrency to a ceiling read seconds earlier"
+title: "Stamp-off for hotfixes 435b2de1a9, 372b68930b, 25cb223e0d and 853235a216: four test-side checks red - BL-1472's runner compared fixture shas BL-1857 added, BL-1513's runner expected the router note BL-1614 replaced, BL-871 invariant 1 compared a loaded run's concurrency to a ceiling read seconds earlier, and BL-886's orphan fixture required PPID 1 on a subreaper host"
 type: defect
 severity: high
 # high: stamp-off of standing-red hotfixes (a red is high at first sighting,
@@ -10,11 +10,11 @@ priority: 5
 direction: normal
 depends_on: []
 mutation_cost: low
-# low: review three small test-side commits, run two runners and one test file.
+# low: review four small test-side commits, run three runners and one test file.
 slice_size_envelope: low
 required_stages: [coder, qa]
 stage_skip_reasons:
-  cleaner: "three test-side fixes of a few lines each; nothing to refactor"
+  cleaner: "four test-side fixes of a few lines each; nothing to refactor"
   architect: "test files only; no production boundary moves"
   hardender: "no production code changed"
   documenter: "no living doc describes these checks' internals"
@@ -39,17 +39,23 @@ qa_e2e_procedure: |
   2. `bb swarmforge/scripts/test/bl1513_router_note_fits_property_runner.bb`:
      ALL PROPERTIES HOLD (measured on main at 372b68930b: 16 route trials
      plus 20 parser checks, 51 s).
-  3. Read from the gather's property row: bl871PropertyLaneWorkerPoolCapInvariants
+  3. `node swarmforge/scripts/test/bl886_vitest_orphan_reaper_supervisor_property_runner.js`:
+     ALL PROPERTIES HOLD (measured on main at 853235a216: 3.6 s; red
+     before it on this host).
+  4. Read from the gather's property row: bl871PropertyLaneWorkerPoolCapInvariants
      2 of 2 (measured alone at 25cb223e0d: 2 of 2, 16 s).
-  4. Read from the gather's acceptance row: BL-1513 4 of 4 and BL-1472
-     4 of 4 (both measured on main at 25cb223e0d: 4 of 4).
-  5. Read the coder's committed review evidence.
+  5. Read from the gather's acceptance row: BL-1513 4 of 4 and BL-1472
+     4 of 4 (both measured on main at 25cb223e0d), BL-886 11 of 11 (7 of
+     11 before 853235a216), BL-887 6 of 6 (1 of 6 before), BL-746 5 of 5
+     (5 of 5 before; it shares the fixture file only).
+  6. Read the coder's committed review evidence.
 
 source: |
   QA note 003876 (2026-10-06): "bb *_property_runner.bb run in no lane
   (BL-2041 sibling); see BL-2039 QA evid". The BL-1472 and BL-1513 runner
   reds were found by the specifier running those runners for the
-  BL-2048/BL-2049 census.
+  BL-2048/BL-2049 census, and so was the BL-886 supervisor runner's
+  ("orphan fixture pid ... never reparented to PPID 1").
   coder@2 note 000151 (2026-10-06): "unowned-red bl871WorkerPoolCapInvariants
   invariant1 fails under full-lane load", evidence c4d986d345 on the
   swarmforge-coder@2 line, found verifying BL-2044.
@@ -66,9 +72,14 @@ notes: |
   as its own unowned-red note.
   Holder note sent to coder@2 (BL-2044, mid-forward when the red was found):
   merge main before forwarding, so the line carries 25cb223e0d.
+  Amended 2026-10-06 (still paused) to also stamp 853235a216: one
+  stamp-off for the census's test-side reds, not a second ticket.
+  853235a216's reds appeared with the 2026-10-06 VM restart: the swarm
+  relaunched under WSL's Relay /init, a child subreaper, so they are host
+  shaped, not a regression in any ticket's code.
 
 description: |
-  ## Status: hotfixes 435b2de1a9, 372b68930b and 25cb223e0d landed the fixes
+  ## Status: hotfixes 435b2de1a9, 372b68930b, 25cb223e0d and 853235a216 landed the fixes
 
   This parcel is their stamp-off: review them, do not re-apply them.
 
@@ -97,14 +108,25 @@ description: |
   from the run's own [property-lane-budget] forks= line, as the heap check
   already reads workerHeapMB= (BL-1651).
 
+  853235a216: specs/pipeline/steps/lib/bl886SupervisorFixture.js
+  spawnOrphanFixture polled ps until the double-forked orphan's parent was
+  PID 1. On a child-subreaper host (WSL's Relay /init, where this swarm
+  runs since the 2026-10-06 VM restart) orphans land on the subreaper, so
+  every user of the fixture went red. BL-1907 (2026-10-03) taught the
+  production reaper the same thing. The fixture now waits until the orphan
+  is no longer parented to the python starter that exited (spawnSync's
+  pid).
+
   ## What the coder does (all of it)
 
-  1. Read `git show 435b2de1a9`, `git show 372b68930b` and
-     `git show 25cb223e0d` against the section above. For 25cb223e0d,
-     confirm that the fixture run names more than one file, so the printed
-     forks= is the config's maxForks (vitest.properties.config.mjs,
-     resolveLaneForks).
-  2. Run qa_e2e_procedure steps 1 and 2 and the bl871 test file once, with
+  1. Read `git show 435b2de1a9`, `git show 372b68930b`,
+     `git show 25cb223e0d` and `git show 853235a216` against the section
+     above. For 25cb223e0d, confirm that the fixture run names more than
+     one file, so the printed forks= is the config's maxForks
+     (vitest.properties.config.mjs, resolveLaneForks). For 853235a216,
+     confirm the orphan is still a real orphan on a PPID 1 host (its
+     starter has exited before the poll starts).
+  2. Run qa_e2e_procedure steps 1 to 3 and the bl871 test file once, with
      output under tmp/.
   3. Write backlog/evidence/BL-2051-coder-<date>.md with the review result
      and the run results, and commit it.

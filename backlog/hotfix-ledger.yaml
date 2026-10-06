@@ -1469,3 +1469,10 @@
   stamp_ticket: BL-2051
   human_decision: null
   decided_at: null
+- commit: 853235a216
+  subject: "Hotfix: BL-886's orphan fixture required PPID 1, red on a subreaper host"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2051
+  human_decision: null
+  decided_at: null
