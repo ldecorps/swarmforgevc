@@ -65,7 +65,10 @@ function registerSteps(registry) {
 
   scoped(/^npm run test:properties completes$/, (ctx) => {
     const f = fixture(ctx);
-    f.outcome = runRecorder({ vitestBin: f.vitestBin, reportPath: f.reportPath, logPath: f.logPath, cwd: f.dir });
+    // BL-2041 QA bounce D1: f.dir is an empty fixture root (never
+    // specs/pipeline/test), so this drives the fake vitest only, never the
+    // real 3-file pipeline property run (BL-1541).
+    f.outcome = runRecorder({ vitestBin: f.vitestBin, reportPath: f.reportPath, logPath: f.logPath, cwd: f.dir, pipelineTestDir: f.dir });
   });
 
   scoped(/^exactly one row is appended to extension\/\.property-durations\.jsonl$/, (ctx) => {
@@ -135,7 +138,7 @@ function registerSteps(registry) {
 
   scoped(/^the recorder exits$/, (ctx) => {
     const f = fixture(ctx);
-    f.outcome = runRecorder({ vitestBin: f.vitestBin, reportPath: f.reportPath, logPath: f.logPath, cwd: f.dir });
+    f.outcome = runRecorder({ vitestBin: f.vitestBin, reportPath: f.reportPath, logPath: f.logPath, cwd: f.dir, pipelineTestDir: f.dir });
   });
 
   scoped(/^no row is appended and the exit status is non-zero$/, (ctx) => {

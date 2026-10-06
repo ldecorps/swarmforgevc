@@ -53,6 +53,11 @@ function runRecorder({
   logPath = LOG_PATH,
   cwd = ROOT_DIR,
   extraArgs = [],
+  // BL-2041 QA bounce D1: a seam, never the module constant read directly -
+  // a unit test or the acceptance handler passes an empty fixture dir so a
+  // call with extraArgs:[] does not spawn the real 3-file pipeline property
+  // run (engineering.prompt's own "fakes, never the real lane", BL-1541).
+  pipelineTestDir = PIPELINE_TEST_DIR,
 } = {}) {
   // A stale report from an earlier KILLED run never survives to be
   // misread as this run's own (scenario 03) - vitest's JSON reporter only
@@ -80,7 +85,7 @@ function runRecorder({
   // whole-lane run, so it never also runs the pipeline property files.
   let pipelinePropertyExitCode = 0;
   if (extraArgs.length === 0) {
-    const pipelineFiles = listPipelineTestFiles(PIPELINE_TEST_DIR);
+    const pipelineFiles = listPipelineTestFiles(pipelineTestDir);
     const { propertyFiles: pipelinePropertyFiles } = partitionPipelineTestFiles(pipelineFiles);
     if (pipelinePropertyFiles.length > 0) {
       const pipelineResult = spawnSync(process.execPath, buildPipelineTestArgs(pipelinePropertyFiles), {
