@@ -26,7 +26,7 @@ required_wiring:
 # No production anchor (BL-1235): the command is a new entry point; its
 # callers are BL-2038's wiring and the seat's card.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your intake (backlog/INTAKE-fight-a-too-small-contect-window-20261006.md),
   with the three design choices you answered in the specifier's console on
