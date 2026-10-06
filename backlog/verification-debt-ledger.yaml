@@ -242,3 +242,8 @@
   role: QA
   description: "qa_e2e step 2 says read the scaffold's unit test from the gather's unit row, but specs/pipeline/test runs in no lane (BL-2041); ran both new specs/pipeline/test files by hand with node --test, which is where their mkdtemp leak (D1) showed"
   detected_at: 2026-10-06
+- category: gather-excerpt-lost-red-message
+  ticket: BL-2038
+  role: QA
+  description: "property lane red on bl1905RealDispatcherScan.property.test.js; the gather excerpt cut the flagged-file list at 'part 1: no handler in specs/pipeline/s…'; ran the file once alone to read the AssertionError naming bl2038LocalSeatFreshPhaseSessionSteps.js line 315"
+  detected_at: 2026-10-06
