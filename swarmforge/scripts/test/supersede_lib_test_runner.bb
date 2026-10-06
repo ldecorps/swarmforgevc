@@ -22,6 +22,21 @@
          (supersede-lib/task-name-from-content
           "from: a\nto: b\npriority: 10\ntype: note\nmessage: Work BL-1084-a-superseded-task-stops-at-every-stage: read file\n\nbody\n"))
 
+(assert= "BL-1843: leading ticket id in message resolves"
+         "BL-9001"
+         (supersede-lib/task-name-from-content
+          "from: a\nto: b\npriority: 10\ntype: note\nmessage: BL-9001 still todo - build+forward BEFORE completing this note\n\nbody\n"))
+
+(assert= "BL-1843: leading ticket id on its own line resolves"
+         "BL-9002"
+         (supersede-lib/task-name-from-content
+          "from: a\nto: b\npriority: 10\ntype: note\nmessage: status\nBL-9002 is blocked on CI\n\nbody\n"))
+
+(assert= "BL-1843: note naming no ticket resolves nil"
+         nil
+         (supersede-lib/task-name-from-content
+          "from: a\nto: b\npriority: 10\ntype: note\nmessage: all good, nothing pending\n\nbody\n"))
+
 (assert= "absent store always passes"
          :ok
          (supersede-lib/turn-verdict {:status :absent} ["BL-1052-qwen-code-seat"]))
