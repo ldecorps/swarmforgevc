@@ -1452,6 +1452,20 @@
   subject: "Hotfix: BL-871 invariant 1 compared a loaded run's concurrency to a ceiling read seconds earlier"
   detected_at: 2026-10-06
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-2051
+  human_decision: null
+  decided_at: null
+- commit: 435b2de1a9
+  subject: "Hotfix: BL-1472 property runner compares the attribution answer, not fixture shas"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2051
+  human_decision: null
+  decided_at: null
+- commit: 372b68930b
+  subject: "Hotfix: BL-1513's property runner expected the router note BL-1614 replaced"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2051
   human_decision: null
   decided_at: null
