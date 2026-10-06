@@ -6,6 +6,8 @@ const path = require('node:path');
 const {
   listTestFiles,
   listPipelineTestFiles,
+  isPipelinePropertyTestFile,
+  partitionPipelineTestFiles,
   PIPELINE_TEST_TIMEOUT_MS,
   buildPipelineTestArgs,
   buildRecord,
@@ -44,6 +46,27 @@ test('listPipelineTestFiles finds .test.js files recursively and excludes fixtur
   fs.writeFileSync(path.join(dir, 'helpers.js'), '');
 
   assert.deepEqual(listPipelineTestFiles(dir), [path.join(dir, 'a.test.js'), path.join(dir, 'steps', 'b.test.js')]);
+});
+
+// BL-2041 S1 (QA bounce, spec-gap amendment): isPipelinePropertyTestFile
+// recognizes ONLY the *.property.test.js suffix, never a plain .test.js
+// file with "property" in its own name elsewhere.
+test('isPipelinePropertyTestFile is true only for a *.property.test.js suffix', () => {
+  assert.equal(isPipelinePropertyTestFile('/a/b.property.test.js'), true);
+  assert.equal(isPipelinePropertyTestFile('/a/b.test.js'), false);
+  assert.equal(isPipelinePropertyTestFile('/a/propertyThing.test.js'), false);
+});
+
+// BL-2041 S1: the split both recorders (recordTestDuration.js's unit lane,
+// recordPropertyDuration.js's property lane) apply to the SAME census -
+// property.test.js files and only those land in propertyFiles, order
+// preserved, nothing dropped or duplicated.
+test('partitionPipelineTestFiles splits property.test.js files out of the unit-lane list, preserving order', () => {
+  const files = ['/a.test.js', '/b.property.test.js', '/c.test.js', '/d.property.test.js'];
+  assert.deepEqual(partitionPipelineTestFiles(files), {
+    unitFiles: ['/a.test.js', '/c.test.js'],
+    propertyFiles: ['/b.property.test.js', '/d.property.test.js'],
+  });
 });
 
 // BL-2041 D1 (QA bounce): node:test's own default per-test timeout is

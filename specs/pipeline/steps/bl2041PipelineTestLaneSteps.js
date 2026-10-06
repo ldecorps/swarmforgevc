@@ -28,7 +28,12 @@ function envWithoutNodeTestContext() {
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const REAL_PIPELINE_TEST_DIR = path.join(REPO_ROOT, 'specs', 'pipeline', 'test');
 const BL1358_FILE = path.join(REAL_PIPELINE_TEST_DIR, 'bl1358MutantTimeCeiling.test.js');
-const { listPipelineTestFiles } = require(path.join(REPO_ROOT, 'extension', 'scripts', 'testDurationRecorderLib'));
+const { listPipelineTestFiles, partitionPipelineTestFiles } = require(path.join(
+  REPO_ROOT,
+  'extension',
+  'scripts',
+  'testDurationRecorderLib'
+));
 
 const FEATURE = 'BL-2041 Every acceptance-pipeline test file runs in a lane QA reads';
 
@@ -84,16 +89,40 @@ function registerSteps(registry) {
     ctx.bl2041 = { realFiles: listPipelineTestFiles(REAL_PIPELINE_TEST_DIR) };
   });
 
-  scoped(/^the lane QA's gather runs is executed on the parcel commit$/, async (ctx) => {
-    ctx.bl2041.runResult = await runFiles(ctx.bl2041.realFiles);
+  // BL-2041 (QA bounce S1, spec-gap amendment): the two lanes run SEPARATELY
+  // - partitionPipelineTestFiles is the SAME split both recorders apply
+  // (recordTestDuration.js's unit-lane run, recordPropertyDuration.js's
+  // property-lane run) - never a restatement of it. Running them as two
+  // real node:test invocations, rather than one combined list, proves the
+  // property files are not silently riding the unit run (or vice versa).
+  scoped(/^the lanes QA's gather runs are executed on the parcel commit$/, async (ctx) => {
+    const { unitFiles, propertyFiles } = partitionPipelineTestFiles(ctx.bl2041.realFiles);
+    ctx.bl2041.unitFiles = unitFiles;
+    ctx.bl2041.propertyFiles = propertyFiles;
+    ctx.bl2041.unitResult = await runFiles(unitFiles);
+    ctx.bl2041.propertyResult = await runFiles(propertyFiles);
   });
 
-  scoped(/^every one of those files runs in it$/, (ctx) => {
-    const expected = new Set(ctx.bl2041.realFiles);
-    const seen = ctx.bl2041.runResult.filesSeen;
-    const missing = [...expected].filter((f) => !seen.has(f));
-    assert.deepEqual(missing, [], `expected every census file to run, missing: ${missing.join(', ')}`);
-    assert.equal(ctx.bl2041.runResult.fail, 0, `expected every test to pass, got ${ctx.bl2041.runResult.fail} failures: ${JSON.stringify(ctx.bl2041.runResult.failures)}`);
+  scoped(/^every one of those files runs in a lane QA's gather runs$/, (ctx) => {
+    const seen = new Set([...ctx.bl2041.unitResult.filesSeen, ...ctx.bl2041.propertyResult.filesSeen]);
+    const missing = ctx.bl2041.realFiles.filter((f) => !seen.has(f));
+    assert.deepEqual(missing, [], `expected every census file to run in one of the two lanes, missing: ${missing.join(', ')}`);
+    assert.equal(ctx.bl2041.unitResult.fail, 0, `expected every unit-lane test to pass, got ${ctx.bl2041.unitResult.fail} failures: ${JSON.stringify(ctx.bl2041.unitResult.failures)}`);
+    assert.equal(ctx.bl2041.propertyResult.fail, 0, `expected every property-lane test to pass, got ${ctx.bl2041.propertyResult.fail} failures: ${JSON.stringify(ctx.bl2041.propertyResult.failures)}`);
+  });
+
+  scoped(/^the files named \*\.property\.test\.js run in the property lane and the others in the unit lane$/, (ctx) => {
+    assert.ok(ctx.bl2041.propertyFiles.length > 0, 'expected at least one *.property.test.js file in the census');
+    for (const f of ctx.bl2041.propertyFiles) {
+      assert.ok(f.endsWith('.property.test.js'), `expected a property-lane file to be named *.property.test.js, got ${f}`);
+      assert.ok(ctx.bl2041.propertyResult.filesSeen.has(f), `expected ${f} to run in the property lane, seen: ${[...ctx.bl2041.propertyResult.filesSeen].join(', ')}`);
+      assert.ok(!ctx.bl2041.unitResult.filesSeen.has(f), `expected ${f} to NOT also run in the unit lane`);
+    }
+    for (const f of ctx.bl2041.unitFiles) {
+      assert.ok(!f.endsWith('.property.test.js'), `expected a unit-lane file to never be named *.property.test.js, got ${f}`);
+      assert.ok(ctx.bl2041.unitResult.filesSeen.has(f), `expected ${f} to run in the unit lane, seen: ${[...ctx.bl2041.unitResult.filesSeen].join(', ')}`);
+      assert.ok(!ctx.bl2041.propertyResult.filesSeen.has(f), `expected ${f} to NOT also run in the property lane`);
+    }
   });
 
   scoped(/^the census of those files is 41, counted with find specs\/pipeline\/test -name '\*\.test\.js' -not -path '\*\/fixtures\/\*'$/, (ctx) => {

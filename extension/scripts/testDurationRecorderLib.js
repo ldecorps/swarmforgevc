@@ -35,6 +35,30 @@ function listPipelineTestFiles(testDir) {
   return out.sort();
 }
 
+// BL-2041 (QA bounce S1, spec-gap amendment 2026-10-06): the lane's own
+// *.property.test.js files (bl988Bl578ContractBinding,
+// bl989PortableGrepTabAnchor, scaffoldStepHandlerInvariants - 3 of the 41)
+// run in the PROPERTY lane, never the unit lane - the shared Engineering
+// Rules keep property tests separate from normal verification (their own
+// tag/command), and vitest.config.mjs already excludes
+// **/*.property.test.js from extension/'s own unit lane for the identical
+// reason (BL-479). Pure split, so both recorders (recordTestDuration.js's
+// unit-lane run, recordPropertyDuration.js's property-lane run) partition
+// the SAME census the SAME way - never two drifting notions of which 3
+// files those are.
+function isPipelinePropertyTestFile(file) {
+  return file.endsWith('.property.test.js');
+}
+
+function partitionPipelineTestFiles(files) {
+  const unitFiles = [];
+  const propertyFiles = [];
+  for (const file of files) {
+    (isPipelinePropertyTestFile(file) ? propertyFiles : unitFiles).push(file);
+  }
+  return { unitFiles, propertyFiles };
+}
+
 // BL-2041 (QA bounce D1): node:test's own default per-test timeout is
 // Infinity, so a hang in any of the 41 pipeline files (e.g. a regression in
 // bl1358MutantTimeCeiling.test.js's own deliberately-hanging fixture) would
@@ -211,6 +235,8 @@ if (require.main === module && process.argv[2] === RUN_IN_OWN_GROUP_FLAG) {
 module.exports = {
   listTestFiles,
   listPipelineTestFiles,
+  isPipelinePropertyTestFile,
+  partitionPipelineTestFiles,
   PIPELINE_TEST_TIMEOUT_MS,
   buildPipelineTestArgs,
   buildRecord,

@@ -25,10 +25,11 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { buildRecord, summarizeDurations, formatPropertyDurationVerdict, HALF_TIMEOUT_MS } = require('./recordPropertyDurationLib');
-const { appendRecord } = require('./testDurationRecorderLib');
+const { appendRecord, listPipelineTestFiles, partitionPipelineTestFiles, buildPipelineTestArgs } = require('./testDurationRecorderLib');
 const { extractFileDurations } = require('../out/tools/check-suite-file-budget');
 
 const ROOT_DIR = path.join(__dirname, '..');
+const REPO_ROOT_DIR = path.join(ROOT_DIR, '..');
 const LOG_PATH = path.join(ROOT_DIR, '.property-durations.jsonl');
 // Its own report file, distinct from the unit lane's .vitest-report.json
 // (recordTestDuration.js) - the two recorders must never clobber each
@@ -36,6 +37,15 @@ const LOG_PATH = path.join(ROOT_DIR, '.property-durations.jsonl');
 const REPORT_PATH = path.join(ROOT_DIR, '.property-vitest-report.json');
 const VITEST_BIN = path.join(ROOT_DIR, 'node_modules', '.bin', 'vitest');
 const CONFIG_PATH = 'vitest.properties.config.mjs';
+// BL-2041 (QA bounce S1): specs/pipeline/test's own *.property.test.js
+// files (3 of the lane's 41) are node:test files, never vitest's - they
+// cannot join vitest.properties.config.mjs's own `include`. Run after
+// vitest, same script, folded into the SAME exit code - the property-lane
+// mirror of recordTestDuration.js's own pipeline run, partitioning the
+// SAME census the SAME way (testDurationRecorderLib's
+// partitionPipelineTestFiles) so the two recorders can never disagree
+// about which 3 files those are.
+const PIPELINE_TEST_DIR = path.join(REPO_ROOT_DIR, 'specs', 'pipeline', 'test');
 
 function runRecorder({
   vitestBin = VITEST_BIN,
@@ -61,7 +71,26 @@ function runRecorder({
     { stdio: 'inherit', cwd }
   );
   const durationMs = Date.now() - startedAt;
-  const testExitCode = result.status === null ? 1 : result.status;
+  const vitestExitCode = result.status === null ? 1 : result.status;
+
+  // BL-2041 (QA bounce S1): the lane's own 3 pipeline *.property.test.js
+  // files run here too, after vitest, folded into the SAME exit code -
+  // only on a whole-lane run (extraArgs empty), the same posture as the
+  // duration-append skip just below: a filtered single-file run is not a
+  // whole-lane run, so it never also runs the pipeline property files.
+  let pipelinePropertyExitCode = 0;
+  if (extraArgs.length === 0) {
+    const pipelineFiles = listPipelineTestFiles(PIPELINE_TEST_DIR);
+    const { propertyFiles: pipelinePropertyFiles } = partitionPipelineTestFiles(pipelineFiles);
+    if (pipelinePropertyFiles.length > 0) {
+      const pipelineResult = spawnSync(process.execPath, buildPipelineTestArgs(pipelinePropertyFiles), {
+        stdio: 'inherit',
+        cwd: REPO_ROOT_DIR,
+      });
+      pipelinePropertyExitCode = pipelineResult.status === null ? 1 : pipelineResult.status;
+    }
+  }
+  const testExitCode = vitestExitCode !== 0 ? vitestExitCode : pipelinePropertyExitCode;
 
   // BL-1619 QA bounce D1: a filtered run (`npm run test:properties -- <file>`,
   // extraArgs non-empty) is not a whole-lane run - its census and trend

@@ -42,6 +42,7 @@ const { spawnSync } = require('child_process');
 const {
   listTestFiles,
   listPipelineTestFiles,
+  partitionPipelineTestFiles,
   buildPipelineTestArgs,
   buildRecord,
   appendRecord,
@@ -217,12 +218,18 @@ function main() {
   // folded into the SAME exit code. An empty file list is a hard failure
   // (never a silent, vacuous pass) - a moved/renamed directory must fail
   // loudly, not quietly stop testing anything at all.
+  //
+  // BL-2041 (QA bounce S1): the lane's *.property.test.js files run in the
+  // PROPERTY lane instead (recordPropertyDuration.js) - only the
+  // partition's unitFiles run here, so the unit lane never re-runs the
+  // property files recordPropertyDuration.js already owns.
   const pipelineTestFiles = listPipelineTestFiles(PIPELINE_TEST_DIR);
+  const { unitFiles: pipelineUnitTestFiles } = partitionPipelineTestFiles(pipelineTestFiles);
   let pipelineTestExitCode = 1;
   if (pipelineTestFiles.length === 0) {
     console.error(`recordTestDuration: found zero *.test.js files under ${PIPELINE_TEST_DIR} - refusing to report a pass`);
   } else {
-    const pipelineResult = spawnSync(process.execPath, buildPipelineTestArgs(pipelineTestFiles), {
+    const pipelineResult = spawnSync(process.execPath, buildPipelineTestArgs(pipelineUnitTestFiles), {
       stdio: 'inherit',
       cwd: REPO_ROOT_DIR,
     });
