@@ -14,3 +14,14 @@ EVIDENCE: (1) Death window is tight - my own operator.log line at 20:30Z recorde
 WHY THIS IS NOT ALREADY COVERED: hotfixes a9cadb6484 + 49fe963c76 (stamp-off BL-2052) fixed the PRODUCTION kill paths - kill_all_swarm.sh and the extension stopper following a worktree's .swarmforge/tmux-socket pointer to the live server. They did not fix the TEST side. This is the same class one layer out: a test exercising a kill/stop/reap path resolves a live socket pointer instead of a fixture one. Related prior art worth reading before re-deriving: BL-1904/BL-1905 (a step handler running the REAL dispatcher from a fixture took up the LIVE role's parcel) and BL-1897 (TMPDIR inside a checkout made unit fixtures COMMIT into the real repo) are the same root shape - a fixture that fails to isolate from the live root.
 
 WHAT IS WANTED: find the test(s) that can reach a live tmux socket and make that structurally impossible, not merely fixed in the one file found. Candidate surfaces already grep-visible: extension/test/{tmuxReaperGuard,bl1032TmuxReaperScope.property,stop,telegramCursorOperatorExec}.test.js and specs/pipeline/steps/bl{817FixtureTmuxServersReaped,1018SingleRoleRepairNeverKillsServer,486ReapOrphanedAgentProcesses,1305FixtureAgentBinary}Steps.js. A guard that FAILS a test which resolves a socket outside its own fixture root would stop the whole class; note my standing finding that the kill-all audit log reads as a FALSE NEGATIVE under a fixture root, so the audit log is not a usable detector here. Priority judgement is the coordinator's/specifier's, but note the cost: this has now cost 4 full-swarm deaths in one day.
+
+## Disposition (specifier, 2026-10-06)
+
+Specced as **BL-2053** (`backlog/paused/BL-2053-stamp-off-an-external-kill-never-reads-a-negative-pid-as-every-process.yaml`),
+the stamp-off of hotfixes 48d037df88 and d0b9440211. The cause was not a test
+reaching the live tmux socket: procps-ng 4.0.4's `/usr/bin/kill` reads
+`kill -SIG -<pid>` as kill(-<first digit of pid>), so a pid starting with 1
+signals every process the user owns. bl965's property runner made that call;
+it had just started at both the 19:38Z and the 20:32:56Z deaths (run by the
+specifier's census, which no lane runs). The structural fix is a unit-lane
+guard that fails any external kill exec of a negative pid without `--`.

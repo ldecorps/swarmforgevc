@@ -1,0 +1,131 @@
+id: BL-2053
+title: "Stamp-off for hotfixes 48d037df88 and d0b9440211: procps kill read bl965's -<pid> as kill(-1) and killed the whole swarm twice; the runner now passes --, and a unit-lane guard fails any external kill exec of a negative pid without --"
+type: defect
+severity: critical
+# critical: kill(-1) signals every process the user owns - every seat, the
+# tmux server and handoffd at once (swarm-down), twice on 2026-10-06.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: a test runner, a unit-lane guard test and two comment-only edits; no
+# TypeScript production code changed, so no Stryker pass is owed.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one guard test file and a one-argument fix; nothing to refactor"
+  architect: "no boundary moves; the rule (pass -- before a negative pid) is stated here"
+  hardender: "test-side files and comment-only lib edits; no production logic changed to mutate"
+  documenter: "no living doc describes the external kill parse; the two lib comments are corrected in the hotfix"
+
+# Not a claim of ownership over BL-965's contract (BL-1251): it is the
+# feature that drives the heal wrapper whose property runner was fixed.
+acceptance: specs/features/BL-965-heal-wrapper-temp-file-cleanup-on-kill.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews them and never re-applies them.
+
+invariants:
+  - Every exec of the external kill binary that passes a negative pid passes -- before it.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), with TMUX unset.
+  1. Read from the gather's unit row: externalKillNegativePidGuard.test.js
+     green, 10 of 10 (measured on main at d0b9440211: 10 of 10; the whole
+     unit lane 655 files, 11218 tests passed).
+  2. `env -u TMUX bb swarmforge/scripts/test/bl965_wrapper_cleanup_property_runner.bb`:
+     ALL PROPERTIES HOLD with every arm drawn at least once (measured at
+     48d037df88: 15 runs, 22 s, coverage normal 4, int 1, term 2, hup 4,
+     kill 4). No lane runs this runner, so this step is not a re-run.
+  3. Read from the gather's acceptance row: BL-965 4 of 4 (measured on
+     main at d0b9440211: pass 4, fail 0).
+  4. The host premise, with signal 0, which delivers nothing:
+     `/usr/bin/kill -0 -1999999; echo $?` prints only 1 (no "No such
+     process" line: kill(-1, 0) ran), and `/usr/bin/kill -0 -- -1999999`
+     prints "No such process". If step 4 no longer shows the first result,
+     say so in the evidence: the guard still stands, the premise changed.
+  5. Confirm the live swarm still lists every session after steps 1-4.
+
+source: |
+  The human, 2026-10-06 at about 20:35Z, to the specifier: "the swarm was
+  killed by the test execution again, your hotfix is not workibng", then
+  "operator wrote an intake for that you might want to read it".
+  From backlog/archive/INTAKE-operator-question-1791319070341.md (filed by
+  the Operator 2026-10-06T20:37:50Z), the human's diagnosis it quotes:
+  "Some unit test execution killed the server again."
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Drained from the Operator's intake 1791319070341 (archived with a pointer
+  here). The intake's premise was a test reaching the live tmux socket.
+  The evidence pins both deaths it covers to kill(-1) instead: at
+  19:37:52Z the specifier's property-runner census created bl965's log
+  (empty) and the server died about 19:38Z; at 20:32:56.035Z the census
+  restarted on bl965 and every seat transcript ends at 20:32:56, the census
+  shell exiting 130 (SIGINT) within 0.6 s. handoffd died with the seats
+  (failure report 20:33:30Z), which a tmux-socket kill would not do. No
+  lane runs bl965's runner; only the census did. The 20:00Z re-run
+  survived because no drawn pid began with a 1. The TMUX-unset question
+  (no test lane unsets TMUX) has no failing case behind it and is not
+  minted. The intake's candidate files (tmuxReaperGuard, bl1032, stop,
+  bl817, bl1018, bl486, bl1305) are not implicated.
+  The two lib comments (bounded_run_lib.bb, daemon_cycle_guard_lib.bb) had
+  recorded the missing -- as "kills only the leader"; that was wrong.
+
+description: |
+  ## Status: hotfixes 48d037df88 (runner and comments) and d0b9440211 (guard) landed the fix
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong
+
+  procps-ng 4.0.4's /usr/bin/kill reads a negative pid that follows a
+  signal option as the unknown option -<first digit> and calls kill() on
+  the negated first digit, with its exit status inverted. A pid starting
+  with 1 makes that kill(-1, SIG): every process the user owns. bash's and
+  dash's builtin kill are correct; only an exec of the external binary is
+  exposed. bl965_wrapper_cleanup_property_runner.bb ran
+  (process/sh "kill" (str "-" sig) (str "-" pid)) in its signal arms.
+
+  ## What the hotfixes changed
+
+  48d037df88: the runner passes "--" before the negative pid. The comments
+  in bounded_run_lib.bb and daemon_cycle_guard_lib.bb that explained the
+  "--" now say what its absence really does.
+
+  d0b9440211: extension/test/externalKillNegativePidGuard.test.js scans
+  swarmforge/scripts, specs/pipeline, extension/src, extension/scripts and
+  extension/test for an exec of the external kill (a quoted "kill" program
+  name in bb/clj/js/ts; exec/env/xargs/nohup/setsid/timeout kill or
+  /usr/bin/kill in a shell script, up to the next ; | &) that passes two or
+  more dash-led arguments with no "--". It pins its census: the three
+  guarded group kills in handoffd_supervisor.bb, the one in
+  daemon_cycle_guard_lib.bb, and both spawnSync('kill') sites in
+  mergedCodeReachesDaemonsSteps.js. Before 48d037df88 it flagged exactly
+  bl965's line 99.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 48d037df88` and `git show d0b9440211` against the
+     section above. Re-run the guard's census grep,
+     `grep -rnE '"kill" .*"--" \(str "-"' swarmforge/scripts`: at
+     d0b9440211 it prints 6 lines - handoffd_supervisor.bb x3,
+     daemon_cycle_guard_lib.bb x1, bl965's fixed line x1, and
+     check_worktree_strays.bb x1, which passes no signal (one dash-led
+     argument, so the guard sees it but its census pin does not count it;
+     the test's own comment predates bl965's fix and names 4). Confirm no
+     exec the guard should see lies outside its five directories.
+  2. Run qa_e2e_procedure step 2 and
+     `npx vitest run test/externalKillNegativePidGuard.test.js` once, with
+     TMUX unset, output under tmp/.
+  3. Write backlog/evidence/BL-2053-coder-<date>.md with the review result
+     and the run results, and commit it.

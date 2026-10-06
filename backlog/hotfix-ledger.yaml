@@ -1490,3 +1490,17 @@
   stamp_ticket: BL-2052
   human_decision: null
   decided_at: null
+- commit: 48d037df88
+  subject: "Hotfix: bl965's runner killed the whole swarm through procps kill's -<pid> parse"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2053
+  human_decision: null
+  decided_at: null
+- commit: d0b9440211
+  subject: "Hotfix: a unit-lane guard fails any external kill exec of a negative pid without --"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2053
+  human_decision: null
+  decided_at: null
