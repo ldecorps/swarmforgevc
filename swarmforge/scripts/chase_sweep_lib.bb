@@ -43,6 +43,18 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "seat_affinity_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 
+;; BL-2039: the tier-aware chase decision reuses seat_difficulty_lib's own
+;; BL-1001 difficulty-claim-decision/parse-seat-tiers/parse-seat-models -
+;; never a second tier table (invariant 1). Already loaded transitively via
+;; handoff_lib.bb; the explicit load keeps this file honest about the
+;; dependency, same posture as seat_affinity_lib/backlog_depth_lib above.
+;; pipeline_stage_lib supplies extract-ticket-id - the SAME ticket-id parse
+;; ready_for_next_task.bb's own mutation-cost-for-task applies to a
+;; resolved task name, never a second notion of "which ticket a parcel
+;; names".
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "seat_difficulty_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
+
 ;; BL-528: claim-without-progress detection.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "claim_progress_lib.bb")))
 
@@ -193,25 +205,45 @@
 ;; apply-inbox-item-action! - the mtime/chaseCount/lastChasedAtMs inputs are
 ;; never touched either way, so releasing the hold resumes the normal ladder
 ;; from exactly the frozen values (see the ticket's freeze-the-counter note).
+;; BL-2039: two new trailing params, both defaulted to true by the 11-arg
+;; arity below - every pre-BL-2039 caller (this file's own call site before
+;; this ticket, bl852's property runner) keeps deciding exactly as before,
+;; since "eligible" is the BL-983/no-declared-tiers default everywhere.
+;; tier-eligible-for-me? false means the claim loop would never let this
+;; role take the item now (seat_difficulty_lib's own :skip-ineligible /
+;; :defer-better-fit, read once per item in sweep-role-inbox!) - chasing or
+;; respawning the owner over it would only remind a seat of a parcel it
+;; structurally cannot claim, so the whole has-recent-activity/backoff/
+;; liveness ladder below is skipped entirely, regardless of busy/lane/
+;; liveness: "tier-deferred" (a no-op for apply-inbox-item-action!, same
+;; posture as "held"/"skipped") when some OTHER seat of the stage may still
+;; claim it, else "dead-lettered" unconditionally - a respawn can never
+;; make an unclaimable ticket claimable, so there is nothing to wait for.
 (defn decide-item-action
-  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?
-   pane-busy? lane-running?]
-  (cond
-    already-terminal? "reaped"
-    held? "held"
-    :else
-    (let [age-seconds (/ (- now-ms item-mtime-ms) 1000.0)]
-      (if (< age-seconds (:chaseTimeoutSeconds config))
-        "skipped"
-        (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)
-              has-recent-activity? (< idle-seconds (:stuckInProcessTimeoutSeconds config))]
-          (if has-recent-activity?
-            (if (nil? last-chased-at-ms)
-              "chased"
-              (let [seconds-since-last-chase (/ (- now-ms last-chased-at-ms) 1000.0)
-                    backoff-seconds (compute-chase-backoff-seconds chase-count config)]
-                (if (>= seconds-since-last-chase backoff-seconds) "chased" "skipped")))
-            (decide-stale-item-action chase-count config liveness pane-busy? lane-running?)))))))
+  ([item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?
+    pane-busy? lane-running?]
+   (decide-item-action item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms
+                        already-terminal? held? pane-busy? lane-running? true true))
+  ([item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?
+    pane-busy? lane-running? tier-eligible-for-me? any-seat-of-stage-eligible?]
+   (cond
+     already-terminal? "reaped"
+     held? "held"
+     :else
+     (let [age-seconds (/ (- now-ms item-mtime-ms) 1000.0)]
+       (if (< age-seconds (:chaseTimeoutSeconds config))
+         "skipped"
+         (if-not tier-eligible-for-me?
+           (if any-seat-of-stage-eligible? "tier-deferred" "dead-lettered")
+           (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)
+                 has-recent-activity? (< idle-seconds (:stuckInProcessTimeoutSeconds config))]
+             (if has-recent-activity?
+               (if (nil? last-chased-at-ms)
+                 "chased"
+                 (let [seconds-since-last-chase (/ (- now-ms last-chased-at-ms) 1000.0)
+                       backoff-seconds (compute-chase-backoff-seconds chase-count config)]
+                   (if (>= seconds-since-last-chase backoff-seconds) "chased" "skipped")))
+               (decide-stale-item-action chase-count config liveness pane-busy? lane-running?)))))))))
 
 (defn decide-stuck-action [last-activity-ms nudge-count now-ms config]
   (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)]
@@ -632,6 +664,115 @@
       :held-by-seat (handoff-lib/header-field file-path "held_by_seat")})
     (catch Exception _ false)))
 
+;; ── BL-2039: tier-aware chase ────────────────────────────────────────────
+;; The sweep acts on the mailbox OWNER and never asked whether the owner
+;; may claim the item (seat_difficulty_lib.bb's own BL-1001 tier rule was
+;; read only at claim time, in ready_for_next_task.bb). A medium/high
+;; ticket waiting in an easy-tier owner's shared stage queue for the
+;; hard-tier seat got chased and respawned repeatedly while the owner
+;; worked something else, and the eligible sibling was never woken. This
+;; reads the SAME claim decision the dispatcher reads (invariant 1) -
+;; never a second notion of eligible.
+
+(defn- item-task-name
+  "The SAME task attribution ready_for_next_task.bb's own claim-task-name
+   resolves (BL-1185/BL-1608): the task: header (git_handoff), else the
+   Work BL-... slug from a note's own message (supersede-lib/task-name-
+   from-content - a leaf handoff_lib.bb itself load-files, already in
+   scope). Never a second parser."
+  [file-path]
+  (or (not-empty (handoff-lib/header-field file-path "task"))
+      (try (supersede-lib/task-name-from-content (slurp file-path))
+           (catch Exception _ nil))))
+
+(defn item-mutation-cost
+  "The claimed ticket's mutation_cost for an inbox item, resolved the SAME
+   way the claim loop resolves it: handoff-lib/active-ticket-mutation-cost
+   over pipeline-stage-lib/extract-ticket-id of the item's own task name
+   (invariant 1, never a second notion of cost). nil when the item names
+   no ticket, the ticket declares no mutation_cost, or either read throws
+   - seat-accepts? treats a nil cost as accepted by every tier, the same
+   fail-toward-today's-ladder posture BL-1004's own hold reads keep."
+  [file-path]
+  (try
+    (handoff-lib/active-ticket-mutation-cost (pipeline-stage-lib/extract-ticket-id (item-task-name file-path)))
+    (catch Exception _ nil)))
+
+(defn- sibling-in-process-busy? [role-info]
+  (boolean (seq (handoff-lib/handoff-files (handoff-lib/mailbox-dir role-info :in_process)))))
+
+(defn stage-sibling-role-infos
+  "Every OTHER seat of role's stage, role-infos read from root's
+   roles.tsv. Parametrized by an explicit role/root - never current-role/
+   target-root the way handoff-lib/stage-sibling-seats is - because the
+   sweep runs as the DAEMON over every role in turn, never as any one
+   seat's own process: current-role reads SWARMFORGE_ROLE, which names the
+   daemon, not the seat being swept."
+  [role root]
+  (let [stage (handoff-lib/seat-stage role)]
+    (filterv #(and (= stage (handoff-lib/seat-stage (:role %))) (not= role (:role %)))
+             (handoff-lib/load-all-roles root))))
+
+(defn- chase-tier-context
+  "Read ONCE per role per sweep (never per item - same posture as
+   deferral-ctx above): the pack conf text, its tier/model maps, and the
+   stage's sibling role-infos. An unreadable conf/roles.tsv degrades to no
+   declared tiers, under which difficulty-claim-decision always answers
+   :claim (BL-983 path) - fail toward today's ladder."
+  [role]
+  (let [root (handoff-lib/target-root)
+        conf-text (try (slurp (str (backlog-depth-lib/conf-file-path root))) (catch Exception _ nil))]
+    {:conf-text conf-text
+     :tiers (try (seat-difficulty-lib/parse-seat-tiers conf-text) (catch Exception _ {}))
+     :models (try (seat-difficulty-lib/parse-seat-models conf-text) (catch Exception _ {}))
+     :sibling-role-infos (try (stage-sibling-role-infos role root) (catch Exception _ []))}))
+
+(defn- stage-member-eligible?
+  "True unless difficulty-claim-decision would :skip-ineligible member-id
+   for cost. :defer-better-fit still counts as eligible here - sibling-
+   states is passed empty deliberately, since this asks only 'could
+   member-id take it at all', not 'would it defer to someone else'; the
+   swept owner's own full decision (item-tier-eligible? below) is what
+   answers that second question for the role actually being swept."
+  [member-id ctx cost]
+  (not= :skip-ineligible
+        (seat-difficulty-lib/difficulty-claim-decision
+         {:me member-id :my-tier (get (:tiers ctx) member-id) :cost cost
+          :stage (handoff-lib/seat-stage member-id) :tiers (:tiers ctx)
+          :models (:models ctx) :conf-text (:conf-text ctx) :sibling-states []})))
+
+(defn item-tier-eligible?
+  "True exactly when the claim loop would let role take this item now -
+   the SAME difficulty-claim-decision ready_for_next_task.bb's own
+   difficulty-allows-claim? reads, restricted to :claim: :defer-better-fit
+   and :skip-ineligible both mean the claim loop leaves it queued, so the
+   sweep must leave role alone over it either way."
+  [role ctx cost]
+  (= :claim
+     (seat-difficulty-lib/difficulty-claim-decision
+      {:me role :my-tier (get (:tiers ctx) role) :cost cost
+       :stage (handoff-lib/seat-stage role) :tiers (:tiers ctx)
+       :models (:models ctx) :conf-text (:conf-text ctx)
+       :sibling-states (mapv (fn [ri] {:role (:role ri) :tier (get (:tiers ctx) (:role ri))
+                                       :busy? (sibling-in-process-busy? ri)})
+                             (:sibling-role-infos ctx))})))
+
+(defn idle-eligible-sibling
+  "The first idle (nothing in its own in_process), eligible sibling for
+   cost, or nil - who the sweep wakes in role's place when role itself may
+   not claim it."
+  [ctx cost]
+  (some (fn [ri] (when (and (not (sibling-in-process-busy? ri)) (stage-member-eligible? (:role ri) ctx cost))
+                   ri))
+        (:sibling-role-infos ctx)))
+
+(defn any-stage-member-eligible?
+  "True when role OR any sibling of its stage may claim cost - false only
+   when the WHOLE stage refuses it (invariant 3's dead-letter branch)."
+  [role ctx cost]
+  (or (stage-member-eligible? role ctx cost)
+      (boolean (some #(stage-member-eligible? (:role %) ctx cost) (:sibling-role-infos ctx)))))
+
 ;; BL-1652: an optional adapter is read via when-let and defaults to nil/
 ;; false - every pre-BL-1652 fixture/property-runner that never wires
 ;; :role-agent-busy?/:role-lane-running?/:get-heartbeat-age-seconds keeps
@@ -694,6 +835,15 @@
         ;; BL-1004: forced only if some non-terminal item actually needs the
         ;; hold check - an empty inbox costs no roles.tsv/conf/mailbox reads.
         deferral-ctx (delay (stage-deferral-context role))
+        ;; BL-2039: same forced-only-when-needed posture as deferral-ctx -
+        ;; an empty inbox, or a stage with no declared tiers, costs no
+        ;; extra conf/roles.tsv reads beyond deferral-ctx's own.
+        tier-ctx (delay (chase-tier-context role))
+        ;; BL-2039: one wake per idle eligible sibling per SWEEP, never per
+        ;; item - mirrors BL-1652's own one-respawn-per-sweep guard, so
+        ;; several ineligible items waiting on the SAME idle sibling in one
+        ;; tick don't send it several wakes.
+        woken-tier-siblings (atom #{})
         ;; BL-1652: one respawn per role per SWEEP, however many stuck items
         ;; decide "respawned" - without this, every one of them raced the
         ;; SAME pre-loop respawn-cooldown-until-ms snapshot (the cooldown
@@ -716,9 +866,16 @@
                            (item-ambulance-held? (:filePath item))
                            (item-deferral-held? @deferral-ctx (:filePath item) now-ms)
                            (item-deferred-note-held? (:filePath item))))
+            ;; BL-2039: only read when the item could actually reach the
+            ;; tier branch - an already-terminal or held item never does,
+            ;; and resolving a ticket's mutation_cost costs a backlog/
+            ;; active/ scan.
+            item-cost (when-not (or already-terminal? held?) (item-mutation-cost (:filePath item)))
+            tier-eligible? (or already-terminal? held? (item-tier-eligible? role @tier-ctx item-cost))
+            any-tier-eligible? (or tier-eligible? (any-stage-member-eligible? role @tier-ctx item-cost))
             decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config
                                          liveness last-activity-ms (:lastChasedAtMs item) already-terminal? held?
-                                         pane-busy? lane-running?)
+                                         pane-busy? lane-running? tier-eligible? any-tier-eligible?)
             respawn-decision? (= decided "respawned")
             action (cond
                      (not respawn-decision?) decided
@@ -732,7 +889,18 @@
                      :else (do (reset! respawned-this-sweep? true) "respawned"))]
         (apply-inbox-item-action! role item action adapters now-ms base-readings)
         (when (= action "respawned")
-          (write-respawn-cooldown-until-ms! inbox-new-dir (+ now-ms (* (:respawnCooldownSeconds config) 1000))))))))
+          (write-respawn-cooldown-until-ms! inbox-new-dir (+ now-ms (* (:respawnCooldownSeconds config) 1000))))
+        ;; BL-2039: an ineligible owner over a parcel some OTHER seat of
+        ;; the stage may claim gets that idle seat woken instead - the
+        ;; wake invariant's out-loud half (invariant 2).
+        (when (= action "tier-deferred")
+          (when-let [sibling (idle-eligible-sibling @tier-ctx item-cost)]
+            (when-not (contains? @woken-tier-siblings (:role sibling))
+              (swap! woken-tier-siblings conj (:role sibling))
+              (when (wake-result->landed? ((:send-wake-up! adapters) (:role sibling)))
+                ((:log-telemetry! adapters)
+                 {:type "tier-wake" :role (:role sibling) :handoffId (handoff-id (:filePath item)) :count 0}
+                 now-ms)))))))))
 
 ;; ── BL-209: rate-limit cooldown gate ─────────────────────────────────────
 ;; A role whose agent hit a provider usage limit must not be blind-retried
