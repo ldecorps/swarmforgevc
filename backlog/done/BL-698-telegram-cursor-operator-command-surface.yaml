@@ -101,4 +101,5 @@ description: |
   - Replacing role-topic steer with slash for every role message.
   - Implementing BL-660 three-shift cron packs themselves.
 
+# 2026-10-06 (specifier, BL-2023 adjudication): 17 scenarios and 3 outline rows retired (9 duplicates of BL-702/BL-704 scenarios already wired green, 8 contradicted, never built, unwireable or meta); the 9 left are wired by BL-2025. See backlog/evidence/BL-2023-unbound-feature-adjudication-20261006.md.
 acceptance: specs/features/BL-698-telegram-cursor-operator-command-surface.feature

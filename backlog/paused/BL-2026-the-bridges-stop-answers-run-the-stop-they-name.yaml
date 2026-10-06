@@ -1,0 +1,115 @@
+id: BL-2026
+title: "The bridge's stop answers run the stop they name - a yes to /land's Drain-stop question writes the swarm bounce sentinel (stop and relaunch, and on a host with no extension host nothing at all) while replying drain-stop requested, and Stop & run kills the swarm while BL-698's how-to calls it a drain-stop"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real fault in two operator answers, contained. The principal can
+# still stop the swarm with /stop, and both answers are rare (the end of a
+# /land batch, a /pilot that meets a live swarm). Neither is a red.
+status: todo
+epic: swarmforge-console
+priority: 40
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: two call sites in telegramCursorBridgeLive.ts and one handler file.
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "two call sites change to an existing function; nothing to deduplicate"
+  architect: "no boundary moves; both answers call the stop modes /stop already offers"
+
+acceptance: specs/features/BL-2026-the-bridges-stop-answers-run-the-stop-they-name.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2026BridgeStopAnswersSteps.js::registerSteps::binds BL-2026-the-bridges-stop-answers-run-the-stop-they-name.feature (discovered by suffix, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  FIRM: a yes to the /land queue's "Drain-stop the swarm now?" runs /stop's
+  drain mode (executeStopMode drain), and no stop answer writes the bounce
+  sentinel. The ask is Stop & run. When /pilot meets a live swarm, its Stop
+  & run button runs the emergency stop (kill_all_swarm.sh, then a 90 s wait
+  for the swarm to clear, then the pilot). BL-698's spec and its living
+  how-to both say drain-stop. Either the reply and the how-to say
+  "emergency stop" (A), or the button drains first (B). The scenario holds
+  under both, because the reply names whichever mode ran.
+ruling_options:
+  - A - Stop & run keeps the emergency stop, its reply says so, and the how-to line is corrected (recommended)
+  - B - Stop & run drains first as BL-698 and the how-to say, then pilots once the pipeline is empty
+ruling_tradeoffs:
+  - Pros - the pilot starts within about a minute, which is what a pilot asked for now needs, and /stop already offers the drain to a principal who wants it before piloting. Cons - in-flight agent turns are killed mid-work. Recommended because the existing 90 s wait was written for a fast stop, and a drain belongs to /stop.
+  - Pros - no in-flight work is lost, and the button keeps the meaning BL-698 gave it. Cons - the pilot waits until every parcel in flight is done, which can be hours, and the 90 s wait must become the drain's own timeout.
+
+invariants:
+  - "Every stop the bridge runs on a principal's answer is the mode its reply names, and no stop answer writes the bounce sentinel."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row:
+     `specs/features/BL-2026-the-bridges-stop-answers-run-the-stop-they-name.feature`
+     3 of 3 pass (two outline rows and one scenario; measured at mint: no
+     handler, all red).
+  2. Read `docs/how-to/BL-698-telegram-cursor-operator-commands.md`'s
+     `/pilot` line (line 23 at mint, "offers **Stop & run** (drain-stop,
+     wait until clear, then pilot)"). It names the mode the ruling chose.
+  3. Read the hardener's committed evidence for the two changed call sites.
+  4. `cat .swarmforge/bounce` on the QA host is unchanged by the gather.
+     The handler writes the sentinel only under its own mkdtemp root.
+
+source: |
+  Found 2026-10-06 by the specifier's BL-2023 adjudication of BL-698's
+  feature (scenarios "/land pilots in-flight tickets out then asks about
+  sleep" and "Stop & run confirm may stop then pilot", both retired as
+  contradicted). Evidence:
+  backlog/evidence/BL-2023-unbound-feature-adjudication-20261006.md.
+  On this host `.swarmforge/bounce` has read "swarm" since 2026-10-05 21:59
+  and `.swarmforge/bounce-ack.json` was last written 2026-08-22.
+
+notes: |
+  Minted 2026-10-06 by the specifier, the BL-2023 adjudication pass.
+  Not auto-approved: medium severity, and approval_context poses a choice.
+  Out of scope: whether a headless host should consume the bounce sentinel
+  at all. /restart and /bounce swarm honestly reply "sentinel written", and
+  on this host a host-agent session (Cursor) consumes it by hand. That is
+  recorded in the adjudication evidence, not ticketed.
+
+description: |
+  ## What is wrong
+
+  - `/land`: when the batch's in-flight queue empties, the bridge asks
+    "Land queue clear. Drain-stop the swarm now?". On yes,
+    `telegramCursorBridgeLive.ts`'s `land-sleep` branch calls
+    `writeOperatorBounceSentinel(repoRoot, 'swarm')` and replies "land:
+    drain-stop requested (bounce sentinel written)". The swarm sentinel is
+    a stop-and-relaunch request (`bouncer.ts`: Bounce = stop + launch),
+    consumed only by a VS Code extension host. So a yes asks for a
+    restart, and on a headless host it does nothing at all. /stop's drain
+    mode, `executeStopMode(repoRoot, 'drain')`, already does what the
+    question asks.
+  - Stop & run: the `stop-and-run` branch calls `runOperatorStop`, which is
+    `kill_all_swarm.sh`, the nuclear pipeline kill. BL-698's how-to says
+    "(drain-stop, wait until clear, then pilot)". The reply prints the
+    kill script's output and never names the mode.
+
+  ## What is wanted
+
+  - A yes to the land question runs /stop's drain mode through the same
+    path /stop's Drain-stop button takes, and a no runs no stop. Neither
+    answer writes the bounce sentinel.
+  - Stop & run runs the mode the ruling picks (A: emergency, B: drain),
+    and its reply names the mode that ran. With ruling A, the documenter
+    corrects the how-to's `/pilot` line. With ruling B, the 90 s
+    `awaitSwarmDrain` wait becomes the drain's own wait.
+
+  ## How (direction, not mandate)
+
+  - A handler `specs/pipeline/steps/bl2026BridgeStopAnswersSteps.js` drives
+    the Live inbound handler (`handleInboundDecision`) with a fake context,
+    the `mkCtx` pattern in `extension/test/telegramCursorBridgeLive.test.js`,
+    on a mkdtemp root with a stub `kill_all_swarm.sh` that records it ran.
+    Register steps with `defineScoped` under this feature's name (BL-1277).
+    The outline validates `<answer>` and `<stop>` against explicit known
+    values.
+  - If the handler puts a fake `tmux` on PATH that names a server-creating
+    subcommand, adopt `./lib/fixtureReaper` (`tmuxReaperGuard.test.js`).
+    Run `npm test` before forwarding.
