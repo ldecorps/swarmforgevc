@@ -255,6 +255,11 @@
   reason: "Direct hotfix fixing an unowned standing red (BL-247 scenarios 01/02, coordinator half red since 2026-07-17 with no register row); stamp ticket BL-1878 (severity high, human_approval approved) already minted to own it, paused per hotfix-ledger.yaml"
   waived_at: 2026-10-02
 
+- key: pipeline-code-on-main-853235a21623cfd9d0c4c1506a951e7789677634
+  waived_by: coordinator
+  reason: "Declared hotfix (Hotfix-Certification: pending trailer, By specifier), registered in backlog/hotfix-ledger.yaml and stamped into BL-2051 (paused, awaiting QA review/human certify-or-waive); is_qa_ancestor exits 1 (not a QA land) so BL-848's ledger+stamp-ticket path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
+
 - key: pipeline-code-on-main-8a726d9f5a6b38948c30c2f284573a7b20e39b29
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
