@@ -49,6 +49,18 @@ other file needs an edit.
 - Both acceptance runners (`run_acceptance.sh`, `run_gherkin_mutation.sh`)
   still default `STEPS_MODULE` to `specs/pipeline/steps/index.js` — neither
   needed an edit, since the change is inside that module.
+- **A new handler starts from the scaffold, not from reading the runner's
+  internals (BL-1979).**
+  `specs/pipeline/scripts/scaffold_step_handler.js <feature-file> <Name>Steps`
+  writes `specs/pipeline/steps/<Name>Steps.js` — a stub per distinct step
+  text in the feature (Background included), each scoped to the feature's
+  own name via `registry.defineScoped`, each throwing `not implemented:
+  <step text>`; a `<placeholder>` becomes a capture group, so a Scenario
+  Outline's step resolves for every Examples row. It refuses, writing
+  nothing, when the target file already exists or the name does not end in
+  `Steps`. Discovery (above) picks the written file up the moment it
+  exists — the scaffold needs no `required_wiring` entry of its own either,
+  for the same reason a handler file doesn't.
 - **A handler whose `require` graph cannot resolve now stops it before
   `main`, not just at the next acceptance run.** Discovery's own "fails the
   run loudly" (above) is a RUNTIME guarantee — it does not stop a handler
