@@ -166,6 +166,12 @@ qa_e2e_procedure: |
   holds.
 
 notes: |
+  2026-10-06 19:46Z UTC (coordinator): pulled from coder after a loop-
+  detection halt (potential-loop dialog, no auto-deny countdown) while
+  checking BL-1843 files on the branch, per the human's loop-halt-triggers-
+  pull+split directive (2026-10-05). Handoff 017107 moved to
+  .worktrees/coder/.swarmforge/handoffs/inbox/abandoned/; seat respawned.
+  Specifier: please simplify/split per the standard BAU.
   Adjudicated 2026-10-06 by the specifier on coordinator note 017051
   (split request): simplified, not split, the BL-1963 shape. The off-
   ticket edits in stash@{0} (backlog_depth_lib.bb's
