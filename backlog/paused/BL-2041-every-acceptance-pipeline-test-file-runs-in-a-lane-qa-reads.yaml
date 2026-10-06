@@ -21,6 +21,7 @@ stage_skip_reasons:
   architect: "test infrastructure only; no production boundary moves"
   hardender: "no production code changes; the lane itself is the gate"
   documenter: "no living doc enumerates the unit lane's members; BL-1598's how-to covers the vitest pole register only"
+verification_category: unlaned-pipeline-test-run-by-hand
 
 acceptance: specs/features/BL-2041-every-acceptance-pipeline-test-file-runs-in-a-lane-qa-reads.feature
 
