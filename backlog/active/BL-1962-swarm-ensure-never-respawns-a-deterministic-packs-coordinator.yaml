@@ -98,3 +98,6 @@ description: |
     (launch_contract_lib) still behaves on a deterministic pack.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: unit, commit: 382acd2be8, evidence: backlog/evidence/BL-1962-QA-20261006.md }
