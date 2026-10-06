@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   listTestFiles,
+  listPipelineTestFiles,
   buildRecord,
   appendRecord,
   computeFinalExitCode,
@@ -28,6 +29,19 @@ test('listTestFiles returns only .test.js files, sorted', () => {
   fs.writeFileSync(path.join(dir, 'notes.txt'), '');
 
   assert.deepEqual(listTestFiles(dir), ['a.test.js', 'b.test.js']);
+});
+
+// BL-2041
+test('listPipelineTestFiles finds .test.js files recursively and excludes fixtures/', () => {
+  const dir = mkTmp();
+  fs.writeFileSync(path.join(dir, 'a.test.js'), '');
+  fs.mkdirSync(path.join(dir, 'steps'));
+  fs.writeFileSync(path.join(dir, 'steps', 'b.test.js'), '');
+  fs.mkdirSync(path.join(dir, 'fixtures'));
+  fs.writeFileSync(path.join(dir, 'fixtures', 'c.test.js'), '');
+  fs.writeFileSync(path.join(dir, 'helpers.js'), '');
+
+  assert.deepEqual(listPipelineTestFiles(dir), [path.join(dir, 'a.test.js'), path.join(dir, 'steps', 'b.test.js')]);
 });
 
 // BL-078 suite-duration-01

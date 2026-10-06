@@ -41,6 +41,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const {
   listTestFiles,
+  listPipelineTestFiles,
   buildRecord,
   appendRecord,
   computeFinalExitCode,
@@ -71,6 +72,11 @@ const ROOT_DIR = path.join(__dirname, '..');
 // though both measure well under budget alone).
 const REPO_ROOT_DIR = path.join(ROOT_DIR, '..');
 const TEST_DIR = path.join(ROOT_DIR, 'test');
+// BL-2041: specs/pipeline/test/ ran in no lane - QA's gather (npm test,
+// npm run test:properties) never reached it, so four files went red on
+// main unseen for weeks. Run after vitest, in the same script, folded into
+// the SAME exit code.
+const PIPELINE_TEST_DIR = path.join(REPO_ROOT_DIR, 'specs', 'pipeline', 'test');
 const LOG_PATH = path.join(ROOT_DIR, '.test-durations.jsonl');
 const REPORT_PATH = path.join(ROOT_DIR, '.vitest-report.json');
 const REGISTER_PATH = path.join(ROOT_DIR, '..', 'backlog', 'suite-poles.tsv');
@@ -202,7 +208,26 @@ function main() {
     cwd: ROOT_DIR,
   });
   const durationMs = Date.now() - startedAt;
-  const testExitCode = result.status === null ? 1 : result.status;
+  const vitestExitCode = result.status === null ? 1 : result.status;
+
+  // BL-2041: specs/pipeline/test's own node:test files - never discovered by
+  // vitest's own config include, and run in no other lane, so four files
+  // went red on main unseen for weeks. Run after vitest, same script,
+  // folded into the SAME exit code. An empty file list is a hard failure
+  // (never a silent, vacuous pass) - a moved/renamed directory must fail
+  // loudly, not quietly stop testing anything at all.
+  const pipelineTestFiles = listPipelineTestFiles(PIPELINE_TEST_DIR);
+  let pipelineTestExitCode = 1;
+  if (pipelineTestFiles.length === 0) {
+    console.error(`recordTestDuration: found zero *.test.js files under ${PIPELINE_TEST_DIR} - refusing to report a pass`);
+  } else {
+    const pipelineResult = spawnSync(process.execPath, ['--test', ...pipelineTestFiles], {
+      stdio: 'inherit',
+      cwd: REPO_ROOT_DIR,
+    });
+    pipelineTestExitCode = pipelineResult.status === null ? 1 : pipelineResult.status;
+  }
+  const testExitCode = vitestExitCode !== 0 ? vitestExitCode : pipelineTestExitCode;
 
   // BL-445: the whole-suite sibling of the per-file guard below - surfaces
   // an over-budget run against the operator's 10s target (never hard-fails;

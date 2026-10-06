@@ -2,12 +2,37 @@
 // recordTestDuration.js (the CLI entry point that shells out to the real
 // test run) stays a thin wrapper — mirrors crapLib.js's split.
 const fs = require('fs');
+const path = require('path');
 
 function listTestFiles(testDir) {
   return fs
     .readdirSync(testDir)
     .filter((f) => f.endsWith('.test.js'))
     .sort();
+}
+
+// BL-2041: specs/pipeline/test's own *.test.js files, found recursively
+// (listTestFiles above is one level deep, this directory's files nest under
+// steps/) - fixtures/ is excluded (it holds fixture data, never a test file
+// of its own; excluded by directory name rather than assumed empty, so a
+// fixture that someday grows a same-suffix file still never joins the run).
+// Absolute paths, sorted, so recordTestDuration.js's node --test invocation
+// is explicit about exactly what ran rather than trusting a shell glob that
+// could silently expand to nothing.
+function listPipelineTestFiles(testDir) {
+  const out = [];
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (entry.name === 'fixtures') continue;
+        walk(path.join(dir, entry.name));
+      } else if (entry.isFile() && entry.name.endsWith('.test.js')) {
+        out.push(path.join(dir, entry.name));
+      }
+    }
+  }
+  walk(testDir);
+  return out.sort();
 }
 
 // BL-1598: pole_ms/work_ms/new_offenders/budget_verdict come from the
@@ -166,6 +191,7 @@ if (require.main === module && process.argv[2] === RUN_IN_OWN_GROUP_FLAG) {
 
 module.exports = {
   listTestFiles,
+  listPipelineTestFiles,
   buildRecord,
   appendRecord,
   computeFinalExitCode,
