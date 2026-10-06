@@ -46,15 +46,22 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { materializeCurrentPipeline, registryLoadVerdict, plantOffender } = require('./helpers/materializedRegistryGuard');
 
 let shared;
 
+// BL-1629: every root this file's own prefix covers carries ITS OWN pid
+// (sweepStaleTmpDirs' own naming contract, `<prefix><pid>-...`) - the
+// shared fixture is still removed by its known path in afterAll below
+// (never swept by prefix), but a prefix that already carries this run's
+// pid means nothing a concurrent sibling run creates can ever collide
+// with it.
+const MATERIALIZED_PREFIX = `bl968-materialized-${process.pid}-`;
+
 beforeAll(() => {
-  shared = materializeCurrentPipeline();
+  shared = materializeCurrentPipeline({ prefix: MATERIALIZED_PREFIX });
 });
 
 afterAll(() => {
@@ -85,11 +92,21 @@ test(
 // zero-dirs-left assertion immune to concurrent runs. Non-vacuity: with
 // the helper's catch-cleanup removed this test goes RED on the
 // leaked-root assertion (staged and restored at fix time).
+// BL-1629: never a blind directory listing of the whole system temp dir
+// over a bare prefix (the unique-per-call prefix below made that safe
+// enough before, but still outside BL-1623's own naming/sweep contract).
+// The prefix
+// handed to materializeCurrentPipeline carries this run's OWN pid
+// (uniquePrefix + process.pid + '-'); sweepStaleTmpDirs reads that exact
+// shape back and removes only a root whose owner pid is this process (or
+// already dead) - the same scoped mechanism every other sweep in this
+// tree uses, never a second one hand-rolled here.
 test('BL-968 D1 guard: a materialization that fails mid-copy leaves no temp dir behind', () => {
   const emptySource = mkTmpDir('bl968-d1-empty-src-');
-  const prefix = `bl968-d1-leakcheck-${Date.now()}-${Math.random().toString(36).slice(2)}-`;
+  const uniquePrefix = `bl968-d1-leakcheck-${Date.now()}-${Math.random().toString(36).slice(2)}-`;
+  const prefix = `${uniquePrefix}${process.pid}-`;
   assert.throws(() => materializeCurrentPipeline({ sourceRoot: emptySource, prefix }));
-  const leaked = fs.readdirSync(os.tmpdir()).filter((d) => d.startsWith(prefix));
+  const leaked = sweepStaleTmpDirs({ prefix: uniquePrefix });
   assert.deepEqual(leaked, [], `a failed materialization leaked its temp root: ${leaked.join(', ')}`);
 });
 

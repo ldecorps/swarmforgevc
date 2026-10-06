@@ -480,7 +480,14 @@ test('parseRegisterRows skips comment and blank lines', () => {
   const text = '# a comment\n\nfile.test.js\tBL-1\t2026-01-01\t9000\tnote\n   \n# another\n';
   const rows = parseRegisterRows(text);
   assert.equal(rows.length, 1);
-  assert.deepEqual(rows[0], { file: 'file.test.js', ticket: 'BL-1', firstSeen: '2026-01-01', measuredMs: 9000, note: 'note' });
+  assert.deepEqual(rows[0], {
+    file: 'file.test.js',
+    ticket: 'BL-1',
+    firstSeen: '2026-01-01',
+    measuredMs: 9000,
+    disposition: 'owned',
+    note: 'note',
+  });
 });
 
 test('parseRegisterRows joins a note containing tabs back together', () => {
@@ -494,6 +501,32 @@ test('parseRegisterRows parses multiple rows in file order', () => {
     rows.map((r) => r.file),
     ['a.test.js', 'b.test.js']
   );
+});
+
+// ── BL-1629: the disposition column (both row shapes) ───────────────────
+
+test('parseRegisterRows: a row with no disposition column (the pre-existing 5-column form) reads disposition "owned"', () => {
+  const rows = parseRegisterRows('file.test.js\tBL-1\t2026-01-01\t9000\tsome note\n');
+  assert.equal(rows[0].disposition, 'owned');
+  assert.equal(rows[0].note, 'some note');
+});
+
+test('parseRegisterRows: a row with the disposition column set to "accepted" reads it, and keeps the note separate', () => {
+  const rows = parseRegisterRows('file.test.js\tBL-1\t2026-01-01\t9000\taccepted\tre-measure: 2026-12-17\n');
+  assert.equal(rows[0].disposition, 'accepted');
+  assert.equal(rows[0].note, 're-measure: 2026-12-17');
+});
+
+test('parseRegisterRows: a row with the disposition column set to "owned" reads it explicitly, same as the default', () => {
+  const rows = parseRegisterRows('file.test.js\tBL-1\t2026-01-01\t9000\towned\tsome note\n');
+  assert.equal(rows[0].disposition, 'owned');
+  assert.equal(rows[0].note, 'some note');
+});
+
+test('parseRegisterRows: a row with no note at all (4 columns) still reads disposition "owned"', () => {
+  const rows = parseRegisterRows('file.test.js\tBL-1\t2026-01-01\t9000\n');
+  assert.equal(rows[0].disposition, 'owned');
+  assert.equal(rows[0].note, '');
 });
 
 // ── openTicketIds ────────────────────────────────────────────────────────
@@ -649,6 +682,89 @@ test('a registered (open, owned) row whose file did not run this time is silentl
   assert.equal(result.registeredPoles.length, 0);
   assert.equal(result.passed, true);
   assert.equal(result.verdict, 'ok');
+});
+
+// ── BL-1629: accepted rows need no open owner ────────────────────────────
+
+test('an accepted row naming a CLOSED ticket, still over budget, is reported "accepted" - never unowned-row, never new-pole', () => {
+  const durations = [{ file: 'f.test.js', durationMs: 12600 }];
+  const register = [
+    { file: 'f.test.js', ticket: 'BL-999', firstSeen: '2026-01-01', measuredMs: 12600, disposition: 'accepted', note: 're-measure: 2026-12-17' },
+  ];
+  const NO_OPEN_TICKETS = new Set(); // BL-999 is closed - irrelevant for an accepted row
+
+  const result = checkFileDurationBudget(durations, 7000, register, NO_OPEN_TICKETS);
+
+  assert.equal(result.passed, true);
+  // The per-file verdict is 'accepted' (registeredPoles below); the
+  // run's own HEADLINE verdict still falls through to 'ok' - nothing
+  // failed, watched or went stale, same posture an owned registered
+  // pole already has (see the "reports as ok" test above).
+  assert.equal(result.verdict, 'ok');
+  assert.equal(result.unownedRows.length, 0);
+  assert.equal(result.offenders.length, 0);
+  assert.deepEqual(result.registeredPoles, [
+    { file: 'f.test.js', durationMs: 12600, budgetMs: 7000, kind: 'accepted', ticket: 'BL-999', note: 're-measure: 2026-12-17' },
+  ]);
+});
+
+test('an accepted row is reported "accepted" even when its measurement is comfortably within budget (never silently kept)', () => {
+  const durations = [{ file: 'f.test.js', durationMs: 6000 }]; // under 7000, above the 5600 stale floor
+  const register = [{ file: 'f.test.js', ticket: 'BL-999', firstSeen: '2026-01-01', measuredMs: 6000, disposition: 'accepted', note: 're-measure: 2026-12-17' }];
+
+  const result = checkFileDurationBudget(durations, 7000, register, new Set());
+
+  assert.equal(result.registeredPoles.length, 1);
+  assert.equal(result.registeredPoles[0].kind, 'accepted');
+});
+
+test('an accepted row whose file now measures under 80% of budget is stale-row, exactly like an owned row', () => {
+  const durations = [{ file: 'f.test.js', durationMs: 5000 }]; // 5000 < 0.8*7000=5600
+  const register = [{ file: 'f.test.js', ticket: 'BL-999', firstSeen: '2026-01-01', measuredMs: 12600, disposition: 'accepted', note: 're-measure: 2026-12-17' }];
+
+  const result = checkFileDurationBudget(durations, 7000, register, new Set());
+
+  assert.equal(result.verdict, 'stale-row');
+  assert.deepEqual(result.staleRows, [{ file: 'f.test.js', durationMs: 5000, budgetMs: 7000, kind: 'stale-row', ticket: 'BL-999' }]);
+  assert.equal(result.registeredPoles.length, 0);
+});
+
+// QA bounce D1 (2026-10-06): classifyAcceptedRow returned null when the
+// row's file was not measured this run (renamed, deleted or excluded from
+// the lane), so an accepted row with a possibly-closed rationale ticket
+// printed nothing on any run - "accepted and forgotten", exactly the
+// defect the FIRM "never silent" invariant exists to prevent.
+test('an accepted row whose file was NOT measured this run is reported stale-row, not silently dropped', () => {
+  const durations = [{ file: 'unrelated.test.js', durationMs: 100 }]; // f.test.js never ran this time
+  const register = [
+    { file: 'f.test.js', ticket: 'BL-999', firstSeen: '2026-01-01', measuredMs: 12600, disposition: 'accepted', note: 're-measure: 2026-12-17' },
+  ];
+
+  const result = checkFileDurationBudget(durations, 7000, register, new Set());
+
+  assert.equal(result.verdict, 'stale-row');
+  assert.deepEqual(result.staleRows, [
+    { file: 'f.test.js', durationMs: 12600, budgetMs: 7000, kind: 'stale-row', ticket: 'BL-999' },
+  ]);
+  assert.equal(result.registeredPoles.length, 0, 'an unmeasured row must never be reported as accepted');
+});
+
+test('a file with no register row at all is still new-pole, even though an accepted disposition exists for OTHER rows', () => {
+  const durations = [{ file: 'unregistered.test.js', durationMs: 12600 }];
+  const register = [{ file: 'other.test.js', ticket: 'BL-999', firstSeen: '2026-01-01', measuredMs: 12600, disposition: 'accepted', note: 're-measure: 2026-12-17' }];
+
+  const result = checkFileDurationBudget(durations, 7000, register, new Set());
+
+  assert.equal(result.verdict, 'new-pole');
+  assert.equal(result.offenders.length, 1);
+  assert.equal(result.offenders[0].file, 'unregistered.test.js');
+});
+
+test('formatBudgetOffenders prints an accepted row\'s rationale ticket and re-measure date, not budget-exceeded wording', () => {
+  const text = formatBudgetOffenders([
+    { file: 'f.test.js', durationMs: 12600, budgetMs: 7000, kind: 'accepted', ticket: 'BL-1629', note: 're-measure: 2026-12-17' },
+  ]);
+  assert.equal(text, 'f.test.js: 12.6s accepted (rationale BL-1629, re-measure: 2026-12-17)');
 });
 
 test('verdict priority: new-pole beats unowned-row and stale-row when several kinds occur together', () => {
