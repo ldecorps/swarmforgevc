@@ -257,3 +257,13 @@
   role: QA
   description: "unit row green but its new node --test summary (qa_e2e 2: 367 tests in 41 files) was outside the gather's tail excerpt (vitest stderr last); ran the lane's exact listPipelineTestFiles once by hand to read 367/367"
   detected_at: 2026-10-06
+- category: gather-excerpt-lost-red-message
+  ticket: BL-1843
+  role: QA
+  description: "property lane red on bl1799ReviewStageLocalModelCards; excerpt was onTaskUpdate noise only; ran the file alone once for the verbatim AssertionError (cleaner card 8848 > 8192)"
+  detected_at: 2026-10-06
+- category: land-path-ownership
+  ticket: BL-1843
+  role: QA
+  description: "found by hand that BL-1843's only supersede_lib.bb change rides f604115bcc (subject BL-1963, closed) - the land walk would read it as a closed-owner code stray (LAND_ESCALATE while BL-1787 is paused); bounced for a tip-pure rebuild"
+  detected_at: 2026-10-06

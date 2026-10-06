@@ -1,0 +1,93 @@
+id: BL-2047
+title: "Stamp-off for hotfixes 61c2c53e37 and 171ddbdee0: every local-model card composed over its 8192-character budget after the BL-2038 phase section (890d5b2f24) and is back under it with no rule dropped; BL-563's feature was 6/8 in the live checkout (a fixture root in a byte comparison, live steward scorecards in cold-apply)"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of standing-red hotfixes (a red is high at first sighting,
+# 2026-09-05); BL-1799's feature was 0/4 on main.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review two commits, run one runner and three features.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a card trim and a two-line test fix; nothing to refactor"
+  architect: "prose and a step handler; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "the cards are the living doc and are the change"
+
+# Not a claim of ownership over BL-1799's contract (BL-1251): it is the
+# feature the card-budget red showed in.
+acceptance: specs/features/BL-1799-the-review-stage-roles-get-local-model-cards.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews them and never re-applies them.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bb swarmforge/scripts/test/bl1798_local_model_compact_card_property_runner.bb`:
+     exit 0 (measured at 61c2c53e37: exit 0; the worst composed card,
+     coder with two-pack and the mono-router overlay, 8164 of 8192).
+  2. Read from the gather's acceptance row: BL-1799 4 of 4 (was 0 of 4),
+     BL-1798 8 of 8, BL-563 8 of 8 (was 6 of 8 in the live checkout).
+  3. Read the coder's committed review evidence.
+
+source: |
+  QA note 003872 (2026-10-06): "unowned-red bl1799: cleaner card 8848>8192
+  since loop.note 890d5b2f24". BL-563's two reds were found by the
+  specifier the same pass, running every feature that composes a
+  local-model card.
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Headroom after 61c2c53e37 is 28 characters on the worst card variant:
+  the next addition to swarmforge/roles/local-model/loop.note or a role
+  card must trim first, measured with the property runner above.
+  BL-1816's feature went 3/4 -> 4/4 with the card trim (its brief pointer
+  needed the budget).
+
+description: |
+  ## Status: hotfixes 61c2c53e37 and 171ddbdee0 landed the fixes
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong, and what each hotfix changed
+
+  61c2c53e37: the BL-2038 phase section (890d5b2f24) put every composed
+  local-model card over BL-1798's 8192-character budget (coder 9325,
+  cleaner 8848; coder 8261+ in the two-pack mono-router variant). The
+  section is compressed (each command kept; the phase CLI named once as
+  C), the header's large-file rule absorbs a duplicate read_file bullet,
+  three command-running bullets become one, and several rules are
+  reworded shorter; the coder card loses one sentence. No rule is dropped.
+  Every role is now 7670-8096 plain, 8164 at most in any variant.
+
+  171ddbdee0: BL-563's step handler (1) compared two fixtures' settings
+  byte for byte though each embeds its own root in the tool-miss heal
+  hook - each root is now masked before comparing; (2) let cold-apply rank
+  the live checkout's .swarmforge/model-steward scorecards - it now passes
+  an empty MODEL_STEWARD_STATE_DIR. Scenario text unchanged.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 61c2c53e37` and `git show 171ddbdee0` against the
+     section above; check that no rule of the loop note lost its meaning.
+  2. Run qa_e2e_procedure step 1 and the three features once, output under
+     tmp/.
+  3. Write backlog/evidence/BL-2047-coder-<date>.md with the review result
+     and the run results, and commit it.
+
+assigned_to: coder

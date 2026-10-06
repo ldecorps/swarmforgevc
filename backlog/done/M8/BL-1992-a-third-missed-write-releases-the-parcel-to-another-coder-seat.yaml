@@ -84,3 +84,6 @@ notes: |
   and documenter stay.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: behavior, commit: 403b928e74, evidence: backlog/evidence/BL-1992-QA-20261006.md }

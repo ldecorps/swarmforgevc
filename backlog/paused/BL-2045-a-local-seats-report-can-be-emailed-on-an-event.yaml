@@ -1,0 +1,100 @@
+id: BL-2045
+title: "A local-model seat's health report (local_seat_report_cli.bb) can be emailed to notify_email_to with one command, named for the event that prompted it, at most once per seat per thirty minutes - slice 1 of 2: the human asked to be emailed iq3 reports on noteworthy events"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: one thin bb CLI over two existing libs (local_seat_report_lib,
+# daemon_alarm_lib) plus a small rate-bound record.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one new CLI over existing libs; nothing to deduplicate"
+  architect: "reuses the report and email libraries as they are; no boundary moves"
+  documenter: "no living doc describes this yet; the role-prompt line saying when to run it is the specifier's at land (notes)"
+
+acceptance: specs/features/BL-2045-a-local-seats-report-can-be-emailed-on-an-event.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2045LocalSeatReportEmailSteps.js::registerSteps::binds BL-2045 feature (discovered by suffix, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  You answered "Yes - email me iq3 reports on those events" in the
+  specifier pane on 2026-10-06 (~13:15Z) to: a CLI emailing the iq3 seat's
+  health report to notify_email_to, sent only when a hotfix lands for it or
+  it goes down/recovers, never on a schedule. This slice is the command and
+  its bound; BL-2046 is the automatic down/recovered trigger. FIRM: the body
+  is local_seat_report_cli.bb's own report, the recipient is
+  notify_email_to, and a seat gets at most one such email per thirty
+  minutes. Tap Approve to confirm the details.
+
+invariants:
+  - "The command never sends more than one email per seat per thirty minutes."
+  - "The body is the report local_seat_report_cli.bb prints for the seat, never a second rendering."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-2045 feature 3 of 3
+     (measured at mint: every step unbound).
+  2. On a fixture root (never this checkout's conf), run the command twice
+     for one seat: the first reports sent (or the test-fixture
+     suppression, daemon_alarm_lib's :test-fixture-suppressed), the second
+     reports the thirty-minute suppression.
+  3. Read the hardener's hand-mutant evidence on the rate-bound record.
+
+source: |
+  Coordinator note 017072 (2026-10-06) proposed it on its own initiative
+  (peer_question answer: "No human asked for this specific tool"). The
+  specifier asked the human through role_ask; the human answered, verbatim:
+  "Yes - email me iq3 reports on those events". The question offered:
+  "a small CLI that emails you the iq3 seat's health report
+  (local_seat_report_cli.bb's output) to notify_email_to, sent only when
+  something noteworthy happens to iq3 - a hotfix lands for it or it goes
+  down/recovers - never on a schedule."
+
+notes: |
+  Minted 2026-10-06 by the specifier, slice 1 of 2 (BL-2046 is the
+  automatic down/recovered trigger and depends on this one).
+  The specifier's half (BL-798): when this lands, specifier.prompt's
+  standing-red hotfix section and coordinator.prompt's hotfix handling gain
+  one line - after landing a hotfix for a local-model seat, run this
+  command with --event "hotfix <sha> landed". Land it on QA's land note,
+  never before.
+
+description: |
+  ## What is wanted
+
+  One command, run from the project root:
+
+      bb swarmforge/scripts/local_seat_report_email_cli.bb <project-root> --seat <seat> --event "<text>"
+
+  - It builds the seat's report exactly as `local_seat_report_cli.bb`
+    prints it and emails it to `notify_email_to` from `swarmforge.conf`,
+    with a subject naming the seat, the event text and the seat's state
+    (generating, idle or down).
+  - At most one email per seat per thirty minutes. Inside the bound it
+    sends nothing, prints that the send was suppressed and when the next is
+    allowed, and exits 0. The bound is recorded per seat under
+    `.swarmforge/operator/`.
+  - No `notify_email_to`, or no `RESEND_API_KEY`: nothing is sent, and the
+    output says why (the reasons `daemon_alarm_lib.bb`'s
+    `email-send-reason` already distinguishes).
+
+  ## How (direction, not mandate)
+
+  - Send through `daemon_alarm_lib.bb`'s `send-configured-email!`: it
+    already resolves recipient, sender and key, and suppresses real sends
+    from a test-fixture root.
+  - Get the report text from `local_seat_report_cli.bb`'s own rendering
+    (factor its render into a callable if needed); never a second
+    rendering of the same facts.
+  - Keep the CLI a thin wrapper over an in-process function that takes the
+    post function, so the step handler drives it with a capturing fake
+    (engineering: postFn seams, never env bypasses). Fixtures under
+    mkdtemp (BL-1390).
+
+assigned_to: coder

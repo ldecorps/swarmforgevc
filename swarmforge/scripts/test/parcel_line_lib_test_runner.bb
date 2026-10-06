@@ -229,7 +229,7 @@
           _ (commit! wt "mine.txt" "m\n" "BL-9002: own unlanded work")
           _ (commit! root "main2.txt" "m2\n" "main moves on")
           _ (git root "update-ref" "refs/remotes/origin/main" "HEAD")
-          _ (git wt "merge" "-q" "--no-edit" "--no-ff" "origin/main")
+          _ (git wt "-c" "user.email=t@t" "-c" "user.name=t" "merge" "-q" "--no-edit" "--no-ff" "origin/main")
           head (git wt "rev-parse" "HEAD")
           facts {:root wt :role "coder" :project-root root :intent {:intent :start :ticket "BL-9002"}}]
       (with-out-str (parcel-line-lib/take-up! facts))
@@ -247,7 +247,7 @@
           _ (commit! wt "tmp.txt" "t\n" "unrelated scratch")
           _ (commit! root "main2.txt" "m2\n" "main moves on")
           _ (git root "update-ref" "refs/remotes/origin/main" "HEAD")
-          _ (git wt "merge" "-q" "--no-edit" "--no-ff" "origin/main")
+          _ (git wt "-c" "user.email=t@t" "-c" "user.name=t" "merge" "-q" "--no-edit" "--no-ff" "origin/main")
           main-sha (git root "rev-parse" "origin/main")
           facts {:root wt :role "coder" :project-root root :intent {:intent :start :ticket "BL-9002"}}]
       (with-out-str (parcel-line-lib/take-up! facts))

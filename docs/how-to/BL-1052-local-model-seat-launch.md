@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-05 (BL-1991: a seat that skips its named write is restarted on it)
+Last Updated: 2026-10-06 (BL-1992: a third missed write releases the parcel to another coder seat)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -456,9 +456,48 @@ exit never loops.
 
 No tool call is ever refused by this check, same invariant as the
 repeat guard above — a restart ends the whole process rather than
-denying one call, and `skipLoopDetection` stays on. The third miss
-(leaving the parcel in `in_process` and notifying so another coder seat
-can take it) is a separate feature, BL-1992.
+denying one call, and `skipLoopDetection` stays on.
+
+### A third missed write releases the parcel to another coder seat (BL-1992)
+
+The same missed-write predicate that drives a restart above (`missed-write`:
+the latest compaction names a write/edit, that write hasn't happened since,
+this call isn't it, and it's the third such call) also drives what happens
+once both of BL-1991's restarts are already spent: `restart-decision` and
+`release-decision` share it, gated only by which side of `restart-count <
+max-restarts` (2) the parcel is on. A third miss with restarts still left
+asks for a restart as before; a third miss with no restarts left releases
+the parcel instead — never a third restart, per the human's trial
+(`.swarmforge/operator/INTAKE-iq3-coder-restart-20261005.md`, "On the third
+miss, do not restart").
+
+Releasing sends the coordinator a `note` (via `swarm_handoff.sh`, never a
+direct `inbox/new/` write) naming the released ticket FIRST, and only on a
+confirmed send moves the seat's own `in_process` handoff file to its
+`inbox/abandoned` — the same destination the coordinator's own pull already
+uses, so nothing keeps routing the parcel back to this seat. A refused or
+failed send (e.g. a stable task name whose note would exceed Article 2.2's
+80-character limit, or `swarm_handoff.sh` itself refusing) leaves the parcel
+exactly where it was, in `in_process`, rather than stranding it already
+moved with nothing sent — `release-parcel!` checks the send's own exit
+status, never fires the move on a best-effort basis (2026-10-06 bounce
+D2).
+
+The ticket named is always a bare id, never raw header text embedded
+whole: the handoff's own `task:` header (a bare id or a full
+stable-task-name slug, resolved to its leading id the same way
+`chase_sweep_lib.bb`'s dispatch-trail-ticket-id already does) or, absent
+one, a Work note's `message:` header (`Work BL-1843: ...`, the shape a
+coordinator dispatch note actually uses, with no `task:` header at all) —
+falling back to the literal "its ticket" only when neither names one
+(2026-10-06 bounce D1). A seat that makes the named write on its last
+chance keeps its parcel and no note is sent, same as a restart. Both the
+send and the move use the event's own `cwd`, never this hook process's
+working directory — the same restart-only discipline BL-1991 established,
+now extended to release.
+
+No tool call is ever refused by this check either, same invariant as the
+repeat guard and the restart above.
 
 ### The window gate refuses qwen's compaction dead zone (BL-1840)
 
