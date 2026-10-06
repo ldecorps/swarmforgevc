@@ -10,7 +10,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const { readBacklogFolders } = require('../../../extension/out/panel/backlogReader');
@@ -52,11 +51,11 @@ function knownBlockedHow(token) {
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl591() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 let nextId = 100;
 
@@ -134,6 +133,8 @@ function registerSteps(registry) {
   scoped(/^a fixture backlog with epics and their child tickets$/, (ctx) => {
     ctx.root = mkSocketFixtureRoot('bl591-');
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl591);
     for (const folder of ['active', 'paused', 'hold', 'done']) {
       fs.mkdirSync(path.join(ctx.root, 'backlog', folder), { recursive: true });
     }

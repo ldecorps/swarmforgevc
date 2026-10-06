@@ -11,7 +11,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -21,11 +20,11 @@ const FEATURE = 'BL-963 open-slot nudge consults the promotion gate chain';
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl963() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function ticketYaml(id, { priority, approval = 'approved', deps = [] }) {
   return (
@@ -84,6 +83,8 @@ function registerSteps(registry) {
   scoped(/^a scratch backlog with an open active slot under the effective depth cap$/, (ctx) => {
     ctx.root = mkSocketFixtureRoot('bl963-');
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl963);
     ctx.pausedDir = path.join(ctx.root, 'backlog', 'paused');
     fs.mkdirSync(ctx.pausedDir, { recursive: true });
   });

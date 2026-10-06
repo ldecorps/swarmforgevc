@@ -13,7 +13,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'flow_watchdog_lib.bb');
@@ -25,11 +24,11 @@ const GLOBAL_WARN_MS = 900000; // conf-pinned 15m
 const GLOBAL_ESCALATE_MS = 3600000;
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl827() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function bbEval(expr) {
   const code = `(load-file "${LIB}") (println (pr-str ${expr}))`;
@@ -41,6 +40,8 @@ function bbEval(expr) {
 }
 
 function mkFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl827);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl827-'));
   trackedRoots.push(root);
   fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });

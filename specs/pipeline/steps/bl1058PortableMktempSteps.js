@@ -26,7 +26,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const FEATURE = 'The tmp-cleanup helper initializes under either mktemp dialect';
 
@@ -45,16 +44,18 @@ const KNOWN_ENDINGS = new Set(['reaches its end cleanly', 'exits on a failed com
 const REFUSING = 'refuses-everything';
 
 let trackedPaths = [];
-afterEach(() => {
+function __bl1659Dispose_bl1058() {
   while (trackedPaths.length) {
     fs.rmSync(trackedPaths.pop(), { recursive: true, force: true });
   }
-});
+}
 
 // A sandbox per scenario: its own bin/ for the shim and its own tmp/ for
 // TMPDIR, so the registry and every fixture root land somewhere this file's
 // own afterEach reclaims - never the shared system temp root.
-function newSandbox(dialect) {
+function newSandbox(ctx, dialect) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1058);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1058-'));
   trackedPaths.push(root);
   const bin = path.join(root, 'bin');
@@ -134,11 +135,11 @@ function registerSteps(registry) {
   scoped(/^a mktemp on PATH that accepts only "(.+)" template syntax$/, (ctx, dialect) => {
     assert.ok(KNOWN_DIALECTS.has(dialect),
       `unknown dialect "${dialect}" - the handlers know ${[...KNOWN_DIALECTS.keys()].join(', ')}`);
-    ctx.sandbox = newSandbox(KNOWN_DIALECTS.get(dialect));
+    ctx.sandbox = newSandbox(ctx, KNOWN_DIALECTS.get(dialect));
   });
 
   scoped(/^a mktemp on PATH that fails for every invocation$/, (ctx) => {
-    ctx.sandbox = newSandbox(REFUSING);
+    ctx.sandbox = newSandbox(ctx, REFUSING);
   });
 
   // Fires as a `When` in scenarios 01 and 03 and as a `Given` continuation in

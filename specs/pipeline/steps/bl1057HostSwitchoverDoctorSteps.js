@@ -28,7 +28,6 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const FEATURE = 'The host switchover doctor names what a host move left behind';
 
@@ -59,11 +58,11 @@ const KNOWN_VERDICTS = new Set(['OK', 'STALE', 'MISSING', 'BLOCKED']);
 const OTHER_ROOT = '/Users/ldecorps/projects/swarmforgevc';
 
 let trackedPaths = [];
-afterEach(() => {
+function __bl1659Dispose_bl1057() {
   while (trackedPaths.length) {
     fs.rmSync(trackedPaths.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function run(args, env) {
   return spawnSync('bb', args, { encoding: 'utf8', env: { ...process.env, ...env } });
@@ -84,7 +83,9 @@ function settingsBody(keys, value) {
   return `{\n${keys.map((k) => `  "${k}": "${value}"`).join(',\n')}\n}\n`;
 }
 
-function newHost() {
+function newHost(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1057);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1057-'));
   trackedPaths.push(root);
   const host = {
@@ -148,8 +149,8 @@ function makeUnreadable(host, row) {
   fs.mkdirSync(target, { recursive: true });
 }
 
-function healthyHost() {
-  const host = newHost();
+function healthyHost(ctx) {
+  const host = newHost(ctx);
   for (const row of host.inventory) makeHealthy(host, row);
   return host;
 }
@@ -205,7 +206,7 @@ function registerSteps(registry) {
 
   scoped(/^a swarm checkout whose repo root is the injected root$/, (ctx) => {
     assert.ok(fs.existsSync(DOCTOR), `the command under test is missing: ${DOCTOR}`);
-    ctx.host = healthyHost();
+    ctx.host = healthyHost(ctx);
   });
 
   scoped(/^a declared inventory of host-pinned locations the forge reads$/, (ctx) => {

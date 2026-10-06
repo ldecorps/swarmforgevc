@@ -12,7 +12,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -33,13 +32,15 @@ const KNOWN_ITEM_COUNTS = new Set([1, 8]);
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl978() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function mkFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl978);
   ctx.root = mkSocketFixtureRoot('bl978-');
   trackedRoots.push(ctx.root);
   ctx.activeDir = path.join(ctx.root, 'backlog', 'active');

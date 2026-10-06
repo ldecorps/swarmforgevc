@@ -23,7 +23,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { spawnHandoffSend } = require('./lib/answerHandoffAudit');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_HANDOFF = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_handoff.bb');
@@ -52,11 +51,11 @@ const ROLES = ['coordinator', 'coder', 'cleaner', 'architect', 'hardender', 'doc
 const KNOWN_ROUTING = new Set(['enabled', 'disabled']);
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl991() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function git(cwd, args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
@@ -66,6 +65,8 @@ function git(cwd, args) {
 }
 
 function mkFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl991);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl991-'));
   trackedRoots.push(root);
   git(root, ['init', '-q']);

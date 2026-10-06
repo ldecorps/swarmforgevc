@@ -12,7 +12,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 const {
   mkSocketFixtureRoot,
   SOCKET_PATH_GUARD_LIMIT,
@@ -71,16 +70,18 @@ function knownVerdict(token) {
 }
 
 let trackedRoots = [];
-function track(root) {
+function track(ctx, root) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1290);
   trackedRoots.push(root);
   return root;
 }
 
-afterEach(() => {
+function __bl1659Dispose_bl1290() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
@@ -93,7 +94,7 @@ function registerSteps(registry) {
   // ── Scenario Outline 01 ──────────────────────────────────────────────────
   scoped(/^a step file that builds a control socket rooted at (.+)$/, (ctx, base) => {
     const { body } = knownBase(base);
-    const root = track(mkSocketFixtureRoot('bl1290-outline-'));
+    const root = track(ctx, mkSocketFixtureRoot('bl1290-outline-'));
     ctx.bl1290.genFile = path.join(root, 'generatedSteps.js');
     fs.writeFileSync(ctx.bl1290.genFile, body);
   });
@@ -134,7 +135,7 @@ function registerSteps(registry) {
   // The real converted prefixes, measured against the real limit - not a
   // green Linux run, per the ticket's own approval_context.
   scoped(/^a step file converted to the short socket-fixture root$/, (ctx) => {
-    ctx.bl1290.convertedRoots = CONVERTED_PREFIXES.map((prefix) => track(mkSocketFixtureRoot(prefix)));
+    ctx.bl1290.convertedRoots = CONVERTED_PREFIXES.map((prefix) => track(ctx, mkSocketFixtureRoot(prefix)));
   });
 
   scoped(/^its control socket path is measured$/, (ctx) => {

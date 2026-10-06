@@ -9,7 +9,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 const { findUnresolvedCitations } = require('./lib/constitutionDocCitations');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -18,13 +17,15 @@ const REAL_ARTICLES_DIR = path.join(REPO_ROOT, 'swarmforge', 'constitution', 'ar
 const FEATURE = 'A document the constitution cites as authority exists on main';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl945() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl945);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   return root;
@@ -68,7 +69,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^an article citing a document present on a branch but absent from main$/,
     (ctx) => {
-      const root = mkTmp('sfvc-bl945-');
+      const root = mkTmp(ctx, 'sfvc-bl945-');
       ctx.fixtureArticlesDir = root;
       ctx.fixtureRepoRoot = root;
       ctx.citingFile = 'local-engineering.prompt';
@@ -118,7 +119,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^an article citing "([^"]*)"$/,
     (ctx, citation) => {
-      const root = mkTmp('sfvc-bl945-');
+      const root = mkTmp(ctx, 'sfvc-bl945-');
       ctx.fixtureArticlesDir = root;
       ctx.fixtureRepoRoot = root;
       fs.writeFileSync(path.join(root, 'local-engineering.prompt'), `See \`${citation}\`.\n`);

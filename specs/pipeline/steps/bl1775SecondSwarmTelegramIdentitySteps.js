@@ -12,7 +12,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 // BL-1636: every throwaway root this file mkdtemps goes through the shared
 // helper (registers it for reaping) rather than a bare fs.mkdtempSync.
 const { mkTmpDir } = require('../../../extension/test/helpers/tmpDir');
@@ -29,13 +28,15 @@ const KNOWN_PROCESSES = new Set([
 
 let trackedDirs = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl1775() {
   while (trackedDirs.length) {
     fs.rmSync(trackedDirs.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function mkTrackedDir(prefix) {
+function mkTrackedDir(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1775);
   const dir = fs.realpathSync(mkTmpDir(prefix));
   trackedDirs.push(dir);
   return dir;
@@ -65,8 +66,8 @@ function fixtureEnv(extra) {
   return { ...env, ...extra };
 }
 
-function mkFixtureHome() {
-  const home = mkTrackedDir('bl1775-home-');
+function mkFixtureHome(ctx) {
+  const home = mkTrackedDir(ctx, 'bl1775-home-');
   fs.mkdirSync(path.join(home, '.swarmforge', 'fleet', 'primary'), { recursive: true });
   return home;
 }
@@ -86,8 +87,8 @@ function writeFleetCreds(home, swarmName, token, chat) {
   fs.writeFileSync(path.join(dir, 'telegram.json'), JSON.stringify({ botToken: token, chatId: chat }));
 }
 
-function mkTargetRoot(swarmName) {
-  const root = mkTrackedDir('bl1775-target-');
+function mkTargetRoot(ctx, swarmName) {
+  const root = mkTrackedDir(ctx, 'bl1775-target-');
   for (const dir of ['swarmforge/roles', 'swarmforge/packs', '.swarmforge/launch', '.swarmforge/prompts']) {
     fs.mkdirSync(path.join(root, dir), { recursive: true });
   }
@@ -159,14 +160,14 @@ function registerSteps(registry) {
 
   // ── Background ──────────────────────────────────────────────────────
   scoped(/^a fixture home whose \.zshenv exports TELEGRAM_BOT_TOKEN "([^"]+)" and TELEGRAM_CHAT_ID "([^"]+)"$/, (ctx, token, chat) => {
-    ctx.home = mkFixtureHome();
+    ctx.home = mkFixtureHome(ctx);
     writeZshenv(ctx.home, token, chat);
     ctx.primaryToken = token;
     ctx.primaryChat = chat;
   });
 
   scoped(/^the fixture home records a primary root that is not the fixture target$/, (ctx) => {
-    ctx.target = mkTargetRoot('primary');
+    ctx.target = mkTargetRoot(ctx, 'primary');
     recordPrimaryRoot(ctx.home, `/nonexistent/other/primary/root-${process.pid}`);
   });
 
@@ -178,7 +179,7 @@ function registerSteps(registry) {
       // Rewrite the target root's conf with the real swarm name (the
       // Background already minted one for "primary" - this scenario
       // needs its own).
-      ctx.target = mkTargetRoot(swarmName);
+      ctx.target = mkTargetRoot(ctx, swarmName);
       writeFleetCreds(ctx.home, swarmName, token, chat);
       ctx.expectToken = token;
       ctx.expectChat = chat;
@@ -187,7 +188,7 @@ function registerSteps(registry) {
 
   scoped(/^the fixture target's swarm is named "([^"]+)" with no fleet creds file$/, (ctx, swarmName) => {
     ctx.swarmName = swarmName;
-    ctx.target = mkTargetRoot(swarmName);
+    ctx.target = mkTargetRoot(ctx, swarmName);
     ctx.expectToken = '';
     ctx.expectChat = '';
   });
@@ -195,7 +196,7 @@ function registerSteps(registry) {
   // ── Scenario 03's own Given (overrides the Background's record) ───────
   scoped(/^the fixture target is the recorded primary root$/, (ctx) => {
     ctx.swarmName = 'primary';
-    ctx.target = mkTargetRoot('primary');
+    ctx.target = mkTargetRoot(ctx, 'primary');
     recordPrimaryRoot(ctx.home, ctx.target);
     ctx.expectToken = ctx.primaryToken;
     ctx.expectChat = ctx.primaryChat;

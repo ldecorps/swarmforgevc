@@ -15,7 +15,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -59,7 +58,7 @@ const WAIT_BOUND_MS = 5000;
 
 let trackedRoots = [];
 let trackedPids = [];
-afterEach(() => {
+function __bl1659Dispose_bl967() {
   while (trackedPids.length) {
     try {
       process.kill(trackedPids.pop(), 'SIGKILL');
@@ -70,9 +69,11 @@ afterEach(() => {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function initRoot(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl967);
   ctx.root = mkSocketFixtureRoot('bl967-cycle-');
   trackedRoots.push(ctx.root);
   const sf = path.join(ctx.root, '.swarmforge');
@@ -107,6 +108,8 @@ function cycleEndSeen(ctx, cycle) {
 // Runs the daemon until the given cycle's END heartbeat lands (or the
 // deadline passes), then stops it cleanly via the stop file.
 async function runDaemonUntilCycleEnd(ctx, cycle, deadlineMs) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl967);
   const outFd = fs.openSync(ctx.daemonOut, 'a');
   const child = spawn('bb', [HANDOFFD, ctx.root], {
     env: {

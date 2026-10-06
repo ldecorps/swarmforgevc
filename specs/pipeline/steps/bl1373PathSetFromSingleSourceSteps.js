@@ -8,7 +8,6 @@
 // The implementation reuses the same fixture pattern as BL-631 scenario 07.
 
 const assert = require('node:assert/strict');
-const { afterEach } = require('node:test');
 const {
   mkFixtureRepo,
   commitFile,
@@ -19,10 +18,6 @@ const {
 } = require('./lib/babysitterSweepFixtureHelpers');
 
 const FEATURE = 'The sweep reads the path set it is told';
-
-afterEach(() => {
-  reapAndRemove();
-});
 
 function registerSteps(registry) {
   // Background
@@ -38,6 +33,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the single source reports a path set the sweep has never seen$/,
     (ctx) => {
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(reapAndRemove);
       ctx.root = mkFixtureRepo('sfvc-bl1373-');
       ctx.stubPaths = ['docs/custom-secret.md', 'internal/restricted/'];
       ctx.stubScript = createStubScript(ctx.stubPaths, 'sfvc-bl1373-stub-');
@@ -76,6 +73,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the single source reports a path set that excludes a path$/,
     (ctx) => {
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(reapAndRemove);
       ctx.root = mkFixtureRepo('sfvc-bl1373-');
       ctx.stubPaths = ['docs/custom-secret.md'];
       ctx.stubScript = createStubScript(ctx.stubPaths, 'sfvc-bl1373-stub-');

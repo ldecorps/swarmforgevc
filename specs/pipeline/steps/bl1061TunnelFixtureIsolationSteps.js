@@ -22,7 +22,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const FEATURE = 'BL-1061 a tunnel-ownership fixture never binds a name the host is already serving';
 
@@ -52,18 +51,20 @@ const KNOWN_TARGETS = new Set(['own fixture', 'pre-existing']);
 
 let trackedPids = [];
 let trackedDirs = [];
-afterEach(() => {
+function __bl1659Dispose_bl1061() {
   while (trackedPids.length) {
     try { process.kill(trackedPids.pop(), 'SIGKILL'); } catch { /* already gone */ }
   }
   while (trackedDirs.length) {
     fs.rmSync(trackedDirs.pop(), { recursive: true, force: true });
   }
-});
+}
 
 // A harmless stand-in with a real cloudflared-shaped command line, under a
 // temp path so the leaked-fixture sweep can find it by path and never by name.
-function spawnFixtureTunnel(name) {
+function spawnFixtureTunnel(ctx, name) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1061);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1061-accept-'));
   trackedDirs.push(dir);
   const bin = path.join(dir, 'cloudflared');
@@ -122,7 +123,7 @@ function registerSteps(registry) {
     // the sweep (correctly) treats it as a live run's and keeps it. Until
     // 2026-10-05 the scenario passed only because the sweep selected a
     // spawner's pre-exec line as having no known creator (BL-1974).
-    ctx.leakedPid = spawnFixtureTunnel(nameWithCreator(deadPid()));
+    ctx.leakedPid = spawnFixtureTunnel(ctx, nameWithCreator(deadPid()));
     assert.ok(isAlive(ctx.leakedPid), 'the leaked-fixture stand-in did not start');
   });
 
@@ -140,7 +141,7 @@ function registerSteps(registry) {
       `unknown target "${target}" - the handlers know ${[...KNOWN_TARGETS].join(', ')}`);
     ctx.target = target;
     ctx.ownName = assertFixtureTunnelName(fixtureTunnelName('own'));
-    ctx.ownPid = spawnFixtureTunnel(ctx.ownName);
+    ctx.ownPid = spawnFixtureTunnel(ctx, ctx.ownName);
     // The candidate table any reap would see: this run's own fixture plus the
     // pre-existing process the run did not start.
     const table = [fixtureLine(ctx.ownPid, ctx.ownName), ctx.preexisting.line];

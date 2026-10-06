@@ -21,7 +21,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -30,13 +29,15 @@ const SWARM_HANDOFF = path.join(SCRIPTS_DIR, 'swarm_handoff.bb');
 const FEATURE = 'A QA approval names the commit QA made, never the bare commit it received';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl950() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl950);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   return root;
@@ -80,7 +81,7 @@ function writeRoles(ctx) {
 }
 
 function mkFixture(ctx) {
-  ctx.root = mkTmp('sfvc-bl950-');
+  ctx.root = mkTmp(ctx, 'sfvc-bl950-');
   git(ctx.root, ['init', '-q']);
   git(ctx.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'received work']);
   const received = gitOut(ctx.root, ['rev-parse', '--short=10', 'HEAD']);

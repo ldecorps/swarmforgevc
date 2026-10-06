@@ -14,7 +14,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -39,7 +38,7 @@ function baseEnv() {
   return env;
 }
 
-function cleanup() {
+function __bl1659Dispose_bl1498() {
   while (trackedPids.length) {
     const pid = trackedPids.pop();
     try {
@@ -57,7 +56,9 @@ function cleanup() {
 }
 
 // ── Scenario 01: hostile ZDOTDIR ────────────────────────────────────────────
-function stageHostileZdotdir() {
+function stageHostileZdotdir(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1498);
   const zdotdir = fs.realpathSync(fs.mkdtempSync(path.join('/tmp', 'bl1498-zdotdir-')));
   trackedZdotdirs.push(zdotdir);
   const hostileBin = path.join(zdotdir, 'bin');
@@ -78,6 +79,8 @@ function runSupervisorTest(env) {
 
 // ── Scenario 02: real --check-once over a mkdtemp fixture ──────────────────
 function mkSupervisorFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1498);
   ctx.root = fs.realpathSync(mkSocketFixtureRoot('bl1498-'));
   trackedRoots.push(ctx.root);
   ctx.daemonDir = path.join(ctx.root, '.swarmforge', 'daemon');
@@ -167,7 +170,7 @@ function registerSteps(registry) {
   scoped(
     /^a zsh startup directory in the harness environment whose startup file prepends a directory holding a tmux that logs nowhere$/,
     (ctx) => {
-      ctx.hostileZdotdir = stageHostileZdotdir();
+      ctx.hostileZdotdir = stageHostileZdotdir(ctx);
     }
   );
 
@@ -237,15 +240,5 @@ function registerSteps(registry) {
     assert.ok(!/^FAIL:/m.test(ctx.testResult.output), `a case failed:\n${ctx.testResult.output}`);
   });
 }
-
-// A live placeholder daemon (scenario 02's "younger" example) is deliberately
-// left alive by the assertion under test, so it is never reaped by anything
-// the daemon itself does. `process.on('exit', cleanup)` cannot reap it
-// either: an un-awaited live child keeps the event loop non-empty, so
-// 'exit' never fires and the whole node --test process hangs until the
-// runner's own outer timeout SIGKILLs it - every scenario reports "ok" but
-// the run still reports failure (bl977SupervisorProgressSteps.js's afterEach
-// shape, not process-exit, is what actually reaps between cases).
-afterEach(cleanup);
 
 module.exports = { registerSteps };

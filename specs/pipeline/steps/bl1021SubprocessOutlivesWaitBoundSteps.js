@@ -27,7 +27,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -61,7 +60,7 @@ const GAP_TICKET_ID = 'BL-1021';
 let trackedRoots = [];
 let trackedPids = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl1021() {
   while (trackedPids.length) {
     try {
       process.kill(trackedPids.pop(), 'SIGKILL');
@@ -77,7 +76,7 @@ afterEach(() => {
     reapRecordedPids(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 function reapRecordedPids(root) {
   const pidFile = path.join(root, 'holder.pids');
@@ -98,6 +97,8 @@ function realBbPath() {
 }
 
 function initRoot(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1021);
   ctx.root = mkSocketFixtureRoot('bl1021-bound-');
   trackedRoots.push(ctx.root);
 
@@ -198,6 +199,8 @@ function cycleEndSeen(ctx, cycle) {
 }
 
 async function runDaemonUntilCycleEnd(ctx, cycle, deadlineMs) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1021);
   const outFd = fs.openSync(ctx.daemonOut, 'a');
   const child = spawn(ctx.realBb, [HANDOFFD, ctx.root], {
     env: {

@@ -13,7 +13,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
-const { after } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -99,19 +98,12 @@ function buildPgrepStub() {
   return dir;
 }
 
-// BL-1832 hardening (same posture as BL-633's own after()-based sweep):
-// a scenario ends on different Then steps (scenario 02 has two, 03/04 have
-// only one), so cleanup cannot live inline in any single assertion step
-// without either firing too early (destroying fixture state a LATER Then
-// still needs) or leaking on a throw. Every state object this file creates
-// is tracked and swept once, after every test in the generated entry point
-// has run, regardless of which step it ended on or whether one threw.
-const pendingCleanups = new Set();
-after(() => {
-  for (const cleanup of pendingCleanups) cleanup();
-  pendingCleanups.clear();
-});
-
+// BL-1832 hardening: a scenario ends on different Then steps (scenario 02
+// has two, 03/04 have only one), so cleanup cannot live inline in any single
+// assertion step without either firing too early (destroying fixture state
+// a LATER Then still needs) or leaking on a throw. BL-1659: registered
+// through the runtime's own per-scenario disposal instead, at the step that
+// first builds this scenario's state.
 function ensureState(ctx) {
   if (!ctx.bl1832) {
     ctx.bl1832 = { root: null, sock: null, sockDir: null, fakeBin: null, rotationRouter: false, standing: false };
@@ -128,7 +120,8 @@ function ensureState(ctx) {
       if (st.fakeBin) fs.rmSync(st.fakeBin, { recursive: true, force: true });
       if (st.root) fs.rmSync(st.root, { recursive: true, force: true });
     };
-    pendingCleanups.add(cleanup);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(cleanup);
   }
   return ctx.bl1832;
 }

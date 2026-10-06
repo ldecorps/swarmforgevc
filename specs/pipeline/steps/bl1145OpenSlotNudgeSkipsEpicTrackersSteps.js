@@ -7,7 +7,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -19,11 +18,11 @@ const FEATURE = 'open-slot nudge skips type epic trackers';
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl1145() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function yamlTicket(id, fields) {
   const lines = [`id: ${id}`, 'title: "fixture"'];
@@ -97,6 +96,8 @@ function registerSteps(registry) {
   scoped(/^a paused type: epic ranks above all non-epic paused tickets$/, (ctx) => {
     ctx.root = mkSocketFixtureRoot('bl1145-');
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1145);
     ctx.pausedDir = path.join(ctx.root, 'backlog', 'paused');
     fs.mkdirSync(ctx.pausedDir, { recursive: true });
     writePaused(
@@ -143,6 +144,8 @@ function registerSteps(registry) {
   scoped(/^a paused epic with priority 1$/, (ctx) => {
     ctx.root = mkSocketFixtureRoot('bl1145b-');
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1145);
     ctx.pausedDir = path.join(ctx.root, 'backlog', 'paused');
     fs.mkdirSync(ctx.pausedDir, { recursive: true });
     writePaused(
@@ -187,6 +190,8 @@ function registerSteps(registry) {
   scoped(/^promote_and_route_next is asked to promote a type: epic id$/, (ctx) => {
     ctx.root = mkSocketFixtureRoot('bl1145c-');
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1145);
     const paused = path.join(ctx.root, 'backlog', 'paused');
     fs.mkdirSync(paused, { recursive: true });
     fs.mkdirSync(path.join(ctx.root, 'backlog', 'active'), { recursive: true });

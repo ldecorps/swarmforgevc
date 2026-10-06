@@ -11,7 +11,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { trackedTmpRoot } = require('./lib/fixtureReaper');
 
@@ -24,7 +23,7 @@ const FEATURE = 'BL-1673 The lane scan never counts the process doing the scanni
 
 let trackedChildren = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl1673() {
   while (trackedChildren.length) {
     const child = trackedChildren.pop();
     if (child.pid) {
@@ -35,7 +34,7 @@ afterEach(() => {
       }
     }
   }
-});
+}
 
 // Root creation goes through fixtureReaper's trackedTmpRoot() (BL-1636's
 // own standing unregistered-mkdtemp guard) - a bare fs.mkdtempSync here
@@ -81,6 +80,8 @@ function registerSteps(registry) {
     } else if (argvShape === 'names nothing while a run_acceptance.sh child runs with its cwd under the worktree') {
       const child = spawn('bash', ['-c', 'exec -a run_acceptance.sh sleep 30'], { cwd: ctx.worktree, stdio: 'ignore' });
       trackedChildren.push(child);
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(__bl1659Dispose_bl1673);
       execFileSync('sleep', ['0.3']);
       ctx.printedOut = runLaneRunningViaFile(ctx.worktree);
     } else {

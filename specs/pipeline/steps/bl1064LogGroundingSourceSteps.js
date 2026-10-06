@@ -16,7 +16,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 
 const FEATURE = 'BL-1064 every log literal is grounded against the source that writes it';
 
@@ -40,11 +39,11 @@ const DIAGNOSTICS_WRITER = path.join(REPO_ROOT, 'extension', 'src', 'tools', 'te
 const KNOWN_LITERALS = new Set(['front-desk-supervisor.log', 'front-desk-diagnostics.log']);
 
 let trackedPaths = [];
-afterEach(() => {
+function __bl1659Dispose_bl1064() {
   while (trackedPaths.length) {
     fs.rmSync(trackedPaths.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function logSpans(row) {
   return extractBacktickSpans(row['Log location']).filter((s) => s.startsWith('.') || s.includes('/'));
@@ -76,6 +75,8 @@ function registerSteps(registry) {
   scoped(/^a row carrying a log literal no verification source contains$/, (ctx) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1064-'));
     trackedPaths.push(dir);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1064);
     const launcher = path.join(dir, 'fixture_launcher.sh');
     fs.writeFileSync(launcher, '#!/usr/bin/env bash\necho nothing-here\n');
     ctx.row = {

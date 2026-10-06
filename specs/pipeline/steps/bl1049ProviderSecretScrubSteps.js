@@ -22,7 +22,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const fixtureReaper = require('./lib/fixtureReaper');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
@@ -67,7 +66,7 @@ const KNOWN_OUTCOMES = new Map([
 const KNOWN_VARIABLES = new Set([...HOST_SECRETS, ...Object.keys(PASSTHROUGHS)]);
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl1049() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     // reap() before rmSync so the fixture's tmux server is torn down, not
@@ -76,9 +75,11 @@ afterEach(() => {
     fixtureReaper.reap(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 function mkFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1049);
   const root = mkSocketFixtureRoot('sfvc-bl1049-');
   ctx.root = root;
   ctx.sock = path.join(root, 'bl1049.sock');

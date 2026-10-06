@@ -14,7 +14,6 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
-const { after } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCHEMA_DOC_PATH = path.join(REPO_ROOT, 'swarmforge', 'backlog-schema.md');
@@ -55,16 +54,13 @@ function bl590TicketPath() {
 
 // BL-633 hardening: scenario 04's fixture root was previously removed only in
 // the scenario's last step, so a throw in an earlier step (e.g. "the audit
-// exits zero" failing) left the mkdtemp directory behind. Track every root
-// created by this file and sweep them all once, after every test in the
-// generated entry point has run, regardless of which step failed.
-const pendingFixtureRoots = new Set();
-after(() => {
-  for (const root of pendingFixtureRoots) {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-  pendingFixtureRoots.clear();
-});
+// exits zero" failing) left the mkdtemp directory behind. BL-1659: registered
+// through the runtime's own per-scenario disposal at the step that creates
+// the root, so it is removed even when a later step in the SAME scenario
+// throws.
+function __bl1659Dispose_bl633(root) {
+  fs.rmSync(root, { recursive: true, force: true });
+}
 
 // Collapses markdown line-wrapping into single spaces so a substring check
 // doesn't depend on exactly where a paragraph happens to wrap (same
@@ -157,7 +153,8 @@ function registerSteps(registry) {
   // ── Scenario 04: an existing ticket reader tolerates the new field ──────
   registry.define(/^a hygienic backlog fixture with two tickets identical except one declares an invariants list$/, (ctx) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl633-hygiene-'));
-    pendingFixtureRoots.add(root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(() => __bl1659Dispose_bl633(root));
     const activeDir = path.join(root, 'backlog', 'active');
     fs.mkdirSync(activeDir, { recursive: true });
     const shared = 'title: "hygienic fixture ticket"\ntype: feature\nepic: test-epic\nmilestone: M8\npriority: 5\nmutation_cost: low\n';

@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { after, afterEach } = require('node:test');
 
 const { summarizeSdkProgressLine } = require('../../../extension/out/bridge/cursorBridgeProgress');
 const { endActiveRun } = require('../../../extension/out/bridge/cursorBridgeRunTracker');
@@ -38,13 +37,7 @@ let restoreExpediteSpawn;
 let restoreReexpediteSpawn;
 let restoreRedeploySpawn;
 
-afterEach(() => {
-  pendingPromptRelease?.();
-  pendingPromptRelease = undefined;
-  endActiveRun();
-});
-
-after(() => {
+function __bl1659Dispose_bl696() {
   pendingPromptRelease?.();
   pendingPromptRelease = undefined;
   endActiveRun();
@@ -60,7 +53,7 @@ after(() => {
     redeployModule.startRedeployRun = restoreRedeploySpawn;
     restoreRedeploySpawn = undefined;
   }
-});
+}
 
 function mkRoot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl696-tg-op-'));
@@ -73,6 +66,10 @@ function inbound(text) {
 }
 
 function mkCtx(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  if (!ctx.__disposables.includes(__bl1659Dispose_bl696)) {
+    ctx.__disposables.push(__bl1659Dispose_bl696);
+  }
   const root = ctx.root ?? mkRoot();
   ctx.root = root;
   ctx.posts = ctx.posts ?? [];
@@ -168,6 +165,8 @@ function writeRedeployScript(root) {
 
 function registerSteps(registry) {
   registry.defineScoped(/^the Cursor Remote Telegram topic is bound for the principal$/, (ctx) => {
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl696);
     ctx.root = mkRoot();
     ctx.posts = [];
     ctx.replyTargets = [];

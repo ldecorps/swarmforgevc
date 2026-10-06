@@ -13,7 +13,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'expedite_cli.bb');
@@ -68,9 +67,9 @@ function reapDecoys(ctx) {
   }
 }
 
-afterEach(() => {
+function __bl1659Dispose_bl782() {
   reapDecoys(null);
-});
+}
 
 function spawnDecoy(argv) {
   const child = spawn('bash', ['-c', `exec -a ${JSON.stringify(argv)} sleep 600`], {
@@ -140,6 +139,8 @@ function registerSteps(registry) {
     /^expedite_cli is auditing project root "([^"]+)"$/,
     (ctx, root) => {
       reapDecoys(ctx);
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(__bl1659Dispose_bl782);
       ctx.auditRoot = root;
     },
     FEATURE_NAME,

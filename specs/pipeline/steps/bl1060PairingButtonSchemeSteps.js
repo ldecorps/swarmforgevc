@@ -21,7 +21,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 
 const FEATURE = 'A Telegram button carries a URL Telegram will accept';
 
@@ -73,17 +72,19 @@ const KNOWN_MINI_APPS = new Map([
 ]);
 
 let trackedPaths = [];
-afterEach(() => {
+function __bl1659Dispose_bl1060() {
   while (trackedPaths.length) {
     fs.rmSync(trackedPaths.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function buttonUrls(keyboard) {
   return keyboard.flat().map((b) => b.url ?? b.webAppUrl).filter(Boolean);
 }
 
-function setupProjectRoot() {
+function setupProjectRoot(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1060);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1060-'));
   trackedPaths.push(root);
   const opDir = path.join(root, '.swarmforge', 'operator');
@@ -199,7 +200,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^the tunnel notifier runs for a rotated tunnel URL$/, async (ctx) => {
-    const root = setupProjectRoot();
+    const root = setupProjectRoot(ctx);
     const env = {
       TELEGRAM_BOT_TOKEN: BOT_TOKEN,
       TELEGRAM_CHAT_ID: CHAT_ID,

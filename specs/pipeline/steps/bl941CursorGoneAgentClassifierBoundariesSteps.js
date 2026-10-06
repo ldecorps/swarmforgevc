@@ -7,7 +7,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const SDK_PATH = path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', '@cursor', 'sdk');
@@ -33,7 +32,7 @@ function parseGoneAgentToken(token) {
 }
 
 let restoreFns = [];
-afterEach(() => {
+function __bl1659Dispose_bl941() {
   while (restoreFns.length) {
     const fn = restoreFns.pop();
     try {
@@ -42,9 +41,11 @@ afterEach(() => {
       // best-effort cleanup
     }
   }
-});
+}
 
-function mkRoot() {
+function mkRoot(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl941);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl941-'));
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
   restoreFns.push(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -80,7 +81,7 @@ function registerSteps(registry) {
   const scoped = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE);
 
   scoped(/^the Cursor bridge has a stored agentId from an earlier session$/, (ctx) => {
-    ctx.root = mkRoot();
+    ctx.root = mkRoot(ctx);
     writeState(ctx.root, STORED_AGENT_ID);
     ctx.storedAgentId = STORED_AGENT_ID;
 

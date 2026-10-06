@@ -17,7 +17,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -33,13 +32,15 @@ const ALARM_LIB = path.join(SCRIPTS, 'daemon_alarm_lib.bb');
 // already proved for this runtime - every mkdtemp'd root is swept after
 // EVERY step, terminal or not.
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl976() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl976);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   return root;
@@ -77,14 +78,14 @@ const SUPERVISOR_STUB = `(require '[babashka.fs :as fs])
 
 function ensureBriefingsDir(ctx) {
   if (!ctx.briefingsDir) {
-    ctx.briefingsDir = mkTmp('aps-bl976-briefings-');
+    ctx.briefingsDir = mkTmp(ctx, 'aps-bl976-briefings-');
   }
   return ctx.briefingsDir;
 }
 
 function ensureProjectRoot(ctx) {
   if (!ctx.projectRoot) {
-    ctx.projectRoot = mkTmp('aps-bl976-root-');
+    ctx.projectRoot = mkTmp(ctx, 'aps-bl976-root-');
     ctx.envFilePath = path.join(ctx.projectRoot, '.swarmforge', 'operator', 'daemon.env');
     ctx.confFile = path.join(ctx.projectRoot, 'swarmforge.conf');
     fs.writeFileSync(ctx.confFile, 'config notify_email_to operator@example.com\n');
@@ -108,7 +109,7 @@ function runGeneration(ctx, keyState, sweeps) {
 
 function launchDaemon(ctx) {
   ensureProjectRoot(ctx);
-  ctx.stubDir = mkTmp('aps-bl976-stubs-');
+  ctx.stubDir = mkTmp(ctx, 'aps-bl976-stubs-');
   fs.writeFileSync(path.join(ctx.stubDir, 'handoffd_stub.bb'), HANDOFFD_STUB);
   fs.writeFileSync(path.join(ctx.stubDir, 'supervisor_stub.bb'), SUPERVISOR_STUB);
   ctx.probeFile = path.join(ctx.projectRoot, 'probe');

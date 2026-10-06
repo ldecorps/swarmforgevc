@@ -195,3 +195,25 @@ test('checkHandlerBudgets non-vacuity: the allowlist never exempts a behavioral 
   assert.equal(violations.length, 1, 'expected the allowlist to leave a behavioral violation in place');
   assert.match(violations[0].reason, /lists a directory at module load/);
 });
+
+test('BL-1659 non-vacuity: a handler that registered a test runner at module load is named, never silently passed', () => {
+  const rows = [
+    { file: 'fakeNodeTestSteps.js', ms: 1, listedDir: false, spawnedProcess: false, registeredTestRunner: true, error: null },
+  ];
+  const violations = checkHandlerBudgets(rows, { budgetMs: PER_HANDLER_BUDGET_MS });
+  assert.equal(violations.length, 1, 'expected the registeredTestRunner row to be named');
+  assert.equal(violations[0].file, 'fakeNodeTestSteps.js');
+  assert.match(violations[0].reason, /registers a test runner/);
+});
+
+test('BL-1659 non-vacuity: the allowlist never exempts a node:test registration, same as the other behavioral violations', () => {
+  const rows = [
+    { file: 'fakeNodeTestSteps.js', ms: 1, listedDir: false, spawnedProcess: false, registeredTestRunner: true, error: null },
+  ];
+  const violations = checkHandlerBudgets(rows, {
+    budgetMs: PER_HANDLER_BUDGET_MS,
+    allowlist: new Map([['fakeNodeTestSteps.js', { ticket: 'BL-0000', reason: 'not a real exemption' }]]),
+  });
+  assert.equal(violations.length, 1, 'expected the allowlist to leave a node:test registration in place');
+  assert.match(violations[0].reason, /registers a test runner/);
+});

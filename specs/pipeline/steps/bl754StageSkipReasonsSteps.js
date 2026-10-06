@@ -8,7 +8,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const {
   writeAcceptanceContractFixture,
   DEFAULT_FEATURE_PATH: ACCEPTANCE_FEATURE_PATH,
@@ -26,11 +25,11 @@ const ARCHITECT_REASON = 'covered';
 const SIMPLE_REASON = 'no test';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl754() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function git(cwd, args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
@@ -40,6 +39,8 @@ function git(cwd, args) {
 }
 
 function mkFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl754);
   if (ctx.root) return ctx.root;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl754-'));
   trackedRoots.push(root);

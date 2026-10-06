@@ -27,7 +27,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { copyScriptClosure } = require('../../../extension/test/helpers/pinnedRepoFixture');
 
 const FEATURE = 'a promotion never bypasses an integrity commit that refused';
@@ -79,11 +78,11 @@ const ACCEPTING_CLI = [
 // fixture root" cleanup silently misses because it deliberately lives
 // outside that root.
 let trackedPaths = [];
-afterEach(() => {
+function __bl1659Dispose_bl1028() {
   while (trackedPaths.length) {
     fs.rmSync(trackedPaths.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function git(root, args) {
   return spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
@@ -94,6 +93,8 @@ function gitOut(root, args) {
 }
 
 function mkFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1028);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1028-'));
   trackedPaths.push(root);
   ctx.root = root;

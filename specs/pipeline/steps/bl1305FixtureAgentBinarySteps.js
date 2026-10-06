@@ -24,7 +24,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 const fixtureReaper = require('./lib/fixtureReaper');
@@ -42,13 +41,13 @@ const {
 // not a backstop for the throw path here - it is the ONLY teardown those
 // two scenarios get.
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl1305() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     fixtureReaper.reap(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 // How long to let a pane command settle before reading what it wrote. The
 // pane writes a file and exits; this is a bounded wait, never a bare sleep
@@ -115,6 +114,8 @@ function registerSteps(registry) {
     fs.writeFileSync(path.join(ctx.root, '.swarmforge', 'tmux-socket'), path.join(ctx.root, 'p.sock'));
     fixtureReaper.track(ctx.root);
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1305);
   });
 
   // ── 01 ───────────────────────────────────────────────────────────────

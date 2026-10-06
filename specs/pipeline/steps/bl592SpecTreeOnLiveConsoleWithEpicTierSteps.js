@@ -9,7 +9,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 // BL-1658: the path only - the actual require(JSDOM_MODULE) happens inside
 // each function that builds a DOM (bl1046/bl1160/bl1153's own pattern), so
 // a mere require() of this file never pays for loading jsdom.
@@ -141,28 +140,22 @@ function stopBridge(ctx) {
 // BL-592 architect bounce (D1): the manual stopBridge()/mkFixture() calls
 // above leak both the bridge handle and the mkdtempSync fixture dir on any
 // throw before their own scenario reaches its designated cleanup step -
-// engineering.prompt's Test Speed And Isolation rule (BL-971). runtime.js's
-// runScenario has no per-scenario teardown hook of its own, so this uses
-// node:test's real afterEach instead, scoped by tracking only the ctx the
-// CURRENT scenario's Background step just created - cleanup is then
-// unconditional regardless of which step throws, or none at all.
-let currentCtx;
-
-function trackCtx(ctx) {
-  currentCtx = ctx;
-  return ctx;
+// engineering.prompt's Test Speed And Isolation rule (BL-971). BL-1659:
+// registered through the runtime's own per-scenario disposal instead -
+// cleanup is then unconditional regardless of which step throws, or none
+// at all.
+function __bl1659Dispose_bl592(ctx) {
+  stopBridge(ctx);
+  if (ctx.root) {
+    fs.rmSync(ctx.root, { recursive: true, force: true });
+  }
 }
 
-afterEach(() => {
-  if (!currentCtx) {
-    return;
-  }
-  stopBridge(currentCtx);
-  if (currentCtx.root) {
-    fs.rmSync(currentCtx.root, { recursive: true, force: true });
-  }
-  currentCtx = undefined;
-});
+function trackCtx(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(() => __bl1659Dispose_bl592(ctx));
+  return ctx;
+}
 
 function clickButton(dom, testId) {
   const btn = dom.window.document.querySelector(`[data-testid="${testId}"]`);

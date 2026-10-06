@@ -13,7 +13,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const TEST_SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test');
@@ -38,14 +37,14 @@ function knownScript(name) {
 
 let trackedRoots = [];
 let trackedFiles = [];
-afterEach(() => {
+function __bl1659Dispose_bl943() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
   while (trackedFiles.length) {
     fs.rmSync(trackedFiles.pop(), { force: true });
   }
-});
+}
 
 function mkTmp(prefix) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -225,6 +224,8 @@ function registerSteps(registry) {
       fs.writeFileSync(brokenPath, broken);
       fs.chmodSync(brokenPath, 0o755);
       trackedFiles.push(brokenPath);
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(__bl1659Dispose_bl943);
       ctx.brokenScriptPath = brokenPath;
     },
     FEATURE

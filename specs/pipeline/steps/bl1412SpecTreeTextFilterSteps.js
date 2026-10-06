@@ -194,11 +194,6 @@ function milestoneCount(dom, milestoneName) {
   return el ? el.textContent : null;
 }
 
-let currentCtx;
-function trackCtx(ctx) {
-  currentCtx = ctx;
-  return ctx;
-}
 function stopBridge(ctx) {
   if (ctx.bridgeHandle) {
     ctx.bridgeHandle.stop();
@@ -206,22 +201,18 @@ function stopBridge(ctx) {
     ctx.dom = null;
   }
 }
+function __bl1659Dispose_bl1412(ctx) {
+  stopBridge(ctx);
+  if (ctx.root) {
+    fs.rmSync(ctx.root, { recursive: true, force: true });
+  }
+}
+function trackCtx(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(() => __bl1659Dispose_bl1412(ctx));
+  return ctx;
+}
 function registerSteps(registry) {
-  // BL-1630: node:test required here, not at module load - a mere
-  // require() of this file registers no test runner (no exit listeners,
-  // no TAP epilogue) for a consumer that never calls registerSteps.
-  const { afterEach } = require('node:test');
-  afterEach(() => {
-    if (!currentCtx) {
-      return;
-    }
-    stopBridge(currentCtx);
-    if (currentCtx.root) {
-      fs.rmSync(currentCtx.root, { recursive: true, force: true });
-    }
-    currentCtx = undefined;
-  });
-
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   // ── Background ───────────────────────────────────────────────────────

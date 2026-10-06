@@ -22,7 +22,6 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { afterEach } = require('node:test');
 
 const EXTENSION_DIR = require('node:path').join(__dirname, '..', '..', '..', 'extension');
 const { countGitSpawns } = require(`${EXTENSION_DIR}/test/helpers/gitSpawnCounter`);
@@ -54,11 +53,13 @@ const DEFAULT_CORPUS_SIZE = 10;
 
 // The extension lane's mkTmpDir records rather than removes; its sweep is
 // normally driven by a Vitest setup file, which this lane does not run.
-afterEach(() => {
+function __bl1659Dispose_bl1066() {
   sweepPendingTmpDirs();
-});
+}
 
 function corpusFor(ctx, count) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1066);
   ctx.doneTickets = count;
   ctx.repo = buildClosedTicketCorpus(count, { prefix: 'sfvc-bl1066-acceptance-' });
   return ctx.repo;

@@ -7,7 +7,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO = path.join(__dirname, '..', '..', '..');
@@ -17,9 +16,9 @@ const FEATURE = 'frequent QA push races on main land are reduced';
 
 let tracked = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl1144() {
   while (tracked.length) fs.rmSync(tracked.pop(), { recursive: true, force: true });
-});
+}
 
 function bbDecide(ednMap) {
   const expr = `
@@ -104,6 +103,8 @@ function registerSteps(registry) {
   scoped(/^two concurrent land or close publishers targeting origin\/main$/, (ctx) => {
     ctx.root = mkSocketFixtureRoot('bl1144-');
     tracked.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1144);
     fs.mkdirSync(path.join(ctx.root, '.swarmforge'), { recursive: true });
     // Minimal git so decide-only can resolve HEAD/origin if present; lock tests
     // do not need a real remote.

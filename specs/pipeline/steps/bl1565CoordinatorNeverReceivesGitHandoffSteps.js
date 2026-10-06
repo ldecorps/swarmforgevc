@@ -107,7 +107,15 @@ function writeRolesTsv(state) {
   fs.writeFileSync(path.join(dir, 'roles.tsv'), `${rows}\n`);
 }
 
-function initFixture() {
+function __bl1659Dispose_bl1565() {
+  while (trackedRoots.length) {
+    fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
+  }
+}
+
+function initFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1565);
   const root = mkSocketFixtureRoot(FIXTURE_PREFIX);
   trackedRoots.push(root);
   execFileSync('git', ['init', '-q'], { cwd: root });
@@ -159,12 +167,6 @@ function registerSteps(registry) {
   // BL-1866: the sweep runs before this handler's first step runs, never
   // while the full step registry is being built.
   registry = require('./lib/sweepOnFirstStep').sweepOnFirstStep(registry, sweepStaleFixtures);
-  const { afterEach } = require('node:test');
-  afterEach(() => {
-    while (trackedRoots.length) {
-      fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
-    }
-  });
 
   const scoped = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE_NAME);
 
@@ -172,7 +174,7 @@ function registerSteps(registry) {
   scoped(
     /^a fixture project whose roles table lists the code-worktree roles in order "([^"]*)"$/,
     (ctx, order) => {
-      ctx.bl1565 = initFixture();
+      ctx.bl1565 = initFixture(ctx);
       const roles = parseList(order);
       assert.ok(roles.length > 0, 'the pipeline order must name at least one role');
       for (const role of roles) assertKnown(KNOWN_ROLES, role, 'pipeline order');

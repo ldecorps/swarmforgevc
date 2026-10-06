@@ -28,7 +28,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync, spawn } = require('node:child_process');
-const { after } = require('node:test');
 const { computeClosure } = require('./lib/operatorRuntimeBbClosure');
 const { isExemptPrefix, isAllowlisted } = require('../../../extension/test/onboarderResidualAllowlist');
 
@@ -69,12 +68,11 @@ function findBl684Ticket() {
 
 const FEATURE_NAME = 'The Onboarding Facilitator is renamed to the Onboarder without breaking a live agent';
 
-// ── shared fixture bookkeeping - swept once, after every test in the
-// generated entry point has run, regardless of which step failed (mirrors
-// bl633InvariantsSectionSteps.js's own after()-based sweep). ──────────────
+// ── shared fixture bookkeeping - registered through the runtime's own
+// per-scenario disposal (BL-1659) at every step that adds to either set. ──
 const pendingRoots = new Set();
 const pendingPids = new Set();
-after(() => {
+function __bl1659Dispose_bl684() {
   for (const pid of pendingPids) {
     try {
       process.kill(pid, 'SIGKILL');
@@ -87,7 +85,7 @@ after(() => {
     fs.rmSync(root, { recursive: true, force: true });
   }
   pendingRoots.clear();
-});
+}
 
 function writeExec(filePath, content) {
   fs.writeFileSync(filePath, content);
@@ -381,12 +379,16 @@ function registerSteps(registry) {
 
   // ── onboarder-rename-03/04/05 (launcher decision) ───────────────────
   registry.define(/^a pre-rename supervisor is running and holds its old-named pid file$/, (ctx) => {
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl684);
     ctx.fixture = buildLaunchFixture();
     ctx.oldPid = spawnBackgroundSleep(300);
     fs.writeFileSync(ctx.fixture.oldPidFile, `${ctx.oldPid}\n`);
   });
 
   registry.define(/^no supervisor is running under either name$/, (ctx) => {
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl684);
     ctx.fixture = buildLaunchFixture();
   });
 
@@ -394,6 +396,8 @@ function registerSteps(registry) {
     if (!OLD_PID_STATES.includes(pidState)) {
       throw new Error(`bl684 onboarder-rename: unrecognized <pid state> example value "${pidState}"`);
     }
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl684);
     ctx.fixture = buildLaunchFixture();
     if (pidState === 'a dead process') {
       const deadPid = await spawnAndWaitExit('sleep', ['0.01']);
@@ -468,6 +472,8 @@ function registerSteps(registry) {
       throw new Error(`bl684 onboarder-rename: unrecognized <artifact> example value "${artifact}"`);
     }
     const names = ARTIFACT_FILES[artifact];
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl684);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl684-stop-'));
     pendingRoots.add(root);
     const opDir = path.join(root, '.swarmforge', 'operator');
@@ -502,6 +508,8 @@ function registerSteps(registry) {
 
   // ── onboarder-rename-07 ─────────────────────────────────────────────
   registry.define(/^an old-named heartbeat file written before the rename$/, (ctx) => {
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl684);
     ctx.fixture = buildSupervisorFixture();
     ctx.oldHeartbeatMs = Date.now();
     fs.writeFileSync(path.join(ctx.fixture.opDir, 'onboarding-facilitator-heartbeat.json'), JSON.stringify({ lastHeartbeatMs: ctx.oldHeartbeatMs }));
