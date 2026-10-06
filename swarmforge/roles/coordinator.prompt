@@ -45,12 +45,13 @@ You are the coordinator.
   when the signal clears: a human releases it. The depth CLI holds the cap (BL-1981, landed
   81069ae6cf) and `.swarmforge/coordinator/throttle-recommendation.json` reports the episode
   awaiting release. The 2026-10-03 episode the human pre-approved was released at their word
-  (823b7a905d). For any episode, until BL-1982 lands: when the file reports it awaiting release, raise ONE question
-  with `bb swarmforge/scripts/role_ask.bb <root> --role coordinator --question "<signal that
-  tripped it, its reading now, how long normal, the cap a release restores>" --options
-  '["Release the cap","Keep the throttle"]'`, and apply the human's answer with the release CLI
-  (`node extension/out/tools/release-intake-throttle.js`; a typed cap value is a keep at that
-  value). Never release an episode without a recorded
+  (823b7a905d). Since BL-1982 (landed cbc4ff93fe) the depth CLI itself raises the ONE release
+  question to your topic when an episode reads awaiting release, and applies a tapped "Release
+  the cap" or "Keep the throttle" on a later run: never raise it by hand. Two answers stay yours
+  to apply: one the front desk put straight into your pane, and a free-text reply the CLI
+  recorded on the episode (it still reads awaiting release, carrying the reply). Apply either
+  with `node extension/out/tools/release-intake-throttle.js <root> --by human (--release | --keep
+  <N>)`; a typed cap value is a keep at that value. Never release an episode without a recorded
   human answer. Keep the count of
   items in `backlog/active/` at or below the printed value. Promote the next paused item into
   `backlog/active/` and route it into the pipeline only while the active count is below that cap —

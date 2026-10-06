@@ -141,3 +141,5 @@ notes: |
   2026-10-05 ~23:30Z (specifier): amended to stamp-off 4a4063fdc0 too, the
   test-fake reds 77584c4c11 left (coder@2 note 000117); one ticket, two
   SHAs, both linked in the hotfix ledger. Still [coder, qa]: test-side.
+
+assigned_to: coder

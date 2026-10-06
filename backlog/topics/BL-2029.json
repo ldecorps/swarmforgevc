@@ -1,0 +1,1 @@
+{"id":"BL-2029","messages":[{"seq":0,"ts":1791255408953,"author":"swarm","type":"outbound","text":"BL-2029 🎵 in progress — Stamp-off for hotfix b82ff33bac: bl1905RealDispatcherScan's part 1 spent its 60 s budget deriving ten dispatcher names by running BL-998's whole guard under bash -x; the guard now stops after step 1b when asked, exiting 3, never a pass"}]}
