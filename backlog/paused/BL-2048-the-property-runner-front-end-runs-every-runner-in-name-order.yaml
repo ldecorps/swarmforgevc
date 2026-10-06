@@ -1,0 +1,131 @@
+id: BL-2048
+title: "The property-runner front-end lists every *_property_runner file under swarmforge/scripts/test in name order, runs each with the interpreter its extension names on BL-2027's recorded lane runner, one duration row per runner and a verdict naming every red - the one command every option of BL-2049's lane ruling runs, for about 200 property runners no lane runs today (QA note 003876)"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal, the same class as BL-2041 - about 200
+# property runners that no lane runs. This slice is the population's one
+# command; BL-2049 rules which lane runs it.
+status: todo
+epic: unit-suite-speed
+priority: 10
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one thin bash front-end over BL-2027's landed runner, one step
+# handler over a mkdtemp fixture directory, one .gitignore line.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one new thin script; nothing to refactor"
+  architect: "a list builder over BL-2027's runner, whose contract the architect reviewed there"
+  hardender: "writes nothing itself - the runner writes the rows and was hardened in BL-2027; bash has no mutation lane (BL-472)"
+  documenter: "BL-2049's lane slice documents the front-end with the lane that runs it"
+verification_category: unlaned-property-runner-run-by-hand
+
+acceptance: specs/features/BL-2048-the-property-runner-front-end-runs-every-runner-in-name-order.feature
+
+invariants: []
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2048PropertyRunnerFrontEndSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Owner of QA note 003876 (BL-2039's QA evidence) - the bb property runners
+  run in no lane, BL-2041's sibling. No choice is posed. FIRM: the front-end
+  only builds the list and calls BL-2027's runner; no change to any
+  property runner, to suite-manifest.tsv, to run_bb_suite.sh, or to any
+  role's lane set in this slice; no full run of the real population inside
+  the parcel.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/` holds 217 property runners: 211
+  `*_property_runner.bb`, 4 `.sh`, 2 `.js` (`ls swarmforge/scripts/test |
+  grep -E '_property_runner\.(bb|sh|js)$' | wc -l`, 2026-10-06). The suite
+  manifest registers `test_*.sh` and `*_test_runner.bb` only (its header
+  says a property runner "has its own lane"), the vitest property lane runs
+  `*.property.test.js` files, and an extension vitest test names only 15 of
+  the `.bb` runners. So about 200 of them run only when a role picks one by
+  hand. QA, BL-2039's pass: "That is the existing convention for every bb
+  *_property_runner.bb here ... They run by hand. This is systemic, a
+  sibling of BL-2041's specs/pipeline/test gap."
+
+  ## What is wanted
+
+  A new script, `swarmforge/scripts/test/run_property_runners.sh`:
+
+      run_property_runners.sh [--limit N] [--durations <path>] [dir]
+
+  - `dir` defaults to the script's own directory. `--durations` defaults
+    to `swarmforge/scripts/test/.property-runner-durations.jsonl`; add it
+    to `.gitignore` next to `extension/.property-durations.jsonl`.
+  - It lists every file directly in `dir` whose name ends
+    `_property_runner.bb`, `_property_runner.sh` or `_property_runner.js`,
+    in name order (`LC_ALL=C sort`), and writes one list line per file:
+    `<file>` TAB `bb <dir>/<file>` for `.bb`, `bash <dir>/<file>` for
+    `.sh`, `node <dir>/<file>` for `.js`.
+  - Then it calls `run_recorded_lane.sh --lane property-runners --list
+    <list> --durations <path>`, forwarding `--limit`, and exits with the
+    runner's status. The list is a temp file the script removes on exit.
+
+  And the step handler
+  `specs/pipeline/steps/bl2048PropertyRunnerFrontEndSteps.js` for scenario
+  01: a mkdtemp fixture directory (`trackedTmpRoot`,
+  `require('./lib/fixtureReaper')`) with `b_property_runner.bb`,
+  `a_property_runner.sh`, `c_property_runner.js` and `d_test_runner.bb`.
+  Each runner is valid code only for its own interpreter and appends one
+  line to a log whose path the handler passes in an env var: the .bb one
+  `(spit (System/getenv "LOG") "b bb\n" :append true)`, the .sh one
+  `echo "a bash" >> "$LOG"`, the .js one
+  `require('fs').appendFileSync(process.env.LOG, 'c node\n')`. A runner
+  started under the wrong interpreter fails before it writes, so a log of
+  exactly `a bash`, `b bb`, `c node`, in that order, proves all three
+  thens. Read the row count from a durations file in the same mkdtemp dir.
+  Register with `registry.defineScoped(re, fn, FEATURE)`.
+
+  ## Not in scope
+
+  - Which lane runs the front-end, and over which runners (BL-2049's
+    ruling: a change-reach selector, a duration cap, or a nightly run).
+  - A per-runner timeout: stock macOS has no `timeout` (BL-2027's
+    portability note); the runner runs each item to completion.
+  - Fixing any red a full run finds - each is an unowned-red note.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2048-the-property-runner-front-end-runs-every-runner-in-name-order.feature`:
+     1 ok, 0 fail.
+  2. `env -u TMUX bash swarmforge/scripts/test/run_property_runners.sh --limit 10 --durations tmp/BL-2048-durations.jsonl`
+     -> ten rows in that file, a verdict `passed 10 failed 0`, exit 0.
+     Measured at mint (2026-10-06 19:51Z, load 14) by running the first
+     ten in `LC_ALL=C` name order one at a time: ambulance_lib ..
+     bl1020_stale_marker_topology, all `.bb`, all rc 0, 61 ms to 6.0 s
+     each, 11.6 s together.
+  3. `git diff <parcel>^..<parcel> --stat` names only the script, the
+     handler, the feature and `.gitignore`.
+
+source: |
+  QA note 003876 (2026-10-06 13:44Z), verbatim: "bb *_property_runner.bb
+  run in no lane (BL-2041 sibling); see BL-2039 QA evid". The evidence is
+  backlog/evidence/BL-2039-QA-20261006.md, Observations. The human
+  sentences BL-2041 carries, verbatim (Article 5.3): the 2026-09-05
+  directive "we should not sweep failing tests under the carpet"; and from
+  BL-1625, the 2026-09-17 intake "tests run for hours" (hence no full
+  population run in a parcel).
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  This is BL-791 slice G's bb-property half ("timing rows for the bb
+  property and shell runners ... if they are ever run as a lane outside the
+  hardender"); BL-2021 is its shell half.
+  Where to read: swarmforge/scripts/test/run_recorded_lane.sh lines 1-10
+  (its interface) and BL-2021's description item 1 (the shell twin's
+  shape). Nothing else is needed.
+  INVEST: Independent (BL-2027, the runner, is landed). Small (one script,
+  one handler, one scenario). Testable (mkdtemp fixtures).
+  Dynamic routing: bash test tooling, no durable write of its own ->
+  [coder, qa].
