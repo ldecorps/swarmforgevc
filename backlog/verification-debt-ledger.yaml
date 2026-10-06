@@ -217,3 +217,8 @@
   role: QA
   description: "property lane FAIL on bl1905RealDispatcherScan.property.test.js: register_join named the file but the gather's 4000-char excerpt held only BL-871 onTaskUpdate noise, so the assertion/timeout text was lost (BL-1509 needs it verbatim); ran the file once alone (pass, part 1 19.6s of 60s) and scanDir by hand to rule out the parcel"
   detected_at: 2026-10-06
+- category: orphan-fixture-daemon-attribution
+  ticket: BL-2027
+  role: specifier
+  description: "QA reaped 2 init-parented fixture handoffd.bb (tmp roots, ~4.5h old) at BL-2027's gather (note 003853); tried by hand to attribute the leaking test: 10+ shell tests and ~20 step handlers background a real handoffd, no pid file or start audit from the start window remained, and QA's note kept no argv; no tool records which test started a fixture daemon"
+  detected_at: 2026-10-06
