@@ -112,3 +112,6 @@ description: |
     names the scaffold as the way a new handler starts.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: unit, commit: e380d4c1aa, evidence: backlog/evidence/BL-1979-QA-20261006.md }
