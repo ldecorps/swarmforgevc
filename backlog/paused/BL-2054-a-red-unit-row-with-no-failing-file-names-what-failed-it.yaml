@@ -1,0 +1,131 @@
+id: BL-2054
+title: "QA's gather lists a red unit run that names no failing file as bare 'unidentified', though the run printed why it exited 1 (vitest's unhandled onTaskUpdate timeout, the per-file budget guard's refusal, or the suite work ratchet's refusal) - QA triaged it by hand three times; the register join names each cause the run printed, with the lane's own line for it"
+milestone: M8
+type: defect
+severity: medium
+# medium: a contained defect in a reporting tool. QA recovers the cause by
+# hand from the run's output and reports, three times 2026-10-03..10-06,
+# and the one-run rule makes each recovery a read of a log it may not have.
+status: todo
+epic: code-quality-gates
+priority: 20
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: one TypeScript module (qaGather.ts), one pure classifier over the
+# lane's whole output, Stryker.
+slice_size_envelope: medium
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one classifier added beside collectFailingAndUnidentified; nothing to deduplicate"
+  architect: "the join already reads each lane's whole output through onRawOutcome (BL-1769); no boundary moves"
+  documenter: "QA.prompt's gather section is the living description and is the specifier's to amend at land (notes)"
+verification_category: register-join-unidentified-red-triage
+
+acceptance: specs/features/BL-2054-a-red-unit-row-with-no-failing-file-names-what-failed-it.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2054RegisterJoinNamesRedCauseSteps.js::registerSteps::binds BL-2054 feature (discovered by suffix, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Owner of the register-join-unidentified-red-triage verification-debt
+  category, which reached its threshold (3 rows) unowned on 2026-10-06
+  (QA note 003880). Medium severity, so not auto-approved. No choice is
+  posed. FIRM: only a red UNIT row that names no failing file gains cause
+  entries; a run that printed no recognised cause, every properties row
+  and every row that names a failing file are joined exactly as today
+  (BL-1554 scenario 08's exact shape stays green).
+
+invariants:
+  - "A red unit row that names no failing file and whose whole output printed a recognised cause never reaches QA as a bare unidentified entry; one that printed none is listed exactly as today, {file, join: 'unidentified'}."
+  - "Causes come only from the run's own whole output, and only for a red unit row that names no failing file; every other register join entry is unchanged."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-2054 feature 4 of 4
+     (6 examples; measured at mint: every step unbound, a new feature).
+  2. On the parcel commit, run BL-1554's feature once:
+     `node specs/pipeline/cli.js specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature`.
+     Measured at mint on main (aa1531d0cc): 14 of 14 ok, 2.5 s. Expect
+     the same, scenario 08's two exact-shape unidentified rows among them.
+  3. Read this parcel's own gather report: if its unit row is red with no
+     failing file, its join entry names the cause; otherwise record that
+     the live case was not exercised (the feature is the gate).
+  4. Read the hardener's Stryker evidence for extension/src/quality/qaGather.ts.
+
+source: |
+  QA note 003880 (2026-10-06 21:12Z): "VERIFICATION_DEBT_UNOWNED
+  register-join-unidentified-red-triage n=3 (BL-2015)". Rows:
+  BL-1858 (2026-10-03, backlog/evidence/BL-1858-QA-20261003.md: the
+  onTaskUpdate unhandled error, owned by paused BL-1889, plus a suite file
+  budget line with no open owner), BL-1958 (2026-10-05: success, 0 failed
+  in .vitest-report.json, so exit 1 was BL-1599's work ratchet, 613108ms >
+  605000ms, read from .test-durations.jsonl), BL-2015 (2026-10-06: no FAIL
+  file, repeated vitest-worker onTaskUpdate timeouts, owned by BL-1889).
+
+notes: |
+  Minted 2026-10-06 by the specifier, the pass the category went unowned,
+  per the verification-debt rule (BL-1782).
+  Not auto-approved: medium severity.
+  Same file as BL-2043 and BL-2030 (qaGather.ts): independent, but they must
+  not run concurrently (Concurrent Work Orthogonality). If BL-2043 has
+  landed first, its verdict-line reader is the natural place to find the
+  work ratchet's and the guard's lines; reuse it, never a second parser.
+  Owner attribution of a cause stays QA's: the guard's own refusal text
+  already says new-pole or unowned for a budget file, and a no-file cause
+  (an unhandled error, the ratchet) has no register row to join. If QA's
+  triage of named causes keeps recording rows in this category after the
+  land, that is the evidence for a follow-up, not something to build now.
+  IR-DRY (mint): three medium-confidence possible-synonym findings over the
+  Given steps; they are one deliberate step family differing only by lane
+  and by whether a FAIL line is printed, so left as written.
+  The specifier's half (BL-798): when this lands, QA.prompt's gather section
+  (the BL-1769 bullet, "An `unidentified` entry is a red row whose output
+  names no failing file anywhere") gains one sentence naming the cause
+  entries. Land it on QA's land note, never before.
+
+description: |
+  ## What is wrong
+
+  `extension/src/quality/qaGather.ts` `collectFailingAndUnidentified`
+  gives a red unit or properties row that names no failing file one entry,
+  `{ file: <check id>, join: 'unidentified' }`, and nothing else. The unit
+  lane (`extension/scripts/recordTestDuration.js`) exits 1 without any FAIL
+  line for three reasons it prints itself:
+  - vitest's own exit 1 on an unhandled error (`Unhandled Error` block,
+    e.g. `[vitest-worker]: Timeout calling "onTaskUpdate"`, BL-1889's
+    flake), with every test passing;
+  - the per-file budget guard's refusal (`printGuardReport`: `suite file
+    budget exceeded:` and the new-pole or unowned-row lines that follow);
+  - the suite work ratchet's refusal (`formatSuiteWorkVerdict`, labelled
+    `REFUSED`, BL-1599).
+  QA had to dig each of these out by hand (source).
+
+  ## What is wanted
+
+  - A red unit row that names no failing file gets one join entry per
+    cause its whole output printed, each naming the cause
+    (`unhandled-error`, `file-budget`, `work-ratchet`) and carrying the
+    lane's own line(s) for it (the error message, the refused files, the
+    verdict line).
+  - A red unit row whose output printed none of them keeps today's exact
+    `unidentified` entry.
+  - The properties row is unchanged: its lane ignores unhandled errors
+    (BL-871, `dangerouslyIgnoreUnhandledErrors`), so one in its output is
+    never its exit cause.
+  - A row that names a failing file is joined exactly as today.
+
+  ## How (direction, not mandate)
+
+  - Read the same whole output BL-1769's join reads (`rawOutputByCheckId`),
+    never the excerpt.
+  - Keep the classifier pure over the output text. The step handler builds
+    its fixture output with the lanes' own formatters (`formatGuardReport`,
+    `formatSuiteWorkVerdict` from `extension/out`) so a format change
+    breaks the test rather than silently blinding the parser (BL-897); the
+    unhandled-error block is vitest's, so copy its real shape once into the
+    fixture and say where from.
+  - Keep `collectFailingAndUnidentified` and `buildRegisterJoin` inside
+    their complexity baseline (BL-1769's hardener extraction).
+
+assigned_to: coder
