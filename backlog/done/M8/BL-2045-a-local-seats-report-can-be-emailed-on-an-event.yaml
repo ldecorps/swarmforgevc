@@ -2,7 +2,8 @@ id: BL-2045
 title: "A local-model seat's health report (local_seat_report_cli.bb) can be emailed to notify_email_to with one command, named for the event that prompted it, at most once per seat per thirty minutes - slice 1 of 2: the human asked to be emailed iq3 reports on noteworthy events"
 milestone: M8
 type: feature
-status: todo
+status: done
+closed_as: retired-human-withdrawn
 epic: local-llm-swarm
 priority: 20
 direction: normal
@@ -64,6 +65,16 @@ notes: |
   one line - after landing a hotfix for a local-model seat, run this
   command with --event "hotfix <sha> landed". Land it on QA's land note,
   never before.
+  Retired 2026-10-06 by the specifier on coordinator note 017112, never
+  built (no parcel, no handler), together with BL-2046.
+  The human, 2026-10-06 19:08:37Z in the coordinator session, verbatim
+  (Article 5.3): "No, actually indon't need this as a permanent ticket. I
+  just want a proof aaa is hzlping iq3.
+  A normal feedback in the next daily brief is enough"
+  So the iq3 report emails are not wanted as a standing mechanism; the
+  proof that the local-seat work helps iq3 goes in the next daily
+  briefing as ordinary feedback. Its feature file is removed with it
+  (no scenario ever ran, so none is retired from a live contract).
 
 description: |
   ## What is wanted
