@@ -22,7 +22,7 @@ acceptance: specs/features/BL-2046-a-local-seat-going-down-or-recovering-emails-
 required_wiring:
   - 'specs/pipeline/steps/bl2046LocalSeatDownRecoveredEmailSteps.js::registerSteps::binds BL-2046 feature (discovered by suffix, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Slice 2 of your "Yes - email me iq3 reports on those events" (specifier
   pane, 2026-10-06 ~13:15Z): the down/recovered half. FIRM: a seat is
