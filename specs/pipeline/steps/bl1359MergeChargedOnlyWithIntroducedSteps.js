@@ -20,7 +20,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { reap } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -46,13 +45,13 @@ const BROKEN_CALLS = {
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl1359() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     reap(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 function git(cwd, args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
@@ -61,7 +60,9 @@ function git(cwd, args) {
   });
 }
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1359);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   return root;
@@ -111,7 +112,7 @@ function registerSteps(registry) {
   scoped(
     /^the sweep is classifying a commit that is reachable from a main ref and is not an ancestor of swarmforge-QA$/,
     (ctx) => {
-      const root = mkTmp('sfvc-bl1359-');
+      const root = mkTmp(ctx, 'sfvc-bl1359-');
       git(root, ['init', '-q', '-b', 'main']);
       fs.writeFileSync(path.join(root, 'README.md'), 'init\n');
       git(root, ['add', '-A']);
@@ -119,7 +120,7 @@ function registerSteps(registry) {
       git(root, ['branch', 'swarmforge-QA']);
       fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
 
-      const stubDir = mkTmp('sfvc-bl1359-stub-');
+      const stubDir = mkTmp(ctx, 'sfvc-bl1359-stub-');
       const stub = path.join(stubDir, 'stub-list-paths.sh');
       fs.writeFileSync(
         stub,
@@ -244,7 +245,7 @@ function registerSteps(registry) {
       // charge is computed from cannot run at all.
       removeTreeOf(root, `${mergeSha}^1`);
     } else if (kind === 'parent-ancestry') {
-      const stubDir = mkTmp('sfvc-bl1359-anc-');
+      const stubDir = mkTmp(ctx, 'sfvc-bl1359-anc-');
       const stub = path.join(stubDir, 'stub-ancestor.sh');
       fs.writeFileSync(
         stub,

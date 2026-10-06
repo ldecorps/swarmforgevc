@@ -15,7 +15,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 const fixtureReaper = require('./lib/fixtureReaper');
 
@@ -27,7 +26,7 @@ const FEATURE = 'Ensure recognises every single-resident rotation value as dorma
 const MIDDLE_ROLES = ['specifier', 'cleaner', 'architect', 'hardender', 'documenter'];
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl571() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     // The fake tmux on PATH names new-session, so this file is in the
@@ -36,7 +35,7 @@ afterEach(() => {
     fixtureReaper.reap(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 function bbEval(expr) {
   const code = `(load-file ${JSON.stringify(MONO_LIB)}) (println (pr-str ${expr}))`;
@@ -48,6 +47,8 @@ function bbEval(expr) {
 }
 
 function mkFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl571);
   const root = mkSocketFixtureRoot('sfvc-bl571-');
   fixtureReaper.track(root);
   trackedRoots.push(root);

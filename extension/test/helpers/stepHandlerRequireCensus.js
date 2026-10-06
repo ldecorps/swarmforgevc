@@ -248,6 +248,16 @@ function checkHandlerBudgets(rows, { budgetMs, allowlist = new Map(), confirmAlo
     if (row.spawnedProcess) {
       violations.push({ file: row.file, reason: 'spawns a process at module load' });
     }
+    // BL-1659: every handler that required node:test at module load (73 on
+    // the coder's received commit) has now dropped that require - its own
+    // cleanup moved to the runtime's per-scenario disposal or
+    // trackedTmpRoot. No allowlist entry survives this ticket, so this is
+    // unconditional, like listedDir/spawnedProcess above, never exempted
+    // by the ms-budget allowlist (checkHandlerBudgets non-vacuity: the
+    // allowlist exempts only the ms budget, never a behavioral violation).
+    if (row.registeredTestRunner) {
+      violations.push({ file: row.file, reason: 'registers a test runner (requires node:test) at module load' });
+    }
     if (row.ms > budgetMs) {
       const confirmedMs = confirmAlone ? confirmAlone(row.file) : row.ms;
       if (confirmedMs > budgetMs) {

@@ -11,7 +11,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { trackedTmpRoot } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -23,17 +22,19 @@ const LEDGER_RELPATH = path.join('backlog', 'verification-debt-ledger.yaml');
 const FEATURE = 'BL-1782 Hand verifications are recorded in a verification-debt ledger';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl1782() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function git(root, ...args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
 }
 
-function mkFixtureRepo() {
+function mkFixtureRepo(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1782);
   const root = trackedTmpRoot('sfvc-bl1782-');
   trackedRoots.push(root);
   git(root, 'init', '-q');
@@ -107,7 +108,7 @@ function registerSteps(registry) {
 
   // ── Background ───────────────────────────────────────────────────────
   scoped(/^a fixture git repository with backlog\/paused, backlog\/active and backlog\/done and no verification-debt ledger$/, (ctx) => {
-    ctx.root = mkFixtureRepo();
+    ctx.root = mkFixtureRepo(ctx);
   });
 
   // ── Scenario 01 ──────────────────────────────────────────────────────

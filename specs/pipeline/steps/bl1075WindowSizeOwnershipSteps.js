@@ -22,7 +22,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 // BL-948: a fixture that builds a control socket roots under a SHORT base -
 // os.tmpdir() resolves under /var/folders/<hash>/<hash>/T/ on macOS and the
 // socket path overruns swarm_socket_lib.bb's 100-char guard, so scenarios die
@@ -53,14 +52,14 @@ const KNOWN_PATHS = new Map([
 ]);
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl1075() {
   while (trackedRoots.length) {
     // reap() kills the fixture tmux server by socket path and untracks the
     // root; the shared exit/SIGINT/SIGTERM hook covers the paths where a
     // scenario throws before reaching here.
     reap(trackedRoots.pop());
   }
-});
+}
 
 function tmux(socket, args) {
   return spawnSync('tmux', ['-S', socket, ...args], { encoding: 'utf8' });
@@ -78,6 +77,8 @@ const DEFAULT_SIZES = [
 ];
 
 function startTiledServer(ctx, sizes) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1075);
   const root = mkSocketFixtureRoot('bl1075-');
   track(root);
   trackedRoots.push(root);

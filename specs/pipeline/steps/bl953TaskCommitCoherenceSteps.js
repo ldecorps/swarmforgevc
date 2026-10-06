@@ -14,7 +14,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { spawnHandoffSend } = require('./lib/answerHandoffAudit');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_HANDOFF = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_handoff.bb');
@@ -22,13 +21,15 @@ const SWARM_HANDOFF = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_hando
 const FEATURE = "A git_handoff's commit must belong to the ticket its task names";
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl953() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl953);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   return root;
@@ -53,7 +54,7 @@ const COMMIT_SUBJECTS = {
 };
 
 function mkFixture(ctx) {
-  const root = mkTmp('sfvc-bl953-');
+  const root = mkTmp(ctx, 'sfvc-bl953-');
   git(root, ['init', '-q', '-b', 'main']);
   fs.mkdirSync(path.join(root, 'specs', 'features'), { recursive: true });
   fs.writeFileSync(path.join(root, 'specs', 'features', 'x.feature'), 'Feature: x\n');

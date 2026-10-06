@@ -15,7 +15,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -47,11 +46,11 @@ const KNOWN_VALUE_FORMS = new Map([
 ]);
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl957() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function processEnvAllowlist() {
   return { PATH: process.env.PATH, HOME: process.env.HOME };
@@ -66,6 +65,8 @@ function mkdirp(p) {
 }
 
 function initRoot(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl957);
   if (ctx.root) {
     return;
   }

@@ -1,0 +1,135 @@
+id: BL-2037
+title: "A local seat's phase record carries its notes between arrange, act and assert - each parcel on a local-model seat runs as phases (arrange gathers, act changes, assert checks), each in a fresh session, and a per-parcel record in the seat's worktree holds the phase, the failed-assert count and every phase's notes - slice 1 of 2: the record and the command that moves it"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: one bb lib (pure transitions over a small file) and its CLI, one
+# step handler over mkdtemp worktrees; no daemon, no tmux, no session restart.
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, qa]
+stage_skip_reasons:
+  cleaner: "two new files; nothing to deduplicate"
+  documenter: "the seat's card is the living doc and the specifier lands it with BL-2038, the slice that makes the command reachable"
+acceptance: specs/features/BL-2037-a-local-seats-phase-record-carries-its-notes-between-phases.feature
+
+invariants:
+  - "A record moves only arrange to arrange, act or assert; act to assert; assert to act on a failed assert while fewer than 2 have failed; or assert to done on a passed assert. Any other move is refused and leaves the record unchanged."
+  - "Notes are only ever appended: every note a phase wrote is still in the record, in order, after every later move."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2037LocalSeatPhaseRecordSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor (BL-1235): the command is a new entry point; its
+# callers are BL-2038's wiring and the seat's card.
+
+human_approval: approved
+approval_context: >
+  Your intake (backlog/INTAKE-fight-a-too-small-contect-window-20261006.md),
+  with the three design choices you answered in the specifier's console on
+  2026-10-06: a fresh session at each phase boundary; every parcel is
+  phased (a parcel that changes no code goes from arrange straight to
+  assert); a failed assert goes back to act at most twice, then the seat
+  asks for a split. This slice is the record and its command. BL-2038
+  wires it into the seat's sessions.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's acceptance row:
+     `specs/features/BL-2037-a-local-seats-phase-record-carries-its-notes-between-phases.feature`
+     9 of 9 pass (01 and 02's eight rows; measured at mint: no handler,
+     all red).
+  2. Read the hardener's committed evidence (a hand-mutant pass on the
+     transition table, since the command writes the record).
+  3. `git diff <parcel>^..<parcel> --stat` names only the lib, the CLI,
+     the handler and the parcel's own evidence.
+
+source: |
+  The human's intake, verbatim
+  (backlog/INTAKE-fight-a-too-small-contect-window-20261006.md, 4e6782ca1b):
+
+  > As local model, I want to divide my turn in several smaller turns accotding to, arrange / action / assert, so I can fight a too small contect window.
+  >
+  > Given a back log item
+  > When it is given to me
+  > Then I chop it in several smaller ones
+  > And the first ones are about gathering data
+  > And then there is obr about making the chsngr using information gathered
+  > And finally i check that the task has been implemented correctly
+  >
+  > ## Rule
+  >
+  > Each scaffolding atrange turns result is persisted and used in the action turn.
+  >
+  > ## Notes
+  >
+  > Local qwen, as it stands, can only implement simple tickets. It has to chop its task in smaller chunks.
+
+  The human's answers to the specifier, 2026-10-06 (console):
+  - Boundary: "Fresh session (Recommended)".
+  - Scope: "Every parcel (Recommended)".
+  - On failure: "Back to act, max 2 (Recommended)".
+
+notes: |
+  Minted 2026-10-06 by the specifier from the intake above, split 1:2.
+  This slice is the record and its command (BL-2037). The wiring (serve
+  names the phase, ending a phase restarts the session, done removes the
+  record) is BL-2038.
+  INVEST: Independent (no dependency). Small (a lib, a CLI, one handler,
+  9 runs). Testable (mkdtemp worktrees, seconds).
+
+description: |
+  ## What is wanted
+
+  A per-parcel phase record in the local-model seat's worktree, and the
+  one command that reads and moves it.
+
+  - The record is a file at
+    `<worktree>/.swarmforge/phase/<ticket>.md` (`.swarmforge/` is
+    gitignored). It holds the current phase (`arrange`, `act`, `assert` or
+    `done`), the count of failed asserts, and the notes every phase has
+    written, appended in order.
+  - The command, `bb swarmforge/scripts/local_seat_phase_cli.bb`, run from
+    the seat's worktree:
+    - `show <ticket>`: prints the phase and failed-assert count, and the
+      record's path. A ticket with no record is in `arrange` with 0.
+    - `end <ticket> --to <arrange|act|assert> --notes <file>`: appends the
+      notes file's text and moves the record. The legal moves are
+      arrange to arrange (more gathering), act or assert (a parcel that
+      changes no code), and act to assert.
+    - `fail <ticket> --notes <file>`: from assert, appends the notes and
+      returns to act, counting the failed assert. At 2 failed asserts it
+      moves nothing, appends the notes, and prints
+      `SPLIT_REQUEST <ticket>`: the seat then sends the coordinator a note
+      `split <ticket>: <seat> failed assert twice` (the existing split
+      BAU).
+    - `pass <ticket>`: from assert, moves to `done`.
+    - Any other move exits non-zero, names the move it refused, and leaves
+      the record unchanged.
+
+  ## How (direction, not mandate)
+
+  - Pure transitions in `swarmforge/scripts/local_seat_phase_lib.bb`, a
+    small table of legal moves, and the file IO in the CLI (engineering:
+    CLI main is a thin wrapper). The two invariants above are a natural
+    property test over random move sequences.
+  - The handler `specs/pipeline/steps/bl2037LocalSeatPhaseRecordSteps.js`
+    runs the real CLI with `spawnSync('bb', [...], { cwd: worktree })` over
+    a worktree under `trackedTmpRoot` (`./lib/fixtureReaper`; it reaps at
+    exit, so no cleanup code is needed). It maps the outline's `<outcome>`
+    to the command (more arrange/ready to act/no code change/done to
+    `end --to ...`, failed to `fail`, passed to `pass`) through an explicit
+    known-values table, never passthrough.
+  - Do not edit `specs/pipeline/steps/index.js`: handlers are discovered by
+    the `Steps.js` suffix (BL-1371).
+
+  ## Not in scope
+
+  BL-2038: serving names the phase, `end`/`fail` restart the seat's
+  session, done_with_current removes the record. The seat's card prose
+  that teaches the phases is the specifier's, landed with BL-2038.
+
+assigned_to: coder

@@ -9,7 +9,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const LIVE_CONF = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'daemon_log_freshness.conf');
@@ -33,10 +32,10 @@ const KNOWN_TEST_FILES = new Map([
 let liveBackup = null;
 let detachedWorktree = null;
 
-afterEach(() => {
+function __bl1659Dispose_bl1000() {
   restoreLiveConf();
   removeDetachedWorktree();
-});
+}
 
 function removeDetachedWorktree() {
   if (detachedWorktree !== null) {
@@ -96,6 +95,8 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^the freshness shell tests and the operator's live threshold conf$/, (ctx) => {
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1000);
     assert.ok(fs.existsSync(LIVE_CONF), `missing live conf: ${LIVE_CONF}`);
     assert.ok(fs.existsSync(FIXTURE_CONF), `missing fixture conf: ${FIXTURE_CONF}`);
     ctx.fixtureConf = FIXTURE_CONF;

@@ -20,7 +20,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'expedite_cli.bb');
@@ -51,12 +50,9 @@ function reapDecoys() {
 }
 
 // BL-782's QA D1 lesson, inherited deliberately: each scenario gets a fresh
-// ctx, so decoys are tracked at module scope and reaped in afterEach too, or
-// one outline row's processes are still alive during the next row's probe.
-afterEach(() => {
-  reapDecoys();
-});
-
+// ctx, so decoys are tracked at module scope and reaped through the
+// runtime's own per-scenario disposal too, or one outline row's processes
+// are still alive during the next row's probe.
 function spawnDecoy(argv) {
   const child = spawn('bash', ['-c', `exec -a ${JSON.stringify(argv)} sleep 600`], { stdio: 'ignore' });
   child.unref();
@@ -118,6 +114,8 @@ function registerSteps(registry) {
 
   scoped(/^a recorded process table for a project root$/, (ctx) => {
     reapDecoys();
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(reapDecoys);
     ctx.bl1250 = { root: null, roles: [], expectedCount: null };
   });
 

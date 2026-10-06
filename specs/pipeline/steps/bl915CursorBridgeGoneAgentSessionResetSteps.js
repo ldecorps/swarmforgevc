@@ -18,7 +18,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const SDK_PATH = path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', '@cursor', 'sdk');
@@ -50,7 +49,7 @@ function parseFaultToken(token) {
 }
 
 let restoreFns = [];
-afterEach(() => {
+function __bl1659Dispose_bl915() {
   while (restoreFns.length) {
     const fn = restoreFns.pop();
     try {
@@ -60,9 +59,11 @@ afterEach(() => {
       // own pass/fail result, which node:test has already recorded by now.
     }
   }
-});
+}
 
-function mkRoot() {
+function mkRoot(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl915);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl915-'));
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
   restoreFns.push(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -123,7 +124,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the Cursor bridge has a stored agentId from an earlier session$/,
     (ctx) => {
-      ctx.root = mkRoot();
+      ctx.root = mkRoot(ctx);
       writeState(ctx.root, STORED_AGENT_ID);
       ctx.storedAgentId = STORED_AGENT_ID;
 

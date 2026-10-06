@@ -8,7 +8,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_bb_scripts_load.sh');
@@ -30,13 +29,9 @@ function runGuard(root) {
   return spawnSync('bash', [GUARD, root, '--all'], { encoding: 'utf8' });
 }
 
-let currentRoot = null;
-afterEach(() => {
-  if (currentRoot) {
-    fs.rmSync(currentRoot, { recursive: true, force: true });
-    currentRoot = null;
-  }
-});
+function __bl1659Dispose_bl1427(root) {
+  fs.rmSync(root, { recursive: true, force: true });
+}
 
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
@@ -44,7 +39,8 @@ function registerSteps(registry) {
   // ── Background ────────────────────────────────────────────────────────
   scoped(/^a fixture tree whose swarmforge scripts directory holds only fixture scripts$/, (ctx) => {
     ctx.bl1427 = mkFixtureTree();
-    currentRoot = ctx.bl1427.root;
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(() => __bl1659Dispose_bl1427(ctx.bl1427.root));
   });
 
   // ── Scenario 01 ───────────────────────────────────────────────────────

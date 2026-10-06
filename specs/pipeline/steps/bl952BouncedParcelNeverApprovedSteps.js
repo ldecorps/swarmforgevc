@@ -15,7 +15,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawn, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -28,7 +27,7 @@ const FEATURE = 'A parcel QA bounced never reads as QA-approved';
 
 let trackedRoots = [];
 let trackedDaemons = [];
-afterEach(() => {
+function __bl1659Dispose_bl952() {
   while (trackedDaemons.length) {
     const { root, proc } = trackedDaemons.pop();
     try {
@@ -46,9 +45,11 @@ afterEach(() => {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl952);
   const root = mkSocketFixtureRoot(prefix);
   trackedRoots.push(root);
   return root;
@@ -84,8 +85,8 @@ function recordBounce(root, sha) {
 // The Background fixture: a repo whose QA ref holds one BOUNCED parcel
 // (merged for review, verdict recorded, never reverted) and one genuinely
 // APPROVED parcel, plus an unreviewed commit off the ref.
-function mkVerdictFixture() {
-  const root = mkTmp('sfvc-bl952-');
+function mkVerdictFixture(ctx) {
+  const root = mkTmp(ctx, 'sfvc-bl952-');
   git(root, ['init', '-q', '-b', 'main']);
   git(root, ['commit', '-q', '--allow-empty', '-m', 'seed']);
   const approved = commitTouching(root, 'extension/src/good.ts', 'approved work\n', 'approved parcel');
@@ -101,7 +102,7 @@ function mkVerdictFixture() {
 
 // QA bounce (2026-08-19): every subprocess here neutralizes the invoking
 // role's own SWARMFORGE_ROLE before spawning - the same posture
-// startDaemon() below takes with the Telegram/Resend vars. The scenarios
+// startDaemon(ctx) below takes with the Telegram/Resend vars. The scenarios
 // simulate a generic caller, and inheriting the runner's role identity
 // made scenario 10 flip pass/fail by WHO ran it: under QA's own shell,
 // check_pipeline_code_on_main.sh's deliberate role-QA early exit fired
@@ -122,9 +123,9 @@ function askPredicate(root, sha, { env } = {}) {
 }
 
 // ── the real daemon, for scenarios 02/03 (the wiring-test recipe) ─────────
-function mkDaemonFixture() {
-  const root = mkTmp('sfvc-bl952-daemon-');
-  const remote = mkTmp('sfvc-bl952-remote-');
+function mkDaemonFixture(ctx) {
+  const root = mkTmp(ctx, 'sfvc-bl952-daemon-');
+  const remote = mkTmp(ctx, 'sfvc-bl952-remote-');
   execFileSync('git', ['init', '-q', '--bare', remote]);
   git(root, ['init', '-q', '-b', 'main']);
   commitTouching(root, 'seed.txt', 'first\n', 'seed commit');
@@ -160,7 +161,9 @@ function mkDaemonFixture() {
   return { root, remote, bin };
 }
 
-function startDaemon(fixture) {
+function startDaemon(ctx, fixture) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl952);
   const env = { ...process.env };
   delete env.TELEGRAM_BOT_TOKEN;
   delete env.TELEGRAM_CHAT_ID;
@@ -225,7 +228,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a repository whose QA ref holds a parcel QA has already bounced$/,
     (ctx) => {
-      ctx.fixture = mkVerdictFixture();
+      ctx.fixture = mkVerdictFixture(ctx);
     },
     FEATURE
   );
@@ -266,7 +269,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a bounced parcel that was never reverted out of the QA ref$/,
     (ctx) => {
-      ctx.daemon = mkDaemonFixture();
+      ctx.daemon = mkDaemonFixture(ctx);
       ctx.bouncedSha = commitTouching(ctx.daemon.root, 'extension/src/bad.ts', 'bounced work\n', 'bounced parcel');
       git(ctx.daemon.root, ['branch', 'swarmforge-QA']); // reachable: merged for review
       recordBounce(ctx.daemon.root, ctx.bouncedSha);
@@ -286,7 +289,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^every parcel in the range about to be pushed is QA-approved$/,
     (ctx) => {
-      ctx.daemon = mkDaemonFixture();
+      ctx.daemon = mkDaemonFixture(ctx);
       ctx.approvedSha = commitTouching(ctx.daemon.root, 'extension/src/good.ts', 'approved work\n', 'approved parcel');
       git(ctx.daemon.root, ['branch', 'swarmforge-QA']);
     },
@@ -296,7 +299,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the publish gate runs over the range about to be pushed$/,
     async (ctx) => {
-      startDaemon(ctx.daemon);
+      startDaemon(ctx, ctx.daemon);
       if (ctx.bouncedSha) {
         ctx.refused = await waitForLog(ctx.daemon, 'qa-refused bounced-parcel', 40000);
       } else {

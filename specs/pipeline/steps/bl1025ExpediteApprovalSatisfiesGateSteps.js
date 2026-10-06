@@ -20,7 +20,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { reap } = require('./lib/fixtureReaper');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
@@ -56,7 +55,7 @@ const SUBJECTS = {
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl1025() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     // Restore any permission we removed, or the rmSync below cannot finish.
@@ -71,13 +70,15 @@ afterEach(() => {
     reap(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 function git(cwd, args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' });
 }
 
-function mkFixtureRepo() {
+function mkFixtureRepo(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1025);
   const root = mkSocketFixtureRoot('sfvc-bl1025-');
   trackedRoots.push(root);
   fs.writeFileSync(path.join(root, 'README.md'), 'init\n');
@@ -140,7 +141,7 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^a commit touching a QA-exclusive path that has landed on main$/, (ctx) => {
-    ctx.root = mkFixtureRepo();
+    ctx.root = mkFixtureRepo(ctx);
   });
 
   scoped(/^the commit (was not|was) merged by a live QA agent$/, (ctx, liveQa) => {

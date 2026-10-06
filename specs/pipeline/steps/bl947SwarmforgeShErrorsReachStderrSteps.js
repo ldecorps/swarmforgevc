@@ -14,7 +14,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { scanScriptFile } = require('./lib/swarmforgeShErrorChannel');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -24,17 +23,19 @@ const LAUNCHER = path.join(SCRIPTS_DIR, 'swarmforge.sh');
 const FEATURE = 'swarmforge.sh reports failures on stderr';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl947() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 // /tmp directly, never os.tmpdir(): macOS's real /var/folders/... base plus
 // a fixture prefix plus /.swarmforge/tmux/<hash>.sock overruns the ~100-char
 // sun_path limit by itself, which would turn the WITHIN-limit fixture into
 // an over-limit one (the exact trap BL-944's regression testing hit).
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl947);
   const root = fs.mkdtempSync(path.join('/tmp', prefix));
   trackedRoots.push(root);
   return root;
@@ -68,7 +69,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a working directory whose control socket path exceeds the limit$/,
     (ctx) => {
-      const base = mkTmp('sfvc-bl947-long-');
+      const base = mkTmp(ctx, 'sfvc-bl947-long-');
       const deep = path.join(base, 'x'.repeat(40), 'y'.repeat(40), 'work');
       fs.mkdirSync(deep, { recursive: true });
       ctx.workingDir = deep;
@@ -79,7 +80,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a working directory whose control socket path is within the limit$/,
     (ctx) => {
-      ctx.workingDir = mkTmp('sfvc-bl947-ok-');
+      ctx.workingDir = mkTmp(ctx, 'sfvc-bl947-ok-');
     },
     FEATURE
   );

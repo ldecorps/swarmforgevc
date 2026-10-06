@@ -12,7 +12,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 const {
   RETIRED_ENSURE_ENV_VARS,
@@ -45,11 +44,11 @@ function knownDir(token) {
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl964() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
@@ -64,6 +63,8 @@ function registerSteps(registry) {
     const retired = knownVar(varToken);
     ctx.root = mkSocketFixtureRoot('bl964-');
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl964);
     const target = path.join(ctx.root, dir);
     fs.mkdirSync(target, { recursive: true });
     ctx.offender = path.join(target, 'test_scratch_offender.sh');
@@ -75,6 +76,8 @@ function registerSteps(registry) {
   scoped(/^a scratch tree whose test files set only the SWARM_ENSURE_\*_CMD env vars$/, (ctx) => {
     ctx.root = mkSocketFixtureRoot('bl964-ok-');
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl964);
     for (const dir of KNOWN_DIRS) {
       const target = path.join(ctx.root, dir);
       fs.mkdirSync(target, { recursive: true });

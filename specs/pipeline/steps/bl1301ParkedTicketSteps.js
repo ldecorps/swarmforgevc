@@ -17,7 +17,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -41,11 +40,11 @@ const KNOWN_VERDICTS = new Set(['yes', 'no']);
 
 const trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl1301() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function git(root, args) {
   execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
@@ -133,6 +132,8 @@ function registerSteps(registry) {
   scoped(
     /^an active ticket with a trail, no parcel in flight anywhere, and a trail stale past the threshold$/,
     (ctx) => {
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(__bl1659Dispose_bl1301);
       ctx.root = mkSocketFixtureRoot('bl1301-');
       trackedRoots.push(ctx.root);
       git(ctx.root, ['init', '-q']);

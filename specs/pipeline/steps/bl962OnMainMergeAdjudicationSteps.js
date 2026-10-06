@@ -15,7 +15,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { reap } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -43,13 +42,13 @@ function knownPath(token) {
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl962() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     reap(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 function git(cwd, args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
@@ -58,7 +57,9 @@ function git(cwd, args) {
   });
 }
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl962);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   return root;
@@ -109,7 +110,7 @@ function registerSteps(registry) {
 
   // ── Background ────────────────────────────────────────────────────────────
   scoped(/^a scratch git repository with branches "main" and "swarmforge-QA"$/, (ctx) => {
-    ctx.root = mkTmp('sfvc-bl962-');
+    ctx.root = mkTmp(ctx, 'sfvc-bl962-');
     fs.writeFileSync(path.join(ctx.root, 'README.md'), 'init\n');
     git(ctx.root, ['init', '-q', '-b', 'main']);
     git(ctx.root, ['add', '-A']);
@@ -120,7 +121,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^the QA-exclusive path set is stubbed to contain "extension\/src\/"$/, (ctx) => {
-    const stubDir = mkTmp('sfvc-bl962-stub-');
+    const stubDir = mkTmp(ctx, 'sfvc-bl962-stub-');
     const stub = path.join(stubDir, 'stub-list-paths.sh');
     fs.writeFileSync(
       stub,
@@ -216,7 +217,7 @@ function registerSteps(registry) {
       // (rev-list swarmforge-QA..main never lists it) - and delegates every
       // other sha to the real predicate, so the sweep's pre-existing
       // confirmations pass and the failure surfaces INSIDE adjudication.
-      const stubDir = mkTmp('sfvc-bl962-anc-stub-');
+      const stubDir = mkTmp(ctx, 'sfvc-bl962-anc-stub-');
       const stub = path.join(stubDir, 'stub-ancestor.sh');
       fs.writeFileSync(
         stub,

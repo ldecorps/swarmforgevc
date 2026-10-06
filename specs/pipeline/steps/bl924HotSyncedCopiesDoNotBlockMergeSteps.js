@@ -13,7 +13,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const TOOL = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'clear_identical_untracked_and_merge.bb');
@@ -30,18 +29,20 @@ const FEATURE = 'a byte-identical hot-synced copy never blocks a worktree merge'
 // session's other new fixture-heavy step files).
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl924() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 function git(cwd, args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' });
 }
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl924);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   return root;
@@ -54,8 +55,8 @@ function mkTmp(prefix) {
 // checkout itself is deferred to the end, after every top-level commit -
 // otherwise a later `git add -A` at the top level would pick up the
 // linked worktree's own .git file as a spurious "embedded git repository".
-function mkRepoWithDivergedRole() {
-  const root = mkTmp('sfvc-bl924-root-');
+function mkRepoWithDivergedRole(ctx) {
+  const root = mkTmp(ctx, 'sfvc-bl924-root-');
   fs.mkdirSync(path.join(root, 'swarmforge', 'scripts'), { recursive: true });
   fs.writeFileSync(path.join(root, 'swarmforge', 'scripts', 'foo.sh'), 'echo foo\n');
   git(root, ['init', '-q', '-b', 'main']);
@@ -104,7 +105,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a role worktree carrying untracked hot-synced copies of paths that main tracks$/,
     (ctx) => {
-      const { root, wt } = mkRepoWithDivergedRole();
+      const { root, wt } = mkRepoWithDivergedRole(ctx);
       ctx.root = root;
       ctx.wt = wt;
     },

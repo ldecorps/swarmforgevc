@@ -81,8 +81,16 @@ function assertKnownCarries(carries) {
   );
 }
 
+function __bl1659Dispose_bl1536() {
+  while (trackedRoots.length) {
+    fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
+  }
+}
+
 function initCtx(ctx) {
   if (ctx.bl1536) return ctx.bl1536;
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1536);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX));
   trackedRoots.push(root);
   ctx.bl1536 = {
@@ -148,12 +156,6 @@ function registerSteps(registry) {
   // BL-1866: the sweep runs before this handler's first step runs, never
   // while the full step registry is being built.
   registry = require('./lib/sweepOnFirstStep').sweepOnFirstStep(registry, sweepStaleFixtures);
-  const { afterEach } = require('node:test');
-  afterEach(() => {
-    while (trackedRoots.length) {
-      fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
-    }
-  });
 
   const scoped = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE_NAME);
 

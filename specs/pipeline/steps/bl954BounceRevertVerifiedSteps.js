@@ -11,7 +11,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const CLI = path.join(REPO_ROOT, 'extension', 'out', 'tools', 'record-bounce.js');
@@ -22,11 +21,11 @@ const BOUNCING_ROLE = 'architect';
 const BRANCH = 'swarmforge-architect';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl954() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function git(cwd, args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
@@ -37,6 +36,8 @@ function git(cwd, args) {
 }
 
 function mkFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl954);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl954-accept-'));
   trackedRoots.push(root);
   git(root, ['init', '-q', '-b', 'main']);

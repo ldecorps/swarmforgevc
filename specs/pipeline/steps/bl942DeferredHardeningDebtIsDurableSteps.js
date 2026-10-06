@@ -13,7 +13,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -23,13 +22,15 @@ const READ_CLI = path.join(SCRIPTS_DIR, 'hardening_debt_ledger_read.bb');
 const FEATURE = 'a deferred hardening gate leaves a durable debt record';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl942() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl942);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   fs.mkdirSync(path.join(root, 'backlog'), { recursive: true });
@@ -63,7 +64,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a hardening pass on a parcel with a wired mutation target$/,
     (ctx) => {
-      ctx.root = mkTmp('sfvc-bl942-');
+      ctx.root = mkTmp(ctx, 'sfvc-bl942-');
       ctx.parcel = rid('BL-PARCEL');
       ctx.fileSet = ['extension/src/quality/closingCeremony.ts', 'extension/src/concierge/epicIcon.ts'];
       ctx.reason = 'host load above busy threshold';
@@ -142,7 +143,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the debt ledger already holds a mutation row for a file set$/,
     (ctx) => {
-      ctx.root = mkTmp('sfvc-bl942-');
+      ctx.root = mkTmp(ctx, 'sfvc-bl942-');
       ctx.fileSet = ['a/one.ts', 'a/two.ts'];
       ctx.firstParcel = rid('BL-FIRST');
       defer(ctx.root, { parcel: ctx.firstParcel, gate: 'mutation', fileSet: ctx.fileSet, reason: 'host load above busy threshold', load: '44.47/27.77/22.49' });
@@ -181,7 +182,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the debt ledger holds rows from earlier deferrals$/,
     (ctx) => {
-      ctx.root = mkTmp('sfvc-bl942-');
+      ctx.root = mkTmp(ctx, 'sfvc-bl942-');
       ctx.deferrals = [
         { parcel: rid('BL-READ'), gate: 'mutation', fileSet: ['x/one.ts'], reason: 'host load above busy threshold', load: '44/27/22' },
         { parcel: rid('BL-READ'), gate: 'CRAP', fileSet: ['x/two.ts', 'x/three.ts'], reason: 'host load above busy threshold', load: '60/50/40' },

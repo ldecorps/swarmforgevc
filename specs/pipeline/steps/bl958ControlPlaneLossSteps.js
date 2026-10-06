@@ -14,7 +14,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const fixtureReaper = require('./lib/fixtureReaper');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
@@ -28,7 +27,7 @@ const ROLES = ['coder', 'specifier', 'cleaner', 'architect', 'hardender', 'docum
 const OBSERVED_AT = '2026-08-19T18:00:00Z';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl958() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     // Hardening (BL-958): reap() before rmSync so the fixture's tmux socket
@@ -39,9 +38,11 @@ afterEach(() => {
     fixtureReaper.reap(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 function mkFixture(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl958);
   const root = mkSocketFixtureRoot('sfvc-bl958-');
   fixtureReaper.track(root);
   trackedRoots.push(root);

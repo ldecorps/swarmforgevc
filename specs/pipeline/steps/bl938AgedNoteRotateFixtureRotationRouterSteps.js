@@ -28,7 +28,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -38,7 +37,7 @@ const HANDOFFD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'handoffd.bb');
 const FEATURE = 'the aged-note rotate wiring fixture declares a rotation-router pack';
 
 let cleanupFns = [];
-afterEach(() => {
+function __bl1659Dispose_bl938() {
   while (cleanupFns.length) {
     const fn = cleanupFns.pop();
     try {
@@ -48,7 +47,7 @@ afterEach(() => {
       // pass/fail result, which node:test has already recorded by now.
     }
   }
-});
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -72,7 +71,9 @@ fi
 exit 0
 `;
 
-function buildChaseSweepFixture({ declareRotation }) {
+function buildChaseSweepFixture(ctx, { declareRotation }) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl938);
   const root = mkSocketFixtureRoot('sfvc-bl938-acc-');
   execFileSync('git', ['init', '-q'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: root });
@@ -139,7 +140,9 @@ function buildChaseSweepFixture({ declareRotation }) {
   return { root, binDir, noteRole: 'specifier' };
 }
 
-async function runDaemonUntil(root, binDir, isDone, timeoutMs) {
+async function runDaemonUntil(ctx, root, binDir, isDone, timeoutMs) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl938);
   const tmuxLog = path.join(root, 'tmux-calls.log');
   fs.writeFileSync(tmuxLog, '');
   const stdoutFd = fs.openSync(path.join(root, 'daemon-stdout.log'), 'w');
@@ -192,7 +195,9 @@ function runShellTest(scriptPath) {
   }
 }
 
-function makeNeutralizedScratchCopy() {
+function makeNeutralizedScratchCopy(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl938);
   const original = fs.readFileSync(SHELL_TEST, 'utf8');
   const marker = "printf 'config rotation router\\nconfig rotation_home coder\\nconfig rotation_starve_after_ms off\\n' > \"$root/swarmforge.conf\"";
   assert.ok(original.includes(marker), 'expected the rotation-router declaration line to still be present verbatim in the shell fixture');
@@ -243,7 +248,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the aged-note rotate wiring test is run$/,
     (ctx) => {
-      const scriptPath = ctx.neutralizeActionability ? makeNeutralizedScratchCopy() : SHELL_TEST;
+      const scriptPath = ctx.neutralizeActionability ? makeNeutralizedScratchCopy(ctx) : SHELL_TEST;
       const { exitCode, output } = runShellTest(scriptPath);
       ctx.exitCode = exitCode;
       ctx.output = output;
@@ -306,8 +311,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the handoffd chase sweep runs$/,
     async (ctx) => {
-      const { root, binDir } = buildChaseSweepFixture({ declareRotation: ctx.declareRotation });
-      ctx.logContent = await runDaemonUntil(
+      const { root, binDir } = buildChaseSweepFixture(ctx, { declareRotation: ctx.declareRotation });
+      ctx.logContent = await runDaemonUntil(ctx, 
         root,
         binDir,
         (log) => /chase-rotate specifier/.test(log) || /not-a-rotation-router/.test(log),

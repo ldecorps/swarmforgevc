@@ -15,7 +15,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { track } = require('./lib/fixtureReaper');
 const {
   REPO_ROOT,
@@ -35,9 +34,6 @@ const SWEEP_LIB = path.join(SCRIPTS, 'babysitterd_sweep_lib.bb');
 
 const FEATURE = 'babysitter sweep detects pipeline code landing on main outside the QA path';
 
-afterEach(() => {
-  reapAndRemove();
-});
 
 // A REAL fake coordinator tmux pane, so --nudge reaches nudge-resident!'s
 // own :nudged branch for real - the ONLY path that calls write-dedup-state!
@@ -126,6 +122,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a commit reachable from main that is not an ancestor of swarmforge-QA$/,
     (ctx) => {
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(reapAndRemove);
       ctx.root = mkFixtureRepo('sfvc-bl631-');
     },
     FEATURE
@@ -186,6 +184,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a critical finding was produced for an offending commit$/,
     (ctx) => {
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(reapAndRemove);
       ctx.root = mkFixtureRepo('sfvc-bl631-');
       ctx.sha = commitFile(ctx.root, 'extension/src/foo.ts', 'code\n', 'coder: merge BL-590 fix');
       ctx.result = runSweep(ctx.root);
@@ -250,6 +250,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^an offending commit sha was nudged as critical on the previous sweep$/,
     (ctx) => {
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(reapAndRemove);
       ctx.root = mkFixtureRepo('sfvc-bl631-');
       ctx.coordinatorSock = addFakeCoordinatorPane(ctx.root);
       ctx.firstSha = commitFile(ctx.root, 'extension/src/foo.ts', 'code\n', 'coder: first offender');
@@ -330,6 +332,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^check_pipeline_code_on_main\.sh --list-paths reports a path set the sweep has never seen$/,
     (ctx) => {
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(reapAndRemove);
       ctx.root = mkFixtureRepo('sfvc-bl631-');
       ctx.stubScript = createStubScript(['docs/custom-secret.md'], 'sfvc-bl631-stub-');
       ctx.stubPath = 'docs/custom-secret.md';
@@ -367,6 +371,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the swarmforge-QA ref cannot be resolved$/,
     (ctx) => {
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(reapAndRemove);
       ctx.root = mkTmp('sfvc-bl631-noqa-');
       fs.writeFileSync(path.join(ctx.root, 'README.md'), 'init\n');
       git(ctx.root, ['init', '-q', '-b', 'main']);
@@ -403,6 +409,8 @@ function registerSteps(registry) {
     /^an offending commit is reachable from (\S+) and from no other ref naming main$/,
     (ctx, token) => {
       const ref = knownRef(token);
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(reapAndRemove);
       const originDir = mkTmp('sfvc-bl631-origin-');
       execFileSync('git', ['init', '-q', '--bare', originDir]);
 
@@ -451,6 +459,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the commit set from the 2026-07-25 BL-590 incident window$/,
     (ctx) => {
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(reapAndRemove);
       ctx.root = mkFixtureRepo('sfvc-bl631-');
       ctx.offendingShas = [];
       ctx.offendingShas.push(commitFile(ctx.root, 'extension/src/a.ts', '1\n', 'coder: 4851901ed-shaped'));

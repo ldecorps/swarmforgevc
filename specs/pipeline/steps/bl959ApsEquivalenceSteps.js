@@ -12,7 +12,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EQUIVALENCE_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'aps_equivalence_cli.bb');
@@ -32,11 +31,11 @@ const CORPUS = ['specs/features/alpha.feature', 'specs/features/beta.feature', '
 const GATES = ['lint-parse', 'ir-dry'];
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl959() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function slug(entry) {
   // Mirrors nothing: filenames only need to be stable fixture keys here -
@@ -84,6 +83,8 @@ function registerSteps(registry) {
     (ctx) => {
       ctx.work = fs.mkdtempSync(path.join(os.tmpdir(), 'bl959-equivalence-'));
       trackedRoots.push(ctx.work);
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(__bl1659Dispose_bl959);
       seedIdentical(ctx);
     }
   );

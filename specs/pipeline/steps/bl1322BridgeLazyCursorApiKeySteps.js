@@ -14,7 +14,6 @@
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
@@ -58,17 +57,17 @@ function controlAuth() {
 // out at 2 minutes instead of reporting the failure). Same shape as
 // bl915CursorBridgeGoneAgentSessionResetSteps.js.
 let restoreFns = [];
-afterEach(() => {
+function __bl1659Dispose_bl1322() {
   while (restoreFns.length) {
     const fn = restoreFns.pop();
     try {
       fn();
     } catch {
       // best-effort - a restore throwing must never mask the scenario's
-      // own pass/fail result, which node:test has already recorded by now.
+      // own pass/fail result.
     }
   }
-});
+}
 
 async function startRealBridge(ctx) {
   ctx.bridge = await lib().startBridge(ctx.targetPath, path.join(ctx.targetPath, 'runs.jsonl'), TOKEN, {});
@@ -80,6 +79,8 @@ function registerSteps(registry) {
 
   // ── Background ──────────────────────────────────────────────────────────
   scoped(/^CURSOR_API_KEY is not set in the environment$/, (ctx) => {
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1322);
     ctx.targetPath = mkSocketFixtureRoot('bl1322-acc-');
     const prevCursorApiKey = process.env.CURSOR_API_KEY;
     delete process.env.CURSOR_API_KEY;

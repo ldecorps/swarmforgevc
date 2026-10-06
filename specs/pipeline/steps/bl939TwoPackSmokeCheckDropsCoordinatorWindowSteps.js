@@ -14,7 +14,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SMOKE_CHECK = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'smoke_check_stabilize_two_pack.sh');
@@ -24,7 +23,7 @@ const REAL_PROFILE = path.join(REPO_ROOT, 'swarmforge', 'profiles', 'stabilize-t
 const FEATURE = 'the stabilize-two-pack smoke check stops demanding a coordinator window line';
 
 let cleanupFns = [];
-afterEach(() => {
+function __bl1659Dispose_bl939() {
   while (cleanupFns.length) {
     const fn = cleanupFns.pop();
     try {
@@ -33,7 +32,7 @@ afterEach(() => {
       // best-effort - a cleanup throwing must never mask the scenario's own pass/fail result.
     }
   }
-});
+}
 
 function runSmokeCheck(root) {
   try {
@@ -140,6 +139,8 @@ function registerSteps(registry) {
       }
       const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl939-parse-'));
       cleanupFns.push(() => fs.rmSync(root, { recursive: true, force: true }));
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(__bl1659Dispose_bl939);
       ctx.confPath = path.join(root, 'stabilize-two-pack.conf');
       fs.writeFileSync(ctx.confPath, build());
     },

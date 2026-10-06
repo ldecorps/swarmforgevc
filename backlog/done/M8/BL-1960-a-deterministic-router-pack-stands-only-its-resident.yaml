@@ -96,3 +96,5 @@ description: |
 
   The scenario; test_rotation_sequential_pack.sh still passes; the pack's
   coordinator_* lines per the procedure's step 4.
+
+assigned_to: coder

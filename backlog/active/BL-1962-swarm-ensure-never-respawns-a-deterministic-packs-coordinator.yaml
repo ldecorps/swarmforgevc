@@ -96,3 +96,5 @@ description: |
     ensure-rc-role! creates nothing for the coordinator either.
   - Architect: the two invariants; ensure's launch-contract gate
     (launch_contract_lib) still behaves on a deterministic pack.
+
+assigned_to: coder

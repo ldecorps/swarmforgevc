@@ -1,0 +1,116 @@
+id: BL-2034
+title: "A throttle signal that trips again is live, not awaiting release - BL-1981's updateThrottleEpisode stamps clearedAtIso on the first clear and never resets it, so a signal that clears and trips again still reads awaiting release, and BL-1982 can ask the human whether the swarm looks healthy while the signal is live"
+milestone: M8
+type: defect
+severity: medium
+# medium: a release in that window is still safe (the live raw cap binds and
+# the released episode stays open until the signal withdraws), but the
+# human is asked a question whose premise is false.
+status: todo
+epic: swarm-self-optimization
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one branch of one pure function, one handler over BL-1981's fixture.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one branch of one pure function; nothing to refactor"
+  architect: "no boundary moves; the episode's shape is unchanged"
+  documenter: "BL-1981's how-to already says awaiting release applies once the signal has cleared; the fix makes the code match it"
+acceptance: specs/features/BL-2034-a-throttle-signal-that-trips-again-is-live-not-awaiting-release.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2034ThrottleRetripSteps.js::registerSteps::binds BL-2034-a-throttle-signal-that-trips-again-is-live-not-awaiting-release.feature (discovered by suffix, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Found by QA on BL-1982's pass (QA evidence O1). No choice is posed.
+  FIRM: the lowest cap the episode reached still holds across a re-trip
+  (BL-1981 invariant 2); only clearedAtIso changes, so the episode reads as
+  awaiting release only while its signal is clear.
+
+invariants:
+  - "An episode reads as awaiting release only on a tick whose raw recommendation is clear: any tick with a live raw recommendation leaves clearedAtIso null."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's acceptance row:
+     `specs/features/BL-2034-a-throttle-signal-that-trips-again-is-live-not-awaiting-release.feature`
+     2 of 2 pass (measured at mint: no handler, all red).
+  2. Read from the gather's unit and property rows:
+     `extension/test/throttleHoldEpisode.test.js` and
+     `extension/test/bl1981ThrottleHoldInvariants.property.test.js` pass.
+  3. Run `node specs/pipeline/cli.js specs/features/BL-1981-a-cleared-throttle-signal-holds-the-cap-until-a-human-releases-it.feature`:
+     7 ok, 0 fail (measured at mint on main 2026-10-06; a feature the
+     gather does not run for this ticket).
+  4. Read the hardener's committed evidence.
+
+source: |
+  QA note 003846, 2026-10-06: "BL-1981 gap: re-tripped episode reads
+  awaiting release; BL-1982 asks - QA O1". QA's evidence
+  (backlog/evidence/BL-1982-QA-20261006.md, O1), verbatim: "BL-1981's
+  episode never resets clearedAtIso when a cleared signal re-trips. Probe
+  (mkdtemp, cap 6): severe -> cleared -> severe again leaves clearedAtIso
+  at the clear and awaitingRelease true, with rawCap 0. If BL-1982's ask
+  has not fired yet (say another coordinator question was pending during
+  the cleared window), it then asks "<signal> has read normal for
+  <duration> - the swarm looks healthy" while the signal is live again. A
+  release then is still safe (the live raw cap binds, and the released
+  episode stays open until the signal withdraws), but the question
+  misleads."
+  BL-1981's human directive, 2026-10-05, verbatim: "Change logic around
+  circuit breaker cap 1. Once cap 1 is reached, ask if it is safe to
+  release the cap. The idea is that we prevent issues from piling up. The
+  swarm is working ok, it is not safe to resume churning at full throttle
+  [just because signals look normal again]."
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  Not auto-approved: medium severity.
+  Out of scope, recorded: a question BL-1982 already raised stays in the
+  Approvals/coordinator topic when the signal re-trips. Withdrawing it is
+  BL-1982's question lifecycle. QA's O3 (the question names
+  configuredCapAtOpen as the cap a release restores, but a release
+  restores min(current configured, recommendation) if the conf changed
+  mid-episode) is BL-1982's wording, sent to no one by QA; recorded here.
+
+description: |
+  ## What is wrong
+
+  `extension/src/tools/emit-throttle-recommendation.ts`,
+  `updateThrottleEpisode` (around line 196): when the tick's raw cap is
+  live (`rawCap !== null`) it updates only `lowestCapReached`. When it is
+  clear, it stamps `clearedAtIso` once. Nothing resets `clearedAtIso`
+  when a cleared signal trips again, though the type's own comment says
+  it is "null while the signal is still live". Every reader takes
+  "awaiting release" as an open, unanswered episode with `clearedAtIso`
+  set, so a re-tripped episode keeps reading as awaiting release.
+
+  ## What is wanted
+
+  - A tick with a live raw recommendation leaves `clearedAtIso` null. The
+    lowest cap reached still holds (BL-1981 invariant 2), and a recorded
+    answer is untouched.
+  - When the signal clears again, `clearedAtIso` is stamped from that
+    clear, so "has read normal for <duration>" counts from the second
+    clear.
+
+  ## How (direction, not mandate)
+
+  - The `rawCap !== null` branch sets `clearedAtIso: null` alongside
+    `lowestCapReached`.
+  - The handler `specs/pipeline/steps/bl2034ThrottleRetripSteps.js` builds
+    the fixture the way `bl1981ThrottleHumanReleaseSteps.js` does (its
+    helpers `writeOverThreshold`, `writeUnderThreshold`,
+    `runEffectiveDepthCli` and `readRecommendation`, lines 34-93), and
+    walks the `<history>` column one change at a time, running the depth
+    CLI after each. It records the first clear's `clearedAtIso`, so "since
+    the second clear" means a later stamp. Validate `<history>` and
+    `<awaiting>` against explicit known values.
+  - The invariant fits `bl1981ThrottleHoldInvariants.property.test.js`:
+    over any generated tick sequence, a live tick leaves `clearedAtIso`
+    null.
+
+assigned_to: coder

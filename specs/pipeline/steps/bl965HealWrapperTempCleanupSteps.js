@@ -10,7 +10,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, spawnSync, execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -28,7 +27,7 @@ function knownSignal(token) {
 let trackedRoots = [];
 let trackedProcs = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl965() {
   while (trackedProcs.length) {
     try {
       trackedProcs.pop().kill('SIGKILL');
@@ -39,7 +38,7 @@ afterEach(() => {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function composeWrapper(command, worktree) {
   const expr = `
@@ -69,6 +68,8 @@ function registerSteps(registry) {
   scoped(/^a fixture TMPDIR and a composed heal wrapper for a long-running command$/, (ctx) => {
     ctx.root = mkSocketFixtureRoot('bl965-');
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl965);
     ctx.tmpDir = path.join(ctx.root, 'tmp');
     fs.mkdirSync(ctx.tmpDir, { recursive: true });
     ctx.worktree = ctx.root;
@@ -92,6 +93,8 @@ function registerSteps(registry) {
         detached: true,
       });
       trackedProcs.push(ctx.child);
+      ctx.__disposables = ctx.__disposables || [];
+      ctx.__disposables.push(__bl1659Dispose_bl965);
       const appeared = await waitFor(() => sfhFiles(ctx.tmpDir).length === 1, 15000);
       assert.ok(appeared, `expected exactly one sfh.* capture file mid-run, got: ${JSON.stringify(sfhFiles(ctx.tmpDir))}`);
     }

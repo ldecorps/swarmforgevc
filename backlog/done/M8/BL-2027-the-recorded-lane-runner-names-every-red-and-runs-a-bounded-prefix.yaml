@@ -44,7 +44,13 @@ description: |
      - Each line of `--list` is `<item>` TAB `<command ...>`. Run the lines
        in order, one at a time (never in parallel). With `--limit N`, run
        only the first N lines.
-     - Around each command, take `date +%s%3N` before and after. The moment
+     - Around each command, read a millisecond clock before and after. It
+       must give whole milliseconds on Linux (GNU date) AND on macOS (BSD
+       date, stock /bin/bash 3.2): `date +%s%3N` is GNU-only, and BSD date
+       prints a literal `3N` (amended 2026-10-06, QA note 003849). For
+       example, use `date +%s%3N` only when its output is all digits, and
+       otherwise `node -e 'process.stdout.write(String(Date.now()))'`
+       (node is on every host this runs on). The moment
        the command returns, append ONE line to `--durations` with `>>`:
        `{"finished_at":"<iso>","lane":"<name>","file":"<item>","result":"pass|fail","duration_ms":<n>}`
        (`result` is `pass` when the command exits 0). Build it with `printf`.
@@ -93,8 +99,17 @@ description: |
       `names exactly that item` -> exactly one `FAILED b` line.
   - Scenario 05's "it runs exactly the first item": the durations file's
     single row has `"file":"a"`.
+  - Scenario 06 (added 2026-10-06 with the clock amendment): for "a date on
+    PATH that prints %3N literally, as BSD date does", the handler writes
+    an executable `date` into a fixture `bin/` dir that prints
+    `<seconds>3N` (seconds from the real date, resolved by absolute path
+    before PATH changes) when an argument contains `%3N`, and otherwise
+    runs the real date with the same arguments. It prepends that dir to
+    the runner's PATH for that run only. "every row's duration_ms is a
+    whole number of milliseconds": every row parses as JSON and its
+    `duration_ms` satisfies `Number.isInteger(v) && v >= 0`.
 
-  Then run `node specs/pipeline/cli.js <this feature>`: 3 ok, 0 fail. Run
+  Then run `node specs/pipeline/cli.js <this feature>`: every run ok, 0 fail. Run
   `cd extension && npm test` before forwarding. No shell test and no
   `suite-manifest.tsv` row: the handler drives the real runner.
 
@@ -107,7 +122,8 @@ description: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-2027-the-recorded-lane-runner-names-every-red-and-runs-a-bounded-prefix.feature`:
-     3 ok (04 x2, 05), 0 fail. Measured at mint: no handler, all red.
+     every run ok, 0 fail: scenario 04's rows, 05 and 06 (06 added
+     2026-10-06; measured at the amendment, 06 unbound).
   2. `git diff <parcel>^..<parcel> --stat` names only the runner, the
      handler and the parcel's own evidence.
 
@@ -142,5 +158,15 @@ notes: |
   first slice.
   INVEST: Independent (no dependency). Small (two new files, three runs).
   Testable (mkdtemp fixtures, seconds).
+  Amended 2026-10-06 (QA note 003849, spec gap; QA bounce D1/D2 went to the
+  coder separately): the description mandated `date +%s%3N`, which BSD
+  date on macOS does not support. macOS is a target (local-engineering Tech
+  Stack). The clock is now a requirement (whole ms on GNU and BSD date),
+  with options as direction, and scenario 06 gates it on this Linux host
+  through a BSD-style fake date. The coder built against the old line
+  and is not at fault.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: behavior, commit: c4d08ba813, evidence: backlog/evidence/BL-2027-QA-20261006.md }

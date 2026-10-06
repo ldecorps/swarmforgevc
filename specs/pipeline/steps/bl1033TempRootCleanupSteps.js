@@ -25,7 +25,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const FEATURE = "a property runner's temp root is removed even when the run throws";
 
@@ -49,11 +48,11 @@ const KNOWN_ENDINGS = new Set(['throws from its git helper', 'fails its exhausti
 const LAST_THROWING_GIT_CALL = 17;
 
 let trackedPaths = [];
-afterEach(() => {
+function __bl1659Dispose_bl1033() {
   while (trackedPaths.length) {
     fs.rmSync(trackedPaths.pop(), { recursive: true, force: true });
   }
-});
+}
 
 // java.io.tmpdir is where fs/create-temp-dir actually writes; os.tmpdir() can
 // differ, and reading the wrong directory would report "no leak" forever.
@@ -66,7 +65,9 @@ function rootsIn(base) {
   return new Set(fs.readdirSync(base).filter((n) => n.startsWith(PREFIX)));
 }
 
-function mkScratch(prefix) {
+function mkScratch(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1033);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedPaths.push(dir);
   return dir;
@@ -74,8 +75,8 @@ function mkScratch(prefix) {
 
 // Passes through to the real git except on the Nth call, where it fails - the
 // runner's `g` helper then throws, which is the live throw path.
-function gitShim(failAt) {
-  const dir = mkScratch('sfvc-bl1033-shim-');
+function gitShim(ctx, failAt) {
+  const dir = mkScratch(ctx, 'sfvc-bl1033-shim-');
   const counter = path.join(dir, 'calls');
   const realGit = (spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout || '').trim();
   fs.writeFileSync(path.join(dir, 'git'),
@@ -92,8 +93,8 @@ function gitShim(failAt) {
 // the run. It lives OUTSIDE the repo, in the layout the runner's own relative
 // load-file resolution needs, so no scratch .bb is left inside
 // swarmforge/scripts for a tree-wide guard to scan.
-function brokenSweepCopy() {
-  const root = mkScratch('sfvc-bl1033-copy-');
+function brokenSweepCopy(ctx) {
+  const root = mkScratch(ctx, 'sfvc-bl1033-copy-');
   const scripts = path.join(root, 'scripts');
   const testDir = path.join(scripts, 'test');
   fs.mkdirSync(testDir, { recursive: true });
@@ -164,10 +165,10 @@ function registerSteps(registry) {
       // call 20 leaves nothing to reclaim and this scenario passes whether the
       // fix is present or not. Call 17 is the DEEPEST throw that genuinely
       // exits early, so it is the strongest case this scenario can make.
-      runRunner(ctx, { shimDir: gitShim(LAST_THROWING_GIT_CALL) });
+      runRunner(ctx, { shimDir: gitShim(ctx, LAST_THROWING_GIT_CALL) });
       return;
     }
-    runRunner(ctx, { target: brokenSweepCopy() });
+    runRunner(ctx, { target: brokenSweepCopy(ctx) });
   };
 
   scoped(/^the runner finishes$/, execute);

@@ -1,0 +1,95 @@
+id: BL-2036
+title: "Stamp-off for hotfix 62ef35bcdb: ambulance-hold-05 bounded its wait for the first chase-rotate at 40 s, but the rotate lands on handoffd's third chase sweep, past 40 s on a loaded host; the bound is now 120 s"
+milestone: M8
+type: defect
+severity: high
+# high: an intermittent red with no register row, holding BL-2014 at QA
+# (standing-red rule, 2026-09-05: a red is high at first sighting).
+status: todo
+epic: swarm-reliability
+priority: 1
+depends_on: []
+mutation_cost: low
+# low: review only - read one commit, run one shell test.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one test bound changes; nothing to refactor"
+  architect: "a shell test's wait bound; no production boundary moves"
+  hardender: "test-side only; no production code changed"
+  documenter: "no living doc describes this test's timing"
+
+# Not a claim of ownership over BL-655's contract (BL-1251): the shell test
+# the hotfix changed is BL-655's real-daemon wiring coverage.
+acceptance: specs/features/BL-655-ambulance-mode-hold.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews it and never re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_handoffd_ambulance_wiring.sh`:
+     ALL PASS, rc 0 (measured at 62ef35bcdb at load 18.8: 68 s; failed at
+     40 s at load 11 before it).
+  2. Read from the gather's acceptance row: the BL-655 feature 20 of 20
+     (measured at mint: 20 of 20).
+  3. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  QA note 003857, 2026-10-06: "BL-2014 held: unowned flaky red
+  ambulance-hold-05 (fixed 40s), evid 72ccf8d12c".
+
+description: |
+  ## Status: hotfix 62ef35bcdb landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `swarmforge/scripts/test/test_handoffd_ambulance_wiring.sh` scenario
+  ambulance-hold-05 starts a real `handoffd.bb` on a temp root and waited
+  at most 40 s for its first `chase-rotate` line. handoffd runs a chase
+  sweep every 10 poll cycles. A timestamped trace at load 11 showed sweeps
+  at +1 s (the parcel was not yet aged) and +20 s (no rotate), with the
+  rotate due on the third. Each 10-cycle stretch also pays this fixture's
+  unassigned-active nudge, 6-8 s, because the fixture has no coordinator
+  row. The third sweep fell past 40 s, so the scenario failed on a working
+  daemon whenever the host was loaded (the coder's two failures). It passed
+  on quieter runs (QA's).
+
+  ## What the hotfix changed
+
+  The deadline is 120 s, with a comment giving the measurement. It is a
+  bound, not a measurement: the loop still stops at the first rotate line,
+  and the documenter-must-not-win check is unchanged. Measured after: ALL
+  PASS at load 18.8, 68 s for the whole file.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure step 1 once, output under tmp/.
+  2. Read `git show 62ef35bcdb` against the two sections above.
+  3. Write backlog/evidence/BL-2036-coder-<date>.md: the result and one
+     line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-06 by the specifier, the same pass as hotfix 62ef35bcdb.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: 62ef35bcdb linked to BL-2036. No register row was added:
+  the red was fixed in the pass that found it.
+  Release note sent to QA 2026-10-06: retake BL-2014's parcel 6ebabfb995
+  and merge main.
+  Seen, not ticketed: the fixture's unassigned-active nudge fails with
+  "Unknown sender role: coordinator" on every sweep. It costs time and
+  hides nothing, since the scenario is about delivery and rotation.
+
+assigned_to: coder

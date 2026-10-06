@@ -1,0 +1,99 @@
+id: BL-2033
+title: "effective_backlog_depth_cli.bb passes on a throttle refresh failure the refresh reports on exit 0 - since BL-1874 the throttle CLI names the failure on stderr and exits 0, and the depth CLI prints the refresh's stderr only on a non-zero exit, so the failure never reaches the asking role's log"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The failure is still named in
+# throttle-recommendation.json (refreshFailureReason) and in
+# throttle-changes.jsonl when the cap changes; only the log line is lost.
+status: todo
+epic: swarm-reliability
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one condition in one bb function, one handler over a fixture.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one condition changes; nothing to refactor"
+  architect: "no boundary moves; the CLI's stdout contract is unchanged"
+  hardender: "a small bb fix that writes no durable state; bb has no mutation lane (BL-472), and the handler and the acceptance run are its coverage"
+  documenter: "no living doc describes the depth CLI's stderr"
+acceptance: specs/features/BL-2033-the-depth-cli-passes-on-a-refresh-failure-reported-on-exit-0.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2033DepthCliRefreshStderrSteps.js::registerSteps::binds BL-2033-the-depth-cli-passes-on-a-refresh-failure-reported-on-exit-0.feature (discovered by suffix, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A follow-up QA found on BL-1874's pass (QA evidence O1). No choice is
+  posed. FIRM: stdout stays the effective depth alone, because every
+  caller reads it as a number; only stderr changes.
+
+invariants:
+  - "The depth CLI's stdout is the effective depth and nothing else, whatever the refresh did."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's acceptance row:
+     `specs/features/BL-2033-the-depth-cli-passes-on-a-refresh-failure-reported-on-exit-0.feature`
+     3 of 3 pass (measured at mint: no handler, all red).
+  2. `bash swarmforge/scripts/test/test_effective_backlog_depth_cli.sh`:
+     every line PASS, rc 0 (its cases discard stderr, so they hold either
+     way).
+
+source: |
+  QA note 003842, 2026-10-06: "BL-1874 follow-up: depth CLI drops
+  refresh-fail stderr on exit 0 - QA evid O1". QA's evidence
+  (backlog/evidence/BL-1874-QA-20261006-2.md, O1), verbatim: "the throttle
+  CLI now exits 0 on a failed refresh and prints the failure to stderr, but
+  `effective_backlog_depth_cli.bb` `refresh-recommendation!` prints the
+  node CLI's stderr only on a non-zero exit. Measured on a
+  blocked-telemetry fixture: the depth CLI printed `3` and nothing about
+  the refresh failure."
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  Not auto-approved: medium severity.
+  The spec gap was the specifier's: BL-1874's description said the failure
+  "reaches the operator log the way the depth CLI already reports stderr",
+  which held only for a non-zero exit, the case BL-1874 removed.
+  QA's O2 (a genuine clear after a failed-refresh tick writes no
+  throttle-changes.jsonl line) is an audit-trail gap only. The release flow
+  reads clearedAtIso, which is stamped correctly. Recorded, not ticketed.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/effective_backlog_depth_cli.bb`'s
+  `refresh-recommendation!` runs `emit-throttle-recommendation.js` and
+  prints its stderr only `(when-not (zero? exit) ...)`. BL-1874 made that
+  CLI exit 0 when its refresh fails and name the failure on stderr, so
+  the depth CLI now drops the failure. Its callers
+  (`promote_and_route_next.sh`, `promotion_gates_cli.bb`) never log it.
+
+  ## What is wanted
+
+  - Whenever the refresh writes anything to stderr, the depth CLI passes
+    it on to its own stderr, whatever the exit. A non-zero exit still adds
+    `exit=<n>` as today.
+  - Stdout is unchanged: the effective depth alone.
+
+  ## How (direction, not mandate)
+
+  - The change is the `when-not (zero? exit)` condition in
+    `refresh-recommendation!` (lines 43-52): print when the exit is
+    non-zero OR the trimmed stderr is non-blank.
+  - The handler `specs/pipeline/steps/bl2033DepthCliRefreshStderrSteps.js`
+    builds the fixture the way `test_effective_backlog_depth_cli.sh`'s
+    `mk_fixture` does (lines 22-29: a mkdtemp root holding
+    `swarmforge/swarmforge.conf` with `config active_backlog_max_depth 3`).
+    It adds a fake `extension/out/tools/emit-throttle-recommendation.js`
+    that writes the Examples message to stderr and exits with the Examples
+    exit. It runs `bb swarmforge/scripts/effective_backlog_depth_cli.bb <root>`
+    with `spawnSync` and keeps stdout and stderr apart. Use `trackedTmpRoot`
+    from `./lib/fixtureReaper` for the root, so no cleanup code is needed.
+    Validate `<exit>` and `<carries>` against explicit known values.
+
+assigned_to: coder

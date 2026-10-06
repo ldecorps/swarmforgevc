@@ -27,10 +27,14 @@
 (ns effective-backlog-depth-cli
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+(def script-dir (str (fs/parent (fs/canonicalize *file*))))
+
+(load-file (str (fs/path script-dir "backlog_depth_lib.bb")))
 ;; bl1128HeadroomRaiseConfiguredCap — acceptance handler registered (BL-1128)
+(load-file (str (fs/path script-dir "throttle_release_ask_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -51,11 +55,115 @@
       (binding [*out* *err*]
         (println (str "effective_backlog_depth_cli: throttle-recommendation refresh error: " (.getMessage e)))))))
 
+;; ── BL-1982: the throttle-release ask-and-apply step ──────────────────────
+;; Runs after refresh-recommendation! (a fresh diagnosis for this tick) and
+;; before the final effective-cap print, so a releasing/keeping answer this
+;; same run consumes is reflected in that same print. Every IO call here
+;; degrades to a logged stderr skip on failure (requirement 6: "never
+;; changes the printed cap"), mirroring refresh-recommendation!'s own
+;; try/catch convention.
+
+(defn- read-recommendation [project-root]
+  (try
+    (json/parse-string (slurp (str (backlog-depth-lib/throttle-recommendation-path project-root))) true)
+    (catch Exception _ nil)))
+
+(defn- atomic-spit! [path content]
+  (fs/create-dirs (fs/parent path))
+  (let [tmp (fs/path (fs/parent path) (str "." (fs/file-name path) ".tmp"))]
+    (spit (str tmp) content)
+    (fs/move tmp path {:replace-existing true :atomic-move true})))
+
+(defn- write-recommendation! [project-root rec]
+  (atomic-spit! (backlog-depth-lib/throttle-recommendation-path project-root) (json/generate-string rec)))
+
+(defn- role-awaiting-asked-at-ms [project-root role]
+  (try
+    (let [p (fs/path project-root ".swarmforge" "operator" "role-awaiting" (str role ".json"))]
+      (when (fs/exists? p)
+        (:asked_at_ms (json/parse-string (slurp (str p)) true))))
+    (catch Exception _ nil)))
+
+;; Scenario 01/invariant 1: raises ONE question per episode via role_ask.bb,
+;; recording its own live marker's asked_at_ms onto the episode so a later
+;; run never re-asks (question-already-asked?). role_ask.bb refuses (exit 0,
+;; {:asked false}) when the coordinator already has ANY other question
+;; pending - that refusal IS this ticket's "never asks while another
+;; question is pending" (scenario 03), with nothing recorded, exactly as
+;; wanted.
+(defn- raise-release-question! [project-root rec]
+  (try
+    (let [question (throttle-release-ask-lib/format-release-question rec (System/currentTimeMillis))
+          options-json (json/generate-string throttle-release-ask-lib/release-options)
+          {:keys [exit out err]} (process/sh
+                                   ["bb" (str (fs/path script-dir "role_ask.bb")) (str project-root)
+                                    "--role" "coordinator" "--question" question "--options" options-json]
+                                   {:dir (str project-root)})]
+      (if (zero? exit)
+        (let [parsed (try (json/parse-string out true) (catch Exception _ nil))]
+          (when (:asked parsed)
+            (when-let [asked-at-ms (role-awaiting-asked-at-ms project-root "coordinator")]
+              (write-recommendation! project-root (assoc-in rec [:episode :releaseAskedAtMs] asked-at-ms)))))
+        (binding [*out* *err*]
+          (println (str "effective_backlog_depth_cli: throttle release ask failed, exit=" exit " " (str/trim (or err "")))))))
+    (catch Exception e
+      (binding [*out* *err*]
+        (println (str "effective_backlog_depth_cli: throttle release ask error: " (.getMessage e)))))))
+
+;; Scenario 04/05: consumes a coordinator answer ONLY when the live pending
+;; question is the one this episode itself raised (compared BEFORE calling
+;; deliver-role-answer, never after - deliver-role-answer.js is the only
+;; sanctioned reader of the answer file regardless, BL-1201). An exact
+;; option tap applies through BL-1981's release CLI; anything else is kept
+;; on the episode as a reply, never acted on.
+(defn- apply-release-answer! [project-root rec]
+  (try
+    (let [live-asked-at-ms (role-awaiting-asked-at-ms project-root "coordinator")
+          our-asked-at-ms (get-in rec [:episode :releaseAskedAtMs])]
+      (when (and our-asked-at-ms (= live-asked-at-ms our-asked-at-ms))
+        (let [deliver-path (str (fs/path project-root "extension" "out" "tools" "deliver-role-answer.js"))
+              {:keys [exit out err]} (process/sh ["node" deliver-path "--role" "coordinator"] {:dir (str project-root)})]
+          (if (zero? exit)
+            (let [parsed (try (json/parse-string out true) (catch Exception _ nil))]
+              (when (= "delivered" (:kind parsed))
+                (let [text (:text parsed)
+                      kind (throttle-release-ask-lib/release-reply-kind text)
+                      release-cli (str (fs/path project-root "extension" "out" "tools" "release-intake-throttle.js"))]
+                  (case kind
+                    :release
+                    (let [{:keys [exit err]} (process/sh ["node" release-cli (str project-root) "--by" "human" "--release"] {:dir (str project-root)})]
+                      (when-not (zero? exit)
+                        (binding [*out* *err*]
+                          (println (str "effective_backlog_depth_cli: throttle release apply failed, exit=" exit " " (str/trim (or err "")))))))
+
+                    :keep
+                    (let [held (get-in rec [:episode :lowestCapReached])
+                          {:keys [exit err]} (process/sh ["node" release-cli (str project-root) "--by" "human" "--keep" (str held)] {:dir (str project-root)})]
+                      (when-not (zero? exit)
+                        (binding [*out* *err*]
+                          (println (str "effective_backlog_depth_cli: throttle keep apply failed, exit=" exit " " (str/trim (or err "")))))))
+
+                    :typed
+                    (write-recommendation! project-root (assoc-in rec [:episode :releaseReply] text))))))
+            (binding [*out* *err*]
+              (println (str "effective_backlog_depth_cli: throttle release answer delivery failed, exit=" exit " " (str/trim (or err "")))))))))
+    (catch Exception e
+      (binding [*out* *err*]
+        (println (str "effective_backlog_depth_cli: throttle release apply error: " (.getMessage e)))))))
+
+(defn- ask-and-apply-throttle-release! [project-root]
+  (when-let [rec (read-recommendation project-root)]
+    (when (throttle-release-ask-lib/episode-awaiting-release? rec)
+      (if (throttle-release-ask-lib/question-already-asked? rec)
+        (apply-release-answer! project-root rec)
+        (raise-release-question! project-root rec)))))
+
 (defn -main [& args]
   (when (not= 1 (count args))
     (usage))
   (let [[project-root] args]
     (refresh-recommendation! project-root)
+    (ask-and-apply-throttle-release! project-root)
     (println (backlog-depth-lib/read-effective-max-depth project-root))))
 
 (apply -main *command-line-args*)

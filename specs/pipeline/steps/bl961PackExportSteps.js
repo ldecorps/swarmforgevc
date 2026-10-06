@@ -12,7 +12,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarmforge.sh');
@@ -58,11 +57,11 @@ function knownRole(token) {
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl961() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 const WINDOW_LINE = (role) =>
   `window ${role} claude ${role} --model claude-haiku-4-5-20251001 --dangerously-skip-permissions --effort low`;
@@ -70,7 +69,9 @@ const WINDOW_LINE = (role) =>
 const INDEX_SNIPPET =
   'index_of_role() { local target="$1" i; for (( i = 1; i <= ${#ROLES[@]}; i++ )); do [[ "${ROLES[$i]}" == "$target" ]] && { echo "$i"; return; }; done }';
 
-function mkFixtureRoot() {
+function mkFixtureRoot(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl961);
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl961-')));
   trackedRoots.push(root);
   for (const dir of ['swarmforge/roles', 'swarmforge/packs', '.swarmforge/launch', '.swarmforge/prompts']) {
@@ -147,7 +148,7 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^a scratch fixture project root with the minimal swarm layout$/, (ctx) => {
-    ctx.root = mkFixtureRoot();
+    ctx.root = mkFixtureRoot(ctx);
     ctx.roles = ['coder'];
   });
 

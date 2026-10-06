@@ -1,0 +1,112 @@
+id: BL-2032
+title: "renderBriefingDiagramsCli renders the real maintained diagrams once per run, not twice - main()'s in-process test and the compiled CLI's subprocess test both render all four real diagrams (4.4 and 4.6 s), while only one render is the guard's signal; main()'s test moves onto a fixture project root"
+milestone: M8
+type: chore
+status: todo
+epic: unit-suite-speed
+priority: 30
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: one test file; one test's project root changes.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one test's fixture changes; nothing to deduplicate"
+  architect: "test-side only; no production boundary moves"
+  hardender: "test-side only; no production code changed"
+  documenter: "no living doc describes this test file"
+
+# A test-file chore (BL-1251): the pointer names the guard feature that reads
+# this file's shape (BL-363's in-process CLI guard), the contract the rewrite
+# must keep. It is not a claim of ownership over BL-363's contract.
+acceptance: specs/features/BL-363-clis-tested-in-process.feature
+
+human_approval: approved
+approval_context: >
+  The human asked for BL-791 slice I to be minted now (coordinator note
+  016869, 2026-10-06). No choice is posed. FIRM: the real maintained
+  diagrams are still rendered once in every run of the file, by the
+  compiled CLI's subprocess test - that render is the file's reason to
+  exist (its BL-1038-EXEMPT comment says so, and that exemption stays).
+
+invariants:
+  - "Every run of the file still renders each real maintained diagram under docs/diagrams/ at least once, and no test in it is removed, skipped or loses an assertion."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's unit row and `extension/.vitest-report.json`:
+     `extension/test/renderBriefingDiagramsCli.test.js` passed, all of its
+     tests, and the file took less than at mint. Measured at mint
+     (2026-10-06 01:27Z, npm test on main, 14 forks): 12.3 s, of which
+     main() in-process on the real repo 4.4 s, the subprocess 4.6 s, and
+     the fixture render 2.7 s. Expected about 8 s. The file stays a
+     registered pole; its `backlog/suite-poles.tsv` row's figure is
+     updated in the parcel to the parcel's measurement.
+  2. Read from the gather's acceptance row: the BL-363 feature passes
+     (measured at mint: the file is in its converted list).
+  3. Read the file: the subprocess test still runs against the real
+     project root, and main()'s in-process test does not.
+
+source: |
+  The human, via coordinator note 016869 (2026-10-06): "human says mint
+  Slice I now (BL-1038-EXEMPT live-repo class, BL-791)." Slice I's
+  measurement: backlog/paused/BL-791-epic-unit-suite-speed.yaml,
+  remaining_slices, "Slice I". Human directive 2026-10-02, verbatim: "We
+  have to make the swarm.churn much fastee".
+
+notes: |
+  Minted 2026-10-06 by the specifier, BL-791 slice I, the second of its
+  two top cuts (BL-2031 is the first). Takes over the file's
+  backlog/suite-poles.tsv row from BL-791 in the mint commit.
+  Honest size: about 4 s of 383 s summed work. It does not move the
+  lane's wall, which renderBriefingBurndownCli (BL-2031) and
+  bl1901MergePathLandDeclines set.
+  2026-10-06: once BL-1629 lands, this file (expected about 8 s, its real
+  render being the point) is the likely first row for its `accepted`
+  disposition. Recording that is a register edit for a later pass, not
+  this ticket's scope; BL-2035 should land before it.
+
+description: |
+  ## What is wrong
+
+  `extension/test/renderBriefingDiagramsCli.test.js` has three render
+  tests:
+  - "renders exactly the maintained diagrams, named and base64-encoded":
+    `renderBriefingDiagrams` on a fixture project root (four copies of an
+    86-byte sample), 2.7 s, mostly the renderer's start-up.
+  - "main() runs in-process against the real repo and prints the
+    maintained diagrams as JSON": all four real diagrams
+    (`architecture.mmd` alone is 43 KB), 4.4 s.
+  - "the compiled CLI runs standalone as a subprocess and produces the
+    same result": the same four real diagrams again, 4.6 s.
+
+  The file's `BL-1038-EXEMPT` comment is legitimate: its signal is a real
+  maintained diagram that has stopped rendering, and its cost does not
+  grow with the repository. But one real render per run carries that
+  signal, and the file pays for two.
+
+  ## What is wanted
+
+  - main()'s in-process test runs against a fixture project root holding
+    the four fixture diagrams. It keeps asserting the names and that each
+    entry decodes to a PNG.
+  - The subprocess test stays on the real project root, so every real
+    diagram is still rendered once per run.
+  - BL-363's guard keeps passing on the file: exactly one
+    `execFileSync('node', ...)` spawn, `main` imported for the in-process
+    call, more test cases than spawns, output asserted.
+
+  ## How (direction, not mandate)
+
+  - `main()` resolves its root with `resolveProjectRoot(process.cwd())`,
+    which needs a git root holding `.swarmforge/roles.tsv`. BL-1770's
+    fixture in `briefingDigestLineCli.test.js` (`mkFixtureCheckout`)
+    shows the shape: `git init -b main` under the file's tmp dir, proven
+    isolated before any mutating git command (BL-1390), plus a one-row
+    `roles.tsv`. Add the four fixture `.mmd` files the existing
+    `mkFixtureProjectRoot` writes.
+  - The file already stubs `process.cwd()` for its in-process call. Point
+    that stub at the fixture root.
+
+assigned_to: coder

@@ -11,7 +11,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const FEATURE = 'A control pause is visible from every checkout, not only from master';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -30,7 +29,7 @@ const TICKET_ID = 'BL-1106';
 const TICKET_FILE = `${TICKET_ID}-promotable-fixture.yaml`;
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl1106() {
   while (trackedRoots.length) {
     try {
       fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
@@ -38,7 +37,7 @@ afterEach(() => {
       /* ignore */
     }
   }
-});
+}
 
 function mkTmp(prefix) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
@@ -109,6 +108,8 @@ function registerSteps(registry) {
   scoped(/^a linked worktree of that repository$/, (ctx) => {
     ctx.worktree = `${ctx.master}-wt`;
     trackedRoots.push(ctx.worktree);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1106);
     git(ctx.master, ['worktree', 'add', '-q', ctx.worktree, '-b', `wt-${Date.now()}`]);
     writeDefaultConf(ctx.worktree, 3);
   });

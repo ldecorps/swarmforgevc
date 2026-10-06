@@ -11,7 +11,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'effective_backlog_depth_cli.bb');
@@ -20,12 +19,12 @@ const FEATURE = 'BL-966 depth CLI gives the same answer from every checkout';
 
 let trackedRoots = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl966() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
 function mkTmp(prefix) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
@@ -108,6 +107,8 @@ function registerSteps(registry) {
   scoped(/^a linked worktree of that repository$/, (ctx) => {
     ctx.worktree = `${ctx.master}-wt`;
     trackedRoots.push(ctx.worktree);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl966);
     git(ctx.master, ['worktree', 'add', '-q', ctx.worktree, '-b', 'wt-branch']);
     writeDefaultConf(ctx.worktree, 3);
   });

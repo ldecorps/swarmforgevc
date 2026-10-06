@@ -19,6 +19,8 @@ Feature: BL-2027 The recorded lane runner names every red and runs a bounded pre
       | shape                  | exit | names                       |
       | both pass              | 0    | names no failing item       |
       | include one that fails | 1    | names exactly that item     |
+      | the first one fails    | 1    | names exactly the first item |
+      | the first one reads stdin and the second fails | 1 | names exactly the second item |
 
   # BL-2019 recorded-lane-runner-05
   Scenario: a limit runs a bounded prefix of the list
@@ -26,3 +28,10 @@ Feature: BL-2027 The recorded lane runner names every red and runs a bounded pre
     When the recorded lane runner runs that list with a limit of 1
     Then it runs exactly the first item
     And the durations file holds exactly one row
+
+  # BL-2027 recorded-lane-runner-06
+  Scenario: the duration rows stay whole milliseconds where date has no %3N
+    Given a fixture list whose two items both pass
+    And a date on PATH that prints %3N literally, as BSD date does
+    When the recorded lane runner runs that list to the end
+    Then every row's duration_ms is a whole number of milliseconds

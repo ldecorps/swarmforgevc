@@ -1378,3 +1378,10 @@
   stamp_ticket: BL-2029
   human_decision: null
   decided_at: null
+- commit: 62ef35bcdb
+  subject: "hotfix: ambulance-hold-05 bounds its wait for the first chase-rotate at 120 s, not 40 s - the rotate lands on the daemon's third chase sweep, past 40 s on a loaded host"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2036
+  human_decision: null
+  decided_at: null

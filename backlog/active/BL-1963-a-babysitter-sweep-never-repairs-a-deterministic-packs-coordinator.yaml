@@ -89,3 +89,5 @@ description: |
   The scenario; test_babysitter_check.sh and
   babysitterd_sweep_lib_test_runner.bb still pass, including the missing
   standing session case for a pack without the declaration.
+
+assigned_to: coder

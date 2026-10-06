@@ -28,7 +28,6 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync, execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const FEATURE = 'BL-1069 the swarm judges its tmux by the server it is actually running';
 
@@ -67,13 +66,15 @@ function assertKnownVersion(value, label) {
 }
 
 let trackedPaths = [];
-afterEach(() => {
+function __bl1659Dispose_bl1069() {
   while (trackedPaths.length) {
     fs.rmSync(trackedPaths.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function newRoot() {
+function newRoot(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1069);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1069-'));
   trackedPaths.push(root);
   return root;
@@ -145,7 +146,7 @@ function registerSteps(registry) {
   scoped(/^the tmux client on PATH reports "(.+)"$/, (ctx, client) => {
     assert.ok(fs.existsSync(SWARMFORGE_SH), `the launcher under test is missing: ${SWARMFORGE_SH}`);
     assertKnownVersion(client, 'client');
-    ctx.root = newRoot();
+    ctx.root = newRoot(ctx);
     ctx.clientVersion = client;
   });
 
@@ -188,7 +189,7 @@ function registerSteps(registry) {
 
   scoped(/^a tmux at "~\/\.local\/bin\/tmux" reporting "(.+)"$/, (ctx, local) => {
     assertKnownVersion(local, 'local');
-    ctx.root = newRoot();
+    ctx.root = newRoot(ctx);
     ctx.home = path.join(ctx.root, 'home');
     ctx.pathBin = path.join(ctx.root, 'path-bin');
     // PATH is narrowed to the fixture plus the one external tool these
@@ -239,7 +240,7 @@ function registerSteps(registry) {
       KNOWN_OPTIONS.has(option),
       `unknown option "${option}" - the handlers know ${[...KNOWN_OPTIONS].join(', ')}`
     );
-    ctx.root = newRoot();
+    ctx.root = newRoot(ctx);
     ctx.option = option;
     ctx.incidents = path.join(ctx.root, 'incidents.edn');
     writeRejectingTmux(path.join(ctx.root, 'bin', 'tmux'), option);
@@ -304,7 +305,7 @@ function registerSteps(registry) {
       `unknown obstacle "${obstacle}" - the handlers know ${[...KNOWN_OBSTACLES].join('; ')}`
     );
     assert.ok(fs.existsSync(INSTALLER), `the installer under test is missing: ${INSTALLER}`);
-    ctx.root = newRoot();
+    ctx.root = newRoot(ctx);
     ctx.obstacle = obstacle;
     ctx.home = path.join(ctx.root, 'home');
     ctx.installedTmux = path.join(ctx.home, '.local', 'bin', 'tmux');

@@ -11,7 +11,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { diffClosureAgainstList } = require('./lib/operatorRuntimeBbClosure');
 const { OPERATOR_RUNTIME_BB_FILES, OPERATOR_RUNTIME_BB_DECLARED_EXTRAS } = require('./lib/operatorRuntimeBbFixtureFiles');
 
@@ -22,13 +21,15 @@ const ENTRY_FILE = 'operator_runtime.bb';
 const FEATURE = 'The operator_runtime.bb acceptance fixture carries every file it loads';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl944() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl944);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   return root;
@@ -148,7 +149,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a disposable fixture root populated from the fixture dependency list$/,
     (ctx) => {
-      const root = mkTmp('sfvc-bl944-');
+      const root = mkTmp(ctx, 'sfvc-bl944-');
       const dest = path.join(root, 'swarmforge', 'scripts');
       fs.mkdirSync(dest, { recursive: true });
       fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });

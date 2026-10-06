@@ -7,7 +7,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { afterEach } = require('node:test');
 
 const EXTENSION_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const { newRepo, git, writeTicket, move } = require(`${EXTENSION_DIR}/test/helpers/backlogCorpusFixture`);
@@ -21,9 +20,9 @@ const KNOWN_MEANS = new Set(['5h', '3h', '4h 30m']);
 const HOUR_MS = 60 * 60 * 1000;
 const MIN_MS = 60 * 1000;
 
-afterEach(() => {
+function __bl1659Dispose_bl1074() {
   sweepPendingTmpDirs();
-});
+}
 
 function ticketFile(id) {
   return `${id}.yaml`;
@@ -41,6 +40,8 @@ function parseMeanLabel(label) {
 
 function ensureRepo(ctx) {
   if (!ctx.repo) {
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl1074);
     ctx.repo = newRepo('sfvc-bl1074-acceptance-');
   }
   return ctx.repo;

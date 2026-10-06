@@ -20,7 +20,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { spawnHandoffSend } = require('./lib/answerHandoffAudit');
-const { afterEach } = require('node:test');
 
 const FEATURE = 'A declaration the sender has not merged is still read';
 
@@ -32,11 +31,11 @@ const SWARM_HANDOFF = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_hando
 // root here so afterEach removes it regardless of which step failed
 // (same guaranteed-cleanup pattern as bl951StageSkipsRecordedSteps.js).
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl992() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 // KNOWN_VALUES: the declaration tokens scenarios name.
 const DECLARATIONS = {
@@ -53,6 +52,8 @@ function git(cwd, args) {
 }
 
 function mkFixture(ctx, { branch = 'main' } = {}) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl992);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl992-'));
   trackedRoots.push(root);
   ctx.root = root;

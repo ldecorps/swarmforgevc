@@ -12,6 +12,7 @@ actor:
   - "QA"
   - "the coordinator"
   - "the art director"
+  - "local model"
 
 action:
   - "file a new intake from my phone"
@@ -19,6 +20,7 @@ action:
   - "chat with a local model about the project"
   - "run a swarm seat on a local model"
   - "approve or reject a pending decision"
+  - "divide my turn in several smaller turns accotding to, arrange / action / assert"
 
 goal:
   - "know the swarm is working on it"
@@ -26,3 +28,4 @@ goal:
   - "work on the project away from my desk"
   - "cut cloud token costs"
   - "trust that nothing lands without review"
+  - "fight a too small contect window"

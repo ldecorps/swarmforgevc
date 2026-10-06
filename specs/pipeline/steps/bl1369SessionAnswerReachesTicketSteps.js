@@ -17,7 +17,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXTENSION_OUT = path.join(REPO_ROOT, 'extension', 'out');
@@ -40,13 +39,15 @@ const FIXTURE_PREFIX = 'sfvc-bl1369-acceptance-';
 // Track fixture roots created by this handler so afterEach can reap them
 // even if a scenario throws before reaching the end.
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl1369() {
   while (trackedRoots.length) {
     rmFixtureRoot(trackedRoots.pop());
   }
-});
+}
 
-function mkFixtureRoot() {
+function mkFixtureRoot(ctx) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1369);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX));
   const activeDir = path.join(root, 'backlog', 'active');
   fs.mkdirSync(activeDir, { recursive: true });
@@ -98,7 +99,7 @@ function registerSteps(registry) {
   // ── Background ────────────────────────────────────────────────────────
   scoped(/^a ticket that declares ruling options$/, (ctx) => {
     ctx.bl1369 = ctx.bl1369 || {};
-    ctx.bl1369.root = mkFixtureRoot();
+    ctx.bl1369.root = mkFixtureRoot(ctx);
     ctx.bl1369.options = ['one', 'two', 'three'];
     ctx.bl1369.ticketId = 'BL-1369';
     writeFixtureTicket(ctx.bl1369.root, ctx.bl1369.options);

@@ -11,7 +11,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { computeClosure } = require('./lib/operatorRuntimeBbClosure');
 
 const FIXTURE_FILES_MODULE_PATH = require.resolve('./lib/operatorRuntimeBbFixtureFiles');
@@ -22,13 +21,15 @@ const ENTRY_FILE = 'operator_runtime.bb';
 const FEATURE = 'BL-1449 The operator_runtime.bb fixture dependency list is derived at load, never typed';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl1449() {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl1449);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   trackedRoots.push(root);
   return root;
@@ -76,7 +77,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a scratch copy of swarmforge\/scripts where one closure file gains a load-file of a new script$/,
     (ctx) => {
-      const root = mkTmp('sfvc-bl1449-scratch-');
+      const root = mkTmp(ctx, 'sfvc-bl1449-scratch-');
       fs.cpSync(LIVE_SCRIPTS_DIR, root, { recursive: true });
       const stubName = 'zz_bl1449_probe_lib.bb';
       fs.writeFileSync(path.join(root, stubName), ';; BL-1449 scenario 02 scratch stub\n');
@@ -122,7 +123,7 @@ function registerSteps(registry) {
     /^a disposable fixture root populated from the derived list$/,
     (ctx) => {
       const { OPERATOR_RUNTIME_BB_FILES } = loadFixtureFilesModuleFresh();
-      const root = mkTmp('sfvc-bl1449-fixture-');
+      const root = mkTmp(ctx, 'sfvc-bl1449-fixture-');
       const dest = path.join(root, 'swarmforge', 'scripts');
       fs.mkdirSync(dest, { recursive: true });
       fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });

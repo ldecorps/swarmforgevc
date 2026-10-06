@@ -20,7 +20,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawn, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -47,7 +46,7 @@ const KNOWN_VERDICTS = new Set(['healthy', 'stalled', 'dead']);
 let trackedRoots = [];
 let trackedPids = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl977() {
   while (trackedPids.length) {
     try {
       process.kill(trackedPids.pop());
@@ -58,7 +57,7 @@ afterEach(() => {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 // The pure verdict, from the REAL evaluate-health and the REAL
 // in-sweep-budget default, via bl813's stop-file load pattern.
@@ -250,6 +249,8 @@ function registerSteps(registry) {
   scoped(/^a daemon poll cycle that runs a sweep named "dropped-parcel-sweep"$/, (ctx) => {
     ctx.root = fs.realpathSync(mkSocketFixtureRoot('bl977-marker-'));
     trackedRoots.push(ctx.root);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl977);
     ctx.markerPath = path.join(ctx.root, 'handoffd.sweep-marker');
     const expr = `
 (require '[babashka.fs :as fs])

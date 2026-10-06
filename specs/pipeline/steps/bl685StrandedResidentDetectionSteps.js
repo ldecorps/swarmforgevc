@@ -14,7 +14,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { track, reap } = require('./lib/fixtureReaper');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
@@ -24,15 +23,17 @@ const BABYSITTER_CHECK = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'babysitt
 const FEATURE = 'A mono-router resident stranded off its home role is detected from outside its own turn';
 
 let trackedRoots = [];
-afterEach(() => {
+function __bl1659Dispose_bl685() {
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
     reap(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}
 
-function mkTmp(prefix) {
+function mkTmp(ctx, prefix) {
+  ctx.__disposables = ctx.__disposables || [];
+  ctx.__disposables.push(__bl1659Dispose_bl685);
   const root = mkSocketFixtureRoot(prefix);
   trackedRoots.push(root);
   return root;
@@ -47,8 +48,8 @@ function backdate(p, secondsAgo) {
 // has home=coder (first non-coordinator row) plus a master-resident
 // specifier and the coordinator, a git repo so the pipeline-code check has
 // refs, and empty mailboxes for every role.
-function mkFixtureRoot() {
-  const root = mkTmp('sfvc-bl685-');
+function mkFixtureRoot(ctx) {
+  const root = mkTmp(ctx, 'sfvc-bl685-');
   const sf = path.join(root, '.swarmforge');
   fs.mkdirSync(path.join(sf, 'handoffs', 'failed'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
@@ -173,7 +174,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a mono-router swarm whose home role is coder$/,
     (ctx) => {
-      ctx.root = mkFixtureRoot();
+      ctx.root = mkFixtureRoot(ctx);
     },
     FEATURE
   );

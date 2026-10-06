@@ -1,0 +1,111 @@
+id: BL-2031
+title: "renderBriefingBurndownCli's tests read a fixture history, not the live repo - three tests each walk this checkout's whole backlog/ history (12.6, 14.1 and 7.0 s), making the file the unit lane's slowest (34.2 s) and the pole that sets its wall; BL-1770's fix for the sibling briefingDigestLineCli applies as is"
+milestone: M8
+type: chore
+status: todo
+epic: unit-suite-speed
+priority: 20
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: one test file; the three walks move onto a fixture checkout built
+# once in beforeAll, BL-1770's pattern.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one test file's fixture changes; nothing to deduplicate beyond what BL-1770's pattern already is"
+  architect: "test-side only; no production boundary moves"
+  hardender: "test-side only; no production code changed"
+  documenter: "no living doc describes this test file"
+
+# A test-file chore (BL-1251): the pointer names the guard feature that reads
+# this file's live-repository derivation (BL-1038), the contract the rewrite
+# must keep. It is not a claim of ownership over BL-1038's contract.
+acceptance: specs/features/BL-1038-unit-tests-pin-the-repo-they-derive-from.feature
+
+human_approval: approved
+approval_context: >
+  The human asked for BL-791 slice I to be minted now (coordinator note
+  016869, 2026-10-06). No choice is posed. FIRM: every test in the file
+  keeps what it asserts today; only where its history comes from changes.
+
+invariants:
+  - "No test in the file reads this checkout's repository, and no test in it is removed, skipped or loses an assertion."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's unit row and `extension/.vitest-report.json`:
+     `extension/test/renderBriefingBurndownCli.test.js` passed, all of
+     its tests, and the file took under 5600 ms (80 % of the 7000 ms
+     per-file budget). Measured at mint (2026-10-06 01:27Z, npm test on
+     main, 14 forks): 34.2 s, of which the three live walks were 12.6,
+     14.1 and 7.0 s.
+  2. `grep -c BL-1038-EXEMPT extension/test/renderBriefingBurndownCli.test.js`:
+     0.
+  3. Read from the gather's acceptance row: the BL-1038 feature 8 of 8
+     (measured at mint: 8 of 8).
+  4. `backlog/suite-poles.tsv` at the parcel has no row for the file.
+
+source: |
+  The human, via coordinator note 016869 (2026-10-06): "human says mint
+  Slice I now (BL-1038-EXEMPT live-repo class, BL-791)." Slice I's
+  measurement: backlog/paused/BL-791-epic-unit-suite-speed.yaml,
+  remaining_slices, "Slice I". Human directive 2026-10-02, verbatim: "We
+  have to make the swarm.churn much fastee".
+
+notes: |
+  Minted 2026-10-06 by the specifier, BL-791 slice I, the first of its two
+  top cuts (BL-2032 is the second). Takes over the file's
+  backlog/suite-poles.tsv row from BL-791 in the mint commit.
+
+description: |
+  ## What is wrong
+
+  `extension/test/renderBriefingBurndownCli.test.js` carries a
+  `BL-1038-EXEMPT` comment for three tests that run against this
+  checkout:
+  - "renderBriefingBurndown falls back to deriving its own history when no
+    snapshot path is given (smoke test against the real repo)": 12.6 s.
+  - "renderBriefingBurndown falls back to deriving its own history when the
+    given snapshot path does not exist": 14.1 s.
+  - "the compiled CLI runs with no flags at all against the real repo":
+    7.0 s.
+
+  Each one ends in `render-briefing-burndown.ts`'s
+  `deriveTicketLifecycles(runGitLog(projectRoot, 'backlog/', 'main'))`
+  over the whole live history, and that cost grows with every commit. The
+  file is the unit lane's slowest (34.2 s), and at 14 forks it sets the
+  lane's wall. The exemption's reason is that nothing else exercises the
+  fallback derivation. A fixture checkout exercises the same code path
+  without the live history, which is how BL-1770 resolved the identical
+  case in `briefingDigestLineCli.test.js`.
+
+  ## What is wanted
+
+  - The three tests run against a fixture checkout built once per file: a
+    `git init -b main` under the file's own tmp dir, with a small
+    `backlog/` history (two commits moving one ticket file from
+    `backlog/active/` to `backlog/done/` is enough for a non-empty
+    diagram), and a `.swarmforge/roles.tsv` at its root so
+    `resolveProjectRoot` resolves it for `main()`. Each test still asserts
+    what it asserts today.
+  - The `BL-1038-EXEMPT` comment goes with the live read.
+  - The file measures under 5600 ms in the unit lane, and its row in
+    `backlog/suite-poles.tsv` is removed in the parcel (BL-1598's
+    stale-row rule).
+
+  ## How (direction, not mandate)
+
+  - Copy BL-1770's fixture: `briefingDigestLineCli.test.js`,
+    `mkFixtureCheckout` and its `beforeAll` (the block under "end-to-end:
+    the compiled CLI's own real output, against a fixture repo"). It
+    proves the fixture is its own repository (`rev-parse
+    --git-common-dir` inside the root) before any mutating git command
+    (BL-1390).
+  - The file already stubs `process.cwd()` for its in-process `main()`
+    call. Point that stub at the fixture root instead of this checkout.
+  - The fake ticket ids the snapshot tests use (`ZZ-9000x`) prove which
+    path ran. Keep a fixture ticket id distinct from them, so the fallback
+    tests still show the derived history, not the snapshot, was used.
+
+assigned_to: coder

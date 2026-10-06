@@ -10,7 +10,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, spawnSync, execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const {
   mkSocketFixtureRoot,
   SOCKET_PATH_GUARD_LIMIT,
@@ -65,7 +64,7 @@ function knownVerdict(token) {
 let trackedRoots = [];
 let trackedProcs = [];
 
-afterEach(() => {
+function __bl1659Dispose_bl948() {
   while (trackedProcs.length) {
     try {
       trackedProcs.pop().kill('SIGKILL');
@@ -76,7 +75,7 @@ afterEach(() => {
   while (trackedRoots.length) {
     fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
   }
-});
+}
 
 function track(root) {
   trackedRoots.push(root);
@@ -115,6 +114,8 @@ function registerSteps(registry) {
     fs.writeFileSync(path.join(ctx.root, 'swarmforge', 'swarmforge.conf'), `window ${ctx.role} claude ${ctx.role} --model x\n`);
     ctx.liveProcess = spawn('sleep', ['20'], { stdio: 'ignore' });
     trackedProcs.push(ctx.liveProcess);
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(__bl1659Dispose_bl948);
     const heartbeat = `role: ${ctx.role}\npid: ${ctx.liveProcess.pid}\nlast_beat: "2026-07-14T00:00:00Z"\nlast_tool: Bash\nphase: entry\nin_flight: false\nbeat_count: 1\n`;
     fs.writeFileSync(path.join(ctx.root, '.swarmforge', 'heartbeat', `${ctx.role}.yaml`), heartbeat);
   });

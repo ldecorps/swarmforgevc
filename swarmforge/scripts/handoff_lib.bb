@@ -62,6 +62,11 @@
 ;; ambulance-lib double-load above.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 
+;; BL-1964: coordinator-config-lib is a leaf dependency (requires only
+;; clojure.string) - loaded here so wake-session below can read the pack's
+;; coordinator_mode and pass the deterministic flag to resolve-wake-session.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
+
 ;; BL-596: rotation dynamics telemetry — one append per successful rotate.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "rotation_telemetry_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "self_heal_telemetry_lib.bb")))
@@ -1273,9 +1278,10 @@
    rotation artifact; redirecting its wake into an unrelated role's live
    pane is the defect, not the fix. nil is a signal to the caller: send no
    wake anywhere, and log the skip naming the configured session."
-  [{:keys [configured-session configured-exists? resident-session resident-exists? rotation-router-pack?]}]
+  [{:keys [configured-session configured-exists? resident-session resident-exists? rotation-router-pack? deterministic-coordinator?]}]
   (cond
     configured-exists? configured-session
+    (and deterministic-coordinator? (= configured-session "swarmforge-coordinator")) nil
     (not rotation-router-pack?) nil
     (and (not (str/blank? resident-session)) resident-exists?) resident-session
     :else configured-session))
@@ -1295,13 +1301,24 @@
    ONLY in a rotation-router pack; a standing pack's session-less recipient
    is never remapped to another role's live pane."
   [socket configured-session]
-  (let [resident (mono-router-resident-session)]
+  (let [resident (mono-router-resident-session)
+        ;; BL-1964 (QA bounce D1): the EFFECTIVE (launched) conf, never the
+        ;; tracked swarmforge/swarmforge.conf - a pack launched with --pack
+        ;; (the deterministic router shape this ticket exists for) persists
+        ;; a different path into .swarmforge/swarm-identity at launch time,
+        ;; and the tracked default declares neither rotation nor
+        ;; coordinator_mode. Same reader handoffd.bb's coordinator-mail-
+        ;; sweep!/open-slot sweep already use for this exact flag.
+        conf-text (try (slurp (str (backlog-depth-lib/conf-file-path (target-root))))
+                       (catch Exception _ nil))
+        deterministic? (coordinator-config-lib/deterministic-coordinator? conf-text)]
     (resolve-wake-session
      {:configured-session configured-session
       :configured-exists? (session-exists? socket configured-session)
       :resident-session resident
       :resident-exists? (boolean (and resident (session-exists? socket resident)))
-      :rotation-router-pack? (rotation-router-pack?)})))
+      :rotation-router-pack? (rotation-router-pack?)
+      :deterministic-coordinator? deterministic?})))
 
 (defn pane-id
   "Prefer an explicit -t target. Bare display-message is only a last resort."
