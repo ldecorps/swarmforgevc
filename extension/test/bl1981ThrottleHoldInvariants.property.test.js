@@ -141,3 +141,24 @@ test('property: a released-and-closed episode leaves no trace in the next episod
     { numRuns: 50 }
   );
 });
+
+// ── BL-2034 invariant: "Any tick with a live raw recommendation leaves ────
+//    clearedAtIso null - a re-tripped episode is live, not awaiting
+//    release." ─────────────────────────────────────────────────────────────
+
+test('property: any tick with a live raw recommendation leaves clearedAtIso null, whatever the episode\'s prior history', () => {
+  fc.assert(
+    fc.property(tickSequenceArb, (ticks) => {
+      let episode = null;
+      const nowMsRef = { ms: Date.parse('2026-10-05T00:00:00Z') };
+      for (const tick of ticks) {
+        episode = applyTick(episode, tick, nowMsRef);
+        if (tick.rawCap !== null) {
+          assert.ok(episode, 'a live tick must keep (or open) an episode');
+          assert.equal(episode.clearedAtIso, null, `a live raw recommendation (${tick.rawCap}) must leave clearedAtIso null - the episode is live, not awaiting release`);
+        }
+      }
+    }),
+    { numRuns: 200 }
+  );
+});

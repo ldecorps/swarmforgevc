@@ -5,6 +5,11 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   listTestFiles,
+  listPipelineTestFiles,
+  isPipelinePropertyTestFile,
+  partitionPipelineTestFiles,
+  PIPELINE_TEST_TIMEOUT_MS,
+  buildPipelineTestArgs,
   buildRecord,
   appendRecord,
   computeFinalExitCode,
@@ -28,6 +33,81 @@ test('listTestFiles returns only .test.js files, sorted', () => {
   fs.writeFileSync(path.join(dir, 'notes.txt'), '');
 
   assert.deepEqual(listTestFiles(dir), ['a.test.js', 'b.test.js']);
+});
+
+// BL-2041
+test('listPipelineTestFiles finds .test.js files recursively and excludes fixtures/', () => {
+  const dir = mkTmp();
+  fs.writeFileSync(path.join(dir, 'a.test.js'), '');
+  fs.mkdirSync(path.join(dir, 'steps'));
+  fs.writeFileSync(path.join(dir, 'steps', 'b.test.js'), '');
+  fs.mkdirSync(path.join(dir, 'fixtures'));
+  fs.writeFileSync(path.join(dir, 'fixtures', 'c.test.js'), '');
+  fs.writeFileSync(path.join(dir, 'helpers.js'), '');
+
+  assert.deepEqual(listPipelineTestFiles(dir), [path.join(dir, 'a.test.js'), path.join(dir, 'steps', 'b.test.js')]);
+});
+
+// BL-2041 S1 (QA bounce, spec-gap amendment): isPipelinePropertyTestFile
+// recognizes ONLY the *.property.test.js suffix, never a plain .test.js
+// file with "property" in its own name elsewhere.
+test('isPipelinePropertyTestFile is true only for a *.property.test.js suffix', () => {
+  assert.equal(isPipelinePropertyTestFile('/a/b.property.test.js'), true);
+  assert.equal(isPipelinePropertyTestFile('/a/b.test.js'), false);
+  assert.equal(isPipelinePropertyTestFile('/a/propertyThing.test.js'), false);
+});
+
+// BL-2041 S1: the split both recorders (recordTestDuration.js's unit lane,
+// recordPropertyDuration.js's property lane) apply to the SAME census -
+// property.test.js files and only those land in propertyFiles, order
+// preserved, nothing dropped or duplicated.
+test('partitionPipelineTestFiles splits property.test.js files out of the unit-lane list, preserving order', () => {
+  const files = ['/a.test.js', '/b.property.test.js', '/c.test.js', '/d.property.test.js'];
+  assert.deepEqual(partitionPipelineTestFiles(files), {
+    unitFiles: ['/a.test.js', '/c.test.js'],
+    propertyFiles: ['/b.property.test.js', '/d.property.test.js'],
+  });
+});
+
+// BL-2041 D1 (QA bounce): node:test's own default per-test timeout is
+// Infinity - buildPipelineTestArgs must thread a real --test-timeout flag,
+// not just sit beside one.
+test('buildPipelineTestArgs passes --test-timeout before the file list, defaulting to PIPELINE_TEST_TIMEOUT_MS', () => {
+  assert.deepEqual(buildPipelineTestArgs(['/a.test.js', '/b.test.js']), [
+    '--test',
+    `--test-timeout=${PIPELINE_TEST_TIMEOUT_MS}`,
+    '/a.test.js',
+    '/b.test.js',
+  ]);
+  assert.deepEqual(buildPipelineTestArgs(['/a.test.js'], 500), ['--test', '--test-timeout=500', '/a.test.js']);
+});
+
+// BL-2041 D1 (QA bounce): the behavioral proof QA asked for - a file that
+// never resolves must fail WITHIN the bound, naming the file, rather than
+// hanging the lane the way a regression in bl1358MutantTimeCeiling.test.js's
+// own deliberately-hanging fixture would without this flag.
+test('a never-resolving pipeline test file fails within the bound and names the file, instead of hanging', () => {
+  const dir = mkTmp();
+  fs.writeFileSync(
+    path.join(dir, 'hangs.test.js'),
+    "const { test } = require('node:test');\n" +
+      "test('never resolves', () => new Promise(() => { setInterval(() => {}, 1000); }));\n"
+  );
+  const files = listPipelineTestFiles(dir);
+  const SHORT_TIMEOUT_MS = 500;
+  const started = Date.now();
+  const result = spawnSync(process.execPath, buildPipelineTestArgs(files, SHORT_TIMEOUT_MS), {
+    encoding: 'utf8',
+    timeout: 15_000,
+  });
+  const elapsedMs = Date.now() - started;
+  assert.notEqual(result.status, 0, `expected a non-zero exit for a hung test, got 0:\n${result.stdout}${result.stderr}`);
+  assert.ok(
+    elapsedMs < 10_000,
+    `expected the run to fail within the ${SHORT_TIMEOUT_MS}ms bound, not hang; took ${elapsedMs}ms`
+  );
+  const out = `${result.stdout}${result.stderr}`;
+  assert.ok(out.includes('hangs.test.js'), `expected the output to name the hung file, got:\n${out}`);
 });
 
 // BL-078 suite-duration-01

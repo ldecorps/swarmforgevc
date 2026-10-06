@@ -2,12 +2,80 @@
 // recordTestDuration.js (the CLI entry point that shells out to the real
 // test run) stays a thin wrapper — mirrors crapLib.js's split.
 const fs = require('fs');
+const path = require('path');
 
 function listTestFiles(testDir) {
   return fs
     .readdirSync(testDir)
     .filter((f) => f.endsWith('.test.js'))
     .sort();
+}
+
+// BL-2041: specs/pipeline/test's own *.test.js files, found recursively
+// (listTestFiles above is one level deep, this directory's files nest under
+// steps/) - fixtures/ is excluded (it holds fixture data, never a test file
+// of its own; excluded by directory name rather than assumed empty, so a
+// fixture that someday grows a same-suffix file still never joins the run).
+// Absolute paths, sorted, so recordTestDuration.js's node --test invocation
+// is explicit about exactly what ran rather than trusting a shell glob that
+// could silently expand to nothing.
+function listPipelineTestFiles(testDir) {
+  const out = [];
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (entry.name === 'fixtures') continue;
+        walk(path.join(dir, entry.name));
+      } else if (entry.isFile() && entry.name.endsWith('.test.js')) {
+        out.push(path.join(dir, entry.name));
+      }
+    }
+  }
+  walk(testDir);
+  return out.sort();
+}
+
+// BL-2041 (QA bounce S1, spec-gap amendment 2026-10-06): the lane's own
+// *.property.test.js files (bl988Bl578ContractBinding,
+// bl989PortableGrepTabAnchor, scaffoldStepHandlerInvariants - 3 of the 41)
+// run in the PROPERTY lane, never the unit lane - the shared Engineering
+// Rules keep property tests separate from normal verification (their own
+// tag/command), and vitest.config.mjs already excludes
+// **/*.property.test.js from extension/'s own unit lane for the identical
+// reason (BL-479). Pure split, so both recorders (recordTestDuration.js's
+// unit-lane run, recordPropertyDuration.js's property-lane run) partition
+// the SAME census the SAME way - never two drifting notions of which 3
+// files those are.
+function isPipelinePropertyTestFile(file) {
+  return file.endsWith('.property.test.js');
+}
+
+function partitionPipelineTestFiles(files) {
+  const unitFiles = [];
+  const propertyFiles = [];
+  for (const file of files) {
+    (isPipelinePropertyTestFile(file) ? propertyFiles : unitFiles).push(file);
+  }
+  return { unitFiles, propertyFiles };
+}
+
+// BL-2041 (QA bounce D1): node:test's own default per-test timeout is
+// Infinity, so a hang in any of the 41 pipeline files (e.g. a regression in
+// bl1358MutantTimeCeiling.test.js's own deliberately-hanging fixture) would
+// hang `node --test` and, with it, every role's lane and QA's gather - with
+// no file named. `--test-timeout` is node:test's own per-test bound (so a
+// timeout is reported against the one test that hung, the same way a real
+// failure already names its file), mirroring vitest.config.mjs's
+// testTimeout for the vitest half of the same lane. 60s is comfortably
+// above the whole directory's normal real-run wall time (13.6s for all 367
+// tests, measured 2026-10-06) while still bounding a genuine hang.
+const PIPELINE_TEST_TIMEOUT_MS = 60_000;
+
+// Pure: the argv `node --test` is invoked with. Exported so a test can pin
+// the flag (and override `timeoutMs` to something short, to prove a real
+// hang fails within the bound) without re-spawning the real 41-file run.
+function buildPipelineTestArgs(files, timeoutMs = PIPELINE_TEST_TIMEOUT_MS) {
+  return ['--test', `--test-timeout=${timeoutMs}`, ...files];
 }
 
 // BL-1598: pole_ms/work_ms/new_offenders/budget_verdict come from the
@@ -166,6 +234,11 @@ if (require.main === module && process.argv[2] === RUN_IN_OWN_GROUP_FLAG) {
 
 module.exports = {
   listTestFiles,
+  listPipelineTestFiles,
+  isPipelinePropertyTestFile,
+  partitionPipelineTestFiles,
+  PIPELINE_TEST_TIMEOUT_MS,
+  buildPipelineTestArgs,
   buildRecord,
   appendRecord,
   computeFinalExitCode,

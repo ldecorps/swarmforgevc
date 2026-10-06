@@ -48,9 +48,17 @@
   (try
     (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-throttle-recommendation.js"))
           {:keys [exit err]} (process/sh ["node" cli-path (str project-root)] {:dir (str project-root)})]
-      (when-not (zero? exit)
-        (binding [*out* *err*]
-          (println (str "effective_backlog_depth_cli: throttle-recommendation refresh failed, exit=" exit " " (str/trim (or err "")))))))
+      ;; BL-2033: since BL-1874 the refresh CLI exits 0 when its refresh
+      ;; fails and names the failure on stderr, so a non-zero exit is no
+      ;; longer the only failure signal - pass on whatever the refresh
+      ;; wrote to stderr, whatever its exit. A non-zero exit still adds
+      ;; exit=<n> as before; stdout stays the effective depth alone.
+      (let [trimmed-err (str/trim (or err ""))]
+        (when (or (not (zero? exit)) (not (empty? trimmed-err)))
+          (binding [*out* *err*]
+            (if (zero? exit)
+              (println (str "effective_backlog_depth_cli: throttle-recommendation refresh failed, " trimmed-err))
+              (println (str "effective_backlog_depth_cli: throttle-recommendation refresh failed, exit=" exit " " trimmed-err)))))))
     (catch Exception e
       (binding [*out* *err*]
         (println (str "effective_backlog_depth_cli: throttle-recommendation refresh error: " (.getMessage e)))))))
