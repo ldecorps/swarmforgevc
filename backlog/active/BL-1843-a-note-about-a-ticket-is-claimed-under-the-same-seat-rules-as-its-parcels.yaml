@@ -166,6 +166,25 @@ qa_e2e_procedure: |
   holds.
 
 notes: |
+  2026-10-06 ~19:35Z (specifier, on coordinator note 017116): NOT split -
+  the work is finished. QA's D1 bounce (003871, 13:07Z) was remediated at
+  2132eec663 (13:25Z: one commit on 61c2c53e37, BL-1843's 8 paths only,
+  re-attributed from BL-1963-tagged f604115bcc), and the seat then
+  completed the bounce with done_with_current --no-op "... handoff
+  written" and queued nothing (the BL-2050 defect). The 18:50Z
+  loop-halt was the seat searching for that finished rebuild
+  (`git log ^61c2c53e37 | grep rebuild parcel|tip-pure`), so a split
+  cannot help. 2132eec663 lives only in
+  refs/swarmforge/parcel-backup/coder/20261006T134047.367Z and merges
+  cleanly with origin/main as of 19:35Z (git merge-tree). Next pass:
+  QA, on a git_handoff naming 2132eec663 (BL-714 shape). Do NOT send the
+  backup ref's tip: BL-2033's 557fa56a98 is stacked on 2132eec663.
+  2026-10-06 19:46Z UTC (coordinator): pulled from coder after a loop-
+  detection halt (potential-loop dialog, no auto-deny countdown) while
+  checking BL-1843 files on the branch, per the human's loop-halt-triggers-
+  pull+split directive (2026-10-05). Handoff 017107 moved to
+  .worktrees/coder/.swarmforge/handoffs/inbox/abandoned/; seat respawned.
+  Specifier: please simplify/split per the standard BAU.
   Adjudicated 2026-10-06 by the specifier on coordinator note 017051
   (split request): simplified, not split, the BL-1963 shape. The off-
   ticket edits in stash@{0} (backlog_depth_lib.bb's

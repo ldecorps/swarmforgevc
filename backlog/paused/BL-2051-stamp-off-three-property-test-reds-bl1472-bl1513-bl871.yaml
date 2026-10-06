@@ -1,0 +1,110 @@
+id: BL-2051
+title: "Stamp-off for hotfixes 435b2de1a9, 372b68930b and 25cb223e0d: three property checks red unseen - BL-1472's runner compared fixture shas BL-1857 added, BL-1513's runner expected the router note BL-1614 replaced, and BL-871 invariant 1 compared a loaded run's concurrency to a ceiling read seconds earlier"
+type: defect
+severity: high
+# high: stamp-off of standing-red hotfixes (a red is high at first sighting,
+# 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review three small test-side commits, run two runners and one test file.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "three test-side fixes of a few lines each; nothing to refactor"
+  architect: "test files only; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "no living doc describes these checks' internals"
+
+# Not a claim of ownership over BL-1513's contract (BL-1251): it is the
+# feature that drives the router whose note one of the runners checks.
+acceptance: specs/features/BL-1513-the-router-note-is-never-cut.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews them and never re-applies them.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bb swarmforge/scripts/test/bl1472_revert_reapply_transparent_property_runner.bb`:
+     ALL PROPERTIES HOLD (measured at 435b2de1a9 in an isolated clone:
+     30 runs, 64 s).
+  2. `bb swarmforge/scripts/test/bl1513_router_note_fits_property_runner.bb`:
+     ALL PROPERTIES HOLD (measured on main at 372b68930b: 16 route trials
+     plus 20 parser checks, 51 s).
+  3. Read from the gather's property row: bl871PropertyLaneWorkerPoolCapInvariants
+     2 of 2 (measured alone at 25cb223e0d: 2 of 2, 16 s).
+  4. Read from the gather's acceptance row: BL-1513 4 of 4 and BL-1472
+     4 of 4 (both measured on main at 25cb223e0d: 4 of 4).
+  5. Read the coder's committed review evidence.
+
+source: |
+  QA note 003876 (2026-10-06): "bb *_property_runner.bb run in no lane
+  (BL-2041 sibling); see BL-2039 QA evid". The BL-1472 and BL-1513 runner
+  reds were found by the specifier running those runners for the
+  BL-2048/BL-2049 census.
+  coder@2 note 000151 (2026-10-06): "unowned-red bl871WorkerPoolCapInvariants
+  invariant1 fails under full-lane load", evidence c4d986d345 on the
+  swarmforge-coder@2 line, found verifying BL-2044.
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  No standing-reds.tsv row was added for any of the three: each was fixed
+  the same pass it was found. The two bb runners stay in no lane until
+  BL-2048/BL-2049 land; BL-2048's census will report any further runner red
+  as its own unowned-red note.
+  Holder note sent to coder@2 (BL-2044, mid-forward when the red was found):
+  merge main before forwarding, so the line carries 25cb223e0d.
+
+description: |
+  ## Status: hotfixes 435b2de1a9, 372b68930b and 25cb223e0d landed the fixes
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong, and what each hotfix changed
+
+  435b2de1a9: bl1472_revert_reapply_transparent_property_runner.bb P1
+  builds two fixture repos and compared delivered-attribution's whole map.
+  BL-1857 (6c740f69b7, 2026-10-01) added :untagged-commits, a list of
+  commit shas, which differ between two repos for the same logical commit,
+  so P1 failed on every case. P1 now compares owners, both flags and the
+  count of each sha list, which is the answer the runner's header pins.
+
+  372b68930b: bl1513_router_note_fits_property_runner.bb expected the
+  router note "Work <id>: read backlog/active/<id>-*.yaml". BL-1614
+  (da0933c0ce, 2026-09-17) changed route_backlog_to_coder.sh's MSG to
+  "Work <id>: merge main first, then read backlog/active". The runner now
+  composes that template in one helper for both invariants, and its length
+  sweep straddles the new threshold (49 + id length <= 80).
+
+  25cb223e0d: bl871PropertyLaneWorkerPoolCapInvariants.property.test.js
+  invariant 1 computed the pool ceiling in its own process
+  (floor(cores - 5-minute load)) and asserted the spawned fixture run's
+  peak concurrency stayed under it. The spawned config computes the same
+  expression seconds later; under a loaded lane the two readings straddle
+  an integer (counterexample fileCount=4). The check now reads the ceiling
+  from the run's own [property-lane-budget] forks= line, as the heap check
+  already reads workerHeapMB= (BL-1651).
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 435b2de1a9`, `git show 372b68930b` and
+     `git show 25cb223e0d` against the section above. For 25cb223e0d,
+     confirm that the fixture run names more than one file, so the printed
+     forks= is the config's maxForks (vitest.properties.config.mjs,
+     resolveLaneForks).
+  2. Run qa_e2e_procedure steps 1 and 2 and the bl871 test file once, with
+     output under tmp/.
+  3. Write backlog/evidence/BL-2051-coder-<date>.md with the review result
+     and the run results, and commit it.

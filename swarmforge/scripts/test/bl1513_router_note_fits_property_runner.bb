@@ -10,10 +10,12 @@
 ;;      acceptance handler uses - a file at .swarmforge/tmux-socket, no
 ;;      real tmux session needed, since deliver-parcel! writes the target
 ;;      file before attempting the wake) across ticket-id lengths
-;;      straddling the exact threshold (35 + 2*id-length <= 80, i.e.
-;;      id-length <= 22) - the domain is one integer parameter with a
-;;      single hard threshold, so covering every length immediately around
-;;      it (21-24) plus representative far points on both sides reaches
+;;      straddling the exact threshold (49 + id-length <= 80, i.e.
+;;      id-length <= 31, since BL-1614's template - it was 35 + 2*id-length,
+;;      id-length <= 22, before 2026-09-17) - the domain is one integer
+;;      parameter with a single hard threshold, so covering every length
+;;      immediately around it (30-33) plus representative far points on
+;;      both sides reaches
 ;;      every distinct behavior class with certainty, never a hoped-for
 ;;      sample, without paying a real git-repo-plus-subprocess round trip
 ;;      per integer in a 30-wide range (BL-1541: seconds, not minutes -
@@ -106,6 +108,14 @@
   (sh! root "env" (str "SWARMFORGE_SKIP_DAEMON=0") (str "SWARMFORGE_ROLE=coordinator")
        route-sh ticket-id root))
 
+;; The message route_backlog_to_coder.sh composes (its MSG line). BL-1614
+;; (da0933c0ce, 2026-09-17) changed it from "Work <id>: read
+;; backlog/active/<id>-*.yaml"; this runner kept the old shape and was red
+;; from then on, unseen, because no lane runs the bb property runners
+;; (hotfix 2026-10-06, QA note 003876). One definition for both invariants.
+(defn- composed-message [ticket-id]
+  (str "Work " ticket-id ": merge main first, then read backlog/active"))
+
 (defn- new-mailbox-message [root]
   (let [dir (fs/path root ".swarmforge" "handoffs" "inbox" "new")]
     (when (fs/exists? dir)
@@ -117,11 +127,11 @@
 
 ;; ── invariant 1: exhaustive length sweep, byte-exact or refused ─────────
 
-(doseq [id-length [1 5 10 21 22 23 24 30]
+(doseq [id-length [1 5 10 30 31 32 33 40]
         prefix ["BL" "GH"]]
   (let [root (mk-fixture!)
         ticket-id (id-of-length prefix id-length)
-        expected-msg (str "Work " ticket-id ": read backlog/active/" ticket-id "-*.yaml")
+        expected-msg (composed-message ticket-id)
         expected-len (count expected-msg)
         result (route! root ticket-id)]
     (try
@@ -154,10 +164,10 @@
 
 ;; ── invariant 2: the real parser recovers the id, new shape and old ─────
 
-(doseq [id-length [3 10 22 23 30]
+(doseq [id-length [3 10 31 32 40]
         prefix ["BL" "GH"]]
   (let [ticket-id (id-of-length prefix id-length)
-        new-shape (str "Work " ticket-id ": read backlog/active/" ticket-id "-*.yaml")
+        new-shape (composed-message ticket-id)
         old-shape (str "Work " ticket-id "-some-old-slug: read file in backlog/active")]
     (when (not= ticket-id (chase-sweep-lib/dispatch-trail-ticket-id {:task nil :message new-shape}))
       (fail! (str "invariant 2: the new-shape message for " ticket-id

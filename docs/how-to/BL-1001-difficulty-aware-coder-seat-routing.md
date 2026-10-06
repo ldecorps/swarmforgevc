@@ -24,7 +24,19 @@ Claim filtering in `ready_for_next_task.bb` uses pure
 
 Asymmetric spill:
 
-- Above-tier never lands on a seat, however idle it is — the ticket waits.
+- Above-tier never lands on a seat, however idle it is — the ticket waits
+  in the stage's shared queue (a multi-seat stage's `inbox/new/` is the
+  mailbox of the seat whose id is the bare stage name). It does not wait
+  passively there: the periodic chase sweep reads the same
+  `difficulty-claim-decision` this filter uses (never a second tier
+  table) before acting on it. An ineligible owner is never chased,
+  respawned or dead-lettered over it; an idle eligible sibling of the
+  stage is woken instead, and only when **no** seat of the stage may
+  claim it does the sweep dead-letter it with no respawn (BL-2039 — see
+  the chase branch in
+  [`docs/diagrams/handoff-flow.mmd`](../diagrams/handoff-flow.mmd)). Before
+  BL-2039, the sweep read no tier at all and chased/respawned the
+  mailbox-owning seat regardless of eligibility.
 - Easy work **may** spill up to a hard-tier seat when the easy seat is busy.
 
 On a stage that has **any** declared `--seat-tier`, undeclared seats of that
