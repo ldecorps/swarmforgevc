@@ -43,6 +43,16 @@
 ;; script-dir already is.
 (def script-dir (fs/parent (fs/canonicalize *file*)))
 
+;; BL-1992 D1/D2 (QA bounce): the ticket a release note names is resolved
+;; the same way chase_sweep_lib.bb's own dispatch-trail-ticket-id already
+;; does for a `task:` header (pipeline-stage-lib/extract-ticket-id - a
+;; \b-bounded prefix+digits match, correct against a bare id or a full
+;; stable-task-name slug alike) and for a Work note's `message:` header
+;; (work-note-evidence-lib/work-note-ticket-id-from-message, already
+;; bare-only). Both pure libs; loaded, never restated.
+(load-file (str (fs/path script-dir "pipeline_stage_lib.bb")))
+(load-file (str (fs/path script-dir "work_note_evidence_lib.bb")))
+
 (def max-repeats
   "Identical calls in one window before the next one is warned about."
   2)
@@ -269,16 +279,30 @@
   (when-let [name (in-process-handoff-name cwd)]
     (io/file cwd ".swarmforge" "handoffs" "inbox" "in_process" name)))
 
+(defn- handoff-header [content field]
+  "One header's value from a handoff file's content, or nil - a plain
+   regex read, matching this file's own self-contained style rather than
+   loading handoff_lib.bb's full header parser."
+  (some-> (re-find (re-pattern (str "(?m)^" field ":\\s*(.+)$")) (or content "")) second str/trim))
+
 (defn task-name-from-handoff
-  "The task: header's value from a handoff file's content, or nil - a
-   plain regex read, matching this file's own self-contained style rather
-   than loading handoff_lib.bb's full header parser."
+  "The released ticket's bare id, from the handoff's own task: header (a
+   git_handoff - resolved through extract-ticket-id, correct whether the
+   header carries a bare id or a full stable-task-name slug) or, absent
+   that, a Work note's message: header (work-note-ticket-id-from-message,
+   already bare-only) - or nil when neither names one. Never the raw
+   header text itself: D2's own repro showed a slug task name, embedded
+   whole, breaks both the 80-char note limit and the point of naming a
+   ticket at all."
   [content]
-  (some-> (re-find #"(?m)^task:\s*(\S+)" (or content "")) second))
+  (or (some-> (handoff-header content "task") pipeline-stage-lib/extract-ticket-id)
+      (work-note-evidence-lib/work-note-ticket-id-from-message (handoff-header content "message"))))
 
 (defn release-note-message
   "The coordinator note's message (note-only, max 80 chars - Article 2.2):
-   names the released ticket so another coder seat can take it."
+   names the released ticket so another coder seat can take it. ticket is
+   always a bare id (task-name-from-handoff's own contract) or the \"its
+   ticket\" fallback, both comfortably under the limit."
   [ticket]
   (str ticket " released: third missed write; another coder seat can take it"))
 
@@ -286,30 +310,42 @@
   "Shells to swarm_handoff.sh (Article 2.3: agents send only through it,
    never writing inbox/new/ directly) with cwd as the working directory -
    never this process's own - so the note lands in the SEAT's own outbox,
-   never wherever this hook process happens to be running from."
+   never wherever this hook process happens to be running from. Returns
+   true only on a real, confirmed send (BL-1992 D2: the caller must know
+   whether the note actually went out before giving up the parcel)."
   [cwd message]
   (let [script (str (fs/path script-dir "swarm_handoff.sh"))
         draft (io/file cwd "tmp" "bl1992-release-note.txt")]
     (io/make-parents draft)
     (spit draft (str "type: note\nto: coordinator\npriority: 10\nmessage: " message "\n"))
-    (process/shell {:dir cwd :out :string :err :string :continue true} script (str draft))))
+    (try
+      (zero? (:exit @(process/shell {:dir cwd :out :string :err :string :continue true} script (str draft))))
+      (catch Exception _ false))))
 
 (defn release-parcel!
-  "Moves the parcel's in_process handoff to this seat's own inbox/abandoned
-   (the destination the coordinator's own pull already uses, so nothing
-   keeps routing it to this seat) and sends the coordinator a note naming
-   its ticket. Best-effort outside a real parcel: nothing to release when
-   there is no in_process handoff."
+  "Sends the coordinator a note naming the released ticket FIRST, and only
+   on a confirmed send moves the parcel's in_process handoff to this
+   seat's own inbox/abandoned (the destination the coordinator's own pull
+   already uses, so nothing keeps routing it to this seat). BL-1992 D2: a
+   refused or failed send must never strand the parcel silently with
+   nothing sent and the file already moved - a failed send leaves the
+   parcel exactly where it was, in_process, for the next miss (or a human)
+   to find, and prints why. Best-effort outside a real parcel: nothing to
+   release when there is no in_process handoff."
   [cwd]
   (when-let [src (in-process-handoff-path cwd)]
     (when (.isFile ^java.io.File src)
       (let [content (slurp src)
             ticket (or (task-name-from-handoff content) "its ticket")
-            dest-dir (io/file cwd ".swarmforge" "handoffs" "inbox" "abandoned")]
-        (io/make-parents (io/file dest-dir "x"))
-        (io/copy src (io/file dest-dir (.getName ^java.io.File src)))
-        (io/delete-file src true)
-        (send-release-note! cwd (release-note-message ticket))))))
+            sent? (send-release-note! cwd (release-note-message ticket))]
+        (if sent?
+          (let [dest-dir (io/file cwd ".swarmforge" "handoffs" "inbox" "abandoned")]
+            (io/make-parents (io/file dest-dir "x"))
+            (io/copy src (io/file dest-dir (.getName ^java.io.File src)))
+            (io/delete-file src true))
+          (binding [*out* *err*]
+            (println (str "local_model_repeat_guard.bb: release note for " ticket
+                          " was not confirmed sent; the parcel stays in_process."))))))))
 
 (defn warning
   "The note to hand the model with this call's result, or nil."

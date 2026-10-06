@@ -226,3 +226,95 @@ test('a release never answers with a refusal, only nil - invariant 1 on the exac
   // through to notes-response for some unrelated reason.
   assert.ok(fs.existsSync(path.join(inProcessDir, 'parcel-01.handoff')), 'the stub release-fn must not itself move anything');
 });
+
+// ── QA bounce D1/D2 regressions (2026-10-06) ────────────────────────────
+//
+// D1: task-name-from-handoff only ever read a git_handoff's own task:
+// header, never a Work note's message: - the iq3 coder's real live parcel
+// at the time (a coordinator Work note, "Work BL-1843: merge main first,
+// then read backlog/active", no task: header at all) would have released
+// naming "its ticket" instead of BL-1843.
+// D2: release-note-message embedded the WHOLE task: value, so any stable
+// task name longer than ~19 characters (routine - full slugs are the
+// common case) made the note exceed Article 2.2's 80-character limit,
+// swarm_handoff.sh refused it, and release-parcel! had ALREADY moved the
+// parcel to inbox/abandoned before learning that - stranded, nothing sent.
+
+test('D1: task-name-from-handoff resolves a bare task id, a full stable-task-name slug, and a Work note message - never the raw header text', () => {
+  const forms = `
+(emit {:bare (local-model-repeat-guard/task-name-from-handoff "type: git_handoff\\nto: coder\\ntask: BL-9001\\ncommit: 0000000000\\n")
+       :slug (local-model-repeat-guard/task-name-from-handoff "type: git_handoff\\nto: coder\\ntask: BL-1629-an-accepted-pole-needs-no-open-owner-bl968-is-one\\ncommit: 0000000000\\n")
+       :work-note (local-model-repeat-guard/task-name-from-handoff "type: note\\nto: coder\\nmessage: Work BL-1843: merge main first, then read backlog/active\\n")
+       :neither (local-model-repeat-guard/task-name-from-handoff "type: note\\nto: coder\\nmessage: branch behind abc123: in_process work present - merge up\\n")})`;
+  const [result] = callGuardLib(forms);
+  assert.equal(result.bare, 'BL-9001');
+  assert.equal(result.slug, 'BL-1629', 'a full slug task: value must resolve to its bare leading id, D2\'s own repro shape');
+  assert.equal(result['work-note'], 'BL-1843', "D1's exact repro: a coordinator Work note with no task: header at all");
+  assert.equal(result.neither, null, 'a merge-up note names no ticket and must resolve to nil, never a wrong guess');
+});
+
+test('D2: release-note-message stays within the 80-character note limit for a realistic long stable-task-name slug', () => {
+  const forms = `
+(emit {:message (local-model-repeat-guard/release-note-message
+                   (local-model-repeat-guard/task-name-from-handoff
+                     "type: git_handoff\\nto: coder\\ntask: BL-1629-an-accepted-pole-needs-no-open-owner-bl968-is-one\\ncommit: 0000000000\\n"))})`;
+  const [{ message }] = callGuardLib(forms);
+  assert.ok(message.length <= 80, `expected <= 80 chars (Article 2.2), got ${message.length}: ${message}`);
+  assert.match(message, /^BL-1629 /, 'the note must still name the ticket, just the bare id');
+});
+
+// Real end-to-end fixtures for D1/D2's IO path (release-parcel! itself) -
+// a disposable git root, never this checkout's own .swarmforge/ (same
+// BL-1390 rule BL-1991's own fixture states for itself).
+const { execFileSync } = require('node:child_process');
+
+function mkReleaseFixture(taskHeaderLine) {
+  const root = mkTmpDir('bl1992-d1d2-');
+  execFileSync('git', ['init', '-q', '-b', 'main', '.'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: root });
+  const inProcessDir = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+  fs.mkdirSync(inProcessDir, { recursive: true });
+  const parcelPath = path.join(inProcessDir, 'parcel-01.handoff');
+  fs.writeFileSync(parcelPath, `type: git_handoff\nto: coder\n${taskHeaderLine}commit: 0000000000\n`);
+  return { root, parcelPath };
+}
+
+test('D1/D2 end-to-end: a full-slug task name releases with a short note naming the bare ticket, and the parcel moves', () => {
+  const { root, parcelPath } = mkReleaseFixture('task: BL-1629-an-accepted-pole-needs-no-open-owner-bl968-is-one\n');
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'roles.tsv'),
+    [
+      ['coder', 'coder-wt', root, 'swarmforge-coder', 'Coder', 'local-model', 'task'].join('\t'),
+      ['coordinator', 'master', root, 'swarmforge-coordinator', 'Coordinator', 'claude', 'task'].join('\t'),
+    ].join('\n') + '\n'
+  );
+  const forms = `(local-model-repeat-guard/release-parcel! ${JSON.stringify(root)})`;
+  const r = spawnSync('bb', ['-e', `(load-file "${GUARD}")\n${forms}`], {
+    encoding: 'utf8',
+    env: { ...process.env, SWARMFORGE_ROLE: 'coder', SWARMFORGE_SKIP_SYNC_INJECT: '1' },
+    timeout: 30000,
+  });
+  assert.equal(r.status, 0, `release-parcel! threw: ${r.stdout}${r.stderr}`);
+  assert.ok(!fs.existsSync(parcelPath), 'the parcel must have moved out of in_process');
+  const outboxDir = path.join(root, '.swarmforge', 'handoffs', 'outbox');
+  const outbox = fs.readdirSync(outboxDir).map((f) => fs.readFileSync(path.join(outboxDir, f), 'utf8'));
+  assert.equal(outbox.length, 1, `expected exactly one outbox note, got: ${JSON.stringify(outbox)}`);
+  assert.match(outbox[0], /^message: BL-1629 released/m);
+});
+
+test('D2: a send that is never confirmed (no roles.tsv - sender-role cannot resolve) leaves the parcel exactly where it was, in_process', () => {
+  const { root, parcelPath } = mkReleaseFixture('task: BL-9001\n');
+  // Deliberately no .swarmforge/roles.tsv - swarm_handoff.sh's sender-role
+  // check refuses, send-release-note! must read that as NOT sent.
+  const forms = `(local-model-repeat-guard/release-parcel! ${JSON.stringify(root)})`;
+  const r = spawnSync('bb', ['-e', `(load-file "${GUARD}")\n${forms}`], {
+    encoding: 'utf8',
+    env: { ...process.env, SWARMFORGE_ROLE: 'coder', SWARMFORGE_SKIP_SYNC_INJECT: '1' },
+    timeout: 30000,
+  });
+  assert.equal(r.status, 0, `release-parcel! threw: ${r.stdout}${r.stderr}`);
+  assert.ok(fs.existsSync(parcelPath), 'a parcel whose release note was never confirmed sent must stay in_process, never silently stranded in abandoned/');
+  const abandonedDir = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'abandoned');
+  assert.ok(!fs.existsSync(abandonedDir) || fs.readdirSync(abandonedDir).length === 0, 'nothing may have moved to abandoned/ either');
+});
