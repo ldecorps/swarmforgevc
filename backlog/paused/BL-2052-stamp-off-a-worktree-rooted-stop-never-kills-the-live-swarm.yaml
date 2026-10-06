@@ -1,0 +1,121 @@
+id: BL-2052
+title: "Stamp-off for hotfixes a9cadb6484 and 49fe963c76: a stop rooted at a seat worktree followed the worktree's tmux-socket pointer (a copy of the main checkout's) and ran tmux kill-server on the live swarm; kill_all_swarm.sh and the extension stopper now kill only a socket under the stopped root's own .swarmforge/, compared physically"
+type: defect
+severity: critical
+# critical: the defect tears down every seat at once (swarm-down). The
+# 2026-08-29 kill-all audit in .worktrees/hardender records it firing.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+not_before: 2026-10-07
+# mutation_cooldown_days refuses Stryker on swarmStopper.ts until a day
+# after 49fe963c76 (2026-10-06); the hardener's pass needs the next day.
+mutation_cost: medium
+# medium: Stryker on socketOwnedByTarget/physicalPath and the three call
+# sites that gate on it; the shell half has no mutation lane (BL-472).
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "two small guards already landed; nothing to refactor"
+  architect: "the boundary (a root may stop only its own server) is the fix itself and is stated here"
+  documenter: "no living doc describes stopping from a worktree"
+
+# Not a claim of ownership over BL-730's contract (BL-1251): it is the
+# feature that drives kill_pipeline_swarm.sh's teardown.
+acceptance: specs/features/BL-730-pipeline-teardown-survivor-scope.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews them and never re-applies them.
+
+invariants:
+  - A stop rooted at any directory runs tmux kill-server or kill-session only against a socket whose physical directory is under that directory's own .swarmforge/.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), with TMUX unset.
+  1. `env -u TMUX bash swarmforge/scripts/test/test_swarm_socket_not_in_tmp.sh`:
+     ALL PASS, including "refuses a worktree tmux-socket pointer that names
+     another root's server" and "refuses a ../ pointer out of this root's
+     .swarmforge" (measured on main at a9cadb6484: ALL PASS).
+  2. Read from the gather's unit row: stop.test.js green, including "refuses
+     a worktree pointer at another root socket" and "refuses an in-root
+     pointer whose directory is a symlink to another root" (measured on main
+     before the land: 49 of 49 across stop, swarmStopper and bounce).
+  3. Read from the gather's acceptance row: BL-730 7 of 7 (measured on main
+     at a9cadb6484: 7 of 7).
+  4. Read the hardener's committed Stryker evidence for swarmStopper.ts.
+  5. Confirm the live swarm still lists every session after steps 1-3.
+
+source: |
+  The human, 2026-10-06, after the 19:38Z whole-tmux-server death:
+  "A unit test might be killing the swarm", then "I did ask cursor agent to
+  hotfix already, he is on the case rigjt now but you can spy on them", then
+  "Own his change". The Cursor agent's diagnosis (agent transcript
+  agent-89b022ec, 2026-10-06): every worktree's .swarmforge/tmux-socket
+  names the main server socket, and a stop rooted at a worktree follows it;
+  the kill-all audit of 2026-08-29 in .worktrees/hardender shows
+  root=.worktrees/hardender and kill-server of the main socket.
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  The 19:38Z and 14:55Z server deaths are NOT pinned to this path: a
+  fixture-rooted stop writes its audit inside a fixture that tests then
+  delete, so neither the main audit nor a worktree audit recorded one. In
+  flight at 19:38Z were coder@2's npm test, a hardener vitest run and the
+  specifier's property-runner census. A second open hypothesis, owned by
+  nobody yet: no test lane unsets TMUX, so a seat's test run that calls
+  tmux without -S reaches the live server. The specifier's own full npm test
+  on main at about 19:55Z ran with TMUX unset and the swarm survived.
+  The fix was written by the Cursor agent; the specifier owned and landed
+  it, making the ownership check physical (pwd -P, realpathSync) instead of
+  a string prefix and adding the ../ and symlinked-dir regression cases.
+
+description: |
+  ## Status: hotfixes a9cadb6484 (shell) and 49fe963c76 (extension) landed the fix
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong
+
+  swarmforge.sh copies the main checkout's .swarmforge/tmux-socket into each
+  role's state dir, so every worktree's copy names the live server's socket.
+  kill_pipeline_swarm.sh (behind kill_all_swarm.sh) and the extension's
+  swarmStopper (stopSwarm, stopSwarmCompletely, drainAgentSessions,
+  clearStaleSwarmState) read that file from the root they were asked to
+  stop and ran tmux kill-session and kill-server on whatever it named. A
+  stop rooted at a worktree therefore tore down every seat.
+
+  ## What the hotfixes changed
+
+  a9cadb6484: socket_owned_by_root in kill_pipeline_swarm.sh admits a socket
+  only when its directory, resolved with pwd -P, is under the root's own
+  .swarmforge/ (also pwd -P). When the directory is gone it falls back to a
+  lexical check that refuses any ../ segment. A refusal logs "REFUSED tmux
+  kill-server <sock>" in the kill-all audit. Two regression cases in
+  test_swarm_socket_not_in_tmp.sh: a foreign pointer, and the same socket
+  reached through ../ from the worktree's own .swarmforge/.
+
+  49fe963c76: socketOwnedByTarget in swarmStopper.ts makes the same check with
+  realpathSync, resolving the nearest existing ancestor when the socket's
+  directory is gone. Every stop entry point refuses a foreign socket, kills
+  nothing, and still clears the target's own stale state. Two unit tests: a
+  foreign pointer, and an in-root pointer whose tmux directory is a symlink
+  to another root's.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show a9cadb6484` and `git show 49fe963c76` against the section
+     above. Confirm a stop of the main checkout still reaches kill-server on
+     its own socket in both stoppers.
+  2. Run qa_e2e_procedure step 1 and `npx vitest run test/stop.test.js`
+     once, with TMUX unset, output under tmp/.
+  3. Write backlog/evidence/BL-2052-coder-<date>.md with the review result
+     and the run results, and commit it.
