@@ -50,7 +50,13 @@ const DISPATCHER_PREFIX = /^(ready_for_next|done_with_current)/;
 // misses done_with_current_task.bb - the helper this ticket is about).
 function deriveClosedSelfRooting(guardPath = REAL_GUARD) {
   const { spawnSync } = require('node:child_process');
-  const { stdout, stderr } = spawnSync('bash', ['-x', guardPath], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  // The guard stops after step 1b when asked (exit 3, never a pass): this
+  // reads only the closed set, and step 2 is most of the -x run.
+  const { stdout, stderr } = spawnSync('bash', ['-x', guardPath], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, SWARMFORGE_GUARD_DERIVE_ONLY: '1' },
+  });
   const trace = `${stdout}\n${stderr}`;
   const all = [...trace.matchAll(/\n\+ SELF_ROOTING=(?:'([^']*)'|(\S+))/g)];
   if (!all.length) throw new Error(`no SELF_ROOTING= assignment in the guard's -x trace:\n${trace.slice(-2000)}`);
