@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-05 (BL-1991: a seat that skips its named write is restarted on it)
+Last Updated: 2026-10-06 (BL-1992: a third missed write releases the parcel to another coder seat)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -456,9 +456,34 @@ exit never loops.
 
 No tool call is ever refused by this check, same invariant as the
 repeat guard above — a restart ends the whole process rather than
-denying one call, and `skipLoopDetection` stays on. The third miss
-(leaving the parcel in `in_process` and notifying so another coder seat
-can take it) is a separate feature, BL-1992.
+denying one call, and `skipLoopDetection` stays on.
+
+### A third missed write releases the parcel to another coder seat (BL-1992)
+
+The same missed-write predicate that drives a restart above (`missed-write`:
+the latest compaction names a write/edit, that write hasn't happened since,
+this call isn't it, and it's the third such call) also drives what happens
+once both of BL-1991's restarts are already spent: `restart-decision` and
+`release-decision` share it, gated only by which side of `restart-count <
+max-restarts` (2) the parcel is on. A third miss with restarts still left
+asks for a restart as before; a third miss with no restarts left releases
+the parcel instead — never a third restart, per the human's trial
+(`.swarmforge/operator/INTAKE-iq3-coder-restart-20261005.md`, "On the third
+miss, do not restart").
+
+Releasing moves the seat's own `in_process` handoff file to its
+`inbox/abandoned` — the same destination the coordinator's own pull already
+uses, so nothing keeps routing the parcel back to this seat — and sends the
+coordinator a `note` (via `swarm_handoff.sh`, never a direct `inbox/new/`
+write) naming the released ticket, read from the handoff's own `task:`
+header, so another coder seat can take it. A seat that makes the named
+write on its last chance keeps its parcel and no note is sent, same as a
+restart. Both the move and the note use the event's own `cwd`, never this
+hook process's working directory — the same restart-only discipline BL-1991
+established, now extended to release.
+
+No tool call is ever refused by this check either, same invariant as the
+repeat guard and the restart above.
 
 ### The window gate refuses qwen's compaction dead zone (BL-1840)
 
