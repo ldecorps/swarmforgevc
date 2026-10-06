@@ -1371,3 +1371,10 @@
   stamp_ticket: BL-2018
   human_decision: null
   decided_at: null
+- commit: b82ff33bac
+  subject: "hotfix: bl1905RealDispatcherScan part 1 spends its 60 s budget deriving 10 dispatcher names by running BL-998's whole guard under bash -x - the guard now stops after step 1b when asked (exit 3, never a pass) and the derivation asks"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2029
+  human_decision: null
+  decided_at: null

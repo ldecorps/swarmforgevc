@@ -1,0 +1,102 @@
+id: BL-2029
+title: "Stamp-off for hotfix b82ff33bac: bl1905RealDispatcherScan's part 1 spent its 60 s budget deriving ten dispatcher names by running BL-998's whole guard under bash -x; the guard now stops after step 1b when asked, exiting 3, never a pass"
+milestone: M8
+type: defect
+severity: high
+# high: a red in the property lane with no register row, holding BL-1964 at QA
+# (standing-red rule, 2026-09-05: a red is high at first sighting).
+status: todo
+epic: unit-suite-speed
+priority: 1
+depends_on: []
+mutation_cost: low
+# low: review only - read one commit, run one shell test twice.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two small test-side edits; nothing to refactor"
+  architect: "a test helper and a shell test; no production boundary moves"
+  hardender: "test-side only; no production code changed"
+  documenter: "no living doc describes the guard's derivation or the scan's timing"
+
+# Not a claim of ownership over BL-1905's contract (BL-1251): this stamp-off's
+# review runs the feature whose scan the hotfix made cheaper.
+acceptance: specs/features/BL-1905-a-step-handler-never-runs-a-real-dispatcher-from-its-fixture.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews it and never re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's property-lane row:
+     `extension/test/bl1905RealDispatcherScan.property.test.js` passed
+     (measured at b82ff33bac alone: 2/2, part 1 8.6 s of its 60 s; 19.6 s
+     before, and red in QA's lane run beside coder@2's).
+  2. Read from the gather's acceptance row: the BL-1905 feature 3 of 3
+     (measured at b82ff33bac).
+  3. `bash swarmforge/scripts/test/test_shell_fixture_dispatch_isolation.sh`:
+     PASS, rc 0. Then the same with `SWARMFORGE_GUARD_DERIVE_ONLY=1`: the
+     DERIVE_ONLY line, rc 3 (measured at b82ff33bac).
+  4. Read the coder's committed review evidence.
+
+source: |
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+  QA note 003843, 2026-10-06: "BL-1964 held: unowned red
+  bl1905RealDispatcherScan.property, evid 897132b09a".
+
+description: |
+  ## Status: hotfix b82ff33bac landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `extension/test/bl1905RealDispatcherScan.property.test.js` part 1
+  (60 s budget) calls `scanDir()`, which first derives the dispatcher
+  names. `realDispatcherScan.js`'s `deriveClosedSelfRooting` ran BL-998's
+  guard `test_shell_fixture_dispatch_isolation.sh` in full under `bash -x`
+  and read the LAST `SELF_ROOTING=` line of the trace. That took 32-44 s on
+  a loaded host; the scan of 1414 handlers took 2.9 s. QA's property lane
+  ran beside coder@2's own, and part 1 went red (evidence 897132b09a; the
+  assertion text was not kept, alone it passed at 19.6 s).
+
+  ## What the hotfix changed
+
+  - The guard: after step 1b's closure loop, `SWARMFORGE_GUARD_DERIVE_ONLY=1`
+    prints a DERIVE_ONLY line and exits 3. Step 2 assigns no
+    `SELF_ROOTING` and was most of the `-x` run. The guard exits 3, never
+    0, so a lane that sets the variable by mistake fails rather than
+    passing without step 2. Unset, the guard is unchanged.
+  - `realDispatcherScan.js`: `deriveClosedSelfRooting` sets that variable.
+    `bl1539SelfRootingDerivationLib.js`'s `deriveSelfRooting` (the FIRST
+    `SELF_ROOTING=`) is untouched.
+  - Measured after: the same ten dispatcher names (14.5 s at load 26), part
+    1 8.6 s, the BL-1905 feature 3/3, the BL-1539 feature 7/7, npm test
+    11174 passed 0 failed.
+
+  ## What the coder does (all of it)
+
+  1. Run qa_e2e_procedure step 3 once, and the property file once
+     (`cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1905RealDispatcherScan.property.test.js`),
+     outputs under tmp/.
+  2. Read `git show b82ff33bac` against the sections above.
+  3. Write backlog/evidence/BL-2029-coder-<date>.md: the results and one
+     line saying whether the hotfix matches its description.
+  4. Commit that file, forward to QA, run done_with_current.sh.
+
+notes: |
+  Minted 2026-10-06 by the specifier, the same pass as hotfix b82ff33bac.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  Hotfix ledger: b82ff33bac linked to BL-2029. No register row was added:
+  the red was fixed in the pass that found it.
+  Seen, not ticketed: QA's evidence names a tool gap. qa-gather keeps a
+  4000-char tail of the lane, so a red's own message is lost when the tail
+  is BL-871's allowlisted onTaskUpdate noise.
