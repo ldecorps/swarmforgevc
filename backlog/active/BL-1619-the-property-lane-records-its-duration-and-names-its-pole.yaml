@@ -146,3 +146,6 @@ notes: |
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: behavior, commit: 020daac44f, evidence: backlog/evidence/BL-1619-QA-20261006.md }
