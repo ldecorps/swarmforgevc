@@ -25,7 +25,7 @@ acceptance: specs/features/BL-2033-the-depth-cli-passes-on-a-refresh-failure-rep
 required_wiring:
   - 'specs/pipeline/steps/bl2033DepthCliRefreshStderrSteps.js::registerSteps::binds BL-2033-the-depth-cli-passes-on-a-refresh-failure-reported-on-exit-0.feature (discovered by suffix, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A follow-up QA found on BL-1874's pass (QA evidence O1). No choice is
   posed. FIRM: stdout stays the effective depth alone, because every
