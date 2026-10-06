@@ -129,3 +129,7 @@ description: |
     scenario 01 reads the real lane definition on the parcel commit.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: unit, commit: 8107d5e923, evidence: backlog/evidence/BL-2041-QA-20261006.md }
+  - { at: 2026-10-06, by: QA, blamed: coder, class: unit, commit: b863e1bcd6, evidence: backlog/evidence/BL-2041-QA-20261006-3.md }

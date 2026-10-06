@@ -7,11 +7,24 @@ const { runRecorder } = require('../scripts/recordPropertyDuration');
 
 function mkFixture() {
   const dir = mkTmpDir('sfvc-property-recorder-wiring-');
+  // BL-2041 QA bounce D1: an empty fixture dir, never the real
+  // specs/pipeline/test - without this, every call below with extraArgs:[]
+  // would spawn the real 3-file pipeline property run via runRecorder's
+  // own default.
+  const pipelineTestDir = mkTmpDir('sfvc-property-recorder-pipeline-');
   return {
     dir,
+    pipelineTestDir,
     reportPath: path.join(dir, 'report.json'),
     logPath: path.join(dir, '.property-durations.jsonl'),
   };
+}
+
+function writeRedPipelinePropertyTest(pipelineTestDir) {
+  fs.writeFileSync(
+    path.join(pipelineTestDir, 'bl2041FixtureRed.property.test.js'),
+    "require('node:test')('red', () => { throw new Error('deliberately red'); });\n"
+  );
 }
 
 function readRows(logPath) {
@@ -30,10 +43,10 @@ function readRows(logPath) {
 // BL-1619 scenario 01 ─────────────────────────────────────────────────
 
 test('runRecorder appends exactly one row and returns vitest\'s own exit status on a pass', () => {
-  const { dir, reportPath, logPath } = mkFixture();
+  const { dir, pipelineTestDir, reportPath, logPath } = mkFixture();
   const vitestBin = writeFakeVitestBin(dir, { exitCode: 0 });
 
-  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir });
+  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir, pipelineTestDir });
 
   assert.equal(exitCode, 0);
   assert.equal(appended, true);
@@ -52,10 +65,10 @@ test('runRecorder appends exactly one row and returns vitest\'s own exit status 
 });
 
 test('runRecorder appends exactly one row and returns vitest\'s own exit status on a fail', () => {
-  const { dir, reportPath, logPath } = mkFixture();
+  const { dir, pipelineTestDir, reportPath, logPath } = mkFixture();
   const vitestBin = writeFakeVitestBin(dir, { exitCode: 1 });
 
-  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir });
+  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir, pipelineTestDir });
 
   assert.equal(exitCode, 1);
   assert.equal(appended, true);
@@ -67,10 +80,10 @@ test('runRecorder appends exactly one row and returns vitest\'s own exit status 
 // BL-1619 scenario 03 ─────────────────────────────────────────────────
 
 test('runRecorder appends no row and reports a non-zero exit status when vitest is killed before it reports', () => {
-  const { dir, reportPath, logPath } = mkFixture();
+  const { dir, pipelineTestDir, reportPath, logPath } = mkFixture();
   const vitestBin = writeKilledFakeVitestBin(dir);
 
-  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir });
+  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir, pipelineTestDir });
 
   assert.notEqual(exitCode, 0);
   assert.equal(appended, false);
@@ -78,14 +91,14 @@ test('runRecorder appends no row and reports a non-zero exit status when vitest 
 });
 
 test('a stale report left on disk by an earlier killed run is never misread as this run\'s own', () => {
-  const { dir, reportPath, logPath } = mkFixture();
+  const { dir, pipelineTestDir, reportPath, logPath } = mkFixture();
   // An earlier run's leftover report, still sitting at the SAME reportPath
   // this run will spawn vitest with - the exact shape a killed run leaves
   // behind if the NEXT run's own unlink-before-spawn guard were missing.
   fs.writeFileSync(reportPath, JSON.stringify({ testResults: [{ name: 'test/stale.property.test.js', startTime: 0, endTime: 9999 }] }));
   const vitestBin = writeKilledFakeVitestBin(dir);
 
-  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir });
+  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir, pipelineTestDir });
 
   assert.notEqual(exitCode, 0);
   assert.equal(appended, false, 'expected the stale report never to be read as a completed run');
@@ -188,4 +201,33 @@ test('runRecorder appends no row for a filtered run - the census and trend stay 
   assert.equal(exitCode, 0, 'a filtered run still reports vitest\'s own exit status');
   assert.equal(appended, false, 'a filtered run must never append a row to the whole-lane log');
   assert.equal(readRows(logPath).length, 0);
+});
+
+// BL-2041 QA bounce D1 (pass 4): the fold with the pipeline property run's
+// own exit code was untested - every prior test's pipelineTestDir was
+// empty, so pipelinePropertyExitCode stayed its 0 default no matter what
+// the fold did with it.
+
+test('a whole-lane run folds in a failing pipeline property file even when vitest itself passes', () => {
+  const { dir, pipelineTestDir, reportPath, logPath } = mkFixture();
+  writeRedPipelinePropertyTest(pipelineTestDir);
+  const vitestBin = writeFakeVitestBin(dir, { exitCode: 0 });
+
+  const { exitCode, appended } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir, pipelineTestDir });
+
+  assert.notEqual(exitCode, 0, 'expected the red pipeline property file to fail the whole-lane run despite vitest passing');
+  assert.equal(appended, true);
+  const rows = readRows(logPath);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].result, 'fail');
+});
+
+test('a filtered run never runs the pipeline property files, even when the fixture dir holds a red one', () => {
+  const { dir, pipelineTestDir, reportPath, logPath } = mkFixture();
+  writeRedPipelinePropertyTest(pipelineTestDir);
+  const vitestBin = writeFakeVitestBin(dir, { exitCode: 0 });
+
+  const { exitCode } = runRecorder({ vitestBin, reportPath, logPath, cwd: dir, pipelineTestDir, extraArgs: ['test/pole.property.test.js'] });
+
+  assert.equal(exitCode, 0, 'expected the filtered run to ignore the pipeline property files entirely and report vitest\'s own exit status');
 });

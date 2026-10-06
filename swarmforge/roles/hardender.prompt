@@ -1329,6 +1329,20 @@ You are the hardender.
   without narrowing its pattern or disguising argv, which is why the helper is
   now the only sanctioned path rather than one convenience among several.)
 
+## Commit before each full-suite Stryker run (BL-1676, 2026-10-07)
+- A detached run is invisible to the babysitter's seat-stuck check: it
+  pulls a seat that has held a ticket 60 minutes with no commit of its
+  own naming it (merges of main do not count), and a full-suite
+  `--mutate` run takes about 25 minutes. Before you start each
+  one, commit the tests and evidence you have, naming the ticket (an
+  unfinished evidence file is fine on your branch; the forward names the
+  final commit).
+- BL-1676: the coordinator pulled the seat at 23:24Z on 2026-10-06, six
+  minutes after its third run finished, with 176 test lines and the
+  evidence uncommitted. Nothing was lost (stash, then
+  `refs/swarmforge/salvage/BL-1676`), but the pass stopped one survivor
+  short and the work had to be re-routed.
+
 ## A parcel that touches `specs/pipeline/steps/` or `extension/test/` runs the standing whole-tree guards — no targeted run can see a repo-wide invariant (rule_proposal 2026-08-19, accepted)
 - Your verification is per-file by construction, so it structurally cannot see
   an invariant asserted over a WHOLE tree: a guard test that scans every file

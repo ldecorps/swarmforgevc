@@ -110,3 +110,5 @@ notes: |
   2026-10-01). The epic's deletion slice depends on BL-1913.
   Measured at mint (2026-10-03, main 41a07792fc, node specs/pipeline/cli.js):
   BL-1901 feature 7 of 7 ok (21 s), BL-1631 5 of 5 ok, BL-1242 14 of 14 ok.
+
+assigned_to: coder@2

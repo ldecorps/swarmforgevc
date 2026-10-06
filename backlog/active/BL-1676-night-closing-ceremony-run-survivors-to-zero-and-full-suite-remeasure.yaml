@@ -47,6 +47,46 @@ invariants:
   - "Every mutant Stryker reports for the file at the parcel commit is either killed by a test in the unit suite or recorded in the evidence as an accepted equivalent with the code-level reason; none is silent."
 
 description: |
+  ## Status (2026-10-07): resumed from salvage, not split
+
+  The coordinator pulled this at 23:24Z on 2026-10-06 (note 017171,
+  "hardender held it 69m, no commit"). The seat was not stuck: its third
+  full-suite Stryker run (about 25 minutes each) had finished at 23:18Z
+  and it was writing up the last survivor
+  (`backlog/evidence/seat-stuck-hardender-bl1676-mutation-sweep-false-stuck-20261006.md`).
+  The coder's pass (57bd349433) and the hardener's WIP (stash 15d930bc14,
+  evidence draft 0f4571eeb5) are pinned together as
+  `refs/swarmforge/salvage/BL-1676` (656137ceda, parent 57bd349433); the
+  stash's scoped Stryker configs are left out. Verified from a git-archive
+  of it: `tsc -p .` clean; the two night-closing-ceremony-run test files
+  48 of 48; this feature 1 of 2 (scenario 01 red on item 1 below).
+
+  The final run (23:17:56Z; report kept local-only at
+  `.swarmforge/salvage/BL-1676/mutation-20261006T231756Z.json`): 622
+  instrumented, 73 ignored, 199 killed, 24 survived, 326 no coverage. The
+  hardener's pass resumes from the salvage commit. What is left, all in
+  the evidence file except item 3:
+  1. Three disposition lines (mainHasBriefing, briefingSent,
+     rotateDocumenter) read "accepted equivalent," or "accepted
+     equivalent." where scenario 01's handler accepts only "accepted
+     equivalent:". Reword them; the reasons stand.
+  2. Replace the three `<<placeholders>>` with the run's figures
+     (Instrumented 622, No-coverage 326, Survived 24) or a later run's.
+  3. Survivor 242 (out 266:16, applyAction's dry-run `return []` made
+     non-empty; one test covers it) has no disposition: the draft's
+     applyAction entry names out/269:61, which is mutant 243, a
+     no-coverage one. Kill 242 with a test that a dry run returns and
+     surfaces no loud code, or record it with its code-level reason.
+  4. Two no-coverage mutants sit in in-scope declarations, not in
+     BL-1519's mass: 243 (269:61, the handler fallback) and 324 (369:97,
+     the `: ''` fallback after the stderr guard). The draft already argues
+     both are unreachable; record them with those reasons.
+  5. The no-coverage table's rows sum to 324 and its total line says 314;
+     with 243 and 324 the run's total is 326.
+  6. Commit, naming BL-1676, before starting any further full-suite
+     Stryker run: the seat-stuck clock pulls a seat 60 minutes after its
+     last commit naming the ticket, and one run takes about 25.
+
   ## What is wrong
 
   `extension/src/tools/night-closing-ceremony-run.ts` (499 lines) was never mutation-tested before BL-1640's hardener
@@ -135,3 +175,11 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+  2026-10-07 (specifier): coordinator note 017171 asked for a split
+  after the 23:24Z pull. Not split: what is left is the six items in the
+  description's Status, one short hardener sitting, and slicing would
+  part the tests from the evidence that accounts for the same mutants.
+  Recommended route: the salvage commit 656137ceda straight to the
+  hardener, since the coder's pass is in it.
+
+assigned_to: hardender

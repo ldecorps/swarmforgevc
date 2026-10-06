@@ -15,8 +15,9 @@ Feature: BL-2041 Every acceptance-pipeline test file runs in a lane QA reads
   # BL-2041 the-lane-runs-the-directory-01
   Scenario: the lane QA's gather runs executes every test file under specs/pipeline/test
     Given the test files under specs/pipeline/test, fixtures excluded
-    When the lane QA's gather runs is executed on the parcel commit
-    Then every one of those files runs in it
+    When the lanes QA's gather runs are executed on the parcel commit
+    Then every one of those files runs in a lane QA's gather runs
+    And the files named *.property.test.js run in the property lane and the others in the unit lane
     And the census of those files is 41, counted with find specs/pipeline/test -name '*.test.js' -not -path '*/fixtures/*'
 
   # BL-2041 a-red-file-fails-the-lane-02

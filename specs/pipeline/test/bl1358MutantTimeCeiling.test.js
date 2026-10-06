@@ -18,23 +18,21 @@ const os = require('node:os');
 const path = require('node:path');
 const { runGeneratedTests, resolveMutantTimeoutMs, DEFAULT_MUTANT_TIMEOUT_MS } = require('../runnerAdapter');
 const { handle } = require('../mutationWorker');
+const { sweepStaleTmpDirs } = require('./lib/tmpDirFixture');
 
 const FIXTURE_PREFIX = 'bl1358-ceiling-';
 
-// A killed run traps no `finally`, so the previous run's fixtures are swept by
-// prefix BEFORE this one starts as well (BL-971). These roots are this test's
-// own, one run at a time.
-function sweepFixtures() {
-  for (const entry of fs.readdirSync(os.tmpdir())) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
-    }
-  }
-}
-
+// BL-2041: a killed run traps no `finally`, so the previous run's fixtures
+// are swept BEFORE this one starts too (BL-971) - but a blind prefix sweep
+// (every "bl1358-ceiling-*" entry) deletes a CONCURRENT run's own fixture
+// just as readily as a dead one's (BL-1385/BL-1390's exact shape: this
+// directory running in a lane now means two invocations can genuinely
+// overlap). Owner-pid naming (`sweepStaleTmpDirs`, the engineering rule's
+// shared helper) removes only this process's own roots or a dead owner's -
+// a live sibling's root, naming a different, live pid, is never touched.
 function mkFixture() {
-  sweepFixtures();
-  return fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX));
+  sweepStaleTmpDirs(FIXTURE_PREFIX);
+  return fs.mkdtempSync(path.join(os.tmpdir(), `${FIXTURE_PREFIX}${process.pid}-`));
 }
 
 // A generated entry point that never finishes. The open INTERVAL is
