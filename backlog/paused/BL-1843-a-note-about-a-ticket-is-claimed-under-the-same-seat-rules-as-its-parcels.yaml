@@ -196,6 +196,8 @@ notes: |
   .worktrees/coder: "BL-1843 off-ticket drift before pull (coordinator
   BAU): backlog_depth_lib/headroom_cap_raise_lib/ready_for_next_task.bb
   unrelated edits, plus bl1843NoteSeatRulesSteps.js WIP".
+  2026-10-06 ~12:00Z (specifier): simplified, not split - fix verified at
+  refs/swarmforge/salvage/BL-1843-v2 (registerSteps wiring corrected).
+  Unblocked for promotion.
 
-status: blocked
 assigned_to: coder
