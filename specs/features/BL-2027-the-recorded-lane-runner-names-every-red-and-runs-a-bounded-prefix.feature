@@ -19,6 +19,8 @@ Feature: BL-2027 The recorded lane runner names every red and runs a bounded pre
       | shape                  | exit | names                       |
       | both pass              | 0    | names no failing item       |
       | include one that fails | 1    | names exactly that item     |
+      | the first one fails    | 1    | names exactly the first item |
+      | the first one reads stdin and the second fails | 1 | names exactly the second item |
 
   # BL-2019 recorded-lane-runner-05
   Scenario: a limit runs a bounded prefix of the list
