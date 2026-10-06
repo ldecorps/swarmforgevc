@@ -91,3 +91,5 @@ notes: |
   Seen, not ticketed: the fixture's unassigned-active nudge fails with
   "Unknown sender role: coordinator" on every sweep. It costs time and
   hides nothing, since the scenario is about delivery and rotation.
+
+assigned_to: coder
