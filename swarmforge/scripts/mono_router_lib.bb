@@ -122,21 +122,36 @@
       :else :dormant)))
 
 (defn should-have-standing-session?
-  "Under rotation router, only resident + coordinator stand."
-  [ordered-roles role]
-  (contains? #{:resident :coordinator} (classify-role ordered-roles role)))
+  "Under rotation router, only resident + coordinator stand - unless the
+   pack declares `config coordinator_mode deterministic` (BL-1961/BL-1931),
+   in which case the coordinator is a roster row and a mailbox, never a
+   seat, and so never counts as standing. deterministic? defaults to false
+   so every existing caller/test is unchanged."
+  ([ordered-roles role] (should-have-standing-session? ordered-roles role false))
+  ([ordered-roles role deterministic?]
+   (and (contains? #{:resident :coordinator} (classify-role ordered-roles role))
+        (not (and deterministic? (= role "coordinator"))))))
 
 (defn topology-action
   "Pure decide for one role under mono-router.
    alive? = session currently exists.
+   deterministic? (BL-1961, default false - every existing caller/test
+   unchanged) = the pack declares config coordinator_mode deterministic.
+   With it set, the coordinator is never ensured (absent is :dormant-ok,
+   never :ensure-standing) and never torn down (alive is also :dormant-ok -
+   tearing down a live seat anyway is not this ticket's to decide, BL-1962/
+   BL-1963's own call).
    Returns :ok | :ensure-standing | :teardown-illicit | :dormant-ok."
-  [ordered-roles role alive?]
-  (let [standing? (should-have-standing-session? ordered-roles role)]
-    (cond
-      (and standing? alive?) :ok
-      (and standing? (not alive?)) :ensure-standing
-      (and (not standing?) alive?) :teardown-illicit
-      :else :dormant-ok)))
+  ([ordered-roles role alive?] (topology-action ordered-roles role alive? false))
+  ([ordered-roles role alive? deterministic?]
+   (if (and deterministic? (= role "coordinator"))
+     :dormant-ok
+     (let [standing? (should-have-standing-session? ordered-roles role)]
+       (cond
+         (and standing? alive?) :ok
+         (and standing? (not alive?)) :ensure-standing
+         (and (not standing?) alive?) :teardown-illicit
+         :else :dormant-ok)))))
 
 (defn rotate-viable?
   "BL-537: pure - could rotate_to_role place work on this dormant target

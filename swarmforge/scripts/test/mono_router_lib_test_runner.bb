@@ -50,6 +50,32 @@
          :ok
          (mono-router-lib/topology-action roles "coordinator" true))
 
+;; BL-1961: deterministic-coordinator pack - the coordinator never stands,
+;; and topology-action never ensures or tears it down. deterministic?
+;; defaults to false, so every assertion above (no deterministic? arg) is
+;; unaffected.
+(assert-true "coordinator does not stand on a deterministic pack"
+             (not (mono-router-lib/should-have-standing-session? roles "coordinator" true)))
+(assert-true "coordinator still stands on a non-deterministic pack"
+             (mono-router-lib/should-have-standing-session? roles "coordinator" false))
+(assert-true "resident unaffected by the deterministic flag"
+             (mono-router-lib/should-have-standing-session? roles "coder" true))
+(assert= "deterministic coordinator absent is dormant-ok, never ensure-standing"
+         :dormant-ok
+         (mono-router-lib/topology-action roles "coordinator" false true))
+(assert= "deterministic coordinator alive anyway is also dormant-ok, never torn down"
+         :dormant-ok
+         (mono-router-lib/topology-action roles "coordinator" true true))
+(assert= "non-deterministic coordinator absent still ensures (unchanged default)"
+         :ensure-standing
+         (mono-router-lib/topology-action roles "coordinator" false false))
+(assert= "non-deterministic coordinator alive is still ok (unchanged default)"
+         :ok
+         (mono-router-lib/topology-action roles "coordinator" true false))
+(assert= "deterministic flag never affects a non-coordinator role"
+         :teardown-illicit
+         (mono-router-lib/topology-action roles "QA" true true))
+
 (assert= "rotate-viable: resident dead"
          {:viable? false :reason "no live resident session to rotate from"}
          (mono-router-lib/rotate-viable?
