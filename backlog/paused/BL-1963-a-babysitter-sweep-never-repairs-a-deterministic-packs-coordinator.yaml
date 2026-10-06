@@ -88,22 +88,48 @@ notes: |
   handler: specs/pipeline/steps/bl1963BabysitterRaisesNoCoordinatorFindingSteps.js,
   registered in specs/pipeline/steps/index.js.
 
+  2026-10-06 ~08:10Z: simplified, not split (coordinator note 016980,
+  human 2026-10-05: a loop halt means simplify). The salvage is complete
+  but for one fixture line (above); the description is now the exact
+  steps. The specifier verified it in a scratch tree off main dba50797ca.
+  Optional, not required: the inline conf read in babysitter_check.bb
+  repeats rotation-router-mode?'s resolution. A shared helper would be
+  tidier, and is out of scope.
 description: |
-  ## What is wanted
+  ## Status: the work is done except one line - finish it, do not redo it
 
-  `should-stand-role?` in babysitter_check.bb gets the pack's mode, read
-  once per sweep beside the router check. On a deterministic pack the
-  coordinator is not expected to stand: on a router pack it passes the flag
-  to BL-1961's `should-have-standing-session?`, and on any other pack it
-  returns false for the coordinator. With `:should-stand?` false the sweep
-  raises no `pane-coordinator` finding and emits no repair; check that
-  `check-live-session` in babysitterd_sweep_lib.bb already behaves so
-  rather than changing it.
+  Simplified 2026-10-06 (coordinator note 016980). The seat's own work,
+  stashed at the pull, is pinned as `refs/swarmforge/salvage/BL-1963`
+  (b7201de666). The specifier rebuilt it on main dba50797ca in a scratch
+  tree. Its diff applies cleanly, and with one fixture line fixed the
+  feature passes 1 of 1 (it fails without the production change, so it
+  gates it), `babysitterd_sweep_lib_test_runner.bb` prints ok, and
+  `test_babysitter_check.sh` prints ALL PASS.
 
-  ## What the coder checks
+  ## What the coder does (all of it, in your worktree, nothing else)
 
-  The scenario; test_babysitter_check.sh and
-  babysitterd_sweep_lib_test_runner.bb still pass, including the missing
-  standing session case for a pack without the declaration.
+  1. Apply the salvage's two tracked-file changes as a diff (never a whole
+     file, so nothing newer on main is lost):
+     `git diff refs/swarmforge/salvage/BL-1963^1 refs/swarmforge/salvage/BL-1963 -- swarmforge/scripts/babysitter_check.bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb | git apply`
+  2. Restore the step handler:
+     `git show refs/swarmforge/salvage/BL-1963^3:specs/pipeline/steps/bl1963BabysitterRaisesNoCoordinatorFindingSteps.js > specs/pipeline/steps/bl1963BabysitterRaisesNoCoordinatorFindingSteps.js`
+  3. The one fix, in that handler (about line 51): the swarm-identity line
+     must name the pack conf by ABSOLUTE path, as production writes it.
+     Change `${PACK_CONF_RELPATH}` there to
+     `${path.join(root, PACK_CONF_RELPATH)}`. With the relative path,
+     babysitter_check.bb looks for the conf from its own working directory,
+     does not find it, and reads the pack as not deterministic.
+  4. Run each once, saving output under tmp/:
+     `node specs/pipeline/cli.js specs/features/BL-1963-a-babysitter-sweep-never-repairs-a-deterministic-packs-coordinator.feature`
+     (1 pass), `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
+     (ok), `bash swarmforge/scripts/test/test_babysitter_check.sh` (ALL PASS).
+  5. Commit the three files, forward to QA, run done_with_current.sh.
+
+  Read nothing else: every question the earlier sessions explored is
+  answered above. (What it does: `should-stand-role?` in
+  babysitter_check.bb takes the pack's coordinator_mode, read once per
+  sweep beside the router check. On a deterministic pack the coordinator is
+  not expected to stand, so the sweep raises no `pane-coordinator` finding
+  and emits no repair. `check-live-session` is unchanged.)
 
 assigned_to: coder
