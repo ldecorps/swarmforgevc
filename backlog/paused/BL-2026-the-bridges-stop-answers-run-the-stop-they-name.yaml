@@ -24,7 +24,10 @@ acceptance: specs/features/BL-2026-the-bridges-stop-answers-run-the-stop-they-na
 required_wiring:
   - 'specs/pipeline/steps/bl2026BridgeStopAnswersSteps.js::registerSteps::binds BL-2026-the-bridges-stop-answers-run-the-stop-they-name.feature (discovered by suffix, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - Stop & run keeps the emergency stop, its reply says so, and the how-to line is corrected (recommended)
+ruling_provenance: tapped
 approval_context: >
   FIRM: a yes to the /land queue's "Drain-stop the swarm now?" runs /stop's
   drain mode (executeStopMode drain), and no stop answer writes the bounce
