@@ -132,3 +132,5 @@ notes: |
   salvage plus five line fixes, one handler). Testable (mkdtemp fixture).
   Stages: production bb writing a committed ledger, so hardender stays
   (BL-959); architect stays for the two invariants.
+
+assigned_to: coder
