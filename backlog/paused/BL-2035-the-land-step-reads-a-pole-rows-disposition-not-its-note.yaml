@@ -24,7 +24,7 @@ acceptance: specs/features/BL-2035-the-land-step-reads-a-pole-rows-disposition-n
 required_wiring:
   - 'specs/pipeline/steps/bl2035LandStepPoleDispositionSteps.js::registerSteps::binds BL-2035-the-land-step-reads-a-pole-rows-disposition-not-its-note.feature (discovered by suffix, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A follow-up the architect raised on BL-1629's pass. No choice is posed.
   FIRM: the land step and the budget check read a pole row's disposition by
