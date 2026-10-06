@@ -273,3 +273,8 @@
   description: "ran all 217 property runners under swarmforge/scripts/test one at a time by hand (no lane runs them, QA note 003876) to census reds and wall for BL-2048/BL-2049"
   detected_at: 2026-10-06
   evidence: backlog/evidence/BL-2048-property-runner-census-20261006.md
+- category: register-join-unidentified-red-triage
+  ticket: BL-2015
+  role: QA
+  description: "Unit lane exit 1, join unidentified: whole output has no FAIL file; repeated vitest-worker onTaskUpdate timeouts under concurrent vitest load, classified as owned by open BL-1889"
+  detected_at: 2026-10-06
