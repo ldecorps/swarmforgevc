@@ -1,0 +1,89 @@
+id: BL-2046
+title: "The babysitter's sweep emails a local-model seat's health report when the seat has been down for ten minutes, and once more when it is back - brief restarts (every BL-2038 phase end) send nothing - slice 2 of 2 of the human's 'email me iq3 reports on those events'"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: normal
+depends_on: [BL-2045]
+mutation_cost: medium
+# medium: a debounced state record and one call from babysitter_check.bb's
+# sweep, a large file; hand-mutant pass on the debounce.
+slice_size_envelope: medium
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one call added to the sweep and one decision in BL-2045's CLI; nothing to deduplicate"
+  architect: "the sweep already reads each seat; this adds a caller of BL-2045's command, no boundary moves"
+  documenter: "no living doc describes the babysitter's emails per seat; the role-prompt half is BL-2045's"
+
+acceptance: specs/features/BL-2046-a-local-seat-going-down-or-recovering-emails-its-report.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2046LocalSeatDownRecoveredEmailSteps.js::registerSteps::binds BL-2046 feature (discovered by suffix, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Slice 2 of your "Yes - email me iq3 reports on those events" (specifier
+  pane, 2026-10-06 ~13:15Z): the down/recovered half. FIRM: a seat is
+  reported down only after ten continuous minutes down (a local seat
+  restarts at every phase end, BL-2038), once per outage, and recovered
+  once when it is back; never on a schedule. Tap Approve to confirm the
+  ten-minute debounce.
+
+invariants:
+  - "At most one down email and one recovered email per outage of a seat."
+  - "A seat down for less than ten minutes never causes an email."
+  - "A recovered email is sent only for a seat whose down email was sent."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-2046 feature 3 of 3
+     (measured at mint: every step unbound).
+  2. Read the hardener's hand-mutant evidence: at least the ten-minute
+     debounce removed, the once-per-outage record not written, and a
+     recovered email without a prior down, each killed.
+  3. After the land, read-only: the babysitter's log shows the sweep
+     reporting the local-model seat's state each run and no email while
+     the seat is generating or idle.
+
+source: |
+  The human, specifier pane, 2026-10-06 ~13:15Z, verbatim: "Yes - email me
+  iq3 reports on those events" (the question named "a hotfix lands for it
+  or it goes down/recovers - never on a schedule"). Coordinator note
+  017072 proposed it; BL-2045 is slice 1.
+
+notes: |
+  Minted 2026-10-06 by the specifier, slice 2 of 2.
+  The ten-minute debounce is the specifier's call at mint: since BL-2038 a
+  local seat's session restarts at every phase end, and BL-1842's
+  seat-state reads :down whenever its process is gone and it has not
+  generated recently. The approval tap confirms or changes it.
+
+description: |
+  ## What is wanted
+
+  - Each babysitter sweep reads every local-model seat's state with
+    BL-1842's `seat-state` (generating, idle, down).
+  - A seat that has read as down continuously for ten minutes or more gets
+    one email through BL-2045's command, event "down". It gets no second
+    down email for the same outage.
+  - A seat whose down email was sent and that now reads as idle or
+    generating gets one email, event "recovered", which ends the outage.
+  - These two emails are bounded per outage as above, not by BL-2045's
+    thirty-minute bound for hand-sent events: a hotfix email sent minutes
+    earlier never suppresses a down or recovered email.
+  - The first-seen-down time and the outage record are kept per seat under
+    `.swarmforge/operator/`, so a babysitter restart does not resend.
+
+  ## How (direction, not mandate)
+
+  - Call BL-2045's in-process send function from the sweep, never a shell
+    of the CLI per seat per sweep, and never a second rendering of the
+    report.
+  - Keep the decision pure (state history in, action out) beside BL-2045's
+    function, and feed it from `babysitter_check.bb`'s existing sweep;
+    babysitter_check.bb is large, so read it by grep and line ranges.
+  - The step handler drives the decision and the send with a fake clock
+    and a capturing post function, in a mkdtemp fixture (BL-1390).
+
+assigned_to: coder

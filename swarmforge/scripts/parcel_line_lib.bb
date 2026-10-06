@@ -114,17 +114,45 @@
             (salvage-lib/header-field f "commit")))
         (salvage-lib/latest-item-handoffs project-root ticket)))
 
+(defn- done-ticket?
+  "True when backlog/done/ (any depth) holds a ticket file for id."
+  [project-root id]
+  (boolean
+   (when project-root
+     (some #(str/starts-with? (str (fs/file-name %)) (str id "-"))
+           (fs/glob (fs/path project-root "backlog" "done") "**.yaml")))))
+
+(defn- line-commit-ok?
+  "One commit beyond the merge base belongs to ticket's line when its
+   subject names ticket and otherwise only done tickets, or when it is a
+   merge naming no ticket at all (a merge of main or of a salvage ref,
+   2026-10-06: the default merge subject names none, and judging it
+   foreign force-moved the coder's BL-1843 line six times)."
+  [project-root ticket {:keys [merge? subject]}]
+  (let [ids (set (re-seq #"\b(?:BL|GH)-\d+\b" (str subject)))]
+    (cond
+      (empty? ids) merge?
+      :else (every? #(or (= % ticket) (done-ticket? project-root %)) ids))))
+
 (defn- own-line?
-  "Every commit the line carries beyond origin/main names ticket and no
-   other: unlanded work a re-sent Work note must not strand. Measured from
-   the merge base, so origin/main moving on after the line was cut does not
-   disown it (BL-1887 scenario 04, coder note 002330)."
-  [root origin-main ticket]
+  "The line beyond origin/main carries ticket's own unlanded work, which a
+   re-sent Work note must not strand: at least one commit names ticket, and
+   every commit is line-commit-ok?. Measured from the merge base, so
+   origin/main moving on after the line was cut does not disown it (BL-1887
+   scenario 04, coder note 002330). A commit naming an unlanded other
+   ticket still disowns it."
+  [root project-root origin-main ticket]
   (boolean
    (when-let [base (and origin-main (git-out root "merge-base" origin-main "HEAD"))]
-     (let [subjects (remove str/blank? (str/split-lines
-                                        (or (git-out root "log" "--format=%s" (str base "..HEAD")) "")))]
-       (and (seq subjects) (every? #(subject-names-only? % ticket) subjects))))))
+     (let [commits (->> (str/split-lines
+                         (or (git-out root "log" "--format=%P%x09%s" (str base "..HEAD")) ""))
+                        (remove str/blank?)
+                        (map (fn [line]
+                               (let [[parents subject] (str/split line #"\t" 2)]
+                                 {:merge? (> (count (str/split (str/trim (str parents)) #"\s+")) 1)
+                                  :subject subject}))))]
+       (and (some #(contains? (set (re-seq #"\b(?:BL|GH)-\d+\b" (str (:subject %)))) ticket) commits)
+            (every? #(line-commit-ok? project-root ticket %) commits))))))
 
 (defn backup-ref [role stamp]
   (str "refs/swarmforge/parcel-backup/" role "/" stamp))
@@ -144,7 +172,7 @@
         target (or handed origin-main)]
     {:target target
      :at-or-past-target? (= head target)
-     :own-line? (own-line? root origin-main ticket)}))
+     :own-line? (own-line? root project-root origin-main ticket)}))
 
 (defn- on-origin-main? [root sha]
   (boolean (when-let [om (resolve-commit root "origin/main")] (ancestor? root sha om))))

@@ -17,8 +17,13 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*))
                          ".." ".." ".." ".." "swarmforge" "scripts" "local_model_repeat_guard.bb")))
 
+;; BL-1992: this feature's own scope is restart-only - a no-op release-fn
+;; keeps a restart-exhausted scenario (03) from side-effecting a real
+;; parcel move / swarm_handoff.sh send into this fixture, which this
+;; feature never asserts on. bl1992ReleaseGuardCli.bb exercises the real
+;; release-parcel! for BL-1992's own scenarios.
 (let [[event-path killed-file] *command-line-args*
       event (json/parse-string (slurp event-path))
       kill-fn (fn [] (spit killed-file "killed"))
-      out (local-model-repeat-guard/answer event #(str/split-lines (slurp %)) kill-fn)]
+      out (local-model-repeat-guard/answer event #(str/split-lines (slurp %)) kill-fn (fn [_cwd] nil))]
   (when out (println out)))

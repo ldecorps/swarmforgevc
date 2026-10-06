@@ -1,0 +1,102 @@
+id: BL-2043
+title: "QA's gather keeps only the last 4000 characters of a lane's stdout+stderr, so a red run's assertion text and a green run's verdict line are lost to stderr noise - the unit and property rows carry each failure message from the lane's own report, and the lane's verdict lines"
+milestone: M8
+type: defect
+severity: medium
+# medium: a contained defect in a reporting tool. QA recovers the text by
+# hand (three times on 2026-10-06), but every recovery is a lane re-run or
+# a reconstruction the one-run rule makes costly.
+status: todo
+epic: code-quality-gates
+priority: 20
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: one TypeScript module (qaGather.ts), two report readers, Stryker.
+slice_size_envelope: medium
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "two readers added beside the existing row builder; nothing to deduplicate"
+  architect: "the gather already reads each lane's raw output through onRawOutcome (BL-1554); no boundary moves"
+  documenter: "QA.prompt's gather section is the living description and is the specifier's to amend at land (notes)"
+verification_category: gather-excerpt-lost-red-message
+
+acceptance: specs/features/BL-2043-a-gather-row-keeps-its-lanes-failures-and-verdict-whatever-the-tail-holds.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2043GatherRowKeepsFailuresSteps.js::registerSteps::binds BL-2043 feature (discovered by suffix, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Owner of the gather-excerpt-lost-red-message verification-debt category,
+  which reached its threshold (3 rows) unowned on 2026-10-06 (QA note
+  003865). Medium severity, so not auto-approved. No choice is posed. FIRM:
+  the 4000-character excerpt stays as it is; the unit and property rows
+  gain the failure messages and verdict lines beside it.
+
+invariants:
+  - "A red unit or property row never reaches QA without each failing test's message or an explicit statement that the lane's report could not be read."
+
+qa_e2e_procedure: |
+  1. Read from the gather's acceptance row: the BL-2043 feature 3 of 3
+     (measured at mint: every step unbound).
+  2. Read this parcel's own gather report: its unit and property rows carry
+     the lanes' verdict lines (the suite budget and work verdicts, the
+     property duration verdict) in the new fields, and the excerpt is
+     unchanged in length.
+  3. Read the hardener's Stryker evidence for extension/src/quality/qaGather.ts.
+
+source: |
+  QA note 003865 (2026-10-06): "VERIFICATION_DEBT_UNOWNED
+  gather-excerpt-lost-red-message count=3 threshold=3". Rows: BL-1964 (a
+  property FAIL whose assertion text was crowded out by BL-871
+  onTaskUpdate noise), BL-1629 (a green unit run's per-file budget verdict
+  above the tail, rebuilt by hand with runGuardAgainstReport), BL-2038 (the
+  flagged-file list cut at "part 1: no handler in specs/pipeline/s...").
+
+notes: |
+  Minted 2026-10-06 by the specifier, the pass the category went unowned,
+  per the verification-debt rule (BL-1782).
+  Not auto-approved: medium severity.
+  Same file as BL-2030 (qaGather.ts): the two are independent but must not
+  run concurrently (Concurrent Work Orthogonality).
+  The specifier's half (BL-798): when this lands, QA.prompt's gather
+  section (the BL-1769 bullet, "the report's 4000-char excerpt, which is
+  unchanged") gains one sentence naming the new fields, and the
+  hand-reconstruction recipe stops being needed. Land it on QA's land note,
+  never before.
+
+description: |
+  ## What is wrong
+
+  `extension/src/quality/qaGather.ts` `runChecklist` builds each row's
+  `excerpt` as `tailExcerpt(stdout + stderr)`, the last 4000 characters.
+  stderr comes last, so a run that ends with allowlisted noise (BL-871's
+  `onTaskUpdate` timeouts) pushes out everything the lane printed to stdout:
+  a red run's assertion messages and a green run's own verdict lines
+  (`recordTestDuration.js` prints `formatSuiteBudgetVerdict` and
+  `formatSuiteWorkVerdict`; `recordPropertyDuration.js` prints
+  `formatPropertyDurationVerdict`). BL-1769 fixed only `register_join`,
+  which now reads the whole output.
+
+  ## What is wanted
+
+  - The unit and property rows carry each failing test's file and message
+    as the lane's own JSON report recorded them (`extension/.vitest-report.json`,
+    `extension/.property-vitest-report.json`, written by the two recorder
+    scripts in the gathered worktree).
+  - The same rows carry the lane's verdict lines, read from the run's whole
+    stdout, never from the excerpt.
+  - A red row whose report is missing or unreadable says so in the row.
+  - The excerpt, its length and every other row are unchanged.
+
+  ## How (direction, not mandate)
+
+  - `runChecklist`'s `onRawOutcome` seam already hands the caller the
+    unbounded outcome (BL-1554 D1); BL-1769's whole-output join is the
+    precedent for reading it.
+  - Read the reports after each lane's run, from the cwd the check ran in.
+    Keep the reader pure over the report text, so the step handler drives
+    it with a fixture report and a fake runFn, never a real vitest run.
+
+assigned_to: coder

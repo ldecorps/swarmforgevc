@@ -16,14 +16,19 @@
 ;;     record's current phase refuses (exit 1), naming the move, leaving
 ;;     the record unchanged. --notes is required and must name a file
 ;;     that exists; absent or missing, refuses (exit 1) before any write.
+;;     BL-2038: a successful move restarts the seat's session on the same
+;;     parcel (handoff_lib's respawn-pane-fresh!, local-model seats only) -
+;;     always AFTER the record is written, never before.
 ;;   local_seat_phase_cli.bb fail <ticket> --notes <file>
 ;;     From assert only: appends the notes and returns to act, counting the
 ;;     failed assert. At 2 failed asserts already, moves nothing, still
 ;;     appends the notes, and prints "SPLIT_REQUEST <ticket>" (exit 0) -
 ;;     the seat then sends the coordinator a note `split <ticket>: <seat>
-;;     failed assert twice` (the existing split BAU). Called from any
-;;     phase other than assert: refuses (exit 1), record unchanged.
-;;     --notes is required, same as end.
+;;     failed assert twice` (the existing split BAU) and never restarts for
+;;     this outcome - the seat is about to give up this parcel, not resume
+;;     it. Called from any phase other than assert: refuses (exit 1),
+;;     record unchanged. --notes is required, same as end. A genuine
+;;     assert-to-act move restarts the session, same as end (BL-2038).
 ;;   local_seat_phase_cli.bb pass <ticket> --notes <file>
 ;;     From assert only: appends the notes and moves to done. Called from
 ;;     any other phase: refuses (exit 1), record unchanged. --notes is
@@ -40,6 +45,7 @@
 
 (def scripts-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path scripts-dir "local_seat_phase_lib.bb")))
+(load-file (str (fs/path scripts-dir "handoff_lib.bb")))
 
 (def value-flags #{"--to" "--notes"})
 
@@ -113,6 +119,25 @@
       (println (str "SPLIT_REQUEST " ticket))
       (print-status! ticket final))))
 
+;; BL-2038: a genuine phase move (end, or a non-split fail) restarts the
+;; seat's session on the SAME parcel, the way the existing parcel-boundary
+;; restart does (ready_for_next_task.bb's maybe-fresh-session-for-parcel!) -
+;; reusing handoff-lib/respawn-pane-fresh! rather than a second respawn
+;; implementation. Only ever called AFTER apply-move! has already written
+;; the record (invariant 1), and only for a local-model seat (invariant 2) -
+;; any other agent, or a role with no roles.tsv row at all, is a no-op. A
+;; restart that fails prints why and lets the seat carry on in this session,
+;; mirroring maybe-fresh-session-for-parcel!'s own fallback.
+(defn- maybe-restart-session! []
+  (let [role (handoff-lib/current-role)
+        agent (:agent (when role (handoff-lib/load-role-info role)))]
+    (when (and role (= "local-model" agent))
+      (try
+        (handoff-lib/respawn-pane-fresh! role (System/getenv "TMUX_PANE"))
+        (catch Exception e
+          (binding [*out* *err*]
+            (println (str "local_seat_phase_cli.bb: restart skipped (" (.getMessage e) "); carry on in this session."))))))))
+
 (defn -main [& args]
   (let [[subcommand & rest-args] args
         ticket (first (positionals rest-args))]
@@ -128,7 +153,8 @@
           (refuse! problem)
           (let [result (local-seat-phase-lib/end-move (read-record ticket) to)]
             (if (:ok result)
-              (apply-move! ticket result notes-path)
+              (do (apply-move! ticket result notes-path)
+                  (maybe-restart-session!))
               (refuse! (:reason result))))))
 
       "fail"
@@ -137,7 +163,8 @@
           (refuse! problem)
           (let [result (local-seat-phase-lib/fail-move (read-record ticket))]
             (if (:ok result)
-              (apply-move! ticket result notes-path)
+              (do (apply-move! ticket result notes-path)
+                  (when-not (:split result) (maybe-restart-session!)))
               (refuse! (:reason result))))))
 
       "pass"
