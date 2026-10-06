@@ -222,3 +222,8 @@
   role: specifier
   description: "QA reaped 2 init-parented fixture handoffd.bb (tmp roots, ~4.5h old) at BL-2027's gather (note 003853); tried by hand to attribute the leaking test: 10+ shell tests and ~20 step handlers background a real handoffd, no pid file or start audit from the start window remained, and QA's note kept no argv; no tool records which test started a fixture daemon"
   detected_at: 2026-10-06
+- category: gather-excerpt-lost-red-message
+  ticket: BL-1629
+  role: QA
+  description: "unit lane green but its per-file budget verdict (the qa_e2e step 1 check: no unowned-row/new-pole, no bl968 line) was outside the gather's 4000-char tail excerpt; rebuilt by hand with runGuardAgainstReport+formatGuardReport over that run's .vitest-report.json and read budget_verdict from .test-durations.jsonl"
+  detected_at: 2026-10-06
