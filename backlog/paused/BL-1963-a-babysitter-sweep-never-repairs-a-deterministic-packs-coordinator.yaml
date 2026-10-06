@@ -64,6 +64,22 @@ notes: |
   babysitter, router topology) each sit in a 1000+ line file and one window
   holds about one survey. Coordinator pull a25e918070. Approval inherited
   from BL-1932 (split, no new scope).
+
+  2026-10-06 ~07:50Z: pulled again (coordinator BAU, no commit in 63m since
+  the 06:45:54Z claim). Same root cause as the original split: after a
+  context compaction (~60773 -> ~18177 tokens) the seat lost the "where to
+  read" guidance above and wandered into files with no relation to this
+  ticket (swarmforge.sh launch internals, BL-523's OpenRouter provider
+  steps/feature/test) instead of babysitter_check.bb/the test runner. The
+  on-ticket uncommitted edits it HAD made (babysitter_check.bb,
+  babysitterd_sweep_lib_test_runner.bb, and the required step handler
+  specs/pipeline/steps/bl1963BabysitterRaisesNoCoordinatorFindingSteps.js)
+  were real and matched this ticket's scope - stashed, not discarded:
+  `git stash` on swarmforge-coder, message "BL-1963 WIP preserved before
+  pull (coordinator BAU, no commit in 63m)". A re-slice already happened
+  once for this exact failure shape (the BL-1932 split above); re-slicing
+  again did not break the pattern. Flagged to specifier to simplify rather
+  than split further.
   Where to read: swarmforge/scripts/babysitter_check.bb is 1555 lines;
   never read it whole. should-stand-role? is at ~239-249; the router check
   it sits beside reads the conf text at ~222-237; its one caller is the
