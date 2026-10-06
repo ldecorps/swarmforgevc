@@ -438,7 +438,8 @@ export type OperatorExecuteResult = {
 };
 
 function loadQueueTickets(repoRoot: string): OperatorQueueTicket[] {
-  const folders = readBacklogFolders(path.join(repoRoot, 'backlog'));
+  // readBacklogFolders joins 'backlog' itself; pass the repo root (BL-2025 note 000131).
+  const folders = readBacklogFolders(repoRoot);
   const out: OperatorQueueTicket[] = [];
   for (const folder of ['active', 'paused', 'hold', 'done'] as const) {
     for (const item of folders[folder] ?? []) {

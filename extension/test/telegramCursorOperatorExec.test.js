@@ -202,6 +202,21 @@ test('BL-703: autopilot dry and land dry via execute', () => {
   assert.match(land.text, /land dry/);
 });
 
+test('BL-703: autopilot dry and land dry list a ticket seeded under backlog/active', () => {
+  const root = mkTmpDir('bl703-dry-seeded-');
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'backlog', 'active', 'BL-9001-seeded.yaml'),
+    'id: BL-9001\ntitle: "seeded defect"\ntype: defect\nseverity: high\npriority: 5\nacceptance: specs/features/BL-9001.feature\n'
+  );
+  const auto = executeOperatorVerb(root, '/autopilot', 'dry');
+  assert.match(auto.text, /autopilot dry \(1\):/);
+  assert.match(auto.text, /BL-9001/);
+  const land = executeOperatorVerb(root, '/land', 'dry');
+  assert.match(land.text, /land dry \(1\):/);
+  assert.match(land.text, /BL-9001/);
+});
+
 test('BL-704: holiday/shift/oncall durable under operator/', () => {
   const root = mkTmpDir('bl704-policy-');
   const add = executeOperatorVerb(root, '/holiday', 'add 2099-06-01 2099-06-02 maint');
