@@ -42,6 +42,7 @@ const { spawnSync } = require('child_process');
 const {
   listTestFiles,
   listPipelineTestFiles,
+  buildPipelineTestArgs,
   buildRecord,
   appendRecord,
   computeFinalExitCode,
@@ -221,7 +222,7 @@ function main() {
   if (pipelineTestFiles.length === 0) {
     console.error(`recordTestDuration: found zero *.test.js files under ${PIPELINE_TEST_DIR} - refusing to report a pass`);
   } else {
-    const pipelineResult = spawnSync(process.execPath, ['--test', ...pipelineTestFiles], {
+    const pipelineResult = spawnSync(process.execPath, buildPipelineTestArgs(pipelineTestFiles), {
       stdio: 'inherit',
       cwd: REPO_ROOT_DIR,
     });

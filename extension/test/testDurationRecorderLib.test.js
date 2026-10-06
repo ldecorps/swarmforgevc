@@ -6,6 +6,8 @@ const path = require('node:path');
 const {
   listTestFiles,
   listPipelineTestFiles,
+  PIPELINE_TEST_TIMEOUT_MS,
+  buildPipelineTestArgs,
   buildRecord,
   appendRecord,
   computeFinalExitCode,
@@ -42,6 +44,47 @@ test('listPipelineTestFiles finds .test.js files recursively and excludes fixtur
   fs.writeFileSync(path.join(dir, 'helpers.js'), '');
 
   assert.deepEqual(listPipelineTestFiles(dir), [path.join(dir, 'a.test.js'), path.join(dir, 'steps', 'b.test.js')]);
+});
+
+// BL-2041 D1 (QA bounce): node:test's own default per-test timeout is
+// Infinity - buildPipelineTestArgs must thread a real --test-timeout flag,
+// not just sit beside one.
+test('buildPipelineTestArgs passes --test-timeout before the file list, defaulting to PIPELINE_TEST_TIMEOUT_MS', () => {
+  assert.deepEqual(buildPipelineTestArgs(['/a.test.js', '/b.test.js']), [
+    '--test',
+    `--test-timeout=${PIPELINE_TEST_TIMEOUT_MS}`,
+    '/a.test.js',
+    '/b.test.js',
+  ]);
+  assert.deepEqual(buildPipelineTestArgs(['/a.test.js'], 500), ['--test', '--test-timeout=500', '/a.test.js']);
+});
+
+// BL-2041 D1 (QA bounce): the behavioral proof QA asked for - a file that
+// never resolves must fail WITHIN the bound, naming the file, rather than
+// hanging the lane the way a regression in bl1358MutantTimeCeiling.test.js's
+// own deliberately-hanging fixture would without this flag.
+test('a never-resolving pipeline test file fails within the bound and names the file, instead of hanging', () => {
+  const dir = mkTmp();
+  fs.writeFileSync(
+    path.join(dir, 'hangs.test.js'),
+    "const { test } = require('node:test');\n" +
+      "test('never resolves', () => new Promise(() => { setInterval(() => {}, 1000); }));\n"
+  );
+  const files = listPipelineTestFiles(dir);
+  const SHORT_TIMEOUT_MS = 500;
+  const started = Date.now();
+  const result = spawnSync(process.execPath, buildPipelineTestArgs(files, SHORT_TIMEOUT_MS), {
+    encoding: 'utf8',
+    timeout: 15_000,
+  });
+  const elapsedMs = Date.now() - started;
+  assert.notEqual(result.status, 0, `expected a non-zero exit for a hung test, got 0:\n${result.stdout}${result.stderr}`);
+  assert.ok(
+    elapsedMs < 10_000,
+    `expected the run to fail within the ${SHORT_TIMEOUT_MS}ms bound, not hang; took ${elapsedMs}ms`
+  );
+  const out = `${result.stdout}${result.stderr}`;
+  assert.ok(out.includes('hangs.test.js'), `expected the output to name the hung file, got:\n${out}`);
 });
 
 // BL-078 suite-duration-01

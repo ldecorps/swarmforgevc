@@ -35,6 +35,25 @@ function listPipelineTestFiles(testDir) {
   return out.sort();
 }
 
+// BL-2041 (QA bounce D1): node:test's own default per-test timeout is
+// Infinity, so a hang in any of the 41 pipeline files (e.g. a regression in
+// bl1358MutantTimeCeiling.test.js's own deliberately-hanging fixture) would
+// hang `node --test` and, with it, every role's lane and QA's gather - with
+// no file named. `--test-timeout` is node:test's own per-test bound (so a
+// timeout is reported against the one test that hung, the same way a real
+// failure already names its file), mirroring vitest.config.mjs's
+// testTimeout for the vitest half of the same lane. 60s is comfortably
+// above the whole directory's normal real-run wall time (13.6s for all 367
+// tests, measured 2026-10-06) while still bounding a genuine hang.
+const PIPELINE_TEST_TIMEOUT_MS = 60_000;
+
+// Pure: the argv `node --test` is invoked with. Exported so a test can pin
+// the flag (and override `timeoutMs` to something short, to prove a real
+// hang fails within the bound) without re-spawning the real 41-file run.
+function buildPipelineTestArgs(files, timeoutMs = PIPELINE_TEST_TIMEOUT_MS) {
+  return ['--test', `--test-timeout=${timeoutMs}`, ...files];
+}
+
 // BL-1598: pole_ms/work_ms/new_offenders/budget_verdict come from the
 // per-file budget guard's own run against this same report (see
 // check-suite-file-budget.js's runGuardAgainstReport) - result stays the
@@ -192,6 +211,8 @@ if (require.main === module && process.argv[2] === RUN_IN_OWN_GROUP_FLAG) {
 module.exports = {
   listTestFiles,
   listPipelineTestFiles,
+  PIPELINE_TEST_TIMEOUT_MS,
+  buildPipelineTestArgs,
   buildRecord,
   appendRecord,
   computeFinalExitCode,
