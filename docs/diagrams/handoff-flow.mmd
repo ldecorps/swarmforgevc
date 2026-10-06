@@ -72,6 +72,10 @@ flowchart TD
   DRIVERSKIP(["wake/chase/resume injection\nskipped - the driver's own\ndrive-tick! owns this pane\n(invariant 2)"])
   DEFERCHECK{"note carries\nwake: defer?\n(BL-1494)"}
   CHASE{"recipient idle\nwith pending mail?"}
+  TIERGATE{"owner tier-eligible for\nthis item? (BL-2039:\nseat_difficulty_lib's own\ndifficulty-claim-decision,\nnever a second tier table)"}
+  TIERSIBLING{"idle eligible sibling\nof the stage?"}
+  TIERWAKE["chase sweep wakes the\neligible sibling instead -\nthe ineligible owner is never\nchased, respawned or\ndead-lettered over this item"]
+  TIERDEADLETTER(["dead-lettered, no respawn:\nno seat of the stage may\nclaim it - alarm reaches\na human (BL-2039 invariant 3)"])
   WAKESESSION{"resolve-wake-session:\nconfigured session live?\n(mono-router remap applies\nonly inside a rotation-router\npack - BL-931/BL-1719)"}
   WAKE["chase sweep wakes it\n(mono-router: rotate resident\ninto that role - respawn)"]
   WAKENOSESSION(["nil session: EVERY tmux -t call\nsite (wake, in-process-resume,\ncontext-clear injectors, babysitter\nnudge) refuses before reaching\ntmux, logs the missing session\nname - never types into an\nunrelated live pane (BL-1719)"])
@@ -110,7 +114,12 @@ flowchart TD
   DRIVERSEAT -->|no| DEFERCHECK
   DEFERCHECK -->|yes| DEFERRED
   DEFERCHECK -->|no| CHASE
-  CHASE -->|yes| WAKESESSION
+  CHASE -->|yes| TIERGATE
+  TIERGATE -->|yes| WAKESESSION
+  TIERGATE -->|no| TIERSIBLING
+  TIERSIBLING -->|yes, idle| TIERWAKE
+  TIERSIBLING -->|no seat of\nthe stage eligible| TIERDEADLETTER
+  TIERWAKE --> WAIT
   WAKESESSION -->|session exists,\nor a rotation-router pack| WAKE
   WAKESESSION -->|no session,\nnot a rotation-router pack| WAKENOSESSION
   CHASE -->|no - busy mid-turn| WAIT
@@ -206,8 +215,8 @@ flowchart TD
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
-  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE,DRIVERSEAT,DRED,DIDLE,DGATE,DFIXLEFT,DSIBLING,WAKESESSION,DMAILTYPE,DHOLDCHECK,DRELEASE gate;
-  class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED,NOTSENT,DMERGECONFLICT,DREDESCALATE,DESCALATE,DMAILCONFLICT bad;
+  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE,DRIVERSEAT,DRED,DIDLE,DGATE,DFIXLEFT,DSIBLING,WAKESESSION,DMAILTYPE,DHOLDCHECK,DRELEASE,TIERGATE,TIERSIBLING gate;
+  class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED,NOTSENT,DMERGECONFLICT,DREDESCALATE,DESCALATE,DMAILCONFLICT,TIERDEADLETTER bad;
   class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED,DRIVERSKIP,WAKENOSESSION,DMAILDONE,DRELCOMPLETE,DRELRETRY,DGIVEUP store;
   class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH,DSERVE,DCHATSET,DFIXTYPE,DPASS,DBOOT,DMERGE,DMAILMERGE,DMAILNOTE,DRESUME act;
-  class DAEMON,WAKE daemon;
+  class DAEMON,WAKE,TIERWAKE daemon;
