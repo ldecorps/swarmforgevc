@@ -1,0 +1,1 @@
+{"id":"BL-2022","messages":[{"seq":0,"ts":1791264462219,"author":"swarm","type":"outbound","text":"BL-2022 🎵 in progress — BL-094's holistic dev-state UI feature runs against a step handler - all 5 of its scenarios fail on main with no step handler matched (16 of its 17 step lines bind nothing), and the BL-1937 census missed it because one step happens to bind"}]}
