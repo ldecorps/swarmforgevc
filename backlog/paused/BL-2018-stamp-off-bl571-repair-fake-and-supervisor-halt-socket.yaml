@@ -115,3 +115,5 @@ notes: |
   aeb9771b84 fixed it the same pass; this ticket stamps both, per the
   2026-10-01 rule (an existing owner becomes the stamp-off, no second
   ticket). Ledger: aeb9771b84 linked to BL-2018. No register row.
+  Release note sent to QA 2026-10-06 (002394): retake BL-1964's parcel
+  9847fb86de and merge main.
