@@ -34,6 +34,7 @@ extension/.test-durations.jsonl
 extension/.vitest-report.json
 extension/.property-durations.jsonl
 extension/.property-vitest-report.json
+swarmforge/scripts/test/.property-runner-durations.jsonl
 *.code-workspace
 extension/stryker-incremental.json
 extension/stryker-incremental-live.json

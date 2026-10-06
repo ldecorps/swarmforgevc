@@ -120,6 +120,16 @@
     (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
     (:out (sh! root "git" "rev-parse" "HEAD"))))
 
+;; The two fixtures are separate repositories, so the same logical commit has
+;; a different sha in each. BL-1857 added :untagged-commits (and BL-1544
+;; :ambiguous) as commit-sha lists, so a whole-map compare failed on every
+;; case from 2026-10-01 on. Compare the answer, not the shas: the owners, the
+;; two flags, and how many commits each list names.
+(defn- comparable-answer [attr]
+  (some-> attr
+          (update :untagged-commits count)
+          (update :ambiguous count)))
+
 (defn- p1-case [{:keys [n-pairs own-edit?]}]
   (let [plain-attr (with-fixture [root]
                      (commit! root "base.txt" "base\n" "c0 base")
@@ -137,7 +147,7 @@
       (nil? plain-attr)
       (str "the baseline (0 revert pairs) fixture itself produced no attribution for sibling.txt - test setup error")
 
-      (not= plain-attr with-pairs-attr)
+      (not= (comparable-answer plain-attr) (comparable-answer with-pairs-attr))
       (str n-pairs " revert/reapply pair(s) changed sibling.txt's attribution: baseline "
            (pr-str plain-attr) " vs with-pairs " (pr-str with-pairs-attr))
 

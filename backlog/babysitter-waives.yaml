@@ -45,6 +45,11 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-171ddbdee044e7c7927bbbcd7bfac12599619eb3
+  waived_by: coordinator
+  reason: "Sanctioned specifier hotfix (10-01 standing directive). By specifier, Hotfix-Certification: pending. Fixes BL-563's feature from 6/8 to 8/8: scenario 02 fixture-root masking, scenario 07 cold-apply MODEL_STEWARD_STATE_DIR seam. Not a QA land - is_qa_ancestor exits 1 by design, SUP-17 accepted noise."
+  waived_at: 2026-10-06
+
 - key: pipeline-code-on-main-1dbe9de8e1feb459e660e17cdc0008bc4d38892b
   waived_by: coordinator
   reason: "Sanctioned hotfix-every-red-then-stamp-off path (operator directive 2026-10-01); recorded in hotfix-ledger.yaml with stamp_ticket BL-1930"
@@ -64,6 +69,11 @@
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
   waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-25cb223e0dff2ab2cafc370ef7ee4bc69134e103
+  waived_by: coordinator
+  reason: "Declared hotfix (Hotfix-Certification: pending trailer, By specifier), registered in backlog/hotfix-ledger.yaml and stamped into BL-2051 (paused, awaiting QA review/human certify-or-waive); is_qa_ancestor exits 1 (not a QA land) so BL-848's ledger+stamp-ticket path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
 
 - key: pipeline-code-on-main-2c805e9b0bd455886a2ba8fa1853db283fc48928
   waived_by: coordinator
@@ -119,6 +129,26 @@
   waived_by: coordinator
   reason: "sync merge of QA-approved 90c7b53cca; op note .swarmforge/operator/NOTE-art42-49b543d9b4-main-sync-merge-false-positive-20260920.md"
   waived_at: 2026-09-20
+
+- key: pipeline-code-on-main-49fe963c763076c5d9c7ac0d3cf81deb998f03eb
+  waived_by: coordinator
+  reason: "Declared hotfix (Hotfix-Certification: pending trailer, By specifier, owning a Cursor-agent fix at the human's request), registered in backlog/hotfix-ledger.yaml (pending, no stamp ticket yet); is_qa_ancestor exits 1 (not a QA land) so BL-848's ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
+
+- key: pipeline-code-on-main-a9cadb6484a700f35e0dbb176d633967746e622e
+  waived_by: coordinator
+  reason: "Declared hotfix, registered in backlog/hotfix-ledger.yaml (pending); stamp ticket BL-2052 already minted (approved) for this commit and 49fe963c76; is_qa_ancestor exits 1 (not a QA land) so the ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
+
+- key: pipeline-code-on-main-d0b944021198ca8471bca3186d577276d61ede69
+  waived_by: coordinator
+  reason: "Declared hotfix, registered in backlog/hotfix-ledger.yaml (pending); stamp ticket BL-2053 already minted (approved) for this commit and 48d037df88; is_qa_ancestor exits 1 (not a QA land) so the ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
+
+- key: pipeline-code-on-main-48d037df88d8d794a585c35a7b18b545f3b6eeac
+  waived_by: coordinator
+  reason: "Declared hotfix, registered in backlog/hotfix-ledger.yaml (pending); stamp ticket BL-2053 already minted (approved) for this commit and d0b9440211; is_qa_ancestor exits 1 (not a QA land) so the ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
 
 - key: pipeline-code-on-main-4a27dbd21be612d62ddb532669e70562de7733a6
   waived_by: coordinator
@@ -249,6 +279,11 @@
   waived_by: coordinator
   reason: "Direct hotfix fixing an unowned standing red (BL-247 scenarios 01/02, coordinator half red since 2026-07-17 with no register row); stamp ticket BL-1878 (severity high, human_approval approved) already minted to own it, paused per hotfix-ledger.yaml"
   waived_at: 2026-10-02
+
+- key: pipeline-code-on-main-853235a21623cfd9d0c4c1506a951e7789677634
+  waived_by: coordinator
+  reason: "Declared hotfix (Hotfix-Certification: pending trailer, By specifier), registered in backlog/hotfix-ledger.yaml and stamped into BL-2051 (paused, awaiting QA review/human certify-or-waive); is_qa_ancestor exits 1 (not a QA land) so BL-848's ledger+stamp-ticket path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
 
 - key: pipeline-code-on-main-8a726d9f5a6b38948c30c2f284573a7b20e39b29
   waived_by: coordinator

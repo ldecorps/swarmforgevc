@@ -212,6 +212,49 @@
                main-sha (git wt "rev-parse" "HEAD")))
     (finally (fs/delete-tree root))))
 
+;; ── 2026-10-06: a merge naming no ticket, and a done ticket's commit, stay ──
+;; The coder's BL-1843 line was force-moved six times on 2026-10-06 because
+;; a default-subject merge (of main, or of a salvage ref) and a landed
+;; ticket's commit read as foreign work.
+(let [root (str (fs/create-temp-dir {:prefix "parcel-line-lib-merge-"}))]
+  (try
+    (git root "init" "-q" "-b" "main")
+    (commit! root "a.txt" "a\n" "init")
+    (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+    (fs/create-dirs (fs/path root "backlog" "done" "M8"))
+    (spit (str (fs/path root "backlog" "done" "M8" "BL-9005-landed.yaml")) "id: BL-9005\n")
+    (let [wt (str (fs/path root "wt"))
+          _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt)
+          _ (commit! wt "landed.txt" "l\n" "BL-9005: a done ticket's commit")
+          _ (commit! wt "mine.txt" "m\n" "BL-9002: own unlanded work")
+          _ (commit! root "main2.txt" "m2\n" "main moves on")
+          _ (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+          _ (git wt "-c" "user.email=t@t" "-c" "user.name=t" "merge" "-q" "--no-edit" "--no-ff" "origin/main")
+          head (git wt "rev-parse" "HEAD")
+          facts {:root wt :role "coder" :project-root root :intent {:intent :start :ticket "BL-9002"}}]
+      (with-out-str (parcel-line-lib/take-up! facts))
+      (assert= "a no-ticket merge and a done ticket's commit beside the ticket's own work stay"
+               head (git wt "rev-parse" "HEAD")))
+    (finally (fs/delete-tree root))))
+
+(let [root (str (fs/create-temp-dir {:prefix "parcel-line-lib-merge-only-"}))]
+  (try
+    (git root "init" "-q" "-b" "main")
+    (commit! root "a.txt" "a\n" "init")
+    (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+    (let [wt (str (fs/path root "wt"))
+          _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt)
+          _ (commit! wt "tmp.txt" "t\n" "unrelated scratch")
+          _ (commit! root "main2.txt" "m2\n" "main moves on")
+          _ (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+          _ (git wt "-c" "user.email=t@t" "-c" "user.name=t" "merge" "-q" "--no-edit" "--no-ff" "origin/main")
+          main-sha (git root "rev-parse" "origin/main")
+          facts {:root wt :role "coder" :project-root root :intent {:intent :start :ticket "BL-9002"}}]
+      (with-out-str (parcel-line-lib/take-up! facts))
+      (assert= "a line with a merge but no commit naming the ticket is not its own line; it restarts"
+               main-sha (git wt "rev-parse" "HEAD")))
+    (finally (fs/delete-tree root))))
+
 ;; ── BL-1887: a git_handoff at a commit already on origin/main starts fresh ──
 (let [root (str (fs/create-temp-dir {:prefix "parcel-line-1887-"}))]
   (try

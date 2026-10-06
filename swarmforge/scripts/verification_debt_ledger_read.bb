@@ -59,10 +59,18 @@
   (let [p (vdl/default-conf-path project-root)]
     (vdl/threshold (vdl/parse-conf (if (fs/exists? p) (slurp p) "")))))
 
-(defn- ->json-row [{:keys [category ticket role description detected-at evidence]}]
+(defn- ->json-row [{:keys [category ticket role description detected-at evidence
+                           discharged-at discharged-by discharged-evidence
+                           waived-at waived-by waive-reason]}]
   (cond-> {:category category :ticket ticket :role role
            :description description :detected_at detected-at}
-    evidence (assoc :evidence evidence)))
+    evidence (assoc :evidence evidence)
+    discharged-at (assoc :discharged_at discharged-at)
+    discharged-by (assoc :discharged_by discharged-by)
+    discharged-evidence (assoc :discharged_evidence discharged-evidence)
+    waived-at (assoc :waived_at waived-at)
+    waived-by (assoc :waived_by waived-by)
+    waive-reason (assoc :waive_reason waive-reason)))
 
 (defn -main [& args]
   (let [[project-root] args]
@@ -74,7 +82,7 @@
           per-category (into {}
                               (map (fn [category]
                                      (let [category-rows (vdl/rows-for-category rows category)
-                                           count (count category-rows)
+                                           count (vdl/outstanding-count rows category)
                                            over? (>= count threshold)
                                            owners (owners-for entries category)]
                                        [category {:count count :threshold threshold

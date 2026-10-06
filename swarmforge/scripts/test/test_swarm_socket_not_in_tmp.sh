@@ -178,4 +178,55 @@ pass "kill_all_swarm.sh's legacy /tmp lookup is a single exact match on this roo
 kill -9 "$PID_A" "$PID_B" 2>/dev/null || true
 rm -rf "$LEGACY_DIR" "$ROOT_A" "$ROOT_B"
 
+# ═══════════════════════════════════════════════════════════════════════════
+# A worktree's tmux-socket file is a copy of the MAIN checkout's socket.
+# kill_all_swarm.sh run from that worktree must refuse it. Following the
+# pointer kill-server'd the live swarm (hardender worktree audit,
+# 2026-08-29). The foreign socket file must still be there afterwards.
+# ═══════════════════════════════════════════════════════════════════════════
+
+MAIN_ROOT="$(cd "$(mktemp -d "$FIXTURE_BASE/main.XXXXXXXX")" && pwd -P)"
+WT_ROOT="$(cd "$(mktemp -d "$FIXTURE_BASE/worktree.XXXXXXXX")" && pwd -P)"
+mkdir -p "$MAIN_ROOT/.swarmforge/tmux" "$WT_ROOT/.swarmforge/daemon"
+FOREIGN_SOCK="$MAIN_ROOT/.swarmforge/tmux/99999.sock"
+printf '%s\n' "$FOREIGN_SOCK" > "$WT_ROOT/.swarmforge/tmux-socket"
+printf 'coder\t1\t1\tswarmforge-coder\tCoder\tclaude\t\t\n' > "$WT_ROOT/.swarmforge/roles.tsv"
+
+PID_FOREIGN="$(bind_fake_socket "$FOREIGN_SOCK")"
+for _ in $(seq 1 20); do
+  [[ -S "$FOREIGN_SOCK" ]] && break
+  sleep 0.1
+done
+[[ -S "$FOREIGN_SOCK" ]] \
+  || { kill -9 "$PID_FOREIGN" 2>/dev/null || true; fail "worktree-pointer setup: foreign socket was never created"; }
+
+bash "$KILL_ALL" "$WT_ROOT" >/dev/null 2>&1 || true
+
+WT_AUDIT="$WT_ROOT/.swarmforge/daemon/kill-all-audit.log"
+grep -q "REFUSED tmux kill-server $FOREIGN_SOCK" "$WT_AUDIT" \
+  || fail "expected a REFUSED line for the foreign socket; got: $(cat "$WT_AUDIT" 2>/dev/null)"
+if grep "tmux kill-server $FOREIGN_SOCK" "$WT_AUDIT" | grep -v REFUSED >/dev/null; then
+  fail "kill_all_swarm.sh (run against the worktree) logged tmux kill-server against the main root's socket"
+fi
+[[ -S "$FOREIGN_SOCK" ]] \
+  || fail "the main root's socket file is gone after a worktree stop"
+
+pass "kill_all_swarm.sh refuses a worktree tmux-socket pointer that names another root's server"
+
+# The same socket reached through this root's own .swarmforge/ and ../
+# segments is still the other root's server.
+DOTDOT_SOCK="$WT_ROOT/.swarmforge/../../$(basename "$MAIN_ROOT")/.swarmforge/tmux/99999.sock"
+printf '%s\n' "$DOTDOT_SOCK" > "$WT_ROOT/.swarmforge/tmux-socket"
+: > "$WT_AUDIT"
+bash "$KILL_ALL" "$WT_ROOT" >/dev/null 2>&1 || true
+grep -q "REFUSED tmux kill-server $DOTDOT_SOCK" "$WT_AUDIT" \
+  || fail "expected a REFUSED line for the ../ pointer; got: $(cat "$WT_AUDIT" 2>/dev/null)"
+[[ -S "$FOREIGN_SOCK" ]] \
+  || fail "the main root's socket file is gone after a ../ pointer stop"
+
+pass "kill_all_swarm.sh refuses a ../ pointer out of this root's .swarmforge"
+
+kill -9 "$PID_FOREIGN" 2>/dev/null || true
+rm -rf "$MAIN_ROOT" "$WT_ROOT"
+
 echo "ALL PASS"

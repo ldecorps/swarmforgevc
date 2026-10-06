@@ -33,3 +33,15 @@ Feature: BL-2038 A local seat's phases each run in a fresh session
     Given a local-model seat holding a parcel for BL-9001 whose phase record is in "done"
     When the seat runs done_with_current.sh
     Then no phase record for BL-9001 remains in the seat's worktree
+
+  # BL-2038 a-non-local-model-seat-is-never-restarted-04
+  Scenario: ending a phase on a seat that is not a local model never restarts its session
+    Given a claude seat holding a parcel for BL-9001 whose phase record is in "arrange"
+    When the seat ends the phase toward "act" with a note
+    Then no respawn-pane call was logged
+
+  # BL-2038 a-split-request-never-restarts-05
+  Scenario: a second failed assert prints a split request and never restarts the session
+    Given a local-model seat holding a parcel for BL-9001 whose phase record is in "assert" with 2 failed asserts
+    When the seat fails that assert with a note
+    Then no respawn-pane call was logged

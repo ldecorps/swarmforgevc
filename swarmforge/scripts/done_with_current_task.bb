@@ -3,6 +3,8 @@
 (ns done-with-current-task
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [cheshire.core :as json]
+            [clojure.java.shell :as sh]
             [clojure.string :as str]))
 
 (def script-dir (fs/parent *file*))
@@ -108,6 +110,41 @@
         :ticket ticket
         :signal (if (handoff-lib/non-forwarding? target-file) "bounce" "clean")}))
     (catch Exception _ nil)))
+
+;; BL-2038 architect bounce D1: the record's path is local_seat_phase_cli.bb's
+;; own domain answer (its private record-path, exposed via the `show`
+;; subcommand's JSON :path field) - re-deriving ".swarmforge/phase/<id>.md"
+;; by hand here was a second, independent answer to "where is this ticket's
+;; record", agreeing today only by coincidence (BL-1811). Shelling to `show`
+;; mirrors ready_for_next_task.bb's own phase-cli-show in this same parcel,
+;; so a future change to the record's layout stays correct for free here too.
+(defn- phase-cli-show [ticket]
+  (try
+    (let [script (str (fs/path script-dir "local_seat_phase_cli.bb"))
+          result (sh/sh "bb" script "show" ticket)]
+      (when (zero? (:exit result))
+        (json/parse-string (str/trim (:out result)) true)))
+    (catch Exception _ nil)))
+
+;; BL-2038: a local-model seat's completed parcel takes its phase record
+;; with it - the record (BL-2037) exists only to carry notes between THIS
+;; parcel's own fresh-session phases; once the parcel is done there is
+;; nothing left for it to carry, and a stale record left behind would be
+;; read as the NEXT parcel of the same ticket id's own history. Best-effort
+;; and silent, same posture as record-lean-ledger!/record-effort-adapt-for!
+;; above: the completion has already happened, and a leftover record
+;; cleanup must never turn a finished parcel into a failure. Absent for
+;; any ticket with no record (every non-local-model seat, always) - a
+;; no-op by construction, never a role/agent check of its own.
+(defn remove-phase-record-for! [target-file]
+  (when-let [ticket-id (pipeline-stage-lib/extract-ticket-id
+                         (handoff-lib/header-field target-file "task"))]
+    (try
+      (when-let [status (phase-cli-show ticket-id)]
+        (let [record (:path status)]
+          (when (and record (fs/exists? record))
+            (fs/delete record))))
+      (catch Exception _ nil))))
 
 ;; ── BL-1422: a Work note is not completed without work ────────────────────
 ;; route_backlog_to_coder.sh dispatches a ticket as a priority-10 note whose
@@ -329,6 +366,7 @@
         (println "COMPLETED:" (str target-file))
         (record-lean-ledger! target-file)
         (record-effort-adapt-for! target-file)
+        (remove-phase-record-for! target-file)
         ;; After a land whose re-point skipped (dirty tree / transient
         ;; in_process), the cost-bound deferred retry fires here - the
         ;; parcel just left in_process, so BL-1773's guard is clear and a

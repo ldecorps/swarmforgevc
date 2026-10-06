@@ -74,9 +74,21 @@
          enqueue-ms
          (seat-affinity-lib/parse-instant-ms "2026-08-21T00:00:00Z"))
 
-(assert= "a note is never deferred (only a git_handoff is a rework)"
-         {:action :claim}
+;; BL-1843: a note naming a ticket a sibling worked IS deferred, exactly as
+;; a git_handoff for that ticket would be. The old "a note is never deferred"
+;; assertion is replaced by the two note cases below.
+(assert= "a note naming a ticket a sibling worked, age below the deadline: defer (BL-1843)"
+         {:action :defer :task "BL-777"}
          (seat-affinity-lib/rework-claim-decision (assoc base :type "note")))
+
+(assert= "a note naming a ticket a sibling worked, age past the deadline: cross-seat claim (BL-1843)"
+         {:action :claim-cross-seat :task "BL-777"}
+         (seat-affinity-lib/rework-claim-decision
+          (assoc base :type "note" :now-ms (+ enqueue-ms 1800001))))
+
+(assert= "a note naming no ticket (task nil) is never deferred"
+         {:action :claim}
+         (seat-affinity-lib/rework-claim-decision (assoc base :type "note" :task nil)))
 
 (assert= "a git_handoff with no task claims"
          {:action :claim}

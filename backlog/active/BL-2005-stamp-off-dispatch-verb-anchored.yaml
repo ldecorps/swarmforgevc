@@ -96,3 +96,5 @@ notes: |
   too large for one seat, the BL-1930 lesson). Severity medium, so it
   mints human_approval pending.
   Hotfix ledger: 6b5f524550 linked to BL-2005.
+
+assigned_to: coder

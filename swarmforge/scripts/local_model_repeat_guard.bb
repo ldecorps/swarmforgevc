@@ -29,9 +29,29 @@
 ;; result the model already has gives it nothing to retry.
 
 (ns local-model-repeat-guard
-  (:require [cheshire.core :as json]
+  (:require [babashka.fs :as fs]
+            [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]))
+
+;; BL-1992: *file* is only correctly bound to THIS file while its own
+;; top-level forms load; a defn body that reads *file* resolves whatever
+;; is loading at CALL time instead (another script's own path, or
+;; "NO_SOURCE_PATH" from a bare -e), the wrong directory entirely. Captured
+;; once here, at load time, the way ready_for_next_task.bb's own
+;; script-dir already is.
+(def script-dir (fs/parent (fs/canonicalize *file*)))
+
+;; BL-1992 D1/D2 (QA bounce): the ticket a release note names is resolved
+;; the same way chase_sweep_lib.bb's own dispatch-trail-ticket-id already
+;; does for a `task:` header (pipeline-stage-lib/extract-ticket-id - a
+;; \b-bounded prefix+digits match, correct against a bare id or a full
+;; stable-task-name slug alike) and for a Work note's `message:` header
+;; (work-note-evidence-lib/work-note-ticket-id-from-message, already
+;; bare-only). Both pure libs; loaded, never restated.
+(load-file (str (fs/path script-dir "pipeline_stage_lib.bb")))
+(load-file (str (fs/path script-dir "work_note_evidence_lib.bb")))
 
 (def max-repeats
   "Identical calls in one window before the next one is warned about."
@@ -154,13 +174,14 @@
                  first)]
     (if idx (subvec v (inc idx)) v)))
 
-(defn restart-decision
+(defn missed-write
   "{:next-step :path}, or nil, for this in-flight call: the latest
    compaction must name a write/edit path, that write must not already
    have happened since that compaction, this call must not be that write,
-   it must be the third such call since that compaction, and the parcel
-   must not already have used both of its restarts."
-  [entries name args restart-count]
+   and it must be the third such call since that compaction. Says nothing
+   about the restart count - restart-decision and release-decision (BL-1992)
+   each decide what this miss means for a parcel at their own count."
+  [entries name args]
   (let [step (latest-next-step entries)
         path (named-write-path step)]
     (when path
@@ -173,9 +194,29 @@
                               (= path (get args "file_path")))]
         (when (and (not already-written?)
                    (not this-write?)
-                   (>= (inc other) 3)
-                   (< restart-count max-restarts))
+                   (>= (inc other) 3))
           {:next-step step :path path})))))
+
+(defn restart-decision
+  "A missed write restarts the seat only while the parcel has not already
+   used both of its restarts."
+  [entries name args restart-count]
+  (when (< restart-count max-restarts)
+    (missed-write entries name args)))
+
+;; ── BL-1992: the third miss releases the parcel instead of restarting ──
+;;
+;; The human's trial goes on: "On the third miss, do not restart: the
+;; parcel must leave in_process, and a note must name the ticket so the
+;; other coder seat can take it." A missed write once both of BL-1991's
+;; restarts are already spent is this, never a third restart request.
+
+(defn release-decision
+  "The same missed write as restart-decision, but only once the parcel's
+   restarts are already exhausted."
+  [entries name args restart-count]
+  (when (>= restart-count max-restarts)
+    (missed-write entries name args)))
 
 (defn- in-process-handoff-name
   "The name of this role's current in_process handoff file - stable across
@@ -227,6 +268,84 @@
   []
   (when-let [parent (.orElse (.parent (java.lang.ProcessHandle/current)) nil)]
     (.destroy ^java.lang.ProcessHandle parent)))
+
+;; ── BL-1992: release the parcel instead of a third restart ─────────────
+
+(defn- in-process-handoff-path
+  "The full path of this role's current in_process handoff file, or nil
+   outside a real parcel - same cwd-only resolution in-process-handoff-name
+   already uses, never this process's own working directory."
+  [cwd]
+  (when-let [name (in-process-handoff-name cwd)]
+    (io/file cwd ".swarmforge" "handoffs" "inbox" "in_process" name)))
+
+(defn- handoff-header [content field]
+  "One header's value from a handoff file's content, or nil - a plain
+   regex read, matching this file's own self-contained style rather than
+   loading handoff_lib.bb's full header parser."
+  (some-> (re-find (re-pattern (str "(?m)^" field ":\\s*(.+)$")) (or content "")) second str/trim))
+
+(defn task-name-from-handoff
+  "The released ticket's bare id, from the handoff's own task: header (a
+   git_handoff - resolved through extract-ticket-id, correct whether the
+   header carries a bare id or a full stable-task-name slug) or, absent
+   that, a Work note's message: header (work-note-ticket-id-from-message,
+   already bare-only) - or nil when neither names one. Never the raw
+   header text itself: D2's own repro showed a slug task name, embedded
+   whole, breaks both the 80-char note limit and the point of naming a
+   ticket at all."
+  [content]
+  (or (some-> (handoff-header content "task") pipeline-stage-lib/extract-ticket-id)
+      (work-note-evidence-lib/work-note-ticket-id-from-message (handoff-header content "message"))))
+
+(defn release-note-message
+  "The coordinator note's message (note-only, max 80 chars - Article 2.2):
+   names the released ticket so another coder seat can take it. ticket is
+   always a bare id (task-name-from-handoff's own contract) or the \"its
+   ticket\" fallback, both comfortably under the limit."
+  [ticket]
+  (str ticket " released: third missed write; another coder seat can take it"))
+
+(defn send-release-note!
+  "Shells to swarm_handoff.sh (Article 2.3: agents send only through it,
+   never writing inbox/new/ directly) with cwd as the working directory -
+   never this process's own - so the note lands in the SEAT's own outbox,
+   never wherever this hook process happens to be running from. Returns
+   true only on a real, confirmed send (BL-1992 D2: the caller must know
+   whether the note actually went out before giving up the parcel)."
+  [cwd message]
+  (let [script (str (fs/path script-dir "swarm_handoff.sh"))
+        draft (io/file cwd "tmp" "bl1992-release-note.txt")]
+    (io/make-parents draft)
+    (spit draft (str "type: note\nto: coordinator\npriority: 10\nmessage: " message "\n"))
+    (try
+      (zero? (:exit @(process/shell {:dir cwd :out :string :err :string :continue true} script (str draft))))
+      (catch Exception _ false))))
+
+(defn release-parcel!
+  "Sends the coordinator a note naming the released ticket FIRST, and only
+   on a confirmed send moves the parcel's in_process handoff to this
+   seat's own inbox/abandoned (the destination the coordinator's own pull
+   already uses, so nothing keeps routing it to this seat). BL-1992 D2: a
+   refused or failed send must never strand the parcel silently with
+   nothing sent and the file already moved - a failed send leaves the
+   parcel exactly where it was, in_process, for the next miss (or a human)
+   to find, and prints why. Best-effort outside a real parcel: nothing to
+   release when there is no in_process handoff."
+  [cwd]
+  (when-let [src (in-process-handoff-path cwd)]
+    (when (.isFile ^java.io.File src)
+      (let [content (slurp src)
+            ticket (or (task-name-from-handoff content) "its ticket")
+            sent? (send-release-note! cwd (release-note-message ticket))]
+        (if sent?
+          (let [dest-dir (io/file cwd ".swarmforge" "handoffs" "inbox" "abandoned")]
+            (io/make-parents (io/file dest-dir "x"))
+            (io/copy src (io/file dest-dir (.getName ^java.io.File src)))
+            (io/delete-file src true))
+          (binding [*out* *err*]
+            (println (str "local_model_repeat_guard.bb: release note for " ticket
+                          " was not confirmed sent; the parcel stays in_process."))))))))
 
 (defn warning
   "The note to hand the model with this call's result, or nil."
@@ -444,17 +563,19 @@
                                                    "additionalContext" (str/join " " notes)}}))))
 
 (defn answer
-  ([event read-lines] (answer event read-lines end-qwen-process!))
-  ([event read-lines kill-fn]
+  ([event read-lines] (answer event read-lines end-qwen-process! release-parcel!))
+  ([event read-lines kill-fn] (answer event read-lines kill-fn release-parcel!))
+  ([event read-lines kill-fn release-fn]
    (let [name (get event "tool_name")
          args (get event "tool_input")
          path (get event "transcript_path")
          cwd (or (get event "cwd") (System/getProperty "user.dir"))
-         ;; BL-1991: restart state/kill is a real, consequential side effect
-         ;; - unlike the notes below, it must NEVER fall back to this
-         ;; process's own working directory. Only a cwd the event itself
-         ;; names (as every real qwen PostToolUse event does) can be a
-         ;; seat's actual worktree; anything else leaves restart inert.
+         ;; BL-1991/BL-1992: restart and release state/side effects are
+         ;; real and consequential - unlike the notes below, they must
+         ;; NEVER fall back to this process's own working directory. Only
+         ;; a cwd the event itself names (as every real qwen PostToolUse
+         ;; event does) can be a seat's actual worktree; anything else
+         ;; leaves both restart and release inert.
          restart-cwd (get event "cwd")]
      (when (string? name)
        (let [entries (when (string? path)
@@ -462,12 +583,22 @@
                          (transcript-entries lines)))
              state-file (when (and entries (string? restart-cwd)) (restart-state-file restart-cwd))
              restart-count (read-restart-count state-file)
-             restart (when state-file (restart-decision entries name args restart-count))]
-         (if restart
+             restart (when state-file (restart-decision entries name args restart-count))
+             release (when (and state-file (not restart))
+                       (release-decision entries name args restart-count))]
+         (cond
+           restart
            (do
              (write-restart-request! state-file (:next-step restart) (:path restart) restart-count)
              (kill-fn)
              nil)
+
+           release
+           (do
+             (release-fn restart-cwd)
+             nil)
+
+           :else
            (notes-response event entries name args cwd)))))))
 
 (when (= *file* (System/getProperty "babashka.file"))

@@ -96,7 +96,10 @@
     (if-not appeared
       (do (process/destroy-tree proc) "the capture file never appeared mid-run")
       (do
-        (process/sh "kill" (str "-" sig) (str "-" (.pid (:proc proc))))
+        ;; The `--` is load-bearing (hotfix 2026-10-06): without it procps
+        ;; kill reads -<pid> as kill(-<first digit>), so a pid starting with
+        ;; 1 signalled every process the user owns - the live swarm with it.
+        (process/sh "kill" (str "-" sig) "--" (str "-" (.pid (:proc proc))))
         (let [done (deref proc 15000 nil)
               _ (process/destroy-tree proc) ; reap the inner sleep either way
               out (str (:out done) (:err done))

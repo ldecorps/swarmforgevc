@@ -28,13 +28,17 @@
             [(str/lower-case (str/trim k)) (str/trim v)]))))
 
 (defn task-name-from-content
-  "Task name from a parcel: preferred `task:` header, else `Work BL-…` in
-   message/body (Work notes often carry no task: header)."
+  "Task name from a parcel: preferred `task:` header, else `Work BL-` in
+   message/body (Work notes often carry no task: header), else a ticket id
+   leading the message/body (BL-1843: notes name tickets in either
+   wording - `Work BL-` or `BL- still todo`)."
   [content]
   (let [headers (parse-headers content)
         from-header (not-empty (get headers "task"))]
     (or from-header
         (when-let [m (re-find #"(?m)(?:^|\n)(?:message:\s*)?Work\s+(BL-\S+?)(?::|\s|$)" (or content ""))]
+          (second m))
+        (when-let [m (re-find #"(?m)(?:^|\n)(?:message:\s*)?(BL-\S+?)(?::|\s|$)" (or content ""))]
           (second m)))))
 
 (defn entries-from-files

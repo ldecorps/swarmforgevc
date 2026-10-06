@@ -64,6 +64,8 @@
           "--description" (recur more (assoc opts :description value))
           "--evidence" (recur more (assoc opts :evidence value))
           "--on" (recur more (assoc opts :detected-at value))
+          "--by" (recur more (assoc opts :by value))
+          "--reason" (recur more (assoc opts :reason value))
           (recur more opts))))))
 
 (defn- ticket-texts [project-root]
@@ -80,59 +82,97 @@
   (let [p (vdl/default-conf-path project-root)]
     (vdl/threshold (vdl/parse-conf (if (fs/exists? p) (slurp p) "")))))
 
+(defn- commit-ledger! [project-root rows message]
+  "Write rows to the ledger file and commit. On commit failure, restore the
+   file's pre-write state (byte-identical when it existed, absent when it
+   did not) and exit 1. Returns nil on success."
+  (let [text (vdl/render-ledger rows)
+        pre-existed? (fs/exists? (ledger-path project-root))
+        pre-text (when pre-existed? (slurp (str (ledger-path project-root))))]
+    (fs/create-dirs (fs/parent (ledger-path project-root)))
+    (spit (str (ledger-path project-root)) text)
+    (let [result (cil/commit-with-integrity!
+                  {:project-root project-root
+                   :paths [ledger-relpath]
+                   :message message})]
+      (if-not (:success result)
+        (do
+          (if pre-existed?
+            (spit (str (ledger-path project-root)) pre-text)
+            (fs/delete-if-exists (ledger-path project-root)))
+          (binding [*out* *err*]
+            (println (str "verification_debt_ledger_update: commit failed (" (:reason result) ") - reverted, nothing written")))
+          (System/exit 1))
+        nil))))
+
 (defn -main [& args]
   (let [[project-root mode category & rest-args] args]
-    (when (or (nil? project-root) (not= "--record" mode) (nil? category)) (usage!))
-    (let [{:keys [ticket role description evidence detected-at]} (parse-opts rest-args)
-          detected-at (or detected-at (today))]
-      (when-not (vdl/valid-category? category) (refuse! "category" (str "\"" category "\" is not a kebab-case id")))
-      (when-not (vdl/valid-ticket? ticket) (refuse! "ticket" (str "\"" ticket "\" is not a BL-/GH- ticket id")))
-      (when (str/blank? role) (refuse! "role" "role is required"))
-      (when-not (vdl/valid-description? description) (refuse! "description" "description is blank"))
-      (let [before (read-rows project-root)
-            {:keys [rows recorded?]} (vdl/record-verification
-                                       before (cond-> {:category category :ticket ticket :role role
-                                                        :description description :detected-at detected-at}
-                                                evidence (assoc :evidence evidence)))]
-        (if-not recorded?
-          (println (str "VERIFICATION_DEBT_ALREADY_RECORDED " category " " ticket))
-          (let [text (vdl/render-ledger rows)
-                ;; BL-1782 hardender bounce D1: capture the file's PRE-WRITE
-                ;; state as a fact (existed? + its raw bytes), not merely
-                ;; `before`'s row vector - `before` is `[]` for BOTH "no
-                ;; file yet" and "file exists with zero rows", so re-
-                ;; rendering it on a revert always writes a header-only
-                ;; file into a spot where NO file existed a moment ago. A
-                ;; commit failure now restores exactly what a moment ago
-                ;; held: the prior raw text when the file existed, or no
-                ;; file at all when it did not.
-                pre-existed? (fs/exists? (ledger-path project-root))
-                pre-text (when pre-existed? (slurp (str (ledger-path project-root))))]
-            (fs/create-dirs (fs/parent (ledger-path project-root)))
-            (spit (str (ledger-path project-root)) text)
-            ;; BL-1544: the subject line must stay untagged - the ticket this
-            ;; row is ABOUT may be closed by the time it is recorded (e.g. a
-            ;; seed row for a land already in backlog/done/), and a closed
-            ;; ticket id leading the subject trips the merge-deletion guard's
-            ;; own ticket-ownership check. The ticket/category live in the
-            ;; body instead, where no guard scans for a leading id.
-            (let [result (cil/commit-with-integrity!
-                          {:project-root project-root
-                           :paths [ledger-relpath]
-                           :message (str "verification-debt: record a hand-verification row\n\n"
-                                        "category: " category "\nticket: " ticket "\n\nBy " role ".")})]
-              (if-not (:success result)
-                (do
-                  (if pre-existed?
-                    (spit (str (ledger-path project-root)) pre-text)
-                    (fs/delete-if-exists (ledger-path project-root)))
-                  (binding [*out* *err*]
-                    (println (str "verification_debt_ledger_update: commit failed (" (:reason result) ") - reverted, nothing recorded")))
-                  (System/exit 1))
-                (let [count (vdl/outstanding-count rows category)
-                      threshold (conf-threshold project-root)]
-                  (println (str "recorded " category " for " ticket))
-                  (when (and (>= count threshold) (not (owned? project-root category)))
-                    (println (str "VERIFICATION_DEBT_UNOWNED " category " count=" count " threshold=" threshold))))))))))))
+    (when (or (nil? project-root) (nil? category)) (usage!))
+    (case mode
+      "--record"
+      (let [{:keys [ticket role description evidence detected-at]} (parse-opts rest-args)
+            detected-at (or detected-at (today))]
+        (when-not (vdl/valid-category? category) (refuse! "category" (str "\"" category "\" is not a kebab-case id")))
+        (when-not (vdl/valid-ticket? ticket) (refuse! "ticket" (str "\"" ticket "\" is not a BL-/GH- ticket id")))
+        (when (str/blank? role) (refuse! "role" "role is required"))
+        (when-not (vdl/valid-description? description) (refuse! "description" "description is blank"))
+        (let [before (read-rows project-root)
+              {:keys [rows recorded?]} (vdl/record-verification
+                                         before (cond-> {:category category :ticket ticket :role role
+                                                          :description description :detected-at detected-at}
+                                                  evidence (assoc :evidence evidence)))]
+          (if-not recorded?
+            (println (str "VERIFICATION_DEBT_ALREADY_RECORDED " category " " ticket))
+            (do
+              (commit-ledger! project-root rows
+                (str "verification-debt: record a hand-verification row\n\n"
+                     "category: " category "\nticket: " ticket "\n\nBy " role "."))
+              (let [count (vdl/outstanding-count rows category)
+                    threshold (conf-threshold project-root)]
+                (println (str "recorded " category " for " ticket))
+                (when (and (>= count threshold) (not (owned? project-root category)))
+                  (println (str "VERIFICATION_DEBT_UNOWNED " category " count=" count " threshold=" threshold))))))))
+
+      "--discharge"
+      (let [{:keys [by evidence detected-at]} (parse-opts rest-args)
+            on (or detected-at (today))]
+        (when-not (vdl/valid-category? category) (refuse! "category" (str "\"" category "\" is not a kebab-case id")))
+        (when (str/blank? by) (refuse! "--by" "--by is required"))
+        (when (str/blank? evidence) (refuse! "--evidence" "--evidence is required"))
+        (let [ev-path (fs/path project-root evidence)]
+          (when-not (fs/regular-file? ev-path) (refuse! "--evidence" (str "evidence file \"" evidence "\" is not a file under the project root"))))
+        (let [before (read-rows project-root)
+              {:keys [rows settled?]} (vdl/discharge-category before {:category category :by by :evidence evidence :on on})]
+          (if settled?
+            (do
+              (commit-ledger! project-root rows
+                (str "verification-debt: discharge category\n\n"
+                     "category: " category "\nby: " by "\nevidence: " evidence "\n\nBy " by "."))
+              (println (str "discharged " category)))
+            (do
+              (binding [*out* *err*]
+                (println (str "verification_debt_ledger_update: no outstanding row in category " category " - nothing written")))
+              (System/exit 1)))))
+
+      "--waive"
+      (let [{:keys [by reason detected-at]} (parse-opts rest-args)
+            on (or detected-at (today))]
+        (when-not (vdl/valid-category? category) (refuse! "category" (str "\"" category "\" is not a kebab-case id")))
+        (when (str/blank? by) (refuse! "--by" "--by is required"))
+        (when (str/blank? reason) (refuse! "--reason" "--reason is required"))
+        (let [before (read-rows project-root)
+              {:keys [rows settled?]} (vdl/waive-category before {:category category :by by :reason reason :on on})]
+          (if settled?
+            (do
+              (commit-ledger! project-root rows
+                (str "verification-debt: waive category\n\n"
+                     "category: " category "\nby: " by "\nreason: " reason "\n\nBy " by "."))
+              (println (str "waived " category)))
+            (do
+              (binding [*out* *err*]
+                (println (str "verification_debt_ledger_update: no outstanding row in category " category " - nothing written")))
+              (System/exit 1)))))
+
+      (usage!))))
 
 (apply -main *command-line-args*)

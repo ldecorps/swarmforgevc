@@ -247,3 +247,40 @@
   role: QA
   description: "property lane red on bl1905RealDispatcherScan.property.test.js; the gather excerpt cut the flagged-file list at 'part 1: no handler in specs/pipeline/s…'; ran the file once alone to read the AssertionError naming bl2038LocalSeatFreshPhaseSessionSteps.js line 315"
   detected_at: 2026-10-06
+- category: unlaned-pipeline-test-run-by-hand
+  ticket: BL-2040
+  role: QA
+  description: "qa_e2e step 1 runs specs/pipeline/test/bl989PortableGrepTabAnchor.property.test.js, in no lane (BL-2041); ran it by hand with node --test, plus a hand reach-check of the new sweep regex against the pre-hotfix file"
+  detected_at: 2026-10-06
+- category: gather-excerpt-lost-red-message
+  ticket: BL-2041
+  role: QA
+  description: "unit row green but its new node --test summary (qa_e2e 2: 367 tests in 41 files) was outside the gather's tail excerpt (vitest stderr last); ran the lane's exact listPipelineTestFiles once by hand to read 367/367"
+  detected_at: 2026-10-06
+- category: gather-excerpt-lost-red-message
+  ticket: BL-1843
+  role: QA
+  description: "property lane red on bl1799ReviewStageLocalModelCards; excerpt was onTaskUpdate noise only; ran the file alone once for the verbatim AssertionError (cleaner card 8848 > 8192)"
+  detected_at: 2026-10-06
+- category: land-path-ownership
+  ticket: BL-1843
+  role: QA
+  description: "found by hand that BL-1843's only supersede_lib.bb change rides f604115bcc (subject BL-1963, closed) - the land walk would read it as a closed-owner code stray (LAND_ESCALATE while BL-1787 is paused); bounced for a tip-pure rebuild"
+  detected_at: 2026-10-06
+- category: unlaned-property-runner-run-by-hand
+  ticket: BL-2048
+  role: specifier
+  description: "ran all 217 property runners under swarmforge/scripts/test one at a time by hand (no lane runs them, QA note 003876) to census reds and wall for BL-2048/BL-2049"
+  detected_at: 2026-10-06
+  evidence: backlog/evidence/BL-2048-property-runner-census-20261006.md
+- category: register-join-unidentified-red-triage
+  ticket: BL-2015
+  role: QA
+  description: "Unit lane exit 1, join unidentified: whole output has no FAIL file; repeated vitest-worker onTaskUpdate timeouts under concurrent vitest load, classified as owned by open BL-1889"
+  detected_at: 2026-10-06
+- category: stale-mutation-census-declaration-reconciled-by-hand
+  ticket: BL-1676
+  role: coder
+  description: "BL-1640's 2026-09-21 first-run census named gateBypassed/ceremonyIsDue as having 2/1 survivors on a 499-line snapshot; BL-1640/BL-1641 both changed this file since (now 697 lines, line:col stale). Traced the CURRENT test suite by hand and found all 4 (mode,sleepPath) boundary combos already distinctly asserted by existing tests added after the census ran, so judged those survivors likely already dead rather than guessing new tests at stale targets; left for the hardener's full re-run to confirm. No tool re-derives which OLD census entries a later same-file parcel already resolved."
+  detected_at: 2026-10-06
+  evidence: backlog/evidence/BL-1676-coder-20261006.md

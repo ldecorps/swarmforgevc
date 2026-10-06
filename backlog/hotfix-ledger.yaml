@@ -1420,3 +1420,87 @@
   stamp_ticket: BL-1843
   human_decision: null
   decided_at: null
+- commit: 24872ac7a9
+  subject: "hotfix: the parcel-line take-up force-moved the coder's BL-1843 line six times on 2026-10-06"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2044
+  human_decision: null
+  decided_at: null
+- commit: c6e284cfec
+  subject: "hotfix: 24872ac7a9's two new parcel_line_lib runner cases crashed on the fixture merge's missing committer identity"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2044
+  human_decision: null
+  decided_at: null
+- commit: 61c2c53e37
+  subject: "hotfix: every local-model card composed over its 8192-character budget since the BL-2038 phase section"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2047
+  human_decision: null
+  decided_at: null
+- commit: 171ddbdee0
+  subject: "hotfix: BL-563's feature was 6/8 in the live checkout"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2047
+  human_decision: null
+  decided_at: null
+- commit: 25cb223e0d
+  subject: "Hotfix: BL-871 invariant 1 compared a loaded run's concurrency to a ceiling read seconds earlier"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2051
+  human_decision: null
+  decided_at: null
+- commit: 435b2de1a9
+  subject: "Hotfix: BL-1472 property runner compares the attribution answer, not fixture shas"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2051
+  human_decision: null
+  decided_at: null
+- commit: 372b68930b
+  subject: "Hotfix: BL-1513's property runner expected the router note BL-1614 replaced"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2051
+  human_decision: null
+  decided_at: null
+- commit: 853235a216
+  subject: "Hotfix: BL-886's orphan fixture required PPID 1, red on a subreaper host"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2051
+  human_decision: null
+  decided_at: null
+- commit: 49fe963c76
+  subject: "Hotfix: the extension stopper followed a worktree's tmux-socket pointer to the live swarm server"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2052
+  human_decision: null
+  decided_at: null
+- commit: a9cadb6484
+  subject: "Hotfix: kill_all_swarm.sh rooted at a seat worktree followed its tmux-socket pointer and killed the live swarm server"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2052
+  human_decision: null
+  decided_at: null
+- commit: 48d037df88
+  subject: "Hotfix: bl965's runner killed the whole swarm through procps kill's -<pid> parse"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2053
+  human_decision: null
+  decided_at: null
+- commit: d0b9440211
+  subject: "Hotfix: a unit-lane guard fails any external kill exec of a negative pid without --"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2053
+  human_decision: null
+  decided_at: null

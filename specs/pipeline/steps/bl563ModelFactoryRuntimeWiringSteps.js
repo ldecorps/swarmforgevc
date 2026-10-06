@@ -163,9 +163,12 @@ function registerSteps(registry) {
 
   registry.define(/^every role's settings file is byte-identical to the pack-derived baseline$/, (ctx) => {
     for (const role of ROLES) {
-      const a = fs.readFileSync(settingsPathFor(ctx.root, role));
-      const b = fs.readFileSync(settingsPathFor(ctx.baselineRoot, role));
-      if (!a.equals(b)) {
+      // Each fixture's own root path rides in the tool-miss heal hook's
+      // command, so it is masked before the byte comparison: the root is
+      // fixture identity, never an effect of the overlay machinery.
+      const a = fs.readFileSync(settingsPathFor(ctx.root, role), 'utf8').split(ctx.root).join('<ROOT>');
+      const b = fs.readFileSync(settingsPathFor(ctx.baselineRoot, role), 'utf8').split(ctx.baselineRoot).join('<ROOT>');
+      if (a !== b) {
         throw new Error(`expected ${role}'s settings file to be byte-identical to the pack-derived baseline; got:\n${a}\nvs baseline:\n${b}`);
       }
     }
@@ -246,7 +249,10 @@ function registerSteps(registry) {
       MODEL_FACTORY_CLI, 'cold-apply', '--mode', 'quality', '--pack', ctx.pack, '--launch-seam', ctx.stubSeamPath
     ], {
       encoding: 'utf8',
-      env: { ...process.env, MODEL_FACTORY_STATE_DIR: ctx.factoryStateDir }
+      // An empty steward dir: cold-apply ranks only the seed registry, never
+      // this checkout's live .swarmforge/model-steward scorecards.
+      env: { ...process.env, MODEL_FACTORY_STATE_DIR: ctx.factoryStateDir,
+             MODEL_STEWARD_STATE_DIR: mkdtemp('bl563-cold-apply-steward-') }
     }));
     const writtenOverlay = path.join(ctx.factoryStateDir, 'assignment.json');
     if (!fs.existsSync(writtenOverlay)) {

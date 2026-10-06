@@ -42,9 +42,9 @@ invariants:
 qa_e2e_procedure: |
   1. Read from the gather's acceptance row: the BL-2041 feature 3 of 3
      (measured at mint: every step unbound).
-  2. Read from the gather's `npm test` row (or whichever lane the parcel
-     wired the directory into, named in the coder's evidence) that the
-     specs/pipeline/test files ran and passed: 367 tests in 41 files
+  2. Read from the gather's `npm test` row that the 38 non-property
+     specs/pipeline/test files ran and passed, and from its
+     `test:properties` row that the 3 `*.property.test.js` files did: 367 tests in 41 files
      (re-measured 2026-10-06 after BL-1979 landed two).
   3. `find specs/pipeline/test -name '*.test.js' -not -path '*/fixtures/*' | wc -l`
      on the parcel commit: 41, unless the parcel's own evidence names a file
@@ -67,6 +67,21 @@ notes: |
   Measured at mint, after hotfix c9132288de: `node --test specs/pipeline/test/*.test.js
   specs/pipeline/test/steps/*.test.js` 356 of 356 in 21 s on a loaded host.
   The census grep is in scenario 01 and qa_e2e step 3.
+  Amended 2026-10-06 ~13:10Z by the specifier on QA spec-gap S1 (note
+  003870): the three *.property.test.js files (bl988Bl578ContractBinding,
+  bl989PortableGrepTabAnchor, scaffoldStepHandlerInvariants) run in the
+  property lane, never the unit lane - engineering.prompt keeps property
+  tests separate, and vitest.config.mjs excludes them from the unit lane
+  (BL-479). The other 38 stay in the unit lane as built. The parcel is at
+  QA, so the feature is not edited on main; the bounce carries scenario
+  01's new text into it, replacing its When and first Then ("When the
+  lane QA's gather runs is executed on the parcel commit" / "Then every
+  one of those files runs in it") with:
+    When the lanes QA's gather runs are executed on the parcel commit
+    Then every one of those files runs in a lane QA's gather runs
+    And the files named *.property.test.js run in the property lane and the others in the unit lane
+  (the census step stays: 41). This send-back is the spec's gap, not the
+  coder's workmanship: the coder built what the spec asked.
   Re-counted 2026-10-06 ~10:55Z: BL-1979 (4c8d2a1f61) added
   scaffoldStepHandler.test.js and its property test, so 39 -> 41; the glob
   ran 367 of 367 in 14 s.
@@ -93,8 +108,10 @@ description: |
 
   ## What is wanted
 
-  - The directory runs in a lane QA's gather runs, and a failure in any of
-    its files fails that lane and names the file.
+  - The directory runs in the lanes QA's gather runs: its
+    `*.property.test.js` files in the property lane (`npm run
+    test:properties`), every other file in the unit lane (`npm test`).
+    A failure in any file fails its lane and names the file.
   - BL-1358's ceiling test reaps only roots no live run owns (an owner pid
     that is dead, or an age bound), per the Test Speed And Isolation rule.
 
