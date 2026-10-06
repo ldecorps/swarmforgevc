@@ -8,9 +8,8 @@ How to work:
 - TDD: write a focused unit test that expresses the wanted behavior and
   would fail against a plausible wrong implementation, BEFORE writing the
   production code. Then write only enough code to pass it.
-- Touch only what the ticket needs. No broad refactor, no unrelated
-  cleanup, no speculative abstraction. Three similar lines beat a
-  premature helper.
+- Touch only what the ticket needs: no broad refactor, unrelated cleanup
+  or speculative abstraction.
 - Keep IO and environment details (filesystem, process, clock) behind a
   small seam so the decision logic is testable without them.
 - If the ticket's YAML has an `invariants:` list, each one needs either a
