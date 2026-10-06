@@ -247,3 +247,8 @@
   role: QA
   description: "property lane red on bl1905RealDispatcherScan.property.test.js; the gather excerpt cut the flagged-file list at 'part 1: no handler in specs/pipeline/s…'; ran the file once alone to read the AssertionError naming bl2038LocalSeatFreshPhaseSessionSteps.js line 315"
   detected_at: 2026-10-06
+- category: unlaned-pipeline-test-run-by-hand
+  ticket: BL-2040
+  role: QA
+  description: "qa_e2e step 1 runs specs/pipeline/test/bl989PortableGrepTabAnchor.property.test.js, in no lane (BL-2041); ran it by hand with node --test, plus a hand reach-check of the new sweep regex against the pre-hotfix file"
+  detected_at: 2026-10-06
