@@ -120,6 +120,22 @@ test('refreshReworkSignal recomputes and persists via runObservatory', () => {
   assert.equal(fs.existsSync(observatorySignalsPath(repo)), true);
 });
 
+// BL-1869 mutation discharge: the only other loadRoleWorktreesOrEmpty test
+// exercises just the missing-roles.tsv (empty-list) path, so a role/
+// worktreePath field swap in its .map() survived undetected. Pin the real
+// content against a genuine roles.tsv.
+test('loadRoleWorktreesOrEmpty maps role and worktreePath from a real roles.tsv, not swapped', () => {
+  const { loadRoleWorktreesOrEmpty } = require('../out/tools/rework-observatory');
+  const repo = mkTmp();
+  mkdirp(path.join(repo, '.swarmforge'));
+  fs.writeFileSync(
+    path.join(repo, '.swarmforge', 'roles.tsv'),
+    `architect\tworker\t/wt/architect\tswarmforge-architect\tArchitect\tclaude\ttask\n`
+  );
+  const roles = loadRoleWorktreesOrEmpty(repo);
+  assert.deepEqual(roles, [{ role: 'architect', worktreePath: '/wt/architect' }]);
+});
+
 // ── main() - real git fixture, in-process (thin-wrapper rule) ──────────────
 
 function mkCliFixture() {

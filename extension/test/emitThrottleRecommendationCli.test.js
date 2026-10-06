@@ -68,6 +68,25 @@ test('computeThrottleRecommendation recommends nothing when the signal is at/bel
   assert.equal(rec.recommendedCap, null);
 });
 
+// BL-1874
+test('computeThrottleRecommendation ignores a persisted signal and carries the failure reason when the refresh failed', () => {
+  const targetPath = mkTmp();
+  // An earlier run's severe diagnosis is still on disk - must not be read.
+  writeSignal(targetPath, { reworkRate: 10, baselineRate: 0.1 });
+  const rec = computeThrottleRecommendation(targetPath, Date.now(), 'telemetry write failed: ENOTDIR');
+  assert.equal(rec.recommendedCap, null, "a failed refresh must not publish the earlier run's rework cap");
+  assert.equal(rec.severity, null);
+  assert.equal(rec.reworkRate, null);
+  assert.equal(rec.baselineRate, null);
+  assert.equal(rec.refreshFailureReason, 'telemetry write failed: ENOTDIR');
+});
+
+test('computeThrottleRecommendation carries refreshFailureReason null on an ordinary successful call', () => {
+  const targetPath = mkTmp();
+  const rec = computeThrottleRecommendation(targetPath);
+  assert.equal(rec.refreshFailureReason, null);
+});
+
 test('computeThrottleRecommendation recommends nothing for a concentrated, escalate-only diagnosis - never auto-throttled', () => {
   const targetPath = mkTmp();
   writeSignal(targetPath, { reworkRate: 10, baselineRate: 0.1, topRole: 'hardener' });
@@ -102,6 +121,21 @@ test('emitThrottleRecommendation persists the recommendation to disk', () => {
   const written = JSON.parse(fs.readFileSync(throttleRecommendationPath(targetPath), 'utf8'));
   assert.deepEqual(written, rec);
   assert.equal(written.recommendedCap, 1);
+});
+
+// BL-1874
+test('emitThrottleRecommendation persists a null rework cap and the failure reason when the refresh failed, overwriting an earlier severe recommendation', () => {
+  const targetPath = mkTmp();
+  emitThrottleRecommendation(targetPath, Date.parse('2026-07-01T00:00:00Z')); // an earlier, ordinary run
+  fs.writeFileSync(
+    throttleRecommendationPath(targetPath),
+    JSON.stringify({ recommendedCap: 0, severity: 'severe', reworkRate: 1, baselineRate: 0.1, standingRed: null, updated_at: '2026-07-01T00:00:00.000Z', heldCap: null, episode: null, refreshFailureReason: null })
+  );
+  const rec = emitThrottleRecommendation(targetPath, Date.parse('2026-07-16T01:00:00Z'), 'telemetry write failed: ENOTDIR');
+  assert.equal(rec.recommendedCap, null);
+  assert.equal(rec.refreshFailureReason, 'telemetry write failed: ENOTDIR');
+  const written = JSON.parse(fs.readFileSync(throttleRecommendationPath(targetPath), 'utf8'));
+  assert.deepEqual(written, rec, 'the file on disk must be written by THIS run, not the earlier severe one');
 });
 
 // Acceptance scenario 05
@@ -208,6 +242,35 @@ test('main() refreshes the observatory before diagnosing - a stale injected sign
   // yields no sample and the stale degraded recommendation must not stick.
   assert.equal(printed.recommendedCap, null);
   assert.ok(fs.existsSync(throttleRecommendationPath(targetPath)));
+});
+
+// BL-1874: a FILE sitting where the telemetry directory must be makes
+// persistReworkSignal's own fs.mkdirSync(dirname, {recursive}) throw
+// for real (EEXIST/ENOTDIR depending on platform) - never chmod, per the Engineering Rules' failure-
+// simulation ban.
+function blockTelemetryWrite(targetPath) {
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  fs.mkdirSync(swarmforgeDir, { recursive: true });
+  fs.writeFileSync(path.join(swarmforgeDir, 'telemetry'), 'blocking\n');
+}
+
+test('main() still publishes a recommendation and exits 0 when the observatory refresh throws, never an older cap', async () => {
+  const targetPath = mkTmp();
+  fs.mkdirSync(path.dirname(throttleRecommendationPath(targetPath)), { recursive: true });
+  fs.writeFileSync(
+    throttleRecommendationPath(targetPath),
+    JSON.stringify({ recommendedCap: 0, severity: 'severe', reworkRate: 1, baselineRate: 0.1, standingRed: null, updated_at: '2026-07-01T00:00:00.000Z', heldCap: null, episode: null, refreshFailureReason: null })
+  );
+  blockTelemetryWrite(targetPath);
+
+  const { exitCode, output } = await runCli([targetPath]);
+
+  assert.equal(exitCode, 0, 'a published recommendation is a success, even though the refresh itself failed');
+  const printed = JSON.parse(output);
+  assert.equal(printed.recommendedCap, null, "must not echo the earlier run's severe cap");
+  assert.ok(typeof printed.refreshFailureReason === 'string' && printed.refreshFailureReason.length > 0);
+  const written = JSON.parse(fs.readFileSync(throttleRecommendationPath(targetPath), 'utf8'));
+  assert.notEqual(written.updated_at, '2026-07-01T00:00:00.000Z', 'the file on disk must be THIS run, not the earlier one');
 });
 
 // A single subprocess smoke test locks the compiled CLI's own wiring
