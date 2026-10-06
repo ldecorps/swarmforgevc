@@ -159,3 +159,5 @@ notes: |
   move). Testable (BL-1609's fixture shape).
   Dynamic routing: Babashka gate change with no durable write, plus a doc
   move and a protocol-doc paragraph -> [coder, documenter, qa].
+
+assigned_to: coder
