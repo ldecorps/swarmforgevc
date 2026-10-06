@@ -129,5 +129,21 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+  2026-10-06 ~11:35Z (coordinator, seat-stuck BAU): pulled from coder@iq3
+  after 61m+ with no new commit past 9811cd59fe (10:44Z) - a 2h2m single
+  turn drifted off-ticket into backlog_depth_lib.bb/headroom_cap_raise_lib.bb/
+  ready_for_next_task.bb (an unrelated active_backlog_max_depth_ceiling
+  feature), post-compaction. The real fix IS already committed and safe:
+  9811cd59fe (supersede_lib.bb + seat_affinity_lib.bb wiring,
+  bl1843NoteSeatRulesSteps.js skeleton, 3 bb test runners ALL PASS;
+  pinned refs/swarmforge/salvage/BL-1843). Still needed: the step
+  handler's module.exports uses made-up phrase keys
+  ('bl1843 write note' etc) instead of a registerSteps function matching
+  the feature's actual Gherkin text - 7/7 scenarios fail "no step handler
+  matched". Off-ticket WIP + the step-handler draft stashed in
+  .worktrees/coder: "BL-1843 off-ticket drift before pull (coordinator
+  BAU): backlog_depth_lib/headroom_cap_raise_lib/ready_for_next_task.bb
+  unrelated edits, plus bl1843NoteSeatRulesSteps.js WIP".
 
+status: blocked
 assigned_to: coder
