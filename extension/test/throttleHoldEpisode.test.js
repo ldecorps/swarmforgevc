@@ -197,6 +197,27 @@ test('clearedAtIso is set only once - a later idempotent clear does not overwrit
   assert.equal(episode.clearedAtIso, '2026-10-05T00:05:00Z');
 });
 
+// BL-2034: a re-tripped signal is LIVE again, not "awaiting release".
+// Before the fix, clearedAtIso was stamped on the first clear and never
+// reset, so a severe→clear→severe→clear episode read as awaiting release
+// from the FIRST clear even though the second clear is what actually
+// needs a human answer.
+test('BL-2034: a re-tripped episode clears again from the SECOND clear - a live tick resets clearedAtIso', () => {
+  let episode = updateThrottleEpisode(null, 0, 6, '2026-10-05T00:00:00Z', fakeRec({ recommendedCap: 0, severity: 'severe' }));
+  // First clear.
+  episode = updateThrottleEpisode(episode, null, 6, '2026-10-05T00:05:00Z', fakeRec());
+  assert.equal(episode.clearedAtIso, '2026-10-05T00:05:00Z');
+  // Re-trip: the signal is live again - the episode is live, not awaiting release.
+  episode = updateThrottleEpisode(episode, 0, 6, '2026-10-05T00:10:00Z', fakeRec({ recommendedCap: 0, severity: 'severe' }));
+  assert.equal(episode.clearedAtIso, null, 'a live tick must reset clearedAtIso - the episode is live again, not awaiting release');
+  // Second clear: the awaiting-release instant is the SECOND clear, not the first.
+  episode = updateThrottleEpisode(episode, null, 6, '2026-10-05T00:15:00Z', fakeRec());
+  assert.equal(episode.clearedAtIso, '2026-10-05T00:15:00Z', 'the awaiting-release instant must be the second clear, not the first');
+  // Invariant 2 still holds across the re-trip: the held floor is the lowest cap ever reached.
+  assert.equal(episode.lowestCapReached, 0);
+  assert.equal(heldCapForEpisode(episode), 0);
+});
+
 test('a release answer lifts the hold immediately (heldCap null) while the signal is still live', () => {
   let episode = updateThrottleEpisode(null, 1, 6, '2026-10-05T00:00:00Z', fakeRec({ recommendedCap: 1, severity: 'degraded' }));
   episode = { ...episode, answer: { kind: 'release', by: 'human', at: '2026-10-05T00:01:00Z' } };

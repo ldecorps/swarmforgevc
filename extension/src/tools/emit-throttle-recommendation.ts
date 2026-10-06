@@ -246,7 +246,10 @@ export function updateThrottleEpisode(
   if (rawCap !== null) {
     // Invariant 2: the lowest cap this episode ever reached, across every
     // severity change - a severe 0 that eases to a degraded 1 stays at 0.
-    episode = { ...episode, lowestCapReached: Math.min(episode.lowestCapReached, rawCap) };
+    // BL-2034: a live tick re-trips the signal - the episode is LIVE again,
+    // not "awaiting release", so the first clear's instant is stale and
+    // must be reset (a later clear re-stamps it).
+    episode = { ...episode, lowestCapReached: Math.min(episode.lowestCapReached, rawCap), clearedAtIso: null };
   } else if (!episode.clearedAtIso && !reworkRefreshFailure) {
     episode = { ...episode, clearedAtIso: nowIso };
   }

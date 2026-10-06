@@ -103,6 +103,32 @@ kill_tmux_socket() {
   tmux -S "$sock" kill-server 2>/dev/null || true
 }
 
+# A worktree's tmux-socket file is a copy of the MAIN checkout's socket
+# path. Following it kill-server's the live swarm (hardender worktree audit,
+# 2026-08-29: root=.worktrees/hardender, kill-server of the main
+# .swarmforge/tmux/*.sock). Only a socket that actually lives under this
+# root's .swarmforge/ belongs to the root being stopped. The legacy /tmp
+# exact-match below is a separate, id-scoped path and is not this check.
+# Compared physically (pwd -P on both sides), so neither a ../ segment in
+# the pointer nor a symlinked directory can name another root's socket as
+# this one's. When the socket's directory is gone no server can be
+# listening there, and the lexical check below only decides the log line.
+socket_owned_by_root() {
+  local sock="$1" root="$2" root_p sock_dir_p
+  root_p="$(cd "$root" 2>/dev/null && pwd -P)" || return 1
+  if sock_dir_p="$(cd "$(dirname "$sock")" 2>/dev/null && pwd -P)"; then
+    case "$sock_dir_p/" in
+      "$root_p"/.swarmforge/*) return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
+  case "$sock" in
+    */../*|*/..) return 1 ;;
+    "$root"/.swarmforge/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # BL-423: the orphaned-vitest-worker reap (the exact class behind the
 # BL-422 OOM-spiral - a killed parent leaves reparented `node (vitest N)`
 # workers, since tmux kill-server only SIGHUPs a pane's own direct child,
@@ -189,14 +215,18 @@ graceful_stop_agents
 # 1. Per-role sessions on the tracked socket (best-effort before kill-server).
 if [[ -f "$ROOT/.swarmforge/tmux-socket" ]]; then
   tracked="$(< "$ROOT/.swarmforge/tmux-socket")"
-  if [[ -S "$tracked" && -f "$ROOT/.swarmforge/roles.tsv" ]]; then
-    while IFS=$'\t' read -r _role _ _ session _ _ _ _; do
-      [[ -n "${session:-}" ]] || continue
-      tmux -S "$tracked" kill-session -t "$session" 2>/dev/null \
-        && log "killed session $session" || true
-    done < "$ROOT/.swarmforge/roles.tsv"
+  if socket_owned_by_root "$tracked" "$ROOT"; then
+    if [[ -S "$tracked" && -f "$ROOT/.swarmforge/roles.tsv" ]]; then
+      while IFS=$'\t' read -r _role _ _ session _ _ _ _; do
+        [[ -n "${session:-}" ]] || continue
+        tmux -S "$tracked" kill-session -t "$session" 2>/dev/null \
+          && log "killed session $session" || true
+      done < "$ROOT/.swarmforge/roles.tsv"
+    fi
+    kill_tmux_socket "$tracked"
+  else
+    log "REFUSED tmux kill-server $tracked — socket is outside $ROOT/.swarmforge"
   fi
-  kill_tmux_socket "$tracked"
 fi
 
 # 2. Every swarmforge tmux socket under this root's own .swarmforge/tmux/

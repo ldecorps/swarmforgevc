@@ -62,6 +62,16 @@
          (ready-for-next-task/claim-task-name
           (tmp-handoff-file "type: note\nto: coder\npriority: 10\ntask: \nmessage: Work BL-2222-something\n\nWork BL-2222-something\n")))
 
+;; Shape 5 (BL-1843): a note whose message leads with a bare ticket id in
+;; the "BL-… still todo" wording resolves that ticket through the shared
+;; reader (supersede-lib/task-name-from-content), so the tier filter and
+;; the affinity rule see the ticket exactly as they would for a git_handoff
+;; carrying the same task: header.
+(assert= "a note leading with a bare ticket id (BL-… still todo) resolves that ticket"
+         "BL-1830"
+         (ready-for-next-task/claim-task-name
+          (tmp-handoff-file "type: note\nto: coder\npriority: 10\nmessage: BL-1830 still todo - build+forward BEFORE completing this note\n\nBL-1830 still todo - build+forward BEFORE completing this note\n")))
+
 ;; BL-1610: current-head-commit-10 - the dequeue stamp's own source of the
 ;; sender's HEAD, otherwise exercised by no test at all (the acceptance
 ;; steps seed received_at_head directly into the fixture parcel, never
