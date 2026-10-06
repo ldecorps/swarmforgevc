@@ -66,6 +66,10 @@ Rules that apply the whole time:
   step handlers in specs/pipeline/steps/, unit and property tests in
   extension/test/, TypeScript in extension/src/, Babashka and shell in
   swarmforge/scripts/. There is no specs/pipeline/features/.
+- A new step handler starts from the scaffold: `node
+  specs/pipeline/scripts/scaffold_step_handler.js <feature-file> <Name>Steps`
+  writes it with one stub per step. Fill the stubs; never write a handler
+  from scratch.
 - Find a file before you read it: `git ls-files | grep <name>`. Never
   guess a path.
 - A function, key or env var your ticket says to ADD does not exist yet:

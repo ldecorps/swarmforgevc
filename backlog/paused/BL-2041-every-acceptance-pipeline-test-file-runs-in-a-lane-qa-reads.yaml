@@ -43,10 +43,10 @@ qa_e2e_procedure: |
      (measured at mint: every step unbound).
   2. Read from the gather's `npm test` row (or whichever lane the parcel
      wired the directory into, named in the coder's evidence) that the
-     specs/pipeline/test files ran and passed: 356 tests in 39 files at
-     mint, after hotfix c9132288de.
+     specs/pipeline/test files ran and passed: 367 tests in 41 files
+     (re-measured 2026-10-06 after BL-1979 landed two).
   3. `find specs/pipeline/test -name '*.test.js' -not -path '*/fixtures/*' | wc -l`
-     on the parcel commit: 39, unless the parcel's own evidence names a file
+     on the parcel commit: 41, unless the parcel's own evidence names a file
      added or retired since.
 
 source: |
@@ -66,11 +66,14 @@ notes: |
   Measured at mint, after hotfix c9132288de: `node --test specs/pipeline/test/*.test.js
   specs/pipeline/test/steps/*.test.js` 356 of 356 in 21 s on a loaded host.
   The census grep is in scenario 01 and qa_e2e step 3.
+  Re-counted 2026-10-06 ~10:55Z: BL-1979 (4c8d2a1f61) added
+  scaffoldStepHandler.test.js and its property test, so 39 -> 41; the glob
+  ran 367 of 367 in 14 s.
 
 description: |
   ## What is wrong
 
-  `specs/pipeline/test/` holds 39 `node:test` files: the acceptance
+  `specs/pipeline/test/` holds 41 `node:test` files: the acceptance
   runner's own tests, guards such as BL-989's portable-grep sweep, and
   step handlers' failure-branch tests. QA's gather runs `npm test` and
   `npm run test:properties` from `extension/`. Neither includes this
