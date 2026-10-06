@@ -1413,3 +1413,10 @@
   stamp_ticket: BL-2042
   human_decision: null
   decided_at: null
+- commit: 336ca56aef
+  subject: "hotfix: BL-1608's scenario 01 pinned exactly 2 call sites of claim-task-name and has been red on main since BL-1715"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-1843
+  human_decision: null
+  decided_at: null

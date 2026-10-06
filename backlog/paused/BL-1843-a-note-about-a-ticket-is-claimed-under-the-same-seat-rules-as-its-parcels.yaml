@@ -53,6 +53,50 @@ source: |
   > Take over the in progress hotfix. Make it the swarm absokute priority to make iq3 work.
 
 description: |
+  ## Status (2026-10-06): simplified, not split - the fix is built and verified
+
+  The coordinator pulled this at 11:4xZ (note 017051, "coder held 61m+,
+  drifted off-ticket"). The seat's work was nearly complete: its commit
+  9811cd59fe holds the seat_affinity_lib.bb change and two runner tests,
+  and its stash 3afb3eedb0 held the claim-loop wiring and a step handler
+  of the right shape. The specifier put them together, fixed the two
+  faults that kept the feature red, and pinned the result as
+  `refs/swarmforge/salvage/BL-1843-v2` (7a1e1c834e, parent 9811cd59fe).
+  Verified from a git-archive of that commit: this feature 7 of 7,
+  supersede_lib and seat_affinity_lib runners pass; with it applied,
+  BL-1001 6/6, BL-1004 5/5, BL-1616 5/5, BL-1655 8/8, BL-1615 8/8,
+  BL-1871 9/9, BL-1185 4/4, BL-1608 4/4.
+
+  The two faults it fixes, so the review knows what changed:
+  - The claim loop passed the affinity rule a parcel's `task:` header,
+    which a note does not carry. It now passes `claim-task-name`'s answer.
+  - Scenario 02 row 2 (coder, which worked BL-9002, asks): BL-1001's
+    prefer-fit deferred coder to the idle easy seat while the affinity
+    rule deferred that seat back, so the note waited out the deadline. A
+    seat that worked the ticket itself now outranks prefer-fit, never
+    `:skip-ineligible` (`difficulty-allows-claim?` takes `own-tasks`).
+    The handler's "stays in the stage queue" step also asserted a
+    DEFERRED line for a tier refusal, which prints only NO_TASK; it now
+    asserts that line only when a sibling worked the ticket.
+
+  ## What the coder does (all of it, in order)
+
+  1. `git merge refs/swarmforge/salvage/BL-1843-v2` into your branch, then
+     merge main. Do not change `seat_affinity_lib.bb`,
+     `ready_for_next_task.bb` or `bl1843NoteSeatRulesSteps.js`: they are
+     the verified fix. Do not bring anything else from your stash.
+  2. Run, once each, output under tmp/: this ticket's feature (7 of 7);
+     `bb swarmforge/scripts/test/seat_affinity_lib_test_runner.bb`,
+     `supersede_lib_test_runner.bb` and
+     `ready_for_next_claim_task_name_runner.bb` (all pass); and
+     `cd extension && npm test` (its guards scan step handlers).
+  3. This ticket is also the stamp-off of hotfix 336ca56aef (BL-1608's
+     feature retired a census step pinning exactly 2 call sites of
+     claim-task-name; this fix adds two more). Read `git show 336ca56aef`
+     and run BL-1608's feature: 4 of 4. Never re-apply it.
+  4. Write backlog/evidence/BL-1843-coder-<date>.md with the results,
+     commit it with the merge (`By coder.`), and send the git_handoff to qa.
+
   ## What happened
 
   - Note 013884 (`to: coder`, "BL-1816 still todo - build+forward BEFORE
@@ -121,6 +165,13 @@ qa_e2e_procedure: |
   holds.
 
 notes: |
+  Adjudicated 2026-10-06 by the specifier on coordinator note 017051
+  (split request): simplified, not split, the BL-1963 shape. The off-
+  ticket edits in stash@{0} (backlog_depth_lib.bb's
+  parse-max-depth-ceiling, headroom_cap_raise_lib.bb) are not this
+  ticket's and stay in the stash for the coordinator to dispose of.
+  Hotfix 336ca56aef's stamp-off is folded in here (step 3): this ticket
+  is the one whose fix would have broken that census again.
   Minted 2026-09-30 by the specifier from coordinator note 014024, under
   the human's iq3 directive. coordinator.prompt: ticket notes to a stage
   lead with `Work <id>:` (landed in the mint commit).
