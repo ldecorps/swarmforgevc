@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const { createStepRegistry } = require('../../stepRegistry');
 const { registerSteps } = require('../../steps/burndownEtaSteps');
 
+const BURNDOWN_ETA_FEATURE = "The burndown shows each milestone's forecast ETA plus an overall ETA for all remaining work";
+
 // BL-228 hardening: matching the established convention (see
 // pwaFontSizeSteps.test.js/complianceBatterySteps.test.js/etc.) - the 5/5
 // Gherkin scenario run only exercises the happy path, so a regression in an
@@ -18,7 +20,8 @@ function freshRegistry() {
 }
 
 function resolveAndRun(registry, ctx, stepText) {
-  const resolved = registry.resolve(stepText);
+  // BL-1277 scoped the handler's steps to its own feature; resolve under it.
+  const resolved = registry.resolve(stepText, BURNDOWN_ETA_FEATURE);
   if (!resolved) {
     throw new Error(`no step handler matched "${stepText}"`);
   }

@@ -82,7 +82,9 @@ function registerSteps(registry) {
     if (!boundNum || !boundUrl) {
       throw new Error('expected the Commit step to bind NUM/URL env: keys to github.event.issue.number/html_url');
     }
-    if (!/\$NUM\b/.test(ctx.commitStep.run) || !/\$URL\b/.test(ctx.commitStep.run)) {
+    // $NUM or ${NUM}: the workflow has used the braced form since 9748747792
+    // (2026-07-22); both expand the same env: binding.
+    if (!/\$(?:NUM\b|\{NUM\})/.test(ctx.commitStep.run) || !/\$(?:URL\b|\{URL\})/.test(ctx.commitStep.run)) {
       throw new Error('expected the commit message body to reference $NUM and $URL');
     }
     if (INTERPOLATION_PATTERN.test(ctx.commitStep.run)) {
