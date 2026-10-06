@@ -17,6 +17,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const fixtureReaper = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const ENSURE = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_ensure.bb');
@@ -28,7 +29,12 @@ const MIDDLE_ROLES = ['specifier', 'cleaner', 'architect', 'hardender', 'documen
 let trackedRoots = [];
 afterEach(() => {
   while (trackedRoots.length) {
-    fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
+    const root = trackedRoots.pop();
+    // The fake tmux on PATH names new-session, so this file is in the
+    // tmux-reaper guard's scope (extension/test/tmuxReaperGuard.test.js,
+    // BL-1032 route 2): reap() before rmSync, as bl958's steps do.
+    fixtureReaper.reap(root);
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -43,6 +49,7 @@ function bbEval(expr) {
 
 function mkFixture(ctx) {
   const root = mkSocketFixtureRoot('sfvc-bl571-');
+  fixtureReaper.track(root);
   trackedRoots.push(root);
   for (const dir of ['.swarmforge/daemon', '.swarmforge/operator', '.swarmforge/launch', '.swarmforge/babysitterd', '.worktrees/coder', 'bin']) {
     fs.mkdirSync(path.join(root, dir), { recursive: true });
