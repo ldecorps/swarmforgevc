@@ -129,3 +129,5 @@ notes: |
   one handler, one scenario). Testable (mkdtemp fixtures).
   Dynamic routing: bash test tooling, no durable write of its own ->
   [coder, qa].
+
+assigned_to: coder
