@@ -24,7 +24,9 @@ Feature: BL-1608 The claim path attributes a Work note's ticket from its message
     When the source of swarmforge/scripts/ready_for_next_task.bb is read
     Then the claim predicate and the claim-moment effort apply both resolve the task through the shared attribution
     And neither of them reads the task header directly for a mutation cost
-    And exactly 2 call sites of the shared attribution exist in that file
+    # Retired 2026-10-06 (specifier hotfix): a census step pinning exactly 2
+    # call sites of claim-task-name, red on main since BL-1715 (fbf19de78d)
+    # added a third, legitimate one; the two steps above carry the property.
 
   # BL-1608 claim-path-attributes-a-work-note-from-its-message-02
   Scenario Outline: the shared attribution prefers the task header and falls back to the Work message
