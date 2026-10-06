@@ -3,6 +3,7 @@
 (ns ready-for-next-task
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.java.shell :as sh]
             [clojure.string :as str]))
 
@@ -72,6 +73,37 @@
         (catch Exception e
           (println (str "FRESH_SESSION: restart skipped (" (.getMessage e) "); carry on with the parcel above."))
           (flush))))))
+
+;; BL-2038: the served ticket id, same two-step fallback print-task's own
+;; task-print-opts uses (task: header, else a Work note's BL-… message) -
+;; duplicated rather than factored into a shared point, same posture as
+;; this file's other small live-glue duplications (e.g. served-ticket-file
+;; below, which this predates).
+(defn- served-ticket-id [handoff-file]
+  (handoff-lib/leading-ticket-id
+   (or (handoff-lib/header-field handoff-file "task")
+       (work-note-evidence-lib/work-note-ticket-id-from-message
+        (handoff-lib/header-field handoff-file "message")))))
+
+(defn- phase-cli-show [ticket]
+  (try
+    (let [script (str (fs/path script-dir "local_seat_phase_cli.bb"))
+          result (sh/sh "bb" script "show" ticket)]
+      (when (zero? (:exit result))
+        (json/parse-string (str/trim (:out result)) true)))
+    (catch Exception _ nil)))
+
+(defn maybe-print-phase-line!
+  "BL-2038: a local-model seat served a parcel sees its phase and the
+   record to read first, right next to the TASK block above - reading
+   BL-2037's own show command rather than re-deriving its logic. Any
+   other agent (or a role with no roles.tsv row at all) sees no PHASE
+   line (invariant 2)."
+  [handoff-file]
+  (when (= "local-model" (:agent (handoff-lib/load-role-info (handoff-lib/current-role))))
+    (when-let [ticket (served-ticket-id handoff-file)]
+      (when-let [status (phase-cli-show ticket)]
+        (println (str "PHASE: " (:phase status) " - read " (:path status) " first."))))))
 
 ;; ── BL-550: non-home resident strands after a merge-up note ───────────────
 ;; Pure decision lives in mono-router-lib/rotate-home?; this reads conf text
@@ -530,7 +562,8 @@
                                        (origin-new-dir-for (first in-process-files)))
           (let [take-up (take-up-parcel-line! (first in-process-files))]
             (apply-effort-for-task! (first in-process-files) (mono-router-conf-text))
-            (handoff-lib/print-task (first in-process-files) (task-print-opts (first in-process-files) take-up)))
+            (handoff-lib/print-task (first in-process-files) (task-print-opts (first in-process-files) take-up))
+            (maybe-print-phase-line! (first in-process-files)))
           (print-merge-main-first-hint! (first in-process-files)))
         (if (handoff-lib/draining?)
           (println "DRAINING")
@@ -692,6 +725,7 @@
                         (let [take-up (take-up-parcel-line! target-file)]
                           (apply-effort-for-task! target-file pack-conf)
                           (handoff-lib/print-task target-file (task-print-opts target-file take-up))
+                          (maybe-print-phase-line! target-file)
                           (print-merge-main-first-hint! target-file)
                           (maybe-fresh-session-for-parcel! take-up)))
                       (recur (rest candidates)))))))))))))
