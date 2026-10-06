@@ -1434,3 +1434,17 @@
   stamp_ticket: BL-2044
   human_decision: null
   decided_at: null
+- commit: 61c2c53e37
+  subject: "hotfix: every local-model card composed over its 8192-character budget since the BL-2038 phase section"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2047
+  human_decision: null
+  decided_at: null
+- commit: 171ddbdee0
+  subject: "hotfix: BL-563's feature was 6/8 in the live checkout"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: BL-2047
+  human_decision: null
+  decided_at: null
