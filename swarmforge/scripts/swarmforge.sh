@@ -1316,6 +1316,23 @@ is_sequential_dormant() {
   (( i > 1 && i < ${#ROLES[@]} ))
 }
 
+# BL-1959: true (0) only for the coordinator's own index (always the LAST-
+# registered role - see is_sequential_dormant above) on a pack declaring
+# `config coordinator_mode deterministic`. Such a pack's handoffd promotes
+# and routes the next ticket itself (BL-1846) and relays every parcel that
+# reaches the coordinator's mail to the human (BL-1847), so the seat itself
+# is unneeded weight - on an all-local pack, a second local-model client
+# fighting the one resident for the GPU slot (BL-1931). provision_coordinator
+# still calls register_role for it unconditionally, so the roles.tsv row and
+# mailbox directories exist exactly as on any other pack; this predicate
+# only gates whether a SESSION, launch script, or terminal window is ever
+# created for that index - never roster registration itself.
+is_coordinator_seatless() {
+  local i="$1"
+  [[ "$i" == "${#ROLES[@]}" ]] || return 1
+  [[ "$COORDINATOR_MODE" == "deterministic" ]]
+}
+
 # BL-090: single-triage invariant. The committed primacy marker
 # (swarmforge/primary, a plain-text file naming the current autonomous
 # swarm) is the cross-machine, git-transported source of truth for which
@@ -3152,6 +3169,7 @@ echo -e "${CYAN}active_backlog_max_depth: ${EFFECTIVE_MAX_DEPTH} (from ${CONFIG_
 typeset -A REFUSED_ROLE_INDICES
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
   is_sequential_dormant "$i" && continue
+  is_coordinator_seatless "$i" && continue
   if ! create_role_session "${SESSIONS[$i]}" "${DISPLAY_NAMES[$i]}" "${ROLES[$i]}"; then
     REFUSED_ROLE_INDICES[$i]=1
   fi
@@ -3199,6 +3217,7 @@ CACHE_WARM_STAGGER_SECONDS=4
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
   [[ -n "${REFUSED_ROLE_INDICES[$i]:-}" ]] && continue
   is_sequential_dormant "$i" && continue
+  is_coordinator_seatless "$i" && continue
   is_first_of_tier=0
   if [[ "$CACHE_WARM_DECISION" == "rewarm" && "${AGENTS[$i]}" == "claude" ]]; then
     claude_settings_and_flags_from_extra_cli "${EXTRA_CLI_ARGS[$i]}"
@@ -3270,6 +3289,7 @@ if terminal_backend_can_open_sessions; then
   previous_window_id=""
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
     is_sequential_dormant "$i" && continue
+    is_coordinator_seatless "$i" && continue
     window_id="$(terminal_open_session "${SESSIONS[$i]}" "SwarmForge ${DISPLAY_NAMES[$i]}" "$previous_window_id")"
     if terminal_backend_tracks_windows; then
       echo "$window_id" >> "$WINDOW_IDS_FILE"

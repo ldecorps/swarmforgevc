@@ -1,0 +1,113 @@
+id: BL-2019
+title: "The recorded lane runner runs a listed population one item at a time, appends one duration row per completed item and none for an incomplete one, names every red in its verdict, exits with the suite's status, and runs a bounded prefix under --limit - slice 1 of BL-1625, one new bash script on fixture lists"
+milestone: M8
+type: feature
+status: todo
+epic: unit-suite-speed
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one new bash script (~60 lines) and one step handler over mkdtemp
+# fixture lists of `true` / `false` / `sleep` commands; no repo state read.
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one new script; nothing to refactor"
+  documenter: "the how-to describes the lane once its front-ends exist; BL-2021, the last slice, carries the docs"
+acceptance: specs/features/BL-2019-the-recorded-lane-runner-appends-one-row-per-completed-item.feature
+
+invariants:
+  - "Every item that completes appends exactly one row, whether it passed or failed; an item that did not complete appends none."
+  - "The runner changes nothing about what it runs: the same files in the population's own order, each item's own exit status - observation only."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2019RecordedLaneRunnerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the runner is a new entry
+# point; its callers are BL-2020's and BL-2021's front-ends.
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1625 (approved), split 2026-10-06 with no new scope.
+  FIRM (BL-1625): rows are per ITEM, appended as each completes, so a run
+  killed part-way leaves the rows of the completed items and no more; the
+  runner never runs beside the unit or property lane.
+
+description: |
+  ## What is wanted
+
+  A new script, `swarmforge/scripts/test/run_recorded_lane.sh`:
+
+      run_recorded_lane.sh --lane <name> --list <file> --durations <path> [--limit N]
+
+  - Each line of `--list` is `<item>` TAB `<command ...>`. The runner runs
+    the lines in order, one at a time (never in parallel), with `--limit N`
+    running only the first N lines.
+  - Around each command: `date +%s%3N` before and after. The moment the
+    command returns, append ONE line to `--durations` with `>>`:
+    `{"finished_at":"<iso>","lane":"<name>","file":"<item>","result":"pass|fail","duration_ms":<n>}`
+    (`result` is `pass` when the command exits 0). Build it with `printf`.
+  - After the last item, print a verdict: the count passed and failed,
+    every failing item by name, the ten slowest with their seconds, and
+    the wall. Exit 1 when any item failed, else 0.
+  - Use `set -uo pipefail` and capture each item's status
+    (`"$@" || st=$?`). Never `set -e` across the loop (BL-1242), and never
+    `kill` anything.
+
+  And the step handler `specs/pipeline/steps/bl2019RecordedLaneRunnerSteps.js`
+  for the feature's scenarios 03, 04 and 05:
+  - Fixture lists go in a mkdtemp dir from `trackedTmpRoot`
+    (`require('./lib/fixtureReaper')`, see the top of
+    `bl1782VerificationDebtLedgerSteps.js`). An item that passes is
+    `true`, one that fails is `false`. Durations go to a file in the same
+    mkdtemp dir, never a repo path.
+  - The kill case: make the second item `sleep 30`, spawn the runner,
+    poll the durations file until it holds one row, then kill the spawned
+    runner (the child process you started, never the test process).
+  - Register every step with `registry.defineScoped(re, fn, FEATURE)`
+    where FEATURE is the feature's exact `Feature:` text. Validate the
+    Outline placeholders (`<shape>`, `<runs>`, `<rows>`, `<exit>`,
+    `<names>`) against explicit KNOWN_VALUES tables, never passthrough.
+
+  ## Not in scope
+
+  - The front-ends (BL-2020 features, BL-2021 shell) and the docs (BL-2021).
+  - A separate shell test for the runner: BL-1625's How suggested one
+    beside the step handler; the handler drives the real runner on the
+    same fixtures, so it is dropped (no suite-manifest row is needed: the
+    manifest registers test_*.sh and *_test_runner.bb only).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2019-the-recorded-lane-runner-appends-one-row-per-completed-item.feature`:
+     6 ok (03 x3, 04 x2, 05), 0 fail.
+  2. `git diff <parcel>^..<parcel> --stat` names only the runner, the
+     feature and the handler.
+
+source: |
+  Split from BL-1625 on 2026-10-06 (coordinator note 016842, "split
+  BL-1625: loop-halt, repeated check, clean worktree"). The human
+  sentences BL-1625 carried, verbatim (Article 5.3): human directive
+  2026-09-05 ("we should not sweep failing tests under the carpet"); human
+  intake 2026-09-17 ("tests run for hours", BL-1618/1619 - hence
+  measurement first, bounded samples in the parcel, and never beside
+  another lane).
+
+  The human, 2026-10-04, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  split from BL-1625 on 2026-10-06 after coder (iq3) held it ~40m: five
+  sessions read specs/pipeline internals, BL-1618's handler and BL-1619's
+  recorder, wrote nothing, then loop-halted re-checking a suite-manifest.tsv
+  row's format (for the shell test this slice no longer has). Clean
+  worktree, nothing to salvage.
+  Where to read: nothing in specs/pipeline/ - this slice needs only bash
+  and the first 40 lines of bl1782VerificationDebtLedgerSteps.js for the
+  mkdtemp helper.
+  Stale premise corrected at the split: run_bb_suite.sh (BL-973,
+  2026-08-23) already runs the standing rows on demand; what no run has is
+  a duration record, and no lane or slot calls it. BL-1625's "no script
+  runs it" was wrong at mint.
+  INVEST: Independent (no dependency). Small (one script, one handler, six
+  examples). Testable (mkdtemp fixtures, seconds).

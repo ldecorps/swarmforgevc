@@ -1,0 +1,80 @@
+id: BL-2023
+title: "Four closed-ticket features the BL-1937 census missed fail on main with no step handler matched - BL-698 (104 of 106 steps unbound), BL-703 (45/46), BL-1054 (13/14) and BL-unassigned-active-coordinator-nudge (6/9) - each is wired or retired, by the specifier's per-feature adjudication"
+milestone: M8
+type: defect
+severity: high
+# high: four standing reds on main (2026-09-05 rule: high at first sighting).
+status: blocked
+epic: swarm-reliability
+priority: 25
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "the work is the specifier's adjudication, then per-feature slices with their own stages"
+  architect: "test-side only until a slice says otherwise"
+  hardender: "test-side only until a slice says otherwise"
+  documenter: "a retirement moves no living doc unless a slice says so"
+# Not a claim of ownership over BL-698's contract (BL-1251): the pointer is
+# the largest of the four features this ticket wires or retires.
+acceptance: specs/features/BL-698-telegram-cursor-operator-command-surface.feature
+
+invariants: []
+required_wiring: []
+
+human_approval: approved
+approval_context: >
+  No choice is posed to the human: whether each feature is wired or
+  retired is the specifier's deprecator judgment (Article 3.6). Minted
+  high under the 2026-09-05 standing-red rule.
+
+description: |
+  ## What is wrong
+
+  Four features of closed (or ticketless) work fail on main because most
+  of their steps match no handler. The BL-1937 census (2026-10-03)
+  counted only features with NO bound step, so it missed all four: one
+  to three generic steps bind elsewhere. None has a register row.
+
+  | feature | scenarios | unbound steps | ticket |
+  |---|---|---|---|
+  | BL-698-telegram-cursor-operator-command-surface | 26 | 104/106 | done |
+  | BL-703-operator-hydrate-autopilot-land | 9 | 45/46 | done |
+  | BL-1054-a-hydrate-run-boots-on-specifier-and-stays-there | 6 | 13/14 | backlog/debt |
+  | BL-unassigned-active-coordinator-nudge | 2 | 6/9 | none |
+
+  ## What happens next (status: blocked until it does)
+
+  The specifier adjudicates each feature in a dedicated pass (Article
+  3.6): is the behaviour it describes still shipped? Wire -> a slice in
+  BL-1937's shape (one handler, [coder, qa]); retire -> the scenarios are
+  retired (never reworded) and the file removed in a slice. BL-698 at 26
+  scenarios is more than one sitting either way and will be cut. Each
+  slice takes over its feature's register row; this ticket closes when no
+  row names it.
+
+qa_e2e_procedure: |
+  Per slice. For this ticket: while it is open, the four register rows
+  naming these features are present and owned by BL-2023; when it closes,
+  none remains on origin/main.
+
+source: |
+  Human directive 2026-09-05 ("we should not sweep failing tests under the
+  carpet"). The human, 2026-10-01, verbatim: "Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff."
+  Not hotfixed in the pass that found them: 168 unbound step lines across
+  four features, two of which may describe retired behaviour, is the
+  rule's more-than-one-sitting and needs-a-ruling exception.
+
+notes: |
+  Minted 2026-10-06 by the specifier with the register rows, while
+  splitting BL-1625; found by the census described in BL-2022's notes.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
+  status blocked on purpose: nothing for a coder until the specifier's
+  per-feature adjudication mints the slices. Do not promote.
+  Adjudication 2026-10-06, part 1 (specifier, backlog/evidence/BL-2023-unbound-feature-adjudication-20261006.md):
+  BL-unassigned-active-coordinator-nudge RETIRED whole (01 covered by
+  BL-1093 nobody-assignee-01; 02's premise reversed by BL-1804, whose 03 is
+  the corrected scenario); BL-1054 PARKED as .feature.draft (unbuilt debt
+  ticket, the cbf3e77ad9 treatment). Both register rows dropped. BL-698 and
+  BL-703 remain, with their rows owned here.

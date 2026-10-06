@@ -169,6 +169,27 @@ test('an unanswered episode records when its signal first clears, and holds at t
   assert.equal(heldCapForEpisode(episode), 1);
 });
 
+// BL-1874 QA bounce D1: a failed refresh's forced-null rawCap must never be
+// read as a genuine clear - "we could not check" is not "the signal is
+// gone". Before this fix, a failed-refresh tick stamped clearedAtIso and
+// wrongly raised BL-1982's human-release question on a diagnosis that
+// never actually cleared.
+test('a failed refresh leaves an open episode uncleared - its null cap is not a genuine clear', () => {
+  let episode = updateThrottleEpisode(null, 0, 6, '2026-10-05T00:00:00Z', fakeRec({ recommendedCap: 0, severity: 'severe' }));
+  episode = updateThrottleEpisode(episode, null, 6, '2026-10-05T00:05:00Z', fakeRec({ refreshFailureReason: 'EACCES: permission denied' }), true);
+  assert.equal(episode.clearedAtIso, null, 'a failed refresh must not stamp clearedAtIso');
+  assert.equal(heldCapForEpisode(episode), 0, 'the hold must still bind at the lowest cap reached');
+});
+
+test('a failed refresh never closes a released episode either - only a genuine withdrawal does', () => {
+  let episode = updateThrottleEpisode(null, 0, 6, '2026-10-05T00:00:00Z', fakeRec({ recommendedCap: 0, severity: 'severe' }));
+  episode = { ...episode, answer: { kind: 'release', by: 'human', at: '2026-10-05T00:04:00Z' } };
+  const afterFailedRefresh = updateThrottleEpisode(episode, null, 6, '2026-10-05T00:05:00Z', fakeRec({ refreshFailureReason: 'EACCES' }), true);
+  assert.notEqual(afterFailedRefresh, null, 'a released episode must survive a failed refresh - it did not actually withdraw');
+  const afterGenuineClear = updateThrottleEpisode(episode, null, 6, '2026-10-05T00:06:00Z', fakeRec());
+  assert.equal(afterGenuineClear, null, 'a genuine clear (no refresh failure) still closes a released episode as before');
+});
+
 test('clearedAtIso is set only once - a later idempotent clear does not overwrite the first clearing instant', () => {
   let episode = updateThrottleEpisode(null, 1, 6, '2026-10-05T00:00:00Z', fakeRec({ recommendedCap: 1, severity: 'degraded' }));
   episode = updateThrottleEpisode(episode, null, 6, '2026-10-05T00:05:00Z', fakeRec());
@@ -221,6 +242,31 @@ test('emitThrottleRecommendation logs "held at N for a human release" when an un
 
   const last = readChangeLogLines(targetPath).at(-1);
   assert.match(last.reason, /held at 1 for a human release/);
+});
+
+// BL-1874 QA bounce D1 repro: the exact shape of QA's own probe - a severe
+// diagnosis opens a hold, then a tick whose refresh FAILS (not whose
+// signal genuinely clears) must leave the episode open and the change-log
+// reason must name the failure, never "rework diagnosis cleared".
+test('emitThrottleRecommendation: a failed refresh never reads as a clear - the episode stays open and the log names the failure', () => {
+  const targetPath = mkTmp();
+  writeConfiguredCap(targetPath, 6);
+  writeSignal(targetPath, { reworkRate: 1, baselineRate: 0.1 }); // severe -> cap 0
+  const tick1 = emitThrottleRecommendation(targetPath, Date.parse('2026-10-06T00:00:00Z'));
+  assert.equal(tick1.recommendedCap, 0);
+  assert.ok(tick1.episode && tick1.episode.clearedAtIso === null);
+
+  const tick2 = emitThrottleRecommendation(targetPath, Date.parse('2026-10-06T00:01:00Z'), 'EACCES: permission denied, mkdir .swarmforge/telemetry');
+
+  assert.equal(tick2.recommendedCap, null, "a failed refresh's rework half is empty");
+  assert.equal(tick2.heldCap, 0, 'the hold must still bind at the severe cap reached');
+  assert.equal(tick2.episode.clearedAtIso, null, 'a failed refresh must not be read as the signal clearing');
+  assert.equal(tick2.episode.answer, null);
+
+  const last = readChangeLogLines(targetPath).at(-1);
+  assert.doesNotMatch(last.reason, /cleared/, `must not read as a clear, got: ${last.reason}`);
+  assert.match(last.reason, /refresh failed/);
+  assert.ok(last.reason.includes('EACCES'), `expected the reason to name the failure, got: ${last.reason}`);
 });
 
 test('emitThrottleRecommendation persists heldCap/episode to the recommendation file (plain JSON, no extension dependency)', () => {

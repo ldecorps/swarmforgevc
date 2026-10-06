@@ -73,6 +73,13 @@ export interface ThrottleRecommendation {
   // (BL-1429's own "the recommendation is withdrawn" contract, unchanged).
   heldCap: number | null;
   episode: ThrottleEpisode | null;
+  // BL-1874: set only when THIS run's own refreshReworkSignal threw (a
+  // write failure under .swarmforge/telemetry, a full disk, a git
+  // failure, ...) - names the failure so the operator-facing recommendation
+  // itself says why the rework half below is empty, rather than leaving a
+  // reader to guess whether "no rework signal" means "none observed" or
+  // "couldn't check". Null on an ordinary successful refresh.
+  refreshFailureReason: string | null;
 }
 
 export interface ThrottleEpisodeAnswer {
@@ -129,8 +136,15 @@ function minRecommendedCap(a: number | null, b: number | null): number | null {
 // tests both need the identical composition). heldCap/episode are left
 // null here: this function knows nothing of prior ticks' episode state -
 // emitThrottleRecommendation below folds those in from disk.
-export function computeThrottleRecommendation(targetRepoPath: string, nowMs: number = Date.now()): ThrottleRecommendation {
-  const signal = readReworkSignal(targetRepoPath);
+export function computeThrottleRecommendation(
+  targetRepoPath: string,
+  nowMs: number = Date.now(),
+  // BL-1874: set when this tick's own refresh threw - the persisted
+  // signal on disk is then whatever an EARLIER run left behind, never
+  // this run's, so it must not be read at all (never trusted as current).
+  reworkRefreshFailure: string | null = null
+): ThrottleRecommendation {
+  const signal = reworkRefreshFailure ? null : readReworkSignal(targetRepoPath);
   const verdict = signal ? diagnoseReworkSignal(signal) : null;
   const severity = classifyThrottleSeverity(verdict);
   const reworkCap = recommendedCapForSeverity(severity);
@@ -144,6 +158,7 @@ export function computeThrottleRecommendation(targetRepoPath: string, nowMs: num
     updated_at: new Date(nowMs).toISOString(),
     heldCap: null,
     episode: null,
+    refreshFailureReason: reworkRefreshFailure,
   };
 }
 
@@ -183,12 +198,20 @@ export function updateThrottleEpisode(
   rawCap: number | null,
   configuredCap: number,
   nowIso: string,
-  rec: ThrottleRecommendation
+  rec: ThrottleRecommendation,
+  // BL-1874 (QA bounce D1): true when THIS tick's null rawCap comes from a
+  // failed refresh (computeThrottleRecommendation forces it null rather
+  // than trust a stale on-disk signal), never a genuine clear. A failed
+  // refresh must leave an open episode exactly as it was - not stamp
+  // clearedAtIso and not close a release - since "we could not check"
+  // is not "the signal is gone"; treating it as a clear raised BL-1982's
+  // human-release question on a diagnosis that never actually cleared.
+  reworkRefreshFailure: boolean = false
 ): ThrottleEpisode | null {
   // A RELEASED episode closes once the raw signal it was answering has
   // actually withdrawn - requirement 5: "the episode closes once that
   // recommendation is withdrawn".
-  if (prior && prior.answer?.kind === 'release' && rawCap === null) {
+  if (prior && prior.answer?.kind === 'release' && rawCap === null && !reworkRefreshFailure) {
     return null;
   }
 
@@ -211,7 +234,7 @@ export function updateThrottleEpisode(
     // Invariant 2: the lowest cap this episode ever reached, across every
     // severity change - a severe 0 that eases to a degraded 1 stays at 0.
     episode = { ...episode, lowestCapReached: Math.min(episode.lowestCapReached, rawCap) };
-  } else if (!episode.clearedAtIso) {
+  } else if (!episode.clearedAtIso && !reworkRefreshFailure) {
     episode = { ...episode, clearedAtIso: nowIso };
   }
   return episode;
@@ -274,6 +297,19 @@ export interface ThrottleChangeLogEntry {
 // verbatim, just wrapped in the new "held" wording when a hold applies;
 // an episode that has already closed (answered-and-withdrawn) or never
 // opened falls through to the original restoring wording unchanged.
+// BL-1874 (QA bounce D1), extracted by the hardener to keep
+// describeChangeReason's own complexity from rising further on top of its
+// pre-existing debt: a failed refresh's null cap is not a clear - name the
+// failure, never "rework diagnosis cleared" (which would read as the real
+// signal having gone away and wrongly raise BL-1982's human-release
+// question on a diagnosis that never actually cleared).
+function describeRefreshFailureReason(refreshFailureReason: string, episode: ThrottleEpisode | null): string {
+  if (episode && episode.answer === null) {
+    return `held at ${episode.lowestCapReached} - refresh failed, not a clear (${refreshFailureReason})`;
+  }
+  return `refresh failed, rework signal unknown this tick (${refreshFailureReason})`;
+}
+
 function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecommendation | null, episode: ThrottleEpisode | null): string {
   if (rec.recommendedCap !== null) {
     const reworkCap = recommendedCapForSeverity(rec.severity);
@@ -285,6 +321,9 @@ function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecomm
       return `severe rework diagnosis (rate ${rec.reworkRate} vs baseline ${rec.baselineRate}) - freezing intake`;
     }
     return `degraded rework diagnosis (rate ${rec.reworkRate} vs baseline ${rec.baselineRate}) - stabilizing to one`;
+  }
+  if (rec.refreshFailureReason) {
+    return describeRefreshFailureReason(rec.refreshFailureReason, episode);
   }
   const clearedPhrase = (() => {
     if (prior) {
@@ -309,12 +348,23 @@ function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecomm
 // ever call (no persisted file yet) compares against null, matching "no
 // recommendation" - so a swarm that has never thrown a diagnosis logs
 // nothing on its very first tick either.
-export function emitThrottleRecommendation(targetRepoPath: string, nowMs: number = Date.now()): ThrottleRecommendation {
-  const recommendation = computeThrottleRecommendation(targetRepoPath, nowMs);
+export function emitThrottleRecommendation(
+  targetRepoPath: string,
+  nowMs: number = Date.now(),
+  reworkRefreshFailure: string | null = null
+): ThrottleRecommendation {
+  const recommendation = computeThrottleRecommendation(targetRepoPath, nowMs, reworkRefreshFailure);
   const prior = readPriorRecommendation(targetRepoPath);
   const priorCap = prior?.recommendedCap ?? null;
   const configuredCap = readConfiguredCap(targetRepoPath);
-  const episode = updateThrottleEpisode(prior?.episode ?? null, recommendation.recommendedCap, configuredCap, recommendation.updated_at, recommendation);
+  const episode = updateThrottleEpisode(
+    prior?.episode ?? null,
+    recommendation.recommendedCap,
+    configuredCap,
+    recommendation.updated_at,
+    recommendation,
+    recommendation.refreshFailureReason !== null
+  );
   const fullRecommendation: ThrottleRecommendation = {
     ...recommendation,
     heldCap: heldCapForEpisode(episode),
@@ -340,8 +390,23 @@ export const main = makeArgsGuardedMain(
     // Refresh before diagnose: computeThrottleRecommendation still reads the
     // persisted signal (so in-process unit tests can inject fixtures), but
     // the live CLI never trusts a snapshot that nothing else has rewritten.
-    refreshReworkSignal(args.targetRepoPath);
-    printJsonToStdout(emitThrottleRecommendation(args.targetRepoPath));
+    //
+    // BL-1874: a throwing refresh (a write failure under
+    // .swarmforge/telemetry, a full disk, a git failure, ...) must still
+    // end in a published recommendation - the rework half empty, never an
+    // older run's cap - rather than exiting 1 before anything is written,
+    // which left effective_backlog_depth_cli.bb reading whatever an
+    // earlier run's file still said (BL-1869 probe c). The failure is
+    // reported to stderr here, since a non-zero exit (the bb wrapper's own
+    // reporting path) no longer happens for this cause.
+    let reworkRefreshFailure: string | null = null;
+    try {
+      refreshReworkSignal(args.targetRepoPath);
+    } catch (err) {
+      reworkRefreshFailure = err instanceof Error ? err.message : String(err);
+      console.error(`emit-throttle-recommendation: rework signal refresh failed, publishing without it: ${reworkRefreshFailure}`);
+    }
+    printJsonToStdout(emitThrottleRecommendation(args.targetRepoPath, Date.now(), reworkRefreshFailure));
   }
 );
 

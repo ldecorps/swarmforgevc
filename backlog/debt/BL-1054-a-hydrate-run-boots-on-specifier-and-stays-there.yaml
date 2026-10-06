@@ -9,7 +9,8 @@ direction: human-requested
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1054-a-hydrate-run-boots-on-specifier-and-stays-there.feature
+# 2026-10-06 (specifier, BL-2023 adjudication): parked unbuilt in backlog/debt/, so its feature is a non-executable .feature.draft (BL-233), as cbf3e77ad9 did for its debt siblings; the BL-1937 census missed it because one generic step binds elsewhere. Unparking: rename it back to .feature and land its step handler in the SAME commit, then repoint this line.
+acceptance: specs/features/BL-1054-a-hydrate-run-boots-on-specifier-and-stays-there.feature.draft
 human_approval: approved
 approval_context: >
   You offered three shapes and asked the specifier to pick one. Picked: A -

@@ -96,6 +96,10 @@
   reason: "mutation_cooldown_gate.bb skip-cooldown - all three changed on main by hotfix 51591aab4a at 2026-10-01T19:13+01:00, file_age_days 0.09 of 1 at the hardener pass; discharge owned by BL-1874's hardener pass"
   load: "n/a - cooldown, not load"
   detected_at: 2026-10-01
+  attempted_at: 2026-10-06
+  attempted_blocker: "mutation_cooldown_gate.bb: skip-cooldown on emit-throttle-recommendation.ts (file_age_days 0.04) and rework-observatory.ts (file_age_days 0.07) - both freshly touched by BL-1874's own coder commit this pass; suboptimality-verdict-line.ts was clear and Stryker-tested (12/12 killed); the two cooldown-blocked files' own BL-1874/hotfix-introduced logic was hand-mutation verified instead (1 real gap found and fixed - loadRoleWorktreesOrEmpty field-swap)"
+  discharged_at: 2026-10-06
+  discharged_evidence: backlog/evidence/BL-1869-BL-1874-mutation-20261006.md
 - parcel: BL-1968
   gate: mutation
   file_set: extension/src/metrics/closingCeremonyRun.ts,extension/src/metrics/closingCeremonyStore.ts,extension/src/quality/closingCeremony.ts

@@ -19,6 +19,7 @@ Feature: BL-1959 A deterministic pack's launch keeps the coordinator's row and s
     And the coordinator's inbox directories exist
     And no swarmforge-coordinator session was created
     And no coordinator launch script was written
+    And the coder session is among the sessions created
 
   # BL-1959 a-non-deterministic-pack-still-provisions-the-seat-02
   Scenario: a pack without the deterministic declaration still provisions the coordinator seat

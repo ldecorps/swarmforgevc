@@ -1,0 +1,108 @@
+id: BL-2024
+title: "QA's gather skips the unit and property lanes for a parcel whose own diff touches only backlog/ - a review-only stamp-off pays 7-9 minutes of lanes that measure main, not the parcel; 23 of the 2026-10-06 shift's 51 QA passes were stamp-offs, and QA was its top dwell hotspot"
+milestone: M8
+type: feature
+status: todo
+epic: lean-aware-coordinator
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: one new check-row status and one path predicate in qaGather.ts,
+# plus the adapter's git diff through the existing runFn seam; TypeScript,
+# so the hardener's Stryker pass runs.
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one predicate and one status beside unchanged checks; nothing to refactor"
+  architect: "the gather's checklist shape and runFn seam are unchanged; the scenarios pin the one new decision"
+acceptance: specs/features/BL-2024-qa-gather-skips-the-unit-and-property-lanes-for-a-backlog-only-parcel.feature
+
+invariants:
+  - "A parcel whose own diff touches any path outside backlog/, or whose diff cannot be computed, runs both lanes - the skip fails closed."
+  - "A skipped lane is reported as skipped with its reason, never as ran or passed."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2024QaGatherBacklogOnlySkipSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the new status's only reader
+# is QA, through the report; qa-gather.js already calls gatherQaChecklist,
+# so a qaGather.ts literal would be satisfied by this parcel's own diff.
+
+human_approval: approved
+approval_context: >
+  This changes what QA's last gate measures, so it needs your yes. FIRM:
+  only a parcel whose OWN diff (merge-base with main to the parcel
+  commit) touches nothing outside backlog/ skips, and only the unit and
+  property lanes; the straggler, sibling, register, wiring and acceptance
+  checks still run, and the skip fails closed on any doubt. QA still reads
+  the coder's committed review and still decides. What it buys: about 3
+  hours of QA processing per shift at the 2026-10-06 rate (23 stamp-offs x
+  ~8 minutes), plus the queue time behind it. What it gives up: a
+  stamp-off parcel no longer re-measures main's unit and property state,
+  which every code-carrying parcel still does.
+
+description: |
+  ## Why
+
+  The 2026-10-06 closing-ceremony packet's top dwell hotspot is QA: 51
+  tickets passed QA, with about 12 hours of processing and 10 hours of
+  queue wait. 23 of the 51 were review-only stamp-offs (the human's
+  2026-10-01 rule, "hotfix the defect and mint a stampoff"), each costing
+  the same ~14 minutes of processing as built work. Twelve QA gather
+  reports from 2026-10-05 (`.worktrees/QA/tmp/*-gather.json`) put the unit
+  lane at 0.6-0.8 min and the property lane at 6.6-8.2 min of every pass.
+  A stamp-off parcel's own diff is the coder's review evidence under
+  backlog/evidence/: those two lanes then measure main, not the parcel.
+
+  ## What is wanted
+
+  - `extension/src/quality/qaGather.ts`: the `unit` and `properties`
+    checks gain a third row status, `skipped`, with a reason naming the
+    backlog-only diff. A skipped row starts no command.
+  - The decision: compute the parcel's own changed paths as
+    `git diff --name-only $(git merge-base main <commit>) <commit>`
+    through the existing `runFn` seam. Skip only when that list is
+    non-empty and every path starts with `backlog/`. A failed merge-base,
+    a failed diff, or any other path runs both lanes as today.
+  - Every other check (straggler, sibling, register, wiring, acceptance)
+    runs exactly as today.
+  - The step handler `specs/pipeline/steps/bl2024QaGatherBacklogOnlySkipSteps.js`
+    builds each fixture with `git init` under mkdtemp (BL-1390) and calls
+    the gather with a `runFn` that passes `git` through to the real git and
+    records every other command, answering it with exit 0.
+  - Documenter: the how-to or reference that lists what the gather runs
+    (`grep -rln qa-gather docs`) states the skip, its reason text and its
+    fail-closed rule.
+
+  ## Not in scope
+
+  - Changing which parcels need QA, or a stamp-off's required_stages.
+  - Skipping the acceptance run, or any check other than the two lanes.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read the gather report for THIS parcel: it touches extension/src, so
+     both lanes must read `ran` (scenario 02 on itself).
+  2. `node specs/pipeline/cli.js specs/features/BL-2024-qa-gather-skips-the-unit-and-property-lanes-for-a-backlog-only-parcel.feature`:
+     6 ok (01, 02 x4, 03), 0 fail.
+  3. After the land, on the next stamp-off QA gathers, read its report:
+     both lane rows `skipped` naming the backlog-only diff.
+
+source: |
+  The specifier's closing-ceremony lean pass for shift 2026-10-06 (packet
+  .swarmforge/lean/ceremony/2026-10-06.json, top dwell hotspot QA
+  43053407 ms; recorded outcome process_ticket BL-2024). The human,
+  2026-10-02, verbatim: "We have to make the swarm.churn much fastee". The human,
+  2026-10-01, verbatim: "Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff."
+
+notes: |
+  Minted 2026-10-06 by the specifier in the closing-ceremony lean pass.
+  Measured: 23 stamp-offs of 51 QA tickets (titles matching stamp-off),
+  each ~14 min processing and ~14 min queue; gather lanes 7.3-8.8 min per
+  pass from 12 QA gather JSONs dated 2026-10-05.
+  QA.prompt carries an "Until BL-2024 lands" line in its gather section
+  (landed with this mint); QA's retire trigger fires at land.
+  INVEST: Independent. Negotiable (the predicate and reason text are
+  direction). Valuable (about 3 QA hours a shift). Estimable (one status,
+  one predicate). Small (three scenarios). Testable (mkdtemp git fixtures,
+  injected runFn).

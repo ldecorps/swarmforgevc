@@ -1,0 +1,104 @@
+id: BL-2021
+title: "The shell front-end lists exactly the suite manifest's standing rows in manifest order and runs them on BL-2019's recorded lane runner, one duration row per test; the docs name the runner, both front-ends and the nightly-slot rule - slice 3 of BL-1625"
+milestone: M8
+type: feature
+status: todo
+epic: unit-suite-speed
+priority: 30
+direction: swarm-reported
+depends_on: [BL-2019, BL-2020]
+mutation_cost: low
+# low: one thin bash front-end, one step handler over a mkdtemp fixture
+# manifest, and two doc sections.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new thin script; nothing to refactor"
+  architect: "a list builder over BL-2019's runner, whose contract and invariants the architect reviewed there"
+  hardender: "writes nothing itself - the runner writes the rows and is hardened in BL-2019; bash has no mutation lane (BL-472)"
+acceptance: specs/features/BL-2021-the-shell-front-end-runs-exactly-the-standing-rows-in-manifest-order.feature
+
+invariants: []
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2021ShellSuiteFrontEndSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1625 (approved), split 2026-10-06 with no new scope.
+  FIRM (BL-1625): measurement before cutting or wiring - no change to any
+  shell test, to suite-manifest.tsv's rows, to run_bb_suite.sh or to any
+  role's lane set; no full run of the real population inside the parcel.
+
+description: |
+  ## What is wanted
+
+  1. A new script, `swarmforge/scripts/test/run_shell_suite.sh`:
+
+         run_shell_suite.sh [--limit N] [--durations <path>] [manifest]
+
+     - `manifest` defaults to `swarmforge/scripts/test/suite-manifest.tsv`;
+       `--durations` defaults to `swarmforge/scripts/test/.shell-durations.jsonl`
+       (add it to `.gitignore` next to the other durations files).
+     - It reads the manifest's rows whose second column is `standing`, in
+       file order, skipping `#` lines, and writes one list line per row:
+       `<file>` TAB `bash <dir>/<file>` for a `.sh`, `bb <dir>/<file>` for
+       a `.bb`, where `<dir>` is the manifest's own directory. (This is
+       the same row filter run_bb_suite.sh uses; run_bb_suite.sh cannot
+       read a fixture manifest, which is why this front-end takes one.)
+     - Then it calls `run_recorded_lane.sh --lane shell` with the list,
+       forwarding `--limit`, and exits with the runner's status.
+     - run_bb_suite.sh is NOT changed: it stays the inventory-gated,
+       root-pollution-checked entry point (BL-973, BL-1516).
+
+  2. The step handler `specs/pipeline/steps/bl2021ShellSuiteFrontEndSteps.js`
+     for scenario 01: a mkdtemp fixture manifest with three rows (two
+     `standing`, one `excluded` with a date and a reason), each naming a
+     fake test in the same dir that appends its own name to a log and
+     exits 0. "Exactly the two standing, in manifest order" is read from
+     that log. Register with `registry.defineScoped(re, fn, FEATURE)`.
+
+  3. The documenter: `docs/how-to/` for the unit-lane duration recorder
+     (find it with `grep -rln test-durations docs/how-to`) gains the shell
+     and acceptance twins: the runner, both front-ends, both durations
+     files, `--limit`. `engineering-detailed.prompt` "Verification" and
+     "Acceptance Pipeline" name them and the rule that a full population
+     run is a nightly-slot run, never a parcel step, and never beside the
+     unit or property lane. Note run_bb_suite.sh's own warning: some
+     standing tests drive real tmux, so a full shell run happens from a
+     detached host shell with `env -u TMUX`, never an agent pane.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2021-the-shell-front-end-runs-exactly-the-standing-rows-in-manifest-order.feature`:
+     1 ok, 0 fail.
+  2. `env -u TMUX bash swarmforge/scripts/test/run_shell_suite.sh --limit 10`
+     -> ten new rows in .shell-durations.jsonl and a verdict, exit 0.
+     Measured at mint by running the manifest's first ten standing rows
+     one at a time: all ten are bb unit runners
+     (acceptance_contract_gate_lib_test_runner.bb ..
+     availability_ledger_lib_test_runner.bb), all rc 0, 15-230 ms each.
+  3. Read the how-to and engineering-detailed.prompt sections against
+     item 3 above.
+
+source: |
+  Split from BL-1625 on 2026-10-06 (coordinator note 016842). The human
+  sentences BL-1625 carried, verbatim (Article 5.3): human directive
+  2026-09-05 ("we should not sweep failing tests under the carpet"); human
+  intake 2026-09-17 ("tests run for hours", BL-1618/1619 - hence
+  measurement first, bounded samples in the parcel, and never beside
+  another lane).
+
+  The human, 2026-10-04, verbatim: "We should make the "splitting of ticket if coder cant manage" BAU."
+
+notes: |
+  Minted 2026-10-06 by the specifier.
+  split from BL-1625 on 2026-10-06 after coder (iq3) held it ~40m (see
+  BL-2019's notes).
+  Where to read: swarmforge/scripts/test/run_bb_suite.sh lines 50-58 only
+  (its standing-row filter); suite-manifest.tsv's header comment (lines
+  1-25) for the column shape. No new suite-manifest row is needed:
+  run_shell_suite.sh is not a test_*.sh file.
+  INVEST: depends on BL-2019 (the runner) and BL-2020 (so the docs cover
+  both front-ends). Small (one script, one handler, one scenario, two doc
+  sections). Testable (mkdtemp fixtures).
