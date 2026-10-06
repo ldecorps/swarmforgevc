@@ -115,6 +115,19 @@ export interface ThrottleEpisode {
   // this episode is open; null while the signal is still live.
   clearedAtIso: string | null;
   answer: ThrottleEpisodeAnswer | null;
+  // BL-1982: set once effective_backlog_depth_cli.bb (bb side) raises the
+  // release question for this episode - role_ask.bb's own pending
+  // marker's asked_at_ms at ask time, compared against the live marker
+  // before consuming an answer. Written and read only by the bb CLI; kept
+  // here so TS readers (release-intake-throttle.ts, tests) see it typed.
+  // undefined/absent means no question has been raised for this episode
+  // yet (invariant 1: at most one per episode).
+  releaseAskedAtMs?: number;
+  // BL-1982: a typed reply that was neither "Release the cap" nor "Keep
+  // the throttle" - kept on the episode for a person to act on with the
+  // release CLI by hand; the cap stays held and the episode still reads
+  // awaiting release. undefined/absent means no such reply is on file.
+  releaseReply?: string;
 }
 
 // Article 3.5's own "never raise" rule, applied across BL-432's rework

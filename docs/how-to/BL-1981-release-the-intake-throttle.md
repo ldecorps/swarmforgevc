@@ -62,9 +62,55 @@ node extension/out/tools/release-intake-throttle.js <project-root> --by <who> --
   fresh episode that opens after this one closes starts with no answer of
   its own, and must be asked about again.
 
-This is the same interface `coordinator.prompt` calls by hand today, and
-that BL-1982 (asking the human directly, with no coordinator seat) will
-call once it lands.
+This is the same interface `coordinator.prompt` calls by hand, and that
+`effective_backlog_depth_cli.bb`'s own ask-and-apply step (below) calls
+once a tapped or typed answer is delivered.
+
+## Asking the human with no coordinator seat (BL-1982)
+
+A pack declaring `config coordinator_mode deterministic` (BL-1846,
+BL-1931) has no coordinator seat to raise the question by hand, and a
+seat that misses the file's state asks nobody either. So every run of
+
+```bash
+bb swarmforge/scripts/effective_backlog_depth_cli.bb <project-root>
+```
+
+also runs an ask-and-apply step, after refreshing the recommendation and
+before printing the effective cap:
+
+- If the recommendation's episode is **awaiting release** (its signal has
+  cleared, no answer recorded) and no question has been raised for it yet,
+  the CLI raises ONE question with
+  `bb swarmforge/scripts/role_ask.bb <root> --role coordinator`, naming
+  the signal that opened the episode, how long it has read normal, and the
+  configured cap a release restores. Its two options are exactly
+  "Release the cap" and "Keep the throttle". The question's `asked_at_ms`
+  is recorded onto the episode (`episode.releaseAskedAtMs`) so a later run
+  never asks a second time for the same episode.
+- If a question was already raised for this episode, the CLI instead
+  checks whether the coordinator's *live* pending question is still that
+  same one (comparing `asked_at_ms` before calling
+  `deliver-role-answer.js`, never after — `deliver-role-answer.js` is the
+  only sanctioned reader of the answer file regardless, BL-1201). When it
+  matches and an answer has been delivered:
+  - **"Release the cap"** applies `release-intake-throttle.js --by human --release`.
+  - **"Keep the throttle"** applies `release-intake-throttle.js --by human --keep <N>` at the episode's lowest reached cap.
+  - Any other reply text is recorded on the episode (`episode.releaseReply`)
+    and the cap stays held — the episode still reads as awaiting release,
+    now carrying the reply, so a human or the coordinator seat can record
+    an answer with the release CLI by hand.
+- While the coordinator has any **other** question pending, `role_ask.bb`
+  itself refuses to raise a new one (exit 0, not asked) and nothing is
+  recorded — the run asks once that slot frees up.
+- On a pack whose coordinator pane is live, the front-desk bot may put a
+  tapped answer straight into the pane and clear the pending marker before
+  this CLI ever runs; the seat then applies it with the release CLI per
+  `coordinator.prompt`, and this step finds nothing to consume. That is
+  expected, not a failure.
+- A failed ask or apply (a CLI missing, `node` missing, etc.) is logged to
+  stderr the same way `refresh-recommendation!` logs its own failures, and
+  never changes the printed cap.
 
 ## Reading the state
 
@@ -85,5 +131,6 @@ is open, awaiting release, or already answered.
 
 Acceptance:
 `specs/features/BL-1981-a-cleared-throttle-signal-holds-the-cap-until-a-human-releases-it.feature`,
+`specs/features/BL-1982-the-throttle-release-question-reaches-the-human-without-a-coordinator-seat.feature`,
 `specs/features/BL-432-auto-tune-intake-throttle.feature`,
 `specs/features/BL-1429-standing-reds-throttle-intake.feature`.
