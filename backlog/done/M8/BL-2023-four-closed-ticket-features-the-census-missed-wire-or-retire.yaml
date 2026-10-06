@@ -4,7 +4,8 @@ milestone: M8
 type: defect
 severity: high
 # high: four standing reds on main (2026-09-05 rule: high at first sighting).
-status: blocked
+status: done
+closed_as: split-into-BL-2025
 epic: swarm-reliability
 priority: 25
 depends_on: []
@@ -78,3 +79,12 @@ notes: |
   the corrected scenario); BL-1054 PARKED as .feature.draft (unbuilt debt
   ticket, the cbf3e77ad9 treatment). Both register rows dropped. BL-698 and
   BL-703 remain, with their rows owned here.
+  Adjudication 2026-10-06, part 2 (specifier, same evidence file): BL-703
+  RETIRED whole (its nine scenarios duplicate BL-698's); BL-698 keeps nine
+  scenarios, wired by BL-2025, which takes over its register row; 17 of its
+  scenarios and three outline rows RETIRED (9 duplicates of green BL-702 and
+  BL-704 scenarios, 8 contradicted, never built, unwireable or meta).
+  BL-2026 minted for the defect the adjudication found (the bridge's stop
+  answers do not run the stop they name). No register row names BL-2023;
+  closed split-into-BL-2025, with the adjudication done in-pass by the
+  specifier (4b4888d4ce and this commit).

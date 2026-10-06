@@ -1,12 +1,12 @@
 id: BL-2021
-title: "The shell front-end lists exactly the suite manifest's standing rows in manifest order and runs them on BL-2019's recorded lane runner, one duration row per test; the docs name the runner, both front-ends and the nightly-slot rule - slice 3 of BL-1625"
+title: "The shell front-end lists exactly the suite manifest's standing rows in manifest order and runs them on BL-2027's recorded lane runner, one duration row per test; the docs name the runner, both front-ends and the nightly-slot rule - slice 3 of BL-1625"
 milestone: M8
 type: feature
 status: todo
 epic: unit-suite-speed
 priority: 30
 direction: swarm-reported
-depends_on: [BL-2019, BL-2020]
+depends_on: [BL-2027, BL-2020]
 mutation_cost: low
 # low: one thin bash front-end, one step handler over a mkdtemp fixture
 # manifest, and two doc sections.
@@ -14,8 +14,8 @@ slice_size_envelope: low
 required_stages: [coder, documenter, qa]
 stage_skip_reasons:
   cleaner: "one new thin script; nothing to refactor"
-  architect: "a list builder over BL-2019's runner, whose contract and invariants the architect reviewed there"
-  hardender: "writes nothing itself - the runner writes the rows and is hardened in BL-2019; bash has no mutation lane (BL-472)"
+  architect: "a list builder over BL-2027's runner, whose contract and invariants the architect reviewed there"
+  hardender: "writes nothing itself - the runner writes the rows and is hardened in BL-2027; bash has no mutation lane (BL-472)"
 acceptance: specs/features/BL-2021-the-shell-front-end-runs-exactly-the-standing-rows-in-manifest-order.feature
 
 invariants: []
@@ -99,6 +99,10 @@ notes: |
   (its standing-row filter); suite-manifest.tsv's header comment (lines
   1-25) for the column shape. No new suite-manifest row is needed:
   run_shell_suite.sh is not a test_*.sh file.
-  INVEST: depends on BL-2019 (the runner) and BL-2020 (so the docs cover
+  INVEST: depends on BL-2027 (the runner) and BL-2020 (so the docs cover
   both front-ends). Small (one script, one handler, one scenario, two doc
   sections). Testable (mkdtemp fixtures).
+  Repointed 2026-10-06 by the specifier: BL-2019 was split into BL-2027
+  (the runner) and BL-2028 (its scenario 03), so every reference to the
+  runner now reads BL-2027 and depends_on names it; the pointer to
+  BL-2019's notes (the BL-1625 session) stays. Nothing else changed.

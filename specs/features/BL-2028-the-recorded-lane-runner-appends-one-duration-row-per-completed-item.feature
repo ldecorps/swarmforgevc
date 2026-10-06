@@ -1,4 +1,4 @@
-Feature: BL-2019 The recorded lane runner appends one duration row per completed item
+Feature: BL-2028 The recorded lane runner appends one duration row per completed item
 
   Neither registered test population has a duration record: the shell
   suite manifest's standing tests (run on demand by run_bb_suite.sh,
@@ -12,7 +12,8 @@ Feature: BL-2019 The recorded lane runner appends one duration row per completed
   and BL-2021's front-ends.
 
   Moved verbatim from BL-1625 (split 2026-10-06 into BL-2019, BL-2020 and
-  BL-2021 after the iq3 coder loop-halted on it).
+  BL-2021 after the iq3 coder loop-halted on it), then from BL-2019 (split
+  2026-10-06 into BL-2027 and BL-2028 after it loop-halted again).
 
   # BL-2019 recorded-lane-runner-03
   Scenario Outline: one row per completed item, none for an incomplete one
@@ -25,22 +26,3 @@ Feature: BL-2019 The recorded lane runner appends one duration row per completed
       | both pass              | runs that list to the end  | one row per item, both passing    |
       | include one that fails | runs that list to the end  | one row per item, one failing     |
       | both pass              | is killed after the first  | exactly one row                   |
-
-  # BL-2019 recorded-lane-runner-04
-  Scenario Outline: the verdict names every failing item and the exit status is the suite's
-    Given a fixture list whose two items <shape>
-    When the recorded lane runner runs that list to the end
-    Then it exits <exit>
-    And its verdict <names>
-
-    Examples:
-      | shape                  | exit | names                       |
-      | both pass              | 0    | names no failing item       |
-      | include one that fails | 1    | names exactly that item     |
-
-  # BL-2019 recorded-lane-runner-05
-  Scenario: a limit runs a bounded prefix of the list
-    Given a fixture list whose two items both pass
-    When the recorded lane runner runs that list with a limit of 1
-    Then it runs exactly the first item
-    And the durations file holds exactly one row

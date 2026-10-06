@@ -133,6 +133,16 @@ $name"
   done < "$EDGES_FILE"
 done
 
+# Derive-only stop. realDispatcherScan.js (BL-1905) runs this guard under
+# bash -x only to read the LAST SELF_ROOTING= of the trace, which step 1b has
+# just closed. Step 2 assigns none and is most of the -x run (17 s against
+# 44 s on a loaded host, 2026-10-06). Exits 3, never 0, so a lane that sets
+# this by mistake fails instead of passing without step 2.
+if [ "${SWARMFORGE_GUARD_DERIVE_ONLY:-}" = "1" ]; then
+  echo "DERIVE_ONLY: stopped after step 1b; step 2 not run" >&2
+  exit 3
+fi
+
 # ── step 2: derive the offenders from what each test executes ────────────
 # An offence is a two-part shape in one file: a variable bound to a
 # self-rooting script through a REAL-scripts-dir path, and an execution of
