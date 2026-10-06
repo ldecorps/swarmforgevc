@@ -1448,3 +1448,10 @@
   stamp_ticket: BL-2047
   human_decision: null
   decided_at: null
+- commit: 25cb223e0d
+  subject: "Hotfix: BL-871 invariant 1 compared a loaded run's concurrency to a ceiling read seconds earlier"
+  detected_at: 2026-10-06
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
