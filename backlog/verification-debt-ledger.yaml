@@ -207,3 +207,8 @@
   role: QA
   description: "qa-gather register_join read the unit red 'unidentified'; by hand: .vitest-report.json success/0 failed, so exit 1 was BL-1599's work ratchet (613108ms > 605000ms) from .test-durations.jsonl; lane excerpt also lost the 2 property FAIL messages"
   detected_at: 2026-10-05
+- category: straggler-owner-attribution
+  ticket: BL-1964
+  role: QA
+  description: "qa-gather's after-run straggler check exited 0 on coder2's concurrent npm run test:properties (9 vitest workers); attributed by hand via /proc cwd to .worktrees/coder2/extension, not a QA orphan"
+  detected_at: 2026-10-06
