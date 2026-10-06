@@ -340,6 +340,11 @@
   reason: "Sanctioned hotfix-every-red-then-stamp-off path (operator directive 2026-10-01); recorded in hotfix-ledger.yaml with stamp_ticket BL-1930"
   waived_at: 2026-10-03
 
+- key: pipeline-code-on-main-aeb9771b84391ae5230f08be7428fddc315909b6
+  waived_by: coordinator
+  reason: "Specifier hotfix (Hotfix-Certification: pending) fixing tmuxReaperGuard red introduced by c15a0f21aa on bl571SequentialRotationDormantParitySteps.js; stamp-off BL-2018 already mints coder+QA review of both hotfixes (backlog/paused). Sanctioned hotfix-then-stampoff pattern (2026-10-01 directive); SUP-17."
+  waived_at: 2026-10-06
+
 - key: pipeline-code-on-main-b225698bf9807622b43beb0d00ce434f0fe79bb9
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
