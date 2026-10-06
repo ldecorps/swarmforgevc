@@ -45,6 +45,11 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-171ddbdee044e7c7927bbbcd7bfac12599619eb3
+  waived_by: coordinator
+  reason: "Sanctioned specifier hotfix (10-01 standing directive). By specifier, Hotfix-Certification: pending. Fixes BL-563's feature from 6/8 to 8/8: scenario 02 fixture-root masking, scenario 07 cold-apply MODEL_STEWARD_STATE_DIR seam. Not a QA land - is_qa_ancestor exits 1 by design, SUP-17 accepted noise."
+  waived_at: 2026-10-06
+
 - key: pipeline-code-on-main-1dbe9de8e1feb459e660e17cdc0008bc4d38892b
   waived_by: coordinator
   reason: "Sanctioned hotfix-every-red-then-stamp-off path (operator directive 2026-10-01); recorded in hotfix-ledger.yaml with stamp_ticket BL-1930"

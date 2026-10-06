@@ -1734,4 +1734,94 @@ echo "$OUT" | grep "^rc:coder: FAILED (respawned pane but the --remote-control f
 cleanup_daemon
 pass "RC-13 (BL-898): a session-dead respawn that fails to restore the flag is reported FAILED and never sends a notify claiming a repair that did not happen"
 
+# ── BL-1962 D1 (QA bounce): on a deterministic pack, OUTSIDE router mode
+#    too, ensure never respawns the coordinator - the -main cond branch
+#    (not BL-1961's router-only topology-action) had zero coverage. No
+#    rotation router conf and no swarm-identity at all: a classic pack. ──
+make_fixture
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+mkdir -p "$ROOT/swarmforge"
+cat > "$ROOT/swarmforge/swarmforge.conf" <<'EOF'
+config coordinator_mode deterministic
+EOF
+mkdir -p "$ROOT/.swarmforge/launch"
+cat > "$ROOT/.swarmforge/launch/coordinator.sh" <<'EOF'
+#!/usr/bin/env bash
+echo stale
+EOF
+chmod +x "$ROOT/.swarmforge/launch/coordinator.sh"
+BL1962_NEW_SESSIONS="$ROOT/bl1962-new-sessions"
+: > "$BL1962_NEW_SESSIONS"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\${5#=}"
+  [[ "\$target" == "swarmforge-coordinator" ]] && exit 1
+  exit 0
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  target="\${5#=}"
+  [[ "\$target" == "swarmforge-coordinator" ]] && exit 1
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "new-session" ]]; then
+  echo "NEW \$*" >> "$BL1962_NEW_SESSIONS"
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+[[ "$RC" -eq 0 ]] || fail "BL-1962 D1: swarm ensure exited $RC on a deterministic pack, expected 0; got: $OUT"
+echo "$OUT" | grep -i 'coordinator' | grep -E 'FAILED|FIXED' >/dev/null \
+  && fail "BL-1962 D1: no coordinator line may read FAILED or FIXED on a deterministic pack; got: $OUT"
+echo "$OUT" | grep '^agent:coordinator: DORMANT (deterministic coordinator; no standing session expected)$' >/dev/null \
+  || fail "BL-1962 D1: expected the coordinator reported DORMANT with its reason, got: $OUT"
+[[ -s "$BL1962_NEW_SESSIONS" ]] && fail "BL-1962 D1: ensure must create no swarmforge-coordinator session on a deterministic pack; got: $(cat "$BL1962_NEW_SESSIONS")"
+cleanup_daemon
+pass "BL-1962 D1: a deterministic pack outside router mode creates no coordinator session, reports DORMANT, exits zero"
+
+# ── BL-1962 D1 control: the SAME fixture, without the deterministic
+#    declaration, still gets its missing coordinator back ────────────────
+make_fixture
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+mkdir -p "$ROOT/.swarmforge/launch"
+cat > "$ROOT/.swarmforge/launch/coordinator.sh" <<'EOF'
+#!/usr/bin/env bash
+echo stale
+EOF
+chmod +x "$ROOT/.swarmforge/launch/coordinator.sh"
+BL1962_CONTROL_NEW_SESSIONS="$ROOT/bl1962-control-new-sessions"
+: > "$BL1962_CONTROL_NEW_SESSIONS"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\${5#=}"
+  [[ "\$target" == "swarmforge-coordinator" ]] && exit 1
+  exit 0
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  target="\${5#=}"
+  [[ "\$target" == "swarmforge-coordinator" ]] && exit 1
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "new-session" ]]; then
+  echo "NEW \$*" >> "$BL1962_CONTROL_NEW_SESSIONS"
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+[[ -s "$BL1962_CONTROL_NEW_SESSIONS" ]] \
+  || fail "BL-1962 D1 control: a pack with no deterministic declaration must still get its missing coordinator session created; got: $OUT"
+cleanup_daemon
+pass "BL-1962 D1 control: a pack without the deterministic declaration still gets its missing coordinator back"
+
 echo "ALL PASS"

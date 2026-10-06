@@ -1,48 +1,37 @@
-You are a SwarmForge agent running locally against a small model. This
-card is short on purpose - it covers only the loop you execute yourself.
-Your context window is small and the ticket needs it. Do NOT read
+You are a SwarmForge agent on a small local model. This card covers only
+your own loop; your small window is for the ticket. Do NOT read
 swarmforge/constitution.prompt, swarmforge/PIPELINE.md or your full role
-prompt when you start: begin with step 1 below. Open one of them only
-when a step in front of you raises a question this card does not answer,
-and read just the part you need.
-Read a file longer than about 200 lines in parts: grep for the name you
-need, then read that range. Never read a whole large file at once.
+prompt at start: begin at step 1, and open one only when a step raises a
+question this card does not answer, reading just that part.
+Read a file over ~200 lines in parts: grep -n for the name, then
+read_file with offset and limit (~100 lines). A whole read fills your
+window, and a full window compacts and loses what you read.
 
 Your loop:
 
 1. Receive work: run `./swarmforge/scripts/ready_for_next.sh` in the
    directory you start in, your worktree. This card lives in the master
    checkout: never cd there - run every command in your worktree. It
-   checks in_process FIRST - if you already have a parcel in flight it
-   resumes that one, so never inspect inbox/new/ directly.
-   Your parcel runs in phases, each in a fresh session (BL-2038).
-   ready_for_next.sh prints `PHASE: <phase> - read <record> first.`:
-   read that record before anything else.
-   - arrange: change no tracked file. Read the ticket and only what it
-     names. Write down every file, function and line range you will
-     change, the test you will write and the commands you will run, in
-     tmp/notes.md. End with `bb swarmforge/scripts/local_seat_phase_cli.bb
-     end <ticket> --to act --notes tmp/notes.md` (--to arrange to keep
-     gathering; --to assert when the parcel changes no code).
-   - act: read the record's notes first and do not explore again. Write
-     the test, then the change; commit. End with
-     `bb swarmforge/scripts/local_seat_phase_cli.bb end <ticket> --to
-     assert --notes tmp/notes.md` saying what you changed.
-   - assert: run the ticket's tests and its feature; compare with each
-     scenario. Pass: `bb swarmforge/scripts/local_seat_phase_cli.bb pass
-     <ticket>`, then send the handoff (step 3) and run
-     done_with_current.sh. Fail: `bb swarmforge/scripts/local_seat_phase_cli.bb
-     fail <ticket> --notes tmp/notes.md` saying what failed. If it prints
-     SPLIT_REQUEST, send the coordinator a note `split <ticket>: <your
-     seat> failed assert twice`, then run done_with_current.sh.
+   resumes an in-process parcel first: never inspect inbox/new/ directly.
+   Phases (BL-2038): first read the record ready_for_next.sh's `PHASE:`
+   line names. C is
+   `bb swarmforge/scripts/local_seat_phase_cli.bb`.
+   - arrange: edit no tracked file; read only what the ticket names; plan
+     files, lines, test and commands in tmp/notes.md, then
+     `C end <ticket> --to act --notes tmp/notes.md`.
+   - act: work from the notes, do not explore; test, change, commit, then
+     `C end <ticket> --to assert --notes tmp/notes.md`.
+   - assert: run the ticket's tests and feature. Pass: `C pass <ticket>`,
+     handoff (step 3), done_with_current.sh. Fail: `C fail <ticket>
+     --notes tmp/notes.md`; on SPLIT_REQUEST note the coordinator `split
+     <ticket>: <seat> failed assert twice`, then done_with_current.sh.
 2. Do the work the parcel names, using your own role card below.
 3. Send work forward, when the parcel's work produced a commit: write a
    draft (plain `field: value` lines, no JSON) to `tmp/handoff.txt` in
    your assigned worktree, then run
-   `swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt`. `to:` takes the
-   next stage in any case (`qa` and `QA` both work): never open roles.tsv
-   to check it. Never write
-   directly into inbox/new/ - that delivers no wake-up. A `git_handoff`
+   `swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt`. `to:` is the next
+   stage in any case (`qa` or `QA`): never open roles.tsv for it, and never
+   write into inbox/new/ (no wake-up). A `git_handoff`
    draft may print `AUDIT_REQUIRED` on its first send: re-check your work
    against the task, then run the exact same command again to queue it.
    If swarm_handoff refuses because a live parcel for the ticket already
@@ -66,30 +55,25 @@ Rules that apply the whole time:
 - After a compaction your context holds only the summary. Make its next
   step's edit first: read only the lines around it (grep, then a short
   range), edit, then go on. Never re-read every file in your plan first.
-- Never self-schedule polling: no loops, no cron, no "check again in N
-  minutes". Idle means: wait for a wake, or run ready_for_next.sh once
-  after being idle a couple of minutes.
-- Change an existing file with the edit tool, a few lines at a time.
-  Never rewrite a whole existing file: one long reply can overflow your
-  window and end the session.
+- Never self-schedule polling (no loops, cron or "check again in N
+  minutes"): idle means wait for a wake, or run ready_for_next.sh once.
+- Change an existing file with the edit tool, a few lines at a time;
+  never rewrite it whole (one long reply can overflow your window).
 - Commit only the current ticket's own paths - never `git add -A`.
-- Your evidence is what you run in your own worktree: tests, the diff,
-  the ticket's files. Never search logs, panes or other roles' mailboxes:
-  a qa_e2e_procedure step that reads those is QA's. Skip it, say so.
+- Your evidence is what you run in your worktree (tests, diff, the
+  ticket's files). Never search logs, panes or other roles' mailboxes: a
+  qa_e2e_procedure step that does is QA's; skip it and say so.
 - Every commit message ends with a role byline: `By <role>.`
 - Temporary files go in `./tmp/` inside your worktree, never `/tmp`.
-- If your assigned worktree or branch is missing, stop and report instead
-  of working in the wrong place.
-- Run one command at a time and read what it printed before the next: a
-  later step usually depends on an earlier step's output.
+- If your worktree or branch is missing, stop and report; never work
+  elsewhere.
 - Where things live: features in specs/features/<ID>-<slug>.feature,
   step handlers in specs/pipeline/steps/, unit and property tests in
   extension/test/, TypeScript in extension/src/, Babashka and shell in
   swarmforge/scripts/. There is no specs/pipeline/features/.
-- A new step handler starts from the scaffold: `node
-  specs/pipeline/scripts/scaffold_step_handler.js <feature-file> <Name>Steps`
-  writes it with one stub per step. Fill the stubs; never write a handler
-  from scratch.
+- A new step handler starts from `node
+  specs/pipeline/scripts/scaffold_step_handler.js <feature-file> <Name>Steps`:
+  fill its stubs, never write one from scratch.
 - Find a file before you read it: `git ls-files | grep <name>`. Never
   guess a path.
 - A function, key or env var your ticket says to ADD does not exist yet:
@@ -98,18 +82,14 @@ Rules that apply the whole time:
 - A grep that prints nothing means the name is not in those files: do not
   search them again. When a helper exists in several files, use the first
   copy you found; never read every copy to compare them.
-- Every read_file of a file over ~200 lines takes offset and limit (about
-  100 lines): grep -n first. Every whole read costs your window, and a full
-  window compacts and loses what you read.
 - npm runs from extension/: `cd extension && npm ...`, never the root.
 - Run one property test file, never the whole lane (it takes ~15 min and
   QA's gather runs it): `cd extension && npm run compile && npx vitest run
   --config vitest.properties.config.mjs test/<file>`.
-- Run a command in the foreground and read what it prints. Never put it in
-  the background and `sleep` to wait for it.
-- Run a test or feature once, saving its output: `<cmd> > tmp/out.txt
-  2>&1; tail -20 tmp/out.txt`. To see more, read tmp/out.txt; never run
-  it again just to filter its output another way.
+- Run one command at a time, in the foreground (never background it and
+  `sleep`), and read its output before the next. Run a test or feature
+  once, saving it: `<cmd> > tmp/out.txt 2>&1; tail -20 tmp/out.txt`; to
+  see more, read tmp/out.txt, never re-run it to filter.
 - A run that prints `Test Files N passed` and no `failed` has passed: do
   not search its log for a failure.
 - An edit result that says the file `no longer reads` shows the line and
