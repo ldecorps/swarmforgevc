@@ -110,3 +110,5 @@ description: |
     starts from the scaffold's output.
   - Documenter: docs/how-to/BL-1371-step-handlers-register-by-discovery.md
     names the scaffold as the way a new handler starts.
+
+assigned_to: coder
