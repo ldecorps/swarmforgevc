@@ -232,3 +232,8 @@
   role: coordinator
   description: "coder@iq3 loop-halted mid-merge (git commit opened vim, never concluded); concluded the already-conflict-resolved merge by hand (a7e716f20d), verified diff vs both parents clean, re-ran supersede_lib + babysitterd_sweep_lib test runners (ALL PASS), respawned coder seat"
   detected_at: 2026-10-06
+- category: straggler-owner-attribution
+  ticket: BL-2037
+  role: QA
+  description: "qa-gather's after-run straggler check exited 0 on 2 vitest workers (pids 21466/22687); attributed by hand via /proc cwd to the master checkout's extension/, another role's run, not a QA orphan"
+  detected_at: 2026-10-06
