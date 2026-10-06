@@ -1,0 +1,115 @@
+id: BL-2030
+title: "qa-gather's straggler check counts only the gathering worktree's own runs - its host-wide pgrep reads another role's live Stryker or property run as a QA straggler, and QA attributes each one by hand through /proc (verification-debt category straggler-owner-attribution, 3 rows)"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, contained fault. The row is wrong whenever another role
+# runs a lane at the same time as QA's gather, which costs a hand check per
+# pass but hides nothing: QA's own stragglers are still listed.
+status: todo
+epic: swarm-reliability
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one check builder in qaGather.ts plus a small classifier; one handler.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one check's command changes; nothing to deduplicate"
+  architect: "no boundary moves; the check stays one row of the same report"
+  documenter: "QA.prompt and Specification.MD name the straggler check, and both still read true"
+verification_category: straggler-owner-attribution
+acceptance: specs/features/BL-2030-qa-gathers-straggler-check-counts-only-its-own-runs.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2030QaGatherStragglerOwnerSteps.js::registerSteps::binds BL-2030-qa-gathers-straggler-check-counts-only-its-own-runs.feature (discovered by suffix, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Owner of the straggler-owner-attribution verification-debt category (3
+  rows, QA's, 2026-10-03..06), minted the pass the category went unowned
+  (BL-1782 rule). No choice is posed. FIRM: a run under the gathering
+  worktree is still reported as a straggler exactly as today; only other
+  checkouts' runs stop counting, and each is still listed with its worktree.
+
+invariants:
+  - "A matched run whose working directory is under the worktree the gather runs from is always reported as a straggler; the change can only stop counting runs that belong to another checkout."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's acceptance row:
+     `specs/features/BL-2030-qa-gathers-straggler-check-counts-only-its-own-runs.feature`
+     4 of 4 pass (measured at mint: no handler, all red).
+  2. Read the gather's own `stragglers_before` and `stragglers_after`
+     rows: every listed run names a worktree, and a run under
+     `.worktrees/QA` is counted as a straggler.
+  3. Read the hardener's committed evidence.
+
+source: |
+  Verification-debt ledger (backlog/verification-debt-ledger.yaml),
+  category straggler-owner-attribution, all QA:
+  - BL-1841 (2026-10-03): "qa-gather's after-run straggler check (host-wide
+    pgrep) exited 0 on another role's live Stryker run; attributed it by
+    hand via /proc args to .worktrees/hardender, not a QA orphan".
+  - BL-1929 (2026-10-04): "qa-gather's straggler check exited 0 before and
+    after on the hardener's live detach_job Stryker run (pgid 5437,
+    backendSwitch.js); attributed by hand via /proc args, not a QA orphan".
+  - BL-1964 (2026-10-06): "qa-gather's after-run straggler check exited 0
+    on coder2's concurrent npm run test:properties (9 vitest workers);
+    attributed by hand via /proc cwd to .worktrees/coder2/extension, not a
+    QA orphan".
+  QA note 003845, 2026-10-06: "verification debt unowned:
+  straggler-owner-attribution count=3 (BL-1964 row)".
+
+description: |
+  ## What is wrong
+
+  `extension/src/quality/qaGather.ts`'s `stragglerCheck` runs
+  `pgrep -fl 'node --test|stryker|vitest'` host-wide, before and after the
+  gather. Every role shares the host, so another checkout's live run (the
+  hardener's Stryker, a coder seat's property lane) makes the row read as a
+  QA straggler (pgrep exit 0). QA then attributes each match by hand from
+  `/proc/<pid>/cwd` or its args, three times so far.
+
+  ## What is wanted
+
+  - The straggler rows list every matched run with the worktree it belongs
+    to: the `.worktrees/<role>` checkout its working directory is under, or
+    `master` for the main checkout.
+  - Only a run under the worktree the gather runs from counts as a
+    straggler. The row keeps pgrep's reading: exit 0 when the gathering
+    worktree has a straggler, 1 when it has none. The excerpt still names
+    every matched run, with its worktree.
+  - The main checkout contains every `.worktrees/<role>` path, so "under the
+    gathering worktree" never means a plain prefix match on the main
+    checkout's path.
+
+  ## How (direction, not mandate)
+
+  - A small classifier over (pid, args, cwd) rows, pure and unit-testable,
+    with the /proc read as the IO edge (engineering: CLI main is a thin
+    wrapper). The check's `build` may call a small compiled CLI in place of
+    pgrep.
+  - The handler starts real short-lived processes whose args contain the
+    pattern's tool name (for example, `node -e` with a sleep and a
+    `vitest` argument) with their cwd in fixture dirs laid out as
+    `<root>/.worktrees/QA`, `<root>/.worktrees/hardender` and so on under
+    mkdtemp. It runs the check with the fixture's QA dir as the gathering
+    root, asserts only about its own fixture runs, and kills only the
+    processes it started. The host's real runs match too and are foreign
+    by construction. Validate `<tool>`, `<worktree>` and `<verdict>`
+    against explicit known values.
+  - BL-2024 (paused) also edits `qaGather.ts` (it skips two lanes for a
+    backlog-only parcel). The two are independent but touch the same file,
+    so they should not run concurrently.
+
+notes: |
+  Minted 2026-10-06 by the specifier, the pass the category went unowned
+  (QA note 003845), per the verification-debt rule (BL-1782).
+  Not auto-approved: medium severity.
+  The gather's lost red message (QA's evidence for BL-1964, the
+  gather-excerpt-lost-red-message category, 1 row) is a different gap and
+  not in scope here.
+
+assigned_to: coder
