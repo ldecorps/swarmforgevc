@@ -1504,3 +1504,24 @@
   stamp_ticket: BL-2053
   human_decision: null
   decided_at: null
+- commit: 0ea531fa5f
+  subject: "Hotfix two unit-lane reds QA found unowned (note 003883): bl1901 race-twice timeout, bl1698 edge cases over the per-file budget"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2057
+  human_decision: null
+  decided_at: null
+- commit: 2cf2694e92
+  subject: "Hotfix the BL-955 invariant 1 reachability floor QA found unowned (note 003888): each surface gets its own 20 runs"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2057
+  human_decision: null
+  decided_at: null
+- commit: 6a0c428723
+  subject: "Hotfix the BL-1389 property red QA found unowned (note 003892): invariant 1 ran past its 20 s-base budget in a loaded full property lane"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2057
+  human_decision: null
+  decided_at: null

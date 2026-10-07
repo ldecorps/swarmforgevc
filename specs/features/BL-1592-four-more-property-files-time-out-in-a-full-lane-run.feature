@@ -38,7 +38,7 @@ Feature: BL-1592 Four more fixture-spawning property files are green in a full l
       | file                                                                          | tests | base  |
       | extension/test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js       | 3     | 20000 |
       | extension/test/bl1309LandDecideEntanglementInvariants.property.test.js        | 3     | 20000 |
-      | extension/test/bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js | 3     | 20000 |
+      | extension/test/bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js | 3     | 60000 |
       | extension/test/bl1529ScriptSenderAuditOutcomesInvariant.property.test.js      | 1     | 60000 |
 
   # BL-1592 four-more-property-files-green-in-a-full-lane-run-03

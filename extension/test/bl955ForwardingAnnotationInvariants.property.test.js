@@ -171,17 +171,23 @@ const SURFACES = {
 test('BL-955 invariant 1: each forwarding surface passes caption text on WITH the note, and plain text byte-identical', { timeout: 120000 }, async () => {
   const surfaceSeen = Object.fromEntries(Object.keys(SURFACES).map((k) => [k, 0]));
   let photoSeen = 0;
-  await fc.assert(
-    fc.asyncProperty(fc.constantFrom(...Object.keys(SURFACES)), wordsArb, fc.boolean(), async (surface, words, isPhoto) => {
-      const { forwarded, expectedBody } = await SURFACES[surface](words, isPhoto);
-      assert.equal(forwarded.length, 1, `${surface}: expected exactly one forward`);
-      const expected = isPhoto ? `${expectedBody}\n${NOTE}` : expectedBody;
-      assert.equal(forwarded[0], expected, `${surface} (photo=${isPhoto})`);
-      surfaceSeen[surface] += 1;
-      if (isPhoto) photoSeen += 1;
-    }),
-    { numRuns: 120 }
-  );
+  // One property per surface, 20 runs each (120 in all, as before). A single
+  // property over fc.constantFrom(surfaces) left the per-surface floor below
+  // to chance: about 1 run in 500 gave some surface fewer than 8 of 120, and
+  // QA's BL-1676 gather on 2026-10-07 drew negotiation-relay 7 times.
+  for (const surface of Object.keys(SURFACES)) {
+    await fc.assert(
+      fc.asyncProperty(wordsArb, fc.boolean(), async (words, isPhoto) => {
+        const { forwarded, expectedBody } = await SURFACES[surface](words, isPhoto);
+        assert.equal(forwarded.length, 1, `${surface}: expected exactly one forward`);
+        const expected = isPhoto ? `${expectedBody}\n${NOTE}` : expectedBody;
+        assert.equal(forwarded[0], expected, `${surface} (photo=${isPhoto})`);
+        surfaceSeen[surface] += 1;
+        if (isPhoto) photoSeen += 1;
+      }),
+      { numRuns: 20 }
+    );
+  }
   // asserted reachability floors, never hoped-for
   for (const [surface, count] of Object.entries(surfaceSeen)) {
     assert.ok(count >= 8, `surface ${surface} exercised only ${count} times`);
