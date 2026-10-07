@@ -443,43 +443,33 @@ test('parseArgv ignores a trailing flag with no value, and an unrecognized flag'
 });
 
 // ── BL-1880 end-to-end: main() with an injected clock, a real previous
-// briefing commit, a real configured model, and --json ──────────────────
+// briefing sent-at record, a real configured model, and --json ──────────
 
-// QA bounce 2026-10-07 D3: the previous briefing's own commit is not the
-// previous SEND - the real flow commits the day's file, then separately
-// commits docs/briefings/.sent.json with that day's key added (the "record
-// sent marker" commit findPreviousBriefingSentAtIso now reads). Both
-// commits land at the same atIso here (these fixtures do not need to model
-// the real file-to-send gap), so every existing caller keeps working with
-// no other change.
-function commitBriefingFile(root, dayKey, atIso) {
+// QA bounce 2026-10-07 D1 (2nd pass): neither the previous briefing file's
+// own commit (1st-pass D3) nor the commit that adds a day key to
+// .sent.json (this bounce) is the real send - a commit can lag the send by
+// days (measured 2026-10-06T01:43Z: four days' markers landed in one later
+// commit). The real send instant now lives in .sent.json's own "sent-at"
+// map (briefing_email_lib.bb's record-briefing-sent!), read straight off
+// disk - no git involved at all. These fixtures write that map directly.
+function writeSentAt(root, entries) {
   const dir = path.join(root, 'docs', 'briefings');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${dayKey}.md`), `# Briefing ${dayKey}\n`);
-  git(root, ['add', `docs/briefings/${dayKey}.md`]);
-  git(root, ['commit', '-q', '-m', `briefing: ${dayKey}`, '--date', atIso], {
-    GIT_AUTHOR_DATE: atIso,
-    GIT_COMMITTER_DATE: atIso,
-  });
   const sentPath = path.join(dir, '.sent.json');
-  let sent = [];
+  let state = {};
   try {
-    sent = JSON.parse(fs.readFileSync(sentPath, 'utf8')).sent;
+    state = JSON.parse(fs.readFileSync(sentPath, 'utf8'));
   } catch {
-    sent = [];
+    state = {};
   }
-  sent.push(`${dayKey}.md`);
-  fs.writeFileSync(sentPath, JSON.stringify({ sent }));
-  git(root, ['add', 'docs/briefings/.sent.json']);
-  git(root, ['commit', '-q', '-m', 'briefing: record sent marker', '--date', atIso], {
-    GIT_AUTHOR_DATE: atIso,
-    GIT_COMMITTER_DATE: atIso,
-  });
+  const sentAt = { ...(state['sent-at'] || {}), ...entries };
+  const sent = Array.from(new Set([...(state.sent || []), ...Object.keys(entries)]));
+  fs.writeFileSync(sentPath, JSON.stringify({ sent, 'sent-at': sentAt }));
 }
 
-test('main() with --at and a real previous-briefing commit prints the window leading the line', async () => {
+test('main() with --at and a real previous-briefing sent-at record prints the window leading the line', async () => {
   const root = mkRepo();
-  commitBriefingFile(root, '2026-10-01', '2026-10-01T08:00:00+00:00');
+  writeSentAt(root, { '2026-10-01.md': '2026-10-01T08:00:00+00:00' });
   appendBounceRecordIfNew(root, {
     ticket: 'BL-1880',
     producingRole: 'coder',
@@ -586,21 +576,11 @@ function runMainCapturingLine(root, atIso, targetOverride) {
   return writes.join('\n');
 }
 
-test('findPreviousBriefingFile picks the LATEST day strictly before today, skipping a non-matching filename and today\'s own file', () => {
+test('findPreviousBriefingSentAtIso picks the MOST RECENT sent-at strictly before now, across several recorded sends', () => {
   const root = mkRepo();
-  // Earlier day, a non-matching filename alongside it (must be ignored by
-  // the anchored DAY_KEY_PATTERN, not merely sorted after it), a LATER day
-  // that is still strictly before "today", and today's own file (which
-  // must never be picked - the CLI runs to feed content INTO it).
-  commitBriefingFile(root, '2026-09-28', '2026-09-28T08:00:00+00:00');
-  commitBriefingFile(root, '2026-10-01', '2026-10-01T08:00:00+00:00');
-  const dir = path.join(root, 'docs', 'briefings');
-  fs.writeFileSync(path.join(dir, 'notes-2026-10-01.md'), 'not a day-key file');
-  fs.writeFileSync(path.join(dir, '2026-10-02.md'), '# today, must never be picked\n');
-  git(root, ['add', '-A']);
-  git(root, ['commit', '-q', '-m', 'stray + today files'], {
-    GIT_AUTHOR_DATE: '2026-10-02T06:00:00+00:00',
-    GIT_COMMITTER_DATE: '2026-10-02T06:00:00+00:00',
+  writeSentAt(root, {
+    '2026-09-28.md': '2026-09-28T08:00:00+00:00',
+    '2026-10-01.md': '2026-10-01T08:00:00+00:00',
   });
   appendBounceRecordIfNew(root, {
     ticket: 'BL-1880',
@@ -612,35 +592,20 @@ test('findPreviousBriefingFile picks the LATEST day strictly before today, skipp
     by: 'architect',
   });
   const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
-  // Picked 2026-10-01 (the latest day BEFORE today), never 2026-09-28 (an
-  // earlier day that would also match "before today") and never
-  // 2026-10-02 (today's own file).
+  // Picked 2026-10-01 (the most recent sent-at before the render), never
+  // 2026-09-28 (an earlier send that would also be "before now").
   assert.match(output, /^Bounces since 2026-10-01T08:00:00/);
 });
 
-test('findPreviousBriefingSentAtIso reads the OLDEST commit that added the day to .sent.json, not a later one', () => {
+// QA bounce 2026-10-07 D1 (2nd pass), the defect's own remediation
+// pointer: "refuse a window start at or after the render time (fall back
+// to 24 h, saying so)". A sent-at entry recorded AFTER the moment this CLI
+// is asked to render for (a clock skew between hosts, or --at rendering
+// for a past moment) must never produce a backwards or zero-length
+// window - it is treated as if absent entirely.
+test('a sent-at recorded AT OR AFTER the render time is never used - falls back to the 24-hour window', () => {
   const root = mkRepo();
-  const dir = path.join(root, 'docs', 'briefings');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01\n');
-  git(root, ['add', 'docs/briefings/2026-10-01.md']);
-  git(root, ['commit', '-q', '-m', 'briefing: 2026-10-01', '--date', '2026-10-01T08:00:00+00:00'], {
-    GIT_AUTHOR_DATE: '2026-10-01T08:00:00+00:00',
-    GIT_COMMITTER_DATE: '2026-10-01T08:00:00+00:00',
-  });
-  const sentPath = path.join(dir, '.sent.json');
-  function writeSentCommit(sentArray, atIso, message) {
-    fs.writeFileSync(sentPath, JSON.stringify({ sent: sentArray }));
-    git(root, ['add', 'docs/briefings/.sent.json']);
-    git(root, ['commit', '-q', '-m', message, '--date', atIso], { GIT_AUTHOR_DATE: atIso, GIT_COMMITTER_DATE: atIso });
-  }
-  // The OLDEST commit adding this day's key to .sent.json.
-  writeSentCommit(['2026-10-01.md'], '2026-10-01T08:00:00+00:00', 'briefing: record sent marker');
-  // A real .sent.json history never removes or re-adds a day key, but the
-  // function's own comment says it falls back to the OLDEST matching
-  // commit if that ever happened; this proves it actually does.
-  writeSentCommit([], '2026-10-01T12:00:00+00:00', 'undo sent marker');
-  writeSentCommit(['2026-10-01.md'], '2026-10-01T23:00:00+00:00', 'briefing: record sent marker (redo)');
+  writeSentAt(root, { '2026-10-02.md': '2026-10-02T07:00:00.000Z' });
   appendBounceRecordIfNew(root, {
     ticket: 'BL-1880',
     producingRole: 'coder',
@@ -651,68 +616,15 @@ test('findPreviousBriefingSentAtIso reads the OLDEST commit that added the day t
     by: 'architect',
   });
   const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
-  assert.match(output, /^Bounces since 2026-10-01T08:00:00/, `expected the OLDEST send-marker commit's time, got: ${output}`);
+  assert.match(output, /^Bounces in the last 24 hours \(no previous briefing was found\)/, `expected the 24h fallback, got: ${output}`);
 });
 
-test('findPreviousBriefingSentAtIso scopes its git log -S search to .sent.json alone, never the whole briefings directory', () => {
-  // A decoy file in docs/briefings/ whose own text happens to contain the
-  // day key as a literal string, committed BEFORE the real .sent.json
-  // send marker. If the pickaxe search were scoped to the whole
-  // directory (sentJsonPath collapsing to just the directory) rather
-  // than .sent.json alone, this earlier, unrelated commit would also
-  // match - and the function's own "oldest wins" fallback would then
-  // report THIS commit's time instead of the real send's.
+test('a strictly-later sent-at still loses to the render-time guard even with an earlier, usable sent-at also on record', () => {
   const root = mkRepo();
-  const dir = path.join(root, 'docs', 'briefings');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01\n');
-  git(root, ['add', 'docs/briefings/2026-10-01.md']);
-  git(root, ['commit', '-q', '-m', 'briefing: 2026-10-01', '--date', '2026-10-01T06:00:00+00:00'], {
-    GIT_AUTHOR_DATE: '2026-10-01T06:00:00+00:00',
-    GIT_COMMITTER_DATE: '2026-10-01T06:00:00+00:00',
+  writeSentAt(root, {
+    '2026-10-01.md': '2026-10-01T08:00:00+00:00',
+    '2026-10-02.md': '2026-10-02T08:00:00.000Z', // after the render time below
   });
-  // Quoted exactly as the code's own pickaxe needle is: `"${dayKey}.md"`.
-  // An unquoted mention (`see 2026-10-01.md`) does not match git log -S's
-  // literal string search at all, so the decoy must quote it to be a
-  // real discriminator.
-  fs.writeFileSync(path.join(dir, 'notes.md'), 'referencing "2026-10-01.md" here\n');
-  git(root, ['add', 'docs/briefings/notes.md']);
-  git(root, ['commit', '-q', '-m', 'decoy file naming the day by coincidence', '--date', '2026-10-01T07:00:00+00:00'], {
-    GIT_AUTHOR_DATE: '2026-10-01T07:00:00+00:00',
-    GIT_COMMITTER_DATE: '2026-10-01T07:00:00+00:00',
-  });
-  const sentPath = path.join(dir, '.sent.json');
-  fs.writeFileSync(sentPath, JSON.stringify({ sent: ['2026-10-01.md'] }));
-  git(root, ['add', 'docs/briefings/.sent.json']);
-  git(root, ['commit', '-q', '-m', 'briefing: record sent marker', '--date', '2026-10-01T08:00:00+00:00'], {
-    GIT_AUTHOR_DATE: '2026-10-01T08:00:00+00:00',
-    GIT_COMMITTER_DATE: '2026-10-01T08:00:00+00:00',
-  });
-  appendBounceRecordIfNew(root, {
-    ticket: 'BL-1880',
-    producingRole: 'coder',
-    ticketType: 'feature',
-    failureClass: 'behavior',
-    commit: 'ffff777777',
-    at: '2026-10-01T09:00:00.000Z',
-    by: 'architect',
-  });
-  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
-  assert.match(
-    output,
-    /^Bounces since 2026-10-01T08:00:00/,
-    `expected the real .sent.json commit (08:00), not the decoy file's (07:00): ${output}`
-  );
-});
-
-test('a previous-day briefing file that was never committed falls back to the 24-hour window, never a crash', () => {
-  const root = mkRepo();
-  const dir = path.join(root, 'docs', 'briefings');
-  fs.mkdirSync(dir, { recursive: true });
-  // Written but never `git add`/`git commit` - findPreviousBriefingFile
-  // finds it on disk, but `git log --follow` has no history for it, so
-  // gitLog's own output is empty and findPreviousBriefingSentAtIso must
-  // fall back to undefined rather than throwing or returning garbage.
   appendBounceRecordIfNew(root, {
     ticket: 'BL-1880',
     producingRole: 'coder',
@@ -722,7 +634,24 @@ test('a previous-day briefing file that was never committed falls back to the 24
     at: '2026-10-01T09:00:00.000Z',
     by: 'architect',
   });
-  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01 (never committed)\n');
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  assert.match(output, /^Bounces since 2026-10-01T08:00:00/, `expected the earlier, usable sent-at, got: ${output}`);
+});
+
+test('a .sent.json with no "sent-at" key at all (pre-BL-1880 shape) falls back to the 24-hour window, never a crash', () => {
+  const root = mkRepo();
+  const dir = path.join(root, 'docs', 'briefings');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '.sent.json'), JSON.stringify({ sent: ['2026-10-01.md'] }));
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555555',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
   const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
   assert.match(output, /^Bounces in the last 24 hours \(no previous briefing was found\)/);
 });
@@ -742,66 +671,11 @@ test('no docs/briefings directory at all falls back to the 24-hour window', () =
   assert.match(output, /^Bounces in the last 24 hours \(no previous briefing was found\)/);
 });
 
-test('DAY_KEY_PATTERN is anchored at both ends - a prefixed or suffixed near-miss filename is never mistaken for a day-key file', () => {
-  const root = mkRepo();
-  commitBriefingFile(root, '2026-09-28', '2026-09-28T08:00:00+00:00');
-  const dir = path.join(root, 'docs', 'briefings');
-  // Neither of these is ever committed, on purpose: if the ^ or $ anchor
-  // were lost, DAY_KEY_PATTERN would match the "2026-10-01" substring
-  // inside one of these names and findPreviousBriefingFile would
-  // construct the LITERAL path "2026-10-01.md" - a file that does not
-  // exist here - so gitLog would find no history for it and the window
-  // would silently fall back to the last 24 hours instead of naming
-  // 2026-09-28's real commit time.
-  fs.writeFileSync(path.join(dir, 'prefix-2026-10-01.md'), 'would match without the ^ anchor');
-  appendBounceRecordIfNew(root, {
-    ticket: 'BL-1880',
-    producingRole: 'coder',
-    ticketType: 'feature',
-    failureClass: 'behavior',
-    commit: 'eeee555555',
-    at: '2026-10-01T09:00:00.000Z',
-    by: 'architect',
-  });
-  fs.writeFileSync(path.join(dir, '2026-10-01.md.disabled'), 'would match without the $ anchor');
-  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
-  assert.match(output, /^Bounces since 2026-09-28T08:00:00/, `expected the real 2026-09-28 commit, got: ${output}`);
-});
-
-test('a committed file for TODAY is excluded by the filter, not merely sorted before an earlier valid day', () => {
-  // No non-matching junk filename here, on purpose: a stray name maps to a
-  // real JS `undefined`, which Array.prototype.sort() ALWAYS moves to the
-  // end regardless of the comparator - that would mask a dropped filter
-  // (it would make dayKeys[dayKeys.length - 1] read undefined either way).
-  // With only real, committed day-key files, dropping the `day < todayKey`
-  // filter has nowhere to hide: today's own file would sort last for real.
-  const root = mkRepo();
-  commitBriefingFile(root, '2026-09-28', '2026-09-28T08:00:00+00:00');
-  const dir = path.join(root, 'docs', 'briefings');
-  fs.writeFileSync(path.join(dir, '2026-10-02.md'), '# today, must never be picked\n');
-  git(root, ['add', '-A']);
-  git(root, ['commit', '-q', '-m', "today's own file"], {
-    GIT_AUTHOR_DATE: '2026-10-02T06:00:00+00:00',
-    GIT_COMMITTER_DATE: '2026-10-02T06:00:00+00:00',
-  });
-  appendBounceRecordIfNew(root, {
-    ticket: 'BL-1880',
-    producingRole: 'coder',
-    ticketType: 'feature',
-    failureClass: 'behavior',
-    commit: 'eeee555555',
-    at: '2026-10-01T09:00:00.000Z',
-    by: 'architect',
-  });
-  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
-  assert.match(output, /^Bounces since 2026-09-28T08:00:00/, `expected 2026-09-28, not today's own file: ${output}`);
-});
-
-test('a docs/briefings directory that exists but has no day-key files falls back to the 24-hour window', () => {
+test('a malformed .sent.json (invalid JSON) falls back to the 24-hour window, never a crash', () => {
   const root = mkRepo();
   const dir = path.join(root, 'docs', 'briefings');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'README.md'), 'not a day-key file');
+  fs.writeFileSync(path.join(dir, '.sent.json'), '{ not valid json');
   appendBounceRecordIfNew(root, {
     ticket: 'BL-1880',
     producingRole: 'coder',
@@ -812,30 +686,5 @@ test('a docs/briefings directory that exists but has no day-key files falls back
     by: 'architect',
   });
   const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
-  assert.match(output, /^Bounces in the last 24 hours \(no previous briefing was found\)/);
-});
-
-test('a previous-day briefing file in a target that is not a git repository at all falls back to the 24-hour window', () => {
-  // cwd stays a real repo (mkRepo) so resolveCliMainWorktreeContext() can
-  // find .swarmforge/roles.tsv the usual way; the business-logic target
-  // (readBounceRecords, findPreviousBriefingSentAtIso's gitLog call) is a
-  // separate, plain non-git directory, passed explicitly via --target -
-  // the two are independent inputs and this is the only way to make
-  // `git log` genuinely throw (ENOTGITREPO) without main() itself failing.
-  const cwdRoot = mkRepo();
-  const target = mkTmp('sfvc-qa-bounce-line-nogit-');
-  const dir = path.join(target, 'docs', 'briefings');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01\n');
-  appendBounceRecordIfNew(target, {
-    ticket: 'BL-1880',
-    producingRole: 'coder',
-    ticketType: 'feature',
-    failureClass: 'behavior',
-    commit: 'eeee555555',
-    at: '2026-10-01T09:00:00.000Z',
-    by: 'architect',
-  });
-  const output = runMainCapturingLine(cwdRoot, '2026-10-02T07:00:00.000Z', target);
   assert.match(output, /^Bounces in the last 24 hours \(no previous briefing was found\)/);
 });

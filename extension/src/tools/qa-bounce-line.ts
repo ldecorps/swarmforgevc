@@ -34,7 +34,6 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
 import {
   computeQaBounceTally,
   computeBounceTallyByBouncingRole,
@@ -214,69 +213,55 @@ export function formatBounceWindowLine(report: BounceWindowReport): string {
   );
 }
 
-// ── BL-1880: when was the previous briefing sent - impure shell ─────────
+// ── BL-1880: when was the previous briefing sent ─────────────────────────
 
-const DAY_KEY_PATTERN = /^(\d{4}-\d{2}-\d{2})\.md$/;
-
-// The most recent docs/briefings/<day>.md whose day is strictly before
-// nowIso's own day - never today's own file, which this CLI typically runs
-// to feed content INTO, before it exists. Absent (or unreadable) briefings
-// directory reads as "no previous briefing", same as an empty one.
-function findPreviousBriefingFile(targetPath: string, nowIso: string): string | undefined {
-  const dir = path.join(targetPath, 'docs', 'briefings');
-  let names: string[];
-  try {
-    names = fs.readdirSync(dir);
-  } catch {
-    return undefined;
-  }
-  const todayKey = nowIso.slice(0, 10);
-  const dayKeys = names
-    .map((name) => DAY_KEY_PATTERN.exec(name)?.[1])
-    .filter((day): day is string => Boolean(day) && day! < todayKey)
-    .sort();
-  if (dayKeys.length === 0) {
-    return undefined;
-  }
-  return path.join(dir, `${dayKeys[dayKeys.length - 1]}.md`);
+interface SentState {
+  sent?: string[];
+  'sent-at'?: Record<string, string>;
 }
 
-// `%aI`'s offset form is fine here: every consumer compares it as a Date,
-// never a literal string (computeWindowStart/recordsAfter above).
-function gitLog(targetPath: string, args: string[]): string | undefined {
-  try {
-    return execFileSync('git', args, { cwd: targetPath, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  } catch {
-    return undefined;
-  }
-}
-
-// QA bounce D3: the previous briefing's own commit (when the .md FILE was
-// authored) is not the previous SEND - the email sweep commits the day's
-// file, then sends it, then commits docs/briefings/.sent.json's "record
-// sent marker" separately, measured 5.5h apart on 2026-10-02. Reading the
-// file's own commit left a gap between two consecutive windows (the
-// previous window ended at the file commit, the next started at the next
-// send) in which a bounce was counted twice. The true send time is the
-// commit that ADDED this day's key to .sent.json: `git log -S` (the
-// pickaxe) finds the commit whose diff changed the number of occurrences
-// of the exact quoted JSON string - since a day key, once added, is never
-// removed or re-added, exactly one commit ever adds it. Falls back to the
-// OLDEST such commit if more than one somehow matches, same "oldest wins"
-// posture the file-commit approach used.
-function findPreviousBriefingSentAtIso(targetPath: string, nowIso: string): string | undefined {
-  const file = findPreviousBriefingFile(targetPath, nowIso);
-  if (!file) {
-    return undefined;
-  }
-  const dayKey = path.basename(file, '.md');
+function readSentState(targetPath: string): SentState | undefined {
   const sentJsonPath = path.join(targetPath, 'docs', 'briefings', '.sent.json');
-  const out = gitLog(targetPath, ['log', '-S', `"${dayKey}.md"`, '--format=%aI', '--', sentJsonPath]);
-  if (!out) {
+  try {
+    return JSON.parse(fs.readFileSync(sentJsonPath, 'utf8')) as SentState;
+  } catch {
     return undefined;
   }
-  const lines = out.split('\n').filter(Boolean);
-  return lines.length > 0 ? lines[lines.length - 1] : undefined;
+}
+
+// QA bounce D3 (first pass): the previous briefing's own commit (when the
+// .md FILE was authored) is not the previous SEND. QA bounce D1 (second
+// pass): nor is the commit that adds a day's key to .sent.json - the email
+// sweep batches that commit (4 of the last 7 days landed in ONE commit,
+// 2026-10-06T01:43Z), so a commit-based start came out short, empty, or
+// starting after the render. The sweep now records the real send instant
+// directly, in .sent.json's own "sent-at" map (briefing_email_lib.bb's
+// record-briefing-sent!), so this reads that map straight off disk - no
+// git archaeology, nothing to lag. The most recent "sent-at" strictly
+// before nowIso IS the previous briefing's send time. An entry at or after
+// nowIso (clock skew, or --at rendering for a past moment) is never used -
+// invariant 2 requires a window that never starts at or after the render
+// time, so such an entry is treated as absent, same as no previous
+// briefing at all (the 24h fallback below).
+function findPreviousBriefingSentAtIso(targetPath: string, nowIso: string): string | undefined {
+  const sentAt = readSentState(targetPath)?.['sent-at'];
+  if (!sentAt) {
+    return undefined;
+  }
+  const nowMs = new Date(nowIso).getTime();
+  let best: string | undefined;
+  let bestMs = -Infinity;
+  for (const iso of Object.values(sentAt)) {
+    const ms = new Date(iso).getTime();
+    if (Number.isNaN(ms) || ms >= nowMs) {
+      continue;
+    }
+    if (ms > bestMs) {
+      bestMs = ms;
+      best = iso;
+    }
+  }
+  return best;
 }
 
 function modelForRole(targetPath: string): (role: string) => string {

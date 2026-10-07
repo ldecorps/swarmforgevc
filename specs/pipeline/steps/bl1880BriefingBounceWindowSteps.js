@@ -5,12 +5,17 @@
 //
 // Drives the REAL qa-bounce-line.js CLI (compiled) via subprocess against a
 // real git worktree fixture, under mkdtemp (BL-1390, trackedTmpRoot) - "the
-// previous briefing was sent at <time>" is a real commit to
-// docs/briefings/<day>.md with that author/committer date, exactly what
-// findPreviousBriefingSentAtIso (qa-bounce-line.ts) reads via `git log`.
+// previous briefing was sent at <time>" is a real entry in
+// docs/briefings/.sent.json's own "sent-at" map, exactly what
+// findPreviousBriefingSentAtIso (qa-bounce-line.ts) reads straight off
+// disk (QA bounce 2026-10-07 D1, 2nd pass: a git commit of that file can
+// lag the real send by days, so this no longer goes through git at all).
 // The bounce log itself is written directly as JSONL (the same shape
-// appendBounceRecordIfNew writes) - no need for a second real git repo
-// layer there, since bounceStore.ts reads it straight off disk.
+// appendBounceRecordIfNew writes) - no need for a real git repo layer
+// there either, since bounceStore.ts reads it straight off disk. A git
+// repo is still initialised below so the fixture matches a real worktree
+// shape (BL-1390's own proof), even though this feature's own reads no
+// longer touch it.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -69,11 +74,10 @@ function appendBounceRecord(root, { producingRole, at, by }) {
   fs.appendFileSync(path.join(dir, `${month}.jsonl`), JSON.stringify(record) + '\n');
 }
 
-// QA bounce 2026-10-07 D3: the previous briefing's own commit is not the
-// previous SEND - findPreviousBriefingSentAtIso now reads the commit that
-// added this day's key to docs/briefings/.sent.json. Both commits land at
-// the same atIso here (this fixture does not need to model the real
-// file-to-send gap).
+// QA bounce 2026-10-07 D1 (2nd pass): the previous briefing's SEND time is
+// read from docs/briefings/.sent.json's own "sent-at" map, written
+// directly here - no git commit involved, so this fixture cannot
+// reintroduce the lagging-commit defect the bounce was about.
 function commitBriefingFile(root, dayKey, atIso) {
   const dir = path.join(root, 'docs', 'briefings');
   fs.mkdirSync(dir, { recursive: true });
@@ -84,14 +88,15 @@ function commitBriefingFile(root, dayKey, atIso) {
     GIT_COMMITTER_DATE: atIso,
   });
   const sentPath = path.join(dir, '.sent.json');
-  let sent = [];
+  let state = {};
   try {
-    sent = JSON.parse(fs.readFileSync(sentPath, 'utf8')).sent;
+    state = JSON.parse(fs.readFileSync(sentPath, 'utf8'));
   } catch {
-    sent = [];
+    state = {};
   }
-  sent.push(`${dayKey}.md`);
-  fs.writeFileSync(sentPath, JSON.stringify({ sent }));
+  const sent = Array.from(new Set([...(state.sent || []), `${dayKey}.md`]));
+  const sentAt = { ...(state['sent-at'] || {}), [`${dayKey}.md`]: atIso };
+  fs.writeFileSync(sentPath, JSON.stringify({ sent, 'sent-at': sentAt }));
   git(root, ['add', 'docs/briefings/.sent.json']);
   git(root, ['commit', '-q', '-m', 'briefing: record sent marker'], {
     GIT_AUTHOR_DATE: atIso,

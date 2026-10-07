@@ -14,7 +14,7 @@
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
             [clojure.string :as str])
-  (:import [java.time LocalDate]
+  (:import [java.time Instant LocalDate]
            [java.time.temporal ChronoUnit]))
 
 ;; BL-967: subprocess waits are bounded at the shared chokepoint - this
@@ -35,9 +35,34 @@
 (defn load-sent-briefings [briefings-dir]
   (set (:sent (read-json (sent-state-path briefings-dir)))))
 
-(defn record-briefing-sent! [briefings-dir file-name]
-  (let [current (conj (load-sent-briefings briefings-dir) file-name)]
-    (spit (sent-state-path briefings-dir) (json/generate-string {:sent (vec (sort current))}))))
+;; BL-1880 QA bounce D1 (2nd pass): the previous-briefing window the daily
+;; email's bounce line reports used to be derived from the GIT COMMIT that
+;; added a day's key to .sent.json - but that commit lags the real send
+;; (the sweep can batch several days' markers into one later commit,
+;; measured 2026-10-06T01:43Z carrying four days at once). This map is the
+;; durable, un-lagged record instead: keyed by the same file-name `:sent`
+;; already carries, valued with the real instant record-briefing-sent! was
+;; called for that file - qa-bounce-line.ts's findPreviousBriefingSentAtIso
+;; reads it straight off disk, no git involved.
+(defn load-sent-at [briefings-dir]
+  (or (:sent-at (read-json (sent-state-path briefings-dir))) {}))
+
+(defn record-briefing-sent!
+  "Marks file-name sent. sent-at-iso (optional, 3-arg form) is the real
+   instant of this send - send-unsent-briefings! below supplies its own
+   clock read, the one genuine IO edge for this value (never derived
+   inside this library, same posture BL-821 Leg B's :today-str already
+   documents). Omitting it (the 2-arg form; every caller/test predating
+   BL-1880) records the file as sent with no sent-at entry, unaffected -
+   `:sent-at` degrades the same way an absent window start always has,
+   the 24h fallback, never a crash or a wrong window."
+  ([briefings-dir file-name] (record-briefing-sent! briefings-dir file-name nil))
+  ([briefings-dir file-name sent-at-iso]
+   (let [current (conj (load-sent-briefings briefings-dir) file-name)
+         sent-at (cond-> (load-sent-at briefings-dir)
+                   sent-at-iso (assoc (keyword file-name) sent-at-iso))]
+     (spit (sent-state-path briefings-dir)
+           (json/generate-string {:sent (vec (sort current)) :sent-at sent-at})))))
 
 ;; Every committed briefing .md file under briefings-dir not yet sent, oldest
 ;; (alphabetically, which is chronologically for YYYY-MM-DD names) first.
@@ -677,7 +702,14 @@
    fails the sweep - the file already sent stays sent for THIS host; the
    marker's own diff just rides the next successful commit. Omitting the
    adapter (every caller/test predating BL-821) skips Leg A entirely,
-   same contract as every other optional adapter here."
+   same contract as every other optional adapter here.
+
+   BL-1880: an optional :now-iso! adapter (zero-arg fn returning a real
+   ISO instant) is read right when a send actually succeeds and passed to
+   record-briefing-sent! as that file's sent-at - the true IO edge for
+   this value, same posture as :today-str above. Omitting it (every
+   caller/test predating BL-1880) falls back to a real `Instant/now` read
+   inline, still correct for production, just not independently stubbable."
   [briefings-dir adapters]
   (let [sent-now (atom [])
         unsent (find-unsent-briefings briefings-dir)
@@ -695,7 +727,8 @@
             (cond
               (:success result)
               (do
-                (record-briefing-sent! briefings-dir file-name)
+                (record-briefing-sent! briefings-dir file-name
+                                        ((or (:now-iso! adapters) (fn [] (str (Instant/now))))))
                 (when-let [commit! (:commit-marker! adapters)]
                   (let [commit-result (commit! briefings-dir)]
                     (when-not (:ok commit-result)
