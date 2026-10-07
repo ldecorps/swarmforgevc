@@ -203,3 +203,6 @@ notes: |
   fix, not new scope.
 
 assigned_to: hardender
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: hardender, class: behavior, commit: bdb95d261c, evidence: backlog/evidence/BL-1676-QA-20261007.md }
