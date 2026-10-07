@@ -1,0 +1,139 @@
+id: BL-2069
+title: "Every briefing send commits its sent marker: from 2026-10-02 to 2026-10-07 each logged commit of docs/briefings/.sent.json failed - three times because the daemon's root was relative and `git add` ran inside docs/briefings with a repo-relative path, twice on a held index lock - so the markers reached git days late by hand, and 10-07's not at all"
+milestone: M8
+type: defect
+severity: high
+# high: a broken record - the sent marker is BL-821's cross-host "mailed
+# exactly once" guard and the one record of when a briefing went out; it
+# has not reached git on its own for six days, a hand commit was needed to
+# unblock the reconcile on 2026-10-06, and BL-1880's QA bounce came from
+# reading it.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: Babashka (no Stryker lane; the hardener's hand-mutant pass) - one
+# commit function and the root it is given.
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one function's git calls; nothing to refactor"
+  architect: "no boundary moves; the sweep, the marker and its commit stay where they are"
+
+acceptance: specs/features/BL-2069-every-briefing-send-commits-its-sent-marker.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2069BriefingMarkerCommittedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): handoffd.bb already passes
+# briefing-email-lib/commit-sent-marker! as :commit-marker!, so any pattern
+# on it matches before and after. The scenarios must drive the REAL
+# send-unsent-briefings! with the REAL commit-sent-marker! over a fixture
+# repository, never a fake commit adapter.
+
+human_approval: approved
+approval_context: >
+  From QA's note 003912 (2026-10-07). No choice is posed. FIRM: the
+  commit stages and commits the sent marker only, never another path, and
+  a failed commit still leaves the index as it found it (BL-1653).
+
+invariants:
+  - "After a sweep, HEAD's docs/briefings/.sent.json lists every briefing the working tree's lists."
+  - "A sent-marker commit changes no path but docs/briefings/.sent.json."
+
+description: |
+  ## What is wrong
+
+  `briefing_email_lib.bb`'s `commit-sent-marker!` runs `git add -- <path>`
+  and `git commit -- <path>` with `:dir briefings-dir`, where `path` is
+  `(fs/path briefings-dir ".sent.json")`. handoffd.bb builds
+  `briefings-dir` from `project-root`, its first command-line argument.
+  When that root is relative ("."), path is "docs/briefings/.sent.json"
+  resolved from inside docs/briefings, and git looks for
+  docs/briefings/docs/briefings/.sent.json. The add is also a raw git call
+  with no wait, so a commit that holds the index lock at that moment
+  fails it.
+
+  handoffd.log, every logged send since 2026-10-02:
+
+  - 10-02 05:45Z, 10-04 07:20Z: "git add failed: fatal: Unable to create
+    '.../.git/index.lock': File exists."
+  - 10-03 07:20Z, 10-05 00:05Z, 10-07 00:10Z: "git add failed: warning:
+    could not open directory 'docs/briefings/docs/briefings/': No such file
+    or directory"
+
+  Each failure leaves the marker written on disk and uncommitted. The 10-03
+  to 10-06 markers reached git in one hand commit on 10-06 at 01:43Z
+  (fa6eb647b6, "unblock reconcile - stray staged index-not-clean"), and on
+  2026-10-07 the master checkout still showed .sent.json modified with
+  10-07's entry. BL-1880's first QA pass found its window start following
+  these lagging commits (QA bounce 64f033e529).
+
+  ## What is wanted
+
+  - A send's marker is committed whether the daemon's root was given
+    absolute or relative (scenario 01).
+  - An index lock held for a moment delays the commit; it does not lose it
+    (scenario 02): the commit waits for the lock the way every other
+    master-checkout writer does (commit_integrity_cli.bb's lock and retry,
+    BL-1475), within the sweep's subprocess bound.
+  - A marker an earlier failure left uncommitted is committed by the next
+    sweep, even one with nothing new to send (scenario 03), so the backlog
+    of today's failures heals itself (invariant 1).
+  - The commit changes no path but the marker (invariant 2), and a failed
+    commit still restores the index (BL-1653).
+  - Living docs: docs/how-to/BL-658-briefing-trigger-derived-from-closure-schedule.md
+    and Specification.MD's BL-821 entry say a failed marker commit is
+    retried on the next sweep.
+
+  ## How (direction, not mandate)
+
+  - Run git at the repository root with the marker's root-relative path,
+    or absolutize briefings-dir once; the coder decides, and says in the
+    evidence why the other caller paths (tests, the fixture harness) still
+    hold.
+  - Reuse commit_integrity_cli.bb / commit_integrity_lib.bb for the commit
+    rather than a second lock-wait loop.
+
+constraints: >
+  Fixture repositories under mkdtemp, proven by rev-parse --git-common-dir
+  before any mutating git command (BL-1390); never the live checkout,
+  never a real email send. bash 3.2 rules for any shell. The step handler
+  lands with the feature (BL-233).
+
+out_of_scope: |
+  - BL-1880's window start: QA's bounce D1 already sends it to the
+    sender's own send time, independent of this commit.
+  - Who launched handoffd with a relative root.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2069-every-briefing-send-commits-its-sent-marker.feature`:
+     4 of 4 ok (01 x2, 02, 03).
+  2. `node specs/pipeline/cli.js specs/features/BL-821-briefing-emails-for-past-days-keep-arriving.feature`:
+     all ok (the cross-host marker behaviour is unchanged).
+  3. After the land, on the live swarm: the next briefing send logs no
+    "briefing-marker-commit-failed" line in .swarmforge/daemon/handoffd.log,
+    and `git log -1 --format=%s -- docs/briefings/.sent.json` on main is
+    "briefing: record sent marker" with that day's entry.
+
+source: |
+  QA note 003912 (2026-10-07T12:26:54Z), verbatim: "briefing sent markers
+  lag: 10-03..06 committed 10-06; 10-07 uncommitted BL-1880".
+  handoffd.log lines quoted in the description; QA's BL-1880 bounce
+  (backlog/evidence/BL-1880-QA-20261007-2.md, 64f033e529).
+
+notes: |
+  Minted 2026-10-07 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  At mint the master checkout's docs/briefings/.sent.json holds 10-07's
+  entry uncommitted; scenario 03's behaviour commits it on the first
+  sweep after the land, so nobody needs to commit it by hand meanwhile
+  unless it blocks a reconcile.
+  IR-DRY at mint: one medium finding (HEAD's marker vs the working tree's
+  marker), two different facts, kept.
+  INVEST: Independent, Negotiable (where the path is fixed, how the lock
+  is waited for), Valuable (the marker reaches git on every send),
+  Estimable (one function, its root), Small (three scenarios), Testable
+  (fixture repository through the real sweep).

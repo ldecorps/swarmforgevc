@@ -143,3 +143,6 @@ notes: |
   how-to that describes the seat.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: coder, class: behavior, commit: 659a09bc7c, evidence: backlog/evidence/BL-1911-QA-20261007.md }

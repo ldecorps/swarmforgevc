@@ -155,13 +155,23 @@
    04: a next step that names no write never restarts the seat)."
   [next-step]
   (when (and next-step (re-find #"(?i)\b(write|writes|edit|edits)\b" next-step))
-    (some-> (re-find #"[A-Za-z0-9_.][A-Za-z0-9_./-]*/[A-Za-z0-9_./-]*\.[A-Za-z0-9]+" next-step)
+    (some-> (re-find #"(/?[A-Za-z0-9_.][A-Za-z0-9_./-]*/[A-Za-z0-9_./-]*\.[A-Za-z0-9]+)" next-step)
+            second
             str/trim)))
 
-(defn- named-write-call? [path entry]
+(defn- resolved-path [cwd p]
+  "p resolved against cwd: an absolute path is itself, a relative one is
+   joined under cwd - so a named path and a call's file_path compare as
+   the same file no matter which form each was written in."
+  (let [f (if (str/starts-with? p "/") (io/file p) (io/file (or cwd ".") p))]
+    (try (str (fs/canonicalize f)) (catch Exception (str f)))))
+
+(defn- named-write-call? [path cwd entry]
   (and (= :call (:kind entry))
        (contains? edit-tools (:name entry))
-       (= path (get (:args entry) "file_path"))))
+       (let [fp (get (:args entry) "file_path")]
+         (and (string? fp)
+              (= (resolved-path cwd path) (resolved-path cwd fp))))))
 
 (defn calls-since-compaction
   "Entries strictly after the latest compaction; every entry when there is
@@ -181,17 +191,18 @@
    and it must be the third such call since that compaction. Says nothing
    about the restart count - restart-decision and release-decision (BL-1992)
    each decide what this miss means for a parcel at their own count."
-  [entries name args]
+  [entries name args cwd]
   (let [step (latest-next-step entries)
         path (named-write-path step)]
     (when path
       (let [stripped (without-in-flight (vec entries) (call-key name args))
             since (calls-since-compaction stripped)
-            already-written? (some #(named-write-call? path %) since)
-            other (count (remove #(named-write-call? path %)
+            already-written? (some #(named-write-call? path cwd %) since)
+            other (count (remove #(named-write-call? path cwd %)
                                   (filter #(= :call (:kind %)) since)))
             this-write? (and (contains? edit-tools name)
-                              (= path (get args "file_path")))]
+                             (named-write-call? path cwd
+                                                 {:kind :call :name name :args args}))]
         (when (and (not already-written?)
                    (not this-write?)
                    (>= (inc other) 3))
@@ -200,9 +211,9 @@
 (defn restart-decision
   "A missed write restarts the seat only while the parcel has not already
    used both of its restarts."
-  [entries name args restart-count]
+  [entries name args cwd restart-count]
   (when (< restart-count max-restarts)
-    (missed-write entries name args)))
+    (missed-write entries name args cwd)))
 
 ;; ── BL-1992: the third miss releases the parcel instead of restarting ──
 ;;
@@ -214,22 +225,38 @@
 (defn release-decision
   "The same missed write as restart-decision, but only once the parcel's
    restarts are already exhausted."
-  [entries name args restart-count]
+  [entries name args cwd restart-count]
   (when (>= restart-count max-restarts)
-    (missed-write entries name args)))
+    (missed-write entries name args cwd)))
+
+;; BL-2055 (QA-reported D2 of its own kind - the coordinator's note
+;; 017189): a sidecar left behind by BL-1992's own release (which moves
+;; only the handoff file, never its .claim-progress.json) is not a held
+;; parcel - reading it as one restarted the seat on the ticket it had
+;; just released. Copied from handoff_lib.bb's sidecar-suffixes rather
+;; than load-filed (measured: loading handoff_lib.bb costs ~100ms more
+;; than this hook's own baseline, and it runs on every tool call) - kept
+;; in agreement by test_bl1971_local_model_repeat_guard.sh (BL-897).
+(def sidecar-suffixes [".nudge" ".chase.json" ".claim-progress.json" ".batch-claim-progress.json"])
+
+(defn- sidecar-name? [name]
+  (boolean (some #(str/ends-with? name %) sidecar-suffixes)))
 
 (defn- in-process-handoff-name
   "The name of this role's current in_process handoff file - stable across
    a restart (the parcel is never completed or handed off), so it is the
    restart count's key: a later, different parcel's different file name
    starts fresh with no reset needed. nil when there is none (no restart
-   state applies outside a real parcel)."
+   state applies outside a real parcel) - including when in_process holds
+   only a sidecar (BL-2055): BL-1992's release moves only the handoff file,
+   so a leftover claim-progress sidecar must never read as a new parcel."
   [cwd]
   (let [dir (io/file cwd ".swarmforge" "handoffs" "inbox" "in_process")]
     (when (.isDirectory dir)
       (some->> (.listFiles dir)
                (filter #(.isFile %))
                (map #(.getName %))
+               (remove sidecar-name?)
                sort
                first))))
 
@@ -247,19 +274,28 @@
     0))
 
 (defn override-message
-  "The fresh turn's only user message: the named next step, told to write
-   the named file and not to read it first (it may not exist yet)."
-  [next-step path]
-  (str next-step "\n\nWrite " path " now. Do not read " path
-       " first - it does not exist yet."))
+  "The fresh turn's only user message: the named next step, told to make
+   the named change. The file may already exist - a next step that names
+   an edit does - so the message names it at its absolute path and tells
+   the seat to read only the lines it will change first, never not to
+   read the file; only a missing file is told to be written without
+   reading it first."
+  [next-step path cwd]
+  (let [exists? (and (string? cwd)
+                     (.exists (java.io.File. ^String (resolved-path cwd path))))]
+    (str next-step "\n\n"
+         (if exists?
+           (str "Edit " (resolved-path cwd path) " now. Read only the lines you will change first (grep -n, then read_file with offset and limit), then edit them.")
+           (str "Write " path " now. Do not read " path
+                " first - it does not exist yet.")))))
 
 (defn write-restart-request!
   "Bumps the durable restart count and writes the pending override message
    under .swarmforge/ for the launcher to relaunch qwen with."
-  [state-file next-step path restart-count]
+  [state-file next-step path cwd restart-count]
   (io/make-parents ^java.io.File state-file)
   (spit state-file (json/generate-string {"restarts" (inc restart-count)}))
-  (spit (io/file (str state-file ".msg")) (override-message next-step path)))
+  (spit (io/file (str state-file ".msg")) (override-message next-step path cwd)))
 
 (defn end-qwen-process!
   "Ends this hook's parent process - qwen spawns the PostToolUse hook as a
@@ -583,13 +619,13 @@
                          (transcript-entries lines)))
              state-file (when (and entries (string? restart-cwd)) (restart-state-file restart-cwd))
              restart-count (read-restart-count state-file)
-             restart (when state-file (restart-decision entries name args restart-count))
+             restart (when state-file (restart-decision entries name args restart-cwd restart-count))
              release (when (and state-file (not restart))
-                       (release-decision entries name args restart-count))]
+                       (release-decision entries name args restart-cwd restart-count))]
          (cond
            restart
            (do
-             (write-restart-request! state-file (:next-step restart) (:path restart) restart-count)
+             (write-restart-request! state-file (:next-step restart) (:path restart) restart-cwd restart-count)
              (kill-fn)
              nil)
 

@@ -84,8 +84,8 @@ function simulateForms(calls, namedPath, restartCount0) {
               name (if write? "write_file" "read_file")
               args (if write? {"file_path" path0} {"file_path" (:probe c)})
               entries2 (conj entries {:kind :call :record (count entries) :name name :args args})
-              restart (local-model-repeat-guard/restart-decision entries2 name args restart-count)
-              release (when-not restart (local-model-repeat-guard/release-decision entries2 name args restart-count))]
+              restart (local-model-repeat-guard/restart-decision entries2 name args "/does-not-matter" restart-count)
+              release (when-not restart (local-model-repeat-guard/release-decision entries2 name args "/does-not-matter" restart-count))]
           (cond
             restart  (recur base (inc restart-count) (rest remaining))
             release  {:released true :restart-count restart-count}
@@ -164,8 +164,8 @@ test('property (BL-1992 invariant 2, boundary): restart-decision and release-dec
   [{:kind :compaction :next-step "Write ${NAMED_PATH} and run its feature."}
    {:kind :call :record 0 :name "read_file" :args {"file_path" "/probe-a"}}
    {:kind :call :record 1 :name "read_file" :args {"file_path" "/probe-b"}}])
-(emit {:restart (boolean (local-model-repeat-guard/restart-decision entries "read_file" {"file_path" "/probe-${probeSuffix}"} ${restartCount}))
-       :release (boolean (local-model-repeat-guard/release-decision entries "read_file" {"file_path" "/probe-${probeSuffix}"} ${restartCount}))})`;
+(emit {:restart (boolean (local-model-repeat-guard/restart-decision entries "read_file" {"file_path" "/probe-${probeSuffix}"} "/does-not-matter" ${restartCount}))
+       :release (boolean (local-model-repeat-guard/release-decision entries "read_file" {"file_path" "/probe-${probeSuffix}"} "/does-not-matter" ${restartCount}))})`;
       const [{ restart, release }] = callGuardLib(forms);
       assert.ok(!(restart && release), `restart-count ${restartCount} decided both restart and release`);
       // And exactly one decides, since this is a genuine third-miss shape.

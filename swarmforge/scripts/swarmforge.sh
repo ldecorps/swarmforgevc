@@ -2486,6 +2486,7 @@ RESUMECHECK
       # its own and trusts that one.
       local qwen_cli="$(swarm_only_strip_seat_tier "$extra_cli")"
       local restart_dir="$role_worktree/.swarmforge/local-seat-restart"
+      local in_process_dir="$role_worktree/.swarmforge/handoffs/inbox/in_process"
       # BL-1991: the (N) qualifier makes an empty glob vanish rather than
       # error - but handed to `ls` with no path argument at all, that falls
       # back to listing THIS SHELL's cwd, so pending_msg becomes whatever
@@ -2502,15 +2503,50 @@ RESUMECHECK
       # feature exists to handle silently defeated it. Both qwen calls
       # need this, not only the first - the loop's own relaunch can also
       # be the next one the guard kills.
+      # BL-2055: an override outlives its parcel (a respawned pane leaves
+      # one on disk, read only at the NEXT qwen exit, on another parcel),
+      # and the old by-name-sort pick served whichever sorted first,
+      # never checking it was still the seat's own held parcel. The
+      # override is named <in_process handoff file name>.json.msg
+      # (local_model_repeat_guard.bb's restart-state-file) - matched here
+      # against in_process_dir's own real-time contents, a sidecar
+      # (.nudge/.chase.json/.claim-progress.json/.batch-claim-progress.json
+      # - handoff_lib.bb's sidecar-suffixes) never counting as the held
+      # parcel's name. Every OTHER pending override is stale and removed
+      # outright, whether or not a parcel is held right now.
       launch_body="qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"Use read_file now to read '$prompt_file' - it is your card, and obey every instruction in it. Its loop starts by running ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\${LOCAL_RESUME_NOTE}\" || true
-local -a pending_msgs
-pending_msgs=('$restart_dir'/*.msg(N))
-while [[ \${#pending_msgs[@]} -gt 0 ]]; do
-  pending_msg=\"\${pending_msgs[1]}\"
+__bl2055_held_name() {
+  local f base
+  for f in '$in_process_dir'/*(N); do
+    [[ -f \"\$f\" ]] || continue
+    base=\"\${f##*/}\"
+    case \"\$base\" in
+      *.nudge|*.chase.json|*.claim-progress.json|*.batch-claim-progress.json) continue ;;
+    esac
+    print -r -- \"\$base\"
+    return
+  done
+}
+__bl2055_discard_stale_overrides() {
+  local held=\"\$1\" m
+  local -a msgs
+  msgs=('$restart_dir'/*.msg(N))
+  for m in \"\${msgs[@]}\"; do
+    [[ -n \"\$held\" && \"\$m\" == '$restart_dir'\"/\${held}.json.msg\" ]] && continue
+    rm -f \"\$m\"
+  done
+}
+local held_name
+held_name=\"\$(__bl2055_held_name)\"
+__bl2055_discard_stale_overrides \"\$held_name\"
+local pending_msg='$restart_dir'\"/\${held_name}.json.msg\"
+while [[ -n \"\$held_name\" && -f \"\$pending_msg\" ]]; do
   override_text=\"\$(cat \"\$pending_msg\")\"
   rm -f \"\$pending_msg\"
   qwen --auth-type openai -y${qwen_cli:+ $qwen_cli} -i \"\$override_text\" || true
-  pending_msgs=('$restart_dir'/*.msg(N))
+  held_name=\"\$(__bl2055_held_name)\"
+  __bl2055_discard_stale_overrides \"\$held_name\"
+  pending_msg='$restart_dir'\"/\${held_name}.json.msg\"
 done"
       ;;
     *)

@@ -30,6 +30,13 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { uncommittedDecision } = require('./helpers/hotfixLedgerDecision');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
+
+// Each run builds git fixtures and spawns bb. Invariant 2 takes 48 s alone at
+// load 9-11; in QA's full lane at load 12-14 on 2026-10-07 it ran 127 s against
+// the bare 120000 no lane ceiling scaled (note 003903). Both bases go through
+// the lane's budget helper (BL-1596's migration, for these two sites): 120 s on
+// a quiet host, up to 360 s under load.
 const {
   REPO_ROOT,
   makeFixture,
@@ -157,7 +164,7 @@ test('BL-1333/BL-654 invariant 1: running the redundancy proof alone never chang
   assert.ok(reach.differs > 0, 'never exercised a path whose content differs');
   assert.ok(reach.notInOrigin > 0, 'never exercised a path origin does not carry - the fail-closed corner');
   assert.ok(reach.absent > 0, 'never exercised a path absent from the working tree');
-}, 120000);
+}, propertyLaneTimeoutMs(120000));
 
 test('BL-1333/BL-654 invariant 2: an unproven path is left as found, still blocks, and is the only one named', () => {
   // The dangerous direction of this hotfix is the drop, so the cases are
@@ -257,7 +264,7 @@ test('BL-1333/BL-654 invariant 2: an unproven path is left as found, still block
   assert.ok(reach.mixed > 0, 'never exercised a proven path alongside an unproven one');
   assert.ok(reach.allUnproven > 0, 'never exercised an overlap the proof establishes nothing in');
   assert.ok(reach.unrelatedDirt > 0, 'never exercised dirt outside the overlap');
-}, 120000);
+}, propertyLaneTimeoutMs(120000));
 
 test('BL-1333/BL-654 invariant 3: the stamp-off parcel never edits the code it reviews', () => {
   // Measured, not asserted in prose: whatever THIS PARCEL changed, none of it

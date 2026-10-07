@@ -228,5 +228,9 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+  2026-10-07 (specifier): hotfix 662b7933c3 migrated bl1333StampOffInvariants'
+  two bare 120000 sites to propertyLaneTimeoutMs(120000) after QA note
+  003903 (stamped by BL-2066); this ticket's census, taken at its own base
+  commit, counts two fewer sites from there on.
 
 assigned_to: null
