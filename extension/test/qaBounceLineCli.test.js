@@ -654,6 +654,57 @@ test('findPreviousBriefingSentAtIso reads the OLDEST commit that added the day t
   assert.match(output, /^Bounces since 2026-10-01T08:00:00/, `expected the OLDEST send-marker commit's time, got: ${output}`);
 });
 
+test('findPreviousBriefingSentAtIso scopes its git log -S search to .sent.json alone, never the whole briefings directory', () => {
+  // A decoy file in docs/briefings/ whose own text happens to contain the
+  // day key as a literal string, committed BEFORE the real .sent.json
+  // send marker. If the pickaxe search were scoped to the whole
+  // directory (sentJsonPath collapsing to just the directory) rather
+  // than .sent.json alone, this earlier, unrelated commit would also
+  // match - and the function's own "oldest wins" fallback would then
+  // report THIS commit's time instead of the real send's.
+  const root = mkRepo();
+  const dir = path.join(root, 'docs', 'briefings');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01\n');
+  git(root, ['add', 'docs/briefings/2026-10-01.md']);
+  git(root, ['commit', '-q', '-m', 'briefing: 2026-10-01', '--date', '2026-10-01T06:00:00+00:00'], {
+    GIT_AUTHOR_DATE: '2026-10-01T06:00:00+00:00',
+    GIT_COMMITTER_DATE: '2026-10-01T06:00:00+00:00',
+  });
+  // Quoted exactly as the code's own pickaxe needle is: `"${dayKey}.md"`.
+  // An unquoted mention (`see 2026-10-01.md`) does not match git log -S's
+  // literal string search at all, so the decoy must quote it to be a
+  // real discriminator.
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'referencing "2026-10-01.md" here\n');
+  git(root, ['add', 'docs/briefings/notes.md']);
+  git(root, ['commit', '-q', '-m', 'decoy file naming the day by coincidence', '--date', '2026-10-01T07:00:00+00:00'], {
+    GIT_AUTHOR_DATE: '2026-10-01T07:00:00+00:00',
+    GIT_COMMITTER_DATE: '2026-10-01T07:00:00+00:00',
+  });
+  const sentPath = path.join(dir, '.sent.json');
+  fs.writeFileSync(sentPath, JSON.stringify({ sent: ['2026-10-01.md'] }));
+  git(root, ['add', 'docs/briefings/.sent.json']);
+  git(root, ['commit', '-q', '-m', 'briefing: record sent marker', '--date', '2026-10-01T08:00:00+00:00'], {
+    GIT_AUTHOR_DATE: '2026-10-01T08:00:00+00:00',
+    GIT_COMMITTER_DATE: '2026-10-01T08:00:00+00:00',
+  });
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'ffff777777',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  assert.match(
+    output,
+    /^Bounces since 2026-10-01T08:00:00/,
+    `expected the real .sent.json commit (08:00), not the decoy file's (07:00): ${output}`
+  );
+});
+
 test('a previous-day briefing file that was never committed falls back to the 24-hour window, never a crash', () => {
   const root = mkRepo();
   const dir = path.join(root, 'docs', 'briefings');
