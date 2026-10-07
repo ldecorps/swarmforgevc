@@ -292,6 +292,22 @@ test('computeSevenDayTrend ignores a record older than seven days and one from a
   assert.deepEqual(computeSevenDayTrend(records, 'coder', now), [0, 0, 0, 0, 0, 0, 0]);
 });
 
+test('computeSevenDayTrend excludes a record exactly seven days old - the window is seven whole days, not eight', () => {
+  const now = '2026-10-02T07:00:00.000Z';
+  const nowMs = new Date(now).getTime();
+  // Exactly 7*24h before now: daysBefore === TREND_DAYS (7), one bucket
+  // past the oldest one this trend reports - must be excluded, not folded
+  // into bucket 0.
+  const records = [{ at: new Date(nowMs - 7 * 24 * 60 * 60 * 1000).toISOString(), producingRole: 'coder' }];
+  assert.deepEqual(computeSevenDayTrend(records, 'coder', now), [0, 0, 0, 0, 0, 0, 0]);
+});
+
+test('computeSevenDayTrend excludes a record that is after nowIso - a future bounce never counts as "before"', () => {
+  const now = '2026-10-02T07:00:00.000Z';
+  const records = [{ at: '2026-10-02T08:00:00.000Z', producingRole: 'coder' }]; // one hour AFTER now
+  assert.deepEqual(computeSevenDayTrend(records, 'coder', now), [0, 0, 0, 0, 0, 0, 0]);
+});
+
 // ── BL-1880: the full report, and the line built from it ───────────────
 
 test('buildBounceWindowReport assembles the window, trend, model and all-time figures from one record set', () => {
@@ -350,6 +366,36 @@ test('formatBounceWindowLine names the 24-hour fallback and "none" when no role 
   assert.match(line, /all-time total: 0$/);
 });
 
+function baseReport(overrides) {
+  return {
+    windowStartIso: '2026-10-01T08:00:00.000Z',
+    hadPreviousBriefing: true,
+    windowTotal: 0,
+    windowByProducingRole: [],
+    windowByBouncingRole: [],
+    allTimeTotal: 0,
+    allTimeByBouncingRole: [],
+    allTimeByTicketType: {},
+    allTimeDefectsPerBounce: 0,
+    ...overrides,
+  };
+}
+
+test('formatBounceWindowLine orders the ticket-type breakdown by count descending', () => {
+  const line = formatBounceWindowLine(baseReport({ allTimeByTicketType: { chore: 1, defect: 5, feature: 3 } }));
+  assert.match(line, /by ticket type: defect x5, feature x3, chore x1 /);
+});
+
+test('formatBounceWindowLine breaks a ticket-type count tie alphabetically, never by the tied magnitude', () => {
+  // Two types tied at the SAME count: the sort's tie-break only engages
+  // when the primary comparison is 0 - a mutant weakening the `||` to
+  // `&&` (or the `-` to `+`) changes the ORDER of unequal entries too, so
+  // pairing a tie with an unequal third entry catches both shapes in one
+  // assertion.
+  const line = formatBounceWindowLine(baseReport({ allTimeByTicketType: { feature: 2, bug: 2, chore: 5 } }));
+  assert.match(line, /by ticket type: chore x5, bug x2, feature x2 /);
+});
+
 // ── BL-1880: argv parsing ────────────────────────────────────────────────
 
 test('parseArgv reads --target, --at and --json in any order', () => {
@@ -359,6 +405,18 @@ test('parseArgv reads --target, --at and --json in any order', () => {
     json: true,
   });
   assert.deepEqual(parseArgv([]), {});
+});
+
+test('parseArgv does not set json when --json is absent, even with other flags present', () => {
+  assert.deepEqual(parseArgv(['--target', '/x', '--at', '2026-10-02T07:00:00Z']), {
+    target: '/x',
+    at: '2026-10-02T07:00:00Z',
+  });
+});
+
+test('parseArgv ignores a trailing flag with no value, and an unrecognized flag', () => {
+  assert.deepEqual(parseArgv(['--target']), {});
+  assert.deepEqual(parseArgv(['--bogus', 'x']), {});
 });
 
 // ── BL-1880 end-to-end: main() with an injected clock, a real previous
@@ -436,4 +494,249 @@ test('main() with --json prints the same figures the line reports, including a c
   assert.equal(report.allTimeTotal, 1);
   assert.equal(report.windowByProducingRole[0].role, 'coder');
   assert.equal(report.windowByProducingRole[0].windowCount, report.windowTotal);
+  assert.equal(report.windowByProducingRole[0].model, 'Opus 5.5');
+});
+
+test('main() reports "model unknown" for a producing role with no configured model', () => {
+  const root = mkRepo();
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'cleaner',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'ffff666666',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  const originalCwd = process.cwd;
+  const writes = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  try {
+    process.cwd = () => root;
+    main({ at: '2026-10-02T07:00:00.000Z', json: true });
+  } finally {
+    process.stdout.write = originalWrite;
+    process.cwd = originalCwd;
+  }
+  const report = JSON.parse(writes.join(''));
+  assert.equal(report.windowByProducingRole[0].role, 'cleaner');
+  assert.equal(report.windowByProducingRole[0].model, 'model unknown');
+});
+
+function runMainCapturingLine(root, atIso, targetOverride) {
+  const originalCwd = process.cwd;
+  const writes = [];
+  const originalLog = console.log;
+  console.log = (...args) => writes.push(args.join(' '));
+  try {
+    process.cwd = () => root;
+    main(targetOverride ? { at: atIso, target: targetOverride } : { at: atIso });
+  } finally {
+    console.log = originalLog;
+    process.cwd = originalCwd;
+  }
+  return writes.join('\n');
+}
+
+test('findPreviousBriefingFile picks the LATEST day strictly before today, skipping a non-matching filename and today\'s own file', () => {
+  const root = mkRepo();
+  // Earlier day, a non-matching filename alongside it (must be ignored by
+  // the anchored DAY_KEY_PATTERN, not merely sorted after it), a LATER day
+  // that is still strictly before "today", and today's own file (which
+  // must never be picked - the CLI runs to feed content INTO it).
+  commitBriefingFile(root, '2026-09-28', '2026-09-28T08:00:00+00:00');
+  commitBriefingFile(root, '2026-10-01', '2026-10-01T08:00:00+00:00');
+  const dir = path.join(root, 'docs', 'briefings');
+  fs.writeFileSync(path.join(dir, 'notes-2026-10-01.md'), 'not a day-key file');
+  fs.writeFileSync(path.join(dir, '2026-10-02.md'), '# today, must never be picked\n');
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-q', '-m', 'stray + today files'], {
+    GIT_AUTHOR_DATE: '2026-10-02T06:00:00+00:00',
+    GIT_COMMITTER_DATE: '2026-10-02T06:00:00+00:00',
+  });
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555555',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  // Picked 2026-10-01 (the latest day BEFORE today), never 2026-09-28 (an
+  // earlier day that would also match "before today") and never
+  // 2026-10-02 (today's own file).
+  assert.match(output, /^Bounces since 2026-10-01T08:00:00/);
+});
+
+test('findPreviousBriefingSentAtIso reads the OLDEST commit touching the briefing file, not the newest', () => {
+  const root = mkRepo();
+  const dir = path.join(root, 'docs', 'briefings');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01\n');
+  git(root, ['add', 'docs/briefings/2026-10-01.md']);
+  git(root, ['commit', '-q', '-m', 'briefing: record sent marker 2026-10-01', '--date', '2026-10-01T08:00:00+00:00'], {
+    GIT_AUTHOR_DATE: '2026-10-01T08:00:00+00:00',
+    GIT_COMMITTER_DATE: '2026-10-01T08:00:00+00:00',
+  });
+  // A LATER commit amending the same file - a real briefing file is never
+  // amended, but the function's own comment says it reads the oldest
+  // commit "even if that ever changes"; this proves it actually does.
+  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01 (amended)\n');
+  git(root, ['add', 'docs/briefings/2026-10-01.md']);
+  git(root, ['commit', '-q', '-m', 'amend briefing 2026-10-01', '--date', '2026-10-01T23:00:00+00:00'], {
+    GIT_AUTHOR_DATE: '2026-10-01T23:00:00+00:00',
+    GIT_COMMITTER_DATE: '2026-10-01T23:00:00+00:00',
+  });
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555555',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  assert.match(output, /^Bounces since 2026-10-01T08:00:00/, `expected the OLDEST commit's time, got: ${output}`);
+});
+
+test('a previous-day briefing file that was never committed falls back to the 24-hour window, never a crash', () => {
+  const root = mkRepo();
+  const dir = path.join(root, 'docs', 'briefings');
+  fs.mkdirSync(dir, { recursive: true });
+  // Written but never `git add`/`git commit` - findPreviousBriefingFile
+  // finds it on disk, but `git log --follow` has no history for it, so
+  // gitLog's own output is empty and findPreviousBriefingSentAtIso must
+  // fall back to undefined rather than throwing or returning garbage.
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555555',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01 (never committed)\n');
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  assert.match(output, /^Bounces in the last 24 hours \(no previous briefing was found\)/);
+});
+
+test('no docs/briefings directory at all falls back to the 24-hour window', () => {
+  const root = mkRepo();
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555555',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  assert.match(output, /^Bounces in the last 24 hours \(no previous briefing was found\)/);
+});
+
+test('DAY_KEY_PATTERN is anchored at both ends - a prefixed or suffixed near-miss filename is never mistaken for a day-key file', () => {
+  const root = mkRepo();
+  commitBriefingFile(root, '2026-09-28', '2026-09-28T08:00:00+00:00');
+  const dir = path.join(root, 'docs', 'briefings');
+  // Neither of these is ever committed, on purpose: if the ^ or $ anchor
+  // were lost, DAY_KEY_PATTERN would match the "2026-10-01" substring
+  // inside one of these names and findPreviousBriefingFile would
+  // construct the LITERAL path "2026-10-01.md" - a file that does not
+  // exist here - so gitLog would find no history for it and the window
+  // would silently fall back to the last 24 hours instead of naming
+  // 2026-09-28's real commit time.
+  fs.writeFileSync(path.join(dir, 'prefix-2026-10-01.md'), 'would match without the ^ anchor');
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555555',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  fs.writeFileSync(path.join(dir, '2026-10-01.md.disabled'), 'would match without the $ anchor');
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  assert.match(output, /^Bounces since 2026-09-28T08:00:00/, `expected the real 2026-09-28 commit, got: ${output}`);
+});
+
+test('a committed file for TODAY is excluded by the filter, not merely sorted before an earlier valid day', () => {
+  // No non-matching junk filename here, on purpose: a stray name maps to a
+  // real JS `undefined`, which Array.prototype.sort() ALWAYS moves to the
+  // end regardless of the comparator - that would mask a dropped filter
+  // (it would make dayKeys[dayKeys.length - 1] read undefined either way).
+  // With only real, committed day-key files, dropping the `day < todayKey`
+  // filter has nowhere to hide: today's own file would sort last for real.
+  const root = mkRepo();
+  commitBriefingFile(root, '2026-09-28', '2026-09-28T08:00:00+00:00');
+  const dir = path.join(root, 'docs', 'briefings');
+  fs.writeFileSync(path.join(dir, '2026-10-02.md'), '# today, must never be picked\n');
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-q', '-m', "today's own file"], {
+    GIT_AUTHOR_DATE: '2026-10-02T06:00:00+00:00',
+    GIT_COMMITTER_DATE: '2026-10-02T06:00:00+00:00',
+  });
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555555',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  assert.match(output, /^Bounces since 2026-09-28T08:00:00/, `expected 2026-09-28, not today's own file: ${output}`);
+});
+
+test('a docs/briefings directory that exists but has no day-key files falls back to the 24-hour window', () => {
+  const root = mkRepo();
+  const dir = path.join(root, 'docs', 'briefings');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'README.md'), 'not a day-key file');
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555555',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  assert.match(output, /^Bounces in the last 24 hours \(no previous briefing was found\)/);
+});
+
+test('a previous-day briefing file in a target that is not a git repository at all falls back to the 24-hour window', () => {
+  // cwd stays a real repo (mkRepo) so resolveCliMainWorktreeContext() can
+  // find .swarmforge/roles.tsv the usual way; the business-logic target
+  // (readBounceRecords, findPreviousBriefingSentAtIso's gitLog call) is a
+  // separate, plain non-git directory, passed explicitly via --target -
+  // the two are independent inputs and this is the only way to make
+  // `git log` genuinely throw (ENOTGITREPO) without main() itself failing.
+  const cwdRoot = mkRepo();
+  const target = mkTmp('sfvc-qa-bounce-line-nogit-');
+  const dir = path.join(target, 'docs', 'briefings');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01\n');
+  appendBounceRecordIfNew(target, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555555',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  const output = runMainCapturingLine(cwdRoot, '2026-10-02T07:00:00.000Z', target);
+  assert.match(output, /^Bounces in the last 24 hours \(no previous briefing was found\)/);
 });

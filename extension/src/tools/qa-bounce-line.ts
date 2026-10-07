@@ -265,14 +265,30 @@ export interface QaBounceLineArgs {
   json?: boolean;
 }
 
+// The value following `flag` at position `i` in `argv`, or undefined when
+// `argv[i]` is not `flag` or `flag` is the last argument. Split out of
+// parseArgv (BL-1880 hardening) so each of the two value-flags is one
+// function call in the loop below, not its own && chain.
+function valueFlagAt(argv: string[], i: number, flag: string): string | undefined {
+  return argv[i] === flag && argv[i + 1] !== undefined ? argv[i + 1] : undefined;
+}
+
 export function parseArgv(argv: string[]): QaBounceLineArgs {
   const args: QaBounceLineArgs = {};
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--target' && argv[i + 1] !== undefined) {
-      args.target = argv[++i];
-    } else if (argv[i] === '--at' && argv[i + 1] !== undefined) {
-      args.at = argv[++i];
-    } else if (argv[i] === '--json') {
+    const target = valueFlagAt(argv, i, '--target');
+    if (target !== undefined) {
+      args.target = target;
+      i++;
+      continue;
+    }
+    const at = valueFlagAt(argv, i, '--at');
+    if (at !== undefined) {
+      args.at = at;
+      i++;
+      continue;
+    }
+    if (argv[i] === '--json') {
       args.json = true;
     }
   }
