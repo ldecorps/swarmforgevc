@@ -1,0 +1,111 @@
+id: BL-2073
+title: "QA's gather runs, on every parcel, the property runners its change reaches and nothing runs the others - the gather-row slice of BL-2049's ruling A: one new check row in qaGather.ts that runs run_property_runners.sh --changed-from <ref> on the parcel's own diff, so a red the parcel causes shows in the gather QA already reads, before the land"
+milestone: M8
+type: feature
+status: todo
+epic: unit-suite-speed
+priority: 10
+direction: swarm-reported
+depends_on: [BL-2049]
+mutation_cost: medium
+# medium: one new check row and one ref computation in qaGather.ts
+# (production TypeScript, so the hardener's Stryker pass runs), plus the
+# step handler over mkdtemp git fixtures.
+slice_size_envelope: medium
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one new check row beside unchanged checks; nothing to refactor"
+  architect: "the gather's checklist shape and runFn seam are unchanged; the scenarios pin the one new decision"
+  documenter: "the how-to that lists what the gather runs states the new row and its ref rule"
+verification_category: unlaned-property-runner-run-by-hand
+
+acceptance: specs/features/BL-2073-qa-gather-runs-the-property-runners-its-change-reaches.feature
+
+invariants:
+  - "The gather's property-runner row runs exactly the runners the parcel's own diff reaches, and no other runner - the same reach rule as property_runner_reach.bb, never a re-listing of all 217."
+  - "When the parcel's own diff reaches no property runner, the row reads ran with the front-end's own 'no property runner reached since <ref>' message and exit 0 - never blocked, never a red."
+  - "Every other check (straggler, sibling, register, wiring, unit, properties, acceptance) runs exactly as today."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2073QaGatherPropertyRunnerReachSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the new row's only reader is
+# QA, through the report; qa-gather.js already calls gatherQaChecklist, so
+# a qaGather.ts literal would be satisfied by this parcel's own diff.
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-2049 (approved, ruling A confirmed by the human and
+  landed): "QA's gather runs, on every parcel, the property runners its
+  change reaches, and nothing runs the others." BL-2049's own
+  approval_context: "On A the specifier mints the gather-row slice the
+  same pass (production TypeScript, so it carries the hardener)." FIRM:
+  the row runs BL-2049's front-end flag, never a second reach rule; the
+  ref is the parcel's own merge-base with main, the same ref BL-2024's
+  skip predicate computes. No new ruling is posed.
+
+description: |
+  ## What is wanted
+
+  - `extension/src/quality/qaGather.ts`: the CHECKLIST gains one new row,
+    `property_runners`, between `properties` and `acceptance`:
+    - The ref: the parcel's own merge-base with main,
+      `git merge-base main <commit>`, computed through the existing runFn
+      seam (the same ref BL-2024's skip predicate computes). When the
+      merge-base cannot be resolved, the row is blocked with a reason
+      naming the failed merge-base - it never falls back to a wider ref.
+    - The command: `swarmforge/scripts/test/run_property_runners.sh
+      --changed-from <ref>` with cwd the repository root - the front-end
+      computes the parcel's own changed paths and runs exactly the
+      reached runners on the recorded lane runner (BL-2049). The row
+      never re-lists the population and never passes a directory.
+    - The row reads `ran` with the front-end's exit status and output,
+      including the front-end's own `no property runner reached since
+      <ref>` message when none is reached (exit 0).
+  - Every other check runs exactly as today, in the fixed order.
+  - The step handler `specs/pipeline/steps/bl2073QaGatherPropertyRunnerReachSteps.js`
+    builds each fixture with `git init` under mkdtemp (BL-1390) and calls
+    the gather with a `runFn` that passes `git` through to the real git
+    and records every other command, answering it with exit 0 - the same
+    seam shape as BL-2024's handler.
+  - Documenter: the how-to or reference that lists what the gather runs
+    (`grep -rln qa-gather docs`) states the new row, its ref rule and its
+    fail-closed rule.
+
+  ## Not in scope
+
+  - The reach selector and the front-end flag: BL-2049, landed.
+  - Skipping the row for a backlog-only parcel: BL-2024 (paused) owns the
+    skip status for the unit and properties lanes; this row is not one of
+    them and runs on every parcel.
+  - A nightly full run of all 217: ruling B's slice, not ruled.
+  - Changing which parcels need QA, or any other check's command.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2073-qa-gather-runs-the-property-runners-its-change-reaches.feature`:
+     5 ok (01 x3, 02, 03), 0 fail.
+  2. Read the gather report for THIS parcel: it touches extension/src,
+     so the property_runners row reads ran with the front-end's own
+     output for this parcel's own diff.
+  3. `git diff <parcel>^..<parcel> --stat` names only qaGather.ts, the
+     feature, the handler, the docs line and the ticket YAML.
+
+source: |
+  BL-2049's approval_context (landed, closed): "On A the specifier mints
+  the gather-row slice the same pass (production TypeScript, so it
+  carries the hardener)." The human's ruling A, verbatim (Article 5.3,
+  carried by BL-2049): "QA's gather runs, on every parcel, the property
+  runners its change reaches, and nothing runs the others."
+
+notes: |
+  Minted 2026-10-07 by the specifier, the same pass BL-2049 landed and
+  closed (coordinator parcel: "BL-2049 ruling A confirmed, landed+closed -
+  mint the gather-row slice").
+  INVEST: depends on BL-2049 (landed). Small (one check row, one ref
+  computation, one handler, three scenarios). Testable (mkdtemp git
+  fixtures, injected runFn).
+  Dynamic routing: production TypeScript -> [coder, hardender, qa]
+  (BL-2049's own note: "production TypeScript, so it carries the
+  hardener").
+
+assigned_to: coder
