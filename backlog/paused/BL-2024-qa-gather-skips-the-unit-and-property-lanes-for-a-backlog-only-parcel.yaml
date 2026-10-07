@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: lean-aware-coordinator
-priority: 20
+priority: 3
 direction: swarm-reported
 depends_on: []
 mutation_cost: medium
@@ -106,3 +106,12 @@ notes: |
   direction). Valuable (about 3 QA hours a shift). Estimable (one status,
   one predicate). Small (three scenarios). Testable (mkdtemp git fixtures,
   injected runFn).
+  2026-10-07 (specifier, closing-ceremony lean pass for shift 2026-10-07):
+  priority 20 -> 3. QA is the top dwell hotspot a second shift running
+  (718 min, then 748 min of processing over 53 passes, median 13.4 min).
+  12 of this shift's 38 QA tickets were stamp-offs, 175 of the 748 min;
+  QA's own lane logs (.worktrees/QA/extension/.property-durations.jsonl)
+  put the property lane at 7.3-17.7 min a run, 311 min over 31 runs. At
+  20 this ticket sat behind about 22 approved non-epic tickets with the
+  depth cap full, so the shift's fix for its own bottleneck had not
+  started.
