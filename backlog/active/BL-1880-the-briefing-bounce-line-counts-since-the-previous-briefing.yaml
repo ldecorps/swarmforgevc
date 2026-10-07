@@ -87,10 +87,13 @@ description: |
 
   ## How (direction, not mandate)
 
-  - Window start: when the previous briefing was sent. Each send commits
-    `docs/briefings/.sent.json` ("briefing: record sent marker"), so the
-    commit that added the previous briefing's file is one source; the
-    briefing caller may also pass it in. Say in the evidence which you used.
+  - Window start: when the previous briefing was sent, taken from the
+    sender (QA bounce D1, 64f033e529): the briefing sweep's own previous
+    send time passed in, or a sent-at the sweep records with each send.
+    Never the commit that added the day to `docs/briefings/.sent.json`:
+    that commit failed on every send from 2026-10-02 to 2026-10-07 and
+    reached git days late by hand (BL-2069 owns it). Amended 2026-10-07,
+    QA note 003912.
   - Model: `readRoleModelId` (`extension/src/swarm/backendSwitch.ts`) with
     `formatModelDisplayName`, the source the Bubble tiles use (BL-1858).
     Never re-derive it (BL-1811).
@@ -128,6 +131,10 @@ qa_e2e_procedure: |
   morning briefing's bounce line leads with the window.
 
 notes: |
+  Amended 2026-10-07 (active, bounced to the coder on D1): the How's
+  window-start bullet no longer says each send commits the sent marker;
+  it points at the sender's send time, as QA's D1 does (QA note 003912,
+  BL-2069). Nothing the coder builds changes beyond D1's remediation.
   Minted 2026-10-02 by the specifier from the documenter's relay of the
   human's two messages (source). Not queue-jump: the standing directive
   admits only local-LLM work and high/critical defects, and this is a
