@@ -1,0 +1,127 @@
+id: BL-2071
+title: "A local seat forwards only a ticket whose acceptance feature passes: the iq3 coder's assert step is told to run the ticket's feature but nothing checks it, so QA finds the errors; a local-model seat's git_handoff is queued only when the ticket's acceptance feature passes at the forwarded commit, and the phase CLI's pass runs the same check"
+milestone: M8
+type: defect
+severity: high
+# high: a broken quality gate - the assert step is the seat's own check,
+# nothing enforces it, and the cost lands on QA as bounces. The human:
+# "absolutely".
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: Babashka (no Stryker lane; the hardener's hand-mutant pass) in
+# swarm_handoff.bb's send path and local_seat_phase_cli.bb, plus a
+# fixture repository with a small feature and handler.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new check shared by two callers; nothing to refactor"
+
+acceptance: specs/features/BL-2071-a-local-seat-forwards-only-a-ticket-whose-acceptance-passes.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2071LocalSeatForwardRunsAcceptanceSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the check's name is the
+# coder's; the scenarios drive the REAL swarm_handoff.bb send and the REAL
+# local_seat_phase_cli.bb pass over a fixture repository.
+
+human_approval: approved
+approval_context: >
+  The human's directive in the specifier's session, 2026-10-07. No choice
+  is posed. FIRM: a red, unhandled or unrunnable acceptance feature never
+  lets a local seat's git_handoff queue; the refusal names what failed so
+  the seat can fix it; cloud seats' sends are unchanged.
+
+invariants:
+  - "A local-model seat never queues a git_handoff for a ticket whose acceptance feature does not pass at the forwarded commit."
+  - "The forward check and the assert step's pass run the same check and agree on the same commit."
+
+description: |
+  ## What is wrong
+
+  The human, 2026-10-07, verbatim: "Iq3 shoyld absokuyely eun the
+  acceptence tests ad part of asses step, to avoid qa findong the error".
+
+  The local seat's card (BL-2038) says the assert phase runs the ticket's
+  tests and feature, then `local_seat_phase_cli.bb pass`. Nothing checks
+  it: local_seat_phase_lib.bb's `pass-move` checks only that the phase is
+  assert, and swarm_handoff.bb has no local-seat check. Measured over the
+  iq3 coder's qwen sessions since 2026-10-04: 258 swarm_handoff.sh calls,
+  104 of them in a session that had run `node specs/pipeline/cli.js` on a
+  feature before the call (the other 154 include notes and the self-audit's
+  second call, but most forwards ran no feature). BL-2058's mint measured
+  12 of 12 iq3 serves since BL-2038 printing a PHASE line, and no phase CLI
+  call at all.
+
+  ## What is wanted
+
+  - When a local-model seat (its roles.tsv agent is `local-model`,
+    gpu_pause_lib.bb's `local-model-seat?`) sends a git_handoff for a
+    ticket, swarm_handoff runs the ticket's `acceptance:` feature at the
+    commit being forwarded. It queues only when every scenario passes
+    (scenario 01, invariant 1). A failing scenario, a step with no
+    handler, or a run that cannot complete refuses the send and prints
+    what failed; the parcel stays with the seat to fix and send again.
+  - `local_seat_phase_cli.bb pass <ticket>` runs the same check and
+    refuses the move to done while it fails (scenario 02, invariant 2),
+    so the assert step and the forward agree.
+  - A cloud seat's send runs no acceptance check (scenario 03).
+  - Living docs: swarmforge/handoff-protocol.md's send gates and
+    docs/how-to/BL-1052-local-model-seat-launch.md say a local seat's
+    forward runs its acceptance feature.
+
+  ## How (direction, not mandate)
+
+  - One check, two callers: a function that takes the project root, the
+    ticket and a commit, reads the ticket's `acceptance:` at that commit,
+    runs `node specs/pipeline/cli.js <feature>` there, and returns pass or
+    the failing lines. The architect decides where it lives, how it runs
+    at the forwarded commit (the seat's worktree HEAD is that commit when
+    it sends), and how it meets the self-audit's two-call protocol (run on
+    the first call, cache by draft fingerprint, or both).
+  - A ticket whose `acceptance:` points at another ticket's feature
+    (BL-1251) runs that feature the same way.
+  - The run's time is the feature's own; a run past the sweep bound is a
+    refusal that names the timeout, never a silent pass.
+
+constraints: >
+  Fixture repositories under mkdtemp, proven by rev-parse
+  --git-common-dir before any mutating git command (BL-1390); never the
+  live checkout or the live mailboxes. bash 3.2 rules for any shell. The
+  step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Cloud seats' forwards (Claude, Cursor coders).
+  - The unit and property lanes: QA's gather runs them; this check is the
+    ticket's own acceptance feature only.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2071-a-local-seat-forwards-only-a-ticket-whose-acceptance-passes.feature`:
+     5 of 5 ok (01 x3, 02, 03).
+  2. `node specs/pipeline/cli.js specs/features/BL-2038-a-local-seats-phases-each-run-in-a-fresh-session.feature`:
+     all ok (the phase moves are otherwise unchanged).
+  3. After the land, on the live swarm: the next iq3 forward's
+     swarm_handoff output shows the acceptance run, and its parcel's QA
+     pass finds the ticket's feature green.
+
+source: |
+  The human, 2026-10-07, verbatim, in the specifier's session:
+
+  > Iq3 shoyld absokuyely eun the acceptence tests ad part of asses step, to avoid qa findong the error
+
+notes: |
+  Minted 2026-10-07 by the specifier at the human's directive.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Seat: this changes the forward path every local seat uses; coder@2 is
+  the better holder.
+  IR-DRY at mint: no findings.
+  INVEST: Independent, Negotiable (where the check lives, how it meets
+  the self-audit), Valuable (iq3's red work stops reaching QA), Estimable
+  (one check, two callers), Small (three scenarios), Testable (fixture
+  repository through the real send and the real pass).
+
+assigned_to: coder

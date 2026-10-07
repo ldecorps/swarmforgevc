@@ -1,0 +1,130 @@
+id: BL-2070
+title: "A local seat starts the next ticket in a fresh session after it forwards one: the iq3 launcher starts qwen once and keeps that session from parcel to parcel, carrying every earlier ticket's reads; after a queued git_handoff and a completed parcel the repeat guard ends qwen and the launcher starts a fresh session with the seat's normal launch message"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 10
+direction: normal
+depends_on: []
+# Shares swarmforge/scripts/local_model_repeat_guard.bb with BL-2055,
+# BL-2056 and BL-2064; the coordinator's orthogonality rule keeps them
+# from running at once, so no depends_on is declared.
+mutation_cost: medium
+# medium: Babashka (no Stryker lane; the hardener's hand-mutant pass) in
+# the guard and the launcher text swarmforge.sh writes, plus fixture
+# transcripts.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new decision beside the existing restart path; nothing to refactor"
+
+acceptance: specs/features/BL-2070-a-local-seat-starts-each-ticket-after-a-forward-in-a-fresh-session.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2070FreshSessionAfterForwardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the decision's name is the
+# coder's, and the guard's existing restart functions match before and
+# after. The scenarios drive the guard's REAL answer over fixture
+# transcripts, as BL-1991's bl1991RestartGuardCli.bb does.
+
+human_approval: approved
+approval_context: >
+  The human asked for it, through the coordinator (note 017260): "iq3
+  should clear context after forwarding a ticket". A new feature file
+  needs the human's look. No choice is posed and there are no
+  ruling_options. What needs sign-off: the trigger is a QUEUED
+  git_handoff followed by a completed parcel (never a challenged send,
+  never a note), and the fresh session is a relaunch, not a /clear typed
+  into the session. FIRM: it never spends the parcel's restart count
+  (BL-1991, BL-1992), and it applies only to local-model seats.
+
+invariants:
+  - "A fresh session starts after a completion only when the seat queued a git_handoff for that parcel; a challenged (AUDIT_REQUIRED) or refused send, or a note, never ends the session."
+  - "A fresh session after a forward never changes a parcel's restart count."
+
+description: |
+  ## What is wrong
+
+  The local seat's launcher (.swarmforge/launch/coder.sh, written by
+  swarmforge/scripts/swarmforge.sh) runs qwen once with the card prompt and
+  runs it again only while a restart request (`local-seat-restart/*.msg`,
+  BL-1991) is pending. Between those, one qwen session serves parcel after
+  parcel: on 2026-10-07 session 95a9908d ran from 11:27Z to 12:28Z
+  through a merge-up note, two idle wakes and then BL-2056. Every earlier
+  ticket's reads stay in a context that compacts at about 55k tokens
+  (BL-2064's measurement: 39% of the seat's model time was reading a
+  compaction then discarded).
+
+  ## What is wanted
+
+  - When the seat's done_with_current.sh completes a parcel for which the
+    seat queued a git_handoff (swarm_handoff.sh printed HANDOFF DELIVERED
+    or HANDOFF QUEUED for a `type: git_handoff` draft), the repeat guard
+    ends qwen and leaves a restart request whose message is the seat's
+    normal launch message, so the next parcel starts in a fresh session
+    that reads its card and runs ready_for_next.sh (scenario 01).
+  - Nothing else ends the session: no send, a send that printed
+    AUDIT_REQUIRED and queued nothing, or a queued note (scenario 02,
+    invariant 1).
+  - The parcel's restart count is unchanged (invariant 2): this is not a
+    missed write.
+  - Living doc: docs/how-to/BL-1052-local-model-seat-launch.md gains a
+    section beside "A seat that skips its named write is restarted on it
+    (BL-1991)".
+
+  ## How (direction, not mandate)
+
+  - A pure decision over `transcript-entries` beside `missed-write`: the
+    last done_with_current.sh result reads COMPLETED, and a git_handoff
+    send since the parcel's take-up reads queued. One more branch in
+    `answer`, reusing end-qwen-process! and the restart request file
+    without bumping the count.
+  - The launch message: swarmforge.sh writes it into the launcher; the
+    guard needs the same text. The architect decides whether the guard
+    reads it from the launcher, a written copy, or an empty .msg the
+    launcher reads as "the normal launch".
+  - This is a relaunch by the harness at a parcel boundary, not an agent
+    typing /clear, so workflow.prompt's "Never /clear unless context is at
+    least 75% full" is not engaged; the fresh session still re-reads its
+    card (the startup re-read that rule protects).
+
+constraints: >
+  Fixture transcripts and temp worktrees only: never the live seat's
+  transcript, never a real qwen process, never the live tmux server. Only
+  local-model seats run the guard. bash 3.2 rules for any shell. The step
+  handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Cloud seats (Claude, Cursor): their sessions are managed elsewhere.
+  - The read budget inside a ticket (BL-2064).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2070-a-local-seat-starts-each-ticket-after-a-forward-in-a-fresh-session.feature`:
+     4 of 4 ok (01, 02 x3).
+  2. `node specs/pipeline/cli.js` on the BL-1991 and BL-1992 features: all
+     ok (the missed-write restart and release are unchanged).
+  3. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`
+     and `bash swarmforge/scripts/test/test_bl1991_local_seat_restart_launch.sh`
+     once each (no lane runs them): all pass.
+  4. After the land and a seat relaunch (the launcher is rewritten at
+     launch): the iq3 seat's qwen chat directory shows a new session
+     starting with the launch message within a minute after each
+     forward, and none after a completed note.
+
+source: |
+  Coordinator note to the specifier, 2026-10-07T13:05:17Z (inbound
+  00_20261007T130517Z_017260), verbatim: "human: iq3 should clear context
+  after forwarding a ticket - mint?"
+
+notes: |
+  Minted 2026-10-07 by the specifier at the human's ask relayed by the
+  coordinator. Not auto-approved: a feature with a new feature file.
+  IR-DRY at mint: one medium finding, "is ended" against "is not ended",
+  opposite outcomes kept as two steps.
+  INVEST: Independent (shares a file with BL-2055, BL-2056 and BL-2064,
+  sequenced by orthogonality), Negotiable (where the launch text lives),
+  Valuable (each ticket starts with an empty window), Estimable (one
+  decision and one launcher change), Small (two scenarios), Testable
+  (fixture transcripts through the real answer).

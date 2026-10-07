@@ -509,4 +509,117 @@ git -C "$ROOT" checkout -q -- keep17.txt
 git -C "$ROOT" checkout -q feature
 git -C "$ROOT" reset -q --hard "$FEATURE_TIP"
 
+# ══ BL-1913: a "this branch" deletion origin/main already made is carried
+#    without naming anything - but ONLY when the incoming commit really is
+#    origin/main (or an ancestor of it) AND the path is really absent
+#    there. The incoming-side direction (BL-1341) and the exemption-by-
+#    naming model are both unchanged. ══════════════════════════════════
+
+ORIGIN_BARE="$(cd "$(mktemp -d)" && pwd -P)"
+git init -q --bare "$ORIGIN_BARE"
+git -C "$ROOT" remote add origin "$ORIGIN_BARE"
+
+push_as_origin_main() {
+  # Pushes $1 (a commit-ish) to the bare origin's main, then fetches it
+  # back into refs/remotes/origin/main - the same ref the guard's own
+  # `git rev-parse --verify --quiet origin/main` reads.
+  git -C "$ROOT" push -q -f origin "$1:refs/heads/main"
+  git -C "$ROOT" fetch -q origin main
+}
+
+# ── 18: MERGE_HEAD IS origin/main itself, the path absent there (origin/main
+#        made the deletion) - exempt, merge allowed with NO ticket named ──
+push_as_origin_main "$MAIN_TIP"
+start_merge
+echo "merge origin/main" > "$MSG"
+run_guard "$MSG" || fail "18: a this-branch deletion that origin/main itself made must be exempt, even with no ticket named"
+pass "18: merging origin/main itself carries its own deletion with no ticket name needed"
+git -C "$ROOT" merge --abort
+
+# ── 19: MERGE_HEAD is an ANCESTOR of origin/main (one commit behind it),
+#        the path still absent there - still exempt ───────────────────────
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" reset -q --hard "$MAIN_TIP"
+echo "origin moved on" > "$ROOT/origin-ahead.txt"
+git -C "$ROOT" add origin-ahead.txt
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "chore: origin/main moves ahead of the line's merge base"
+ORIGIN_AHEAD_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+push_as_origin_main "$ORIGIN_AHEAD_TIP"
+start_merge
+echo "merge an older point on origin/main" > "$MSG"
+run_guard "$MSG" || fail "19: a this-branch deletion made at an ANCESTOR of origin/main must still be exempt"
+pass "19: merging a commit that is an ancestor of origin/main still carries its deletion"
+git -C "$ROOT" merge --abort
+
+# ── 20: MERGE_HEAD is NOT on origin/main at all (even though an origin/main
+#        ref exists, pointing elsewhere) - the exemption must not leak to an
+#        unrelated branch; still refused exactly as before BL-1913 ────────
+git -C "$ROOT" checkout -q -b off-origin-main "$PRE_REVERT"
+git -C "$ROOT" rm -q specs/pipeline/steps/bl0001ExampleSteps.js swarmforge/scripts/bl0002_example_lib.bb
+git -C "$ROOT" commit -q -m "a side branch that is not on origin/main, also deleting both files"
+OFF_ORIGIN_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+# origin/main still points at ORIGIN_AHEAD_TIP from row 19 - a real, but
+# UNRELATED, commit - never this branch's own ancestor or descendant.
+git -C "$ROOT" checkout -q feature
+git -C "$ROOT" reset -q --hard "$FEATURE_TIP"
+set +e
+git -C "$ROOT" merge --no-ff --no-commit "$OFF_ORIGIN_TIP" >/dev/null 2>&1
+set -e
+echo "merge a branch that is not on origin/main" > "$MSG"
+set +e
+OUT20="$(run_guard "$MSG" 2>&1)"
+STATUS20=$?
+set -e
+[[ "$STATUS20" -ne 0 ]] || fail "20: a this-branch deletion from a branch that is not on origin/main must still be refused"
+grep -q "bl0001ExampleSteps.js" <<<"$OUT20" || fail "20: refusal must name the first path, got: $OUT20"
+pass "20: a deletion from a branch that is not on origin/main is still refused, even with an unrelated origin/main present"
+git -C "$ROOT" merge --abort
+
+# ── 21: MERGE_HEAD IS origin/main, but the path is STILL PRESENT there (the
+#        drop came from something else, e.g. a hand resolution) - the
+#        exemption requires BOTH "is origin/main-or-ancestor" AND "absent
+#        there"; still refused ─────────────────────────────────────────────
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" reset -q --hard "$PRE_REVERT"
+git -C "$ROOT" rm -q specs/pipeline/steps/bl0001ExampleSteps.js
+git -C "$ROOT" commit -q -m "revert only BL-0001, keeping BL-0002"
+MAIN_PARTIAL_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+push_as_origin_main "$MAIN_PARTIAL_TIP"
+git -C "$ROOT" checkout -q feature
+git -C "$ROOT" reset -q --hard "$FEATURE_TIP"
+set +e
+git -C "$ROOT" merge --no-ff --no-commit "$MAIN_PARTIAL_TIP" >/dev/null 2>&1
+set -e
+# Hand-drop the SECOND file too, even though origin/main (MERGE_HEAD) still
+# carries it - a resolver's own choice, not origin/main's deletion.
+git -C "$ROOT" rm -q -f swarmforge/scripts/bl0002_example_lib.bb >/dev/null 2>&1 || true
+echo "merge origin/main" > "$MSG"
+set +e
+OUT21="$(run_guard "$MSG" 2>&1)"
+STATUS21=$?
+set -e
+[[ "$STATUS21" -ne 0 ]] || fail "21: a hand-dropped path that origin/main (MERGE_HEAD) still carries must not be exempt"
+grep -q "bl0002_example_lib.bb" <<<"$OUT21" || fail "21: refusal must name the hand-dropped path still present at MERGE_HEAD, got: $OUT21"
+grep -q "bl0001ExampleSteps.js" <<<"$OUT21" && fail "21: the path origin/main itself dropped (absent at MERGE_HEAD) must stay exempt, got: $OUT21"
+pass "21: a path still present at MERGE_HEAD (origin/main) is never exempt, even though MERGE_HEAD is origin/main itself"
+git -C "$ROOT" merge --abort
+
+# ── 22 (invariant 2): no origin remote at all - ORIGIN_MAIN_SHA resolves
+#        empty, the exemption is unavailable, and the guard refuses exactly
+#        as it did before BL-1913 (fail closed) ───────────────────────────
+git -C "$ROOT" remote remove origin
+git -C "$ROOT" checkout -q feature
+git -C "$ROOT" reset -q --hard "$FEATURE_TIP"
+start_merge
+echo "merge main, no origin configured at all" > "$MSG"
+set +e
+OUT22="$(run_guard "$MSG" 2>&1)"
+STATUS22=$?
+set -e
+[[ "$STATUS22" -ne 0 ]] || fail "22: with no origin/main resolvable, the guard must fail closed and refuse exactly as before BL-1913"
+grep -q "bl0001ExampleSteps.js" <<<"$OUT22" || fail "22: refusal must still name the first path, got: $OUT22"
+grep -q "bl0002_example_lib.bb" <<<"$OUT22" || fail "22: refusal must still name the second path, got: $OUT22"
+pass "22: with no origin/main resolvable (invariant 2), the guard fails closed exactly as it did before BL-1913"
+git -C "$ROOT" merge --abort
+
 echo "ALL PASS"
