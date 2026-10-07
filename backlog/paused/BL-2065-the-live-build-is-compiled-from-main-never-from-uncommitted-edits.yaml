@@ -1,0 +1,142 @@
+id: BL-2065
+title: "The live build is compiled from main, never from uncommitted edits: the front-desk supervisor's stale-build recompile ran `npm run compile` on the master checkout's working tree, so an uncommitted hand-made BL-1911 implementation with a leaky secret filter went live in the cursor bridge from 09:31Z to 10:50Z on 2026-10-07 under a BUILD_SHA naming main"
+milestone: M8
+type: defect
+severity: high
+# high: a live path that ships unreviewed, uncommitted code into the
+# running front desk and bridge, labelled as main; on 2026-10-07 it
+# shipped a repo reader whose secret filter leaked (QA note 003900).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: Babashka supervisor code (no Stryker lane; the hardener's
+# hand-mutant pass) plus a fixture project that compiles in seconds.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one build step changes; nothing to refactor"
+
+acceptance: specs/features/BL-2065-the-live-build-is-compiled-from-main-never-from-uncommitted-edits.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2065LiveBuildFromMainSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the build step's new shape is
+# the architect's, and a pattern on ensure-current-build! matches before
+# and after. The scenarios must drive the supervisor's REAL recompile
+# function over a fixture project, as BL-328's handler
+# (mergedCodeReachesDaemonsSteps.js) already drives ensure-current-build!.
+
+human_approval: approved
+approval_context: >
+  From QA's live alarm (note 003900) on 2026-10-07. No choice is posed:
+  the behaviour is fixed (the live build equals main's committed tree)
+  and the mechanism is the architect's. FIRM: the master checkout's
+  working tree is never modified by the build (scenario 02), and a failed
+  recompile still never keeps the front desk down (BL-328 scenario 08).
+
+invariants:
+  - "Whatever the master checkout's working tree holds, the build the supervisor compiles equals the build of main's committed tree."
+  - "The build never writes to, stages, restores or deletes a file in the master checkout's working tree."
+
+description: |
+  ## What is wrong
+
+  front_desk_supervisor.bb's `ensure-current-build!` runs
+  `npm run compile` in the master checkout's extension/ whenever
+  extension/out/BUILD_SHA differs from main. tsc compiles what the
+  working tree holds, uncommitted and untracked files included, and the
+  build is then stamped as main's commit.
+
+  On 2026-10-07 an uncommitted, hand-made implementation of BL-1911 (a
+  repo reader for the local qwen seat, extension/src/tools/localSeatRepoRead.ts
+  plus an edit to localQwenSeatLive.ts and a test and step handler) sat
+  in the master checkout from 07:41Z. Every recompile from 07:46Z (about
+  twenty that morning) compiled it into extension/out. The cursor bridges
+  the bridge supervisor started at 09:31Z, 09:36Z, 09:45Z, 09:47Z and
+  10:23Z loaded it. QA found its secret filter leaky and the files
+  blocking the reconcile (note 003900). The source files were gone from
+  the checkout by 10:45Z, the 10:49Z recompile built a clean
+  localQwenSeatLive.js, and the specifier restarted the cursor bridge
+  child at 10:50:05Z (pid 27628) so it loaded the clean build. The
+  pipeline's BL-1911 parcel, which carries the reviewed filter, is a
+  different implementation.
+
+  ## What is wanted
+
+  - The supervisor's recompile builds main's committed tree: an
+    uncommitted edit or an untracked source file in the master working
+    tree never reaches the compiled output (scenario 01, invariant 1).
+  - BUILD_SHA names the commit the build was compiled from, and the
+    working tree is left exactly as it was (scenario 02, invariant 2).
+  - A failed recompile keeps today's behaviour: the front desk still
+    comes up, loudly (BL-328 scenario 08 stays green).
+  - Living docs: docs/how-to/BL-1154-build-stale-restarts-not-crash-giveup-budget.md
+    and docs/reference/BL-629-build-freshness-qa-approval-gate.md say
+    the build is compiled from main's committed tree.
+
+  ## How (direction, not mandate)
+
+  - One shape: export main's tree (`git archive` or a dedicated build
+    worktree kept at main) into a build directory, run the compile there
+    with the live node_modules linked, then swap the output into
+    extension/out atomically. The architect decides, including whether
+    an uncommitted change under extension/src should also raise an alarm.
+  - Fixture project: a tiny extension/ with a package.json whose compile
+    script runs tsc on two files, committed on main in a mkdtemp repo.
+
+constraints: >
+  Fixture repositories under mkdtemp only, proven by rev-parse
+  --git-common-dir before any mutating git command (BL-1390); never the
+  live checkout, never the live supervisor. bash 3.2 rules for any shell.
+  The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - A role running `npm run compile` or `npm test` by hand in the master
+    checkout also writes extension/out from the working tree. That is a
+    separate path; if the architect finds the same fix covers it, say so
+    in the evidence.
+  - The cursor bridge supervisor has no stale-build restart of its own:
+    pid 32710 kept the stray build until it was killed by hand. A note to
+    the specifier if the architect wants it owned.
+  - Who wrote the stray implementation.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2065-the-live-build-is-compiled-from-main-never-from-uncommitted-edits.feature`:
+     4 of 4 ok (01 x3, 02).
+  2. `node specs/pipeline/cli.js specs/features/BL-328-merged-code-reaches-running-daemons.feature`:
+     all ok (the recompile and its failure path are unchanged).
+  3. After the land, on the live swarm: the next "stale-build-detected
+     recompiling before respawn" line in front-desk-supervisor.log is
+     followed by a build whose BUILD_SHA equals `git rev-parse main`, and
+     `git status --porcelain` in the master checkout is unchanged across
+     it.
+
+source: |
+  QA note 003900 (2026-10-07T10:42:00Z), verbatim: "LIVE: stray BL-1911
+  impl in master (07:41Z), leaky filter; blocks reconcile".
+  Timeline from .swarmforge/operator/front-desk-supervisor.log
+  ("stale-build-detected recompiling before respawn" from 07:46:06Z to
+  10:29:03Z) and cursor-bridge-supervisor.log (bridge spawns 09:31:59Z
+  to 10:23:53Z).
+
+notes: |
+  Minted 2026-10-07 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Live remediation the same pass, by the specifier: the stray sources
+  were already gone from the checkout; the supervisor's 10:49:19Z
+  recompile built a clean localQwenSeatLive.js (no localSeatRepoRead
+  require); the specifier sent SIGTERM to the cursor bridge child (pid
+  32710, started 10:23:52Z on the stray build) and the supervisor
+  respawned it at 10:50:05Z (pid 27628) with CURSOR_BRIDGE_INBOUND_QUEUE=1
+  kept. extension/out/tools/localSeatRepoRead.js is left on disk, an
+  orphan nothing requires; BL-1911's land replaces it.
+  IR-DRY at mint: no findings.
+  INVEST: Independent (no unbuilt sibling), Negotiable (the build shape
+  is the architect's), Valuable (nothing uncommitted runs live under
+  main's name), Estimable (one build step and a fixture project), Small
+  (two scenarios), Testable (a fixture project compiled by the real
+  recompile function).
