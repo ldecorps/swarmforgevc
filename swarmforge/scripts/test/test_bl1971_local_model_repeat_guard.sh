@@ -22,6 +22,19 @@ GUARD="$SCRIPTS/local_model_repeat_guard.bb"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
+# BL-2055/BL-897: local_model_repeat_guard.bb copies handoff_lib.bb's
+# sidecar-suffixes rather than load-filing it (measured: loading
+# handoff_lib.bb costs ~100ms more than this hook's own baseline, and it
+# runs on every tool call) - this is what keeps the copy from drifting
+# from the original it is a copy of.
+agree="$(bb -e "
+(load-file \"$SCRIPTS/handoff_lib.bb\")
+(load-file \"$GUARD\")
+(println (= handoff-lib/sidecar-suffixes local-model-repeat-guard/sidecar-suffixes))
+")"
+[[ "$agree" == "true" ]] || fail "local_model_repeat_guard.bb's copied sidecar-suffixes disagrees with handoff_lib.bb's own: $agree"
+pass "local_model_repeat_guard.bb's copied sidecar-suffixes list agrees with handoff_lib.bb's own (BL-897)"
+
 fn_text="$(awk '
   /^write_local_model_qwen_settings\(\) \{/ { flag=1 }
   flag && in_heredoc { print; if ($0 == "JSON") { in_heredoc=0 }; next }

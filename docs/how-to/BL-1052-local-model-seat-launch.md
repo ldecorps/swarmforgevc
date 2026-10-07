@@ -450,9 +450,30 @@ exit — never trips the script's own `set -euo pipefail` before the
 pending-override check runs; an earlier version aborted the whole
 script on exactly the exit this feature produces, silently defeating
 itself on its own trigger. After qwen exits for any reason, the script
-checks for a pending override and, only when one exists, relaunches
-qwen with it as the sole message, consuming the file so an ordinary
-exit never loops.
+relaunches qwen only with the override for the handoff **currently** in
+the seat's `in_process` (BL-2055) — never whichever pending override
+happened to sort first by name. An override outlives its parcel (a
+respawned pane can leave one on disk, read only at the *next* qwen
+exit, which may already be on another parcel), so the script re-derives
+the held parcel's name from `in_process`'s own real-time contents each
+time it is about to relaunch (skipping a sidecar — `.nudge`,
+`.chase.json`, `.claim-progress.json`, `.batch-claim-progress.json`,
+`handoff_lib.bb`'s own `sidecar-suffixes`, BL-897 — which never counts as
+a held parcel), discards every *other* pending override outright, and
+relaunches with the held parcel's own override as the sole message,
+consuming the file so an ordinary exit never loops. A seat whose
+`in_process` holds nothing but sidecars is not holding a parcel at all —
+no relaunch, whatever pending overrides happen to be lying around.
+
+The restart count itself is kept the same way, in
+`local_model_repeat_guard.bb`'s `in-process-handoff-name`: before BL-2055
+it picked the first name in `in_process` by sort order, sidecars
+included, so a claim-progress sidecar a release left behind (BL-1992's
+release moves only the handoff file) read as a brand-new parcel with no
+restarts spent and could restart the seat on the ticket it had just
+released. It now filters out the same four sidecar suffixes before
+picking a name, so the count is keyed on the actual held handoff file or
+not restarted at all.
 
 No tool call is ever refused by this check, same invariant as the
 repeat guard above — a restart ends the whole process rather than
