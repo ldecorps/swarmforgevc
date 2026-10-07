@@ -145,6 +145,7 @@ notes: |
   record of past bounces was cut to out_of_scope to keep it one sitting.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-10-07, by: QA, blamed: coder, class: behavior, commit: c5c4c50d1e, evidence: backlog/evidence/BL-1880-QA-20261007.md }
+  - { at: 2026-10-07, by: QA, blamed: coder, class: behavior, commit: ee53a33ce9, evidence: backlog/evidence/BL-1880-QA-20261007-2.md }
