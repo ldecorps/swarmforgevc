@@ -1,7 +1,7 @@
 Feature: BL-1743 A non-vacuity probe never writes inside the checkout
 
   A non-vacuity probe proves a test can fail by running it against a
-  deliberately broken copy of the script under test. Eight test files
+  deliberately broken copy of the script under test. Nine test files
   wrote that copy inside the checkout, most of them beside the real script
   so that the copy's relative loads would still resolve, and removed it in
   a finally.
@@ -16,7 +16,7 @@ Feature: BL-1743 A non-vacuity probe never writes inside the checkout
     Given the probe census of test files and step handlers that write a broken copy of a script
     When each probe's broken-copy path is read
     Then no broken-copy path is under the checkout
-    And the census names the 8 probe files counted at mint
+    And the census names the 9 probe files counted at the 2026-10-07 re-census
 
   # BL-1743 a-killed-probe-leaves-nothing-behind-02
   Scenario: a probe killed before its cleanup leaves nothing in the checkout

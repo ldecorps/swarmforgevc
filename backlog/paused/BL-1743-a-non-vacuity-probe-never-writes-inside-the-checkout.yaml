@@ -1,5 +1,5 @@
 id: BL-1743
-title: "Eight test files' non-vacuity probes write their deliberately broken copy of a script INSIDE the checkout (beside the real script in swarmforge/scripts/ or swarmforge/scripts/test/, or in extension/test/helpers/) and remove it only in a finally, so a killed run leaves it behind - at 06:35Z on 2026-09-25 a killed property run on the main checkout left bl1652's two broken copies (a chase_sweep_lib.bb with the per-sweep respawn cap removed, and its runner) in swarmforge/scripts/, the 08:00Z launch's sync_worktree_scripts copied them into seven worktrees, and QA reported its tree dirty; a probe's broken copy lives under a temporary root of its own and the next probe reaps any root a dead run left"
+title: "Nine test files' non-vacuity probes write their deliberately broken copy of a script INSIDE the checkout (beside the real script in swarmforge/scripts/ or swarmforge/scripts/test/, or in extension/test/helpers/) and remove it only in a finally, so a killed run leaves it behind - at 06:35Z on 2026-09-25 a killed property run on the main checkout left bl1652's two broken copies (a chase_sweep_lib.bb with the per-sweep respawn cap removed, and its runner) in swarmforge/scripts/, the 08:00Z launch's sync_worktree_scripts copied them into seven worktrees, and QA reported its tree dirty; a probe's broken copy lives under a temporary root of its own and the next probe reaps any root a dead run left"
 milestone: M8
 type: defect
 severity: medium
@@ -10,14 +10,17 @@ severity: medium
 # from being loaded.
 status: todo
 epic: code-quality-gates
-priority: 92
+priority: 4
 direction: swarm-reported
-depends_on: []
+depends_on: [BL-2055, BL-2056]
+# BL-2055/BL-2056 (2026-10-07): this ticket is BL-2058's live-proof vehicle
+# on the iq3 seat; it waits for the two restart fixes so a failure is the
+# seat's, not the restart harness's. Ruling B on BL-2058 removes them.
 # No open ticket touches these probes (grep of paused/ and active/ for
 # non-vacuity-scratch, 2026-09-25). BL-1740 changes chase_sweep_lib.bb,
 # not the bl1505/bl1652 test files this ticket edits.
 mutation_cost: medium
-# medium: eight test files, fifteen sites, most of them one line once a
+# medium: nine test files, sixteen sites, most of them one line once a
 # shared helper exists; plus that helper and one step handler.
 slice_size_envelope: medium
 required_stages: [coder, qa]
@@ -31,7 +34,7 @@ acceptance: specs/features/BL-1743-a-non-vacuity-probe-never-writes-inside-the-c
 
 required_wiring:
   - 'specs/pipeline/steps/bl1743ProbeScratchOutsideCheckoutSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
-# The consumers are the eight probe files themselves, and scenario 01 gates
+# The consumers are the nine probe files themselves, and scenario 01 gates
 # every one of them by census, so no second anchor is declared (BL-1235: an
 # anchor on a helper the parcel adds would be satisfied by construction).
 
@@ -87,7 +90,7 @@ description: |
     (writes into `swarmforge/scripts/test/`)
   After the fix this regex finds none, by design. Scenario 01's census
   therefore derives the population as "every file that builds a broken
-  copy of a script, whichever way" and pins it at these 8, with bl1652
+  copy of a script, whichever way" and pins it at these 8 (9 since the 2026-10-07 re-census in Scope), with bl1652
   among them.
 
   ## What is wanted
@@ -104,10 +107,29 @@ description: |
     today.
 
   ## Scope
-  - The 8 census files.
+  - The 9 census files (re-census of 2026-10-07 below).
   - A shared helper under `extension/test/helpers/` (step handlers may
     require it too).
-  - The feature and its step handler plus `index.js` registration.
+  - The feature and its step handler. Handlers are discovered by their
+    file-name suffix (BL-1371); `specs/pipeline/steps/index.js` needs no
+    edit.
+
+  ## Re-census 2026-10-07 (main 68e4875d3d), where to read
+
+  The description's grep now finds 9 files and 16 sites:
+  bl1835PauseExemptsBriefingInstructionInvariant.property.test.js joined
+  with BL-1835 (dd2950dc24) and writes a broken handoff_lib.bb copy beside
+  swarmforge/scripts/handoff_lib.bb. Each site, file:line, read with
+  offset and limit around the line, never the whole file:
+  - extension/test/bl1458BriefingTriggerInvariants.property.test.js:107, :164
+  - extension/test/bl1459DocumenterBriefingTipGuardInvariants.property.test.js:165, :331, :372, :400, :483
+  - extension/test/bl1505DedupSuppressedChaseCountInvariants.property.test.js:176
+  - extension/test/bl1630NoStepHandlerModuleLoadWorkInvariants.property.test.js:124 (writes into extension/test/helpers/)
+  - extension/test/bl1652ChaseRespawnBusyGuardInvariants.property.test.js:123, :240, :242
+  - extension/test/bl1671MergeDeletionGuardInvariants.property.test.js:117
+  - extension/test/bl1835PauseExemptsBriefingInstructionInvariant.property.test.js:197
+  - specs/pipeline/steps/bl938AgedNoteRotateFixtureRotationRouterSteps.js:212
+  - specs/pipeline/steps/bl943FixtureCleanupVerdictSteps.js:223 (writes into swarmforge/scripts/test/)
 
 out_of_scope: |
   - `sync_worktree_scripts` copying master's UNTRACKED script files into
@@ -127,7 +149,7 @@ qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-1743-a-non-vacuity-probe-never-writes-inside-the-checkout.feature`:
      all ok (2 of 2).
-  2. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1652ChaseRespawnBusyGuardInvariants.property.test.js test/bl1505DedupSuppressedChaseCountInvariants.property.test.js`:
+  2. Read from the gather's property row: the seven census property files
      green (bl1505 only outside a control pause until BL-1740 lands); then
      `git status --short -- swarmforge/ extension/test/helpers/` in the
      QA worktree shows no new `*non-vacuity*` path.
@@ -145,3 +167,17 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+  2026-10-07 (specifier): live-proof vehicle for BL-2058, at the human's
+  request in the coordinator console, verbatim: "fine: ask Specifier to
+  mint an live proving of IQ3 to deal with a big ticket utilizing the new
+  Arrange Act Assert functionality". Route it to the bare coder seat (the
+  iq3 local model) only, never coder@2. If BL-1992 releases it (third
+  missed write) or a failed assert asks for a split, the coordinator
+  routes it on as usual and BL-2058 records that outcome; the work still
+  gets done. Re-census the same day: 9 files and 16 sites (bl1835 joined
+  with BL-1835), so scenario 01's pin moves from 8 to 9; the class and the
+  approval are unchanged. Scope also drops the stale index.js
+  registration (BL-1371) and step 2 reads the gather instead of re-running
+  property files (lean pass 2026-10-03).
+
+assigned_to: coder
