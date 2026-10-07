@@ -137,3 +137,5 @@ notes: |
   is waited for), Valuable (the marker reaches git on every send),
   Estimable (one function, its root), Small (three scenarios), Testable
   (fixture repository through the real sweep).
+
+assigned_to: coder
