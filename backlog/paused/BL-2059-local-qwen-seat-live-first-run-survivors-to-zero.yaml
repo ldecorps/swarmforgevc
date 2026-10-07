@@ -33,7 +33,7 @@ stage_skip_reasons:
 # green because no production behaviour changes.
 acceptance: specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   An owner for 22 first-run mutants the BL-1911 hardener found on lines
   of localQwenSeatLive.ts that BL-1235 shipped and BL-1911 did not touch
