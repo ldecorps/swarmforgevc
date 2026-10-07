@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { spawn } = require('node:child_process');
-const { buildKillSessionArgs, stopSwarm, stopSwarmOnExtensionShutdown } = require('../out/swarm/swarmStopper');
+const { buildKillSessionArgs, stopSwarm, stopSwarmOnExtensionShutdown, socketOwnedByTarget } = require('../out/swarm/swarmStopper');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
@@ -156,6 +156,61 @@ test('stopSwarm refuses an in-root pointer whose directory is a symlink to anoth
   } finally {
     fake.restore();
   }
+});
+
+// BL-2052 hardening: physicalPath's own `if (parent === head) { return
+// path.resolve(p); }` terminal fallback (the "no ancestor resolves at
+// all" case) has no coverage from any real filesystem fixture - every
+// real path has an existing root ("/"), so fs.realpathSync always
+// succeeds before that walk-up can ever bottom out. Only a stubbed
+// fs.realpathSync that NEVER succeeds can reach it, and reaching it
+// safely (a sane boolean, no throw, no infinite loop) is exactly the
+// guarantee this defensive branch exists to make.
+test('socketOwnedByTarget never throws or loops when no path segment resolves at all', () => {
+  const originalRealpathSync = fs.realpathSync;
+  fs.realpathSync = () => {
+    throw new Error('ENOENT: simulated - nothing resolves on this host');
+  };
+  try {
+    const result = socketOwnedByTarget('/a/b/c', '/a/b/c/.swarmforge/tmux/sock');
+    assert.equal(typeof result, 'boolean');
+    // Both sides fall back to path.resolve(p) unmodified, so the socket's
+    // directory (/a/b/c/.swarmforge/tmux) genuinely IS under the target's
+    // own .swarmforge/ - this is the one case where the unresolvable
+    // fallback still computes the right, safe answer.
+    assert.equal(result, true);
+  } finally {
+    fs.realpathSync = originalRealpathSync;
+  }
+});
+
+test('socketOwnedByTarget still refuses a foreign socket when no path segment resolves at all', () => {
+  const originalRealpathSync = fs.realpathSync;
+  fs.realpathSync = () => {
+    throw new Error('ENOENT: simulated - nothing resolves on this host');
+  };
+  try {
+    const result = socketOwnedByTarget('/a/b/target', '/x/y/foreign/.swarmforge/tmux/sock');
+    assert.equal(result, false);
+  } finally {
+    fs.realpathSync = originalRealpathSync;
+  }
+});
+
+// BL-2052 hardening: a socket under a SIBLING directory that merely
+// shares ".swarmforge" as a text prefix (".swarmforge-evil", never the
+// real ".swarmforge/") must never be treated as owned - the ownership
+// check requires a path SEPARATOR boundary, not a bare string prefix.
+// Hand-mutation proof: dropping the "+ path.sep" the real code appends
+// to its owned-prefix comparison (out/swarm/swarmStopper.js:141) makes
+// every pre-existing test in this file and swarmStopper.test.js pass
+// unchanged - only this fixture shape observes the difference.
+test('socketOwnedByTarget refuses a sibling directory that only shares ".swarmforge" as a text prefix', () => {
+  const root = mkTmp();
+  const evilSock = path.join(root, '.swarmforge-evil', 'tmux', 'sock');
+  mkdirp(path.dirname(evilSock));
+  fs.writeFileSync(evilSock, '');
+  assert.equal(socketOwnedByTarget(root, evilSock), false);
 });
 
 test('stopSwarm sends SIGTERM to a live daemon pid and still succeeds', async () => {
