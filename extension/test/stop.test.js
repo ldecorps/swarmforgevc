@@ -5,7 +5,14 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { spawn } = require('node:child_process');
-const { buildKillSessionArgs, stopSwarm, stopSwarmOnExtensionShutdown, socketOwnedByTarget } = require('../out/swarm/swarmStopper');
+const {
+  buildKillSessionArgs,
+  stopSwarm,
+  stopSwarmOnExtensionShutdown,
+  socketOwnedByTarget,
+  drainAgentSessions,
+  clearStaleSwarmState,
+} = require('../out/swarm/swarmStopper');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
@@ -122,6 +129,82 @@ test('stopSwarm refuses a worktree pointer at another root socket', () => {
     assert.equal(result.success, true);
     assert.deepEqual(result.sessionsKilled, []);
     assert.match(result.message, /outside this root/);
+    assert.deepEqual(fake.calls(), []);
+    assert.equal(fs.existsSync(foreign), true);
+    assert.equal(fs.existsSync(path.join(worktree, '.swarmforge', 'tmux-socket')), false);
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-2052: drainAgentSessions had no test of any kind before this pass -
+// a success-path case alongside the refusal case below so neither branch
+// of its own socketOwnedByTarget gate is left uncovered.
+test('drainAgentSessions kills each role session and reports the count when the socket is owned', () => {
+  const tmp = mkTmp();
+  mkdirp(path.join(tmp, '.swarmforge'));
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
+  );
+  const fake = installInProcessTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
+  try {
+    const result = drainAgentSessions(tmp);
+    assert.equal(result.success, true);
+    assert.equal(result.sessionsStopped, 2);
+    assert.deepEqual(result.sessionsAttempted, ['swarmforge-coder', 'swarmforge-cleaner']);
+    assert.match(result.message, /stopped 2\/2 role session\(s\)/);
+    // drain-agents leaves the tmux server itself (and the socket file)
+    // up - distinct from a full stop.
+    assert.equal(fs.existsSync(path.join(tmp, '.swarmforge', 'tmux-socket')), true);
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-2052 QA bounce D1: socketOwnedByTarget gates drainAgentSessions,
+// clearStaleSwarmState, stopSwarm and stopSwarmCompletely, but only
+// stopSwarm had a test proving a foreign socket is refused.
+test('drainAgentSessions refuses a worktree pointer at another root socket', () => {
+  const main = mkTmp();
+  const worktree = mkTmp();
+  const foreign = path.join(main, '.swarmforge', 'tmux', 'live.sock');
+  mkdirp(path.dirname(foreign));
+  fs.writeFileSync(foreign, '');
+  mkdirp(path.join(worktree, '.swarmforge'));
+  fs.writeFileSync(path.join(worktree, '.swarmforge', 'tmux-socket'), foreign);
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
+  );
+
+  const fake = installInProcessTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
+  try {
+    const result = drainAgentSessions(worktree);
+    assert.equal(result.success, true);
+    assert.equal(result.sessionsStopped, 0);
+    assert.deepEqual(result.sessionsAttempted, []);
+    assert.match(result.message, /outside this root/);
+    assert.deepEqual(fake.calls(), []);
+    assert.equal(fs.existsSync(foreign), true);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('clearStaleSwarmState refuses a worktree pointer at another root socket, but still clears its own stale state', () => {
+  const main = mkTmp();
+  const worktree = mkTmp();
+  const foreign = path.join(main, '.swarmforge', 'tmux', 'live.sock');
+  mkdirp(path.dirname(foreign));
+  fs.writeFileSync(foreign, '');
+  mkdirp(path.join(worktree, '.swarmforge'));
+  fs.writeFileSync(path.join(worktree, '.swarmforge', 'tmux-socket'), foreign);
+
+  const fake = installInProcessTmux([{ subcommand: 'kill-server', exitCode: 0 }]);
+  try {
+    clearStaleSwarmState(worktree);
     assert.deepEqual(fake.calls(), []);
     assert.equal(fs.existsSync(foreign), true);
     assert.equal(fs.existsSync(path.join(worktree, '.swarmforge', 'tmux-socket')), false);
