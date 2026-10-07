@@ -25,7 +25,7 @@ stage_skip_reasons:
 # feature the vehicle satisfies.
 acceptance: specs/features/BL-1743-a-non-vacuity-probe-never-writes-inside-the-checkout.feature
 
-human_approval: pending
+human_approval: approved
 human_ruling: |
   A - after the restart fixes BL-2055 and BL-2056 land (recommended)
 ruling_provenance: relayed by specifier
