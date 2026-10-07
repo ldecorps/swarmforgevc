@@ -31,7 +31,10 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/bl2049PropertyRunnerReachSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  A - QA's gather runs, on every parcel, the property runners its change reaches, and nothing runs the others (recommended)
+ruling_provenance: tapped
 approval_context: >
   QA found that the bb property runners run in no lane (note 003876,
   BL-2041's sibling). FIRM: BL-2048, the front-end that runs a list of them

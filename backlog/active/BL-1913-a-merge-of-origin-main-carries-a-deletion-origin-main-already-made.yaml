@@ -110,5 +110,45 @@ notes: |
   2026-10-01). The epic's deletion slice depends on BL-1913.
   Measured at mint (2026-10-03, main 41a07792fc, node specs/pipeline/cli.js):
   BL-1901 feature 7 of 7 ok (21 s), BL-1631 5 of 5 ok, BL-1242 14 of 14 ok.
+  2026-10-07 specifier, adjudicating coordinator note 017189 ("BL-1913
+  loop-halt 6x/24h (iq3) - simplify per 10-05 rule"): not split and not
+  re-scoped; the feature and the acceptance contract are unchanged.
+  BL-1992 already released the ticket to coder@2 at 23:54Z on 2026-10-06
+  (note 002456; reassigned in 9e76f1a4ca). The iq3 loops on it were the
+  seat reading for 18 minutes without writing (session 3e694b79: about
+  150 reads across the lander, the land step, every commit-msg guard and
+  the retirement registry) plus two restart faults, now BL-2055 and
+  BL-2056, which sent the seat to BL-1963's and BL-1874's step handlers
+  and restarted it on BL-1913 after the release.
+  Facts for the holder, so none of that reading is needed:
+  - Salvage: iq3 wrote the "this branch" predicate after the release. It
+    is pinned at refs/swarmforge/salvage/BL-1913 (worktree-drift stash
+    d2c06251fd of .worktrees/coder: check_merge_deletion.sh only, +29).
+    It follows the How above: MERGE_HEAD is origin/main or its ancestor,
+    the path is absent at MERGE_HEAD, origin/main is resolved once with
+    `git rev-parse --verify --quiet origin/main`, and an empty result
+    means no exemption. Untested. Apply it as a diff
+    (`git diff 'refs/swarmforge/salvage/BL-1913^1' refs/swarmforge/salvage/BL-1913`),
+    never a whole-file checkout.
+  - Do not take 39dec5f68f on swarmforge-coder: it bundles a 65-line
+    BL-1913 handler scaffold with off-ticket BL-1874 and BL-1963 edits.
+  - The guard is self-contained (it sources nothing). commit-msg line 44
+    runs it as `check_merge_deletion.sh "$1"`; it cds to
+    `git rev-parse --show-toplevel` and exits 0 when there is no
+    MERGE_HEAD.
+  - Scenarios 01 and 02: BL-1242's driver
+    specs/pipeline/steps/lib/bl1242MergeBranchWorkDeletionCli.sh already
+    runs the real guard against a fixture merge.
+  - Scenario 03: BL-1872's lander fixture is exported as `fixture` from
+    specs/pipeline/steps/bl1872LanderDaemonSteps.js (makeFixture, git,
+    queue, runSweep); bl1901CleanLineLandsAsAMergeSteps.js reuses it and
+    adds `moveOrigin`. Their steps are defineScoped per feature, so this
+    feature's handler registers its own scoped copies. The fixture sets
+    no core.hooksPath, so its lander merge meets the guard only if the
+    handler gives the fixture a commit-msg hook that runs the real
+    check_merge_deletion.sh.
+  - The guard's other tests: swarmforge/scripts/test/test_merge_deletion_guard.sh,
+    bl1403_merge_deletion_guard_property_runner.bb and
+    bl1576_merge_drop_guard_property_runner.bb.
 
-assigned_to: coder
+assigned_to: coder@2
