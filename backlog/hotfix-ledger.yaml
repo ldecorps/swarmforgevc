@@ -1553,3 +1553,10 @@
   stamp_ticket: BL-2060
   human_decision: null
   decided_at: null
+- commit: 662b7933c3
+  subject: "Hotfix two property timeouts QA found unowned (note 003903): bl1333 invariant 2 past a bare 120000, bl1445 invariant 1 past its scaled 20000 base"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2066
+  human_decision: null
+  decided_at: null
