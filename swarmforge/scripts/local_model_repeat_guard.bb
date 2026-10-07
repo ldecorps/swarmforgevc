@@ -132,6 +132,102 @@
 (defn latest-next-step [entries]
   (some :next-step (reverse (filter #(= :compaction (:kind %)) entries))))
 
+;; ── BL-2064 hotfix (2026-10-07): warn a seat that reads without writing ──
+;;
+;; The human, live: "compressions for iq3 are lethal, it just compacted
+;; and immediately goes on a reading frenzy." BL-2064 (paused, approved)
+;; already says why: the seat spends most of its time reading and throws
+;; most of that away on a compaction before any edit. Its own invariant
+;; says this new counter resets on exactly what resets-window? resets -
+;; including a bare compaction. That is backwards for THIS counter: a
+;; compaction is exactly when the seat has just lost its context and is
+;; most likely to re-read everything to rebuild it, so resetting the
+;; budget there hands it a fresh 12 reads right when it is most likely to
+;; burn them - the "reading frenzy" the human just watched happen. This
+;; hotfix gives the counter its own reset rule, a sibling of
+;; resets-window? that drops the compaction clause: an edit/write_file or
+;; a state-changing shell command reset it, a compaction does not.
+;;
+;; Scope deliberately narrower than BL-2064's full build: this lands the
+;; warning half only (warn from the 12th qualifying read-only call since
+;; the last reset onward). The 24th-read restart, sharing BL-1991/1992's
+;; per-parcel restart count, needs a first-message fallback this hook's
+;; transcript-entries does not yet parse out (BL-2064's own wording: "the
+;; latest compaction's next_step, else the session's first message") -
+;; safer to leave that half, and the restart wiring it implies, to
+;; BL-2064's own build than to guess at it under a hotfix. See the
+;; stamp-off ticket this hotfix mints for the review that should confirm
+;; this scope.
+
+(def read-warn-at
+  "A qualifying read-only call is warned about from this count onward,
+   since the last reset (never a bare compaction - see above)."
+  12)
+
+(def read-only-tools #{"read_file" "read_many_files" "grep_search" "glob" "list_directory"})
+
+(def read-only-command-pattern
+  "A shell command whose own output cannot change the repo or the
+   mailbox: the existing read-commands list, `sed -n`, and the read-only
+   git subcommands - matched only at the start of the (trimmed) command,
+   the same way command-base already reads a command's leading word."
+  #"^(?:ls|cat|head|tail|wc|grep|find|stat|sed\s+-n|git\s+(?:show|log|diff|grep|ls-files|blame|status))\b")
+
+(defn read-only-shell-command? [cmd]
+  (boolean (and (string? cmd) (re-find read-only-command-pattern (str/trim cmd)))))
+
+(defn read-type-call?
+  "True for a call whose own result cannot change the repo or the
+   mailbox - the kind of call the read budget counts."
+  [{:keys [kind name args]}]
+  (and (= kind :call)
+       (or (contains? read-only-tools name)
+           (and (= name "run_shell_command")
+                (read-only-shell-command? (get args "command"))))))
+
+(defn read-budget-resets?
+  "resets-window? without its compaction clause (see above): only an
+   edit/write_file or a state-changing shell command starts the read
+   budget's window over."
+  [{:keys [kind name args]}]
+  (or (contains? edit-tools name)
+      (and (= kind :call) (= name "run_shell_command")
+           (let [command (str (get args "command"))]
+             (some #(str/includes? command %) state-changing-commands)))))
+
+(defn reads-since-write
+  "How many read-type calls were already made since the last reset, not
+   counting the in-flight call itself. Entries between the reset and now
+   that are neither a read-type call nor a reset (a compaction, or any
+   other call) pass through uncounted - only read-type calls advance the
+   budget."
+  [entries name args]
+  (let [k (call-key name args)
+        entries (without-in-flight (vec entries) k)
+        window (reverse (take-while (complement read-budget-resets?) (rseq entries)))]
+    (count (filter read-type-call? window))))
+
+(defn read-budget-note
+  "The note to hand the model with this call's result, or nil: only for a
+   read-type in-flight call (this is the scenario the human reported,
+   and it keeps the note out of calls the budget does not track), once
+   the qualifying read count since the last reset reaches read-warn-at.
+   Warn-only (see scope note above) - it keeps firing on every qualifying
+   read past read-warn-at rather than stopping at a restart count this
+   hotfix does not implement."
+  [entries name args]
+  (when (read-type-call? {:kind :call :name name :args args})
+    (let [total (inc (reads-since-write entries name args))]
+      (when (>= total read-warn-at)
+        (str "READ-BUDGET: this is your " total "th read since your last edit or"
+             " state-changing command, with no write in between. A compaction does"
+             " not reset this count - rebuilding context is not a reason to keep reading."
+             " Your next call should be the change your ticket names, or writing your"
+             " plan to tmp/notes.md if you are still in the arrange phase."
+             (when-let [step (latest-next-step entries)]
+               (str " Your last summary named this next step: "
+                    (subs step 0 (min 300 (count step))))))))))
+
 ;; ── BL-1991: restart a seat that skips the write its compaction named ──
 ;;
 ;; On 2026-10-05 the iq3 coder, holding BL-1928, merged main and never
@@ -589,7 +685,8 @@
         loop-note (when entries (cycle-note entries name args))
         undo (when entries (undo-note entries name args))
         rerun (when entries (rerun-hint entries name args))
-        notes (remove nil? [repeat-note loop-note undo rerun
+        read-budget (when entries (read-budget-note entries name args))
+        notes (remove nil? [repeat-note loop-note undo rerun read-budget
                             (empty-grep-hint name args (get event "tool_response"))
                             (offset-hint name args) (sleep-hint name args)
                             (read-hint name args) (npm-hint name args)
