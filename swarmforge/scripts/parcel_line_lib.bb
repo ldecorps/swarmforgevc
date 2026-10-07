@@ -134,6 +134,20 @@
       (empty? ids) merge?
       :else (every? #(or (= % ticket) (done-ticket? project-root %)) ids))))
 
+(defn- commit-log-entries
+  "Oldest-first {:sha :merge? :subject} for the commits in (base..rev] - the
+   ONE shared parse own-line? and take-up!'s BL-2044 re-apply selection both
+   read, never two notions of 'the line's commits'."
+  [root base rev]
+  (->> (str/split-lines
+        (or (git-out root "log" "--reverse" "--format=%H%x09%P%x09%s" (str base ".." rev)) ""))
+       (remove str/blank?)
+       (mapv (fn [line]
+               (let [[sha parents subject] (str/split line #"\t" 3)]
+                 {:sha sha
+                  :merge? (> (count (str/split (str/trim (str parents)) #"\s+")) 1)
+                  :subject subject})))))
+
 (defn- own-line?
   "The line beyond origin/main carries ticket's own unlanded work, which a
    re-sent Work note must not strand: at least one commit names ticket, and
@@ -144,15 +158,65 @@
   [root project-root origin-main ticket]
   (boolean
    (when-let [base (and origin-main (git-out root "merge-base" origin-main "HEAD"))]
-     (let [commits (->> (str/split-lines
-                         (or (git-out root "log" "--format=%P%x09%s" (str base "..HEAD")) ""))
-                        (remove str/blank?)
-                        (map (fn [line]
-                               (let [[parents subject] (str/split line #"\t" 2)]
-                                 {:merge? (> (count (str/split (str/trim (str parents)) #"\s+")) 1)
-                                  :subject subject}))))]
+     (let [commits (commit-log-entries root base "HEAD")]
        (and (some #(contains? (set (re-seq #"\b(?:BL|GH)-\d+\b" (str (:subject %)))) ticket) commits)
             (every? #(line-commit-ok? project-root ticket %) commits))))))
+
+;; ── BL-2044: carry the ticket's own commits across a forced move ──────────
+;; A line that must move (own-line? false, because it carries an unlanded
+;; OTHER ticket's commit) still held commits that line-commit-ok? would
+;; happily call ticket's own - those are not "foreign", they are just not
+;; EVERY commit on the line. Re-applying exactly that subset onto the new
+;; target is what keeps them from surviving only under the parcel-backup
+;; ref. Only a :start intent (a coordinator Work note) reaches this path -
+;; a :take-up (a forwarded git_handoff) moves the role onto a commit that
+;; already IS the parcel, so re-applying the role's own commit a second
+;; time is an empty cherry-pick that reads as a conflict (BL-2044 D1).
+
+(defn- reapply-worthy?
+  "line-commit-ok? alone also calls a commit 'the ticket's own' when its
+   subject names ONLY done tickets and never ticket itself - correct for
+   own-line?'s STAY question (a done-only commit is harmless to leave on a
+   line that is staying), wrong for 'which commits follow the ticket across
+   a forced move' (BL-2044 D2): a done ticket's ORIGINAL commit must not be
+   re-applied onto a target that may already hold its LANDED REPLAY, and
+   must not be injected into a different ticket's line when it does not.
+   Re-applying is for subjects that name ticket itself; line-commit-ok?
+   still gates the REST of the subject's ids (only ticket or done tickets)."
+  [project-root ticket {:keys [subject] :as entry}]
+  (and (contains? (set (re-seq #"\b(?:BL|GH)-\d+\b" (str subject))) ticket)
+       (line-commit-ok? project-root ticket entry)))
+
+(defn- reapply-candidates
+  "Oldest-first commits (base..head] that are reapply-worthy? for ticket,
+   excluding merges (a ticketless merge of main carries no content worth
+   re-applying onto a target that already descends from main; it is only
+   ever a reason the line was allowed to STAY) and excluding any commit
+   already an ancestor of target (BL-2044 D1: a :start target can be the
+   ticket's own newest handed-off commit, which already holds these same
+   commits - re-applying them again is the same empty-cherry-pick-reads-as-
+   conflict shape :take-up was wrongly exposed to)."
+  [root project-root base head ticket target]
+  (filterv #(and (not (:merge? %))
+                 (reapply-worthy? project-root ticket %)
+                 (not (ancestor? root (:sha %) target)))
+           (commit-log-entries root base head)))
+
+(defn- reapply-commits!
+  "Cherry-picks commits (oldest-first {:sha ...}) onto root's current HEAD.
+   Returns {:ok? true :count n} once every commit applies cleanly, or
+   {:ok? false :conflicting-sha sha} with the cherry-pick already aborted -
+   root's HEAD is never left mid-cherry-pick either way."
+  [root commits]
+  (loop [cs commits n 0]
+    (if (empty? cs)
+      {:ok? true :count n}
+      (let [sha (:sha (first cs))
+            r (git root "cherry-pick" sha)]
+        (if (zero? (:exit r))
+          (recur (rest cs) (inc n))
+          (do (git root "cherry-pick" "--abort")
+              {:ok? false :conflicting-sha sha}))))))
 
 (defn backup-ref [role stamp]
   (str "refs/swarmforge/parcel-backup/" role "/" stamp))
@@ -164,7 +228,12 @@
 (defn- start-target
   "A fresh start for ticket: its newest handed-off commit, else origin/main.
    Never \"past\" origin/main: a long-lived branch descends from it and would
-   wrongly stay; only the ticket's own unlanded line stays (own-line?)."
+   wrongly stay; only the ticket's own unlanded line stays (own-line?).
+   :start? true marks every result of this function (BL-2044 D1): a :start
+   intent (coordinator Work note) and a :take-up intent whose commit is a
+   BL-1887 route (already on origin/main) both start the ticket fresh the
+   same way, and take-up!'s re-apply must follow THAT shape, not the
+   intent keyword the caller happened to arrive with."
   [root project-root head ticket]
   (git root "fetch" "-q" "origin")
   (let [origin-main (resolve-commit root "origin/main")
@@ -172,13 +241,18 @@
         target (or handed origin-main)]
     {:target target
      :at-or-past-target? (= head target)
-     :own-line? (own-line? root project-root origin-main ticket)}))
+     :own-line? (own-line? root project-root origin-main ticket)
+     :start? true}))
 
 (defn- on-origin-main? [root sha]
   (boolean (when-let [om (resolve-commit root "origin/main")] (ancestor? root sha om))))
 
 (defn- resolve-target
-  "{:target sha :at-or-past-target? bool :own-line? bool} for the intent."
+  "{:target sha :at-or-past-target? bool :own-line? bool :start? bool} for
+   the intent. :start? is true only when the target was resolved via
+   start-target (BL-2044 D1) - never for a plain :take-up at a parcel
+   commit not on origin/main, which moves onto exactly that commit and
+   must never re-apply it a second time."
   [{:keys [root project-root intent]}]
   (let [head (resolve-commit root "HEAD")]
     (case (:intent intent)
@@ -194,13 +268,13 @@
           (start-target root project-root head (:ticket intent))
 
           (and target head (ancestor? root target head))
-          {:target target :at-or-past-target? true}
+          {:target target :at-or-past-target? true :start? false}
 
           (and target (:ticket intent)
                (do (git root "fetch" "-q" "origin") (on-origin-main? root target)))
           (start-target root project-root head (:ticket intent))
 
-          :else {:target target :at-or-past-target? false}))
+          :else {:target target :at-or-past-target? false :start? false}))
       :start
       (start-target root project-root head (:ticket intent)))))
 
@@ -214,7 +288,7 @@
    outcome - :stay, :moved, or :refused when the parcel was not taken up -
    and nil when the intent asks for no move, so the caller's ACTION text
    can follow it."
-  [{:keys [root role intent own-root] :as facts}]
+  [{:keys [root role intent own-root project-root] :as facts}]
   (when (#{:take-up :start} (:intent intent))
     (let [resolved (resolve-target facts)
           decision (move-decision (assoc resolved
@@ -237,10 +311,32 @@
             (refused "PARCEL_LINE: detached HEAD; the parcel was not taken up.")
             (do
               (when head (git root "update-ref" (backup-ref role (utc-stamp)) head))
-              (let [r (git root "switch" "-q" "-C" branch (:target decision))]
-                (if (zero? (:exit r))
-                  (do (println (str "PARCEL_LINE: moved " branch " onto " (subs (:target decision) 0 10)
-                                    (when head (str " (left " (subs head 0 10) " under refs/swarmforge/parcel-backup/" role "/)"))))
-                      :moved)
+              ;; BL-2044: the candidates are read from the OLD head, before
+              ;; the switch below moves it - own-line? having already read
+              ;; false for this exact base/ticket is what got us here, so
+              ;; this never re-litigates that decision, only picks the
+              ;; subset of its commits worth carrying forward. Scoped to a
+              ;; START move (D1, resolved's :start?) - a Work note OR a
+              ;; BL-1887 route (:take-up at a commit already on
+              ;; origin/main) - never a plain :take-up at a parcel commit
+              ;; not on origin/main, whose target already IS the parcel, so
+              ;; its own commit would be re-applied onto itself.
+              (let [ticket (:ticket intent)
+                    origin-main (resolve-commit root "origin/main")
+                    base (and origin-main head (git-out root "merge-base" origin-main head))
+                    candidates (when (and (:start? resolved) ticket base)
+                                 (reapply-candidates root project-root base head ticket (:target decision)))
+                    r (git root "switch" "-q" "-C" branch (:target decision))]
+                (if-not (zero? (:exit r))
                   (refused (str "PARCEL_LINE: move failed; the parcel was not taken up: "
-                                (str/trim (:err r)))))))))))))
+                                (str/trim (:err r))))
+                  (let [reapplied (reapply-commits! root candidates)]
+                    (if (:ok? reapplied)
+                      (do (println (str "PARCEL_LINE: moved " branch " onto " (subs (:target decision) 0 10)
+                                        (when head (str " (left " (subs head 0 10) " under refs/swarmforge/parcel-backup/" role "/)"))
+                                        (when (pos? (:count reapplied)) (str "; re-applied " (:count reapplied) " commit(s)"))))
+                          :moved)
+                      (do (git root "switch" "-q" "-C" branch head)
+                          (refused (str "PARCEL_LINE: re-applying " (subs (:conflicting-sha reapplied) 0 10)
+                                        " onto " (subs (:target decision) 0 10)
+                                        " conflicted; the parcel was not taken up."))))))))))))))

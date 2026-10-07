@@ -57,10 +57,23 @@ Example output when a move happens:
 ```
 PARCEL_LINE: moved swarmforge-architect onto a1b2c3d9e8 (left 7f3c0e1a2b under refs/swarmforge/parcel-backup/architect/)
 ```
+When that line carried the ticket's own unlanded commits past the old merge
+base (BL-2044), and the move starts the ticket fresh — a coordinator `Work`
+note, or a forwarded `git_handoff` whose commit is already on `origin/main`
+(a BL-1887 route) — the move re-applies them onto the new target before
+reporting, and says so:
+```
+PARCEL_LINE: moved swarmforge-coder onto a1b2c3d9e8 (left 7f3c0e1a2b under refs/swarmforge/parcel-backup/coder/); re-applied 2 commit(s)
+```
 When a move is blocked:
 ```
 PARCEL_LINE: uncommitted changes to tracked files (swarmforge/foo.bb); the parcel was not taken up. Commit or restore them and ask again.
 PARCEL_LINE: /home/carillon/swarmforgevc/.worktrees/QA is not coder's own worktree (/home/carillon/swarmforgevc/.worktrees/coder); the parcel was not taken up there.
+```
+When the re-apply itself conflicts (BL-2044), the cherry-pick is aborted and
+the worktree is switched back to the old head unchanged — nothing moves:
+```
+PARCEL_LINE: re-applying 9f1c2b3d4e onto a1b2c3d9e8 conflicted; the parcel was not taken up.
 ```
 When nothing moves (parcel carries no work, or the role is already at or
 past the target), the claim path prints nothing extra.
@@ -127,6 +140,41 @@ Before any move, the head being left is kept under
 `refs/swarmforge/parcel-backup/<role>/<UTC stamp>` — a ref, not a reflog
 entry, so it survives a `git gc`. If a move ever looks wrong, that ref is
 where the commit a role held before the move is reachable from.
+
+That backup ref is still written on every move, but since BL-2044 it is no
+longer the only place the ticket's own commits land. A line a seat holds
+can be force-moved onto the start target — a `:start` intent, origin/main's
+tip — when it carries an unlanded *other* ticket's work and so fails
+`own-line?`'s check; before BL-2044 the current ticket's own unlanded
+commits on that same line were stranded under the backup ref with nothing
+re-applying them, silently losing a seat's finished work at the next serve.
+
+The re-apply runs for a **start move** — not for the `:start`/`:take-up`
+intent keyword itself, but for whichever moves resolve through
+`start-target` (BL-2044 D1): a coordinator `Work` note, forcing the line
+off its old base, **and** a forwarded `git_handoff` whose cited commit is
+already on `origin/main` (a BL-1887 route git_handoff, which starts its
+ticket fresh exactly as a Work note does). A plain `:take-up` at a parcel
+commit that is *not* on `origin/main` never re-applies: its target already
+**is** the parcel, so cherry-picking the role's own commit onto it a second
+time is an empty cherry-pick — which `git cherry-pick` reports as a
+conflict, not a no-op — and would wrongly refuse the commonest bounce shape
+(a role receiving its own bounced commit back). For a start move,
+`take-up!` reads the commits past the old merge base whose subject names
+**the ticket itself**
+(`reapply-worthy?` — stricter than `own-line?`'s own `line-commit-ok?`,
+which also calls a commit "the ticket's own" when its subject names only
+*done* tickets; a done ticket's original commit is excluded here because a
+target may already hold its landed replay, or the commit may belong to an
+unrelated ticket's line it would be wrong to inject it into), excludes
+merges, and excludes any commit already an ancestor of the new target
+(the ticket's newest handed-off commit can already carry the same work).
+What survives is cherry-picked, oldest first, onto the new target after
+the switch, before reporting the move. If a cherry-pick conflicts, the
+take-up aborts it and switches back to the old head unchanged (no
+cherry-pick or merge left in progress), refuses with the conflicting
+commit named, and the parcel is not taken up — the backup ref from this
+same move is still there either way.
 
 ## Who this applies to
 

@@ -1,0 +1,209 @@
+id: BL-2074
+title: "Stamp-off for hotfix 9b89a6e5db: BL-2064's own read-budget invariant reset the count on a bare compaction, handing the iq3 coder a fresh 12 reads right after it lost context - exactly the 'reading frenzy' the human watched happen; the guard now resets only on an edit/write or a state-changing command, warns from the 12th qualifying read, and defers the 24th-read restart to BL-2064's own build"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of a production hotfix for a live fault the human
+# reported in real time on the running swarm - the same class BL-2060
+# and BL-2066 were minted at.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: normal
+depends_on: []
+
+mutation_cost: medium
+# medium: Babashka production code, no Stryker lane (hand-mutant pass is
+# the hardener's job) - four new pure functions plus one wiring line in
+# a ~650-line hook, read against the fixture-driven BL-1971 test script.
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "four small pure functions beside their siblings in the same file, following the file's existing style; nothing to refactor"
+  architect: "no boundary moves; the hook, its transcript parsing and the restart/release machinery it reuses are all pre-existing (BL-1991, BL-1992, BL-1971)"
+
+# No feature of its own exercises local_model_repeat_guard.bb's notes
+# directly (BL-1971's own test is a shell script over fixture
+# transcripts, not gherkin). BL-1991's feature drives the same file's
+# restart/release path end to end through the real hook and proves the
+# hotfix left it untouched - the nearest acceptance contract that
+# already exists, the same pattern BL-2060 used for its stamp-off.
+acceptance: specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-restarted-on-it.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the human asked the coordinator to land
+  immediately, live, under the 2026-10-01 rule ("instead of minting a
+  red, hotfix the defect and mint a stampoff"). No choice is posed here.
+  FIRM: the coder reviews the hotfix and never re-applies it.
+
+invariants:
+  - "A bare compaction never resets the read-since-last-write count; only an edit/write_file or one of the existing state-changing shell commands does."
+  - "The read-budget warning never refuses a tool call - it only adds additionalContext with the call's own result, the same posture as every other note in this hook (BL-1971)."
+  - "The hotfix's restart/release machinery (BL-1991/1992's missed-write path) is byte-for-byte untouched: the new read-budget code is additive, a new branch in notes-response only, never a change to restart-decision, release-decision or their precedence in answer's cond."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     all checks pass (the specifier ran it clean at the hotfix commit).
+  2. `node specs/pipeline/cli.js specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-restarted-on-it.feature`
+     and the BL-1992 feature: all ok (the shared restart/release path for
+     a missed write is unchanged).
+  3. Read the coder's fixture evidence (ad hoc `bb -e` or shell checks are
+     fine, per this ticket's own review scope) proving: (a) a transcript
+     with 11 qualifying read-type calls since the last reset, then a
+     bare compaction, then 1 more such call, is reported as the 13th read
+     and warned - never reset to a fresh count by the compaction; (b) the
+     same shape with an edit, a write_file, or a state-changing shell
+     command in place of the compaction is NOT warned (the reset fires);
+     (c) the 11th qualifying read in a row is not warned and the 12th is,
+     naming "12th read" in the note; (d) a read-only shell command
+     (`sed -n`, and a read-only git subcommand such as `git log`) counts
+     toward the budget the same as read_file.
+  4. Confirm scope: this hotfix does not restart or release a parcel for
+     a read-budget overrun (no 24th-read branch exists yet) - only warns.
+     That is a deliberate, narrower scope than BL-2064's full build (see
+     notes below); this review's job is to confirm the warn-only code is
+     correct and safe, not to fault it for omitting the restart half.
+  5. On the live iq3 seat, after this lands: watch for the READ-BUDGET
+     note firing in the seat's transcript shortly after a compaction
+     whose <next_step> is a write, where it previously would not have
+     (the bug this hotfix fixes). Record what you see in QA evidence.
+
+source: |
+  The human, 2026-10-07, verbatim, live on the running swarm: "compressions
+  for iq3 are lethal, it just compacted and immediately goes on a reading
+  frenzy." The coordinator spun off this ephemeral specifier session to
+  mint a ticket and land a hotfix immediately rather than wait for the
+  normal pipeline; the specifier's own prior mailbox note to itself about
+  the bug (sent before this session) is superseded by this ticket and the
+  landed commit.
+
+notes: |
+  Minted 2026-10-07 by an ephemeral specifier spun off by the coordinator
+  at the human's live report, outside the normal mint flow (no topic.json
+  exists yet for this ticket - that file is written by the mailbox/
+  approval bot once a seat actually claims it, not at mint time; compare
+  BL-2060, also freshly minted and auto-approved, which likewise has none
+  while paused).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Scope deliberately narrower than BL-2064's own spec. BL-2064 (paused,
+  human-approved 2026-10-07: "Warn, then restart (Recommended)") specs a
+  read-since-last-write counter that warns at the 12th qualifying read and
+  restarts the seat at the 24th, sharing BL-1991/1992's per-parcel restart
+  count - and its own `invariants:` say the count resets on exactly what
+  resets-window? resets, including a bare compaction. That is the bug the
+  human's live report caught: resetting on compaction hands the seat a
+  fresh 12-read budget right when it has just lost context and is most
+  likely to spend it rebuilding - the "reading frenzy." This hotfix fixes
+  only that: a sibling reset predicate (read-budget-resets?) that drops
+  the compaction clause, and the warn half (12th read onward) wired to it.
+  The 24th-read restart is NOT landed here - BL-2064's own wording needs
+  "the latest compaction's next_step, else the session's first message"
+  as the fresh turn's message, and this hook's transcript-entries does
+  not yet parse a session's first message out of the transcript. Guessing
+  at that wiring under a hotfix, rather than building it properly as
+  BL-2064's own ticket, was judged the riskier path; BL-2064 itself is
+  amended (see its own notes) to point at this hotfix and this review.
+
+  No mutation lane exists for Babashka (Article/Engineering rule) - the
+  hardener's hand-mutant pass over the four new functions and the one
+  notes-response wiring line is this ticket's only mutation coverage; the
+  specifier ran the existing BL-1971 fixture suite plus ad hoc `bb -e`
+  checks (not committed as a test file - a hotfix review, not a build)
+  proving the four behaviours qa_e2e_procedure step 3 names, all clean.
+
+  Interplay: once BL-2064 itself is eventually built, it will very likely
+  replace read-budget-resets?/reads-since-write/read-budget-note wholesale
+  with its own full (warn+restart) implementation - this ticket's review
+  should say so explicitly rather than treating this hotfix's functions as
+  permanent names to preserve.
+
+description: |
+  ## Status: hotfix 9b89a6e5db landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  swarmforge/scripts/local_model_repeat_guard.bb is the qwen PostToolUse
+  hook every local-model ("iq3") coder seat runs after every tool call.
+  BL-2064 (paused, human-approved) specs a new read-since-last-write
+  counter for it: warn the seat at its 12th read-only call since the last
+  write, restart it at the 24th. Its own `invariants:` say the counter
+  resets on exactly what the existing `resets-window?` resets on - an
+  edit/write_file, a compaction, or a state-changing shell command.
+
+  The human caught, live, why that is wrong for this specific counter:
+  "compressions for iq3 are lethal, it just compacted and immediately goes
+  on a reading frenzy." A compaction is exactly when the seat has just
+  lost its context and is most likely to re-read heavily to rebuild it.
+  Resetting the read budget on every compaction hands the seat a brand
+  new 12-read allowance at precisely that moment, so the counter BL-2064
+  specs would never actually catch the frenzy the human watched happen -
+  it would always look freshly reset right after the compaction that
+  triggers it.
+
+  ## What the hotfix changed
+
+  9b89a6e5db, swarmforge/scripts/local_model_repeat_guard.bb:
+  - `read-budget-resets?`: `resets-window?` without its compaction
+    clause - an edit/write_file or a state-changing shell command resets
+    the read budget; a bare compaction does not.
+  - `read-only-tools`, `read-only-command-pattern`, `read-only-shell-command?`,
+    `read-type-call?`: a read-type call is read_file, read_many_files,
+    grep_search, glob, list_directory, or a shell command whose own
+    output cannot change the repo or the mailbox (the existing
+    read-commands list, `sed -n`, or a read-only git subcommand - show,
+    log, diff, grep, ls-files, blame, status).
+  - `reads-since-write`: the count of read-type calls since the last
+    `read-budget-resets?` entry, not counting the in-flight call, built
+    the same way `prior-repeats` already walks the window.
+  - `read-budget-note`: for an in-flight read-type call, once the
+    qualifying count (this call included) reaches 12, adds a
+    `READ-BUDGET:` note to the call's own result naming the count and the
+    latest compaction's next_step if there is one - never refuses the
+    call, and keeps firing on every qualifying read past 12 (no 24th-read
+    restart is implemented in this hotfix - see notes above).
+  - Wired into `notes-response` beside the other notes.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 9b89a6e5db` against the section above. Confirm
+     `read-budget-resets?` really is `resets-window?` minus the
+     compaction branch (line-by-line), that `read-type-call?` matches the
+     tool/command list above and nothing wider, and that
+     `restart-decision`, `release-decision` and their precedence in
+     `answer`'s cond are byte-for-byte unchanged by the diff.
+  2. Run `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`
+     and the two features in qa_e2e_procedure once each, output under
+     tmp/.
+  3. Reproduce the four fixture checks in qa_e2e_procedure step 3 against
+     the real hook (a `bb -e` scratch script over hand-built transcript
+     JSONL, the same shape BL-1971's own test script uses) and confirm
+     each.
+  4. Write backlog/evidence/BL-2074-coder-<date>.md with the review result
+     and the run results, and commit it.
+
+  ## What the hardener does
+
+  A hand-mutant pass over the four new functions and the `notes-response`
+  wiring line (no Stryker lane for Babashka) - mutate each boundary (the
+  12 threshold, the reset predicate's clauses, the read-only-tools set,
+  the regex) and confirm `test_bl1971_local_model_repeat_guard.sh` or the
+  coder's fixture checks catch it.
+
+  ## What the documenter does
+
+  Nothing in docs/how-to/ currently describes the read-budget behaviour
+  (BL-2064's own living-doc section was never written, since BL-2064 was
+  never built) - add a short section to
+  docs/how-to/BL-1052-local-model-seat-launch.md beside "A seat that skips
+  its named write is restarted on it (BL-1991)" saying: from the 12th
+  qualifying read-only call since its last edit/write/state-changing
+  command, the seat is warned and told to write next; a compaction does
+  not reset this count; no restart yet exists for this path (link
+  forward to wherever BL-2064 eventually lands, or to this ticket if it
+  is still open).

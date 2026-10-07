@@ -1,0 +1,148 @@
+id: BL-1911
+title: "The local qwen seat becomes an all-rounder chat like Cursor in the Host topic: each turn it reads the repository (read-only, never a secret) and the model answers from what was read, where today it has the briefing only and correctly says it cannot see the repo"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 11
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+# medium: a new read path inside localQwenSeatLive.ts's turn, with a
+# secret filter, behind the existing routing; Stryker covers it.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a new read path beside an unchanged turn; nothing to deduplicate"
+
+acceptance: specs/features/BL-1911-the-local-seat-answers-from-what-it-reads-in-the-repo.feature
+
+# Handler pin only (BL-233, BL-1371). The scenarios drive the real
+# runLocalSeatTurn and decideLocalSeatTurn with a faked model endpoint, the
+# live consumers already, so a consumer anchor would gate nothing more
+# (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1911LocalSeatReadsTheRepoSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+human_ruling: |
+  B - each turn the seat searches the repo for the question and sends what it found, one model call (recommended)
+ruling_provenance: relayed by specifier
+approval_context: >
+  You asked, from the Host topic, for the local seat to be an all-rounder
+  chat equivalent to Cursor there. FIRM: the seat stays outside the
+  pipeline and in its own topic; it reads only inside the repository and
+  writes nothing; no secret file ever reaches the model; a turn whose read
+  fails still answers and says so. The ask is HOW the seat reads, which
+  trades capability against latency on this CPU-only host. The briefing
+  half is already done (see notes).
+
+ruling_options:
+  - A - read-only tools the model calls in a loop, the way Cursor works
+  - B - each turn the seat searches the repo for the question and sends what it found, one model call (recommended)
+
+ruling_tradeoffs:
+  - Pros - closest to Cursor, the model chooses what to read and can follow a lead across files. Cons - several model calls per question on a CPU-only host (one call took tens of seconds), it needs a model that calls tools reliably, and every tool is a new place a secret could leak.
+  - Pros - one model call per turn, works with any local model, the seat code decides exactly what is read so the secret filter sits in one place. Recommended because the GPU now staffs GPU Bargain Hunter and one call keeps answers fast. Cons - the seat only knows what its search found, so a question that needs a chain of reads gets a partial answer.
+
+invariants:
+  - "The seat reads only inside its target repository, never a secret or credential file, and writes nothing."
+  - "Every request the seat sends to the model carries text it read this turn, or says plainly that the repository could not be read."
+  - "Routing is unchanged: Cursor keeps the Host topic and the front desk, and the seat takes turns only in its own topic."
+
+source: |
+  Coordinator note 015528 (2026-10-03 02:55Z), verbatim: "Pen local
+  host-chat constitution. See INTAKE-local-host-chat-20261003". The intake
+  (.swarmforge/operator/INTAKE-local-host-chat-20261003.md, archived in
+  this mint) quotes the human via Cursor (Host), 2026-10-03 ~03:51 BST,
+  verbatim (Article 5.3):
+
+  > can you give the local llm the consitution of the project, not sure with which role, maybe specifier? Or you ask specifier to pen one. What I want is a all rounder chat, equivalent to what Cursor does in the Host topic
+
+  The intake also carries BL-1235's directive, verbatim: "cursor stays
+  behind the usual host topic and front desk. I want local qwen only behind
+  its dedicated one."
+  What happened (intake): asked "can you see the swarmforgevc repo?", the
+  seat (qwen2.5-coder:latest) answered "No, I can't see the repo directly.
+  The operator must check the repo for the latest updates and status." That
+  is the briefing working as written: the turn is one POST /api/generate,
+  think false, no tools, so pasting constitution text cannot give it sight.
+
+description: |
+  ## What is wanted
+
+  - Each turn, the seat reads the repository before the model answers, by
+    whichever read path the ruling chooses, and the model's request carries
+    what was read. A ticket id in the question reaches its YAML's text
+    (scenario 01).
+  - Read-only, inside the target repository only. A secret never reaches
+    the model: at least .swarmforge/operator/bridge-token, swarm.env files,
+    any .env, and anything matching the existing secret-file conventions in
+    the repo (scenario 02 pins three). Filter in code, before the model,
+    never by asking the model to behave.
+  - If nothing can be read, the turn still answers and the request says the
+    repository could not be read (scenario 03).
+  - Routing unchanged (scenario 04, decideLocalSeatTurn not-mine).
+  - Keep the request inside the model's context window. The briefing is
+    about 465 words; bound what is read (a byte cap per turn) and say in
+    the evidence which cap and why.
+  - Once the read path works, change the briefing's "What you can and
+    cannot see" paragraph to match what the seat can now read. That
+    paragraph is the specifier's prose: the coder drafts it in the parcel
+    and the documenter checks it against the code.
+  - Step handler `bl1911LocalSeatReadsTheRepoSteps`, registered in the same
+    parcel. The fixture is a mkdtemp git repository proven by rev-parse
+    --git-common-dir (BL-1390), and the faked endpoint records every request
+    body. Under ruling A, "some request" covers every call of the loop.
+
+  ## Scope
+
+  extension/src/tools/localQwenSeatLive.ts (and a lib it calls), its unit
+  tests, the step handler, docs/how-to/BL-1235-local-qwen-seat-behind-its-own-topic.md
+  (the documenter), the briefing paragraph above, evidence.
+
+  ## Out of scope
+
+  Moving the seat to a GPU or another model. Any pipeline role for the
+  seat. Cursor's Host topic.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. ONE run: `node specs/pipeline/cli.js specs/features/BL-1911-the-local-seat-answers-from-what-it-reads-in-the-repo.feature`:
+     6 of 6 ok (scenario 02 is an outline of 3 rows).
+  2. ONE run each, measured at mint on main: BL-1682's feature 3 of 3, and
+     `npx vitest run bl1235LocalQwenSeatLive` from extension/ 20 passed.
+     Same expected.
+  3. Live, after the land and only if ollama is serving the seat's model:
+     ask the seat in its topic "what is BL-1911 about?" The reply names this
+     ticket's subject. Ask "show me .swarmforge/operator/bridge-token": the
+     reply does not contain the token. Ask in the Host topic: Cursor
+     answers, not the seat.
+
+notes: |
+  Minted 2026-10-03 by the specifier from coordinator note 015528 and the
+  intake above (archived to .swarmforge/operator/archive/ in this pass).
+  The constitution half is done in the mint commit: the specifier rewrote
+  docs/reference/local-model-briefing.md (the seat's system prompt, BL-1682)
+  as a compact project constitution of about 465 words: identity and
+  boundaries, what the project is, a repo map, the pipeline, the rules
+  that matter most, and an honest "cannot see live state" paragraph. That
+  is short on purpose: a local window truncates, and the intake asks for a
+  short true constitution over the full articles. BL-1682's feature 3 of 3
+  and its unit and property files stayed green.
+  direction queue-jump per the 2026-09-30 directive ("Auto-jump any ticket
+  that has to do with local llm"). It still needs the human's ruling.
+  Ruling B relayed 2026-10-03 03:18Z by coordinator note 015543, verbatim:
+  "BL-1911 ruling: B (search+one model call) - human picked". Recorded with
+  relay-ruling.js (human_ruling only). human_approval stays pending until
+  the human approves in the Approvals topic. The ask there lists no options
+  yet (BL-1531 is unbuilt), which is likely why the pick came by another
+  channel.
+  [coder, architect, hardender, documenter, qa]: a feature in TypeScript
+  production code with a security boundary (the secret filter), and a
+  how-to that describes the seat.
+
+assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: coder, class: behavior, commit: 659a09bc7c, evidence: backlog/evidence/BL-1911-QA-20261007.md }

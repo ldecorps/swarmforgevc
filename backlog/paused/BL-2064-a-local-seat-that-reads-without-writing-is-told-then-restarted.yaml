@@ -1,0 +1,218 @@
+id: BL-2064
+title: "A local seat that reads without writing is told to write, then restarted: since 2026-10-04 61% of the iq3 coder's model time went to read-only calls and 39% was reading a compaction discarded before any edit; the repeat guard tells the seat to write at its 12th read since the last write and restarts it at the 24th, on the same per-parcel restart count as a missed write"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the local coder seat spends
+# most of its time reading and throws most of that away (measured below).
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: normal
+depends_on: [BL-2055, BL-2056]
+# Both are active at mint and change the same restart path in
+# local_model_repeat_guard.bb and the launcher; this ticket lands after
+# them so the three never touch that path at once.
+mutation_cost: medium
+# medium: Babashka production code (no Stryker lane; the hardener's
+# hand-mutant pass), one new decision beside missed-write in a 600-line
+# guard, plus fixture transcripts.
+slice_size_envelope: medium
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new count and two answers beside the existing missed-write path; nothing to refactor"
+  architect: "no boundary moves; the restart, the release and the hook already exist (BL-1991, BL-1992)"
+
+acceptance: specs/features/BL-2064-a-local-seat-that-reads-without-writing-is-told-then-restarted.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2064LocalSeatReadBudgetSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the new decision's name is
+# the coder's, and any pattern on the guard's existing functions matches
+# before and after the work. The scenarios must drive the guard's REAL
+# `answer` through a CLI over fixture transcripts, the way BL-1991's
+# specs/pipeline/steps/lib/bl1991RestartGuardCli.bb does.
+
+human_approval: approved
+approval_context: >
+  The human raised it ("Iq3 seems to be spending most its time reading
+  files...") and chose the design in the specifier's session on
+  2026-10-07 from three options: warn only, warn then restart, restart at
+  12 with no warning. Chosen, verbatim: "Warn, then restart
+  (Recommended)" - at 12 reads the guard tells the seat to write, at 24
+  it restarts it. FIRM: no tool call is ever refused (the guard's
+  warn-or-restart posture, BL-1991); the restart and release reuse the
+  existing per-parcel count.
+
+invariants:
+  - "The read count resets on exactly what resets the repeat warning (resets-window?): an edit or write_file, a compaction, or a state-changing shell command."
+  - "A read-budget restart and a missed-write restart draw on one per-parcel restart count; no parcel is restarted more than max-restarts times for either reason, and the next overrun releases it (BL-1992)."
+
+description: |
+  ## What is wrong
+
+  The human, 2026-10-07: "Iq3 seems to be spending most its time reading
+  files..." Measured over the iq3 coder's qwen sessions since 2026-10-04
+  (~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats,
+  281 sessions, 14,613 tool calls):
+
+  - 69% of calls only read (read_file, grep_search, glob, list_directory,
+    or a read-only shell command), and they took 16.1 of 26.2 hours of
+    model time (61%).
+  - 316 of 871 read streaks ended in a compaction, not a write: 10.3 hours
+    (39% of all model time) of reading thrown away before any edit.
+  - Sessions that did edit made a median of 11 reads before the first
+    edit (p75 18, p90 37, max 63).
+  - Session c1ab1546 (2026-10-06 23:32Z), a one-line edit to a step
+    handler: 43 reads in 4.5 minutes, babysitter_check.bb read in 15
+    slices covering the whole file and another handler 1 to 4 lines at a
+    time; then a compaction at 55.8k tokens, one read of the target file
+    and the edit in 30 s.
+  - Session 34b86140 (2026-10-07 10:34Z), told "fix named-write-path
+    (line ~152)": 23 reads in 3 minutes (the contract, tests, features,
+    handlers, a how-to) and no edit, at 55.6k tokens.
+
+  The card already says "read only what the ticket names" and "never read
+  files the ticket does not name". The seat does not follow it. The repeat
+  guard only notices identical calls (BL-1971) and whole-file reads; a
+  streak of different reads passes it.
+
+  ## What is wanted
+
+  In swarmforge/scripts/local_model_repeat_guard.bb, the PostToolUse hook
+  every local seat runs:
+
+  - A read-type call is read_file, read_many_files, grep_search, glob,
+    list_directory, or a shell command that only reads: the guard's
+    `read-commands` (ls, cat, head, tail, wc, grep, find, stat) plus
+    `sed -n` and the read-only git subcommands (show, log, diff, grep,
+    ls-files, blame, status).
+  - The count is the read-type calls since the last thing that resets the
+    repeat window (`resets-window?`). Writing tmp/notes.md in the arrange
+    phase is a write_file, so it resets the count: planning is never
+    penalised (invariant 1).
+  - From the 12th to the 23rd read the hook's additionalContext tells the
+    seat how many reads it has made without a write and that its next call
+    is a write: the change its task names, or in the arrange phase its
+    plan in tmp/notes.md (scenarios 01, 03).
+  - At the 24th read the guard restarts the seat the way a missed write
+    does (BL-1991): end qwen, leave a restart request whose first message
+    is the task's step (the latest compaction's next_step, else the
+    session's first message) and says the last session made 24 reads
+    without a write. It bumps the same per-parcel count; once both
+    restarts are spent it releases the parcel instead (BL-1992, scenario
+    04, invariant 2).
+  - 12 and 24 are the human's numbers; they live where max-restarts lives
+    or in swarmforge.conf, the coder's call.
+  - Living doc: docs/how-to/BL-1052-local-model-seat-launch.md gains a
+    section beside "A seat that skips its named write is restarted on it
+    (BL-1991)".
+
+  ## How (direction, not mandate)
+
+  - A pure `read-budget` decision over `transcript-entries`, beside
+    `missed-write`, and one more branch in `answer`'s cond: restart and
+    release keep their precedence, the read-budget restart joins them,
+    and the warning joins `notes-response`.
+  - The scenarios drive `answer` through a fixture CLI over hand-built
+    transcripts, as BL-1991's bl1991RestartGuardCli.bb does; the kill
+    and release seams are fakes.
+
+constraints: >
+  No tool call is refused. Fixture transcripts and a temp worktree only:
+  never the live seat's transcript, never a real qwen process. bash 3.2
+  rules for any shell (engineering.prompt). The step handler lands with
+  the feature (BL-233).
+
+out_of_scope: |
+  - The card's wording (.swarmforge/prompts/coder.md is 28 chars under
+    its budget; bl1798's runner guards it).
+  - qwen's own compaction threshold and context window (BL-1840).
+  - Cloud seats: the hook is registered only for local-model seats.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2064-a-local-seat-that-reads-without-writing-is-told-then-restarted.feature`:
+     9 of 9 ok (01 x3, 02 x4, 03, 04).
+  2. `node specs/pipeline/cli.js specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-restarted-on-it.feature`
+     and the BL-1992 feature: all ok (the shared restart path is unchanged
+     for a missed write).
+  3. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`
+     and `bash swarmforge/scripts/test/test_bl1991_local_seat_restart_launch.sh`
+     once each (no lane runs them): all checks pass.
+  4. After the land, on the live iq3 seat: over the sessions since the
+     land, the share of model time on read-only calls and the share
+     discarded by compaction, measured the same way as the description
+     (api_response duration_ms per assistant record). Expected: both
+     lower than 61% and 39%; record the numbers in the QA evidence.
+
+source: |
+  The human, 2026-10-07, verbatim, in the specifier's session:
+
+  > Iq3 seems to be spending most its time reading files...
+
+  The human's ruling, 2026-10-07, verbatim (session question, three
+  options):
+
+  > Warn, then restart (Recommended)
+
+  Measurements: the specifier's analysis of the iq3 coder's qwen chat
+  JSONL since 2026-10-04 (api_response duration_ms attributed to each
+  assistant record's calls; chat_compression records as streak ends).
+
+notes: |
+  Minted 2026-10-07 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  The design choice was put to the human in the session before mint and
+  answered there, so no ruling_options are declared; the answer is
+  quoted in approval_context and source, never hand-written into
+  human_ruling (backlog-schema.md: ruling_provenance is never the
+  specifier's).
+  Seat: this changes the guard that watches the iq3 coder; coder@2 is
+  the better holder.
+  Interplay: BL-2058 (paused, the live proof of iq3 through arrange, act
+  and assert) will run under this budget once it lands; arrange's notes
+  write resets the count.
+
+  AMENDED 2026-10-07 by an ephemeral specifier the coordinator spun off at
+  the human's live report: "compressions for iq3 are lethal, it just
+  compacted and immediately goes on a reading frenzy." That report caught
+  a real bug in THIS ticket's own `invariants:` (above): "The read count
+  resets on exactly what resets-window? resets" includes a bare
+  compaction, and resetting the read budget on every compaction hands the
+  seat a fresh 12-read allowance at precisely the moment it has just lost
+  context and is most likely to burn reads rebuilding it - the opposite
+  of what the budget is for. Rather than wait for this ticket to move
+  through the normal pipeline, the human asked for an immediate hotfix:
+  landed as 9b89a6e5db (warn-only half: read-budget-resets? is
+  resets-window? without the compaction clause; warns from the 12th
+  qualifying read-type call since the last edit/write/state-changing
+  command onward). The 24th-read restart this ticket also specs is NOT
+  in that hotfix - it needs the fresh turn's first message to fall back
+  to "the session's first message" when there is no compaction next_step,
+  which this hook's transcript-entries does not yet parse out, and
+  guessing at that wiring under a hotfix was judged riskier than building
+  it properly. The hotfix's own stamp-off review is BL-2074
+  (backlog/paused/BL-2074-stamp-off-read-budget-compaction-reset-hotfix-9b89a6e5db.yaml).
+
+  THIS TICKET IS NOT CLOSED and not satisfied-by-hotfix: 9b89a6e5db only
+  covers the warn half, corrected for the compaction bug; the restart half
+  (24th read, shared BL-1991/1992 per-parcel count, first-message
+  fallback) is still unbuilt and still this ticket's job. Whoever builds
+  it should also correct invariant 1 above in the same pass (the
+  compaction clause must be dropped from the reset rule it describes -
+  9b89a6e5db's read-budget-resets? is the corrected version to carry
+  forward, not resets-window? itself) and should read BL-2074's review
+  before deciding whether to keep the hotfix's functions or replace them
+  wholesale with this ticket's own full build.
+  IR-DRY at mint: four medium findings, all one step pattern ("the
+  seat's transcript has N read-type calls since its last write") used
+  with different counts, plus scenario 02's deliberately different Given;
+  kept so each is one handler.
+  INVEST: Independent (waits only on BL-2055 and BL-2056 via
+  depends_on), Negotiable (where the numbers live, the decision's shape),
+  Valuable (the seat stops discarding 39% of its time), Estimable (one
+  decision, two answers, one doc section), Small (four scenarios), Testable
+  (fixture transcripts through the real answer).
+
+assigned_to: coder

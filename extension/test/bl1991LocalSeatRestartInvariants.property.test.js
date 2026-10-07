@@ -75,7 +75,7 @@ function simulateForms(calls, namedPath) {
               name (if write? "write_file" "read_file")
               args (if write? {"file_path" path0} {"file_path" (:probe c)})
               entries2 (conj entries {:kind :call :record (count entries) :name name :args args})
-              decision (local-model-repeat-guard/restart-decision entries2 name args restart-count)]
+              decision (local-model-repeat-guard/restart-decision entries2 name args "/does-not-matter" restart-count)]
           (if decision
             (recur base (inc restart-count) (rest remaining) (inc restarts-done))
             (recur entries2 restart-count (rest remaining) restarts-done)))))))
@@ -218,7 +218,7 @@ test('named-write-path recognizes "edit"/"edits" exactly as it recognizes "write
         [{:kind :compaction :next-step "Edit ${NAMED_PATH} to add the missing case."}
          {:kind :call :record 0 :name "read_file" :args {"file_path" "/probe-1"}}
          {:kind :call :record 1 :name "read_file" :args {"file_path" "/probe-2"}}]
-        "read_file" {"file_path" "/probe-3"} 0))`;
+        "read_file" {"file_path" "/probe-3"} "/does-not-matter" 0))`;
   const [decision] = callGuardLib(decisionForms);
   assert.ok(decision, `an "edit"-phrased next step must restart on the third non-matching call, got: ${JSON.stringify(decision)}`);
   assert.equal(decision['next-step'], `Edit ${NAMED_PATH} to add the missing case.`);

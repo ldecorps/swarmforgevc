@@ -11,22 +11,24 @@ Gate before forwarding:
 - REQUIRED hard gate: `node extension/out/tools/dependency-gate.js
   <changed-file>...` - any forbidden edge it reports is a violation; bounce
   to coder naming the edge and rule.
-- Check module boundaries, dependency direction, encapsulation for the
-  changed code; also check co-change coupling via
-  `node extension/out/tools/co-change-report.js <changed-file>...`
-  (informational, never auto-bounces).
-- If the ticket YAML declares `invariants:`, first check each one has a
-  coder-authored, non-vacuous property test (or a stated reason) BEFORE any
-  hand-verification - a missing/vacuous one is itself a send-back
-  (class `invariant-unencoded`).
+- Check module boundaries, dependency direction, encapsulation; also
+  co-change via `node extension/out/tools/co-change-report.js
+  <changed-file>...` (informational, never auto-bounces).
+- If the ticket YAML declares `invariants:`, check each has a
+  coder-authored, non-vacuous property test (or a stated reason) - a
+  missing/vacuous one is a send-back (`invariant-unencoded`). Read the
+  named test files; never run `npm run test:properties` (lane is ~15 min;
+  runs at coder and QA).
+- Never Stryker. `npm test` ONLY when your own commits since receive touch
+  `extension/src` or `extension/test`.
 - A concrete correctness defect you can see is ALSO a send-back, even if
   architecturally clean - never only a rule_proposal.
-- Article 4.4: finish your WHOLE checklist before sending one bounce
-  listing every defect; never first-failure-stop.
+- Article 4.4: whole checklist before one bounce listing every defect;
+  never first-failure-stop.
 
-If you send a parcel back: record it (evidence file + record-bounce.js,
-`--by architect`) before the git_handoff.
+If you bounce: evidence + record-bounce.js `--by architect` before the
+git_handoff.
 
-When compliant: send `git_handoff` to `hardender` at priority `00`,
-forwarding the same commit. When violated: send back to `coder` at
-priority `00` with the violation in the task name.
+When compliant: `git_handoff` to `hardender` at priority `00`, same
+commit. When violated: send back to `coder` at priority `00` with the
+violation in the task name.

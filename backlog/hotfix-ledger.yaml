@@ -1276,7 +1276,7 @@
 - commit: 6b5f524550
   subject: "hotfix: a note counts as a dispatch only when its capitalised Spec/Work verb opens the message or a sentence"
   detected_at: 2026-10-05
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-2005
   human_decision: null
   decided_at: null
@@ -1395,126 +1395,175 @@
 - commit: c9132288de
   subject: "hotfix: three specs/pipeline/test files red unseen in no lane - BL-227's handler refused the workflow's ${NUM}/${URL} (its scenario 02 red on main since 2026-07-22), a burndown test resolved BL-1277-scoped steps unscoped, and a test still required a handler BL-267 deleted on 2026-07-11"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2040
   human_decision: null
   decided_at: null
 - commit: 6038e612b4
   subject: "hotfix: two shell tests anchored tabs with GNU-only grep -qP, red in bl989PortableGrepTabAnchor's tree sweep - rewritten to the BL-989 printf form, along with three grep -qE '\t' negative checks in the BL-1861 test that could never fire"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2040
   human_decision: null
   decided_at: null
 - commit: f1b8d5f2b7
   subject: "hotfix: the babysitter's seat-stuck clock counted a seat's commit only when its byline was exactly By <stage>."
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2042
   human_decision: null
   decided_at: null
 - commit: 336ca56aef
   subject: "hotfix: BL-1608's scenario 01 pinned exactly 2 call sites of claim-task-name and has been red on main since BL-1715"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1843
   human_decision: null
   decided_at: null
 - commit: 24872ac7a9
   subject: "hotfix: the parcel-line take-up force-moved the coder's BL-1843 line six times on 2026-10-06"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2044
   human_decision: null
   decided_at: null
 - commit: c6e284cfec
   subject: "hotfix: 24872ac7a9's two new parcel_line_lib runner cases crashed on the fixture merge's missing committer identity"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2044
   human_decision: null
   decided_at: null
 - commit: 61c2c53e37
   subject: "hotfix: every local-model card composed over its 8192-character budget since the BL-2038 phase section"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2047
   human_decision: null
   decided_at: null
 - commit: 171ddbdee0
   subject: "hotfix: BL-563's feature was 6/8 in the live checkout"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2047
   human_decision: null
   decided_at: null
 - commit: 25cb223e0d
   subject: "Hotfix: BL-871 invariant 1 compared a loaded run's concurrency to a ceiling read seconds earlier"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2051
   human_decision: null
   decided_at: null
 - commit: 435b2de1a9
   subject: "Hotfix: BL-1472 property runner compares the attribution answer, not fixture shas"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2051
   human_decision: null
   decided_at: null
 - commit: 372b68930b
   subject: "Hotfix: BL-1513's property runner expected the router note BL-1614 replaced"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2051
   human_decision: null
   decided_at: null
 - commit: 853235a216
   subject: "Hotfix: BL-886's orphan fixture required PPID 1, red on a subreaper host"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2051
   human_decision: null
   decided_at: null
 - commit: 49fe963c76
   subject: "Hotfix: the extension stopper followed a worktree's tmux-socket pointer to the live swarm server"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2052
   human_decision: null
   decided_at: null
 - commit: a9cadb6484
   subject: "Hotfix: kill_all_swarm.sh rooted at a seat worktree followed its tmux-socket pointer and killed the live swarm server"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2052
   human_decision: null
   decided_at: null
 - commit: 48d037df88
   subject: "Hotfix: bl965's runner killed the whole swarm through procps kill's -<pid> parse"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2053
   human_decision: null
   decided_at: null
 - commit: d0b9440211
   subject: "Hotfix: a unit-lane guard fails any external kill exec of a negative pid without --"
   detected_at: 2026-10-06
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2053
   human_decision: null
   decided_at: null
 - commit: 0ea531fa5f
   subject: "Hotfix two unit-lane reds QA found unowned (note 003883): bl1901 race-twice timeout, bl1698 edge cases over the per-file budget"
   detected_at: 2026-10-07
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2057
   human_decision: null
   decided_at: null
 - commit: 2cf2694e92
   subject: "Hotfix the BL-955 invariant 1 reachability floor QA found unowned (note 003888): each surface gets its own 20 runs"
   detected_at: 2026-10-07
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2057
+  human_decision: null
+  decided_at: null
+- commit: 6a0c428723
+  subject: "Hotfix the BL-1389 property red QA found unowned (note 003892): invariant 1 ran past its 20 s-base budget in a loaded full property lane"
+  detected_at: 2026-10-07
+  state: awaiting-human
+  stamp_ticket: BL-2057
+  human_decision: null
+  decided_at: null
+- commit: c416adc5fb
+  subject: "Hotfix approval taps lost to the bridge: a front-desk 409 retries within 5 s so its heartbeat stays fresh"
+  detected_at: 2026-10-07
+  state: stamp-open
+  stamp_ticket: BL-2060
+  human_decision: null
+  decided_at: null
+- commit: fe7833a272
+  subject: "Hotfix BL-1253 scenario 05, red on main since the human certified 2ec06b6ef1 (QA note 003895): its no-decision check uses uncommittedDecision like the nine sites 02f834ec44 fixed"
+  detected_at: 2026-10-07
+  state: awaiting-human
+  stamp_ticket: BL-2062
+  human_decision: null
+  decided_at: null
+- commit: 8381fd02fb
+  subject: "Hotfix BL-764 scenario 05's busy-to-idle row, red on main since 2026-08-05: the idle liveness line has no waiting count by design"
+  detected_at: 2026-10-07
+  state: awaiting-human
+  stamp_ticket: BL-2062
+  human_decision: null
+  decided_at: null
+- commit: 4453766c28
+  subject: "Hotfix approval taps, second cause: the bridge's start-time inbound-queue flag no longer outlives the front desk's outage"
+  detected_at: 2026-10-07
+  state: stamp-open
+  stamp_ticket: BL-2060
+  human_decision: null
+  decided_at: null
+- commit: 662b7933c3
+  subject: "Hotfix two property timeouts QA found unowned (note 003903): bl1333 invariant 2 past a bare 120000, bl1445 invariant 1 past its scaled 20000 base"
+  detected_at: 2026-10-07
+  state: awaiting-human
+  stamp_ticket: BL-2066
+  human_decision: null
+  decided_at: null
+- commit: 9b89a6e5db
+  subject: "Hotfix the BL-2064 read-budget invariant: a compaction must never reset the local-seat read count"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2074
   human_decision: null
   decided_at: null

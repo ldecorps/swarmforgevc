@@ -22,6 +22,19 @@ GUARD="$SCRIPTS/local_model_repeat_guard.bb"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
+# BL-2055/BL-897: local_model_repeat_guard.bb copies handoff_lib.bb's
+# sidecar-suffixes rather than load-filing it (measured: loading
+# handoff_lib.bb costs ~100ms more than this hook's own baseline, and it
+# runs on every tool call) - this is what keeps the copy from drifting
+# from the original it is a copy of.
+agree="$(bb -e "
+(load-file \"$SCRIPTS/handoff_lib.bb\")
+(load-file \"$GUARD\")
+(println (= handoff-lib/sidecar-suffixes local-model-repeat-guard/sidecar-suffixes))
+")"
+[[ "$agree" == "true" ]] || fail "local_model_repeat_guard.bb's copied sidecar-suffixes disagrees with handoff_lib.bb's own: $agree"
+pass "local_model_repeat_guard.bb's copied sidecar-suffixes list agrees with handoff_lib.bb's own (BL-897)"
+
 fn_text="$(awk '
   /^write_local_model_qwen_settings\(\) \{/ { flag=1 }
   flag && in_heredoc { print; if ($0 == "JSON") { in_heredoc=0 }; next }
@@ -244,6 +257,15 @@ out="$(decide_resp '{"command":"node specs/pipeline/cli.js specs/features/BL-925
 out="$(decide_resp '{"command":"git diff --stat"}' "$EMPTY")"
 [[ -z "$out" ]] || fail "a command that is not a grep got the grep hint: $out"
 pass "a grep that prints nothing is told the name is not in those files; a grep that finds something, or another empty command, is not (2026-10-05)"
+
+D1="$(mktemp -d)"
+register_tmp_dir "$D1"
+mkdir -p "$D1/tmp"
+echo 'a line' > "$D1/tmp/notes.md"
+out="$(bb -e "(load-file \"$GUARD\") (in-ns (quote local-model-repeat-guard)) (println (override-message \"Edit tmp/notes.md: add a line\" (named-write-path \"Edit tmp/notes.md: add a line\") \"$D1\"))")"
+[[ "$out" == *"$D1/tmp/notes.md"* ]] || fail "the existing-file restart message did not name the file at its absolute path: $out"
+[[ "$out" != *"Do not read"* ]] || fail "the existing-file restart message told the seat not to read the file: $out"
+pass "a restart on a file that exists names it at its absolute path and never says do not read (BL-2056)"
 
 printf 'not json\n{"type":"assistant"}\n' > "$T"
 out="$(decide "$T" run_shell_command "$LOG")"

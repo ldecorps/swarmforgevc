@@ -1,0 +1,108 @@
+id: BL-2062
+title: "Stamp-off for hotfixes fe7833a272 and 8381fd02fb: two acceptance reds frozen into landed features - BL-1253 scenario 05 required 2ec06b6ef1's ledger row undecided forever and went red when the human certified it, and BL-764 scenario 05's busy-to-idle row asserted a waiting count the idle line has not shown since 2026-08-05"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of standing-red hotfixes (a red is high at first
+# sighting, 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review two step-or-feature commits and run two features once.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one assertion swapped for a shared helper call and one Examples row retired; nothing to refactor"
+  architect: "test-side only; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "no living doc describes these two scenarios"
+
+# Not a claim of ownership over BL-1253's contract (BL-1251): it is the
+# feature fe7833a272 repairs.
+acceptance: specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of hotfixes the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews them and never
+  re-applies them.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), from a checkout
+  whose backlog/hotfix-ledger.yaml is clean (BL-1253's scenario 05 also
+  checks that the stamp-off left the ledger untouched).
+  1. `node specs/pipeline/cli.js specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature`:
+     8 of 8 ok (measured at fe7833a272 on a clean local clone of main: 8
+     of 8; without the change 7 of 8, scenario 05 "state is certified").
+  2. `node specs/pipeline/cli.js specs/features/BL-764-front-desk-eats-host-bridge-updates.feature`:
+     6 of 6 ok (measured at 8381fd02fb: 6 of 6; before it 6 of 7, "/2
+     waiting/").
+  3. Read the coder's committed review evidence.
+
+source: |
+  QA note 003895 (2026-10-07T09:27:42Z), verbatim: "hotfix c416adc5fb
+  (human: fix approval taps): mint stamp-off; BL-1253 s05 red".
+  BL-764's red was found by the specifier while measuring that feature
+  for BL-2061's qa_e2e_procedure at mint.
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-07 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  No standing-reds.tsv row was added for either: both were fixed the same
+  pass they were found, and no parcel is held on them.
+  Kept apart from BL-2057 (the same day's unit and property-lane reds)
+  so neither stamp-off grows past one sitting for one seat.
+  Six paused stamp-offs (BL-1504, BL-1506, BL-1507, BL-1508, BL-1557,
+  BL-1644) carry the same "ledger row stays undecided" scenario with no
+  handler yet. When each is built, its Then must call
+  extension/test/helpers/hotfixLedgerDecision.js's uncommittedDecision(),
+  or the human's later certification turns it red on main the same way.
+
+description: |
+  ## Status: hotfixes fe7833a272 and 8381fd02fb landed the fixes
+
+  This parcel is their stamp-off: review them, do not re-apply them.
+
+  ## What was wrong, and what the hotfix changed
+
+  1. fe7833a272, specs/pipeline/steps/bl1253DeadFeederOwnsGetUpdatesStampSteps.js:
+     BL-1253's scenario 05 ("The ledger row stays pending until a human
+     decides") required the hotfix-ledger row for 2ec06b6ef1 to stay
+     neither certified nor waived with human_decision null, forever. The
+     human certified it on 2026-10-05, so it has been red on main since.
+     02f834ec44 fixed the same check at nine other stamp-off sites with
+     extension/test/helpers/hotfixLedgerDecision.js and missed this one,
+     which wrote its own regexes. The Then step now calls
+     `uncommittedDecision()`: an undecided row, or one decided exactly as
+     HEAD's committed ledger records a human's decision, passes; a
+     decision HEAD does not carry still fails.
+  2. 8381fd02fb, specs/features/BL-764-front-desk-eats-host-bridge-updates.feature:
+     scenario 05 asserted "2 waiting" on the edited liveness line for
+     both of its rows. Operator hotfix 2b8d19d178 (2026-08-05, reviewed
+     under BL-811) made the idle line a bare "Bridge: idle" on purpose,
+     so the busy -> idle row has been red on main since then. The row is
+     retired, never reworded, with a feature comment naming the
+     superseding hotfix; the idle text is pinned by
+     telegramCursorBridgeLiveness.test.js.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show fe7833a272` and `git show 8381fd02fb` against the
+     section above. For fe7833a272, confirm only the Then step's
+     assertions and one require changed, and the When step's
+     clean-ledger check is untouched. For 8381fd02fb, confirm only the
+     one Examples row went and a comment came.
+  2. Run the two features once each with output under tmp/.
+  3. Write backlog/evidence/BL-2062-coder-<date>.md with the review
+     result and the run results, and commit it.
+
+assigned_to: coder

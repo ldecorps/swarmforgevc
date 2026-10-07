@@ -17,6 +17,10 @@
 #   incoming-both-sides           - BL-1341 scenario 04
 #   untagged-removal <named|unnamed> - BL-1662 scenario 09
 #   untagged-removal-incoming-only <named|unnamed> - BL-1662 hardener scenario 10 (MERGE_HEAD-side mirror)
+#   origin-exempt         - BL-1913 scenario 01: MERGE_HEAD is origin/main itself, the
+#                            deleted paths absent there - exempt, no ticket needed
+#   off-origin-refused    - BL-1913 scenario 02: same deletion, but MERGE_HEAD is a
+#                            branch that is not on origin/main - still refused
 # Prints one JSON line.
 
 set -uo pipefail
@@ -46,6 +50,8 @@ git -C "$ROOT" commit -q -m "BL-0001: add step handler"
 echo "lib" > "$ROOT/swarmforge/scripts/bl0002_example_lib.bb"
 git -C "$ROOT" add swarmforge/scripts/bl0002_example_lib.bb
 git -C "$ROOT" commit -q -m "BL-0002: add lib"
+
+PRE_REVERT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 git -C "$ROOT" checkout -q -b feature
 echo "feature progress" > "$ROOT/feature-note.txt"
@@ -291,6 +297,60 @@ case "$MODE" in
     EXIT_CODE=$?
     rm -f "$MSG"
     STDERR_ESCAPED="$(bb -e '(println (cheshire.core/generate-string (slurp *in*)))' <<<"$OUT")"
+    printf '{"exitCode":%s,"stderr":%s}\n' "$EXIT_CODE" "$STDERR_ESCAPED"
+    ;;
+
+  origin-exempt)
+    # BL-1913: MERGE_HEAD IS origin/main itself, and the deleted paths are
+    # absent there (origin/main made the deletion) - exempt even with no
+    # ticket named. A throwaway bare repo stands in for origin: pushed to
+    # and fetched back as refs/remotes/origin/main, the exact ref the
+    # guard's own `git rev-parse --verify --quiet origin/main` reads.
+    ORIGIN_BARE="$ROOT-origin-bare"
+    git init -q --bare "$ORIGIN_BARE"
+    git -C "$ROOT" remote add origin "$ORIGIN_BARE"
+    git -C "$ROOT" push -q -f origin "$MAIN_TIP:refs/heads/main"
+    git -C "$ROOT" fetch -q origin main
+    start_merge
+    MSG="$ROOT/../msg_$$.txt"
+    echo "merge origin/main" > "$MSG"
+    OUT="$(run_merge_guard "$MSG" 2>&1)"
+    EXIT_CODE=$?
+    rm -f "$MSG"
+    rm -rf "$ORIGIN_BARE"
+    printf '{"exitCode":%s}\n' "$EXIT_CODE"
+    ;;
+
+  off-origin-refused)
+    # BL-1913: the SAME deletion, but from a branch that is NOT on
+    # origin/main (origin/main points elsewhere entirely) - the exemption
+    # must not leak; still refused exactly as before BL-1913.
+    ORIGIN_BARE="$ROOT-origin-bare"
+    git init -q --bare "$ORIGIN_BARE"
+    git -C "$ROOT" remote add origin "$ORIGIN_BARE"
+    git -C "$ROOT" checkout -q -b origin-main-point "$PRE_REVERT"
+    echo "origin/main's own unrelated progress" > "$ROOT/origin-progress.txt"
+    git -C "$ROOT" add origin-progress.txt
+    git -C "$ROOT" commit -q -m "chore: origin/main's own unrelated progress"
+    ORIGIN_MAIN_POINT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+    git -C "$ROOT" push -q -f origin "$ORIGIN_MAIN_POINT:refs/heads/main"
+    git -C "$ROOT" fetch -q origin main
+
+    git -C "$ROOT" checkout -q -b off-origin-main "$PRE_REVERT"
+    git -C "$ROOT" rm -q specs/pipeline/steps/bl0001ExampleSteps.js swarmforge/scripts/bl0002_example_lib.bb
+    git -C "$ROOT" commit -q -m "a side branch that is not on origin/main, also deleting both files"
+    OFF_ORIGIN_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q feature
+    git -C "$ROOT" reset -q --hard "$FEATURE_TIP"
+    git -C "$ROOT" merge --no-ff --no-commit "$OFF_ORIGIN_TIP" >/dev/null 2>&1 || true
+    MSG="$ROOT/../msg_$$.txt"
+    echo "merge a branch that is not on origin/main" > "$MSG"
+    OUT="$(run_merge_guard "$MSG" 2>&1)"
+    EXIT_CODE=$?
+    rm -f "$MSG"
+    STDERR_ESCAPED="$(bb -e '(println (cheshire.core/generate-string (slurp *in*)))' <<<"$OUT")"
+    rm -rf "$ORIGIN_BARE"
     printf '{"exitCode":%s,"stderr":%s}\n' "$EXIT_CODE" "$STDERR_ESCAPED"
     ;;
 

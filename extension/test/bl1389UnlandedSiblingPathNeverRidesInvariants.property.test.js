@@ -186,6 +186,13 @@ function sweepFixtures() {
   sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
+// Each run builds a real git fixture and spawns bb on land_step_lib.bb
+// (about 0.7 s of that is loading the lib). Alone at load 7-15 the three
+// tests take 14.8 s, 15.2 s and 11.7 s, too close to a 20 s base: in QA's
+// full lane on 2026-10-07 at load 12-18 invariant 1 ran past its 92.9 s
+// budget (note 003892). The 60 s base is bl1529's class: 60 s on a quiet
+// host, up to 180 s under load.
+
 test("BL-1389/BL-654 invariant 1: a path an unlanded sibling owns alone never rides, whatever its approval reads", () => {
   sweepFixtures();
   const reach = Object.fromEntries(APPROVAL_SHAPES.map((s) => [s.name, 0]));
@@ -226,7 +233,7 @@ test("BL-1389/BL-654 invariant 1: a path an unlanded sibling owns alone never ri
   }
 
   assertReachFloor(reach, APPROVAL_SHAPES.map((s) => s.name), APPROVAL_CELL_RUNS, 'approval shape');
-}, propertyLaneTimeoutMs(20000));
+}, propertyLaneTimeoutMs(60000));
 
 test('BL-1389/BL-654 invariant 2: a sibling reads landed only when EVERY attributed path is on origin/main', () => {
   sweepFixtures();
@@ -279,7 +286,7 @@ test('BL-1389/BL-654 invariant 2: a sibling reads landed only when EVERY attribu
   }
 
   assertReachFloor(reach, Object.keys(reach), LANDED_CELL_RUNS, 'sibling-landed shape');
-}, propertyLaneTimeoutMs(20000));
+}, propertyLaneTimeoutMs(60000));
 
 test('BL-1389/BL-654 invariant 3: the report is enough to check the verdict without diffing the tip', () => {
   sweepFixtures();
@@ -332,4 +339,4 @@ test('BL-1389/BL-654 invariant 3: the report is enough to check the verdict with
     }),
     { numRuns: 4 },
   );
-}, propertyLaneTimeoutMs(20000));
+}, propertyLaneTimeoutMs(60000));

@@ -1,0 +1,162 @@
+id: BL-2055
+title: "A local seat's restart relaunches it only on the parcel it holds now - the launch script served an earlier parcel's stale override (BL-1963, then BL-1874) to the iq3 coder holding BL-1913 on 2026-10-06, and a released parcel's leftover claim-progress sidecar made the repeat guard restart the seat on the ticket it had just released"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. Both BL-1913 restarts sent the
+# iq3 coder to work on tickets it did not hold (it edited BL-1963's step
+# handler and replaced BL-1874's), and after the release it was restarted
+# on BL-1913 again and loop-halted at 00:05Z. One stale override is still
+# pending on the seat now.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: one selection rule in the generated launch script's relaunch
+# loop, one filter in the guard's in_process lookup, their shell tests,
+# one step handler, one how-to paragraph.
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a selection rule in one loop and a filter in one lookup; nothing to deduplicate"
+  architect: "no boundary moves: the guard still writes the override and the launch script still serves it; invariant 1 pins which one"
+
+acceptance: specs/features/BL-2055-a-local-seat-restart-relaunches-only-on-the-parcel-it-holds.feature
+
+invariants:
+  - "A restart's fresh turn only ever carries the override written for the handoff that is in the seat's in_process when qwen exits."
+  - "A seat whose in_process holds no handoff file (sidecars do not count) is never restarted and sends no release note."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2055RestartOnlyOnTheHeldParcelSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Found by the specifier adjudicating coordinator note 017189 ("BL-1913
+  loop-halt 6x/24h (iq3) - simplify per 10-05 rule"). No choice is posed.
+  FIRM: BL-1991's trial is unchanged (two restarts per parcel, the
+  override is the restart's only message, no tool call is refused) and
+  BL-1992's release is unchanged; only WHICH override is served, and
+  whether a parcel exists at all, change.
+
+description: |
+  ## What is wrong
+
+  Two faults in BL-1991's restart, both seen on the iq3 coder holding
+  BL-1913 (parcel 017169) on 2026-10-06, from its qwen sessions in
+  ~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/:
+
+  1. The generated local-model launch script (swarmforge.sh, the
+     `local-model)` case: `pending_msgs=('$restart_dir'/*.msg(N))`, then
+     `pending_msg="${pending_msgs[1]}"`) serves the FIRST pending override
+     by name, whichever parcel wrote it. Overrides outlive their parcel
+     (a pane respawned before its loop reads one leaves it on disk, and the
+     new pane's loop reads it only at the next qwen exit, on another
+     parcel), and older parcels' names sort first. At 23:32Z the guard restarted the
+     seat for a missed write of tmp/notes.md (session 3e694b79's 23:31:35Z
+     compaction), but the fresh turn (session c1ab1546) opened with an
+     earlier parcel's BL-1963 step and edited BL-1963's step handler. At
+     23:38Z the guard wrote BL-1963 text for 017169; the launch script
+     served a BL-1874 step instead (session 2ea20f23), and the seat
+     replaced specs/pipeline/steps/bl1874ThrottleRefreshFailureSteps.js.
+     The 23:38Z override was never served and is still pending:
+     .worktrees/coder/.swarmforge/local-seat-restart/10_20261006T231403Z_017169_from_coordinator_to_coder_for_coder.handoff.json.msg
+  2. local_model_repeat_guard.bb's `in-process-handoff-name` keys the
+     restart count on the first file in in_process, sidecars included.
+     BL-1992's release moves only the handoff file, so at 23:54Z the
+     parcel's `.claim-progress.json` sidecar was left alone in in_process,
+     the guard read it as a new parcel with no restarts, and it restarted
+     the seat (session 1507e310) on BL-1913 after the release. That session
+     edited check_merge_deletion.sh, re-ran one scratch repro about fifteen
+     times, and was halted by qwen's loop dialog at 00:05Z.
+
+  The seat's off-ticket work from 1 and 2 was committed on its branch as
+  39dec5f68f ("step handlers: throttle refresh failure, babysitter qa-paths
+  stub, merge-of-origin-main deletions"; no ticket id, no byline). It is
+  not on origin/main and not in the lander queue.
+
+  ## What is wanted
+
+  - When qwen exits, the launch script relaunches it only with the
+    override for the handoff now in the seat's in_process, and discards
+    any override whose handoff is no longer there (scenarios 01, 02).
+  - A seat whose in_process holds only sidecars is not holding a parcel:
+    no restart, no release note (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - The override file is named `<in_process handoff file name>.json.msg`
+    (`restart-state-file` plus `.msg`), so the launch script can match it
+    against the files in `$role_worktree/.swarmforge/handoffs/inbox/in_process/`.
+  - The sidecar suffixes already have one home: `sidecar-suffixes` in
+    swarmforge/scripts/handoff_lib.bb (.nudge, .chase.json,
+    .claim-progress.json, .batch-claim-progress.json). Reuse it if loading
+    it stays cheap in a PostToolUse hook; otherwise copy the list and add a
+    test that both lists agree (BL-897).
+  - The launch-script test swarmforge/scripts/test/test_bl1991_local_seat_restart_launch.sh
+    already runs the real `local-model)` case block against a fake qwen;
+    scenarios 01 and 02 can drive the same extraction. Scenario 03 can
+    drive the guard the way specs/pipeline/steps/bl1992ThirdMissReleasesParcelSteps.js
+    does (bl1991RestartGuardCli.bb with a fake kill controller).
+  - Steps repeating BL-1991's or BL-1992's text register with
+    `registry.defineScoped(pattern, handler, featureName)` (BL-425).
+
+  ## Scope
+
+  swarmforge/scripts/swarmforge.sh (the `local-model)` case's relaunch
+  loop), swarmforge/scripts/local_model_repeat_guard.bb
+  (`in-process-handoff-name`), their shell tests, the how-to section
+  "A seat that skips its named write is restarted on it (BL-1991)" in
+  docs/how-to/BL-1052-local-model-seat-launch.md (it says the script
+  relaunches with any pending override), the feature, and its handler
+  specs/pipeline/steps/bl2055RestartOnlyOnTheHeldParcelSteps.js.
+
+  ## Out of scope
+
+  - The guard's path reading and the restart message's wording: BL-2056.
+  - Deleting the off-ticket commit 39dec5f68f or the pending stale
+    override by hand: the coordinator's (note sent 2026-10-07).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule):
+  1. `node specs/pipeline/cli.js specs/features/BL-2055-a-local-seat-restart-relaunches-only-on-the-parcel-it-holds.feature`:
+     01, 02, 03 ok. Measured 0 at mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-restarted-on-it.feature`:
+     4 of 4 ok. Measured at mint (2026-10-07, main 2676e8605a): 4 of 4 ok, 4 s.
+  3. `node specs/pipeline/cli.js specs/features/BL-1992-a-third-missed-write-releases-the-parcel-to-another-coder-seat.feature`:
+     2 of 2 ok. Measured at mint: 2 of 2 ok, 8 s.
+  4. `bash swarmforge/scripts/test/test_bl1991_local_seat_restart_launch.sh`
+     and `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     ALL PASS. Measured at mint: both PASS.
+  5. Read the parcel's how-to diff: the BL-1991 section says the launch
+     script serves only the override for the handoff in in_process.
+
+source: |
+  Coordinator note 017189 (2026-10-07T06:07:54Z), verbatim: "BL-1913
+  loop-halt 6x/24h (iq3) - simplify per 10-05 rule". The 10-05 rule, the
+  human's words: "When coder is stuck in a loop, the response to that is
+  back to specifier to make the ticket easier for coder to implement."
+  Adjudication evidence: the iq3 coder's sessions 3e694b79, c1ab1546,
+  2ea20f23 and 1507e310 (first user message and chat_compression
+  next_step of each), the restart directory listing above, and the
+  coder branch commit 39dec5f68f.
+
+notes: |
+  Minted 2026-10-07 by the specifier while adjudicating coordinator note
+  017189 on BL-1913. BL-1913 itself was not split: it is already with
+  coder@2 (BL-1992 released it at 23:54Z), and the BL-1913 loops traced
+  to this fault and BL-2056, not to the ticket's size.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Shares local_model_repeat_guard.bb with BL-2056; orthogonality
+  sequences the two, neither depends on the other.
+  Routing hint, not a mandate: this repairs the harness that restarts the
+  iq3 seat, so a hard-tier coder seat is the better fit.
+  Until BL-2055 lands, the pending stale override above is served the
+  next time the iq3 seat's qwen exits inside the relaunch loop.
+
+assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: hardender, class: unit, commit: 651ed89396, evidence: backlog/evidence/BL-2055-QA-20261007.md }

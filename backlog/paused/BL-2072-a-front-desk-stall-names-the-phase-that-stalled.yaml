@@ -1,0 +1,122 @@
+id: BL-2072
+title: "A front-desk stall names the phase that stalled: the supervisor killed the bot as stalled 37 times on 2026-10-07 with no 409 involved, and nothing shows whether the startup topic checks, the long poll or a batch of updates held the heartbeat past 90 s; each phase that runs long now leaves a timing line, so the fix can be cut from the evidence"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the human's only channel is
+# restarted dozens of times a day; this slice is the diagnosis the fix
+# needs.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript (telegram-front-desk-bot.ts, a thin timing wrapper
+# around existing phases) under Stryker on the changed lines only.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "a timing wrapper around three existing phases; nothing to refactor"
+  architect: "no boundary moves; the supervisor, its 90 s rule and the heartbeat are unchanged"
+  documenter: "the diagnostics log's lines are read by the specifier minting the fix; no living doc describes them"
+
+acceptance: specs/features/BL-2072-a-front-desk-stall-names-the-phase-that-stalled.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2072FrontDeskStallNamesPhaseSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the timing helper's name is
+# the coder's. The scenarios must drive the bot's REAL startup and poll
+# cycle code paths over fakes, never a restatement of them.
+
+human_approval: approved
+approval_context: >
+  The human chose "Mint a diagnosis ticket" in the specifier's session on
+  2026-10-07. No choice is posed. FIRM: the heartbeat's meaning and the
+  supervisor's 90 s rule are unchanged - this slice only makes each kill
+  name its phase; the fix is minted afterwards from what the lines show.
+
+invariants:
+  - "Every startup step, getUpdates wait and batch handling that runs longer than the threshold leaves exactly one timing line naming that phase and its duration; nothing else in the bot's behaviour changes."
+
+description: |
+  ## What is wrong
+
+  front-desk-supervisor.log on 2026-10-07: 37 "stalled bot no poll
+  heartbeat within 90000 ms" kills, none with a 409 on the poll. Two came
+  at 11:32:29Z and 11:34:48Z, after both of QA's approval-tap hotfixes
+  (c416adc5fb, 4453766c28); the second came 135 s after the bot started at
+  11:32:33Z. QA note 003907 saw the 10:23Z and 10:28Z kills inside
+  recompile windows.
+
+  telegram-front-desk-bot.ts writes the poll heartbeat once when
+  `pollLoop` begins - after main awaits the startup topic checks
+  (`ensureBacklogTopic`, `ensureOnboardingTopic`, `ensureIntakeTopic` and
+  the others before it) - and then after each completed cycle
+  (`applyPollCycleResult`). So a slow startup, a slow getUpdates long poll,
+  and a slow batch of updates (routing, approval commits, topic opens) are
+  indistinguishable: each leaves the heartbeat stale and the bot is
+  killed with nothing naming why.
+
+  ## What is wanted
+
+  - When the startup topic checks, a getUpdates wait, or the handling of
+    one update batch runs longer than a threshold (10 s is a reasonable
+    start; the coder records the choice), the bot appends one line to
+    .swarmforge/operator/front-desk-diagnostics.log naming the phase and
+    its duration (scenario 01). A phase under the threshold writes
+    nothing (scenario 02).
+  - Nothing else changes: the heartbeat is written where it is today, and
+    the supervisor's 90 s rule stands (invariant).
+  - After the land, the hardener's or QA's evidence records the phase
+    lines that sit just before the next stall-kills, and the specifier
+    mints the fix from them (notes).
+
+  ## How (direction, not mandate)
+
+  - A small timing wrapper, injected clock, used at the three sites; the
+    diagnostics log already exists and is append-only.
+  - The handler drives main's startup sequence and one poll cycle over a
+    fake Telegram with injected delays and a fake clock, never real
+    sleeps.
+
+constraints: >
+  Fakes for Telegram and the clock, a temp operator directory; never the
+  live token, the live operator directory or real sleeps. The step handler
+  lands with the feature (BL-233).
+
+out_of_scope: |
+  - The fix for whichever phase stalls: minted from this slice's evidence.
+  - The supervisor's 90 s threshold.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2072-a-front-desk-stall-names-the-phase-that-stalled.feature`:
+     4 of 4 ok (01 x3, 02).
+  2. Read from the gather's unit row: telegramFrontDeskBotCore.test.js and
+     the bot's own tests green.
+  3. After the land and a front-desk restart onto the new build: the next
+     "stalled bot" line in front-desk-supervisor.log has, before it in
+     front-desk-diagnostics.log, a timing line naming the phase that ran
+     long; record both lines in the QA evidence.
+
+source: |
+  The human's answer in the specifier's session, 2026-10-07, to "Should I
+  mint a diagnosis ticket?": "Mint a diagnosis ticket (Recommended)".
+  QA note 003907 (2026-10-07T11:30:34Z), verbatim: "BL-2061 data: bot
+  stall-killed 10:23+10:28Z, no 409, in recompile windows".
+  front-desk-supervisor.log counts and times quoted in the description.
+
+notes: |
+  Minted 2026-10-07 by the specifier at the human's choice.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  This is the diagnosis slice. Once its lines name the stalling phase,
+  the specifier mints the fix (startup heartbeat, a startup grace, or a
+  batch split, depending on the phase) as its own ticket.
+  IR-DRY at mint: one medium finding ("the bot runs it" against "the bot
+  runs the cycle"), two different whens, kept.
+  INVEST: Independent, Negotiable (threshold, wrapper shape), Valuable
+  (the next stall names its cause), Estimable (three timing sites),
+  Small (two scenarios), Testable (fake Telegram and clock).
+
+assigned_to: coder

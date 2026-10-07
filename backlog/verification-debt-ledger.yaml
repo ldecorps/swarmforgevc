@@ -284,3 +284,13 @@
   description: "BL-1640's 2026-09-21 first-run census named gateBypassed/ceremonyIsDue as having 2/1 survivors on a 499-line snapshot; BL-1640/BL-1641 both changed this file since (now 697 lines, line:col stale). Traced the CURRENT test suite by hand and found all 4 (mode,sleepPath) boundary combos already distinctly asserted by existing tests added after the census ran, so judged those survivors likely already dead rather than guessing new tests at stale targets; left for the hardener's full re-run to confirm. No tool re-derives which OLD census entries a later same-file parcel already resolved."
   detected_at: 2026-10-06
   evidence: backlog/evidence/BL-1676-coder-20261006.md
+- category: stryker-array-tuple-false-survivor
+  ticket: BL-1880
+  role: hardener
+  description: "Scoped Stryker run on qa-bounce-line.js reported 19 mutants Survived with coveredBy lists that omit tests that demonstrably DO cover the location (e.g. mutant 146 at out/182:122 omits test 22, which directly executes that line); reproduced identically across 5 runs including coverageAnalysis:all and a cleared node_modules/.vite cache. Hand-mutated each of the 19 and ran the full test file directly: 13 genuinely killed (9 new tests, 4 the tool mis-scored), 6 confirmed accepted equivalents."
+  detected_at: 2026-10-07
+- category: stryker-array-tuple-false-survivor
+  ticket: BL-1911
+  role: hardener
+  description: "Scoped Stryker run on localSeatRepoRead.js reported mutant 381 (out/263:38, the err.message StringLiteral) as Survived; hand-mutating the exact line and running the full test file directly shows it genuinely fails (1 test), confirming the coverage-attribution misattribution already logged for BL-1880 recurs for this vitest Stryker wiring."
+  detected_at: 2026-10-07

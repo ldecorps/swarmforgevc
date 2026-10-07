@@ -1,0 +1,104 @@
+id: BL-2066
+title: "Stamp-off for hotfix 662b7933c3: two property-lane timeouts in a loaded full lane - BL-1333's invariant 2 ran 127 s against a bare 120000 no lane ceiling scales, and BL-1445's invariant 1 ran 83 s past its scaled 20000 base (17 s alone)"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of standing-red hotfixes (a red is high at first
+# sighting, 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review one test-side commit and run two property files once.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "three timeout arguments, one require and two comments; nothing to refactor"
+  architect: "test files only; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "no living doc describes these two test files"
+
+# Not a claim of ownership over BL-1585's contract (BL-1251): it is the
+# reach-floor sweep feature that reads both files.
+acceptance: specs/features/BL-1585-sampled-reach-floors-sweep-1-of-6.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's property row:
+     bl1333StampOffInvariants 3 of 3 and
+     bl1445StaffingGateWiringTestDecidesOverrideInvariants 2 of 2.
+     Measured at 662b7933c3: both alone, 5 of 5; in a full property
+     lane exit 0 (527 files, 1451 tests, 653 s wall, load 7-14), bl1333
+     invariant 2 84.9 s and bl1445 invariant 1 36.4 s.
+  2. `node specs/pipeline/cli.js specs/features/BL-1585-sampled-reach-floors-sweep-1-of-6.feature`
+     and `node specs/pipeline/cli.js specs/features/BL-1587-sampled-reach-floors-sweep-3-of-6.feature`:
+     17 of 17 and 12 of 12 ok (measured at mint with the change).
+  3. Read the coder's committed review evidence.
+
+source: |
+  QA note 003903 (2026-10-07T11:26:20Z), verbatim: "unowned-red: bl1333
+  inv2 + bl1445 inv1 STACK_TRACE_ERROR timeouts ev 651ed89396". Evidence:
+  backlog/evidence/BL-2055-QA-20261007.md (commit 651ed89396),
+  properties gate (load 12-14).
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-07 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Its own ticket because BL-2057, which stamps the day's earlier
+  unit and property-lane reds, was already active.
+  No standing-reds.tsv row was added: fixed the same pass it was
+  reported, and QA withheld no parcel on it (BL-2055 bounced on its own
+  D1).
+  bl1333's two bare 120000 timeouts were sites in BL-1596's census (at
+  bdb76c3c8a); this hotfix migrates them through the lane helper the way
+  BL-1596 would, and BL-1596's notes say so.
+
+description: |
+  ## Status: hotfix 662b7933c3 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong, and what the hotfix changed
+
+  QA's BL-2055 property lane on 2026-10-07 (load 12-14) timed out two
+  tests in files the parcel did not touch:
+
+  1. extension/test/bl1333StampOffInvariants.property.test.js, invariant
+     2: 127 s against a bare `120000` per-test timeout, a constant no lane
+     ceiling scales (BL-1596's class). Alone at load 9-11 it takes 48 s.
+     The hotfix requires `propertyLaneTimeoutMs` and passes
+     `propertyLaneTimeoutMs(120000)` to both of the file's bare 120000
+     sites (invariants 1 and 2): 120 s on a quiet host, up to 360 s under
+     load. A comment says why.
+  2. extension/test/bl1445StaffingGateWiringTestDecidesOverrideInvariants.property.test.js,
+     invariant 1: 83 s, past its scaled `propertyLaneTimeoutMs(20000)`;
+     17.1 s alone at load 9-11. The base moves to 60000 (bl1529's and
+     bl1389's class: 60 s quiet, up to 180 s under load), and the
+     existing BL-1808 comment gains a line.
+
+  No property body changed.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 662b7933c3` against the section above. Confirm only
+     the timeout arguments, the one require and the comments changed.
+  2. Run the two property files once each, alone, with
+     `--config vitest.properties.config.mjs` and output under tmp/.
+  3. Write backlog/evidence/BL-2066-coder-<date>.md with the review
+     result and the run results, and commit it.
+
+assigned_to: coder

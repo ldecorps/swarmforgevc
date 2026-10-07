@@ -1,0 +1,193 @@
+id: BL-2056
+title: "A local seat's repeat guard reads the file a compaction summary named at the path the summary wrote - it drops a leading slash, so a seat that edits the named file at its absolute path is still judged to have missed the write, and its restart message tells the seat that a file which exists does not exist yet"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. BL-1991's "a seat that writes
+# first is left alone" fails for the seat's own writes (all absolute), so
+# a seat that did write is restarted and, on the third count, released
+# (BL-1992); and the "does not exist yet" line led the iq3 coder to
+# replace an existing step handler with write_file on 2026-10-06.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: the path reader, the written-file comparison and the message
+# wording, all in local_model_repeat_guard.bb, plus one step handler.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one reader, one comparison, one message in one file; nothing to deduplicate"
+  architect: "no boundary moves: the guard's decision and its restart and release paths stay as BL-1991 and BL-1992 built them"
+  hardender: "Babashka with no mutation lane (BL-472); the change reads a path and words a message, the restart state write is unchanged, and the outline pins each path form"
+
+acceptance: specs/features/BL-2056-a-restart-reads-and-names-the-summarys-file-path-as-written.feature
+
+invariants:
+  - "A write or edit of the file a summary named counts as the named write whether the summary wrote its path absolute or relative to the seat's worktree."
+  - "A restart message says a file does not exist only when it does not exist in the seat's worktree."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2056RestartNamesTheSummarysPathSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Found by the specifier adjudicating coordinator note 017189 ("BL-1913
+  loop-halt 6x/24h (iq3) - simplify per 10-05 rule"). No choice is posed.
+  FIRM: the human's trial wording stays for a file the seat is about to
+  create ("an instruction to write the named file and not to read a file
+  it is about to create", BL-1991 source); a file that exists is told to
+  be edited instead. Restart counts, the release and the no-refusal rule
+  are unchanged.
+
+description: |
+  ## What is wrong
+
+  In swarmforge/scripts/local_model_repeat_guard.bb:
+
+  1. `named-write-path`'s pattern cannot start with "/", so it returns an
+     absolute path without its leading slash. Measured 2026-10-07 (main
+     2676e8605a): "Edit /home/carillon/swarmforgevc/.worktrees/coder/swarmforge/scripts/check_merge_deletion.sh: ..."
+     reads as "home/carillon/swarmforgevc/.worktrees/coder/swarmforge/scripts/check_merge_deletion.sh".
+  2. `named-write-call?` compares that string with the call's `file_path`
+     exactly. Every edit and write_file the iq3 coder made in its recorded
+     sessions (679 of 679) used an absolute path, so the seat's own write
+     never matches, whether the summary wrote the path absolute (case 1) or
+     relative ("Write tmp/notes.md", session 3e694b79 at 23:31:35Z).
+     Measured: `missed-write` over [compaction "Edit /abs/dir/f.sh: ...",
+     edit of /abs/dir/f.sh, two reads] returns a miss for "abs/dir/f.sh".
+  3. `override-message` always ends "Write <path> now. Do not read <path>
+     first - it does not exist yet.", with the slash-less path, even when
+     the step is an edit of a file that exists. At 23:38Z on 2026-10-06 the
+     iq3 coder, told a step handler it should edit "does not exist", used
+     write_file and replaced the whole file (BL-2055 has why it was on that
+     file at all).
+
+  ## What the coder does next (all of it) - 2026-10-07 simplification
+
+  The coordinator pulled the parcel after the iq3 coder halted on QA's
+  bounce with no commit (note 017245). Most of this ticket is already
+  built on the parcel's line: cc781d8f25 (named-write-path keeps "/",
+  resolved-path comparison, existing-file wording) through 6729d33753
+  (QA's bounce record). Start from that line; do not redo it. Three edits
+  are left, nothing else:
+
+  1. swarmforge/scripts/local_model_repeat_guard.bb, `override-message`
+     (line 260 at 6729d33753). Line 270 is
+     `(str "Edit " path " now. Do not read " path " first - it already exists.")`.
+     Replace it with
+     `(str "Edit " (resolved-path cwd path) " now. Read only the lines you will change first (grep -n, then read_file with offset and limit), then edit them.")`.
+     That is QA's D1 (the absolute path) and scenario 02's new step (read
+     the lines, never "do not read"). Make the docstring (lines 261-264)
+     say the same. Leave line 271's missing-file branch as it is.
+  2. specs/pipeline/steps/bl2056RestartNamesTheSummarysPathSteps.js: after
+     the step at line 179 ("the message tells the seat to edit that file
+     ..."), add the handler for scenario 02's new step, "the message tells
+     the seat to read only the lines it will change before editing, and
+     never not to read the file": read the message the same way line 180
+     does, assert it includes "Read only the lines you will change" and
+     does not include "Do not read".
+  3. swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh: one
+     new case before the final summary, QA's D1 probe. In a mktemp dir
+     holding tmp/notes.md, run
+     `bb -e '(load-file "swarmforge/scripts/local_model_repeat_guard.bb") (in-ns (quote local-model-repeat-guard)) (println (override-message "Edit tmp/notes.md: add a line" (named-write-path "Edit tmp/notes.md: add a line") "<that dir>"))'`
+     and check the output contains "<that dir>/tmp/notes.md" and not
+     "Do not read".
+
+  Then run the BL-2056, BL-1991 and BL-1992 features and the shell test
+  once each, commit, and forward.
+
+  ## What is wanted
+
+  - A seat that wrote the file its summary named, at its absolute path,
+    is left alone, whether the summary wrote the path absolute or relative
+    (scenario 01).
+  - A restart on a file that exists names it at its absolute path and tells
+    the seat to edit it, never that it does not exist (scenario 02). The
+    restart is a fresh session with none of the file in context, so the
+    message tells the seat to read only the lines it will change first
+    (grep -n, then read_file with offset and limit) and never tells it not
+    to read the file: "do not read it first" invites the whole-file
+    write_file this ticket exists to stop (amended 2026-10-07, QA spec-gap
+    note 003910).
+  - A restart on a file that does not exist keeps BL-1991's wording: write
+    it, do not read it first (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - Resolve a relative path against the hook event's `cwd` (the seat's
+    worktree; BL-1991 already refuses to fall back to the hook's own cwd)
+    and compare resolved paths.
+  - BL-1991's scenario 01 asserts the restart message's wording for a file
+    about to be created; keep that wording for that case so its 4 of 4
+    stay green.
+  - Steps repeating BL-1991's text register with
+    `registry.defineScoped(pattern, handler, featureName)` (BL-425); the
+    guard can be driven the way specs/pipeline/steps/bl1991SkippedWriteRestartSteps.js
+    does (bl1991RestartGuardCli.bb with a fake kill controller).
+
+  ## Scope
+
+  swarmforge/scripts/local_model_repeat_guard.bb (`named-write-path`,
+  `named-write-call?`, `override-message`), its shell test
+  swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh, the
+  how-to section "A seat that skips its named write is restarted on it
+  (BL-1991)" in docs/how-to/BL-1052-local-model-seat-launch.md (it says
+  the message tells the seat to write the file and not read it first),
+  the feature, and its handler
+  specs/pipeline/steps/bl2056RestartNamesTheSummarysPathSteps.js.
+
+  ## Out of scope
+
+  - Which pending override the launch script serves, and the released
+    parcel's leftover sidecar: BL-2055.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule):
+  1. `node specs/pipeline/cli.js specs/features/BL-2056-a-restart-reads-and-names-the-summarys-file-path-as-written.feature`:
+     01 (both rows), 02, 03 ok. Measured 0 at mint: no handler exists yet.
+  2. `node specs/pipeline/cli.js specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-restarted-on-it.feature`:
+     4 of 4 ok. Measured at mint (2026-10-07, main 2676e8605a): 4 of 4 ok, 4 s.
+  3. `node specs/pipeline/cli.js specs/features/BL-1992-a-third-missed-write-releases-the-parcel-to-another-coder-seat.feature`:
+     2 of 2 ok. Measured at mint: 2 of 2 ok, 8 s.
+  4. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     ALL PASS. Measured at mint: PASS.
+  5. In the parcel's tree, `bb -e` loading the guard: `named-write-path` of
+     "Edit /home/carillon/swarmforgevc/.worktrees/coder/swarmforge/scripts/check_merge_deletion.sh: x"
+     prints the path with its leading "/".
+
+source: |
+  Coordinator note 017189 (2026-10-07T06:07:54Z), verbatim: "BL-1913
+  loop-halt 6x/24h (iq3) - simplify per 10-05 rule". The 10-05 rule, the
+  human's words: "When coder is stuck in a loop, the response to that is
+  back to specifier to make the ticket easier for coder to implement."
+  The trial this preserves, verbatim from BL-1991's source: "The new
+  turn's user message is only that next step, plus an instruction to
+  write the named file and not to read a file it is about to create."
+
+notes: |
+  2026-10-07 (specifier): split request (coordinator note 017245, the
+  iq3 coder halted on QA's bounce with no commit) answered by
+  simplifying, not splitting: what is left is one line, one step handler
+  and one shell-test case, written out exactly above with line anchors
+  at 6729d33753. No new scope; human_approval stands.
+  Amended 2026-10-07 (active, bounced to the coder on D1): scenario 02
+  gained a Then step and What is wanted says the existing-file message
+  tells the seat to read only the lines it changes, never not to read
+  (QA spec-gap note 003910). The step handler for the new step lands in
+  the same rework (BL-233).
+  Minted 2026-10-07 by the specifier while adjudicating coordinator note
+  017189 on BL-1913, beside BL-2055.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Shares local_model_repeat_guard.bb with BL-2055; orthogonality
+  sequences the two, neither depends on the other.
+  Routing hint, not a mandate: this repairs the harness that restarts the
+  iq3 seat, so a hard-tier coder seat is the better fit.
+
+assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: coder, class: behavior, commit: 85e802b15d, evidence: backlog/evidence/BL-2056-QA-20261007.md }
+  - { at: 2026-10-07, by: QA, blamed: coder, class: unit, commit: d3837aa198, evidence: backlog/evidence/BL-2056-QA-20261007-2.md }

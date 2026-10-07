@@ -1,0 +1,167 @@
+id: BL-2059
+title: "localQwenSeatLive.ts's first Stryker run (BL-1911's hardener, 2026-10-07) left 22 first-run mutants owned by nobody - 15 survived and 7 never covered, all on lines BL-1235 shipped (readLocalEndpoint 8, completeWithLocalModel 5, runLocalSeatTurn 4, readQwenLocalTopicId 2, the two default-dependency resolvers 2, readLocalSeatSystemPrompt 1); each is killed by a behaviour test or recorded as an accepted equivalent with its code-level proof"
+milestone: M8
+type: chore
+severity: medium
+# medium: hardening debt, not a red and not a safety signal; BL-1911's
+# own lines are fully killed, and these 22 sit on the file's older lines.
+status: todo
+epic: first-run-mutation-debt
+priority: 34
+direction: swarm-reported
+depends_on: [BL-1911]
+# BL-1911 (active, at the documenter/QA hop at mint) changes this same
+# file and its test; this ticket waits for it to land so the two never
+# touch the file at once.
+not_before: 2026-10-09
+# mutation_cooldown_gate.bb refuses a file changed on main within a day,
+# and BL-1911's land changes this one. If BL-1911 lands after 2026-10-08,
+# the hardener's cooldown gate may still say skip-cooldown: then the
+# hardener waits it out, never runs inside it (2026-10-01 rule).
+mutation_cost: medium
+# medium: TypeScript under Stryker, CRAP and DRY over one 274-line file;
+# the run itself was 29 to 46 s scoped (BL-1911 hardener evidence).
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "tests only; nothing to refactor"
+  architect: "tests only, no design surface"
+  documenter: "nothing beyond the evidence file; no living doc describes these tests"
+
+# Not a claim of ownership over BL-1235's contract (BL-1251): it is the
+# feature that drives the seat turn these tests pin, and it must stay
+# green because no production behaviour changes.
+acceptance: specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature
+
+human_approval: approved
+approval_context: >
+  An owner for 22 first-run mutants the BL-1911 hardener found on lines
+  of localQwenSeatLive.ts that BL-1235 shipped and BL-1911 did not touch
+  (hardener note 001712). No choice is posed and there are no
+  ruling_options. What needs sign-off: that all 22 are chased in one
+  sitting, the BL-1672 shape - 22 is well under BL-1519's 60-per-sitting
+  arithmetic. FIRM: tests only, no production behaviour changes, and
+  "accepted equivalent" needs the code-level reason in the evidence
+  (BL-1520's rule), never "first-run debt" - this ticket IS the owner
+  that reason names.
+
+invariants:
+  - "Every mutant Stryker reports for localQwenSeatLive.js at the parcel commit is either killed by a test in the unit suite or recorded in the evidence as an accepted equivalent with the code-level reason; none is silent."
+
+description: |
+  ## What is wrong
+
+  `extension/src/tools/localQwenSeatLive.ts` (BL-1235's local qwen seat:
+  the topic id, the endpoint probe, the completion call and the turn)
+  had never had a Stryker run; BL-1235's hardener fell back to a hand
+  sweep of 7 mutants (`6a2f0d2e9d`). BL-1911's hardener ran Stryker over
+  it on 2026-10-07 (`a2e54bbee9`, evidence
+  `backlog/evidence/BL-1911-hardener-20261007.md`): BL-1911's own lines
+  are all killed, and 22 mutants on the older lines are left, 15
+  survived and 7 never covered. The hardener rightly did not chase
+  another ticket's debt inside BL-1911 and sent the specifier an
+  `unowned-survivors` note; this is the owner.
+
+  Census by enclosing declaration (survived / no-coverage; per-mutant
+  list and the counting script in
+  `backlog/evidence/BL-2059-first-run-survivor-census-20261007.md`):
+
+  | declaration | surv | no-cov |
+  |---|---|---|
+  | readLocalEndpoint | 5 | 3 |
+  | completeWithLocalModel | 4 | 1 |
+  | runLocalSeatTurn | 3 | 1 |
+  | readQwenLocalTopicId | 2 | 0 |
+  | readLocalSeatSystemPrompt | 1 | 0 |
+  | resolveReadEndpoint | 0 | 1 |
+  | resolveComplete | 0 | 1 |
+
+  Representative gaps: the probe's `/api/tags` URL and the completion's
+  `POST` method and `content-type` header can be blanked and no test
+  notices; the reason text on a failed probe and the model catalogue it
+  reports are never asserted; with `deps.topicId` absent the turn's
+  topic lookup is never exercised.
+
+  ## What is wanted
+
+  - The run is repeated with the include set naming every unit-test file
+    that reaches the module (at least `bl1235LocalQwenSeatLive.test.js`,
+    `bl1235LocalQwenSeat.test.js` and BL-1911's
+    `bl1911LocalSeatRepoRead.test.js`); the evidence records the include
+    set, the summary block, load and duration, and either zero survived
+    and zero no-coverage for `localQwenSeatLive.js` or one
+    accepted-equivalent record per remaining mutant with the code-level
+    reason.
+  - Behaviour tests kill the rest through the exported functions with an
+    injected `fetchFn` and fixture files, never a live endpoint: the
+    exact request each call makes (URL, method, header), the exact reason
+    and catalogue a failed or odd probe reports, the fallback when the
+    topic map or briefing cannot be read, and the turn with no
+    `deps.topicId`. The two default-dependency resolvers are reached by a
+    turn that injects neither `readEndpoint` nor `complete`, over a fake
+    fetch.
+  - The evidence lists, per declaration in the census, the test file and
+    case that now rejects its mutants.
+  - Any function `npm run crap` flags in the file stays under 6.
+  - Evidence path: `backlog/evidence/BL-2059-localQwenSeatLive-mutation.md`.
+
+  ## How (direction, not mandate)
+
+  - `--mutate out/tools/localQwenSeatLive.js`, `perTest`, sibling links
+    per the Verification rules; BL-1911's scoped config
+    (`extension/stryker.bl1911.config.json`,
+    `vitest.bl1911.stryker.config.mjs` in the hardener worktree) is the
+    recipe; the scoped config is not committed. Check
+    `mutation_cooldown_gate.bb` first and record its decision.
+  - `bl1235LocalQwenSeatLive.test.js` is the home; group the new cases
+    by the census's declarations.
+
+constraints: >
+  Tests only unless a seam is missing, in which case the smallest
+  extraction that exposes the behaviour to an in-process test; never a
+  live model endpoint or the live Telegram API; never `process.chdir()`
+  under mutation; never a hand-edited manifest.
+
+out_of_scope: |
+  - `localSeatRepoRead.ts` and BL-1911's own lines in this file: BL-1911's
+    hardener killed or accounted for every one of them.
+  - Any change to what the seat posts, asks or answers.
+
+qa_e2e_procedure: >
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  (1) `node specs/pipeline/cli.js specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature`:
+  5 of 5 ok (measured at mint on main at dc240b22a2: 5 of 5, 2.5 s).
+  (2) Read from the gather's unit row: bl1235LocalQwenSeatLive.test.js
+  green with the new cases. (3) `npm run crap` once: no function in
+  localQwenSeatLive.ts above 6. (4) Read the hardener's committed
+  evidence: Stryker totals for localQwenSeatLive.js with at least the
+  run's mutant count recorded, and survived 0, no-coverage 0, or each
+  remainder with its code-level reason. QA starts no mutation run.
+
+source: |
+  Hardener note to the specifier, priority 00, 2026-10-07T08:11:52Z
+  (inbound 00_20261007T081152Z_001712_from_hardender), verbatim:
+  "unowned-survivors BL-1911 localQwenSeatLive.js 15srv/7nocov see
+  evidence". Hardener evidence
+  `backlog/evidence/BL-1911-hardener-20261007.md` (commit a2e54bbee9),
+  verbatim: "this is first-run debt surfacing now, not a regression.
+  Sent as an unowned-survivors `note` to the specifier (priority `00`)
+  rather than chased in this pass". Census:
+  `backlog/evidence/BL-2059-first-run-survivor-census-20261007.md`.
+  Parents: BL-1235 (the file), BL-1911 (the run), BL-1519 (the epic),
+  BL-1672 (the previous owner of this shape).
+
+notes: |
+  Minted 2026-10-07 by the specifier while completing the hardener's
+  unowned-survivors note, the same pass (rule of 2026-09-10: the owner is
+  minted before the note is completed). Not auto-approved: chore,
+  medium. Added to BL-1519's decomposes_into in the mint commit. No new
+  feature file: the work's proof is the hardener's evidence, which QA
+  reads, and BL-1235's feature is the behaviour contract that must stay
+  green. INVEST: Independent (waits only on BL-1911's land via
+  depends_on), Negotiable (test shapes are direction), Valuable (the
+  seat's whole file goes from a hand sweep to a full Stryker account),
+  Estimable (22 mutants, seven declarations), Small (one test file, one
+  run, under BL-1519's 60 per sitting), Testable (the evidence and the
+  feature). Stages: TypeScript test work whose proof is a Stryker run,
+  so [coder, hardender, qa] per the 2026-10-01 dynamic-routing rule.

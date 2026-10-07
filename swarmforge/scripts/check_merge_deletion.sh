@@ -50,6 +50,18 @@
 #   swarmforge/git-hooks/commit-msg. This script needs no separate
 #   pre-commit call the way check_ticket_deletion.sh does: there is no
 #   earlier hook point to defer from for a merge.
+#
+# BL-1913 adds a THIRD, direction-specific exemption, "this branch" only:
+# when the incoming side (MERGE_HEAD) is origin/main itself or an ancestor
+# of origin/main, a path that is ABSENT at MERGE_HEAD is not a finding in
+# the "this branch" direction - the incoming branch never carried it, so
+# dropping it against origin/main's state is the merge's normal job, not a
+# silent loss of reviewed work. The exemption-by-naming model and the
+# incoming-side direction are unchanged: a path the incoming branch DID
+# carry is still reported exactly as before, and a named ticket in the
+# commit message still exempts any finding. If origin/main does not
+# resolve (no remote ref), the exemption is unavailable and the guard
+# proceeds exactly as pre-BL-1913 (fail closed).
 
 set -euo pipefail
 
@@ -79,6 +91,11 @@ is_ticket_yaml_path() {
 
 MERGE_HEAD_SHA="$(cat "$MERGE_HEAD_PATH" 2>/dev/null | head -1 | tr -d '[:space:]')"
 
+# BL-1913: resolve origin/main once, up front. Empty when the ref does not
+# exist (no remote / never fetched) - the exemption below is then simply
+# unavailable and the guard behaves exactly as pre-BL-1913 (fail closed).
+ORIGIN_MAIN_SHA="$(git rev-parse --verify --quiet origin/main 2>/dev/null || true)"
+
 # Both directions, collected into one list. `side_of` remembers where each
 # path came from; a path dropped from BOTH sides is recorded once, with both
 # sides named, rather than reported twice (BL-1242 scenario 04's discipline,
@@ -101,6 +118,18 @@ collect_deletions() {
     [[ -n "$status" && -n "$path" ]] || continue
     [[ "$status" == "D" ]] || continue
     is_ticket_yaml_path "$path" && continue
+    # BL-1913: "this branch" direction only - when the incoming side is
+    # origin/main itself or an ancestor of it, a path that is ABSENT at
+    # MERGE_HEAD was never carried by the incoming branch, so dropping it
+    # against origin/main's state is the merge's normal job, not a silent
+    # loss. Skip it here; the incoming-side direction is untouched.
+    if [[ "$side" == "this branch" && -n "$ORIGIN_MAIN_SHA" ]] \
+       && { [[ "$MERGE_HEAD_SHA" == "$ORIGIN_MAIN_SHA" ]] \
+            || git merge-base --is-ancestor "$MERGE_HEAD_SHA" "$ORIGIN_MAIN_SHA" 2>/dev/null; }; then
+      if ! git cat-file -e "$MERGE_HEAD_SHA:$path" 2>/dev/null; then
+        continue
+      fi
+    fi
     if [[ -n "${side_of[$path]:-}" ]]; then
       # Already seen from the other side - one finding, both sides named.
       side_of["$path"]="${side_of[$path]} and $side"

@@ -132,6 +132,102 @@
 (defn latest-next-step [entries]
   (some :next-step (reverse (filter #(= :compaction (:kind %)) entries))))
 
+;; ── BL-2064 hotfix (2026-10-07): warn a seat that reads without writing ──
+;;
+;; The human, live: "compressions for iq3 are lethal, it just compacted
+;; and immediately goes on a reading frenzy." BL-2064 (paused, approved)
+;; already says why: the seat spends most of its time reading and throws
+;; most of that away on a compaction before any edit. Its own invariant
+;; says this new counter resets on exactly what resets-window? resets -
+;; including a bare compaction. That is backwards for THIS counter: a
+;; compaction is exactly when the seat has just lost its context and is
+;; most likely to re-read everything to rebuild it, so resetting the
+;; budget there hands it a fresh 12 reads right when it is most likely to
+;; burn them - the "reading frenzy" the human just watched happen. This
+;; hotfix gives the counter its own reset rule, a sibling of
+;; resets-window? that drops the compaction clause: an edit/write_file or
+;; a state-changing shell command reset it, a compaction does not.
+;;
+;; Scope deliberately narrower than BL-2064's full build: this lands the
+;; warning half only (warn from the 12th qualifying read-only call since
+;; the last reset onward). The 24th-read restart, sharing BL-1991/1992's
+;; per-parcel restart count, needs a first-message fallback this hook's
+;; transcript-entries does not yet parse out (BL-2064's own wording: "the
+;; latest compaction's next_step, else the session's first message") -
+;; safer to leave that half, and the restart wiring it implies, to
+;; BL-2064's own build than to guess at it under a hotfix. See the
+;; stamp-off ticket this hotfix mints for the review that should confirm
+;; this scope.
+
+(def read-warn-at
+  "A qualifying read-only call is warned about from this count onward,
+   since the last reset (never a bare compaction - see above)."
+  12)
+
+(def read-only-tools #{"read_file" "read_many_files" "grep_search" "glob" "list_directory"})
+
+(def read-only-command-pattern
+  "A shell command whose own output cannot change the repo or the
+   mailbox: the existing read-commands list, `sed -n`, and the read-only
+   git subcommands - matched only at the start of the (trimmed) command,
+   the same way command-base already reads a command's leading word."
+  #"^(?:ls|cat|head|tail|wc|grep|find|stat|sed\s+-n|git\s+(?:show|log|diff|grep|ls-files|blame|status))\b")
+
+(defn read-only-shell-command? [cmd]
+  (boolean (and (string? cmd) (re-find read-only-command-pattern (str/trim cmd)))))
+
+(defn read-type-call?
+  "True for a call whose own result cannot change the repo or the
+   mailbox - the kind of call the read budget counts."
+  [{:keys [kind name args]}]
+  (and (= kind :call)
+       (or (contains? read-only-tools name)
+           (and (= name "run_shell_command")
+                (read-only-shell-command? (get args "command"))))))
+
+(defn read-budget-resets?
+  "resets-window? without its compaction clause (see above): only an
+   edit/write_file or a state-changing shell command starts the read
+   budget's window over."
+  [{:keys [kind name args]}]
+  (or (contains? edit-tools name)
+      (and (= kind :call) (= name "run_shell_command")
+           (let [command (str (get args "command"))]
+             (some #(str/includes? command %) state-changing-commands)))))
+
+(defn reads-since-write
+  "How many read-type calls were already made since the last reset, not
+   counting the in-flight call itself. Entries between the reset and now
+   that are neither a read-type call nor a reset (a compaction, or any
+   other call) pass through uncounted - only read-type calls advance the
+   budget."
+  [entries name args]
+  (let [k (call-key name args)
+        entries (without-in-flight (vec entries) k)
+        window (reverse (take-while (complement read-budget-resets?) (rseq entries)))]
+    (count (filter read-type-call? window))))
+
+(defn read-budget-note
+  "The note to hand the model with this call's result, or nil: only for a
+   read-type in-flight call (this is the scenario the human reported,
+   and it keeps the note out of calls the budget does not track), once
+   the qualifying read count since the last reset reaches read-warn-at.
+   Warn-only (see scope note above) - it keeps firing on every qualifying
+   read past read-warn-at rather than stopping at a restart count this
+   hotfix does not implement."
+  [entries name args]
+  (when (read-type-call? {:kind :call :name name :args args})
+    (let [total (inc (reads-since-write entries name args))]
+      (when (>= total read-warn-at)
+        (str "READ-BUDGET: this is your " total "th read since your last edit or"
+             " state-changing command, with no write in between. A compaction does"
+             " not reset this count - rebuilding context is not a reason to keep reading."
+             " Your next call should be the change your ticket names, or writing your"
+             " plan to tmp/notes.md if you are still in the arrange phase."
+             (when-let [step (latest-next-step entries)]
+               (str " Your last summary named this next step: "
+                    (subs step 0 (min 300 (count step))))))))))
+
 ;; ── BL-1991: restart a seat that skips the write its compaction named ──
 ;;
 ;; On 2026-10-05 the iq3 coder, holding BL-1928, merged main and never
@@ -155,13 +251,23 @@
    04: a next step that names no write never restarts the seat)."
   [next-step]
   (when (and next-step (re-find #"(?i)\b(write|writes|edit|edits)\b" next-step))
-    (some-> (re-find #"[A-Za-z0-9_.][A-Za-z0-9_./-]*/[A-Za-z0-9_./-]*\.[A-Za-z0-9]+" next-step)
+    (some-> (re-find #"(/?[A-Za-z0-9_.][A-Za-z0-9_./-]*/[A-Za-z0-9_./-]*\.[A-Za-z0-9]+)" next-step)
+            second
             str/trim)))
 
-(defn- named-write-call? [path entry]
+(defn- resolved-path [cwd p]
+  "p resolved against cwd: an absolute path is itself, a relative one is
+   joined under cwd - so a named path and a call's file_path compare as
+   the same file no matter which form each was written in."
+  (let [f (if (str/starts-with? p "/") (io/file p) (io/file (or cwd ".") p))]
+    (try (str (fs/canonicalize f)) (catch Exception (str f)))))
+
+(defn- named-write-call? [path cwd entry]
   (and (= :call (:kind entry))
        (contains? edit-tools (:name entry))
-       (= path (get (:args entry) "file_path"))))
+       (let [fp (get (:args entry) "file_path")]
+         (and (string? fp)
+              (= (resolved-path cwd path) (resolved-path cwd fp))))))
 
 (defn calls-since-compaction
   "Entries strictly after the latest compaction; every entry when there is
@@ -181,17 +287,18 @@
    and it must be the third such call since that compaction. Says nothing
    about the restart count - restart-decision and release-decision (BL-1992)
    each decide what this miss means for a parcel at their own count."
-  [entries name args]
+  [entries name args cwd]
   (let [step (latest-next-step entries)
         path (named-write-path step)]
     (when path
       (let [stripped (without-in-flight (vec entries) (call-key name args))
             since (calls-since-compaction stripped)
-            already-written? (some #(named-write-call? path %) since)
-            other (count (remove #(named-write-call? path %)
+            already-written? (some #(named-write-call? path cwd %) since)
+            other (count (remove #(named-write-call? path cwd %)
                                   (filter #(= :call (:kind %)) since)))
             this-write? (and (contains? edit-tools name)
-                              (= path (get args "file_path")))]
+                             (named-write-call? path cwd
+                                                 {:kind :call :name name :args args}))]
         (when (and (not already-written?)
                    (not this-write?)
                    (>= (inc other) 3))
@@ -200,9 +307,9 @@
 (defn restart-decision
   "A missed write restarts the seat only while the parcel has not already
    used both of its restarts."
-  [entries name args restart-count]
+  [entries name args cwd restart-count]
   (when (< restart-count max-restarts)
-    (missed-write entries name args)))
+    (missed-write entries name args cwd)))
 
 ;; ── BL-1992: the third miss releases the parcel instead of restarting ──
 ;;
@@ -214,22 +321,38 @@
 (defn release-decision
   "The same missed write as restart-decision, but only once the parcel's
    restarts are already exhausted."
-  [entries name args restart-count]
+  [entries name args cwd restart-count]
   (when (>= restart-count max-restarts)
-    (missed-write entries name args)))
+    (missed-write entries name args cwd)))
+
+;; BL-2055 (QA-reported D2 of its own kind - the coordinator's note
+;; 017189): a sidecar left behind by BL-1992's own release (which moves
+;; only the handoff file, never its .claim-progress.json) is not a held
+;; parcel - reading it as one restarted the seat on the ticket it had
+;; just released. Copied from handoff_lib.bb's sidecar-suffixes rather
+;; than load-filed (measured: loading handoff_lib.bb costs ~100ms more
+;; than this hook's own baseline, and it runs on every tool call) - kept
+;; in agreement by test_bl1971_local_model_repeat_guard.sh (BL-897).
+(def sidecar-suffixes [".nudge" ".chase.json" ".claim-progress.json" ".batch-claim-progress.json"])
+
+(defn- sidecar-name? [name]
+  (boolean (some #(str/ends-with? name %) sidecar-suffixes)))
 
 (defn- in-process-handoff-name
   "The name of this role's current in_process handoff file - stable across
    a restart (the parcel is never completed or handed off), so it is the
    restart count's key: a later, different parcel's different file name
    starts fresh with no reset needed. nil when there is none (no restart
-   state applies outside a real parcel)."
+   state applies outside a real parcel) - including when in_process holds
+   only a sidecar (BL-2055): BL-1992's release moves only the handoff file,
+   so a leftover claim-progress sidecar must never read as a new parcel."
   [cwd]
   (let [dir (io/file cwd ".swarmforge" "handoffs" "inbox" "in_process")]
     (when (.isDirectory dir)
       (some->> (.listFiles dir)
                (filter #(.isFile %))
                (map #(.getName %))
+               (remove sidecar-name?)
                sort
                first))))
 
@@ -247,19 +370,28 @@
     0))
 
 (defn override-message
-  "The fresh turn's only user message: the named next step, told to write
-   the named file and not to read it first (it may not exist yet)."
-  [next-step path]
-  (str next-step "\n\nWrite " path " now. Do not read " path
-       " first - it does not exist yet."))
+  "The fresh turn's only user message: the named next step, told to make
+   the named change. The file may already exist - a next step that names
+   an edit does - so the message names it at its absolute path and tells
+   the seat to read only the lines it will change first, never not to
+   read the file; only a missing file is told to be written without
+   reading it first."
+  [next-step path cwd]
+  (let [exists? (and (string? cwd)
+                     (.exists (java.io.File. ^String (resolved-path cwd path))))]
+    (str next-step "\n\n"
+         (if exists?
+           (str "Edit " (resolved-path cwd path) " now. Read only the lines you will change first (grep -n, then read_file with offset and limit), then edit them.")
+           (str "Write " path " now. Do not read " path
+                " first - it does not exist yet.")))))
 
 (defn write-restart-request!
   "Bumps the durable restart count and writes the pending override message
    under .swarmforge/ for the launcher to relaunch qwen with."
-  [state-file next-step path restart-count]
+  [state-file next-step path cwd restart-count]
   (io/make-parents ^java.io.File state-file)
   (spit state-file (json/generate-string {"restarts" (inc restart-count)}))
-  (spit (io/file (str state-file ".msg")) (override-message next-step path)))
+  (spit (io/file (str state-file ".msg")) (override-message next-step path cwd)))
 
 (defn end-qwen-process!
   "Ends this hook's parent process - qwen spawns the PostToolUse hook as a
@@ -553,7 +685,8 @@
         loop-note (when entries (cycle-note entries name args))
         undo (when entries (undo-note entries name args))
         rerun (when entries (rerun-hint entries name args))
-        notes (remove nil? [repeat-note loop-note undo rerun
+        read-budget (when entries (read-budget-note entries name args))
+        notes (remove nil? [repeat-note loop-note undo rerun read-budget
                             (empty-grep-hint name args (get event "tool_response"))
                             (offset-hint name args) (sleep-hint name args)
                             (read-hint name args) (npm-hint name args)
@@ -583,13 +716,13 @@
                          (transcript-entries lines)))
              state-file (when (and entries (string? restart-cwd)) (restart-state-file restart-cwd))
              restart-count (read-restart-count state-file)
-             restart (when state-file (restart-decision entries name args restart-count))
+             restart (when state-file (restart-decision entries name args restart-cwd restart-count))
              release (when (and state-file (not restart))
-                       (release-decision entries name args restart-count))]
+                       (release-decision entries name args restart-cwd restart-count))]
          (cond
            restart
            (do
-             (write-restart-request! state-file (:next-step restart) (:path restart) restart-count)
+             (write-restart-request! state-file (:next-step restart) (:path restart) restart-cwd restart-count)
              (kill-fn)
              nil)
 

@@ -29,6 +29,7 @@ const OUT = path.join(REPO_ROOT, 'extension', 'out');
 const HOTFIX = '2ec06b6ef1';
 const START_CLI = path.join(__dirname, 'lib', 'bl1253StartCursorBridgeFeederCli.sh');
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
+const { uncommittedDecision } = require(path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'hotfixLedgerDecision.js'));
 
 // The hotfix's own functional paths. This parcel must not touch them, and the
 // tree under review must still carry what landed in them.
@@ -327,14 +328,11 @@ function registerSteps(registry) {
     const rows = ctx.bl1253.ledger.split(/^- commit: /m).filter((r) => r.startsWith(HOTFIX));
     assert.equal(rows.length, 1, `expected exactly one ledger row for ${HOTFIX}`);
     const row = rows[0];
-    const state = /\n\s*state:\s*(\S+)/.exec(row);
-    const decision = /\n\s*human_decision:\s*(\S+)/.exec(row);
-    assert.ok(state, `the ledger row for ${HOTFIX} has no state`);
-    assert.ok(
-      !['certified', 'waived'].includes(state[1]),
-      `green scenarios certified the hotfix: state is ${state[1]}`
-    );
-    assert.equal(decision && decision[1], 'null', `a human decision was recorded without a human: ${row}`);
+    assert.match(row, /\n\s*state:\s*\S+/, `the ledger row for ${HOTFIX} has no state`);
+    // Undecided, or decided exactly as HEAD's committed ledger records a
+    // human's decision (the human certified 2ec06b6ef1 on 2026-10-05): the
+    // same check 02f834ec44 gave the nine other stamp-off sites.
+    assert.equal(uncommittedDecision(REPO_ROOT, ctx.bl1253.ledger, HOTFIX), null, row);
   });
 }
 

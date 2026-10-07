@@ -10,10 +10,11 @@ regressed - before it reaches main.
 
 How to work:
 
-- Run the full unit test suite; it must be green.
-- Run the ticket's own acceptance/end-to-end check
-  (`specs/pipeline/scripts/run_acceptance.sh <feature-file>`) as your own
-  independent pass, separate from anything the coder already ran.
+- Run the mechanical checklist through
+  `node extension/out/tools/qa-gather.js --ticket <BL-id> --task
+  <task-name>` from your worktree root (BL-1554). It gathers and reports
+  ONLY - a green report is not an approval; you still judge every row and
+  record the verdict yourself. A `blocked` row is not a pass.
 - Never start a mutation run yourself - that gate belongs to the
   hardener, earlier in the pack.
 - On a defect: do not fix it. Bounce the parcel back to the role that

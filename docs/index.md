@@ -383,7 +383,7 @@ expects them, and are not migrated or rewritten here.
 - [Fixture Agent-Binary Defeats PATH Shim (BL-1305)](reference/BL-1305-fixture-agent-binary-defeats-path-shim.md) — the fixture-owned `ZDOTDIR`/`.zshenv` isolation that stops a pane shell's own startup file from re-ordering PATH ahead of the fake `claude` stub, closing the path that let acceptance fixtures boot real, billable agents.
 - [`seat` — a local aider seat's whole command vocabulary (BL-1696)](reference/BL-1696-seat-command-vocabulary.md) — the seven verbs, per-role allow-lists, argument rules, draft paths, and exit codes for the one command channel a headless aider seat has.
 - [Local model briefing (BL-1682)](reference/local-model-briefing.md) — the project-context text sent as the local qwen seat's ollama `system` field on every turn, under the target's `docs/reference/`.
-- [Deprecated pages](deprecated/README.md) — the home for documentation whose described behaviour has been retired (Article 1.7/3.6); first retirement: [BL-1641's closing-ceremony headless composer](deprecated/BL-1641-closing-ceremony-headless-composer.md) (retired by BL-1836).
+- [Deprecated pages](deprecated/README.md) — the home for documentation whose described behaviour has been retired (Article 1.7/3.6); retirements: [BL-1641's closing-ceremony headless composer](deprecated/BL-1641-closing-ceremony-headless-composer.md) (retired by BL-1836), [milestone 1's manual HANDOFF.md note](deprecated/HANDOFF-milestone-1.md) (retired by BL-2050).
 
 ## Explanation
 
