@@ -71,7 +71,13 @@ description: |
     is left alone, whether the summary wrote the path absolute or relative
     (scenario 01).
   - A restart on a file that exists names it at its absolute path and tells
-    the seat to edit it, never that it does not exist (scenario 02).
+    the seat to edit it, never that it does not exist (scenario 02). The
+    restart is a fresh session with none of the file in context, so the
+    message tells the seat to read only the lines it will change first
+    (grep -n, then read_file with offset and limit) and never tells it not
+    to read the file: "do not read it first" invites the whole-file
+    write_file this ticket exists to stop (amended 2026-10-07, QA spec-gap
+    note 003910).
   - A restart on a file that does not exist keeps BL-1991's wording: write
     it, do not read it first (scenario 03).
 
@@ -128,6 +134,11 @@ source: |
   write the named file and not to read a file it is about to create."
 
 notes: |
+  Amended 2026-10-07 (active, bounced to the coder on D1): scenario 02
+  gained a Then step and What is wanted says the existing-file message
+  tells the seat to read only the lines it changes, never not to read
+  (QA spec-gap note 003910). The step handler for the new step lands in
+  the same rework (BL-233).
   Minted 2026-10-07 by the specifier while adjudicating coordinator note
   017189 on BL-1913, beside BL-2055.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
