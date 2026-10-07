@@ -123,3 +123,5 @@ description: |
      once, with TMUX unset, output under tmp/.
   3. Write backlog/evidence/BL-2052-coder-<date>.md with the review result
      and the run results, and commit it.
+
+assigned_to: coder
