@@ -100,3 +100,5 @@ description: |
      `--config vitest.properties.config.mjs` and output under tmp/.
   3. Write backlog/evidence/BL-2066-coder-<date>.md with the review
      result and the run results, and commit it.
+
+assigned_to: coder
