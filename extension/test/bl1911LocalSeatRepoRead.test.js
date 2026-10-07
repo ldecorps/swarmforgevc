@@ -25,6 +25,34 @@ describe('BL-1911 the secret-file filter', () => {
     assert.equal(isSecretRelPath('backlog/active/BL-9001-x.yaml'), false);
     assert.equal(isSecretRelPath('docs/reference/local-model-briefing.md'), false);
   });
+
+  // QA bounce 2026-10-07 D1: six real secret names the live repo carries
+  // that the first build's filter missed.
+  it('catches a backed-up, disabled, or dotfile .env variant, and anything under .swarmforge/operator/', () => {
+    assert.equal(isSecretRelPath('.swarmforge/swarm.env.bak-before-bob-20260901T0940Z'), true);
+    assert.equal(isSecretRelPath('.swarmforge/qwen.env.disabled'), true);
+    assert.equal(isSecretRelPath('.swarmforge/openrouter.env.bak-anthropic-20260730'), true);
+    assert.equal(isSecretRelPath('.swarmforge/operator/vscode-cli/data/token.json'), true);
+    assert.equal(isSecretRelPath('.swarmforge/operator/vscode-cli/data/agent-host-token'), true);
+    assert.equal(isSecretRelPath('.env.local'), true);
+  });
+
+  // D1's component rule must not catch a name that merely CONTAINS "env" as
+  // a substring rather than as a whole dot-delimited segment.
+  it('leaves an "environment"-named file alone - "env" must be a whole component, not a substring', () => {
+    assert.equal(isSecretRelPath('docs/environment.md'), false);
+    assert.equal(isSecretRelPath('src/environment-setup.ts'), false);
+  });
+
+  // QA bounce D2: macOS's default APFS volume is case-insensitive, so a
+  // case-sensitive filter would still open the real secret under a
+  // differently-cased name.
+  it('matches a secret name regardless of case', () => {
+    assert.equal(isSecretRelPath('.swarmforge/operator/BRIDGE-TOKEN'), true);
+    assert.equal(isSecretRelPath('.swarmforge/SWARM.ENV'), true);
+    assert.equal(isSecretRelPath('extension/.ENV'), true);
+    assert.equal(isSecretRelPath('.SWARMFORGE/OPERATOR/vscode-cli/data/token.json'), true);
+  });
 });
 
 describe('BL-1911 searchRepoForQuestion', () => {
@@ -118,6 +146,69 @@ describe('BL-1911 searchRepoForQuestion', () => {
       assert.ok(reading.context.length <= 100, `context not capped: ${reading.context.length}`);
     });
     assert.equal(REPO_READ_MAX_BYTES > 0, true);
+  });
+
+  // QA bounce D3: a symlink INSIDE the repo pointing OUTSIDE it must not
+  // leak the outside file's contents.
+  it('never follows a symlink that points outside the repository', () => {
+    withRepo((root) => {
+      const outside = mkTmpDir('bl1911-outside-link-');
+      try {
+        fs.writeFileSync(path.join(outside, 'creds.txt'), 'SECRET-TOKEN-1911');
+        fs.symlinkSync(outside, path.join(root, 'vendor'));
+        const reading = searchRepoForQuestion(root, 'show me vendor/creds.txt');
+        assert.ok(!reading.context.includes('SECRET-TOKEN-1911'), 'followed an outward symlink');
+      } finally {
+        fs.rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // QA bounce D3: a symlink INSIDE the repo pointing at a secret must not
+  // leak the secret's contents under the symlink's own, innocuous name.
+  it('never follows a symlink to a secret file, even under an innocuous name', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
+      fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(root, '.swarmforge', 'operator', 'bridge-token'), 'SECRET-TOKEN-1911');
+      fs.symlinkSync('../.swarmforge/operator/bridge-token', path.join(root, 'docs', 'notes.txt'));
+      const reading = searchRepoForQuestion(root, 'show me docs/notes.txt');
+      assert.ok(!reading.context.includes('SECRET-TOKEN-1911'), 'read a secret through a symlink to it');
+    });
+  });
+
+  // QA bounce D4: 49% of done tickets sit under backlog/done/<milestone>/.
+  it('finds a ticket filed under a nested backlog/done/<milestone>/ directory', () => {
+    withRepo((root) => {
+      const dir = path.join(root, 'backlog', 'done', 'M8');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'BL-9006-x.yaml'), 'title: "shipped under a milestone folder"\n');
+      const reading = searchRepoForQuestion(root, 'what is BL-9006 about?');
+      assert.match(reading.context, /shipped under a milestone folder/);
+    });
+  });
+
+  // QA bounce D4: GH-<n> ids are never matched by /\bBL-\d+\b/.
+  it('finds a GH-<n> ticket named by id, same as a BL-<n> one', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'backlog', 'done'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'backlog', 'done', 'GH-22-x.yaml'), 'title: "a github-sourced ticket"\n');
+      const reading = searchRepoForQuestion(root, 'what is GH-22 about?');
+      assert.match(reading.context, /a github-sourced ticket/);
+    });
+  });
+
+  // QA bounce D4's own caveat about the shared lookup's looser match: a
+  // question naming a SHORTER id that is a lexical prefix of a real file's
+  // id must not pick that longer id's file.
+  it('never picks a longer ticket id\'s file for a shorter id that is its lexical prefix', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-9901-x.yaml'), 'title: "DECOY-LONGER-ID"\n');
+      const reading = searchRepoForQuestion(root, 'what is BL-990 about?');
+      assert.equal(reading.ok, true);
+      assert.equal(reading.context, '');
+    });
   });
 
   it('finds a ticket filed under any backlog subdirectory, not only active/', () => {

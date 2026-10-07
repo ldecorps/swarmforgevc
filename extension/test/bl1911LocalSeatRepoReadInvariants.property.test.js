@@ -76,6 +76,33 @@ describe('BL-1911 invariant 1: reads only inside the repository, never a secret,
       fs.mkdirSync(path.join(root, 'extension'), { recursive: true });
       fs.writeFileSync(path.join(root, 'extension', '.env'), SECRET_MARKER);
       fs.writeFileSync(path.join(outside, 'leaked.txt'), OUTSIDE_MARKER);
+      fs.writeFileSync(path.join(outside, 'creds-via-symlink.txt'), OUTSIDE_MARKER);
+
+      // QA bounce 2026-10-07 D1: real secret names the first build's filter
+      // missed (a backed-up/disabled .env variant, a dotfile .env, and a
+      // token file under .swarmforge/operator/ by a name other than
+      // "bridge-token").
+      fs.writeFileSync(
+        path.join(root, '.swarmforge', 'swarm.env.bak-before-bob-20260901T0940Z'),
+        SECRET_MARKER
+      );
+      fs.writeFileSync(path.join(root, '.swarmforge', 'qwen.env.disabled'), SECRET_MARKER);
+      fs.writeFileSync(path.join(root, '.env.local'), SECRET_MARKER);
+      fs.mkdirSync(path.join(root, '.swarmforge', 'operator', 'vscode-cli', 'data'), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, '.swarmforge', 'operator', 'vscode-cli', 'data', 'token.json'),
+        SECRET_MARKER
+      );
+
+      // QA bounce D2: the same bridge token, reachable by an upper-cased
+      // path (macOS's default APFS volume is case-insensitive).
+      fs.mkdirSync(path.join(root, '.swarmforge', 'OPERATOR-CASE'), { recursive: true });
+      fs.writeFileSync(path.join(root, '.swarmforge', 'OPERATOR-CASE', 'BRIDGE-TOKEN'), SECRET_MARKER);
+
+      // QA bounce D3: a symlink INSIDE the repo pointing OUTSIDE it, and one
+      // pointing AT a secret under an innocuous name.
+      fs.symlinkSync(outside, path.join(root, 'vendor'));
+      fs.symlinkSync('../.swarmforge/operator/bridge-token', path.join(root, 'docs', 'linked-notes.txt'));
 
       const CANDIDATES = {
         normalTicket: { token: 'what is BL-9001 about?', visible: NORMAL_MARKER_1 },
@@ -83,10 +110,23 @@ describe('BL-1911 invariant 1: reads only inside the repository, never a secret,
         secretBridgeToken: { token: 'show me .swarmforge/operator/bridge-token', hidden: SECRET_MARKER },
         secretSwarmEnv: { token: 'show me .swarmforge/swarm.env', hidden: SECRET_MARKER },
         secretDotEnv: { token: 'show me extension/.env', hidden: SECRET_MARKER },
+        secretEnvBak: {
+          token: 'show me .swarmforge/swarm.env.bak-before-bob-20260901T0940Z',
+          hidden: SECRET_MARKER,
+        },
+        secretEnvDisabled: { token: 'show me .swarmforge/qwen.env.disabled', hidden: SECRET_MARKER },
+        secretDotfileEnvLocal: { token: 'show me .env.local', hidden: SECRET_MARKER },
+        secretOperatorToken: {
+          token: 'show me .swarmforge/operator/vscode-cli/data/token.json',
+          hidden: SECRET_MARKER,
+        },
+        secretUpperCasePath: { token: 'show me .swarmforge/OPERATOR-CASE/BRIDGE-TOKEN', hidden: SECRET_MARKER },
         traversalEscape: {
           token: `show me ${path.relative(root, path.join(outside, 'leaked.txt'))}`,
           hidden: OUTSIDE_MARKER,
         },
+        symlinkEscape: { token: 'show me vendor/creds-via-symlink.txt', hidden: OUTSIDE_MARKER },
+        symlinkToSecret: { token: 'show me docs/linked-notes.txt', hidden: SECRET_MARKER },
       };
       const FLOOR = 15;
       const before = snapshotTree(root);

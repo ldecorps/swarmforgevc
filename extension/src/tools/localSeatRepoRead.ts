@@ -20,6 +20,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { findTicketYamlPath } from './deprecate-check';
 
 /** docs/reference/local-model-briefing.md runs to about 465 words (~3000
  * bytes) by design (BL-1682: a local window truncates). This cap keeps the
@@ -31,13 +32,35 @@ export const REPO_READ_MAX_BYTES = 4000;
 
 const SECRET_BASENAMES = new Set(['bridge-token']);
 
-/** True for any repo-relative path matching a known secret-file convention:
- * the cursor bridge token, and any `.env`-suffixed file (covers `.env`
- * itself and `swarm.env`). Checked on the BASENAME only, so a secret stays
- * caught regardless of which directory it sits under. */
+// `.swarmforge/operator/` holds the operator's own secrets and credentials
+// (the bridge token, vscode-cli tokens, swarm.env backups) - refused
+// wholesale (QA bounce 2026-10-07, D1) rather than file by file, since a
+// file new to that directory is a secret by convention, not by name.
+const SECRET_DIR_PREFIX = '.swarmforge/operator/';
+
+/** True when `lowerBasename` has "env" as a whole dot-delimited component
+ * (`.env`, `swarm.env`, `swarm.env.bak-*`, `qwen.env.disabled`, `.env.local`)
+ * rather than merely containing the substring - "environment.txt" must stay
+ * ordinary. */
+function hasEnvComponent(lowerBasename: string): boolean {
+  return lowerBasename.split('.').includes('env');
+}
+
+/** True for any repo-relative path matching a known secret-file or
+ * secret-directory convention: the cursor bridge token, anything under
+ * `.swarmforge/operator/`, and any basename with an `env` component (covers
+ * `.env` itself, `swarm.env`, and a backed-up, disabled, or dotfile variant
+ * of either). Matched case-insensitively (QA bounce D2): macOS's default
+ * APFS volume is case-insensitive, so `statSync`/`readFileSync` would still
+ * open the real secret under a differently-cased name even though a
+ * case-sensitive filter read it as not secret. */
 export function isSecretRelPath(relPath: string): boolean {
-  const base = path.basename(relPath);
-  return SECRET_BASENAMES.has(base) || base.endsWith('.env');
+  const lower = relPath.split(path.sep).join('/').toLowerCase();
+  if (lower === SECRET_DIR_PREFIX.slice(0, -1) || lower.startsWith(SECRET_DIR_PREFIX)) {
+    return true;
+  }
+  const base = path.basename(lower);
+  return SECRET_BASENAMES.has(base) || hasEnvComponent(base);
 }
 
 /** `path.resolve`d target inside `root`, or undefined when the candidate
@@ -53,13 +76,30 @@ function resolveWithinRepo(root: string, candidate: string): string | undefined 
   return resolved;
 }
 
-const TICKET_ID_PATTERN = /\bBL-\d+\b/g;
-const BACKLOG_SUBDIRS = ['active', 'paused', 'done', 'hold', 'archive'];
+// QA bounce D4: GH-<n> ids (a GitHub-sourced ticket) are a real backlog id
+// shape too, never matched by a BL-only pattern.
+const TICKET_ID_PATTERN = /\b(?:BL|GH)-\d+\b/g;
 
-/** The ticket's own YAML file under backlog/<subdir>/, found by id prefix -
- * the same `<id>-*.yaml` naming every backlog file already uses. */
+// paused/active/done (including nested done/<milestone>/ directories, where
+// 49% of done tickets live) are deprecate-check.ts's own domain answer
+// (findTicketYamlPath, BL-1811: call the module that owns it, never
+// re-derive it). hold/ and archive/ are outside that module's domain - it
+// never reads them - so they stay this module's own flat, top-level check.
+const FALLBACK_BACKLOG_SUBDIRS = ['hold', 'archive'];
+
+/** The ticket's own YAML file under backlog/, found by id prefix - the same
+ * `<id>-*.yaml` naming every backlog file already uses. */
 function findTicketFile(targetPath: string, ticketId: string): string | undefined {
-  for (const subdir of BACKLOG_SUBDIRS) {
+  // findTicketYamlPath's own match is a plain startsWith(id) with no
+  // trailing separator (QA bounce D4's own note): asking about "BL-19"
+  // would wrongly match a real "BL-1911-....yaml" if no "BL-19-*.yaml" file
+  // existed. Guarded here by re-checking the precise `${id}-` prefix this
+  // module has always matched on.
+  const shared = findTicketYamlPath(targetPath, ticketId);
+  if (shared && path.basename(shared).startsWith(`${ticketId}-`)) {
+    return shared;
+  }
+  for (const subdir of FALLBACK_BACKLOG_SUBDIRS) {
     const dir = path.join(targetPath, 'backlog', subdir);
     let names: string[];
     try {
@@ -119,22 +159,42 @@ function readTicketSnippets(targetPath: string, question: string): string[] {
  * plain file inside the repository, and is not a secret; `undefined`
  * otherwise. Never stats or reads a path the containment check or the secret
  * filter rejects - the filter runs before anything from that path could
- * reach a caller. */
+ * reach a caller.
+ *
+ * QA bounce 2026-10-07 D3: the lexical check alone is not enough - a
+ * symlink INSIDE the repository can point OUTSIDE it, or at a secret under
+ * an innocuous name, and `statSync`/`readFileSync` follow symlinks
+ * regardless of what the lexical path says. Both the containment check and
+ * the secret filter below run against the REAL path (`fs.realpathSync`),
+ * resolved before either check, so a symlink cannot read as something it
+ * is not. */
 function readSnippetForPathToken(targetPath: string, token: string): string | undefined {
   const resolved = resolveWithinRepo(targetPath, token);
   if (!resolved) {
     return undefined;
   }
-  const relPath = path.relative(targetPath, resolved);
+  let realRoot: string;
+  let realCandidate: string;
+  try {
+    realRoot = fs.realpathSync(targetPath);
+    realCandidate = fs.realpathSync(resolved);
+  } catch {
+    // Root unreadable, or candidate not found / not readable - nothing to add.
+    return undefined;
+  }
+  if (realCandidate !== realRoot && !realCandidate.startsWith(realRoot + path.sep)) {
+    return undefined;
+  }
+  const relPath = path.relative(realRoot, realCandidate);
   if (isSecretRelPath(relPath)) {
     return undefined;
   }
   try {
-    const stat = fs.statSync(resolved);
+    const stat = fs.statSync(realCandidate);
     if (!stat.isFile()) {
       return undefined;
     }
-    return fs.readFileSync(resolved, 'utf8');
+    return fs.readFileSync(realCandidate, 'utf8');
   } catch {
     // Not found, not readable, or not a plain file - nothing to add.
     return undefined;
