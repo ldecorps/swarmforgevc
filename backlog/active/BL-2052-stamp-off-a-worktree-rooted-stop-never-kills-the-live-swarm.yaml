@@ -47,7 +47,13 @@ qa_e2e_procedure: |
      before the land: 49 of 49 across stop, swarmStopper and bounce).
   3. Read from the gather's acceptance row: BL-730 7 of 7 (measured on main
      at a9cadb6484: 7 of 7).
-  4. Read the hardener's committed Stryker evidence for swarmStopper.ts.
+  4. Read the hardener's committed hand-mutant evidence for swarmStopper.ts
+     (backlog/evidence/BL-2052-hardener-20261007.md: three
+     socketOwnedByTarget mutants, one survivor closed by a new test) and
+     the refusal and owned-socket tests at all four socketOwnedByTarget
+     gates (7b11af2725). The Stryker run is BL-2067's (not_before
+     2026-10-08): the cooldown gate refuses swarmStopper.ts until
+     2026-10-07 21:22Z (amended 2026-10-07 at QA spec-gap note 003905).
   5. Confirm the live swarm still lists every session after steps 1-3.
 
 source: |
@@ -64,6 +70,10 @@ source: |
   > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
 
 notes: |
+  Amended 2026-10-07 (active, parcel 7b11af2725 with QA): qa_e2e step 4
+  accepts the hand-mutant evidence and names BL-2067 as the owner of the
+  Stryker run the cooldown blocked (QA spec-gap note 003905; the mint's
+  not_before: 2026-10-07 did not clear a rolling 24 h window).
   Minted 2026-10-06 by the specifier.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) — see auto-approve-high-severity-defects-amendment-20260917.md.
   The 19:38Z and 14:55Z server deaths are NOT pinned to this path: a
