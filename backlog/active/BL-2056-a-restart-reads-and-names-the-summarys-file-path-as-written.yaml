@@ -135,3 +135,5 @@ notes: |
   sequences the two, neither depends on the other.
   Routing hint, not a mandate: this repairs the harness that restarts the
   iq3 seat, so a hard-tier coder seat is the better fit.
+
+assigned_to: coder
