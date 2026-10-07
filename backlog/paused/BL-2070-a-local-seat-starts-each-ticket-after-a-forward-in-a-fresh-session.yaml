@@ -28,7 +28,7 @@ required_wiring:
 # after. The scenarios drive the guard's REAL answer over fixture
 # transcripts, as BL-1991's bl1991RestartGuardCli.bb does.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The human asked for it, through the coordinator (note 017260): "iq3
   should clear context after forwarding a ticket". A new feature file
