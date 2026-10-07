@@ -69,12 +69,31 @@ function appendBounceRecord(root, { producingRole, at, by }) {
   fs.appendFileSync(path.join(dir, `${month}.jsonl`), JSON.stringify(record) + '\n');
 }
 
+// QA bounce 2026-10-07 D3: the previous briefing's own commit is not the
+// previous SEND - findPreviousBriefingSentAtIso now reads the commit that
+// added this day's key to docs/briefings/.sent.json. Both commits land at
+// the same atIso here (this fixture does not need to model the real
+// file-to-send gap).
 function commitBriefingFile(root, dayKey, atIso) {
   const dir = path.join(root, 'docs', 'briefings');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${dayKey}.md`), `# Briefing ${dayKey}\n`);
   git(root, ['add', `docs/briefings/${dayKey}.md`]);
-  git(root, ['commit', '-q', '-m', `briefing: record sent marker ${dayKey}`], {
+  git(root, ['commit', '-q', '-m', `briefing: ${dayKey}`], {
+    GIT_AUTHOR_DATE: atIso,
+    GIT_COMMITTER_DATE: atIso,
+  });
+  const sentPath = path.join(dir, '.sent.json');
+  let sent = [];
+  try {
+    sent = JSON.parse(fs.readFileSync(sentPath, 'utf8')).sent;
+  } catch {
+    sent = [];
+  }
+  sent.push(`${dayKey}.md`);
+  fs.writeFileSync(sentPath, JSON.stringify({ sent }));
+  git(root, ['add', 'docs/briefings/.sent.json']);
+  git(root, ['commit', '-q', '-m', 'briefing: record sent marker'], {
     GIT_AUTHOR_DATE: atIso,
     GIT_COMMITTER_DATE: atIso,
   });
@@ -255,6 +274,26 @@ function registerSteps(registry) {
     assert.match(state.output, new RegExp(`all-time total: ${json.allTimeTotal}$`), `all-time total mismatch: ${state.output}`);
     for (const entry of json.windowByProducingRole) {
       assert.match(state.output, new RegExp(`${entry.role} x${entry.windowCount}\\b`), `role count mismatch for ${entry.role}: ${state.output}`);
+      // QA bounce 2026-10-07 D2: this step's own claim is "every count",
+      // not a subset - the trend values are in the JSON too, and must
+      // appear on the line, same as the role count just checked above.
+      assert.match(
+        state.output,
+        new RegExp(`${entry.role} x${entry.windowCount} \\(trend ${entry.trend.join(' ')},`),
+        `trend mismatch for ${entry.role}: ${state.output}`
+      );
+    }
+    // QA bounce D2/D1: windowByBouncingRole (the window's own split) never
+    // appeared on the line at all before the fix - checked here against
+    // the WINDOW segment specifically (before any "all-time" label), not
+    // merely somewhere on the line.
+    const windowSegment = state.output.split(' - all-time')[0];
+    for (const entry of json.windowByBouncingRole) {
+      assert.match(
+        windowSegment,
+        new RegExp(`by bouncing role: .*\\b${entry.role} x${entry.count}\\b`),
+        `window bouncing-role count mismatch for ${entry.role}: ${state.output}`
+      );
     }
   });
 }

@@ -260,10 +260,26 @@ test('recordsAfter excludes a record exactly at the window start', () => {
     { at: '2026-10-01T08:00:00.001Z', producingRole: 'coder' },
     { at: '2026-10-01T07:59:59.999Z', producingRole: 'coder' },
   ];
-  const kept = recordsAfter(records, '2026-10-01T08:00:00.000Z');
+  const kept = recordsAfter(records, '2026-10-01T08:00:00.000Z', '2026-10-02T00:00:00.000Z');
   assert.deepEqual(
     kept.map((r) => r.at),
     ['2026-10-01T08:00:00.001Z']
+  );
+});
+
+// QA bounce 2026-10-07 D4: the window has an upper bound too - a record
+// after the render time (nowIso) must never count, even though it is
+// strictly after the start.
+test('recordsAfter excludes a record exactly at, and after, the render time', () => {
+  const records = [
+    { at: '2026-10-01T09:00:00.000Z', producingRole: 'coder' },
+    { at: '2026-10-01T10:00:00.000Z', producingRole: 'coder' },
+    { at: '2026-10-01T10:00:00.001Z', producingRole: 'coder' },
+  ];
+  const kept = recordsAfter(records, '2026-10-01T08:00:00.000Z', '2026-10-01T10:00:00.000Z');
+  assert.deepEqual(
+    kept.map((r) => r.at),
+    ['2026-10-01T09:00:00.000Z', '2026-10-01T10:00:00.000Z']
   );
 });
 
@@ -345,6 +361,13 @@ test('formatBounceWindowLine names the window, every producing role entry, and e
   const line = formatBounceWindowLine(report);
   assert.match(line, /^Bounces since 2026-10-01T08:00:00\.000Z: 2/);
   assert.match(line, /coder x2 \(trend 1 0 2 0 3 1 4, now Opus 5\.5\)/);
+  // QA bounce 2026-10-07 D1: the window's OWN bouncing-role split (2,
+  // architect-only) must appear, distinct from the all-time split (5,
+  // architect x3 + QA x2) - and the all-time clauses are explicitly
+  // labelled, never printed as if they were a breakdown of the window
+  // total above them.
+  assert.match(line, /by bouncing role: architect x2 - all-time by bouncing role: architect x3, QA x2/);
+  assert.match(line, /all-time by ticket type: .*\(1\.2 defects\/bounce\)/);
   assert.match(line, /\(1\.2 defects\/bounce\)/);
   assert.match(line, /all-time total: 5$/);
 });
@@ -422,12 +445,33 @@ test('parseArgv ignores a trailing flag with no value, and an unrecognized flag'
 // ── BL-1880 end-to-end: main() with an injected clock, a real previous
 // briefing commit, a real configured model, and --json ──────────────────
 
+// QA bounce 2026-10-07 D3: the previous briefing's own commit is not the
+// previous SEND - the real flow commits the day's file, then separately
+// commits docs/briefings/.sent.json with that day's key added (the "record
+// sent marker" commit findPreviousBriefingSentAtIso now reads). Both
+// commits land at the same atIso here (these fixtures do not need to model
+// the real file-to-send gap), so every existing caller keeps working with
+// no other change.
 function commitBriefingFile(root, dayKey, atIso) {
   const dir = path.join(root, 'docs', 'briefings');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${dayKey}.md`), `# Briefing ${dayKey}\n`);
   git(root, ['add', `docs/briefings/${dayKey}.md`]);
-  git(root, ['commit', '-q', '-m', `briefing: record sent marker ${dayKey}`, '--date', atIso], {
+  git(root, ['commit', '-q', '-m', `briefing: ${dayKey}`, '--date', atIso], {
+    GIT_AUTHOR_DATE: atIso,
+    GIT_COMMITTER_DATE: atIso,
+  });
+  const sentPath = path.join(dir, '.sent.json');
+  let sent = [];
+  try {
+    sent = JSON.parse(fs.readFileSync(sentPath, 'utf8')).sent;
+  } catch {
+    sent = [];
+  }
+  sent.push(`${dayKey}.md`);
+  fs.writeFileSync(sentPath, JSON.stringify({ sent }));
+  git(root, ['add', 'docs/briefings/.sent.json']);
+  git(root, ['commit', '-q', '-m', 'briefing: record sent marker', '--date', atIso], {
     GIT_AUTHOR_DATE: atIso,
     GIT_COMMITTER_DATE: atIso,
   });
@@ -574,25 +618,29 @@ test('findPreviousBriefingFile picks the LATEST day strictly before today, skipp
   assert.match(output, /^Bounces since 2026-10-01T08:00:00/);
 });
 
-test('findPreviousBriefingSentAtIso reads the OLDEST commit touching the briefing file, not the newest', () => {
+test('findPreviousBriefingSentAtIso reads the OLDEST commit that added the day to .sent.json, not a later one', () => {
   const root = mkRepo();
   const dir = path.join(root, 'docs', 'briefings');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01\n');
   git(root, ['add', 'docs/briefings/2026-10-01.md']);
-  git(root, ['commit', '-q', '-m', 'briefing: record sent marker 2026-10-01', '--date', '2026-10-01T08:00:00+00:00'], {
+  git(root, ['commit', '-q', '-m', 'briefing: 2026-10-01', '--date', '2026-10-01T08:00:00+00:00'], {
     GIT_AUTHOR_DATE: '2026-10-01T08:00:00+00:00',
     GIT_COMMITTER_DATE: '2026-10-01T08:00:00+00:00',
   });
-  // A LATER commit amending the same file - a real briefing file is never
-  // amended, but the function's own comment says it reads the oldest
-  // commit "even if that ever changes"; this proves it actually does.
-  fs.writeFileSync(path.join(dir, '2026-10-01.md'), '# Briefing 2026-10-01 (amended)\n');
-  git(root, ['add', 'docs/briefings/2026-10-01.md']);
-  git(root, ['commit', '-q', '-m', 'amend briefing 2026-10-01', '--date', '2026-10-01T23:00:00+00:00'], {
-    GIT_AUTHOR_DATE: '2026-10-01T23:00:00+00:00',
-    GIT_COMMITTER_DATE: '2026-10-01T23:00:00+00:00',
-  });
+  const sentPath = path.join(dir, '.sent.json');
+  function writeSentCommit(sentArray, atIso, message) {
+    fs.writeFileSync(sentPath, JSON.stringify({ sent: sentArray }));
+    git(root, ['add', 'docs/briefings/.sent.json']);
+    git(root, ['commit', '-q', '-m', message, '--date', atIso], { GIT_AUTHOR_DATE: atIso, GIT_COMMITTER_DATE: atIso });
+  }
+  // The OLDEST commit adding this day's key to .sent.json.
+  writeSentCommit(['2026-10-01.md'], '2026-10-01T08:00:00+00:00', 'briefing: record sent marker');
+  // A real .sent.json history never removes or re-adds a day key, but the
+  // function's own comment says it falls back to the OLDEST matching
+  // commit if that ever happened; this proves it actually does.
+  writeSentCommit([], '2026-10-01T12:00:00+00:00', 'undo sent marker');
+  writeSentCommit(['2026-10-01.md'], '2026-10-01T23:00:00+00:00', 'briefing: record sent marker (redo)');
   appendBounceRecordIfNew(root, {
     ticket: 'BL-1880',
     producingRole: 'coder',
@@ -603,7 +651,7 @@ test('findPreviousBriefingSentAtIso reads the OLDEST commit touching the briefin
     by: 'architect',
   });
   const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
-  assert.match(output, /^Bounces since 2026-10-01T08:00:00/, `expected the OLDEST commit's time, got: ${output}`);
+  assert.match(output, /^Bounces since 2026-10-01T08:00:00/, `expected the OLDEST send-marker commit's time, got: ${output}`);
 });
 
 test('a previous-day briefing file that was never committed falls back to the 24-hour window, never a crash', () => {

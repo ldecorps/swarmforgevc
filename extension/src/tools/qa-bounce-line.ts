@@ -90,12 +90,19 @@ export function computeWindowStart(previousBriefingAtIso: string | undefined, no
 }
 
 // Invariant 2: a bounce is in the window exactly when its time is AFTER the
-// window start (never at-or-equal), so a bounce landing exactly on a window
-// boundary is counted in exactly one of two consecutive briefings, never
-// both and never neither.
-export function recordsAfter(records: BounceRecord[], startIso: string): BounceRecord[] {
+// window start and AT-OR-BEFORE the render time (never at-or-equal the
+// start, so a bounce landing exactly on a window boundary is counted in
+// exactly one of two consecutive briefings, never both and never neither;
+// never after `nowIso`, so a render that runs behind the wall clock -
+// --at injects exactly this - does not count a bounce that has not
+// happened yet as of the moment it is reporting for, QA bounce D4).
+export function recordsAfter(records: BounceRecord[], startIso: string, nowIso: string): BounceRecord[] {
   const startMs = new Date(startIso).getTime();
-  return records.filter((r) => new Date(r.at).getTime() > startMs);
+  const nowMs = new Date(nowIso).getTime();
+  return records.filter((r) => {
+    const atMs = new Date(r.at).getTime();
+    return atMs > startMs && atMs <= nowMs;
+  });
 }
 
 // One count per day for the seven days before nowIso, oldest first - fixed
@@ -151,7 +158,7 @@ export function buildBounceWindowReport(
   modelForRole: (role: string) => string
 ): BounceWindowReport {
   const { startIso, hadPreviousBriefing } = computeWindowStart(previousBriefingAtIso, nowIso);
-  const windowRecords = recordsAfter(allRecords, startIso);
+  const windowRecords = recordsAfter(allRecords, startIso, nowIso);
   const windowTally = computeQaBounceTally(windowRecords);
   const windowByProducingRole: BounceWindowRoleEntry[] = windowTally.byRole.map(({ role, count }) => ({
     role,
@@ -177,10 +184,18 @@ function formatRoleEntry(entry: BounceWindowRoleEntry): string {
   return `${entry.role} x${entry.windowCount} (trend ${entry.trend.join(' ')}, now ${entry.model})`;
 }
 
-// The all-time total is kept LAST and labelled "all-time total" - nothing
-// follows it, so a caller scanning for where the line ends always finds it
-// there (scenario 05). The window leads, named by when it started or, with
-// no previous briefing on record, as the last-24-hours fallback.
+// QA bounce D1: the window's own bouncing-role split (already in the JSON
+// as windowByBouncingRole) now prints in the WINDOW segment, right beside
+// the producing-role split it sits next to in the JSON - every count the
+// JSON carries for the window must also be readable on the line (scenario
+// 06, D2). Every clause after it is explicitly labelled "all-time" (not
+// only the final total) - those three breakdowns are, and always were,
+// all-time figures; printing them with no label read as a split of the
+// window count above them. The all-time total is kept LAST and labelled
+// "all-time total" - nothing follows it, so a caller scanning for where
+// the line ends always finds it there (scenario 05). The window leads,
+// named by when it started or, with no previous briefing on record, as
+// the last-24-hours fallback.
 export function formatBounceWindowLine(report: BounceWindowReport): string {
   const windowLabel = report.hadPreviousBriefing
     ? `Bounces since ${report.windowStartIso}`
@@ -192,8 +207,9 @@ export function formatBounceWindowLine(report: BounceWindowReport): string {
     .join(', ');
   return (
     `${windowLabel}: ${report.windowTotal} - by producing role: ${byProducing} - ` +
-    `by bouncing role: ${formatRoleCounts(report.allTimeByBouncingRole)} - ` +
-    `by ticket type: ${byType} (${report.allTimeDefectsPerBounce.toFixed(1)} defects/bounce) - ` +
+    `by bouncing role: ${formatRoleCounts(report.windowByBouncingRole)} - ` +
+    `all-time by bouncing role: ${formatRoleCounts(report.allTimeByBouncingRole)} - ` +
+    `all-time by ticket type: ${byType} (${report.allTimeDefectsPerBounce.toFixed(1)} defects/bounce) - ` +
     `all-time total: ${report.allTimeTotal}`
   );
 }
@@ -225,12 +241,8 @@ function findPreviousBriefingFile(targetPath: string, nowIso: string): string | 
   return path.join(dir, `${dayKeys[dayKeys.length - 1]}.md`);
 }
 
-// "The commit that added the previous briefing's file" (the ticket's own
-// suggestion): the OLDEST commit touching that path, not the newest - a
-// briefing file is written once and never amended, but reading the oldest
-// rather than the newest stays correct even if that ever changes. `%aI`'s
-// offset form is fine here: every consumer compares it as a Date, never a
-// literal string (computeWindowStart/recordsAfter above).
+// `%aI`'s offset form is fine here: every consumer compares it as a Date,
+// never a literal string (computeWindowStart/recordsAfter above).
 function gitLog(targetPath: string, args: string[]): string | undefined {
   try {
     return execFileSync('git', args, { cwd: targetPath, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -239,12 +251,27 @@ function gitLog(targetPath: string, args: string[]): string | undefined {
   }
 }
 
+// QA bounce D3: the previous briefing's own commit (when the .md FILE was
+// authored) is not the previous SEND - the email sweep commits the day's
+// file, then sends it, then commits docs/briefings/.sent.json's "record
+// sent marker" separately, measured 5.5h apart on 2026-10-02. Reading the
+// file's own commit left a gap between two consecutive windows (the
+// previous window ended at the file commit, the next started at the next
+// send) in which a bounce was counted twice. The true send time is the
+// commit that ADDED this day's key to .sent.json: `git log -S` (the
+// pickaxe) finds the commit whose diff changed the number of occurrences
+// of the exact quoted JSON string - since a day key, once added, is never
+// removed or re-added, exactly one commit ever adds it. Falls back to the
+// OLDEST such commit if more than one somehow matches, same "oldest wins"
+// posture the file-commit approach used.
 function findPreviousBriefingSentAtIso(targetPath: string, nowIso: string): string | undefined {
   const file = findPreviousBriefingFile(targetPath, nowIso);
   if (!file) {
     return undefined;
   }
-  const out = gitLog(targetPath, ['log', '--format=%aI', '--follow', '--', file]);
+  const dayKey = path.basename(file, '.md');
+  const sentJsonPath = path.join(targetPath, 'docs', 'briefings', '.sent.json');
+  const out = gitLog(targetPath, ['log', '-S', `"${dayKey}.md"`, '--format=%aI', '--', sentJsonPath]);
   if (!out) {
     return undefined;
   }
