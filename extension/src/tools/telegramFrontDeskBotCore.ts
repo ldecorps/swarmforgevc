@@ -3295,6 +3295,25 @@ export function computePollBackoffMs(consecutiveFailures: number, config: PollBa
   });
 }
 
+// Hotfix 2026-10-07 (human: "Fix approval taps"): a 409 means another
+// getUpdates consumer holds this token's slot. After a restart that is the
+// cursor bridge's dead-feeder fallback (BL-1253), which takes the token once
+// this bot's poll heartbeat is 90 s old and hands it back once the heartbeat
+// is fresh. Backing a 409 off to the full 60 s cap kept the heartbeat stale
+// (a contested request plus the wait ran past 90 s), so the bridge never
+// handed the token back, the supervisor killed this bot as stalled until it
+// gave up, and every approval tap in between reached the bridge, which
+// answers the callback and drops it. A conflict therefore retries within
+// POLL_CONFLICT_BACKOFF_MAX_MS: the heartbeat stays fresh and the bridge
+// returns to the queue on its next poll. Any other failure keeps the full
+// backoff.
+export const POLL_CONFLICT_BACKOFF_MAX_MS = 5000;
+
+export function decidePollFailureDelayMs(consecutiveFailures: number, config: PollBackoffConfig, errorMessage: string | undefined): number {
+  const backoffMs = computePollBackoffMs(consecutiveFailures, config);
+  return errorMessage?.includes('409') ? Math.min(backoffMs, POLL_CONFLICT_BACKOFF_MAX_MS) : backoffMs;
+}
+
 // Retry-forever-with-capped-backoff, escalate-on-sustained is a DELIBERATE
 // departure from decideTelegramRetryAction's own retry|escalate=stop
 // semantics - a chat bot must keep trying to self-recover when the
@@ -3464,7 +3483,7 @@ export async function runPollCycle(
   const consecutiveFailures = state.consecutiveFailures + 1;
   return {
     state: { offset: result.nextOffset, consecutiveFailures, stuckAttempts: state.stuckAttempts, sustainedOutage: outage.state },
-    delayMs: computePollBackoffMs(consecutiveFailures, config),
+    delayMs: decidePollFailureDelayMs(consecutiveFailures, config, result.error),
     degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
     // `outage.escalate` is already once-per-episode, so it doubles as the
     // "not already reported" fact - no second flag to keep in step.

@@ -20,6 +20,8 @@ const {
   relaySseReplies,
   DEFAULT_SUBJECT_KEY,
   computePollBackoffMs,
+  decidePollFailureDelayMs,
+  POLL_CONFLICT_BACKOFF_MAX_MS,
   shouldRaiseDegradedWarning,
   runPollCycle,
   applyPollCycleResult,
@@ -5985,6 +5987,36 @@ test('runPollCycle: conflictWindow is set from a 409 error and carries the confi
 
   const other = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'network error' }), config, FIXTURE_NOW);
   assert.equal(other.conflictWindow, undefined, 'a non-409 failure must not be described as a conflict window');
+});
+
+// Hotfix 2026-10-07 ("Fix approval taps"): a 409 retries within the
+// conflict cap so the poll heartbeat stays fresher than the bridge's 90 s
+// dead-feeder window; any other failure keeps the full backoff.
+const CONFLICT_ERROR = 'Telegram API responded with status 409: Conflict: terminated by other getUpdates request';
+const FULL_BACKOFF_CONFIG = { ...BACKOFF_CONFIG, backoffBaseMs: 2000, backoffMaxMs: 60_000 };
+
+test('decidePollFailureDelayMs: a 409 never waits longer than POLL_CONFLICT_BACKOFF_MAX_MS, however long the streak', () => {
+  assert.equal(POLL_CONFLICT_BACKOFF_MAX_MS, 5000);
+  for (const failures of [1, 2, 3, 6, 12, 40]) {
+    const delay = decidePollFailureDelayMs(failures, FULL_BACKOFF_CONFIG, CONFLICT_ERROR);
+    assert.equal(delay, Math.min(computePollBackoffMs(failures, FULL_BACKOFF_CONFIG), POLL_CONFLICT_BACKOFF_MAX_MS), `streak ${failures}`);
+  }
+  assert.equal(decidePollFailureDelayMs(12, FULL_BACKOFF_CONFIG, CONFLICT_ERROR), 5000, 'a long streak sits at the cap, not at 60 s');
+  assert.equal(decidePollFailureDelayMs(1, FULL_BACKOFF_CONFIG, CONFLICT_ERROR), computePollBackoffMs(1, FULL_BACKOFF_CONFIG), 'below the cap the ordinary backoff stands');
+});
+
+test('decidePollFailureDelayMs: any other failure keeps the full backoff', () => {
+  for (const error of ['network error', 'fetch failed', undefined]) {
+    assert.equal(decidePollFailureDelayMs(12, FULL_BACKOFF_CONFIG, error), 60_000, String(error));
+  }
+});
+
+test('runPollCycle: a 409 cycle waits at most the conflict cap, a non-409 cycle at the same streak waits the full backoff', async () => {
+  const state = { offset: 0, consecutiveFailures: 11, sustainedOutage: NO_OUTAGE };
+  const conflict = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: CONFLICT_ERROR }), FULL_BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(conflict.delayMs, POLL_CONFLICT_BACKOFF_MAX_MS);
+  const other = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'network error' }), FULL_BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(other.delayMs, 60_000);
 });
 
 // ── applyPollCycleResult (adapter-injected per-cycle side effects) ───────

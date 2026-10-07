@@ -277,7 +277,12 @@ coordinator chased. A role that really is invoking this exemption says so
 at completion - `done_with_current.sh --no-op "<reason>"` (BL-1609) - and
 a forwarding parcel completed with nothing sent is refused from then on;
 see the forward-gate description under `done_with_current_task.sh` and
-`done_with_current_batch.sh` below.
+`done_with_current_batch.sh` below. A role other than QA that has already
+committed for the ticket since the parcel was queued, with no forward yet
+evidenced, gets `NOT_A_NO_OP` instead of the reason path - a `--no-op`
+reason is never read as cover for work that was finished and never
+forwarded (BL-2050; the coder seat's root `HANDOFF.md` rewrites hid the
+BL-1843 and BL-2033 fixes this way on 2026-10-06).
 
 ### `note`
 
@@ -3278,7 +3283,22 @@ Responsibilities:
     below) whose `task:` header names the same ticket, or
   - the invocation carried `--no-op "<reason>"` (non-blank), in which case
     complete and stamp `no_op_reason` and `no_op_at` onto the completed
-    file instead of requiring a forward.
+    file instead of requiring a forward -
+    **unless the role has already committed for the ticket (BL-2050).** A
+    role other than QA that made a commit on HEAD, since the inbound's own
+    evidence window start, not yet on `main`/`origin/main`, whose
+    subject's leading ticket id is this parcel's ticket, with no forward
+    yet evidenced, is refused regardless of the reason (exit 1,
+    `NOT_A_NO_OP: <ticket-id> has commit <sha> since this parcel was
+    queued`, next line `Send a git_handoff for <ticket-id> naming <sha>.`,
+    `<sha>` the newest such commit, 10 hex, no side effects, the file
+    stays in_process; this message never mentions `--no-op`). QA is never
+    gated by this: its forward is a note, not a commit, so `qa-stage?` is
+    checked raw here, not ANDed with note evidence the way BL-1642's
+    `qa-note-evidenced?` flag is. On 2026-10-06 the coder seat finished
+    two QA bounces (BL-1843, BL-2033), rewrote the root `HANDOFF.md`
+    instead of forwarding, and completed both with `--no-op` reasons
+    describing the finished work - this rule closes that path.
   A non-forwarding inbound (Article 2.4's merge-only handback) completes
   exactly as before, gated by neither rule. The received commit is judged
   as the parcel, never the last hop (see "the received commit is the

@@ -361,6 +361,178 @@
                sent (git wt "rev-parse" "HEAD")))
     (finally (fs/delete-tree root))))
 
+;; ── BL-2044 D1 (QA bounce 587e17842f, routed to coder/hardener): a :take-up
+;; of the role's OWN bounce parcel must never re-apply anything - the
+;; candidate computation used to run on :take-up too (the intent map carries
+;; :ticket whenever the forwarding git_handoff's task names one), so the
+;; commonest bounce shape (a role idle on ticket X's line, handed X's own
+;; bounce back - the parcel commit descends from the role's own current
+;; HEAD) tried to cherry-pick a commit already present in the target: an
+;; empty cherry-pick git reports as a conflict, wrongly refusing the bounce.
+(let [root (str (fs/create-temp-dir {:prefix "parcel-line-2044-takeup-"}))]
+  (try
+    (git root "init" "-q" "-b" "main")
+    (commit! root "a.txt" "a\n" "init")
+    (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+    (let [wt (str (fs/path root "wt"))
+          _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt)
+          own (commit! wt "own.txt" "o\n" "BL-9002: own work")
+          side (str (fs/path root "side"))
+          _ (git root "worktree" "add" "-q" "--detach" side own)
+          bounce (commit! side "evidence.md" "D1\n" "BL-9002: QA review pass evidence (1 defect(s))")
+          facts {:root wt :project-root root :role "coder"
+                 :intent {:intent :take-up :commit bounce :ticket "BL-9002"}}
+          outcome (atom nil)
+          out (with-out-str (reset! outcome (parcel-line-lib/take-up! facts)))]
+      (assert= "a :take-up of the role's own bounce parcel moves" :moved @outcome)
+      (assert= "HEAD lands exactly on the bounce commit" bounce (git wt "rev-parse" "HEAD"))
+      (assert= "nothing is re-applied on a :take-up (its target already IS the parcel)"
+               false (str/includes? out "re-applied")))
+    (finally (fs/delete-tree root))))
+
+;; ── BL-2044 D2 (QA bounce 587e17842f): a commit naming ONLY a done ticket
+;; (never the :start ticket itself) must not be re-applied across a forced
+;; move - line-commit-ok? alone (the pre-D2 reapply-candidates filter) also
+;; calls such a commit "the ticket's own" (every id is ticket-or-done, and
+;; done-ticket's id alone satisfies that with ticket never mentioned at
+;; all), so it was carried forward and conflicted with the done ticket's
+;; landed REPLAY already on the target.
+(let [root (str (fs/create-temp-dir {:prefix "parcel-line-2044-done-"}))]
+  (try
+    (git root "init" "-q" "-b" "main")
+    (commit! root "a.txt" "a\n" "init")
+    (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+    (fs/create-dirs (fs/path root "backlog" "done" "M8"))
+    (spit (str (fs/path root "backlog" "done" "M8" "BL-9005-landed.yaml")) "id: BL-9005\n")
+    (let [wt (str (fs/path root "wt"))
+          _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt)
+          _ (commit! wt "landed.txt" "l\n" "BL-9005: a done ticket's commit")
+          ;; origin/main independently lands BL-9005's REPLAY (a fresh
+          ;; commit with the same path/content, never the same sha) before
+          ;; the coder is served BL-9002's Work note.
+          _ (commit! root "landed.txt" "l\n" "Land BL-9005 (replay)")
+          _ (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+          main-sha (git root "rev-parse" "origin/main")
+          facts {:root wt :project-root root :role "coder" :intent {:intent :start :ticket "BL-9002"}}
+          out (with-out-str (parcel-line-lib/take-up! facts))]
+      (assert= "a line carrying only a done ticket's original commit is not BL-9002's own line; it moves"
+               main-sha (git wt "rev-parse" "HEAD"))
+      (assert= "the done ticket's original is not re-applied onto the replay already there"
+               false (str/includes? out "re-applied")))
+    (finally (fs/delete-tree root))))
+
+;; ── BL-2044 D1 (ancestor-of-target filter): a candidate commit already
+;; reachable from the move's own target must never be re-applied a second
+;; time - here the ticket's own commit is already the ticket's newest
+;; HANDED-OFF commit (recorded in another role's completed/ mailbox, per
+;; BL-1887's newest-handoff-commit), so the :start target IS that exact
+;; sha. Re-applying it again is the same empty-cherry-pick-reads-as-
+;; conflict shape :take-up was wrongly exposed to (D1's second half, inside
+;; reapply-candidates itself rather than the :start/:take-up scoping).
+(let [root (str (fs/create-temp-dir {:prefix "parcel-line-2044-ancestor-"}))]
+  (try
+    (git root "init" "-q" "-b" "main")
+    (commit! root "a.txt" "a\n" "init")
+    (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+    (let [wt (str (fs/path root "wt"))
+          _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt)
+          own (commit! wt "own.txt" "o\n" "BL-9002: own work")
+          _ (commit! wt "other.txt" "o2\n" "BL-9000: another ticket's unlanded work")
+          hold (str (fs/path root "hold"))]
+      ;; a handoff mailbox recording the ticket's own commit as already
+      ;; handed off downstream of the coder - so the :start target resolves
+      ;; to that exact sha, not to origin/main.
+      (fs/create-dirs (fs/path hold ".swarmforge" "handoffs" "inbox" "completed"))
+      (spit (str (fs/path hold ".swarmforge" "roles.tsv"))
+            (str "architect\tarchitect\t" hold "\t\t\t\ttask\n"))
+      (spit (str (fs/path hold ".swarmforge" "handoffs" "inbox" "completed" "001.handoff"))
+            (str "type: git_handoff\nto: hardener\ntask: BL-9002\ncommit: " own "\n"))
+      (let [facts {:root wt :project-root hold :role "coder" :intent {:intent :start :ticket "BL-9002"}}
+            out (with-out-str (parcel-line-lib/take-up! facts))]
+        (assert= "the line moves onto the ticket's own newest handed-off commit"
+                 own (git wt "rev-parse" "HEAD"))
+        (assert= "the commit already an ancestor of the handed-off target is not re-applied a second time"
+                 false (str/includes? out "re-applied"))))
+    (finally (fs/delete-tree root))))
+
+;; ── BL-2044 D2 (QA bounce 8e3a8ad3d0, D1): a BL-1887 route (:take-up at a
+;; commit already on origin/main) must re-apply the ticket's own unlanded
+;; commit even when the line ALSO carries another ticket's unlanded work -
+;; QA's own probe case H-route (backlog/evidence/BL-2044-QA-20261007.md),
+;; now a standing regression. The pre-D1 code gated re-apply on the intent
+;; keyword alone ((= :start (:intent intent))), so this route - :take-up
+;; intent, resolved via start-target just like a Work note - skipped the
+;; re-apply and stranded "own" under the backup ref.
+(let [root (str (fs/create-temp-dir {:prefix "parcel-line-2044-route-reapply-"}))]
+  (try
+    (git root "init" "-q" "-b" "main")
+    ;; take-up!'s own cherry-pick commits with no -c override (unlike this
+    ;; file's commit! helper), so this is the first fixture in this file
+    ;; that needs a real, persistent committer identity - every earlier
+    ;; case only exercises a :refused/no-reapply path where no cherry-pick
+    ;; ever actually commits (same convention as the BL-2044 property
+    ;; runner's own fixture setup).
+    (git root "config" "user.email" "t@t")
+    (git root "config" "user.name" "t")
+    (git root "config" "commit.gpgsign" "false")
+    (commit! root "a.txt" "a\n" "init")
+    (fs/create-dirs (fs/path root "backlog" "active"))
+    (let [route (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "Promote BL-9002: paused -> active for coder")
+          _ (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+          wt (str (fs/path root "wt"))
+          _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt)
+          own (commit! wt "f.txt" "own\n" "BL-9002: own work")
+          other (commit! wt "z.txt" "z\n" "BL-9003: z work (unlanded, other ticket)")
+          facts {:root wt :project-root root :role "coder"
+                 :intent {:intent :take-up :commit route :ticket "BL-9002"}}
+          outcome (atom nil)
+          out (with-out-str (reset! outcome (parcel-line-lib/take-up! facts)))]
+      (assert= "a BL-1887 route re-applies the ticket's own commit, even over an unlanded other ticket's"
+               :moved @outcome)
+      (assert= "the re-applied commit's content lands on the new HEAD" true (fs/exists? (fs/path wt "f.txt")))
+      (assert= "the other ticket's content does not" false (fs/exists? (fs/path wt "z.txt")))
+      (assert= "the move reports one re-applied commit" true (str/includes? out "re-applied 1 commit(s)"))
+      (assert= "the old head (both commits) is backed up" true
+               (str/includes? (git wt "for-each-ref" "--format=%(objectname)" "refs/swarmforge/parcel-backup/coder/") other)))
+    (finally (fs/delete-tree root))))
+
+;; ── BL-2044 D2 (QA bounce 8e3a8ad3d0): the :start-move scope itself is
+;; load-bearing - a plain :take-up at a commit NOT on origin/main must
+;; never reapply anything, even when the line being left behind carries a
+;; reapply-worthy commit, for the SAME ticket, that the forwarded commit
+;; does not already contain. QA's own D2 finding: dropping (:start?
+;; resolved) from the :move branch's guard (reverting to always computing
+;; candidates whenever ticket+base are present) passes every
+;; PRE-EXISTING case in this file unchanged, because none of them gives a
+;; plain :take-up a reapply-worthy sibling commit to find. This one does.
+(let [root (str (fs/create-temp-dir {:prefix "parcel-line-2044-scope-"}))]
+  (try
+    (git root "init" "-q" "-b" "main")
+    (git root "config" "user.email" "t@t")
+    (git root "config" "user.name" "t")
+    (git root "config" "commit.gpgsign" "false")
+    (commit! root "a.txt" "a\n" "init")
+    (git root "update-ref" "refs/remotes/origin/main" "HEAD")
+    (let [wt (str (fs/path root "wt"))
+          _ (git root "worktree" "add" "-q" "-b" "swarmforge-coder" wt)
+          own (commit! wt "own.txt" "o\n" "BL-9002: own earlier work")
+          ;; a sibling build for the SAME ticket, built from origin/main
+          ;; directly (never descended from "own") and never pushed to
+          ;; origin/main - a plain forwarded git_handoff, never a BL-1887
+          ;; route.
+          _ (git wt "checkout" "-q" "-b" "build" "origin/main")
+          build (commit! wt "build.txt" "b\n" "BL-9002: the build")
+          _ (git wt "checkout" "-q" "swarmforge-coder")
+          facts {:root wt :project-root root :role "coder"
+                 :intent {:intent :take-up :commit build :ticket "BL-9002"}}
+          outcome (atom nil)
+          out (with-out-str (reset! outcome (parcel-line-lib/take-up! facts)))]
+      (assert= "a plain take-up not on origin/main moves onto exactly the cited commit"
+               build (git wt "rev-parse" "HEAD"))
+      (assert= "the line's earlier own commit is never reapplied onto it" false (fs/exists? (fs/path wt "own.txt")))
+      (assert= "no reapply is reported for a plain take-up" false (str/includes? out "re-applied")))
+    (finally (fs/delete-tree root))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

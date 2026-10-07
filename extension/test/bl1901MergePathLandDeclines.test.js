@@ -24,10 +24,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { fixture } = require('../../specs/pipeline/steps/bl1872LanderDaemonSteps');
+const { resolveUnitLaneTimeout } = require('../../specs/pipeline/steps/lib/contentionBudget');
+const { unitLaneHeavyContentionFactor } = require('./helpers/unitLaneContentionBudget');
 
 const { makeFixture, git } = fixture;
 const SCRIPT = path.join(__dirname, '..', '..', 'swarmforge', 'scripts', 'land_merge_path.bb');
 const TICKET = 'BL-9001';
+
+// Each test builds a real git fixture and spawns land_merge_path.bb (1.0 to
+// 2.7 s each alone on a quiet host). On 2026-10-07 at 06:09Z two full unit
+// suites ran at once (load 13.7) and the race-twice test hit the flat 20 s
+// cap in both. BL-1607's heavy-test budget scales the cap with load and
+// forks, the way bl1277UnscopedStepCollisionGuard.test.js already does.
+const HEAVY_TIMEOUT_MS = resolveUnitLaneTimeout(20000, { factor: unitLaneHeavyContentionFactor() }).effectiveMs;
 
 // Installs a pre-receive hook that rejects the first `rejectCount` pushes:
 // on each rejected push it moves main forward itself first (an interleaved
@@ -88,7 +97,7 @@ test('a push that loses the race once is absorbed by the retry: the land still p
   assert.equal(spawnSync('git', ['-C', fx.origin, 'merge-base', '--is-ancestor', raceSha, 'main']).status, 0);
   assert.equal(spawnSync('git', ['-C', fx.origin, 'merge-base', '--is-ancestor', before, 'main']).status, 0);
   assert.equal(git(wt, 'symbolic-ref', '--short', 'HEAD'), 'swarmforge-lander');
-});
+}, HEAVY_TIMEOUT_MS);
 
 test('a push that loses the race twice declines to the land step, publishing nothing via the merge path', () => {
   const fx = makeFixture();
@@ -103,7 +112,7 @@ test('a push that loses the race twice declines to the land step, publishing not
   const handover = out.indexOf('LAND_PATH land-step');
   assert.doesNotMatch(out.slice(0, handover), /LAND_PUBLISHED/, out);
   assert.equal(git(wt, 'symbolic-ref', '--short', 'HEAD'), 'swarmforge-lander');
-});
+}, HEAVY_TIMEOUT_MS);
 
 test('a lock already held by another land declines to the land step, publishing nothing', () => {
   const fx = makeFixture();
@@ -124,7 +133,7 @@ test('a lock already held by another land declines to the land step, publishing 
   assert.doesNotMatch(out, /LAND_PUBLISHED/, out);
   assert.equal(git(fx.origin, 'rev-parse', 'main'), before, out);
   assert.equal(git(wt, 'symbolic-ref', '--short', 'HEAD'), 'swarmforge-lander');
-});
+}, HEAVY_TIMEOUT_MS);
 
 test('a dirty lander worktree declines to the land step, which still lands its own way', () => {
   const fx = makeFixture();
@@ -142,7 +151,7 @@ test('a dirty lander worktree declines to the land step, which still lands its o
   // the uncommitted change this test made under `wt`).
   const handover = out.indexOf('LAND_PATH land-step');
   assert.doesNotMatch(out.slice(0, handover), /LAND_PUBLISHED/, out);
-});
+}, HEAVY_TIMEOUT_MS);
 
 // QA D1: `git checkout --detach <commit>` fails when an untracked file in the
 // lander worktree sits at a path the queued commit tracks. Before the fix its
@@ -168,7 +177,7 @@ test('a checkout the untracked lander worktree refuses declines to the land step
   // take a merge-path land at all.
   assert.doesNotMatch(git(fx.origin, 'log', '--format=%s', 'main'), /^Land BL-9001: merge origin\/main/m, out);
   assert.equal(git(wt, 'symbolic-ref', '--short', 'HEAD'), 'swarmforge-lander');
-});
+}, HEAVY_TIMEOUT_MS);
 
 // BL-1901 hardening: registry-decline (the land step's registry-pass check,
 // amendment 1c6f5d70a0) does its OWN checkout of the built sha, separate
@@ -191,4 +200,4 @@ test('a checkout the untracked lander worktree refuses, on the fast-forward path
   assert.doesNotMatch(out.slice(0, handover), /LAND_PUBLISHED/, out);
   assert.doesNotMatch(git(fx.origin, 'log', '--format=%s', 'main'), /^Land BL-9001: merge origin\/main/m, out);
   assert.equal(git(wt, 'symbolic-ref', '--short', 'HEAD'), 'swarmforge-lander');
-});
+}, HEAVY_TIMEOUT_MS);

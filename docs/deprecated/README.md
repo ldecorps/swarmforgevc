@@ -19,3 +19,4 @@ retirement note at its top change.
 | Page | Retired by | Reason |
 |------|-----------|--------|
 | [BL-1641: the closing ceremony composes a headless briefing at its hard deadline](BL-1641-closing-ceremony-headless-composer.md) | BL-1836 (2026-10-02) | Human ruling (2026-09-30): the ceremony waits for the documenter's own briefing instead of substituting a headless dump; a missing briefing at the deadline now just stops the swarm loudly, as it did before BL-1641. |
+| [Milestone 1's manual HANDOFF.md handoff note](HANDOFF-milestone-1.md) | BL-2050 (2026-10-07) | The root `HANDOFF.md` was a manual pre-mailbox handoff note (2026-06-29); on 2026-10-06 a seat rewrote it instead of forwarding two finished QA bounces, hiding both fixes from the pipeline. Handoffs now travel only through `swarm_handoff.sh` and the mailbox. |

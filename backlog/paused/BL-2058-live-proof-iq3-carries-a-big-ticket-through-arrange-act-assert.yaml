@@ -1,0 +1,154 @@
+id: BL-2058
+title: "Live proof that the iq3 coder carries a big ticket through arrange, act and assert (BL-2037/BL-2038): BL-1743 - nine test files, sixteen sites and a shared helper - runs on the iq3 seat alone, and QA writes up its phase trail and a verdict, PROVEN or NOT PROVEN with the phase where it stopped and why"
+milestone: M8
+type: chore
+status: todo
+epic: local-llm-swarm
+priority: 4
+direction: normal
+depends_on: [BL-1743]
+# BL-1743 is the vehicle: this readout promotes once it has closed, however
+# it closed (on iq3, or finished by coder@2 after a release or a split).
+mutation_cost: low
+# low: a readout of one parcel's session transcripts and phase calls into
+# one evidence file; no code.
+slice_size_envelope: low
+required_stages: [qa]
+stage_skip_reasons:
+  coder: "the vehicle's work is BL-1743's; this ticket only reads its trail"
+  cleaner: "no code"
+  architect: "no code or design surface"
+  hardender: "no code"
+  documenter: "the verdict lives in its evidence file; no living doc changes"
+
+# Not a claim of ownership over BL-1743's contract (BL-1251): it is the
+# feature the vehicle satisfies.
+acceptance: specs/features/BL-1743-a-non-vacuity-probe-never-writes-inside-the-checkout.feature
+
+human_approval: approved
+human_ruling: |
+  A - after the restart fixes BL-2055 and BL-2056 land (recommended)
+ruling_provenance: relayed by specifier
+approval_context: >
+  Your request in the coordinator console on 2026-10-07 (quoted in
+  source). FIRM: the vehicle is BL-1743, routed to the bare coder seat
+  (the iq3 local model) and never to coder@2 while iq3 holds it; it is big
+  for iq3 (nine files, sixteen sites, a new shared helper, read in parts)
+  while each phase's own work fits one session. FIRM: the readout records
+  whatever happens and never retries; a release or a split request is a
+  NOT PROVEN verdict naming the phase, and the coordinator still routes
+  the work on so BL-1743 gets done. What has happened so far: every one of
+  the 12 parcels served to iq3 since BL-2038 landed (2026-10-06 13:24Z to
+  23:46Z, nine tickets, BL-1913 last) printed "PHASE - arrange", and iq3
+  ran the phase command 0 times; on BL-1913 two restarts handed it other
+  tickets' stale steps (BL-2055) and a real write would have been missed
+  for its leading slash (BL-2056). The ask is WHEN the proof runs.
+
+ruling_options:
+  - A - after the restart fixes BL-2055 and BL-2056 land (recommended)
+  - B - now, before the restart fixes
+
+ruling_tradeoffs:
+  - Pros - a stall, release or split then measures iq3 and the phases, not the restart harness that sent it to BL-1963 and BL-1874 on 2026-10-06. Cons - waits for two high defects, both expedited at priority 5. Recommended because BL-2055 and BL-2056 are exactly the faults that turned BL-1913's restarts into off-ticket work, so a NOT PROVEN before they land could not say whether the phases failed.
+  - Pros - an answer today. Cons - with 0 phase moves in 12 serves and the restart faults still live, a NOT PROVEN is the likely result and it cannot separate the seat from the harness; the proof would have to run again after BL-2055 and BL-2056.
+
+invariants: []
+
+description: |
+  ## What is wanted
+
+  A recorded answer to the human's question: can the iq3 coder carry a
+  ticket too big for one session through BL-2037/BL-2038's arrange, act
+  and assert phases, each phase in a fresh session?
+
+  1. BL-1743 runs on the bare coder seat (iq3) alone (its notes and
+     `assigned_to: coder` say so; the coordinator routes it there).
+  2. When BL-1743 has closed, QA reads the trail of every iq3 session
+     that held it and writes
+     `backlog/evidence/BL-2058-iq3-aaa-live-proof-<date>.md` with:
+     - each `PHASE:` line `ready_for_next.sh` served for BL-1743, with
+       its time and session;
+     - each `local_seat_phase_cli.bb` call (show, end, fail, pass) with
+       its time, session and outcome;
+     - per session: tool calls, compactions, edits and writes, commits
+       naming BL-1743, and how it ended (phase move, BL-1991 restart
+       with its override text, BL-1992 release, loop halt, done);
+     - the outcome: iq3 forwarded a parcel QA approved; or a failed
+       assert asked for a split; or BL-1992 released it; or the seat
+       stalled and the coordinator pulled it;
+     - the verdict. PROVEN only when iq3 alone moved BL-1743 from
+       arrange through pass, every phase in a fresh session, and the
+       parcel it forwarded passed QA. NOT PROVEN otherwise, naming the
+       phase it stopped in and the evidence for why.
+
+  ## Where the trail is
+
+  - iq3's qwen sessions:
+    ~/.qwen/projects/-home-carillon-swarmforgevc--worktrees-coder/chats/*.jsonl,
+    one per session; the ones whose timestamps span BL-1743's hold.
+    `PHASE:` lines are in run_shell_command results of
+    `ready_for_next.sh`; phase moves are run_shell_command calls of
+    `local_seat_phase_cli.bb`; compactions are `chat_compression`
+    system records.
+  - The phase record `.worktrees/coder/.swarmforge/phase/BL-1743.md`
+    (gitignored; BL-2038 clears it at done, so the transcripts are the
+    durable source).
+  - BL-1991 restart state and pending overrides under
+    `.worktrees/coder/.swarmforge/local-seat-restart/`; BL-1992 release
+    notes in the coordinator's mailbox ("BL-1743 released ...").
+  - git: commits naming BL-1743 on swarmforge-coder and any
+    refs/swarmforge/parcel-backup/coder/ ref left by a move.
+
+  ## Baseline (2026-10-07, for the write-up to compare against)
+
+  Since BL-2038 landed (3be279fb5f, 2026-10-06 13:24Z) iq3 was served 12
+  parcels over nine tickets (BL-2047, BL-2015, BL-2033 three times,
+  BL-2034, BL-2048, BL-2053, BL-2051, BL-2005, BL-1913 twice). Each printed
+  "PHASE: arrange - read .swarmforge/phase/<id>.md first." No session
+  ran `local_seat_phase_cli.bb` (0 calls; .worktrees/coder/.swarmforge/phase/
+  does not exist). BL-1913's arrange ran 18 minutes and about 150 reads
+  with no write, then its restarts served other tickets' stale steps
+  (BL-2055).
+
+source: |
+  The human in the coordinator console, 2026-10-07T07:21:40Z, verbatim:
+  "are you ever going to try and give iq3 a parcel that will test its
+  ability to deal with it using AAA ?" and at 07:23:34Z, verbatim: "fine:
+  ask Specifier to mint an live proving of IQ3 to deal with a big ticket
+  utilizing the new Arrange Act Assert functionality". Relayed as
+  coordinator note 017200: "mint: live-prove iq3's AAA phases
+  (BL-2037/2038) on a big ticket". Precedent for a QA-only live readout:
+  BL-975.
+
+qa_e2e_procedure: |
+  Once BL-1743 has closed (its land, or its split's retirement):
+  1. Find iq3's sessions that held BL-1743 (grep the chats directory above
+     for BL-1743; keep the ones whose PHASE lines or Work note name it).
+  2. Extract the trail items in What is wanted 2 from those sessions, the
+     restart directory, the coordinator mailbox and git, and write the
+     evidence file with the verdict.
+  3. Commit the evidence. The verdict closes this ticket either way; a
+     NOT PROVEN is a finding, never a bounce.
+  Read-only: never run the seat, never re-route BL-1743, never edit the
+  phase record.
+
+notes: |
+  Minted 2026-10-07 by the specifier from coordinator note 017200, the
+  human's request quoted in source. Vehicle choice: BL-1743 over BL-1596
+  (38 files, 81 sites), whose act phase alone would overflow one iq3
+  session by construction - that would test the window, not the phases.
+  BL-1743 was amended the same pass: assigned_to coder, depends_on
+  BL-2055 and BL-2056 (ruling A's shape; ruling B removes them), priority
+  92 to 4, and a re-census (9 files, 16 sites).
+  INVEST: Independent (depends only on the vehicle closing), Negotiable
+  (the readout's shape), Valuable (answers the human's question with a
+  recorded trail), Estimable and Small (one readout, one evidence file),
+  Testable (the evidence file and its verdict rules above).
+  If the verdict is NOT PROVEN in arrange again, the next slice is the
+  one that makes arrange mechanical (a serve-time arrange restart toward
+  tmp/notes.md and `end --to act`), not another prose card line.
+  2026-10-07: the human answered the coordinator's in-console question at
+  07:47:20Z, verbatim: "After BL-2055/56 land (recommended)" (option A).
+  The specifier relayed it with relay-ruling.js (human_ruling, provenance
+  relayed). human_approval stays pending for the human's own Approvals
+  tap: no agent flips it (backlog-schema human_approval).

@@ -1134,6 +1134,29 @@ test('shouldUseCursorBridgeInboundQueue: live feeder keeps shared-token queue (B
   assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '0' }, { feederLive: true }), false);
 });
 
+// Hotfix 2026-10-07 ("Approval taps still not working"): the start script's
+// own decision is a start-time snapshot (CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto),
+// so the per-poll feeder liveness decides; an operator's explicit flag stands.
+test('shouldUseCursorBridgeInboundQueue: an auto "0" from start_cursor_bridge.sh yields to a live feeder, so the shared token never has two pollers', () => {
+  const autoOff = { TELEGRAM_BOT_TOKEN: 'shared', CURSOR_BRIDGE_INBOUND_QUEUE: '0', CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE: 'auto' };
+  assert.equal(shouldUseCursorBridgeInboundQueue(autoOff, { feederLive: true }), true, 'live front desk: drain the queue');
+  assert.equal(shouldUseCursorBridgeInboundQueue(autoOff, { feederLive: false }), false, 'dead front desk: still own getUpdates');
+  assert.equal(shouldUseCursorBridgeInboundQueue({ ...autoOff, CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE: ' auto ' }, { feederLive: true }), true, 'the marker is trimmed');
+});
+
+test('shouldUseCursorBridgeInboundQueue: an auto "1" also follows the live heartbeat, and an exclusive token still decides when the flag is auto', () => {
+  const autoOn = { CURSOR_BRIDGE_INBOUND_QUEUE: '1', CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE: 'auto' };
+  assert.equal(shouldUseCursorBridgeInboundQueue(autoOn, { feederLive: true }), true);
+  assert.equal(shouldUseCursorBridgeInboundQueue(autoOn, { feederLive: false }), false);
+  assert.equal(shouldUseCursorBridgeInboundQueue({ ...autoOn, CURSOR_BRIDGE_BOT_TOKEN: 'exclusive' }, { feederLive: true }), false);
+});
+
+test('shouldUseCursorBridgeInboundQueue: an explicit operator "0" (no auto marker, or another marker) still forces getUpdates', () => {
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '0' }, { feederLive: true }), false);
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '0', CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE: 'operator' }, { feederLive: true }), false);
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '0', CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE: '' }, { feederLive: true }), false);
+});
+
 test('shouldUseCursorBridgeInboundQueue: whitespace-only env values trim to their empty/absent behavior', () => {
   // A whitespace-only flag is neither '1' nor '0' — falls through to the
   // exclusive-token default, same as the flag being unset entirely.

@@ -41,6 +41,10 @@ Feature: One poller owns a Telegram bot token and fans updates out to the Host b
     And it opens no Telegram long poll
 
   # BL-764 dual-poller-05
+  # The busy -> idle row is retired (2026-10-07, specifier hotfix): operator
+  # hotfix 2b8d19d178 (2026-08-05, reviewed under BL-811) made the idle line
+  # a bare "Bridge: idle" on purpose, so that row was red on main from then
+  # on. The idle text is pinned by telegramCursorBridgeLiveness.test.js.
   Scenario Outline: The standing liveness line is edited in place, not reposted
     Given the Cursor Remote liveness line already shows <before>
     When the bridge state becomes <after>
@@ -50,4 +54,3 @@ Feature: One poller owns a Telegram bot token and fans updates out to the Host b
     Examples:
       | before | after |
       | idle   | busy  |
-      | busy   | idle  |

@@ -1,5 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 7, 2026 (BL-2044: `take-up!`'s `:move` branch —
+a seat's line force-moved onto the start target because it carries an
+unlanded *other* ticket's work — now re-applies the current ticket's own
+unlanded commits onto the new target by cherry-pick, oldest first, after
+the switch, instead of leaving them reachable only from the
+`refs/swarmforge/parcel-backup/<role>/` ref the move already wrote —
+nothing re-applied that ref before, so a seat that slipped one commit for
+another ticket onto its line lost its own finished work at the next serve
+(the BL-2042 incident this ticket traces to). The re-apply runs for a
+**start move** — not keyed to the `:start`/`:take-up` intent literally, but
+to whichever moves resolve their target via `start-target`: a coordinator
+`Work` note, and a forwarded `git_handoff` whose cited commit is already on
+`origin/main` (a BL-1887 route, which starts its ticket fresh the same way
+a `Work` note does). A plain `:take-up` at a parcel commit not on
+`origin/main` never re-applies, since its target already is the parcel
+and cherry-picking the role's own commit onto it a second time is an empty
+cherry-pick that `git` reports as a conflict, wrongly refusing the
+commonest bounce shape. For a start move, the commits carried forward
+are those past the old merge base whose subject names the ticket itself
+(stricter than `own-line?`'s own "the ticket's own", which also admits a
+commit naming only done tickets — excluded here, since a done ticket's
+original commit may already be held by the target via its landed replay,
+or may belong to an unrelated ticket's line), excluding merges and
+excluding any commit already an ancestor of the new target. A
+re-application that conflicts aborts the cherry-pick and switches the
+worktree back to the old head unchanged — no cherry-pick or merge left in
+progress — refuses naming the conflicting commit, and the parcel is not
+taken up; the backup ref from that same move is still there either way.
+How-to: `docs/how-to/BL-1871-parcel-line-take-up.md` ("No commit is ever
+lost" section). Acceptance:
+`specs/features/BL-2044-a-seats-own-commits-survive-a-parcel-line-move.feature`.
+No new extension command or setting; no diagram edit — no registered
+diagram depicts take-up's internal move/re-apply mechanics.)
+
+Prior entry —
+
 **Last Updated:** October 3, 2026 (BL-1858: Bubble's live grid now shows a
 tile for every live seat, not only one `sessions.tsv` already listed.
 `sessions.tsv` is written only by a full `./swarm` launch; a seat enabled

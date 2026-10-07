@@ -155,3 +155,5 @@ notes: |
   iq3 seat, so a hard-tier coder seat is the better fit.
   Until BL-2055 lands, the pending stale override above is served the
   next time the iq3 seat's qwen exits inside the relaunch loop.
+
+assigned_to: coder

@@ -243,38 +243,60 @@ function landBriefingIfDue(target: string, prev: LiveState | null, nightKey: str
   return deps.landDocumenterBriefing(target, nightKey) ? 'briefing-landed-from-documenter' : null;
 }
 
+// BL-1676: a switch's cyclomatic complexity is driven by its case count
+// (8, pushing applyAction's own CRAP over the gate's threshold regardless of
+// coverage) - a data-driven dispatch table collapses that to one lookup, same
+// shape as telegramCursorBridgeLive.ts's INBOUND_ACTION_HANDLERS. Each
+// per-kind handler is its own trivial (complexity 1) function; the
+// Record<LiveAction['kind'], ...> type keeps the table exhaustive at compile
+// time, same guarantee the switch's cases gave.
+type ActionHandler = (target: string, action: LiveAction, deps: RunDeps, nowMs: number) => string[];
+
+const ACTION_HANDLERS: Record<LiveAction['kind'], ActionHandler> = {
+  freeze: (target, action, deps) => {
+    deps.applyFreeze(target, (action as Extract<LiveAction, { kind: 'freeze' }>).untilMs);
+    return [];
+  },
+  surface: (target, action, deps) => {
+    deps.surface(target, (action as Extract<LiveAction, { kind: 'surface' }>).code);
+    return [];
+  },
+  'record-cnp': (target, action, deps) => {
+    deps.recordCnp(target, (action as Extract<LiveAction, { kind: 'record-cnp' }>).heldParcelIds);
+    return [];
+  },
+  'rotate-documenter': (target, _action, deps) => {
+    deps.rotateDocumenter(target);
+    return [];
+  },
+  'instruct-briefing': (target, action, deps) => {
+    deps.instructBriefing(target, (action as Extract<LiveAction, { kind: 'instruct-briefing' }>).dayKey);
+    return [];
+  },
+  // BL-1528: the send's own outcome is handed to deps.surface, same as a
+  // statically-decided 'surface' action, then returned to fold into loudSurfaces.
+  'lean-packet': (target, action, deps, nowMs) => {
+    const a = action as Extract<LiveAction, { kind: 'lean-packet' }>;
+    return surfaceLoudCodes(target, deps, deps.deliverLeanPacket(target, a.shiftKey, nowMs));
+  },
+  'record-empty-outcome': (target, action, deps, nowMs) => {
+    const a = action as Extract<LiveAction, { kind: 'record-empty-outcome' }>;
+    return surfaceLoudCodes(target, deps, deps.recordEmptyOutcome(target, a.shiftKey, nowMs));
+  },
+  'night-stop': (target, _action, deps) => {
+    deps.nightStop(target);
+    return [];
+  },
+};
+
 // BL-1528: returns the loud codes a 'lean-packet'/'record-empty-outcome'
 // action's own send outcome produced - [] for every other kind.
 function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: boolean, nowMs: number): string[] {
   if (dryRun) {
     return [];
   }
-  switch (action.kind) {
-    case 'freeze':
-      deps.applyFreeze(target, action.untilMs);
-      return [];
-    case 'surface':
-      deps.surface(target, action.code);
-      return [];
-    case 'record-cnp':
-      deps.recordCnp(target, action.heldParcelIds);
-      return [];
-    case 'rotate-documenter':
-      deps.rotateDocumenter(target);
-      return [];
-    case 'instruct-briefing':
-      deps.instructBriefing(target, action.dayKey);
-      return [];
-    case 'lean-packet':
-      return surfaceLoudCodes(target, deps, deps.deliverLeanPacket(target, action.shiftKey, nowMs));
-    case 'record-empty-outcome':
-      return surfaceLoudCodes(target, deps, deps.recordEmptyOutcome(target, action.shiftKey, nowMs));
-    case 'night-stop':
-      deps.nightStop(target);
-      return [];
-    default:
-      return [];
-  }
+  const handler = ACTION_HANDLERS[action.kind];
+  return handler ? handler(target, action, deps, nowMs) : [];
 }
 
 export function buildRealDeps(): RunDeps {
@@ -626,6 +648,19 @@ function resolveCeremonyDeadlines(
   return { drainBudgetMs: 25 * 60_000, hardDeadlineMs: parseHmToMs(nowMs, gate.closureStopLocal ?? '06:00') };
 }
 
+// BL-1676: split out of runNightClosingCeremony to keep its own CRAP under
+// the gate (each extra `&&` is its own branch point) - same differential-
+// complexity reasoning as withRuntimeLoudCodes/landBriefingIfDue above.
+function isContinuingInProgressNight(prev: LiveState | null, nightKey: string): boolean {
+  return prev !== null && prev.nightKey === nightKey && prev.phase !== 'done' && prev.phase !== 'idle';
+}
+
+// BL-1676: same reasoning - the `||` and `??` in the final return each add a
+// branch point to whichever function evaluates them.
+function ceremonyHasAdvanced(actions: LiveAction[], finalState: LiveState, prev: LiveState | null): boolean {
+  return actions.length > 0 || finalState.phase !== (prev?.phase ?? 'idle');
+}
+
 export function runNightClosingCeremony(
   target: string,
   confPath: string,
@@ -663,7 +698,7 @@ export function runNightClosingCeremony(
   };
 
   // Continue in-progress nights even outside the begin window.
-  if (prev && prev.nightKey === nightKey && prev.phase !== 'done' && prev.phase !== 'idle') {
+  if (isContinuingInProgressNight(prev, nightKey)) {
     obs.ceremonyDue = true;
   }
 
@@ -680,7 +715,7 @@ export function runNightClosingCeremony(
   if (!dryRun) {
     deps.writeState(target, finalState);
   }
-  return { gateMode: gateModeLabel(gate.mode, sleepPath), advanced: actions.length > 0 || finalState.phase !== (prev?.phase ?? 'idle'), state: finalState, actions };
+  return { gateMode: gateModeLabel(gate.mode, sleepPath), advanced: ceremonyHasAdvanced(actions, finalState, prev), state: finalState, actions };
 }
 
 export async function main(): Promise<void> {

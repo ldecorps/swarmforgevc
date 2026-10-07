@@ -230,6 +230,15 @@ You are the hardender.
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.
+- **A Stryker "Survived" can be false (BL-2063, 2026-10-07).** On BL-1858,
+  BL-1880 and BL-1911 a test that runs the mutated line killed the mutant
+  when run directly, under perTest and coverageAnalysis all alike. Until
+  BL-2063 lands, before writing a test for a survivor you suspect, apply its
+  replacement to out/ by hand, run its test file directly, restore the file,
+  and record a `stryker-array-tuple-false-survivor` verification-debt row.
+  Once BL-2063 lands, run `node extension/out/tools/stryker-survivor-recheck.js`
+  over the report and the test files first, quote its verdict counts in your
+  evidence, and write tests only for `survived-when-run-directly`.
 - Office-hours mutation bypass (operator policy, 2026-07-06): DURING OFFICE
   HOURS, bypass heavy mutation testing on RECENTLY-MODIFIED files — defer the
   expensive full mutation pass to the off-peak/overnight window. Office hours

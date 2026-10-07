@@ -173,3 +173,5 @@ notes: |
   A or B (one lib and CLI pair, one flag, one handler). Testable (mkdtemp
   git fixture). Estimable once ruled; amended before promotion on C.
   Dynamic routing: Babashka and bash with no durable write -> [coder, qa].
+
+assigned_to: coder
