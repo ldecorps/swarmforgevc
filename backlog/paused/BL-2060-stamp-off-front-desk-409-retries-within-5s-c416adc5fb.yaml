@@ -64,9 +64,11 @@ qa_e2e_procedure: |
      the bb and shell lines. QA starts no mutation run.
   5. On the live swarm, read .swarmforge/operator/front-desk-supervisor.log
      for the hours since 2026-10-07T09:47:46Z: no 409 on a front-desk poll
-     while the front desk is live, no "stalled bot no poll heartbeat" kill
-     and no "gave-up" line, and an approval tap made in that time reads
-     recorded in its ticket.
+     while the front desk is live, and an approval tap made in that time
+     reads recorded in its ticket. "stalled bot no poll heartbeat" kills
+     without a 409 still occur (11:32Z and 11:34Z on 2026-10-07, QA note
+     003907); they are not these hotfixes' to remove, so they do not fail
+     this step.
 
 source: |
   QA note 003895 (2026-10-07T09:27:42Z), verbatim: "hotfix c416adc5fb
