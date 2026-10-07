@@ -1,0 +1,149 @@
+id: BL-2063
+title: "A Stryker survivor is re-checked by a command, not by hand: three hardener passes in five days (BL-1858, BL-1880, BL-1911) found mutants Stryker scored Survived that a test executing the line does kill, each found by applying the mutant to out/ by hand and running the test file; a command does that for every survivor in a report, on a copy, and classifies it"
+milestone: M8
+type: chore
+severity: medium
+# medium: hand-verification debt, not a red; it costs each hardener pass
+# a hand check per suspect survivor (about 35 on BL-1858's pass).
+status: todo
+epic: code-quality-gates
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: one new TypeScript CLI with a pure core (apply a reported
+# replacement at its location, decide a verdict) and a thin wrapper (copy,
+# spawn vitest), under Stryker, CRAP and DRY.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new CLI with a pure core; nothing existing to refactor"
+verification_category: stryker-array-tuple-false-survivor
+
+acceptance: specs/features/BL-2063-a-stryker-survivor-is-re-checked-by-a-command-not-by-hand.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2063StrykerSurvivorRecheckSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# The tool's consumer is the hardener, by prose: the specifier landed the
+# hardender.prompt line with this mint (see notes). No production code
+# calls it, so no code anchor exists that the parcel would not satisfy by
+# construction (BL-1235).
+
+human_approval: pending
+approval_context: >
+  A new feature file and a new tool, minted as the owner of the
+  stryker-array-tuple-false-survivor verification-debt category (hardener
+  note 001720: 3 rows, over its threshold of 3, unowned). No choice is
+  posed. What needs sign-off: that the deliverable is a re-check command
+  the hardener runs before writing tests, not a root-cause fix of the
+  Stryker/vitest wiring - the cause is not known (BL-1880 saw it under
+  coverageAnalysis all too), and the command makes the check mechanical
+  whatever the cause. FIRM: the command never writes to the live checkout.
+
+invariants:
+  - "The re-check never writes to a file under the checkout it is run from: every mutant is applied to a copy."
+  - "Every mutant the report did not count killed (Survived or NoCoverage) gets exactly one verdict: killed-when-run-directly, survived-when-run-directly or stale."
+
+description: |
+  ## What is wrong
+
+  Stryker, as wired here (vitest runner, the project's stryker-plugin,
+  scoped configs per BL-1753), sometimes scores a mutant Survived when a
+  test that executes the mutated line kills it. The hardener then checks
+  each suspect survivor by hand: apply the mutant's replacement to the
+  compiled out/ file, run the test file directly, restore the file.
+
+  - BL-1858 (2026-10-03): about 35 ArrayDeclaration and StringLiteral
+    mutants in backendSwitch.js's LAUNCH_SCRIPT_AGENT_PATTERNS read
+    Survived; by hand nearly all were killed.
+  - BL-1880 (2026-10-07): 19 Survived on qa-bounce-line.js, with
+    coveredBy lists omitting tests that run the line; the same across 5
+    runs, under coverageAnalysis all and with the vite cache cleared. By
+    hand 13 were killed.
+  - BL-1911 (2026-10-07): mutant 381 on localSeatRepoRead.js (the
+    err.message reason) read Survived; by hand one test fails.
+
+  The cause is not known. Until it is, every suspect survivor costs a
+  hand check, and the ledger counts each pass.
+
+  ## What is wanted
+
+  - A command (extension/src/tools/stryker-survivor-recheck.ts, compiled
+    to out/tools/stryker-survivor-recheck.js) that takes a Stryker JSON
+    report and one or more test files. For every mutant the report did
+    not count killed, it applies the mutant's replacement at its reported
+    location to a COPY of the compiled file, runs the named test files
+    against that copy, and prints one verdict per mutant:
+    killed-when-run-directly, survived-when-run-directly, or stale when
+    the file on disk no longer matches the report's recorded source
+    (scenario 03; never applied).
+  - The live checkout's files are byte-identical after any run (scenario
+    02, invariant 1).
+  - Output that the hardener's evidence can quote: one line per mutant
+    with its id, file, line:column, mutator and verdict, then a count per
+    verdict.
+  - A how-to for the hardener (docs/how-to/) naming when to run it: after
+    a Stryker run, before writing a test for any survivor.
+
+  ## How (direction, not mandate)
+
+  - Pure core: apply a replacement to source text by Stryker's
+    1-based-line, 0-based-column location; decide stale by comparing the
+    report's `files[<path>].source` with the file's current text; turn a
+    vitest exit status into a verdict. Thin wrapper: build the copy (the
+    same sibling links ensureStrykerSandboxSiblingLinks gives Stryker's
+    own sandbox), spawn vitest on the named files, collect.
+  - The architect checks the copy really isolates: a test that resolves
+    its module through a sibling link or REPO_ROOT must load the COPY's
+    mutated file, or the command reproduces the false reading instead of
+    checking it.
+  - Run the mutants one at a time; no shared mutable state between runs.
+
+constraints: >
+  Never writes to the live checkout; fixtures under mkdtemp with their
+  own test file; no Stryker run inside the acceptance lane (the scenarios
+  hand-build a small report). The step handler lands with the feature
+  (BL-233).
+
+out_of_scope: |
+  - Finding and fixing why Stryker misreads these mutants. If the
+    architect or hardener finds the cause on the way, it is a note to the
+    specifier for its own ticket.
+  - Changing any Stryker config or the stryker-plugin.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2063-a-stryker-survivor-is-re-checked-by-a-command-not-by-hand.feature`:
+     4 of 4 ok (01 x2, 02, 03).
+  2. Read from the gather's unit row: the new CLI's unit test file green.
+  3. Read the hardener's committed evidence for the parcel: it records one
+     run of the command over a real Stryker report (its own pass over the
+     new CLI, or BL-1911's report if it is still on disk), with the
+     per-verdict counts. QA starts no mutation run.
+  4. `git status --porcelain` in QA's checkout is unchanged by step 1.
+
+source: |
+  Hardener note to the specifier, priority 00, 2026-10-07T09:41:03Z
+  (inbound 00_20261007T094103Z_001720_from_hardender), verbatim:
+  "verification-debt stryker-array-tuple-false-survivor over threshold
+  (3)". Ledger rows (backlog/verification-debt-ledger.yaml), read with
+  verification_debt_ledger_read.bb: BL-1858 (hardender, 2026-10-03),
+  BL-1880 (hardender, 2026-10-07), BL-1911 (hardender, 2026-10-07).
+
+notes: |
+  Minted 2026-10-07 by the specifier while completing the hardener's
+  verification-debt note, the same pass (2026-09-26 rule, BL-1782). Not
+  auto-approved: chore, medium, new feature file.
+  Prose half (BL-798): the hardender.prompt line telling the hardener to
+  run the command before writing tests for survivors, and to hand-check
+  and record rows until it lands, is landed by the specifier with this
+  mint.
+  IR-DRY at mint: two medium findings, both one step pattern used with a
+  placeholder and with a literal, kept on purpose so each is one handler.
+  INVEST: Independent (no unbuilt sibling), Negotiable (copy mechanics
+  are direction), Valuable (no more hand mutation per suspect survivor),
+  Estimable (one CLI, a pure core and a thin wrapper), Small (three
+  scenarios, two invariants), Testable (fixture module, fixture test,
+  hand-built report).
+  Stages: a new TypeScript tool with an isolation question, so the
+  architect stays; the documenter writes the how-to; no cleaner.
