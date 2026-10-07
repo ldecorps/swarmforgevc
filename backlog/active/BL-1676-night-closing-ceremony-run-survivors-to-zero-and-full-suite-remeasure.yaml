@@ -113,7 +113,10 @@ description: |
   - The evidence lists, per declaration in the census, the test file and
     case that now rejects its mutants (scenario 02).
   - Any function `npm run crap` flags in the file under 6 (coverage
-    first; a small refactor only where coverage cannot reach).
+    first; a small refactor only where coverage cannot reach), except the
+    CLI entry, dep builders and readers the FIRM clause leaves to BL-1519:
+    each of those over 6 is listed with its figure on BL-1519's
+    remaining_slices instead (amended 2026-10-07, QA spec-gap note 003886).
   - Evidence path: `backlog/evidence/BL-1676-night-closing-ceremony-run-mutation.md`.
 
   ## How (direction, not mandate)
@@ -142,8 +145,17 @@ out_of_scope: |
 qa_e2e_procedure: >
   (1) `node specs/pipeline/cli.js specs/features/BL-1676-night-closing-ceremony-run-survivors-to-zero-and-full-suite-remeasure.feature` ONCE on
   the parcel commit: 2 scenarios ok. (2) `cd extension && npx vitest run
-  test/nightClosingCeremonyRun.test.js test/nightClosingCeremonyRotateDocumenterFallback.test.js` once: green with the new cases. (3) `npm run crap` once: no
-  function in the file above 6. (4) The parcel's evidence names the
+  test/nightClosingCeremonyRun.test.js test/nightClosingCeremonyRotateDocumenterFallback.test.js` once: green with the new cases. (3) `npm run crap` once
+  (if its coverage half exits 1 only on BL-1889's vitest-worker
+  onTaskUpdate timeouts, run `node scripts/crapReport.js
+  src/tools/night-closing-ceremony-run.ts` on that coverage): no function
+  in the file above 6 except the CLI entry, dep builders and readers the
+  FIRM clause leaves to BL-1519, and each of those over 6 is named with
+  its figure on BL-1519's remaining_slices. Measured by QA on 2026-10-07
+  (bdb95d261c): seven such functions over 6 (parseArgs 105.22,
+  landDocumenterBriefing 94.24, documenterBranchName 25.02, newestMtimeMs
+  25.02, nightStop 12.00, readActiveRole 9.03, main 6.80); in-scope
+  maximum runNightClosingCeremony 5.00. (4) The parcel's evidence names the
   Stryker totals over the full unit suite with at least 400 mutants and
   survived 0, no-coverage 0, or each remainder with its reason. Never
   "run it N times".
@@ -181,5 +193,13 @@ notes: |
   part the tests from the evidence that accounts for the same mutants.
   Recommended route: the salvage commit 656137ceda straight to the
   hardener, since the coder's pass is in it.
+  2026-10-07 (specifier, QA spec-gap note 003886, evidence bdb95d261c):
+  qa_e2e step 3 and the description's CRAP line said "no function in the
+  file above 6", which the FIRM clause (the CLI's dep builders and readers
+  are not covered here; BL-1519 owns them) made impossible to pass. Both
+  now exclude that mass and require each of its functions over 6 on
+  BL-1519's remaining_slices, which QA's D1 already asks for. Nothing the
+  hardener builds changes beyond D1 and D2; this is a contract wording
+  fix, not new scope.
 
 assigned_to: hardender
