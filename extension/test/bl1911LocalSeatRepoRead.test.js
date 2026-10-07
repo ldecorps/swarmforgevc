@@ -119,6 +119,119 @@ describe('BL-1911 searchRepoForQuestion', () => {
     });
     assert.equal(REPO_READ_MAX_BYTES > 0, true);
   });
+
+  it('finds a ticket filed under any backlog subdirectory, not only active/', () => {
+    withRepo((root) => {
+      const placed = [
+        ['paused', 'BL-9002', 'paused for later'],
+        ['done', 'BL-9003', 'already shipped'],
+        ['hold', 'BL-9004', 'held for the human'],
+        ['archive', 'BL-9005', 'long since archived'],
+      ];
+      for (const [subdir, id, marker] of placed) {
+        const dir = path.join(root, 'backlog', subdir);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, `${id}-x.yaml`), `title: "${marker}"\n`);
+      }
+      for (const [, id, marker] of placed) {
+        const reading = searchRepoForQuestion(root, `what is ${id} about?`);
+        assert.match(reading.context, new RegExp(marker), `${id} (in its own subdir) was not found`);
+      }
+    });
+  });
+
+  it('picks the file matching BOTH the ticket-id prefix AND the .yaml suffix, never a decoy matching only one', () => {
+    withRepo((root) => {
+      const dir = path.join(root, 'backlog', 'active');
+      fs.mkdirSync(dir, { recursive: true });
+      // Right prefix, wrong extension - must not be picked.
+      fs.writeFileSync(path.join(dir, 'BL-9001-notes.txt'), 'DECOY-WRONG-EXTENSION');
+      // Right extension, wrong prefix - must not be picked.
+      fs.writeFileSync(path.join(dir, 'BL-9002-other.yaml'), 'DECOY-WRONG-PREFIX');
+      // The real match.
+      fs.writeFileSync(path.join(dir, 'BL-9001-the-real-one.yaml'), 'title: "the real ticket text"\n');
+      const reading = searchRepoForQuestion(root, 'what is BL-9001 about?');
+      assert.match(reading.context, /the real ticket text/);
+      assert.ok(!reading.context.includes('DECOY-WRONG-EXTENSION'), 'picked the wrong-extension decoy');
+      assert.ok(!reading.context.includes('DECOY-WRONG-PREFIX'), 'picked the wrong-prefix decoy');
+    });
+  });
+
+  it('finds nothing for a ticket id the question names when no backlog file matches it anywhere', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+      const reading = searchRepoForQuestion(root, 'what is BL-4242 about?');
+      assert.equal(reading.ok, true);
+      assert.equal(reading.context, '');
+    });
+  });
+
+  it('strips more than one layer of surrounding punctuation from a path token before resolving it', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'docs', 'notes.md'), 'ordinary repo text');
+      const reading = searchRepoForQuestion(root, 'see ((docs/notes.md))??');
+      assert.match(reading.context, /ordinary repo text/);
+    });
+  });
+
+  it('strips leading punctuation only from the START of the token, never from inside the real path', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+      // A parenthesis that is part of the path itself (not surrounding
+      // punctuation) must survive the strip untouched.
+      fs.writeFileSync(path.join(root, 'docs', '(notes).md'), 'ordinary repo text');
+      const reading = searchRepoForQuestion(root, 'see docs/(notes).md');
+      assert.match(reading.context, /ordinary repo text/);
+    });
+  });
+
+  it('skips a path token that resolves to a directory, and one that resolves to a nonexistent file, without crashing or leaking the literal "undefined"', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'docs', 'notes.md'), 'ordinary repo text');
+      // "docs/" (trailing slash) resolves to the directory itself, so it is
+      // a path-shaped token that genuinely reaches the isFile() check.
+      const reading = searchRepoForQuestion(root, 'look at docs/, docs/missing.md and docs/notes.md');
+      assert.equal(reading.ok, true);
+      assert.match(reading.context, /ordinary repo text/);
+      assert.ok(!reading.context.includes('undefined'), `leaked a skipped read: ${reading.context}`);
+    });
+  });
+
+  it('never adds a blank entry for a skipped read sandwiched between two real snippets', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-9001-x.yaml'), 'TICKET-SNIPPET');
+      fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'docs', 'notes.md'), 'PATH-SNIPPET');
+      // The skipped directory token sits textually BETWEEN the ticket id
+      // and the real path, so a wrongly-pushed "undefined" entry would
+      // widen the separator to four newlines instead of two.
+      const reading = searchRepoForQuestion(root, 'what is BL-9001 about, also see docs/ and docs/notes.md');
+      assert.equal(reading.context, 'TICKET-SNIPPET\n\nPATH-SNIPPET', `wrong join: ${JSON.stringify(reading.context)}`);
+    });
+  });
+
+  it('joins two found snippets with a blank line between them, not run together', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-9001-x.yaml'), 'TICKET-SNIPPET');
+      fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'docs', 'notes.md'), 'PATH-SNIPPET');
+      const reading = searchRepoForQuestion(root, 'what is BL-9001 about, see docs/notes.md');
+      assert.match(reading.context, /TICKET-SNIPPET\n\nPATH-SNIPPET/);
+    });
+  });
+
+  it('trims the joined context of surrounding whitespace', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-9001-x.yaml'), '\nhello\n');
+      const reading = searchRepoForQuestion(root, 'what is BL-9001 about?');
+      assert.equal(reading.context, 'hello');
+    });
+  });
 });
 
 describe('BL-1911 buildPromptWithRepoContext', () => {

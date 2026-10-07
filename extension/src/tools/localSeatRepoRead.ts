@@ -94,6 +94,69 @@ export interface RepoReadResult {
   reason?: string;
 }
 
+/** The text of every ticket named by id in `question`, one entry per ticket
+ * whose backlog YAML could be found and read. Split out of
+ * `searchRepoForQuestion` (BL-1676/BL-1911 hardening) so each read strategy
+ * carries its own, separately-measured CRAP score. */
+function readTicketSnippets(targetPath: string, question: string): string[] {
+  const snippets: string[] = [];
+  const ticketIds = new Set(question.match(TICKET_ID_PATTERN) ?? []);
+  for (const ticketId of ticketIds) {
+    const file = findTicketFile(targetPath, ticketId);
+    if (!file) {
+      continue;
+    }
+    try {
+      snippets.push(fs.readFileSync(file, 'utf8'));
+    } catch {
+      // One ticket file being unreadable does not fail the whole turn.
+    }
+  }
+  return snippets;
+}
+
+/** The text at `token` (resolved against `targetPath`) when it exists, is a
+ * plain file inside the repository, and is not a secret; `undefined`
+ * otherwise. Never stats or reads a path the containment check or the secret
+ * filter rejects - the filter runs before anything from that path could
+ * reach a caller. */
+function readSnippetForPathToken(targetPath: string, token: string): string | undefined {
+  const resolved = resolveWithinRepo(targetPath, token);
+  if (!resolved) {
+    return undefined;
+  }
+  const relPath = path.relative(targetPath, resolved);
+  if (isSecretRelPath(relPath)) {
+    return undefined;
+  }
+  try {
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile()) {
+      return undefined;
+    }
+    return fs.readFileSync(resolved, 'utf8');
+  } catch {
+    // Not found, not readable, or not a plain file - nothing to add.
+    return undefined;
+  }
+}
+
+/** The text of every path-shaped token in `question` that resolves to an
+ * existing plain file inside `targetPath` and is not a secret. */
+function readPathTokenSnippets(targetPath: string, question: string): string[] {
+  const pathTokens = new Set(
+    Array.from(question.match(PATH_TOKEN_PATTERN) ?? [], stripSurroundingPunctuation).filter(Boolean)
+  );
+  const snippets: string[] = [];
+  for (const token of pathTokens) {
+    const snippet = readSnippetForPathToken(targetPath, token);
+    if (snippet !== undefined) {
+      snippets.push(snippet);
+    }
+  }
+  return snippets;
+}
+
 /**
  * Reads whatever the question seems to name from inside `targetPath`: a
  * ticket id resolves to that ticket's backlog YAML, and a path-shaped token
@@ -115,45 +178,7 @@ export function searchRepoForQuestion(
     return { ok: false, context: '', reason: (err as Error).message };
   }
 
-  const snippets: string[] = [];
-
-  const ticketIds = new Set(question.match(TICKET_ID_PATTERN) ?? []);
-  for (const ticketId of ticketIds) {
-    const file = findTicketFile(targetPath, ticketId);
-    if (!file) {
-      continue;
-    }
-    try {
-      snippets.push(fs.readFileSync(file, 'utf8'));
-    } catch {
-      // One ticket file being unreadable does not fail the whole turn.
-    }
-  }
-
-  const pathTokens = new Set(
-    Array.from(question.match(PATH_TOKEN_PATTERN) ?? [], stripSurroundingPunctuation).filter(Boolean)
-  );
-  for (const token of pathTokens) {
-    const resolved = resolveWithinRepo(targetPath, token);
-    if (!resolved) {
-      continue;
-    }
-    const relPath = path.relative(targetPath, resolved);
-    if (isSecretRelPath(relPath)) {
-      // Never read, never logged with its content - the filter runs before
-      // anything from this path can reach `snippets`.
-      continue;
-    }
-    try {
-      const stat = fs.statSync(resolved);
-      if (!stat.isFile()) {
-        continue;
-      }
-      snippets.push(fs.readFileSync(resolved, 'utf8'));
-    } catch {
-      // Not found, not readable, or not a plain file - nothing to add.
-    }
-  }
+  const snippets = [...readTicketSnippets(targetPath, question), ...readPathTokenSnippets(targetPath, question)];
 
   let context = snippets.join('\n\n').trim();
   if (context.length > maxBytes) {
