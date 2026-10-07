@@ -173,6 +173,38 @@ notes: |
   Interplay: BL-2058 (paused, the live proof of iq3 through arrange, act
   and assert) will run under this budget once it lands; arrange's notes
   write resets the count.
+
+  AMENDED 2026-10-07 by an ephemeral specifier the coordinator spun off at
+  the human's live report: "compressions for iq3 are lethal, it just
+  compacted and immediately goes on a reading frenzy." That report caught
+  a real bug in THIS ticket's own `invariants:` (above): "The read count
+  resets on exactly what resets-window? resets" includes a bare
+  compaction, and resetting the read budget on every compaction hands the
+  seat a fresh 12-read allowance at precisely the moment it has just lost
+  context and is most likely to burn reads rebuilding it - the opposite
+  of what the budget is for. Rather than wait for this ticket to move
+  through the normal pipeline, the human asked for an immediate hotfix:
+  landed as 9b89a6e5db (warn-only half: read-budget-resets? is
+  resets-window? without the compaction clause; warns from the 12th
+  qualifying read-type call since the last edit/write/state-changing
+  command onward). The 24th-read restart this ticket also specs is NOT
+  in that hotfix - it needs the fresh turn's first message to fall back
+  to "the session's first message" when there is no compaction next_step,
+  which this hook's transcript-entries does not yet parse out, and
+  guessing at that wiring under a hotfix was judged riskier than building
+  it properly. The hotfix's own stamp-off review is BL-2074
+  (backlog/paused/BL-2074-stamp-off-read-budget-compaction-reset-hotfix-9b89a6e5db.yaml).
+
+  THIS TICKET IS NOT CLOSED and not satisfied-by-hotfix: 9b89a6e5db only
+  covers the warn half, corrected for the compaction bug; the restart half
+  (24th read, shared BL-1991/1992 per-parcel count, first-message
+  fallback) is still unbuilt and still this ticket's job. Whoever builds
+  it should also correct invariant 1 above in the same pass (the
+  compaction clause must be dropped from the reset rule it describes -
+  9b89a6e5db's read-budget-resets? is the corrected version to carry
+  forward, not resets-window? itself) and should read BL-2074's review
+  before deciding whether to keep the hotfix's functions or replace them
+  wholesale with this ticket's own full build.
   IR-DRY at mint: four medium findings, all one step pattern ("the
   seat's transcript has N read-type calls since its last write") used
   with different counts, plus scenario 02's deliberately different Given;
