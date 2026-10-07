@@ -123,3 +123,5 @@ notes: |
   the self-audit), Valuable (iq3's red work stops reaching QA), Estimable
   (one check, two callers), Small (three scenarios), Testable (fixture
   repository through the real send and the real pass).
+
+assigned_to: coder
