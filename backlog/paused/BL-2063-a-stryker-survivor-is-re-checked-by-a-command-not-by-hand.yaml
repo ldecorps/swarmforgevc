@@ -136,8 +136,8 @@ notes: |
   auto-approved: chore, medium, new feature file.
   Prose half (BL-798): the hardender.prompt line telling the hardener to
   run the command before writing tests for survivors, and to hand-check
-  and record rows until it lands, is landed by the specifier with this
-  mint.
+  and record rows until it lands, landed by the specifier in a54a0c08b7,
+  the mint commit.
   IR-DRY at mint: two medium findings, both one step pattern used with a
   placeholder and with a literal, kept on purpose so each is one handler.
   INVEST: Independent (no unbuilt sibling), Negotiable (copy mechanics
