@@ -597,6 +597,33 @@ test('findPreviousBriefingSentAtIso picks the MOST RECENT sent-at strictly befor
   assert.match(output, /^Bounces since 2026-10-01T08:00:00/);
 });
 
+test('findPreviousBriefingSentAtIso picks the most recent sent-at by VALUE, not by insertion order in the map', () => {
+  const root = mkRepo();
+  // The chronologically LATER entry is inserted FIRST, and the earlier
+  // one SECOND - the reverse of Object.values' iteration order a naive
+  // "last one wins" walk would rely on. Only a genuine ms > bestMs
+  // comparison picks the later date here.
+  writeSentAt(root, {
+    '2026-10-01.md': '2026-10-01T08:00:00+00:00',
+    '2026-09-28.md': '2026-09-28T08:00:00+00:00',
+  });
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-1880',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'eeee555556',
+    at: '2026-10-01T09:00:00.000Z',
+    by: 'architect',
+  });
+  const output = runMainCapturingLine(root, '2026-10-02T07:00:00.000Z');
+  assert.match(
+    output,
+    /^Bounces since 2026-10-01T08:00:00/,
+    `expected the chronologically later sent-at, got: ${output}`
+  );
+});
+
 // QA bounce 2026-10-07 D1 (2nd pass), the defect's own remediation
 // pointer: "refuse a window start at or after the render time (fall back
 // to 24 h, saying so)". A sent-at entry recorded AFTER the moment this CLI
