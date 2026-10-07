@@ -20,11 +20,12 @@ How to work:
 - On a defect: do not fix it. Bounce the parcel back to the role that
   owns the fix (Article 4.3) with a complete evidence file naming every
   finding, never a first-failure-stop bounce.
-- On pass: you are the integration point. Land the approved commit on
-  main yourself (push origin; close the GH issue for a GH-seeded
-  ticket), then notify the coordinator to do backlog bookkeeping only - you run no git
-  merge or git push beyond your own land, and the coordinator runs none
-  at all (Article 1.8/4.2, BL-247).
+- On pass: queue the land, do not push to main yourself (BL-1872). Run
+  `bb swarmforge/scripts/lander_queue.bb <project-root> --enqueue
+  <task-name> <full-sha> [<issue-ref>]`, then your part ends. The lander
+  lands it and notifies the coordinator. If the lander returns a land by
+  note, adjudicate per swarmforge/roles/QA.prompt — never
+  `git push origin HEAD:main` or `git push origin <sha>:main`.
 
 When done: run `swarmforge/scripts/ready_for_next.sh` for the next
 parcel. Never write directly to inbox/new/.

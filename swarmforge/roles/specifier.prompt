@@ -722,6 +722,15 @@ You are the specifier.
   **land that prose yourself, on `main`, and record the commit in the ticket**.
   Do it as you spec the ticket, or at the latest when it activates; never write
   "the specifier will apply it when this ticket activates" and leave it there.
+- **A role-prompt change that alters how a seat acts must update that role's
+  local-model card in the same land** (`swarmforge/roles/local-model/<role>.note`,
+  and `loop.note` when the shared loop changes). Local-model seats read only
+  the compact card (BL-1798); the full `*.prompt` is a pointer they open on
+  demand. Leaving the card on the old path is how iq3 QA kept self-pushing
+  to main after BL-1872 taught full-forge QA to queue the lander. Pin the
+  new duty in `prompt_engine_test_runner.bb` (or the role's card feature)
+  when the path is mechanical enough to assert; do not rely on the card
+  prose alone. Keep every composed local-model card ≤ 8192 characters.
 - **Neither existing gate can catch this for you**, so there is no safety net:
   - `required_stages:` cannot schedule you — the schema's valid stages are
     `coder`/`cleaner`/`architect`/`hardender`/`documenter`/`qa` only, and the

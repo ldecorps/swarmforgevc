@@ -365,6 +365,18 @@
   (assert-true "local-model/coder composed text never inlines the generic stable prefix"
                (not (str/includes? (:system-prompt result) "# SwarmForge Constitution"))))
 
+;; Local-model QA card tracks BL-1872: queue the lander, never tip-push main.
+;; Catches the card drifting back to the pre-lander "land yourself" path while
+;; QA.prompt still says lander_queue.bb (2026-10-07 iq3 self-push incident).
+(let [result (prompt-engine-lib/compose "QA" {:agent "local-model"})
+      text (:system-prompt result)]
+  (assert-true "local-model/QA composed text is at most 8192 characters"
+               (<= (count text) 8192))
+  (assert-true "local-model/QA card names lander_queue.bb (BL-1872)"
+               (str/includes? text "lander_queue.bb"))
+  (assert-true "local-model/QA card does not tell the seat to land on main itself"
+               (not (str/includes? text "Land the approved commit on"))))
+
 ;; compose dispatch: a role with no card falls back to EXACTLY today's
 ;; generic composition - never a truncated or partial mix (invariant 2).
 (assert= "local-model/operator (no card) equals claude/operator (generic) byte-for-byte"

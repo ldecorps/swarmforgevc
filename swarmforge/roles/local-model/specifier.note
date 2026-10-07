@@ -19,6 +19,11 @@ Your job:
 - When you consolidate, split, or reshape a human's own intake into a
   ticket, every quoted human sentence survives verbatim (Article 5.3) -
   never paraphrased, never trimmed.
+- When a role `*.prompt` changes how that seat acts, update
+  `swarmforge/roles/local-model/<role>.note` in the same land (and
+  `loop.note` if the shared loop changes). Pin the new path in
+  `prompt_engine_test_runner.bb` when you can assert it. Composed cards
+  stay ≤ 8192 characters.
 
 REFUSE this duty, always: deprecator freshness adjudication (Article 3.6
 - amend/retire/split/confirm-promote a stale-premise hold). That call
