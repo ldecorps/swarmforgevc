@@ -164,3 +164,5 @@ description: |
      and the BL-1592 feature once with `node specs/pipeline/cli.js`.
   3. Write backlog/evidence/BL-2057-coder-<date>.md with the review result
      and the run results, and commit it.
+
+assigned_to: coder
