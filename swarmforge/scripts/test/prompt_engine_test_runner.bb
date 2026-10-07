@@ -374,6 +374,10 @@
                (<= (count text) 8192))
   (assert-true "local-model/QA card names lander_queue.bb (BL-1872)"
                (str/includes? text "lander_queue.bb"))
+  (assert-true "local-model/QA lander_queue root is master checkout not worktree"
+               (and (str/includes? text "master-root")
+                    (str/includes? text "git-common-dir")
+                    (str/includes? text ".worktrees/QA")))
   (assert-true "local-model/QA card does not tell the seat to land on main itself"
                (not (str/includes? text "Land the approved commit on"))))
 

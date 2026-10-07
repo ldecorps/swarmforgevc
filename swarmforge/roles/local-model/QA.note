@@ -21,11 +21,15 @@ How to work:
   owns the fix (Article 4.3) with a complete evidence file naming every
   finding, never a first-failure-stop bounce.
 - On pass: queue the land, do not push to main yourself (BL-1872). Run
-  `bb swarmforge/scripts/lander_queue.bb <project-root> --enqueue
-  <task-name> <full-sha> [<issue-ref>]`, then your part ends. The lander
-  lands it and notifies the coordinator. If the lander returns a land by
-  note, adjudicate per swarmforge/roles/QA.prompt — never
-  `git push origin HEAD:main` or `git push origin <sha>:main`.
+  `bb swarmforge/scripts/lander_queue.bb <master-root> --enqueue
+  <task-name> <full-sha> [<issue-ref>]`, then your part ends.
+  `<master-root>` is the live swarm checkout that owns
+  `.swarmforge/lander/queue` (handoffd's read path) — never your seat
+  worktree (`.worktrees/QA`). From the worktree:
+  `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`.
+  The lander lands it and notifies the coordinator. If the lander
+  returns a land by note, adjudicate per swarmforge/roles/QA.prompt —
+  never `git push origin HEAD:main` or `git push origin <sha>:main`.
 
 When done: run `swarmforge/scripts/ready_for_next.sh` for the next
 parcel. Never write directly to inbox/new/.

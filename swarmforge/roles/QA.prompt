@@ -127,13 +127,17 @@ You are QA.
     seat runs in task mode and takes each parcel up on its own line
     (BL-1871), so the note moved nothing and only woke idle seats.
   - **Queue the land; the lander lands it (BL-1872, BL-1870 ruling A).** Once
-    you approve, run `bb swarmforge/scripts/lander_queue.bb <project-root>
+    you approve, run `bb swarmforge/scripts/lander_queue.bb <master-root>
     --enqueue <task-name> <full-sha> [<issue-ref>]` and your part of the
-    parcel ends there. handoffd's lander sweep runs the land step in a
-    worktree of its own, sends the coordinator its bookkeeping note, and
-    returns a land it cannot complete to you by `note` with the land step's
-    own reason; adjudicate that as you adjudicate a refusal today, using
-    the recipe below.
+    parcel ends there. `<master-root>` is the live swarm checkout that
+    owns `.swarmforge/lander/queue` (handoffd's read path) — never the QA
+    seat worktree (`.worktrees/QA`). From the worktree resolve it with
+    `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`.
+    handoffd's lander sweep runs the land step in a worktree of its own,
+    sends the coordinator its bookkeeping note, and returns a land it
+    cannot complete to you by `note` with the land step's own reason;
+    adjudicate that as you adjudicate a refusal today, using the recipe
+    below.
   - **When the lander returns a land to you: Land it on `main` yourself**
     as your adjudication directs (BL-247; operator ruling 2026-07-10 — QA
     is the integration point, not the coordinator). Your approved commit
