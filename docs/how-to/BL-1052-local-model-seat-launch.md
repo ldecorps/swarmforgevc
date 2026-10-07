@@ -431,7 +431,7 @@ When the latest compaction's `<next_step>` names a write or an edit of a
 file, and the seat then makes **three** tool calls that are not that
 write, the hook ends qwen — its own parent process — instead of only
 warning. It leaves a pending override message (that next step, plus an
-instruction to write the named file and not read it first) under
+instruction to make the named write and not read it first) under
 `.swarmforge/local-seat-restart/<in_process handoff file>.json.msg|.json`,
 keyed by the parcel's own in-process handoff file so the count survives
 a restart but starts fresh for a different parcel. **At most two**
@@ -442,6 +442,28 @@ dir on the hook's own event leaves the whole restart path inert — never
 a fallback to the hook process's own cwd, which in an earlier draft let
 a stray test invocation write real state and kill a real seat's process
 in this very worktree.
+
+The named write is matched by resolved path, not by the summary's
+literal string (BL-2056): the summary may name the file as an absolute
+or a relative path, and the seat's own calls carry whatever form the
+model used, so the hook resolves both against the event's `cwd`
+(absolute paths pass through, relative ones join under it) and
+compares the canonicalized results — a seat that edited the named file
+at its absolute path counts as having made the write. The override
+message distinguishes the two cases, and the existing-file wording
+deliberately does **not** tell the seat to skip reading (amended
+2026-10-07, QA spec-gap note 003910: "do not read it first" on an
+existing file invites exactly the whole-file `write_file` this ticket
+exists to stop — that is how the iq3 coder replaced
+`check_merge_deletion.sh` on 2026-10-06, BL-2055's own incident):
+- a file that already exists in the seat's worktree is named at its
+  **absolute** path and the seat is told to `Read only the lines you
+  will change first (grep -n, then read_file with offset and limit),
+  then edit them` — a fresh restart session has none of the file in
+  context, so some reading is unavoidable, but only the lines it is
+  about to touch;
+- a file that does not exist yet keeps BL-1991's original wording:
+  `Write <path> now. Do not read <path> first - it does not exist yet.`
 
 The generated local-model launch script's `qwen` invocations both end
 `|| true` (both the first kickoff and the loop's own relaunch) so a
