@@ -157,6 +157,13 @@ source: |
 
 notes: |
   Minted 2026-10-07 by the specifier.
+  QA data (note 003907, 2026-10-07T11:30:34Z, verbatim: "BL-2061 data: bot
+  stall-killed 10:23+10:28Z, no 409, in recompile windows"): the front
+  desk is killed as stalled without any 409 too - 37 times on 2026-10-07
+  by front-desk-supervisor.log, still at 11:32Z and 11:34Z after both
+  hotfixes. Each kill leaves the heartbeat stale for at least 90 s, so
+  in auto mode the window this ticket closes opens many times a day, not
+  only on a swarm death.
   Amended 2026-10-07 (still paused) after QA's second hotfix 4453766c28:
   the cause narrative, depends_on BL-2060, and the explicit-flag note.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.

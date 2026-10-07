@@ -218,18 +218,34 @@
   (when (>= restart-count max-restarts)
     (missed-write entries name args)))
 
+;; BL-2055 (QA-reported D2 of its own kind - the coordinator's note
+;; 017189): a sidecar left behind by BL-1992's own release (which moves
+;; only the handoff file, never its .claim-progress.json) is not a held
+;; parcel - reading it as one restarted the seat on the ticket it had
+;; just released. Copied from handoff_lib.bb's sidecar-suffixes rather
+;; than load-filed (measured: loading handoff_lib.bb costs ~100ms more
+;; than this hook's own baseline, and it runs on every tool call) - kept
+;; in agreement by test_bl1971_local_model_repeat_guard.sh (BL-897).
+(def sidecar-suffixes [".nudge" ".chase.json" ".claim-progress.json" ".batch-claim-progress.json"])
+
+(defn- sidecar-name? [name]
+  (boolean (some #(str/ends-with? name %) sidecar-suffixes)))
+
 (defn- in-process-handoff-name
   "The name of this role's current in_process handoff file - stable across
    a restart (the parcel is never completed or handed off), so it is the
    restart count's key: a later, different parcel's different file name
    starts fresh with no reset needed. nil when there is none (no restart
-   state applies outside a real parcel)."
+   state applies outside a real parcel) - including when in_process holds
+   only a sidecar (BL-2055): BL-1992's release moves only the handoff file,
+   so a leftover claim-progress sidecar must never read as a new parcel."
   [cwd]
   (let [dir (io/file cwd ".swarmforge" "handoffs" "inbox" "in_process")]
     (when (.isDirectory dir)
       (some->> (.listFiles dir)
                (filter #(.isFile %))
                (map #(.getName %))
+               (remove sidecar-name?)
                sort
                first))))
 

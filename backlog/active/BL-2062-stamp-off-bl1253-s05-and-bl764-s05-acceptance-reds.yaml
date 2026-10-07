@@ -104,3 +104,5 @@ description: |
   2. Run the two features once each with output under tmp/.
   3. Write backlog/evidence/BL-2062-coder-<date>.md with the review
      result and the run results, and commit it.
+
+assigned_to: coder

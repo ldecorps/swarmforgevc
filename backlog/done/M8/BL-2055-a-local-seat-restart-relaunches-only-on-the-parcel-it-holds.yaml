@@ -157,3 +157,6 @@ notes: |
   next time the iq3 seat's qwen exits inside the relaunch loop.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: hardender, class: unit, commit: 651ed89396, evidence: backlog/evidence/BL-2055-QA-20261007.md }

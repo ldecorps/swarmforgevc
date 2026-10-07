@@ -5,7 +5,14 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { spawn } = require('node:child_process');
-const { buildKillSessionArgs, stopSwarm, stopSwarmOnExtensionShutdown } = require('../out/swarm/swarmStopper');
+const {
+  buildKillSessionArgs,
+  stopSwarm,
+  stopSwarmOnExtensionShutdown,
+  socketOwnedByTarget,
+  drainAgentSessions,
+  clearStaleSwarmState,
+} = require('../out/swarm/swarmStopper');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
@@ -130,6 +137,82 @@ test('stopSwarm refuses a worktree pointer at another root socket', () => {
   }
 });
 
+// BL-2052: drainAgentSessions had no test of any kind before this pass -
+// a success-path case alongside the refusal case below so neither branch
+// of its own socketOwnedByTarget gate is left uncovered.
+test('drainAgentSessions kills each role session and reports the count when the socket is owned', () => {
+  const tmp = mkTmp();
+  mkdirp(path.join(tmp, '.swarmforge'));
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
+  );
+  const fake = installInProcessTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
+  try {
+    const result = drainAgentSessions(tmp);
+    assert.equal(result.success, true);
+    assert.equal(result.sessionsStopped, 2);
+    assert.deepEqual(result.sessionsAttempted, ['swarmforge-coder', 'swarmforge-cleaner']);
+    assert.match(result.message, /stopped 2\/2 role session\(s\)/);
+    // drain-agents leaves the tmux server itself (and the socket file)
+    // up - distinct from a full stop.
+    assert.equal(fs.existsSync(path.join(tmp, '.swarmforge', 'tmux-socket')), true);
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-2052 QA bounce D1: socketOwnedByTarget gates drainAgentSessions,
+// clearStaleSwarmState, stopSwarm and stopSwarmCompletely, but only
+// stopSwarm had a test proving a foreign socket is refused.
+test('drainAgentSessions refuses a worktree pointer at another root socket', () => {
+  const main = mkTmp();
+  const worktree = mkTmp();
+  const foreign = path.join(main, '.swarmforge', 'tmux', 'live.sock');
+  mkdirp(path.dirname(foreign));
+  fs.writeFileSync(foreign, '');
+  mkdirp(path.join(worktree, '.swarmforge'));
+  fs.writeFileSync(path.join(worktree, '.swarmforge', 'tmux-socket'), foreign);
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
+  );
+
+  const fake = installInProcessTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
+  try {
+    const result = drainAgentSessions(worktree);
+    assert.equal(result.success, true);
+    assert.equal(result.sessionsStopped, 0);
+    assert.deepEqual(result.sessionsAttempted, []);
+    assert.match(result.message, /outside this root/);
+    assert.deepEqual(fake.calls(), []);
+    assert.equal(fs.existsSync(foreign), true);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('clearStaleSwarmState refuses a worktree pointer at another root socket, but still clears its own stale state', () => {
+  const main = mkTmp();
+  const worktree = mkTmp();
+  const foreign = path.join(main, '.swarmforge', 'tmux', 'live.sock');
+  mkdirp(path.dirname(foreign));
+  fs.writeFileSync(foreign, '');
+  mkdirp(path.join(worktree, '.swarmforge'));
+  fs.writeFileSync(path.join(worktree, '.swarmforge', 'tmux-socket'), foreign);
+
+  const fake = installInProcessTmux([{ subcommand: 'kill-server', exitCode: 0 }]);
+  try {
+    clearStaleSwarmState(worktree);
+    assert.deepEqual(fake.calls(), []);
+    assert.equal(fs.existsSync(foreign), true);
+    assert.equal(fs.existsSync(path.join(worktree, '.swarmforge', 'tmux-socket')), false);
+  } finally {
+    fake.restore();
+  }
+});
+
 test('stopSwarm refuses an in-root pointer whose directory is a symlink to another root', () => {
   const main = mkTmp();
   const worktree = mkTmp();
@@ -156,6 +239,61 @@ test('stopSwarm refuses an in-root pointer whose directory is a symlink to anoth
   } finally {
     fake.restore();
   }
+});
+
+// BL-2052 hardening: physicalPath's own `if (parent === head) { return
+// path.resolve(p); }` terminal fallback (the "no ancestor resolves at
+// all" case) has no coverage from any real filesystem fixture - every
+// real path has an existing root ("/"), so fs.realpathSync always
+// succeeds before that walk-up can ever bottom out. Only a stubbed
+// fs.realpathSync that NEVER succeeds can reach it, and reaching it
+// safely (a sane boolean, no throw, no infinite loop) is exactly the
+// guarantee this defensive branch exists to make.
+test('socketOwnedByTarget never throws or loops when no path segment resolves at all', () => {
+  const originalRealpathSync = fs.realpathSync;
+  fs.realpathSync = () => {
+    throw new Error('ENOENT: simulated - nothing resolves on this host');
+  };
+  try {
+    const result = socketOwnedByTarget('/a/b/c', '/a/b/c/.swarmforge/tmux/sock');
+    assert.equal(typeof result, 'boolean');
+    // Both sides fall back to path.resolve(p) unmodified, so the socket's
+    // directory (/a/b/c/.swarmforge/tmux) genuinely IS under the target's
+    // own .swarmforge/ - this is the one case where the unresolvable
+    // fallback still computes the right, safe answer.
+    assert.equal(result, true);
+  } finally {
+    fs.realpathSync = originalRealpathSync;
+  }
+});
+
+test('socketOwnedByTarget still refuses a foreign socket when no path segment resolves at all', () => {
+  const originalRealpathSync = fs.realpathSync;
+  fs.realpathSync = () => {
+    throw new Error('ENOENT: simulated - nothing resolves on this host');
+  };
+  try {
+    const result = socketOwnedByTarget('/a/b/target', '/x/y/foreign/.swarmforge/tmux/sock');
+    assert.equal(result, false);
+  } finally {
+    fs.realpathSync = originalRealpathSync;
+  }
+});
+
+// BL-2052 hardening: a socket under a SIBLING directory that merely
+// shares ".swarmforge" as a text prefix (".swarmforge-evil", never the
+// real ".swarmforge/") must never be treated as owned - the ownership
+// check requires a path SEPARATOR boundary, not a bare string prefix.
+// Hand-mutation proof: dropping the "+ path.sep" the real code appends
+// to its owned-prefix comparison (out/swarm/swarmStopper.js:141) makes
+// every pre-existing test in this file and swarmStopper.test.js pass
+// unchanged - only this fixture shape observes the difference.
+test('socketOwnedByTarget refuses a sibling directory that only shares ".swarmforge" as a text prefix', () => {
+  const root = mkTmp();
+  const evilSock = path.join(root, '.swarmforge-evil', 'tmux', 'sock');
+  mkdirp(path.dirname(evilSock));
+  fs.writeFileSync(evilSock, '');
+  assert.equal(socketOwnedByTarget(root, evilSock), false);
 });
 
 test('stopSwarm sends SIGTERM to a live daemon pid and still succeeds', async () => {

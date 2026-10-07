@@ -11,6 +11,11 @@ const {
   verifySwarmStopped,
   StopPhase,
 } = require('../out/swarm/swarmStopper');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
+
+function ownedSocket(tmp) {
+  return path.join(tmp, '.swarmforge', 'tmux', 'swarm.sock');
+}
 
 function mkTmp() {
   return mkTmpDir('sfvc-stop-');
@@ -274,6 +279,75 @@ test('stopSwarmCompletely reports phases in result', () => {
   // Should have completion phases
   assert(result.phases.some(p => p.name === 'daemon-stop'));
   assert(result.phases.some(p => p.name === 'state-cleanup'));
+});
+
+// BL-2052: every existing stopSwarmCompletely test's socket
+// (writeSwarmState's fake.sock) sits directly in targetPath, OUTSIDE
+// .swarmforge/ - so none of them actually exercises the OWNED branch of
+// socketOwnedByTarget's gate inside stopSwarmCompletely; all of them were
+// silently taking the refused path. This is the one real "owns its own
+// socket, kills its own sessions" case.
+test('stopSwarmCompletely kills its own sessions and the tmux server when the socket is genuinely owned', () => {
+  const targetPath = mkTmp();
+  fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(targetPath, '.swarmforge', 'tmux-socket'), ownedSocket(targetPath));
+  fs.writeFileSync(
+    path.join(targetPath, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
+  );
+
+  const fake = installInProcessTmux([
+    { subcommand: 'kill-session', exitCode: 0 },
+    { subcommand: 'kill-server', exitCode: 0 },
+  ]);
+  try {
+    const result = stopSwarmCompletely(targetPath);
+    assert.equal(result.success, true);
+    assert.deepEqual(result.sessionsAttempted, ['swarmforge-coder']);
+    assert.equal(result.sessionsStopped, 1);
+    const tmuxPhase = result.phases.find((p) => p.name === 'tmux-stop');
+    assert.match(tmuxPhase.detail, /Stopped 1\/1 sessions/);
+    assert.ok(
+      fake.calls().some((c) => c.includes('kill-server')),
+      'the tmux server itself was never asked to shut down'
+    );
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-2052 QA bounce D1: socketOwnedByTarget gates drainAgentSessions,
+// clearStaleSwarmState, stopSwarm and stopSwarmCompletely, but only
+// stopSwarm had a test proving a foreign socket is refused - the other
+// three could lose the guard with every existing test still green
+// (writeSwarmState's own fixture socket sits OUTSIDE .swarmforge/ too,
+// but no test here ever asserted on the refusal that produces).
+test('stopSwarmCompletely refuses a foreign tmux-socket pointer: no kill-server, tmux-stop phase names the refusal, state still cleared', () => {
+  const main = mkTmp();
+  const worktree = mkTmp();
+  const foreignSock = path.join(main, '.swarmforge', 'tmux', 'live.sock');
+  fs.mkdirSync(path.dirname(foreignSock), { recursive: true });
+  fs.writeFileSync(foreignSock, '');
+  fs.mkdirSync(path.join(worktree, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.swarmforge', 'tmux-socket'), foreignSock);
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
+  );
+
+  const result = stopSwarmCompletely(worktree);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.sessionsAttempted, []);
+  assert.equal(result.sessionsStopped, 0);
+  const tmuxPhase = result.phases.find((p) => p.name === 'tmux-stop');
+  assert.ok(tmuxPhase, 'no tmux-stop phase in the result');
+  assert.match(tmuxPhase.detail, /Refused a socket outside this root/);
+  // The foreign socket file itself is untouched - nothing was ever sent to it.
+  assert.equal(fs.existsSync(foreignSock), true);
+  // The target's OWN stale state is still cleared, refusal notwithstanding.
+  assert.equal(fs.existsSync(path.join(worktree, '.swarmforge', 'tmux-socket')), false);
+  assert.equal(fs.existsSync(path.join(worktree, '.swarmforge', 'sessions.tsv')), false);
 });
 
 test('stopSwarmCompletely returns detail on sessions killed', () => {

@@ -35,6 +35,14 @@ export function buildKillSessionArgs(socketPath: string, sessions: string[]): st
   return sessions.map((session) => ['-S', socketPath, 'kill-session', '-t', session]);
 }
 
+/** `refusedMsg` when `socketPath` names a real (but foreign, refused)
+ * socket, else `noneMsg` (no socket was ever recorded). Every
+ * socketOwnedByTarget call site needs this same two-way text, split out
+ * (BL-2052 hardening) so the branch is counted once, not once per site. */
+function socketRefusalOrAbsent(socketPath: string | undefined, refusedMsg: string, noneMsg: string): string {
+  return socketPath ? refusedMsg : noneMsg;
+}
+
 /**
  * BL-698 /drain-agents: kill role tmux sessions only. Leaves the tmux
  * server, handoffd, and supervisors up (distinct from kill_all_swarm).
@@ -49,9 +57,11 @@ export function drainAgentSessions(targetPath: string): {
   if (!socketPath || !socketOwnedByTarget(targetPath, socketPath)) {
     return {
       success: true,
-      message: socketPath
-        ? 'drain-agents: refused a socket outside this root.'
-        : 'drain-agents: no tmux socket — nothing to drain.',
+      message: socketRefusalOrAbsent(
+        socketPath,
+        'drain-agents: refused a socket outside this root.',
+        'drain-agents: no tmux socket — nothing to drain.'
+      ),
       sessionsStopped: 0,
       sessionsAttempted: [],
     };
@@ -168,9 +178,11 @@ export function stopSwarm(targetPath: string): StopResult {
     stopHandoffDaemon(targetPath);
     return {
       success: true,
-      message: socketPath
-        ? 'Refused to kill a socket outside this root; stale swarm state cleared.'
-        : 'Swarm already stopped (no tmux socket); state cleared.',
+      message: socketRefusalOrAbsent(
+        socketPath,
+        'Refused to kill a socket outside this root; stale swarm state cleared.',
+        'Swarm already stopped (no tmux socket); state cleared.'
+      ),
       sessionsKilled: [],
     };
   }
@@ -402,9 +414,7 @@ export function stopSwarmCompletely(
       phases.push({
         name: 'tmux-stop',
         success: true,
-        detail: socketPath
-          ? 'Refused a socket outside this root'
-          : 'No tmux socket found (already stopped)',
+        detail: socketRefusalOrAbsent(socketPath, 'Refused a socket outside this root', 'No tmux socket found (already stopped)'),
       });
     }
 
