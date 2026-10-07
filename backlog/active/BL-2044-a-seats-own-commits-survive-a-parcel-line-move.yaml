@@ -129,3 +129,7 @@ description: |
     re-apply.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-10-06, by: QA, blamed: coder, class: behavior, commit: 587e17842f, evidence: backlog/evidence/BL-2044-QA-20261006.md }
+  - { at: 2026-10-07, by: QA, blamed: coder, class: behavior, commit: 8e3a8ad3d0, evidence: backlog/evidence/BL-2044-QA-20261007.md }
