@@ -25,7 +25,7 @@ stage_skip_reasons:
 # feature whose fixture tunnels these are; it must stay green.
 acceptance: specs/features/BL-857-one-owner-for-the-production-tunnel-name.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A test-side defect QA found while stopping its property lane (note
   003909). No choice is posed and there are no ruling_options. What
