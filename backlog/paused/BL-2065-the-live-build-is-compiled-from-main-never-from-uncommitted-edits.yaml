@@ -134,6 +134,9 @@ notes: |
   respawned it at 10:50:05Z (pid 27628) with CURSOR_BRIDGE_INBOUND_QUEUE=1
   kept. extension/out/tools/localSeatRepoRead.js is left on disk, an
   orphan nothing requires; BL-1911's land replaces it.
+  The coordinator cleared the stray files from the master checkout
+  (note 017233, 10:45Z) and kept a backup in the master checkout's
+  gitignored tmp/stray-bl1911-20261007/.
   IR-DRY at mint: no findings.
   INVEST: Independent (no unbuilt sibling), Negotiable (the build shape
   is the architect's), Valuable (nothing uncommitted runs live under
