@@ -1504,3 +1504,10 @@
   stamp_ticket: BL-2053
   human_decision: null
   decided_at: null
+- commit: 0ea531fa5f
+  subject: "Hotfix two unit-lane reds QA found unowned (note 003883): bl1901 race-twice timeout, bl1698 edge cases over the per-file budget"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2057
+  human_decision: null
+  decided_at: null
