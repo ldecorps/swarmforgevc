@@ -34,15 +34,22 @@ function git(root, ...args) {
 }
 
 // A fresh `git init` on a brand-new mkdtemp root establishes its own
-// isolated .git itself (BL-1390) - the same posture bl1440's fixture uses:
-// there is no PRIOR git state here for a linked-worktree config to leak
-// from.
+// isolated .git itself (BL-1390) - there is no PRIOR git state here for a
+// linked-worktree config to leak from. Proven, not merely asserted by
+// comment: git-common-dir must resolve INSIDE this fixture root, exactly
+// as bl1738/bl1853/bl1887's own fixtures prove it.
 function initScratchRepo() {
   const root = trackedTmpRoot('bl1911-fixture-');
   git(root, 'init', '-q', '-b', 'main', '.');
   git(root, 'config', 'user.email', 't@t');
   git(root, 'config', 'user.name', 't');
   git(root, 'config', 'commit.gpgsign', 'false');
+  const commonDir = git(root, 'rev-parse', '--git-common-dir');
+  assert.equal(
+    path.resolve(root, commonDir),
+    path.join(root, '.git'),
+    `bl1911: git-common-dir did not resolve inside the fixture root, got "${commonDir}"`
+  );
   return root;
 }
 
