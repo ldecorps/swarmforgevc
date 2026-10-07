@@ -1511,3 +1511,10 @@
   stamp_ticket: BL-2057
   human_decision: null
   decided_at: null
+- commit: 2cf2694e92
+  subject: "Hotfix the BL-955 invariant 1 reachability floor QA found unowned (note 003888): each surface gets its own 20 runs"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2057
+  human_decision: null
+  decided_at: null
