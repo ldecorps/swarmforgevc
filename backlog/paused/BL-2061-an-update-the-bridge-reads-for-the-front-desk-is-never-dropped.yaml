@@ -1,0 +1,157 @@
+id: BL-2061
+title: "An update the cursor bridge reads for the front desk is never dropped: while the bridge's dead-feeder fallback holds getUpdates it answers and drops every update it has no route for - an Approve or Reject tap, an approve verb typed in the Approvals topic - so the front desk never sees it; c416adc5fb shortened that window to seconds, this closes it"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault that silently loses the human's decisions. The tap
+# looks taken (the bridge answers the callback) and nothing is recorded;
+# the human's taps on BL-2058 and BL-2059 were lost this way on
+# 2026-10-07. c416adc5fb made the window seconds per front-desk restart,
+# not hours; it did not close it.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: high
+# high: two large TypeScript files under Stryker (the bridge's live loop
+# and the front desk's poll cycle) and a new hand-over between them;
+# keeps the ticket off easy seats (BL-1001).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+stage_skip_reasons: {}
+
+acceptance: specs/features/BL-2061-an-update-the-bridge-reads-for-the-front-desk-is-never-dropped.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2061BridgeNeverDropsFrontDeskUpdatesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the hand-over's name is the
+# coder's to choose, and a pattern on the bridge's or front desk's
+# existing functions matches before and after the work. Scenario 01 must
+# drive the bridge's REAL per-update dispatch in telegramCursorBridgeLive.ts
+# and the front desk's REAL poll cycle, never a restatement of either.
+
+human_approval: approved
+approval_context: >
+  Residual of the approval-tap hotfix c416adc5fb, which QA landed at the
+  human's word ("Fix approval taps (Hotfix)") and which names this gap
+  itself. No choice is posed: the behaviour is fixed (nothing the bridge
+  reads is dropped) and the mechanism is the architect's. FIRM: the
+  bridge keeps the token while the front desk is dead (BL-1253, certified
+  by the human on 2026-10-05) - this ticket changes what it does with
+  updates that are not its own, never whether it holds the token.
+
+invariants:
+  - "Every update the bridge reads while it holds getUpdates is either handled by the bridge or handed to the front desk; none is consumed and dropped."
+  - "A handed-over update is applied by the front desk at most once, however many times it is handed over or read."
+
+description: |
+  ## What is wrong
+
+  When the front desk's poll heartbeat is more than 90 s old, the cursor
+  bridge's dead-feeder fallback (BL-1253, 2ec06b6ef1) calls getUpdates on
+  the shared bot token itself. Every update it reads is then confirmed
+  and gone from Telegram. In telegramCursorBridgeLive.ts's per-update
+  loop the bridge answers every callback query
+  (`answerCallbackQuery(deps.botToken, inbound.callbackQueryId)`), routes
+  what is its own (the cursor topic, Bubble, the local seat), and drops
+  the rest. So an Approve or Reject tap, an approve verb typed in the
+  Approvals topic, or any other front-desk update in that window is lost,
+  and a tap looks taken while nothing is recorded.
+
+  On 2026-10-07 the front desk's 409 backoff kept its heartbeat stale for
+  hours, and the human's taps on BL-2058 and BL-2059 recorded nothing.
+  QA's hotfix c416adc5fb (stamped by BL-2060) caps a 409's backoff at 5 s,
+  so the bridge now hands the token back within seconds of a restart. Its
+  message names what is left: "a tap that reaches the bridge in the few
+  seconds it holds the token is still answered and dropped."
+
+  ## What is wanted
+
+  - An update the bridge reads while holding getUpdates that is not its
+    own reaches the front desk, which applies it as if it had read it
+    itself once it polls again (scenario 01: an Approve tap, a Reject
+    tap, and the typed verb `approve BL-9061` in the Approvals topic each
+    land in the ticket's human_approval).
+  - The bridge's own updates are unchanged: a message in the cursor topic
+    is still answered by the bridge and nothing is handed over for it
+    (scenario 02).
+  - A hand-over survives redelivery: the same update handed over twice is
+    applied once (scenario 03, invariant 2), keyed by Telegram's
+    update_id.
+  - Living docs: docs/how-to/BL-1253-swarm-stamp-dead-feeder-owns-getupdates.md
+    and docs/how-to/BL-764-front-desk-shared-token-bridge-fanout.md describe
+    who reads which update on the shared token; both say what happens to
+    a front-desk update in fallback mode. If front-desk-flow.mmd draws
+    the shared-token fan-out, it gains the reverse arrow (its
+    change-trigger: the front-desk routing changes).
+
+  ## How (direction, not mandate)
+
+  - The front desk already feeds the bridge through a durable append
+    file in queue mode (cursorBridgeInboundQueue.ts,
+    `appendCursorBridgeInboundUpdate`). The reverse direction - the
+    bridge appends a not-its-own raw update to a file the front desk
+    drains at the top of its next poll cycle, deduplicated on update_id -
+    is one shape. The architect decides the shape, whether the bridge
+    still answers a handed-over callback query, and where "not its own"
+    is decided (the bridge's existing `decideInboundAction` already
+    returns no route for these).
+  - Fixtures only: fake Telegram, fake clock, a temp operator directory,
+    never the live token or the live operator directory.
+
+constraints: >
+  The bridge's token-ownership rule (BL-1253) and the front desk's poll
+  backoff (c416adc5fb) are unchanged. No live Telegram call in any test.
+  Webview and VS Code API untouched. The step handler lands with the
+  feature (BL-233).
+
+out_of_scope: |
+  - Whether the bridge should take the token at all while the front desk
+    restarts (BL-1253, certified).
+  - The front desk's 409 backoff (BL-2060 stamps it).
+  - Updates read while the front desk itself holds the token: those are
+    already the front desk's.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2061-an-update-the-bridge-reads-for-the-front-desk-is-never-dropped.feature`:
+     5 of 5 ok (01 x3, 02, 03).
+  2. `node specs/pipeline/cli.js specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature`:
+     8 of 8 ok on a clean checkout (measured at fe7833a272 on a clean
+     local clone: 8 of 8).
+  3. `node specs/pipeline/cli.js specs/features/BL-764-front-desk-eats-host-bridge-updates.feature`:
+     6 of 6 ok (measured at 8381fd02fb, which retired its stale busy-to-idle
+     row; BL-2062 stamps that).
+  4. After the land, on the live swarm: read the bridge's log and
+     front-desk-supervisor.log for the hours since; every update the
+     bridge logged as handed over has its effect in the front desk's
+     records (for a tap, the ticket's human_approval), and no approval
+     tap the human reports is missing.
+
+source: |
+  QA's hotfix c416adc5fb (2026-10-07T09:21:57Z), verbatim: "Not fixed
+  here: a tap that reaches the bridge in the few seconds it holds the
+  token is still answered and dropped."
+  QA note 003895 (2026-10-07T09:27:42Z), verbatim: "hotfix c416adc5fb
+  (human: fix approval taps): mint stamp-off; BL-1253 s05 red".
+  The human, 2026-10-07, verbatim (c416adc5fb's message):
+
+  > Fix approval taps (Hotfix)
+
+notes: |
+  Minted 2026-10-07 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Full chain on purpose: the design is open (a new hand-over between the
+  bridge and the front desk, two large files), which is the dynamic-
+  routing rule's case for the full chain.
+  IR-DRY at mint: two medium findings, both one step pattern used with a
+  placeholder and with a literal ("the human sends ... while the bridge
+  holds getUpdates", "BL-9061's human_approval reads ..."), kept on
+  purpose so each is one handler.
+  INVEST: Independent (no unbuilt sibling; BL-2060 is a review of a
+  landed hotfix), Negotiable (the shape is the architect's), Valuable
+  (no human decision is lost to the bridge), Estimable (one hand-over,
+  two call sites, three scenarios), Small (one sitting for a hard-tier
+  seat), Testable (fixture-driven scenarios over the real dispatch and
+  poll functions).

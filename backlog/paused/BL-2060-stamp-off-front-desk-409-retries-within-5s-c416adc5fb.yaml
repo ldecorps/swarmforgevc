@@ -1,0 +1,125 @@
+id: BL-2060
+title: "Stamp-off for QA's hotfix c416adc5fb: approval taps were lost to the cursor bridge because a front-desk 409 backed off to 60 s, kept its poll heartbeat stale past 90 s and left the bridge's dead-feeder fallback holding getUpdates; a 409 now retries within 5 s"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of a production hotfix for a live fault - the human's
+# approval taps (BL-2058, BL-2059) recorded nothing for about four hours.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+not_before: 2026-10-08
+# mutation_cooldown_gate.bb refuses a file changed on main within a day,
+# and c416adc5fb changed telegramFrontDeskBotCore.ts at 09:21Z on
+# 2026-10-07. If the hardener's gate still reports skip-cooldown, it waits
+# it out, never runs inside it (2026-10-01 rule).
+mutation_cost: medium
+# medium: a scoped Stryker pass over the hotfix's own lines in a file of
+# about 2000 mutants; the rest of the file's debt is BL-1519's.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one function and one call site; nothing to refactor"
+  architect: "no boundary moves; the bridge and supervisor are unchanged"
+  documenter: "no living doc describes the front desk's poll backoff"
+
+# Not a claim of ownership over BL-1036's contract (BL-1251): it is the
+# feature on the front desk's poll-conflict path that this hotfix changes.
+acceptance: specs/features/BL-1036-a-restart-does-not-cost-a-telegram-conflict-window.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix QA landed at the human's word ("Fix approval
+  taps (Hotfix)"), under the 2026-10-01 rule. No choice is posed. FIRM:
+  the coder reviews it and never re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's unit row: telegramFrontDeskBotCore.test.js
+     green with the hotfix's three cases (the 5 s cap over a long 409
+     streak, the full backoff for any other error, runPollCycle's delay on
+     a 409). Measured by QA at c416adc5fb on a git-archive of 8e496f49e0:
+     478 of 478.
+  2. `node specs/pipeline/cli.js specs/features/BL-1036-a-restart-does-not-cost-a-telegram-conflict-window.feature`:
+     5 of 5 ok (QA measured 5 of 5 at c416adc5fb).
+  3. `node specs/pipeline/cli.js specs/features/BL-582-approval-tap-never-records-or-repaints.feature`:
+     10 of 10 ok (QA measured 10 of 10 at c416adc5fb).
+  4. Read the hardener's committed evidence: the scoped Stryker result
+     over decidePollFailureDelayMs and runPollCycle's delay line. QA
+     starts no mutation run.
+  5. On the live front desk, read .swarmforge/operator/front-desk-supervisor.log
+     for the hours since the land: no "stalled bot no poll heartbeat"
+     kill and no "gave-up" line while the bridge reports dead-feeder
+     mode, and an approval tap made in that time reads recorded in its
+     ticket.
+
+source: |
+  QA note 003895 (2026-10-07T09:27:42Z), verbatim: "hotfix c416adc5fb
+  (human: fix approval taps): mint stamp-off; BL-1253 s05 red".
+  The human, 2026-10-07, verbatim (c416adc5fb's message):
+
+  > Fix approval taps (Hotfix)
+
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-07 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  The residual c416adc5fb names ("a tap that reaches the bridge in the
+  few seconds it holds the token is still answered and dropped") is
+  BL-2061's, not this stamp's.
+  The note's second half, BL-1253 scenario 05, was hotfixed by the
+  specifier in fe7833a272 and is stamped by BL-2057 with the day's other
+  test-side reds.
+
+description: |
+  ## Status: hotfix c416adc5fb landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong, and what the hotfix changed
+
+  After a stale-build restart the front desk's poll heartbeat was over
+  90 s old, so the cursor bridge's dead-feeder fallback (BL-1253,
+  2ec06b6ef1) took getUpdates on the shared token. The front desk's polls
+  then failed with 409, its backoff grew to the 60 s cap, a contested
+  request plus the wait ran past 90 s, and the heartbeat never came back
+  fresh: the bridge never handed the token back, and the supervisor
+  killed the bot as stalled about every 5 minutes until it gave up for 15
+  (06:59, 08:00 and 09:14Z on 2026-10-07). Every update in between reached
+  the bridge, which answers the callback query and drops an approve: or
+  reject: tap it has no route for. The human's taps on BL-2058 and
+  BL-2059 recorded nothing.
+
+  In extension/src/tools/telegramFrontDeskBotCore.ts the hotfix adds
+  `POLL_CONFLICT_BACKOFF_MAX_MS` (5000) and `decidePollFailureDelayMs`,
+  which caps the backoff at 5 s when the poll error carries a 409 and
+  keeps the full backoff for any other error; `runPollCycle`'s failure
+  delay goes through it. extension/test/telegramFrontDeskBotCore.test.js
+  gains three cases. No bridge or supervisor change.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show c416adc5fb` against the section above. Confirm the
+     only production change is the new constant, the new function and the
+     one call site in runPollCycle, and that a 409 is the only error the
+     cap applies to.
+  2. Run telegramFrontDeskBotCore.test.js once, alone, and the BL-1036 and
+     BL-582 features once each, with output under tmp/.
+  3. Write backlog/evidence/BL-2060-coder-<date>.md with the review result
+     and the run results, and commit it.
+
+  ## What the hardener does
+
+  A Stryker pass scoped to the hotfix's lines (Stryker's
+  `out/tools/telegramFrontDeskBotCore.js:<start>-<end>` mutate form,
+  over decidePollFailureDelayMs and runPollCycle's delay line), not the
+  whole file: the file's first-run debt is BL-1519's. Every mutant on
+  those lines is killed or recorded as an accepted equivalent with its
+  code-level reason.

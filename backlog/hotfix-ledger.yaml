@@ -1525,3 +1525,24 @@
   stamp_ticket: BL-2057
   human_decision: null
   decided_at: null
+- commit: c416adc5fb
+  subject: "Hotfix approval taps lost to the bridge: a front-desk 409 retries within 5 s so its heartbeat stays fresh"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2060
+  human_decision: null
+  decided_at: null
+- commit: fe7833a272
+  subject: "Hotfix BL-1253 scenario 05, red on main since the human certified 2ec06b6ef1 (QA note 003895): its no-decision check uses uncommittedDecision like the nine sites 02f834ec44 fixed"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2062
+  human_decision: null
+  decided_at: null
+- commit: 8381fd02fb
+  subject: "Hotfix BL-764 scenario 05's busy-to-idle row, red on main since 2026-08-05: the idle liveness line has no waiting count by design"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2062
+  human_decision: null
+  decided_at: null
