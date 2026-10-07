@@ -125,3 +125,6 @@ description: |
      and the run results, and commit it.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: hardender, class: unit, commit: 6b421b082b, evidence: backlog/evidence/BL-2052-QA-20261007.md }
