@@ -26,6 +26,9 @@ stage_skip_reasons:
 acceptance: specs/features/BL-1743-a-non-vacuity-probe-never-writes-inside-the-checkout.feature
 
 human_approval: pending
+human_ruling: |
+  A - after the restart fixes BL-2055 and BL-2056 land (recommended)
+ruling_provenance: relayed by specifier
 approval_context: >
   Your request in the coordinator console on 2026-10-07 (quoted in
   source). FIRM: the vehicle is BL-1743, routed to the bare coder seat
@@ -144,3 +147,8 @@ notes: |
   If the verdict is NOT PROVEN in arrange again, the next slice is the
   one that makes arrange mechanical (a serve-time arrange restart toward
   tmp/notes.md and `end --to act`), not another prose card line.
+  2026-10-07: the human answered the coordinator's in-console question at
+  07:47:20Z, verbatim: "After BL-2055/56 land (recommended)" (option A).
+  The specifier relayed it with relay-ruling.js (human_ruling, provenance
+  relayed). human_approval stays pending for the human's own Approvals
+  tap: no agent flips it (backlog-schema human_approval).
