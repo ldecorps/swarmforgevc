@@ -187,3 +187,7 @@ notes: |
   iq3 seat, so a hard-tier coder seat is the better fit.
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: coder, class: behavior, commit: 85e802b15d, evidence: backlog/evidence/BL-2056-QA-20261007.md }
+  - { at: 2026-10-07, by: QA, blamed: coder, class: unit, commit: d3837aa198, evidence: backlog/evidence/BL-2056-QA-20261007-2.md }
