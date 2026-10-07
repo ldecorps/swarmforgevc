@@ -395,9 +395,24 @@ export function isFrontDeskInboundFeederLive(input: {
   return input.nowMs - hb <= stall;
 }
 
+// Hotfix 2026-10-07 (human: "Approval taps still not working"):
+// start_cursor_bridge.sh resolves CURSOR_BRIDGE_INBOUND_QUEUE from the
+// front-desk heartbeat ONCE, at start, and the supervisor hands that value to
+// every bridge it respawns. A supervisor started while the front desk was down
+// (a swarm restart, a bot mid-restart) carried "0" for its whole life, and "0"
+// forces getUpdates even with a live front desk: two pollers on one token, the
+// front desk killed as stalled, and every approval tap answered and dropped by
+// the bridge (live from 2026-10-06 19:45 to 2026-10-07 09:47). The script now
+// marks its own decision CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto; an auto flag
+// is a start-time snapshot, so it is ignored here and the per-poll feeder
+// liveness above decides. An operator's explicit 0 or 1 (no auto marker) keeps
+// its meaning.
+export const CURSOR_BRIDGE_INBOUND_QUEUE_AUTO_SOURCE = 'auto';
+
 export function shouldUseCursorBridgeInboundQueue(
   env: {
     CURSOR_BRIDGE_INBOUND_QUEUE?: string;
+    CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE?: string;
     CURSOR_BRIDGE_BOT_TOKEN?: string;
     TELEGRAM_BOT_TOKEN?: string;
   },
@@ -406,7 +421,10 @@ export function shouldUseCursorBridgeInboundQueue(
   if (opts?.feederLive === false) {
     return false;
   }
-  const flag = env.CURSOR_BRIDGE_INBOUND_QUEUE?.trim();
+  const flag =
+    env.CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE?.trim() === CURSOR_BRIDGE_INBOUND_QUEUE_AUTO_SOURCE
+      ? undefined
+      : env.CURSOR_BRIDGE_INBOUND_QUEUE?.trim();
   if (flag === '1') {
     return true;
   }
