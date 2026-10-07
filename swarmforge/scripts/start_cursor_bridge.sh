@@ -82,6 +82,10 @@ if [[ -z "${CURSOR_BRIDGE_BOT_TOKEN:-}" ]]; then
       echo "start_cursor_bridge: front-desk feeder not live — owning getUpdates (CURSOR_BRIDGE_INBOUND_QUEUE=0)" >&2
       export CURSOR_BRIDGE_INBOUND_QUEUE=0
     fi
+    # Hotfix 2026-10-07: this is a start-time snapshot; marked so the bridge
+    # re-decides from the live heartbeat on every poll instead of carrying it
+    # for the supervisor's whole life (telegramCursorBridgeCore.ts).
+    export CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto
   fi
 fi
 : "${TELEGRAM_CHAT_ID:?TELEGRAM_CHAT_ID is not set}"

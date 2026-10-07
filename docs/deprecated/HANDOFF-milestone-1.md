@@ -1,3 +1,13 @@
+> **Retired (BL-2050, 2026-10-07):** this file was a manual handoff note from
+> milestone 1 (2026-06-29), before the mailbox existed. It was the only file
+> named for handing off, and on 2026-10-06 the coder seat rewrote it twice
+> while finishing two QA bounces instead of forwarding them, hiding both
+> fixes from the pipeline. Handoffs now travel exclusively through
+> `swarmforge/scripts/swarm_handoff.sh` and the `.swarmforge/handoffs/`
+> mailbox (`swarmforge/handoff-protocol.md`); nothing writes to a root
+> `HANDOFF.md` any more. Kept here as a record of what the manual process
+> looked like.
+
 # Handoff: BL-006 input mirroring — cleaned and verified
 
 **Priority:** 00  

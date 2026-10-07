@@ -169,6 +169,34 @@
   (work-note-evidence-lib/work-note-ticket-id-from-message
    (handoff-lib/header-field source-file "message")))
 
+(defn- newest-sha-naming-ticket-since
+  "The newest (--format=%H%x09%s, newest-first by git log's own default
+   order) commit on HEAD, committed after since-iso, reachable from HEAD
+   but not from main or origin/main (whichever resolve -
+   landed-ticket-lib/declaration-refs, BL-1834), whose subject's leading
+   ticket id is exactly ticket-id (never a substring match) - the 10-hex
+   sha, or nil. A commit the coordinator lands on main - a 'Promote <id>'
+   or 'BL topic record for <id>' commit - reads as the role's own work the
+   instant it merges main in, however it arrived (fast-forward or merge
+   commit); excluding both refs keeps that commit from ever counting as
+   evidence. BL-2050: the one reader git-log-names-ticket-since? (below)
+   and forward-gate!'s own NOT_A_NO_OP message both use, never two
+   separate git-log invocations that could drift apart."
+  [ticket-id since-iso]
+  (try
+    (let [root (handoff-lib/worktree-root)
+          exclude-refs (landed-ticket-lib/declaration-refs root)
+          args (into ["git" "log" (str "--since=" since-iso) "--format=%H%x09%s" "HEAD"]
+                     (when (seq exclude-refs) (cons "--not" exclude-refs)))
+          {:keys [out exit]} (process/sh args {:dir root})]
+      (when (zero? exit)
+        (some (fn [line]
+                (let [[sha subject] (str/split line #"\t" 2)]
+                  (when (= ticket-id (pipeline-stage-lib/extract-ticket-id (or subject "")))
+                    (subs sha 0 10))))
+              (str/split-lines (or out "")))))
+    (catch Exception _ nil)))
+
 (defn- git-log-names-ticket-since?
   "A commit on HEAD, committed after since-iso, reachable from HEAD but not
    from main or origin/main (whichever resolve -
@@ -179,17 +207,7 @@
    in, however it arrived (fast-forward or merge commit); excluding both
    refs keeps that commit from ever counting as evidence."
   [ticket-id since-iso]
-  (try
-    (let [root (handoff-lib/worktree-root)
-          exclude-refs (landed-ticket-lib/declaration-refs root)
-          args (into ["git" "log" (str "--since=" since-iso) "--format=%s" "HEAD"]
-                     (when (seq exclude-refs) (cons "--not" exclude-refs)))
-          {:keys [out exit]} (process/sh args {:dir root})]
-      (boolean
-       (and (zero? exit)
-            (some #(= ticket-id (pipeline-stage-lib/extract-ticket-id %))
-                  (str/split-lines (or out ""))))))
-    (catch Exception _ false)))
+  (boolean (newest-sha-naming-ticket-since ticket-id since-iso)))
 
 ;; BL-1609: sent-handoff-names-ticket-since? now lives in
 ;; forward_evidence_lib.bb, shared with the forward-gate! below.
@@ -269,22 +287,31 @@
         since (forward-evidence-lib/inbound-window-start source-file)
         reason (dispatch-lib/no-op-reason)
         evidenced? (boolean (and ticket-id (forward-evidence-lib/sent-handoff-names-ticket-since? ticket-id since)))
+        qa-stage? (forward-evidence-lib/qa-stage?)
         ;; BL-1642: QA's own forward is a note (Article 1.8/2.5), never a
         ;; git_handoff - qa-stage? is ANDed in here so a non-QA role's
         ;; decision never sees this flag true, keeping BL-1609's rule
         ;; byte-identical for every other role.
         ;; 2026-10-04: or a land QA queued for the ticket (QA note 003793).
-        qa-note-evidenced? (boolean (and ticket-id (forward-evidence-lib/qa-stage?)
+        qa-note-evidenced? (boolean (and ticket-id qa-stage?
                                           (or (forward-evidence-lib/sent-note-names-ticket-since? ticket-id since)
-                                              (forward-evidence-lib/lander-queued-ticket-since? ticket-id since))))]
+                                              (forward-evidence-lib/lander-queued-ticket-since? ticket-id since))))
+        ;; BL-2050: the sha, not just the boolean - NOT_A_NO_OP names it.
+        committed-sha (and ticket-id (newest-sha-naming-ticket-since ticket-id since))]
     (case (forward-evidence-lib/forward-completion-decision
            {:forwarding? (forward-evidence-lib/forwarding-inbound? source-file)
             :master-resident? (forward-evidence-lib/master-resident?)
             :evidenced? evidenced?
             :qa-note-evidenced? qa-note-evidenced?
+            :qa-stage? qa-stage?
+            :committed? (boolean committed-sha)
             :reason reason})
       :complete-plain nil
       :complete-with-reason reason
+      :refuse-committed
+      (handoff-lib/fail! 1
+                         (str "NOT_A_NO_OP: " ticket-id " has commit " committed-sha " since this parcel was queued")
+                         (str "Send a git_handoff for " ticket-id " naming " committed-sha "."))
       :refuse
       (handoff-lib/fail! 1
                          (str "FORWARD_NOT_SENT: " ticket-id " has no git_handoff naming it queued since dequeue.")

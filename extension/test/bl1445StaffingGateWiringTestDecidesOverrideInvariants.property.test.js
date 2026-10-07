@@ -116,7 +116,10 @@ test('BL-1445/BL-654 invariant 1: the wiring test decides PACK_STAFFING_SKIP_GAT
 // 20000ms testTimeout reds this under full-lane contention (QA note
 // 003353, evidence 1db06f92). base=20000 is ~2x the highest solo reading;
 // propertyLaneTimeoutMs scales it further under real measured load.
-}, propertyLaneTimeoutMs(20000));
+// 2026-10-07 (QA note 003903): 17.1 s solo at load 9-11 and 83 s in a full
+// lane at load 12-14, past the scaled 20000 base; base 60000 is bl1529's
+// class (60 s quiet, up to 180 s under load).
+}, propertyLaneTimeoutMs(60000));
 
 // invariant 2 is static (a property of the source text, not of any
 // generated input): non-vacuous in the ordinary sense (fails if a second

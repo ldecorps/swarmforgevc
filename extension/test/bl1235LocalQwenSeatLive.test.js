@@ -41,6 +41,11 @@ function turn(over = {}) {
     readEndpoint: async () => healthy(),
     complete: async () => 'four',
     modelId: DEFAULT_LOCAL_SEAT_MODEL_ID,
+    // BL-1911: these pre-existing tests are about the turn LOOP, not the
+    // repo read - default to "found nothing" so the prompt each asserts on
+    // stays exactly `deps.text`, same as before BL-1911 existed. Tests that
+    // care about the repo read override this explicitly.
+    searchRepo: () => ({ ok: true, context: '' }),
     ...over,
   }).then((outcome) => ({ outcome, posted: over.posted ?? posted }));
 }
@@ -181,6 +186,60 @@ describe('BL-1235 one live turn', () => {
     assert.equal(posted.length, 2);
     assert.match(posted[1].message, /model runner exited mid-generation/);
     assert.equal(posted[1].topicId, SEAT_TOPIC);
+  });
+
+  // BL-1911: the search happens once, before the ONE model call, and its
+  // result is what reaches the model - never a second call to re-ask.
+  it('carries what the repo read found, ahead of the question', async () => {
+    let sawPrompt;
+    await turn({
+      searchRepo: () => ({ ok: true, context: 'the bridge restarts on a stale build' }),
+      complete: async (_m, prompt) => {
+        sawPrompt = prompt;
+        return 'ok';
+      },
+    });
+    assert.match(sawPrompt, /the bridge restarts on a stale build/);
+    assert.match(sawPrompt, /what is 2 \+ 2\?/);
+  });
+
+  it('says plainly the repository could not be read, and still answers', async () => {
+    let sawPrompt;
+    const { outcome, posted } = await turn({
+      searchRepo: () => ({ ok: false, context: '', reason: 'EACCES: permission denied' }),
+      complete: async (_m, prompt) => {
+        sawPrompt = prompt;
+        return 'an answer anyway';
+      },
+    });
+    assert.equal(outcome.kind, 'answer');
+    assert.match(sawPrompt, /repository could not be read/);
+    assert.match(sawPrompt, /EACCES/);
+    assert.equal(posted[1].message, 'an answer anyway');
+  });
+
+  it('asks the real search, scoped to targetPath, when nothing is injected', async () => {
+    const root = mkTmpDir('bl1911-live-wiring-');
+    try {
+      fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, 'backlog', 'active', 'BL-9001-x.yaml'),
+        'title: "the bridge restarts on a stale build"\n'
+      );
+      let sawPrompt;
+      await turn({
+        targetPath: root,
+        searchRepo: undefined,
+        text: 'what is BL-9001 about?',
+        complete: async (_m, prompt) => {
+          sawPrompt = prompt;
+          return 'ok';
+        },
+      });
+      assert.match(sawPrompt, /the bridge restarts on a stale build/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

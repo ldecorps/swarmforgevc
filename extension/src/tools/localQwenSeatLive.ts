@@ -28,6 +28,7 @@ import {
   qwenLocalTopicIdFromMap,
   resolveLocalSeatModelId,
 } from './localQwenSeat';
+import { RepoReadResult, buildPromptWithRepoContext, searchRepoForQuestion } from './localSeatRepoRead';
 
 /** The same topic map the cursor bridge and Bubble resolve their own ids from. */
 export function localSeatTopicMapPath(targetPath: string): string {
@@ -170,6 +171,9 @@ export interface LocalSeatTurnDeps {
   readEndpoint?: () => Promise<LocalEndpointReading>;
   complete?: (modelId: string, prompt: string, endpointUrl: string, system?: string) => Promise<string>;
   modelId?: string;
+  /** BL-1911: this turn's repository read, or the real one (scoped to
+   * `targetPath`) when the caller injects nothing. */
+  searchRepo?: (question: string) => RepoReadResult;
 }
 
 export interface LocalSeatTurnOutcome {
@@ -204,6 +208,12 @@ function resolveComplete(
   return deps.complete ?? ((m, p, url, system) => completeWithLocalModel(m, p, url, undefined, system));
 }
 
+/** deps.searchRepo, or the real repository search (scoped to deps.targetPath)
+ * when the caller injects nothing. */
+function resolveSearchRepo(deps: LocalSeatTurnDeps): (question: string) => RepoReadResult {
+  return deps.searchRepo ?? ((question) => searchRepoForQuestion(deps.targetPath, question));
+}
+
 export async function runLocalSeatTurn(deps: LocalSeatTurnDeps): Promise<LocalSeatTurnOutcome> {
   const posted: string[] = [];
   const post = async (message: string): Promise<void> => {
@@ -236,11 +246,16 @@ export async function runLocalSeatTurn(deps: LocalSeatTurnDeps): Promise<LocalSe
   await post(formatLocalSeatAcknowledgement(turn.modelId));
   const complete = resolveComplete(deps);
   const systemPrompt = readLocalSeatSystemPrompt(deps.targetPath);
+  // BL-1911 ruling B: one search, one model call - the search happens here,
+  // never inside `complete`, so the prompt the model sees already carries
+  // whatever this turn read (or plainly says the read failed).
+  const reading = resolveSearchRepo(deps)(deps.text);
+  const promptWithContext = buildPromptWithRepoContext(deps.text, reading);
   try {
     // Trimmed here, not only in the default completion call: a reply of pure
     // whitespace posted into the topic is indistinguishable from a broken
     // seat, and the seat is the one that knows it got nothing.
-    const reply = String(await complete(turn.modelId, deps.text, turn.endpointUrl, systemPrompt)).trim();
+    const reply = String(await complete(turn.modelId, promptWithContext, turn.endpointUrl, systemPrompt)).trim();
     await post(reply || '(the local model returned an empty reply)');
   } catch (err) {
     await post(

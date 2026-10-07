@@ -162,6 +162,76 @@ project is.
   time — never rewritten wholesale by the coder). Editing it going
   forward is an ordinary docs change to that one file, not a code change.
 
+## Each turn reads the repository before the model answers (BL-1911)
+
+Ruling B (human pick, 2026-10-03): rather than a tool-calling loop the model
+drives itself, the seat does ONE search before its ONE completion call.
+`searchRepoForQuestion` (`localSeatRepoRead.ts`), scoped to the live
+`targetPath`, resolves two things out of the inbound question text:
+
+- a ticket id (`BL-\d+` or `GH-\d+`) to that ticket's own backlog YAML,
+  found under `backlog/{active,paused,done,hold,archive}/`, including a
+  done ticket nested under `backlog/done/<milestone>/` (49% of done
+  tickets live there — `findTicketFile` delegates to
+  `deprecate-check.ts`'s own `findTicketYamlPath`, the module that already
+  owns that lookup, BL-1811, re-checking the precise `${id}-` prefix
+  against its looser match so an id like `BL-19` cannot pick up
+  `BL-1911-....yaml`);
+- a path-shaped token (containing `/` or `.`) to that file's text, when it
+  resolves to an existing plain file inside the repository.
+
+Everything found is joined, capped at `REPO_READ_MAX_BYTES` (4000
+characters — `context.length`, not bytes, despite the constant's name;
+picked as roughly the same order of magnitude as the briefing itself,
+BL-1682), and prefixed ahead of the question via `buildPromptWithRepoContext`
+before the one call to `complete`. A question that matches nothing still
+gets an ordinary, context-free turn; a repository that cannot be read at
+all (its root is unreadable) still gets an answer — the prompt says
+plainly that the read failed rather than silently omitting it.
+
+**The secret filter runs in code, before anything is read, never as a
+prompt instruction**, and was widened after a QA bounce found it missed
+real secret names (2026-10-07). `isSecretRelPath` rejects a path, matched
+case-insensitively (macOS's default APFS volume is not case-sensitive, so
+a case-sensitive filter would still let `statSync`/`readFileSync` open the
+real secret under a differently-cased name):
+
+- anything under `.swarmforge/operator/` wholesale — the operator's own
+  secrets directory (the bridge token, vscode-cli tokens, `swarm.env`
+  backups), refused by convention rather than file by file, so a file new
+  to that directory is caught without a filter update;
+- any basename with `env` as a whole dot-delimited component — `.env`,
+  `swarm.env`, `swarm.env.bak-*`, `qwen.env.disabled`, `.env.local` — not
+  merely a substring, so `environment.txt` stays ordinary;
+- the cursor bridge's `bridge-token`, by basename, for any copy outside
+  `.swarmforge/operator/` too.
+
+`readSnippetForPathToken` checks the filter before the file is ever
+opened, so a secret's contents never enter the string sent to the model
+even when the question names it by path. Both the containment check and
+the secret filter run against the candidate's **real** path
+(`fs.realpathSync`, via `realPathWithinRepo`), resolved before either
+check — a lexically-contained path is not enough, since a symlink inside
+the repository can point outside it, or at a secret under an innocuous
+name, and `statSync`/`readFileSync` follow symlinks regardless of what the
+lexical path said (a second QA finding, same bounce).
+
+This is a pure read: `localSeatRepoRead.ts` never writes, and it is wired
+into `runLocalSeatTurn` as an injectable `deps.searchRepo` seam, the same
+pattern as `readEndpoint` and `complete`. Invariant 3 (routing unchanged)
+still holds — the search happens only after `decideLocalSeatTurn` has
+already decided the turn is the seat's own; `not-mine` and `refuse` turns
+never call it.
+
+The briefing's "What you can and cannot see" paragraph
+(`docs/reference/local-model-briefing.md`) was rewritten in the same parcel
+to describe this read path instead of claiming no sight at all — the seat
+still cannot see git history or live swarm state beyond what a given
+turn's search found.
+
+Acceptance:
+`specs/features/BL-1911-the-local-seat-answers-from-what-it-reads-in-the-repo.feature`.
+
 ## Thinking is always off for this seat (BL-1744)
 
 `completeWithLocalModel` sends ollama's own `think: false` on every
@@ -189,7 +259,9 @@ Acceptance: `specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature
 plus `specs/features/BL-1384-the-local-seat-topic-reaches-the-bridge-through-the-front-desk.feature`
 for the feeder-side reachability contract above, and
 `specs/features/BL-1682-the-local-seat-sends-the-project-briefing-as-its-system-prompt.feature`
-for the briefing-file contract.
+for the briefing-file contract, and
+`specs/features/BL-1911-the-local-seat-answers-from-what-it-reads-in-the-repo.feature`
+for the repository-read contract above.
 
 See also: [BL-1383: a direct-provider chat seat behind its own topic](BL-1383-provider-chat-seat-behind-its-own-topic.md)
 — a sibling mechanism, minted from the same intake, that answers inside

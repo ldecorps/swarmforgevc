@@ -65,13 +65,53 @@ description: |
      write_file and replaced the whole file (BL-2055 has why it was on that
      file at all).
 
+  ## What the coder does next (all of it) - 2026-10-07 simplification
+
+  The coordinator pulled the parcel after the iq3 coder halted on QA's
+  bounce with no commit (note 017245). Most of this ticket is already
+  built on the parcel's line: cc781d8f25 (named-write-path keeps "/",
+  resolved-path comparison, existing-file wording) through 6729d33753
+  (QA's bounce record). Start from that line; do not redo it. Three edits
+  are left, nothing else:
+
+  1. swarmforge/scripts/local_model_repeat_guard.bb, `override-message`
+     (line 260 at 6729d33753). Line 270 is
+     `(str "Edit " path " now. Do not read " path " first - it already exists.")`.
+     Replace it with
+     `(str "Edit " (resolved-path cwd path) " now. Read only the lines you will change first (grep -n, then read_file with offset and limit), then edit them.")`.
+     That is QA's D1 (the absolute path) and scenario 02's new step (read
+     the lines, never "do not read"). Make the docstring (lines 261-264)
+     say the same. Leave line 271's missing-file branch as it is.
+  2. specs/pipeline/steps/bl2056RestartNamesTheSummarysPathSteps.js: after
+     the step at line 179 ("the message tells the seat to edit that file
+     ..."), add the handler for scenario 02's new step, "the message tells
+     the seat to read only the lines it will change before editing, and
+     never not to read the file": read the message the same way line 180
+     does, assert it includes "Read only the lines you will change" and
+     does not include "Do not read".
+  3. swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh: one
+     new case before the final summary, QA's D1 probe. In a mktemp dir
+     holding tmp/notes.md, run
+     `bb -e '(load-file "swarmforge/scripts/local_model_repeat_guard.bb") (in-ns (quote local-model-repeat-guard)) (println (override-message "Edit tmp/notes.md: add a line" (named-write-path "Edit tmp/notes.md: add a line") "<that dir>"))'`
+     and check the output contains "<that dir>/tmp/notes.md" and not
+     "Do not read".
+
+  Then run the BL-2056, BL-1991 and BL-1992 features and the shell test
+  once each, commit, and forward.
+
   ## What is wanted
 
   - A seat that wrote the file its summary named, at its absolute path,
     is left alone, whether the summary wrote the path absolute or relative
     (scenario 01).
   - A restart on a file that exists names it at its absolute path and tells
-    the seat to edit it, never that it does not exist (scenario 02).
+    the seat to edit it, never that it does not exist (scenario 02). The
+    restart is a fresh session with none of the file in context, so the
+    message tells the seat to read only the lines it will change first
+    (grep -n, then read_file with offset and limit) and never tells it not
+    to read the file: "do not read it first" invites the whole-file
+    write_file this ticket exists to stop (amended 2026-10-07, QA spec-gap
+    note 003910).
   - A restart on a file that does not exist keeps BL-1991's wording: write
     it, do not read it first (scenario 03).
 
@@ -128,6 +168,16 @@ source: |
   write the named file and not to read a file it is about to create."
 
 notes: |
+  2026-10-07 (specifier): split request (coordinator note 017245, the
+  iq3 coder halted on QA's bounce with no commit) answered by
+  simplifying, not splitting: what is left is one line, one step handler
+  and one shell-test case, written out exactly above with line anchors
+  at 6729d33753. No new scope; human_approval stands.
+  Amended 2026-10-07 (active, bounced to the coder on D1): scenario 02
+  gained a Then step and What is wanted says the existing-file message
+  tells the seat to read only the lines it changes, never not to read
+  (QA spec-gap note 003910). The step handler for the new step lands in
+  the same rework (BL-233).
   Minted 2026-10-07 by the specifier while adjudicating coordinator note
   017189 on BL-1913, beside BL-2055.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
@@ -135,3 +185,5 @@ notes: |
   sequences the two, neither depends on the other.
   Routing hint, not a mandate: this repairs the harness that restarts the
   iq3 seat, so a hard-tier coder seat is the better fit.
+
+assigned_to: coder

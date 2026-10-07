@@ -1,0 +1,129 @@
+id: BL-2067
+title: "The Stryker pass BL-2052 could not run: swarmStopper.ts's hotfix lines (a9cadb6484, 49fe963c76) were inside the one-day mutation cooldown until 2026-10-07 21:22Z, so BL-2052 closed on hand-mutant evidence; this runs the scoped Stryker pass once the file is past the cooldown and kills or accounts for every survivor"
+milestone: M8
+type: chore
+severity: high
+# high: the deferred half of a critical stamp-off (BL-2052: a
+# worktree-rooted stop must never kill the live swarm); the mutation gate
+# on the code that guards it has not run yet.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: [BL-2052]
+not_before: 2026-10-08
+# mutation_cooldown_gate.bb's window for swarmStopper.ts ends 2026-10-07
+# 21:22Z (49fe963c76 landed 2026-10-06 21:22Z). BL-2052's land changes
+# only tests, not swarmStopper.ts.
+mutation_cost: medium
+# medium: a scoped Stryker pass over the hotfix's own lines in one
+# TypeScript file, plus tests for any survivor.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "no production change is expected; tests only, for survivors"
+  architect: "no boundary moves"
+  documenter: "no living doc describes the mutation result"
+
+# Not a claim of ownership over BL-730's contract (BL-1251): it is the
+# feature on the stop path whose guard these lines are.
+acceptance: specs/features/BL-730-pipeline-teardown-survivor-scope.feature
+
+human_approval: approved
+approval_context: >
+  The deferred mutation half of BL-2052, a critical stamp-off the human
+  owned ("Own his change"); the 2026-10-01 rule that a same-day stamp
+  cannot mandate Stryker names this ticket as the owner of the deferred
+  run. No choice is posed. FIRM: swarmStopper.ts's behaviour does not
+  change; only tests are added.
+
+invariants:
+  - "Every mutant Stryker reports on the hotfix's lines of swarmStopper.ts at the parcel commit is either killed by a unit test or recorded in the evidence as an accepted equivalent with its code-level reason; none is silent."
+
+description: |
+  ## What is wrong
+
+  BL-2052 is the stamp-off for hotfixes a9cadb6484 and 49fe963c76: a
+  stop rooted in a worktree followed the worktree's tmux-socket pointer
+  to the live server and could kill the live swarm, and the hotfix makes
+  `socketOwnedByTarget` refuse a socket another root owns at all four
+  stop gates. Its qa_e2e step 4 asked for the hardener's Stryker evidence
+  on extension/src/swarm/swarmStopper.ts. The mutation cooldown gate
+  refused it (skip-cooldown, file age 0.60 days; window ends 2026-10-07
+  21:22Z), so the hardener hand-mutated instead
+  (backlog/evidence/BL-2052-hardener-20261007.md: three
+  socketOwnedByTarget mutants, one survivor closed by a new test) and QA
+  added refusal and owned-socket tests at all four gates (7b11af2725).
+  BL-2052's step 4 was amended to accept that evidence and to name this
+  ticket as the owner of the Stryker run (QA spec-gap note 003905).
+
+  ## What is wanted
+
+  - A Stryker pass over swarmStopper.ts scoped to the two hotfixes' lines
+    (`out/swarm/swarmStopper.js:<start>-<end>` for socketOwnedByTarget and
+    the four gates that call it), recorded in
+    backlog/evidence/BL-2067-hardender-<date>.md with the include set,
+    the summary block, load, and the cooldown gate's decision.
+  - Every survivor killed by a test, or recorded as an accepted
+    equivalent with its code-level reason (invariant).
+  - If the hardening-debt ledger carries a row for this gate, it is
+    discharged with that evidence (`hardening_debt_ledger_update.bb
+    --discharge`).
+
+  ## What the coder does
+
+  1. Confirm swarmStopper.ts at the parcel's base is unchanged since
+     49fe963c76 apart from what BL-2052 landed (`git log --oneline
+     49fe963c76..HEAD -- extension/src/swarm/swarmStopper.ts`), and name
+     the line ranges of socketOwnedByTarget and its four callers in
+     backlog/evidence/BL-2067-coder-<date>.md. Commit it and forward.
+
+  ## How (direction, not mandate)
+
+  - The run recipe is BL-1911's scoped config shape
+    (`stryker.<id>.config.json`, a vitest config including only the test
+    files that reach the module: stop.test.js, swarmStopper.test.js,
+    bounce); the scoped config is not committed.
+  - Every test that drives the stop uses a private tmux socket or a fake
+    tmux, never the live server, and runs with TMUX unset (BL-2053's
+    lesson: a stray kill reaches every process).
+
+constraints: >
+  Tests only. No test may reach the live tmux server: private -S sockets
+  or fakes, TMUX unset. Never `kill -<signal> -<pid>` without `--`
+  (procps reads it as kill(-1), BL-2053).
+
+out_of_scope: |
+  - The rest of swarmStopper.ts's first-run mutation debt, if the run
+    shows any outside the hotfix's lines: a note to the specifier for its
+    own owner.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule), with TMUX unset.
+  1. Read from the gather's unit row: stop.test.js and swarmStopper.test.js
+     green with any new cases.
+  2. `node specs/pipeline/cli.js specs/features/BL-730-pipeline-teardown-survivor-scope.feature`:
+     7 of 7 ok (measured on main at a9cadb6484 for BL-2052: 7 of 7).
+  3. Read the hardener's committed Stryker evidence: the include set, the
+     totals for the scoped lines, survived 0 and no-coverage 0 or each
+     remainder with its code-level reason. QA starts no mutation run.
+  4. Confirm the live swarm still lists every session after step 1.
+
+source: |
+  QA note 003905 (2026-10-07T11:29:11Z), verbatim: "spec-gap BL-2052
+  qa_e2e 4: Stryker gated till 21:22Z; D1 fixed ev 0172221571". QA's
+  evidence (backlog/evidence/BL-2052-QA-20261007-2.md, 0172221571),
+  verbatim remediation: "Specifier: either amend qa_e2e 4 to accept the
+  committed hand-mutant evidence ... or keep it and re-route the parcel
+  (7b11af2725) to the hardender after 21:22Z with a note naming that sha."
+
+notes: |
+  Minted 2026-10-07 by the specifier, owning the deferred mutation run
+  under the 2026-10-01 rule ("A same-day stamp cannot mandate Stryker on
+  its hotfix's files": name now the later ticket whose hardener
+  discharges it). Not auto-approved by the severity carve-out: type
+  chore. human_approval is approved because it inherits BL-2052's scope
+  with nothing new asked (the split rule's wording), and says so in
+  approval_context.
+  No hardening-debt ledger row exists for this gate at mint; the owner
+  is named in BL-2052's YAML instead.

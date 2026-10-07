@@ -213,22 +213,40 @@
                            so a non-QA role's forwarding inbound is governed
                            by evidenced?/reason exactly as before (BL-1609's
                            own rule, byte-identical for every other role).
+     qa-stage?          - BL-2050: this role IS the QA stage, raw (not
+                           ANDed with note evidence) - QA's reason path
+                           (QA.prompt line 790: commit evidence, then
+                           complete a held parcel with a reason) must never
+                           be caught by committed?, whether or not a note
+                           happens to be evidenced too.
+     committed?         - BL-2050: a commit on HEAD, since the inbound's
+                           own dequeue, not yet on main/origin/main, whose
+                           subject's leading ticket id is this parcel's
+                           ticket (done_with_current_task.bb's
+                           git-log-names-ticket-since?, the same reader
+                           BL-1422's Work-note gate already uses). A caller
+                           that omits this key (the batch path) gets
+                           exactly today's answers - it is treated as nil,
+                           which is falsy below.
      reason             - the --no-op reason argv already vetted non-blank,
                            or nil for a plain invocation.
-   Returns :complete-plain | :complete-with-reason | :refuse.
+   Returns :complete-plain | :complete-with-reason | :refuse-committed | :refuse.
 
    A nil/false forwarding? or a master-resident role always completes
-   plainly regardless of evidenced?/qa-note-evidenced?/reason - the gate
-   never engages for them, which is exactly \"completes exactly as
-   today.\" Otherwise: a stated reason always completes-with-reason
-   (recorded, never silent, checked BEFORE either evidence clause so a
-   reason is never silently dropped in favour of evidence that happens to
-   exist too); either kind of evidence with no reason completes plainly;
-   none of the three refuses."
-  [{:keys [forwarding? master-resident? evidenced? qa-note-evidenced? reason]}]
+   plainly regardless of every other key - the gate never engages for
+   them, which is exactly \"completes exactly as today.\" Otherwise: a
+   non-QA role that committed for the ticket since dequeue, with no forward
+   yet evidenced, is :refuse-committed - checked BEFORE the reason clause
+   (BL-2050's own defect: a stated --no-op reason must NOT read as cover
+   for work that was finished and never forwarded, so a reason being given
+   or not makes no difference here). Otherwise a stated reason always
+   completes-with-reason (recorded, never silent); either kind of evidence
+   with no reason completes plainly; none of the above refuses."
+  [{:keys [forwarding? master-resident? evidenced? qa-note-evidenced? qa-stage? committed? reason]}]
   (cond
     (not forwarding?) :complete-plain
     master-resident? :complete-plain
+    (and committed? (not qa-stage?) (not evidenced?)) :refuse-committed
     (some? reason) :complete-with-reason
     evidenced? :complete-plain
     qa-note-evidenced? :complete-plain
