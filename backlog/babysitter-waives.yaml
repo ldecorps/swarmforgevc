@@ -5,6 +5,11 @@
 # creates one - the sweep never waives anything on its own (BL-848's line).
 # Record one with babysitter_waive.bb --record; list them with --list.
 
+- key: pipeline-code-on-main-007d54a2c429554032dd4e06b9e844a01890e405
+  waived_by: coordinator
+  reason: "Root-caused + fixed (swarmforge-QA push was tracking refs/heads/main, now origin/swarmforge-QA); content is QA's own in-review WIP for still-active BL-1880, not a bypass of a finished land; see backlog/evidence/art42-origin-main-1007-coordinator-closeout.md. Re-waive if BL-1880 doesn't land soon."
+  waived_at: 2026-10-08
+
 - key: pipeline-code-on-main-02f834ec44a1b217311af8789eb3cbd7c52b27f6
   waived_by: coordinator
   reason: "sanctioned hotfix (SUP-17 ruling, Article 4.2 re-fires on sanctioned stamp-offs are accepted noise), already in hotfix-ledger.yaml with stamp_ticket BL-1988 pending"
@@ -34,6 +39,11 @@
   waived_by: coordinator
   reason: "sanctioned hotfix (SUP-17 ruling), already in hotfix-ledger.yaml with stamp_ticket BL-2008 pending"
   waived_at: 2026-10-05
+
+- key: pipeline-code-on-main-0ea531fa5f356ce16112f36d1185f855028cf2b5
+  waived_by: coordinator
+  reason: "Declared hotfix under human's 2026-10-01 rule (instead of minting a red, hotfix the defect and mint a stampoff); hotfix-ledger.yaml entry present, stamp_ticket BL-2057 minted in backlog/paused/ (QA note 003883 unowned reds bl1698/bl1901)."
+  waived_at: 2026-10-07
 
 - key: pipeline-code-on-main-1530609f514dd2b2641710ecfae5c9c044cab1c4
   waived_by: coordinator
@@ -80,6 +90,11 @@
   reason: "Direct hotfix fixing an unowned standing red (BL-526 console-menu feature, 41 days red); stamp ticket BL-1859 (severity high, human_approval approved) already minted to own it, paused per hotfix-ledger.yaml"
   waived_at: 2026-10-01
 
+- key: pipeline-code-on-main-2cf2694e92ef9c66a1b21c4145670de6eda3b720
+  waived_by: coordinator
+  reason: "Declared hotfix under human's 2026-10-01 rule; hotfix-ledger.yaml entry present, stamp_ticket BL-2057 (amended 2026-10-07 to cover this commit too, QA note 003888 unowned red bl955 invariant 1 reachability floor)."
+  waived_at: 2026-10-07
+
 - key: pipeline-code-on-main-3024ccb56c752e1d5572dea92d6c7f46643dbaa8
   waived_by: coordinator
   reason: "sanctioned hotfix (SUP-17 ruling), already in hotfix-ledger.yaml with stamp_ticket BL-2000 pending"
@@ -120,10 +135,20 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-4453766c28d82b7ebc51265d1068845de1d287a7
+  waived_by: coordinator
+  reason: "Human-directed emergency hotfix (approval taps still broken after c416adc5fb, 2026-10-07): QA-authored on main, second root cause - stale CURSOR_BRIDGE_INBOUND_QUEUE=0 baked in during the 2026-10-06 swarm-death restart caused a dual-poller 409 storm. Hotfix-Certification: pending trailer; verified 141/141 + property/shell/BL-1253/BL-764 all green; operator already applied the runtime mitigation (bridge supervisor restarted with explicit =1 at 09:47:46Z)."
+  waived_at: 2026-10-07
+
 - key: pipeline-code-on-main-44ac04024da1db826fcf251d28ce78812a61ff9e
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-48d037df88d8d794a585c35a7b18b545f3b6eeac
+  waived_by: coordinator
+  reason: "Declared hotfix, registered in backlog/hotfix-ledger.yaml (pending); stamp ticket BL-2053 already minted (approved) for this commit and d0b9440211; is_qa_ancestor exits 1 (not a QA land) so the ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
 
 - key: pipeline-code-on-main-49b543d9b48d58af54a0083dcc38403a7dfe98e2
   waived_by: coordinator
@@ -133,21 +158,6 @@
 - key: pipeline-code-on-main-49fe963c763076c5d9c7ac0d3cf81deb998f03eb
   waived_by: coordinator
   reason: "Declared hotfix (Hotfix-Certification: pending trailer, By specifier, owning a Cursor-agent fix at the human's request), registered in backlog/hotfix-ledger.yaml (pending, no stamp ticket yet); is_qa_ancestor exits 1 (not a QA land) so BL-848's ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
-  waived_at: 2026-10-06
-
-- key: pipeline-code-on-main-a9cadb6484a700f35e0dbb176d633967746e622e
-  waived_by: coordinator
-  reason: "Declared hotfix, registered in backlog/hotfix-ledger.yaml (pending); stamp ticket BL-2052 already minted (approved) for this commit and 49fe963c76; is_qa_ancestor exits 1 (not a QA land) so the ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
-  waived_at: 2026-10-06
-
-- key: pipeline-code-on-main-d0b944021198ca8471bca3186d577276d61ede69
-  waived_by: coordinator
-  reason: "Declared hotfix, registered in backlog/hotfix-ledger.yaml (pending); stamp ticket BL-2053 already minted (approved) for this commit and 48d037df88; is_qa_ancestor exits 1 (not a QA land) so the ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
-  waived_at: 2026-10-06
-
-- key: pipeline-code-on-main-48d037df88d8d794a585c35a7b18b545f3b6eeac
-  waived_by: coordinator
-  reason: "Declared hotfix, registered in backlog/hotfix-ledger.yaml (pending); stamp ticket BL-2053 already minted (approved) for this commit and d0b9440211; is_qa_ancestor exits 1 (not a QA land) so the ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
   waived_at: 2026-10-06
 
 - key: pipeline-code-on-main-4a27dbd21be612d62ddb532669e70562de7733a6
@@ -215,6 +225,11 @@
   reason: "Standing-directive hotfix (amendment aa6dacc938): red-first, stamp-off second. Ledger entry records stamp_ticket BL-1894 (paused, ready for promotion)."
   waived_at: 2026-10-02
 
+- key: pipeline-code-on-main-662b7933c3c8d565374223e0060e43028e51920f
+  waived_by: coordinator
+  reason: "Specifier-authored declared hotfix for QA's unowned property timeouts (note 003903): bl1333 invariant 2 past bare 120000, bl1445 invariant 1 past scaled 20000 base, both under load (12-14). Hotfix-ledger stamp_ticket BL-2066 (paused, approved)."
+  waived_at: 2026-10-07
+
 - key: pipeline-code-on-main-6689619fe0d171c52fd47c7268a5fe904877ac91
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
@@ -224,6 +239,11 @@
   waived_by: coordinator
   reason: "Merge-up commit in BL-1872's own land history (QA-approved, note 003696) - part of the same approved land, not a separate hand-land."
   waived_at: 2026-10-02
+
+- key: pipeline-code-on-main-6a0c42872375a187a76edb3b3a3feb6acb516dc3
+  waived_by: coordinator
+  reason: "Declared hotfix for QA note 003892's unowned BL-1389 property red (invariant 1 timeout under load); recorded in hotfix-ledger.yaml, stamp-off ticket BL-2057 (specifier, paused/amended)"
+  waived_at: 2026-10-07
 
 - key: pipeline-code-on-main-6d8a61c1dd84026ce926a7401f1d18ab1009ecbc
   waived_by: coordinator
@@ -250,6 +270,11 @@
   reason: "legitimate operator hotfix (Hotfix-Certification: pending), tracked in backlog/hotfix-ledger.yaml state=stamp-open, stamp ticket BL-1714 (backlog/paused/), awaiting human decision"
   waived_at: 2026-09-25
 
+- key: pipeline-code-on-main-73493e93c1206d7b7a2d2f90b7d36fa50e26c5fe
+  waived_by: coordinator
+  reason: "Hardener re-harden commit, ancestor of the same BL-1880 chain above (rode in on the QA sync-merge); same cause and close-out as 007d54a2c4 - see backlog/evidence/art42-origin-main-1007-coordinator-closeout.md."
+  waived_at: 2026-10-08
+
 - key: pipeline-code-on-main-7376655875b267ee38e11b5137bd26d33bed7c41
   waived_by: coordinator
   reason: "sanctioned hotfix (SUP-17 ruling), already in hotfix-ledger.yaml with stamp_ticket BL-2011 pending"
@@ -274,6 +299,11 @@
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
   waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-8381fd02fb
+  waived_by: coordinator
+  reason: "Specifier-authored declared hotfix for BL-764 scenario 05, red on main since 2026-08-05 (idle liveness line has no waiting count by design, per operator hotfix 2b8d19d178/BL-811); found while measuring BL-2061's qa_e2e_procedure. Hotfix-Certification: pending trailer; hotfix-ledger stamp_ticket BL-2062; verified 6/6, lint clean."
+  waived_at: 2026-10-07
 
 - key: pipeline-code-on-main-83d5e34527396bf686bd437152e06a23d6eabaf5
   waived_by: coordinator
@@ -375,6 +405,11 @@
   reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-a9cadb6484a700f35e0dbb176d633967746e622e
+  waived_by: coordinator
+  reason: "Declared hotfix, registered in backlog/hotfix-ledger.yaml (pending); stamp ticket BL-2052 already minted (approved) for this commit and 49fe963c76; is_qa_ancestor exits 1 (not a QA land) so the ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
+
 - key: pipeline-code-on-main-ae5d0646a03ade739409357f807c6359d5117247
   waived_by: coordinator
   reason: "Sanctioned hotfix-every-red-then-stamp-off path (operator directive 2026-10-01); recorded in hotfix-ledger.yaml with stamp_ticket BL-1930"
@@ -425,6 +460,11 @@
   reason: "genuine QA-approved ancestor: same sha lives on swarmforge-QA and origin/main (BL-1241 hand-built recipe, no distinct source sha); is_qa_ancestor.sh exits 0; evidence backlog/evidence/babysitter-article42-bl1475-c34c1986-genuine-qa-ancestor-20260908.md"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-c416adc5fbf5f2c2661af7683fdfc91275de0562
+  waived_by: coordinator
+  reason: "Human-directed emergency hotfix (approval taps lost to the bridge, 2026-10-07): authored by QA directly on main, Hotfix-Certification: pending trailer, verified (478/478 + 3 new tests, BL-302/1036/621/582 pass). QA note 003895 already asked specifier to mint the stamp-off (BL-1253 scenario 05 red noted as pre-existing/unrelated)."
+  waived_at: 2026-10-07
+
 - key: pipeline-code-on-main-c7ee0fb1922cdf153c8e4d145e19809ca7e565bd
   waived_by: coordinator
   reason: "Direct hotfix retiring passenger scenarios obsoleted by BL-1830 (BL-1375/BL-1465/BL-1466); stamp ticket BL-1876 (severity high, human_approval approved) already minted to own it, paused"
@@ -444,6 +484,11 @@
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
   waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-d0b944021198ca8471bca3186d577276d61ede69
+  waived_by: coordinator
+  reason: "Declared hotfix, registered in backlog/hotfix-ledger.yaml (pending); stamp ticket BL-2053 already minted (approved) for this commit and 48d037df88; is_qa_ancestor exits 1 (not a QA land) so the ledger+stamp-ticket certification path is the real close-out, not Article 4.2's QA-ancestor check"
+  waived_at: 2026-10-06
 
 - key: pipeline-code-on-main-d1ba3e5edf0ad4675adbc3f5c6a5cc00b9225256
   waived_by: coordinator
@@ -549,6 +594,11 @@
   waived_by: coordinator
   reason: "Same pattern as eda4bb1934: BL-1491 tip-pure replay, land-approvals record exists with source 40830d747f, is_qa_ancestor.sh fails on source but QA did the land-step"
   waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-fe7833a272e328cffa91868d1b1a344b140dc7ec
+  waived_by: coordinator
+  reason: "Specifier-authored declared hotfix for BL-1253 scenario 05, red on main since the human certified 2ec06b6ef1 on 2026-10-05 (QA note 003895 flagged it alongside the c416adc5fb approval-taps hotfix). Hotfix-Certification: pending trailer; verified 8/8 + BL-1563/BL-1560 green on a clean clone."
+  waived_at: 2026-10-07
 
 - key: pipeline-code-on-main-feb18315ea117495d770c438f870b525d8f8e8e1
   waived_by: coordinator
