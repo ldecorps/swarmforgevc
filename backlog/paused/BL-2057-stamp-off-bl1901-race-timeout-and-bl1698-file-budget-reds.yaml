@@ -1,5 +1,5 @@
 id: BL-2057
-title: "Stamp-off for hotfixes 0ea531fa5f and 2cf2694e92: three test-side reds - bl1901MergePathLandDeclines' race-twice test hit the flat 20 s cap and bl1698LocalParcelDriverMailAndReleaseEdgeCases was refused as a new pole at 7.3 s, both under concurrent suites, and BL-955's property invariant 1 left its per-surface reachability floor to chance"
+title: "Stamp-off for hotfixes 0ea531fa5f, 2cf2694e92 and 6a0c428723: four test-side reds - bl1901MergePathLandDeclines' race-twice test hit the flat 20 s cap and bl1698LocalParcelDriverMailAndReleaseEdgeCases was refused as a new pole at 7.3 s, both under concurrent suites, BL-955's property invariant 1 left its per-surface reachability floor to chance, and BL-1389's property invariant 1 ran past its 20 s-base budget in a loaded full property lane"
 milestone: M8
 type: defect
 severity: high
@@ -11,14 +11,15 @@ priority: 5
 direction: normal
 depends_on: []
 mutation_cost: low
-# low: review two test-side commits and run four test files once.
+# low: review three test-side commits, run five test files and one
+# feature once.
 slice_size_envelope: low
 required_stages: [coder, qa]
 stage_skip_reasons:
-  cleaner: "one timeout constant, one verbatim file split and one loop over surfaces; nothing to refactor"
+  cleaner: "one timeout constant, one verbatim file split, one loop over surfaces and one timeout base; nothing to refactor"
   architect: "test files only; no production boundary moves"
   hardender: "no production code changed"
-  documenter: "no living doc describes these two test files"
+  documenter: "no living doc describes these test files"
 
 # Not a claim of ownership over BL-1901's contract (BL-1251): it is the
 # feature whose land path the bl1901 unit test drives.
@@ -52,7 +53,15 @@ qa_e2e_procedure: |
      timeouts in other files (bl1346RcRepairStampInvariants at its bare
      120000, BL-1596's class; bl1853LandDiffCacheInvariants at its scaled
      234 s on an overloaded host) and BL-871's onTaskUpdate.
-  4. Read the coder's committed review evidence.
+  4. Read from the gather's property row:
+     bl1389UnlandedSiblingPathNeverRidesInvariants 3 of 3. Measured at
+     6a0c428723: alone 3 of 3 (57.6 s, load 16); in a full property
+     lane, exit 0 (834 s wall, load 12 to 15), the file 77.5 s with
+     invariant 1 at 35.4 s.
+  5. `node specs/pipeline/cli.js specs/features/BL-1592-four-more-property-files-time-out-in-a-full-lane-run.feature`:
+     14 of 14 ok (measured at 6a0c428723, 170 s; its scenario 02 now reads
+     bl1389's base as 60000).
+  6. Read the coder's committed review evidence.
 
 source: |
   QA note 003883 (2026-10-07T06:33:19Z), verbatim: "unowned-red: bl1698
@@ -64,6 +73,10 @@ source: |
   QA note 003888 (2026-10-07T07:05:10Z), verbatim: "unowned-red: bl955
   inv1 'negotiation-relay exercised only 7 times' ev bdb95d261c".
   Evidence: backlog/evidence/BL-1676-QA-20261007.md (commit bdb95d261c),
+  properties gate.
+  QA note 003892 (2026-10-07T08:02:07Z), verbatim: "unowned-red: bl1389
+  inv1 'Error: STACK_TRACE_ERROR' 92.9s timeout ev 2fcee115ce".
+  Evidence: backlog/evidence/BL-2050-QA-20261007.md (commit 2fcee115ce),
   properties gate.
   The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
 
@@ -86,9 +99,12 @@ notes: |
   Amended 2026-10-07 (still paused) to also stamp 2cf2694e92, QA note
   003888's property red: one stamp-off for the day's test-side reds, not
   a second ticket.
+  Amended again 2026-10-07 (still paused) to also stamp 6a0c428723, QA
+  note 003892's property red, on the same grounds. No register row was
+  added. QA bounced BL-2050 on its own D1, never held it on this red.
 
 description: |
-  ## Status: hotfixes 0ea531fa5f and 2cf2694e92 landed the fixes
+  ## Status: hotfixes 0ea531fa5f, 2cf2694e92 and 6a0c428723 landed the fixes
 
   This parcel is their stamp-off: review them, do not re-apply them.
 
@@ -122,16 +138,29 @@ description: |
      property per surface, 20 runs each (120 in all), so the floor holds by
      construction; the assertions and the photo floor are unchanged
      (simulated photo minimum over 3000 trials: 43, floor 30).
+  4. 6a0c428723, extension/test/bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js:
+     QA's BL-2050 property lane (load 12 to 18) timed invariant 1 out at
+     its scaled budget, 92.9 s, while invariants 2 and 3 took 38 s and
+     30 s. Each run builds a git fixture and spawns bb on
+     land_step_lib.bb; alone at load 7 to 15 the three tests take 14.8 s,
+     15.2 s and 11.7 s, close to their 20 s base. The hotfix raises all
+     three bases to `propertyLaneTimeoutMs(60000)` (bl1529's class: 60 s
+     quiet, up to 180 s under load), adds a comment saying why, and sets
+     bl1389's base cell in BL-1592's scenario 02 Examples to 60000. No
+     property body changed.
 
   ## What the coder does (all of it)
 
-  1. Read `git show 0ea531fa5f` and `git show 2cf2694e92` against the
-     section above. For 2cf2694e92, confirm the property body is unchanged
+  1. Read `git show 0ea531fa5f`, `git show 2cf2694e92` and
+     `git show 6a0c428723` against the section above. For 2cf2694e92, confirm the property body is unchanged
      apart from the surface now coming from the loop. For 0ea531fa5f, confirm the
      moved tests are byte-identical to their originals
      (`git show 0ea531fa5f^:extension/test/bl1698LocalParcelDriverMailAndReleaseEdgeCases.test.js`)
-     and that no test was dropped (7 before, 4 + 3 after).
-  2. Run the four test files once each, alone, with output under tmp/
-     (bl955's with `--config vitest.properties.config.mjs`).
+     and that no test was dropped (7 before, 4 + 3 after). For
+     6a0c428723, confirm only the three timeout bases, the comment and
+     the one Examples cell changed.
+  2. Run the five test files once each, alone, with output under tmp/
+     (bl955's and bl1389's with `--config vitest.properties.config.mjs`),
+     and the BL-1592 feature once with `node specs/pipeline/cli.js`.
   3. Write backlog/evidence/BL-2057-coder-<date>.md with the review result
      and the run results, and commit it.
