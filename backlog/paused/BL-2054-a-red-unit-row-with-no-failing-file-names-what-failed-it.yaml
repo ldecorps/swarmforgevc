@@ -27,7 +27,7 @@ acceptance: specs/features/BL-2054-a-red-unit-row-with-no-failing-file-names-wha
 required_wiring:
   - 'specs/pipeline/steps/bl2054RegisterJoinNamesRedCauseSteps.js::registerSteps::binds BL-2054 feature (discovered by suffix, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Owner of the register-join-unidentified-red-triage verification-debt
   category, which reached its threshold (3 rows) unowned on 2026-10-06
