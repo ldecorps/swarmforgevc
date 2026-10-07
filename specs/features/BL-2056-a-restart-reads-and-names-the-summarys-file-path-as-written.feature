@@ -35,6 +35,7 @@ Feature: BL-2056 A restart reads and names the file its compaction summary named
     When the seat makes a third tool call that is not the named write
     Then the fresh turn's only user message names that file at its absolute path
     And the message tells the seat to edit that file and never says that it does not exist
+    And the message tells the seat to read only the lines it will change before editing, and never not to read the file
 
   # BL-2056 a-restart-on-a-new-file-says-write-it-unread-03
   Scenario: a restart on a file that does not exist yet still says to write it without reading it first

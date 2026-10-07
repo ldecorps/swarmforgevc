@@ -1,0 +1,124 @@
+id: BL-2068
+title: "A fake cloudflared fixture leaves no orphan sleep behind: bl857's property file and bl1287's fixture helper write a bash script whose child is `sleep 300`, so killing the fixture's pid (the test's cleanup, or the reaper under test) kills bash and orphans the sleep to init for five minutes - 33 of them after one property lane on 2026-10-07"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained - each orphan dies after 300 s, but a lane
+# leaves dozens on a shared host, every straggler check has to attribute
+# them by hand, and a test that reads the process table sees them.
+status: todo
+epic: code-quality-gates
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two fixture bodies change; no production code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two fixture script bodies; nothing to refactor"
+  architect: "test fixtures only; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "no living doc describes these fixtures"
+
+# Not a claim of ownership over BL-857's contract (BL-1251): it is the
+# feature whose fixture tunnels these are; it must stay green.
+acceptance: specs/features/BL-857-one-owner-for-the-production-tunnel-name.feature
+
+human_approval: approved
+approval_context: >
+  A test-side defect QA found while stopping its property lane (note
+  003909). No choice is posed and there are no ruling_options. What
+  needs sign-off: the fix is the two fixtures' bodies only. FIRM: the
+  fixture's command line keeps the shape the tunnel library and the
+  leaked-fixture sweep match on ("<interpreter> <temp path>/cloudflared
+  tunnel ... run <name>"), so every existing assertion still holds.
+
+invariants:
+  - "Killing a fake cloudflared fixture's pid leaves no process the fixture started still running."
+
+description: |
+  ## What is wrong
+
+  extension/test/bl857TunnelOwnershipInvariants.property.test.js
+  (`spawnFakeCloudflared`, line 57) and
+  extension/test/helpers/bl1287FixtureSweepFixture.js (line 32) each write
+  a fake `cloudflared` as `#!/usr/bin/env bash\nsleep 300\n` and launch
+  it with `... tunnel --config ... run <name> &`. The fixture's pid is the
+  bash running the script; `sleep 300` is its child. The test's cleanup
+  and the reaper under test (tunnel_ownership_lib.sh) both SIGKILL that
+  pid, so bash dies and the sleep is reparented to init and lives on for
+  up to five minutes. QA found 33 of them (ppid 1) in its property lane's
+  process group on 2026-10-07 (note 003909, evidence 85e802b15d).
+  Reproduced at mint: the BL-857, BL-1287 and BL-1061 features, run once
+  each, took the count of `sleep 300` processes with ppid 1 from 0 to 15.
+
+  Census: `grep -rlnF '#!/usr/bin/env bash\nsleep' extension/test` = 2
+  files, the two above. The other long-sleep fixtures (bl782,
+  bl1071SweepFixture, ollamaAncillaryFixture) already `exec` the sleep,
+  so their pid is the sleep itself.
+
+  ## What is wanted
+
+  - The fake is a single process: killing its pid leaves nothing it
+    started (invariant). Its command line still reads
+    "<interpreter> <temp path>/cloudflared tunnel --config ... run <name>",
+    because tunnel_ownership_lib.sh finds candidates with
+    `pgrep -f "run <name>"` and lists them with `ps -o pid= -o args=`, and
+    leakedFixtureTunnelPids selects by the temp path.
+  - A plain `exec sleep 300` would replace that command line with
+    "sleep 300" and break both, so it is not the fix.
+
+  ## How (direction, not mandate)
+
+  - A node shebang that holds a timer, `#!/usr/bin/env node` then
+    `setTimeout(() => {}, 300000);`: node is on every host the tests run
+    on, and its command line keeps the script path and arguments.
+  - A unit or property check that spawns one fixture, SIGKILLs its pid,
+    and finds no remaining process whose parent was that pid or whose
+    args name the fixture's temp path.
+
+constraints: >
+  Test-side only. No fixture may bind the production tunnel name
+  (BL-1061's assertFixtureTunnelName stays). bash 3.2 rules for any
+  shell.
+
+out_of_scope: |
+  - The reaper's own behaviour: real cloudflared is one process, so a
+    pid kill is complete there.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's property row: bl857TunnelOwnershipInvariants
+     and bl1287FixtureSweepScopingInvariants green.
+  2. Before and after `cd extension && npx vitest run --config
+     vitest.properties.config.mjs test/bl857TunnelOwnershipInvariants.property.test.js`
+     (a run alone: the point is the orphans this file leaves), count
+     `ps -ww -eo pid,ppid,args | awk '$2==1 && $3=="sleep" && $4=="300"'`;
+     the count does not rise. At mint, after QA killed the lane's group,
+     it read 0.
+  3. `node specs/pipeline/cli.js` on
+     specs/features/BL-857-one-owner-for-the-production-tunnel-name.feature,
+     specs/features/BL-1287-a-fixture-sweep-must-not-signal-a-live-runs-fixtures.feature
+     and specs/features/BL-1061-tunnel-ownership-fixture-binds-a-live-tunnel-name.feature:
+     6 of 6, 4 of 4 and 5 of 5 ok (measured at mint), and the orphan
+     count from step 2 does not rise across them either (at mint the
+     three runs left 15 orphaned `sleep 300`, from 0).
+
+source: |
+  QA note 003909 (2026-10-07T12:13:42Z), verbatim: "bl857 tunnel property
+  leaves 33 orphan sleep 300 (ppid 1) per lane ev 85e802b15d". QA's
+  evidence (backlog/evidence/BL-2056-QA-20261007.md), verbatim: "33
+  orphaned `sleep 300` processes (ppid 1) in the lane's process group,
+  most likely from
+  extension/test/bl857TunnelOwnershipInvariants.property.test.js:57
+  (writes a fake binary that runs `sleep 300`)".
+
+notes: |
+  Minted 2026-10-07 by the specifier. Not a red, so not hotfixed (the
+  specifier writes no tests outside a standing-red hotfix); minted
+  pending the human's tap: defect, medium.
+  INVEST: Independent, Negotiable (the single-process shape is
+  direction), Valuable (no orphan processes per lane), Estimable (two
+  fixture bodies), Small, Testable (an orphan count before and after one
+  run, plus a check in the suite).

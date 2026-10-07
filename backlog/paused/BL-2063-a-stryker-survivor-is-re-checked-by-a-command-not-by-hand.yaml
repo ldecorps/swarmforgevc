@@ -29,7 +29,7 @@ required_wiring:
 # calls it, so no code anchor exists that the parcel would not satisfy by
 # construction (BL-1235).
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file and a new tool, minted as the owner of the
   stryker-array-tuple-false-survivor verification-debt category (hardener
