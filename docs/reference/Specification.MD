@@ -4,15 +4,31 @@
 to count every bounce since the project began with no date filter, so it
 could not answer whether a role's work bounced more or less since its
 model changed. `qa-bounce-line.js`'s live line (`main()`, no `--json`) now
-leads with the bounces since the PREVIOUS briefing was SENT — the commit
-that added that day's key to `docs/briefings/.sent.json` (`git log -S` the
-pickaxe, oldest match; the file's own introducing commit is a different,
-earlier moment — the email sweep commits the day's file, sends it, then
-separately commits the send marker, 5.5h apart measured, so reading the
-file commit double-counted a bounce landing in that gap, QA bounce D3) —
-bounded at the top by the render time itself, never counting a bounce that
-had not happened yet as of the moment being reported for (D4) — or, with
-no previous send on record, the last 24 hours, said plainly. The window's
+leads with the bounces since the PREVIOUS briefing was SENT — the real
+send instant, read straight off `docs/briefings/.sent.json`'s own
+`"sent-at"` map, keyed by day, with no git log involved at all. Two
+earlier attempts at "when was the previous briefing sent" each proved to
+be a different moment than the true send: the file's own introducing
+commit (QA bounce D3, first pass — the email sweep commits the day's
+file, sends it, then separately commits the send marker, 5.5h apart
+measured, so reading the file commit double-counted a bounce landing in
+that gap) and, after that fix, the commit that first added a day's key to
+`.sent.json` (QA bounce D1, second pass — the sweep batches several days'
+markers into ONE later commit, four days landed in one commit measured
+2026-10-06T01:43Z, so a commit-derived start came out short, empty, or
+even later than the render it was computed for). `briefing_email_lib.bb`'s
+`record-briefing-sent!` now takes an optional real send instant (fed by
+`send-unsent-briefings!`'s injectable `:now-iso!` adapter, the actual IO
+edge) and writes it into `.sent.json`'s `sent-at` map directly, so the
+value `qa-bounce-line.ts` reads is the send itself, not an archaeological
+guess at it. The most recent `sent-at` entry strictly before the render
+time is used; any entry at or after the render time (clock skew, or `--at`
+rendering for a past moment) is treated as absent, falling back to the
+last-24-hours window rather than a backwards or zero-length one — bounded
+at the top by the render time itself either way, never counting a bounce
+that had not happened yet as of the moment being reported for (D4) — or,
+with no previous send on record at all, the last 24 hours, said plainly.
+The window's
 OWN bouncing-role split is printed in the window segment (`by bouncing
 role: ...`, QA bounce D1 — it used to print only the all-time split there,
 reading as a breakdown of the window total above it); every clause after
