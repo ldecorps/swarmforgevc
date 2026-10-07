@@ -201,22 +201,14 @@ function registerSteps(registry) {
     assert.match(text, new RegExp(`^no_op_reason: ${REASON}$`, 'm'), `expected no_op_reason on the completed file: ${text}`);
   });
 
-  scoped(new RegExp("^the coder holds a forwarding git_handoff for BL-4242 in in_process, queued a minute ago, with no git_handoff naming BL-4242 in its outbox or sent mailbox$"), (ctx) => {
-    const state = ensureState(ctx);
-    state.role = 'coder';
-    const dequeuedAt = isoSecondsAgo(60);
-    const dirs = state.fx.dirsByRole.coder;
-    const filePath = path.join(dirs.inProcess, '50_x1.handoff');
-    fs.writeFileSync(filePath, forwardingHandoffBody({ role: 'coder', ticket: TICKET, dequeuedAt }));
-    state.itemPath = filePath;
-  });
-
-  scoped(new RegExp("^a commit whose subject leads with BL-4242 on the coder's branch since that parcel was queued$"), (ctx) => {
-    const state = ensureState(ctx);
-    const wt = state.fx.wtByRole.coder;
-    git(wt, ['commit', '-q', '--allow-empty', '-m', 'BL-4242: fix']);
-    state.committedSha = git(wt, ['rev-parse', '--short=10', 'HEAD']);
-  });
+  // Scenario 02's Given lines reuse the literal text the Outline's generic
+  // handlers above already match ("the coder holds a forwarding
+  // git_handoff for BL-4242..." and "a commit whose subject leads with
+  // BL-4242 on the coder's branch..."); the scaffold also emitted
+  // standalone literal stubs for them, which stepRegistry's first-match-
+  // in-registration-order resolution would never reach (the generic ones
+  // above are registered first and already match), so they are deleted
+  // here rather than kept as unreachable dead code.
 
   scoped(new RegExp("^the coder runs done_with_current with no reason$"), (ctx) => {
     const state = ensureState(ctx);
