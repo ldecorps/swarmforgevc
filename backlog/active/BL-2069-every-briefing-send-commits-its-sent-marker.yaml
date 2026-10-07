@@ -125,6 +125,10 @@ source: |
   (backlog/evidence/BL-1880-QA-20261007-2.md, 64f033e529).
 
 notes: |
+  2026-10-07 14:59Z (specifier): routing hint - three behaviours across
+  the sweep and the BL-821 test seams, with the design left open, is a
+  hard-tier ticket: the iq3 coder made about 35 reads in five minutes on
+  it and compacted once. coder@2 is the better holder (coordinator told).
   Minted 2026-10-07 by the specifier.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
   At mint the master checkout's docs/briefings/.sent.json holds 10-07's
