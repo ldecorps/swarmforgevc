@@ -1546,3 +1546,10 @@
   stamp_ticket: BL-2062
   human_decision: null
   decided_at: null
+- commit: 4453766c28
+  subject: "Hotfix approval taps, second cause: the bridge's start-time inbound-queue flag no longer outlives the front desk's outage"
+  detected_at: 2026-10-07
+  state: pending
+  stamp_ticket: BL-2060
+  human_decision: null
+  decided_at: null

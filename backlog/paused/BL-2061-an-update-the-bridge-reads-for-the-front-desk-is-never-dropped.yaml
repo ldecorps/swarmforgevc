@@ -1,18 +1,22 @@
 id: BL-2061
-title: "An update the cursor bridge reads for the front desk is never dropped: while the bridge's dead-feeder fallback holds getUpdates it answers and drops every update it has no route for - an Approve or Reject tap, an approve verb typed in the Approvals topic - so the front desk never sees it; c416adc5fb shortened that window to seconds, this closes it"
+title: "An update the cursor bridge reads for the front desk is never dropped: while the bridge's dead-feeder fallback holds getUpdates it answers and drops every update it has no route for - an Approve or Reject tap, an approve verb typed in the Approvals topic - so the front desk never sees it; QA's hotfixes c416adc5fb and 4453766c28 narrowed that to real front-desk outages, this closes it"
 milestone: M8
 type: defect
 severity: high
 # high: a live fault that silently loses the human's decisions. The tap
 # looks taken (the bridge answers the callback) and nothing is recorded;
 # the human's taps on BL-2058 and BL-2059 were lost this way on
-# 2026-10-07. c416adc5fb made the window seconds per front-desk restart,
-# not hours; it did not close it.
+# 2026-10-07. After 4453766c28 the bridge holds the token only while the
+# front desk is dead (swarm deaths, a restart past 90 s): narrower, and
+# still a silent loss of every front-desk update in that window.
 status: todo
 epic: code-quality-gates
 priority: 5
 direction: normal
-depends_on: []
+depends_on: [BL-2060]
+# BL-2060 stamps 4453766c28 and c416adc5fb, which changed
+# telegramCursorBridgeCore.ts and the two how-tos this ticket also edits;
+# it lands first so the two never touch those files at once.
 mutation_cost: high
 # high: two large TypeScript files under Stryker (the bridge's live loop
 # and the front desk's poll cycle) and a new hand-over between them;
@@ -59,12 +63,18 @@ description: |
   Approvals topic, or any other front-desk update in that window is lost,
   and a tap looks taken while nothing is recorded.
 
-  On 2026-10-07 the front desk's 409 backoff kept its heartbeat stale for
-  hours, and the human's taps on BL-2058 and BL-2059 recorded nothing.
-  QA's hotfix c416adc5fb (stamped by BL-2060) caps a 409's backoff at 5 s,
-  so the bridge now hands the token back within seconds of a restart. Its
-  message names what is left: "a tap that reaches the bridge in the few
-  seconds it holds the token is still answered and dropped."
+  On 2026-10-07 the bridge had held getUpdates beside a live front desk
+  for 14 hours (its start-time inbound-queue flag was baked to 0 during the
+  2026-10-06 swarm death), and the human's taps on BL-2058 and BL-2059
+  recorded nothing. QA's hotfixes, both stamped by BL-2060: c416adc5fb
+  caps a front-desk 409's backoff at 5 s; 4453766c28 makes the start
+  script's own decision yield to the per-poll feeder liveness. Now the
+  bridge holds the token only while the front desk is really dead. In that
+  window every front-desk update it reads is still answered and dropped,
+  where without the bridge Telegram would have kept it for the front desk
+  to read on recovery. c416adc5fb's message names it: "a tap that reaches
+  the bridge in the few seconds it holds the token is still answered and
+  dropped."
 
   ## What is wanted
 
@@ -109,7 +119,11 @@ constraints: >
 out_of_scope: |
   - Whether the bridge should take the token at all while the front desk
     restarts (BL-1253, certified).
-  - The front desk's 409 backoff (BL-2060 stamps it).
+  - The front desk's 409 backoff and the start-time flag (BL-2060 stamps
+    both).
+  - The live supervisor's explicit CURSOR_BRIDGE_INBOUND_QUEUE=1 (set by QA
+    at 2026-10-07T09:47:46Z): while it stands, the bridge never takes the
+    token; the fixture scenarios do not depend on it.
   - Updates read while the front desk itself holds the token: those are
     already the front desk's.
 
@@ -130,6 +144,8 @@ qa_e2e_procedure: |
      tap the human reports is missing.
 
 source: |
+  QA note 003897 (2026-10-07T10:00:56Z), verbatim: "hotfixes
+  c416adc5fb+4453766c28 (approval taps, human ask): one stamp-off".
   QA's hotfix c416adc5fb (2026-10-07T09:21:57Z), verbatim: "Not fixed
   here: a tap that reaches the bridge in the few seconds it holds the
   token is still answered and dropped."
@@ -141,6 +157,8 @@ source: |
 
 notes: |
   Minted 2026-10-07 by the specifier.
+  Amended 2026-10-07 (still paused) after QA's second hotfix 4453766c28:
+  the cause narrative, depends_on BL-2060, and the explicit-flag note.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
   Full chain on purpose: the design is open (a new hand-over between the
   bridge and the front desk, two large files), which is the dynamic-
@@ -149,8 +167,8 @@ notes: |
   placeholder and with a literal ("the human sends ... while the bridge
   holds getUpdates", "BL-9061's human_approval reads ..."), kept on
   purpose so each is one handler.
-  INVEST: Independent (no unbuilt sibling; BL-2060 is a review of a
-  landed hotfix), Negotiable (the shape is the architect's), Valuable
+  INVEST: Independent (waits only on BL-2060, a review of landed
+  hotfixes, via depends_on), Negotiable (the shape is the architect's), Valuable
   (no human decision is lost to the bridge), Estimable (one hand-over,
   two call sites, three scenarios), Small (one sitting for a hard-tier
   seat), Testable (fixture-driven scenarios over the real dispatch and

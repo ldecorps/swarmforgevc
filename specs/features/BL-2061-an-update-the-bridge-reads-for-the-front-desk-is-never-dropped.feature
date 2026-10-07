@@ -4,8 +4,9 @@ Feature: An update the cursor bridge reads for the front desk is never dropped
   update it reads then is gone from Telegram, so one it has no route for -
   an Approve or Reject tap, an approve verb typed in the Approvals topic -
   must reach the front desk, not be answered and dropped. On 2026-10-07 the
-  human's taps on BL-2058 and BL-2059 recorded nothing this way (c416adc5fb
-  shortened the window; this closes it).
+  human's taps on BL-2058 and BL-2059 recorded nothing this way
+  (c416adc5fb and 4453766c28 narrowed it to real front-desk outages; this
+  closes it).
 
   Background:
     Given the front desk's poll heartbeat is older than 90 seconds, so the cursor bridge holds getUpdates

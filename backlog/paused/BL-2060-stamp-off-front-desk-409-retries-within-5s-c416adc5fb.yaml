@@ -1,68 +1,85 @@
 id: BL-2060
-title: "Stamp-off for QA's hotfix c416adc5fb: approval taps were lost to the cursor bridge because a front-desk 409 backed off to 60 s, kept its poll heartbeat stale past 90 s and left the bridge's dead-feeder fallback holding getUpdates; a 409 now retries within 5 s"
+title: "Stamp-off for QA's approval-tap hotfixes c416adc5fb and 4453766c28: the cursor bridge's start-time inbound-queue flag, baked to 0 during the 2026-10-06 swarm death, kept it polling getUpdates beside a live front desk for 14 hours, so every approval tap that reached it was answered and dropped; an auto-decided flag now yields to the per-poll feeder liveness, and a front-desk 409 retries within 5 s"
 milestone: M8
 type: defect
 severity: high
-# high: stamp-off of a production hotfix for a live fault - the human's
-# approval taps (BL-2058, BL-2059) recorded nothing for about four hours.
+# high: stamp-off of production hotfixes for a live fault - the human's
+# approval taps recorded nothing for about 14 hours (2026-10-06 19:45 to
+# 2026-10-07 09:47 local).
 status: todo
 epic: code-quality-gates
 priority: 5
 direction: normal
 depends_on: []
 not_before: 2026-10-08
-# mutation_cooldown_gate.bb refuses a file changed on main within a day,
-# and c416adc5fb changed telegramFrontDeskBotCore.ts at 09:21Z on
-# 2026-10-07. If the hardener's gate still reports skip-cooldown, it waits
-# it out, never runs inside it (2026-10-01 rule).
+# mutation_cooldown_gate.bb refuses a file changed on main within a day:
+# c416adc5fb changed telegramFrontDeskBotCore.ts at 09:21Z and 4453766c28
+# changed telegramCursorBridgeCore.ts at 09:52Z on 2026-10-07. If the
+# hardener's gate still reports skip-cooldown, it waits it out, never runs
+# inside it (2026-10-01 rule).
 mutation_cost: medium
-# medium: a scoped Stryker pass over the hotfix's own lines in a file of
-# about 2000 mutants; the rest of the file's debt is BL-1519's.
+# medium: scoped Stryker passes over each hotfix's own lines in two large
+# files (their first-run debt is BL-1519's), plus a hand-mutant pass over
+# one bb line and four shell lines (no Stryker lane for bb or shell).
 slice_size_envelope: low
-required_stages: [coder, hardender, qa]
+required_stages: [coder, hardender, documenter, qa]
 stage_skip_reasons:
-  cleaner: "one function and one call site; nothing to refactor"
-  architect: "no boundary moves; the bridge and supervisor are unchanged"
-  documenter: "no living doc describes the front desk's poll backoff"
+  cleaner: "two small functions, one call site and five script lines; nothing to refactor"
+  architect: "no boundary moves; the flag's meaning narrows, the components and channels are unchanged"
 
 # Not a claim of ownership over BL-1036's contract (BL-1251): it is the
-# feature on the front desk's poll-conflict path that this hotfix changes.
+# feature on the front desk's poll-conflict path that c416adc5fb changes.
 acceptance: specs/features/BL-1036-a-restart-does-not-cost-a-telegram-conflict-window.feature
 
 human_approval: approved
 approval_context: >
-  Stamp-off of a hotfix QA landed at the human's word ("Fix approval
-  taps (Hotfix)"), under the 2026-10-01 rule. No choice is posed. FIRM:
-  the coder reviews it and never re-applies it.
+  Stamp-off of two hotfixes QA landed at the human's word ("Fix approval
+  taps (Hotfix)", then "Approval taps still not working"), under the
+  2026-10-01 rule. No choice is posed. FIRM: the coder reviews them and
+  never re-applies them.
 
 invariants: []
 
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. Read from the gather's unit row: telegramFrontDeskBotCore.test.js
-     green with the hotfix's three cases (the 5 s cap over a long 409
-     streak, the full backoff for any other error, runPollCycle's delay on
-     a 409). Measured by QA at c416adc5fb on a git-archive of 8e496f49e0:
-     478 of 478.
-  2. `node specs/pipeline/cli.js specs/features/BL-1036-a-restart-does-not-cost-a-telegram-conflict-window.feature`:
-     5 of 5 ok (QA measured 5 of 5 at c416adc5fb).
-  3. `node specs/pipeline/cli.js specs/features/BL-582-approval-tap-never-records-or-repaints.feature`:
-     10 of 10 ok (QA measured 10 of 10 at c416adc5fb).
-  4. Read the hardener's committed evidence: the scoped Stryker result
-     over decidePollFailureDelayMs and runPollCycle's delay line. QA
-     starts no mutation run.
-  5. On the live front desk, read .swarmforge/operator/front-desk-supervisor.log
-     for the hours since the land: no "stalled bot no poll heartbeat"
-     kill and no "gave-up" line while the bridge reports dead-feeder
-     mode, and an approval tap made in that time reads recorded in its
-     ticket.
+     green with c416adc5fb's three cases (QA measured 478 of 478), and
+     telegramCursorBridgeCore.test.js and cursorBridgeInboundQueue.test.js
+     green with 4453766c28's three cases (QA measured 141 of 141 for the
+     two). Read from the gather's property row:
+     telegramCursorBridgeCore.property 3 of 3.
+  2. `node specs/pipeline/cli.js` on
+     specs/features/BL-1036-a-restart-does-not-cost-a-telegram-conflict-window.feature,
+     specs/features/BL-582-approval-tap-never-records-or-repaints.feature,
+     specs/features/BL-1253-swarm-stamp-dead-feeder-owns-getupdates-2ec06b6ef1.feature
+     (from a checkout whose backlog/hotfix-ledger.yaml is clean) and
+     specs/features/BL-764-front-desk-eats-host-bridge-updates.feature:
+     5 of 5, 10 of 10, 8 of 8 and 6 of 6 (QA measured each at its hotfix).
+  3. `bash swarmforge/scripts/test/test_start_stop_cursor_bridge.sh` and
+     `bb swarmforge/scripts/test/cursor_bridge_supervisor_test_runner.bb`
+     once each (no lane runs them): ALL CHECKS PASSED and ALL PASS (QA
+     measured both at 4453766c28).
+  4. Read the hardener's committed evidence: the scoped Stryker results
+     over each hotfix's TypeScript lines and the hand-mutant results over
+     the bb and shell lines. QA starts no mutation run.
+  5. On the live swarm, read .swarmforge/operator/front-desk-supervisor.log
+     for the hours since 2026-10-07T09:47:46Z: no 409 on a front-desk poll
+     while the front desk is live, no "stalled bot no poll heartbeat" kill
+     and no "gave-up" line, and an approval tap made in that time reads
+     recorded in its ticket.
 
 source: |
   QA note 003895 (2026-10-07T09:27:42Z), verbatim: "hotfix c416adc5fb
   (human: fix approval taps): mint stamp-off; BL-1253 s05 red".
+  QA note 003897 (2026-10-07T10:00:56Z), verbatim: "hotfixes
+  c416adc5fb+4453766c28 (approval taps, human ask): one stamp-off".
   The human, 2026-10-07, verbatim (c416adc5fb's message):
 
   > Fix approval taps (Hotfix)
+
+  The human, 2026-10-07 after c416adc5fb, verbatim (4453766c28's message):
+
+  > Approval taps still not working
 
   The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
 
@@ -71,55 +88,93 @@ source: |
 notes: |
   Minted 2026-10-07 by the specifier.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Amended 2026-10-07 (still paused) to stamp 4453766c28 too, at QA note
+  003897's ask for one stamp-off, and to add the documenter: three living
+  docs say the start script defaults the flag to 0, which 4453766c28
+  changes.
+  Operational state at mint: QA restarted the bridge supervisor at
+  09:47:46Z with CURSOR_BRIDGE_INBOUND_QUEUE=1 set explicitly (pid 20074).
+  An explicit 1 keeps its meaning after 4453766c28, so while it stands
+  the bridge never takes getUpdates, even with the front desk dead
+  (BL-1253's fallback is off). Returning to the auto decision is a
+  supervisor restart without the explicit flag; that is an operator
+  call, not this stamp's.
   The residual c416adc5fb names ("a tap that reaches the bridge in the
   few seconds it holds the token is still answered and dropped") is
   BL-2061's, not this stamp's.
-  The note's second half, BL-1253 scenario 05, was hotfixed by the
-  specifier in fe7833a272 and is stamped by BL-2057 with the day's other
-  test-side reds.
+  The BL-1253 scenario 05 red in note 003895 was hotfixed by the
+  specifier in fe7833a272 and is stamped by BL-2062.
 
 description: |
-  ## Status: hotfix c416adc5fb landed the fix
+  ## Status: hotfixes c416adc5fb and 4453766c28 landed the fixes
 
-  This parcel is its stamp-off: review it, do not re-apply it.
+  This parcel is their stamp-off: review them, do not re-apply them.
 
-  ## What was wrong, and what the hotfix changed
+  ## What was wrong
 
-  After a stale-build restart the front desk's poll heartbeat was over
-  90 s old, so the cursor bridge's dead-feeder fallback (BL-1253,
-  2ec06b6ef1) took getUpdates on the shared token. The front desk's polls
-  then failed with 409, its backoff grew to the 60 s cap, a contested
-  request plus the wait ran past 90 s, and the heartbeat never came back
-  fresh: the bridge never handed the token back, and the supervisor
-  killed the bot as stalled about every 5 minutes until it gave up for 15
-  (06:59, 08:00 and 09:14Z on 2026-10-07). Every update in between reached
-  the bridge, which answers the callback query and drops an approve: or
-  reject: tap it has no route for. The human's taps on BL-2058 and
-  BL-2059 recorded nothing.
+  The front desk and the cursor bridge share one bot token, so only one
+  of them may call getUpdates. start_cursor_bridge.sh decided
+  CURSOR_BRIDGE_INBOUND_QUEUE once, at start, from the front-desk
+  heartbeat, and cursor_bridge_supervisor.bb handed that value to every
+  bridge it respawned. The live supervisor started on 2026-10-06 at 19:45
+  local, during the swarm death, with the front desk down, so it carried
+  0 from then on. "0" forces getUpdates even with a live front desk: the
+  token had two pollers for 14 hours, every front-desk poll failed with
+  409, the supervisor killed the front desk as stalled about every 5
+  minutes, and every approval tap that reached the bridge was answered
+  and dropped. The human's taps on BL-2058 and BL-2059 recorded nothing.
 
-  In extension/src/tools/telegramFrontDeskBotCore.ts the hotfix adds
-  `POLL_CONFLICT_BACKOFF_MAX_MS` (5000) and `decidePollFailureDelayMs`,
-  which caps the backoff at 5 s when the poll error carries a 409 and
-  keeps the full backoff for any other error; `runPollCycle`'s failure
-  delay goes through it. extension/test/telegramFrontDeskBotCore.test.js
-  gains three cases. No bridge or supervisor change.
+  ## What the hotfixes changed
+
+  1. c416adc5fb, extension/src/tools/telegramFrontDeskBotCore.ts: adds
+     `POLL_CONFLICT_BACKOFF_MAX_MS` (5000) and
+     `decidePollFailureDelayMs`, which caps the backoff at 5 s when the
+     poll error carries a 409 and keeps the full backoff for any other
+     error; `runPollCycle`'s failure delay goes through it, so the
+     heartbeat stays under 90 s through a conflict.
+     extension/test/telegramFrontDeskBotCore.test.js gains three cases.
+  2. 4453766c28: start_cursor_bridge.sh still decides the flag and says
+     so (BL-1253 scenario 04 unchanged) and now marks its decision
+     `CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto`;
+     cursor_bridge_supervisor.bb forwards the marker; in
+     extension/src/tools/telegramCursorBridgeCore.ts
+     `shouldUseCursorBridgeInboundQueue` ignores an auto-marked flag, so
+     the per-poll feeder liveness decides (queue while the front desk is
+     live, getUpdates only while it is dead). An operator's explicit 0 or
+     1 keeps its meaning. extension/test/telegramCursorBridgeCore.test.js
+     gains three cases.
 
   ## What the coder does (all of it)
 
-  1. Read `git show c416adc5fb` against the section above. Confirm the
-     only production change is the new constant, the new function and the
-     one call site in runPollCycle, and that a 409 is the only error the
-     cap applies to.
-  2. Run telegramFrontDeskBotCore.test.js once, alone, and the BL-1036 and
-     BL-582 features once each, with output under tmp/.
-  3. Write backlog/evidence/BL-2060-coder-<date>.md with the review result
-     and the run results, and commit it.
+  1. Read `git show c416adc5fb` and `git show 4453766c28` against the
+     section above. For c416adc5fb, confirm the only production change is
+     the constant, the function and the one call site, and that a 409 is
+     the only error the cap applies to. For 4453766c28, confirm an
+     explicit 0 or 1 still forces its mode (no SOURCE marker, or a marker
+     other than auto) and that the start script's stderr still names its
+     decision.
+  2. Run the four unit test files once each, alone, the four features in
+     the procedure once each, and the shell test and bb runner once each,
+     with output under tmp/.
+  3. Write backlog/evidence/BL-2060-coder-<date>.md with the review
+     result and the run results, and commit it.
 
   ## What the hardener does
 
-  A Stryker pass scoped to the hotfix's lines (Stryker's
-  `out/tools/telegramFrontDeskBotCore.js:<start>-<end>` mutate form,
-  over decidePollFailureDelayMs and runPollCycle's delay line), not the
-  whole file: the file's first-run debt is BL-1519's. Every mutant on
-  those lines is killed or recorded as an accepted equivalent with its
-  code-level reason.
+  Scoped Stryker passes over each hotfix's TypeScript lines only
+  (`out/tools/<file>.js:<start>-<end>`): decidePollFailureDelayMs and
+  runPollCycle's delay line; shouldUseCursorBridgeInboundQueue's
+  auto-marker branch. The files' first-run debt is BL-1519's. A
+  hand-mutant pass over cursor_bridge_supervisor.bb's forwarding line and
+  start_cursor_bridge.sh's marker lines, each run against
+  cursor_bridge_supervisor_test_runner.bb and
+  test_start_stop_cursor_bridge.sh.
+
+  ## What the documenter does
+
+  docs/how-to/BL-1253-swarm-stamp-dead-feeder-owns-getupdates.md (the
+  start-script default line), docs/how-to/BL-764-front-desk-shared-token-bridge-fanout.md
+  (the `CURSOR_BRIDGE_INBOUND_QUEUE=0|1` bullets) and
+  docs/reference/Specification.MD's BL-1253 entry say what is true after
+  4453766c28: the start script's own decision is marked auto and yields
+  to the per-poll feeder liveness; only an explicit 0 or 1 forces a mode.
