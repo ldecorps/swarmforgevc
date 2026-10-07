@@ -152,3 +152,6 @@ notes: |
     bl1576_merge_drop_guard_property_runner.bb.
 
 assigned_to: coder@2
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: cleaner, class: behavior, commit: 3d5ebf80ca, evidence: backlog/evidence/BL-1913-QA-20261007.md }
