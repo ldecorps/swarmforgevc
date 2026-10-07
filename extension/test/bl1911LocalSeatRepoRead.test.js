@@ -37,6 +37,14 @@ describe('BL-1911 the secret-file filter', () => {
     assert.equal(isSecretRelPath('.env.local'), true);
   });
 
+  it('catches the operator directory itself, bare, not only a file under it', () => {
+    assert.equal(isSecretRelPath('.swarmforge/operator'), true);
+  });
+
+  it('does not catch a sibling directory that merely shares the "operator" prefix', () => {
+    assert.equal(isSecretRelPath('.swarmforge/operator-logs/notes.txt'), false);
+  });
+
   // D1's component rule must not catch a name that merely CONTAINS "env" as
   // a substring rather than as a whole dot-delimited segment.
   it('leaves an "environment"-named file alone - "env" must be a whole component, not a substring', () => {
@@ -135,7 +143,9 @@ describe('BL-1911 searchRepoForQuestion', () => {
   it('reports ok: false, naming the reason, when the repository root cannot be read', () => {
     const reading = searchRepoForQuestion('/nonexistent/bl1911/root', 'what is BL-9001 about?');
     assert.equal(reading.ok, false);
-    assert.ok(reading.reason && reading.reason.length > 0);
+    // The reason names the REAL underlying error, not a generic placeholder
+    // - this is the only diagnostic a caller gets when the read fails.
+    assert.match(reading.reason, /ENOENT|no such file/);
   });
 
   it('caps the returned context at the byte bound', () => {
@@ -146,6 +156,20 @@ describe('BL-1911 searchRepoForQuestion', () => {
       assert.ok(reading.context.length <= 100, `context not capped: ${reading.context.length}`);
     });
     assert.equal(REPO_READ_MAX_BYTES > 0, true);
+  });
+
+  it('leaves content exactly AT the cap untruncated, and truncates one character past it', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+      // The cap is a strict ">", not ">=" - content whose length EQUALS the
+      // cap must pass through unchanged.
+      fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-9001-exact.yaml'), 'x'.repeat(100));
+      const atCap = searchRepoForQuestion(root, 'what is BL-9001 about?', 100);
+      assert.equal(atCap.context.length, 100, `content at the exact cap was truncated: ${atCap.context.length}`);
+      fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-9001-exact.yaml'), 'x'.repeat(101));
+      const overCap = searchRepoForQuestion(root, 'what is BL-9001 about?', 100);
+      assert.equal(overCap.context.length, 100, `content one over the cap was not truncated: ${overCap.context.length}`);
+    });
   });
 
   // QA bounce D3: a symlink INSIDE the repo pointing OUTSIDE it must not
@@ -248,6 +272,22 @@ describe('BL-1911 searchRepoForQuestion', () => {
     });
   });
 
+  it('picks the file matching BOTH the ticket-id prefix AND the .yaml suffix under hold/, never a decoy matching only the prefix', () => {
+    // hold/ and archive/ are NOT findTicketYamlPath's domain (D4) - they
+    // stay this module's own flat loop, the only place that still checks
+    // name.endsWith('.yaml') itself, so this decoy has to live here to
+    // exercise that check at all.
+    withRepo((root) => {
+      const dir = path.join(root, 'backlog', 'hold');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'BL-9001-notes.txt'), 'DECOY-WRONG-EXTENSION');
+      fs.writeFileSync(path.join(dir, 'BL-9001-the-real-one.yaml'), 'title: "the real held ticket text"\n');
+      const reading = searchRepoForQuestion(root, 'what is BL-9001 about?');
+      assert.match(reading.context, /the real held ticket text/);
+      assert.ok(!reading.context.includes('DECOY-WRONG-EXTENSION'), 'picked the wrong-extension decoy under hold/');
+    });
+  });
+
   it('finds nothing for a ticket id the question names when no backlog file matches it anywhere', () => {
     withRepo((root) => {
       fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
@@ -287,6 +327,22 @@ describe('BL-1911 searchRepoForQuestion', () => {
       assert.equal(reading.ok, true);
       assert.match(reading.context, /ordinary repo text/);
       assert.ok(!reading.context.includes('undefined'), `leaked a skipped read: ${reading.context}`);
+    });
+  });
+
+  it('skips a path token that resolves to an existing, unreadable file, without crashing', () => {
+    withRepo((root) => {
+      fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+      const unreadable = path.join(root, 'docs', 'locked.md');
+      fs.writeFileSync(unreadable, 'SHOULD NOT BE READ');
+      fs.chmodSync(unreadable, 0o000);
+      try {
+        const reading = searchRepoForQuestion(root, 'see docs/locked.md');
+        assert.equal(reading.ok, true);
+        assert.equal(reading.context, '');
+      } finally {
+        fs.chmodSync(unreadable, 0o644);
+      }
     });
   });
 

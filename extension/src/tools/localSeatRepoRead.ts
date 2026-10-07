@@ -168,16 +168,19 @@ function readTicketSnippets(targetPath: string, question: string): string[] {
  * the secret filter below run against the REAL path (`fs.realpathSync`),
  * resolved before either check, so a symlink cannot read as something it
  * is not. */
-function readSnippetForPathToken(targetPath: string, token: string): string | undefined {
-  const resolved = resolveWithinRepo(targetPath, token);
-  if (!resolved) {
-    return undefined;
-  }
+/** The candidate's REAL path (`fs.realpathSync`, following symlinks) and its
+ * path relative to the root's own real path, or undefined when the root or
+ * the candidate does not resolve, or the real candidate escapes the real
+ * root. Split out of `readSnippetForPathToken` (CRAP hardening) - a
+ * lexically-contained path can still point outside the repository through a
+ * symlink (QA bounce D3), so both resolutions and the containment check are
+ * carried together here as one unit. */
+function realPathWithinRepo(root: string, candidate: string): { realCandidate: string; relPath: string } | undefined {
   let realRoot: string;
   let realCandidate: string;
   try {
-    realRoot = fs.realpathSync(targetPath);
-    realCandidate = fs.realpathSync(resolved);
+    realRoot = fs.realpathSync(root);
+    realCandidate = fs.realpathSync(candidate);
   } catch {
     // Root unreadable, or candidate not found / not readable - nothing to add.
     return undefined;
@@ -185,16 +188,27 @@ function readSnippetForPathToken(targetPath: string, token: string): string | un
   if (realCandidate !== realRoot && !realCandidate.startsWith(realRoot + path.sep)) {
     return undefined;
   }
-  const relPath = path.relative(realRoot, realCandidate);
-  if (isSecretRelPath(relPath)) {
+  return { realCandidate, relPath: path.relative(realRoot, realCandidate) };
+}
+
+function readSnippetForPathToken(targetPath: string, token: string): string | undefined {
+  const resolved = resolveWithinRepo(targetPath, token);
+  if (!resolved) {
+    return undefined;
+  }
+  const real = realPathWithinRepo(targetPath, resolved);
+  if (!real) {
+    return undefined;
+  }
+  if (isSecretRelPath(real.relPath)) {
     return undefined;
   }
   try {
-    const stat = fs.statSync(realCandidate);
+    const stat = fs.statSync(real.realCandidate);
     if (!stat.isFile()) {
       return undefined;
     }
-    return fs.readFileSync(realCandidate, 'utf8');
+    return fs.readFileSync(real.realCandidate, 'utf8');
   } catch {
     // Not found, not readable, or not a plain file - nothing to add.
     return undefined;
