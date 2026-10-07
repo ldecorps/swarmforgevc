@@ -161,3 +161,6 @@ notes: |
   move and a protocol-doc paragraph -> [coder, documenter, qa].
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-07, by: QA, blamed: coder, class: acceptance, commit: 2fcee115ce, evidence: backlog/evidence/BL-2050-QA-20261007.md }
