@@ -75,6 +75,7 @@ function mailboxDirs(wt) {
 function buildFixture() {
   const root = mkProcessTmpDir('bl2050acc-');
   git(root, ['init', '-q', '-b', 'main']);
+  assert.equal(path.resolve(root, git(root, ['rev-parse', '--git-common-dir'])), path.join(root, '.git'));
   git(root, ['config', 'user.email', 'test@test']);
   git(root, ['config', 'user.name', 'test']);
   git(root, ['config', 'commit.gpgsign', 'false']);
@@ -84,6 +85,7 @@ function buildFixture() {
   for (const role of KNOWN_ROLES) {
     const wt = path.join(root, '.worktrees', role);
     git(root, ['worktree', 'add', '-q', '-b', role, wt]);
+    assert.equal(path.resolve(wt, git(wt, ['rev-parse', '--git-common-dir'])), path.join(root, '.git'));
     installScripts(path.join(wt, 'swarmforge', 'scripts'));
     wtByRole[role] = wt;
   }
