@@ -104,7 +104,15 @@ test('stopSwarm reports success and the killed session list when tmux kills succ
     const result = stopSwarm(tmp);
     assert.equal(result.success, true);
     assert.deepEqual(result.sessionsKilled, ['swarmforge-coder', 'swarmforge-cleaner']);
-    assert.match(result.message, /Stopped 2 session\(s\)/);
+    // BL-2067: exact message (not just a substring match) - proves the
+    // killed-session list is joined with ', ', not concatenated bare.
+    assert.equal(result.message, 'Stopped 2 session(s): swarmforge-coder, swarmforge-cleaner');
+    // BL-2067: the server-wide kill-server call itself was never checked -
+    // every prior assertion here only covered the per-session kills.
+    assert.deepEqual(
+      fake.calls().filter((c) => c.includes('kill-server')),
+      [['-S', ownedSocket(tmp), 'kill-server']]
+    );
   } finally {
     fake.restore();
   }
@@ -208,6 +216,69 @@ test('clearStaleSwarmState refuses a worktree pointer at another root socket, bu
     assert.deepEqual(fake.calls(), []);
     assert.equal(fs.existsSync(foreign), true);
     assert.equal(fs.existsSync(path.join(worktree, '.swarmforge', 'tmux-socket')), false);
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-2067 (deferred Stryker pass over the BL-2052 hotfix's lines): every
+// clearStaleSwarmState test before this one used a FOREIGN socket, so the
+// OWNED branch of its own socketOwnedByTarget gate - the one that actually
+// runs `tmux kill-server` - had never executed at all (0% coverage on the
+// gate's true side and the kill-server call it guards).
+test('clearStaleSwarmState kills the tmux server when the socket is genuinely owned', () => {
+  const tmp = mkTmp();
+  mkdirp(path.join(tmp, '.swarmforge'));
+  const owned = ownedSocket(tmp);
+  mkdirp(path.dirname(owned));
+  fs.writeFileSync(owned, '');
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), owned);
+
+  const fake = installInProcessTmux([{ subcommand: 'kill-server', exitCode: 0 }]);
+  try {
+    clearStaleSwarmState(tmp);
+    assert.deepEqual(fake.calls(), [['-S', owned, 'kill-server']]);
+    assert.equal(fs.existsSync(path.join(tmp, '.swarmforge', 'tmux-socket')), false);
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-2067: drainAgentSessions's own noneMsg branch (socketRefusalOrAbsent's
+// SECOND argument, "no tmux socket") is distinct from its refusedMsg branch
+// (a real but foreign socket) - every prior test exercised only the latter.
+test('drainAgentSessions reports "no tmux socket" when none was ever recorded', () => {
+  const tmp = mkTmp();
+  mkdirp(path.join(tmp, '.swarmforge'));
+
+  const result = drainAgentSessions(tmp);
+  assert.equal(result.success, true);
+  assert.equal(result.sessionsStopped, 0);
+  assert.match(result.message, /no tmux socket — nothing to drain/);
+});
+
+// BL-2067: the kill-session loop's `if (result.exitCode === 0)` had no
+// test where one session's kill actually failed - every prior fixture's
+// single installInProcessTmux rule returned exitCode 0 for every call, so
+// a mutant hard-coding this condition to `true` passed every existing test.
+test('drainAgentSessions counts only the sessions whose kill-session actually succeeded', () => {
+  const tmp = mkTmp();
+  mkdirp(path.join(tmp, '.swarmforge'));
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), ownedSocket(tmp));
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
+  );
+  const fake = installInProcessTmux([
+    { subcommand: 'kill-session', argsInclude: 'swarmforge-coder', exitCode: 0 },
+    { subcommand: 'kill-session', argsInclude: 'swarmforge-cleaner', exitCode: 1 },
+  ]);
+  try {
+    const result = drainAgentSessions(tmp);
+    assert.equal(result.success, true);
+    assert.equal(result.sessionsStopped, 1);
+    assert.deepEqual(result.sessionsAttempted, ['swarmforge-coder', 'swarmforge-cleaner']);
+    assert.match(result.message, /stopped 1\/2 role session\(s\)/);
   } finally {
     fake.restore();
   }
