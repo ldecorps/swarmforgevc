@@ -10,6 +10,9 @@
 ;;   local_seat_tuning_report_cli.bb <project-root> --seat <seat>
 ;;     [--since <iso-date>] [--qwen-home <dir>] [--qwen-projects-dir <dir>]
 ;;     [--ollama-log <path>] [--settings-file <path>]
+;;   local_seat_tuning_report_cli.bb <project-root> --briefing
+;;     [--days N] [--now <iso>] [--qwen-home <dir>]
+;;     [--qwen-projects-dir <dir>] [--ollama-log <path>]
 ;;
 ;; Read-only (ticket invariant 1): touches no file, pane or process.
 (ns local-seat-tuning-report-cli
@@ -164,9 +167,11 @@
 
 (defn briefing-report
   "{:seat :day-summaries [...]} for every seat with a settings record that
-   made at least one request in the last `days` days ending at `now` (an
-   ISO instant) - gather-opts carries every optional path gather itself
-   accepts (--qwen-home etc.), reused unchanged per seat."
+   made at least one request in the last `days` host-local days ending at
+   the host-local midnight that starts `now`'s own date (an ISO instant) -
+   `now`'s own day is never in the window. gather-opts carries every
+   optional path gather itself accepts (--qwen-home etc.), reused
+   unchanged per seat."
   [project-root days now gather-opts]
   (let [[start-ms end-ms] (local-seat-tuning-report-lib/briefing-window days now)]
     (vec

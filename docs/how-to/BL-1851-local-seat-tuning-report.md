@@ -90,8 +90,10 @@ filter.
   under `.swarmforge/local-agent/seat-settings/` — by that file's own
   stem, never by inverting a qwen directory name.
 - For each such seat that made at least one request in the last `--days`
-  days (default 7, ending at `--now` or the current time), prints a
-  heading naming the seat and a markdown table with one row per
+  days — host-local days ending at the host-local midnight that starts
+  `--now`'s own date (default 7; `--now`'s own day, today, is never in
+  the table) — prints a heading naming the seat and a markdown table with
+  one row per
   host-local date it made a request: requests, median time to first
   token, median prefill and decode speed, median output tokens, thinking
   share of output, chat compressions per 10 requests, and tool-call
