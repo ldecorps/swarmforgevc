@@ -26,7 +26,7 @@ required_wiring:
 # coder's, and the shim's request handler, the one live consumer, already
 # exists. The scenarios drive the REAL shim process over a fake Ollama.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Second of three slices from the human's 2026-10-07 intake: "GPU
   inference stays 1-at-a-time - load balancing seats is not concurrent
