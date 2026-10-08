@@ -1,0 +1,101 @@
+id: BL-2079
+title: "Stamp-off for hotfix 94d434ae2a: BL-1554's scenario 01 asserts qa-gather's fixed checklist order and still listed eight checks after BL-2073's land added property_runners between properties and acceptance, so the feature was red on main (13/14) with no register row; the hotfix adds the row to the step, 14/14"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is high at first sighting (2026-09-05
+# amendment); this is the stamp-off of the hotfix that turned it green.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: specifier-found
+depends_on: []
+mutation_cost: low
+# low: one step's text in a feature file; no code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one step's text in a feature file; nothing to refactor"
+  architect: "no boundary moves; the step now names the row qa-gather already runs"
+  hardender: "no code: a feature file's step text"
+  documenter: "no living doc describes the step's list"
+
+# Not a claim of ownership over BL-1554's contract (BL-1251): the feature
+# the hotfix changed, which this review must leave green.
+acceptance: specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix landed under the human's 2026-10-01 rule
+  ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews the hotfix and never
+  re-applies it.
+
+invariants: []
+
+description: |
+  ## Status: hotfix 94d434ae2a landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  BL-2073's land (3a65a6e5ab, 2026-10-08) added a `property_runners` row
+  to qa-gather's checklist (extension/src/quality/qaGather.ts, between
+  `properties` and `acceptance`), on purpose and asserted by BL-2073's own
+  feature. BL-1554's scenario 01 ("the report lists the fixed checklist in
+  its fixed order") still named eight checks, so it failed on main: 13 of
+  14. No register row named it; QA and the coder of BL-2075 each recorded
+  it as pre-existing.
+
+  ## What the hotfix changed
+
+  94d434ae2a, one line: the step now reads `stragglers_before, sibling,
+  register, wiring, unit, properties, property_runners, acceptance,
+  stragglers_after`. The handler (bl1554QaGatherReportSteps.js) reads the
+  list from the step text, so no handler changed.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 94d434ae2a` and confirm the list matches the `id`
+     order in qaGather.ts's checklist.
+  2. Run the two features in qa_e2e_procedure once each, output under
+     tmp/.
+  3. Write backlog/evidence/BL-2079-coder-<date>.md with the result and
+     commit it.
+
+constraints: >
+  Review only: never re-apply or extend the hotfix. Never run qa-gather
+  against the live QA worktree.
+
+out_of_scope: |
+  - qa-gather's behaviour (BL-1554, BL-2073).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature`:
+     14 of 14 ok (measured at mint, after the hotfix, 2026-10-08).
+  2. `node specs/pipeline/cli.js specs/features/BL-2073-qa-gather-runs-the-property-runners-its-change-reaches.feature`:
+     5 of 5 ok (measured at mint, 2026-10-08).
+  3. Read the coder's evidence; confirm the hotfix changed only that step
+     (`git show 94d434ae2a --stat`).
+
+source: |
+  Found by the specifier on 2026-10-08 while amending BL-2075 (QA note
+  003922, verbatim: "BL-2075 spec-gap: prose acceptance fails pre-QA gate
+  (da1dabd56c) - cite feature"): BL-2075's qa_e2e step 1 ran this feature
+  and recorded the failure as pre-existing; the coder's review b17cb52d30
+  recorded "BL-1554 run: 13/14 pass, pre-existing property_runners
+  failure". Fixed under the human's 2026-10-01 directive, verbatim:
+  "Also, update your prompt / c9 stitution: instead of minting a red,
+  hotfix the defect and mint a stampoff."
+
+notes: |
+  Minted 2026-10-08 by the specifier as the stamp-off of its own hotfix
+  94d434ae2a.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  No register row was added: the hotfix turned the red green in the same
+  pass. Ledger: hotfix_ledger_update.bb --new 94d434ae2a, --link BL-2079.
+  INVEST: Independent, Negotiable (review only), Valuable (the stamp
+  closes the hotfix's certification), Estimable (one line), Small (two
+  feature runs), Testable (both features).

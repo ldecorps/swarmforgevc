@@ -1574,3 +1574,10 @@
   stamp_ticket: BL-2075
   human_decision: null
   decided_at: null
+- commit: 94d434ae2a
+  subject: "hotfix: BL-1554 scenario 01 names qa-gather's property_runners row"
+  detected_at: 2026-10-08
+  state: pending
+  stamp_ticket: BL-2079
+  human_decision: null
+  decided_at: null
