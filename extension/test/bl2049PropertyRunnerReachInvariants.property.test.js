@@ -21,7 +21,7 @@ const os = require('node:os');
 const path = require('node:path');
 const fc = require('fast-check');
 const { execFileSync } = require('node:child_process');
-const { assertReachFloor } = require('./helpers/reachFloors');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -81,51 +81,57 @@ test('property (BL-2049 invariant 1): a runner that cannot be read is always rep
 
 const INV2_RUNS = 60;
 const INV2_FLOOR = 10;
+const INV2_CELLS = [2, 3, 4];
 
 test('property (BL-2049 invariant 2): the runners reached by several changed paths together are exactly the union of what each reaches alone', () => {
   const coverage = {};
-  fc.assert(
-    fc.property(fc.integer({ min: 2, max: 4 }), (n) => {
-      const cell = `n=${n}`;
-      coverage[cell] = (coverage[cell] || 0) + 1;
-      const fx = buildFixture();
-      try {
-        // n independent libs, each named ONLY by its own runner's text
-        // (rule 3) - no two runners share a reach, so the union is
-        // trivially distinguishable from any single path's own reach.
-        const libFiles = [];
-        const runnerNames = [];
-        for (let i = 0; i < n; i += 1) {
-          const lib = `lib${i}.bb`;
-          const runnerName = `r${i}_property_runner.bb`;
-          fs.writeFileSync(path.join(fx.scriptsDir, lib), `; lib ${i}\n`);
-          fs.writeFileSync(path.join(fx.testDir, runnerName), `; names ${lib}\n`);
-          libFiles.push(lib);
-          runnerNames.push(runnerName);
-        }
-        // One extra runner no path reaches, to prove it stays OUT of the
-        // union too (the union property cuts both ways).
-        fs.writeFileSync(path.join(fx.testDir, 'unreached_property_runner.bb'), '; reaches nothing here\n');
+  // BL-1062: each n gets its runs by construction. A sampled
+  // fc.integer({ min: 2, max: 4 }) over 60 runs left one cell under the
+  // floor about 2% of the time (QA on BL-2084, 2026-10-08: n=4 drawn 9 < 10).
+  for (const cellN of INV2_CELLS) {
+    fc.assert(
+      fc.property(fc.constant(cellN), (n) => {
+        const cell = `n=${n}`;
+        coverage[cell] = (coverage[cell] || 0) + 1;
+        const fx = buildFixture();
+        try {
+          // n independent libs, each named ONLY by its own runner's text
+          // (rule 3) - no two runners share a reach, so the union is
+          // trivially distinguishable from any single path's own reach.
+          const libFiles = [];
+          const runnerNames = [];
+          for (let i = 0; i < n; i += 1) {
+            const lib = `lib${i}.bb`;
+            const runnerName = `r${i}_property_runner.bb`;
+            fs.writeFileSync(path.join(fx.scriptsDir, lib), `; lib ${i}\n`);
+            fs.writeFileSync(path.join(fx.testDir, runnerName), `; names ${lib}\n`);
+            libFiles.push(lib);
+            runnerNames.push(runnerName);
+          }
+          // One extra runner no path reaches, to prove it stays OUT of the
+          // union too (the union property cuts both ways).
+          fs.writeFileSync(path.join(fx.testDir, 'unreached_property_runner.bb'), '; reaches nothing here\n');
 
-        const changedPaths = libFiles.map((lib) => `swarmforge/scripts/${lib}`);
-        const separateReach = changedPaths.map((p) => new Set(runReach(fx.scriptsDir, [p])));
-        const expectedUnion = new Set();
-        for (const s of separateReach) {
-          for (const r of s) expectedUnion.add(r);
+          const changedPaths = libFiles.map((lib) => `swarmforge/scripts/${lib}`);
+          const separateReach = changedPaths.map((p) => new Set(runReach(fx.scriptsDir, [p])));
+          const expectedUnion = new Set();
+          for (const s of separateReach) {
+            for (const r of s) expectedUnion.add(r);
+          }
+          const together = new Set(runReach(fx.scriptsDir, changedPaths));
+          assert.deepEqual(
+            [...together].sort(),
+            [...expectedUnion].sort(),
+            `reach-together must equal the union of each path's own reach (n=${n})`
+          );
+          assert.ok(!together.has('unreached_property_runner.bb'), 'the untouched runner must never appear in the union');
+          return true;
+        } finally {
+          fs.rmSync(fx.root, { recursive: true, force: true });
         }
-        const together = new Set(runReach(fx.scriptsDir, changedPaths));
-        assert.deepEqual(
-          [...together].sort(),
-          [...expectedUnion].sort(),
-          `reach-together must equal the union of each path's own reach (n=${n})`
-        );
-        assert.ok(!together.has('unreached_property_runner.bb'), 'the untouched runner must never appear in the union');
-        return true;
-      } finally {
-        fs.rmSync(fx.root, { recursive: true, force: true });
-      }
-    }),
-    { numRuns: INV2_RUNS }
-  );
-  assertReachFloor(coverage, ['n=2', 'n=3', 'n=4'], INV2_FLOOR, 'BL-2049 invariant 2 cell');
+      }),
+      { numRuns: runsPerCell(INV2_RUNS, INV2_CELLS.length) }
+    );
+  }
+  assertReachFloor(coverage, INV2_CELLS.map((n) => `n=${n}`), INV2_FLOOR, 'BL-2049 invariant 2 cell');
 });
