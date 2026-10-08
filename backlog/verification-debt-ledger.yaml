@@ -299,3 +299,8 @@
   role: QA
   description: "lander returned BL-1880 LAND_ESCALATE 'no commit credited': the approval cited coder commit 957e49201e, already on origin/main via an unapproved push (007d54a2c4); traced by hand which stage commits the overnight pass covered, re-verified main's content, landed QA's own evidence commit de0f7e0ed3 (971122d8bb)"
   detected_at: 2026-10-08
+- category: register-join-unidentified-red-triage
+  ticket: BL-2075
+  role: QA
+  description: "unit row exit 1 joined unidentified; read .vitest-report.json (11323/11323 passed, 0 failed files) and .test-durations.jsonl (work ratchet over-tolerance = exit 0) by hand: cause is vitest onTaskUpdate unhandled timeouts at load 17.68/20, owned by BL-1889"
+  detected_at: 2026-10-08
