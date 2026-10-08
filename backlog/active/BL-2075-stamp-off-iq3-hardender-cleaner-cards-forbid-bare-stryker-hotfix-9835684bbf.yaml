@@ -1,0 +1,124 @@
+id: BL-2075
+title: "Stamp-off for hotfix 9835684bbf: the iq3 hardender/cleaner cards now forbid bare Stryker and name the scoped shape (stryker.blXXXX + vitest.blXXXX.stryker, concurrency 8+), the cleaner runs mutation-site-count before forward, the architect never runs the property lane or Stryker, and QA runs qa-gather instead of listing checks by hand - so a local-model TypeScript parcel can no longer burn hundreds of hours on a default-config Stryker run"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of a production hotfix for a live fault the human watched
+# happen on the running swarm - the iq3 hardender on BL-2073 ran the default
+# stryker.config.json and saw ~70k mutants / hundreds of hours of ETA. The
+# same class BL-2060, BL-2066 and BL-2074 were minted at.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: normal
+depends_on: []
+
+mutation_cost: low
+# low: role-card text only - no code, no Stryker lane, no test to run.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  hardender: "role-card text only - no code to mutate"
+  cleaner: "no code to refactor"
+  architect: "no boundary moves; the cards' own wording is the change"
+  documenter: "no living doc describes the local-model cards' mutation wording (the cards themselves are the doc)"
+
+# Not a claim of ownership over BL-1977's contract: it is the feature that
+# drives the hardener's gate the hotfix's wording pins. The hotfix's own
+# wording is pinned in this ticket's invariants and qa_e2e_procedure, the
+# same pattern BL-2074 used for BL-1991.
+acceptance: specs/features/BL-1977-the-hardener-gates-changed-babashka-code-on-touch.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix landed under the human's 2026-10-01 rule
+  ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed here. FIRM: the coder reviews the hotfix and never
+  re-applies it.
+
+invariants:
+  - "hardender.note: NEVER bare `npm run mutation` / default `stryker.config.json`; the scoped shape is `stryker.blXXXX.config.json` mutating ONLY the parcel's changed `out/...js` file(s), concurrency 8+, coverageAnalysis perTest, plus `vitest.blXXXX.stryker.config.mjs` with include: only the covering unit test(s) (shape: vitest.bl1911.stryker.config.mjs); never edit vitest.config.mjs excludes; from extension/ `npx stryker run stryker.blXXXX.config.json`; thousands of tests or hours of ETA: stop, fix scope; kill survivors."
+  - "cleaner.note: the same scoped-Stryker wording; before forward `npm run compile` then `node extension/out/tools/mutation-site-count.js <changed-file>...` (count-only; over 100 is a soft split candidate, not a block)."
+  - "architect.note: never run `npm run test:properties` (lane is ~15 min; runs at coder and QA); never Stryker; `npm test` ONLY when own commits touch `extension/src` or `extension/test`."
+  - "QA.note: run the mechanical checklist through `node extension/out/tools/qa-gather.js --ticket <BL-id> --task <task-name>` from the worktree root (BL-1554); it gathers and reports ONLY - a green report is not an approval."
+  - "The hotfix's wording is byte-for-byte what `git show 9835684bbf` shows; the review confirms each card carries it and nothing wider."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js
+     specs/features/BL-1977-the-hardener-gates-changed-babashka-code-on-touch.feature`
+     and `node specs/pipeline/cli.js
+     specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature`:
+     all ok (the nearest acceptance contracts the hotfix's wording pins).
+  2. Read the coder's evidence (backlog/evidence/BL-2075-coder-<date>.md)
+     proving each of the four cards carries the hotfix's wording verbatim
+     (grep each phrase against the card) and that no card still names bare
+     `npm run mutation` / default stryker.config.json as the run shape.
+  3. Confirm scope: the hotfix changed only the four local-model role cards
+     (`git show 9835684bbf --stat`); no code, no feature, no prompt file.
+
+source: |
+  The coordinator's note (this parcel) names the hotfix. The hotfix's own
+  commit message records the fault: the iq3 hardender on BL-2073 ran the
+  default stryker.config.json (mutate out/**/*.js, concurrency 1) and saw
+  ~70k mutants / hundreds of hours of ETA. Local seats load only the
+  compact role card, not hardender.prompt's scoped-run rules, so the trap
+  repeats on every TypeScript parcel.
+
+notes: |
+  Minted 2026-10-08 by the specifier at the coordinator's word.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+description: |
+  ## Status: hotfix 9835684bbf landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  The iq3 hardender on BL-2073 ran the default stryker.config.json (mutate
+  out/**/*.js, concurrency 1) and saw ~70k mutants / hundreds of hours of
+  ETA. Local seats load only the compact role card, not hardender.prompt's
+  scoped-run rules, so the trap repeats on every TypeScript parcel. The
+  same mutation wording was on the cleaner card; the architect could still
+  burn the property lane checking invariants; QA still listed checks by
+  hand instead of qa-gather.
+
+  ## What the hotfix changed
+
+  9835684bbf, four local-model role cards only:
+  - swarmforge/roles/local-model/hardender.note: forbids bare `npm run
+    mutation` / default stryker.config.json; names the scoped shape
+    (stryker.blXXXX.config.json mutating only the parcel's changed out/...js,
+    concurrency 8+, coverageAnalysis perTest; vitest.blXXXX.stryker.config.mjs
+    include: only the covering unit test(s), shape vitest.bl1911.stryker.config.mjs;
+    never edit vitest.config.mjs excludes; from extension/ `npx stryker run
+    stryker.blXXXX.config.json`; thousands of tests or hours of ETA: stop,
+    fix scope; kill survivors).
+  - swarmforge/roles/local-model/cleaner.note: the same scoped-Stryker
+    wording plus before-forward `npm run compile` then
+    `node extension/out/tools/mutation-site-count.js <changed-file>...`
+    (count-only; over 100 is a soft split candidate, not a block).
+  - swarmforge/roles/local-model/architect.note: never run
+    `npm run test:properties` (lane is ~15 min; runs at coder and QA); never
+    Stryker; `npm test` only when own commits touch extension/src or
+    extension/test.
+  - swarmforge/roles/local-model/QA.note: run the mechanical checklist
+    through `node extension/out/tools/qa-gather.js --ticket <BL-id> --task
+    <task-name>` from the worktree root (BL-1554); it gathers and reports
+    ONLY - a green report is not an approval.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 9835684bbf` against the section above. Confirm each of
+     the four cards carries the hotfix's wording verbatim (grep each phrase
+     against the card) and that no card still names bare `npm run mutation`
+     / default stryker.config.json as the run shape.
+  2. Run the two features in qa_e2e_procedure step 1 once each, output under
+     tmp/.
+  3. Write backlog/evidence/BL-2075-coder-<date>.md with the review result
+     and the run results, and commit it.
+
+assigned_to: coder
