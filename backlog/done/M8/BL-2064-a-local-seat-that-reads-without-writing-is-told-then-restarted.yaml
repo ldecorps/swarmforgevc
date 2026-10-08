@@ -45,7 +45,7 @@ approval_context: >
   existing per-parcel count.
 
 invariants:
-  - "The read count resets on exactly what resets the repeat warning (resets-window?): an edit or write_file, a compaction, or a state-changing shell command."
+  - "The read count resets on an edit or write_file or a state-changing shell command, and never on a compaction (9b89a6e5db's read-budget-resets?: resets-window? without its compaction clause)."
   - "A read-budget restart and a missed-write restart draw on one per-parcel restart count; no parcel is restarted more than max-restarts times for either reason, and the next overrun releases it (BL-1992)."
 
 description: |
@@ -87,10 +87,12 @@ description: |
     `read-commands` (ls, cat, head, tail, wc, grep, find, stat) plus
     `sed -n` and the read-only git subcommands (show, log, diff, grep,
     ls-files, blame, status).
-  - The count is the read-type calls since the last thing that resets the
-    repeat window (`resets-window?`). Writing tmp/notes.md in the arrange
-    phase is a write_file, so it resets the count: planning is never
-    penalised (invariant 1).
+  - The count is the read-type calls since the last edit, write_file or
+    state-changing shell command (`read-budget-resets?`, hotfix
+    9b89a6e5db). A compaction does NOT reset it: a seat that has just
+    lost its context is the one most likely to re-read (scenario 05,
+    invariant 1). Writing tmp/notes.md in the arrange phase is a
+    write_file, so it resets the count: planning is never penalised.
   - From the 12th to the 23rd read the hook's additionalContext tells the
     seat how many reads it has made without a write and that its next call
     is a write: the change its task names, or in the arrange phase its
@@ -133,7 +135,7 @@ out_of_scope: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-2064-a-local-seat-that-reads-without-writing-is-told-then-restarted.feature`:
-     9 of 9 ok (01 x3, 02 x4, 03, 04).
+     9 of 9 ok (01 x3, 02 x3, 03, 04, 05).
   2. `node specs/pipeline/cli.js specs/features/BL-1991-a-local-seat-that-skips-its-named-write-is-restarted-on-it.feature`
      and the BL-1992 feature: all ok (the shared restart path is unchanged
      for a missed write).
@@ -205,6 +207,15 @@ notes: |
   forward, not resets-window? itself) and should read BL-2074's review
   before deciding whether to keep the hotfix's functions or replace them
   wholesale with this ticket's own full build.
+  AMENDED 2026-10-08 by the specifier (coder@2 note 000169, "feature
+  scenario 02's compaction row contradicts the fix"): scenario 02's "a
+  compaction" row RETIRED and its title re-tensed (a write or a
+  state-changing command); new scenario 05 asserts a compaction does not
+  start the count again (20 reads, a compaction, 3 reads, then the 24th
+  read restarts the seat); invariant 1 and the description now carry
+  read-budget-resets? (no compaction clause), the correction the note
+  above left to the builder. Scenario 05 reuses scenario 02's Given and
+  scenario 01's restart Then, so its steps need no new pattern.
   IR-DRY at mint: four medium findings, all one step pattern ("the
   seat's transcript has N read-type calls since its last write") used
   with different counts, plus scenario 02's deliberately different Given;
