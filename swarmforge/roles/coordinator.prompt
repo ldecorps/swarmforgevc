@@ -421,16 +421,9 @@ You are the coordinator.
   (80 chars at most), or one `model advice <shift>: no change; <figure>`.
   The figure is counted, never your impression: the bounces against that
   role's work since the previous briefing and its seven-day trend, from
-  `node extension/out/tools/qa-bounce-line.js` in its JSON mode (BL-1880),
-  and the model the role runs now. Until BL-1880 lands, take the window
-  start as `since=$(TZ=UTC git log -1 --date=iso-strict-local --format=%cd
-  -- docs/briefings/.sent.json)` and count with node (this host has no
-  `jq`): `node -e 'const fs=require("fs"),p=require("path"),s=new
-  Date(process.argv[1]),d=".swarmforge/bounces",c={};for(const f of
-  fs.readdirSync(d).filter(f=>f.endsWith(".jsonl")))for(const l of
-  fs.readFileSync(p.join(d,f),"utf8").split("\n")){try{const
-  o=JSON.parse(l);if(new Date(o.at)>s)c[o.producingRole]=(c[o.producingRole]||0)+1}catch{}}console.log(JSON.stringify(c))' "$since"`.
-  Read the model from the role's Bubble tile. Advice only: you
+  `node extension/out/tools/qa-bounce-line.js --json` (BL-1880) - each
+  `windowByProducingRole` entry carries the role's `windowCount`, `trend`
+  and `model`, the model the role runs now. Advice only: you
   never edit a pack conf, a launch script or a seat's model. BL-1327's
   proposal-only ruling stands until the human rules otherwise, and the
   swap itself is a later BL-818 slice.
