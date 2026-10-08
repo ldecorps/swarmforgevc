@@ -128,6 +128,19 @@ Checks the QA approval gate, then recompiles (if needed) and restarts stale daem
 
 On 2026-07-25, commits reached `main` without passing the back half of the pipeline (architect, hardener, documenter, QA). The incident was caught by an architect noticing the branch state. The daemons had not synced due to a liveness gap, but a routine `sync` call during that window would have deployed three known live defects in the Telegram redelivery path.
 
+### Known Gap: `sync`'s Own Recompile Reads The Working Tree (BL-2065)
+
+`sync`'s `recompile-extension!` runs `npm run compile` directly inside the
+master checkout's `extension/`, so an uncommitted or untracked file
+sitting there at that moment compiles in and is stamped with `main`'s sha
+as if it had been built from `main` — the same defect pattern BL-2065
+fixed in `front_desk_supervisor.bb`'s own stale-build recompile (see
+[BL-1154](../how-to/BL-1154-build-stale-restarts-not-crash-giveup-budget.md#what-the-voluntary-roll-actually-compiles-bl-2065)).
+BL-2065 flagged this `recompile-extension!` copy for the architect as the
+identical pattern; the architect's review did not fold a fix for it into
+that ticket, so `sync` still compiles whatever the working tree holds,
+unlike the front-desk path.
+
 ### Known Friction: Expeditor-Landed Commits
 
 BL-567's commits are QA-approved via the expeditor (an offline single-ticket pipeline), but they are not ancestors of `swarmforge-QA` (the normal integration branch). A post-expedite `sync` will refuse with "code drift" until the next normal QA landing self-heals the ancestry. Use `--override` to permit the sync in this case.
