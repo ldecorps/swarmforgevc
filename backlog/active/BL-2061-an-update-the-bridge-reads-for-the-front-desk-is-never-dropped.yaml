@@ -182,3 +182,6 @@ notes: |
   poll functions).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-08, by: QA, blamed: coder, class: behavior, commit: 45ec53cebb, evidence: backlog/evidence/BL-2061-QA-20261008.md }
