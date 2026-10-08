@@ -1,6 +1,6 @@
 # Judge a settings change from a local seat's own work (BL-1851)
 
-Last Updated: 2026-10-04
+Last Updated: 2026-10-08
 
 [BL-1842's seat report](BL-1052-local-model-seat-launch.md#judge-a-seats-health-from-its-records-not-its-pane)
 tells you how a seat is doing right now. This report answers a different
@@ -75,6 +75,36 @@ Between two consecutive groups, it names what changed as `<field> <old>
    as the `Difference:` line between the two groups it prints, with each
    group's own numbers on either side of it to read whether it helped.
 
+## The daily-briefing mode (BL-2084)
+
+```sh
+bb swarmforge/scripts/local_seat_tuning_report_cli.bb <project-root> --briefing [--days N] [--now <iso>]
+```
+
+This is the mode the documenter's morning briefing pastes verbatim into
+its Local LLM section. Unlike `--seat`, it needs no `--seat` and no
+`--since`: it discovers every seat on its own and the window *is* the
+filter.
+
+- Discovers every seat with a [BL-1850 settings record](BL-1052-local-model-seat-launch.md#a-local-model-seat-records-the-settings-it-starts-with-bl-1850)
+  under `.swarmforge/local-agent/seat-settings/` — by that file's own
+  stem, never by inverting a qwen directory name.
+- For each such seat that made at least one request in the last `--days`
+  days (default 7, ending at `--now` or the current time), prints a
+  heading naming the seat and a markdown table with one row per
+  host-local date it made a request: requests, median time to first
+  token, median prefill and decode speed, median output tokens, thinking
+  share of output, chat compressions per 10 requests, and tool-call
+  failure rate — the same figures and the same grouping math as `--seat`
+  (above), just bucketed by day instead of by settings fingerprint. A
+  field no record carries prints `unknown`, never `0` (same invariant as
+  `--seat`).
+- When no local-model seat made a request in the window, it prints the
+  single line `No local-model seat ran in the last <N> days.` instead of
+  any table.
+- `--qwen-home`, `--qwen-projects-dir` and `--ollama-log` still override
+  their sources per seat, same as `--seat` mode.
+
 ## Sources it reads (never a second parser for the same record — BL-1811)
 
 | Source | What it carries |
@@ -90,4 +120,6 @@ Between two consecutive groups, it names what changed as `<field> <old>
 | [BL-1052: seat health from its records](BL-1052-local-model-seat-launch.md#judge-a-seats-health-from-its-records-not-its-pane) | `local_seat_report_cli.bb` — one seat's latest session right now, not a before/after comparison |
 | [BL-1052: settings snapshot](BL-1052-local-model-seat-launch.md#a-local-model-seat-records-the-settings-it-starts-with-bl-1850) | How a settings row gets recorded, and how to record one by hand after an outside-the-swarm change |
 
-Acceptance: `specs/features/BL-1851-a-local-seats-tuning-report-compares-its-work-across-the-settings-it-ran-with.feature`.
+Acceptance: `specs/features/BL-1851-a-local-seats-tuning-report-compares-its-work-across-the-settings-it-ran-with.feature`
+(`--seat` mode); `specs/features/BL-2084-the-tuning-report-briefing-prints-each-local-seats-days.feature`
+(`--briefing` mode).
