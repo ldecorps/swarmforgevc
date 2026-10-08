@@ -593,6 +593,29 @@ now extended to release.
 No tool call is ever refused by this check either, same invariant as the
 repeat guard and the restart above.
 
+### A local-model seat's forward runs its acceptance feature (BL-2071)
+
+A local-model seat's `git_handoff` send is gated on the ticket's declared
+`acceptance:` feature passing at the commit being forwarded. The check
+lives in `local_seat_acceptance_gate_lib.bb` and is called from two
+places: `swarm_handoff.bb`'s send path and `local_seat_phase_cli.bb`'s
+`pass` subcommand, so the forward and the assert step's `pass` agree on
+the same commit.
+
+The gate is keyed off the raw `SWARMFORGE_ROLE` seat id (never the
+canonicalized stage BL-983 collapses `coder@2` and `coder` into): a
+cloud seat's forward is unaffected and runs no acceptance check.
+
+A failing scenario, a step with no handler, or a run past the time
+bound refuses the send and names what failed; the parcel stays with the
+seat to fix and re-send. If `cli.js` itself cannot be found at root the
+gate fails open (a warning, never a finding) — the same line BL-761's
+acceptance-contract gate draws between a real quality signal and
+infrastructure trouble.
+
+Full gate description: `swarmforge/handoff-protocol.md`, "Local-Seat
+Acceptance Gate (BL-2071)".
+
 ### The window gate refuses qwen's compaction dead zone (BL-1840)
 
 qwen 0.24.7 auto-compacts a seat's chat at `min(0.85 * window, window -
