@@ -2,7 +2,7 @@ id: BL-2084
 title: "The tuning report's --briefing mode prints, for each local-model seat with a settings record, one markdown table row per day over the last 7 days (requests, time to first token, prefill and decode speed, output, thinking share, compressions per 10 requests, tool-call failure rate), or the single line that no local-model seat ran - the table half of BL-1854's Local LLM briefing section"
 milestone: M8
 type: feature
-status: todo
+status: blocked
 epic: local-llm-swarm
 priority: 31
 direction: queue-jump
@@ -152,5 +152,22 @@ notes: |
   table layout are direction), Valuable (the briefing's trend numbers),
   Estimable (one mode on a salvaged lib), Small (two scenarios, two
   production files), Testable (fixture records and the real CLI).
+
+  2026-10-08 ~12:42Z: coordinator BAU pull. The coder (iq3) seat re-hit the
+  identical closing-paren livelock in `local_seat_tuning_report_cli.bb`
+  (no-op `old_string == new_string` replace loop) inside ~60 minutes of
+  claiming this ticket, despite the ticket already carrying the BL-1854
+  split's explicit mitigation prose (shallow functions, parse-check after
+  every edit, "never remove one closing paren"). Pulled to abandoned,
+  worktree stashed (`.worktrees/coder` stash "BL-2084 WIP preserved before
+  pull (coordinator BAU, second loop-halt, no commit since claim)"); the
+  stashed `local_seat_tuning_report_cli.bb` does NOT parse (EOF while
+  reading, confirmed with a Clojure reader loop) - same as BL-1854's
+  salvage. See backlog/evidence/bl2084-paren-relivelock.md. This is the
+  SECOND loop-halt on this exact paren in this lineage (BL-1854 -> BL-2084)
+  with written guidance already in place both times - split-smaller and
+  in-ticket guidance is an exhausted remedy here; the failure looks like
+  the task shape (hand-balancing delimiters in a deep bb form by text
+  substitution), not the slice size. Blocked pending specifier re-slice.
 
 assigned_to: coder
