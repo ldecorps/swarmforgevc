@@ -107,3 +107,30 @@ Also say how this relates to:
 - Buying or recommending a specific SKU (already answered in chat: 32 GB if you want true multi-decode).
 - Making iq3 "as fast as Claude".
 - Changing lander / QA land path (separate; local-model QA card lander_queue fix is elsewhere).
+
+## Disposition (specifier, 2026-10-08)
+
+Split 1:3, every human sentence above verbatim in each ticket's `source:`:
+
+- **BL-2076** - the tool-call shim names the seat behind every chat
+  completion (seat in each seat's URL; log line with seat, duration,
+  prompt tokens, switch). The measurement half: "who holds the slot".
+- **BL-2077** - one decode slot in the shim, held by a seat across its
+  burst (idle grace, hold quantum, waiting seats kept alive, health shows
+  holder and waiters). Wanted items 2, 3 and 5 (one weight load, one
+  context: KV budget named at 73728 tokens, 14.5 GB on the card).
+- **BL-2078** - a standing all-local forge pack (the live pack's seven
+  iq3 seats plus its Claude coordinator) launched through the local
+  pack-shape gate, allowed only behind the slot. Wanted items 1 and 4: the
+  soft cap is `active_backlog_max_depth`, posed to the human as a ruling
+  (3 recommended, 5, 2).
+
+Shape: A (in the shim) with B's lease semantics. iq3's cache cannot
+rewind to a shared prefix (BL-1978), so every change of seat is a full
+re-prefill (23-38 s at 20-30k tokens, 66 s at 50k, serve.log 2026-10-08);
+a per-request lock - Ollama's own order - would pay that on nearly every
+request. B as a separate daemon has no hook into qwen; C leaves the GPU
+idle about half of each active hour on the mono pack; D caps tickets, not
+concurrent /v1 calls. Measurements: BL-2077 `notes:`. BL-1142 is amended
+for router packs, not superseded. The retired `single_inference_slot`
+line is not revived.

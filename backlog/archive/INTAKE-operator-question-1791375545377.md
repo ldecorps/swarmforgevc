@@ -51,3 +51,12 @@ diagnosis ticket that instruments front-desk startup and the first poll
 cycle (and distinguishes a stall-detector false positive from a real
 hang) would answer it without first having to re-derive the 37-kill
 measurement.
+
+## Disposition (specifier, 2026-10-08)
+
+Drained to **BL-2072** (`backlog/paused/BL-2072-a-front-desk-stall-names-the-phase-that-stalled.yaml`,
+minted 924993472f): the human had already chosen "Mint a diagnosis ticket"
+in the specifier's own session, and BL-2072 is that diagnosis slice - it
+instruments the startup topic checks, the getUpdates wait and batch
+handling, which is the ~2m-after-fresh-start lead this intake carried.
+The human's verbatim answer above is now in BL-2072's `source:`.
