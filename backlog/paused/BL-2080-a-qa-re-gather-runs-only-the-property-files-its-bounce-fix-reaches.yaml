@@ -35,7 +35,7 @@ required_wiring:
 # parcel's own diff. The scenarios drive gatherQaChecklist, the live entry,
 # never a helper alone.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   This changes what QA's last gate measures on a re-gather, so it needs
   your yes. FIRM: the FIRST gather of every parcel still runs the whole
