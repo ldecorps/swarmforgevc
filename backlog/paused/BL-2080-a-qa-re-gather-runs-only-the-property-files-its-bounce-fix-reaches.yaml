@@ -1,0 +1,164 @@
+id: BL-2080
+title: "A QA re-gather of a bounced ticket runs only the property files the fix reaches since the ticket's last green whole-lane run: QA's gather runs the whole property lane on every gather (389-1314 s, 75-90% of each gather on 2026-10-07), and four re-gathers that shift paid 2912 s of lane again for small fixes on top of a commit whose whole lane QA had already seen green; the whole lane still runs once per parcel and whenever the reach cannot place a change"
+milestone: M8
+type: feature
+status: todo
+epic: unit-suite-speed
+priority: 4
+direction: swarm-reported
+depends_on: []
+# Shares extension/src/quality/qaGather.ts's properties row with BL-2024
+# (paused, priority 3, approved). The coordinator's orthogonality rule keeps
+# them from running at once, so no depends_on is declared. Whichever lands
+# second merges main first and keeps both: a lane BL-2024 skips writes no
+# whole-lane record, so the next gather of that ticket runs the whole lane.
+mutation_cost: medium
+# medium: one decision on the properties row (production TypeScript, so the
+# hardener's Stryker pass runs), one durable per-ticket record, and the
+# placement of paths outside extension/src in property_reach.js.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one decision beside an unchanged checklist and one rule added to one selector; nothing to deduplicate"
+
+acceptance: specs/features/BL-2080-a-qa-re-gather-runs-only-the-property-files-its-bounce-fix-reaches.feature
+
+invariants:
+  - "A gather runs less than the whole property lane only when this ticket's last whole-lane run was green at a commit the gathered commit descends from and the reach placed every path changed since that commit; every other gather runs the whole lane."
+  - "A reached-files run never appends to the property lane's duration log (extension/.property-durations.jsonl), so the lane's pole, trend and budget read whole-lane runs only."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2080QaRegatherReachSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the new decision's only reader
+# is QA, through the report, and qa-gather.js already calls
+# gatherQaChecklist, so a qaGather.ts literal would be satisfied by this
+# parcel's own diff. The scenarios drive gatherQaChecklist, the live entry,
+# never a helper alone.
+
+human_approval: pending
+approval_context: >
+  This changes what QA's last gate measures on a re-gather, so it needs
+  your yes. FIRM: the FIRST gather of every parcel still runs the whole
+  property lane, as BL-1877's ruling A rests on ("QA's gather still runs
+  the whole lane once per parcel"). Only a re-gather after a bounce runs
+  fewer files, and only when that ticket's last whole-lane run was green at
+  a commit the fix descends from. Any change the reach cannot place, a red
+  or unfinished earlier lane, or a selector error runs the whole lane.
+  What it buys: on 2026-10-07, four re-gathers paid 2912 s (49 min) of
+  property lane again, on the stage that has been the top dwell hotspot
+  three shifts running. Two of those fixes had merged main, so their reach
+  is wide and the real saving is less than that. What it gives up: a
+  property file the reach misses for the fix is no longer run at QA's
+  re-gather. Such a red then shows at the next parcel's first gather after
+  the land, in a file that parcel did not touch.
+
+description: |
+  ## Why
+
+  The 2026-10-08 closing-ceremony packet's top dwell hotspot is QA, for the
+  third shift running: 520 min of processing and 1080 min of queue wait,
+  with 184 chases. QA's 16 gathers on 2026-10-07
+  (`.worktrees/QA/tmp/*-gather.json`) put the property lane at 389-1314 s,
+  75-90% of each gather. Seven of them re-gathered a bounced ticket. For
+  four of those (BL-2044 658 s, BL-1911 1314 s, BL-2052 551 s, BL-1880
+  389 s), the ticket's previous gather had run the whole lane green at a
+  commit the fix descends from. The other three followed a red or
+  unfinished lane, and this ticket keeps those on the whole lane.
+
+  ## What is wanted
+
+  - `extension/src/quality/qaGather.ts` (with its IO adapter
+    `extension/src/metrics/qaGatherAdapter.ts`), the `properties` row:
+    - After every whole-lane run that completes, the gather records the
+      ticket, the commit and the lane's exit status in a per-ticket record
+      under `.swarmforge/`. The gather is the record's only writer and only
+      reader, in the checkout QA gathers in. A killed gather writes nothing.
+    - On a gather, when the ticket's last record is green at a commit the
+      gathered commit descends from (`git merge-base --is-ancestor`), the
+      row asks the reach selector which property files the change since
+      that commit reaches (`git diff --name-only <recorded>..<commit>`).
+      It runs only those, with `npx vitest run --config
+      vitest.properties.config.mjs <files>` after the compile, never
+      through `npm run test:properties`, whose recorder appends a
+      whole-lane duration (invariant 2). When none is reached, the row
+      reads ran, exit 0, with a message naming the recorded commit and no
+      property file reached. In both cases the row names the recorded
+      commit.
+    - The whole lane runs as today in every other case: no record, a red
+      last record, a commit that does not descend from it, the selector
+      printing ALL, or the selector exiting non-zero.
+  - `swarmforge/scripts/property_reach.js` places a changed path outside
+    extension/src instead of answering ALL. Direction, not mandate:
+    - a changed `specs/pipeline` .js module is a changed node in the
+      require graph BL-1877 already walks (its rule 5 then reaches the
+      step-registry loaders);
+    - any other changed file reaches the property files whose code lines
+      name it by file name, name a `swarmforge/scripts` file that names it
+      (one hop, as BL-1877's rule 4), or name the directory it sits in (for
+      example `path.join(REPO_ROOT, 'specs', 'features')`, which
+      bl1277StepCollisionInvariants lists);
+    - a file reached by none of these reaches nothing.
+    The pre-commit guard only passes extension/src and property-file paths
+    (`check_property_suite_drift.sh`'s path_triggers_check), so the commit
+    hook behaves exactly as today.
+  - The lane's three node:test property files under `specs/pipeline/test`
+    (BL-2041) are part of the population: a reached-files run includes
+    each one the change reaches, by the same rules.
+  - The step handler `specs/pipeline/steps/bl2080QaRegatherReachSteps.js`
+    builds each fixture with `git init` under mkdtemp (BL-1390), and calls
+    gatherQaChecklist with a `runFn` that passes `git` and the reach
+    selector through to the real ones and records every other command,
+    answering it with exit 0. This is the same seam BL-2073's handler uses.
+  - Documenter: `docs/reference/Specification.MD`'s qa-gather section
+    (around "node extension/out/tools/qa-gather.js") states the re-gather
+    rule, the recorded commit the row names, and when the whole lane runs.
+
+  ## Not in scope
+
+  - The first gather of a parcel: it keeps the whole lane (BL-1877 ruling A).
+  - Skipping lanes for a backlog-only parcel: BL-2024 (paused) owns that.
+  - The property_runners row (BL-2073) and every other check: unchanged.
+  - The pre-commit guard's own selection: unchanged.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2080-a-qa-re-gather-runs-only-the-property-files-its-bounce-fix-reaches.feature`:
+     10 ok (01 x5, 02 x5), 0 fail.
+  2. Read the gather report for THIS parcel. If this is its first gather,
+     the properties row runs the whole lane (scenario 02's first row on
+     itself), and the per-ticket record for BL-2080 exists afterwards with
+     this commit and the lane's exit.
+  3. `git diff <parcel>^..<parcel> --stat` names only qaGather.ts, the
+     adapter, property_reach.js, their tests, the feature, the handler, the
+     Specification.MD lines and the ticket YAML.
+  4. After the land, the next time QA re-gathers a bounced ticket, read its
+     properties row: either the reached files with the recorded commit, or
+     the whole lane with the reason.
+
+source: |
+  The specifier's closing-ceremony lean pass for shift 2026-10-08 (packet
+  .swarmforge/lean/ceremony/2026-10-08.json, top dwell hotspot QA 31211256
+  ms of processing; recorded outcome process_ticket BL-2080). The human,
+  2026-10-02, verbatim: "We have to make the swarm.churn much fastee".
+
+notes: |
+  Minted 2026-10-08 by the specifier in the closing-ceremony lean pass.
+  Measured from the QA gather JSONs dated 2026-10-07 (16 gathers): the
+  properties row's duration_ms and exit, the ticket's previous gather, and
+  `git merge-base --is-ancestor` between their commits. A first draft of
+  this ticket's feature, from an earlier session of this pass, said "7
+  re-gathers, 5141 s" and "only backlog/ and docs/ files -> no property
+  file". Both were corrected before mint: three of those re-gathers followed
+  a red or unfinished lane, and bl1333/bl1115 read backlog/hotfix-ledger.yaml,
+  bl1320 reads a docs/how-to page, and bl1277 lists specs/features.
+  Dynamic routing: production TypeScript with a durable record ->
+  [coder, architect, hardender, documenter, qa]. architect: the record's
+  home and the selector's new rule are a boundary the spec states but
+  cannot pin. Cleaner dropped (medium).
+  INVEST: Independent (BL-2024 shares the file, not a premise). Negotiable
+  (the record's shape and the selector's matching are direction). Valuable
+  (QA re-gathers, on the bottleneck stage). Estimable (one row decision,
+  one record, one selector rule). Small (two scenario outlines). Testable
+  (mkdtemp git fixtures, injected runFn, the real selector).
+  No ruling_options: approve means this rule, reject keeps every gather on
+  the whole lane.
