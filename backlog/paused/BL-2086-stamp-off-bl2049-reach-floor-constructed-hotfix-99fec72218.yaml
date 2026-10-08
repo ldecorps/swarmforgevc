@@ -1,0 +1,114 @@
+id: BL-2086
+title: "Stamp-off for hotfix 99fec72218: bl2049PropertyRunnerReachInvariants.property.test.js invariant 2 sampled its reach floor (n drawn from 2..4 over 60 runs against 10 per cell, red about 2% of runs) and QA's gather of BL-2084 drew n=4 9 < 10; the hotfix gives each n runsPerCell(60, 3) = 20 runs by construction, 2/2 green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is high at first sighting (2026-09-05
+# amendment); this is the stamp-off of the hotfix that turned it green.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: the loop structure of one property test; no production code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one loop in one test file; nothing to refactor"
+  architect: "no boundary moves; the property asserts what it asserted before"
+  hardender: "no production code: a property test's run structure"
+  documenter: "no living doc describes this file's run structure"
+
+# Not a claim of ownership over BL-2049's contract (BL-1251): the feature
+# whose invariants this property file carries, which this review must
+# leave green.
+acceptance: specs/features/BL-2049-a-change-runs-exactly-the-property-runners-it-reaches.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix landed under the human's 2026-10-01 rule
+  ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews the hotfix and never
+  re-applies it.
+
+invariants: []
+
+description: |
+  ## Status: hotfix 99fec72218 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `extension/test/bl2049PropertyRunnerReachInvariants.property.test.js`
+  invariant 2 drew `n` with `fc.integer({ min: 2, max: 4 })` over
+  `numRuns: 60` and asserted 10 runs per value of `n`, a reach floor
+  sampled rather than constructed (BL-1062). A cell lands under 10 when
+  Binomial(60, 1/3) is 9 or less: about 0.6% per cell, about 2% per run.
+  QA's gather of BL-2084 at 96a694b92b drew n=4 9 times (evidence
+  767f2ac0a5, note 003930). No register row named the file.
+
+  ## What the hotfix changed
+
+  99fec72218, test only: invariant 2 loops over `n` in [2, 3, 4] with
+  `runsPerCell(60, 3)` runs each (20), the cell held as `fc.constant`.
+  The property body, the floor and the total run budget are unchanged.
+  `sampled_reach_floor_census_cli.bb` now reads the file `constructed`
+  (it read `sampled-low` before). Invariant 1 was already constructed (one
+  cell, 15 runs, floor 15) and is untouched.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 99fec72218` and confirm the property body and the
+     floor are unchanged apart from indentation, and that each cell's
+     runs meet its floor by construction.
+  2. Run the property file and the feature in qa_e2e_procedure once each,
+     output under tmp/.
+  3. Write backlog/evidence/BL-2086-coder-<date>.md with the result and
+     commit it.
+
+constraints: >
+  Review only: never re-apply or extend the hotfix. Never start a
+  mutation run.
+
+out_of_scope: |
+  - Other property files with sampled floors (BL-1583's sweeps own that
+    census; the 11 added after BL-1584's gate are listed on BL-1583).
+  - The gate that let this file land (BL-2087).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read the property file's row in QA's gather (the properties lane runs
+     it): both tests pass. Measured at mint, alone, after the hotfix
+     (2026-10-08): 2 of 2 in 6 s (invariant 1 0.4 s, invariant 2 4.9 s).
+  2. `node specs/pipeline/cli.js specs/features/BL-2049-a-change-runs-exactly-the-property-runners-it-reaches.feature`:
+     8 of 8 ok (measured at mint, 2026-10-08, 3 s).
+  3. Read the coder's evidence; confirm the hotfix changed only the
+     property file (`git show 99fec72218 --stat`).
+
+source: |
+  QA note 003930 (2026-10-08T14:53:38Z), verbatim: "BL-2084 unowned red
+  bl2049 reach floor inv2 n=4 9<10, see ev 767f2ac0a5". Fixed under the
+  human's 2026-10-01 directive, verbatim: "Also, update your prompt / c9
+  stitution: instead of minting a red, hotfix the defect and mint a
+  stampoff."
+
+notes: |
+  Minted 2026-10-08 by the specifier as the stamp-off of its own hotfix
+  99fec72218 (committed as SWARMFORGE_ROLE=QA: extension/test/ is a
+  QA-exclusive path on main; SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS raised up
+  front for the pre-commit property guard).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  No register row was added: the hotfix turned the red green in the same
+  pass. Ledger: hotfix_ledger_update.bb --new 99fec72218, --link BL-2086.
+  QA (holding BL-2084, which bounced on its own items in the same pass)
+  was told the red is fixed on main.
+  Second leak of the same class on 2026-10-08 (bl2055 was the first,
+  BL-2083): both files were added after BL-1584's send-time gate shipped,
+  which is silent on a coder's first send - BL-2087 owns that.
+  INVEST: Independent, Negotiable (review only), Valuable (the stamp
+  closes the hotfix's certification), Estimable (one loop), Small (one
+  property file and one feature run), Testable (both runs).
+
+assigned_to: coder
