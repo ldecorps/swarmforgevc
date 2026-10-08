@@ -1,5 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 8, 2026 (BL-2060: stamp-off of hotfixes
+`c416adc5fb` and `4453766c28` — CONFIRMED. The front desk and the Cursor
+bridge share one bot token, so only one may call `getUpdates`; a
+supervisor started while the front desk was down carried a stale
+`CURSOR_BRIDGE_INBOUND_QUEUE=0` for its whole life, giving both a live
+409-retry loop and a second permanent poller on the same token, so every
+approval tap that reached the bridge was answered and dropped
+(2026-10-06 19:45 to 2026-10-07 09:47 local). `c416adc5fb` adds
+`POLL_CONFLICT_BACKOFF_MAX_MS` (5000) and `decidePollFailureDelayMs` to
+`telegramFrontDeskBotCore.ts`, capping the front desk's poll-failure
+backoff at 5s on a 409 so its heartbeat stays under the 90s stall window
+through a conflict (full backoff is unchanged for every other error).
+`4453766c28` keeps `start_cursor_bridge.sh` deciding
+`CURSOR_BRIDGE_INBOUND_QUEUE` once at start, but now marks that decision
+`CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto`; `shouldUseCursorBridgeInboundQueue`
+in `telegramCursorBridgeCore.ts` ignores an auto-marked value and
+re-decides from the live per-poll feeder liveness instead, so a stale
+start-time snapshot can no longer force a mode for the supervisor's whole
+life — an operator's explicit `CURSOR_BRIDGE_INBOUND_QUEUE=0|1` (no auto
+marker) still forces it. This stamp-off review confirms the landed
+commits only; it reimplements nothing. No diagram edit — neither hotfix
+changes a component, boundary, or channel a registered diagram depicts.
+See `docs/how-to/BL-1253-swarm-stamp-dead-feeder-owns-getupdates.md` and
+`docs/how-to/BL-764-front-desk-shared-token-bridge-fanout.md`.
+Acceptance:
+`specs/features/BL-1036-a-restart-does-not-cost-a-telegram-conflict-window.feature`.)
+
+Prior entry —
+
 **Last Updated:** October 7, 2026 (BL-2073: QA's mechanical checklist
 gains a ninth row, `property_runners`, between the `properties` and
 `acceptance` rows — on every parcel the gather runs
