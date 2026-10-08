@@ -1,5 +1,5 @@
 id: BL-2088
-title: "Stamp-off for soft shift-close hotfix: scheduled bedtime freezes new jobs at T−15 and drains in_process (push-forward or bounce) before finish-shift, instead of hard-killing at the shift-end bell"
+title: "Stamp-off for soft shift-close hotfix 01e77eaef2: scheduled bedtime freezes new jobs at T−15 and drains in_process (push-forward or bounce) before finish-shift, instead of hard-killing at the shift-end bell"
 milestone: M8
 type: defect
 severity: high
@@ -70,7 +70,7 @@ notes: |
   lifecycle change), Estimable, Small, Testable.
 
 description: |
-  ## Status: soft shift-close hotfix landed
+  ## Status: hotfix 01e77eaef2 landed the fix
 
   This parcel is its stamp-off: review it, do not re-apply it.
 

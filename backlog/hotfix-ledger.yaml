@@ -1602,3 +1602,10 @@
   stamp_ticket: BL-2086
   human_decision: null
   decided_at: null
+- commit: 01e77eaef2
+  subject: "hotfix: soft shift close freezes new jobs at T−15 and drains in_process before finish-shift"
+  detected_at: 2026-10-08
+  state: pending
+  stamp_ticket: BL-2088
+  human_decision: null
+  decided_at: null
