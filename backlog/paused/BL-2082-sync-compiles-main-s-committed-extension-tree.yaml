@@ -1,0 +1,150 @@
+id: BL-2082
+title: "build_freshness_cli.bb sync compiles main's committed extension tree, as the front desk's recompile does since BL-2065: sync's own recompile runs npm run compile in the master checkout's extension/, and its override compiles uncommitted changes under main's name - 170 of 258 logged overrides (2026-07-27 to 2026-10-07) ran with such changes present, and the 2026-10-07T10:23:40Z one listed the stray BL-1911 repo reader whose secret filter leaked"
+milestone: M8
+type: defect
+severity: high
+# high: same live impact as BL-2065 - unreviewed, uncommitted code compiled
+# into the running build and stamped as main; the 10:23:40Z override on
+# 2026-10-07 is in the incident BL-2065 was minted from.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: swarm-reported
+depends_on: [BL-2065]
+# BL-2065 ships safe_recompile_lib.bb's recompile-extension-from-main!,
+# which this ticket routes sync's recompile through.
+mutation_cost: low
+# low: one adapter in a Babashka CLI (no Stryker lane) and fixture setup.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one adapter changes; nothing to refactor"
+  architect: "the build shape is BL-2065's safe_recompile_lib, already reviewed; this routes sync's recompile adapter through it"
+  hardender: "Babashka with no Stryker lane; the export and swap are safe_recompile_lib's, hand-mutant-hardened in BL-2065; scenario 02 pins the one new decision"
+
+acceptance: specs/features/BL-2082-sync-compiles-main-s-committed-extension-tree.feature
+
+invariants:
+  - "Whatever the master checkout's working tree holds, with or without the override, the extension build sync compiles equals the build of main's committed tree."
+
+required_wiring:
+  - 'swarmforge/scripts/build_freshness_cli.bb::recompile-extension-from-main!::sync recompiles through safe_recompile_lib (BL-2065), the consumer call'
+  - 'specs/pipeline/steps/bl2082SyncCompilesMainSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  From the documenter's spec-gap note on BL-2065 (001711). No choice is
+  posed: BL-2065's invariant (the live build equals main's committed tree)
+  now covers sync too. FIRM: an override still lets sync pass its refusal
+  and restart the stale groups, and it is still logged; it no longer
+  compiles uncommitted extension code. A failed main build restarts
+  nothing, as a failed compile does today.
+
+description: |
+  ## What is wrong
+
+  `build_freshness_cli.bb sync` recompiles the extension before it
+  restarts a stale daemon group. Its `recompile-extension!` runs
+  `npm run compile` inside the master checkout's `extension/`, so tsc
+  compiles whatever the working tree holds, and the build is stamped with
+  main's commit. sync refuses an uncommitted change under the deployed
+  surface (BL-629's `:dirty-surface` reason), but `--override` passes that
+  refusal and compiles the change anyway.
+
+  `.swarmforge/build-freshness/sync-overrides.jsonl` holds 258 overrides
+  from 2026-07-27 to 2026-10-07: 131 code-drift, 126 dirty-surface, 1
+  gather-failed. 170 of them list uncommitted deployed-surface paths, so
+  each of those compiled them. On 2026-10-07 at 10:23:40Z a code-drift
+  override listed `extension/src/tools/localQwenSeatLive.ts` and
+  `extension/src/tools/localSeatRepoRead.ts`, the stray BL-1911
+  implementation whose secret filter leaked (QA note 003900); the cursor
+  bridge child that loaded it started at 10:23:52Z (BL-2065's notes).
+
+  BL-2065 fixed the front desk's own recompile with
+  `safe_recompile_lib.bb`'s `recompile-extension-from-main!` and left
+  sync's copy alone. Its documenter recorded the gap in
+  docs/reference/BL-629-build-freshness-qa-approval-gate.md ("Known Gap:
+  `sync`'s Own Recompile Reads The Working Tree").
+
+  ## What is wanted
+
+  - sync's recompile builds main's committed tree through
+    `recompile-extension-from-main!`, with the main sha sync already
+    gathers (scenario 01, invariant 1). The override keeps its refusal
+    bypass and its audit record; it no longer changes what is compiled.
+  - The lib returns an error string where today's adapter throws. sync
+    keeps today's outcome on a failed compile: it exits non-zero naming
+    the failure, and restarts no group (scenario 02).
+  - BL-629's, BL-433's and BL-1225's features stay green with their text
+    unchanged. Their handlers put a fake `npm` on PATH over fixtures that
+    may commit no `extension/`; if the lib's export needs one, give the
+    fixture one in this parcel.
+  - Documenter: retire the "Known Gap" section of
+    docs/reference/BL-629-build-freshness-qa-approval-gate.md and the
+    paragraph of docs/how-to/BL-1154-build-stale-restarts-not-crash-giveup-budget.md
+    that says sync's recompile was left unfixed; both say sync builds
+    main's committed tree.
+
+  ## How (direction, not mandate)
+
+  - The `:recompile!` adapter in `run-sync!` calls the lib and throws
+    `ex-info` on an error string, so `execute-sync!` and `-main` stay as
+    they are.
+  - The step handler builds the fixture with `git init` under mkdtemp
+    (BL-1390), a tiny `extension/` whose compile script writes a file
+    from its sources, and a stale tracked process the way
+    bl629SyncQaApprovalGateSteps.js does, then shells the real CLI.
+
+constraints: >
+  Fixture repositories under mkdtemp only, proven by rev-parse
+  --git-common-dir before any mutating git command (BL-1390); never the
+  live checkout, never the live operator runtime. bash 3.2 rules for any
+  shell.
+
+out_of_scope: |
+  - A role running `npm run compile` by hand in the master checkout
+    (BL-2065's out_of_scope; still a separate path).
+  - Uncommitted swarmforge/scripts files: the daemons run them from the
+    checkout, and the master-checkout drift sweep owns that.
+  - The override's refusal reasons and its audit record (BL-629).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2082-sync-compiles-main-s-committed-extension-tree.feature`:
+     3 ok (01 x2, 02), 0 fail.
+  2. `node specs/pipeline/cli.js specs/features/BL-629-sync-refuses-non-qa-approved-main.feature`:
+     13 ok; BL-433-build-freshness-operator-restart-race.feature: 5 ok;
+     BL-1225-sync-initiated-restart-leaves-a-readable-trail.feature: 3 ok
+     (all three measured at mint, 2026-10-08, before the change).
+  3. `git diff <parcel>^..<parcel> --stat` names only
+     build_freshness_cli.bb, the feature, the step handlers, the two docs
+     and the ticket's evidence.
+  4. After the land, on the live swarm: the next sync that recompiles
+     leaves extension/out/BUILD_SHA equal to `git rev-parse main`, and
+     `git status --porcelain` in the master checkout is unchanged across
+     it.
+
+source: |
+  The documenter's note 001711 (2026-10-08T10:41:09Z), verbatim:
+  "BL-2065 spec-gap: BL-629's recompile unfixed, docs state the gap".
+  BL-2065's origin, QA note 003900 (2026-10-07T10:42:00Z), verbatim:
+  "LIVE: stray BL-1911 impl in master (07:41Z), leaky filter; blocks
+  reconcile". Override counts from
+  .swarmforge/build-freshness/sync-overrides.jsonl read on 2026-10-08.
+
+notes: |
+  Minted 2026-10-08 by the specifier on the documenter's spec-gap note
+  001711, the same pass BL-2065's Living docs bullet was amended to match
+  what its documenter shipped (04720240fa).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Dynamic routing: Babashka production code, small fix -> [coder, qa],
+  plus documenter (two living docs describe the gap this closes).
+  The override log's last row is 2026-10-07T11:14:40Z; no override ran
+  on 2026-10-08 before this mint.
+  IR-DRY at mint: one possible-synonym finding (the working tree "holds"
+  the change vs "is unchanged by the sync"), kept: a setup and an
+  assertion about the same tree.
+  INVEST: Independent (depends_on BL-2065, in flight at QA), Negotiable
+  (the adapter's shape is direction), Valuable (no override compiles
+  uncommitted code under main's name), Estimable (one adapter), Small
+  (three scenarios), Testable (a fixture swarm and the real CLI).

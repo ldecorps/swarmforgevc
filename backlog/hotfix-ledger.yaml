@@ -1588,3 +1588,10 @@
   stamp_ticket: BL-2081
   human_decision: null
   decided_at: null
+- commit: 2242cd327c
+  subject: "hotfix: bl2055 property file's reach floors are built per cell with runsPerCell instead of sampled (BL-1062)"
+  detected_at: 2026-10-08
+  state: pending
+  stamp_ticket: BL-2083
+  human_decision: null
+  decided_at: null

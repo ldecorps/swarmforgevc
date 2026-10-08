@@ -95,6 +95,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "safe_recompile_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_log_freshness_pulse_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
@@ -303,6 +304,15 @@
 ;; reason to refuse the respawn below - a front desk that stays down takes
 ;; the human's only channel with it, so the caller still brings the
 ;; process up on the stale build and surfaces this loudly instead.
+;;
+;; BL-2065: the recompile itself is safe-recompile-lib/recompile-extension-
+;; from-main! - it builds main's COMMITTED extension/ tree (a git archive of
+;; that commit), never whatever the master checkout's working tree happens
+;; to hold at this exact moment. The old inline `npm run compile` here ran
+;; directly in the live checkout's extension/, so an uncommitted or
+;; untracked file sitting there (BL-1911's stray implementation, 2026-10-07)
+;; got compiled in and stamped with main's sha as if it had been built from
+;; main.
 (defn- ensure-current-build! []
   (when (node-build-stale?)
     (log! "stale-build-detected" "recompiling before respawn")
@@ -314,9 +324,9 @@
      project-root {:type "stale-build-recompile"
                    :subject "front-desk-supervisor"
                    :reason "recompiling before respawn"})
-    (let [{:keys [exit err]} (process/sh {:continue true :dir (str (fs/path project-root "extension"))} "npm" "run" "compile")]
-      (when-not (zero? exit)
-        (str "npm run compile failed: " err)))))
+    (if-let [main (main-sha!)]
+      (safe-recompile-lib/recompile-extension-from-main! project-root main)
+      "could not resolve main's current commit")))
 
 (defn atomic-spit! [path content]
   (fs/create-dirs (fs/parent path))

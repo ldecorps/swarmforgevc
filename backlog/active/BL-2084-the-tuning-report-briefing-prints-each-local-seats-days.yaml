@@ -1,0 +1,156 @@
+id: BL-2084
+title: "The tuning report's --briefing mode prints, for each local-model seat with a settings record, one markdown table row per day over the last 7 days (requests, time to first token, prefill and decode speed, output, thinking share, compressions per 10 requests, tool-call failure rate), or the single line that no local-model seat ran - the table half of BL-1854's Local LLM briefing section"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 31
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: a rendering mode over BL-1851's bb lib; bb has no mutation lane wired
+# (engineering.prompt). Fixtures only.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "a small rendering mode beside unchanged code; nothing to deduplicate"
+  architect: "a rendering mode over BL-1851's lib, no second parser and no boundary moved"
+  hardender: "Babashka, no Stryker lane (BL-472), and a read-only report writes no durable state"
+
+acceptance: specs/features/BL-2084-the-tuning-report-briefing-prints-each-local-seats-days.feature
+
+# Handler pin (BL-233, BL-1371). The consumer is the documenter's briefing
+# step, prose in documenter.prompt (its interim now names this ticket), so
+# no production anchor exists (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl2084LocalSeatBriefingSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1854 (approved; the human asked for it directly and
+  the 2026-09-30 directive makes local-LLM tickets queue-jump). This slice
+  adds no scope: it is BL-1854's scenarios 01 and 04, moved verbatim. FIRM,
+  as in BL-1854: the numbers come from this tool and the documenter pastes
+  them verbatim; the suggestion is the documenter's.
+
+invariants:
+  - "The briefing section is read-only to produce and the same records always print the same section."
+  - "Every number in the section comes from a record; a field no record carries prints as unknown, never as 0."
+
+source: |
+  Split from BL-1854 on 2026-10-08. BL-1854's source, the human,
+  2026-09-30 ~21:00Z, specifier pane, verbatim:
+
+  > tell documenter to add a special local llm section in the daily breifing where telemetry trends are shown, as well as a suggestion as to how to improve its usage as a swarm role
+
+  The split, the human's 2026-10-04 directive, verbatim: "We should make
+  the "splitting of ticket if coder cant manage" BAU."
+
+description: |
+  ## Why
+
+  The documenter composes the morning briefing, and the human wants a
+  Local LLM section in it with the local seats' telemetry trend (BL-1854).
+  The numbers must come from a tool. This slice is the trend table; the
+  lines under it are BL-2085.
+
+  ## What is wanted
+
+  `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <project-root> --briefing [--days N] [--now <iso>]`
+  (default 7 days) prints markdown:
+  - for every seat with a BL-1850 settings record
+    (`.swarmforge/local-agent/seat-settings/<seat>.jsonl`) that made a
+    request in the window, a heading naming the seat and a table with one
+    row per host-local date it made requests. Each row: requests, median
+    time to first token, median prefill and decode speed, median output
+    tokens, thinking share of output, compressions per 10 requests and
+    tool-call failure rate, computed as BL-1851 computes them (scenario
+    01). A field no record carries prints `unknown` (invariant 2);
+  - when no such seat made a request in the window, the single line
+    `No local-model seat ran in the last <N> days.` (scenario 02).
+  `--seat` keeps working as it does today when `--briefing` is absent.
+
+  ## Start from the salvage (do not rebuild it)
+
+  `refs/swarmforge/salvage/BL-1854` (71c040ff9d) holds a first pass. Take
+  ONLY `swarmforge/scripts/local_seat_tuning_report_lib.bb` from it:
+  `git checkout refs/swarmforge/salvage/BL-1854 -- swarmforge/scripts/local_seat_tuning_report_lib.bb`.
+  Never take its `local_seat_tuning_report_cli.bb` (its `candidate-seats`
+  is one `)` short and inverts qwen directory names wrongly), and never
+  its `specs/pipeline/steps/Bl2076ShimNamesSeatSteps.js` (another
+  ticket's WIP). The salvaged lib parses and holds what this slice needs:
+  `epoch-ms` (public), `local-date-of`, `briefing-window`,
+  `briefing-day-rows`, `summarise-events` (the shared core
+  `summarise-group` now calls) and `summarise-day`. Two known bugs in it:
+  - `local-date-of` (line ~60) calls `.toInstant` on the Instant that
+    `Instant/parse` returns. Instant has no `.toInstant`, the catch
+    swallows it, and every date comes back nil, so no row is ever
+    printed. Pass the Instant straight to `LocalDate/ofInstant`.
+  - `briefing-window` (line ~70) has the same `.toInstant` call in its
+    `->` chain and throws.
+
+  ## Where to read
+
+  Both files are small; read only these:
+  - lib (230 lines after the salvage): lines 50-100 (`epoch-ms` to
+    `briefing-day-rows`) and 142-175 (`summarise-events`,
+    `summarise-day`).
+  - cli (160 lines): `gather` (~line 60), `build-report` (~line 125),
+    `-main` (~line 141). The briefing mode calls `gather` once per seat
+    with `:seat` and filters its events into the window; no second parser
+    (BL-1811).
+
+  ## How (direction, not mandate)
+
+  - Seats are the settings-record file stems; `gather` already maps a
+    seat to its qwen directory through `seat-worktree-path` and
+    `qwen-cwd-key`. Never derive a seat by inverting a qwen directory
+    name.
+  - Keep each new function shallow (three nested forms or fewer) and run
+    `bb -e '(load-file "swarmforge/scripts/local_seat_tuning_report_cli.bb")'`
+    after every edit: the last attempt spent 30 minutes adding and
+    removing one closing paren.
+  - Step handler `specs/pipeline/steps/bl2084LocalSeatBriefingSteps.js`,
+    discovered from its own file (BL-1371), fixtures under mkdtemp, paths
+    passed as arguments so fixtures never read the operator's `~/.qwen`.
+    It defines the Background and the `When` step; BL-2085 reuses them.
+  - The bb test: `swarmforge/scripts/test/local_seat_tuning_report_lib_test_runner.bb`.
+  - Documenter: `docs/how-to/BL-1851-local-seat-tuning-report.md` gains
+    the `--briefing` mode.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2084-the-tuning-report-briefing-prints-each-local-seats-days.feature`:
+     2 of 2 ok. No handler exists at mint.
+  2. `bb swarmforge/scripts/test/local_seat_tuning_report_lib_test_runner.bb`
+     passes, and BL-1851's feature
+     (`specs/features/BL-1851-a-local-seats-tuning-report-compares-its-work-across-the-settings-it-ran-with.feature`)
+     still passes.
+  3. Live, read-only: `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <root> --briefing`
+     prints a table for each seat that made requests in the last 7 days
+     (on 2026-10-08 the bare `coder` seat, iq3, had). Paste the output
+     into the evidence.
+
+notes: |
+  Split from BL-1854 on 2026-10-08 after the coder (iq3) seat held it 83m
+  (claim ~09:46Z, pulled at 11:09Z, a5e989f24e) with no commit: its
+  session (qwen chat a7eefd2d, 10:25Z-11:07Z) wrote the lib half in four
+  minutes, then made about 190 edits adding and removing one closing
+  paren in the CLI's candidate-seats until Claude Code's loop detection
+  halted it. This slice is BL-1854's scenarios 01 and 04; BL-2085 has 02
+  and 03 and depends on this one.
+  The documenter's interim in swarmforge/roles/documenter.prompt now reads
+  "Until BL-2084 lands" (moved from BL-1854 in the split commit); when
+  this lands, the specifier removes that interim sentence.
+  Seat rule: BL-1850 settings-record stems, a narrowing of BL-1854's "a
+  settings record or a qwen session under a seat worktree" (direction,
+  not mandate there): every local seat writes a settings record, and the
+  salvage's inversion of qwen directory names was wrong for coder2.
+  Dynamic routing: Babashka, read-only -> [coder, qa], plus documenter
+  (the BL-1851 how-to describes the CLI).
+  INVEST: Independent (BL-1851 is done), Negotiable (the seat rule and the
+  table layout are direction), Valuable (the briefing's trend numbers),
+  Estimable (one mode on a salvaged lib), Small (two scenarios, two
+  production files), Testable (fixture records and the real CLI).
+
+assigned_to: coder

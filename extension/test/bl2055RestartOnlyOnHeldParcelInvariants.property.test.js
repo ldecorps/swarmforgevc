@@ -26,7 +26,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { assertReachFloor } = require('./helpers/reachFloors');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
 const SCRIPTS = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
@@ -113,46 +113,52 @@ function runLaunchBody(fx) {
 const safeSuffix = fc.string({ minLength: 1, maxLength: 10 }).map((s) => s.replace(/[^a-zA-Z0-9]/g, 'x') || 'x');
 
 const INV1_FLOOR = 10;
+const INV1_SHAPES = [true, false];
 test('property (BL-2055 invariant 1): a restart carries only the override for the parcel in in_process, whatever else sorts first', () => {
   const coverage = {};
-  fc.assert(
-    fc.property(safeSuffix, fc.integer({ min: 0, max: 3 }), fc.boolean(), (suffix, staleCount, hasHeld) => {
-      const shape = hasHeld ? 'held' : 'noHeld';
-      coverage[shape] = (coverage[shape] || 0) + 1;
-      const fx = buildLaunchFixture();
-      try {
-        const heldName = `held-${suffix}.handoff`;
-        if (hasHeld) {
-          fs.writeFileSync(path.join(fx.inProcessDir, heldName), 'type: git_handoff\nto: coder\n');
-          fs.writeFileSync(path.join(fx.restartDir, `${heldName}.json.msg`), `HELD-OVERRIDE-${suffix}`);
-        }
-        const staleNames = [];
-        for (let i = 0; i < staleCount; i += 1) {
-          // "0_" sorts before "held-" alphabetically - the exact failure
-          // mode this invariant closes (the old code served whichever
-          // override sorted first, regardless of whose parcel it was).
-          const staleName = `0_stale-${i}-${suffix}.handoff`;
-          staleNames.push(staleName);
-          fs.writeFileSync(path.join(fx.restartDir, `${staleName}.json.msg`), `STALE-OVERRIDE-${i}-${suffix}`);
-        }
+  // BL-1062: each shape gets its runs by construction. A sampled
+  // fc.boolean() over 30 runs left one shape under the floor about 4% of
+  // the time (QA hold on BL-2065, 2026-10-08: held drawn 8 < 10).
+  for (const hasHeld of INV1_SHAPES) {
+    fc.assert(
+      fc.property(safeSuffix, fc.integer({ min: 0, max: 3 }), (suffix, staleCount) => {
+        const shape = hasHeld ? 'held' : 'noHeld';
+        coverage[shape] = (coverage[shape] || 0) + 1;
+        const fx = buildLaunchFixture();
+        try {
+          const heldName = `held-${suffix}.handoff`;
+          if (hasHeld) {
+            fs.writeFileSync(path.join(fx.inProcessDir, heldName), 'type: git_handoff\nto: coder\n');
+            fs.writeFileSync(path.join(fx.restartDir, `${heldName}.json.msg`), `HELD-OVERRIDE-${suffix}`);
+          }
+          const staleNames = [];
+          for (let i = 0; i < staleCount; i += 1) {
+            // "0_" sorts before "held-" alphabetically - the exact failure
+            // mode this invariant closes (the old code served whichever
+            // override sorted first, regardless of whose parcel it was).
+            const staleName = `0_stale-${i}-${suffix}.handoff`;
+            staleNames.push(staleName);
+            fs.writeFileSync(path.join(fx.restartDir, `${staleName}.json.msg`), `STALE-OVERRIDE-${i}-${suffix}`);
+          }
 
-        const calls = runLaunchBody(fx);
-        if (hasHeld) {
-          assert.equal(calls.length, 2, `expected a kickoff plus one relaunch, got:\n${calls.join('\n')}`);
-          assert.ok(calls[1].includes(`HELD-OVERRIDE-${suffix}`), `the relaunch did not carry the held override: ${calls[1]}`);
-        } else {
-          assert.equal(calls.length, 1, `expected only the kickoff (no held parcel), got:\n${calls.join('\n')}`);
+          const calls = runLaunchBody(fx);
+          if (hasHeld) {
+            assert.equal(calls.length, 2, `expected a kickoff plus one relaunch, got:\n${calls.join('\n')}`);
+            assert.ok(calls[1].includes(`HELD-OVERRIDE-${suffix}`), `the relaunch did not carry the held override: ${calls[1]}`);
+          } else {
+            assert.equal(calls.length, 1, `expected only the kickoff (no held parcel), got:\n${calls.join('\n')}`);
+          }
+          for (const staleName of staleNames) {
+            assert.ok(!fs.existsSync(path.join(fx.restartDir, `${staleName}.json.msg`)), `a stale override for ${staleName} was not discarded`);
+          }
+          return true;
+        } finally {
+          fs.rmSync(fx.root, { recursive: true, force: true });
         }
-        for (const staleName of staleNames) {
-          assert.ok(!fs.existsSync(path.join(fx.restartDir, `${staleName}.json.msg`)), `a stale override for ${staleName} was not discarded`);
-        }
-        return true;
-      } finally {
-        fs.rmSync(fx.root, { recursive: true, force: true });
-      }
-    }),
-    { numRuns: 30 }
-  );
+      }),
+      { numRuns: runsPerCell(30, INV1_SHAPES.length) }
+    );
+  }
   assertReachFloor(coverage, ['held', 'noHeld'], INV1_FLOOR, 'BL-2055 invariant 1 held/noHeld shape');
 });
 
@@ -226,16 +232,23 @@ const INV2_FLOOR = 2;
 
 test('property (BL-2055 invariant 2): a sidecar alone in in_process is never read as a held parcel - no restart, no release', () => {
   const coverage = {};
-  fc.assert(
-    fc.property(fc.constantFrom(...SIDECAR_SUFFIXES), fc.boolean(), (suffix, exhausted) => {
-      const cell = `${suffix}:${exhausted ? 'exhausted' : 'fresh'}`;
-      coverage[cell] = (coverage[cell] || 0) + 1;
-      const { killed, released } = callAnswerSidecarOnly(suffix, exhausted ? 2 : 0);
-      assert.equal(killed, false, `a sidecar (${suffix}) alone in in_process must never trigger a restart (exhausted=${exhausted})`);
-      assert.equal(released, false, `a sidecar (${suffix}) alone in in_process must never trigger a release (exhausted=${exhausted})`);
-      return true;
-    }),
-    { numRuns: 64 }
-  );
+  // BL-1062: every suffix x restart-state cell gets its runs by
+  // construction; a uniform draw of 64 over 8 cells left one under the
+  // floor about 1.6% of the time.
+  for (const suffix of SIDECAR_SUFFIXES) {
+    for (const exhausted of [false, true]) {
+      fc.assert(
+        fc.property(fc.constant(suffix), fc.constant(exhausted), () => {
+          const cell = `${suffix}:${exhausted ? 'exhausted' : 'fresh'}`;
+          coverage[cell] = (coverage[cell] || 0) + 1;
+          const { killed, released } = callAnswerSidecarOnly(suffix, exhausted ? 2 : 0);
+          assert.equal(killed, false, `a sidecar (${suffix}) alone in in_process must never trigger a restart (exhausted=${exhausted})`);
+          assert.equal(released, false, `a sidecar (${suffix}) alone in in_process must never trigger a release (exhausted=${exhausted})`);
+          return true;
+        }),
+        { numRuns: runsPerCell(64, INV2_CELLS.length) }
+      );
+    }
+  }
   assertReachFloor(coverage, INV2_CELLS, INV2_FLOOR, 'BL-2055 invariant 2 sidecar-suffix x restart-state cell');
 });
