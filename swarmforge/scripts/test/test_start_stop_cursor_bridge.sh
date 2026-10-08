@@ -18,7 +18,7 @@ make_fixture() {
   cp "$SRC/start_cursor_bridge.sh" "$SRC/stop_cursor_bridge.sh" \
      "$SRC/cursor_bridge_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" \
      "$SRC/bridge_supervisor_env_lib.bb" "$SRC/cursor_ripgrep_env.sh" \
-     "$SRC/tooling_root_lib.sh" \
+     "$SRC/tooling_root_lib.sh" "$SRC/daemon_log_freshness_pulse_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '' > "$d/extension/out/tools/telegram-cursor-bridge.js"
   printf '%s' "$d"
@@ -97,6 +97,82 @@ check "the refusal names the tooling root's own path" \
 check "the refusal names the target's own path too" \
   '[[ "$OUT" == *"$F/extension/out/tools/telegram-cursor-bridge.js"* ]]'
 rm -rf "$F" "$TOOL2"
+
+# ── BL-2060 (hotfix 4453766c28): the auto-decide block exports
+#    CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto alongside its own decision, and
+#    only when it is the one deciding — an operator's preset value must not
+#    be marked. DRYRUN mode exits before this block ever runs (see the
+#    comment above), so these drive the real (non-dry-run) path up to the
+#    entrypoint-not-found exit and read the exported vars back via a trap
+#    set in the sourcing shell (the exports do not survive a subprocess exec,
+#    only a `source`) ──────────────────────────────────────────────────────
+probe_inbound_queue_exports() {
+  # $1: fixture root. Prints "Q=<value-or-unset>|S=<value-or-unset>" from
+  # the script's own exported CURSOR_BRIDGE_INBOUND_QUEUE[_SOURCE], captured
+  # via a trap that fires when the script's own `exit 1` (entrypoint not
+  # found, reached right after the auto-decide block) ends this subshell.
+  # fd 3 saves the real stdout BEFORE `source`'s own `>/dev/null 2>&1`
+  # redirects fd 1/2: bash runs an EXIT trap fired by an `exit` inside an
+  # already-redirected builtin (source never forks) with that redirection
+  # still in effect, so a trap printf to the (by-then-/dev/null) fd 1 is
+  # silently swallowed - only a fd saved beforehand survives to be read.
+  ( set -uo pipefail
+    exec 3>&1
+    trap 'printf "Q=%s|S=%s\n" "${CURSOR_BRIDGE_INBOUND_QUEUE:-<unset>}" "${CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE:-<unset>}" >&3' EXIT
+    source "$(START_IN "$1")" "$1" >/dev/null 2>&1
+  )
+}
+
+F="$(make_fixture)"
+rm -f "$F/extension/out/tools/telegram-cursor-bridge.js"
+OUT="$(TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x TELEGRAM_PRINCIPAL_USER_ID=x CURSOR_API_KEY=x probe_inbound_queue_exports "$F")" || true
+check "auto-decide with no live front desk forces getUpdates and marks the source auto" \
+  '[[ "$OUT" == "Q=0|S=auto" ]]'
+rm -rf "$F"
+
+F="$(make_fixture)"
+rm -f "$F/extension/out/tools/telegram-cursor-bridge.js"
+printf '{"lastHeartbeatMs": %s}' "$(node -e 'console.log(Date.now())')" \
+  > "$F/.swarmforge/operator/front-desk-poll-heartbeat.json"
+OUT="$(TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x TELEGRAM_PRINCIPAL_USER_ID=x CURSOR_API_KEY=x probe_inbound_queue_exports "$F")" || true
+check "auto-decide with a live front desk queues and marks the source auto" \
+  '[[ "$OUT" == "Q=1|S=auto" ]]'
+rm -rf "$F"
+
+F="$(make_fixture)"
+rm -f "$F/extension/out/tools/telegram-cursor-bridge.js"
+OUT="$(TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x TELEGRAM_PRINCIPAL_USER_ID=x CURSOR_API_KEY=x \
+  CURSOR_BRIDGE_INBOUND_QUEUE=1 probe_inbound_queue_exports "$F")" || true
+check "an operator's preset CURSOR_BRIDGE_INBOUND_QUEUE keeps its value and is never marked auto" \
+  '[[ "$OUT" == "Q=1|S=<unset>" ]]'
+rm -rf "$F"
+
+# ── BL-2060 (hotfix 4453766c28): cursor_bridge_supervisor.bb forwards
+#    CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE to the spawned bridge child's env
+#    alongside CURSOR_BRIDGE_INBOUND_QUEUE. Verified via a stub `node` on
+#    PATH that dumps its own environment instead of running the real bridge
+#    entrypoint - the supervisor's own spawn (process/process) is async and
+#    fire-and-forget, so a bounded wait reads the dump back once the stub
+#    has run and exited ────────────────────────────────────────────────────
+F="$(make_fixture)"
+FAKEBIN="$(mktemp -d)"; register_tmp_dir "$FAKEBIN"
+CAPTURE="$FAKEBIN/env.txt"
+cat > "$FAKEBIN/node" <<'EOS'
+#!/bin/sh
+env > "$CAPTURE_FILE"
+exit 1
+EOS
+chmod +x "$FAKEBIN/node"
+PATH="$FAKEBIN:$PATH" CAPTURE_FILE="$CAPTURE" \
+  TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x TELEGRAM_PRINCIPAL_USER_ID=x CURSOR_API_KEY=x \
+  CURSOR_BRIDGE_INBOUND_QUEUE=0 CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto \
+  timeout 15 bb "$F/swarmforge/scripts/cursor_bridge_supervisor.bb" "$F" --check-once >/dev/null 2>&1 || true
+for _ in 1 2 3 4 5 6 7 8 9 10; do [[ -s "$CAPTURE" ]] && break; sleep 0.2; done
+check "cursor_bridge_supervisor forwards CURSOR_BRIDGE_INBOUND_QUEUE to the spawned bridge" \
+  'grep -qx "CURSOR_BRIDGE_INBOUND_QUEUE=0" "$CAPTURE"'
+check "cursor_bridge_supervisor forwards CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE to the spawned bridge" \
+  'grep -qx "CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto" "$CAPTURE"'
+rm -rf "$F"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "start_stop_cursor_bridge smoke: ALL CHECKS PASSED"

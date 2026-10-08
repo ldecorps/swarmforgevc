@@ -182,3 +182,6 @@ description: |
   to the per-poll feeder liveness; only an explicit 0 or 1 forces a mode.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-08, by: QA, blamed: hardender, class: unit, commit: 6a4d7acfc6, evidence: backlog/evidence/BL-2060-QA-20261008.md }

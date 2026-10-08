@@ -1,0 +1,115 @@
+id: BL-2085
+title: "The tuning report's --briefing mode lists, under each local seat's table, the seat's settings changes in the window as '<date> <time> <field> <old> -> <new>' and every model load in the window that put layers outside VRAM as '<N>/<M> layers on GPU' with its date - the lines-under-the-table half of BL-1854's Local LLM briefing section"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 31
+direction: queue-jump
+depends_on: [BL-2084]
+# BL-2084 builds the --briefing mode and the table these lines sit under,
+# and its step handler defines the Background and When steps this
+# feature reuses.
+mutation_cost: low
+# low: two kinds of line in a rendering mode; bb has no mutation lane wired.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "two kinds of line beside unchanged code; nothing to deduplicate"
+  architect: "the lines read BL-1850's settings rows and the parsed Ollama loads already gathered; no boundary moved"
+  hardender: "Babashka, no Stryker lane (BL-472), and a read-only report writes no durable state"
+
+acceptance: specs/features/BL-2085-the-tuning-report-briefing-lists-settings-changes-and-spilled-loads.feature
+
+# Handler pin (BL-233, BL-1371). The consumer is the documenter's briefing
+# step (prose), so no production anchor exists (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl2085LocalSeatBriefingLinesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1854 (approved; the human asked for it directly and
+  the 2026-09-30 directive makes local-LLM tickets queue-jump). This slice
+  adds no scope: it is BL-1854's scenarios 02 and 03, moved verbatim.
+
+invariants:
+  - "The briefing section is read-only to produce and the same records always print the same section."
+  - "Every number in the section comes from a record; a field no record carries prints as unknown, never as 0."
+
+source: |
+  Split from BL-1854 on 2026-10-08. BL-1854's source, the human,
+  2026-09-30 ~21:00Z, specifier pane, verbatim:
+
+  > tell documenter to add a special local llm section in the daily breifing where telemetry trends are shown, as well as a suggestion as to how to improve its usage as a swarm role
+
+  The split, the human's 2026-10-04 directive, verbatim: "We should make
+  the "splitting of ticket if coder cant manage" BAU."
+
+description: |
+  ## Why
+
+  BL-2084 prints each local seat's daily trend. The documenter's
+  suggestion needs to say what changed beside it: a settings change or a
+  model that no longer fit in VRAM.
+
+  ## What is wanted
+
+  Under each seat's table in the `--briefing` output:
+  - the seat's settings changes in the window, one line each, as
+    `<date> <time> <field> <old> -> <new>` from BL-1850's settings rows,
+    with the field's human label and unit (scenario 01:
+    `2026-09-30 21:28 GPU power limit 180 W -> 150 W`);
+  - every model load in the window that put layers outside VRAM, as
+    `<N>/<M> layers on GPU` with its date (scenario 02).
+  No line is printed when the window holds neither.
+
+  ## Where to read
+
+  `swarmforge/scripts/local_seat_tuning_report_lib.bb` already holds both
+  selections from BL-1854's salvage (landed with BL-2084):
+  `settings-changes-in-window` and `spilled-loads-in-window` (around lines
+  176-200). Field labels and units: `labeled-settings-paths` (around line
+  255) and how `group-transition-diffs` (around line 306) prints old ->
+  new. The rendering is in `local_seat_tuning_report_cli.bb`, beside
+  BL-2084's per-seat table.
+
+  ## How (direction, not mandate)
+
+  - Reuse `labeled-settings-paths` for the field name and unit; no second
+    label table.
+  - Keep each new function shallow and run
+    `bb -e '(load-file "swarmforge/scripts/local_seat_tuning_report_cli.bb")'`
+    after every edit (BL-2084's notes say why).
+  - Step handler `specs/pipeline/steps/bl2085LocalSeatBriefingLinesSteps.js`
+    defines only this feature's own Given and Then steps; the Background
+    and `When the tuning report runs with --briefing` resolve from
+    BL-2084's handler.
+  - Documenter: `docs/how-to/BL-1851-local-seat-tuning-report.md`'s
+    `--briefing` section gains the two kinds of line.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2085-the-tuning-report-briefing-lists-settings-changes-and-spilled-loads.feature`:
+     2 of 2 ok. No handler exists at mint.
+  2. `node specs/pipeline/cli.js specs/features/BL-2084-the-tuning-report-briefing-prints-each-local-seats-days.feature`:
+     2 of 2 ok, and `bb swarmforge/scripts/test/local_seat_tuning_report_lib_test_runner.bb`
+     passes.
+  3. Live, read-only: `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <root> --briefing`;
+     paste the output into the evidence and send the Art Director a
+     sign-off note on it (Article 1.10).
+  After the land (the coordinator's check, not QA's): the next morning
+  briefing's Local LLM section carries this output verbatim, with the
+  documenter's suggestion under it.
+
+notes: |
+  Split from BL-1854 on 2026-10-08 after the coder (iq3) seat held it 83m
+  (claim ~09:46Z, pulled at 11:09Z, a5e989f24e) with no commit. This
+  slice is BL-1854's scenarios 02 and 03; BL-2084 has 01 and 04 and must
+  land first.
+  Dynamic routing: Babashka, read-only -> [coder, qa], plus documenter
+  (the BL-1851 how-to describes the output).
+  INVEST: Independent (depends_on BL-2084, which builds the mode),
+  Negotiable (the line layout is the scenarios'; the code is direction),
+  Valuable (the suggestion can name what changed), Estimable (two
+  selections already written, one render), Small (two scenarios),
+  Testable (fixture settings rows and Ollama log, the real CLI).

@@ -41,12 +41,18 @@ healthy.
 `swarmforge/scripts/start_cursor_bridge.sh`:
 
 - Leave `CURSOR_BRIDGE_BOT_TOKEN` unset (bridge shares `TELEGRAM_BOT_TOKEN`
-  with the front desk) to get the queue automatically —
-  `CURSOR_BRIDGE_INBOUND_QUEUE` defaults to `1` in that case.
+  with the front desk) to get the queue automatically. The start script
+  takes a start-time snapshot of the front-desk heartbeat and marks its own
+  decision `CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto` (hotfix
+  `c416adc5fb`+`4453766c28`, BL-2060); `shouldUseCursorBridgeInboundQueue`
+  ignores an auto-marked value and re-decides from the live per-poll feeder
+  liveness instead, so a supervisor started while the front desk was down
+  does not carry a stale `0` for its whole life.
 - Set `CURSOR_BRIDGE_BOT_TOKEN` to a dedicated token to keep the bridge
   polling directly.
-- `CURSOR_BRIDGE_INBOUND_QUEUE=0|1` forces the mode explicitly, overriding
-  the token-based default.
+- `CURSOR_BRIDGE_INBOUND_QUEUE=0|1` set WITHOUT the auto marker forces the
+  mode explicitly, overriding both the token-based default and the
+  per-poll liveness check — an operator's explicit setting always wins.
 
 ## Liveness cue
 

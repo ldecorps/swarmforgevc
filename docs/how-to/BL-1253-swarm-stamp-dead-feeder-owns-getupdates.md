@@ -22,8 +22,14 @@ front-desk poll heartbeat liveness instead of assuming it:
   (Scenario 06, carried from retired BL-1260; the dangerous direction is a
   bridge that takes the token and never gives it back, leaving the front
   desk permanently dead while every other liveness signal reads green).
-- `start_cursor_bridge.sh` defaults `CURSOR_BRIDGE_INBOUND_QUEUE=0` when
-  the feeder is not live at launch.
+- `start_cursor_bridge.sh` still defaults `CURSOR_BRIDGE_INBOUND_QUEUE=0`
+  when the feeder is not live at launch, but now marks its own decision
+  `CURSOR_BRIDGE_INBOUND_QUEUE_SOURCE=auto` (hotfix `c416adc5fb`+`4453766c28`,
+  stamped by BL-2060). `shouldUseCursorBridgeInboundQueue` in
+  `telegramCursorBridgeCore.ts` ignores
+  an auto-marked flag — it is only a start-time snapshot — and decides from
+  the per-poll feeder liveness instead; an operator's explicit `0` or `1`
+  (no auto marker) still forces that mode.
 
 See also [BL-764](BL-764-front-desk-shared-token-bridge-fanout.md) for the
 general shared-token fanout mechanism this hotfix hardens.
