@@ -90,6 +90,17 @@ export const CHECKLIST: CheckSpec[] = [
     build: (ctx) => ({ command: 'npm', args: ['run', 'test:properties'], cwd: path.join(ctx.root, 'extension') }),
   },
   {
+    id: 'property_runners',
+    build: (ctx) =>
+      ctx.commit && ctx.commit !== 'unknown'
+        ? {
+            command: path.join(ctx.root, 'swarmforge', 'scripts', 'test', 'run_property_runners.sh'),
+            args: ['--changed-from', ctx.commit],
+            cwd: ctx.root,
+          }
+        : { blockedReason: `could not resolve merge-base main ${ctx.commit}` },
+  },
+  {
     id: 'acceptance',
     build: (ctx) =>
       ctx.acceptanceFeature

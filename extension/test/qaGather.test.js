@@ -18,10 +18,10 @@ const { findTicketYamlContent, gatherQaChecklist, defaultRunFn } = require('../o
 
 // ── CHECKLIST shape and order (BL-1554 invariant 3) ────────────────────
 
-test('the checklist is the fixed 8 checks in the fixed order', () => {
+test('the checklist is the fixed 9 checks in the fixed order', () => {
   assert.deepEqual(
     CHECKLIST.map((c) => c.id),
-    ['stragglers_before', 'sibling', 'register', 'wiring', 'unit', 'properties', 'acceptance', 'stragglers_after'],
+    ['stragglers_before', 'sibling', 'register', 'wiring', 'unit', 'properties', 'property_runners', 'acceptance', 'stragglers_after'],
   );
 });
 
@@ -60,6 +60,36 @@ test('runChecklist runs every check and never skips one on a blocked prerequisit
       assert.equal(row.exit, 0);
     }
   }
+});
+
+// ── BL-2073: the property_runners row ───────────────────────────────────
+
+test('the property_runners row builds the front-end command with the parcel merge-base ref', () => {
+  const spec = CHECKLIST.find((c) => c.id === 'property_runners');
+  const built = spec.build({ root: '/r', ticketId: 'BL-1', commit: 'abc1234567' });
+  assert.equal(built.command, path.join('/r', 'swarmforge', 'scripts', 'test', 'run_property_runners.sh'));
+  assert.deepEqual(built.args, ['--changed-from', 'abc1234567']);
+  assert.equal(built.cwd, '/r');
+});
+
+test('the property_runners row is blocked with a reason naming the failed merge-base when it cannot be resolved', () => {
+  const spec = CHECKLIST.find((c) => c.id === 'property_runners');
+  const built = spec.build({ root: '/r', ticketId: 'BL-1', commit: 'unknown' });
+  assert.equal(built.blockedReason, 'could not resolve merge-base main unknown');
+});
+
+test('the property_runners row runs the front-end with the parcel commit ref and reads its exit and output', () => {
+  const { runFn, calls } = fakeRunner({
+    default: { started: true, exit: 0, stdout: '', stderr: '' },
+  });
+  const rows = runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', task: 't', acceptanceFeature: 'f.feature' }, runFn);
+  const row = rows.find((r) => r.id === 'property_runners');
+  assert.equal(row.status, 'ran');
+  assert.equal(row.exit, 0);
+  const call = calls.find((c) => c.command.includes('run_property_runners.sh'));
+  assert.ok(call, 'the front-end command was not started');
+  assert.deepEqual(call.args, ['--changed-from', 'abc1234567']);
+  assert.equal(call.cwd, '/r');
 });
 
 test('a check the runner cannot start is reported blocked with the runner\'s own reason, and later checks still run', () => {

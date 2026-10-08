@@ -1,34 +1,70 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 7, 2026 (BL-2073: QA's mechanical checklist
+gains a ninth row, `property_runners`, between the `properties` and
+`acceptance` rows — on every parcel the gather runs
+`swarmforge/scripts/test/run_property_runners.sh --changed-from <ref>`
+with the parcel's own merge-base with main, so a red the parcel causes in
+a property runner its change reaches shows in the gather QA already
+reads, before the land (BL-2049 ruling A's gather-row slice). The row is
+reported like every other row — `id`, `command`, `cwd`, `status`, `exit`,
+`duration_ms`, `excerpt`, and a `reason` when blocked — and is blocked
+with a reason naming the failed merge-base when the commit ref cannot be
+resolved, never omitted. The checklist count is 9, not 8. No new
+extension command or setting; no diagram edit — no registered diagram
+depicts QA's internal checklist rows.)
+
+Prior entry —
+
+**Last Updated:** October 7, 2026 (BL-2044: `take-up!`'s `:move` branch —
+a seat's line force-moved onto the start target because it carries an
+unlanded *other* ticket's work — now re-applies the current ticket's own
+unlanded commits onto the new target by cherry-pick, oldest first, after
+the switch, instead of leaving them reachable only from the
+`refs/swarmforge/parcel-backup/<role>/` ref the move already wrote —
+nothing re-applied that ref before, so a seat that slipped one commit for
+another ticket onto its line lost its own finished work at the next serve
+(the BL-2042 incident this ticket traces to). The re-apply runs for a
+**start move** — not keyed to the `:start`/`:take-up` intent literally, but
+to whichever moves resolve their target via `start-target`: a coordinator
+`Work` note, and a forwarded `git_handoff` whose cited commit is already on
+`origin/main` (a BL-1887 route, which starts its ticket fresh the same way
+a `Work` note does). A plain `:take-up` at a parcel commit not on
+`origin/main` never re-applies, since its target already is the parcel
+and cherry-picking the role's own commit onto it a second time is an empty
+cherry-pick that `git` reports as a conflict, wrongly refusing the
+commonest bounce shape. For a start move, the commits carried forward
+are those past the old merge base whose subject names the ticket itself
+(stricter than `own-line?`'s own "the ticket's own", which also admits a
+commit naming only done tickets — excluded here, since a done ticket's
+original commit may already be held by the target via its landed replay,
+or may belong to an unrelated ticket's line), excluding merges and
+excluding any commit already an ancestor of the new target. A
+re-application that conflicts aborts the cherry-pick and switches the
+worktree back to the old head unchanged — no cherry-pick or merge left in
+progress — refuses naming the conflicting commit, and the parcel is not
+taken up; the backup ref from that same move is still there either way.
+How-to: `docs/how-to/BL-1871-parcel-line-take-up.md` ("No commit is ever
+lost" section). Acceptance:
+`specs/features/BL-2044-a-seats-own-commits-survive-a-parcel-line-move.feature`.
+No new extension command or setting; no diagram edit — no registered
+diagram depicts take-up's internal move/re-apply mechanics.)
+
+Prior entry —
+
 **Last Updated:** October 7, 2026 (BL-1880: the briefing's bounce line used
 to count every bounce since the project began with no date filter, so it
 could not answer whether a role's work bounced more or less since its
 model changed. `qa-bounce-line.js`'s live line (`main()`, no `--json`) now
-leads with the bounces since the PREVIOUS briefing was SENT — the real
-send instant, read straight off `docs/briefings/.sent.json`'s own
-`"sent-at"` map, keyed by day, with no git log involved at all. Two
-earlier attempts at "when was the previous briefing sent" each proved to
-be a different moment than the true send: the file's own introducing
-commit (QA bounce D3, first pass — the email sweep commits the day's
-file, sends it, then separately commits the send marker, 5.5h apart
-measured, so reading the file commit double-counted a bounce landing in
-that gap) and, after that fix, the commit that first added a day's key to
-`.sent.json` (QA bounce D1, second pass — the sweep batches several days'
-markers into ONE later commit, four days landed in one commit measured
-2026-10-06T01:43Z, so a commit-derived start came out short, empty, or
-even later than the render it was computed for). `briefing_email_lib.bb`'s
-`record-briefing-sent!` now takes an optional real send instant (fed by
-`send-unsent-briefings!`'s injectable `:now-iso!` adapter, the actual IO
-edge) and writes it into `.sent.json`'s `sent-at` map directly, so the
-value `qa-bounce-line.ts` reads is the send itself, not an archaeological
-guess at it. The most recent `sent-at` entry strictly before the render
-time is used; any entry at or after the render time (clock skew, or `--at`
-rendering for a past moment) is treated as absent, falling back to the
-last-24-hours window rather than a backwards or zero-length one — bounded
-at the top by the render time itself either way, never counting a bounce
-that had not happened yet as of the moment being reported for (D4) — or,
-with no previous send on record at all, the last 24 hours, said plainly.
-The window's
+leads with the bounces since the PREVIOUS briefing was SENT — the commit
+that added that day's key to `docs/briefings/.sent.json` (`git log -S` the
+pickaxe, oldest match; the file's own introducing commit is a different,
+earlier moment — the email sweep commits the day's file, sends it, then
+separately commits the send marker, 5.5h apart measured, so reading the
+file commit double-counted a bounce landing in that gap, QA bounce D3) —
+bounded at the top by the render time itself, never counting a bounce that
+had not happened yet as of the moment being reported for (D4) — or, with
+no previous send on record, the last 24 hours, said plainly. The window's
 OWN bouncing-role split is printed in the window segment (`by bouncing
 role: ...`, QA bounce D1 — it used to print only the all-time split there,
 reading as a breakdown of the window total above it); every clause after
@@ -65,42 +101,6 @@ this entry are the reference. Acceptance:
 `specs/features/BL-1880-the-briefing-bounce-line-counts-since-the-previous-briefing.feature`.
 No new extension command or setting; no diagram edit — this is a briefing
 CLI's output shape, not a boundary, topology or handoff-lifecycle change.)
-
-Prior entry —
-**Last Updated:** October 7, 2026 (BL-2044: `take-up!`'s `:move` branch —
-a seat's line force-moved onto the start target because it carries an
-unlanded *other* ticket's work — now re-applies the current ticket's own
-unlanded commits onto the new target by cherry-pick, oldest first, after
-the switch, instead of leaving them reachable only from the
-`refs/swarmforge/parcel-backup/<role>/` ref the move already wrote —
-nothing re-applied that ref before, so a seat that slipped one commit for
-another ticket onto its line lost its own finished work at the next serve
-(the BL-2042 incident this ticket traces to). The re-apply runs for a
-**start move** — not keyed to the `:start`/`:take-up` intent literally, but
-to whichever moves resolve their target via `start-target`: a coordinator
-`Work` note, and a forwarded `git_handoff` whose cited commit is already on
-`origin/main` (a BL-1887 route, which starts its ticket fresh the same way
-a `Work` note does). A plain `:take-up` at a parcel commit not on
-`origin/main` never re-applies, since its target already is the parcel
-and cherry-picking the role's own commit onto it a second time is an empty
-cherry-pick that `git` reports as a conflict, wrongly refusing the
-commonest bounce shape. For a start move, the commits carried forward
-are those past the old merge base whose subject names the ticket itself
-(stricter than `own-line?`'s own "the ticket's own", which also admits a
-commit naming only done tickets — excluded here, since a done ticket's
-original commit may already be held by the target via its landed replay,
-or may belong to an unrelated ticket's line), excluding merges and
-excluding any commit already an ancestor of the new target. A
-re-application that conflicts aborts the cherry-pick and switches the
-worktree back to the old head unchanged — no cherry-pick or merge left in
-progress — refuses naming the conflicting commit, and the parcel is not
-taken up; the backup ref from that same move is still there either way.
-How-to: `docs/how-to/BL-1871-parcel-line-take-up.md` ("No commit is ever
-lost" section). Acceptance:
-`specs/features/BL-2044-a-seats-own-commits-survive-a-parcel-line-move.feature`.
-No new extension command or setting; no diagram edit — no registered
-diagram depicts take-up's internal move/re-apply mechanics.)
-
 Prior entry —
 
 **Last Updated:** October 3, 2026 (BL-1858: Bubble's live grid now shows a
