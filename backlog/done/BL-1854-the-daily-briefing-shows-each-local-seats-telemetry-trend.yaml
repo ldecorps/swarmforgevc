@@ -2,7 +2,8 @@ id: BL-1854
 title: "The daily briefing shows each local seat's telemetry trend - the tuning report's --briefing mode prints, for each local-model seat, one row per day over the last 7 days (requests, time to first token, prefill and decode speed, output, thinking share, compressions per 10 requests, tool-call failure rate) plus the settings changes and spilled model loads in that window, as markdown the documenter pastes verbatim into the briefing's Local LLM section"
 milestone: M8
 type: feature
-status: todo
+status: done
+closed_as: split-into-BL-2084,BL-2085
 epic: local-llm-swarm
 priority: 31
 direction: queue-jump
@@ -15,7 +16,9 @@ required_stages: [coder, architect, hardender, documenter, qa]
 stage_skip_reasons:
   cleaner: "slice envelope low or medium; the architect and hardener passes cover structure, so the cleaner runs only for large slices"
 
-acceptance: specs/features/BL-1854-the-daily-briefing-shows-each-local-seats-telemetry-trend.feature
+# Its four scenarios moved verbatim on the 2026-10-08 split: 01 and 04 to
+# BL-2084's feature, 02 and 03 to BL-2085's. The feature file was removed.
+acceptance: specs/features/BL-2084-the-tuning-report-briefing-prints-each-local-seats-days.feature
 
 # Handler pin (BL-233, BL-1371). The consumer is the documenter's briefing
 # step, which is prose in documenter.prompt, landed by the specifier with
@@ -122,7 +125,24 @@ notes: |
   no-op Edit on swarmforge/scripts/local_seat_tuning_report_cli.bb
   ("old_string and new_string are identical"), tripping Claude Code's
   loop-detection halt twice even after a resume nudge named the behavior.
-  No salvage commit exists on this ticket's line. Parked to paused; seat
-  restarted.
-
-assigned_to: coder
+  Parked to paused; seat restarted.
+  2026-10-08 (operator correction): real salvageable WIP from this run DOES
+  exist - 166 insertions / 47 deletions across
+  swarmforge/scripts/local_seat_tuning_report_cli.bb and
+  local_seat_tuning_report_lib.bb, pinned durably at
+  refs/swarmforge/salvage/BL-1854 (71c040ff9d) in .worktrees/coder so a
+  later worktree-drift stash cannot push it down and lose it. Whoever
+  holds a split slice should apply it as a DIFF against those two files
+  rather than rebuilding from scratch. Caveat: that same ref's
+  untracked-files parent also carries an UNRELATED file,
+  specs/pipeline/steps/Bl2076ShimNamesSeatSteps.js (BL-2076 WIP swept in
+  by the same stash) - do not apply that path from this ref.
+  Retired 2026-10-08 by the specifier, split into BL-2084 (the --briefing
+  mode's per-seat day table and the no-seat line; scenarios 01 and 04) and
+  BL-2085 (settings-change and spilled-load lines under each table;
+  scenarios 02 and 03), under the BAU split rule after the coordinator's
+  note 017388 ("split BL-1854: coder held it, no commit, no-op edit
+  livelock"). The coder (iq3) held it 83m; its session wrote the lib half,
+  then looped on one closing paren in the CLI. BL-2084 starts from the
+  salvage's lib file only and names its two .toInstant bugs. The
+  documenter's interim now reads "Until BL-2084 lands".

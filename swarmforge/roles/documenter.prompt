@@ -181,12 +181,12 @@ You are the documenter.
   suggestion as to how to improve its usage as a swarm role").** It goes
   after the résumé and before "Process suggestions", in two parts, each a
   few lines at most:
-  1. **Telemetry trend.** Until BL-1854 lands, write no number of your own.
+  1. **Telemetry trend.** Until BL-2084 lands, write no number of your own.
      Quote only figures already committed under `backlog/evidence/` in the
      window, naming the file (for example
      `iq3-window-vram-census-20260930-specifier.md`). Say in a line or two
      what the local-model seats did, from the sources you already read:
-     tickets they took, finished or bounced. Once BL-1854 has landed, run
+     tickets they took, finished or bounced. Once BL-2084 has landed, run
      `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <project-root>
      --briefing` and paste its output verbatim as the trend. Never write,
      rank or round those numbers yourself.
