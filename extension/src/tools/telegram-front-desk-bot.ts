@@ -144,6 +144,7 @@ import {
 } from './telegramFrontDeskBotCore';
 import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
+import { drainCursorBridgeHandoverUpdates, isHandoverUpdateApplied, recordAppliedHandoverId } from './cursorBridgeHandoverQueue';
 import { runProviderChatSeatTurn } from './providerChatSeatLive';
 import { readQwenLocalTopicId } from './localQwenSeatLive';
 import { largestTelegramPhotoFileId, mimeTypeFromTelegramFilePath, MAX_TELEGRAM_PHOTO_BYTES } from '../bridge/cursorBridgeTelegramMedia';
@@ -2692,6 +2693,16 @@ function buildPollAdapters(
         return false;
       }
     },
+    // BL-2061: the reverse of forwardCursorBridgeUpdate above - updates the
+    // bridge read itself while not its own, drained at the top of every
+    // poll cycle and applied through the SAME processUpdate every real
+    // poll update goes through.
+    drainHandoverUpdates: () =>
+      Promise.resolve(
+        drainCursorBridgeHandoverUpdates(path.join(targetPath, '.swarmforge', 'operator')) as unknown as TelegramUpdate[]
+      ),
+    isHandoverApplied: (updateId) => isHandoverUpdateApplied(path.join(targetPath, '.swarmforge', 'operator'), updateId),
+    recordHandoverApplied: (updateId) => recordAppliedHandoverId(path.join(targetPath, '.swarmforge', 'operator'), updateId),
     openSubjectAndRecord: (topicId, text, updateId) => openSubjectAndRecord(targetPath, topicId, text, updateId),
     // BL-1235-style seat, generalized (providerChatSeat.ts): a topic bound
     // in provider-chat-topic-map.json answers here, never as a generic

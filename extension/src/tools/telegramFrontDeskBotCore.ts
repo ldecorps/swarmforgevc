@@ -1186,6 +1186,27 @@ export interface PollAdapters {
    * (the caption still routes, it just never gains a saved-path line).
    */
   persistRoutedPhoto?: (update: TelegramUpdate) => Promise<PhotoPersistOutcome>;
+  /**
+   * BL-2061: the reverse of forwardCursorBridgeUpdate above - updates the
+   * bridge read itself (its BL-1253 dead-feeder fallback) while they are
+   * not its own, appended to a hand-over queue the bridge drains nothing
+   * from and the front desk alone reads. Drained at the TOP of every poll
+   * cycle, before this cycle's own getUpdates call, so a hand-over is
+   * applied no later than a real poll would have applied it. Optional so
+   * every pre-BL-2061 fixture keeps working unchanged (no hand-over queue
+   * wired means nothing is ever drained from one).
+   */
+  drainHandoverUpdates?: () => Promise<TelegramUpdate[]>;
+  /**
+   * BL-2061 invariant 2: a hand-over queue entry is drained (and thus gone
+   * from the queue) exactly once, but the SAME update_id can legitimately
+   * reach drainHandoverUpdates twice (the bridge appending it again after
+   * a crash before this cycle recorded it as applied) - these two must be
+   * checked/recorded around the SAME processUpdate call pollAndForward
+   * already makes for every other update, never a second dispatch path.
+   */
+  isHandoverApplied?: (updateId: number) => boolean;
+  recordHandoverApplied?: (updateId: number) => void;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -3135,6 +3156,21 @@ export interface PollResult {
 // just sequencing the adapters and counting outcomes, never a second
 // decision path.
 export async function pollAndForward(offset: number, principalUserId: string, adapters: PollAdapters): Promise<PollResult> {
+  // BL-2061 (invariant 1, 2): apply hand-over updates BEFORE this cycle's
+  // own getUpdates call, through the same processUpdate every real poll
+  // update goes through - never a second decision path. Deduped on
+  // update_id so a hand-over re-appended after a crash (invariant 2) is
+  // applied at most once.
+  if (adapters.drainHandoverUpdates) {
+    const handedOver = await adapters.drainHandoverUpdates();
+    for (const update of handedOver) {
+      if (adapters.isHandoverApplied?.(update.update_id)) {
+        continue;
+      }
+      await processUpdate(update, principalUserId, adapters);
+      adapters.recordHandoverApplied?.(update.update_id);
+    }
+  }
   const result = await adapters.getUpdates(offset);
   if (!result.success) {
     return { nextOffset: offset, posted: 0, dropped: 0, failed: 0, ok: false, error: result.error };
