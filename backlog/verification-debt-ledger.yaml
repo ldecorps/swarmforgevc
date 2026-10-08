@@ -294,3 +294,8 @@
   role: hardener
   description: "Scoped Stryker run on localSeatRepoRead.js reported mutant 381 (out/263:38, the err.message StringLiteral) as Survived; hand-mutating the exact line and running the full test file directly shows it genuinely fails (1 test), confirming the coverage-attribution misattribution already logged for BL-1880 recurs for this vitest Stryker wiring."
   detected_at: 2026-10-07
+- category: land-path-ownership
+  ticket: BL-1880
+  role: QA
+  description: "lander returned BL-1880 LAND_ESCALATE 'no commit credited': the approval cited coder commit 957e49201e, already on origin/main via an unapproved push (007d54a2c4); traced by hand which stage commits the overnight pass covered, re-verified main's content, landed QA's own evidence commit de0f7e0ed3 (971122d8bb)"
+  detected_at: 2026-10-08
