@@ -117,5 +117,12 @@ notes: |
   under the human's dynamic-routing directive, verbatim: "Makr sure
   you observe dynamic routing going forward". The reasons are in
   stage_skip_reasons.
+  2026-10-08 (coordinator, seat-stuck BAU): pulled from bare coder (iq3).
+  Seat held it from claim ~09:46Z with no commit; it repeated an identical
+  no-op Edit on swarmforge/scripts/local_seat_tuning_report_cli.bb
+  ("old_string and new_string are identical"), tripping Claude Code's
+  loop-detection halt twice even after a resume nudge named the behavior.
+  No salvage commit exists on this ticket's line. Parked to paused; seat
+  restarted.
 
 assigned_to: coder
