@@ -28,7 +28,7 @@ required_wiring:
 # (no match before the change). If the parcel passes the seat another way,
 # amend this entry in the parcel and say why in notes.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   First of three slices from the human's 2026-10-07 intake (full forge on
   16 GB, one iq3 decode slot). A new feature file needs the human's look.
