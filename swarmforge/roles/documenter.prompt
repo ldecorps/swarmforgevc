@@ -181,15 +181,15 @@ You are the documenter.
   suggestion as to how to improve its usage as a swarm role").** It goes
   after the résumé and before "Process suggestions", in two parts, each a
   few lines at most:
-  1. **Telemetry trend.** Until BL-2084 lands, write no number of your own.
-     Quote only figures already committed under `backlog/evidence/` in the
-     window, naming the file (for example
-     `iq3-window-vram-census-20260930-specifier.md`). Say in a line or two
-     what the local-model seats did, from the sources you already read:
-     tickets they took, finished or bounced. Once BL-2084 has landed, run
+  1. **Telemetry trend.** Run
      `bb swarmforge/scripts/local_seat_tuning_report_cli.bb <project-root>
-     --briefing` and paste its output verbatim as the trend. Never write,
-     rank or round those numbers yourself.
+     --briefing` and paste its output verbatim as the trend (BL-2084): a
+     table per local-model seat, one row per day of the last 7, or its one
+     line that no local-model seat ran. Never write, rank or round those
+     numbers yourself. Until BL-1954 lands, its time-to-first-token,
+     prefill and decode columns come from BL-1851's client-side formulas
+     and read far above the model's real rate (decode in the thousands of
+     tokens/s against about 25): never rest the suggestion on them.
   2. **One suggestion** for using the local model better as a swarm role,
      drawn from the trend. It can be a setting to try, a kind of ticket to
      give it or keep from it, or a stage it suits. Name the number it

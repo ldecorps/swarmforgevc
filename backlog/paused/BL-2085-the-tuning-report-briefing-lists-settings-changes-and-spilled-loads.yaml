@@ -113,3 +113,8 @@ notes: |
   Valuable (the suggestion can name what changed), Estimable (two
   selections already written, one render), Small (two scenarios),
   Testable (fixture settings rows and Ollama log, the real CLI).
+  2026-10-08: BL-2084 re-routed to coder@2 after iq3's second paren
+  livelock (see its notes). This slice stays low for iq3: its change is new
+  top-level functions plus one call in the briefing render, the shape iq3
+  wrote cleanly in BL-1854's lib. If iq3 loop-halts here too, re-cost it to
+  medium (coder@2) rather than split it.
