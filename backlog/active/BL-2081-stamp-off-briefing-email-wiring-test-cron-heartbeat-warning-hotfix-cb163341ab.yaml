@@ -112,3 +112,5 @@ notes: |
   INVEST: Independent, Negotiable (review only), Valuable (the stamp
   closes the hotfix's certification), Estimable (four lines), Small (one
   test and one feature run), Testable (both runs).
+
+assigned_to: coder
