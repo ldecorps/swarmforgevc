@@ -39,6 +39,39 @@ Log cues in `.swarmforge/operator/front-desk-supervisor.log`:
 Pure policy lives in `front_desk_supervisor_lib.bb` → `check-one!` /
 `voluntary-build-stale-started-entry`. No new extension command or setting.
 
+## What the voluntary roll actually compiles (BL-2065)
+
+The recompile a voluntary stale-build roll triggers builds `main`'s
+**committed** `extension/` tree, never whatever the master checkout's
+working tree holds at that moment. `front_desk_supervisor.bb`'s
+`ensure-current-build!` used to run `npm run compile` directly inside the
+live checkout's `extension/`, so an uncommitted or untracked file sitting
+there got compiled in and stamped with `main`'s sha as if it had been
+built from `main` — on 2026-10-07 a stray hand-made implementation with a
+leaky secret filter rode about twenty such recompiles into the running
+cursor bridge this way (QA note 003900).
+
+`ensure-current-build!` now delegates to
+`safe_recompile_lib.bb`'s `recompile-extension-from-main!`: it exports
+`main`'s committed `extension/` subtree via `git archive` into a fresh
+temp directory (the working tree and index are never consulted),
+symlinks in the live checkout's `node_modules` read-only, compiles there,
+stamps `BUILD_SHA` with the known `main` sha, and swaps the result into
+the live `extension/out` — nothing else under the master checkout's
+`extension/` is ever read, written, staged, restored, or deleted. A
+failed recompile (or a failure to resolve `main`'s own current commit)
+is still reported as an error string rather than an exception, so the
+supervisor still respawns on the stale build instead of staying down
+(BL-328 scenario 08, unchanged).
+
+This fix is scoped to `front_desk_supervisor.bb`'s own recompile path.
+`build_freshness_cli.bb`'s separate `sync` command has the identical
+`npm run compile`-on-the-live-checkout pattern in its own
+`recompile-extension!` and was left unfixed (BL-2065 flagged it for the
+architect, who did not fold it in) — see
+[BL-629](../reference/BL-629-build-freshness-qa-approval-gate.md) for
+that mechanism, which still compiles whatever the working tree holds.
+
 ## Operator response
 
 1. Tail `front-desk-supervisor.log` and count whether `:gave-up` followed
