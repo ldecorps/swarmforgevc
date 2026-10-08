@@ -1,0 +1,114 @@
+id: BL-2081
+title: "Stamp-off for hotfix cb163341ab: test_handoffd_briefing_email_wiring.sh (BL-902 warning-not-spammed-05) counted two email-misconfigured lines because BL-1392's cron-heartbeat sweep alarms on the fixture's absent freshness-cron log through its own one-shot atom; the hotfix gives the fixture a fresh log, 5/5 PASS"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is high at first sighting (2026-09-05
+# amendment); this is the stamp-off of the hotfix that turned it green.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: four lines of fixture setup in one shell test; no production code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "four lines of fixture setup in one shell test; nothing to refactor"
+  architect: "no boundary moves; the daemon's sweeps and their atoms are unchanged"
+  hardender: "no production code: a shell test's fixture"
+  documenter: "no living doc describes this test's fixture"
+
+# Not a claim of ownership over BL-902's contract (BL-1251): the feature
+# whose scenario 04 the shell test's warning-not-spammed-05 wires to the
+# real daemon, which this review must leave green.
+acceptance: specs/features/BL-902-briefing-email-composes-before-key-check.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix landed under the human's 2026-10-01 rule
+  ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews the hotfix and never
+  re-applies it.
+
+invariants: []
+
+description: |
+  ## Status: hotfix cb163341ab landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `swarmforge/scripts/test/test_handoffd_briefing_email_wiring.sh` runs a
+  real handoffd against a mkdtemp fixture with RESEND_API_KEY unset, and
+  its last assertion (BL-902 warning-not-spammed-05) expects exactly one
+  `email-misconfigured` line in the daemon log. Since BL-1392 (2026-09-04)
+  the daemon's cron-heartbeat sweep runs earlier in the same cycle, finds
+  the fixture's `.swarmforge/daemon/freshness-check.cron.log` absent,
+  sends its "cron daemon is not running" alarm, and logs its own
+  `email-misconfigured` line through `push-alarm-email-missing-key-warned?`,
+  a one-shot atom separate from the briefing sweep's by design (handoffd.bb
+  says each signal has its own). The test counted 2 and failed. No lane
+  runs this shell test; coder@2 ran it while reworking BL-2069 and sent the
+  `unowned-red` note (000174, 2026-10-08). No register row named it.
+
+  ## What the hotfix changed
+
+  cb163341ab, test only: before starting the daemon, the fixture creates
+  `.swarmforge/daemon/` and touches `freshness-check.cron.log`, so the
+  heartbeat reads fresh (under its 10-minute bound) and that sweep sends
+  nothing. The briefing sweep's warning is then the only one counted. The
+  daemon and both atoms are unchanged.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show cb163341ab` and confirm it touches only the shell
+     test's fixture setup, before the daemon starts.
+  2. Run the shell test and the feature in qa_e2e_procedure once each,
+     output under tmp/.
+  3. Write backlog/evidence/BL-2081-coder-<date>.md with the result and
+     commit it.
+
+constraints: >
+  Review only: never re-apply or extend the hotfix. Never change handoffd's
+  one-shot warning atoms here.
+
+out_of_scope: |
+  - Whether the cron-heartbeat and briefing warnings should share one atom
+    (handoffd.bb keeps them separate on purpose).
+  - Putting swarmforge/scripts/test shell tests into a lane.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_handoffd_briefing_email_wiring.sh`:
+     5 PASS lines and ALL PASS, the last reading "fired exactly once across
+     2 early-skip sweeps" (measured at mint, after the hotfix, 2026-10-08,
+     about 15 s). Before the hotfix it failed: "expected exactly 1
+     email-misconfigured warning across 2 early-skip sweeps, got 2".
+  2. `node specs/pipeline/cli.js specs/features/BL-902-briefing-email-composes-before-key-check.feature`:
+     7 of 7 ok (measured at mint, 2026-10-08).
+  3. Read the coder's evidence; confirm the hotfix changed only the shell
+     test (`git show cb163341ab --stat`).
+
+source: |
+  coder@2's note 000174 (2026-10-08T09:27:32Z), verbatim:
+  "unowned-red test_handoffd_briefing_email_wiring.sh BL-902
+  warning-not-spammed-05". Fixed under the human's 2026-10-01 directive,
+  verbatim: "Also, update your prompt / c9 stitution: instead of minting a
+  red, hotfix the defect and mint a stampoff."
+
+notes: |
+  Minted 2026-10-08 by the specifier as the stamp-off of its own hotfix
+  cb163341ab.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Cause found from the fixture daemon's log: the first email-misconfigured
+  line follows "cron-heartbeat-stale absent", the second precedes
+  "briefing-skip-missing-key". No register row was added: the hotfix
+  turned the red green in the same pass. Ledger: hotfix_ledger_update.bb
+  --new cb163341ab, --link BL-2081. coder@2 (BL-2069 rework, line
+  cbff9645dd) was told to merge main and re-run.
+  INVEST: Independent, Negotiable (review only), Valuable (the stamp
+  closes the hotfix's certification), Estimable (four lines), Small (one
+  test and one feature run), Testable (both runs).

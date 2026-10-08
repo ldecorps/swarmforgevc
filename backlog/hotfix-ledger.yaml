@@ -1581,3 +1581,10 @@
   stamp_ticket: BL-2079
   human_decision: null
   decided_at: null
+- commit: cb163341ab
+  subject: "hotfix: test_handoffd_briefing_email_wiring.sh fixture writes a fresh freshness-cron log so BL-1392's heartbeat alarm stops doubling the email-misconfigured count"
+  detected_at: 2026-10-08
+  state: pending
+  stamp_ticket: BL-2081
+  human_decision: null
+  decided_at: null
