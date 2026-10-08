@@ -129,3 +129,5 @@ notes: |
   Where to read: local_model_tool_call_shim.py ShimHandler (~492-720) and
   upstream_root (~483) only; swarmforge.sh 692-720 and the launch writer
   at ~2620-2635 only.
+
+assigned_to: coder
