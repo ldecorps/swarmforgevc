@@ -47,11 +47,14 @@ python3 -m unittest "$TEST_DIR/test_local_model_tool_call_shim.py" >/dev/null 2>
 pass "the shim's unit tests pass"
 
 # 1. The seat URL: the shim's by default, the endpoint when switched off.
+# BL-2076: the shim URL names the seat (second argument).
 STARTED_PORT="$(free_port)"
-out="$(SWARMFORGE_LOCAL_MODEL_SHIM=off local_model_seat_url "$LM_URL")"
+out="$(SWARMFORGE_LOCAL_MODEL_SHIM=off local_model_seat_url "$LM_URL" coder)"
 [[ "$out" == "$LM_URL" ]] || fail "off: expected $LM_URL, got $out"
-out="$(SWARMFORGE_LOCAL_MODEL_SHIM_PORT="$STARTED_PORT" local_model_seat_url "$LM_URL")"
-[[ "$out" == "http://127.0.0.1:$STARTED_PORT/v1" ]] || fail "on: expected the shim URL, got $out"
+out="$(SWARMFORGE_LOCAL_MODEL_SHIM_PORT="$STARTED_PORT" local_model_seat_url "$LM_URL" coder)"
+[[ "$out" == "http://127.0.0.1:$STARTED_PORT/seat/coder/v1" ]] || fail "on: expected the seat-named shim URL, got $out"
+out="$(SWARMFORGE_LOCAL_MODEL_SHIM_PORT="$STARTED_PORT" local_model_seat_url "$LM_URL" 'coder@2')"
+[[ "$out" == "http://127.0.0.1:$STARTED_PORT/seat/coder@2/v1" ]] || fail "on: expected the seat-named shim URL for coder@2, got $out"
 [[ "$(serving "$STARTED_PORT")" == "0" ]] || fail "working out the seat URL started a shim"
 pass "the seat URL is the shim's (the endpoint when off), and working it out starts nothing"
 
