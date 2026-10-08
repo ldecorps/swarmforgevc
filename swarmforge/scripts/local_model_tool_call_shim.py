@@ -63,6 +63,7 @@ something else holds the port, and never stops a process it did not start.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import re
 import subprocess
@@ -495,8 +496,11 @@ def seat_of_path(path: str) -> tuple[str, str]:
     return "-", path
 
 
-# The shim's own log lines, in order: the tests read the last one.
-_log_lines: list[str] = []
+# The shim's own log lines, in order, bounded: the long-lived host-wide
+# process must not grow unbounded state for a list only the unit tests
+# read. The tests read the last one, which a deque still gives by index.
+_LOG_LINES_MAX = 200
+_log_lines: collections.deque[str] = collections.deque(maxlen=_LOG_LINES_MAX)
 
 
 def _log(message: str) -> None:
@@ -519,13 +523,19 @@ class ShimHandler(BaseHTTPRequestHandler):
         if self.path == HEALTH_PATH:
             self._send_json(200, {"shim": NAME, "upstream": self.upstream, "last_seat": self.last_seat})
             return
-        self._passthrough(None)
+        seat, upstream_path = seat_of_path(self.path)
+        self.path = upstream_path
+        self._passthrough(None, seat)
 
     def do_HEAD(self) -> None:
-        self._passthrough(None)
+        seat, upstream_path = seat_of_path(self.path)
+        self.path = upstream_path
+        self._passthrough(None, seat)
 
     def do_DELETE(self) -> None:
-        self._passthrough(self._read_body())
+        seat, upstream_path = seat_of_path(self.path)
+        self.path = upstream_path
+        self._passthrough(self._read_body(), seat)
 
     def do_POST(self) -> None:
         self._completion_started = time.monotonic()
@@ -538,7 +548,7 @@ class ShimHandler(BaseHTTPRequestHandler):
             except ValueError:
                 request = None
             if isinstance(request, dict) and is_compaction_request(request):
-                self._respond(request, self._compact)
+                self._respond(request, self._compact, seat)
                 return
             if isinstance(request, dict) and declared_tool_names(request):
                 self._shim_chat(request, seat)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -532,6 +533,10 @@ class SeatNamedLiveTests(unittest.TestCase):
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.read()
 
+    def get(self, path: str) -> bytes:
+        with urllib.request.urlopen(self.base + path, timeout=10) as resp:
+            return resp.read()
+
     def test_a_seat_url_reaches_ollama_unchanged_and_is_logged_with_the_seat(self) -> None:
         for seat in ("coder", "coder@2"):
             before = len(FakeOllama.seen)
@@ -573,6 +578,53 @@ class SeatNamedLiveTests(unittest.TestCase):
                   {"model": "m", "messages": [{"role": "user", "content": "read it"}]})
         health = shim.probe(self.shim.server_address[1])
         self.assertEqual(health["last_seat"], "coder")
+
+    def test_a_seat_get_reaches_ollama_with_the_prefix_stripped(self) -> None:
+        raw = self.get("/seat/coder/v1/models")
+        self.assertEqual(json.loads(raw)["path"], "/v1/models")
+
+    def _capture_chat_seat_lines(self) -> list:
+        # _log_chat_completion runs just after the response is already
+        # sent, so the client can resume before the server thread appends;
+        # a dedicated, unbounded capture list (restored after the test)
+        # sidesteps both that race and the eviction a bounded _log_lines
+        # (D3, BL-2076) could cause under shared, whole-suite state.
+        captured: list = []
+        original_log = shim._log
+
+        def wrapper(message: str) -> None:
+            if message.startswith("chat seat="):
+                captured.append(message)
+            original_log(message)
+
+        shim._log = wrapper
+        self.addCleanup(setattr, shim, "_log", original_log)
+        return captured
+
+    def _post_and_wait(self, captured: list, path: str, body: dict) -> str:
+        start = len(captured)
+        self.post(path, body)
+        deadline = time.monotonic() + 2.0
+        while len(captured) <= start and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertGreater(len(captured), start, "no chat seat= line logged in time")
+        return captured[-1]
+
+    def test_a_compaction_is_logged_with_its_seat_and_no_false_switch(self) -> None:
+        captured = self._capture_chat_seat_lines()
+        self._post_and_wait(captured, "/seat/coder/v1/chat/completions",
+                            {"model": "m", "messages": [{"role": "user", "content": "one"}]})
+        line = self._post_and_wait(captured, "/seat/coder/v1/chat/completions",
+                                   {"model": "m", "messages": [
+                                       {"role": "system", "content": "You are the component that summarizes a conversation"},
+                                       {"role": "user", "content": "go"},
+                                   ]})
+        self.assertTrue(line.startswith("chat seat=coder duration_ms="))
+        self.assertIn("switch=0", line)
+        line = self._post_and_wait(captured, "/seat/coder/v1/chat/completions",
+                                   {"model": "m", "messages": [{"role": "user", "content": "two"}]})
+        self.assertTrue(line.startswith("chat seat=coder duration_ms="))
+        self.assertIn("switch=0", line)
 
 
 class BadToolCallTests(unittest.TestCase):

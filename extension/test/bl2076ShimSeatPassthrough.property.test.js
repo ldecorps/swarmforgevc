@@ -88,6 +88,18 @@ function postJson(url, bodyObj) {
   });
 }
 
+function getRequest(url) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(url, { method: 'GET' }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => resolve({ status: res.statusCode, data }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 beforeAll(async () => {
   fakeRequests = [];
   fakeServer = http.createServer((req, res) => {
@@ -151,3 +163,24 @@ test('property (BL-2076 invariant): the shim forwards every request to Ollama wi
     { numRuns: 30 }
   );
 }, 30000);
+
+// D1 (BL-2076 bounce, 2026-10-08): only do_POST stripped the seat prefix -
+// a GET/HEAD/DELETE at /seat/<seat>/v1/... forwarded with the prefix still
+// on and Ollama 404'd. Draws the method alongside the seat so this would
+// have caught it.
+test('property (BL-2076 invariant, D1): a GET at a seat URL reaches Ollama at /v1/... with the prefix stripped, regardless of seat', async () => {
+  await fc.assert(
+    fc.asyncProperty(seatArb, async (seat) => {
+      const url = seat === null
+        ? `${shimBase}/v1/models`
+        : `${shimBase}/seat/${seat}/v1/models`;
+      const before = fakeRequests.length;
+      const r = await getRequest(url);
+      assert.equal(r.status, 200, `seat=${seat} GET failed: ${r.status} ${r.data}`);
+      const forwarded = fakeRequests.slice(before).filter((req) => req.method === 'GET');
+      assert.equal(forwarded.length, 1, `expected exactly one GET request upstream, got ${forwarded.length}`);
+      assert.equal(forwarded[0].path, '/v1/models', 'Ollama must see the prefix stripped, not /seat/<seat>/v1/models');
+    }),
+    { numRuns: 15 }
+  );
+}, 20000);
