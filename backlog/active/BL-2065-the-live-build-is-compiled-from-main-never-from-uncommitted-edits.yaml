@@ -74,8 +74,12 @@ description: |
   - A failed recompile keeps today's behaviour: the front desk still
     comes up, loudly (BL-328 scenario 08 stays green).
   - Living docs: docs/how-to/BL-1154-build-stale-restarts-not-crash-giveup-budget.md
-    and docs/reference/BL-629-build-freshness-qa-approval-gate.md say
-    the build is compiled from main's committed tree.
+    says the front desk's recompile builds main's committed tree.
+    docs/reference/BL-629-build-freshness-qa-approval-gate.md says that
+    `sync`'s own recompile (build_freshness_cli.bb `recompile-extension!`)
+    still compiles the working tree; BL-2082 owns that path. (Amended
+    2026-10-08: this bullet first asked both docs to say "compiled from
+    main's committed tree", which is false for `sync`.)
 
   ## How (direction, not mandate)
 
@@ -138,6 +142,12 @@ notes: |
   (note 017233, 10:45Z) and kept a backup in the master checkout's
   gitignored tmp/stray-bl1911-20261007/.
   IR-DRY at mint: no findings.
+  Amended 2026-10-08 by the specifier on the documenter's spec-gap note
+  001711 ("BL-2065 spec-gap: BL-629's recompile unfixed, docs state the
+  gap"): only the Living docs bullet changed, to match the docs the
+  documenter shipped at 04720240fa. Nothing anyone builds changes. The
+  sync path is owned by BL-2082 (minted the same pass); QA, the holder,
+  was told.
   INVEST: Independent (no unbuilt sibling), Negotiable (the build shape
   is the architect's), Valuable (nothing uncommitted runs live under
   main's name), Estimable (one build step and a fixture project), Small
