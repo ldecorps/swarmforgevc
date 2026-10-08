@@ -824,6 +824,90 @@ test('pollAndForward leaves the offset unchanged when the poll itself fails', as
   assert.equal(result.posted, 0);
 });
 
+// ── pollAndForward — BL-2061 hand-over drain ──────────────────────────────
+
+test('BL-2061: pollAndForward applies a drained hand-over update through the same processUpdate path, BEFORE its own getUpdates', async () => {
+  const order = [];
+  const posted = [];
+  const recorded = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'handed over' })],
+    isHandoverApplied: () => false,
+    recordHandoverApplied: (updateId) => recorded.push(updateId),
+    getUpdates: async () => {
+      order.push('getUpdates');
+      return { success: true, updates: [] };
+    },
+    postToBridge: async (subjectId, text) => {
+      order.push('postToBridge');
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: 'handed over' }]);
+  assert.deepEqual(order, ['postToBridge', 'getUpdates'], 'the hand-over must be applied BEFORE this cycle\'s own getUpdates call');
+  assert.deepEqual(recorded, [1]);
+  assert.equal(result.ok, true);
+});
+
+test('BL-2061: pollAndForward never re-applies a hand-over update isHandoverApplied already reports as applied', async () => {
+  const posted = [];
+  const recorded = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'already applied' })],
+    isHandoverApplied: (updateId) => updateId === 1,
+    recordHandoverApplied: (updateId) => recorded.push(updateId),
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(posted, [], 'an update already marked applied must not be processed a second time');
+  assert.deepEqual(recorded, [], 'recordHandoverApplied must not fire again for an already-applied id');
+});
+
+test('BL-2061: pollAndForward applies a drained hand-over update without throwing when isHandoverApplied/recordHandoverApplied are not wired', async () => {
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'handed over, no dedup adapters' })],
+    // isHandoverApplied and recordHandoverApplied deliberately omitted -
+    // both call sites use `?.()`, so this must not throw even though the
+    // adapter object has no such methods.
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: 'handed over, no dedup adapters' }]);
+  assert.equal(result.ok, true);
+});
+
+test('BL-2061: pollAndForward skips the hand-over drain entirely when no drainHandoverUpdates adapter is wired (pre-BL-2061 fixtures)', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.equal(result.ok, true);
+});
+
 // ── pollAndForward wiring — BL-425 slice 1 role steering ─────────────────
 
 function stubRedirectToRole() {

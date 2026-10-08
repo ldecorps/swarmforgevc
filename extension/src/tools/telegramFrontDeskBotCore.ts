@@ -3151,26 +3151,32 @@ export interface PollResult {
   error?: string;
 }
 
+// BL-2061 (invariant 1, 2): apply hand-over updates BEFORE this cycle's own
+// getUpdates call, through the same processUpdate every real poll update
+// goes through - never a second decision path. Deduped on update_id so a
+// hand-over re-appended after a crash (invariant 2) is applied at most once.
+// Extracted out of pollAndForward so its own routing/counting logic keeps
+// its pre-BL-2061 complexity (differential CRAP gate).
+async function applyHandoverUpdates(principalUserId: string, adapters: PollAdapters): Promise<void> {
+  if (!adapters.drainHandoverUpdates) {
+    return;
+  }
+  const handedOver = await adapters.drainHandoverUpdates();
+  for (const update of handedOver) {
+    if (adapters.isHandoverApplied?.(update.update_id)) {
+      continue;
+    }
+    await processUpdate(update, principalUserId, adapters);
+    adapters.recordHandoverApplied?.(update.update_id);
+  }
+}
+
 // Adapter-injected: one poll-and-forward cycle. Every update decision goes
 // through decideUpdateAction (pure) above - this function's own job is
 // just sequencing the adapters and counting outcomes, never a second
 // decision path.
 export async function pollAndForward(offset: number, principalUserId: string, adapters: PollAdapters): Promise<PollResult> {
-  // BL-2061 (invariant 1, 2): apply hand-over updates BEFORE this cycle's
-  // own getUpdates call, through the same processUpdate every real poll
-  // update goes through - never a second decision path. Deduped on
-  // update_id so a hand-over re-appended after a crash (invariant 2) is
-  // applied at most once.
-  if (adapters.drainHandoverUpdates) {
-    const handedOver = await adapters.drainHandoverUpdates();
-    for (const update of handedOver) {
-      if (adapters.isHandoverApplied?.(update.update_id)) {
-        continue;
-      }
-      await processUpdate(update, principalUserId, adapters);
-      adapters.recordHandoverApplied?.(update.update_id);
-    }
-  }
+  await applyHandoverUpdates(principalUserId, adapters);
   const result = await adapters.getUpdates(offset);
   if (!result.success) {
     return { nextOffset: offset, posted: 0, dropped: 0, failed: 0, ok: false, error: result.error };

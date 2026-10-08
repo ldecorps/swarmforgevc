@@ -2054,6 +2054,39 @@ export async function tryDispatchToBubbleSeat(
   return true;
 }
 
+// BL-2061: an update that is not the bridge's own is only ever dropped on a
+// route the forward queue (front-desk -> bridge) already filtered for us, so
+// this only ever fires in the dead-feeder fallback - the bridge calling
+// getUpdates itself while the front desk is dead. The front desk still owns
+// applying it (invariant 1); the bridge keeps answering the callback query
+// so the Telegram UI does not hang. Extracted out of processInboundUpdates so
+// its own routing logic keeps its pre-BL-2061 complexity, mirroring the
+// tryDispatchToBubbleSeat extraction just above it (differential CRAP gate,
+// hardener pass). Returns whether this update was handed over (and thus
+// already appended to the hand-over queue).
+async function handOverToFrontDeskIfNotOwn(
+  deps: CursorBridgeLoopDeps,
+  inbound: CursorBridgeInboundEvent & { messageId?: number },
+  update: TelegramUpdate,
+  holder: { state: CursorBridgePersistedState; busy: boolean },
+  handOverIfNotOwn: boolean
+): Promise<boolean> {
+  if (
+    !handOverIfNotOwn ||
+    isScopedToCursorTopic(inbound, deps.chatId, {
+      cursorTopicId: holder.state.cursorTopicId,
+      bubbleTopicId: holder.state.bubbleTopicId,
+    })
+  ) {
+    return false;
+  }
+  if (inbound.kind === 'callback' && inbound.callbackQueryId) {
+    await answerCallbackQuery(deps.botToken, inbound.callbackQueryId, deps.telegramPostFn);
+  }
+  appendCursorBridgeHandoverUpdate(deps.opDir, update as unknown as { update_id?: number } & Record<string, unknown>);
+  return true;
+}
+
 async function processInboundUpdates(
   deps: CursorBridgeLoopDeps,
   updates: TelegramUpdate[],
@@ -2105,23 +2138,7 @@ async function processInboundUpdates(
     if (await tryDispatchToBubbleSeat(deps, inbound, holder, handlerCtx)) {
       continue;
     }
-    // BL-2061: an update that is not the bridge's own is only ever dropped
-    // on a route the forward queue (front-desk -> bridge) already filtered
-    // for us, so this check only ever fires in the dead-feeder fallback -
-    // the bridge calling getUpdates itself while the front desk is dead.
-    // The front desk still owns applying it (invariant 1); the bridge keeps
-    // answering the callback query so the Telegram UI does not hang.
-    if (
-      handOverIfNotOwn &&
-      !isScopedToCursorTopic(inbound, deps.chatId, {
-        cursorTopicId: holder.state.cursorTopicId,
-        bubbleTopicId: holder.state.bubbleTopicId,
-      })
-    ) {
-      if (inbound.kind === 'callback' && inbound.callbackQueryId) {
-        await answerCallbackQuery(deps.botToken, inbound.callbackQueryId, deps.telegramPostFn);
-      }
-      appendCursorBridgeHandoverUpdate(deps.opDir, update as unknown as { update_id?: number } & Record<string, unknown>);
+    if (await handOverToFrontDeskIfNotOwn(deps, inbound, update, holder, handOverIfNotOwn)) {
       continue;
     }
     const pending = readPendingOperatorConfirm(deps.repoRoot);

@@ -57,6 +57,15 @@ test('applied handover ids: malformed JSON reads as empty rather than throwing',
   assert.deepEqual(readAppliedHandoverIds(opDir), new Set());
 });
 
+test('applied handover ids: a well-formed array with non-number entries keeps only the numbers', () => {
+  const opDir = tmpOpDir();
+  const file = path.join(opDir, 'cursor-bridge-handover-applied.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify([1, 'not-a-number', null, 2, { update_id: 3 }]));
+  assert.deepEqual(readAppliedHandoverIds(opDir), new Set([1, 2]));
+  assert.equal(isHandoverUpdateApplied(opDir, 'not-a-number'), false);
+});
+
 test('applied handover ids: recording an id makes it read back as applied', () => {
   const opDir = tmpOpDir();
   recordAppliedHandoverId(opDir, 42);
