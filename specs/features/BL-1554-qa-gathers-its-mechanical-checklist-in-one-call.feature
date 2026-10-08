@@ -20,7 +20,7 @@ Feature: BL-1554 QA gathers its mechanical checklist in one call
   # BL-1554 qa-gathers-checklist-01
   Scenario: the report lists the fixed checklist in its fixed order
     When qa-gather runs for BL-1554-FIX over the fake runner
-    Then the report names the checks stragglers_before, sibling, register, wiring, unit, properties, acceptance, stragglers_after in that order
+    Then the report names the checks stragglers_before, sibling, register, wiring, unit, properties, property_runners, acceptance, stragglers_after in that order
     And every check row carries the command it ran, its working directory, its exit status and an output excerpt
     And the tool exits 0
 
