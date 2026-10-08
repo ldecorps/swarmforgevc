@@ -2,14 +2,16 @@ id: BL-2084
 title: "The tuning report's --briefing mode prints, for each local-model seat with a settings record, one markdown table row per day over the last 7 days (requests, time to first token, prefill and decode speed, output, thinking share, compressions per 10 requests, tool-call failure rate), or the single line that no local-model seat ran - the table half of BL-1854's Local LLM briefing section"
 milestone: M8
 type: feature
-status: blocked
+status: todo
 epic: local-llm-swarm
 priority: 31
 direction: queue-jump
 depends_on: []
-mutation_cost: low
-# low: a rendering mode over BL-1851's bb lib; bb has no mutation lane wired
-# (engineering.prompt). Fixtures only.
+mutation_cost: medium
+# medium is a SEAT-TIER declaration, not a size (backlog-schema.md
+# slice_size_envelope; the Article 3.6 precedent): BL-1001's claim gate
+# keeps it off the easy seat (iq3, --seat-tier easy) and coder@2 (hard)
+# takes it. The size stays low below. bb has no mutation lane wired.
 slice_size_envelope: low
 required_stages: [coder, documenter, qa]
 stage_skip_reasons:
@@ -88,6 +90,13 @@ description: |
     printed. Pass the Instant straight to `LocalDate/ofInstant`.
   - `briefing-window` (line ~70) has the same `.toInstant` call in its
     `->` chain and throws.
+
+  The second attempt (2026-10-08) is at `refs/swarmforge/salvage/BL-2084`
+  (d25e2a3cb0, a stash: lib and cli tracked, the step handler under
+  `^3`). Use it or not, your call. Both files parse (checked 2026-10-08),
+  but its lib's `briefing-window` still throws ("No matching method
+  atTime") and `briefing-day-rows` merges buckets with `merge`, so a day
+  with requests and compressions loses its requests.
 
   ## Where to read
 
@@ -169,5 +178,20 @@ notes: |
   in-ticket guidance is an exhausted remedy here; the failure looks like
   the task shape (hand-balancing delimiters in a deep bb form by text
   substitution), not the slice size. Blocked pending specifier re-slice.
+
+  2026-10-08 ~13:00Z, specifier adjudication of the coordinator's split
+  request (note 017413): RE-ROUTED, NOT SPLIT. The ticket was already
+  BL-1854's split, carried the shallow-function and parse-after-every-edit
+  guidance, and iq3 still livelocked on the same paren, so a third size cut
+  repeats a remedy that failed with its own instructions present. The
+  failure is the task shape (editing a deep bb form by text substitution)
+  on the iq3 seat, not the slice size: for a Claude seat this slice is one
+  sitting. So mutation_cost goes low -> medium, which BL-1001's claim gate
+  turns into "coder@2 only" (iq3 is --seat-tier easy since 0e79c1e26a).
+  Scope, scenarios, stages and approval are unchanged; the human's
+  approval stands (no new scope). The second attempt's stash is pinned at
+  refs/swarmforge/salvage/BL-2084 (named in the description).
+  BL-2085 stays low for iq3: its change is new top-level functions plus one
+  call, the shape iq3 wrote cleanly in BL-1854's lib.
 
 assigned_to: coder
