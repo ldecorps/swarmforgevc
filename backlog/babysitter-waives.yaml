@@ -10,6 +10,11 @@
   reason: "Root-caused + fixed (swarmforge-QA push was tracking refs/heads/main, now origin/swarmforge-QA); content is QA's own in-review WIP for still-active BL-1880, not a bypass of a finished land; see backlog/evidence/art42-origin-main-1007-coordinator-closeout.md. Re-waive if BL-1880 doesn't land soon."
   waived_at: 2026-10-08
 
+- key: pipeline-code-on-main-01e77eaef2bf2fc1ba8bdd238d1b77b4f6664ceb
+  waived_by: coordinator
+  reason: "sanctioned hotfix: soft shift close freezes new jobs at T-15 and drains in_process before finish-shift. Registered in backlog/hotfix-ledger.yaml (state: pending), stamp ticket BL-2088 minted in backlog/paused/. is_qa_ancestor.sh exit 1 (not yet QA-merged) - genuine Article 4.2 hit per the human's 2026-10-01 hotfix-then-stampoff rule, not a bypass."
+  waived_at: 2026-10-08
+
 - key: pipeline-code-on-main-02f834ec44a1b217311af8789eb3cbd7c52b27f6
   waived_by: coordinator
   reason: "sanctioned hotfix (SUP-17 ruling, Article 4.2 re-fires on sanctioned stamp-offs are accepted noise), already in hotfix-ledger.yaml with stamp_ticket BL-1988 pending"
