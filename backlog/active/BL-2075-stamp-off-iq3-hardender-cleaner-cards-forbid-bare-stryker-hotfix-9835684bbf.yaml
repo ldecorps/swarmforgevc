@@ -80,6 +80,7 @@ notes: |
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
   ruling_options) - see
   auto-approve-high-severity-defects-amendment-20260917.md.
+  2026-10-08 05:49Z: coordinator routed to coder (Work BL-2075 note).
 
 description: |
   ## Status: hotfix 9835684bbf landed the fix
