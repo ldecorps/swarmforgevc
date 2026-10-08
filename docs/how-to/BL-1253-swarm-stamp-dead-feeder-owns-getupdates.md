@@ -32,7 +32,10 @@ front-desk poll heartbeat liveness instead of assuming it:
   (no auto marker) still forces that mode.
 
 See also [BL-764](BL-764-front-desk-shared-token-bridge-fanout.md) for the
-general shared-token fanout mechanism this hotfix hardens.
+general shared-token fanout mechanism this hotfix hardens, and
+[BL-2061](BL-764-front-desk-shared-token-bridge-fanout.md#a-front-desk-update-the-bridge-reads-is-never-dropped-bl-2061)
+for what happens to a front-desk update read during this hotfix's own
+dead-feeder window — it used to be silently dropped; it no longer is.
 
 ## Stamp-off posture
 
