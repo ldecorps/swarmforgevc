@@ -180,3 +180,5 @@ description: |
   docs/reference/Specification.MD's BL-1253 entry say what is true after
   4453766c28: the start script's own decision is marked auto and yields
   to the per-poll feeder liveness; only an explicit 0 or 1 forces a mode.
+
+assigned_to: coder
