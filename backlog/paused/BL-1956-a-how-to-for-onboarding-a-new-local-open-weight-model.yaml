@@ -21,7 +21,7 @@ stage_skip_reasons:
 # orphan check that proves the new how-to is linked from docs/index.md.
 acceptance: specs/features/BL-757-pilot-orphan-checker-never-run-against-real-tree.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your ask, held until you judge iq3 stable: tap Approve then, and the
   documenter writes it. FIRM: one how-to under docs/how-to/, linked from
