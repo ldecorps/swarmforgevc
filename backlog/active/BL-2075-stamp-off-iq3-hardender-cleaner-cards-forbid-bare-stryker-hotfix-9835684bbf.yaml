@@ -29,7 +29,12 @@ stage_skip_reasons:
 # qa_e2e_procedure, the same pattern BL-2074 used for BL-1991.
 # (BL-1977's feature was wrongly named here at mint: it is paused and its
 # step handler was never landed.)
-acceptance: the four local-model role cards carry the hotfix's wording verbatim
+acceptance: |
+  The four local-model role cards carry the hotfix's wording verbatim:
+  swarmforge/roles/local-model/hardender.note, cleaner.note,
+  architect.note and QA.note each match `git show 9835684bbf` byte-for-byte,
+  and no card still names bare `npm run mutation` / default
+  stryker.config.json as the run shape.
 
 human_approval: approved
 approval_context: >
