@@ -1,0 +1,113 @@
+id: BL-2083
+title: "Stamp-off for hotfix 2242cd327c: bl2055RestartOnlyOnHeldParcelInvariants.property.test.js sampled its reach floors (invariant 1: fc.boolean() over 30 runs against 10 per shape, red about 4% of runs; invariant 2: 8 cells over 64 uniform runs against 2 per cell, about 1.6%), and QA's gather of BL-2065 drew held 8 < 10; the hotfix loops over the cells with runsPerCell at the same budgets, 2/2 green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main is high at first sighting (2026-09-05
+# amendment); this is the stamp-off of the hotfix that turned it green.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: the loop structure of two property tests; no production code.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two loops in one test file; nothing to refactor"
+  architect: "no boundary moves; the properties assert what they asserted before"
+  hardender: "no production code: a property test's run structure"
+  documenter: "no living doc describes this file's run structure"
+
+# Not a claim of ownership over BL-2055's contract (BL-1251): the feature
+# whose invariants this property file carries, which this review must
+# leave green.
+acceptance: specs/features/BL-2055-a-local-seat-restart-relaunches-only-on-the-parcel-it-holds.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix landed under the human's 2026-10-01 rule
+  ("instead of minting a red, hotfix the defect and mint a stampoff").
+  No choice is posed. FIRM: the coder reviews the hotfix and never
+  re-applies it.
+
+invariants: []
+
+description: |
+  ## Status: hotfix 2242cd327c landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `extension/test/bl2055RestartOnlyOnHeldParcelInvariants.property.test.js`
+  declared reach floors it only sampled, the shape BL-1062 says to
+  construct:
+  - invariant 1 drew `hasHeld` with `fc.boolean()` over `numRuns: 30` and
+    asserted 10 runs per shape. Either shape lands under 10 when
+    Binomial(30, 1/2) is 9 or less, or 21 or more: about 4% of runs. QA's
+    gather of BL-2065 at 04720240fa drew held 8 (evidence 3d4e0453f5) and
+    held that parcel on it (note 003926).
+  - invariant 2 drew its 8 suffix x restart-state cells uniformly over
+    `numRuns: 64` and asserted 2 per cell: about 1.6% of runs.
+  No register row named the file.
+
+  ## What the hotfix changed
+
+  2242cd327c, test only: invariant 1 loops over `hasHeld` in [true, false]
+  with `runsPerCell(30, 2)` runs each (15); invariant 2 loops over the 4
+  suffixes x [false, true] with `runsPerCell(64, 8)` runs each (8), the
+  cell held as `fc.constant`. The property bodies, the floors and the total
+  run budgets are unchanged. `runsPerCell` is the existing helper in
+  `extension/test/helpers/reachFloors.js`.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 2242cd327c` and confirm each test's body and floor
+     are unchanged apart from indentation, and that each cell's runs
+     meet its floor by construction.
+  2. Run the property file and the feature in qa_e2e_procedure once each,
+     output under tmp/.
+  3. Write backlog/evidence/BL-2083-coder-<date>.md with the result and
+     commit it.
+
+constraints: >
+  Review only: never re-apply or extend the hotfix. Never start a
+  mutation run.
+
+out_of_scope: |
+  - Other property files with sampled floors (the BL-1585..BL-1587 sweeps
+    own that census).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read the property file's row in QA's gather (the properties lane runs
+     it): both tests pass. Measured at mint, alone, after the hotfix
+     (2026-10-08): 2 of 2 in 17 s (invariant 1 0.5 s, invariant 2 16 s).
+  2. `node specs/pipeline/cli.js specs/features/BL-2055-a-local-seat-restart-relaunches-only-on-the-parcel-it-holds.feature`:
+     3 of 3 ok (measured at mint, 2026-10-08).
+  3. Read the coder's evidence; confirm the hotfix changed only the
+     property file (`git show 2242cd327c --stat`).
+
+source: |
+  QA note 003926 (2026-10-08T11:09:30Z), verbatim: "BL-2065 held:
+  unowned-red bl2055 inv1 reach floor held 8<10; ev 3d4e0453f5". Fixed
+  under the human's 2026-10-01 directive, verbatim: "Also, update your
+  prompt / c9 stitution: instead of minting a red, hotfix the defect and
+  mint a stampoff."
+
+notes: |
+  Minted 2026-10-08 by the specifier as the stamp-off of its own hotfix
+  2242cd327c (committed as SWARMFORGE_ROLE=QA: extension/test/ is a
+  QA-exclusive path on main; the first attempt timed out at the 60 s
+  default bound while the pre-commit property guard ran, the retry used
+  SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  No register row was added: the hotfix turned the red green in the same
+  pass. Ledger: hotfix_ledger_update.bb --new 2242cd327c, --link BL-2083.
+  QA (holding BL-2065 at 04720240fa) was told to retake it, merge main and
+  re-run.
+  INVEST: Independent, Negotiable (review only), Valuable (the stamp
+  closes the hotfix's certification), Estimable (two loops), Small (one
+  property file and one feature run), Testable (both runs).
