@@ -23,11 +23,13 @@ stage_skip_reasons:
   architect: "no boundary moves; the cards' own wording is the change"
   documenter: "no living doc describes the local-model cards' mutation wording (the cards themselves are the doc)"
 
-# Not a claim of ownership over BL-1977's contract: it is the feature that
-# drives the hardener's gate the hotfix's wording pins. The hotfix's own
-# wording is pinned in this ticket's invariants and qa_e2e_procedure, the
-# same pattern BL-2074 used for BL-1991.
-acceptance: specs/features/BL-1977-the-hardener-gates-changed-babashka-code-on-touch.feature
+# No feature: the hotfix is role-card text only, so the acceptance is the
+# hotfix's own scope - the four local-model role cards it changed. The
+# hotfix's wording is pinned in this ticket's invariants and
+# qa_e2e_procedure, the same pattern BL-2074 used for BL-1991.
+# (BL-1977's feature was wrongly named here at mint: it is paused and its
+# step handler was never landed.)
+acceptance: the four local-model role cards carry the hotfix's wording verbatim
 
 human_approval: approved
 approval_context: >
@@ -46,10 +48,13 @@ invariants:
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js
-     specs/features/BL-1977-the-hardener-gates-changed-babashka-code-on-touch.feature`
-     and `node specs/pipeline/cli.js
      specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature`:
-     all ok (the nearest acceptance contracts the hotfix's wording pins).
+     all ok (the QA card's qa-gather contract).
+     NOTE: the BL-1554 feature currently fails 1 scenario (the
+     property_runners checklist row added by BL-2073, commit 3a65a6e5ab on
+     origin/main, not yet in local main). That failure is pre-existing and
+     unowned by this parcel: record it in the evidence and do not bounce
+     the stamp-off for it.
   2. Read the coder's evidence (backlog/evidence/BL-2075-coder-<date>.md)
      proving each of the four cards carries the hotfix's wording verbatim
      (grep each phrase against the card) and that no card still names bare
@@ -116,8 +121,9 @@ description: |
      the four cards carries the hotfix's wording verbatim (grep each phrase
      against the card) and that no card still names bare `npm run mutation`
      / default stryker.config.json as the run shape.
-  2. Run the two features in qa_e2e_procedure step 1 once each, output under
-     tmp/.
+  2. Run the feature in qa_e2e_procedure step 1 once, output under tmp/.
+     Record the pre-existing BL-1554 property_runners failure (see the
+     NOTE there) in the evidence.
   3. Write backlog/evidence/BL-2075-coder-<date>.md with the review result
      and the run results, and commit it.
 
