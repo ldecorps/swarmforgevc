@@ -197,6 +197,31 @@ dependencies) now sits between a local-model seat and Ollama:
 | `SWARMFORGE_LOCAL_MODEL_SHIM_PORT` | the shim's own loopback port | `11439` |
 | `SWARMFORGE_LOCAL_MODEL_SHIM` | `off` sends the seat to Ollama's endpoint directly, bypassing the shim | `on` |
 
+**The URL names the seat behind every chat completion (BL-2076).** Every
+local-model seat on the host shares this one shim and one Ollama slot, but
+until this a seat switch — on iq3, a full re-prefill, 23-38 s at
+20-30k prompt tokens, 66 s at 50k, against 0.5-2 s for a cached
+continuation — was invisible: nothing could tell one seat's request from
+another's.
+
+- `local_model_seat_url` now gives the seat a URL of the shape
+  `http://127.0.0.1:<port>/seat/<role>/v1` (the role as given, `coder@2`
+  included) instead of the bare `/v1` path, whenever the shim is on.
+  `SWARMFORGE_LOCAL_MODEL_SHIM=off` is unchanged: the seat talks straight
+  to Ollama with no seat name at all.
+  `seat_of_path` strips `/seat/<seat>` before forwarding, so Ollama
+  receives the same method, body and `/v1` path as before this slice — a
+  client at the plain `/v1` path (an older launch script, or any other
+  local client) is still served and logs seat `-`.
+- One log line per chat completion: `chat seat=<seat>
+  duration_ms=<ms> prompt_tokens=<n> switch=<0|1>` — `switch=1` when the
+  previous chat completion the shim forwarded came from a different seat,
+  `switch=0` otherwise (the shim's own class-level `last_seat`, not a
+  per-connection instance attribute, so it is actually shared across
+  requests).
+- `GET /shim/health` adds `last_seat`, the seat behind the most recent
+  chat completion.
+
 ### The shim caps a compaction summary, drops the ask for `<analysis>`, and runs it with thinking off (BL-1952)
 
 qwen's own compaction side-query — the request it sends itself to
