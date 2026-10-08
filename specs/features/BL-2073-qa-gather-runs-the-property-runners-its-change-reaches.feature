@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5785883c06e9108f507e5331584066dee817b2448ccbd75d7d2d3ca6789a8684
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-07T21:41:38.438812859Z","feature_name":"BL-2073 QA's gather runs the property runners its change reaches","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-2073-qa-gather-runs-the-property-runners-its-change-reaches.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a parcel whose own diff reaches property runners runs exactly those","scenario_hash":"26dfd9e87cd8c088290e42241a611df47e4ffc4247e131211e854e645f6045a4","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-10-07T21:41:14.376336473Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-2073 QA's gather runs the property runners its change reaches
 
   About 200 of the 217 property runners under swarmforge/scripts/test run

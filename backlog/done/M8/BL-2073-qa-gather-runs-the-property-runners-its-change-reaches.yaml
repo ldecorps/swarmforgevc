@@ -28,6 +28,9 @@ invariants:
 
 required_wiring:
   - 'specs/pipeline/steps/bl2073QaGatherPropertyRunnerReachSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+abandoned_commits:
+  - 0eff3ceca0
 # No production anchor on purpose (BL-1235): the new row's only reader is
 # QA, through the report; qa-gather.js already calls gatherQaChecklist, so
 # a qaGather.ts literal would be satisfied by this parcel's own diff.

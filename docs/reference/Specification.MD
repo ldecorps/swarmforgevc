@@ -1,5 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 7, 2026 (BL-2073: QA's mechanical checklist
+gains a ninth row, `property_runners`, between the `properties` and
+`acceptance` rows — on every parcel the gather runs
+`swarmforge/scripts/test/run_property_runners.sh --changed-from <ref>`
+with the parcel's own merge-base with main, so a red the parcel causes in
+a property runner its change reaches shows in the gather QA already
+reads, before the land (BL-2049 ruling A's gather-row slice). The row is
+reported like every other row — `id`, `command`, `cwd`, `status`, `exit`,
+`duration_ms`, `excerpt`, and a `reason` when blocked — and is blocked
+with a reason naming the failed merge-base when the commit ref cannot be
+resolved, never omitted. The checklist count is 9, not 8. No new
+extension command or setting; no diagram edit — no registered diagram
+depicts QA's internal checklist rows.)
+
+Prior entry —
+
 **Last Updated:** October 7, 2026 (BL-2044: `take-up!`'s `:move` branch —
 a seat's line force-moved onto the start target because it carries an
 unlanded *other* ticket's work — now re-applies the current ticket's own
@@ -34,6 +50,57 @@ lost" section). Acceptance:
 No new extension command or setting; no diagram edit — no registered
 diagram depicts take-up's internal move/re-apply mechanics.)
 
+Prior entry —
+
+**Last Updated:** October 7, 2026 (BL-1880: the briefing's bounce line used
+to count every bounce since the project began with no date filter, so it
+could not answer whether a role's work bounced more or less since its
+model changed. `qa-bounce-line.js`'s live line (`main()`, no `--json`) now
+leads with the bounces since the PREVIOUS briefing was SENT — the commit
+that added that day's key to `docs/briefings/.sent.json` (`git log -S` the
+pickaxe, oldest match; the file's own introducing commit is a different,
+earlier moment — the email sweep commits the day's file, sends it, then
+separately commits the send marker, 5.5h apart measured, so reading the
+file commit double-counted a bounce landing in that gap, QA bounce D3) —
+bounded at the top by the render time itself, never counting a bounce that
+had not happened yet as of the moment being reported for (D4) — or, with
+no previous send on record, the last 24 hours, said plainly. The window's
+OWN bouncing-role split is printed in the window segment (`by bouncing
+role: ...`, QA bounce D1 — it used to print only the all-time split there,
+reading as a breakdown of the window total above it); every clause after
+it is explicitly labelled `all-time by ...` or `all-time total`, so a
+line-scanner always finds the window's own figures distinct from the
+all-time ones and the end of the line in the same place. Each producing
+role in the window is shown with a fixed seven-day trend (one count per
+day, oldest first, fixed 24-hour buckets ending at the render time, never
+calendar days) and the model it runs now (`backendSwitch.ts`'s
+`readRoleModelId` + `formatModelDisplayName`, BL-1811 — never re-derived).
+A `--json` mode prints the same figures — window start, per-role window
+count/trend/model, the window's own bouncing-role split, and the all-time
+breakdowns — as one object, and every count the JSON carries now appears
+on the line too (scenario 06; the step that asserts this was itself
+widened, D2, after it first passed while checking only a subset and
+missing D1's bug) — for the coordinator's model-advice prompt to cite
+(BL-798 landed the prompt side: the coordinator sends the documenter its
+advice by note, counted figures only, at the closing ceremony; the
+coordinator applying a model swap itself is a later slice, BL-818).
+`formatBounceLine` (the pre-BL-1880 formatter) is untouched byte-for-byte —
+BL-454/635/688/689's own acceptance scenarios call it directly with their
+own fixture tallies, never through `main()`, so they stay green by
+construction; `main()` builds the new window report through
+`buildBounceWindowReport` instead. Invariant: the window, the trend and the
+all-time total are all read from the same merged bounce log through one
+assembly point, so a correction removes a bounce from every figure at
+once; a bounce counts in a window exactly when its time is strictly after
+that window's start and at-or-before the render time, so no bounce is
+double-counted or dropped across two consecutive briefings. Out of scope:
+recording which model produced a past bounce (this slice pairs each role
+with its model now, not historically) and the coordinator making a model
+swap itself. How-to: no dedicated page; the CLI's own header comment and
+this entry are the reference. Acceptance:
+`specs/features/BL-1880-the-briefing-bounce-line-counts-since-the-previous-briefing.feature`.
+No new extension command or setting; no diagram edit — this is a briefing
+CLI's output shape, not a boundary, topology or handoff-lifecycle change.)
 Prior entry —
 
 **Last Updated:** October 3, 2026 (BL-1858: Bubble's live grid now shows a

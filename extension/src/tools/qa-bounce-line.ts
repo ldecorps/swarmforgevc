@@ -18,11 +18,37 @@
  * still count, attributed as unattributed rather than silently folded into
  * QA (they predate `by` on the JSONL line entirely).
  *
- * Usage: node qa-bounce-line.js
+ * BL-1880: the briefing line used to count every bounce since the project
+ * began with no date filter, so it could not answer "did a role's work
+ * bounce more, or less, since its model changed?" The live briefing line
+ * (main(), no --json) now leads with the bounces since the PREVIOUS
+ * briefing was sent, a seven-day trend and the current model per producing
+ * role, and keeps the all-time total (with the pre-existing breakdowns)
+ * last. formatBounceLine itself is untouched - BL-454/635/688/689's own
+ * acceptance scenarios call it directly with their own fixture tallies, not
+ * through main(), so leaving it alone keeps them green by construction.
+ * BL-1811: the model per role is read through backendSwitch.ts's
+ * readRoleModelId, never re-derived here.
+ *
+ * Usage: node qa-bounce-line.js [--target <path>] [--at <iso-timestamp>] [--json]
  */
-import { computeQaBounceTally, computeBounceTallyByBouncingRole, computeDefectsPerBounce, QaBounceRoleTally, QaBounceTally } from '../quality/qaBounce';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  computeQaBounceTally,
+  computeBounceTallyByBouncingRole,
+  computeDefectsPerBounce,
+  BounceRecord,
+  QaBounceRoleTally,
+  QaBounceTally,
+} from '../quality/qaBounce';
 import { readBounceRecords } from '../metrics/bounceStore';
-import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
+import { resolveCliMainWorktreeContext, runCliMain, printJsonToStdout } from './swarm-metrics';
+import { readRoleModelId } from '../swarm/backendSwitch';
+import { formatModelDisplayName } from '../swarm/modelDisplayName';
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const TREND_DAYS = 7;
 
 function formatRoleCounts(counts: QaBounceRoleTally[]): string {
   return counts.map(({ role, count }) => `${role} x${count}`).join(', ');
@@ -31,7 +57,8 @@ function formatRoleCounts(counts: QaBounceRoleTally[]): string {
 // BL-689: defectsPerBounce is optional and, when omitted, produces BYTE-FOR-
 // BYTE the same line this function printed before this ticket - every
 // existing caller (bl635/bl688's own step handlers) keeps working unchanged.
-// Only main() below, and this ticket's own tests, pass the real figure.
+// BL-1880 leaves this function and every one of its callers untouched -
+// main()'s own printed line now comes from formatBounceWindowLine below.
 export function formatBounceLine(byBouncingRole: QaBounceRoleTally[], tally: QaBounceTally, defectsPerBounce?: number): string {
   const byType = Object.entries(tally.byTicketType)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -44,15 +71,264 @@ export function formatBounceLine(byBouncingRole: QaBounceRoleTally[], tally: QaB
   );
 }
 
-export function main(): void {
+// ── BL-1880: the window + trend + model report, pure core ───────────────
+
+export interface BounceWindowStart {
+  startIso: string;
+  hadPreviousBriefing: boolean;
+}
+
+// Invariant 1 half: the window's own start, computed from one input (when
+// the previous briefing was sent, or undefined) rather than re-deriving it
+// from the bounce log itself.
+export function computeWindowStart(previousBriefingAtIso: string | undefined, nowIso: string): BounceWindowStart {
+  if (previousBriefingAtIso) {
+    return { startIso: previousBriefingAtIso, hadPreviousBriefing: true };
+  }
+  return { startIso: new Date(new Date(nowIso).getTime() - MS_PER_DAY).toISOString(), hadPreviousBriefing: false };
+}
+
+// Invariant 2: a bounce is in the window exactly when its time is AFTER the
+// window start and AT-OR-BEFORE the render time (never at-or-equal the
+// start, so a bounce landing exactly on a window boundary is counted in
+// exactly one of two consecutive briefings, never both and never neither;
+// never after `nowIso`, so a render that runs behind the wall clock -
+// --at injects exactly this - does not count a bounce that has not
+// happened yet as of the moment it is reporting for, QA bounce D4).
+export function recordsAfter(records: BounceRecord[], startIso: string, nowIso: string): BounceRecord[] {
+  const startMs = new Date(startIso).getTime();
+  const nowMs = new Date(nowIso).getTime();
+  return records.filter((r) => {
+    const atMs = new Date(r.at).getTime();
+    return atMs > startMs && atMs <= nowMs;
+  });
+}
+
+// One count per day for the seven days before nowIso, oldest first - fixed
+// 24-hour buckets ending at nowIso (bucket 6, the newest, is (now-24h, now];
+// bucket 0, the oldest, is (now-7*24h, now-6*24h]), never calendar-day
+// boundaries - the window fallback above already treats "the last 24
+// hours" the same way, so the two concepts share one notion of a day.
+export function computeSevenDayTrend(records: BounceRecord[], role: string, nowIso: string): number[] {
+  const nowMs = new Date(nowIso).getTime();
+  const counts = new Array(TREND_DAYS).fill(0) as number[];
+  for (const record of records) {
+    if (record.producingRole !== role) {
+      continue;
+    }
+    const daysBefore = Math.floor((nowMs - new Date(record.at).getTime()) / MS_PER_DAY);
+    if (daysBefore >= 0 && daysBefore < TREND_DAYS) {
+      counts[TREND_DAYS - 1 - daysBefore] += 1;
+    }
+  }
+  return counts;
+}
+
+export interface BounceWindowRoleEntry {
+  role: string;
+  windowCount: number;
+  trend: number[];
+  model: string;
+}
+
+export interface BounceWindowReport {
+  windowStartIso: string;
+  hadPreviousBriefing: boolean;
+  windowTotal: number;
+  windowByProducingRole: BounceWindowRoleEntry[];
+  windowByBouncingRole: QaBounceRoleTally[];
+  allTimeTotal: number;
+  allTimeByBouncingRole: QaBounceRoleTally[];
+  allTimeByTicketType: Record<string, number>;
+  allTimeDefectsPerBounce: number;
+}
+
+// The one assembly point every figure (the line AND the JSON) reads
+// through - invariant 1's "same reader" for the window/trend/all-time
+// figures together, so a correction (BL-990, already resolved out of
+// allRecords by readBounceRecords before this is called) changes every one
+// of them at once. modelForRole is injected so this stays pure and
+// testable without a filesystem - main() below supplies the real
+// readRoleModelId-backed reader.
+export function buildBounceWindowReport(
+  allRecords: BounceRecord[],
+  previousBriefingAtIso: string | undefined,
+  nowIso: string,
+  modelForRole: (role: string) => string
+): BounceWindowReport {
+  const { startIso, hadPreviousBriefing } = computeWindowStart(previousBriefingAtIso, nowIso);
+  const windowRecords = recordsAfter(allRecords, startIso, nowIso);
+  const windowTally = computeQaBounceTally(windowRecords);
+  const windowByProducingRole: BounceWindowRoleEntry[] = windowTally.byRole.map(({ role, count }) => ({
+    role,
+    windowCount: count,
+    trend: computeSevenDayTrend(allRecords, role, nowIso),
+    model: modelForRole(role),
+  }));
+  const allTimeTally = computeQaBounceTally(allRecords);
+  return {
+    windowStartIso: startIso,
+    hadPreviousBriefing,
+    windowTotal: windowTally.total,
+    windowByProducingRole,
+    windowByBouncingRole: computeBounceTallyByBouncingRole(windowRecords),
+    allTimeTotal: allTimeTally.total,
+    allTimeByBouncingRole: computeBounceTallyByBouncingRole(allRecords),
+    allTimeByTicketType: allTimeTally.byTicketType,
+    allTimeDefectsPerBounce: computeDefectsPerBounce(allRecords),
+  };
+}
+
+function formatRoleEntry(entry: BounceWindowRoleEntry): string {
+  return `${entry.role} x${entry.windowCount} (trend ${entry.trend.join(' ')}, now ${entry.model})`;
+}
+
+// QA bounce D1: the window's own bouncing-role split (already in the JSON
+// as windowByBouncingRole) now prints in the WINDOW segment, right beside
+// the producing-role split it sits next to in the JSON - every count the
+// JSON carries for the window must also be readable on the line (scenario
+// 06, D2). Every clause after it is explicitly labelled "all-time" (not
+// only the final total) - those three breakdowns are, and always were,
+// all-time figures; printing them with no label read as a split of the
+// window count above them. The all-time total is kept LAST and labelled
+// "all-time total" - nothing follows it, so a caller scanning for where
+// the line ends always finds it there (scenario 05). The window leads,
+// named by when it started or, with no previous briefing on record, as
+// the last-24-hours fallback.
+export function formatBounceWindowLine(report: BounceWindowReport): string {
+  const windowLabel = report.hadPreviousBriefing
+    ? `Bounces since ${report.windowStartIso}`
+    : 'Bounces in the last 24 hours (no previous briefing was found)';
+  const byProducing = report.windowByProducingRole.length > 0 ? report.windowByProducingRole.map(formatRoleEntry).join(', ') : 'none';
+  const byType = Object.entries(report.allTimeByTicketType)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([type, count]) => `${type} x${count}`)
+    .join(', ');
+  return (
+    `${windowLabel}: ${report.windowTotal} - by producing role: ${byProducing} - ` +
+    `by bouncing role: ${formatRoleCounts(report.windowByBouncingRole)} - ` +
+    `all-time by bouncing role: ${formatRoleCounts(report.allTimeByBouncingRole)} - ` +
+    `all-time by ticket type: ${byType} (${report.allTimeDefectsPerBounce.toFixed(1)} defects/bounce) - ` +
+    `all-time total: ${report.allTimeTotal}`
+  );
+}
+
+// ── BL-1880: when was the previous briefing sent ─────────────────────────
+
+interface SentState {
+  sent?: string[];
+  'sent-at'?: Record<string, string>;
+}
+
+function readSentState(targetPath: string): SentState | undefined {
+  const sentJsonPath = path.join(targetPath, 'docs', 'briefings', '.sent.json');
+  try {
+    return JSON.parse(fs.readFileSync(sentJsonPath, 'utf8')) as SentState;
+  } catch {
+    return undefined;
+  }
+}
+
+// QA bounce D3 (first pass): the previous briefing's own commit (when the
+// .md FILE was authored) is not the previous SEND. QA bounce D1 (second
+// pass): nor is the commit that adds a day's key to .sent.json - the email
+// sweep batches that commit (4 of the last 7 days landed in ONE commit,
+// 2026-10-06T01:43Z), so a commit-based start came out short, empty, or
+// starting after the render. The sweep now records the real send instant
+// directly, in .sent.json's own "sent-at" map (briefing_email_lib.bb's
+// record-briefing-sent!), so this reads that map straight off disk - no
+// git archaeology, nothing to lag. The most recent "sent-at" strictly
+// before nowIso IS the previous briefing's send time. An entry at or after
+// nowIso (clock skew, or --at rendering for a past moment) is never used -
+// invariant 2 requires a window that never starts at or after the render
+// time, so such an entry is treated as absent, same as no previous
+// briefing at all (the 24h fallback below).
+function findPreviousBriefingSentAtIso(targetPath: string, nowIso: string): string | undefined {
+  const sentAt = readSentState(targetPath)?.['sent-at'];
+  if (!sentAt) {
+    return undefined;
+  }
+  const nowMs = new Date(nowIso).getTime();
+  let best: string | undefined;
+  let bestMs = -Infinity;
+  for (const iso of Object.values(sentAt)) {
+    const ms = new Date(iso).getTime();
+    if (Number.isNaN(ms) || ms >= nowMs) {
+      continue;
+    }
+    if (ms > bestMs) {
+      bestMs = ms;
+      best = iso;
+    }
+  }
+  return best;
+}
+
+function modelForRole(targetPath: string): (role: string) => string {
+  return (role) => {
+    const modelId = readRoleModelId(targetPath, role);
+    return modelId ? formatModelDisplayName(modelId) : 'model unknown';
+  };
+}
+
+export interface QaBounceLineArgs {
+  target?: string;
+  at?: string;
+  json?: boolean;
+}
+
+// The value following `flag` at position `i` in `argv`, or undefined when
+// `argv[i]` is not `flag` or `flag` is the last argument. Split out of
+// parseArgv (BL-1880 hardening) so each of the two value-flags is one
+// function call in the loop below, not its own && chain.
+function valueFlagAt(argv: string[], i: number, flag: string): string | undefined {
+  return argv[i] === flag && argv[i + 1] !== undefined ? argv[i + 1] : undefined;
+}
+
+export function parseArgv(argv: string[]): QaBounceLineArgs {
+  const args: QaBounceLineArgs = {};
+  for (let i = 0; i < argv.length; i++) {
+    const target = valueFlagAt(argv, i, '--target');
+    if (target !== undefined) {
+      args.target = target;
+      i++;
+      continue;
+    }
+    const at = valueFlagAt(argv, i, '--at');
+    if (at !== undefined) {
+      args.at = at;
+      i++;
+      continue;
+    }
+    if (argv[i] === '--json') {
+      args.json = true;
+    }
+  }
+  return args;
+}
+
+// args defaults to {} (never process.argv) - existing callers (bl635/bl688's
+// own step handlers, and this ticket's own unit tests) call main() directly
+// in-process with no arguments and must keep reading the real cwd/wall
+// clock exactly as before. Only the require.main entrypoint below parses
+// real argv.
+export function main(args: QaBounceLineArgs = {}): void {
   const { mainWorktreePath } = resolveCliMainWorktreeContext();
-  const records = readBounceRecords(mainWorktreePath);
-  if (records.length === 0) {
+  const targetPath = args.target ?? mainWorktreePath;
+  const nowIso = args.at ?? new Date().toISOString();
+  const records = readBounceRecords(targetPath);
+  if (records.length === 0 && !args.json) {
     return;
   }
-  console.log(formatBounceLine(computeBounceTallyByBouncingRole(records), computeQaBounceTally(records), computeDefectsPerBounce(records)));
+  const previousBriefingAtIso = findPreviousBriefingSentAtIso(targetPath, nowIso);
+  const report = buildBounceWindowReport(records, previousBriefingAtIso, nowIso, modelForRole(targetPath));
+  if (args.json) {
+    printJsonToStdout(report);
+    return;
+  }
+  console.log(formatBounceWindowLine(report));
 }
 
 if (require.main === module) {
-  runCliMain(main);
+  runCliMain(() => main(parseArgv(process.argv.slice(2))));
 }

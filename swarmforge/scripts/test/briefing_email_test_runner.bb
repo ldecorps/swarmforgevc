@@ -282,6 +282,62 @@
            ["2026-07-09.md"]
            (briefing-email-lib/find-unsent-briefings dir)))
 
+;; ── BL-1880: record-briefing-sent!'s optional sent-at (load-sent-at) ─────
+;; QA bounce 2026-10-07 D1 (2nd pass): the git commit that adds a day's key
+;; to .sent.json can lag the real send by days, so qa-bounce-line.ts no
+;; longer reads it via git - it reads this map directly off disk instead.
+
+(let [dir (mk-tmp)]
+  (assert= "no marker file yet -> no sent-at entries"
+           {}
+           (briefing-email-lib/load-sent-at dir))
+  (briefing-email-lib/record-briefing-sent! dir "2026-07-08.md" "2026-07-08T09:00:00Z")
+  (assert= "the 3-arg form records the real sent-at for that file"
+           {:2026-07-08.md "2026-07-08T09:00:00Z"}
+           (briefing-email-lib/load-sent-at dir))
+  (assert= "the file is also in the plain sent set, same as the 2-arg form"
+           #{"2026-07-08.md"}
+           (briefing-email-lib/load-sent-briefings dir))
+  (briefing-email-lib/record-briefing-sent! dir "2026-07-09.md")
+  (assert= "the 2-arg form (sent-at omitted) leaves sent-at untouched for that file"
+           {:2026-07-08.md "2026-07-08T09:00:00Z"}
+           (briefing-email-lib/load-sent-at dir))
+  (assert= "but still marks it sent"
+           #{"2026-07-08.md" "2026-07-09.md"}
+           (briefing-email-lib/load-sent-briefings dir))
+  (briefing-email-lib/record-briefing-sent! dir "2026-07-10.md" "2026-07-10T09:00:00Z")
+  (assert= "a later 3-arg call preserves an earlier file's own sent-at entry"
+           {:2026-07-08.md "2026-07-08T09:00:00Z" :2026-07-10.md "2026-07-10T09:00:00Z"}
+           (briefing-email-lib/load-sent-at dir)))
+
+;; BL-1880: send-unsent-briefings!'s optional :now-iso! adapter feeds
+;; record-briefing-sent!'s sent-at - the real IO edge for this value is
+;; read right when a send actually succeeds, same posture as :today-str.
+(let [dir (mk-tmp)]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject _text & _] {:success true})
+    :now-iso! (fn [] "2026-07-09T12:00:00Z")
+    :log! (fn [& _parts] nil)})
+  (assert= "the injected clock reaches .sent.json's sent-at map"
+           {:2026-07-09.md "2026-07-09T12:00:00Z"}
+           (briefing-email-lib/load-sent-at dir)))
+
+;; Omitting :now-iso! (every caller/test predating BL-1880) still records
+;; SOME sent-at (a real `Instant/now` read), never a missing/nil entry.
+(let [dir (mk-tmp)]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject _text & _] {:success true})
+    :log! (fn [& _parts] nil)})
+  (assert= "omitting :now-iso! still records a real sent-at, not nil"
+           true
+           (some? (:2026-07-09.md (briefing-email-lib/load-sent-at dir)))))
+
 ;; ── send-unsent-briefings! (fixture-based, fake send-email! adapter) ─────
 
 (defn fake-log! [calls]
