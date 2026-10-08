@@ -257,6 +257,19 @@ function registerSteps(registry) {
     assert.ok(out.includes(expected), `expected the output to contain:\n${expected}\ngot:\n${out}`);
   });
 
+  // Hotfix 2026-10-08: a missing phase record (fresh arrange) must not
+  // name a path to read - that path does not exist yet and stalls qwen
+  // on File-not-found (live BL-2074).
+  scoped(/^the output names the phase "([^"]+)" with no phase notes yet$/, (ctx, phase) => {
+    const out = ctx.serveResult.stdout;
+    const expected = `PHASE: ${phase} - no phase notes yet (fresh arrange); begin from the ticket.`;
+    assert.ok(out.includes(expected), `expected the output to contain:\n${expected}\ngot:\n${out}`);
+    assert.ok(
+      !out.includes(`read ${path.join('.swarmforge', 'phase', `${TICKET}.md`)} first.`),
+      `fresh arrange must not tell the seat to read a missing phase file; got:\n${out}`
+    );
+  });
+
   scoped(/^the output carries no phase line$/, (ctx) => {
     assert.ok(!/PHASE:/.test(ctx.serveResult.stdout), `expected no PHASE line, got:\n${ctx.serveResult.stdout}`);
   });
