@@ -53,6 +53,13 @@ chmod +x "$FAKE_BIN/tmux"
 
 DUTIES_FILE="$ROOT/.swarmforge/daemon/handoffd-duties.json"
 
+# BL-1392's cron-heartbeat sweep alarms on an absent freshness-cron log and
+# logs its own email-misconfigured line through a separate one-shot atom, so
+# warning-not-spammed-05 counted two. A fresh log keeps that sweep quiet and
+# leaves the briefing sweep's warning the only one counted.
+mkdir -p "$ROOT/.swarmforge/daemon"
+touch "$ROOT/.swarmforge/daemon/freshness-check.cron.log"
+
 env -u RESEND_API_KEY PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" &
 DAEMON_PID=$!
 
