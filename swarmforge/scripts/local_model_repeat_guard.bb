@@ -84,10 +84,21 @@
   (let [text (->> (tree-seq coll? seq payload) (filter string?) (str/join "\n"))]
     (some-> (re-find #"(?s)<next_step>(.*?)</next_step>" text) second str/trim not-empty)))
 
+(defn- message-text
+  "The text of a \"user\"-type record's message, or nil - qwen's own
+   real-user turns carry it as message.parts[].text (BL-2064: distinct
+   from a \"tool_result\" record, which also has message.role \"user\" but
+   its own \"type\" value, so the \"type\" check above already excludes it)."
+  [record]
+  (->> (get-in record ["message" "parts"])
+       (keep #(get % "text"))
+       (str/join "\n")
+       not-empty))
+
 (defn transcript-entries
-  "Tool calls and compactions in transcript order, from qwen's session JSONL
-   lines; each call carries :record, the index of the assistant record that
-   made it. A line that does not parse is skipped."
+  "Tool calls, compactions and user messages in transcript order, from
+   qwen's session JSONL lines; each call carries :record, the index of the
+   assistant record that made it. A line that does not parse is skipped."
   [lines]
   (apply concat
          (map-indexed
@@ -103,6 +114,8 @@
                       :let [call (get part "functionCall")]
                       :when (map? call)]
                   {:kind :call :record i :name (get call "name") :args (get call "args")})
+                (= "user" (get record "type"))
+                [{:kind :user :text (message-text record)}]
                 :else [])))
           lines)))
 
@@ -132,37 +145,52 @@
 (defn latest-next-step [entries]
   (some :next-step (reverse (filter #(= :compaction (:kind %)) entries))))
 
-;; ── BL-2064 hotfix (2026-10-07): warn a seat that reads without writing ──
+(defn session-first-message
+  "The text of the session's very first user message, or nil - BL-2064's
+   fallback restart message when no compaction has run yet (a seat can
+   overrun the read budget on its very first turn, before any compaction)."
+  [entries]
+  (some #(when (= :user (:kind %)) (:text %)) entries))
+
+;; ── BL-2064: warn, then restart, a seat that reads without writing ──
 ;;
 ;; The human, live: "compressions for iq3 are lethal, it just compacted
-;; and immediately goes on a reading frenzy." BL-2064 (paused, approved)
-;; already says why: the seat spends most of its time reading and throws
-;; most of that away on a compaction before any edit. Its own invariant
-;; says this new counter resets on exactly what resets-window? resets -
-;; including a bare compaction. That is backwards for THIS counter: a
-;; compaction is exactly when the seat has just lost its context and is
-;; most likely to re-read everything to rebuild it, so resetting the
-;; budget there hands it a fresh 12 reads right when it is most likely to
-;; burn them - the "reading frenzy" the human just watched happen. This
-;; hotfix gives the counter its own reset rule, a sibling of
-;; resets-window? that drops the compaction clause: an edit/write_file or
-;; a state-changing shell command reset it, a compaction does not.
+;; and immediately goes on a reading frenzy." Measured since 2026-10-04:
+;; 61% of the iq3 coder's model time went to read-only calls, and 39% was
+;; reading a compaction then discarded before any edit. The card already
+;; says "read only what the ticket names"; the seat does not.
 ;;
-;; Scope deliberately narrower than BL-2064's full build: this lands the
-;; warning half only (warn from the 12th qualifying read-only call since
-;; the last reset onward). The 24th-read restart, sharing BL-1991/1992's
-;; per-parcel restart count, needs a first-message fallback this hook's
-;; transcript-entries does not yet parse out (BL-2064's own wording: "the
-;; latest compaction's next_step, else the session's first message") -
-;; safer to leave that half, and the restart wiring it implies, to
-;; BL-2064's own build than to guess at it under a hotfix. See the
-;; stamp-off ticket this hotfix mints for the review that should confirm
-;; this scope.
+;; A compaction's own reset status was the first bug found here: the
+;; ticket's original invariant reset this counter on exactly what
+;; resets-window? resets, including a bare compaction - but a compaction
+;; is exactly when the seat has just lost its context and is most likely
+;; to re-read everything to rebuild it, so resetting the budget there
+;; hands it a fresh 12 reads right when it is most likely to burn them -
+;; the "reading frenzy" the human watched happen. read-budget-resets?
+;; below is a sibling of resets-window? that drops the compaction clause:
+;; an edit/write_file or a state-changing shell command resets the read
+;; budget, a compaction does not. (The warning half of this shipped ahead
+;; of the rest as hotfix 9b89a6e5db; this build carries the same
+;; read-budget-resets? forward and adds the restart half.)
+;;
+;; At the 24th qualifying read since the last reset, the seat is
+;; restarted the same way a missed write restarts it (BL-1991), drawing
+;; on the same per-parcel restart count (BL-1992): once both restarts are
+;; already spent, the overrun releases the parcel instead. The fresh
+;; turn's only message is the latest compaction's next step, or - a seat
+;; can overrun the budget on its very first turn, before any compaction -
+;; the session's first message (session-first-message above).
 
 (def read-warn-at
   "A qualifying read-only call is warned about from this count onward,
    since the last reset (never a bare compaction - see above)."
   12)
+
+(def read-restart-at
+  "A qualifying read-only call at or past this count, since the last
+   reset, restarts the seat (BL-1991's own path) rather than merely
+   warning it."
+  24)
 
 (def read-only-tools #{"read_file" "read_many_files" "grep_search" "glob" "list_directory"})
 
@@ -211,14 +239,13 @@
   "The note to hand the model with this call's result, or nil: only for a
    read-type in-flight call (this is the scenario the human reported,
    and it keeps the note out of calls the budget does not track), once
-   the qualifying read count since the last reset reaches read-warn-at.
-   Warn-only (see scope note above) - it keeps firing on every qualifying
-   read past read-warn-at rather than stopping at a restart count this
-   hotfix does not implement."
+   the qualifying read count since the last reset reaches read-warn-at
+   and before it reaches read-restart-at (answer's cond takes the restart
+   branch at and past that point, so this never double-fires with it)."
   [entries name args]
   (when (read-type-call? {:kind :call :name name :args args})
     (let [total (inc (reads-since-write entries name args))]
-      (when (>= total read-warn-at)
+      (when (and (>= total read-warn-at) (< total read-restart-at))
         (str "READ-BUDGET: this is your " total "th read since your last edit or"
              " state-changing command, with no write in between. A compaction does"
              " not reset this count - rebuilding context is not a reason to keep reading."
@@ -227,6 +254,40 @@
              (when-let [step (latest-next-step entries)]
                (str " Your last summary named this next step: "
                     (subs step 0 (min 300 (count step))))))))))
+
+(defn read-budget-step
+  "The fresh turn's only message, before the '24 reads' line below is
+   appended: the latest compaction's next step, else the session's first
+   message - the human's own fallback order for this restart."
+  [entries]
+  (or (latest-next-step entries) (session-first-message entries)))
+
+(defn read-budget-override-message
+  "Unlike a missed write's override-message, there is no named file path
+   to point the seat at - the ticket names no single file for \"read too
+   much\", only the change it was already told to make. The step text (or
+   its session's-first-message fallback) carries that; this just says why
+   the turn is fresh."
+  [step reads]
+  (str step "\n\nYour last session made " reads " reads since its last edit or"
+       " state-changing command, with no write in between. Do not re-read what you"
+       " already read: make the change above now."))
+
+(defn read-budget-overrun
+  "{:step :reads}, or nil, for this in-flight call: only a read-type call
+   counts (same guard read-budget-note uses), and only once the
+   qualifying count since the last reset - including this call - reaches
+   read-restart-at."
+  [entries name args]
+  (when (read-type-call? {:kind :call :name name :args args})
+    (let [total (inc (reads-since-write entries name args))]
+      (when (>= total read-restart-at)
+        {:step (read-budget-step entries) :reads total}))))
+
+;; read-budget-restart-decision and read-budget-release-decision are
+;; defined below, beside restart-decision/release-decision, once
+;; max-restarts exists - the same per-parcel count a missed write draws
+;; on (BL-1991/1992).
 
 ;; ── BL-1991: restart a seat that skips the write its compaction named ──
 ;;
@@ -325,6 +386,23 @@
   (when (>= restart-count max-restarts)
     (missed-write entries name args cwd)))
 
+;; ── BL-2064: a read-budget overrun draws on the same per-parcel count ──
+
+(defn read-budget-restart-decision
+  "A read-budget overrun restarts the seat only while the parcel has not
+   already used both of its restarts - the same per-parcel count a missed
+   write draws on (BL-1991)."
+  [entries name args restart-count]
+  (when (< restart-count max-restarts)
+    (read-budget-overrun entries name args)))
+
+(defn read-budget-release-decision
+  "The same read-budget overrun as read-budget-restart-decision, but only
+   once the parcel's restarts are already exhausted (BL-1992)."
+  [entries name args restart-count]
+  (when (>= restart-count max-restarts)
+    (read-budget-overrun entries name args)))
+
 ;; BL-2055 (QA-reported D2 of its own kind - the coordinator's note
 ;; 017189): a sidecar left behind by BL-1992's own release (which moves
 ;; only the handoff file, never its .claim-progress.json) is not a held
@@ -385,13 +463,23 @@
            (str "Write " path " now. Do not read " path
                 " first - it does not exist yet.")))))
 
-(defn write-restart-request!
+(defn- write-restart-state!
   "Bumps the durable restart count and writes the pending override message
-   under .swarmforge/ for the launcher to relaunch qwen with."
-  [state-file next-step path cwd restart-count]
+   under .swarmforge/ for the launcher to relaunch qwen with - shared by
+   every restart reason (a missed write, BL-1991; a read-budget overrun,
+   BL-2064), since they draw on the same per-parcel count."
+  [state-file message restart-count]
   (io/make-parents ^java.io.File state-file)
   (spit state-file (json/generate-string {"restarts" (inc restart-count)}))
-  (spit (io/file (str state-file ".msg")) (override-message next-step path cwd)))
+  (spit (io/file (str state-file ".msg")) message))
+
+(defn write-restart-request!
+  [state-file next-step path cwd restart-count]
+  (write-restart-state! state-file (override-message next-step path cwd) restart-count))
+
+(defn write-read-budget-restart-request!
+  [state-file step reads restart-count]
+  (write-restart-state! state-file (read-budget-override-message step reads) restart-count))
 
 (defn end-qwen-process!
   "Ends this hook's parent process - qwen spawns the PostToolUse hook as a
@@ -716,9 +804,17 @@
                          (transcript-entries lines)))
              state-file (when (and entries (string? restart-cwd)) (restart-state-file restart-cwd))
              restart-count (read-restart-count state-file)
+             ;; BL-2064: a read-budget overrun joins restart/release as a
+             ;; third reason, never ahead of a missed write's own (the
+             ;; ticket's own direction: "restart and release keep their
+             ;; precedence, the read-budget restart joins them").
              restart (when state-file (restart-decision entries name args restart-cwd restart-count))
-             release (when (and state-file (not restart))
-                       (release-decision entries name args restart-cwd restart-count))]
+             read-restart (when (and state-file (not restart))
+                            (read-budget-restart-decision entries name args restart-count))
+             release (when (and state-file (not restart) (not read-restart))
+                       (release-decision entries name args restart-cwd restart-count))
+             read-release (when (and state-file (not restart) (not read-restart) (not release))
+                            (read-budget-release-decision entries name args restart-count))]
          (cond
            restart
            (do
@@ -726,7 +822,18 @@
              (kill-fn)
              nil)
 
+           read-restart
+           (do
+             (write-read-budget-restart-request! state-file (:step read-restart) (:reads read-restart) restart-count)
+             (kill-fn)
+             nil)
+
            release
+           (do
+             (release-fn restart-cwd)
+             nil)
+
+           read-release
            (do
              (release-fn restart-cwd)
              nil)

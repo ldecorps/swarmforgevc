@@ -501,7 +501,58 @@ No tool call is ever refused by this check, same invariant as the
 repeat guard above — a restart ends the whole process rather than
 denying one call, and `skipLoopDetection` stays on.
 
+### A seat that reads without writing is told to write, then restarted (BL-2064)
+
+Measured over the iq3 coder's qwen sessions since 2026-10-04: 61% of its
+model time went to calls that only read, and 39% was reading a
+compaction then discarded before any edit (316 of 871 read streaks
+ended in a compaction, not a write). The same hook also counts
+**read-type** calls — `read_file`, `read_many_files`, `grep_search`,
+`glob`, `list_directory`, or a read-only shell command (`ls`/`cat`/
+`head`/`tail`/`wc`/`grep`/`find`/`stat`, `sed -n`, or a read-only `git`
+subcommand: `show`/`log`/`diff`/`grep`/`ls-files`/`blame`/`status`) —
+since the last **read-budget reset**, a narrower window than the
+repeat-warning reset above: an edit, `write_file`, or a state-changing
+shell command resets it, but **a bare compaction does not**. Resetting
+on a compaction was the original (and wrong) design: a compaction is
+exactly when the seat has just lost its context and is most likely to
+re-read everything to rebuild it, so resetting the budget there handed
+it a fresh 12 reads right when it was most likely to burn them — the
+"reading frenzy" the human watched happen live. (The warning half of
+this landed first, as hotfix 9b89a6e5db, with the corrected reset rule;
+this section covers the full build, which carries that reset rule
+forward unchanged and adds the restart half.)
+
+From the 12th qualifying read onward, `additionalContext` carries a
+`READ-BUDGET:` note naming the count and telling the seat its next call
+should be the change its ticket names (or its plan in `tmp/notes.md`, in
+the arrange phase) — the call still runs, same warn-only shape as the
+repeat note. At the **24th** such read, the hook restarts the seat the
+same way a missed write does (above): it ends qwen and leaves a pending
+override message under the same
+`.swarmforge/local-seat-restart/<in_process handoff file>.json.msg|.json`
+state, bumping the **same per-parcel restart count** a missed write
+draws on — a read-budget restart and a missed-write restart are two
+reasons for the one shared count, never two separate budgets, so a
+parcel is restarted at most twice total between them. The fresh turn's
+only message is the latest compaction's `<next_step>`, or — a seat can
+overrun the read budget on its very first turn, before any compaction —
+the session's own first message, plus a line naming how many reads the
+last session made with no write in between. A missed-write restart is
+checked first and takes precedence when both conditions hold on the
+same call; the read-budget restart only applies when the former does
+not.
+
+No tool call is ever refused by this check either, same invariant as
+the repeat guard and the restart above.
+
 ### A third missed write releases the parcel to another coder seat (BL-1992)
+
+A BL-2064 read-budget overrun that lands once both restarts are already
+spent releases the parcel the same way (`read-budget-release-decision`
+beside `release-decision`, gated on the identical shared count) — the
+rest of this section describes the missed-write side of release; the
+read-budget side follows the same shape with no note of its own.
 
 The same missed-write predicate that drives a restart above (`missed-write`:
 the latest compaction names a write/edit, that write hasn't happened since,

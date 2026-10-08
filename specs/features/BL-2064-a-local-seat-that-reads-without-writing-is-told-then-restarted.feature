@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2281b672eac12117d0121f180198d899c54d1a190c21bfd7a689a271cec392f4
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-08T08:42:35.823403754Z","feature_name":"A local seat that reads without writing is told to write, then restarted","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-2064-a-local-seat-that-reads-without-writing-is-told-then-restarted.feature","background_hash":"859d6f3625215a21a6c60f506186a94b5c2d80cd85f11ae623bcbeba4c02e483","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the read count since the last write decides the guard's answer","scenario_hash":"e35477ea643651767d965729c9acb92d4e4445f2fc0292d723e72ff5f2b10229","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-10-08T08:42:35.823403754Z"},{"index":1,"name":"a write or a state-changing command starts the count again","scenario_hash":"923c843e0685a77523c50a489cd81dc59e8e91c5d02afc98530ede1524417ff3","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-10-08T08:42:35.823403754Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A local seat that reads without writing is told to write, then restarted
   Since 2026-10-04, 61% of the iq3 coder's model time went to calls that
   only read, and 39% was reading that a compaction then discarded before
