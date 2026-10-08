@@ -127,3 +127,5 @@ notes: |
   approval_context.
   No hardening-debt ledger row exists for this gate at mint; the owner
   is named in BL-2052's YAML instead.
+
+assigned_to: coder
