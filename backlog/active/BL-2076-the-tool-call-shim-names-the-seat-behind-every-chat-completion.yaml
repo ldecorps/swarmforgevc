@@ -130,4 +130,7 @@ notes: |
   upstream_root (~483) only; swarmforge.sh 692-720 and the launch writer
   at ~2620-2635 only.
 
-assigned_to: coder
+assigned_to: coder@2
+# 2026-10-08: reassigned from bare coder (iq3) after it self-released
+# ("third missed write"); WIP preserved as .worktrees/coder stash
+# "BL-2076 WIP preserved before reassign to coder@2".
