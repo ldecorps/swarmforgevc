@@ -7,7 +7,10 @@ Feature: A local seat that reads without writing is told to write, then restarte
   every tool call, counts read-type calls since the last write: at the
   12th it tells the seat its next call is a write, and at the 24th it
   restarts the seat on a fresh window the way a missed write does
-  (BL-1991), drawing on the same per-parcel restart count (BL-1992).
+  (BL-1991), drawing on the same per-parcel restart count (BL-1992). A
+  compaction never starts the count again: the human, 2026-10-07,
+  "compressions for iq3 are lethal, it just compacted and immediately goes
+  on a reading frenzy" (hotfix 9b89a6e5db).
 
   Background:
     Given a local seat holding a parcel with no restart used
@@ -25,7 +28,7 @@ Feature: A local seat that reads without writing is told to write, then restarte
       | 23    | restarts the seat with a first message naming its 24 reads         |
 
   # BL-2064 local-seat-read-budget-02
-  Scenario Outline: a write, a compaction or a state-changing command starts the count again
+  Scenario Outline: a write or a state-changing command starts the count again
     Given the seat's transcript has 20 read-type calls, then <reset>, then 3 read-type calls
     When the seat makes another read_file call
     Then the guard adds no read-budget note
@@ -34,7 +37,6 @@ Feature: A local seat that reads without writing is told to write, then restarte
       | reset                        |
       | an edit                      |
       | a write_file to tmp/notes.md |
-      | a compaction                 |
       | a git commit                 |
 
   # BL-2064 local-seat-read-budget-03
@@ -49,3 +51,9 @@ Feature: A local seat that reads without writing is told to write, then restarte
     And the seat's transcript has 23 read-type calls since its last write
     When the seat makes another read_file call
     Then the guard releases the parcel instead of restarting the seat
+
+  # BL-2064 local-seat-read-budget-05
+  Scenario: a compaction does not start the count again
+    Given the seat's transcript has 20 read-type calls, then a compaction, then 3 read-type calls
+    When the seat makes another read_file call
+    Then the guard restarts the seat with a first message naming its 24 reads
