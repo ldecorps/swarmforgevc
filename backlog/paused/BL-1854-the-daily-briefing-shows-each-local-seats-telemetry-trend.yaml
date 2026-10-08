@@ -122,7 +122,17 @@ notes: |
   no-op Edit on swarmforge/scripts/local_seat_tuning_report_cli.bb
   ("old_string and new_string are identical"), tripping Claude Code's
   loop-detection halt twice even after a resume nudge named the behavior.
-  No salvage commit exists on this ticket's line. Parked to paused; seat
-  restarted.
+  Parked to paused; seat restarted.
+  2026-10-08 (operator correction): real salvageable WIP from this run DOES
+  exist - 166 insertions / 47 deletions across
+  swarmforge/scripts/local_seat_tuning_report_cli.bb and
+  local_seat_tuning_report_lib.bb, pinned durably at
+  refs/swarmforge/salvage/BL-1854 (71c040ff9d) in .worktrees/coder so a
+  later worktree-drift stash cannot push it down and lose it. Whoever
+  holds a split slice should apply it as a DIFF against those two files
+  rather than rebuilding from scratch. Caveat: that same ref's
+  untracked-files parent also carries an UNRELATED file,
+  specs/pipeline/steps/Bl2076ShimNamesSeatSteps.js (BL-2076 WIP swept in
+  by the same stash) - do not apply that path from this ref.
 
 assigned_to: coder
