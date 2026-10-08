@@ -121,6 +121,86 @@
     (when (seq diffs)
       [(str/join "\n" (map #(str "Difference: " %) diffs))]))))
 
+;; ── BL-2084: --briefing mode (BL-1854's scenarios 01/04 split out) ───────
+
+(defn settings-record-seats
+  "Every seat with a BL-1850 settings record under project-root - the
+   record's own file stem. Never derived by inverting a qwen directory
+   name (the ticket's own direction, and the salvage's documented bug):
+   gather already maps a seat name FORWARD to its qwen directory via
+   seat-worktree-path/qwen-cwd-key, so this never needs the reverse."
+  [project-root]
+  (let [dir (fs/path project-root ".swarmforge" "local-agent" "seat-settings")]
+    (if (fs/exists? dir)
+      (->> (fs/list-dir dir)
+           (filter #(str/ends-with? (str %) ".jsonl"))
+           (map #(str/replace (fs/file-name %) #"\.jsonl$" ""))
+           sort
+           vec)
+      [])))
+
+(defn seat-briefing-days
+  "This seat's own {:seat :day-summaries [...]}, or nil when it made no
+   request inside [start-ms end-ms) - the per-seat gate the ticket's own
+   \"made a request in the window\" names (a day with only a compression
+   or a tool-call, no request, is never a row - briefing-day-rows buckets
+   every kind, but only a date carrying at least one request becomes a
+   row here)."
+  [seat gathered start-ms end-ms]
+  (let [in-window? (fn [row] (let [ms (local-seat-tuning-report-lib/epoch-ms (:timestamp row))]
+                                (and ms (<= start-ms ms) (< ms end-ms))))
+        requests (filter in-window? (:requests gathered))
+        compressions (filter in-window? (:compressions gathered))
+        tool-calls (filter in-window? (:tool-calls gathered))]
+    (when (seq requests)
+      (let [day-rows (local-seat-tuning-report-lib/briefing-day-rows requests compressions tool-calls)
+            request-dates (->> day-rows (filter (fn [[_ m]] (seq (:requests m)))) (map first) set)]
+        {:seat seat
+         :day-summaries (->> day-rows
+                             (filter (fn [[date _]] (contains? request-dates date)))
+                             (map (fn [[date m]] (local-seat-tuning-report-lib/summarise-day (assoc m :date date))))
+                             (sort-by :date)
+                             vec)}))))
+
+(defn briefing-report
+  "{:seat :day-summaries [...]} for every seat with a settings record that
+   made at least one request in the last `days` days ending at `now` (an
+   ISO instant) - gather-opts carries every optional path gather itself
+   accepts (--qwen-home etc.), reused unchanged per seat."
+  [project-root days now gather-opts]
+  (let [[start-ms end-ms] (local-seat-tuning-report-lib/briefing-window days now)]
+    (vec
+     (keep (fn [seat]
+             (let [gathered (gather (merge gather-opts {:project-root project-root :seat seat}))]
+               (seat-briefing-days seat gathered start-ms end-ms)))
+           (settings-record-seats project-root)))))
+
+(defn render-briefing-day-row [{:keys [date requests median-ttft-s median-prefill-tps median-decode-tps
+                                       median-output-tokens median-thinking-share
+                                       compressions-per-10-requests tool-call-failure-rate]}]
+  (str "| " date
+       " | " requests
+       " | " (or-unknown (fmt-s median-ttft-s))
+       " | " (or-unknown (fmt-tps median-prefill-tps))
+       " | " (or-unknown (fmt-tps median-decode-tps))
+       " | " (or-unknown (fmt-tokens median-output-tokens))
+       " | " (or-unknown (fmt-pct (when median-thinking-share (Math/round (* 100.0 median-thinking-share)))))
+       " | " (or-unknown compressions-per-10-requests)
+       " | " (or-unknown (fmt-pct tool-call-failure-rate))
+       " |"))
+
+(def briefing-table-header
+  ["| Date | Requests | Median TTFT | Median prefill | Median decode | Median output | Thinking share | Compressions/10 requests | Tool-call failure rate |"
+   "|---|---|---|---|---|---|---|---|---|"])
+
+(defn render-briefing-seat [{:keys [seat day-summaries]}]
+  (str/join "\n" (concat [(str "### " seat)] briefing-table-header (map render-briefing-day-row day-summaries))))
+
+(defn render-briefing [seat-reports days]
+  (if (empty? seat-reports)
+    (str "No local-model seat ran in the last " days " days.")
+    (str/join "\n\n" (map render-briefing-seat seat-reports))))
+
 (defn build-report
   "gather's data, grouped and summarised - the CLI's own pure assembly
    step, kept separate so a fixture can call it on data it built by hand
@@ -138,10 +218,26 @@
                            (partition 2 1 groups)))]
     {:groups summaries :diffs diffs}))
 
-(defn -main [args]
-  (let [project-root (first args)
-        rest-args (rest args)
-        seat (opt-value rest-args "--seat")]
+(defn- has-flag? [args flag] (boolean (some #{flag} args)))
+
+;; BL-2084: --briefing needs no --seat (it discovers every seat with a
+;; settings record itself) and no --since (the window IS the filter);
+;; everything else gather itself accepts (--qwen-home etc.) carries
+;; through unchanged, one gather call per discovered seat.
+(defn- run-briefing! [project-root rest-args]
+  (when (str/blank? project-root)
+    (binding [*out* *err*]
+      (println "Usage: local_seat_tuning_report_cli.bb <project-root> --briefing [--days N] [--now <iso>] [--qwen-home <dir>] [--qwen-projects-dir <dir>] [--ollama-log <path>]"))
+    (System/exit 2))
+  (let [days (or (some-> (opt-value rest-args "--days") parse-long) 7)
+        now (or (opt-value rest-args "--now") (str (java.time.Instant/now)))
+        gather-opts {:qwen-home (opt-value rest-args "--qwen-home")
+                     :qwen-projects-dir (opt-value rest-args "--qwen-projects-dir")
+                     :ollama-log (opt-value rest-args "--ollama-log")}]
+    (println (render-briefing (briefing-report project-root days now gather-opts) days))))
+
+(defn- run-seat! [project-root rest-args]
+  (let [seat (opt-value rest-args "--seat")]
     (when (or (str/blank? project-root) (str/blank? seat))
       (binding [*out* *err*]
         (println "Usage: local_seat_tuning_report_cli.bb <project-root> --seat <seat> [--since <iso>] [--qwen-home <dir>] [--qwen-projects-dir <dir>] [--ollama-log <path>] [--settings-file <path>]"))
@@ -156,5 +252,12 @@
       (if (empty? (:requests gathered))
         (println "No requests found for this seat.")
         (println (render (build-report gathered)))))))
+
+(defn -main [args]
+  (let [project-root (first args)
+        rest-args (rest args)]
+    (if (has-flag? rest-args "--briefing")
+      (run-briefing! project-root rest-args)
+      (run-seat! project-root rest-args))))
 
 (-main (cli-args))
