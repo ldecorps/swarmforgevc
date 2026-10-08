@@ -1,0 +1,124 @@
+id: BL-2088
+title: "Stamp-off for soft shift-close hotfix: scheduled bedtime freezes new jobs at T−15 and drains in_process (push-forward or bounce) before finish-shift, instead of hard-killing at the shift-end bell"
+milestone: M8
+type: defect
+severity: high
+# high: production lifecycle path — weekday/weekend bedtime was cutting
+# seats mid-ticket; the human directed the soft-close reframe live.
+status: todo
+epic: swarm-lifecycle
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: one pure predicate + two small shell scripts + wiring in the
+# existing bedtime entrypoint; no Stryker surface.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "additive scripts beside wait_for_expedite_then_bedtime.sh; nothing to refactor"
+  architect: "no boundary moves; reuses control-pause (BL-423/617) and finish-shift (BL-762)"
+  hardender: "Babashka-free shell + one pure TS predicate; shell fixture test is the coverage"
+
+acceptance: specs/features/BL-762-finish-shift-leaves-the-phone-path-up.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the human asked for live under the 2026-10-01
+  rule ("hotfix the defect and mint a stampoff") and the 2026-10-08
+  soft-close reframe ("agents should stop accepting new jobs 15 minutes
+  before the shift end; the swarm continues until all agents have either
+  pushed forward or bounced back their current ticket"). No choice is
+  posed. FIRM: the coder reviews the hotfix and never re-applies it.
+
+invariants:
+  - "isInFlightEmpty is true when every live role's inbox/in_process is empty, even when inbox/new still holds mail."
+  - "isInFlightEmpty is false when any live role holds an in_process parcel."
+  - "wait_in_flight_drain.sh prints drained when in_process is empty, and forced when the drain timeout elapses with in_process still occupied."
+  - "wait_for_expedite_then_bedtime.sh arms the intake freeze, waits for expedite, runs the in-flight drain, then calls ./finish-shift — it never calls finish-shift before the drain returns drained or forced."
+  - "shift_close_freeze_intake.sh writes control-pause active with an untilMs and pre-consumes the day's cooldown window marker so apply-cooldown-pause does not double-pause at shift end."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bash swarmforge/scripts/test/test_wait_in_flight_drain.sh` — 3 PASS.
+  2. `npx vitest run test/telegramFrontDeskBotCli.test.js -t 'isInFlightEmpty'`
+     from extension/ — both new cases green.
+  3. `node specs/pipeline/cli.js specs/features/BL-762-finish-shift-leaves-the-phone-path-up.feature`
+     — finish-shift keep/kill matrix still green (bedtime verb unchanged).
+  4. Read `git show 5db8326a83` and confirm the five invariants above;
+     write backlog/evidence/BL-2088-coder-<date>.md.
+
+source: |
+  Human via Cursor, 2026-10-08, verbatim: "Maybe we need to reframe the
+  timelines around closing a shift: agents should stop accepting new jobs
+  15 minutes before the shift end. The swarm continues until all the
+  agents have either push forward or bounced back their current ticket.
+  That is not the current timings of a close? Hard kill is a bit harsh."
+  Follow-up, verbatim: "Hotfix it now + stampoff".
+
+notes: |
+  Minted 2026-10-08 by Cursor operator as the stamp-off of the soft
+  shift-close hotfix landed the same session.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options).
+  Living doc: docs/how-to/BL-2088-soft-shift-close.md.
+  Default drain ceiling 4h (`SWARMFORGE_SHIFT_CLOSE_DRAIN_TIMEOUT_MS`).
+  Weekday crontab also gains `45 16 * * 1-5` → shift_close_freeze_intake.sh
+  (T−15); weekend stop path is the same wait_for_expedite_then_bedtime.sh
+  entrypoint and therefore gets the soft drain too.
+  INVEST: Independent, Negotiable (review only), Valuable (certifies the
+  lifecycle change), Estimable, Small, Testable.
+
+description: |
+  ## Status: soft shift-close hotfix landed
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  Scheduled bedtime (`wait_for_expedite_then_bedtime.sh`, used by weekday
+  17:00 `day-shift-bedtime.sh` and weekend 09:00 stop) waited only for an
+  in-flight expedite, then called `./finish-shift`, which SIGTERMs every
+  seat. A hardender mid-mutation or a coder mid-bounce was killed at the
+  bell. An earlier drain-before-bedtime intent
+  (`wait_pipeline_drain.sh`, NOTE 2026-08-26) was never wired.
+
+  ## What the hotfix changed
+
+  - `extension/src/tools/telegramPipelineDrain.ts`: `isInFlightEmpty` —
+    true iff no live role has `inbox/in_process` mail (`new/` ignored).
+  - `swarmforge/scripts/shift_close_freeze_intake.sh`: T−15 freeze via
+    `control-pause.json` + cooldown window pre-consume.
+  - `swarmforge/scripts/wait_in_flight_drain.sh`: poll until
+    `isInFlightEmpty` or timeout → `drained` | `forced`.
+  - `swarmforge/scripts/wait_for_expedite_then_bedtime.sh`: freeze →
+    wait expedite → in-flight drain → `./finish-shift`.
+  - `docs/how-to/BL-2088-soft-shift-close.md` + fixture test
+    `swarmforge/scripts/test/test_wait_in_flight_drain.sh`.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 5db8326a83` against the invariants and the section
+     above. Confirm finish-shift itself is not reimplemented — only the
+     wait that precedes it.
+  2. Run the three commands in qa_e2e_procedure once each, output under
+     tmp/.
+  3. Write backlog/evidence/BL-2088-coder-<date>.md and commit it.
+
+  ## What the documenter does
+
+  Confirm `docs/how-to/BL-2088-soft-shift-close.md` matches the landed
+  scripts (T−15 table, env vars, drained vs forced). Link it from
+  `docs/how-to/BL-762-finish-shift-bedtime-vs-lights-out.md` if that page
+  still describes an immediate kill at the scheduled bell.
+
+constraints: >
+  Review only: never re-apply or extend the hotfix. Never start a
+  mutation run.
+
+out_of_scope: |
+  - Changing Control Drain & stop (still full isPipelineEmpty).
+  - Per-stage seat-stuck clock allowances (separate intake).
+  - Replacing the one-night evening-shift-tonight override mechanism.
+
+assigned_to: coder

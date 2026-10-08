@@ -230,11 +230,11 @@ import {
 import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
 import { controlDrainTimeoutMs } from './telegramControlCore';
-import { isPipelineEmpty, resolveLiveRoles } from './telegramPipelineDrain';
+import { isInFlightEmpty, isPipelineEmpty, resolveLiveRoles } from './telegramPipelineDrain';
 // BL-759: re-export drain helpers so existing bot consumers keep resolving
 // the same implementations after the extract.
 export { controlDrainTimeoutMs } from './telegramControlCore';
-export { isPipelineEmpty, resolveLiveRoles } from './telegramPipelineDrain';
+export { isInFlightEmpty, isPipelineEmpty, resolveLiveRoles } from './telegramPipelineDrain';
 import { isWithinWindow, localMinutesOfDay, currentWindowStartMs } from './cooldownWindowCore';
 import { readCooldownConfigFromDisk, writeCooldownWindowMarker } from './cooldownWindowState';
 import { commitApprovalWrites, humanDecisionCommitMessage } from '../util/commitIntegrityRunner';
