@@ -1,0 +1,162 @@
+id: BL-2087
+title: "BL-1584's sampled-reach-floor send gate checks a coder's first send of a ticket against the parcel's base on main, so a first-hop parcel that adds a sampled-low property test is refused - today a coder that took the ticket from a Work note has no received commit, the gate sends silently, and at least 13 sampled-low files landed after the gate shipped (two went red in QA on 2026-10-08)"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. The gate exists to stop the class of
+# daily unowned reds (BL-1583) and is silent at the only hop that adds the
+# files; two reds on 2026-10-08 came from files it passed (bl2055, BL-2083;
+# bl2049, BL-2086).
+status: todo
+epic: sampled-reach-floors
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium is a SEAT-TIER declaration, not a size (backlog-schema.md
+# slice_size_envelope; BL-2084 4ec4fb6484): the change sits inside
+# findings-for-git-handoff's nested cond, the deep-bb-form edit the easy
+# iq3 seat livelocks on, so BL-1001's claim gate routes it to coder@2.
+# The size stays low below. bb has no mutation lane wired (BL-472).
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one baseline fallback in one lib function; nothing to deduplicate"
+  architect: "the gate keeps its call site, classifier and refusal; only the baseline of the added test changes"
+  hardender: "Babashka, no Stryker lane (BL-472), and the gate writes no durable state"
+
+acceptance: specs/features/BL-2087-the-sampled-reach-floor-gate-checks-a-coders-first-send.feature
+
+# Handler pin (BL-233, BL-1371). The consumer, swarm_handoff.bb's call to
+# findings-for-git-handoff, already exists; the fix is inside the lib, so
+# no new wiring anchor applies (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl2087FirstSendReachFloorSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A high-severity defect in a gate the human asked for (BL-1583, the
+  operator-relayed ask of 2026-09-15: a preventive gate at send time so
+  the sampled-reach-floor class stops growing). No choice is posed: the
+  baseline a first send is checked against is direction, not a ruling.
+
+invariants:
+  - "Whether a property test file counts as added never depends on the shape of the sender's inbound (a Work note, a git_handoff, or none): it is absent at the parcel's base and present at its commit."
+  - "The gate never sends silently when it cannot establish a baseline: it decides, or it prints a warning naming the ticket."
+
+description: |
+  ## What is wrong
+
+  `sampled_reach_floor_guard_lib.bb`'s `findings-for-git-handoff` decides
+  whether a parcel ADDS a property test by comparing the parcel commit
+  with the sender's received commit
+  (`review-forward-evidence-gate-lib/received-commit-for-task`). When that
+  returns nil it returns no findings and no warnings ("a fresh task,
+  nothing yet received"). A coder takes up a new ticket from a Work note
+  (`type: note`, no `commit:` header), so on the coder's first send the
+  received commit is always nil and the gate is silent. That first send is
+  where a parcel adds its property tests; every later hop sees the file
+  as `:modified` and only warns. So the gate never refuses in the normal
+  flow. `docs/how-to/BL-1584-sampled-reach-floor-send-time-gate.md`
+  documents the silence ("an ordinary first-hop parcel is silent").
+
+  Measured 2026-10-08 by the specifier:
+  - Replaying the gate on BL-2049's coder send (`findings-for-git-handoff`
+    with sender `coder@2`, task `BL-2049`, commit `dcdfc712b3`, which
+    added `bl2049PropertyRunnerReachInvariants.property.test.js`, then
+    `sampled-low`) returns `{:findings [], :warnings []}`.
+  - Property test files added since the gate landed (188b03a02f,
+    2026-09-16): 127. Of these, 11 read `sampled-low` on main today
+    (listed on BL-1583), and two more were `sampled-low` when added and
+    went red in QA on 2026-10-08: bl2055 (BL-2065's gather) and bl2049
+    (BL-2084's gather), hotfixed 2242cd327c and 99fec72218.
+  - BL-1584's feature never built the coder's real inbound: its
+    Background seeds a received `git_handoff` with a commit for every
+    scenario (BL-1515's lesson: an acceptance that never constructs the
+    population it quantifies over gates nothing).
+
+  ## What is wanted
+
+  When the sender holds no received commit for the ticket, the gate
+  decides `added` against the parcel's base on main instead of
+  returning silently: a property test file absent at that base and
+  present at the parcel commit is `:added`, and the existing
+  `decide-for-path` table applies unchanged (scenario 01). A file
+  already on main is `:modified` and warns, never refuses (scenario
+  02). A forwarded send with a received commit behaves exactly as
+  today (BL-1584's feature stays green). When no base can be
+  established, the gate warns naming the ticket and sends (invariant 2,
+  the existing fail-open posture, never silence).
+
+  ## How (direction, not mandate)
+
+  - Candidate bases: `git merge-base <commit> main` (simplest), or the
+    Work note's `received_at_head` stamp (BL-1610). No current reader
+    returns the stamp for a note: `received-parcel-for-task` matches
+    `type: git_handoff` only, so `received-at-head-for-task` is nil
+    there too. Either base is fine if both scenarios hold. Do not change
+    `received-commit-for-task` or `received-parcel-for-task`: other
+    gates rely on their nil (the merge-drop guard, BL-806).
+  - Keep the new branch shallow: put the base lookup in its own small
+    function and call it from the `(not received)` arm.
+  - Step handler `specs/pipeline/steps/bl2087FirstSendReachFloorSteps.js`,
+    discovered from its own file (BL-1371) with steps scoped to this
+    feature (`defineScoped`). Mirror BL-1584's handler (the real
+    swarm_handoff.bb against a real fixture repo, frozen corpus under
+    `specs/pipeline/fixtures/bl1584/`), but give the fixture a `main`
+    branch carrying the base, and seed the coder's `in_process` with a
+    Work note (`type: note`, `message: Work BL-<id>: ...`, no commit).
+    Step text may repeat BL-1584's: scoped steps do not collide.
+  - Documenter: the BL-1584 how-to's "Parcel-scoped and added-only"
+    section and `swarmforge/handoff-protocol.md`'s "Sampled Reach Floor
+    Send-Time Gate" section say what a first send is now checked
+    against.
+
+constraints: >
+  Never change which verdicts refuse (decide-for-path is unchanged).
+  Never sweep or edit the 11 sampled-low files already on main; they
+  are BL-1583's.
+
+out_of_scope: |
+  - Converting existing sampled-low files (BL-1583's sweeps).
+  - The classifier's blind spots (BL-1583 remaining_slices).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2087-the-sampled-reach-floor-gate-checks-a-coders-first-send.feature`:
+     4 of 4 ok (3 outline rows + scenario 02). No handler exists at mint.
+  2. `node specs/pipeline/cli.js specs/features/BL-1584-a-new-property-test-with-a-sampled-reach-floor-is-refused-at-send.feature`:
+     32 of 32 ok, as before the change (measured at mint 2026-10-08,
+     78 s).
+  3. Live, read-only: replay the gate on BL-2049's coder send with
+     `bb -e` loading `sampled_reach_floor_guard_lib.bb` and calling
+     `findings-for-git-handoff` with `{:root <root> :sender "coder@2"
+     :task-name "BL-2049" :commit "dcdfc712b3"}`. It returns one
+     `:refuse` finding naming
+     `extension/test/bl2049PropertyRunnerReachInvariants.property.test.js`
+     (on main at mint it returned none). Paste the output into the
+     evidence.
+
+source: |
+  Found 2026-10-08 by the specifier while owning QA note 003930
+  (verbatim: "BL-2084 unowned red bl2049 reach floor inv2 n=4 9<10, see
+  ev 767f2ac0a5"), the second sampled-reach-floor red of the day from a
+  file added after BL-1584's gate shipped. The gate is BL-1583's, from
+  the operator-relayed human ask of 2026-09-15
+  (backlog/archive/INTAKE-operator-question-1789505022651.md).
+
+notes: |
+  Minted 2026-10-08 by the specifier (with BL-2086, the stamp-off of the
+  bl2049 hotfix 99fec72218).
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Dynamic routing: Babashka production code, read-only gate -> [coder,
+  qa], plus documenter (the BL-1584 how-to and handoff-protocol.md
+  describe first-hop silence). mutation_cost medium routes it to coder@2
+  (seat tier, see the comment at the field).
+  INVEST: Independent (no unbuilt sibling), Negotiable (the base is
+  direction), Valuable (the gate starts refusing the class that produces
+  the daily reach-floor reds), Estimable (one fallback in one function),
+  Small (two scenarios, one lib, one handler, two doc sections), Testable
+  (fixture repo with the real swarm_handoff.bb, plus the live replay).
+
+assigned_to: coder
