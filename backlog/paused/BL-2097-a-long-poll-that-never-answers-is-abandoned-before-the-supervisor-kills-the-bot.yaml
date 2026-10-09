@@ -1,0 +1,169 @@
+id: BL-2097
+title: "A long poll that never answers is abandoned before the supervisor kills the bot: BL-2072's timing lines name the stalling phase - all 84 slow lines from 11:26Z to 13:53Z on 2026-10-09 are getUpdates waits of 27-93 s against a 25 s long poll, and the bot waits for the answer with no deadline of its own, so a wait past 90 s gets the bot killed as stalled and hands getUpdates to the bridge"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the human's only channel is
+# killed and restarted on a stale heartbeat (7 kills on 2026-10-09, 41 on
+# 2026-10-07), and each kill also flips the shared token's getUpdates to
+# the bridge's dead-feeder fallback (BL-1253).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript in the poll path (a deadline with an injected timer
+# beside BL-1036's in-flight abort) under Stryker on the changed lines,
+# plus a new step handler over a fake Telegram and a fake clock.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one deadline around one existing call; nothing to refactor"
+  architect: "no boundary moves; the supervisor's 90 s rule, the bridge's 90 s feeder check and the failed-poll retry path are unchanged"
+  documenter: "no living doc describes the bot's getUpdates wait; BL-764 and BL-1253's how-tos describe who polls, which does not change"
+
+acceptance: specs/features/BL-2097-a-long-poll-that-never-answers-is-abandoned-before-the-supervisor-kills-the-bot.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2097UnansweredLongPollAbandonedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the deadline's name and site
+# are the coder's. The scenarios must drive the code path the live bot's
+# getUpdates adapter runs (runPollCycle / pollAndForward and whatever the
+# deadline is built into), never a restatement of it; QA's step 3 reads
+# the live diagnostics log after the land.
+
+human_approval: approved
+approval_context: >
+  The fix BL-2072's diagnosis was minted to produce (its notes: "Once its
+  lines name the stalling phase, the specifier mints the fix"). No choice
+  is posed. FIRM: the supervisor's 90 s rule, the bridge's feeder check
+  and the 25 s long poll are unchanged; an abandoned poll never advances
+  the offset.
+
+invariants:
+  - "An abandoned getUpdates call never advances the offset: every update Telegram held for it is read again by the next poll."
+  - "A getUpdates call that answers before the deadline is handled exactly as before this ticket."
+  - "The bot never starts a getUpdates call while an earlier one of its own is still open (BL-1036's slot release, the 409 hazard)."
+
+description: |
+  ## What is wrong
+
+  BL-2072 (landed 2026-10-09) makes each slow phase of the front-desk
+  bot's cycle leave a line in .swarmforge/operator/front-desk-diagnostics.log.
+  From 11:26Z to 13:53Z it wrote 84 lines. All 84 name the getUpdates
+  wait; no startup check or update batch ran long. The waits took 27.5 s
+  to 93 s (median 42 s, 90th percentile 76 s) for a long poll the bot asks
+  Telegram to answer within 25 s (POLL_TIMEOUT_SECONDS).
+
+  `getTelegramUpdates` (extension/src/notify/telegramClient.ts) passes
+  25 s to Telegram as the server-side wait and sets no client-side
+  deadline; its only signal is BL-1036's shutdown abort. A request whose
+  answer never arrives is therefore held until something kills the
+  process. The poll heartbeat is written once per completed cycle
+  (`applyPollCycleResult`), so a wait past 90 s gets the bot killed as
+  stalled by the front-desk supervisor. The bridge's own feeder check
+  (DEFAULT_FRONT_DESK_FEEDER_STALL_MS, also 90 s) then treats the front
+  desk as dead and polls getUpdates itself (BL-1253).
+
+  Measured cases on 2026-10-09:
+  - At 13:01:22.66Z the supervisor killed the bot. At 13:01:25.14Z the
+    dying bot wrote "getUpdates wait took 93157ms" for a poll that started
+    at 12:59:51.98Z, when its previous batch ended. That poll had been in
+    flight for 91 s.
+  - At 12:59:26.83Z it killed the bot 91 s after the previous cycle's
+    batch line (12:57:55.61Z).
+  The network is not the slow part: from this host,
+  https://api.telegram.org/ answered in 0.05 s (DNS 5 ms, connect 15 ms,
+  TLS 40 ms). No 409 has been logged since 2026-10-07, so no second
+  poller competed. Why an answer can take 93 s is not known. The
+  abandonment line below records it: an abandonment that fires on time
+  puts the hang in the request, one that fires late puts it in the
+  process.
+
+  ## What is wanted
+
+  - A getUpdates call that has not answered by a deadline is abandoned:
+    the request is aborted (its connection closed, which releases
+    Telegram's slot as BL-1036's shutdown abort does), and the cycle ends
+    as a failed poll that keeps its offset (scenario 01). The existing
+    failed-poll path (BL-302 backoff, degraded warning, sustained-outage
+    escalation) handles it unchanged.
+  - The deadline sits above the long poll's own 25 s plus latency and
+    above FRONT_DESK_SLOW_PHASE_THRESHOLD_MS (27 s), so a poll answered at
+    30 s is kept (scenario 02). It sits low enough that the cycle ends by
+    45 s, leaving the hand-over apply and the next cycle's start well
+    inside the supervisor's 90 s.
+  - The abandonment leaves one line in front-desk-diagnostics.log naming
+    the getUpdates wait as abandoned and the time it actually waited.
+  - A poll answered before the deadline, at 1 s or at 30 s, is handled
+    exactly as today (scenario 02, invariant 2).
+
+  ## How (direction, not mandate)
+
+  - A deadline timer, injected the way BL-2072's clock is, that aborts the
+    same per-cycle AbortController BL-1036 created in the bot's
+    getUpdates adapter, or a signal composed with it. Build it into code
+    the step handler can drive (`pollAndForward`, `getTelegramUpdates` or
+    a small helper they call), not only the live wrapper. About 40 s is a
+    reasonable start.
+  - The handler drives `runPollCycle` (or `pollAndForward`) with a fake
+    Telegram whose getUpdates never resolves until its signal aborts, a
+    fake clock and a fake timer. It never uses real sleeps.
+
+constraints: >
+  Fakes for Telegram, the clock and the timer; a temp operator directory;
+  never the live token, the live operator directory or real sleeps. The
+  step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Why a Telegram answer can take 93 s: the abandonment lines from this
+    slice are its evidence; mint from them.
+  - The supervisor's 90 s threshold, the bridge's feeder check, and the
+    long poll's 25 s.
+  - Timing the hand-over apply phase: BL-2096.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2097-a-long-poll-that-never-answers-is-abandoned-before-the-supervisor-kills-the-bot.feature`:
+     3 of 3 ok (01, 02 x2).
+  2. `node specs/pipeline/cli.js specs/features/BL-2072-a-front-desk-stall-names-the-phase-that-stalled.feature`:
+     5 of 5 ok (measured on main at mint), or 6 of 6 if BL-2096 landed
+     first.
+  3. Read from the gather's unit row: telegramFrontDeskBotCore.test.js and
+     the telegramClient tests green.
+  4. After the land and a front-desk restart onto the new build, over the
+     next 2 hours of the bot running: count the "stalled bot" lines in
+     front-desk-supervisor.log (2026-10-09 baseline: 2 between 11:26Z and
+     13:53Z) and the abandonment lines in front-desk-diagnostics.log, with
+     how long each abandoned wait actually took. Record any kill that still
+     comes, with the diagnostics lines before it, in the QA evidence.
+
+source: |
+  BL-2072's notes, verbatim: "This is the diagnosis slice. Once its
+  lines name the stalling phase, the specifier mints the fix (startup
+  heartbeat, a startup grace, or a batch split, depending on the phase)
+  as its own ticket."
+  The human's answer in the specifier's session, 2026-10-07, to "Should I
+  mint a diagnosis ticket?": "Mint a diagnosis ticket (Recommended)".
+  .swarmforge/operator/front-desk-diagnostics.log and
+  front-desk-supervisor.log, 2026-10-09, read by the specifier at
+  14:50Z-15:05Z; the counts and times in the description are from them.
+
+notes: |
+  Minted 2026-10-09 by the specifier, the fix BL-2072's diagnosis named.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  The phase is getUpdates, which BL-2072's notes did not foresee
+  (they named a startup heartbeat, a startup grace or a batch split).
+  A deadline fixes the kill whatever makes the answer late; the
+  abandonment line is the evidence for the cause.
+  While minting, the front desk itself was found down: no front-desk
+  supervisor or bot process after 13:53:56Z (the supervisor's last line
+  is "stale-build-detected recompiling before respawn"). The coordinator
+  was sent a note (priority 00). That outage is not this ticket.
+  Sibling BL-2096 also changes pollAndForward; the coordinator promotes
+  them one at a time (Concurrent Work Orthogonality). This one first.
+  INVEST: Independent, Negotiable (deadline value and site), Valuable
+  (no kill on a poll that never answers), Estimable (one deadline, one
+  handler), Small (two scenarios), Testable (fake Telegram, clock and
+  timer).

@@ -1,0 +1,123 @@
+id: BL-2096
+title: "The front desk times its hand-over apply phase: BL-2061 (landed 2026-10-09) applies the updates the bridge handed over before each getUpdates call, through network posts to the bridge, and that phase is not one of BL-2072's timed phases, so a slow hand-over batch can hold the poll heartbeat past the supervisor's 90 s with no timing line naming it"
+milestone: M8
+type: defect
+severity: medium
+# medium: the other three phases are timed and the stall-kills seen so
+# far are on the getUpdates wait (BL-2097); this closes the one phase
+# BL-2061 added after BL-2072 was specced. Real but contained.
+status: todo
+epic: code-quality-gates
+priority: 30
+direction: normal
+depends_on: [BL-2061]
+mutation_cost: low
+# low: one timing wrapper around one existing call in pollAndForward,
+# Stryker on the changed lines; one Examples row and one phase runner in
+# an existing step handler.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one wrapper call and one handler runner; nothing to refactor"
+  architect: "no boundary moves; the phase reuses BL-2072's shared timing helper and threshold"
+  documenter: "no living doc lists the timed phases; the diagnostics lines are read by the specifier"
+
+# Not a claim of ownership over BL-2072's contract (BL-1251): this ticket
+# adds one phase row to BL-2072's scenario 01, the contract it must
+# satisfy is that file with the row added and every other scenario still
+# resolving.
+acceptance: specs/features/BL-2072-a-front-desk-stall-names-the-phase-that-stalled.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2072FrontDeskStallNamesPhaseSteps.js::hand-over apply::the handler learns the new phase in the same parcel as the feature row (BL-233)'
+# No production anchor (BL-1235): the live consumer, pollAndForward, is
+# already the code the scenario drives, so the row proves the wiring.
+
+human_approval: pending
+approval_context: >
+  A changed feature file needs the human's look. No choice is posed. What
+  needs sign-off: BL-2072's scenario 01 gains one row, "hand-over apply",
+  so the updates the bridge hands over (BL-2061) leave a timing line when
+  applying them runs long, the same line the other three phases leave.
+  FIRM: the threshold, the line's format and the other phases are
+  unchanged.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  BL-2072 made each phase of the front-desk bot's poll cycle that runs
+  longer than FRONT_DESK_SLOW_PHASE_THRESHOLD_MS (27 s) leave one line in
+  .swarmforge/operator/front-desk-diagnostics.log: the startup topic
+  checks, the getUpdates wait and the handling of one update batch.
+  BL-2061, landed the same day, added a fourth phase in front of the
+  getUpdates call: `pollAndForward` first runs `applyHandoverUpdates`,
+  which drains the updates the bridge read for the front desk and sends
+  each through `processUpdate` (network posts to the bridge, approval
+  commits). That call is not wrapped by `timePhaseIfWired`, so a slow
+  hand-over batch holds the heartbeat with nothing naming it. QA found
+  it while resolving the merge of the two parcels (note 003955, evidence
+  backlog/evidence/BL-2061-QA-20261009-2.md).
+
+  ## What is wanted
+
+  - The hand-over apply phase is timed like the other three: when it
+    runs at or over the threshold it leaves one line naming
+    "hand-over apply" and its duration, and under the threshold it leaves
+    nothing.
+  - In BL-2072's feature, scenario 01's Examples gain the row
+    `| hand-over apply              |` (kept aligned with the others), and
+    the narrative's second-to-last sentence gains the phase, e.g. "a slow
+    hand-over apply, a slow startup step, a slow long poll or a slow batch
+    of updates all look the same from outside". The feature carries the
+    hardener's mutation stamp: the hardener re-stamps it in this parcel.
+  - The step handler learns the phase: the two regexes that list the
+    phases gain `hand-over apply`, and a runner drives the REAL
+    `pollAndForward` with a `drainHandoverUpdates` adapter returning one
+    update whose handling advances the fake clock by the scenario's
+    seconds. Scenario 02's cycle also drains one hand-over that advances
+    nothing, so "every phase" includes it.
+
+  ## How (direction, not mandate)
+
+  - `timePhaseIfWired(adapters, 'hand-over apply', () =>
+    applyHandoverUpdates(principalUserId, adapters))` at the one call
+    site; nothing else in the function changes.
+
+constraints: >
+  Fakes for Telegram, the bridge and the clock, a temp operator directory;
+  never the live token, the live operator directory or real sleeps. The
+  feature row and the handler change land in the same commit (BL-233).
+
+out_of_scope: |
+  - The getUpdates overrun the diagnosis lines now show: BL-2097.
+  - The threshold's value.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2072-a-front-desk-stall-names-the-phase-that-stalled.feature`:
+     6 of 6 ok (01 x4, 02, 03). Measured on main at mint without the row:
+     5 of 5.
+  2. Read from the gather's unit row: telegramFrontDeskBotCore.test.js
+     green.
+
+source: |
+  QA note 003955 (2026-10-09T14:53:36Z), verbatim: "BL-2072 follow-up:
+  BL-2061 hand-over apply phase is untimed (no stall line)".
+  QA evidence backlog/evidence/BL-2061-QA-20261009-2.md (9e92b7fa0c),
+  verbatim: "Observation for BL-2072's follow-up (not a defect of either
+  parcel): the hand-over apply phase (network posts before getUpdates) is
+  not one of BL-2072's timed phases, so a slow hand-over batch would hold
+  the heartbeat with no timing line naming it."
+
+notes: |
+  Minted 2026-10-09 by the specifier from QA note 003955.
+  depends_on BL-2061 is already satisfied (closed c4d86149cb); it names
+  the premise: applyHandoverUpdates exists on main.
+  Sibling BL-2097 also changes pollAndForward's getUpdates path; the two
+  touch the same function, so the coordinator promotes them one at a time
+  (Concurrent Work Orthogonality). BL-2097 is the higher priority.
+  INVEST: Independent (BL-2061 landed), Negotiable (wrapper shape),
+  Valuable (a hand-over stall names itself), Estimable (one call site),
+  Small (one Examples row), Testable (fake clock and drain).
