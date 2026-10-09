@@ -98,12 +98,23 @@
    record to read first, right next to the TASK block above - reading
    BL-2037's own show command rather than re-deriving its logic. Any
    other agent (or a role with no roles.tsv row at all) sees no PHASE
-   line (invariant 2)."
+   line (invariant 2).
+   Hotfix 2026-10-08: local_seat_phase_cli show reports phase arrange
+   and a virtual path when no record file exists yet. Naming that path
+   as 'read … first' made the live qwen coder hit File-not-found and
+   stall on a fresh arrange (BL-2074). Only tell the seat to read the
+   path when the file is on disk; otherwise name a fresh arrange with
+   no notes yet."
   [handoff-file]
   (when (= "local-model" (:agent (handoff-lib/load-role-info (handoff-lib/current-role))))
     (when-let [ticket (served-ticket-id handoff-file)]
       (when-let [status (phase-cli-show ticket)]
-        (println (str "PHASE: " (:phase status) " - read " (:path status) " first."))))))
+        (let [phase (:phase status)
+              p (:path status)]
+          (if (and p (fs/exists? p))
+            (println (str "PHASE: " phase " - read " p " first."))
+            (println (str "PHASE: " phase
+                          " - no phase notes yet (fresh arrange); begin from the ticket."))))))))
 
 ;; ── BL-550: non-home resident strands after a merge-up note ───────────────
 ;; Pure decision lives in mono-router-lib/rotate-home?; this reads conf text

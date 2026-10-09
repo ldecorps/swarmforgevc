@@ -701,12 +701,15 @@ local_model_shim_port() {
 }
 
 local_model_seat_url() {
-  local lm_url="$1"
+  local lm_url="$1" role="$2"
   if [[ "${SWARMFORGE_LOCAL_MODEL_SHIM:-on}" == "off" ]]; then
     printf '%s\n' "$lm_url"
     return 0
   fi
-  printf 'http://127.0.0.1:%s/v1\n' "$(local_model_shim_port)"
+  # BL-2076: the URL names the seat, so the one host-wide shim can log each
+  # completion with the seat behind it; the shim strips the prefix before
+  # forwarding to Ollama's /v1 path unchanged.
+  printf 'http://127.0.0.1:%s/seat/%s/v1\n' "$(local_model_shim_port)" "$role"
 }
 
 # The pane-script line that starts the shim for one seat, or reuses the one
@@ -2623,7 +2626,7 @@ done"
     # BL-1917: the seat's requests go through its tool-call shim. The pane
     # script starts it on every start and respawn; the provider entry's
     # baseUrl (written below) is the URL qwen actually uses.
-    seat_url="$(local_model_seat_url "$lm_url")"
+    seat_url="$(local_model_seat_url "$lm_url" "$role")"
     local_model_guard=""
     if [[ "$seat_url" != "$lm_url" ]]; then
       local_model_guard="$(local_model_shim_start_line "$lm_url" "$role")

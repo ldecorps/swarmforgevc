@@ -60,9 +60,17 @@
 (def edit-tools #{"edit" "write_file"})
 
 (def state-changing-commands
+  ;; ready_for_next.sh is intentionally absent: when a seat already holds
+  ;; in_process work the script only reprints STOP + TASK and changes
+  ;; nothing. Counting it as a reset let the iq3 QA seat re-run it forever
+  ;; after a STOP banner without ever seeing a REPEAT note (live 2026-09-30
+  ;; compliance battery: coder-stop_banner_compliance). A successful claim
+  ;; still leaves the window alone - the seat's next edit/commit/handoff
+  ;; resets it. done_with_current and swarm_handoff remain resets because
+  ;; they move the mailbox.
   ["git commit" "git merge" "git checkout" "git switch" "git restore"
    "git reset" "git rebase" "git cherry-pick" "git revert" "git stash"
-   "swarm_handoff.sh" "done_with_current.sh" "ready_for_next.sh"])
+   "swarm_handoff.sh" "done_with_current.sh"])
 
 (def noise-keys
   "Argument keys that do not change what a call returns."
@@ -663,6 +671,22 @@
           (str "You already ran `" base "` with another filter, and its output has not changed."
                " Next time run it once as `" base " > tmp/out.txt 2>&1`, then read or grep tmp/out.txt."))))))
 
+(defn ready-for-next-stop-hint
+  "When ready_for_next.sh reprints the in-process STOP banner, name the
+   next tool call explicitly. The iq3 QA seat treated the STOP text itself
+   as a cue to emit ready_for_next.sh again (coder-stop_banner_compliance);
+   pointing at Read of inbox/in_process breaks that loop without a PreToolUse
+   deny (denies made iq3 re-send until qwen's dialog halted the turn)."
+  [name args response]
+  (let [cmd (when (map? args) (get args "command"))
+        text (->> (tree-seq coll? seq response) (filter string?) (str/join "\n"))]
+    (when (and (= name "run_shell_command") (string? cmd)
+               (re-find #"ready_for_next\.sh\b" cmd)
+               (re-find #"Do NOT run ready_for_next\.sh again" text))
+      (str "STOP means continue the parcel you already hold - do not run ready_for_next.sh again. "
+           "Next tool: Read `.swarmforge/handoffs/inbox/in_process/` (or the TASK path just printed) "
+           "and execute that parcel. ready_for_next.sh is only for when in_process is empty."))))
+
 (defn empty-grep-hint
   "A grep that prints nothing gives a model nothing to stop on: the cycle
    above was four greps whose output was (empty) every time."
@@ -775,6 +799,7 @@
         rerun (when entries (rerun-hint entries name args))
         read-budget (when entries (read-budget-note entries name args))
         notes (remove nil? [repeat-note loop-note undo rerun read-budget
+                            (ready-for-next-stop-hint name args (get event "tool_response"))
                             (empty-grep-hint name args (get event "tool_response"))
                             (offset-hint name args) (sleep-hint name args)
                             (read-hint name args) (npm-hint name args)

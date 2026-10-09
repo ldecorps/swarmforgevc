@@ -10,6 +10,11 @@
   reason: "Root-caused + fixed (swarmforge-QA push was tracking refs/heads/main, now origin/swarmforge-QA); content is QA's own in-review WIP for still-active BL-1880, not a bypass of a finished land; see backlog/evidence/art42-origin-main-1007-coordinator-closeout.md. Re-waive if BL-1880 doesn't land soon."
   waived_at: 2026-10-08
 
+- key: pipeline-code-on-main-01e77eaef2bf2fc1ba8bdd238d1b77b4f6664ceb
+  waived_by: coordinator
+  reason: "sanctioned hotfix: soft shift close freezes new jobs at T-15 and drains in_process before finish-shift. Registered in backlog/hotfix-ledger.yaml (state: pending), stamp ticket BL-2088 minted in backlog/paused/. is_qa_ancestor.sh exit 1 (not yet QA-merged) - genuine Article 4.2 hit per the human's 2026-10-01 hotfix-then-stampoff rule, not a bypass."
+  waived_at: 2026-10-08
+
 - key: pipeline-code-on-main-02f834ec44a1b217311af8789eb3cbd7c52b27f6
   waived_by: coordinator
   reason: "sanctioned hotfix (SUP-17 ruling, Article 4.2 re-fires on sanctioned stamp-offs are accepted noise), already in hotfix-ledger.yaml with stamp_ticket BL-1988 pending"
@@ -444,6 +449,11 @@
   waived_by: coordinator
   reason: "Specifier hotfix (Hotfix-Certification: pending) fixing bl1905RealDispatcherScan.property red (QA note 003843 held BL-1964); stamp-off BL-2029 already mints coder+QA review (backlog/paused, approved). Sanctioned hotfix-then-stampoff pattern (2026-10-01 directive); SUP-17."
   waived_at: 2026-10-06
+
+- key: pipeline-code-on-main-b8611eff861e2c0c0d181516ea8e55660bab1696
+  waived_by: coordinator
+  reason: "declared hotfix by the human (2026-10-01 rule: hotfix the defect, mint a stampoff) - raises the property-lane default timeout budget for bl1071SweepSurvivesAnyProbeFailure and bl2071ForwardAndPassAgree, fixing the exact two unowned-red notes I was tracking (coder note 000185, QA note 003949); no body-logic change, verified full property lane exit 0 (537 files/1473 tests/1105s). Specifier to mint the stamp-off ticket + ledger row."
+  waived_at: 2026-10-09
 
 - key: pipeline-code-on-main-b89dc06cd635ecf9cc85340dfcdd5af476cd3e9f
   waived_by: coordinator

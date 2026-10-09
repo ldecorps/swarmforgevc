@@ -1,0 +1,208 @@
+id: BL-2091
+title: "A hardener whose mutation run is under way gets a longer seat-stuck clock: babysitter's check 5b holds every seat to 60 minutes with no commit, but a hardener gate on a mutation-heavy ticket makes no commit for the length of its Stryker, CRAP and jscpd run by design, so BL-2061's 142-minute pass on 2026-10-08 drew the CRIT twice while its progress file showed a healthy run; the human ruled the clock stage-aware, a longer clock for the hardener's mutation gate and 60 minutes for every other seat"
+milestone: M8
+type: defect
+severity: high
+# high: a broken health signal that drives a destructive action. The
+# seat-stuck CRIT wakes the operator and makes the coordinator pull the
+# ticket and respawn the seat (5b277c03cd BAU), which kills a working
+# mutation run. Four false firings in three days (human ruling, 2026-10-08).
+status: todo
+epic: swarm-reliability
+priority: 3
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium is a SEAT-TIER declaration, not a size (BL-2084 4ec4fb6484): the
+# gatherer change sits inside held-seat-tickets' nested keep/fn/let, the
+# deep-bb-form edit the easy iq3 seat livelocks on, so BL-1001's claim
+# gate routes it to coder@2. bb has no mutation lane wired (BL-472).
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one gathered fact and one threshold choice in an existing check; nothing to deduplicate"
+  architect: "no boundary moves; the gatherer already resolves each held seat and the check already decides from its map"
+  hardender: "Babashka, no Stryker lane (BL-472), and the check writes no durable state"
+
+acceptance: specs/features/BL-2091-a-hardener-whose-mutation-run-is-under-way-gets-a-longer-seat-stuck-clock.feature
+
+# The consumer is babysitter_check.bb's own gather, which runs every sweep
+# in production; today it never reads a mutation progress file, so the
+# anchor matches only once the gatherer reads one (BL-1235).
+required_wiring:
+  - 'swarmforge/scripts/babysitter_check.bb::mutation-progress::the live gatherer reads the progress file of each held seat'
+  - 'specs/pipeline/steps/bl2091HardenerMutationAllowanceSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+human_ruling: |
+  150 minutes (recommended)
+ruling_provenance: tapped
+approval_context: >
+  Firm, from your 2026-10-08 ruling: 60 minutes stays for every seat
+  except the hardener; the hardener gets a longer clock only while its
+  own mutation progress file has been written since its last commit for
+  the ticket (proof a run began during this hold), so a hardener that is
+  idle or looping is still held to 60. The loop-dialog and REPEAT-note
+  triggers are unchanged. The one open choice is the length of the
+  hardener's clock. Measured over 53 hardener passes 2026-10-05..09 -
+  median 13 min, 95th percentile 44 min, longest 142 min (BL-2061, a
+  mutation_cost high ticket), next 95 min (BL-1884, a local-model seat).
+ruling_options:
+  - 120 minutes
+  - 150 minutes (recommended)
+  - 180 minutes
+ruling_tradeoffs:
+  - Pros - the closest to your 60, so a hardener that hangs after its run is reported soonest. Cons - BL-2061's 142-minute pass on 2026-10-08 would still have drawn one false CRIT, and with it a pull of a working seat.
+  - Pros - covers every hardener pass measured 2026-10-05..09 with 8 minutes to spare, and applies only while a run is proven under way. Cons - a hardener that hangs after its run started waits up to 2.5 hours before anyone is told. Recommended because it ends the false pulls seen so far at the smallest clock that does.
+  - Pros - the widest margin for a long full-suite run. Cons - the length you called way too much for every seat on 2026-10-05, and a hung hardener goes unreported for 3 hours.
+
+invariants:
+  - "Every seat whose stage is not hardender is held to the 60-minute clock, whatever files its worktree carries."
+  - "The longer clock never applies to a hardener whose mutation progress file is absent or was last written before the hold's progress origin."
+  - "The loop-dialog and REPEAT-note triggers raise the CRIT for a hardener exactly as for any other seat."
+
+description: |
+  ## What is wrong
+
+  `babysitterd_sweep_lib.bb`'s `check-seat-ticket-stuck` (check 5b) raises
+  `seat-stuck-<role>` CRIT when a seat holds a ticket
+  `seat-ticket-stuck-min` (60) minutes with no own commit naming it. The
+  coordinator answers that CRIT by pulling the ticket and respawning the
+  seat (coordinator.prompt, "A ticket its seat cannot finish is pulled and
+  split"). A hardener gate on a mutation-heavy ticket runs Stryker, CRAP,
+  jscpd, then commits, so it makes no commit for the length of the run.
+  BL-2061's hardener pass on 2026-10-08 ran about 142 minutes and drew the
+  CRIT at 61m (14:21Z) and 91m (14:51Z); at 14:47:37Z
+  `.worktrees/hardender/.swarmforge/mutation-progress/hardender.json` read
+  `status: done, percent: 100, health: healthy`. The hardener prompt's
+  commit-before-each-Stryker-run rule (BL-1676) does not cover a single
+  run plus its CRAP and jscpd steps that outlast 60 minutes.
+
+  ## What is wanted
+
+  Check 5b's dwell trigger uses a longer clock (the length the human
+  rules, `human_ruling`) for a seat whose stage is `hardender` when that
+  seat's mutation progress file was written after the hold's progress
+  origin (the claim, or the seat's last own commit for the ticket,
+  `progress-origin-ms`). Otherwise it uses 60 minutes, as today. The CRIT
+  message names the threshold that applied. Scenario 01 is the 91-minute
+  firing on BL-2061, which no option allows. The outline pins the
+  hardener's clock and the 60-minute fallbacks (scenario 02).
+
+  The feature names 150 minutes, the recommended option. If
+  `human_ruling` names another length, do not build: send the specifier a
+  note first, and the feature's `150` (the first Examples row) is amended
+  to the ruled length before any code.
+
+  ## How (direction, not mandate)
+
+  - Gatherer: in `babysitter_check.bb`'s `held-seat-tickets`, read the
+    held seat's progress file, the one its own runs write
+    (`extension/src/mutation/mutationProgressFile.ts`
+    `defaultProgressFilePath`, `<worktree>/.swarmforge/mutation-progress/<SWARMFORGE_ROLE>.json`;
+    for a numbered seat try the seat name, then the stage name). Put one
+    fact on the map, for example `:mutation-run-since-origin?`, true when
+    the record's `updated_at` (or the file's mtime) is at or after
+    `taken-ms`. A missing or unreadable file is false. Keep the read in
+    its own small function and the let-binding shallow.
+  - Check: in `babysitterd_sweep_lib.bb`, a second constant beside
+    `seat-ticket-stuck-min` (keep that one, and its 2026-10-05 comment,
+    unchanged) and a small function that picks the threshold from the
+    stage and the fact. `check-seat-ticket-stuck`'s dwell filter and its
+    message both use the picked threshold. The `(threshold Nm)` text
+    already in the message carries it.
+  - `bl1986_seat_ticket_stuck_invariant_property_runner.bb` reads
+    `sw/seat-ticket-stuck-min` with a role pool that has no hardender, so
+    it stays valid unchanged. Do not widen its pool in this parcel.
+  - Step handler `specs/pipeline/steps/bl2091HardenerMutationAllowanceSteps.js`,
+    discovered from its own file (BL-1371), steps scoped to this feature.
+    Copy `bl1997RepeatNotesSeatStuckSteps.js`'s shape: the REAL
+    `babysitter_check.sh` against a disposable fixture root, the roles row
+    and held handoff it builds, with role `hardender` or `coder` from the
+    step, the claim `<minutes>` old, and a progress file whose `updated_at`
+    is one minute after or one minute before the claim. Validate `<role>`,
+    `<when>` and `<minutes>` against explicit KNOWN_VALUES.
+  - Documenter: `docs/how-to/BL-611-babysitterd-runbook.md` row 5b and
+    `docs/how-to/BL-653-operator-escalation-driven-wake-model.md`'s
+    `seat-stuck-<role>` row state the hardener's clock and when it
+    applies.
+
+constraints: >
+  Never change seat-ticket-stuck-min (60) or how the clock's origin is
+  computed. Never exempt the hardener from the loop-dialog or REPEAT-note
+  triggers. Never read a pane, a spinner or a process table to decide the
+  longer clock: the progress file is the evidence.
+
+out_of_scope: |
+  - The chase sweep's respawns of the hardener (handoffd chase ladder,
+    `lane_process_lib.bb`). This ticket changes only check 5b.
+  - A longer clock for any stage but the hardener.
+  - The coordinator's pull-and-split BAU itself.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2091-a-hardener-whose-mutation-run-is-under-way-gets-a-longer-seat-stuck-clock.feature`:
+     4 of 4 ok (scenario 01 + 3 outline rows). No handler exists at mint.
+  2. Sibling features, unchanged by this ticket, measured on main at mint
+     2026-10-09: `node specs/pipeline/cli.js` on
+     `specs/features/BL-1986-a-seat-whose-pane-shows-qwens-loop-dialog-is-reported-stuck.feature`
+     1 of 1 ok (2 s), and on
+     `specs/features/BL-1997-a-seat-collecting-repeat-notes-is-reported-stuck.feature`
+     3 of 3 ok (4 s). Both stay so.
+  3. `bb swarmforge/scripts/test/bl1986_seat_ticket_stuck_invariant_property_runner.bb`
+     prints `ALL PROPERTIES HOLD` (under 1 s at mint).
+  4. Read the diff: `seat-ticket-stuck-min` is still 60, and the hardener
+     constant equals the length in `human_ruling`.
+
+source: |
+  backlog/INTAKE-operator-question-1791472140083.md, filed by the
+  Operator 2026-10-08T15:09:00Z (2f372c06c3), verbatim:
+  "HUMAN RULING (2026-10-08, answering the Operator's SUP-17 ask): make
+  the babysitter seat-stuck threshold STAGE-AWARE - a longer clock for the
+  hardender mutation gate - rather than re-tuning the global 60m. Context
+  the swarm should not re-derive: the global 60m was set deliberately by
+  the human on 10-05 (hotfix 9b4ccdd827), so it must STAY 60m for ordinary
+  seats; this is an added per-stage allowance, not a replacement.
+  Evidence: 4th false seat-stuck CRIT in 3 days, and BL-2061 fired TWICE
+  on the SAME ticket (61m at 14:21Z, 91m at 14:51Z). Mechanism: a
+  hardender gate on a mutation_cost:high ticket runs stryker -> CRAP ->
+  jscpd -> commit, which produces NO commits BY DESIGN and routinely
+  outruns 60m, so the check re-fires until the seat finally commits. The
+  seat was provably working each time (at 14:47:37Z
+  .worktrees/hardender/.swarmforge/mutation-progress/hardender.json read
+  status:done, percent:100, 8/8 killed, health:healthy; at 15:08Z the pane
+  held a live 600s monitor mid-gate). Suggested shape for the specifier to
+  spec, not a mandate: read the holding seat's stage/mutation_cost
+  (and/or the mutation-progress file that already proves liveness) and
+  apply the longer clock only for that case. The Operator FILED this
+  ruling only - it did not mint, spec, promote or implement anything."
+  Also the closing-ceremony lean pass for shift 2026-10-09, whose top
+  dwell hotspot was the hardener (440 min processing, 95 chases).
+
+notes: |
+  Minted 2026-10-09 by the specifier, draining the root intake above
+  during the 2026-10-09 closing-ceremony lean pass (outcome
+  process_ticket, ref BL-2091).
+  Severity high with ruling_options, so it mints human_approval pending:
+  the 2026-09-17 auto-approve carve-out does not apply to a ticket that
+  poses a choice.
+  Dynamic routing: Babashka production code that writes no durable state
+  -> [coder, qa], plus documenter (two how-to rows describe the 60-minute
+  clock). mutation_cost medium routes it to coder@2 (seat tier, see the
+  comment at the field).
+  Shape choice: the human offered stage/mutation_cost and/or the progress
+  file. The progress file is the narrower test. mutation_cost alone would
+  give an idle or looping local-model hardener the longer clock too
+  (BL-1884's hardener sat 80-190 minutes with no activity on 2026-10-08
+  and was rightly respawned).
+  IR-DRY (2026-10-09): 4 medium findings, each an outline placeholder
+  against the literal of the same step pattern (scenario 01 vs the
+  outline), or the CRIT/no-CRIT opposites. No change.
+  INVEST: Independent (no unbuilt sibling), Negotiable (where the fact is
+  read and how the threshold is picked are direction), Valuable (ends
+  false CRITs that pull a working hardener), Estimable (one read, one
+  constant, one pick), Small (two scenarios, two libs, one handler, two
+  doc rows), Testable (the real babysitter_check.sh against a fixture
+  root).
+
+assigned_to: coder

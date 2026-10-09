@@ -52,7 +52,12 @@ stop time moves the ceremony — no second clock to edit.
 4. **Happy path** — if drain ended at documenter, chain into briefing; else
    rotate resident to documenter with explicit briefing instruction.
 5. **Briefing** — written, committed, send confirmed via sent-state (not
-   “file exists”). Already-sent nights are not double-sent. **On any tick
+   “file exists”). Already-sent nights are not double-sent. The email
+   sweep's own sent-marker commit is retried on the next sweep whenever
+   it failed (BL-2069): `send-unsent-briefings!` runs one heal commit
+   per sweep whenever the `:commit-marker!` adapter is present, so a
+   marker an earlier failure left uncommitted is committed by the next
+   sweep even when that sweep has nothing new to send. **On any tick
    in the briefing phase, the documenter branch's own pure-add briefing
    commit is landed the moment it exists, never only at the deadline
    (BL-1836, 2026-10-02):** when the previous tick's state was already in

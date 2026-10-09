@@ -197,6 +197,31 @@ dependencies) now sits between a local-model seat and Ollama:
 | `SWARMFORGE_LOCAL_MODEL_SHIM_PORT` | the shim's own loopback port | `11439` |
 | `SWARMFORGE_LOCAL_MODEL_SHIM` | `off` sends the seat to Ollama's endpoint directly, bypassing the shim | `on` |
 
+**The URL names the seat behind every chat completion (BL-2076).** Every
+local-model seat on the host shares this one shim and one Ollama slot, but
+until this a seat switch — on iq3, a full re-prefill, 23-38 s at
+20-30k prompt tokens, 66 s at 50k, against 0.5-2 s for a cached
+continuation — was invisible: nothing could tell one seat's request from
+another's.
+
+- `local_model_seat_url` now gives the seat a URL of the shape
+  `http://127.0.0.1:<port>/seat/<role>/v1` (the role as given, `coder@2`
+  included) instead of the bare `/v1` path, whenever the shim is on.
+  `SWARMFORGE_LOCAL_MODEL_SHIM=off` is unchanged: the seat talks straight
+  to Ollama with no seat name at all.
+  `seat_of_path` strips `/seat/<seat>` before forwarding, so Ollama
+  receives the same method, body and `/v1` path as before this slice — a
+  client at the plain `/v1` path (an older launch script, or any other
+  local client) is still served and logs seat `-`.
+- One log line per chat completion: `chat seat=<seat>
+  duration_ms=<ms> prompt_tokens=<n> switch=<0|1>` — `switch=1` when the
+  previous chat completion the shim forwarded came from a different seat,
+  `switch=0` otherwise (the shim's own class-level `last_seat`, not a
+  per-connection instance attribute, so it is actually shared across
+  requests).
+- `GET /shim/health` adds `last_seat`, the seat behind the most recent
+  chat completion.
+
 ### The shim caps a compaction summary, drops the ask for `<analysis>`, and runs it with thinking off (BL-1952)
 
 qwen's own compaction side-query — the request it sends itself to
@@ -592,6 +617,29 @@ now extended to release.
 
 No tool call is ever refused by this check either, same invariant as the
 repeat guard and the restart above.
+
+### A local-model seat's forward runs its acceptance feature (BL-2071)
+
+A local-model seat's `git_handoff` send is gated on the ticket's declared
+`acceptance:` feature passing at the commit being forwarded. The check
+lives in `local_seat_acceptance_gate_lib.bb` and is called from two
+places: `swarm_handoff.bb`'s send path and `local_seat_phase_cli.bb`'s
+`pass` subcommand, so the forward and the assert step's `pass` agree on
+the same commit.
+
+The gate is keyed off the raw `SWARMFORGE_ROLE` seat id (never the
+canonicalized stage BL-983 collapses `coder@2` and `coder` into): a
+cloud seat's forward is unaffected and runs no acceptance check.
+
+A failing scenario, a step with no handler, or a run past the time
+bound refuses the send and names what failed; the parcel stays with the
+seat to fix and re-send. If `cli.js` itself cannot be found at root the
+gate fails open (a warning, never a finding) — the same line BL-761's
+acceptance-contract gate draws between a real quality signal and
+infrastructure trouble.
+
+Full gate description: `swarmforge/handoff-protocol.md`, "Local-Seat
+Acceptance Gate (BL-2071)".
 
 ### The window gate refuses qwen's compaction dead zone (BL-1840)
 

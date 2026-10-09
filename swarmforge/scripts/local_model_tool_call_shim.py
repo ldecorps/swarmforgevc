@@ -63,6 +63,7 @@ something else holds the port, and never stops a process it did not start.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import re
 import subprocess
@@ -485,8 +486,27 @@ def upstream_root(upstream: str) -> str:
     return root[: -len("/v1")] if root.endswith("/v1") else root
 
 
+def seat_of_path(path: str) -> tuple[str, str]:
+    """The seat a request path names and the path to forward upstream:
+    /seat/<seat>/v1/... strips to /v1/...; any other path is served as-is
+    with seat '-' (the plain /v1 path, BL-2076)."""
+    parts = path.split("/")
+    if len(parts) >= 4 and parts[1] == "seat" and parts[3] == "v1":
+        return parts[2], "/" + "/".join(parts[3:])
+    return "-", path
+
+
+# The shim's own log lines, in order, bounded: the long-lived host-wide
+# process must not grow unbounded state for a list only the unit tests
+# read. The tests read the last one, which a deque still gives by index.
+_LOG_LINES_MAX = 200
+_log_lines: collections.deque[str] = collections.deque(maxlen=_LOG_LINES_MAX)
+
+
 def _log(message: str) -> None:
-    print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {message}", file=sys.stderr, flush=True)
+    line = f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {message}"
+    _log_lines.append(line)
+    print(line, file=sys.stderr, flush=True)
 
 
 class ShimHandler(BaseHTTPRequestHandler):
@@ -494,41 +514,51 @@ class ShimHandler(BaseHTTPRequestHandler):
     timeout_s = 900.0
     keepalive_s = 15.0
     output_caps: dict[str, tuple[int | None, float]] = {}
+    last_seat = "-"  # the seat the last forwarded chat completion came from
 
     def log_message(self, *_args: Any) -> None:  # the shim logs its own lines
         pass
 
     def do_GET(self) -> None:
         if self.path == HEALTH_PATH:
-            self._send_json(200, {"shim": NAME, "upstream": self.upstream})
+            self._send_json(200, {"shim": NAME, "upstream": self.upstream, "last_seat": self.last_seat})
             return
-        self._passthrough(None)
+        seat, upstream_path = seat_of_path(self.path)
+        self.path = upstream_path
+        self._passthrough(None, seat)
 
     def do_HEAD(self) -> None:
-        self._passthrough(None)
+        seat, upstream_path = seat_of_path(self.path)
+        self.path = upstream_path
+        self._passthrough(None, seat)
 
     def do_DELETE(self) -> None:
-        self._passthrough(self._read_body())
+        seat, upstream_path = seat_of_path(self.path)
+        self.path = upstream_path
+        self._passthrough(self._read_body(), seat)
 
     def do_POST(self) -> None:
+        self._completion_started = time.monotonic()
         body = self._read_body()
+        seat, upstream_path = seat_of_path(self.path)
+        self.path = upstream_path
         if self.path.rstrip("/").endswith("/chat/completions"):
             try:
                 request = json.loads(body or b"{}")
             except ValueError:
                 request = None
             if isinstance(request, dict) and is_compaction_request(request):
-                self._respond(request, self._compact)
+                self._respond(request, self._compact, seat)
                 return
             if isinstance(request, dict) and declared_tool_names(request):
-                self._shim_chat(request)
+                self._shim_chat(request, seat)
                 return
             if isinstance(request, dict):
                 clamped, lowered = clamp_output_budget(request, self._output_cap(request.get("model")))
                 if lowered is not None:
                     body = json.dumps(clamped).encode()
                     _log(f"passthrough model={request.get('model')} budget={lowered}->{clamped.get('max_tokens', clamped.get('max_completion_tokens'))}")
-        self._passthrough(body)
+        self._passthrough(body, seat)
 
     def _limits(self, model: Any) -> tuple[int | None, int | None]:
         """The model's Modelfile (num_predict, num_ctx), cached for
@@ -578,7 +608,7 @@ class ShimHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _passthrough(self, body: bytes | None) -> None:
+    def _passthrough(self, body: bytes | None, seat: str = "-") -> None:
         req = urllib.request.Request(
             upstream_root(self.upstream) + self.path, data=body, method=self.command, headers=self._forward_headers()
         )
@@ -598,12 +628,39 @@ class ShimHandler(BaseHTTPRequestHandler):
             self.end_headers()
             if self.command == "HEAD":
                 return
+            data = b""
             while True:
                 piece = resp.read1(65536) if hasattr(resp, "read1") else resp.read(65536)
                 if not piece:
                     break
+                data += piece
                 self.wfile.write(piece)
                 self.wfile.flush()
+        if self.command == "POST" and self.path.rstrip("/").endswith("/chat/completions"):
+            self._log_chat_completion(seat, data)
+
+    def _log_chat_completion(self, seat: str, raw: bytes) -> None:
+        """One line per forwarded chat completion: the seat the request came
+        from, its duration, the reply's prompt tokens, and switch=1 when the
+        previous forwarded chat completion came from another seat (BL-2076)."""
+        started = self._completion_started
+        duration_ms = int((time.monotonic() - started) * 1000)
+        switch = 0 if seat == self.last_seat else 1
+        # A BaseHTTPRequestHandler instance is per-connection, discarded
+        # after one request: `self.last_seat = seat` would only ever shadow
+        # the class attribute on this instance, leaving every later request
+        # reading back the unchanged class default and switch always 1.
+        type(self).last_seat = seat
+        prompt_tokens = None
+        try:
+            payload = json.loads(raw or b"{}")
+            if isinstance(payload, dict):
+                usage = payload.get("usage")
+                if isinstance(usage, dict):
+                    prompt_tokens = usage.get("prompt_tokens")
+        except ValueError:
+            pass
+        _log(f"chat seat={seat} duration_ms={duration_ms} prompt_tokens={prompt_tokens} switch={switch}")
 
     def _call_upstream(self, request: dict[str, Any]) -> tuple[int, bytes]:
         upstream_request = dict(request)
@@ -687,13 +744,14 @@ class ShimHandler(BaseHTTPRequestHandler):
              f"finish={choice.get('finish_reason')} closed={closed} salvaged={salvaged} reasoning_chars={reasoning} head={head!r}")
         return status, payload
 
-    def _shim_chat(self, request: dict[str, Any]) -> None:
-        self._respond(request, self._complete)
+    def _shim_chat(self, request: dict[str, Any], seat: str) -> None:
+        self._respond(request, self._complete, seat)
 
-    def _respond(self, request: dict[str, Any], complete: Callable[[dict[str, Any]], tuple[int, Any]]) -> None:
+    def _respond(self, request: dict[str, Any], complete: Callable[[dict[str, Any]], tuple[int, Any]], seat: str = "-") -> None:
         if not request.get("stream"):
             status, payload = complete(request)
             self._send_json(status, payload)
+            self._log_chat_completion(seat, json.dumps(payload).encode())
             return
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -719,10 +777,11 @@ class ShimHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
         self.wfile.write(b"data: [DONE]\n\n")
         self.wfile.flush()
+        self._log_chat_completion(seat, json.dumps(payload).encode())
 
 
 def make_server(port: int, upstream: str, host: str = "127.0.0.1") -> ThreadingHTTPServer:
-    handler = type("BoundShimHandler", (ShimHandler,), {"upstream": upstream, "output_caps": {}})
+    handler = type("BoundShimHandler", (ShimHandler,), {"upstream": upstream, "output_caps": {}, "last_seat": "-"})
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
     return server

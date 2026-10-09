@@ -46,6 +46,8 @@
 (def scripts-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path scripts-dir "local_seat_phase_lib.bb")))
 (load-file (str (fs/path scripts-dir "handoff_lib.bb")))
+(load-file (str (fs/path scripts-dir "local_seat_acceptance_gate_lib.bb")))
+(load-file (str (fs/path scripts-dir "gpu_pause_lib.bb")))
 
 (def value-flags #{"--to" "--notes"})
 
@@ -109,6 +111,24 @@
     (not (fs/exists? notes-path)) (str "--notes file not found: " notes-path)
     :else nil))
 
+;; BL-2071: the SAME check swarm_handoff.bb's git_handoff gate runs (ONE
+;; CHECK, TWO CALLERS - invariant 2), so the assert step's own pass and the
+;; forward can never disagree about the same commit. Local-model seats
+;; only, mirroring the gate's own cloud-seat exemption (scenario 03) - a
+;; non-local-model seat's pass is unchanged. "." is this CLI's own root
+;; convention throughout (see record-path above); run from the seat's
+;; worktree, it is that worktree's own specs/pipeline/cli.js and backlog/.
+(defn- local-model-acceptance-refusal [ticket]
+  (let [role (handoff-lib/current-role)
+        agent (:agent (when role (handoff-lib/load-role-info role)))]
+    (when (and role (gpu-pause-lib/local-model-seat? agent))
+      (let [check (local-seat-acceptance-gate-lib/run-check! {:root "." :ticket-id ticket})]
+        (doseq [warning (:warnings check)]
+          (binding [*out* *err*]
+            (println (str "local_seat_phase_cli.bb: " warning))))
+        (when (local-seat-acceptance-gate-lib/blocked? check)
+          (local-seat-acceptance-gate-lib/refusal-message {:ticket-id ticket :findings (:findings check)}))))))
+
 (defn- apply-move! [ticket result notes-path]
   ;; Shared tail for end/fail/pass once the lib has judged the move legal:
   ;; append the note, write the record, report the outcome.
@@ -169,10 +189,17 @@
 
       "pass"
       (let [notes-path (flag-value rest-args "--notes")
-            result (local-seat-phase-lib/pass-move (read-record ticket))]
-        (if (:ok result)
-          (apply-move! ticket result notes-path)
-          (refuse! (:reason result))))
+            result (local-seat-phase-lib/pass-move (read-record ticket))
+            ;; BL-2071 invariant 2: judged BEFORE apply-move! writes anything
+            ;; (and only when the structural move itself is legal - no
+            ;; sense running a feature for a move that will refuse anyway),
+            ;; so a refusal here leaves the record exactly where fail-move
+            ;; left it (unchanged, phase stays at assert).
+            acceptance-refusal (when (:ok result) (local-model-acceptance-refusal ticket))]
+        (cond
+          (not (:ok result)) (refuse! (:reason result))
+          acceptance-refusal (refuse! acceptance-refusal)
+          :else (apply-move! ticket result notes-path)))
 
       (usage))))
 

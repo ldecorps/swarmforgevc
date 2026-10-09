@@ -111,6 +111,16 @@ naming a ticket that is not open, naming the offending row.
   `MERGE_HEAD:<path>` — a line either parent already carried is inherited,
   never a reason to refuse. A merge whose own conflict resolution adds a
   genuinely new row naming a closed ticket is still refused.
+- **A new test-lane row must declare why it was not hotfixed (BL-1884).**
+  A commit that **adds** a register row in a test lane (`property`,
+  `unit`, `bb`, `acceptance`, `shell`) is refused unless the owner ticket
+  (staged or on disk) declares `hotfix_fallback:` as `needs-ruling` with a
+  non-empty `ruling_options`, or `multi-sitting` with a non-empty
+  one-line `hotfix_fallback_reason:`. The refusal names the row and what
+  the owner is missing, in the same one-refusal-per-commit shape as the
+  guard's other checks. Rows already on `main` and hardening-lane rows
+  are not judged — the guard makes every fallback declared and countable,
+  it cannot judge whether the reason is true.
 - **Fail-open on an unreadable git index** (WARN, exit 0) — the same
   posture every other guard in the chain takes; this guard's own refusal
   requires being SURE the row is unowned, not merely suspicious.
@@ -142,6 +152,9 @@ Acceptance: `specs/features/BL-1428-every-standing-red-names-an-open-owner.featu
   throttle signal).
 - BL-1430 — the unowned `bl874` red this register's own audit surfaced,
   minted its own ticket the same pass.
+- BL-1884 — the fallback-declaration check: a new test-lane row is refused
+  unless its owner ticket declares `hotfix_fallback` (needs-ruling or
+  multi-sitting).
 - BL-816 — the 2026-08-05 ask this ticket supersedes and retires.
 - [The hardening-debt ledger](BL-942-hardening-debt-ledger.md) (BL-942) —
   one of the three sources this register joins.

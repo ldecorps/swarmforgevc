@@ -44,6 +44,15 @@ Separately, scheduled nights use BL-658's
 so the morning briefing is the last act before stop (not an independent
 morning clock that can fire after the swarm is already down).
 
+## Scheduled soft close (BL-2088)
+
+Weekday/weekend **scheduled** bedtime no longer hard-kills at the shift-end
+bell. `wait_for_expedite_then_bedtime.sh` freezes new-job intake (T−15 via
+`shift_close_freeze_intake.sh`, or at the bell if that was missed), waits
+until every seat's `inbox/in_process` is empty (push-forward or bounce),
+then runs `./finish-shift`. See
+[BL-2088 soft shift close](BL-2088-soft-shift-close.md).
+
 ## Usage
 
 ```sh

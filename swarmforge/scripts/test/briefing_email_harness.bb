@@ -104,11 +104,23 @@
   (let [today-str (nth *command-line-args* 2)
         commit-mode (nth *command-line-args* 3)
         send-outcome (nth *command-line-args* 4)
+        commit-marker-calls (atom 0)
+        ;; BL-2069 D1: counted so acceptance/property tests can assert "no
+        ;; commit attempt" directly rather than inferring it from git state
+        ;; alone - a call that itself resolves to :nothing-to-commit and a
+        ;; call never made both leave HEAD unchanged, but only the count
+        ;; tells them apart.
         commit-marker!
         (case commit-mode
-          "real" briefing-email-lib/commit-sent-marker!
-          "fail" (fn [_dir] {:ok false :reason "simulated commit failure"})
+          "real" (fn [dir] (swap! commit-marker-calls inc) (briefing-email-lib/commit-sent-marker! dir))
+          "fail" (fn [_dir] (swap! commit-marker-calls inc) {:ok false :reason "simulated commit failure"})
           "none" nil)
+        ;; BL-2069 D1: wired alongside :commit-marker! whenever the REAL
+        ;; commit function is in play, exactly as handoffd.bb pairs the two -
+        ;; a "fail"/"none" commit-mode has no commit to gate in the first
+        ;; place, so marker-uncommitted? is real-git-only too.
+        marker-uncommitted?
+        (when (= commit-mode "real") briefing-email-lib/marker-uncommitted?)
         adapters
         (cond-> {:read-briefing-content (fn [f] (slurp (str (fs/path briefings-dir f))))
                  :send-email! (fn [_subject text & _]
@@ -119,11 +131,13 @@
                                       {:success true})))
                  :log! (fn [& parts] (swap! logs conj (vec parts)))}
           (not= today-str "none") (assoc :today-str today-str)
-          commit-marker! (assoc :commit-marker! commit-marker!))
+          commit-marker! (assoc :commit-marker! commit-marker!)
+          marker-uncommitted? (assoc :marker-uncommitted? marker-uncommitted?))
         sent (briefing-email-lib/send-unsent-briefings! briefings-dir adapters)]
     (println (json/generate-string {:sent sent
                                      :emailsSent @emails-sent
-                                     :logs @logs}))
+                                     :logs @logs
+                                     :commitMarkerCalls @commit-marker-calls}))
     (System/exit 0)))
 
 ;; BL-260: the diagram modes exercise send-unsent-briefings!'s :diagram-section

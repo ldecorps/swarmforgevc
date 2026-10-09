@@ -1528,7 +1528,7 @@
 - commit: c416adc5fb
   subject: "Hotfix approval taps lost to the bridge: a front-desk 409 retries within 5 s so its heartbeat stays fresh"
   detected_at: 2026-10-07
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-2060
   human_decision: null
   decided_at: null
@@ -1549,7 +1549,7 @@
 - commit: 4453766c28
   subject: "Hotfix approval taps, second cause: the bridge's start-time inbound-queue flag no longer outlives the front desk's outage"
   detected_at: 2026-10-07
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-2060
   human_decision: null
   decided_at: null
@@ -1563,42 +1563,70 @@
 - commit: 9b89a6e5db
   subject: "Hotfix the BL-2064 read-budget invariant: a compaction must never reset the local-seat read count"
   detected_at: 2026-10-07
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-2074
   human_decision: null
   decided_at: null
 - commit: 9835684bbf
   subject: "hotfix: the iq3 hardender/cleaner cards forbid bare Stryker; architect skips the property lane; QA runs qa-gather"
   detected_at: 2026-10-07
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2075
   human_decision: null
   decided_at: null
 - commit: 94d434ae2a
   subject: "hotfix: BL-1554 scenario 01 names qa-gather's property_runners row"
   detected_at: 2026-10-08
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-2079
   human_decision: null
   decided_at: null
 - commit: cb163341ab
   subject: "hotfix: test_handoffd_briefing_email_wiring.sh fixture writes a fresh freshness-cron log so BL-1392's heartbeat alarm stops doubling the email-misconfigured count"
   detected_at: 2026-10-08
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2081
   human_decision: null
   decided_at: null
 - commit: 2242cd327c
   subject: "hotfix: bl2055 property file's reach floors are built per cell with runsPerCell instead of sampled (BL-1062)"
   detected_at: 2026-10-08
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2083
   human_decision: null
   decided_at: null
 - commit: 99fec72218
   subject: "Hotfix: bl2049PropertyRunnerReachInvariants.property.test.js invariant 2 reach floor was sampled, not constructed (BL-1062)"
   detected_at: 2026-10-08
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2086
+  human_decision: null
+  decided_at: null
+- commit: 01e77eaef2
+  subject: "hotfix: soft shift close freezes new jobs at T−15 and drains in_process before finish-shift"
+  detected_at: 2026-10-08
+  state: stamp-open
+  stamp_ticket: BL-2088
+  human_decision: null
+  decided_at: null
+- commit: d47df679b8
+  subject: "Hotfix: ready_for_next must not tell a local seat to read a missing phase record on fresh arrange"
+  detected_at: 2026-10-08
+  state: awaiting-human
+  stamp_ticket: BL-2089
+  human_decision: null
+  decided_at: null
+- commit: aa7d603d66
+  subject: "Hotfix: stop iq3 QA from looping ready_for_next after a STOP banner."
+  detected_at: 2026-10-09
+  state: stamp-open
+  stamp_ticket: BL-2090
+  human_decision: null
+  decided_at: null
+- commit: b8611eff86
+  subject: "Hotfix two property timeouts reported unowned: bl1071 sweep file and bl2071 forward-and-pass file ran on the lane default budget"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2092
   human_decision: null
   decided_at: null
