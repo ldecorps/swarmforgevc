@@ -61,9 +61,19 @@ function mkFixture() {
 // Runs run-sweep! exactly once at nowMs, with :send-wake-up! returning
 // wakeResultLiteral verbatim (a babashka literal: "true", "false", or a map
 // like "{:attempted true :landed false}").
+//
+// set-project-root! pins target-root to the fixture: without it the bb
+// process (cwd: this checkout) resolved the LIVE repository via
+// git-common-dir, and the sweep's BL-1004 deferral and BL-2039 tier reads
+// took the live roles.tsv/pack conf - a two-seat coder stage with tiers
+// declared left the fixture's parcel unchased (QA, BL-2091, 2026-10-09).
+// The fixture has no roles.tsv or conf, so both reads degrade to no seats
+// and no tiers, the plain ladder this file asserts. Same pin as
+// bl2039_tier_aware_chase_sweep_property_runner.bb.
 function runOneSweep(root, nowMs, wakeResultLiteral) {
   const script = `
 (load-file "${CHASE}")
+(handoff-lib/set-project-root! "${root}")
 (def adapters
   {:get-liveness (fn [_role] "alive")
    :send-wake-up! (fn [_role] ${wakeResultLiteral})
@@ -179,6 +189,7 @@ test(
     try {
       const script = `
 (load-file "${brokenPath}")
+(handoff-lib/set-project-root! "${root}")
 (def adapters
   {:get-liveness (fn [_role] "alive")
    :send-wake-up! (fn [_role] {:attempted false :landed false})
