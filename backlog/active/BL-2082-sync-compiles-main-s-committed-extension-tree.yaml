@@ -148,3 +148,5 @@ notes: |
   (the adapter's shape is direction), Valuable (no override compiles
   uncommitted code under main's name), Estimable (one adapter), Small
   (three scenarios), Testable (a fixture swarm and the real CLI).
+
+assigned_to: coder
