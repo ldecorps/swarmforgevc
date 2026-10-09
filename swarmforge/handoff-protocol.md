@@ -1678,6 +1678,37 @@ The one deliberate exception to "fail open" is a malformed `required_wiring`
 entry: the author is present and the fix is a one-line edit, so that fails
 closed (manifest class).
 
+## Local-Seat Acceptance Gate (BL-2071)
+
+A local-model seat's `git_handoff` send runs the ticket's declared
+`acceptance:` feature at the commit being forwarded, before the parcel is
+queued. The check lives in `local_seat_acceptance_gate_lib.bb` and is
+called from two places: `swarm_handoff.bb`'s send path and
+`local_seat_phase_cli.bb`'s `pass` subcommand, so the forward and the
+assert step's `pass` agree on the same commit.
+
+The gate is keyed off the raw `SWARMFORGE_ROLE` seat id (never the
+canonicalized stage BL-983 collapses `coder@2` and `coder` into): a
+cloud seat's forward is unaffected and runs no acceptance check.
+
+Outcomes:
+- **Feature passes** — every scenario green, no unresolved steps, run
+  completed within the time bound. The send is queued (or the phase
+  record moves to `done`).
+- **Feature fails** — a failing scenario, a step with no handler, or a
+  run past the time bound. The send is refused and the refusal names
+  what failed; the parcel stays with the seat to fix and re-send.
+- **`cli.js` not found at root** — infrastructure trouble, same line
+  BL-761's acceptance-contract gate draws between a real quality signal
+  and infrastructure trouble. The gate fails **open**: a warning, never
+  a finding, and the send proceeds.
+
+This gate is distinct from Check D (the acceptance-contract gate,
+BL-761): Check D is armed only at the documenter→QA edge and verifies
+that every step resolves against the step registry at the cited commit
+without actually running the feature. The local-seat acceptance gate
+runs the feature and checks its outcome.
+
 ## First-Hop Acceptance-Pointer Gate (BL-880)
 
 Check D above (the acceptance-contract gate) is armed only at the

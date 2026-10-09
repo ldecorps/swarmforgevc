@@ -548,6 +548,7 @@ test_tunnel_ownership_lib.sh	standing
 test_unpark_front_desk.sh	standing		
 test_upstream_drift_check_cli.sh	standing
 test_verify_lanes.sh	standing
+test_wait_in_flight_drain.sh	standing		
 test_worktree_drift_guard.sh	standing
 test_worktree_drift_guard_master_resident_exempt.sh	standing		
 test_wsl_bootstrap.sh	standing		

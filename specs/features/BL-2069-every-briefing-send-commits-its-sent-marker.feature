@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=84d8f0ee9ab5667d4815dcbe8dc0fae1f0d4b2d15b74fdd2e049cf771d2737dd
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-08T19:42:50.691270311Z","feature_name":"Every briefing send commits its sent marker","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-2069-every-briefing-send-commits-its-sent-marker.feature","background_hash":"4042f403800a79bc2b1551f7891f936762f0838bd21bdf1306e8d3f4efb9e0a3","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a send's marker is committed whichever way the daemon's root was given","scenario_hash":"52ce4efdc2015564a2c22c498a9aaed0a42931001c97475751f14bd3a1caffa6","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-10-08T10:40:45.532204968Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Every briefing send commits its sent marker
   The briefing-email sweep records each send in docs/briefings/.sent.json
   and commits it (BL-821), so a fresh checkout or a second host never mails

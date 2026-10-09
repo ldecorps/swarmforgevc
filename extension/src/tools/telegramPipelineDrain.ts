@@ -33,3 +33,14 @@ export function isPipelineEmpty(targetPath: string): boolean {
       scanInboxNew(inboxNewDir).length === 0 && scanInProcess(inProcessDir).length === 0
   );
 }
+
+/**
+ * True when no parcel sits in any live role's inbox/in_process
+ * (soft shift-close drain: current tickets have been pushed forward or
+ * bounced; inbox/new may still hold undelivered or frozen mail).
+ */
+export function isInFlightEmpty(targetPath: string): boolean {
+  const roles = resolveLiveRoles(targetPath).map((r) => r.role);
+  const roleInboxes = buildRoleInboxes(targetPath, roles);
+  return roleInboxes.every(({ inProcessDir }) => scanInProcess(inProcessDir).length === 0);
+}

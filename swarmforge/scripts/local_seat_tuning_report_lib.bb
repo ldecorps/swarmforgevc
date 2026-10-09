@@ -50,45 +50,77 @@
 
 ;; ── grouping: consecutive requests under the same settings+served key ────
 
-(defn- epoch-ms [iso]
+(defn epoch-ms
+  "An ISO-8601 instant (Instant/parse shape, e.g. 2026-09-30T20:00:00Z) to
+   epoch ms, or nil on any parse failure. Public: the CLI's own briefing
+   window (BL-1854) and the lib's own group-key both need it."
+  [iso]
   (try (.toEpochMilli (java.time.Instant/parse iso)) (catch Exception _ nil)))
 
-(defn group-key
-  "[fingerprint-or-unrecorded served-label-or-unknown] for timestamp iso -
-   two timestamps under the SAME settings row and the SAME served load
-   get the same key; either changing changes the key (the ticket's own
-   \"within a fingerprint, it splits by how Ollama served\")."
-  [settings-rows ollama-loads iso]
-  (let [settings (settings-at-or-before settings-rows iso)
-        ms (epoch-ms iso)
-        served (when ms (served-at-or-before ollama-loads ms))]
-    [(or (:fingerprint settings) unrecorded-settings)
-     (or (served-label served) "unknown serving")]))
+(defn local-date-of
+  "The host-local calendar date of an ISO instant, as \"YYYY-MM-DD\" -
+   the briefing's own day rows are keyed by the host's local dates
+   (BL-1854), never UTC."
+  [iso]
+  (try (str (java.time.LocalDate/ofInstant
+            (java.time.Instant/parse iso)
+            (java.time.ZoneId/systemDefault)))
+       (catch Exception _ nil)))
 
-(defn- tag [kind events]
-  (map #(assoc % :kind kind) events))
+(defn briefing-window
+  "[start-ms end-ms] for a briefing of `days` days ending at `now` (an ISO
+   instant): end is the host-local midnight of now's own local date (the
+   window ends at the start of today, never mid-day), start is end minus
+   days*86400000."
+  [days now]
+  (let [zone (java.time.ZoneId/systemDefault)
+        end-ms (-> now
+                   (java.time.Instant/parse)
+                   (java.time.LocalDate/ofInstant zone)
+                   ;; atTime is an INSTANCE method on LocalDate (returns a
+                   ;; LocalDateTime) - LocalDateTime/atTime is not a static
+                   ;; method and throws "No matching method atTime found
+                   ;; taking 3 args" (confirmed empirically; the same
+                   ;; failure the ticket's second salvage attempt hit).
+                   (.atTime 0 0)
+                   ;; LocalDateTime.toInstant(ZoneOffset) requires a FIXED
+                   ;; offset, not a region-based zone like
+                   ;; ZoneId/systemDefault's usual "Area/City" shape
+                   ;; (confirmed empirically: ClassCastException, ZoneRegion
+                   ;; cannot be cast to ZoneOffset) - .atZone first makes a
+                   ;; ZonedDateTime, whose no-arg .toInstant needs no offset
+                   ;; at all.
+                   (.atZone zone)
+                   (.toInstant)
+                   (.toEpochMilli))]
+    [(- end-ms (* days 86400000)) end-ms]))
 
-(defn partition-into-groups
-  "requests/compressions/tool-calls (each carrying its own :timestamp) are
-   merged into one timeline, sorted by timestamp, each tagged with the
-   group-key in force at its own moment, then split into MAXIMAL
-   consecutive runs of the same key (clojure.core/partition-by - a later
-   return to an earlier key starts a NEW group, never rejoins the old
-   one, matching \"a session is not the unit\": a session's own requests
-   can span more than one group, and a group never reorders a session's
-   requests back together once a settings row has split them).
+(defn briefing-day-rows
+  "requests/compressions/tool-calls (each carrying its own :timestamp)
+   bucketed by the host-local date of their own timestamp: a map of
+   local-date -> {:requests [...] :compressions [...] :tool-calls [...]},
+   only dates that carry at least one event.
 
-   Returns a vector of {:key [...] :events [...]} in timestamp order,
-   events still tagged :kind and carrying every original field."
-  [{:keys [requests compressions tool-calls settings-rows ollama-loads]}]
-  (let [all (sort-by :timestamp (concat (tag :request requests)
-                                        (tag :compression compressions)
-                                        (tag :tool-call tool-calls)))
-        keyed (map #(assoc % :group-key (group-key settings-rows ollama-loads (:timestamp %))) all)]
-    (->> (partition-by :group-key keyed)
-         (mapv (fn [events] {:key (:group-key (first events)) :events (vec events)})))))
-
-;; ── per-group summary: medians, rates, shares ─────────────────────────────
+   Known bug, fixed here: a plain (merge m1 m2 m3) is SHALLOW - a date
+   present in more than one bucket map keeps only the LAST map's value for
+   that date, silently dropping the earlier kind's events for that day
+   (confirmed empirically; the same failure the ticket's second salvage
+   attempt hit, present here too). merge-with merge resolves a shared date
+   key by merging the two INNER {:kind [...]} maps instead of replacing
+   one with the other - each bucket's own map has exactly one kind key per
+   date, so the inner merge never itself collides."
+  [requests compressions tool-calls]
+  (let [bucket (fn [kind rows]
+                 (reduce (fn [acc row]
+                           (let [d (local-date-of (:timestamp row))]
+                             (if d
+                               (update-in acc [d kind] conj row)
+                               acc)))
+                         {} rows))]
+    (merge-with merge
+                (bucket :requests requests)
+                (bucket :compressions compressions)
+                (bucket :tool-calls tool-calls))))
 
 (defn- median [nums]
   (let [vs (sort (remove nil? nums))
@@ -129,23 +161,20 @@
          first
          first)))
 
-(defn summarise-group
-  "One group's own numbers, every metric nil (never 0) when no event in
-   the group carries the field at all - round2 keeps a median readable
-   without fabricating false precision."
-  [{:keys [key events]}]
-  (let [requests (filter #(= :request (:kind %)) events)
-        compressions (filter #(= :compression (:kind %)) events)
-        tool-calls (filter #(= :tool-call (:kind %)) events)
-        failed (filter (complement :success?) tool-calls)
+(defn summarise-events
+  "The shared per-event summary core: the same metric keys summarise-group
+   computes, from a day's (or a group's) own requests/compressions/
+   tool-calls - every metric nil (never 0) when no event carries the field
+   at all (the ticket's own FIRM invariant 2). summarise-group keeps its
+   own :settings-fingerprint/:served keys on top of this."
+  [requests compressions tool-calls]
+  (let [failed (filter (complement :success?) tool-calls)
         metrics (map per-request-metrics requests)
         n-requests (count requests)
         savings (keep (fn [c] (when (and (:tokens-before c) (:tokens-after c))
                                  (- (:tokens-before c) (:tokens-after c))))
                       compressions)]
-    {:settings-fingerprint (first key)
-     :served (second key)
-     :sessions (distinct-session-count requests)
+    {:sessions (distinct-session-count requests)
      :requests n-requests
      :median-ttft-s (round2 (median (map :ttft-s metrics)))
      :median-prefill-tps (round2 (median (map :prefill-tps metrics)))
@@ -159,6 +188,89 @@
      :tool-call-failures (count failed)
      :tool-call-failure-rate (when (pos? (count tool-calls)) (round2 (* 100.0 (/ (count failed) (count tool-calls)))))
      :most-failing-tool (most-failing-tool failed)}))
+
+(defn summarise-day
+  "One day's own numbers: summarise-events over that day's own events,
+   keyed by its local date."
+  [{:keys [date requests compressions tool-calls]}]
+  (assoc (summarise-events requests compressions tool-calls) :date date))
+
+(defn settings-changes-in-window
+  "The settings rows (BL-1850's own {:at :fingerprint ...} shape) whose own
+   :at falls in [start-ms end-ms) - the briefing's own settings-change
+   lines, one per row."
+  [settings-rows start-ms end-ms]
+  (->> settings-rows
+       (keep (fn [row]
+               (let [ms (epoch-ms (:at row))]
+                 (when (and ms (<= start-ms ms) (< ms end-ms)) row))))
+       (sort-by :at)
+       vec))
+
+(defn spilled-loads-in-window
+  "The ollama-loads entries (local-seat-report-lib/parse-ollama-loads' own
+   {:at-ms ...} shape) whose own :at-ms falls in [start-ms end-ms) AND
+   which put layers outside VRAM (layers-on-gpu < layers-total) - the
+   briefing's own spilled-load lines."
+  [ollama-loads start-ms end-ms]
+  (->> ollama-loads
+       (keep (fn [load]
+               (let [ms (:at-ms load)]
+                 (when (and ms (<= start-ms ms) (< ms end-ms)
+                            (:layers-on-gpu load) (:layers-total load)
+                            (< (:layers-on-gpu load) (:layers-total load)))
+                   load))))
+       (sort-by :at-ms)
+       vec))
+
+(defn group-key
+  "[fingerprint-or-unrecorded served-label-or-unknown] for timestamp iso -
+   two timestamps under the SAME settings row and the SAME served load
+   get the same key; either changing changes the key (the ticket's own
+   \"within a fingerprint, it splits by how Ollama served\")."
+  [settings-rows ollama-loads iso]
+  (let [settings (settings-at-or-before settings-rows iso)
+        ms (epoch-ms iso)
+        served (when ms (served-at-or-before ollama-loads ms))]
+    [(or (:fingerprint settings) unrecorded-settings)
+     (or (served-label served) "unknown serving")]))
+
+(defn- tag [kind events]
+  (map #(assoc % :kind kind) events))
+
+(defn partition-into-groups
+  "requests/compressions/tool-calls (each carrying its own :timestamp) are
+   merged into one timeline, sorted by timestamp, each tagged with the
+   group-key in force at its own moment, then split into MAXIMAL
+   consecutive runs of the same key (clojure.core/partition-by - a later
+   return to an earlier key starts a NEW group, never rejoins the old
+   one, matching \"a session is not the unit\": a session's own requests
+   can span more than one group, and a group never reorders a session's
+   requests back together once a settings row has split them).
+
+   Returns a vector of {:key [...] :events [...]} in timestamp order,
+   events still tagged :kind and carrying every original field."
+  [{:keys [requests compressions tool-calls settings-rows ollama-loads]}]
+  (let [all (sort-by :timestamp (concat (tag :request requests)
+                                        (tag :compression compressions)
+                                        (tag :tool-call tool-calls)))
+        keyed (map #(assoc % :group-key (group-key settings-rows ollama-loads (:timestamp %))) all)]
+    (->> (partition-by :group-key keyed)
+         (mapv (fn [events] {:key (:group-key (first events)) :events (vec events)})))))
+
+;; ── per-group summary: medians, rates, shares ─────────────────────────────
+
+(defn summarise-group
+  "One group's own numbers, every metric nil (never 0) when no event in
+   the group carries the field at all - round2 keeps a median readable
+   without fabricating false precision."
+  [{:keys [key events]}]
+  (let [requests (filter #(= :request (:kind %)) events)
+        compressions (filter #(= :compression (:kind %)) events)
+        tool-calls (filter #(= :tool-call (:kind %)) events)]
+    (assoc (summarise-events requests compressions tool-calls)
+           :settings-fingerprint (first key)
+           :served (second key))))
 
 ;; ── difference between two consecutive groups' own settings/served ───────
 

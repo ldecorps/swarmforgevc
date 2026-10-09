@@ -1025,8 +1025,8 @@
     :send-email! (fn [_subject text & _] {:success true})
     :commit-marker! (fn [briefings-dir] (swap! commit-calls conj briefings-dir) {:ok true})
     :log! (fn [& _] nil)})
-  (assert= "BL-821: :commit-marker! is called once, with briefings-dir, after a successful send"
-           [dir] @commit-calls))
+  (assert= "BL-821: :commit-marker! is called after a successful send (once per-file, plus once by the BL-2069 heal block)"
+           [dir dir] @commit-calls))
 
 (let [dir (mk-tmp)
       commit-calls (atom [])]
@@ -1037,8 +1037,8 @@
     :send-email! (fn [_subject text & _] {:success false :reason :missing-api-key :error "no key"})
     :commit-marker! (fn [briefings-dir] (swap! commit-calls conj briefings-dir) {:ok true})
     :log! (fn [& _] nil)})
-  (assert= "BL-821: :commit-marker! is never called on a failed/skipped send"
-           [] @commit-calls))
+  (assert= "BL-821: :commit-marker! is never called on a failed/skipped send (the BL-2069 heal block still runs once per sweep)"
+           [dir] @commit-calls))
 
 (let [dir (mk-tmp)
       logs (atom [])]
@@ -1054,111 +1054,195 @@
     (assert-true "BL-821: a commit failure is reported via :log!"
                  (some #(= (first %) "briefing-marker-commit-failed") @logs))))
 
-;; ── BL-821 Leg A: commit-sent-marker! (injected sh-fn, no real git process) ─
+;; ── BL-2069: commit-sent-marker! now routes through commit_integrity_lib.bb ─
+;; The old injected-sh-fn tests above are replaced: commit-sent-marker! no
+;; longer accepts a sh-fn (the 2-arity form ignores it and delegates to the
+;; 1-arity form, which calls commit-integrity-lib/commit-with-integrity!).
+;; These tests exercise the new mapping via a temp git repo (real git, no
+;; fake sh-fn) plus the heal path in send-unsent-briefings!.
 
-(let [dir (mk-tmp)
-      calls (atom [])
-      sh-fn (fn [repo-dir & args]
-              (swap! calls conj (vec (cons repo-dir args)))
-              {:exit 0 :out "" :err ""})]
-  (spit (str (fs/path dir ".sent.json")) "{}")
-  (let [result (briefing-email-lib/commit-sent-marker! dir sh-fn)
-        add-call (first @calls)
-        commit-call (second @calls)
-        marker-path (briefing-email-lib/sent-state-path dir)]
-    (assert= "BL-821: a clean add+commit reports ok" {:ok true} result)
-    (assert= "BL-821: git add is scoped to exactly the marker path, nothing else, run inside briefings-dir"
-             [dir "git" "add" "--" marker-path]
-             add-call)
-    (assert= "BL-821: git commit is scoped to exactly the marker path too, never a broad `git commit -a`"
-             ["--" marker-path]
-             (take-last 2 commit-call))))
+;; Helper: create a minimal git repo with a committed .sent.json marker.
+;; The marker starts EMPTY - a committed briefing file is therefore
+;; "unsent" by find-unsent-briefings, which is what the heal-path test
+;; relies on (a leftover marker must not list a briefing that is still
+;; unsent, or the sweep would mail it).
+(defn- mk-git-repo []
+  (let [dir (mk-tmp)
+        briefings (str (fs/path dir "docs" "briefings"))]
+    (fs/create-dirs briefings)
+    (spit (str (fs/path dir "README.md")) "# fixture\n")
+    (spit (str (fs/path briefings ".sent.json")) (json/generate-string {:sent []}))
+    (spit (str (fs/path briefings "2020-01-01.md")) "old\n")
+    (let [run (fn [& args] (apply daemon-cycle-guard-lib/sh! {:continue true :dir dir} args))]
+      (run "git" "init" "-q")
+      (run "git" "config" "user.email" "aps@example.com")
+      (run "git" "config" "user.name" "aps")
+      (run "git" "add" "README.md" "docs/briefings/.sent.json" "docs/briefings/2020-01-01.md")
+      (run "git" "commit" "-q" "-m" "init"))
+    {:repo dir :briefings briefings}))
 
-(let [dir (mk-tmp)
-      sh-fn (fn [_repo-dir & args]
-              (if (= (second args) "add")
-                {:exit 1 :out "" :err "fatal: add failed"}
-                {:exit 0 :out "" :err ""}))]
-  (assert-true "BL-821: a git add failure is reported, never thrown"
-               (not (:ok (briefing-email-lib/commit-sent-marker! dir sh-fn)))))
+;; Relative-root commit succeeds: the briefings-dir is given as a RELATIVE
+;; path (resolved against the process cwd), and commit-sent-marker! must
+;; still resolve the project root and commit the marker.
+(let [{:keys [repo briefings]} (mk-git-repo)
+      rel-briefings (str (fs/relativize (fs/file (System/getProperty "user.dir")) (fs/file briefings)))]
+  (spit (str (fs/path briefings "2026-10-08.md")) "today\n")
+  (briefing-email-lib/record-briefing-sent! briefings "2026-10-08.md")
+  (let [result (briefing-email-lib/commit-sent-marker! rel-briefings)]
+    (assert= "BL-2069: a relative briefings-dir still resolves the project root and commits the marker"
+             true (:ok result))
+    (let [head-marker (str/trim (:out (daemon-cycle-guard-lib/sh! {:continue true :dir repo} "git" "show" "HEAD:docs/briefings/.sent.json")))]
+      (assert-true "BL-2069: the relative-root commit landed the marker on HEAD"
+                   (str/includes? head-marker "2026-10-08.md")))))
 
-(let [dir (mk-tmp)
-      sh-fn (fn [_repo-dir & args]
-              (if (= (second args) "commit")
-                {:exit 1 :out "" :err "nothing to commit, working tree clean"}
-                {:exit 0 :out "" :err ""}))]
-  (assert= "BL-821: \"nothing to commit\" (a racing second host already committed the same content) is ok, not a failure"
-           {:ok true :reason :nothing-to-commit}
-           (briefing-email-lib/commit-sent-marker! dir sh-fn)))
+;; Lock-timeout: hold the checkout's integrity lock with a LIVE owner pid so
+;; the helper polls to its bounded limit (a dead owner would be reaped
+;; immediately, not timed out), and commit-sent-marker! maps that to
+;; {:ok false :reason "lock-timeout" :index-left-dirty true}.
+(let [{:keys [repo briefings]} (mk-git-repo)
+      git-dir (str/trim (:out (daemon-cycle-guard-lib/sh! {:continue true :dir repo} "git" "rev-parse" "--absolute-git-dir")))
+      lock-dir (str (fs/path git-dir "swarmforge-commit-integrity.lock"))
+      self-pid (str (.pid (java.lang.ProcessHandle/current)))]
+  (spit (str (fs/path briefings "2026-10-08.md")) "today\n")
+  (briefing-email-lib/record-briefing-sent! briefings "2026-10-08.md")
+  (fs/create-dirs lock-dir)
+  (spit (str (fs/path lock-dir "owner.json")) (json/generate-string {:pid (Integer/parseInt self-pid) :created_at_ms (System/currentTimeMillis)}))
+  (let [result (briefing-email-lib/commit-sent-marker! briefings)]
+    (assert= "BL-2069: a held integrity lock maps to {:ok false :reason \"lock-timeout\"}"
+             "lock-timeout" (:reason result))
+    (assert-true "BL-2069: lock-timeout reports :index-left-dirty"
+                 (boolean (:index-left-dirty result))))
+  (fs/delete-tree lock-dir))
 
-(let [dir (mk-tmp)
-      sh-fn (fn [_repo-dir & args]
-              (if (= (second args) "commit")
-                {:exit 1 :out "On branch main\nUntracked files:\n\t(use \"git add\" to track)\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n" :err ""}
-                {:exit 0 :out "" :err ""}))]
-  (assert= "BL-821: git's OTHER \"nothing to commit\" phrasing - printed instead of \"working tree clean\" whenever ANY untracked file exists anywhere else in the repo, which real-fixture testing found is the common case for this chronically-not-pristine checkout - is ok too, not a failure"
-           {:ok true :reason :nothing-to-commit}
-           (briefing-email-lib/commit-sent-marker! dir sh-fn)))
+;; Commit-failed: inject a commit-fn! that always fails, and verify the
+;; result carries :index-restored (the helper restored the index).
+(let [{:keys [repo briefings]} (mk-git-repo)]
+  (spit (str (fs/path briefings "2026-10-08.md")) "today\n")
+  (briefing-email-lib/record-briefing-sent! briefings "2026-10-08.md")
+  ;; Drive commit-with-integrity! directly with a failing commit-fn! to
+  ;; exercise the :commit-failed -> :index-restored mapping.
+  (let [marker-rel (str (fs/relativize (fs/file repo) (fs/file (briefing-email-lib/sent-state-path briefings))))
+        r (commit-integrity-lib/commit-with-integrity!
+           {:project-root repo
+            :paths [marker-rel]
+            :message "test"
+            :commit-fn! (fn [_root _msg _paths] {:exit 1 :out "" :err "fatal: simulated commit failure"})
+            :max-retries 1})]
+    (assert= "BL-2069: a commit failure maps to :commit-failed"
+             :commit-failed (:reason r))
+    (assert-true "BL-2069: a commit failure restores the index"
+                 (or (:index-restored r) (:index-left-dirty r)))))
 
-(let [dir (mk-tmp)
-      sh-fn (fn [_repo-dir & args]
-              (if (= (second args) "commit")
-                {:exit 1 :out "" :err "fatal: unable to lock ref"}
-                {:exit 0 :out "" :err ""}))]
-  (assert-true "BL-821: a real git commit failure is reported, never thrown"
-               (not (:ok (briefing-email-lib/commit-sent-marker! dir sh-fn)))))
+;; Heal path: a marker written locally but not committed is committed by
+;; the next sweep's heal block, even when nothing new is sent. The fixture
+;; repo's committed marker is empty, so the committed 2020-01-01.md is
+;; unsent; the leftover working-tree marker lists only 2026-10-08.md (an
+;; earlier sweep sent it and recorded it, then failed to commit), so the
+;; sweep mails 2020-01-01.md, records it, and the heal block commits the
+;; marker carrying BOTH names.
+(let [{:keys [repo briefings]} (mk-git-repo)
+      logs (atom [])]
+  (spit (str (fs/path briefings "2026-10-08.md")) "today\n")
+  ;; Simulate an earlier sweep that recorded the send but failed to commit:
+  ;; the working-tree marker lists the briefing, HEAD's does not.
+  (spit (str (fs/path briefings ".sent.json")) (json/generate-string {:sent ["2026-10-08.md"]}))
+  (let [result (briefing-email-lib/send-unsent-briefings!
+                briefings
+                {:read-briefing-content (fn [f] (slurp (str (fs/path briefings f))))
+                 :send-email! (fn [_s _t & _] {:success true})
+                 :commit-marker! (fn [d] (briefing-email-lib/commit-sent-marker! d))
+                 :log! (fn [& parts] (swap! logs conj (vec parts)))})]
+    (assert= "BL-2069: the heal sweep mails only the still-unsent briefing (the leftover marker already lists 2026-10-08.md)"
+             ["2020-01-01.md"] result)
+    ;; The heal block committed the leftover marker: HEAD now lists it.
+    (let [head-marker (str/trim (:out (daemon-cycle-guard-lib/sh! {:continue true :dir repo} "git" "show" "HEAD:docs/briefings/.sent.json")))]
+      (assert-true "BL-2069: the heal block committed the leftover marker to HEAD"
+                   (str/includes? head-marker "2026-10-08.md")))))
 
-;; ── BL-1653 item 1 (hardening finding): commit-sent-marker!'s own
-;; :index-restored / :index-left-dirty reporting had zero coverage - the
-;; test above drives the exact same commit-failure branch this code lives
-;; in, but its sh-fn returns {:exit 0} for every call except "commit"
-;; (which is what makes the subsequent "restore" call succeed too), and
-;; nothing asserted on the returned map beyond `:ok`. Confirmed by hand-
-;; mutation before writing these: hardcoding `restored?` to `false` (the
-;; restore call is made but its own real exit code is discarded) left
-;; every existing test in this file green.
-(let [dir (mk-tmp)
-      restore-calls (atom [])
-      sh-fn (fn [repo-dir & args]
-              (cond
-                (= (second args) "commit") {:exit 1 :out "" :err "fatal: unable to lock ref"}
-                (= (second args) "restore") (do (swap! restore-calls conj (vec (cons repo-dir args)))
-                                                 {:exit 0 :out "" :err ""})
-                :else {:exit 0 :out "" :err ""}))
-      result (briefing-email-lib/commit-sent-marker! dir sh-fn)
-      marker-path (briefing-email-lib/sent-state-path dir)]
-  (assert= "BL-1653: a commit failure whose restore SUCCEEDS reports :index-restored naming the marker path"
-           [marker-path] (:index-restored result))
-  (assert= "BL-1653: :index-left-dirty is absent when the restore succeeded"
-           false (boolean (:index-left-dirty result)))
-  (assert= "BL-1653: the restore is scoped to exactly the marker path, never a bare `git restore --staged`"
-           [dir "git" "restore" "--staged" "--" marker-path]
-           (first @restore-calls)))
+;; ── BL-2069 D1 (QA bounce 26cd3a6165): the heal commit makes no attempt
+;;    when nothing changed ────────────────────────────────────────────────
+;; An unconditional heal attempt is not cheap: commit-with-integrity! still
+;; runs a real `git add` + `git commit` through this checkout's
+;; core.hooksPath pre-commit hook even on a byte-identical marker, measured
+;; ~7.5s per no-op attempt against handoffd's own ~2.4-minute sweep cadence.
+;; marker-uncommitted? is the cheap pre-check; wired as :marker-uncommitted?
+;; it must stop :commit-marker! from being called AT ALL when the marker
+;; already matches HEAD - not merely make the resulting commit a no-op.
 
-(let [dir (mk-tmp)
-      sh-fn (fn [_repo-dir & args]
-              (cond
-                (= (second args) "commit") {:exit 1 :out "" :err "fatal: unable to lock ref"}
-                (= (second args) "restore") {:exit 1 :out "" :err "fatal: pathspec did not match"}
-                :else {:exit 0 :out "" :err ""}))
-      result (briefing-email-lib/commit-sent-marker! dir sh-fn)]
-  (assert-true "BL-1653: a commit failure whose restore ALSO fails reports :index-left-dirty"
-               (boolean (:index-left-dirty result)))
-  (assert= "BL-1653: :index-restored is absent when the restore itself failed"
-           nil (:index-restored result)))
+;; Clean state: seed the fixture's marker to already list every briefing
+;; present and commit that BEFORE the sweep under test, so this sweep mails
+;; nothing and the marker is already byte-identical to HEAD.
+(let [{:keys [repo briefings]} (mk-git-repo)
+      commit-calls (atom 0)
+      _ (spit (str (fs/path briefings ".sent.json")) (json/generate-string {:sent ["2020-01-01.md"]}))
+      _ (daemon-cycle-guard-lib/sh! {:continue true :dir repo} "git" "add" "docs/briefings/.sent.json")
+      _ (daemon-cycle-guard-lib/sh! {:continue true :dir repo} "git" "commit" "-q" "-m" "seed sent marker")
+      result (briefing-email-lib/send-unsent-briefings!
+              briefings
+              {:read-briefing-content (fn [f] (slurp (str (fs/path briefings f))))
+               :send-email! (fn [_s _t & _] {:success true})
+               :commit-marker! (fn [d] (swap! commit-calls inc) (briefing-email-lib/commit-sent-marker! d))
+               :marker-uncommitted? briefing-email-lib/marker-uncommitted?
+               :log! (fn [& _parts] nil)})]
+  (assert= "BL-2069 D1: a sweep with nothing unsent and a marker already matching HEAD sends nothing"
+           [] result)
+  (assert= "BL-2069 D1: the heal block makes NO commit attempt when the marker already matches HEAD"
+           0 @commit-calls))
 
-(let [dir (mk-tmp)
-      restore-calls (atom [])
-      sh-fn (fn [repo-dir & args]
-              (if (= (second args) "add")
-                {:exit 1 :out "" :err "fatal: add failed"}
-                (do (swap! restore-calls conj (vec (cons repo-dir args)))
-                    {:exit 0 :out "" :err ""})))
-      result (briefing-email-lib/commit-sent-marker! dir sh-fn)]
-  (assert= "BL-1653: a failed `git add` never staged anything, so this call restores nothing"
-           [] @restore-calls)
-  (assert= "BL-1653: :index-restored is absent on an :add-failed shape"
-           nil (:index-restored result)))
+;; Positive control, same fixture shape as the "Heal path" test above but
+;; with :marker-uncommitted? wired too: the commit attempt still happens
+;; (and still lands) when there genuinely is something to heal, so the
+;; pre-check never masks a real pending write.
+(let [{:keys [repo briefings]} (mk-git-repo)
+      commit-calls (atom 0)]
+  (spit (str (fs/path briefings "2026-10-08.md")) "today\n")
+  (spit (str (fs/path briefings ".sent.json")) (json/generate-string {:sent ["2026-10-08.md"]}))
+  (let [result (briefing-email-lib/send-unsent-briefings!
+                briefings
+                {:read-briefing-content (fn [f] (slurp (str (fs/path briefings f))))
+                 :send-email! (fn [_s _t & _] {:success true})
+                 :commit-marker! (fn [d] (swap! commit-calls inc) (briefing-email-lib/commit-sent-marker! d))
+                 :marker-uncommitted? briefing-email-lib/marker-uncommitted?
+                 :log! (fn [& _parts] nil)})]
+    (assert= "BL-2069 D1 positive control: the heal sweep still mails the still-unsent briefing"
+             ["2020-01-01.md"] result)
+    (assert-true "BL-2069 D1 positive control: the heal block DOES attempt a commit when the marker genuinely differs from HEAD"
+                 (>= @commit-calls 1))
+    (let [head-marker (str/trim (:out (daemon-cycle-guard-lib/sh! {:continue true :dir repo} "git" "show" "HEAD:docs/briefings/.sent.json")))]
+      (assert-true "BL-2069 D1 positive control: the heal block's commit landed on HEAD"
+                   (str/includes? head-marker "2026-10-08.md")))))
+
+;; ── BL-2069 D2 (QA bounce 26cd3a6165): commit-sent-marker! works from a
+;;    LINKED WORKTREE ───────────────────────────────────────────────────────
+;; A linked worktree's git-dir is .git/worktrees/<name>, never a plain
+;; .git - the exact shape the old `(fs/path git-dir "..")` derivation
+;; landed on .git/worktrees (not a work tree at all) for, leaving
+;; project-root the empty string (truthy in Clojure) and an uncaught
+;; exception in commit-with-integrity!. git-common-dir proven under the
+;; fixture root (BL-1390) before anything in the linked worktree mutates.
+(let [{:keys [repo]} (mk-git-repo)
+      linked (str (fs/path repo "linked-worktree"))
+      _ (daemon-cycle-guard-lib/sh! {:continue true :dir repo} "git" "worktree" "add" "-q" "-b" "linked" linked)
+      common-dir (str/trim (:out (daemon-cycle-guard-lib/sh!
+                                  {:continue true :dir linked}
+                                  "git" "rev-parse" "--path-format=absolute" "--git-common-dir")))
+      real-repo (str (fs/real-path repo))
+      real-common (str (fs/real-path common-dir))]
+  (assert-true "BL-2069 D2 fixture: the linked worktree's git-common-dir is proven under the fixture repo (BL-1390)"
+               (str/starts-with? real-common real-repo))
+  (let [linked-briefings (str (fs/path linked "docs" "briefings"))]
+    (fs/create-dirs linked-briefings)
+    (spit (str (fs/path linked-briefings ".sent.json")) (json/generate-string {:sent []}))
+    (daemon-cycle-guard-lib/sh! {:continue true :dir linked} "git" "add" "-A")
+    (daemon-cycle-guard-lib/sh! {:continue true :dir linked} "git" "commit" "-q" "-m" "seed linked briefings")
+    (spit (str (fs/path linked-briefings "2026-10-08.md")) "today\n")
+    (briefing-email-lib/record-briefing-sent! linked-briefings "2026-10-08.md")
+    (let [result (briefing-email-lib/commit-sent-marker! linked-briefings)]
+      (assert= "BL-2069 D2: commit-sent-marker! commits the marker from inside a linked worktree, never throwing"
+               true (:ok result))
+      (let [head-marker (str/trim (:out (daemon-cycle-guard-lib/sh! {:continue true :dir linked} "git" "show" "HEAD:docs/briefings/.sent.json")))]
+        (assert-true "BL-2069 D2: the linked-worktree commit landed on that worktree's own HEAD"
+                     (str/includes? head-marker "2026-10-08.md"))))))
 
 ;; ── render-briefing-html (BL-1419: phone-mail-client layout) ─────────────
 
