@@ -134,6 +134,9 @@ notes: |
       Then front-desk-diagnostics.log gains no timing line
   If QA bounces the parcel for another reason, the coder adds those
   lines to the feature verbatim in the same rework.
+  Done 2026-10-09 after the land: the specifier added scenario 03 to the
+  feature on main, verbatim (5 of 5 ok; at 28 s the step fails, so it
+  gates the threshold).
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
   This is the diagnosis slice. Once its lines name the stalling phase,
   the specifier mints the fix (startup heartbeat, a startup grace, or a
