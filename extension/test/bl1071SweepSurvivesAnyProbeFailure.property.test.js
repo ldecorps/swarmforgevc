@@ -46,6 +46,7 @@
 
 const assert = require('node:assert/strict');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 const {
   makeSweepFixture,
   breakProbes,
@@ -109,7 +110,12 @@ test('BL-1071/BL-654 invariant 1: no combination of failing probes stops the swe
   // `subsets` that quietly drops a cardinality fails here rather than silently
   // narrowing the sweep.
   assert.deepEqual(reached, { none: 1, one: 3, two: 3, all: 1 }, `lattice coverage was not exhaustive: ${JSON.stringify(reached)}`);
-});
+// 2026-10-09 (coder@2 note 000185): eight real sweeps in sequence ran on the
+// lane's default budget, which is 20000 ms on a quiet host and never above
+// its 60000 ms cap; alone at load 20 this test took 22.4 s, and a full lane
+// timed it out. base 60000 is bl1529's and bl1445's class (60 s quiet, up
+// to 180 s under load).
+}, propertyLaneTimeoutMs(60000));
 
 test('BL-1071/BL-654 invariant 3: an unreadable probe is reported unavailable - not healthy, not absent', () => {
   // Only the probes that always have something to say about themselves. The
@@ -164,4 +170,6 @@ test('BL-1071/BL-654 invariant 3: an unreadable probe is reported unavailable - 
     !/UNAVAILABLE \[proc-gather-/.test(healthy.output),
     `a healthy sweep reported the process gather unavailable:\n${healthy.output}`
   );
-});
+// Four real sweeps: 12.9 s alone at load 20 (2026-10-09), same budget class
+// as invariant 1 above.
+}, propertyLaneTimeoutMs(60000));
