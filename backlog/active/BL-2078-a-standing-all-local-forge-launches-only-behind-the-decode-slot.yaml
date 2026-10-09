@@ -148,3 +148,5 @@ notes: |
   ruling, gate shape), Valuable (an all-local pack whose GPU idle time
   other seats can use), Estimable (one allowed shape, a conf, a script),
   Small (two scenarios), Testable (gate and conf read, never launched).
+
+assigned_to: coder
