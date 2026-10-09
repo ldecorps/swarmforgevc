@@ -11,12 +11,18 @@ a new row status, `skipped` (alongside `ran`/`blocked`), with the reason
 and no command started. `backlogOnlySkipReason` (in
 `extension/src/quality/qaGather.ts`) computes the parcel's own changed
 paths through the same injected `runFn` seam every check already uses —
-`git merge-base main <commit>` then `git diff --name-only <base>
-<commit>` — and returns a reason only when that diff is non-empty and
-every path in it starts with `backlog/`; a failed merge-base, a failed
-diff, an empty diff, or any path outside `backlog/` leaves it
-`undefined`, so both lanes run exactly as today (fails closed on any
-doubt). Every other check — straggler, sibling, register,
+`git merge-base main <commit>` then `git diff --no-renames --name-only
+<base> <commit>` (`--no-renames` is load-bearing: git's default rename
+detection collapses a file moved out of `extension/src/` into `backlog/`
+into a single destination-only line, which would read a parcel that
+deletes production code this way as backlog-only — a QA bounce, D1,
+found this live) — and returns a reason only when that diff is
+non-empty and every path in it starts with `backlog/`; a failed
+merge-base, a failed diff, an empty diff, or any path outside
+`backlog/` leaves it `undefined`, so both lanes run exactly as today
+(fails closed on any doubt). The skipped row's `reason` field reads "the
+parcel's own diff touches only backlog/ (`<paths>`)", naming every
+changed path. Every other check — straggler, sibling, register,
 `property_runners`, wiring, acceptance — is unaffected and still runs.
 No new extension command or setting; no diagram edit — no registered
 diagram depicts QA's internal checklist rows. No how-to page: same
