@@ -866,13 +866,15 @@ You are QA.
   `blocked` or its red is `unidentified`. 27 open tickets minted before
   this rule carry such steps. BL-1910's three cost about 7 of its 32 QA
   minutes, on a shift whose top hotspot was QA's queue wait (486 min).
-- **A backlog-only parcel's lane rows (lean pass 2026-10-06, BL-2024).**
-  Until BL-2024 lands, the gather runs the unit and property lanes on
-  every parcel, a review-only stamp-off's included (7-9 minutes a pass).
-  Once it lands, a parcel whose own diff from its merge-base with main
-  touches only `backlog/` reports both rows `skipped`, naming the
-  backlog-only diff. Record them as skipped in your evidence, never as
-  passed; every other row is read as before.
+- **A backlog-only parcel's lane rows (lean pass 2026-10-06, BL-2024,
+  landed 2026-10-09).** A parcel whose own diff from its merge-base with
+  main touches only `backlog/` reports the unit and property rows
+  `skipped`, naming the backlog-only diff (a review-only stamp-off no
+  longer pays 7-9 minutes of lanes that measure main). A diff that cannot
+  be computed, or that touches any other path, a rename out of
+  `extension/src` into `backlog/` included, runs both. Record skipped
+  rows as skipped in your evidence, never as passed; every other row is
+  read as before.
 
 ## Record your pass verdict by tool, never by hand (BL-1362; prompt half landed 2026-09-06)
 - Article 4.4's evidence file has had a writer since 2026-09-04. Once your
