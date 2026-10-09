@@ -149,6 +149,14 @@ export interface CheckRow {
 // tracks this constant rather than a hard-coded copy of it.
 export const EXCERPT_MAX_CHARS = 4000;
 
+// Hardener note (BL-2024 mutation pass, 2026-10-09): the `text.length <=
+// maxChars` guard's own comparison mutants (false/< instead of <=/empty
+// block) are accepted EQUIVALENTS, not gaps - for ANY input, `.slice`
+// clamps a start index more negative than the string's own length to 0,
+// so `text.slice(text.length - maxChars)` already returns the untouched
+// `text` whenever text.length <= maxChars (the guard's own case), the
+// same value the early return would give. No assertion on the return
+// value can ever separate the mutant from the original.
 export function tailExcerpt(text: string, maxChars: number = EXCERPT_MAX_CHARS): string {
   if (text.length <= maxChars) {
     return text;
@@ -301,6 +309,11 @@ export function failingFilesFromRow(
     return [];
   }
   if (row.id === 'unit' || row.id === 'properties') {
+    // Hardener note (BL-2024 mutation pass, 2026-10-09): mutating this
+    // `?? ''` fallback to any other FAIL-line-free string is an accepted
+    // EQUIVALENT - parseFailingFilesFromVitestOutput only ever reacts to
+    // a real " FAIL  <file>" line, so any fallback text lacking one
+    // (including the mutator's own literal) parses to the same [].
     return parseFailingFilesFromVitestOutput(rawOutputByCheckId.get(row.id) ?? '').map(toRepoRootRelative);
   }
   if (isFailingAcceptanceRow(row, acceptanceFeature)) {
@@ -349,6 +362,13 @@ export function buildRegisterJoin(
   acceptanceFeature: string | undefined,
   rawOutputByCheckId: ReadonlyMap<string, string>
 ): RegisterJoinEntry[] {
+  // Hardener note (BL-2024 mutation pass, 2026-10-09): mutating this
+  // `?? []` fallback (undefined/no-register case) to a non-empty bogus
+  // array is an accepted EQUIVALENT - byFile is read only via
+  // `byFile.get(file)` below with `file` always a real failing-file path
+  // (from a vitest FAIL line or the ticket's own acceptance: path), never
+  // the bogus entry's own (non-string-`.file`-bearing) key, so the extra
+  // entry is never observably reachable.
   const byFile = new Map<string, RegisterRow>();
   for (const r of register?.rows ?? []) {
     byFile.set(r.file, r);
@@ -368,6 +388,15 @@ export function buildRegisterJoin(
 // Parses the register check's own RAW (unbounded) stdout, never the row's
 // bounded-for-display `excerpt` (BL-1554 architect bounce D1) - a register
 // large enough to cross EXCERPT_MAX_CHARS must still resolve every row.
+// Hardener note (BL-2024 mutation pass, 2026-10-09): two accepted
+// EQUIVALENTS here. (1) dropping `rawStdout === undefined` from the guard
+// above - `JSON.parse(undefined)` coerces to the string "undefined",
+// which is never valid JSON, so it throws and the catch below returns
+// undefined anyway: the same result the guard gives directly. (2) the
+// catch block's own explicit `return undefined` vs an empty `catch {}` -
+// a function with no further statement after a no-op catch implicitly
+// returns undefined, identically. Both are demonstrable from the code,
+// not merely from this run's own fixtures.
 export function parseRegisterOutput(row: CheckRow | undefined, rawStdout: string | undefined): RegisterReport | undefined {
   if (!row || row.status !== 'ran' || row.exit === null || rawStdout === undefined) {
     return undefined;
@@ -418,24 +447,41 @@ export interface QaGatherReport {
 // empty diff, or any path outside backlog/ returns undefined, so the
 // caller runs both lanes exactly as today (invariant 1: fails closed on
 // any doubt).
-export function backlogOnlySkipReason(root: string, commit: string, runFn: RunFn): string | undefined {
+// Extracted from backlogOnlySkipReason below (hardener extraction, BL-2024
+// CRAP gate: complexity 8 at 100% coverage on the un-extracted version) -
+// each helper is its own "did this git call resolve" test, no different in
+// meaning, just out of the caller's count. Mirrors isFailingAcceptanceRow's
+// own extraction above for the same reason.
+function resolveMergeBase(root: string, commit: string, runFn: RunFn): string | undefined {
   const mergeBase = runFn('git', ['merge-base', 'main', commit], root);
   if (!mergeBase.started || mergeBase.exit !== 0) {
     return undefined;
   }
-  const base = mergeBase.stdout.trim();
-  if (!base) {
-    return undefined;
-  }
+  return mergeBase.stdout.trim() || undefined;
+}
+
+function resolveChangedPaths(root: string, base: string, commit: string, runFn: RunFn): string[] | undefined {
   const diff = runFn('git', ['diff', '--name-only', base, commit], root);
   if (!diff.started || diff.exit !== 0) {
     return undefined;
   }
-  const paths = diff.stdout
+  return diff.stdout
     .split('\n')
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
-  if (paths.length === 0 || !paths.every((p) => p.startsWith('backlog/'))) {
+}
+
+function isBacklogOnlyPaths(paths: string[]): boolean {
+  return paths.length > 0 && paths.every((p) => p.startsWith('backlog/'));
+}
+
+export function backlogOnlySkipReason(root: string, commit: string, runFn: RunFn): string | undefined {
+  const base = resolveMergeBase(root, commit, runFn);
+  if (!base) {
+    return undefined;
+  }
+  const paths = resolveChangedPaths(root, base, commit, runFn);
+  if (!paths || !isBacklogOnlyPaths(paths)) {
     return undefined;
   }
   return `the parcel's own diff touches only backlog/ (${paths.join(', ')})`;
@@ -468,6 +514,16 @@ export function composeQaGatherReport(
     if (id === 'register') {
       registerRawStdout = outcome.stdout;
     }
+    // Hardener note (BL-2024 mutation pass, 2026-10-09): widening this
+    // guard to always-true is an accepted EQUIVALENT - it would only add
+    // extra entries keyed by some OTHER check's id, and
+    // failingFilesFromRow's own `row.id === 'unit' || row.id ===
+    // 'properties'` branch (above) is the only reader of this map, so an
+    // entry under any other id is never looked up. Narrowing it to
+    // exclude 'properties' specifically (e.g. `id === 'unit' || id !==
+    // 'properties'`) is NOT equivalent - it drops a real properties
+    // row's own output, which a RED properties row's own register_join
+    // test below depends on.
     if (id === 'unit' || id === 'properties') {
       rawOutputByCheckId.set(id, outcome.stdout + outcome.stderr);
     }

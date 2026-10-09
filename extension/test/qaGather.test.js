@@ -26,6 +26,33 @@ test('the checklist is the fixed 9 checks in the fixed order', () => {
   );
 });
 
+test('every CHECKLIST check build()s its exact command, args and cwd for a fully-populated context', () => {
+  const ctx = { root: '/r', ticketId: 'BL-1', task: 't', commit: 'abc1234567', acceptanceFeature: 'f.feature' };
+  const builtById = new Map(CHECKLIST.map((c) => [c.id, c.build(ctx)]));
+  assert.deepEqual(builtById.get('sibling'), {
+    command: 'node',
+    args: [path.join('extension', 'out', 'tools', 'qa-sibling-check.js'), 'status', '--ticket', 'BL-1'],
+    cwd: '/r',
+  });
+  assert.deepEqual(builtById.get('register'), {
+    command: 'bb',
+    args: [path.join('swarmforge', 'scripts', 'standing_red_register_cli.bb'), '/r'],
+    cwd: '/r',
+  });
+  assert.deepEqual(builtById.get('wiring'), {
+    command: path.join('/r', 'swarmforge', 'scripts', 'pre_qa_gate.sh'),
+    args: ['t', 'abc1234567', '/r'],
+    cwd: '/r',
+  });
+  assert.deepEqual(builtById.get('unit'), { command: 'npm', args: ['test'], cwd: path.join('/r', 'extension') });
+  assert.deepEqual(builtById.get('properties'), { command: 'npm', args: ['run', 'test:properties'], cwd: path.join('/r', 'extension') });
+  assert.deepEqual(builtById.get('acceptance'), {
+    command: path.join('/r', 'specs', 'pipeline', 'scripts', 'run_acceptance.sh'),
+    args: ['f.feature'],
+    cwd: '/r',
+  });
+});
+
 // ── runChecklist: sequential, blocked handling, never a verdict ────────
 
 function fakeRunner(script) {
@@ -53,8 +80,12 @@ test('runChecklist runs every check and never skips one on a blocked prerequisit
   const acceptance = rows.find((r) => r.id === 'acceptance');
   assert.equal(wiring.status, 'blocked');
   assert.match(wiring.reason, /--task/);
+  assert.equal(wiring.command, '');
+  assert.equal(wiring.excerpt, '');
   assert.equal(acceptance.status, 'blocked');
   assert.match(acceptance.reason, /acceptance/);
+  assert.equal(acceptance.command, '');
+  assert.equal(acceptance.excerpt, '');
   for (const row of rows) {
     if (row.id !== 'wiring' && row.id !== 'acceptance') {
       assert.equal(row.status, 'ran');
@@ -102,12 +133,28 @@ test('a check the runner cannot start is reported blocked with the runner\'s own
   const sibling = rows.find((r) => r.id === 'sibling');
   assert.equal(sibling.status, 'blocked');
   assert.equal(sibling.reason, 'ENOENT: no such file');
+  // a runner-cannot-start row still names the command that was attempted
+  // (unlike a prerequisite-blocked row, which never had one), but never
+  // any output text, since nothing ran.
+  assert.equal(sibling.command, `node ${path.join('extension', 'out', 'tools', 'qa-sibling-check.js')} status --ticket BL-1`);
+  assert.equal(sibling.excerpt, '');
   // every check after sibling was still started (only sibling's own
   // command uses `node`, so the count of started calls after it is every
   // remaining check).
   const afterSibling = rows.slice(rows.findIndex((r) => r.id === 'sibling') + 1);
   assert.ok(afterSibling.every((r) => r.status === 'ran'));
   assert.equal(calls.length, CHECKLIST.length); // every build produced a real command in this fixture
+});
+
+test('a check the runner cannot start is reported blocked with "could not start" when the runner gives no reason of its own', () => {
+  const { runFn } = fakeRunner({
+    node: { started: false, exit: null, stdout: '', stderr: '' },
+    default: { started: true, exit: 0, stdout: '', stderr: '' },
+  });
+  const rows = runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567' }, runFn);
+  const sibling = rows.find((r) => r.id === 'sibling');
+  assert.equal(sibling.status, 'blocked');
+  assert.equal(sibling.reason, 'could not start');
 });
 
 test('runChecklist never runs two checks concurrently: every call is issued strictly after the previous one returned', () => {
@@ -238,6 +285,69 @@ test('backlogOnlySkipReason returns undefined when the diff itself cannot be res
   );
 });
 
+// The two tests above answer every failed merge-base/diff with EMPTY
+// stdout, same as a real git failure in practice - but that also means a
+// guard-removal mutant (e.g. `if (false)` in place of the exit!==0 check)
+// still falls through to an empty base/diff and lands on the SAME
+// undefined result by coincidence (BL-2063-class fake-runner trap: "A
+// fake-runGit test for a status!==0 guard needs non-empty matching stdout
+// on the failing call - empty stdout collapses both branches"). These
+// give the failing call a non-empty, backlog-only-shaped stdout so a
+// guard-removal mutant diverges for real: skipping the guard would carry
+// that bogus value all the way to a non-undefined skip reason.
+test('backlogOnlySkipReason returns undefined when merge-base exits non-zero even if it printed something to stdout', () => {
+  const runFn = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 1, stdout: 'should-be-ignored-sha\n', stderr: 'ambiguous argument' },
+    default: { started: true, exit: 0, stdout: 'backlog/evidence/BL-9001-coder.md\n', stderr: '' },
+  }).runFn;
+  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
+});
+
+test('backlogOnlySkipReason returns undefined when diff exits non-zero even if it printed something to stdout', () => {
+  const runFn = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
+    'diff --name-only basesha0001 abc1234567': { started: true, exit: 1, stdout: 'backlog/evidence/sneaky.md\n', stderr: 'boom' },
+  }).runFn;
+  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
+});
+
+// Same trap, for the OUTER `if (!base)` guard in backlogOnlySkipReason
+// itself: merge-base resolves (started, exit 0) but with an empty base,
+// and a would-be diff call (never legitimately reached) is mocked via
+// `default` to answer as backlog-only - a guard-removal mutant would
+// call it anyway and produce a bogus skip reason.
+test('backlogOnlySkipReason returns undefined when the merge-base resolves to an empty base, even if a later diff call would read as backlog-only', () => {
+  const runFn = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 0, stdout: '\n', stderr: '' },
+    default: { started: true, exit: 0, stdout: 'backlog/evidence/BL-9001-coder.md\n', stderr: '' },
+  }).runFn;
+  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
+});
+
+test('backlogOnlySkipReason trims each diff path before checking backlog/, never matching one with leading/trailing whitespace untrimmed', () => {
+  const runFn = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
+    'diff --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: ' backlog/evidence/BL-9001-coder.md \n', stderr: '' },
+  }).runFn;
+  const reason = backlogOnlySkipReason('/r', 'abc1234567', runFn);
+  assert.ok(typeof reason === 'string' && reason.length > 0, 'a path that is backlog/-only once trimmed must still skip');
+  assert.match(reason, /backlog\/evidence\/BL-9001-coder\.md/);
+});
+
+test('backlogOnlySkipReason joins multiple backlog/ paths with ", " in the reason, exactly', () => {
+  const runFn = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
+    'diff --name-only basesha0001 abc1234567': {
+      started: true,
+      exit: 0,
+      stdout: 'backlog/evidence/BL-9001-coder.md\nbacklog/evidence/BL-9001-architect.md\n',
+      stderr: '',
+    },
+  }).runFn;
+  const reason = backlogOnlySkipReason('/r', 'abc1234567', runFn);
+  assert.equal(reason, "the parcel's own diff touches only backlog/ (backlog/evidence/BL-9001-coder.md, backlog/evidence/BL-9001-architect.md)");
+});
+
 test("the unit and properties checks' build() skip without ever building a command when ctx.backlogOnlySkipReason is set", () => {
   const ctx = { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', backlogOnlySkipReason: 'the parcel only touches backlog/' };
   const unitBuilt = CHECKLIST.find((c) => c.id === 'unit').build(ctx);
@@ -264,10 +374,10 @@ test('runChecklist reports a skipped build as status "skipped" with its reason, 
   const unitRow = rows.find((r) => r.id === 'unit');
   const propsRow = rows.find((r) => r.id === 'properties');
   assert.deepEqual(
-    [unitRow, propsRow].map((r) => ({ status: r.status, command: r.command, exit: r.exit, reason: r.reason })),
+    [unitRow, propsRow].map((r) => ({ status: r.status, command: r.command, excerpt: r.excerpt, exit: r.exit, reason: r.reason })),
     [
-      { status: 'skipped', command: '', exit: null, reason: 'only backlog/' },
-      { status: 'skipped', command: '', exit: null, reason: 'only backlog/' },
+      { status: 'skipped', command: '', excerpt: '', exit: null, reason: 'only backlog/' },
+      { status: 'skipped', command: '', excerpt: '', exit: null, reason: 'only backlog/' },
     ]
   );
   assert.ok(!calls.some((c) => c.args.includes('test') || c.args.includes('test:properties')), 'a skipped check must never reach runFn');
@@ -700,6 +810,21 @@ test('composeQaGatherReport correctly classifies owned even when the register CL
   const report = composeQaGatherReport('/fake/root', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
 
   assert.deepEqual(report.register_join, [{ file: 'extension/test/file0.test.js', join: 'owned', ticket: 'BL-1000' }]);
+});
+
+// onRawOutcome's own id-gated capture (`id === 'unit' || id === 'properties'`)
+// is exercised above only via a RED 'unit' row - a mutant that breaks the
+// capture specifically for 'properties' (e.g. `id === 'unit' || id !== 'properties'`,
+// false for id === 'properties' itself) would still pass every test above.
+test('composeQaGatherReport\'s raw-output capture also names a red PROPERTIES row\'s own failing file, not just a red unit row\'s', () => {
+  const runFn = (command, args) => {
+    if (args.includes('test:properties')) {
+      return { started: true, exit: 1, stdout: 'FAIL test/bar.property.test.js\n', stderr: '' };
+    }
+    return { started: true, exit: 0, stdout: '', stderr: '' };
+  };
+  const report = composeQaGatherReport('/fake/root', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
+  assert.deepEqual(report.register_join, [{ file: 'extension/test/bar.property.test.js', join: 'absent' }]);
 });
 
 // ── defaultRunFn: real child_process (hardener pass, BL-1554) ──────────
