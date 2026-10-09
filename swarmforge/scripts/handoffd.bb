@@ -3599,6 +3599,7 @@
    {:send-reason! briefing-send-reason!
     :today-str (str (java.time.LocalDate/now java.time.ZoneOffset/UTC))
     :commit-marker! briefing-email-lib/commit-sent-marker!
+    :marker-uncommitted? briefing-email-lib/marker-uncommitted?
     :read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
     :send-email! send-configured-briefing-email!
     :diagram-section briefing-diagram-section
