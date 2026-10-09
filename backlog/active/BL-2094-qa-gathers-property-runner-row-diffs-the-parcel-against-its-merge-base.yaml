@@ -157,3 +157,6 @@ notes: |
   the parcel builds changes.
 
 assigned_to: coder@2
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-09, by: QA, blamed: coder, class: integration, commit: c922bb1b07, evidence: backlog/evidence/BL-2094-QA-20261009.md }

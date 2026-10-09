@@ -27,7 +27,7 @@ test('the checklist is the fixed 9 checks in the fixed order', () => {
 });
 
 test('every CHECKLIST check build()s its exact command, args and cwd for a fully-populated context', () => {
-  const ctx = { root: '/r', ticketId: 'BL-1', task: 't', commit: 'abc1234567', acceptanceFeature: 'f.feature' };
+  const ctx = { root: '/r', ticketId: 'BL-1', task: 't', commit: 'abc1234567', mergeBaseWithMain: 'base0001ab', acceptanceFeature: 'f.feature' };
   const builtById = new Map(CHECKLIST.map((c) => [c.id, c.build(ctx)]));
   assert.deepEqual(builtById.get('sibling'), {
     command: 'node',
@@ -71,7 +71,7 @@ function fakeRunner(script) {
 
 test('runChecklist runs every check and never skips one on a blocked prerequisite', () => {
   const { runFn } = fakeRunner({ default: { started: true, exit: 0, stdout: 'ok', stderr: '' } });
-  const rows = runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567' }, runFn);
+  const rows = runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', mergeBaseWithMain: 'base0001ab' }, runFn);
   assert.equal(rows.length, CHECKLIST.length);
   assert.deepEqual(rows.map((r) => r.id), CHECKLIST.map((c) => c.id));
   // no --task and no acceptanceFeature -> wiring and acceptance are
@@ -94,34 +94,101 @@ test('runChecklist runs every check and never skips one on a blocked prerequisit
   }
 });
 
-// ── BL-2073: the property_runners row ───────────────────────────────────
+// ── BL-2094: the property_runners row ───────────────────────────────────
+// (BL-2073 passed ctx.commit - the gathered commit itself, which IS HEAD
+// when QA gathers - directly as --changed-from, collapsing the front-end's
+// own diff range to empty on every real gather. The row now reads the
+// merge-base-with-main composeQaGatherReport resolves onto ctx, never
+// ctx.commit directly.)
 
-test('the property_runners row builds the front-end command with the parcel merge-base ref', () => {
+test('the property_runners row builds the front-end command with the resolved merge-base ref, never the gathered commit', () => {
   const spec = CHECKLIST.find((c) => c.id === 'property_runners');
-  const built = spec.build({ root: '/r', ticketId: 'BL-1', commit: 'abc1234567' });
+  const built = spec.build({ root: '/r', ticketId: 'BL-1', commit: 'abc1234567', mergeBaseWithMain: 'base0001ab' });
   assert.equal(built.command, path.join('/r', 'swarmforge', 'scripts', 'test', 'run_property_runners.sh'));
-  assert.deepEqual(built.args, ['--changed-from', 'abc1234567']);
+  assert.deepEqual(built.args, ['--changed-from', 'base0001ab']);
   assert.equal(built.cwd, '/r');
 });
 
 test('the property_runners row is blocked with a reason naming the failed merge-base when it cannot be resolved', () => {
   const spec = CHECKLIST.find((c) => c.id === 'property_runners');
-  const built = spec.build({ root: '/r', ticketId: 'BL-1', commit: 'unknown' });
+  const built = spec.build({ root: '/r', ticketId: 'BL-1', commit: 'unknown' }); // mergeBaseWithMain absent
   assert.equal(built.blockedReason, 'could not resolve merge-base main unknown');
 });
 
-test('the property_runners row runs the front-end with the parcel commit ref and reads its exit and output', () => {
+test('the property_runners row is blocked even when ctx.commit itself looks like a real sha, if the merge-base could not be resolved', () => {
+  const spec = CHECKLIST.find((c) => c.id === 'property_runners');
+  const built = spec.build({ root: '/r', ticketId: 'BL-1', commit: 'abc1234567' }); // mergeBaseWithMain absent
+  assert.equal(built.blockedReason, 'could not resolve merge-base main abc1234567');
+});
+
+test('the property_runners row runs the front-end with the resolved merge-base ref and reads its exit and output', () => {
   const { runFn, calls } = fakeRunner({
     default: { started: true, exit: 0, stdout: '', stderr: '' },
   });
-  const rows = runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', task: 't', acceptanceFeature: 'f.feature' }, runFn);
+  const rows = runChecklist(
+    CHECKLIST,
+    { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', mergeBaseWithMain: 'base0001ab', task: 't', acceptanceFeature: 'f.feature' },
+    runFn
+  );
   const row = rows.find((r) => r.id === 'property_runners');
   assert.equal(row.status, 'ran');
   assert.equal(row.exit, 0);
   const call = calls.find((c) => c.command.includes('run_property_runners.sh'));
   assert.ok(call, 'the front-end command was not started');
-  assert.deepEqual(call.args, ['--changed-from', 'abc1234567']);
+  assert.deepEqual(call.args, ['--changed-from', 'base0001ab']);
   assert.equal(call.cwd, '/r');
+});
+
+test('composeQaGatherReport resolves mergeBaseWithMain via merge-base main <commit> through runFn and feeds it to the row', () => {
+  const { runFn, calls } = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'base0001ab\n', stderr: '' },
+    default: { started: true, exit: 0, stdout: '', stderr: '' },
+  });
+  const report = composeQaGatherReport('/r', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
+  const row = report.checks.find((c) => c.id === 'property_runners');
+  assert.equal(row.status, 'ran');
+  const mergeBaseCall = calls.find((c) => c.command === 'git' && c.args.join(' ') === 'merge-base main abc1234567');
+  assert.ok(mergeBaseCall, 'expected a merge-base main <commit> call');
+  const frontEndCall = calls.find((c) => c.command.includes('run_property_runners.sh'));
+  assert.deepEqual(frontEndCall.args, ['--changed-from', 'base0001ab']);
+});
+
+test('composeQaGatherReport blocks the property_runners row when merge-base cannot be resolved (never started, non-zero exit, or empty stdout)', () => {
+  for (const mergeBaseAnswer of [
+    { started: false, exit: null, stdout: '', stderr: '', reason: 'boom' },
+    { started: true, exit: 1, stdout: '', stderr: 'boom' },
+    { started: true, exit: 0, stdout: '', stderr: '' },
+  ]) {
+    const { runFn } = fakeRunner({
+      'merge-base main abc1234567': mergeBaseAnswer,
+      default: { started: true, exit: 0, stdout: '', stderr: '' },
+    });
+    const report = composeQaGatherReport('/r', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
+    const row = report.checks.find((c) => c.id === 'property_runners');
+    assert.equal(row.status, 'blocked', `expected blocked for merge-base answer ${JSON.stringify(mergeBaseAnswer)}`);
+    assert.equal(row.reason, 'could not resolve merge-base main abc1234567');
+  }
+});
+
+// The three cases above all answer a failed merge-base with EMPTY stdout,
+// same as a real git failure in practice - but that also means a
+// guard-removal mutant (e.g. "if (false)" in place of the started/exit
+// check) still falls through to an empty base and lands on the SAME
+// blocked result by coincidence (the fake-runGit trap: "a status!==0
+// guard needs non-empty matching stdout on the failing call"). This gives
+// the failing call a non-empty stdout so a guard-removal mutant diverges
+// for real: skipping the guard would carry that bogus value all the way
+// to a started front-end call.
+test('composeQaGatherReport blocks the property_runners row when merge-base exits non-zero even if it printed something to stdout', () => {
+  const { runFn, calls } = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 1, stdout: 'bogus-base-sha\n', stderr: 'ambiguous argument' },
+    default: { started: true, exit: 0, stdout: '', stderr: '' },
+  });
+  const report = composeQaGatherReport('/r', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
+  const row = report.checks.find((c) => c.id === 'property_runners');
+  assert.equal(row.status, 'blocked');
+  assert.equal(row.reason, 'could not resolve merge-base main abc1234567');
+  assert.ok(!calls.some((c) => c.command.includes('run_property_runners.sh')), 'the front-end must never be started on a failed merge-base');
 });
 
 test('a check the runner cannot start is reported blocked with the runner\'s own reason, and later checks still run', () => {
@@ -129,7 +196,11 @@ test('a check the runner cannot start is reported blocked with the runner\'s own
     node: { started: false, exit: null, stdout: '', stderr: '', reason: 'ENOENT: no such file' },
     default: { started: true, exit: 0, stdout: '', stderr: '' },
   });
-  const rows = runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', task: 't', acceptanceFeature: 'f.feature' }, runFn);
+  const rows = runChecklist(
+    CHECKLIST,
+    { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', mergeBaseWithMain: 'base0001ab', task: 't', acceptanceFeature: 'f.feature' },
+    runFn
+  );
   const sibling = rows.find((r) => r.id === 'sibling');
   assert.equal(sibling.status, 'blocked');
   assert.equal(sibling.reason, 'ENOENT: no such file');
@@ -151,7 +222,7 @@ test('a check the runner cannot start is reported blocked with "could not start"
     node: { started: false, exit: null, stdout: '', stderr: '' },
     default: { started: true, exit: 0, stdout: '', stderr: '' },
   });
-  const rows = runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567' }, runFn);
+  const rows = runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', mergeBaseWithMain: 'base0001ab' }, runFn);
   const sibling = rows.find((r) => r.id === 'sibling');
   assert.equal(sibling.status, 'blocked');
   assert.equal(sibling.reason, 'could not start');
@@ -168,7 +239,11 @@ test('runChecklist never runs two checks concurrently: every call is issued stri
     order.push('end');
     return { started: true, exit: 0, stdout: '', stderr: '' };
   };
-  runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', task: 't', acceptanceFeature: 'f.feature' }, runFn);
+  runChecklist(
+    CHECKLIST,
+    { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', mergeBaseWithMain: 'base0001ab', task: 't', acceptanceFeature: 'f.feature' },
+    runFn
+  );
   // strict start/end/start/end/... alternation, once per check.
   assert.deepEqual(order, CHECKLIST.flatMap(() => ['start', 'end']));
 });
@@ -220,20 +295,24 @@ test('no row ever carries a verdict-shaped field', () => {
 });
 
 // ── BL-2024: backlog-only parcel skips the unit/properties lanes ────────
+// (BL-2024/BL-2094 integration bounce, 2026-10-09: backlogOnlySkipReason
+// no longer resolves the merge-base itself - it takes the ALREADY-RESOLVED
+// base as its own parameter, one level up now at composeQaGatherReport.
+// Every test below passes `base` directly; the merge-base-resolution
+// failure modes moved to resolveMergeBaseWithMain's own tests/property
+// test and to composeQaGatherReport's tests further down this file.)
 
 test('backlogOnlySkipReason returns a reason when the diff is non-empty and every path starts with backlog/', () => {
   const runFn = fakeRunner({
-    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
     'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: 'backlog/evidence/BL-9001-coder.md\n', stderr: '' },
   }).runFn;
-  const reason = backlogOnlySkipReason('/r', 'abc1234567', runFn);
+  const reason = backlogOnlySkipReason('/r', 'basesha0001', 'abc1234567', runFn);
   assert.ok(typeof reason === 'string' && reason.length > 0);
   assert.match(reason, /backlog\//);
 });
 
 test('backlogOnlySkipReason returns undefined when any path is outside backlog/, even alongside backlog/ paths', () => {
   const runFn = fakeRunner({
-    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
     'diff --no-renames --name-only basesha0001 abc1234567': {
       started: true,
       exit: 0,
@@ -241,102 +320,57 @@ test('backlogOnlySkipReason returns undefined when any path is outside backlog/,
       stderr: '',
     },
   }).runFn;
-  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
+  assert.equal(backlogOnlySkipReason('/r', 'basesha0001', 'abc1234567', runFn), undefined);
 });
 
 test('backlogOnlySkipReason returns undefined when the diff is empty', () => {
   const runFn = fakeRunner({
-    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
     'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: '', stderr: '' },
   }).runFn;
-  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
-});
-
-test('backlogOnlySkipReason returns undefined when the merge-base cannot be resolved (never started, a non-zero exit, or empty stdout)', () => {
-  assert.equal(
-    backlogOnlySkipReason('/r', 'abc1234567', fakeRunner({ 'merge-base main abc1234567': { started: false, exit: null, stdout: '', stderr: '', reason: 'boom' } }).runFn),
-    undefined
-  );
-  assert.equal(
-    backlogOnlySkipReason('/r', 'abc1234567', fakeRunner({ 'merge-base main abc1234567': { started: true, exit: 1, stdout: '', stderr: 'no such ref' } }).runFn),
-    undefined
-  );
-  assert.equal(
-    backlogOnlySkipReason('/r', 'abc1234567', fakeRunner({ 'merge-base main abc1234567': { started: true, exit: 0, stdout: '\n', stderr: '' } }).runFn),
-    undefined
-  );
+  assert.equal(backlogOnlySkipReason('/r', 'basesha0001', 'abc1234567', runFn), undefined);
 });
 
 test('backlogOnlySkipReason returns undefined when the diff itself cannot be resolved (never started, or a non-zero exit)', () => {
-  const mergeBaseOk = { 'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' } };
   assert.equal(
     backlogOnlySkipReason(
-      '/r', 'abc1234567',
-      fakeRunner({ ...mergeBaseOk, 'diff --no-renames --name-only basesha0001 abc1234567': { started: false, exit: null, stdout: '', stderr: '', reason: 'boom' } }).runFn
+      '/r', 'basesha0001', 'abc1234567',
+      fakeRunner({ 'diff --no-renames --name-only basesha0001 abc1234567': { started: false, exit: null, stdout: '', stderr: '', reason: 'boom' } }).runFn
     ),
     undefined
   );
   assert.equal(
     backlogOnlySkipReason(
-      '/r', 'abc1234567',
-      fakeRunner({ ...mergeBaseOk, 'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 1, stdout: '', stderr: 'boom' } }).runFn
+      '/r', 'basesha0001', 'abc1234567',
+      fakeRunner({ 'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 1, stdout: '', stderr: 'boom' } }).runFn
     ),
     undefined
   );
 });
 
-// The two tests above answer every failed merge-base/diff with EMPTY
-// stdout, same as a real git failure in practice - but that also means a
-// guard-removal mutant (e.g. `if (false)` in place of the exit!==0 check)
-// still falls through to an empty base/diff and lands on the SAME
-// undefined result by coincidence (BL-2063-class fake-runner trap: "A
-// fake-runGit test for a status!==0 guard needs non-empty matching stdout
-// on the failing call - empty stdout collapses both branches"). These
-// give the failing call a non-empty, backlog-only-shaped stdout so a
-// guard-removal mutant diverges for real: skipping the guard would carry
-// that bogus value all the way to a non-undefined skip reason.
-test('backlogOnlySkipReason returns undefined when merge-base exits non-zero even if it printed something to stdout', () => {
-  const runFn = fakeRunner({
-    'merge-base main abc1234567': { started: true, exit: 1, stdout: 'should-be-ignored-sha\n', stderr: 'ambiguous argument' },
-    default: { started: true, exit: 0, stdout: 'backlog/evidence/BL-9001-coder.md\n', stderr: '' },
-  }).runFn;
-  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
-});
-
+// BL-2063-class fake-runner trap: "A fake-runGit test for a status!==0
+// guard needs non-empty matching stdout on the failing call - empty
+// stdout collapses both branches". Gives the failing diff call a
+// non-empty, backlog-only-shaped stdout so a guard-removal mutant
+// diverges for real: skipping the exit-check would carry that bogus
+// value all the way to a non-undefined skip reason.
 test('backlogOnlySkipReason returns undefined when diff exits non-zero even if it printed something to stdout', () => {
   const runFn = fakeRunner({
-    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
     'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 1, stdout: 'backlog/evidence/sneaky.md\n', stderr: 'boom' },
   }).runFn;
-  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
-});
-
-// Same trap, for the OUTER `if (!base)` guard in backlogOnlySkipReason
-// itself: merge-base resolves (started, exit 0) but with an empty base,
-// and a would-be diff call (never legitimately reached) is mocked via
-// `default` to answer as backlog-only - a guard-removal mutant would
-// call it anyway and produce a bogus skip reason.
-test('backlogOnlySkipReason returns undefined when the merge-base resolves to an empty base, even if a later diff call would read as backlog-only', () => {
-  const runFn = fakeRunner({
-    'merge-base main abc1234567': { started: true, exit: 0, stdout: '\n', stderr: '' },
-    default: { started: true, exit: 0, stdout: 'backlog/evidence/BL-9001-coder.md\n', stderr: '' },
-  }).runFn;
-  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
+  assert.equal(backlogOnlySkipReason('/r', 'basesha0001', 'abc1234567', runFn), undefined);
 });
 
 test('backlogOnlySkipReason trims each diff path before checking backlog/, never matching one with leading/trailing whitespace untrimmed', () => {
   const runFn = fakeRunner({
-    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
     'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: ' backlog/evidence/BL-9001-coder.md \n', stderr: '' },
   }).runFn;
-  const reason = backlogOnlySkipReason('/r', 'abc1234567', runFn);
+  const reason = backlogOnlySkipReason('/r', 'basesha0001', 'abc1234567', runFn);
   assert.ok(typeof reason === 'string' && reason.length > 0, 'a path that is backlog/-only once trimmed must still skip');
   assert.match(reason, /backlog\/evidence\/BL-9001-coder\.md/);
 });
 
 test('backlogOnlySkipReason joins multiple backlog/ paths with ", " in the reason, exactly', () => {
   const runFn = fakeRunner({
-    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
     'diff --no-renames --name-only basesha0001 abc1234567': {
       started: true,
       exit: 0,
@@ -344,8 +378,35 @@ test('backlogOnlySkipReason joins multiple backlog/ paths with ", " in the reaso
       stderr: '',
     },
   }).runFn;
-  const reason = backlogOnlySkipReason('/r', 'abc1234567', runFn);
+  const reason = backlogOnlySkipReason('/r', 'basesha0001', 'abc1234567', runFn);
   assert.equal(reason, "the parcel's own diff touches only backlog/ (backlog/evidence/BL-9001-coder.md, backlog/evidence/BL-9001-architect.md)");
+});
+
+// composeQaGatherReport-level: the ONE merge-base resolution's failure
+// cascades to BOTH ctx.mergeBaseWithMain and ctx.backlogOnlySkipReason
+// (never calling the diff at all for the latter) - the "empty base"/
+// "merge-base cannot be resolved" guards this integration now owns,
+// since backlogOnlySkipReason itself no longer resolves a merge-base.
+test('composeQaGatherReport: a failed merge-base leaves both mergeBaseWithMain and backlogOnlySkipReason unset, and never attempts the backlog-only diff', () => {
+  for (const mergeBaseAnswer of [
+    { started: false, exit: null, stdout: '', stderr: '', reason: 'boom' },
+    { started: true, exit: 1, stdout: 'should-be-ignored-sha\n', stderr: 'ambiguous argument' },
+    { started: true, exit: 0, stdout: '\n', stderr: '' },
+  ]) {
+    const { runFn, calls } = fakeRunner({
+      'merge-base main abc1234567': mergeBaseAnswer,
+      default: { started: true, exit: 0, stdout: 'backlog/evidence/BL-9001-coder.md\n', stderr: '' },
+    });
+    const report = composeQaGatherReport('/r', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
+    const diffCalls = calls.filter((c) => c.args[0] === 'diff');
+    assert.deepEqual(diffCalls, [], `expected no diff call for merge-base answer ${JSON.stringify(mergeBaseAnswer)}`);
+    const propertyRunnersRow = report.checks.find((c) => c.id === 'property_runners');
+    assert.equal(propertyRunnersRow.status, 'blocked', `expected property_runners blocked for ${JSON.stringify(mergeBaseAnswer)}`);
+    const unitRow = report.checks.find((c) => c.id === 'unit');
+    const propsRow = report.checks.find((c) => c.id === 'properties');
+    assert.notEqual(unitRow.status, 'skipped', 'backlogOnlySkipReason must never fire off an unresolved merge-base');
+    assert.notEqual(propsRow.status, 'skipped', 'backlogOnlySkipReason must never fire off an unresolved merge-base');
+  }
 });
 
 test("the unit and properties checks' build() skip without ever building a command when ctx.backlogOnlySkipReason is set", () => {
@@ -369,7 +430,15 @@ test("the unit and properties checks' build() run normally when ctx.backlogOnlyS
 test('runChecklist reports a skipped build as status "skipped" with its reason, calls no runFn for it, and never calls onRawOutcome for it', () => {
   const { runFn, calls } = fakeRunner({ default: { started: true, exit: 0, stdout: 'ok', stderr: '' } });
   const raw = new Map();
-  const ctx = { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', task: 't', acceptanceFeature: 'f.feature', backlogOnlySkipReason: 'only backlog/' };
+  const ctx = {
+    root: '/r',
+    ticketId: 'BL-1',
+    commit: 'abc1234567',
+    mergeBaseWithMain: 'base0001ab',
+    task: 't',
+    acceptanceFeature: 'f.feature',
+    backlogOnlySkipReason: 'only backlog/',
+  };
   const rows = runChecklist(CHECKLIST, ctx, runFn, (id, outcome) => raw.set(id, outcome.stdout));
   const unitRow = rows.find((r) => r.id === 'unit');
   const propsRow = rows.find((r) => r.id === 'properties');

@@ -35,11 +35,26 @@ export interface CheckContext {
   task?: string;
   commit: string;
   acceptanceFeature?: string;
-  // BL-2024: set only when the parcel's own diff (merge-base main..commit)
-  // is non-empty and every path starts with "backlog/" - the reason the
-  // unit/properties checks' build() skip with below. undefined (never
-  // computed, or the diff touches anything else, or could not be
-  // resolved) means "run as today" - the skip fails closed (invariant 1).
+  // BL-2094: the parcel's own merge-base with main, resolved ONCE in
+  // composeQaGatherReport (resolveMergeBaseWithMain, the SAME runFn seam
+  // every check uses) and fed to both this field and backlogOnlySkipReason
+  // below - never two independent git merge-base calls for one fact
+  // (BL-2094/BL-2024 integration bounce, 2026-10-09). This is the
+  // property_runners row's own --changed-from ref: never the gathered
+  // commit itself. QA gathers with that commit already checked out as
+  // HEAD, so the front-end's own <ref>...HEAD range collapsed to empty
+  // when the row passed ctx.commit directly (15 of 15 gathers since
+  // BL-2073 landed read "no property runner reached since <their own
+  // tip>"). undefined only when no merge-base could be resolved (no
+  // common history with main) - the row blocks rather than ever falling
+  // back to a wider ref (BL-2073's own rule, restated by BL-2094).
+  mergeBaseWithMain?: string;
+  // BL-2024: set only when the parcel's own diff (mergeBaseWithMain above
+  // ..commit) is non-empty and every path starts with "backlog/" - the
+  // reason the unit/properties checks' build() skip with below. undefined
+  // (no merge-base resolved, or the diff touches anything else, or could
+  // not be resolved) means "run as today" - the skip fails closed
+  // (invariant 1).
   backlogOnlySkipReason?: string;
 }
 
@@ -116,10 +131,10 @@ export const CHECKLIST: CheckSpec[] = [
   {
     id: 'property_runners',
     build: (ctx) =>
-      ctx.commit && ctx.commit !== 'unknown'
+      ctx.mergeBaseWithMain
         ? {
             command: path.join(ctx.root, 'swarmforge', 'scripts', 'test', 'run_property_runners.sh'),
-            args: ['--changed-from', ctx.commit],
+            args: ['--changed-from', ctx.mergeBaseWithMain],
             cwd: ctx.root,
           }
         : { blockedReason: `could not resolve merge-base main ${ctx.commit}` },
@@ -149,8 +164,8 @@ export interface CheckRow {
 // tracks this constant rather than a hard-coded copy of it.
 export const EXCERPT_MAX_CHARS = 4000;
 
-// Hardener note (BL-2024 mutation pass, 2026-10-09): the `text.length <=
-// maxChars` guard's own comparison mutants (false/< instead of <=/empty
+// Hardener note (BL-2024/BL-2094 mutation passes, 2026-10-09): the
+// `text.length <= maxChars` guard's own comparison mutants (false/< instead of <=/empty
 // block) are accepted EQUIVALENTS, not gaps - for ANY input, `.slice`
 // clamps a start index more negative than the string's own length to 0,
 // so `text.slice(text.length - maxChars)` already returns the untouched
@@ -309,8 +324,8 @@ export function failingFilesFromRow(
     return [];
   }
   if (row.id === 'unit' || row.id === 'properties') {
-    // Hardener note (BL-2024 mutation pass, 2026-10-09): mutating this
-    // `?? ''` fallback to any other FAIL-line-free string is an accepted
+    // Hardener note (BL-2024/BL-2094 mutation passes, 2026-10-09): mutating
+    // this `?? ''` fallback to any other FAIL-line-free string is an accepted
     // EQUIVALENT - parseFailingFilesFromVitestOutput only ever reacts to
     // a real " FAIL  <file>" line, so any fallback text lacking one
     // (including the mutator's own literal) parses to the same [].
@@ -362,8 +377,8 @@ export function buildRegisterJoin(
   acceptanceFeature: string | undefined,
   rawOutputByCheckId: ReadonlyMap<string, string>
 ): RegisterJoinEntry[] {
-  // Hardener note (BL-2024 mutation pass, 2026-10-09): mutating this
-  // `?? []` fallback (undefined/no-register case) to a non-empty bogus
+  // Hardener note (BL-2024/BL-2094 mutation passes, 2026-10-09): mutating
+  // this `?? []` fallback (undefined/no-register case) to a non-empty bogus
   // array is an accepted EQUIVALENT - byFile is read only via
   // `byFile.get(file)` below with `file` always a real failing-file path
   // (from a vitest FAIL line or the ticket's own acceptance: path), never
@@ -388,9 +403,9 @@ export function buildRegisterJoin(
 // Parses the register check's own RAW (unbounded) stdout, never the row's
 // bounded-for-display `excerpt` (BL-1554 architect bounce D1) - a register
 // large enough to cross EXCERPT_MAX_CHARS must still resolve every row.
-// Hardener note (BL-2024 mutation pass, 2026-10-09): two accepted
+// Hardener note (BL-2024/BL-2094 mutation passes, 2026-10-09): two accepted
 // EQUIVALENTS here. (1) dropping `rawStdout === undefined` from the guard
-// above - `JSON.parse(undefined)` coerces to the string "undefined",
+// below - `JSON.parse(undefined)` coerces to the string "undefined",
 // which is never valid JSON, so it throws and the catch below returns
 // undefined anyway: the same result the guard gives directly. (2) the
 // catch block's own explicit `return undefined` vs an empty `catch {}` -
@@ -438,36 +453,35 @@ export interface QaGatherReport {
   register_join: RegisterJoinEntry[];
 }
 
-// BL-2024: the parcel's OWN changed paths - git merge-base main <commit>,
-// then git diff --no-renames --name-only <base> <commit>, both through the
-// SAME injected runFn seam every check uses (never a second subprocess
-// mechanism, never a reimplementation of what git already answers).
-// Returns a skip reason only when that diff is non-empty and every path
-// in it starts with "backlog/" - a failed merge-base, a failed diff, an
-// empty diff, or any path outside backlog/ returns undefined, so the
-// caller runs both lanes exactly as today (invariant 1: fails closed on
-// any doubt).
-// Extracted from backlogOnlySkipReason below (hardener extraction, BL-2024
-// CRAP gate: complexity 8 at 100% coverage on the un-extracted version) -
-// each helper is its own "did this git call resolve" test, no different in
-// meaning, just out of the caller's count. Mirrors isFailingAcceptanceRow's
-// own extraction above for the same reason.
-function resolveMergeBase(root: string, commit: string, runFn: RunFn): string | undefined {
-  const mergeBase = runFn('git', ['merge-base', 'main', commit], root);
-  if (!mergeBase.started || mergeBase.exit !== 0) {
+// BL-2094: the parcel's merge-base with main - the property_runners row's
+// own --changed-from ref, and (BL-2024/BL-2094 integration bounce,
+// 2026-10-09) the ONE git merge-base call composeQaGatherReport makes per
+// gather, its result fed to backlogOnlySkipReason below too rather than
+// each resolving it independently. Exported so an acceptance handler
+// driving the property_runners row in isolation builds the SAME ctx field
+// composeQaGatherReport does, never a restatement of the resolution.
+export function resolveMergeBaseWithMain(root: string, commit: string, runFn: RunFn): string | undefined {
+  const result = runFn('git', ['merge-base', 'main', commit], root);
+  if (!result.started || result.exit !== 0) {
     return undefined;
   }
-  return mergeBase.stdout.trim() || undefined;
+  return result.stdout.trim() || undefined;
 }
 
+// BL-2024: the parcel's OWN changed paths - git diff --no-renames
+// --name-only <base> <commit>, through the SAME injected runFn seam every
+// check uses (never a second subprocess mechanism, never a
+// reimplementation of what git already answers). `base` is the ALREADY-
+// RESOLVED merge-base (resolveMergeBaseWithMain above, called once by the
+// caller) - this never re-resolves it.
+//
+// QA bounce D1 (2026-10-09): --no-renames is load-bearing. git's default
+// rename detection collapses a moved file into ONE line naming only the
+// destination, so a parcel that renames extension/src/x.ts to backlog/x.ts
+// (deleting production code) read as touching only backlog/ - invariant 1
+// failing OPEN on exactly the diff shape it means to catch. --no-renames
+// always lists both the old (D) and new (A) path.
 function resolveChangedPaths(root: string, base: string, commit: string, runFn: RunFn): string[] | undefined {
-  // QA bounce D1 (2026-10-09): --no-renames is load-bearing. git's default
-  // rename detection collapses a moved file into ONE line naming only the
-  // destination, so a parcel that renames extension/src/x.ts to
-  // backlog/x.ts (deleting production code) read as touching only
-  // backlog/ - invariant 1 failing OPEN on exactly the diff shape it
-  // means to catch. --no-renames always lists both the old (D) and new
-  // (A) path.
   const diff = runFn('git', ['diff', '--no-renames', '--name-only', base, commit], root);
   if (!diff.started || diff.exit !== 0) {
     return undefined;
@@ -482,11 +496,12 @@ function isBacklogOnlyPaths(paths: string[]): boolean {
   return paths.length > 0 && paths.every((p) => p.startsWith('backlog/'));
 }
 
-export function backlogOnlySkipReason(root: string, commit: string, runFn: RunFn): string | undefined {
-  const base = resolveMergeBase(root, commit, runFn);
-  if (!base) {
-    return undefined;
-  }
+// Returns a skip reason only when the diff from the (already-resolved)
+// merge-base to commit is non-empty and every path in it starts with
+// "backlog/" - a failed diff, an empty diff, or any path outside backlog/
+// returns undefined, so the caller runs both lanes exactly as today
+// (invariant 1: fails closed on any doubt).
+export function backlogOnlySkipReason(root: string, base: string, commit: string, runFn: RunFn): string | undefined {
   const paths = resolveChangedPaths(root, base, commit, runFn);
   if (!paths || !isBacklogOnlyPaths(paths)) {
     return undefined;
@@ -507,13 +522,18 @@ export function composeQaGatherReport(
   yamlContent: string | undefined
 ): QaGatherReport {
   const acceptanceFeature = yamlContent ? readAcceptancePath(yamlContent) : undefined;
+  // BL-2024/BL-2094 integration bounce (2026-10-09): ONE merge-base
+  // resolution per gather, fed to both fields below - never two
+  // independent `git merge-base main <commit>` calls for one fact.
+  const mergeBaseWithMain = resolveMergeBaseWithMain(root, opts.commit, runFn);
   const ctx: CheckContext = {
     root,
     ticketId,
     task: opts.task,
     commit: opts.commit,
     acceptanceFeature,
-    backlogOnlySkipReason: backlogOnlySkipReason(root, opts.commit, runFn),
+    mergeBaseWithMain,
+    backlogOnlySkipReason: mergeBaseWithMain ? backlogOnlySkipReason(root, mergeBaseWithMain, opts.commit, runFn) : undefined,
   };
   let registerRawStdout: string | undefined;
   const rawOutputByCheckId = new Map<string, string>();
@@ -521,8 +541,8 @@ export function composeQaGatherReport(
     if (id === 'register') {
       registerRawStdout = outcome.stdout;
     }
-    // Hardener note (BL-2024 mutation pass, 2026-10-09): widening this
-    // guard to always-true is an accepted EQUIVALENT - it would only add
+    // Hardener note (BL-2024/BL-2094 mutation passes, 2026-10-09): widening
+    // this guard to always-true is an accepted EQUIVALENT - it would only add
     // extra entries keyed by some OTHER check's id, and
     // failingFilesFromRow's own `row.id === 'unit' || row.id ===
     // 'properties'` branch (above) is the only reader of this map, so an
