@@ -1288,11 +1288,23 @@ Mechanics (`sampled_reach_floor_guard_lib.bb`):
 - **Fail-open is absolute** (invariant 3), same posture as every other
   send-time gate in `swarm_handoff.bb`: an unresolvable task id, an
   unreadable forwarded commit, or an unreadable recorded received commit
-  each warn on stderr and the send proceeds; no recorded received commit
-  at all (an ordinary first-hop parcel) is silent, the same convention
-  the merge-drop guard (BL-1576) and BL-806 already follow. An unreadable
-  file (of the parcel's own added/modified candidates) warns and is
-  skipped, never refused.
+  each warn on stderr and the send proceeds. An unreadable file (of the
+  parcel's own added/modified candidates) warns and is skipped, never
+  refused.
+- **A coder's first send is checked too (BL-2087).** No recorded received
+  commit for the task at all is exactly the shape a coder's first send
+  from a Work note takes (no `commit:` header), and that is precisely the
+  hop where a property test file is ADDED — the class this gate exists to
+  catch. It used to be silent there (the convention BL-1576's merge-drop
+  guard and BL-806 still follow), so at least 13 sampled-low files landed
+  after the gate shipped this way; two went red in QA (BL-2087). The gate
+  now falls back to `git merge-base <commit> main` as the base and
+  decides `:added` vs `:modified` against it with the SAME
+  `decide-for-path` machinery a forwarded send already uses — added-vs-
+  modified never depends on the sender's inbound shape (invariant 1 of
+  BL-2087). Only when no merge-base exists either (orphan/unrelated
+  history) does it warn naming the task and let the send proceed
+  unverified, never silent (invariant 2 of BL-2087).
 
 Refusal message names the file, the matched assertion text (first 80
 chars), the budget, and the remedy:
