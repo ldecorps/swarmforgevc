@@ -886,6 +886,42 @@
       (try (json/parse-string (slurp sidecar) true)
            (catch Exception _ nil)))))
 
+;; BL-2091: the mutation-progress file a hardener's own run writes
+;; (extension/src/mutation/mutationProgressFile.ts's defaultProgressFilePath)
+;; - the evidence check 5b's longer hardener clock is gated on, never a
+;; pane/spinner/process-table read (the ticket's own constraint).
+
+(defn mutation-progress-file-path
+  [worktree name]
+  (fs/path worktree ".swarmforge" "mutation-progress" (str name ".json")))
+
+(defn mutation-progress-updated-ms
+  "The progress file's own updated_at (ISO-8601), or its mtime when that
+   is missing/unparseable - nil for a missing or unreadable file. Tries
+   the full seat name first (hardener@2.json), then the bare stage
+   (hardener.json) - a numbered seat's own writer may have used either."
+  [worktree role stage]
+  (some (fn [name]
+          (let [p (mutation-progress-file-path worktree name)]
+            (when (fs/exists? p)
+              (or (try (babysitterd-sweep-lib/parse-instant-ms
+                        (:updated_at (json/parse-string (slurp (str p)) true)))
+                       (catch Exception _ nil))
+                  (try (.toMillis (fs/last-modified-time p)) (catch Exception _ nil))))))
+        (distinct [role stage])))
+
+(defn mutation-run-since-origin?
+  "True when the held seat's mutation progress file was written at or
+   after taken-ms (the hold's progress origin) - proof a run began
+   during THIS hold. False for a missing/unreadable file, or one last
+   written before the origin (stale: an idle or looping hardener keeps
+   the 60-minute clock, BL-1884)."
+  [worktree role stage taken-ms]
+  (boolean
+   (when (and worktree taken-ms)
+     (when-let [updated-ms (mutation-progress-updated-ms worktree role stage)]
+       (>= updated-ms taken-ms)))))
+
 (defn held-seat-tickets
   "One map per in_process parcel that names a BL- ticket. Dwell is minutes
    since the later of the claim (dequeued_at) and the seat's last own commit
@@ -940,7 +976,11 @@
                           :gpu-quiet? (boolean (contains? gpu-quiet-roles role))
                           :head-unchanged? (if (and dir claim-ms)
                                              true
-                                             (babysitterd-sweep-lib/same-commit? baseline head))}))))))
+                                             (babysitterd-sweep-lib/same-commit? baseline head))
+                          ;; BL-2091: proof a mutation run began during THIS
+                          ;; hold - the hardener's own longer seat-stuck
+                          ;; clock (check-seat-ticket-stuck) is gated on it.
+                          :mutation-run-since-origin? (mutation-run-since-origin? dir role stage taken-ms)}))))))
          vec)))
 
 (defn in-process-claims [busy-by-role]

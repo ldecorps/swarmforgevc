@@ -272,6 +272,30 @@
 ;; back to 60m." (74c3769083 shipped 180.)
 (def seat-ticket-stuck-min 60)
 
+;; BL-2091 (human ruling 2026-10-08, ruling_provenance tapped): a hardener's
+;; gate runs Stryker, then CRAP, then jscpd, then commits, so it makes no
+;; commit for the length of that run BY DESIGN - BL-2061's 142-minute pass
+;; drew the 60m CRIT twice (61m, 91m) while its progress file showed a
+;; healthy run. The human's 60m from 2026-10-05 stays for every other
+;; seat; this is an added per-stage allowance, never a replacement.
+(def seat-ticket-stuck-hardener-min 150)
+
+(defn seat-stuck-threshold-min
+  "60 for every seat whose stage is not hardender, whatever its worktree
+   carries (invariant 1: the 60-minute clock never moves for anyone else).
+   For a hardener, the longer clock only when its mutation progress file
+   was written at or after the hold's progress origin
+   (mutation-run-since-origin?, set by the gatherer from the progress
+   file's own updated_at/mtime) - proof a run began during THIS hold. A
+   hardener with no such proof (absent, unreadable, or stale progress
+   file - idle or looping, BL-1884) stays at 60 too (invariant 2). `role`
+   may carry a seat number (hardener@2); only the stage before '@' is
+   compared."
+  [role mutation-run-since-origin?]
+  (if (and (= (first (str/split (str role) #"@")) "hardender") mutation-run-since-origin?)
+    seat-ticket-stuck-hardener-min
+    seat-ticket-stuck-min))
+
 (defn parse-instant-ms
   "ISO-8601 instant to epoch millis, or nil. Never throws."
   [s]
@@ -321,12 +345,15 @@
 
 (defn check-seat-ticket-stuck
   "held-tickets: {:role :task :dwell-min :head-unchanged? :busy?
-   :loop-dialog? :repeat-notes-since-claim}, already resolved by the
-   gatherer. One CRIT per role, for the longest unchanged claim that is
-   stuck: dwell at or past seat-ticket-stuck-min, or a loop-detection
-   dialog on the pane, or ten or more REPEAT notes since the claim
-   (BL-1980). The message names which trigger(s) fired. paused? suppresses
-   the check."
+   :loop-dialog? :repeat-notes-since-claim :mutation-run-since-origin?},
+   already resolved by the gatherer. One CRIT per role, for the longest
+   unchanged claim that is stuck: dwell at or past the role's own
+   threshold (seat-stuck-threshold-min: 60, or 150 for a hardener whose
+   mutation progress file proves a run began during this hold, BL-2091),
+   or a loop-detection dialog on the pane, or ten or more REPEAT notes
+   since the claim (BL-1980) - those two triggers are unchanged for a
+   hardener (invariant 3). The message names which trigger(s) fired and
+   the threshold that applied. paused? suppresses the check."
   [held-tickets paused?]
   (if paused?
     []
@@ -334,7 +361,8 @@
      (for [[role items] (group-by :role (remove :gpu-quiet? (or held-tickets [])))
            :let [stuck (->> items
                             (filter :head-unchanged?)
-                            (filter #(or (>= (long (or (:dwell-min %) 0)) seat-ticket-stuck-min)
+                            (filter #(or (>= (long (or (:dwell-min %) 0))
+                                             (seat-stuck-threshold-min role (:mutation-run-since-origin? %)))
                                         (:loop-dialog? %)
                                         (>= (long (or (:repeat-notes-since-claim %) 0)) 10)))
                             (sort-by :dwell-min >)
@@ -342,8 +370,9 @@
            :when stuck]
        (let [dwell (long (or (:dwell-min stuck) 0))
              repeats (long (or (:repeat-notes-since-claim stuck) 0))
+             threshold (seat-stuck-threshold-min role (:mutation-run-since-origin? stuck))
              triggers (cond-> []
-                        (>= dwell seat-ticket-stuck-min) (conj (str "no commit for " dwell "m"))
+                        (>= dwell threshold) (conj (str "no commit for " dwell "m"))
                         (:loop-dialog? stuck) (conj "qwen's loop dialog is on the pane")
                         (>= repeats 10) (conj (str repeats " REPEAT notes since the claim")))]
          {:key (str "seat-stuck-" role)
@@ -352,7 +381,7 @@
                         (str/join ", " triggers)
                         (when (:busy? stuck)
                           " — the pane spinner is not progress")
-                        " (threshold " seat-ticket-stuck-min "m)")})))))
+                        " (threshold " threshold "m)")})))))
 
 ;; ── check 6: menu-blocked-pane ────────────────────────────────────────────────
 

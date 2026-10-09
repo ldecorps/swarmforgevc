@@ -440,6 +440,63 @@
                     (= "seat-stuck-coder" (:key (first fs)))
                     (str/includes? (:message (first fs)) "loop dialog"))))
 
+;; BL-2091: a hardener whose mutation progress proves a run began during
+;; this hold gets the longer 150m clock; every other seat, and a hardener
+;; with no such proof, stays at 60.
+(assert= "seat-stuck-threshold-min is 60 for a non-hardener seat regardless of the fact"
+         [60 60]
+         [(sw/seat-stuck-threshold-min "coder" true) (sw/seat-stuck-threshold-min "coder" false)])
+(assert= "seat-stuck-threshold-min is 150 for a hardener only when the fact is true"
+         [150 60 60]
+         [(sw/seat-stuck-threshold-min "hardender" true)
+          (sw/seat-stuck-threshold-min "hardender" false)
+          (sw/seat-stuck-threshold-min "hardender" nil)])
+(assert= "seat-stuck-threshold-min strips a numbered seat's @N before comparing the stage"
+         [150 60]
+         [(sw/seat-stuck-threshold-min "hardender@2" true) (sw/seat-stuck-threshold-min "coder@2" true)])
+(assert= "a hardener at 91m with a proven mutation run under way is not stuck (invariant 2, QA's BL-2061 repro)"
+         []
+         (sw/check-seat-ticket-stuck
+          [{:role "hardender" :task "BL-2061" :dwell-min 91 :head-unchanged? true
+           :busy? true :mutation-run-since-origin? true}]
+          false))
+(assert-true "a hardener at 150m with a proven mutation run under way is stuck, naming the 150m threshold"
+             (let [fs (sw/check-seat-ticket-stuck
+                       [{:role "hardender" :task "BL-2061" :dwell-min 150 :head-unchanged? true
+                        :busy? true :mutation-run-since-origin? true}]
+                       false)]
+               (and (= 1 (count fs))
+                    (= "CRIT" (:severity (first fs)))
+                    (= "seat-stuck-hardender" (:key (first fs)))
+                    (str/includes? (:message (first fs)) "threshold 150m"))))
+(assert-true "a hardener at 60m with NO proven mutation run falls back to the 60m threshold (invariant 1)"
+             (let [fs (sw/check-seat-ticket-stuck
+                       [{:role "hardender" :task "BL-2061" :dwell-min 60 :head-unchanged? true
+                        :busy? true :mutation-run-since-origin? false}]
+                       false)]
+               (and (= 1 (count fs))
+                    (str/includes? (:message (first fs)) "threshold 60m"))))
+(assert= "a hardener at 91m with NO proven mutation run is still not stuck under the 150m threshold but IS under 60m"
+         []
+         (sw/check-seat-ticket-stuck
+          [{:role "hardender" :task "BL-2061" :dwell-min 59 :head-unchanged? true
+           :busy? true :mutation-run-since-origin? false}]
+          false))
+(assert-true "invariant 3: a hardener's loop-detection dialog is a CRIT at 5m dwell, same as any other seat"
+             (let [fs (sw/check-seat-ticket-stuck
+                       [{:role "hardender" :task "BL-2091" :dwell-min 5 :head-unchanged? true
+                        :busy? false :loop-dialog? true :mutation-run-since-origin? true}]
+                       false)]
+               (and (= 1 (count fs))
+                    (str/includes? (:message (first fs)) "loop dialog"))))
+(assert-true "invariant 3: ten REPEAT notes are a CRIT for a hardener at 5m dwell, same as any other seat"
+             (let [fs (sw/check-seat-ticket-stuck
+                       [{:role "hardender" :task "BL-2091" :dwell-min 5 :head-unchanged? true
+                        :busy? false :repeat-notes-since-claim 10 :mutation-run-since-origin? true}]
+                       false)]
+               (and (= 1 (count fs))
+                    (str/includes? (:message (first fs)) "10"))))
+
 ;; ── check 6: menu-blocked-pane ───────────────────────────────────────────────
 (assert-nil "no menu block produces no finding"
             (sw/check-menu-blocked {:role "coder" :menu-blocked? false}))
