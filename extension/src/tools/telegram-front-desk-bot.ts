@@ -141,6 +141,7 @@ import {
   roleFromAskThreadId,
   reconcileStaleApprovalAsks,
   PhotoPersistOutcome,
+  timePhase,
 } from './telegramFrontDeskBotCore';
 import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
@@ -2664,6 +2665,10 @@ function buildPollAdapters(
     // line that dies with the process explains nothing afterwards.
     logDropAudit: (line) => appendFrontDeskDiagnostic(targetPath, line),
     logDiagnostic: (line) => appendFrontDeskDiagnostic(targetPath, line),
+    // BL-2072: paired with logDiagnostic above - pollAndForward's own
+    // timePhaseIfWired runs both "getUpdates wait" and "handling of one
+    // update batch" untimed unless both are wired.
+    now: () => Date.now(),
     explainApprovalRecordNoOp: (backlogId) => Promise.resolve(explainApprovalRecordNoOp(targetPath, backlogId)),
     getUpdates: (offset) => {
       // One controller per cycle: aborting a spent one would do nothing, and
@@ -3909,6 +3914,91 @@ export function parseCliArgs(argv: string[]): { bridgeUrl: string; targetPath: s
   return bridgeUrl && targetPath ? { bridgeUrl, targetPath } : null;
 }
 
+// BL-2072: every standing-topic bind that must happen BEFORE any poll loop
+// starts - extracted out of main() verbatim, each call's own ordering
+// rationale comment moved with it, so it can be timed as one phase there
+// (timePhase) and driven directly, over a fake Telegram, by a fixture
+// that never touches main() itself (which also reads env vars and starts
+// the forever-loops). postFn threads through every call exactly as it
+// does when main() omits it (undefined falls back to each function's own
+// default live post).
+export async function runStartupTopicChecks(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<void> {
+  // BL-346: bind the standing Operator topic BEFORE any loop starts
+  // polling, so no inbound message can ever reach it while it is still
+  // unbound (see ensureOperatorTopic's own comment for the auto-adopt
+  // trap this ordering avoids). A failed create here must never block the
+  // rest of the bot's ordinary routing from coming up.
+  await ensureOperatorTopic(targetPath, botToken, chatId, postFn);
+
+  // BL-434: bind the standing Approvals topic BEFORE any loop starts
+  // polling too - same ordering rationale as ensureOperatorTopic just
+  // above (an inbound reply must never reach an unbound Approvals topic
+  // and be misrouted as an ordinary support-thread post).
+  await ensureApprovalsTopic(targetPath, botToken, chatId, postFn);
+
+  // BL-649: pending approval announcement — POST doorbell after Approvals topic bind.
+  await runPendingApprovalAnnouncementHook(
+    targetPath,
+    {
+      ensureApprovalsTopic: () => ensureApprovalsTopic(targetPath, botToken, chatId, postFn),
+      postMessage: async (topicId, text) => {
+        const sent = await sendTelegramMessageWithRateLimitRetry(botToken, chatId, text, undefined, postFn, topicId);
+        return sent.success ? sent.messageId : undefined;
+      },
+    },
+    Date.now(),
+    readTickState,
+    writeTickState
+  );
+
+  // BL-450: bind the standing Recert topic BEFORE any loop starts polling
+  // too - same ordering rationale as ensureOperatorTopic/ensureApprovalsTopic
+  // just above (an inbound reply must never reach an unbound Recert topic
+  // and be misrouted as an ordinary support-thread post).
+  await ensureRecertTopic(targetPath, botToken, chatId, postFn);
+
+  // BL-466: bind the standing Agent Questions topic BEFORE any loop starts
+  // polling too - same ordering rationale as ensureOperatorTopic/
+  // ensureApprovalsTopic/ensureRecertTopic just above (an unbound Agent
+  // Questions topic must never be reachable by an inbound reply before the
+  // binding decideAgentQuestionsReplyAction depends on exists).
+  await ensureAgentQuestionsTopic(targetPath, botToken, chatId, postFn);
+
+  // BL-423: bind the standing Control topic BEFORE any loop starts polling
+  // too - same ordering rationale as every other standing topic above (an
+  // unbound Control topic must never be reachable by an inbound
+  // stop/restart/pause verb).
+  await ensureControlTopic(targetPath, botToken, chatId, postFn);
+
+  // BL-522: standing Resident Spy topic — Mini App URL lives here.
+  await ensureResidentSpyTopic(targetPath, botToken, chatId, postFn);
+
+  // BL-425 slice 1: bind each swarm role's own standing steering topic
+  // BEFORE any loop starts polling too - same ordering rationale as
+  // ensureOperatorTopic just above (an unbound role topic must never be
+  // reachable by an inbound message).
+  await ensureRoleTopics(targetPath, botToken, chatId, ALL_SWARM_ROLES, postFn);
+
+  // BL-492: bind the standing Backlog catch-all topic BEFORE any loop
+  // starts polling too - same ordering rationale as every other standing
+  // topic above. Foundation slice of the BL-491 topic-consolidation epic;
+  // nothing routes INTO it yet (that is BL-493), but the topic itself must
+  // exist and be idempotently reused across restarts like every sibling.
+  await ensureBacklogTopic(targetPath, botToken, chatId, postFn);
+
+  // BL-590: bind the standing Onboarding topic BEFORE any loop starts
+  // polling too - same ordering rationale as every other standing topic
+  // above (an unbound Onboarding topic must never be reachable by an
+  // inbound repo URL or reply).
+  await ensureOnboardingTopic(targetPath, botToken, chatId, postFn);
+
+  // BL-1732: bind the standing Intake topic BEFORE any loop starts polling
+  // too - same ordering rationale as every other standing topic above (an
+  // unbound Intake topic must never be reachable by an inbound message and
+  // be misrouted as an ordinary support-thread post).
+  await ensureIntakeTopic(targetPath, botToken, chatId, postFn);
+}
+
 export async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
   if (!args) {
@@ -3930,80 +4020,17 @@ export async function main(): Promise<void> {
   // before binding standing topics (inv2 — before ensureOperatorTopic).
   retireTrackedSupervisorRecords(targetPath, topicsDir(targetPath));
 
-  // BL-346: bind the standing Operator topic BEFORE any loop starts
-  // polling, so no inbound message can ever reach it while it is still
-  // unbound (see ensureOperatorTopic's own comment for the auto-adopt
-  // trap this ordering avoids). A failed create here must never block the
-  // rest of the bot's ordinary routing from coming up.
-  await ensureOperatorTopic(targetPath, botToken, chatId);
-
-  // BL-434: bind the standing Approvals topic BEFORE any loop starts
-  // polling too - same ordering rationale as ensureOperatorTopic just
-  // above (an inbound reply must never reach an unbound Approvals topic
-  // and be misrouted as an ordinary support-thread post).
-  await ensureApprovalsTopic(targetPath, botToken, chatId);
-
-  // BL-649: pending approval announcement — POST doorbell after Approvals topic bind.
-  await runPendingApprovalAnnouncementHook(
-    targetPath,
-    {
-      ensureApprovalsTopic: () => ensureApprovalsTopic(targetPath, botToken, chatId),
-      postMessage: async (topicId, text) => {
-        const sent = await sendTelegramMessageWithRateLimitRetry(botToken, chatId, text, undefined, undefined, topicId);
-        return sent.success ? sent.messageId : undefined;
-      },
-    },
-    Date.now(),
-    readTickState,
-    writeTickState
+  // BL-2072: timed as ONE phase (timePhase, the same helper
+  // pollAndForward's own two phases use) - a slow startup here looked
+  // identical to a slow getUpdates wait or a slow update batch from
+  // outside (37 stall-kills on 2026-10-07, none with a 409, nothing
+  // naming which phase held the heartbeat).
+  await timePhase(
+    () => Date.now(),
+    (line) => appendFrontDeskDiagnostic(targetPath, line),
+    'startup topic checks',
+    () => runStartupTopicChecks(targetPath, botToken, chatId)
   );
-
-  // BL-450: bind the standing Recert topic BEFORE any loop starts polling
-  // too - same ordering rationale as ensureOperatorTopic/ensureApprovalsTopic
-  // just above (an inbound reply must never reach an unbound Recert topic
-  // and be misrouted as an ordinary support-thread post).
-  await ensureRecertTopic(targetPath, botToken, chatId);
-
-  // BL-466: bind the standing Agent Questions topic BEFORE any loop starts
-  // polling too - same ordering rationale as ensureOperatorTopic/
-  // ensureApprovalsTopic/ensureRecertTopic just above (an unbound Agent
-  // Questions topic must never be reachable by an inbound reply before the
-  // binding decideAgentQuestionsReplyAction depends on exists).
-  await ensureAgentQuestionsTopic(targetPath, botToken, chatId);
-
-  // BL-423: bind the standing Control topic BEFORE any loop starts polling
-  // too - same ordering rationale as every other standing topic above (an
-  // unbound Control topic must never be reachable by an inbound
-  // stop/restart/pause verb).
-  await ensureControlTopic(targetPath, botToken, chatId);
-
-  // BL-522: standing Resident Spy topic — Mini App URL lives here.
-  await ensureResidentSpyTopic(targetPath, botToken, chatId);
-
-  // BL-425 slice 1: bind each swarm role's own standing steering topic
-  // BEFORE any loop starts polling too - same ordering rationale as
-  // ensureOperatorTopic just above (an unbound role topic must never be
-  // reachable by an inbound message).
-  await ensureRoleTopics(targetPath, botToken, chatId);
-
-  // BL-492: bind the standing Backlog catch-all topic BEFORE any loop
-  // starts polling too - same ordering rationale as every other standing
-  // topic above. Foundation slice of the BL-491 topic-consolidation epic;
-  // nothing routes INTO it yet (that is BL-493), but the topic itself must
-  // exist and be idempotently reused across restarts like every sibling.
-  await ensureBacklogTopic(targetPath, botToken, chatId);
-
-  // BL-590: bind the standing Onboarding topic BEFORE any loop starts
-  // polling too - same ordering rationale as every other standing topic
-  // above (an unbound Onboarding topic must never be reachable by an
-  // inbound repo URL or reply).
-  await ensureOnboardingTopic(targetPath, botToken, chatId);
-
-  // BL-1732: bind the standing Intake topic BEFORE any loop starts polling
-  // too - same ordering rationale as every other standing topic above (an
-  // unbound Intake topic must never be reachable by an inbound message and
-  // be misrouted as an ordinary support-thread post).
-  await ensureIntakeTopic(targetPath, botToken, chatId);
 
   const conciergeScheduler = createConciergeTickScheduler(targetPath, botToken, chatId);
   const scheduleConciergeTick = () => conciergeScheduler.scheduleDebounced(DEFAULT_CONCIERGE_TICK_DEBOUNCE_MS);
