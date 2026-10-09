@@ -1623,3 +1623,10 @@
   stamp_ticket: BL-2090
   human_decision: null
   decided_at: null
+- commit: b8611eff86
+  subject: "Hotfix two property timeouts reported unowned: bl1071 sweep file and bl2071 forward-and-pass file ran on the lane default budget"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2092
+  human_decision: null
+  decided_at: null
