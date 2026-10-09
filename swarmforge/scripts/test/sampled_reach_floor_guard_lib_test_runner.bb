@@ -402,17 +402,58 @@
       (assert-true "...but is still warned about"
                    (boolean (some #(str/includes? % "extension/test/bl9006Foo.property.test.js") (:warnings result)))))))
 
-;; scenario: no recorded received commit at all (first hop) - silent, the
-;; gate does not run rather than guessing at added-vs-modified.
+;; scenario (BL-2087): no recorded received commit at all - a coder's first
+;; send, taken up from a Work note - falls back to the parcel's base on
+;; main instead of staying silent. An ADDED sampled-low file still refuses,
+;; exactly as a forwarded send with a received commit would (invariant 1).
+;; The coder's commit lives on its own branch, diverged from main at the
+;; seed, so the merge-base is the seed - not the commit itself.
 (with-fixture [root]
   (write-roles! root)
+  (sh! root "git" "checkout" "-q" "-b" "coder-branch")
   (commit! root "extension/test/bl9007Foo.property.test.js" sampled-low-text
-           "BL-1584-fixture: first hop, nothing received yet")
+           "BL-1584-fixture: first hop, nothing received yet, adds a sampled-low file")
   (let [forwarded (head root)
         result (sampled-reach-floor-guard-lib/findings-for-git-handoff
                 {:root root :sender "coder" :task-name TASK :commit forwarded})]
-    (assert= "no recorded received commit: findings []" [] (:findings result))
-    (assert= "no recorded received commit: warnings [] (silent, not even a warning)" [] (:warnings result))))
+    (assert-true "BL-2087: a first send with no received commit still refuses an added sampled-low file, via the merge-base-on-main fallback"
+                 (sampled-reach-floor-guard-lib/blocked? result))
+    (assert= "exactly one finding, naming the added file"
+             ["extension/test/bl9007Foo.property.test.js"] (mapv :path (:findings result)))))
+
+;; scenario (BL-2087 invariant 1): the SAME first-send shape, but the file
+;; is already on main (a pre-existing file only touched) - never refused,
+;; at most a warning, exactly like the received-commit scenario 03 above.
+(with-fixture [root]
+  (write-roles! root)
+  (commit! root "extension/test/bl9009Foo.property.test.js" sampled-low-text
+           "pre-existing: sampled-low property test, already on main")
+  (sh! root "git" "checkout" "-q" "-b" "coder-branch")
+  (commit! root "extension/test/bl9009Foo.property.test.js" (str sampled-low-text "\n// touched")
+           "BL-1584-fixture: first hop, nothing received yet, touches a pre-existing sampled-low file")
+  (let [forwarded (head root)
+        result (sampled-reach-floor-guard-lib/findings-for-git-handoff
+                {:root root :sender "coder" :task-name TASK :commit forwarded})]
+    (assert-false "BL-2087: a first send touching a pre-existing sampled-low file is never refused"
+                  (sampled-reach-floor-guard-lib/blocked? result))
+    (assert-true "...but is still warned about"
+                 (boolean (some #(str/includes? % "extension/test/bl9009Foo.property.test.js") (:warnings result))))))
+
+;; scenario (BL-2087 invariant 2): no recorded received commit AND no
+;; merge-base with main at all (an orphan/unrelated history) - warns naming
+;; the task, never silent, never refuses on a guess.
+(with-fixture [root]
+  (write-roles! root)
+  (sh! root "git" "checkout" "-q" "--orphan" "unrelated-branch")
+  (commit! root "extension/test/bl9008Foo.property.test.js" sampled-low-text
+           "BL-1584-fixture: orphan branch, unrelated to main, adds a sampled-low file")
+  (let [forwarded (head root)
+        result (sampled-reach-floor-guard-lib/findings-for-git-handoff
+                {:root root :sender "coder" :task-name TASK :commit forwarded})]
+    (assert= "BL-2087: no received commit and no merge-base with main: findings []" [] (:findings result))
+    (assert-true "BL-2087: ...but warns, naming the task"
+                 (boolean (some #(str/includes? % TASK) (:warnings result))))
+    (assert-false "BL-2087: ...so the send is allowed" (sampled-reach-floor-guard-lib/blocked? result))))
 
 ;; scenario: the recorded received commit itself cannot be read - warns and
 ;; sends, never refuses on the gate's own blindness.

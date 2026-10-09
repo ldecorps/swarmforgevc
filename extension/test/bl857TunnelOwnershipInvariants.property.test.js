@@ -87,9 +87,38 @@ function uniqueName(label) {
 // operator's real tunnel, which is the whole hazard. The real cloudflared is
 // an installed binary outside the temp directory and cannot be reached this
 // way however the names collide.
+//
+// 2026-10-09 (QA note 003951): an AGE bound as well. bl1287's property and
+// acceptance fixtures name a DEAD creator on purpose - that is the case they
+// test - so the creator-liveness check (BL-1287) selects them while a live
+// run still holds them, and this module-load sweep killed one mid-draw in
+// another fork or another seat's lane ("expected selected=true, got false").
+// A fixture younger than SIBLING_FIXTURE_MIN_AGE_S belongs to a run that is
+// still here; a real leak (sleep 300) outlives the bound by minutes and is
+// swept on a later load. This is the age half of "reap only what no live run
+// owns" (engineering Guardrails, BL-1385/BL-1390).
+const SIBLING_FIXTURE_MIN_AGE_S = 30;
+
+// `ps -o etime=` ([[dd-]hh:]mm:ss) rather than etimes, which macOS ps lacks.
+// null when the pid is gone or the age cannot be read - never swept then.
+function processAgeSeconds(pid) {
+  let etime;
+  try {
+    etime = execFileSync('ps', ['-o', 'etime=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+  } catch {
+    return null;
+  }
+  const m = etime.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+  if (!m) return null;
+  const [, days = '0', hours = '0', minutes, seconds] = m;
+  return Number(days) * 86400 + Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+}
+
 function sweepLeakedFixtureTunnels() {
   const swept = [];
   for (const pid of leakedFixtureTunnelPids(execFileSync)) {
+    const age = processAgeSeconds(pid);
+    if (age === null || age < SIBLING_FIXTURE_MIN_AGE_S) continue;
     try {
       process.kill(pid, 'SIGKILL');
       swept.push(pid);

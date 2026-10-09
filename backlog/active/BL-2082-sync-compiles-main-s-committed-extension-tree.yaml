@@ -7,6 +7,7 @@ severity: high
 # into the running build and stamped as main; the 10:23:40Z override on
 # 2026-10-07 is in the incident BL-2065 was minted from.
 status: todo
+assigned_to: coder@2
 epic: code-quality-gates
 priority: 5
 direction: swarm-reported
@@ -148,3 +149,5 @@ notes: |
   (the adapter's shape is direction), Valuable (no override compiles
   uncommitted code under main's name), Estimable (one adapter), Small
   (three scenarios), Testable (a fixture swarm and the real CLI).
+
+assigned_to: coder

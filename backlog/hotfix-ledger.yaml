@@ -1630,3 +1630,10 @@
   stamp_ticket: BL-2092
   human_decision: null
   decided_at: null
+- commit: 3d5e5064c5
+  subject: "Hotfix two property-lane reds: bl857 module-load sweep killed bl1287 dead-creator fixtures mid-draw, and bl1346 invariant 1 timed out on a bare 120000"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2093
+  human_decision: null
+  decided_at: null

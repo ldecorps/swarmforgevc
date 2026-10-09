@@ -360,6 +360,24 @@
    :warnings [(str "sampled-reach-floor check could not run for " task-name
                     " (received commit " received " unreadable) - send allowed, unverified (BL-1584)")]})
 
+;; BL-2087: the comparison base when the sender has no received commit at
+;; all - a coder's first send, taken up from a Work note (`type: note`,
+;; no `commit:` header), which is exactly where a property test file is
+;; ADDED. `git merge-base <commit> main` (the ticket's own "simplest"
+;; direction): nil when main does not resolve or the two commits share no
+;; merge base (git merge-base exits non-zero), which the caller treats as
+;; "no base available" and warns rather than refusing on a guess
+;; (invariant 2).
+(defn- parcel-base-on-main [root commit]
+  (let [{:keys [exit out]} (git! root "merge-base" commit "main")]
+    (when (zero? exit) (str/trim out))))
+
+(defn- no-base-warning [task-name commit]
+  {:findings []
+   :warnings [(str "sampled-reach-floor check could not establish a base for " task-name
+                    " (no received commit, and " commit " has no merge-base with main) - "
+                    "send allowed, unverified (BL-1584, BL-2087)")]})
+
 (defn- decisions-for-candidates [root received commit candidates]
   (for [path candidates
         :let [was? (path-exists-on-ref? root received path)
@@ -373,6 +391,23 @@
         (or (decide-for-path {:path path :kind kind :verdict verdict
                                :matched matched :budget budget})
             {:clean path})))))
+
+;; BL-2087: the ONE "run the candidates through decide-for-path and shape
+;; the result" body, shared by the received-commit path (the :else arm
+;; below) and the merge-base fallback (the (not received) arm) - a file's
+;; added/modified kind is decided by comparing commit against base the
+;; identical way regardless of where base came from (invariant 1).
+(defn- gate-result-for-base [root base commit changed-paths]
+  (let [candidates (->> changed-paths (filter property-test-path?) distinct sort)
+        decisions (decisions-for-candidates root base commit candidates)]
+    {:findings (vec (keep #(when (= :refuse (:action %)) %) decisions))
+     :warnings (vec (concat
+                     (keep #(when (= :warn (:action %)) (warning-line %)) decisions)
+                     (keep (fn [{:keys [unreadable]}]
+                             (when unreadable
+                               (str unreadable " could not be read at " commit
+                                    " - sampled-reach-floor check skipped for it, send allowed, unverified (BL-1584)")))
+                           decisions)))}))
 
 (defn findings-for-git-handoff
   "The one impure entry point. {:findings [...refuse entries...] :warnings
@@ -395,25 +430,21 @@
           (let [received (review-forward-evidence-gate-lib/received-commit-for-task root sender task-name)]
             (cond
               (not received)
-              ;; No recorded received commit at all (a fresh task, nothing
-              ;; yet received) is silent, not a warning - the same
-              ;; convention merge_drop_guard_lib.bb and BL-806 follow.
-              {:findings [] :warnings []}
+              ;; BL-2087: no recorded received commit at all (a coder's
+              ;; first send, taken up from a Work note) is exactly where a
+              ;; property test file is ADDED - fall back to the parcel's
+              ;; base on main instead of staying silent (invariant 2), so
+              ;; this is judged the same way a forwarded send already is
+              ;; (invariant 1).
+              (if-let [base (parcel-base-on-main root commit)]
+                (gate-result-for-base root base commit changed-paths)
+                (no-base-warning task-name commit))
 
               (not (ref-resolves? root received))
               (unreadable-received-warning task-name received)
 
               :else
-              (let [candidates (->> changed-paths (filter property-test-path?) distinct sort)
-                    decisions (decisions-for-candidates root received commit candidates)]
-                {:findings (vec (keep #(when (= :refuse (:action %)) %) decisions))
-                 :warnings (vec (concat
-                                 (keep #(when (= :warn (:action %)) (warning-line %)) decisions)
-                                 (keep (fn [{:keys [unreadable]}]
-                                         (when unreadable
-                                           (str unreadable " could not be read at " commit
-                                                " - sampled-reach-floor check skipped for it, send allowed, unverified (BL-1584)")))
-                                       decisions)))}))))))))
+              (gate-result-for-base root received commit changed-paths))))))))
 
 (defn blocked? [{:keys [findings]}] (boolean (seq findings)))
 
