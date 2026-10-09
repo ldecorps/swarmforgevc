@@ -9,7 +9,9 @@ Feature: One decode slot on the host, held by a seat across its burst
   keeps asking, gives it up when it goes quiet past an idle grace (tests,
   git, any tool) or has held it past a hold quantum while another seat
   waits, and a seat waiting for the slot is kept alive until its turn.
-  Builds on BL-2076's seat names.
+  A seat is a pane: a pack that rotates its roles through one pane is one
+  seat to the slot, whichever role it is running. Builds on BL-2076's seat
+  names.
 
   Background:
     Given a tool-call shim with one decode slot in front of a fake Ollama that answers only when the test releases it
@@ -45,3 +47,15 @@ Feature: One decode slot on the host, held by a seat across its burst
     When seat "QA" sends a streamed chat completion
     Then QA receives keepalive comments while it waits
     And QA receives its reply after coder hands over the slot
+
+  # BL-2077 rotation-in-one-pane-is-one-seat-05
+  Scenario Outline: a role rotated into the same pane gets the slot at once, a role in another pane waits out the idle grace
+    Given a <pack> pack on which the coder's chat completion, sent to the URL swarmforge.sh works out for the coder, has just been answered
+    When the cleaner sends a chat completion to the URL swarmforge.sh works out for the cleaner on that pack
+    Then the cleaner's completion reaches the fake Ollama <when> the idle grace runs out
+    And the shim's health names cleaner as holding the slot with no seat waiting
+
+    Examples:
+      | pack     | when   |
+      | rotating | before |
+      | standing | after  |

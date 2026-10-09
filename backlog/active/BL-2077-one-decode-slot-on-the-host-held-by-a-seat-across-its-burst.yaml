@@ -41,7 +41,7 @@ approval_context: >
 invariants:
   - "At most one chat completion is in flight to Ollama at any moment, from any number of seats; the shim's own extra upstream calls for one client request (the BL-1920 nudge, a BL-1978 warm-up) run under that request's slot."
   - "A request reaches Ollama with the same body it would have without the slot - the slot decides only when - and calls other than chat completions never wait."
-  - "With one seat on the host, every chat completion is forwarded as soon as it arrives."
+  - "With one local pane on the host, every chat completion is forwarded as soon as it arrives, whichever role the pane is running."
 
 description: |
   ## What is wrong
@@ -75,8 +75,16 @@ description: |
     per hand-over: seat, wait ms, previous holder (scenario 02).
   - The slot covers the whole client request, the shim's own extra
     upstream calls included (invariant 1).
+  - A pack that rotates its roles through one local pane (`config
+    rotation router` or `sequential`) is one seat to the slot: a role
+    rotated into the pane is forwarded at once and never waits out the
+    departed role's idle grace, while the log and the health endpoint
+    still name the role (scenario 05, rotating row). On a standing pack
+    each role is its own pane and the idle grace stands (scenario 05,
+    standing row).
   - Living doc: docs/how-to/BL-1052-local-model-seat-launch.md gains the
-    decode slot beside the shim section BL-2076 extends.
+    decode slot beside the shim section BL-2076 extends; its one-seat line
+    says that one seat means one pane, whichever role it runs.
 
   ## How (direction, not mandate)
 
@@ -90,6 +98,17 @@ description: |
     activity.
   - The waiting happens inside the existing keepalive path (the worker
     thread around ~704), so a waiting stream is kept alive the same way.
+  - The rotation reaches the slot through each pane's launch script (for
+    example the URL the writer works out, which already names the role),
+    not through an option on the shim or a read of
+    `.swarmforge/mono-router-active-role`. One shim serves the whole host
+    and outlives a pack across relaunches, so rotating behaviour set on the
+    shim would carry into a standing pack (BL-2078), and the active-role
+    file outlives a router run (on 2026-10-09 it read QA while a standing
+    roster ran). Scenario 05's handler gets both URLs from swarmforge.sh's
+    writer with the pack's rotation set, the way BL-2076's handler does,
+    and uses an idle grace of a few seconds so an at-once grant and a
+    grace wait are told apart (QA's repro used 3 s).
   - The architect reviews the lease against the three invariants, and the
     handover rules for a holder whose client disconnects mid-request.
 
@@ -111,17 +130,19 @@ out_of_scope: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-2077-one-decode-slot-on-the-host-held-by-a-seat-across-its-burst.feature`:
-     5 of 5 ok (01, 02, 03 x2, 04).
+     7 of 7 ok (01, 02, 03 x2, 04, 05 x2).
   2. `node specs/pipeline/cli.js specs/features/BL-2076-the-tool-call-shim-names-the-seat-behind-every-chat-completion.feature`:
      4 of 4 ok.
   3. `bash swarmforge/scripts/test/test_bl1917_local_model_seat_url.sh`
      (no lane runs it; it runs the shim's unittest file, the invariants'
      property tests included): all PASS.
   4. After the land, at the next relaunch (stop the old shim first; the
-     live pack is mono-router, one seat): `GET /shim/health` shows the
-     slot with the live seat as holder and no waiters, and the seat's
-     turns are not slower than before (invariant 3); record the health
-     answer in the QA evidence.
+     live pack rotates its roles through one local pane): `GET
+     /shim/health` shows the slot with the live role as holder and no
+     waiters; the first completion after the next role rotation shows no
+     wait for the slot in the shim log; and the seat's turns are not
+     slower than before (invariant 3). Record the health answer and the
+     log line in the QA evidence.
 
 source: |
   backlog/INTAKE-full-forge-iq3-one-gpu-decode-slot-20261007.md, the
@@ -170,3 +191,29 @@ notes: |
   share one slot without per-request re-prefills), Estimable (one lease on
   one request path), Small (four scenarios), Testable (real shim over a
   fake Ollama that answers on release).
+  Amended 2026-10-09 (QA note 003953, evidence e94df3b5cf, D1 spec-gap).
+  As minted, the slot keyed on the role the URL names (BL-2076), so on a
+  rotating pack every rotation was a change of seat: the rotated-in
+  role's first completion waited out the departed role's idle grace (QA's
+  repro: 2508 ms at a 3 s grace; up to 30 s at the default) with no other
+  seat alive, against invariant 3 and approval_context's FIRM "a lone
+  seat never waits". Ruling: a seat is a pane. A rotating pack is one
+  seat to the slot whichever role runs; a standing pack's roles are
+  separate panes and the idle grace stands. Added scenario 05 with two
+  rows: the standing row keeps the fix from collapsing into "every role
+  is one seat", which would leave BL-2078's standing pack with no slot.
+  Invariant 3 reworded; the how-to's one-seat line follows. No new
+  scope: scenario 05 is the executable form of the approved FIRM line, so
+  human_approval stays approved. The parcel (1d9eec0235) was built
+  correctly against the ticket as minted and QA recorded no bounce, so
+  nothing is charged to the coder.
+  Rebuild from 1d9eec0235: merge main (this amendment), add scenario 05's
+  steps to bl2077DecodeSlotSteps.js, change the slot or the writer, and
+  the documenter corrects the how-to's one-seat line.
+  The feature was edited on main: the parcel does not change it and
+  carries no mutation stamp (no hardener stage), so the BL-1385 conflict
+  cannot arise.
+  IR-DRY for scenario 05: "names cleaner as holding the slot with no seat
+  waiting" against scenario 01's "names coder as holding the slot and QA
+  as waiting" are two states, kept; the Given and the When are two
+  different sends, kept.
