@@ -210,6 +210,11 @@
   reason: "Sanctioned hotfix-every-red-then-stamp-off path (operator directive 2026-10-01); recorded in hotfix-ledger.yaml with stamp_ticket BL-1930"
   waived_at: 2026-10-03
 
+- key: pipeline-code-on-main-597801eadd2dbf1cc4f2e1e5ea4eaf3b0718df25
+  waived_by: coordinator
+  reason: "False positive: direct hotfix to bl1700StewardCoderProbeSteps.js leak-check scenario 03, caused by real model_steward_cli.bb probe runs I started tonight (coder-seat-freed-for-steward-exercise) leaving live .probe.tmux.sock processes on the host that the old host-wide ps scan miscounted as leaks. Not a QA land; adjudicated as a legitimate same-evening hotfix, not pipeline-process-bypass."
+  waived_at: 2026-10-09
+
 - key: pipeline-code-on-main-5d9fc6da3b10e855ea6ff4df167f955e58151d0b
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
