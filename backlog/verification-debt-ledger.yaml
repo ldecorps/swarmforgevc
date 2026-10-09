@@ -329,3 +329,8 @@
   role: hardender
   description: "Stryker dry run on verificationDebtSignal.js/emit-throttle-recommendation.js terminated (exit 143) at ~7min on 4 consecutive attempts under coder2's own concurrent 10-worker vitest load; fell back to hand-mutation verification (2 mutants, 1 killed real gap, 1 found via a missing test now added) plus full unit/property/acceptance suites."
   detected_at: 2026-10-09
+- category: stryker-dry-run-timeout-fallback
+  ticket: BL-2097
+  role: hardender
+  description: "Stryker dry run on telegramFrontDeskBotCore.js terminated (exit 143) near-immediately on 2 consecutive attempts, confirmed coder2's own 10-worker vitest load throughout; fell back to hand-mutation verification (2 mutants, both killed) plus full unit/property/acceptance suites."
+  detected_at: 2026-10-09
