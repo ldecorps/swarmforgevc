@@ -36,6 +36,7 @@
 (load-file (str (fs/path scripts-dir "node_tool_bringup_lib.bb")))
 (load-file (str (fs/path scripts-dir "model_steward_coder_probe_lib.bb")))
 (load-file (str (fs/path scripts-dir "model_steward_brief_lib.bb")))
+(load-file (str (fs/path scripts-dir "local_model_prepare_lib.bb")))
 
 (defn cli-args []
   (let [raw (vec *command-line-args*)]
@@ -113,7 +114,9 @@
   (println "  trial go-live <provider>/<model> --role <role>")
   (println "  trial status [--role <role>]")
   (println "  trial assess --role <role> [--now <iso>]")
+  (println "  prepare <base-tag> [--alias <name>] [--num-ctx N] [--num-predict N] [--dry-run] [--reprobe]")
   (println "  probe <model> [--scenario <id>]... [--all] [--endpoint-url <url>] [--evidence-dir <dir>]")
+  (println "           [--prepare] [--prepare-alias <name>] [--model-settings-file <path>]")
   (println "  probe score-hazard --handed-off <true|false> [--spec-changed <true|false>] [--touched-outside <true|false>]")
   (System/exit 1))
 
@@ -612,11 +615,55 @@
         summary (model-steward-coder-probe-lib/summarize (conj coder-cards hazard-card))]
     (println (json/generate-string summary))))
 
+(defn run-prepare
+  "Shared local-model prepare: Modelfile + alias + think-off aider profile.
+   Optional --reprobe runs BL-1700 against the prepared alias (and one
+   empty-response retry is a no-op here since prepare already applied)."
+  [rest-args]
+  (when (empty? rest-args) (usage))
+  (let [base (first rest-args)
+        flags (vec (rest rest-args))
+        alias (opt-value flags "--alias")
+        num-ctx (when-let [v (opt-value flags "--num-ctx")] (Long/parseLong v))
+        num-predict (when-let [v (opt-value flags "--num-predict")] (Long/parseLong v))
+        dry? (has-flag? flags "--dry-run")
+        reprobe? (has-flag? flags "--reprobe")
+        evidence-dir (opt-value flags "--evidence-dir")
+        endpoint-url (or (opt-value flags "--endpoint-url") "http://127.0.0.1:11434/v1")]
+    (try
+      (let [profile (local-model-prepare-lib/prepare!
+                     (cond-> {:base base :dry-run? dry?}
+                       alias (assoc :alias alias)
+                       num-ctx (assoc :num-ctx num-ctx)
+                       num-predict (assoc :num-predict num-predict)))]
+        (println (json/generate-string profile))
+        (when reprobe?
+          (when dry?
+            (binding [*out* *err*]
+              (println "prepare --reprobe ignored with --dry-run (no ollama alias)"))
+            (System/exit 0))
+          (let [result (model-steward-coder-probe-lib/probe!
+                        {:model (:alias profile)
+                         :endpoint-url endpoint-url
+                         :evidence-dir evidence-dir
+                         :model-settings-file (:aiderSettingsPath profile)
+                         :prepare-profile profile})]
+            (println (json/generate-string result))
+            (System/exit (if (= "pass" (:verdict (:summary result))) 0 1))))
+        (System/exit 0))
+      (catch Exception e
+        (binding [*out* *err*]
+          (println (str "prepare failed: " (or (ex-message e) (.getMessage e)))))
+        (System/exit 1)))))
+
 (defn run-probe
   "BL-1700: `probe <model> [--scenario <id>]... [--endpoint-url <url>]
    [--evidence-dir <dir>]` - the steward CLI's dispatch anchor for
    model-steward-coder-probe-lib/probe! (BL-1235 consumer anchor). BL-1701:
-   `probe score-hazard ...` dispatches to the pure hazard scorer instead."
+   `probe score-hazard ...` dispatches to the pure hazard scorer instead.
+   With `--prepare`, runs local_model_prepare_lib first (alias + think-off
+   profile) then probes the alias; on empty-response fail shape, retries
+   once (prepare already applied — retry reuses the same profile)."
   [rest-args]
   (when (empty? rest-args) (usage))
   (cond
@@ -634,6 +681,9 @@
           fix-turns-limit (when-let [v (opt-value flags "--fix-turns-limit")] (Long/parseLong v))
           max-ticks (when-let [v (opt-value flags "--max-ticks")] (Long/parseLong v))
           wall-clock-seconds (when-let [v (opt-value flags "--wall-clock-seconds")] (Long/parseLong v))
+          prepare? (has-flag? flags "--prepare")
+          prepare-alias (opt-value flags "--prepare-alias")
+          model-settings-file (opt-value flags "--model-settings-file")
           scenarios (loop [fs flags acc []]
                       (if (empty? fs)
                         acc
@@ -649,13 +699,47 @@
                                 include-all? (vec (concat model-steward-coder-probe-lib/fixture-ids
                                                            model-steward-coder-probe-lib/hazard-fixture-ids))
                                 :else model-steward-coder-probe-lib/fixture-ids)
-          result (model-steward-coder-probe-lib/probe!
-                  (cond-> {:model model :endpoint-url endpoint-url
-                           :fixture-ids-to-run fixture-ids-to-run :evidence-dir evidence-dir}
-                    stand-in (assoc :stand-in-mode stand-in)
-                    fix-turns-limit (assoc :fix-turns-limit fix-turns-limit)
-                    max-ticks (assoc :max-ticks max-ticks)
-                    wall-clock-seconds (assoc :wall-clock-seconds wall-clock-seconds)))]
+          profile (when (and prepare? (not stand-in))
+                    (local-model-prepare-lib/prepare!
+                     (cond-> {:base model}
+                       prepare-alias (assoc :alias prepare-alias))))
+          probe-model (or (:alias profile) model)
+          settings-file (or model-settings-file (:aiderSettingsPath profile))
+          probe-opts (cond-> {:model probe-model :endpoint-url endpoint-url
+                              :fixture-ids-to-run fixture-ids-to-run :evidence-dir evidence-dir}
+                       stand-in (assoc :stand-in-mode stand-in)
+                       fix-turns-limit (assoc :fix-turns-limit fix-turns-limit)
+                       max-ticks (assoc :max-ticks max-ticks)
+                       wall-clock-seconds (assoc :wall-clock-seconds wall-clock-seconds)
+                       settings-file (assoc :model-settings-file settings-file)
+                       profile (assoc :prepare-profile profile))
+          result (model-steward-coder-probe-lib/probe! probe-opts)
+          ;; One automatic retry when the empty-implement shape appears:
+          ;; prepare (Modelfile + think-off) then re-probe the alias. Covers
+          ;; bakeoffs that probed a bare HF tag without --prepare.
+          result (if (and (not stand-in)
+                          (:endpointOk? result)
+                          (local-model-prepare-lib/empty-response-fail-shape?
+                           (:summary result) (:scorecards result)))
+                   (let [retry-profile (or profile
+                                           (try
+                                             (local-model-prepare-lib/prepare!
+                                              (cond-> {:base model}
+                                                prepare-alias (assoc :alias prepare-alias)))
+                                             (catch Exception e
+                                               (binding [*out* *err*]
+                                                 (println (str "prepare-on-empty-fail skipped: "
+                                                               (or (ex-message e) (.getMessage e)))))
+                                               nil)))]
+                     (if retry-profile
+                       (let [retry (model-steward-coder-probe-lib/probe!
+                                    (assoc probe-opts
+                                           :model (:alias retry-profile)
+                                           :model-settings-file (:aiderSettingsPath retry-profile)
+                                           :prepare-profile (assoc retry-profile :retryAfterEmptyResponse true)))]
+                         (assoc retry :priorEmptyResponseFail true :firstAttempt result))
+                       result))
+                   result)]
       (if-not (:endpointOk? result)
         (do (binding [*out* *err*]
               (println (str "probe: endpoint " (:endpointUrl result) " did not answer")))
@@ -718,5 +802,6 @@
     "adapter" (run-adapter rest-args)
     "eligible" (run-eligible rest-args)
     "trial" (run-trial rest-args)
+    "prepare" (run-prepare rest-args)
     "probe" (run-probe rest-args)
     (usage)))

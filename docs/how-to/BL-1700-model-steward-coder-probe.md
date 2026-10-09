@@ -21,6 +21,18 @@ bb swarmforge/scripts/model_steward_cli.bb probe qwen2.5-coder:latest \
   --endpoint-url http://127.0.0.1:11434/v1
 ```
 
+For a **new** HF/ollama GGUF that has never been seat-tuned, prefer prepare
+first (Modelfile alias + think-off aider profile). Bare tags often fail with
+empty implement turns (~8s / `no model commit`) — the XXS / Qwen3.6 shape:
+
+```sh
+bb swarmforge/scripts/model_steward_cli.bb probe 'hf.co/org/repo:TAG' --prepare
+# or: prepare … --reprobe
+```
+
+See [BL-547 prepare section](./BL-547-model-steward-overview.md#preparing-a-new-local-ollamahf-coder-candidate).
+On that empty-response fail shape the CLI also retries once after prepare.
+
 Prints the run's JSON result (`endpointOk?`, per-fixture `scorecards`, and
 `summary`) and exits 0 only when the summary's verdict is `pass` (at least
 4 of the 5 fixture tickets handed off with the spec untouched). Also

@@ -1,8 +1,33 @@
 # Model Steward: Onboarding, Certification, and Role Recommendations
 
-Last Updated: 2026-09-30
+Last Updated: 2026-10-08
 
 SwarmForge's **Model Steward** maintains the Model Registry, Capability Registry, Role Recommendation Matrix, and Prompt Adapter catalogue — the permanent home for knowledge about each language model the swarm uses.
+
+## Preparing a new local (ollama/HF) coder candidate
+
+Bare HF tags often fail BL-1700 with empty implement turns (thinking models,
+wrong `num_ctx` / `num_predict`). Shared prepare lives in
+`local_model_prepare_lib.bb` — **recruiter invokes it after pull; steward
+invokes it for bakeoffs**. Neither cold-swaps a live pack.
+
+```bash
+# Modelfile alias + think-off aider profile (no probe)
+bb swarmforge/scripts/model_steward_cli.bb prepare \
+  'hf.co/org/repo:Q4_K_M' --alias prepared-example
+
+# Prepare then BL-1700 probe the alias
+bb swarmforge/scripts/model_steward_cli.bb prepare \
+  'hf.co/org/repo:Q4_K_M' --alias prepared-example --reprobe
+
+# Or probe with --prepare (same lib; one empty-response retry on fail)
+bb swarmforge/scripts/model_steward_cli.bb probe 'hf.co/org/repo:Q4_K_M' --prepare
+```
+
+Artifacts land under `.swarmforge/model-steward/prepared/`. Pack window /
+day_shift apply stays human-gated (BL-1956 onboarding how-to when landed).
+Recruiter weekly calls the same prepare before battery/certify and still
+**never staffs** a seat.
 
 ## Onboarding a New Model
 

@@ -243,7 +243,11 @@
   [endpoint-url]
   (str/replace endpoint-url #"/v1/?$" ""))
 
-(defn- aider-launch-args [model endpoint-url llm-history-path]
+(defn- aider-launch-args
+  "Build aider argv. When model-settings-file is present (prepared think-off
+   profile from local_model_prepare_lib), pass --model-settings-file so the
+   probe harness applies think:false for that exact model id."
+  [model endpoint-url llm-history-path model-settings-file]
   ;; litellm's "openai/<model>" provider validates against REAL OpenAI
   ;; model ids even with --openai-api-base pointed elsewhere (a live
   ;; ollama model this host serves came back
@@ -252,15 +256,18 @@
   ;; native "ollama_chat/<model>" provider talks to OLLAMA_API_BASE
   ;; directly, no OpenAI validation layer - verified working against the
   ;; same live endpoint.
-  (let [model (if (str/includes? model "/") model (str "ollama_chat/" model))]
-    ["aider" "--model" model
-     "--yes-always" "--no-detect-urls" "--no-show-model-warnings" "--no-check-update" "--no-gitignore"
-     "--test-cmd" "swarmforge/scripts/seat test" "--auto-test"
-     ;; BL-1700 D3: an ABSOLUTE path outside the throwaway root - the root
-     ;; is deleted in run-fixture!'s finally, and the relative
-     ;; ".probe-llm.log" this used to be died with it, so no run's model
-     ;; transcript ever survived to be read.
-     "--llm-history-file" llm-history-path "--chat-history-file" ".probe-chat.md"]))
+  (let [model (if (str/includes? model "/") model (str "ollama_chat/" model))
+        base ["aider" "--model" model
+              "--yes-always" "--no-detect-urls" "--no-show-model-warnings" "--no-check-update" "--no-gitignore"
+              "--test-cmd" "swarmforge/scripts/seat test" "--auto-test"
+              ;; BL-1700 D3: an ABSOLUTE path outside the throwaway root - the root
+              ;; is deleted in run-fixture!'s finally, and the relative
+              ;; ".probe-llm.log" this used to be died with it, so no run's model
+              ;; transcript ever survived to be read.
+              "--llm-history-file" llm-history-path "--chat-history-file" ".probe-chat.md"]]
+    (cond-> base
+      (and model-settings-file (fs/exists? model-settings-file))
+      (concat ["--model-settings-file" (str model-settings-file)]))))
 
 (defn launch-aider-seat!
   "Starts a real aider seat in a fresh tmux session (its own socket, one
@@ -268,21 +275,23 @@
    (BL-1699): --yes-always, no repo path in the bootstrap, coder-only
    --test-cmd/--auto-test, an OpenAI-compat endpoint. llm-history-path is
    an absolute path OUTSIDE root so it outlives the throwaway repo
-   (BL-1700 D3). Returns {:socket :session}."
-  [root model endpoint-url llm-history-path]
-  (let [socket (str (fs/path root ".probe.tmux.sock"))
-        session "probe"
-        cmd (aider-launch-args model endpoint-url llm-history-path)
-        shell-line (str "cd " (str root)
-                         " && export OPENAI_API_KEY=ollama BROWSER=/usr/bin/true"
-                         " OLLAMA_API_BASE=" (ollama-base-from-openai-compat-url endpoint-url)
-                         " && "
-                         (str/join " " (map #(str "'" (str/replace % "'" "'\\''") "'") cmd))
-                         "; sleep 300")]
-    (sh! {:out "/dev/null" :err "/dev/null"}
-         "tmux" "-S" socket "new-session" "-d" "-s" session "-x" "200" "-y" "50" shell-line)
-    {:socket socket :session session}))
-
+   (BL-1700 D3). Optional :model-settings-file applies a prepare think-off
+   profile. Returns {:socket :session}."
+  ([root model endpoint-url llm-history-path]
+   (launch-aider-seat! root model endpoint-url llm-history-path nil))
+  ([root model endpoint-url llm-history-path model-settings-file]
+   (let [socket (str (fs/path root ".probe.tmux.sock"))
+         session "probe"
+         cmd (aider-launch-args model endpoint-url llm-history-path model-settings-file)
+         shell-line (str "cd " (str root)
+                          " && export OPENAI_API_KEY=ollama BROWSER=/usr/bin/true"
+                          " OLLAMA_API_BASE=" (ollama-base-from-openai-compat-url endpoint-url)
+                          " && "
+                          (str/join " " (map #(str "'" (str/replace % "'" "'\\''") "'") cmd))
+                          "; sleep 300")]
+     (sh! {:out "/dev/null" :err "/dev/null"}
+          "tmux" "-S" socket "new-session" "-d" "-s" session "-x" "200" "-y" "50" shell-line)
+     {:socket socket :session session})))
 (defn- kill-session! [socket session]
   ;; kill-server (never just kill-session): each run gets its OWN socket,
   ;; so this always tears down exactly this run's server, never another
@@ -391,7 +400,8 @@
    Always kills the tmux session it started and removes the throwaway
    repo before returning, whatever the outcome - invariant 2."
   [{:keys [fixture-id model endpoint-url stand-in-mode
-           fix-turns-limit max-ticks wall-clock-seconds]}]
+           fix-turns-limit max-ticks wall-clock-seconds
+           model-settings-file]}]
   (let [fix-turns-limit (or fix-turns-limit local-parcel-driver-lib/default-fix-turns)
         max-ticks (or max-ticks default-max-ticks)
         wall-clock-seconds (or wall-clock-seconds default-wall-clock-seconds)
@@ -406,7 +416,7 @@
                             (str (fs/path (fs/parent root) (str "bl1700-llm-history-" fixture-id "-" t0 ".log"))))
         {:keys [socket session]} (if stand-in-mode
                                     (launch-stand-in-seat! root stand-in-mode)
-                                    (launch-aider-seat! root model endpoint-url llm-history-path))
+                                    (launch-aider-seat! root model endpoint-url llm-history-path model-settings-file))
         agent (if stand-in-mode "stand-in" "aider")
         ;; The driver assumes an ALREADY-idle seat (true in production - a
         ;; seat boots once, long before any parcel reaches it); this
@@ -506,7 +516,8 @@
    that path. Every scorecard and the summary/evidence file report the
    RESOLVED model id (BL-1700 D3), not the raw argument."
   [{:keys [model endpoint-url fixture-ids-to-run stand-in-mode
-           fix-turns-limit max-ticks wall-clock-seconds evidence-dir]
+           fix-turns-limit max-ticks wall-clock-seconds evidence-dir
+           model-settings-file prepare-profile]
     :or {fixture-ids-to-run fixture-ids
          endpoint-url "http://127.0.0.1:11434/v1"}}]
   (if-not (or stand-in-mode (endpoint-answers? endpoint-url))
@@ -523,7 +534,8 @@
                               (let [sc (run-fixture! {:fixture-id id :model resolved-model :endpoint-url endpoint-url
                                                        :stand-in-mode stand-in-mode
                                                        :fix-turns-limit fix-turns-limit :max-ticks max-ticks
-                                                       :wall-clock-seconds wall-clock-seconds})]
+                                                       :wall-clock-seconds wall-clock-seconds
+                                                       :model-settings-file model-settings-file})]
                                 (if (hazard-fixture? id)
                                   (assoc sc :hazardVerdict (hazard-verdict-for-scorecard sc))
                                   sc)))
@@ -538,9 +550,15 @@
                 (str "# local coder probe: " resolved-model "\n\n"
                      "handed off " (:handedOff summary) " of " (:of summary)
                      " - verdict " (:verdict summary) "\n\n"
+                     (when prepare-profile
+                       (str "prepare profile: alias=" (:alias prepare-profile)
+                            " thinkOff=" (:thinkOff prepare-profile)
+                            " numCtx=" (:numCtx prepare-profile)
+                            " numPredict=" (:numPredict prepare-profile) "\n\n"))
                      (str/join "\n" (map #(str "- " (:fixtureId %) ": " (:outcome %) " (" (:wallSeconds %)
                                                 "s, " (:turns %) " turn(s)) - llm history: " (:llmHistoryPath %)
                                                 (when (:hazardVerdict %) (str " - hazard verdict: " (:hazardVerdict %))))
                                           scorecards))
                      "\n"))))
-      {:endpointOk? true :model resolved-model :scorecards scorecards :summary summary})))
+      {:endpointOk? true :model resolved-model :scorecards scorecards :summary summary
+       :prepareProfile prepare-profile})))

@@ -1,0 +1,12 @@
+# local-coder-prepare.Modelfile.tmpl — frozen template for
+# local_model_prepare_lib.bb. Derived from ista-iq3s-coder lessons
+# (num_ctx outside qwen compaction dead zone; num_predict default for
+# callers that omit max_tokens). Placeholders replaced at prepare time:
+#   FROM line <- base ollama/HF tag (e.g. hf.co/org/repo:Q4_K_M)
+#   num_ctx / num_predict <- defaults 32768 / 4096 unless overridden
+#
+# Apply via: bb swarmforge/scripts/local_model_prepare_cli.bb <base> --alias <name>
+# Never freelanced by cron — edit this template deliberately.
+FROM {{FROM}}
+PARAMETER num_ctx {{NUM_CTX}}
+PARAMETER num_predict {{NUM_PREDICT}}
