@@ -35,18 +35,38 @@ export interface CheckContext {
   task?: string;
   commit: string;
   acceptanceFeature?: string;
+  // BL-2024: set only when the parcel's own diff (merge-base main..commit)
+  // is non-empty and every path starts with "backlog/" - the reason the
+  // unit/properties checks' build() skip with below. undefined (never
+  // computed, or the diff touches anything else, or could not be
+  // resolved) means "run as today" - the skip fails closed (invariant 1).
+  backlogOnlySkipReason?: string;
 }
 
 type BuiltCommand = { command: string; args: string[]; cwd: string };
 type BlockedBuild = { blockedReason: string };
+type SkippedBuild = { skippedReason: string };
 
 export interface CheckSpec {
   id: string;
-  build(ctx: CheckContext): BuiltCommand | BlockedBuild;
+  build(ctx: CheckContext): BuiltCommand | BlockedBuild | SkippedBuild;
 }
 
-function isBlocked(built: BuiltCommand | BlockedBuild): built is BlockedBuild {
+function isBlocked(built: BuiltCommand | BlockedBuild | SkippedBuild): built is BlockedBuild {
   return (built as BlockedBuild).blockedReason !== undefined;
+}
+
+function isSkipped(built: BuiltCommand | BlockedBuild | SkippedBuild): built is SkippedBuild {
+  return (built as SkippedBuild).skippedReason !== undefined;
+}
+
+// BL-2024: a check whose build() returns this when ctx.backlogOnlySkipReason
+// is set - the unit and properties checks are the only two that use it.
+function skippableCommand(
+  ctx: CheckContext,
+  real: () => BuiltCommand
+): BuiltCommand | SkippedBuild {
+  return ctx.backlogOnlySkipReason ? { skippedReason: ctx.backlogOnlySkipReason } : real();
 }
 
 const STRAGGLER_PATTERN = 'node --test|stryker|vitest';
@@ -84,10 +104,14 @@ export const CHECKLIST: CheckSpec[] = [
         ? { command: path.join(ctx.root, 'swarmforge', 'scripts', 'pre_qa_gate.sh'), args: [ctx.task, ctx.commit, ctx.root], cwd: ctx.root }
         : { blockedReason: '--task was not given; the wiring check needs a task name' },
   },
-  { id: 'unit', build: (ctx) => ({ command: 'npm', args: ['test'], cwd: path.join(ctx.root, 'extension') }) },
+  {
+    id: 'unit',
+    build: (ctx) => skippableCommand(ctx, () => ({ command: 'npm', args: ['test'], cwd: path.join(ctx.root, 'extension') })),
+  },
   {
     id: 'properties',
-    build: (ctx) => ({ command: 'npm', args: ['run', 'test:properties'], cwd: path.join(ctx.root, 'extension') }),
+    build: (ctx) =>
+      skippableCommand(ctx, () => ({ command: 'npm', args: ['run', 'test:properties'], cwd: path.join(ctx.root, 'extension') })),
   },
   {
     id: 'property_runners',
@@ -114,7 +138,7 @@ export interface CheckRow {
   id: string;
   command: string;
   cwd: string;
-  status: 'ran' | 'blocked';
+  status: 'ran' | 'blocked' | 'skipped';
   exit: number | null;
   duration_ms: number;
   excerpt: string;
@@ -162,6 +186,10 @@ export function runChecklist(
   const rows: CheckRow[] = [];
   for (const spec of checklist) {
     const built = spec.build(ctx);
+    if (isSkipped(built)) {
+      rows.push({ id: spec.id, command: '', cwd: ctx.root, status: 'skipped', exit: null, duration_ms: 0, excerpt: '', reason: built.skippedReason });
+      continue;
+    }
     if (isBlocked(built)) {
       rows.push({ id: spec.id, command: '', cwd: ctx.root, status: 'blocked', exit: null, duration_ms: 0, excerpt: '', reason: built.blockedReason });
       continue;
@@ -381,6 +409,38 @@ export interface QaGatherReport {
   register_join: RegisterJoinEntry[];
 }
 
+// BL-2024: the parcel's OWN changed paths - git merge-base main <commit>,
+// then git diff --name-only <base> <commit>, both through the SAME
+// injected runFn seam every check uses (never a second subprocess
+// mechanism, never a reimplementation of what git already answers).
+// Returns a skip reason only when that diff is non-empty and every path
+// in it starts with "backlog/" - a failed merge-base, a failed diff, an
+// empty diff, or any path outside backlog/ returns undefined, so the
+// caller runs both lanes exactly as today (invariant 1: fails closed on
+// any doubt).
+export function backlogOnlySkipReason(root: string, commit: string, runFn: RunFn): string | undefined {
+  const mergeBase = runFn('git', ['merge-base', 'main', commit], root);
+  if (!mergeBase.started || mergeBase.exit !== 0) {
+    return undefined;
+  }
+  const base = mergeBase.stdout.trim();
+  if (!base) {
+    return undefined;
+  }
+  const diff = runFn('git', ['diff', '--name-only', base, commit], root);
+  if (!diff.started || diff.exit !== 0) {
+    return undefined;
+  }
+  const paths = diff.stdout
+    .split('\n')
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (paths.length === 0 || !paths.every((p) => p.startsWith('backlog/'))) {
+    return undefined;
+  }
+  return `the parcel's own diff touches only backlog/ (${paths.join(', ')})`;
+}
+
 // The pure composition core: given the ticket's own landed YAML content
 // (already read by the impure caller - qaGatherAdapter.ts's
 // gatherQaChecklist), resolves the acceptance: path and drives the fixed
@@ -394,7 +454,14 @@ export function composeQaGatherReport(
   yamlContent: string | undefined
 ): QaGatherReport {
   const acceptanceFeature = yamlContent ? readAcceptancePath(yamlContent) : undefined;
-  const ctx: CheckContext = { root, ticketId, task: opts.task, commit: opts.commit, acceptanceFeature };
+  const ctx: CheckContext = {
+    root,
+    ticketId,
+    task: opts.task,
+    commit: opts.commit,
+    acceptanceFeature,
+    backlogOnlySkipReason: backlogOnlySkipReason(root, opts.commit, runFn),
+  };
   let registerRawStdout: string | undefined;
   const rawOutputByCheckId = new Map<string, string>();
   const checks = runChecklist(CHECKLIST, ctx, runFn, (id, outcome) => {

@@ -13,6 +13,7 @@ const {
   composeQaGatherReport,
   parseRegisterOutput,
   EXCERPT_MAX_CHARS,
+  backlogOnlySkipReason,
 } = require('../out/quality/qaGather');
 const { findTicketYamlContent, gatherQaChecklist, defaultRunFn } = require('../out/metrics/qaGatherAdapter');
 
@@ -169,6 +170,188 @@ test('no row ever carries a verdict-shaped field', () => {
       assert.ok(!/verdict|pass|bounce|approve/i.test(key), `row key "${key}" looks like a verdict field`);
     }
   }
+});
+
+// ── BL-2024: backlog-only parcel skips the unit/properties lanes ────────
+
+test('backlogOnlySkipReason returns a reason when the diff is non-empty and every path starts with backlog/', () => {
+  const runFn = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
+    'diff --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: 'backlog/evidence/BL-9001-coder.md\n', stderr: '' },
+  }).runFn;
+  const reason = backlogOnlySkipReason('/r', 'abc1234567', runFn);
+  assert.ok(typeof reason === 'string' && reason.length > 0);
+  assert.match(reason, /backlog\//);
+});
+
+test('backlogOnlySkipReason returns undefined when any path is outside backlog/, even alongside backlog/ paths', () => {
+  const runFn = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
+    'diff --name-only basesha0001 abc1234567': {
+      started: true,
+      exit: 0,
+      stdout: 'backlog/evidence/BL-9001-coder.md\nextension/src/tools/bl9001.ts\n',
+      stderr: '',
+    },
+  }).runFn;
+  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
+});
+
+test('backlogOnlySkipReason returns undefined when the diff is empty', () => {
+  const runFn = fakeRunner({
+    'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
+    'diff --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: '', stderr: '' },
+  }).runFn;
+  assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
+});
+
+test('backlogOnlySkipReason returns undefined when the merge-base cannot be resolved (never started, a non-zero exit, or empty stdout)', () => {
+  assert.equal(
+    backlogOnlySkipReason('/r', 'abc1234567', fakeRunner({ 'merge-base main abc1234567': { started: false, exit: null, stdout: '', stderr: '', reason: 'boom' } }).runFn),
+    undefined
+  );
+  assert.equal(
+    backlogOnlySkipReason('/r', 'abc1234567', fakeRunner({ 'merge-base main abc1234567': { started: true, exit: 1, stdout: '', stderr: 'no such ref' } }).runFn),
+    undefined
+  );
+  assert.equal(
+    backlogOnlySkipReason('/r', 'abc1234567', fakeRunner({ 'merge-base main abc1234567': { started: true, exit: 0, stdout: '\n', stderr: '' } }).runFn),
+    undefined
+  );
+});
+
+test('backlogOnlySkipReason returns undefined when the diff itself cannot be resolved (never started, or a non-zero exit)', () => {
+  const mergeBaseOk = { 'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' } };
+  assert.equal(
+    backlogOnlySkipReason(
+      '/r', 'abc1234567',
+      fakeRunner({ ...mergeBaseOk, 'diff --name-only basesha0001 abc1234567': { started: false, exit: null, stdout: '', stderr: '', reason: 'boom' } }).runFn
+    ),
+    undefined
+  );
+  assert.equal(
+    backlogOnlySkipReason(
+      '/r', 'abc1234567',
+      fakeRunner({ ...mergeBaseOk, 'diff --name-only basesha0001 abc1234567': { started: true, exit: 1, stdout: '', stderr: 'boom' } }).runFn
+    ),
+    undefined
+  );
+});
+
+test("the unit and properties checks' build() skip without ever building a command when ctx.backlogOnlySkipReason is set", () => {
+  const ctx = { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', backlogOnlySkipReason: 'the parcel only touches backlog/' };
+  const unitBuilt = CHECKLIST.find((c) => c.id === 'unit').build(ctx);
+  const propsBuilt = CHECKLIST.find((c) => c.id === 'properties').build(ctx);
+  assert.deepEqual(unitBuilt, { skippedReason: 'the parcel only touches backlog/' });
+  assert.deepEqual(propsBuilt, { skippedReason: 'the parcel only touches backlog/' });
+});
+
+test("the unit and properties checks' build() run normally when ctx.backlogOnlySkipReason is unset", () => {
+  const ctx = { root: '/r', ticketId: 'BL-1', commit: 'abc1234567' };
+  const unitBuilt = CHECKLIST.find((c) => c.id === 'unit').build(ctx);
+  const propsBuilt = CHECKLIST.find((c) => c.id === 'properties').build(ctx);
+  assert.equal(unitBuilt.command, 'npm');
+  assert.deepEqual(unitBuilt.args, ['test']);
+  assert.equal(propsBuilt.command, 'npm');
+  assert.deepEqual(propsBuilt.args, ['run', 'test:properties']);
+});
+
+test('runChecklist reports a skipped build as status "skipped" with its reason, calls no runFn for it, and never calls onRawOutcome for it', () => {
+  const { runFn, calls } = fakeRunner({ default: { started: true, exit: 0, stdout: 'ok', stderr: '' } });
+  const raw = new Map();
+  const ctx = { root: '/r', ticketId: 'BL-1', commit: 'abc1234567', task: 't', acceptanceFeature: 'f.feature', backlogOnlySkipReason: 'only backlog/' };
+  const rows = runChecklist(CHECKLIST, ctx, runFn, (id, outcome) => raw.set(id, outcome.stdout));
+  const unitRow = rows.find((r) => r.id === 'unit');
+  const propsRow = rows.find((r) => r.id === 'properties');
+  assert.deepEqual(
+    [unitRow, propsRow].map((r) => ({ status: r.status, command: r.command, exit: r.exit, reason: r.reason })),
+    [
+      { status: 'skipped', command: '', exit: null, reason: 'only backlog/' },
+      { status: 'skipped', command: '', exit: null, reason: 'only backlog/' },
+    ]
+  );
+  assert.ok(!calls.some((c) => c.args.includes('test') || c.args.includes('test:properties')), 'a skipped check must never reach runFn');
+  assert.ok(!raw.has('unit') && !raw.has('properties'), 'onRawOutcome must never fire for a skipped check');
+  // every other check still ran, unaffected by the two skips.
+  for (const row of rows) {
+    if (row.id !== 'unit' && row.id !== 'properties') {
+      assert.equal(row.status, 'ran');
+    }
+  }
+});
+
+test('composeQaGatherReport end to end: a real fixture repo whose parcel commit touches only backlog/ reports both lanes skipped', () => {
+  const root = mkTmpDir('bl2024-backlog-only-');
+  const { execFileSync } = require('node:child_process');
+  const git = (args) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  git(['init', '-q']);
+  git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  git(['branch', '-M', 'main']);
+  // main itself stays at the init commit - the parcel commit is a
+  // DESCENDANT on its own branch, never main's own tip, or merge-base
+  // main <commit> would resolve to <commit> itself and the diff would be
+  // empty (every path "outside" it vacuously, proving nothing).
+  git(['checkout', '-q', '-b', 'parcel']);
+  fs.mkdirSync(path.join(root, 'backlog', 'evidence'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'backlog', 'evidence', 'BL-9001-coder.md'), '# evidence\n');
+  git(['add', '-A']);
+  git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'add evidence']);
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+
+  const npmCalls = [];
+  const runFn = (command, args, cwd) => {
+    if (command === 'git') {
+      return defaultRunFn(command, args, cwd);
+    }
+    if (command === 'npm') {
+      npmCalls.push(args.join(' '));
+    }
+    return { started: true, exit: 0, stdout: '', stderr: '' };
+  };
+  const report = composeQaGatherReport(root, 'BL-9999', { commit }, runFn, undefined);
+  const unitRow = report.checks.find((c) => c.id === 'unit');
+  const propsRow = report.checks.find((c) => c.id === 'properties');
+  assert.equal(unitRow.status, 'skipped');
+  assert.equal(propsRow.status, 'skipped');
+  assert.match(unitRow.reason, /backlog\/evidence\/BL-9001-coder\.md/);
+  assert.deepEqual(npmCalls, []);
+});
+
+test('composeQaGatherReport end to end: a real fixture repo whose parcel commit touches a non-backlog path too runs both lanes', () => {
+  const root = mkTmpDir('bl2024-mixed-');
+  const { execFileSync } = require('node:child_process');
+  const git = (args) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  git(['init', '-q']);
+  git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  git(['branch', '-M', 'main']);
+  // Same reasoning as the backlog-only test above: the parcel commit is a
+  // descendant on its own branch, main stays behind.
+  git(['checkout', '-q', '-b', 'parcel']);
+  fs.mkdirSync(path.join(root, 'backlog', 'evidence'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'extension', 'src', 'tools'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'backlog', 'evidence', 'BL-9001-coder.md'), '# evidence\n');
+  fs.writeFileSync(path.join(root, 'extension', 'src', 'tools', 'bl9001.ts'), 'export const x = 1;\n');
+  git(['add', '-A']);
+  git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'add evidence and code']);
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+
+  const npmCalls = [];
+  const runFn = (command, args, cwd) => {
+    if (command === 'git') {
+      return defaultRunFn(command, args, cwd);
+    }
+    if (command === 'npm') {
+      npmCalls.push(args.join(' '));
+      return { started: true, exit: 0, stdout: '', stderr: '' };
+    }
+    return { started: true, exit: 0, stdout: '', stderr: '' };
+  };
+  const report = composeQaGatherReport(root, 'BL-9999', { commit }, runFn, undefined);
+  const unitRow = report.checks.find((c) => c.id === 'unit');
+  const propsRow = report.checks.find((c) => c.id === 'properties');
+  assert.equal(unitRow.status, 'ran');
+  assert.equal(propsRow.status, 'ran');
+  assert.deepEqual(npmCalls.sort(), ['run test:properties', 'test']);
 });
 
 // ── tailExcerpt ─────────────────────────────────────────────────────────
