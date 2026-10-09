@@ -90,10 +90,19 @@ test('BL-695 bounce inv2: front-desk main migrates SUP icons before standing top
   assert.ok(mainIdx !== -1);
   const mainBody = src.slice(mainIdx);
   const migrateAt = mainBody.indexOf('retireTrackedSupervisorRecords(targetPath, topicsDir(targetPath))');
-  const operatorAt = mainBody.indexOf('await ensureOperatorTopic(targetPath');
+  // BL-2072: the Operator topic bind now lives inside runStartupTopicChecks
+  // (timed as one phase) rather than main()'s own body - the ordering
+  // invariant this guards now spans the call to that function here and its
+  // own body's bind, checked as the two halves below.
+  const startupChecksCallAt = mainBody.indexOf('runStartupTopicChecks(targetPath, botToken, chatId)');
   assert.ok(migrateAt !== -1, 'expected migrate call in main()');
-  assert.ok(operatorAt !== -1, 'expected ensureOperatorTopic in main()');
-  assert.ok(migrateAt < operatorAt, 'migrate must run before standing Operator topic bind');
+  assert.ok(startupChecksCallAt !== -1, 'expected the runStartupTopicChecks call in main()');
+  assert.ok(migrateAt < startupChecksCallAt, 'migrate must run before the startup topic checks (which bind the standing Operator topic)');
+
+  const startupChecksIdx = src.indexOf('export async function runStartupTopicChecks(');
+  assert.ok(startupChecksIdx !== -1, 'expected runStartupTopicChecks to be defined');
+  const startupChecksBody = src.slice(startupChecksIdx, mainIdx);
+  assert.ok(startupChecksBody.includes('await ensureOperatorTopic(targetPath'), 'expected ensureOperatorTopic in runStartupTopicChecks');
 });
 
 
