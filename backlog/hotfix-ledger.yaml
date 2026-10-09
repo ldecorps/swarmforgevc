@@ -1620,6 +1620,6 @@
   subject: "Hotfix: stop iq3 QA from looping ready_for_next after a STOP banner."
   detected_at: 2026-10-09
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-2090
   human_decision: null
   decided_at: null
