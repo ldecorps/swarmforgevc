@@ -34,7 +34,7 @@ required_wiring:
 # path, already exists. The scenarios run the REAL dispatcher as a seat of
 # a fixture stage (BL-1843's posture), which is the wiring proof.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file needs the human's look. No choice is posed. What
   needs sign-off: a seat prints one line for each parcel it leaves above
