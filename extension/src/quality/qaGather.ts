@@ -439,8 +439,8 @@ export interface QaGatherReport {
 }
 
 // BL-2024: the parcel's OWN changed paths - git merge-base main <commit>,
-// then git diff --name-only <base> <commit>, both through the SAME
-// injected runFn seam every check uses (never a second subprocess
+// then git diff --no-renames --name-only <base> <commit>, both through the
+// SAME injected runFn seam every check uses (never a second subprocess
 // mechanism, never a reimplementation of what git already answers).
 // Returns a skip reason only when that diff is non-empty and every path
 // in it starts with "backlog/" - a failed merge-base, a failed diff, an
@@ -461,7 +461,14 @@ function resolveMergeBase(root: string, commit: string, runFn: RunFn): string | 
 }
 
 function resolveChangedPaths(root: string, base: string, commit: string, runFn: RunFn): string[] | undefined {
-  const diff = runFn('git', ['diff', '--name-only', base, commit], root);
+  // QA bounce D1 (2026-10-09): --no-renames is load-bearing. git's default
+  // rename detection collapses a moved file into ONE line naming only the
+  // destination, so a parcel that renames extension/src/x.ts to
+  // backlog/x.ts (deleting production code) read as touching only
+  // backlog/ - invariant 1 failing OPEN on exactly the diff shape it
+  // means to catch. --no-renames always lists both the old (D) and new
+  // (A) path.
+  const diff = runFn('git', ['diff', '--no-renames', '--name-only', base, commit], root);
   if (!diff.started || diff.exit !== 0) {
     return undefined;
   }

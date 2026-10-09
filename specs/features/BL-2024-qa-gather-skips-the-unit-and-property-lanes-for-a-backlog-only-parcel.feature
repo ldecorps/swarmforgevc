@@ -37,3 +37,9 @@ Feature: BL-2024 QA's gather skips the unit and property lanes for a backlog-onl
     Given a fixture repository with no main branch
     When the QA gather runs for its HEAD commit
     Then the unit row and the properties row ran
+
+  # BL-2024 a-rename-into-backlog-runs-both-lanes-04
+  Scenario: a parcel that renames a file out of extension/src into backlog/ runs both lanes
+    Given a fixture repository whose parcel commit renames "extension/src/tools/bl9001.ts" to "backlog/bl9001.ts" on top of main
+    When the QA gather runs for that parcel commit
+    Then the unit row and the properties row ran

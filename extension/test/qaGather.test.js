@@ -224,7 +224,7 @@ test('no row ever carries a verdict-shaped field', () => {
 test('backlogOnlySkipReason returns a reason when the diff is non-empty and every path starts with backlog/', () => {
   const runFn = fakeRunner({
     'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
-    'diff --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: 'backlog/evidence/BL-9001-coder.md\n', stderr: '' },
+    'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: 'backlog/evidence/BL-9001-coder.md\n', stderr: '' },
   }).runFn;
   const reason = backlogOnlySkipReason('/r', 'abc1234567', runFn);
   assert.ok(typeof reason === 'string' && reason.length > 0);
@@ -234,7 +234,7 @@ test('backlogOnlySkipReason returns a reason when the diff is non-empty and ever
 test('backlogOnlySkipReason returns undefined when any path is outside backlog/, even alongside backlog/ paths', () => {
   const runFn = fakeRunner({
     'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
-    'diff --name-only basesha0001 abc1234567': {
+    'diff --no-renames --name-only basesha0001 abc1234567': {
       started: true,
       exit: 0,
       stdout: 'backlog/evidence/BL-9001-coder.md\nextension/src/tools/bl9001.ts\n',
@@ -247,7 +247,7 @@ test('backlogOnlySkipReason returns undefined when any path is outside backlog/,
 test('backlogOnlySkipReason returns undefined when the diff is empty', () => {
   const runFn = fakeRunner({
     'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
-    'diff --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: '', stderr: '' },
+    'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: '', stderr: '' },
   }).runFn;
   assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
 });
@@ -272,14 +272,14 @@ test('backlogOnlySkipReason returns undefined when the diff itself cannot be res
   assert.equal(
     backlogOnlySkipReason(
       '/r', 'abc1234567',
-      fakeRunner({ ...mergeBaseOk, 'diff --name-only basesha0001 abc1234567': { started: false, exit: null, stdout: '', stderr: '', reason: 'boom' } }).runFn
+      fakeRunner({ ...mergeBaseOk, 'diff --no-renames --name-only basesha0001 abc1234567': { started: false, exit: null, stdout: '', stderr: '', reason: 'boom' } }).runFn
     ),
     undefined
   );
   assert.equal(
     backlogOnlySkipReason(
       '/r', 'abc1234567',
-      fakeRunner({ ...mergeBaseOk, 'diff --name-only basesha0001 abc1234567': { started: true, exit: 1, stdout: '', stderr: 'boom' } }).runFn
+      fakeRunner({ ...mergeBaseOk, 'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 1, stdout: '', stderr: 'boom' } }).runFn
     ),
     undefined
   );
@@ -306,7 +306,7 @@ test('backlogOnlySkipReason returns undefined when merge-base exits non-zero eve
 test('backlogOnlySkipReason returns undefined when diff exits non-zero even if it printed something to stdout', () => {
   const runFn = fakeRunner({
     'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
-    'diff --name-only basesha0001 abc1234567': { started: true, exit: 1, stdout: 'backlog/evidence/sneaky.md\n', stderr: 'boom' },
+    'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 1, stdout: 'backlog/evidence/sneaky.md\n', stderr: 'boom' },
   }).runFn;
   assert.equal(backlogOnlySkipReason('/r', 'abc1234567', runFn), undefined);
 });
@@ -327,7 +327,7 @@ test('backlogOnlySkipReason returns undefined when the merge-base resolves to an
 test('backlogOnlySkipReason trims each diff path before checking backlog/, never matching one with leading/trailing whitespace untrimmed', () => {
   const runFn = fakeRunner({
     'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
-    'diff --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: ' backlog/evidence/BL-9001-coder.md \n', stderr: '' },
+    'diff --no-renames --name-only basesha0001 abc1234567': { started: true, exit: 0, stdout: ' backlog/evidence/BL-9001-coder.md \n', stderr: '' },
   }).runFn;
   const reason = backlogOnlySkipReason('/r', 'abc1234567', runFn);
   assert.ok(typeof reason === 'string' && reason.length > 0, 'a path that is backlog/-only once trimmed must still skip');
@@ -337,7 +337,7 @@ test('backlogOnlySkipReason trims each diff path before checking backlog/, never
 test('backlogOnlySkipReason joins multiple backlog/ paths with ", " in the reason, exactly', () => {
   const runFn = fakeRunner({
     'merge-base main abc1234567': { started: true, exit: 0, stdout: 'basesha0001\n', stderr: '' },
-    'diff --name-only basesha0001 abc1234567': {
+    'diff --no-renames --name-only basesha0001 abc1234567': {
       started: true,
       exit: 0,
       stdout: 'backlog/evidence/BL-9001-coder.md\nbacklog/evidence/BL-9001-architect.md\n',
@@ -461,6 +461,51 @@ test('composeQaGatherReport end to end: a real fixture repo whose parcel commit 
   const propsRow = report.checks.find((c) => c.id === 'properties');
   assert.equal(unitRow.status, 'ran');
   assert.equal(propsRow.status, 'ran');
+  assert.deepEqual(npmCalls.sort(), ['run test:properties', 'test']);
+});
+
+// QA bounce D1 (2026-10-09): git's default rename detection collapses a
+// moved file into ONE line naming only the destination, so a parcel that
+// renames production code OUT of extension/src/ INTO backlog/ read as
+// touching only backlog/ - invariant 1 failing open on exactly the diff
+// shape it exists to catch. --no-renames (resolveChangedPaths's own fix)
+// always lists both the old (D) and new (A) path. Real git, same
+// end-to-end shape as the two tests above - never a restatement of the
+// decision, and never a fake runFn standing in for git's own rename
+// detection (the one thing no fake script can reproduce).
+test('composeQaGatherReport end to end: a real fixture repo whose parcel commit RENAMES a file out of extension/src into backlog/ runs both lanes', () => {
+  const root = mkTmpDir('bl2024-rename-');
+  const { execFileSync } = require('node:child_process');
+  const git = (args) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  git(['init', '-q']);
+  fs.mkdirSync(path.join(root, 'extension', 'src', 'tools'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'extension', 'src', 'tools', 'bl9001.ts'), 'export const x = 1;\n');
+  git(['add', '-A']);
+  git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'seed the source file']);
+  git(['branch', '-M', 'main']);
+  // Same reasoning as the two tests above: the parcel commit is a
+  // descendant on its own branch, main stays behind.
+  git(['checkout', '-q', '-b', 'parcel']);
+  fs.mkdirSync(path.join(root, 'backlog'), { recursive: true });
+  git(['mv', path.join('extension', 'src', 'tools', 'bl9001.ts'), path.join('backlog', 'bl9001.ts')]);
+  git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'rename into backlog/']);
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+
+  const npmCalls = [];
+  const runFn = (command, args, cwd) => {
+    if (command === 'git') {
+      return defaultRunFn(command, args, cwd);
+    }
+    if (command === 'npm') {
+      npmCalls.push(args.join(' '));
+    }
+    return { started: true, exit: 0, stdout: '', stderr: '' };
+  };
+  const report = composeQaGatherReport(root, 'BL-9999', { commit }, runFn, undefined);
+  const unitRow = report.checks.find((c) => c.id === 'unit');
+  const propsRow = report.checks.find((c) => c.id === 'properties');
+  assert.equal(unitRow.status, 'ran', `expected unit to run (the rename must not read as backlog-only); got ${unitRow.status} (${unitRow.reason})`);
+  assert.equal(propsRow.status, 'ran', `expected properties to run (the rename must not read as backlog-only); got ${propsRow.status} (${propsRow.reason})`);
   assert.deepEqual(npmCalls.sort(), ['run test:properties', 'test']);
 });
 

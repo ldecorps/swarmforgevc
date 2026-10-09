@@ -84,7 +84,9 @@ qa_e2e_procedure: |
   1. Read the gather report for THIS parcel: it touches extension/src, so
      both lanes must read `ran` (scenario 02 on itself).
   2. `node specs/pipeline/cli.js specs/features/BL-2024-qa-gather-skips-the-unit-and-property-lanes-for-a-backlog-only-parcel.feature`:
-     6 ok (01, 02 x4, 03), 0 fail.
+     7 ok (01, 02 x4, 03, 04), 0 fail. Scenario 04 (a rename out of
+     extension/src into backlog/ runs both lanes) added on the QA bounce
+     (D1, 2026-10-09).
   3. After the land, on the next stamp-off QA gathers, read its report:
      both lane rows `skipped` naming the backlog-only diff.
 

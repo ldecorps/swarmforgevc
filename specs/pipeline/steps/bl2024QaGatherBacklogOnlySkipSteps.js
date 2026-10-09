@@ -26,9 +26,14 @@ function git(cwd, args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-function mkRepo(prefix) {
+// QA bounce D3 (2026-10-09): branch is explicit and REQUIRED, never left
+// to git's own init.defaultBranch config - a host with that config set to
+// "main" previously made the "no main branch" fixture HAVE one anyway,
+// resolving a real (vacuous) merge-base instead of the unresolvable one
+// that scenario names.
+function mkRepo(prefix, branch) {
   const root = trackedTmpRoot(prefix);
-  git(root, ['init', '-q']);
+  git(root, ['init', '-q', '-b', branch]);
   // BL-1390: proven isolated before any other mutating git command.
   const commonDir = git(root, ['rev-parse', '--git-common-dir']);
   assert.ok(
@@ -77,8 +82,7 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(new RegExp('^a fixture repository whose parcel commit adds only "backlog/evidence/BL-9001-coder\\.md" on top of main$'), (ctx) => {
-    const root = mkRepo('bl2024-backlog-only-');
-    git(root, ['branch', '-M', 'main']);
+    const root = mkRepo('bl2024-backlog-only-', 'main');
     const commit = commitParcel(root, ['backlog/evidence/BL-9001-coder.md']);
     ctx.bl2024 = { root, commit };
   });
@@ -86,22 +90,38 @@ function registerSteps(registry) {
   scoped(
     new RegExp('^a fixture repository whose parcel commit adds "backlog/evidence/BL-9001-coder\\.md" and "(.+?)" on top of main$'),
     (ctx, extraPath) => {
-      const root = mkRepo('bl2024-mixed-');
-      git(root, ['branch', '-M', 'main']);
+      const root = mkRepo('bl2024-mixed-', 'main');
       const commit = commitParcel(root, ['backlog/evidence/BL-9001-coder.md', extraPath]);
       ctx.bl2024 = { root, commit };
     }
   );
 
+  // QA bounce D1 (2026-10-09): a RENAME out of extension/src/ into
+  // backlog/ is the one diff shape --name-only's default rename
+  // detection hides the source path for - the production fix is
+  // --no-renames; this proves it against real git, never a restatement.
+  scoped(new RegExp('^a fixture repository whose parcel commit renames "(.+?)" to "(.+?)" on top of main$'), (ctx, fromPath, toPath) => {
+    const root = mkRepo('bl2024-rename-', 'main');
+    writeFile(root, fromPath, 'fixture content to be moved\n');
+    git(root, ['add', '-A']);
+    git(root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'seed the source file']);
+    git(root, ['checkout', '-q', '-b', 'parcel']);
+    fs.mkdirSync(path.join(root, path.dirname(toPath)), { recursive: true });
+    git(root, ['mv', fromPath, toPath]);
+    git(root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'rename into backlog/']);
+    const commit = git(root, ['rev-parse', 'HEAD']);
+    ctx.bl2024 = { root, commit };
+  });
+
   scoped(new RegExp('^a fixture repository with no main branch$'), (ctx) => {
-    // mkRepo's own git init defaults to "master" (this environment carries
-    // no init.defaultBranch config) - never renamed to "main", so main
-    // genuinely does not exist, reproducing an unresolvable merge-base.
-    const root = mkRepo('bl2024-no-main-');
+    // An explicit non-"main" initial branch (mkRepo's own branch arg),
+    // never ambient-config-dependent - proven below, not assumed.
+    const root = mkRepo('bl2024-no-main-', 'other');
     writeFile(root, 'backlog/evidence/BL-9001-coder.md', 'fixture content\n');
     git(root, ['add', '-A']);
     git(root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'add evidence']);
     const commit = git(root, ['rev-parse', 'HEAD']);
+    assert.throws(() => git(root, ['rev-parse', '--verify', 'main']), 'expected "main" to be unresolvable in this fixture, not vacuously present');
     ctx.bl2024 = { root, commit };
   });
 
