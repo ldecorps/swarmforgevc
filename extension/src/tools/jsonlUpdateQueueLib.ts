@@ -79,9 +79,12 @@ function leftoverDrainingFiles(file: string): string[] {
   } catch {
     return [];
   }
-  // Lexicographic sort on a fixed-width-millis timestamp embedded right
-  // after the prefix is chronological too - oldest leftover first, same
-  // order its own entries would have drained in originally.
+  // Lexicographic sort is chronological too: the fresh name below puts
+  // Date.now() right after the prefix, and a millisecond epoch stamp stays
+  // a fixed 13 digits until the year ~2286, so no name is ever a different
+  // width. Putting the pid first instead (as drainJsonlUpdates's own
+  // non-durable naming does - unrelated here) would sort by PID, not time,
+  // across leftover files from different process incarnations.
   return names
     .filter((name) => name.startsWith(prefix))
     .sort()
@@ -140,7 +143,7 @@ export function drainJsonlUpdatesDurable(file: string): DurableDrain {
   const pending = leftoverDrainingFiles(file);
   const recovered = pending.flatMap(readAndParseDrainingFile);
 
-  const fresh = `${file}${DRAINING_PREFIX_SEP}${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const fresh = `${file}${DRAINING_PREFIX_SEP}${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}`;
   let freshUpdates: QueuedUpdate[] = [];
   try {
     fs.renameSync(file, fresh);

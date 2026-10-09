@@ -59,6 +59,36 @@ test('handover queue (durable drain): commit() removes the draining file; withou
   assert.equal(leftoverAfter.length, 0, 'commit() must remove the draining file');
 });
 
+test('handover queue (durable drain): the fresh draining filename embeds a millisecond timestamp first, not the pid - leftover recovery sorts on it', () => {
+  const opDir = tmpOpDir();
+  appendCursorBridgeHandoverUpdate(opDir, { update_id: 1 });
+  const originalRenameSync = fs.renameSync;
+  let capturedDrainingPath;
+  fs.renameSync = (src, dest) => {
+    capturedDrainingPath = dest;
+    return originalRenameSync(src, dest);
+  };
+  let commit;
+  try {
+    ({ commit } = drainCursorBridgeHandoverUpdatesDurable(opDir));
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
+  assert.ok(capturedDrainingPath, 'renameSync should have been called with the draining path');
+  const base = cursorBridgeHandoverQueuePath(opDir);
+  const suffix = capturedDrainingPath.slice(`${base}.draining-`.length);
+  const firstField = suffix.split('-')[0];
+  // A millisecond epoch stamp is ~1.7e12 right now; a pid is a small
+  // integer, nowhere near Date.now() - if leftoverDrainingFiles ever sorted
+  // on this field expecting it to be the pid instead, this would catch it.
+  assert.ok(/^\d{13}$/.test(firstField), `expected the first field to be a 13-digit millisecond timestamp, got "${firstField}"`);
+  assert.ok(
+    Math.abs(Date.now() - Number(firstField)) < 10_000,
+    `expected the first field to be close to Date.now(), got "${firstField}" vs now ${Date.now()}`
+  );
+  commit();
+});
+
 test('handover queue (durable drain): an uncommitted drain is recovered by the next durable drain, merged ahead of anything freshly appended', () => {
   const opDir = tmpOpDir();
   appendCursorBridgeHandoverUpdate(opDir, { update_id: 1 });
@@ -81,6 +111,26 @@ test('handover queue (durable drain): an uncommitted drain is recovered by the n
   recovered.commit();
   const finalLeftover = fs.readdirSync(opDir).filter((n) => n.includes('.draining-'));
   assert.equal(finalLeftover.length, 0, 'commit() on the recovering drain must clean up every draining file it read, including the recovered one');
+});
+
+test('handover queue (durable drain): leftover files from different process incarnations (pids) recover in chronological order, not pid order', () => {
+  // Two prior crashed incarnations left draining files behind - a lower
+  // pid that crashed SECOND (later timestamp) and a higher pid that
+  // crashed FIRST (earlier timestamp). A sort keyed on pid-then-timestamp
+  // would recover the lower-pid file first regardless of which actually
+  // drained its entries earlier; this pins recovery to timestamp order.
+  const opDir = tmpOpDir();
+  const base = cursorBridgeHandoverQueuePath(opDir);
+  fs.mkdirSync(path.dirname(base), { recursive: true });
+  fs.writeFileSync(`${base}.draining-1700000000000-99999-aaa`, `${JSON.stringify({ update_id: 1 })}\n`);
+  fs.writeFileSync(`${base}.draining-1700000000500-5-bbb`, `${JSON.stringify({ update_id: 2 })}\n`);
+  const { updates, commit } = drainCursorBridgeHandoverUpdatesDurable(opDir);
+  assert.deepEqual(
+    updates.map((u) => u.update_id),
+    [1, 2],
+    'the earlier-timestamped leftover (update_id 1) must recover before the later one, whatever pid each name embeds'
+  );
+  commit();
 });
 
 test('handover queue (durable drain): a committed drain leaves nothing for the next drain to recover', () => {
