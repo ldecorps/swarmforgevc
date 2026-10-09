@@ -78,6 +78,13 @@ dropping it — the reverse of this doc's forward queue:
    `extension/src/tools/cursorBridgeHandoverQueue.ts`) — an at-most-once
    hand-over, since the update_id this file carries is also the dedup key
    the front desk checks before applying it.
+   - A `poll_answer` carries no topic, so it never reaches
+     `isScopedToCursorTopic` at all: it is handed over unless it matches
+     one of the three shapes the bridge tracks as its own poll
+     (`isBridgeOwnPollAnswer` — a live queued-prompt poll, a poll it
+     superseded, or a pending choice poll).
+   - An update `inboundEventOf` cannot parse into any known shape is
+     unconditionally handed over too, rather than silently dropped.
 2. **The front desk drains and applies at the top of every poll cycle.**
    `applyHandoverUpdates` (`extension/src/tools/telegramFrontDeskBotCore.ts`)
    runs before the front desk's own `getUpdates` call in `pollAndForward`,
@@ -88,6 +95,13 @@ dropping it — the reverse of this doc's forward queue:
    (`isHandoverUpdateApplied`/`recordAppliedHandoverId`) is skipped, so a
    hand-over re-appended after a crash is applied at most once however
    many times it is read.
+   - A delivery that fails or throws is never recorded as applied —
+     `requeueHandoverUpdate` puts it back on the queue for the next poll
+     cycle instead, since (unlike the regular `getUpdates` offset) nothing
+     here holds Telegram back to redeliver it on failure. A permanently-
+     failing hand-over folds its `posted`/`dropped`/`failed` counts into
+     the same `PollResult` a regular delivery does, driving the same
+     BL-369 stuck-delivery escalation.
 3. **The bridge's own updates are unaffected.** A message in the cursor
    topic is still answered and routed by the bridge itself; nothing is
    handed over for it.
