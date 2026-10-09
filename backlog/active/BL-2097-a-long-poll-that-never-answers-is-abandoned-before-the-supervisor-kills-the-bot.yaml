@@ -167,3 +167,5 @@ notes: |
   (no kill on a poll that never answers), Estimable (one deadline, one
   handler), Small (two scenarios), Testable (fake Telegram, clock and
   timer).
+
+assigned_to: coder

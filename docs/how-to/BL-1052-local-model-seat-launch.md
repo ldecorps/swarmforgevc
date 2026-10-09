@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-09 (BL-2090: ready_for_next.sh's STOP reprint no longer resets the repeat guard's window — it is told the next step instead)
+Last Updated: 2026-10-09 (BL-2077: one decode slot on the host, held by a seat across its burst)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -221,6 +221,62 @@ another's.
   requests).
 - `GET /shim/health` adds `last_seat`, the seat behind the most recent
   chat completion.
+
+**One decode slot, held by a seat across its burst (BL-2077).** Ollama
+serves one chat completion at a time on this host, first come first
+served; without more, standing local seats taking turns per request would
+pay iq3's full re-prefill (23-66 s, measured in serve.log) on nearly every
+request instead of the 4-7 s a cached continuation costs. The shim now
+holds that one slot for one seat at a time and keeps it sticky across the
+seat's own burst of requests rather than handing it to the next request in
+line:
+
+- A chat completion from the seat already holding the slot is forwarded
+  at once. One from another seat waits.
+- The holder keeps the slot while it keeps asking: its next completion,
+  arriving within the idle grace of its last reply, still goes ahead of
+  any waiting seat — until it has held the slot past the hold quantum
+  while another seat waits, when it queues behind that seat on its own
+  next ask (the quantum is checked only inside the holder's own request,
+  never by a background timer).
+- A holder that sends nothing for the idle grace — running tests, git,
+  any tool, not another chat completion — gives the slot to the
+  longest-waiting seat.
+- A waiting streamed completion gets the same keepalive comments a slow
+  upstream call already gets; nothing a seat waits on fails it with a
+  client timeout. A toolless (non-tool-declaring) **streamed** completion
+  is the one shape still missing that keepalive while queued, because the
+  keepalive loop lives on the tool-declaring worker-thread path — real
+  local-model seats declare tools on every agent turn, so this carries no
+  production traffic today (architect review, BL-2077).
+- The slot covers the whole client request, including the shim's own
+  extra upstream calls for that request (the BL-1920 nudge, a BL-1978
+  warm-up) — it decides only when a completion is sent, never what is
+  sent.
+- `GET /shim/health` adds `slot`: `holder`, `held_ms`, `waiters` (seat and
+  wait so far, longest first), `idle_grace_ms`, `hold_quantum_ms`. One
+  `slot_handover seat=<seat> wait_ms=<ms> previous=<seat>` log line per
+  hand-over.
+- `--idle-grace-s`/`--hold-quantum-s` on the shim's own launch set the two
+  durations (default 30 s / 300 s, the 2026-10-08 measurements' starting
+  values); a test can pass negligible values to run fast.
+
+**A seat is a pane (BL-2077 D1).** The slot contends on a GROUP, not
+always the bare seat name: on a pack that rotates its roles through one
+resident pane (`config rotation router` or `sequential`),
+`local_model_seat_url` gives every role the same
+`http://127.0.0.1:<port>/seat/<role>/pane/resident/v1` shape — the
+`/pane/resident/` segment makes every role rotated through that pane share
+one decode-slot group, so a role rotation is never mistaken for a change
+of seat and the rotated-in role is forwarded at once rather than waiting
+out the departed role's idle grace. The log and `/shim/health` still name
+whichever role is actually asking. A standing pack (one pane per role)
+keeps the plain `/seat/<role>/v1` shape — every role is its own pane and
+its own group, and the idle grace stands between two different roles
+exactly as between two different seats. With one pane on the host — the
+live mono-router pack today — every chat completion is forwarded as soon
+as it arrives, whichever role the pane is running: a lone seat never waits
+on itself.
 
 ### The shim caps a compaction summary, drops the ask for `<analysis>`, and runs it with thinking off (BL-1952)
 

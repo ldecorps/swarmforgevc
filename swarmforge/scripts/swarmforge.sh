@@ -701,7 +701,7 @@ local_model_shim_port() {
 }
 
 local_model_seat_url() {
-  local lm_url="$1" role="$2"
+  local lm_url="$1" role="$2" rotation="${3:-}"
   if [[ "${SWARMFORGE_LOCAL_MODEL_SHIM:-on}" == "off" ]]; then
     printf '%s\n' "$lm_url"
     return 0
@@ -709,6 +709,20 @@ local_model_seat_url() {
   # BL-2076: the URL names the seat, so the one host-wide shim can log each
   # completion with the seat behind it; the shim strips the prefix before
   # forwarding to Ollama's /v1 path unchanged.
+  # BL-2077 D1 (QA note 003953, 2026-10-09): `rotation` is "router" or
+  # "sequential" ONLY for a pack with one resident pane rotating every
+  # role through it (rotation_signal's own normalisation) - both insert a
+  # /pane/resident/ segment ahead of /v1, which the shim's decode slot
+  # treats as one contention group whichever role is asking. A standing
+  # pack (rotation empty) keeps the plain BL-2076 shape: every role is its
+  # own group, as today. The segment rides the PATH, never a query string
+  # appended to this base - the OpenAI-compatible client that reads
+  # OPENAI_BASE_URL simply concatenates "/chat/completions" onto it, which
+  # a query string would corrupt.
+  if [[ "$rotation" == "router" || "$rotation" == "sequential" ]]; then
+    printf 'http://127.0.0.1:%s/seat/%s/pane/resident/v1\n' "$(local_model_shim_port)" "$role"
+    return 0
+  fi
   printf 'http://127.0.0.1:%s/seat/%s/v1\n' "$(local_model_shim_port)" "$role"
 }
 
@@ -2626,7 +2640,10 @@ done"
     # BL-1917: the seat's requests go through its tool-call shim. The pane
     # script starts it on every start and respawn; the provider entry's
     # baseUrl (written below) is the URL qwen actually uses.
-    seat_url="$(local_model_seat_url "$lm_url" "$role")"
+    # BL-2077 D1: rotation_signal, not a read of mono-router-active-role -
+    # the writer decides the group once, here, from the pack's own
+    # configuration, never from which role happens to be active right now.
+    seat_url="$(local_model_seat_url "$lm_url" "$role" "$(rotation_signal)")"
     local_model_guard=""
     if [[ "$seat_url" != "$lm_url" ]]; then
       local_model_guard="$(local_model_shim_start_line "$lm_url" "$role")

@@ -486,14 +486,262 @@ def upstream_root(upstream: str) -> str:
     return root[: -len("/v1")] if root.endswith("/v1") else root
 
 
-def seat_of_path(path: str) -> tuple[str, str]:
-    """The seat a request path names and the path to forward upstream:
-    /seat/<seat>/v1/... strips to /v1/...; any other path is served as-is
-    with seat '-' (the plain /v1 path, BL-2076)."""
+def seat_of_path(path: str) -> tuple[str, str, str]:
+    """The seat a request path names, the DECODE-SLOT GROUP it contends
+    under, and the path to forward upstream. /seat/<seat>/v1/... strips to
+    /v1/... with seat and group both <seat> (BL-2076: no rotation, every
+    seat its own group). /seat/<seat>/pane/<pane>/v1/... (BL-2077 D1) is the
+    same strip with group <pane> instead - the writer emits this shape only
+    for a rotating pack's one resident pane, so every role rotated through
+    it shares one group (one decode-slot identity) while the seat segment
+    still names whichever role is asking, right up to the shim's own
+    health/log output. Any other path is served as-is with seat and group
+    both '-' (the plain /v1 path, BL-2076)."""
     parts = path.split("/")
+    if len(parts) >= 6 and parts[1] == "seat" and parts[3] == "pane" and parts[5] == "v1":
+        return parts[2], parts[4], "/" + "/".join(parts[5:])
     if len(parts) >= 4 and parts[1] == "seat" and parts[3] == "v1":
-        return parts[2], "/" + "/".join(parts[3:])
-    return "-", path
+        return parts[2], parts[2], "/" + "/".join(parts[3:])
+    return "-", "-", path
+
+
+# BL-2077: Ollama (OLLAMA_NUM_PARALLEL 1) serves one completion at a time;
+# iq3's cache cannot rewind to a shared prefix (BL-1978), so a completion
+# that follows another seat's is a full re-prefill (23-66 s against 4-7 s
+# cached). DEFAULT_IDLE_GRACE_S/DEFAULT_HOLD_QUANTUM_S are the 2026-10-08
+# measurements' starting values (notes): a 5 min quantum keeps a waiting
+# seat's wait at a depth of 3 under qwen's 900 s streamIdleTimeoutMs even
+# if a keepalive comment were not counted as activity.
+DEFAULT_IDLE_GRACE_S = 30.0
+DEFAULT_HOLD_QUANTUM_S = 300.0
+# How often a blocked acquire() rechecks idle-grace/hold-quantum state -
+# independent of the keepalive_s a streamed client sees comments at, and
+# small enough that a short test idle_grace/hold_quantum (fractions of a
+# second) is still observed promptly.
+_SLOT_POLL_S = 0.02
+
+
+class DecodeSlot:
+    """BL-2077: one Ollama decode slot, held by one seat at a time across
+    its burst of chat completions, with an injected clock for deterministic
+    tests. The ONE invariant this class exists to keep: acquire() for two
+    different GROUPS never both return before one of them calls release().
+
+    - A seat with no current holder is granted at once.
+    - The current holder re-asking within its hold quantum is granted at
+      once, even with another seat waiting (the holder keeps its burst).
+    - The current holder re-asking PAST its hold quantum, with a seat
+      waiting, gives up the slot and queues behind the longest-waiting
+      seat - "held quantum while another seat waits" (the ticket's own
+      wording): a lone holder with no waiter is never forced to queue
+      behind itself.
+    - A seat that is not the holder waits, UNLESS the holder has been
+      idle (no acquire/release activity) past the idle grace, in which
+      case it takes over at once.
+    - Among several waiters, the longest-waiting one is granted first.
+
+    acquire() blocks the calling thread (never a callback or a second
+    notion of "wait") - a streamed caller runs it on the SAME worker
+    thread _respond's existing keepalive loop already polls, so a wait
+    for the slot is kept alive exactly as a wait for Ollama already is.
+
+    BL-2077 D1 (QA note 003953, 2026-10-09): `seat` and `group` are
+    different things. `seat` is the DISPLAY name shown in health/log output
+    - whichever role is actually asking. `group` is the decode-slot's own
+    CONTENTION identity, defaulting to `seat` itself (every pre-D1 caller,
+    and every standing-pack seat, is its own group - no behaviour change).
+    A rotating pack's one resident pane gives every role rotated through it
+    the SAME group (seat_of_path's /pane/<id>/ segment), so a role rotation
+    there is treated exactly like the current holder re-asking - granted at
+    once, never gated on the idle grace, while the display name still
+    follows whichever role actually sent the request.
+
+    BL-2077 D1 bounce (QA evidence BL-2077-QA-20261009.md): every waiter is
+    tracked PER REQUEST (arrival, group, seat, a unique token), never one
+    dict entry per group - a group can have several requests in flight of
+    it at once (one actually running, the rest genuinely waiting their
+    turn), and this predates the pane/group work: the first build's
+    per-seat dict had the identical flaw for two concurrent requests from
+    ONE seat. A request sharing the holder's group while a sibling of that
+    SAME group is still in flight waits for its release rather than being
+    granted alongside it - the slot's one invariant now reads: acquire()
+    for two different REQUESTS of different groups, or two requests of the
+    SAME group where one is already in flight, never both return before a
+    release() separates them.
+    """
+
+    def __init__(
+        self,
+        idle_grace_s: float = DEFAULT_IDLE_GRACE_S,
+        hold_quantum_s: float = DEFAULT_HOLD_QUANTUM_S,
+        now: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.idle_grace_s = idle_grace_s
+        self.hold_quantum_s = hold_quantum_s
+        self._now = now
+        self._cv = threading.Condition()
+        self._holder: str | None = None
+        self._holder_group: str | None = None
+        self._holder_since = 0.0
+        self._last_activity = 0.0
+        # True while some request of _holder_group is actually running
+        # (between a grant and its release()) - the idle grace must never
+        # fire while a completion is genuinely in flight, however long it
+        # runs (a real re-prefill can take tens of seconds): "idle" means a
+        # GAP between completions, measured from the last release(), never
+        # from how long the current one has been running. Also what makes
+        # a SECOND request of the SAME group wait for its sibling instead
+        # of being granted alongside it (BL-2077 D1 bounce).
+        self._in_flight = False
+        # One entry per WAITING REQUEST, never per group - {arrival, group,
+        # seat, token}. token is an object() identity sentinel so two
+        # requests of the same group/seat never collide in this list
+        # (BL-2077 D1 bounce: a dict keyed by group lost the second one).
+        self._waiters: list[dict[str, Any]] = []
+        # The seat that last gave the slot up via the hold-quantum queue
+        # (never via idle-grace, which reads self._holder directly while
+        # it is still set) - self._holder is nulled the INSTANT a holder
+        # queues behind a waiter, before the waiter's own thread gets the
+        # lock back to claim it, so "who held it before this grant" would
+        # otherwise be lost between the two. Cleared the instant a grant
+        # consumes it, so a later free slot with nothing vacated reads
+        # back to None, never a stale seat name.
+        self._vacated_by: str | None = None
+
+    def _grant_locked(self, seat: str, group: str, now: float, reset_since: bool) -> None:
+        self._holder = seat
+        self._holder_group = group
+        if reset_since:
+            self._holder_since = now
+        self._last_activity = now
+        self._in_flight = True
+
+    def _other_group_waiting_locked(self, group: str) -> bool:
+        return any(w["group"] != group for w in self._waiters)
+
+    def _winning_token_locked(self, now: float) -> object | None:
+        """The ONE waiting request (by token) that may be granted right
+        now, given current state, or None if nobody may proceed yet. A
+        pure read of self._waiters/_holder_group/_in_flight/_last_activity/
+        _holder_since - never mutates, and never itself decides to vacate
+        a hold-quantum-spent holder (acquire()'s own loop does that,
+        exactly once per discovery, since this function runs on every
+        waiting thread's every poll tick)."""
+        if not self._waiters:
+            return None
+        if self._holder_group is None:
+            # A free slot: pure FIFO across every waiting request, any
+            # group - "queues behind the longest-waiting seat" (the
+            # original docstring's own words), never "the other group
+            # always wins regardless of arrival order".
+            return min(self._waiters, key=lambda w: w["arrival"])["token"]
+        if self._in_flight:
+            return None
+        same_group = [w for w in self._waiters if w["group"] == self._holder_group]
+        if same_group and not (
+            self._other_group_waiting_locked(self._holder_group)
+            and now - self._holder_since > self.hold_quantum_s
+        ):
+            # A continuation: the earliest-arrived request of the holder's
+            # OWN group, waiting only because a sibling request of that
+            # same group is (or was) ahead of it - never gated on the idle
+            # grace, which is for a genuinely DIFFERENT group only.
+            return min(same_group, key=lambda w: w["arrival"])["token"]
+        if now - self._last_activity > self.idle_grace_s:
+            # Idle takeover: among every OTHER group waiting (the holder's
+            # own group is never a candidate here - a vacated holder's own
+            # queued requests are handled above, or via the free-slot
+            # branch once vacated), only the single longest-waiting group
+            # may act, and only its own earliest-arrived request.
+            others = [w for w in self._waiters if w["group"] != self._holder_group]
+            if others:
+                longest_group = min(others, key=lambda w: w["arrival"])["group"]
+                candidates = [w for w in others if w["group"] == longest_group]
+                return min(candidates, key=lambda w: w["arrival"])["token"]
+        return None
+
+    def acquire(self, seat: str, group: str | None = None) -> tuple[str | None, int]:
+        """Blocks until `seat` (contending as `group`, default `seat`
+        itself) may proceed. Returns (previous_holder, wait_ms) -
+        previous_holder is None (wait_ms 0) for a grant that handed over
+        nothing: the slot was free, or `group` already held it (with no
+        sibling request of that group in flight) and kept it without
+        having to wait."""
+        group = seat if group is None else group
+        with self._cv:
+            token = object()
+            arrival = self._now()
+            self._waiters.append({"arrival": arrival, "group": group, "seat": seat, "token": token})
+            try:
+                while True:
+                    now = self._now()
+                    # The hold-quantum check runs only inside a request of
+                    # the HOLDER's own group discovering it (never a
+                    # timer) - now checked on every poll tick of such a
+                    # request rather than only a brand-new call's entry,
+                    # so a holder idle between completions with another
+                    # group waiting is preempted as soon as ITS OWN
+                    # queued continuation (if any) notices, not only when
+                    # a fresh request happens to arrive.
+                    if (
+                        self._holder_group == group
+                        and not self._in_flight
+                        and self._other_group_waiting_locked(group)
+                        and now - self._holder_since > self.hold_quantum_s
+                    ):
+                        self._vacated_by = self._holder
+                        self._holder = None
+                        self._holder_group = None
+                        self._cv.notify_all()
+                    winner = self._winning_token_locked(now)
+                    if winner is token:
+                        if self._holder_group is None:
+                            previous = self._vacated_by
+                            self._vacated_by = None
+                            reset_since = True
+                        elif self._holder_group == group:
+                            previous = None
+                            reset_since = False
+                        else:
+                            previous = self._holder
+                            reset_since = True
+                        self._grant_locked(seat, group, now, reset_since)
+                        return previous, int((now - arrival) * 1000)
+                    self._cv.wait(timeout=_SLOT_POLL_S)
+            finally:
+                self._waiters[:] = [w for w in self._waiters if w["token"] is not token]
+
+    def release(self, seat: str, group: str | None = None) -> None:
+        """Marks `group`'s activity and clears in-flight (so a waiter's
+        idle-grace check starts counting from THIS moment, never from
+        when the just-finished completion started) without giving up the
+        slot - only a later acquire() (the holder's own group's, past its
+        hold quantum, or a different group's, past the idle grace) ever
+        hands it over. A sibling request of the SAME group already
+        waiting (BL-2077 D1 bounce) is woken to take the slot next,
+        exactly like any other waiter."""
+        group = seat if group is None else group
+        with self._cv:
+            if self._holder_group == group:
+                self._last_activity = self._now()
+                self._in_flight = False
+            self._cv.notify_all()
+
+    def snapshot(self) -> dict[str, Any]:
+        """GET /shim/health's own view: the holder, how long it has held
+        the slot, every waiting REQUEST with its own wait so far (longest
+        first, one entry per request even when several share a seat or
+        group - BL-2077 D1 bounce), and the two configured durations."""
+        with self._cv:
+            now = self._now()
+            waiters = sorted(self._waiters, key=lambda w: w["arrival"])
+            return {
+                "holder": self._holder,
+                "held_ms": int((now - self._holder_since) * 1000) if self._holder is not None else None,
+                "waiters": [{"seat": w["seat"], "wait_ms": int((now - w["arrival"]) * 1000)} for w in waiters],
+                "idle_grace_ms": int(self.idle_grace_s * 1000),
+                "hold_quantum_ms": int(self.hold_quantum_s * 1000),
+            }
 
 
 # The shim's own log lines, in order, bounded: the long-lived host-wide
@@ -515,32 +763,36 @@ class ShimHandler(BaseHTTPRequestHandler):
     keepalive_s = 15.0
     output_caps: dict[str, tuple[int | None, float]] = {}
     last_seat = "-"  # the seat the last forwarded chat completion came from
+    slot: DecodeSlot = DecodeSlot()
 
     def log_message(self, *_args: Any) -> None:  # the shim logs its own lines
         pass
 
     def do_GET(self) -> None:
         if self.path == HEALTH_PATH:
-            self._send_json(200, {"shim": NAME, "upstream": self.upstream, "last_seat": self.last_seat})
+            self._send_json(200, {
+                "shim": NAME, "upstream": self.upstream, "last_seat": self.last_seat,
+                "slot": self.slot.snapshot(),
+            })
             return
-        seat, upstream_path = seat_of_path(self.path)
+        seat, _group, upstream_path = seat_of_path(self.path)
         self.path = upstream_path
         self._passthrough(None, seat)
 
     def do_HEAD(self) -> None:
-        seat, upstream_path = seat_of_path(self.path)
+        seat, _group, upstream_path = seat_of_path(self.path)
         self.path = upstream_path
         self._passthrough(None, seat)
 
     def do_DELETE(self) -> None:
-        seat, upstream_path = seat_of_path(self.path)
+        seat, _group, upstream_path = seat_of_path(self.path)
         self.path = upstream_path
         self._passthrough(self._read_body(), seat)
 
     def do_POST(self) -> None:
         self._completion_started = time.monotonic()
         body = self._read_body()
-        seat, upstream_path = seat_of_path(self.path)
+        seat, group, upstream_path = seat_of_path(self.path)
         self.path = upstream_path
         if self.path.rstrip("/").endswith("/chat/completions"):
             try:
@@ -548,17 +800,38 @@ class ShimHandler(BaseHTTPRequestHandler):
             except ValueError:
                 request = None
             if isinstance(request, dict) and is_compaction_request(request):
-                self._respond(request, self._compact, seat)
+                self._respond(request, self._compact, seat, group)
                 return
             if isinstance(request, dict) and declared_tool_names(request):
-                self._shim_chat(request, seat)
+                self._shim_chat(request, seat, group)
                 return
             if isinstance(request, dict):
                 clamped, lowered = clamp_output_budget(request, self._output_cap(request.get("model")))
                 if lowered is not None:
                     body = json.dumps(clamped).encode()
                     _log(f"passthrough model={request.get('model')} budget={lowered}->{clamped.get('max_tokens', clamped.get('max_completion_tokens'))}")
+            self._passthrough_chat(body, seat, group)
+            return
         self._passthrough(body, seat)
+
+    def _passthrough_chat(self, body: bytes, seat: str, group: str) -> None:
+        """BL-2077: a chat completion with no declared tools, and not a
+        compaction side-query, still reaches Ollama's one decode slot -
+        acquired synchronously around the raw relay, no keepalive during
+        the wait (_passthrough writes response headers and body straight
+        to self.wfile as they arrive from upstream, which the worker-
+        thread keepalive loop _respond's other two paths use cannot share
+        without corrupting the stream). Real local-model seats declare
+        tools for every agent turn - the shim's whole reason to exist -
+        so this is the rare toolless/health-check shape, never the burst
+        a seat holds the slot across."""
+        previous, wait_ms = self.slot.acquire(seat, group)
+        if previous is not None:
+            _log(f"slot_handover seat={seat} wait_ms={wait_ms} previous={previous}")
+        try:
+            self._passthrough(body, seat)
+        finally:
+            self.slot.release(seat, group)
 
     def _limits(self, model: Any) -> tuple[int | None, int | None]:
         """The model's Modelfile (num_predict, num_ctx), cached for
@@ -744,12 +1017,31 @@ class ShimHandler(BaseHTTPRequestHandler):
              f"finish={choice.get('finish_reason')} closed={closed} salvaged={salvaged} reasoning_chars={reasoning} head={head!r}")
         return status, payload
 
-    def _shim_chat(self, request: dict[str, Any], seat: str) -> None:
-        self._respond(request, self._complete, seat)
+    def _shim_chat(self, request: dict[str, Any], seat: str, group: str = "-") -> None:
+        self._respond(request, self._complete, seat, group)
 
-    def _respond(self, request: dict[str, Any], complete: Callable[[dict[str, Any]], tuple[int, Any]], seat: str = "-") -> None:
+    def _complete_under_slot(
+        self, complete: Callable[[dict[str, Any]], tuple[int, Any]], request: dict[str, Any], seat: str, group: str
+    ) -> tuple[int, Any]:
+        """BL-2077 invariant 1: one acquire() for the WHOLE client request,
+        so complete()'s own extra upstream calls (BL-1920's nudge retry, a
+        future BL-1978 warm-up) run under the SAME slot grant - never
+        released and re-acquired between them, which would let another
+        seat's completion land in the middle of this one's turn."""
+        previous, wait_ms = self.slot.acquire(seat, group)
+        if previous is not None:
+            _log(f"slot_handover seat={seat} wait_ms={wait_ms} previous={previous}")
+        try:
+            return complete(request)
+        finally:
+            self.slot.release(seat, group)
+
+    def _respond(
+        self, request: dict[str, Any], complete: Callable[[dict[str, Any]], tuple[int, Any]], seat: str = "-", group: str = "-"
+    ) -> None:
+        guarded = lambda: self._complete_under_slot(complete, request, seat, group)
         if not request.get("stream"):
-            status, payload = complete(request)
+            status, payload = guarded()
             self._send_json(status, payload)
             self._log_chat_completion(seat, json.dumps(payload).encode())
             return
@@ -759,7 +1051,12 @@ class ShimHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         box: dict[str, tuple[int, Any]] = {}
-        worker = threading.Thread(target=lambda: box.setdefault("r", complete(request)), daemon=True)
+        # BL-2077: the worker thread that already runs complete() is where
+        # a wait for the slot blocks too - this loop's own keepalive
+        # comments cover both "waiting for the slot" and "waiting for
+        # Ollama" identically, the same way they already cover a merely
+        # slow upstream call (scenario 04).
+        worker = threading.Thread(target=lambda: box.setdefault("r", guarded()), daemon=True)
         worker.start()
         while worker.is_alive():
             worker.join(self.keepalive_s)
@@ -780,8 +1077,19 @@ class ShimHandler(BaseHTTPRequestHandler):
         self._log_chat_completion(seat, json.dumps(payload).encode())
 
 
-def make_server(port: int, upstream: str, host: str = "127.0.0.1") -> ThreadingHTTPServer:
-    handler = type("BoundShimHandler", (ShimHandler,), {"upstream": upstream, "output_caps": {}, "last_seat": "-"})
+def make_server(
+    port: int,
+    upstream: str,
+    host: str = "127.0.0.1",
+    idle_grace_s: float = DEFAULT_IDLE_GRACE_S,
+    hold_quantum_s: float = DEFAULT_HOLD_QUANTUM_S,
+    keepalive_s: float | None = None,
+) -> ThreadingHTTPServer:
+    handler = type("BoundShimHandler", (ShimHandler,), {
+        "upstream": upstream, "output_caps": {}, "last_seat": "-",
+        "slot": DecodeSlot(idle_grace_s, hold_quantum_s),
+        **({"keepalive_s": keepalive_s} if keepalive_s is not None else {}),
+    })
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
     return server
@@ -828,10 +1136,16 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--upstream", required=True)
     parser.add_argument("--log", default="/dev/null")
+    parser.add_argument("--idle-grace-s", type=float, default=DEFAULT_IDLE_GRACE_S)
+    parser.add_argument("--hold-quantum-s", type=float, default=DEFAULT_HOLD_QUANTUM_S)
+    parser.add_argument("--keepalive-s", type=float, default=None)
     args = parser.parse_args(argv)
     if args.mode == "ensure":
         return ensure(args.port, args.upstream, args.log)
-    server = make_server(args.port, args.upstream)
+    server = make_server(
+        args.port, args.upstream, idle_grace_s=args.idle_grace_s, hold_quantum_s=args.hold_quantum_s,
+        keepalive_s=args.keepalive_s,
+    )
     _log(f"{NAME}: serving 127.0.0.1:{args.port} -> {args.upstream}")
     server.serve_forever()
     return 0
