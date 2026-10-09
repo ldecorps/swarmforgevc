@@ -5,7 +5,9 @@
 #
 #   discover  -> recruiter_hf_discover.py (rule-based, no LLM in the loop)
 #   acquire   -> ollama pull hf.co/<org>/<repo>:Q4_K_M, alias <name>:latest
-#   register  -> model_steward_cli.bb register local/<alias>
+#   prepare   -> local_model_prepare_cli.bb (Modelfile + think-off profile;
+#                shared lib — recruiter invokes, does not own fine-tuning)
+#   register  -> model_steward_cli.bb register local/<prepared-alias>
 #   benchmark -> BL-1127 coder battery + local_model_compliance_battery.py
 #                (15 competencies + the 2 certify-gating safety probes)
 #   certify   -> model_steward_cli.bb certify (the safety gate decides)
@@ -98,10 +100,21 @@ fi
 ollama cp "$PULL" "$ALIAS" >>"$LOG" 2>&1 || finish "alias-failed" "ollama cp $PULL $ALIAS failed"
 log "acquired $ALIAS"
 
+# ── prepare (shared lib: Modelfile + think-off; never staffs) ────────────
+PREPARE_ALIAS="${ALIAS%-latest}"
+PREPARE_ALIAS="${PREPARE_ALIAS%.latest}"
+PREPARE_ALIAS="prepared-${PREPARE_ALIAS}"
+PREPARE_JSON="$(bb "$SCRIPT_DIR/local_model_prepare_cli.bb" "$PULL" --alias "$PREPARE_ALIAS" --num-ctx 32768 2>>"$LOG")" \
+  || finish "prepare-failed" "local_model_prepare_cli.bb $PULL --alias $PREPARE_ALIAS failed (see $LOG)"
+PREPARED_ALIAS="$(echo "$PREPARE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["alias"])')"
+log "prepared alias=$PREPARED_ALIAS (think-off profile; Modelfile under .swarmforge/model-steward/prepared/)"
+# Battery/certify the prepared alias, not the bare pull/cp tag.
+ALIAS="$PREPARED_ALIAS"
+
 # ── register ─────────────────────────────────────────────────────────────
 PB="$(echo "$CAND_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["params_b"])')"
 bb "$SCRIPT_DIR/model_steward_cli.bb" register "local/$ALIAS" --cost-class low --context-window 32768 \
-   --limitations "recruited from $HF_ID (${PB}B, Q4_K_M) on $STAMP; CPU-only inference on this host" >>"$LOG" 2>&1 \
+   --limitations "recruited from $HF_ID (${PB}B, Q4_K_M) on $STAMP; prepared via local_model_prepare (think-off, num_ctx 32768)" >>"$LOG" 2>&1 \
   || finish "register-failed" "model_steward_cli.bb register local/$ALIAS failed"
 
 # ── benchmark ────────────────────────────────────────────────────────────
@@ -116,7 +129,8 @@ BATTERY_LOG="$STATE/battery-$STAMP.log"
 [[ -s "$SCORECARD" ]] || finish "battery-failed" "no scorecard written for $ALIAS (see $BATTERY_LOG)"
 TALLY="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); e=d["entries"]; print(f"{sum(1 for x in e if x[\"status\"]==\"pass\")}/{len(e)} overall={d.get(\"overall\")}")' "$SCORECARD")"
 SAFETY="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(", ".join(f"{x[\"competency\"]}={x[\"status\"]}" for x in d["entries"] if x["competency"].startswith("coordinator-")))' "$SCORECARD")"
-BATTERY_SUMMARY="- BL-1127 coder battery: ${CODER_RESULT:-unknown}
+BATTERY_SUMMARY="- prepare: $PREPARED_ALIAS (local_model_prepare; think-off)
+- BL-1127 coder battery: ${CODER_RESULT:-unknown}
 - compliance battery: $TALLY
 - safety probes: $SAFETY
 - scorecard: .swarmforge/model-steward/scorecards/local__$ALIAS.json
@@ -130,13 +144,17 @@ else
   REASON="$(echo "$CERT_OUT" | sed -n 's/^certify refused: //p' | head -1)"
   # Disk is scarce on this host (the 2026-09-21 stall was a 98%-full model
   # store) and the human ruled (2026-09-21) that an unfit GGUF may be
-  # deleted. Only what THIS run pulled is removed - the alias and its
-  # hf.co source tag - never any other model. The scorecard and the
-  # candidate registry row stay: they are the record of why it was refused.
+  # deleted. Only what THIS run pulled is removed - the prepared alias,
+  # the cp alias, and its hf.co source tag - never any other model. The
+  # scorecard and the candidate registry row stay: they are the record of
+  # why it was refused. Prepare-only failures above never reach here.
   if [[ "${RECRUITER_KEEP_UNFIT:-0}" != "1" ]]; then
     ollama rm "$ALIAS" >>"$LOG" 2>&1 || true
+    # Original discover alias (before prepare overwrote ALIAS)
+    ORIG_ALIAS="$(echo "$CAND_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["alias"])')"
+    ollama rm "$ORIG_ALIAS" >>"$LOG" 2>&1 || true
     ollama rm "$PULL" >>"$LOG" 2>&1 || true
-    log "removed unfit weights: $ALIAS and $PULL (scorecard + registry row kept)"
+    log "removed unfit weights: $ALIAS, $ORIG_ALIAS, $PULL (scorecard + registry row kept)"
     REASON="$REASON; weights removed to free disk (RECRUITER_KEEP_UNFIT=1 to keep)"
   fi
   finish "refused" "local/$ALIAS from $HF_ID — $REASON; battery $TALLY"

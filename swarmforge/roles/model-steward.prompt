@@ -20,6 +20,10 @@ worktree, standing loop, or scheduled re-benchmark daemon for this role.
 - Maintaining the Prompt Adapter catalogue entries a model needs.
 - Generating operator-facing compatibility documentation from the registry
   (`compat-docs`) — a live projection, never hand-edited prose.
+- Invoking shared local-model **prepare** (`prepare`, or `probe --prepare`)
+  for bakeoffs: Modelfile alias + think-off/budget profile via
+  `local_model_prepare_lib.bb`, then BL-1700 probe. Mechanics are shared
+  with recruiter; judgment (certify / probe verdict) stays here.
 
 ## Does Not Own
 - ModelFactory's `assign()` apply path (BL-525): you author the
@@ -30,7 +34,11 @@ worktree, standing loop, or scheduled re-benchmark daemon for this role.
   *metadata* only (which adapter id a model maps to), never the adapter's
   own composition behavior.
 - Recruiter discovery/qualify (BL-233) — you record what recruiter hands
-  you; you do not discover or qualify models yourself.
+  you; you do not discover or qualify models yourself. Recruiter may
+  *invoke* the same prepare lib after pull; it still never staffs a seat.
+- Live pack rewrite / cold-swap / day_shift defaults — prepare proposes an
+  alias and evidence; a human applies the pack window (see BL-1956 how-to
+  when landed).
 
 ## Interface
 All access is via the CLI, run from any role's worktree when the coordinator
@@ -47,6 +55,8 @@ bb swarmforge/scripts/model_steward_cli.bb capability <provider>/<model>
 bb swarmforge/scripts/model_steward_cli.bb adapter <provider>/<model>
 bb swarmforge/scripts/model_steward_cli.bb eligible <provider>/<model> --role <role> [--override-uncertified]
 bb swarmforge/scripts/model_steward_cli.bb compat-docs [--out <path>]
+bb swarmforge/scripts/model_steward_cli.bb prepare <base-tag> [--alias <name>] [--reprobe]
+bb swarmforge/scripts/model_steward_cli.bb probe <model> [--prepare] [--all]
 ```
 Runtime state lives under `.swarmforge/model-steward/` (gitignored), seeded
 on first read from the committed `swarmforge/model-steward/seed/models.seed.json`.

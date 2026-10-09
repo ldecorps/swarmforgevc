@@ -1,0 +1,126 @@
+id: BL-2103
+title: "Shim ensure replaces a running shim older than its code: local_model_tool_call_shim.py ensure reuses any process whose /shim/health names the shim and the upstream, whatever code it runs, so a shim started before BL-2076 survived the 2026-10-09 relaunch and the coder seat's every wake failed '404 page not found' on the new /seat/coder/v1 route until QA killed it by hand - ensure reuses only a shim running the code on disk and replaces any other"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the resident local coder seat
+# failed every wake until a human-side restart, and every future change to
+# the shim strands running local seats the same way.
+status: todo
+epic: local-llm-swarm
+priority: 10
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: Python only (no Stryker lane); one step handler that boots real
+# shim subprocesses on ephemeral ports in front of a fake Ollama, the way
+# bl2076ShimNamesSeatSteps.js does.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one function and one health field; nothing to refactor"
+  architect: "no boundary moves; the launch script keeps calling ensure exactly as today"
+  hardender: "Python production code with no durable write; the unit suite and the acceptance run are the coverage (dynamic routing, 2026-10-01)"
+
+acceptance: specs/features/BL-2103-shim-ensure-replaces-a-running-shim-older-than-its-code.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2103ShimEnsureReplacesStaleShimSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the live consumer, each
+# local-model seat's launch script built by swarmforge.sh
+# (local_model_tool_call_shim.py ensure --port ... --upstream ...), already
+# calls ensure, so the fix inside ensure is reached unchanged.
+
+human_approval: approved
+approval_context: >
+  No choice is posed. FIRM: a process that does not answer the shim's own
+  health name on the port is never signalled (scenario 03, today's
+  behaviour). FIRM: a shim running the code on disk is reused, never
+  restarted (scenario 01). FIRM: the launch script's call to ensure and
+  its arguments do not change.
+
+invariants:
+  - "ensure never signals a process that does not answer the shim's own health name on that port."
+  - "When ensure exits 0, the process serving the port runs the shim code that is on disk at that moment."
+
+description: |
+  ## What is wrong
+
+  `ensure()` in swarmforge/scripts/local_model_tool_call_shim.py probes
+  `GET /shim/health` and returns 0 when the answer names the shim and the
+  same upstream. It never asks what code that process runs. Each
+  local-model seat's launch script calls ensure before qwen starts
+  (swarmforge.sh), so a shim started under older code keeps serving
+  across every relaunch.
+
+  2026-10-09: the shim on :11439 had been started 2026-10-08 21:04Z,
+  before BL-2076 (the `/seat/<seat>/v1` route) and BL-2077 (one decode
+  slot) landed. The 16:29Z relaunch pointed qwen at
+  `http://127.0.0.1:11439/seat/coder/v1`; the old shim forwarded that path
+  to Ollama verbatim and Ollama answered "404 page not found" on every
+  wake. QA killed the shim and re-ran ensure at 16:48Z (note 003957). A
+  stale shim's health shows only `shim` and `upstream`; a current one also
+  shows `last_seat` and `slot`.
+
+  ## What is wanted
+
+  - The shim's health reports which code it runs, so ensure can compare
+    it with the shim file on disk (scenario 02's last step).
+  - ensure reuses a shim running the code on disk (scenario 01).
+  - ensure replaces a shim running anything else, including one whose
+    health carries no code fingerprint at all, which is every shim started
+    before this ticket: it stops that process, waits for the port to free,
+    and starts the shim from disk (scenario 02).
+  - A port held by something that is not the shim is still refused with
+    exit 1 and that process is left running (scenario 03).
+  - Each replacement leaves one line in the shim log naming the old and
+    new code.
+
+  ## How (direction, not mandate)
+
+  - A fingerprint of the shim's own source file read at startup (a
+    sha256 prefix, say), reported in health with the process's pid.
+    ensure computes the same fingerprint of `__file__` and compares.
+  - A shim that reports no pid (the pre-ticket ones) is found by its
+    serve command line for that port (`pgrep -f`), never by port alone;
+    only a process whose health named the shim may be signalled.
+  - SIGTERM, a bounded wait for the port to stop answering, then the
+    existing start path. macOS and Linux only; stdlib only.
+
+constraints: >
+  Ephemeral ports, a fake upstream and temp directories only; never the
+  live :11439 shim or the live Ollama. Every process the handler starts is
+  killed in a finally. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - A request in flight on the replaced shim is cut and the seat retries;
+    no hand-over of in-flight requests.
+  - babysitterd or any other supervisor managing the shim's lifetime (the
+    how-to says none does; that stays).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2103-shim-ensure-replaces-a-running-shim-older-than-its-code.feature`:
+     4 of 4 ok (01, 02 x2, 03).
+  2. `python3 swarmforge/scripts/test/test_local_model_tool_call_shim.py`:
+     OK (98 tests at mint, plus the coder's new ones).
+  3. `node specs/pipeline/cli.js` on the BL-2076 and BL-2077 features: 4/4
+     and 7/7 ok, as measured on main at mint.
+  4. Read docs/how-to/BL-1052-local-model-seat-launch.md's shim section:
+     it says ensure reuses only a shim running the code on disk.
+  5. After the land, at the next local seat launch: `curl -s
+     127.0.0.1:11439/shim/health` reports the fingerprint of the
+     shim file on main, and the shim log carries one replacement line.
+
+source: |
+  QA note 003957 (2026-10-09T16:49:36Z), verbatim: "shim ensure kept
+  pre-BL-2076 shim; /seat route 404'd coder; restarted 16:48Z".
+
+notes: |
+  Minted 2026-10-09 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Not a standing red (no test failed); a live fault QA recovered by hand.
+  INVEST: Independent, Negotiable (fingerprint and lookup shape),
+  Valuable (no local seat stranded by a shim change), Estimable (one
+  function, one health field), Small (three scenarios), Testable (real
+  shim subprocesses, fake upstream, ephemeral ports).

@@ -33,6 +33,34 @@ Specification.MD-only. Acceptance:
 
 Prior entry —
 
+**Last Updated:** October 9, 2026 (BL-1784: an unowned verification-debt
+category is now a third Article 3.5 throttle signal, the same shape as
+BL-1429's standing-red fold. `extension/src/metrics/verificationDebtSignal.ts`'s
+`computeVerificationDebtRecommendation(targetRepoPath)` shells to BL-1782's
+`verification_debt_ledger_read.bb` (never a second YAML parser here) and
+recommends a cap of `1` — never `0`, the same soft stop — whenever the
+reader's `unowned` list is non-empty, naming every category in it; an
+empty list, a missing ledger, or a failing CLI all degrade to no
+recommendation, the same shell-and-degrade posture the standing-red and
+rework readers already use, so a broken reader never freezes intake.
+`emit-throttle-recommendation.ts` folds it into `recommendedCap` by the
+same never-raise `min()` rule alongside `reworkCap` and `standingRed`,
+carries it in the persisted JSON under its own `verificationDebt` key,
+and the change log credits a lowering or a clearing only to whichever
+signal is actually binding (the BL-1429 architect bounce's rule,
+unchanged) — checked in fixed priority (`standingRed` then
+`verificationDebt`) only to pick one deterministic name on a tie, since
+both signals only ever recommend the same cap `1`. `burnSectionText.ts`'s
+token-burn warning now names an unowned verification-debt category
+alongside the standing-red register as a way the swarm throttles itself.
+See "Standing reds fold into the same throttle (BL-1429...)" above for
+the full mechanism this extends. No new extension command, setting, or
+UI change; no diagram edit — no registered diagram depicts the throttle
+signal fold. Acceptance:
+`specs/features/BL-1784-an-unowned-verification-debt-category-throttles-intake.feature`.)
+
+Prior entry —
+
 **Last Updated:** October 8, 2026 (BL-2060: stamp-off of hotfixes
 `c416adc5fb` and `4453766c28` — CONFIRMED. The front desk and the Cursor
 bridge share one bot token, so only one may call `getUpdates`; a
@@ -13171,6 +13199,8 @@ where `<project-root>` may be the master checkout or any linked worktree of it (
 This slice moves only this one knob — it does not self-generate tickets, respawn a role, reroute work, or touch code; those stay BL-431's escalate-only recommendations for a human, exactly the epic's safety contract (BL-429).
 
 **Standing reds fold into the same throttle (BL-1429, human directive 2026-09-05).** The rework diagnosis above is not the only Article 3.5 signal: BL-1428's standing-red register (`standing_red_register_cli.bb`) is now a second one. `extension/src/metrics/standingRedSignal.ts` reads the register's JSON report (`count`, `oldest_age_days`, `unowned`) and two conf thresholds — `standing_red_max_count` (default 10) and `standing_red_max_age_days` (default 7), both read through the same `config <key> <value>` reader `active_backlog_max_depth` uses — and recommends a cap of `1` (never `0`; the human ruled a soft stop, not a freeze, so a severe/cap-0 posture stays BL-432's rework diagnosis alone) when any one of three conditions holds: more than `standing_red_max_count` reds, the oldest red older than `standing_red_max_age_days` days, or any unowned red at all (an unowned red throttles regardless of count or age). `emit-throttle-recommendation.ts` computes both the rework recommendation and the standing-red recommendation and persists **the lower of the two** — the register is a signal, never a raise, so it can only pull the effective cap down toward `1`, never push it below whatever the rework diagnosis already recommends. The persisted JSON gains a `standingRed` block (the recommendation or `null`) alongside the existing rework fields, and the change log names whichever signal (`count`, `age`, or `unowned`) caused a lowering or cleared one — a recommendation that persists unchanged logs nothing. Reading the register goes only through the CLI (BL-1428's own invariant: never a second TSV parser here); a missing or failing CLI degrades to "no standing-red signal" with a logged warning, the same shell-and-degrade posture the rework reader already has. The daily briefing's token-burn warning (`burnSectionText.ts`) now names the standing-red register alongside the control pause, the nightly cooldown window, and a lowered `active_backlog_max_depth` as a way the swarm throttles itself.
+
+**An unowned verification-debt category folds into the same throttle (BL-1784, human directive 2026-09-26, "enforce this rule even harder on the swarm engine").** A third Article 3.5 signal, the same shape as BL-1429's standing-red fold: `extension/src/metrics/verificationDebtSignal.ts`'s `computeVerificationDebtRecommendation(targetRepoPath)` shells to BL-1782's `verification_debt_ledger_read.bb`, never parsing `backlog/verification-debt-ledger.yaml` itself, and recommends a cap of `1` (the same soft stop, never `0`) whenever the reader's `unowned` list is non-empty, naming every category in it; an empty `unowned` list, a missing ledger, or a failing CLI all degrade to no recommendation, the same shell-and-degrade posture the standing-red and rework readers already use — a broken reader must not freeze intake. `emit-throttle-recommendation.ts` folds this third recommendation into `recommendedCap` by the same never-raise `min()` rule (`reworkCap`, then `standingRed`, then `verificationDebt`), carries the raw recommendation in the persisted JSON under its own `verificationDebt` key, and the change log names the binding category by `describeVerificationDebtSignal` — checked in fixed priority (`standingRed` first, then `verificationDebt`) only to pick one deterministic name on a tie, since every signal this fold ever recommends is the same cap `1`; a clearing is credited only to whichever signal was actually binding (the BL-1429 architect bounce's rule, unchanged). The daily briefing's token-burn warning (`burnSectionText.ts`) now also names an unowned verification-debt category, alongside the standing-red register, as a way the swarm throttles itself. No new extension command, setting, or UI change; no diagram edit.
 
 #### Promotion gates: one chokepoint for every promote/route decision (BL-663)
 

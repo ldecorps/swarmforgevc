@@ -1,0 +1,84 @@
+id: BL-2107
+title: "Stamp-off for hotfix 597801eadd: BL-1700 scenario 03's leak check scanned ps host-wide for .probe.tmux.sock and stand-in.sh, so a live steward probe on the host turned it red (a prepared-alias probe started 18:46Z and a probe tmux left since 17:58Z on 2026-10-09); the check now counts only probe processes that appeared during the scenario"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of a standing-red hotfix (a red is high at first
+# sighting, 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review one test-side commit (a pid snapshot and a filtered check)
+# and run one feature once.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a pid snapshot and one filter; nothing to refactor"
+  architect: "step handler only; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "no living doc describes this step"
+
+# Not a claim of ownership over BL-1700's contract (BL-1251): its handler
+# is the file this hotfix changed.
+acceptance: specs/features/BL-1700-the-model-steward-probes-a-local-coder-model-through-the-real-driver.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants: []
+
+description: |
+  Status: hotfix 597801eadd landed the fix. The coder reviews it and never
+  re-applies it.
+
+  Found by the specifier measuring BL-1700's feature on main for BL-2106's
+  QA procedure, 2026-10-09: 6 of 7, scenario 03 failing at "And no aider or
+  tmux process from the run is left alive" with "leaked process(es)": a
+  real steward probe of the prepared alias
+  `prepared-ista-daslab-qwen3.8-27b-gsq-rco-gguf-iq3_xxs`, started 18:46Z
+  (the steward task backlog/evidence/steward-probe-prepared-20261009.md),
+  and a probe tmux for model `--help` alive since 17:58Z. Neither came from
+  the scenario: specs/pipeline/steps/bl1700StewardCoderProbeSteps.js read
+  `ps aux` for `.probe.tmux.sock` or `stand-in.sh` across the whole host.
+
+  597801eadd: the scenario's first Given step snapshots the pids of every
+  matching process (`ps -eo pid=,args=`), and the leak check fails only on
+  a matching process whose pid is not in that snapshot. Run on main with
+  both probes alive: 7 of 7.
+
+  The review asks: can a matching process that starts DURING the scenario
+  but belongs to another run (a concurrent feature run in another
+  worktree, a steward probe started mid-scenario) still fail it? If so,
+  is tightening the match to this run's own temp root worth a follow-up?
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-1700-the-model-steward-probes-a-local-coder-model-through-the-real-driver.feature`:
+     7 of 7 ok (measured on main at mint with the change while two probe
+     tmux servers were alive; 6 of 7 before).
+  2. Read the coder's committed review evidence.
+
+source: |
+  Found by the specifier, 2026-10-09 ~19:55Z (see description).
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-09 by the specifier, the stamp-off for hotfix 597801eadd.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  The hotfix was committed while main was one behind origin/main
+  (main_sync_status said wait-reconcile; the specifier's commit was
+  chained to the status check, a process slip); handoffd's reconcile sweep
+  joins it.
+  No register row was added; no parcel was held on the red.
+  INVEST: Independent, Negotiable (review only), Valuable (BL-1700 stays
+  green while the steward probes), Estimable, Small (one step), Testable
+  (one feature).

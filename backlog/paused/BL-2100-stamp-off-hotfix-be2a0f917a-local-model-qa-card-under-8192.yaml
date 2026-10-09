@@ -1,0 +1,84 @@
+id: BL-2100
+title: "Stamp-off for hotfix be2a0f917a: the local-model QA card composed to 8413 characters after aa7d603d66 grew QA.note by 362, failing prompt_engine_test_runner's 'local-model/QA composed text is at most 8192 characters' with no owner (its stamp-off BL-2090 had closed); the hotfix tightens the card's wording to 8154 and keeps every duty and pinned literal"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of a standing-red hotfix (a red is high at first
+# sighting, 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review one prose-only commit to one card and run one bb runner and
+# one feature once.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "wording of one card; nothing to refactor"
+  architect: "prose only; no boundary moves"
+  hardender: "no production code changed"
+  documenter: "the card is the seat's own text; no living doc describes it"
+
+# Not a claim of ownership over BL-1798's contract (BL-1251): no feature
+# pins the QA card's budget (prompt_engine_test_runner.bb does, QA step 1);
+# BL-1798's is the compact-card contract the hotfix keeps.
+acceptance: specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants: []
+
+description: |
+  Status: hotfix be2a0f917a landed the fix. The coder reviews it and
+  never re-applies it.
+
+  aa7d603d66 (operator hotfix, 2026-10-09 07:39 +0100, "stop iq3 QA from
+  looping ready_for_next after a STOP banner") added 362 characters to
+  swarmforge/roles/local-model/QA.note. The composed local-model QA card
+  reached 8413 characters and prompt_engine_test_runner.bb failed
+  "local-model/QA composed text is at most 8192 characters". There was no
+  register row, and that hotfix's stamp-off, BL-2090, had already closed.
+  The specifier found the red while landing BL-2099's card interim.
+
+  be2a0f917a changes wording only: the pipeline-order sentence, the
+  qa-gather, mutation and bounce bullets, and the lander-queue path
+  sentence. It keeps every duty, the STOP-banner rule aa7d603d66 added,
+  and the literals the runner pins (lander_queue.bb, master-root,
+  git-common-dir, .worktrees/QA; no "Land the approved commit on").
+  Composed QA card: 8154.
+
+  The review asks: does the shorter card still tell an iq3 QA seat
+  everything the longer one did? Name any instruction that was lost.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `bb swarmforge/scripts/test/prompt_engine_test_runner.bb`: ALL PASS
+     (measured on main at mint with the change; 1 FAILURE, the QA card
+     at 8413, before).
+  2. `node specs/pipeline/cli.js specs/features/BL-1798-a-local-model-seat-starts-from-a-compact-card.feature`:
+     8 of 8 ok (measured on main at mint).
+  3. Read the coder's committed review evidence.
+
+source: |
+  Found by the specifier, 2026-10-09 ~17:00Z, running
+  prompt_engine_test_runner.bb before committing a local-model card
+  change: "FAIL: local-model/QA composed text is at most 8192 characters".
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-09 by the specifier, the stamp-off for hotfix be2a0f917a.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  No register row was added: the hotfix turned the red green in the same
+  pass. No parcel was held on it.
+  INVEST: Independent, Negotiable (review only), Valuable (the card's
+  budget gate is green and the cut is reviewed), Estimable, Small (one
+  card), Testable (one runner, one feature).

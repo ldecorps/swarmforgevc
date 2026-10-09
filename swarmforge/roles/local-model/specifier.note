@@ -24,6 +24,8 @@ Your job:
   `loop.note` if the shared loop changes). Pin the new path in
   `prompt_engine_test_runner.bb` when you can assert it. Composed cards
   stay ≤ 8192 characters.
+- Until BL-2099 lands: a `non-forwarding: true` git_handoff to you may
+  be an Article 5.1 proposal; `git show --stat` it before completing.
 
 REFUSE this duty, always: deprecator freshness adjudication (Article 3.6
 - amend/retire/split/confirm-promote a stale-premise hold). That call

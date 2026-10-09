@@ -2683,11 +2683,21 @@ function buildPollAdapters(
     // update batch" untimed unless both are wired.
     now: () => Date.now(),
     explainApprovalRecordNoOp: (backlogId) => Promise.resolve(explainApprovalRecordNoOp(targetPath, backlogId)),
-    getUpdates: (offset) => {
+    getUpdates: (offset, deadlineSignal) => {
       // One controller per cycle: aborting a spent one would do nothing, and
       // holding a single controller forever means the first abort disables
       // every later poll.
       inFlightPoll = new AbortController();
+      // BL-2097: a signal composed with BL-1036's own controller, never
+      // replacing it - either the deadline (pollAndForward) or a shutdown
+      // (abortInFlightPoll) aborts this cycle's request.
+      if (deadlineSignal) {
+        if (deadlineSignal.aborted) {
+          inFlightPoll.abort();
+        } else {
+          deadlineSignal.addEventListener('abort', () => inFlightPoll?.abort());
+        }
+      }
       return getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS, undefined, inFlightPoll.signal);
     },
     postToBridge: (subjectId, text, updateId) =>

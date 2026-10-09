@@ -33,7 +33,7 @@ required_wiring:
 # No production anchor (BL-1235): the live consumer, pollAndForward, is
 # already the code the scenario drives, so the row proves the wiring.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A changed feature file needs the human's look. No choice is posed. What
   needs sign-off: BL-2072's scenario 01 gains one row, "hand-over apply",

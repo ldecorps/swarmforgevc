@@ -58,7 +58,10 @@
         colliding (conj (set (take (rand-int* 3) task-pool)) task)
         age-below (rand-int* deadline-ms)
         age-at-or-past (+ deadline-ms (rand-int* deadline-ms))
-        base {:type "git_handoff"
+        ;; Hotfix 2026-10-09: every deferrable type (a git_handoff, and a
+        ;; note since BL-1843) walks the same shapes; the lib's own set,
+        ;; sorted so the seeded draw stays reproducible.
+        base {:type (rand-nth* (sort seat-affinity-lib/rework-deferrable-types))
               :task task
               :sibling-tasks colliding
               :my-tasks #{}
@@ -83,7 +86,7 @@
                                       :sibling-tasks #{}
                                       (rand-nth* [:enqueued-at :created-at])
                                       (iso (- now-ms (rand-nth* [age-below age-at-or-past]))))
-                :non-handoff (assoc base :type (rand-nth* ["note" "awake" "rule_proposal"])))]
+                :non-handoff (assoc base :type (rand-nth* ["awake" "rule_proposal"])))]
     {:shape shape :input input}))
 
 (defn age-of [{:keys [enqueued-at created-at now-ms]}]
@@ -116,10 +119,11 @@
     (when (and (contains? (:my-tasks input) (:task input))
                (not= {:action :claim} decision))
       (fail! (str "draw " i ": self-worked task not claimed: " (pr-str input))))
-    ;; only a git_handoff is ever deferred or cross-seat flagged
-    (when (and (not= "git_handoff" (:type input))
+    ;; only a deferrable type (git_handoff, or a note since BL-1843) is ever
+    ;; deferred or cross-seat flagged
+    (when (and (not (contains? seat-affinity-lib/rework-deferrable-types (:type input)))
                (not= {:action :claim} decision))
-      (fail! (str "draw " i ": non-git_handoff decided " (pr-str decision))))
+      (fail! (str "draw " i ": non-deferrable type " (:type input) " decided " (pr-str decision))))
     ;; invariant 2: renderers receive seat ids and never leak one
     (let [render-in {:basename (str "50_x_from_hardender_to_coder_" i ".handoff")
                      :task (:task input)
@@ -137,7 +141,7 @@
       :defer (swap! coverage update :defer inc)
       :claim-cross-seat (swap! coverage update (if (nil? age) :cross-seat-unreadable :cross-seat-aged) inc)
       :claim (cond
-               (not= "git_handoff" (:type input)) (swap! coverage update :non-handoff inc)
+               (not (contains? seat-affinity-lib/rework-deferrable-types (:type input))) (swap! coverage update :non-handoff inc)
                (empty? (:sibling-tasks input)) (swap! coverage update :empty-sibling inc)
                (contains? (:my-tasks input) (:task input)) (swap! coverage update :self-affinity inc)
                :else nil))))
@@ -190,8 +194,8 @@
                       :released-aged (iso (- now-ms age-at-or-past))
                       (iso (- now-ms age-below)))
         input {:type (if (= shape :non-handoff)
-                       (rand-nth* ["note" "awake" "rule_proposal"])
-                       "git_handoff")
+                       (rand-nth* ["awake" "rule_proposal"])
+                       (rand-nth* (sort seat-affinity-lib/rework-deferrable-types)))
                :task task
                :seat-worked-task-sets sets
                :enqueued-at enqueued-at
@@ -222,7 +226,7 @@
     ;; coverage keyed by the OBSERVED outcome, same discipline as above
     (cond
       hold (swap! hold-coverage update :held inc)
-      (not= "git_handoff" (:type input)) (swap! hold-coverage update :non-handoff inc)
+      (not (contains? seat-affinity-lib/rework-deferrable-types (:type input))) (swap! hold-coverage update :non-handoff inc)
       (= 1 seat-count) (swap! hold-coverage update :single-seat inc)
       (not-any? #(contains? % task) sets) (swap! hold-coverage update :no-worker inc)
       (every? #(contains? % task) sets) (swap! hold-coverage update :all-workers inc)

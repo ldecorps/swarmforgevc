@@ -1,0 +1,105 @@
+id: BL-2102
+title: "Stamp-off for hotfix 6f0e120836: two load-sensitive reds QA reported unowned on BL-2082 - bl1287 invariant 1 sampled ps before the fake cloudflared had exec'd (spawnFakeCloudflared now returns once ps shows the child's own argv), and test_build_freshness_cli.sh's fixed 10 s operator_runtime boot budget missed at load 19.6 on 20 cores (wait_for now scales every budget by load per core, 1x to 6x)"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of a standing-red hotfix (a red is high at first
+# sighting, 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review one test-side commit (a fixture wait, an exported regex, a
+# shell wait helper) and run one property file, one shell test and two
+# features once.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "two small test-side waits; nothing to refactor"
+  architect: "test helpers only; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "no living doc describes these fixtures"
+
+# Not a claim of ownership over BL-1287's contract (BL-1251): its handler
+# drives spawnFakeCloudflared, the helper this hotfix changed.
+acceptance: specs/features/BL-1287-a-fixture-sweep-must-not-signal-a-live-runs-fixtures.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants: []
+
+description: |
+  Status: hotfix 6f0e120836 landed the fix. The coder reviews it and never
+  re-applies it.
+
+  QA held BL-2082 on 2026-10-09 (note 003958, evidence 592a3bd139) on two
+  reds no open ticket owned, both load-sensitive (load 19.6 to 21.3 on 20
+  cores, a hardener Stryker run live):
+
+  1. extension/test/bl1287FixtureSweepScopingInvariants.property.test.js
+     invariant 1: "AssertionError: creatorAlive=false: expected
+     selected=true, got false". spawnFakeCloudflared
+     (test/helpers/bl1287FixtureSweepFixture.js) backgrounds the fake with
+     `& echo $!` and returned that pid before the child had exec'd. Until
+     it does, ps shows the spawning shell's `bash -c` line, which
+     leakedFixtureTunnelPids drops on purpose (BL-1974's SHELL_DASH_C_RE),
+     so a sweep sampled in that window missed a fixture it had to select.
+     The hotfix polls `ps -o pid=,args= -p <pid>` until the line no longer
+     matches SHELL_DASH_C_RE (now exported from fixtureTunnelName.js, one
+     definition), bounded at 10 s, returning at once if the process is
+     gone. Measured: 28 ms on an idle spawn.
+  2. swarmforge/scripts/test/test_build_freshness_cli.sh
+     operator-restart-race setup: "operator_runtime did not publish its
+     first status" - red in QA's run 1, green in run 2 on the same commit.
+     The hotfix adds `wait_for_scale` (load per core from /proc/loadavg or
+     sysctl vm.loadavg, cores from getconf; 1 + int(3 x load / cores),
+     capped at 6) and multiplies every `wait_for` budget by it. A condition
+     that holds still returns at once. Portable to macOS bash 3.2.
+
+  The review asks: is either wait able to hide a real failure (a fixture
+  that never execs, a daemon that never boots) rather than only absorb
+  load? Each still fails, later.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's property row:
+     bl1287FixtureSweepScopingInvariants 3 of 3.
+  2. `bash swarmforge/scripts/test/test_build_freshness_cli.sh`:
+     "build_freshness_cli smoke: ALL CHECKS PASSED" (measured on main at
+     mint with the change: exit 0, 53 s at load 13.6).
+  3. `node specs/pipeline/cli.js specs/features/BL-1287-a-fixture-sweep-must-not-signal-a-live-runs-fixtures.feature`:
+     4 of 4 ok (measured on main at mint with the change).
+  4. `node specs/pipeline/cli.js specs/features/BL-328-merged-code-reaches-running-daemons.feature`:
+     9 of 9 ok, about 290 s (measured on main at mint with the change).
+  5. Read the coder's committed review evidence.
+
+source: |
+  QA note 003958 (2026-10-09T17:00Z), verbatim: "BL-2082 held: unowned
+  reds bl1287 inv1, build_freshness_cli boot; ev 592a3bd139".
+  QA evidence backlog/evidence/BL-2082-QA-20261009.md (592a3bd139),
+  verbatim: "the fixture should wait for the child's own argv before
+  sampling" and "a fixed 10 s boot budget for operator_runtime.bb under
+  load; wants a load-relative budget."
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-09 by the specifier, the stamp-off for hotfix 6f0e120836.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Not the bl1287 mechanism 3d5e5064c5 fixed (bl857's sweep SIGKILLing
+  young fixtures): QA's sync base c097d97626 already carried that hotfix.
+  No register row was added; QA was told to retake BL-2082 and re-run.
+  The hotfix edits test_build_freshness_cli.sh's wait_for helper only,
+  away from BL-2082's own hunks in that file (lines 376+), so QA's merge
+  of main into its line is clean.
+  INVEST: Independent, Negotiable (review only), Valuable (two reds green
+  and reviewed), Estimable, Small (two waits), Testable (one property
+  file, one shell test, two features).

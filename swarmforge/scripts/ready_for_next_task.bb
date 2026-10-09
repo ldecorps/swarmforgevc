@@ -674,9 +674,14 @@
                 given-up-tasks       (handoff-lib/given-up-task-names-in
                                        (handoff-lib/my-mailbox-dir :completed)
                                        (handoff-lib/current-role))
-                claimable            (->> decided
-                                          (remove #(= :defer (:action (second %))))
-                                          (filter (fn [[f _]] (difficulty-allows-claim? f tiers pack-conf own-tasks)))
+                non-deferred         (remove #(= :defer (:action (second %))) decided)
+                ;; BL-2095: a single difficulty-allows-claim? pass partitions
+                ;; non-deferred candidates into claimable and tier-skipped -
+                ;; the exact same predicate the old single `filter` call
+                ;; used, never a second, possibly-drifting copy of it.
+                tier-grouped         (group-by (fn [[f _]] (boolean (difficulty-allows-claim? f tiers pack-conf own-tasks))) non-deferred)
+                tier-skipped         (get tier-grouped false [])
+                claimable            (->> (get tier-grouped true [])
                                           (remove (fn [[f _]] (contains? given-up-tasks (claim-task-name f))))
                                           vec)]
             (doseq [[f decision] deferred]
@@ -690,6 +695,15 @@
                           {:basename (fs/file-name f)
                            :task (:task decision)
                            :sibling-seats sibling-seat-ids}))))
+            (doseq [[f _] tier-skipped]
+              ;; BL-2095: out loud for the same reason the deferral line
+              ;; above is - a NO_TASK beside a full queue must explain
+              ;; itself. No seat identity is passed in (none to leak).
+              (let [task (claim-task-name f)]
+                (println (seat-difficulty-lib/tier-skip-line
+                          {:basename (fs/file-name f)
+                           :ticket (pipeline-stage-lib/extract-ticket-id task)
+                           :cost (mutation-cost-for-task task)}))))
             (if (empty? claimable)
               (report-no-task-or-rotate!)
               ;; BL-983: two idle seats can race for the same stage-queue

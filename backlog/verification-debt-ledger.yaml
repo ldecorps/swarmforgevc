@@ -314,3 +314,23 @@
   role: QA
   description: "qa-gather's property_runners row passes --changed-from <the gathered tip> (qaGather.ts:98), so it reaches nothing on every pass; ran the parcel's new bl2087_first_send_reach_floor_property_runner.bb and the changed lib's test runner by hand"
   detected_at: 2026-10-09
+- category: flaky-feature-reclassified-by-rerun
+  ticket: BL-2082
+  role: documenter
+  description: "BL-433 feature showed 1-2 failures (operator-restart-race setup: operator_runtime did not publish its first status within its 10s wait_for budget) while run back-to-back with other heavy feature runs; re-ran in isolation and got 5/5 ok, confirming transient resource contention from concurrent background test runs rather than a BL-2082 regression. No tool distinguishes a load-induced flake from a real regression on this suite."
+  detected_at: 2026-10-09
+- category: unlaned-property-runner-run-by-hand
+  ticket: BL-2095
+  role: QA
+  description: "qa-gather's property_runners row reached nothing (BL-2094's gap); ran the parcel's new bl2095_tier_skip_said_out_loud_property_runner.bb, seat_difficulty_lib_test_runner.bb, ready_for_next_claim_task_name_runner.bb and the adjacent bl1004/seat_affinity runners by hand"
+  detected_at: 2026-10-09
+- category: stryker-dry-run-timeout-fallback
+  ticket: BL-1784
+  role: hardender
+  description: "Stryker dry run on verificationDebtSignal.js/emit-throttle-recommendation.js terminated (exit 143) at ~7min on 4 consecutive attempts under coder2's own concurrent 10-worker vitest load; fell back to hand-mutation verification (2 mutants, 1 killed real gap, 1 found via a missing test now added) plus full unit/property/acceptance suites."
+  detected_at: 2026-10-09
+- category: stryker-dry-run-timeout-fallback
+  ticket: BL-2097
+  role: hardender
+  description: "Stryker dry run on telegramFrontDeskBotCore.js terminated (exit 143) near-immediately on 2 consecutive attempts, confirmed coder2's own 10-worker vitest load throughout; fell back to hand-mutation verification (2 mutants, both killed) plus full unit/property/acceptance suites."
+  detected_at: 2026-10-09

@@ -64,13 +64,12 @@ is still reported as an error string rather than an exception, so the
 supervisor still respawns on the stale build instead of staying down
 (BL-328 scenario 08, unchanged).
 
-This fix is scoped to `front_desk_supervisor.bb`'s own recompile path.
-`build_freshness_cli.bb`'s separate `sync` command has the identical
+`build_freshness_cli.bb`'s separate `sync` command had the identical
 `npm run compile`-on-the-live-checkout pattern in its own
-`recompile-extension!` and was left unfixed (BL-2065 flagged it for the
-architect, who did not fold it in) — see
+`recompile-extension!`; BL-2082 routed it through the same
+`recompile-extension-from-main!` — see
 [BL-629](../reference/BL-629-build-freshness-qa-approval-gate.md) for
-that mechanism, which still compiles whatever the working tree holds.
+that mechanism, which now builds `main`'s committed tree too.
 
 ## Operator response
 

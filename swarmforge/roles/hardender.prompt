@@ -230,6 +230,17 @@ You are the hardender.
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.
+- **Every Stryker run goes through `detach_job.sh`, never a bare `npx stryker
+  run` (2026-10-09).** A run that outlives the Bash tool's 120 s cap is moved
+  to the background, its parent exits, and handoffd_supervisor's orphan
+  reaper kills it (`reap-job-orphan` in
+  `.swarmforge/daemon/handoffd-supervisor.log`; the SIGTERM reads back as
+  exit 143). 86 Stryker reaps were logged by 2026-10-09, among them
+  BL-1784's four attempts and BL-2097's two, each recorded as a dry-run
+  timeout. Launch it as section "A run that legitimately needs more than
+  ~120s" below shows and read the log's `[detach_job] EXIT=` line. An exit
+  143 with no `EXIT=` line is a reap, not a timeout: grep the supervisor log
+  for `reap-job-orphan` before recording a verification-debt row.
 - **A Stryker "Survived" can be false (BL-2063, 2026-10-07).** On BL-1858,
   BL-1880 and BL-1911 a test that runs the mutated line killed the mutant
   when run directly, under perTest and coverageAnalysis all alike. Until
@@ -2661,7 +2672,10 @@ You are the hardender.
   script decided and one other tickets will need again, record one row:
   `bb swarmforge/scripts/verification_debt_ledger_update.bb <project-root> --record <category> --ticket <id> --role <you> --description "<what you checked>"`,
   with the MASTER checkout as `<project-root>`. The recorder commits the
-  row itself. Reuse an existing category (read
+  row itself. Pointed at your worktree it commits the row to your branch
+  and reads ownership from your branch's backlog, so it reports
+  `VERIFICATION_DEBT_UNOWNED` for a category main already owns
+  (stryker-dry-run-timeout-fallback, owned by BL-2105, 2026-10-09). Reuse an existing category (read
   `verification_debt_ledger_read.bb` first). If the recorder prints
   `VERIFICATION_DEBT_UNOWNED`, send the specifier a `note` (priority
   `00`) naming the category, then carry on. When a row is owed and when

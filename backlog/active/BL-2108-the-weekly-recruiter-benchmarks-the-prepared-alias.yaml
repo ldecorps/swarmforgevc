@@ -1,0 +1,107 @@
+id: BL-2108
+title: "The weekly recruiter benchmarks the prepared alias: review and gate recruiter_weekly.sh's prepare step a Cursor agent landed on main in 1e64496d93 - it prepares the pulled tag right after the pull, registers, batteries and certifies the prepared alias instead of the bare tag, stops at prepare-failed before registering, and on a refusal removes only the prepared alias, the copied alias and the pulled tag"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 20
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: about 30 landed shell lines to review, but the handler needs a
+# fixture copy of recruiter_weekly.sh with fakes for discovery, ollama, the
+# batteries and the steward CLI (bb_closure_copy.sh for the bb closure).
+slice_size_envelope: medium
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "about 30 landed lines; nothing to refactor"
+  architect: "BL-2106's architect pass reviews the shared prepare boundary the recruiter calls; the script's own flow is unchanged around it"
+
+acceptance: specs/features/BL-2108-the-weekly-recruiter-benchmarks-the-prepared-alias.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2108RecruiterPreparedAliasSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): recruiter_weekly.sh already
+# calls local_model_prepare_cli.bb on main (1e64496d93), and the handler
+# runs that script.
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the code is already on main
+  (1e64496d93); this ticket reviews and gates it and fixes what review
+  finds. FIRM: the recruiter still only offers - it never staffs a seat,
+  edits a pack conf or a launch script, or commits (BL-1127's own rule).
+  FIRM: no test pulls, creates or removes a real Ollama model.
+
+invariants:
+  - "The recruiter never removes a model it did not pull or create in the same run."
+
+description: |
+  ## Status
+
+  A Cursor agent landed this on main as part of 1e64496d93 with a raw
+  intake asking the specifier to mint the acceptance (intake item 2). The
+  coder reviews the landed lines, builds the handler, and fixes what
+  review finds; the parcel never re-applies the code.
+
+  ## What is gated
+
+  In recruiter_weekly.sh, after `ollama pull` and `ollama cp`:
+  - `local_model_prepare_cli.bb <pulled tag> --alias prepared-<alias>
+    --num-ctx 32768` runs, and the alias it returns replaces the copied
+    alias for register, the coder and compliance batteries and certify
+    (scenario 01).
+  - A failing prepare finishes the run `prepare-failed` before anything is
+    registered (scenario 02). Observed, not changed here: the pulled
+    weights stay on disk on that path; the script's own comment says the
+    refusal cleanup is never reached from it.
+  - A refused certify removes the prepared alias, the copied alias and the
+    pulled tag, and nothing else (scenario 03, invariant), unless
+    `RECRUITER_KEEP_UNFIT=1`.
+  - Living doc: docs/how-to/BL-547-model-steward-overview.md's recruiter
+    lines match.
+
+  ## How (direction, not mandate)
+
+  - Copy recruiter_weekly.sh and its bb closure into a mkdtemp scripts
+    directory (swarmforge/scripts/test/lib/bb_closure_copy.sh) with fake
+    recruiter_hf_discover.py, local_coder_battery.sh, compliance battery
+    and model_steward_cli.bb siblings, and fake `ollama`, `curl` and `df`
+    first on PATH, each recording its argv. A seam for SCRIPT_DIR or the
+    discovery command is fine if copying is not enough.
+
+constraints: >
+  Temp project roots, fake ollama/curl/df and fake sibling scripts only;
+  never the live Ollama, the live .swarmforge/recruiter or model-steward
+  state, or the network. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - The steward side of prepare (prepare!, probe --prepare, the re-probe):
+    BL-2106.
+  - Whether a failed prepare should also free the pulled weights.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2108-the-weekly-recruiter-benchmarks-the-prepared-alias.feature`:
+     3 of 3 ok.
+  2. `bb swarmforge/scripts/test/local_model_prepare_lib_test_runner.bb`:
+     ALL CHECKS PASSED (measured on main at mint).
+  3. `grep -n "local_model_prepare_cli.bb" swarmforge/scripts/recruiter_weekly.sh`:
+     one call, after the `ollama cp` line and before the register line.
+
+source: |
+  backlog/INTAKE-local-model-prepare-shared-lib-20261009.md (1e64496d93),
+  the human via Cursor, verbatim: "Rebuild and pass to specifier". Intake
+  item 2: "Recruiter may **invoke** prepare after pull, before battery;
+  still offer-only (never pack launch, conf edit, seat bind, or commit)."
+  The human, 2026-10-09, verbatim: "Can ypu find, commit and own the libs
+  cirsor wrote yesterday ?"
+
+notes: |
+  Minted 2026-10-09 by the specifier from the root intake above (1:2
+  split: recruiter side here, steward side BL-2106).
+  INVEST: Independent (the code is on main), Negotiable (fixture shape,
+  any seam), Valuable (the weekly recruiter ranks the model, not the bare
+  tag), Estimable (30 landed lines, one fixture handler), Small (three
+  scenarios), Testable (fakes for every external).

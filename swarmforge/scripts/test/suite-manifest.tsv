@@ -129,6 +129,7 @@ landed_but_open_test_runner.bb	standing
 launch_contract_test_runner.bb	standing		
 llm_cost_ledger_lib_test_runner.bb	standing		
 local_coder_probe_gate_lib_test_runner.bb	standing		
+local_model_prepare_lib_test_runner.bb	standing		
 local_model_window_gate_lib_test_runner.bb	standing
 local_seat_phase_cli_test_runner.bb	standing
 loop_detect_lib_test_runner.bb	standing

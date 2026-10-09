@@ -47,6 +47,11 @@ notes: |
   Minted 2026-10-04 by the specifier. Held at human_approval: pending on
   purpose: the human's "when iq3 is stabilized" is the trigger, and the
   Approvals tap is how they give it.
+  Cross-link (2026-10-09, specifier): when this how-to ships, name the
+  shared prepare step (`model_steward_cli.bb prepare <tag> --reprobe`, or
+  `probe <tag> --prepare`) as the step before any probe of a new model;
+  gated by BL-2106 (steward) and BL-2108 (recruiter). This note does not
+  widen this ticket's doc-only scope.
 
 description: |
   ## What is wanted

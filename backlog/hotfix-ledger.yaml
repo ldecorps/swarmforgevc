@@ -1644,3 +1644,38 @@
   stamp_ticket: BL-2098
   human_decision: null
   decided_at: null
+- commit: be2a0f917a
+  subject: "Hotfix: local-model QA card back under 8192 characters (prompt_engine_test_runner red since aa7d603d66)"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2100
+  human_decision: null
+  decided_at: null
+- commit: 6f0e120836
+  subject: "Hotfix: two load-sensitive reds QA reported unowned on BL-2082 - spawnFakeCloudflared waits for the child's own argv; test_build_freshness_cli.sh scales wait_for budgets by load"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2102
+  human_decision: null
+  decided_at: null
+- commit: 304e4a8816
+  subject: "Hotfix: seat-affinity rework deferral reads one type set (git_handoff, note) in both the claim decision and the stall-sweep hold - bl1004 property runner red since BL-1843"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2104
+  human_decision: null
+  decided_at: null
+- commit: 597801eadd
+  subject: "Hotfix: BL-1700 scenario 03's leak check counts only probe processes that appeared during the scenario - a live steward probe on the host failed it"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2107
+  human_decision: null
+  decided_at: null
+- commit: c045fbbfc3
+  subject: "Hotfix: seat_affinity_lib.bb half of 304e4a8816 - rework-deferrable-types defined and read by rework-claim-decision and deferral-hold? (QA note 003960: the lib half never landed)"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2104
+  human_decision: null
+  decided_at: null

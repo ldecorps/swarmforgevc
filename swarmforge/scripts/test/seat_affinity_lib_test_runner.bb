@@ -217,9 +217,13 @@
          false
          (seat-affinity-lib/deferral-hold? (assoc hold-base :seat-worked-task-sets [])))
 
-(assert= "a note is never held (only a git_handoff is a rework)"
-         false
+(assert= "a note naming a sibling-worked ticket is held like a git_handoff (BL-1843; hotfix 2026-10-09)"
+         true
          (seat-affinity-lib/deferral-hold? (assoc hold-base :type "note")))
+
+(assert= "an awake or rule_proposal is never held as a rework, whatever task it carries"
+         [false false]
+         (mapv #(seat-affinity-lib/deferral-hold? (assoc hold-base :type %)) ["awake" "rule_proposal"]))
 
 (assert= "a blank task is never held"
          false

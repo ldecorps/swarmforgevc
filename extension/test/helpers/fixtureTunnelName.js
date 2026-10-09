@@ -224,4 +224,5 @@ module.exports = {
   leakedFixtureTunnelPids,
   creatingPidFor,
   isProcessAlive,
+  SHELL_DASH_C_RE,
 };
