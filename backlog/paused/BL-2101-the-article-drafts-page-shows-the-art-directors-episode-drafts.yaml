@@ -1,0 +1,134 @@
+id: BL-2101
+title: "The Article drafts page shows the Art Director's episode drafts: land the live Mini App page a Cursor agent built on 2026-10-09 and left uncommitted in the master checkout - an index of .swarmforge/operator/DRAFT-linkedin-*.md, newest first, and a page per draft showing the post without its meta block, linked from the console menu and the Mini App page bundle, its feeds behind the bridge token"
+milestone: M8
+type: feature
+status: todo
+epic: art-direction
+priority: 30
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: about 650 lines of new TypeScript (articleDraftsCore.ts,
+# articleDraftsHtml.ts) and route wiring in bridgeServer.ts already
+# written; Stryker on the two new modules and the changed lines, one step
+# handler, two rewritten unit tests.
+slice_size_envelope: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "code already written and reviewed by its author; medium slice, not high"
+
+acceptance: specs/features/BL-2101-the-article-drafts-page-shows-the-art-directors-episode-drafts.feature
+
+required_wiring:
+  - 'extension/src/bridge/bridgeServer.ts::buildArticleDraftsIndexState(targetPath)::the live bridge route table reaches the index builder'
+  - 'extension/src/bridge/bridgeServer.ts::getArticleDraftsUiHtml()::the live bridge serves the page shell'
+  - 'extension/src/bridge/consoleMenuUiHtml.ts::/article-drafts::the console menu links the page'
+  - 'specs/pipeline/steps/bl2101ArticleDraftsPageSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# The first three anchor calls in pre-existing live consumers (BL-1235):
+# bridgeServer.ts and consoleMenuUiHtml.ts already serve every other Mini
+# App page, so a match there is a call the running bridge makes.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: this lands the Cursor
+  agent's 2026-10-09 code from the committed snapshot; it adds no
+  behaviour the snapshot does not have. FIRM: it is the LIVE holistic UI
+  (bridge, token-gated feeds), never the static backlog PWA (Local
+  Engineering Architecture Rule 5). FIRM: read-only; no route writes,
+  moves or deletes a draft. FIRM: drafts stay gitignored in the master
+  checkout's .swarmforge/operator/ (art-director.prompt); no test reads
+  the live drafts.
+
+invariants:
+  - "A draft page request never reads a file outside the project's .swarmforge/operator/ and never one whose name is not DRAFT-linkedin-*.md."
+  - "Every article drafts route is a read-only GET, and the JSON feeds answer only a request that carries the bridge token."
+
+description: |
+  ## What is wanted
+
+  The human reads the Art Director's LinkedIn episode drafts on the
+  phone, in the Telegram Mini App. A Cursor agent built that page on
+  2026-10-09 in the master checkout and never committed it, so it is in
+  no build. This ticket lands it through the pipeline unchanged in
+  behaviour: an "Article drafts" button on the console menu, a page
+  listing every `.swarmforge/operator/DRAFT-linkedin-*.md`, newest first,
+  and a page per draft that renders the post below the first `---` line
+  (the meta block above it is never shown), with the existing Listen
+  (speech) control. The Art Director owns the drafts and reviews this
+  page as one of its artifacts (art-director.prompt).
+
+  ## Where the code is
+
+  `backlog/evidence/BL-2101-article-drafts-mini-app-snapshot-20261009.patch`,
+  committed by the specifier, applies cleanly to main at mint (`git apply`
+  from your worktree root). It holds all eight paths:
+  articleDraftsCore.ts, articleDraftsHtml.ts and their two unit tests
+  (new), and the edits to bridgeServer.ts, consoleMenuUiHtml.ts,
+  letsTalkRoutes.ts and bl1634RejectedManifestBuiltInsInvariant.property.test.js.
+  Take the code from the patch, never from the master checkout's working
+  copy.
+
+  Two changes to the snapshot are part of this ticket:
+  - The snapshot drops two unit tests from articleDraftsCore.test.js,
+    "buildArticleDraftsIndexState lists live repo drafts" and
+    "buildArticleDraftPageState serves a real Ep7 draft body". Both read
+    the real, gitignored drafts, so they fail in any checkout that lacks
+    them (every seat worktree) and quote unpublished draft text. Cover
+    `buildArticleDraftsIndexState` and `buildArticleDraftPageState` with
+    temp-directory fixtures instead (scenarios 01 to 03 do the same).
+  - The remaining fixtures quote Ep7's working title and one of its
+    subheadings. Replace them with neutral strings.
+
+  ## How (direction, not mandate)
+
+  - The step handler drives `buildArticleDraftsIndexState` and
+    `buildArticleDraftPageState` over a mkdtemp project with an operator
+    directory (file mtimes set to order the drafts), and starts the bridge
+    in process for scenario 04 the way articleDraftsBridge.test.js does.
+
+constraints: >
+  Temp project roots only; never the live .swarmforge/operator/ or the
+  live bridge token. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Posting to LinkedIn or reading readers' feedback: the human ruled it
+    manual on 2026-10-09 (art-director.prompt).
+  - Any change to how drafts look on the page: Art Director briefs, new
+    tickets.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2101-the-article-drafts-page-shows-the-art-directors-episode-drafts.feature`:
+     6 of 6 ok (01, 02, 03 x3, 04).
+  2. Read from the gather's rows: articleDraftsCore.test.js and
+     articleDraftsBridge.test.js green in the unit row,
+     bl1634RejectedManifestBuiltInsInvariant green in the property row.
+  3. `grep -rn "operator/DRAFT-linkedin-ep" extension/test`: no match (no
+     test reads a live draft).
+  4. Art-direction sign-off (epic art-direction): send the Art Director
+     the note with where the page renders; its LGTM or defect list is
+     evidence.
+
+source: |
+  The human, in the specifier's session, 2026-10-09, verbatim: "Own
+  cursor changes he made today around the new mini app screen and the
+  episldes drafts. Art Director will màage that gping forward"
+  The human's answer to the specifier's question on the uncommitted page,
+  2026-10-09: "Mint a ticket to land it".
+  The art-director's amendment, incorporated in eaed2e6892: "Sew
+  [show/showcase] the newly added mini app page."
+
+notes: |
+  Minted 2026-10-09 by the specifier.
+  Snapshot taken 2026-10-09 ~17:15Z from the master checkout's working
+  copy (files last written 16:40Z). The master checkout still holds those
+  uncommitted copies, and a dirty overlap blocks the main sync the land
+  needs. So when the coordinator promotes this ticket, the specifier
+  checks the working copy against the snapshot (refreshing the snapshot
+  if anything newer is there) and restores the eight paths to HEAD before
+  the coder starts.
+  INVEST: Independent, Negotiable (handler shape), Valuable (the human
+  reads drafts on the phone), Estimable (code exists), Small (land plus
+  two tests and a handler), Testable (temp operator directory, in-process
+  bridge).

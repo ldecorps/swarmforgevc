@@ -127,12 +127,21 @@
    artifacts.
 5. **Placement: a role-prompt section**, alongside "You are called, not
    seated". No Article 1.10 line.
-6. **Posting / feedback interop (addendum): the human's choice, asked
-   2026-10-09.** Until the human rules, the art-director's deliverable is
-   the final post text, the human posts it, and readers' feedback reaches
-   the art-director when the human relays it. Whatever the ruling, a
-   publish, comment or reply on the human's behalf needs the human's
-   confirmation of that exact text, one post per confirmation.
+6. **Posting / feedback interop (addendum): manual, by the human's
+   ruling.** Asked 2026-10-09; the human answered "Keep it manual". The
+   art-director's deliverable is the final post text, the human posts it,
+   and readers' feedback reaches the art-director when the human relays
+   it. No LinkedIn client is built. (As the specifier understood it when
+   asking: posting would need LinkedIn's w_member_social scope, and
+   reading comments r_member_social, which LinkedIn reserves for approved
+   partners.)
+7. **The Article drafts page and the drafts are the art-director's.** The
+   human, 2026-10-09, verbatim: "Own cursor changes he made today around
+   the new mini app screen and the episldes drafts. Art Director will
+   màage that gping forward". The Cursor agent's uncommitted page lands
+   through the pipeline as BL-2101 (epic art-direction, so QA asks the
+   art-director to sign off on it); the art-director inventories it and
+   briefs any change, writing no production code.
 
 ## How the proposal reached the specifier
 
