@@ -1,0 +1,85 @@
+id: BL-2089
+title: "Stamp-off for hotfix d47df679b8: ready_for_next must not tell a local seat to read a missing phase record on fresh arrange"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of a production hotfix for a live fault the human
+# reported in real time on the running swarm (qwen coder stalled on
+# File-not-found for .swarmforge/phase/BL-2074.md at fresh arrange).
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: normal
+depends_on: []
+
+mutation_cost: low
+# low: one BRANCH in maybe-print-phase-line! plus the BL-2038 none-example
+# wording and step; no Stryker surface.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one conditional beside its sibling println; nothing to refactor"
+  architect: "no boundary moves; reuses local_seat_phase_cli show and fs/exists?"
+  hardender: "Babashka-free acceptance change plus one pure branch; BL-2038 feature is the coverage"
+
+acceptance: specs/features/BL-2038-a-local-seats-phases-each-run-in-a-fresh-session.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the human asked Cursor to land immediately, live,
+  under the 2026-10-01 rule ("instead of minting a red, hotfix the defect
+  and mint a stampoff"). No choice is posed here. FIRM: the coder reviews
+  the hotfix and never re-applies it.
+
+invariants:
+  - "ready_for_next_task.bb's PHASE line for a local-model seat names 'read <path> first' only when .swarmforge/phase/<ticket>.md exists on disk."
+  - "When no phase record file exists yet, the PHASE line is 'PHASE: arrange - no phase notes yet (fresh arrange); begin from the ticket.' and never names a path to read."
+  - "A local-model seat whose phase record already exists still sees 'PHASE: <phase> - read <path> first.' unchanged."
+  - "A non-local-model seat still sees no PHASE line (BL-2038 invariant 2)."
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2038-a-local-seats-phases-each-run-in-a-fresh-session.feature`
+     — 7/7 ok (the none example now asserts the fresh-arrange wording).
+  2. Read `git show d47df679b8` and confirm the four invariants above;
+     write backlog/evidence/BL-2089-coder-<date>.md.
+  3. On a live local-model seat with an in_process parcel and no
+     `.swarmforge/phase/<ticket>.md`: re-run ready_for_next.sh and confirm
+     the PHASE line does not invite a ReadFile of a missing path.
+
+source: |
+  The human, 2026-10-08, via Telegram photo of the live qwen coder: the seat
+  ran ready_for_next.sh, got "PHASE: arrange - read .swarmforge/phase/BL-2074.md
+  first.", then File-not-found on that path. Follow-up, verbatim: "hotfix this".
+
+notes: |
+  Minted 2026-10-08 by Cursor operator as the stamp-off of hotfix d47df679b8.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options).
+  INVEST: Independent, Negotiable (review only), Valuable (stops fresh-arrange
+  stall), Estimable, Small, Testable.
+
+description: |
+  ## Status: hotfix d47df679b8 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong
+
+  `local_seat_phase_cli.bb show` returns phase `arrange` and a virtual
+  path when no record file exists yet. `ready_for_next_task.bb`'s
+  `maybe-print-phase-line!` always printed `PHASE: … - read <path> first.`,
+  so a fresh-arrange local seat (live BL-2074) hit File-not-found and
+  stalled before reading the ticket.
+
+  ## What the hotfix changed
+
+  - `swarmforge/scripts/ready_for_next_task.bb`: name the path only when
+    the file exists; otherwise print the fresh-arrange wording.
+  - `specs/features/BL-2038-…feature` + step: the `none` example expects
+    the new wording.
+
+  ## What the coder does (all of it)
+
+  Review the landed commit. Do not re-apply the change. Confirm the
+  invariants and leave evidence under backlog/evidence/.

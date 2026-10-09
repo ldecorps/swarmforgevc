@@ -195,3 +195,6 @@ notes: |
   call, the shape iq3 wrote cleanly in BL-1854's lib.
 
 assigned_to: coder@2
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-08, by: QA, blamed: documenter, class: behavior, commit: 767f2ac0a5, evidence: backlog/evidence/BL-2084-QA-20261008.md }

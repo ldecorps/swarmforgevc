@@ -1789,6 +1789,31 @@ test('isPipelineEmpty is false when a role has in-flight (in_process) work', () 
   assert.equal(isPipelineEmpty(root), false);
 });
 
+// ── isInFlightEmpty (soft shift-close) ─────────────────────────────────────
+
+test('isInFlightEmpty is true when in_process is empty even if inbox/new has mail', () => {
+  const { isInFlightEmpty } = require('../out/tools/telegramPipelineDrain');
+  const root = mkTmpRoot();
+  writeRolesTsvFixture(root, 'coder', root);
+  const newDir = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new');
+  fs.mkdirSync(newDir, { recursive: true });
+  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  fs.writeFileSync(path.join(newDir, 'BL-1.handoff'), 'type: note\nto: coder\npriority: 50\n\nhi\n');
+  assert.equal(isInFlightEmpty(root), true);
+  assert.equal(isPipelineEmpty(root), false);
+});
+
+test('isInFlightEmpty is false when a role has in_process work', () => {
+  const { isInFlightEmpty } = require('../out/tools/telegramPipelineDrain');
+  const root = mkTmpRoot();
+  writeRolesTsvFixture(root, 'coder', root);
+  fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'new'), { recursive: true });
+  const inProcessDir = path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process');
+  fs.mkdirSync(inProcessDir, { recursive: true });
+  fs.writeFileSync(path.join(inProcessDir, 'BL-1.handoff'), 'type: note\nto: coder\npriority: 50\n\nhi\n');
+  assert.equal(isInFlightEmpty(root), false);
+});
+
 // ── runKillAllSwarm / executeStop (BL-423) ─────────────────────────────────
 
 function writeFakeKillAllSwarm(root, body) {

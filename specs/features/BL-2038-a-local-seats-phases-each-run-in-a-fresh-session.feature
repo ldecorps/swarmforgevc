@@ -18,7 +18,7 @@ Feature: BL-2038 A local seat's phases each run in a fresh session
     Examples:
       | agent       | phase   | phase_line                                              |
       | local-model | act     | names the phase "act" and the record's path             |
-      | local-model | none    | names the phase "arrange" and the record's path         |
+      | local-model | none    | names the phase "arrange" with no phase notes yet       |
       | claude      | act     | carries no phase line                                   |
 
   # BL-2038 ending-a-phase-restarts-the-session-02

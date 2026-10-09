@@ -10,6 +10,11 @@
   reason: "Root-caused + fixed (swarmforge-QA push was tracking refs/heads/main, now origin/swarmforge-QA); content is QA's own in-review WIP for still-active BL-1880, not a bypass of a finished land; see backlog/evidence/art42-origin-main-1007-coordinator-closeout.md. Re-waive if BL-1880 doesn't land soon."
   waived_at: 2026-10-08
 
+- key: pipeline-code-on-main-01e77eaef2bf2fc1ba8bdd238d1b77b4f6664ceb
+  waived_by: coordinator
+  reason: "sanctioned hotfix: soft shift close freezes new jobs at T-15 and drains in_process before finish-shift. Registered in backlog/hotfix-ledger.yaml (state: pending), stamp ticket BL-2088 minted in backlog/paused/. is_qa_ancestor.sh exit 1 (not yet QA-merged) - genuine Article 4.2 hit per the human's 2026-10-01 hotfix-then-stampoff rule, not a bypass."
+  waived_at: 2026-10-08
+
 - key: pipeline-code-on-main-02f834ec44a1b217311af8789eb3cbd7c52b27f6
   waived_by: coordinator
   reason: "sanctioned hotfix (SUP-17 ruling, Article 4.2 re-fires on sanctioned stamp-offs are accepted noise), already in hotfix-ledger.yaml with stamp_ticket BL-1988 pending"
@@ -365,6 +370,11 @@
   reason: "QA-approved BL-1836 land (confirmed via note 003714/own close commit bc0c3a2a8c). Lander daemon land, same class as BL-1834/BL-1866/BL-1871/BL-1872/BL-1867/BL-1887."
   waived_at: 2026-10-02
 
+- key: pipeline-code-on-main-99fec722184d51326c4a7bdc2f783759e55c76e8
+  waived_by: coordinator
+  reason: "Specifier-authored declared hotfix (commit trailer: By specifier., Hotfix-Certification: pending): bl2049PropertyRunnerReachInvariants.property.test.js reach floor construction fix for QA-reported unowned red (note 003930, ev 767f2ac0a5) from BL-2084 - same sampled-to-constructed pattern and producer as cb163341ab/2242cd327c (BL-2081/BL-2083). Test-only, 2/2 green, 6s. Missing from hotfix-ledger.yaml unlike its siblings - flagged to specifier to add row + mint stamp ticket."
+  waived_at: 2026-10-08
+
 - key: pipeline-code-on-main-9b1c4c393c773088df7f80288c18c51e1ce6bc93
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
@@ -609,3 +619,8 @@
   waived_by: coordinator
   reason: "QA-approved BL-1887 land via the new lander daemon (BL-1872); land-approvals record and lander log confirm LAND_PUBLISH_OK. Close itself is blocked on a separate gap (lander notifies coordinator as coordinator, not QA) - flagged to specifier, not a sign the land itself is unapproved."
   waived_at: 2026-10-02
+
+- key: pipeline-code-on-main-d47df679b83305fa37b0faab44a3feffe2eb2c85
+  waived_by: operator
+  reason: "Human-directed declared hotfix (Cursor, 2026-10-08): ready_for_next PHASE line no longer tells a local seat to read a missing fresh-arrange phase file (live BL-2074 File-not-found stall). Stamp ticket BL-2089. Hotfix-Certification: pending. Touches specs/pipeline/steps/ only to update BL-2038's none example."
+  waived_at: 2026-10-08
