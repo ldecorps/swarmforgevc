@@ -47,6 +47,12 @@ description: |
   the landed code, builds the step handler, and fixes what review finds;
   the parcel never re-applies the code.
 
+  It is also the stamp-off for hotfix fbc184ed19 (2026-10-09, QA note
+  003965): local_model_prepare_lib_test_runner.bb, landed in 1e64496d93,
+  created a temp root and deleted it only on success, so tempDirTrapGuard
+  went red; the hotfix moves the delete-tree into a finally. Review it,
+  never re-apply it.
+
   ## Why it exists
 
   On 2026-10-09 two candidate coder models probed on their bare Hugging
@@ -101,7 +107,9 @@ qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `node specs/pipeline/cli.js specs/features/BL-2106-the-steward-probes-a-local-coder-through-a-prepared-alias.feature`:
      7 of 7 ok (01 x2, 02, 03 x3, 04).
-  2. `bb swarmforge/scripts/test/local_model_prepare_lib_test_runner.bb`:
+  2. Read from the gather's rows: tempDirTrapGuard.test.js (unit) and
+     tempDirTrapGuard.property.test.js (property) green (4/4 and 9/9
+     after fbc184ed19). `bb swarmforge/scripts/test/local_model_prepare_lib_test_runner.bb`:
      ALL CHECKS PASSED; `bb swarmforge/scripts/test/model_steward_coder_probe_lib_test_runner.bb`:
      ALL PASS (both measured on main at mint).
   3. `node specs/pipeline/cli.js` on the BL-547, BL-1700 and BL-1701
@@ -124,7 +132,12 @@ source: |
 notes: |
   Minted 2026-10-09 by the specifier from the root intake above (1:2
   split: steward side here, recruiter side BL-2108).
+  2026-10-09 ~20:50Z, specifier: became the stamp-off for hotfix
+  fbc184ed19 (the existing owner of the code, so no second ticket); amended
+  before any work started.
   INVEST: Independent (the code is on main), Negotiable (handler shape,
   any seam), Valuable (local-coder bakeoffs rank models, not the harness),
   Estimable (about 400 landed lines and one handler), Small (four
   scenarios), Testable (dry runs, a fake ollama, temp dirs).
+
+assigned_to: coder

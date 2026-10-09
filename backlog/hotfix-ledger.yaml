@@ -1679,3 +1679,10 @@
   stamp_ticket: BL-2104
   human_decision: null
   decided_at: null
+- commit: fbc184ed19
+  subject: "Hotfix: local_model_prepare_lib_test_runner.bb removes its temp root in a finally - tempDirTrapGuard red since 1e64496d93 (QA note 003965)"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2106
+  human_decision: null
+  decided_at: null
