@@ -23,14 +23,17 @@
 // hand-over-rules review, per the ticket's own direction.
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
+const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 
 const FEATURE = 'One decode slot on the host, held by a seat across its burst';
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const SHIM_PY = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'local_model_tool_call_shim.py');
+const SWARMFORGE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarmforge.sh');
 
 // Short enough to keep this feature fast; long enough that the steps'
 // own small setup delays never race past them by accident.
@@ -169,6 +172,11 @@ async function boot(ctx) {
       myState.fakeServer.close();
     }
   });
+  ctx.__disposables.push(() => {
+    if (myState.seatUrlScriptFile) {
+      try { fs.unlinkSync(myState.seatUrlScriptFile); } catch { /* already gone */ }
+    }
+  });
 
   myState.ready = shimReady.then(() => myState);
   return myState.ready;
@@ -207,6 +215,40 @@ function getJson(url) {
   });
 }
 
+// Scenario 05: both URLs come from swarmforge.sh's OWN writer
+// (local_model_seat_url), the same extraction-and-eval posture
+// bl2076ShimNamesSeatSteps.js already uses - never a restatement of the
+// URL shape here. "rotating"/"standing" map to the rotation_signal values
+// the writer's own call site passes ("router"/""), never read from this
+// test; a Scenario Outline example disposes `state` between runs
+// (boot()'s own reuse/dispose shape), so the extracted script is torn
+// down and rebuilt with each fresh shim's port.
+function seatUrlScript(s) {
+  if (s.seatUrlScriptFile) {
+    return s.seatUrlScriptFile;
+  }
+  const extract = (fn) => execFileSync('bash', [
+    '-c',
+    `awk -v fn="${fn}" '$0 ~ "^"fn"\\\\(\\\\) \\\\{" { flag=1 } flag { print } flag && /^\\}/ { exit }' "${SWARMFORGE_SH}"`,
+  ], { encoding: 'utf8' });
+  const fnText = `${extract('local_model_shim_port')}\n${extract('local_model_seat_url')}`;
+  const scriptFile = path.join(os.tmpdir(), `bl2077-seat-url-${process.pid}-${Date.now()}.sh`);
+  fs.writeFileSync(scriptFile, `${fnText}\nlocal_model_seat_url "" "$1" "$2"\n`);
+  s.seatUrlScriptFile = scriptFile;
+  return scriptFile;
+}
+
+function seatUrlFor(s, role, pack) {
+  const rotation = pack === 'rotating' ? 'router' : '';
+  const shimPort = s.shimBase.split(':').pop();
+  const out = execFileSync('bash', [seatUrlScript(s), role, rotation], {
+    encoding: 'utf8',
+    env: { ...process.env, SWARMFORGE_LOCAL_MODEL_SHIM_PORT: shimPort },
+  }).trim();
+  assert.ok(out.startsWith(`http://127.0.0.1:${shimPort}/seat/`), `unexpected seat URL for ${role} on a ${pack} pack: ${out}`);
+  return out;
+}
+
 // Scenarios 01-03: a plain completion - the seat name rides as the sole
 // user message's content, which is all the fake Ollama ever reads.
 function plainBody(seat) {
@@ -225,7 +267,14 @@ function toolBody(seat, stream) {
 }
 
 function sendPlain(s, seat) {
-  const sent = postJson(`${s.shimBase}/seat/${seat}/v1/chat/completions`, plainBody(seat));
+  return sendPlainTo(s, `${s.shimBase}/seat/${seat}/v1`, seat);
+}
+
+// Scenario 05: the URL comes from the writer (seatUrlFor), never built
+// here from a bare seat name - the URL's own shape (plain seat, or with a
+// /pane/<id>/ segment) is exactly what this scenario is testing.
+function sendPlainTo(s, url, seat) {
+  const sent = postJson(`${url}/chat/completions`, plainBody(seat));
   // Tracked so disposal (a scenario that deliberately ends with a held or
   // still-waiting completion outstanding) can drain it before the shim
   // dies under it - .catch() only to keep the TRACKING copy from ever
@@ -399,6 +448,43 @@ function registerSteps(registry) {
     const text = s.qaStreamChunks.join('');
     assert.ok(/"content":\s*"ok"/.test(text), `expected QA's reply in the stream, got: ${JSON.stringify(text)}`);
     assert.ok(text.includes('[DONE]'), `expected a [DONE] event, got: ${JSON.stringify(text)}`);
+  }));
+
+  // ── Scenario 05 (BL-2077 D1, QA note 003953): a role rotated into one pane is one seat to the slot ──
+
+  scoped(/^a (rotating|standing) pack on which the coder's chat completion, sent to the URL swarmforge\.sh works out for the coder, has just been answered$/, (ctx, pack) => boot(ctx).then(async (s) => {
+    s.pack = pack;
+    const coderUrl = seatUrlFor(s, 'coder', pack);
+    s.coderSendPromise = sendPlainTo(s, coderUrl, 'coder');
+    await waitForFakeRequest(s, 'coder');
+    s.releaseGate.resolve();
+    await s.coderSendPromise;
+    s.releaseGate = freshGate();
+  }));
+
+  scoped(/^the cleaner sends a chat completion to the URL swarmforge\.sh works out for the cleaner on that pack$/, (ctx) => boot(ctx).then(async (s) => {
+    const cleanerUrl = seatUrlFor(s, 'cleaner', s.pack);
+    s.cleanerSendPromise = sendPlainTo(s, cleanerUrl, 'cleaner');
+  }));
+
+  scoped(/^the cleaner's completion reaches the fake Ollama (before|after) the idle grace runs out$/, (ctx, when) => boot(ctx).then(async (s) => {
+    if (when === 'before') {
+      // A rotation-in-group grant never waits at all - well inside the
+      // idle grace, not merely "eventually".
+      await waitForFakeRequest(s, 'cleaner', IDLE_GRACE_S * 1000 * 0.5);
+    } else {
+      await new Promise((r) => setTimeout(r, IDLE_GRACE_S * 1000 * 0.5));
+      assert.ok(!s.fakeRequests.some((r) => r.seat === 'cleaner'), "cleaner reached the fake Ollama before the idle grace ran out, on a standing pack where coder and cleaner are different seats");
+      await waitForFakeRequest(s, 'cleaner', IDLE_GRACE_S * 1000 * 2);
+    }
+    s.releaseGate.resolve();
+    await s.cleanerSendPromise;
+  }));
+
+  scoped(/^the shim's health names cleaner as holding the slot with no seat waiting$/, (ctx) => boot(ctx).then(async (s) => {
+    const health = await getJson(`${s.shimBase}/shim/health`);
+    assert.equal(health.slot.holder, 'cleaner', `expected cleaner to hold the slot: ${JSON.stringify(health.slot)}`);
+    assert.deepEqual(health.slot.waiters, [], `expected no seat waiting: ${JSON.stringify(health.slot)}`);
   }));
 }
 
