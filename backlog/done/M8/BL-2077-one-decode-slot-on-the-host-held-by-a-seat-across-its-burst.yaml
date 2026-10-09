@@ -217,3 +217,5 @@ notes: |
   waiting" against scenario 01's "names coder as holding the slot and QA
   as waiting" are two states, kept; the Given and the When are two
   different sends, kept.
+
+assigned_to: coder
