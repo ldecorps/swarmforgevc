@@ -37,6 +37,22 @@ export const operatorDocs: LetsTalkUiBundlePage = {
   order: 6,
 };
 
+export const articleDrafts: LetsTalkUiBundlePage = {
+  id: 'article-drafts',
+  title: 'Article drafts',
+  entryPath: 'article-drafts',
+  order: 7,
+};
+
+export function mergeArticleDraftsIntoUiBundleManifest(manifest: LetsTalkUiBundleManifest): LetsTalkUiBundleManifest {
+  if (manifest.pages.some((page) => page.id === articleDrafts.id)) {
+    return manifest;
+  }
+  return {
+    ...manifest,
+    pages: [...manifest.pages, articleDrafts].sort((a, b) => a.order - b.order),
+  };
+}
 
 // required_wiring anchor: bubbleHealthPage
 export const bubbleHealth: LetsTalkUiBundlePage = {
