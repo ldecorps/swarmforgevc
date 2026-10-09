@@ -314,3 +314,8 @@
   role: QA
   description: "qa-gather's property_runners row passes --changed-from <the gathered tip> (qaGather.ts:98), so it reaches nothing on every pass; ran the parcel's new bl2087_first_send_reach_floor_property_runner.bb and the changed lib's test runner by hand"
   detected_at: 2026-10-09
+- category: flaky-feature-reclassified-by-rerun
+  ticket: BL-2082
+  role: documenter
+  description: "BL-433 feature showed 1-2 failures (operator-restart-race setup: operator_runtime did not publish its first status within its 10s wait_for budget) while run back-to-back with other heavy feature runs; re-ran in isolation and got 5/5 ok, confirming transient resource contention from concurrent background test runs rather than a BL-2082 regression. No tool distinguishes a load-induced flake from a real regression on this suite."
+  detected_at: 2026-10-09

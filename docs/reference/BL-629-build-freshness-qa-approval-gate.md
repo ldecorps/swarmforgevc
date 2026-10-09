@@ -128,18 +128,24 @@ Checks the QA approval gate, then recompiles (if needed) and restarts stale daem
 
 On 2026-07-25, commits reached `main` without passing the back half of the pipeline (architect, hardener, documenter, QA). The incident was caught by an architect noticing the branch state. The daemons had not synced due to a liveness gap, but a routine `sync` call during that window would have deployed three known live defects in the Telegram redelivery path.
 
-### Known Gap: `sync`'s Own Recompile Reads The Working Tree (BL-2065)
+### `sync`'s Own Recompile Builds `main`'s Committed Tree (BL-2082)
 
-`sync`'s `recompile-extension!` runs `npm run compile` directly inside the
-master checkout's `extension/`, so an uncommitted or untracked file
-sitting there at that moment compiles in and is stamped with `main`'s sha
-as if it had been built from `main` — the same defect pattern BL-2065
-fixed in `front_desk_supervisor.bb`'s own stale-build recompile (see
+`sync`'s `recompile-extension!` used to run `npm run compile` directly
+inside the master checkout's `extension/`, so an uncommitted or untracked
+file sitting there at that moment compiled in and was stamped with
+`main`'s sha as if it had been built from `main` — the same defect pattern
+BL-2065 fixed in `front_desk_supervisor.bb`'s own stale-build recompile
+(see
 [BL-1154](../how-to/BL-1154-build-stale-restarts-not-crash-giveup-budget.md#what-the-voluntary-roll-actually-compiles-bl-2065)).
-BL-2065 flagged this `recompile-extension!` copy for the architect as the
-identical pattern; the architect's review did not fold a fix for it into
-that ticket, so `sync` still compiles whatever the working tree holds,
-unlike the front-desk path.
+170 of 258 logged overrides (2026-07-27 to 2026-10-07) ran with such an
+uncommitted deployed-surface path present, including the one that
+compiled in BL-2065's own originating incident. BL-2082 routed `sync`'s
+`recompile-extension!` through the same `safe_recompile_lib.bb`
+`recompile-extension-from-main!` the front-desk path already used: `sync`
+now builds `main`'s committed tree whatever the working tree holds.
+`--override` still bypasses the refusal and is still logged in
+`.swarmforge/build-freshness/sync-overrides.jsonl` — it no longer changes
+what gets compiled.
 
 ### Known Friction: Expeditor-Landed Commits
 

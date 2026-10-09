@@ -55,6 +55,11 @@
 (def script-dir (str (fs/path (fs/parent (fs/canonicalize *file*)))))
 
 (load-file (str (fs/path script-dir "build_freshness_lib.bb")))
+;; BL-2082: sync's own recompile goes through the SAME safe export
+;; front_desk_supervisor.bb's ensure-current-build! already uses (BL-2065)
+;; - never a second `npm run compile` run directly in the master
+;; checkout's working tree.
+(load-file (str (fs/path script-dir "safe_recompile_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -320,10 +325,17 @@
             (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.destroyForcibly))
             (wait-until-dead pid kill-timeout-ms))))))
 
-(defn- recompile-extension! [project-root]
-  (let [{:keys [exit err]} (process/sh {:continue true :dir (str (fs/path project-root "extension"))} "npm" "run" "compile")]
-    (when-not (zero? exit)
-      (throw (ex-info (str "npm run compile failed: " err) {:step :recompile})))))
+;; BL-2082: compiles main-sha's COMMITTED extension/ tree
+;; (safe-recompile-lib/recompile-extension-from-main!, BL-2065's own
+;; export), never whatever the master checkout's working tree holds at
+;; this exact moment - an --override bypasses sync's dirty-surface/
+;; code-drift REFUSAL (BL-629) but no longer changes what gets compiled.
+;; The lib returns nil on success or an error string on failure; this
+;; adapter throws ex-info on the string so run-sync!/execute-sync!'s
+;; existing catch-all/outcome shape is unchanged.
+(defn- recompile-extension! [project-root main-sha]
+  (when-let [err (safe-recompile-lib/recompile-extension-from-main! project-root main-sha)]
+    (throw (ex-info err {:step :recompile}))))
 
 ;; The front-desk trio (bridge/bot/front_desk_supervisor) is restarted as
 ;; ONE UNIT, never independently: bridge/bot are DETACHED OS processes
@@ -452,7 +464,7 @@
                :override? override?
                :processes processes
                :main-sha main-sha}
-        adapters {:recompile! (fn [] (recompile-extension! project-root))
+        adapters {:recompile! (fn [] (recompile-extension! project-root main-sha))
                   :restart-group! (fn [group] ((get restart-group! group) project-root main-sha))
                   :record-override! (fn [gate] (append-override-record! project-root gate))
                   ;; BL-433: a restarted operator group has ALREADY settled by
