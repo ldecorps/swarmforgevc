@@ -176,5 +176,137 @@ git -C "$ROOT" merge --abort 2>/dev/null || git -C "$ROOT" reset -q --hard coder
 echo "$OUT6" | grep "BL-9999" >/dev/null || fail "06: refusal must name BL-9999, got: $OUT6"
 pass "06: a merge whose own resolution adds a genuinely new, unowned ledger row is still refused"
 
+# ── 07: a new test-lane row whose owner declares multi-sitting with a
+#    reason passes (BL-1884) ──────────────────────────────────────────────
+git -C "$ROOT" checkout -q coder
+cat > "$ROOT/backlog/paused/BL-5000-owner.yaml" <<'EOF'
+id: BL-5000
+hotfix_fallback: multi-sitting
+hotfix_fallback_reason: "the fix needs a second sitting"
+EOF
+printf 'unit\tnewred7.test.js\tBL-5000\t2026-10-01\tfixture\n' >> "$ROOT/backlog/standing-reds.tsv"
+git -C "$ROOT" add -A
+set +e
+OUT7="$(run_guard 2>&1)"
+STATUS7=$?
+set -e
+git -C "$ROOT" reset -q --hard coder
+[[ "$STATUS7" -eq 0 ]] || fail "07: expected a multi-sitting fallback with a reason to pass, got: $OUT7"
+pass "07: a new test-lane row whose owner declares multi-sitting with a reason passes"
+
+# ── 08: a new test-lane row whose owner declares needs-ruling with
+#    ruling_options passes (BL-1884) ──────────────────────────────────────
+git -C "$ROOT" checkout -q coder
+cat > "$ROOT/backlog/paused/BL-5000-owner.yaml" <<'EOF'
+id: BL-5000
+hotfix_fallback: needs-ruling
+ruling_options:
+  - option-a
+  - option-b
+EOF
+printf 'unit\tnewred8.test.js\tBL-5000\t2026-10-01\tfixture\n' >> "$ROOT/backlog/standing-reds.tsv"
+git -C "$ROOT" add -A
+set +e
+OUT8="$(run_guard 2>&1)"
+STATUS8=$?
+set -e
+git -C "$ROOT" reset -q --hard coder
+[[ "$STATUS8" -eq 0 ]] || fail "08: expected a needs-ruling fallback with ruling_options to pass, got: $OUT8"
+pass "08: a new test-lane row whose owner declares needs-ruling with ruling_options passes"
+
+# ── 09: a new test-lane row whose owner declares no hotfix_fallback is
+#    refused, naming the row (BL-1884) ────────────────────────────────────
+git -C "$ROOT" checkout -q coder
+cat > "$ROOT/backlog/paused/BL-5000-owner.yaml" <<'EOF'
+id: BL-5000
+EOF
+printf 'unit\tnewred9.test.js\tBL-5000\t2026-10-01\tfixture\n' >> "$ROOT/backlog/standing-reds.tsv"
+git -C "$ROOT" add -A
+set +e
+OUT9="$(run_guard 2>&1)"
+STATUS9=$?
+set -e
+git -C "$ROOT" reset -q --hard coder
+[[ "$STATUS9" -ne 0 ]] || fail "09: expected refusal of a row whose owner declares no hotfix_fallback"
+echo "$OUT9" | grep "newred9.test.js" >/dev/null || fail "09: refusal must name the row, got: $OUT9"
+echo "$OUT9" | grep "hotfix_fallback" >/dev/null || fail "09: refusal must name the missing fallback, got: $OUT9"
+pass "09: a new test-lane row whose owner declares no hotfix_fallback is refused, naming the row"
+
+# ── 10: a new test-lane row whose owner declares multi-sitting without a
+#    reason is refused (BL-1884) ──────────────────────────────────────────
+git -C "$ROOT" checkout -q coder
+cat > "$ROOT/backlog/paused/BL-5000-owner.yaml" <<'EOF'
+id: BL-5000
+hotfix_fallback: multi-sitting
+EOF
+printf 'unit\tnewred10.test.js\tBL-5000\t2026-10-01\tfixture\n' >> "$ROOT/backlog/standing-reds.tsv"
+git -C "$ROOT" add -A
+set +e
+OUT10="$(run_guard 2>&1)"
+STATUS10=$?
+set -e
+git -C "$ROOT" reset -q --hard coder
+[[ "$STATUS10" -ne 0 ]] || fail "10: expected refusal of a multi-sitting declaration without a reason"
+echo "$OUT10" | grep "newred10.test.js" >/dev/null || fail "10: refusal must name the row, got: $OUT10"
+pass "10: a new test-lane row whose owner declares multi-sitting without a reason is refused"
+
+# ── 11: a new test-lane row whose owner declares needs-ruling without
+#    ruling_options is refused (BL-1884) ──────────────────────────────────
+git -C "$ROOT" checkout -q coder
+cat > "$ROOT/backlog/paused/BL-5000-owner.yaml" <<'EOF'
+id: BL-5000
+hotfix_fallback: needs-ruling
+EOF
+printf 'unit\tnewred11.test.js\tBL-5000\t2026-10-01\tfixture\n' >> "$ROOT/backlog/standing-reds.tsv"
+git -C "$ROOT" add -A
+set +e
+OUT11="$(run_guard 2>&1)"
+STATUS11=$?
+set -e
+git -C "$ROOT" reset -q --hard coder
+[[ "$STATUS11" -ne 0 ]] || fail "11: expected refusal of a needs-ruling declaration without ruling_options"
+echo "$OUT11" | grep "newred11.test.js" >/dev/null || fail "11: refusal must name the row, got: $OUT11"
+pass "11: a new test-lane row whose owner declares needs-ruling without ruling_options is refused"
+
+# ── 12: a hardening-lane row whose owner declares no hotfix_fallback
+#    passes - hardening rows are not judged (BL-1884 scenario 04) ─────────
+git -C "$ROOT" checkout -q coder
+cat > "$ROOT/backlog/paused/BL-5000-owner.yaml" <<'EOF'
+id: BL-5000
+EOF
+printf 'hardening\tnewred12.test.js\tBL-5000\t2026-10-01\tfixture\n' >> "$ROOT/backlog/standing-reds.tsv"
+git -C "$ROOT" add -A
+set +e
+OUT12="$(run_guard 2>&1)"
+STATUS12=$?
+set -e
+git -C "$ROOT" reset -q --hard coder
+[[ "$STATUS12" -eq 0 ]] || fail "12: expected a hardening-lane row to pass even without a fallback declaration, got: $OUT12"
+pass "12: a hardening-lane row whose owner declares no hotfix_fallback passes"
+
+# ── 13: a new test-lane row whose owner declares needs-ruling with NO
+#    ruling_options but DOES carry an unrelated bulleted field (invariants:)
+#    is still refused - the bullet check must be scoped to the
+#    ruling_options block, not any list in the file (architect bounce
+#    2026-10-08) ──────────────────────────────────────────────────────────
+git -C "$ROOT" checkout -q coder
+cat > "$ROOT/backlog/paused/BL-5000-owner.yaml" <<'EOF'
+id: BL-5000
+hotfix_fallback: needs-ruling
+invariants:
+  - "some invariant unrelated to ruling_options"
+  - "another invariant"
+EOF
+printf 'unit\tnewred13.test.js\tBL-5000\t2026-10-01\tfixture\n' >> "$ROOT/backlog/standing-reds.tsv"
+git -C "$ROOT" add -A
+set +e
+OUT13="$(run_guard 2>&1)"
+STATUS13=$?
+set -e
+git -C "$ROOT" reset -q --hard coder
+[[ "$STATUS13" -ne 0 ]] || fail "13: expected refusal of a needs-ruling declaration with no ruling_options but an unrelated bullet list"
+echo "$OUT13" | grep "newred13.test.js" >/dev/null || fail "13: refusal must name the row, got: $OUT13"
+pass "13: a needs-ruling declaration with no ruling_options is refused even when the ticket carries an unrelated bullet list"
+
 echo ""
-echo "ALL PASS: check_standing_red_register.sh ledger join + merge-inherited-line filtering (BL-1646)"
+echo "ALL PASS: check_standing_red_register.sh ledger join + merge-inherited-line filtering (BL-1646) + hotfix_fallback declaration (BL-1884)"
