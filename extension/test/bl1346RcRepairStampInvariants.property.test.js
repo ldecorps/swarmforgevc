@@ -35,6 +35,7 @@ const {
 } = require('../../specs/pipeline/steps/lib/bl1346RcRepairStampFixture');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { uncommittedDecision } = require('./helpers/hotfixLedgerDecision');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
 const REVIEWED_COMMIT = '195de28861';
@@ -102,7 +103,12 @@ test('BL-1346/BL-654 invariant 1: a degraded pane is still repaired, with its ow
   }
 
   assertReachFloor(reach, ROLES, DEGRADED_CELL_RUNS, 'degraded role');
-}, 120000);
+// 2026-10-09: a bare 120000 no lane ceiling scales (BL-1596's class) timed
+// this invariant out at 123 s in a full lane at load 12-15 (the file took
+// 166.6 s there, 49.2 s in a lighter lane the same morning). Both bare sites
+// go through propertyLaneTimeoutMs(120000): 120 s quiet, up to 360 s under
+// load - BL-1596's migration for these two sites, as 662b7933c3 did bl1333's.
+}, propertyLaneTimeoutMs(120000));
 
 test('BL-1346/BL-654 invariant 2: the marker keeps full authority on a router pack, and none off it', () => {
   // Both halves of the same claim, over every marker value the packs can
@@ -150,7 +156,7 @@ test('BL-1346/BL-654 invariant 2: the marker keeps full authority on a router pa
   }
 
   assert.ok(reach.router > 0 && reach.standing > 0, 'never exercised both pack shapes');
-}, 120000);
+}, propertyLaneTimeoutMs(120000));
 
 test('BL-1346/BL-654 invariant 3: the stamp-off parcel never edits the code it reviews', () => {
   // Measured, not asserted in prose, and scoped to THIS PARCEL's own commits

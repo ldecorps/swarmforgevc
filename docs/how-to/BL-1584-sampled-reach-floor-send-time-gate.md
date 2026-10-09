@@ -78,11 +78,26 @@ onward) is never refused by this gate.
 
 **Fail-open on unreadable facts**, the same posture as every other
 send-time gate in `swarm_handoff.bb`: an unresolvable task id, an
-unreadable forwarded commit, an unreadable recorded received commit, or
-an unreadable candidate file each warn on stderr and the send proceeds.
-No recorded received commit at all (an ordinary first-hop parcel) is
-silent, not a warning — the same convention the merge-drop guard
-(BL-1576) and BL-806 follow.
+unreadable forwarded commit, or an unreadable candidate file each warn on
+stderr and the send proceeds.
+
+**A coder's first send is checked too (BL-2087).** No recorded received
+commit for the task — exactly the shape a coder's first send from a Work
+note takes, with no `commit:` header to read — used to make the gate
+return silently: `{:findings [] :warnings []}`, no matter what the parcel
+added. That is precisely the hop where a property test file is ADDED, so
+the class this gate exists to catch (BL-1583) passed through it
+unrefused; at least 13 sampled-low files landed after the gate shipped
+this way, two going red in QA. The gate now falls back to
+`git merge-base <commit> main` as the base and runs the SAME
+`decide-for-path` machinery a forwarded send already gets — a path
+absent at that base and present at the parcel commit is `:added` and
+refusable exactly as before (invariant 1: added-vs-modified never
+depends on the sender's inbound shape — a Work note, a `git_handoff`, or
+none). Only when no merge-base exists either (orphan or unrelated
+history) does the gate fall back to a warning naming the task and let
+the send proceed unverified (invariant 2: it never goes silent — it
+decides, or it warns).
 
 ## Fixing it
 

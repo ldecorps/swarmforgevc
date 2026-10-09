@@ -1104,6 +1104,67 @@ test('BL-2061 D3: a process killed between a durable drain and apply leaves both
   thirdDrain.commit();
 });
 
+// BL-2072: the two pollAndForward phase names are the exact strings the
+// diagnostic line carries - a StringLiteral mutant that empties either
+// name (Stryker survivors on timePhaseIfWired's call sites) must fail
+// here. The phase bodies themselves are exercised by the acceptance
+// feature and the property test; this pins the names by driving each
+// phase over the threshold and reading the line back.
+test('BL-2072: pollAndForward names its getUpdates wait and update batch phases exactly', async () => {
+  let current = 0;
+  const clock = { now: () => current };
+  const lines = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    now: clock.now,
+    logDiagnostic: (line) => lines.push(line),
+    getUpdates: async () => {
+      current += 28000;
+      return { success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'accepted' })] };
+    },
+    postToBridge: async () => {
+      current += 28000;
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current2) => current2 + 1,
+  });
+  assert.equal(result.posted, 1);
+  const waitLine = lines.find((l) => l.includes('getUpdates wait'));
+  assert.ok(waitLine, `no line names the getUpdates wait phase: ${JSON.stringify(lines)}`);
+  assert.ok(waitLine.startsWith('front-desk-phase-slow: getUpdates wait took '), `line does not carry the exact getUpdates wait phase name: ${waitLine}`);
+  const batchLine = lines.find((l) => l.includes('handling of one update batch'));
+  assert.ok(batchLine, `no line names the update batch phase: ${JSON.stringify(lines)}`);
+  assert.ok(batchLine.startsWith('front-desk-phase-slow: handling of one update batch took '), `line does not carry the exact update batch phase name: ${batchLine}`);
+});
+
+// BL-2072 D2 (QA bounce 2026-10-09): the bot's OWN getUpdates long poll
+// (telegram-front-desk-bot.ts POLL_TIMEOUT_SECONDS = 25s) is a routine,
+// healthy idle wait - not a stall - so a 25s empty cycle must write
+// nothing. Before the fix (threshold 10000ms) this wrote a line on every
+// one of the ~3456 healthy idle cycles a day, implicating getUpdates
+// before every real stall-kill regardless of what actually stalled.
+test('BL-2072 D2: a healthy 25s idle getUpdates wait (the bot\'s own long-poll timeout) writes no diagnostic line', async () => {
+  let current = 0;
+  const lines = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    now: () => current,
+    logDiagnostic: (line) => lines.push(line),
+    getUpdates: async () => {
+      current += 25000;
+      return { success: true, updates: [] };
+    },
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current2) => current2,
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(lines, [], `a healthy 25s idle poll must write no diagnostic line, got: ${JSON.stringify(lines)}`);
+});
+
 // ── pollAndForward wiring — BL-425 slice 1 role steering ─────────────────
 
 function stubRedirectToRole() {

@@ -232,5 +232,9 @@ notes: |
   two bare 120000 sites to propertyLaneTimeoutMs(120000) after QA note
   003903 (stamped by BL-2066); this ticket's census, taken at its own base
   commit, counts two fewer sites from there on.
+  2026-10-09 (specifier): hotfix 3d5e5064c5 migrated
+  bl1346RcRepairStampInvariants' two bare 120000 sites to
+  propertyLaneTimeoutMs(120000) after invariant 1 timed out at 123 s in a
+  full lane (stamped by BL-2093); two fewer sites again.
 
 assigned_to: null

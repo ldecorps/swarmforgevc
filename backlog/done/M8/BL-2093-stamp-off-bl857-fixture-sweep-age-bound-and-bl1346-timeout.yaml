@@ -1,0 +1,134 @@
+id: BL-2093
+title: "Stamp-off for hotfix 3d5e5064c5: two property-lane reds - bl857's module-load fixture sweep killed bl1287's deliberately dead-creator fixtures mid-draw (the sweep now spares any fixture younger than 30 s), and bl1346 invariant 1 timed out at 123 s on a bare 120000 no lane ceiling scales (now propertyLaneTimeoutMs(120000))"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of standing-red hotfixes (a red is high at first
+# sighting, 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review one test-side commit and run three property files once.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one constant, a small age reader, one guard line, two timeout arguments, one require and comments in test files; nothing to refactor"
+  architect: "test files only; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "no living doc describes these test files"
+
+# Not a claim of ownership over BL-1287's contract (BL-1251): its scenario
+# 03 (two suites sweeping in one lane each keep their own fixtures) is the
+# property the first half of this hotfix restores for the one fixture
+# shape BL-1287's creator check cannot protect.
+acceptance: specs/features/BL-1287-a-fixture-sweep-must-not-signal-a-live-runs-fixtures.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's property row:
+     bl857TunnelOwnershipInvariants 4 of 4,
+     bl1287FixtureSweepScopingInvariants 3 of 3 and
+     bl1346RcRepairStampInvariants 3 of 3.
+     Measured at 3d5e5064c5: a full property lane exit 0 (538 files,
+     1474 tests, 847 s wall, load 13-17), bl1346 100.8 s and bl857 16.5 s.
+  2. `node specs/pipeline/cli.js specs/features/BL-1287-a-fixture-sweep-must-not-signal-a-live-runs-fixtures.feature`:
+     4 of 4 ok (measured on main at mint with the change; BL-857 6 of 6,
+     BL-1061 5 of 5 and BL-1586 17 of 17 likewise).
+  3. Read the coder's committed review evidence.
+
+source: |
+  QA note 003951 (2026-10-09T11:00:08Z), verbatim: "unowned-red
+  bl1287FixtureSweepScopingInvariants.property: deadPid pid reuse".
+  Evidence: QA's BL-2061 review pass (fb4b7d2f1f), verbatim failure:
+  "Property failed after 3 tests { seed: 502172034, path: "2",
+  endOnFailure: true } Counterexample: [false,"k"]" / "Caused by:
+  AssertionError: creatorAlive=false: expected selected=true, got false".
+  bl1346: found by the specifier's own full property lane run verifying
+  the bl857 change (2026-10-09T11:07Z-11:18Z, load 12-15): invariant 1
+  STACK_TRACE_ERROR at 123013 ms, file 166.6 s.
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-09 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  No standing-reds.tsv row was added: both reds were fixed the same pass
+  they were found, and QA held no parcel on either (BL-2061 bounced on its
+  own D1).
+  bl1287 diagnosis differs from the note's: QA read it as pid reuse of
+  deadPid(). Linux allocates pids cyclically, so a freed pid returns only
+  after a full wrap (this host: pid_max 32768, about 70 s per wrap under
+  load), never inside a one-second draw, and 200 spawn-then-read trials at
+  load 9 showed neither reuse nor a pre-exec read. The killer is bl857's
+  module-load sweep: it SIGKILLs every fixture the selector picks, and
+  bl1287's dead-creator fixtures are picked by design.
+  BL-2068 (paused, orphaned sleep 300 children of the same fake
+  cloudflared helpers) is a different mechanism and is unchanged.
+  bl1346's two bare 120000 sites were in BL-1596's census (at bdb76c3c8a);
+  this hotfix migrates them the way BL-1596 would, and BL-1596's notes say
+  so (same as 662b7933c3 did for bl1333, stamped by BL-2066).
+
+description: |
+  ## Status: hotfix 3d5e5064c5 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong, and what the hotfix changed
+
+  1. extension/test/bl857TunnelOwnershipInvariants.property.test.js runs
+     `sweepLeakedFixtureTunnels()` at module load: it SIGKILLs every pid
+     `leakedFixtureTunnelPids` selects, that is every temp-dir cloudflared
+     whose tunnel name names a creator pid that is not alive (BL-1287).
+     bl1287's property file and its acceptance handler deliberately spawn
+     fixtures that name a DEAD creator, because that is the case they
+     test, and hold each one for about a second while the selector runs.
+     When bl857 loaded in another fork of the same lane, or in another
+     seat's lane (the sweep reads the whole host process table), it killed
+     that fixture before bl1287's selector read the table, and bl1287
+     invariant 1 failed with "creatorAlive=false: expected selected=true,
+     got false" (QA, BL-2061's lane).
+
+     The hotfix keeps the selector unchanged and adds an age bound to the
+     KILLER: bl857's sweep skips any selected pid whose `ps -o etime=` age
+     is under 30 s (SIBLING_FIXTURE_MIN_AGE_S), or whose age cannot be
+     read. A real leak is a `sleep 300` and outlives the bound by minutes,
+     so a later load still sweeps it. This is the age half of the
+     engineering Guardrails rule "reap only roots no live run owns (a dead
+     recorded owner pid, or an age bound)" (BL-1385/BL-1390). `etime`
+     rather than `etimes`, which macOS ps lacks. Verified at mint: a
+     dead-creator fixture aged 35 s was swept and a fresh one survived a
+     real bl857 run (4 of 4).
+
+  2. extension/test/bl1346RcRepairStampInvariants.property.test.js
+     invariants 1 and 2 carried a bare `120000` per-test timeout, a
+     constant no lane ceiling scales (BL-1596's class). In a full lane at
+     load 12-15 invariant 1 timed out at 123 s; alone at load 14.5 it takes
+     30.7 s. Both sites now pass `propertyLaneTimeoutMs(120000)` (120 s
+     quiet, up to 360 s under load), with a comment. No property body
+     changed.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 3d5e5064c5` against the section above. Confirm only the
+     constant, the age reader, the guard line, the timeout arguments, the
+     require and the comments changed.
+  2. Run bl857TunnelOwnershipInvariants, bl1287FixtureSweepScopingInvariants
+     and bl1346RcRepairStampInvariants once each, alone, with
+     `--config vitest.properties.config.mjs` and output under tmp/.
+  3. Write backlog/evidence/BL-2093-coder-<date>.md with the review result
+     and the run results, and commit it.
+
+assigned_to: coder
