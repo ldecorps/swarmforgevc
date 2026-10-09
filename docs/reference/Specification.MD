@@ -1,5 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** October 9, 2026 (BL-2024: QA's gather skips the `unit`
+and `properties` checks for a parcel whose own diff (merge-base with
+main to the parcel commit) touches nothing outside `backlog/` — the
+common shape of a review-only stamp-off, where those two lanes measure
+main's state rather than the parcel's own. Both checks' `build()` now
+return a third outcome, `{ skippedReason }`, whenever
+`CheckContext.backlogOnlySkipReason` is set; `runChecklist` reports it as
+a new row status, `skipped` (alongside `ran`/`blocked`), with the reason
+and no command started. `backlogOnlySkipReason` (in
+`extension/src/quality/qaGather.ts`) computes the parcel's own changed
+paths through the same injected `runFn` seam every check already uses —
+`git merge-base main <commit>` then `git diff --name-only <base>
+<commit>` — and returns a reason only when that diff is non-empty and
+every path in it starts with `backlog/`; a failed merge-base, a failed
+diff, an empty diff, or any path outside `backlog/` leaves it
+`undefined`, so both lanes run exactly as today (fails closed on any
+doubt). Every other check — straggler, sibling, register,
+`property_runners`, wiring, acceptance — is unaffected and still runs.
+No new extension command or setting; no diagram edit — no registered
+diagram depicts QA's internal checklist rows. No how-to page: same
+documentation precedent as `qa-gather.js`'s own BL-1554 mint and its
+sibling `record-review-evidence.js`/`record-bounce.js` (BL-1362),
+Specification.MD-only. Acceptance:
+`specs/features/BL-2024-qa-gather-skips-the-unit-and-property-lanes-for-a-backlog-only-parcel.feature`.)
+
+Prior entry —
+
 **Last Updated:** October 8, 2026 (BL-2060: stamp-off of hotfixes
 `c416adc5fb` and `4453766c28` — CONFIRMED. The front desk and the Cursor
 bridge share one bot token, so only one may call `getUpdates`; a
