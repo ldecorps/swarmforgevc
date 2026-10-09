@@ -1651,3 +1651,10 @@
   stamp_ticket: BL-2100
   human_decision: null
   decided_at: null
+- commit: 6f0e120836
+  subject: "Hotfix: two load-sensitive reds QA reported unowned on BL-2082 - spawnFakeCloudflared waits for the child's own argv; test_build_freshness_cli.sh scales wait_for budgets by load"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2102
+  human_decision: null
+  decided_at: null
