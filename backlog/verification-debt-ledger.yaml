@@ -273,6 +273,9 @@
   description: "ran all 217 property runners under swarmforge/scripts/test one at a time by hand (no lane runs them, QA note 003876) to census reds and wall for BL-2048/BL-2049"
   detected_at: 2026-10-06
   evidence: backlog/evidence/BL-2048-property-runner-census-20261006.md
+  discharged_at: 2026-10-09
+  discharged_by: specifier
+  discharged_evidence: backlog/evidence/BL-2094-QA-20261009-2.md
 - category: register-join-unidentified-red-triage
   ticket: BL-2015
   role: QA
@@ -314,6 +317,9 @@
   role: QA
   description: "qa-gather's property_runners row passes --changed-from <the gathered tip> (qaGather.ts:98), so it reaches nothing on every pass; ran the parcel's new bl2087_first_send_reach_floor_property_runner.bb and the changed lib's test runner by hand"
   detected_at: 2026-10-09
+  discharged_at: 2026-10-09
+  discharged_by: specifier
+  discharged_evidence: backlog/evidence/BL-2094-QA-20261009-2.md
 - category: flaky-feature-reclassified-by-rerun
   ticket: BL-2082
   role: documenter
@@ -324,6 +330,9 @@
   role: QA
   description: "qa-gather's property_runners row reached nothing (BL-2094's gap); ran the parcel's new bl2095_tier_skip_said_out_loud_property_runner.bb, seat_difficulty_lib_test_runner.bb, ready_for_next_claim_task_name_runner.bb and the adjacent bl1004/seat_affinity runners by hand"
   detected_at: 2026-10-09
+  discharged_at: 2026-10-09
+  discharged_by: specifier
+  discharged_evidence: backlog/evidence/BL-2094-QA-20261009-2.md
 - category: stryker-dry-run-timeout-fallback
   ticket: BL-1784
   role: hardender
