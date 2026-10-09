@@ -4,24 +4,88 @@ milestone: M8
 type: defect
 severity: high
 status: paused
-# high: stamp-off of a production hotfix for a live fault — iq3 QA seat was
-# stuck in a ready_for_next loop after its qwen chat returned a STOP banner;
-# the coordinator hotfixed with aa7d603d66 which updates ready_for_next.sh
-# to emit a proper STOP banner and exit rather than re-enter the loop.
+# high: stamp-off of a production hotfix for a live fault - the iq3 QA seat
+# re-ran ready_for_next.sh in a loop after it reprinted the in-process STOP
+# banner. Hotfix aa7d603d66 (operator, 2026-10-09) did not touch
+# ready_for_next.sh: it took ready_for_next.sh out of
+# local_model_repeat_guard.bb's state-changing commands (so the loop now
+# draws a REPEAT note), added a STOP-reprint hint naming the next tool,
+# said the same in swarmforge/roles/local-model/QA.note, restored the
+# qwen-coord mono-router pack conf, and added two cases to
+# test_bl1971_local_model_repeat_guard.sh.
 priority: 5
 direction: normal
 epic: local-llm-swarm
 depends_on: []
 
 mutation_cost: medium
-# medium: Babashka shell script plus doc update — four files touched, ~100
-# lines added; no Stryker lane (hand-mutant pass is the hardener's job) —
-# the hook is a thin shell wrapper beside its siblings.
+# medium: a Babashka guard, a seat card and a pack conf - four files, ~100
+# lines added. No Stryker lane is wired for Babashka (BL-472); the coder's
+# review and the guard's own shell test are the coverage.
 slice_size_envelope: low
 required_stages: [coder, documenter, qa]
 stage_skip_reasons:
-  cleaner: "shell patch to a small helper; follows existing style"
-  architect: "no boundary moves; the change is within ready_for_next.sh"
-  hardender: null
+  cleaner: "review-only stamp of a small guard patch that follows its siblings' style"
+  architect: "no boundary moves; the change stays inside the repeat guard, one seat card and one pack conf"
+  hardender: "Babashka with no Stryker lane (BL-472) and no durable write; the coder review plus test_bl1971 and BL-2064's feature cover the guard"
+
+acceptance: specs/features/BL-2064-a-local-seat-that-reads-without-writing-is-told-then-restarted.feature
+# Not a claim of ownership over BL-2064's contract: it is the feature that
+# drives the real local_model_repeat_guard.bb, including its state-changing
+# command list that this hotfix edited (scenario 02). Measured on main
+# 2026-10-09: 9 of 9 ok.
+
+human_approval: approved
+approval_context: >
+  Review-only stamp-off of an operator hotfix already on main. No choice
+  is posed: the coder reviews aa7d603d66 and never re-applies it.
+
+description: |
+  ## Status
+
+  Hotfix aa7d603d66 (operator, 2026-10-09 06:39Z) landed the fix. This
+  ticket is the review of it (the BL-1858 and BL-1868 shape): the coder
+  reviews it and never re-applies it.
+
+  ## What the hotfix did
+
+  - local_model_repeat_guard.bb: `ready_for_next.sh` is no longer one of
+    the state-changing commands that start a fresh repeat window. When a
+    seat already holds in_process work the script only reprints STOP and
+    the TASK, so counting it as a reset let the iq3 QA seat re-run it
+    forever without a REPEAT note. A third run with no edit between is now
+    warned about.
+  - The same guard adds a hint when ready_for_next.sh reprints the STOP
+    banner, naming the next tool: Read the in_process parcel.
+  - swarmforge/roles/local-model/QA.note says the same.
+  - swarmforge/packs/ollama-ista-local-model-qwen-coord-mono-router.conf,
+    the IQ3 pipeline seats' pack, was restored so the swarm could launch.
+  - test_bl1971_local_model_repeat_guard.sh gained the two cases above.
+
+  ## What is wanted
+
+  The coder's review records whether each change is right and complete,
+  and names any defect as its own ticket rather than fixing it here. The
+  documenter keeps the local-model seat how-to in step with the guard.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2064-a-local-seat-that-reads-without-writing-is-told-then-restarted.feature`:
+     9 of 9 ok (measured on main 2026-10-09).
+  2. `bash swarmforge/scripts/test/test_bl1971_local_model_repeat_guard.sh`:
+     exit 0, 22 PASS lines, among them "a third ready_for_next.sh since the
+     last edit is warned about" and "ready_for_next that reprints the STOP
+     banner is told to Read in_process next".
+  3. Read the coder's review evidence (7df48e6b67) and the documenter's
+     how-to change (b5a3899ef9): each hotfix change above is accounted for.
+
+notes: |
+  Minted 2026-10-09 (ff0e952b7f) without an acceptance field, so the
+  documenter's forward to QA was refused at PRE_QA_GATE (documenter note
+  001727). Amended 2026-10-09 by the specifier: acceptance, description,
+  qa_e2e_procedure, the hardender skip reason (was null) and the comment
+  above (it said the hotfix changed ready_for_next.sh; it changed the
+  repeat guard). The stages are unchanged, because the parcel is in flight.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
 
 assigned_to: coder
