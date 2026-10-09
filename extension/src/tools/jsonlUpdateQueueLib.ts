@@ -31,6 +31,21 @@ function parseJsonlUpdateLine(line: string): QueuedUpdate | undefined {
   }
 }
 
+// BL-2061 D3 hardening (jscpd clone, 3rd pass): drainJsonlUpdates and
+// readAndParseDrainingFile below both split a raw file's content into
+// lines and keep only the ones that parse into a QueuedUpdate - one
+// implementation, not two copies drifting apart.
+function parseJsonlLines(raw: string): QueuedUpdate[] {
+  const out: QueuedUpdate[] = [];
+  for (const line of raw.split('\n')) {
+    const parsed = parseJsonlUpdateLine(line);
+    if (parsed) {
+      out.push(parsed);
+    }
+  }
+  return out;
+}
+
 /**
  * Drain via atomic rename rather than read-then-truncate: a truncating write
  * issued after the read has a window where a concurrent appendFileSync lands
@@ -58,14 +73,7 @@ export function drainJsonlUpdates(file: string): QueuedUpdate[] {
       // best-effort cleanup
     }
   }
-  const out: QueuedUpdate[] = [];
-  for (const line of raw.split('\n')) {
-    const parsed = parseJsonlUpdateLine(line);
-    if (parsed) {
-      out.push(parsed);
-    }
-  }
-  return out;
+  return parseJsonlLines(raw);
 }
 
 const DRAINING_PREFIX_SEP = '.draining-';
@@ -98,14 +106,7 @@ function readAndParseDrainingFile(drainingPath: string): QueuedUpdate[] {
   } catch {
     return [];
   }
-  const out: QueuedUpdate[] = [];
-  for (const line of raw.split('\n')) {
-    const parsed = parseJsonlUpdateLine(line);
-    if (parsed) {
-      out.push(parsed);
-    }
-  }
-  return out;
+  return parseJsonlLines(raw);
 }
 
 export interface DurableDrain {

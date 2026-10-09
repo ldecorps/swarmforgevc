@@ -44,6 +44,14 @@ test('handover queue: drain on an empty/missing queue returns an empty array', (
   assert.deepEqual(drainCursorBridgeHandoverUpdates(opDir), []);
 });
 
+test('handover queue: a successful drain removes its own renamed-aside draining file (no leftover litter)', () => {
+  const opDir = tmpOpDir();
+  appendCursorBridgeHandoverUpdate(opDir, { update_id: 1 });
+  assert.deepEqual(drainCursorBridgeHandoverUpdates(opDir).map((u) => u.update_id), [1]);
+  const leftover = fs.readdirSync(opDir).filter((n) => n.includes('.draining-'));
+  assert.deepEqual(leftover, [], 'the non-durable drain must unlink its draining file once read - it never commits later like the durable drain');
+});
+
 // ── durable drain — BL-2061 D3 (QA bounce 2026-10-09, "kill mid-apply loses drained hand-overs") ──
 
 test('handover queue (durable drain): commit() removes the draining file; without it, the file is left behind', () => {
@@ -113,6 +121,78 @@ test('handover queue (durable drain): an uncommitted drain is recovered by the n
   assert.equal(finalLeftover.length, 0, 'commit() on the recovering drain must clean up every draining file it read, including the recovered one');
 });
 
+test('handover queue (durable drain): recovery order comes from sorting the names, not from whatever order readdirSync happens to hand back', () => {
+  // On this host (and most Linux filesystems) readdirSync already returns
+  // directory entries in creation/alphabetical order, so writing the two
+  // leftover files in either order on real disk cannot tell a dropped
+  // `.sort()` apart from a kept one - the fixture would already be sorted
+  // before the code ever touched it (the "a fixture that already satisfies
+  // the property under test" trap). Mock readdirSync to hand back the
+  // SAME two names in the WRONG (reverse-chronological) order regardless of
+  // what is really on disk, so only the code's own `.sort()` can put them
+  // right.
+  const opDir = tmpOpDir();
+  const base = cursorBridgeHandoverQueuePath(opDir);
+  const earlierName = 'cursor-bridge-handover.jsonl.draining-1700000000000-99999-aaa';
+  const laterName = 'cursor-bridge-handover.jsonl.draining-1700000000500-5-bbb';
+  fs.writeFileSync(path.join(opDir, earlierName), `${JSON.stringify({ update_id: 1 })}\n`);
+  fs.writeFileSync(path.join(opDir, laterName), `${JSON.stringify({ update_id: 2 })}\n`);
+  const originalReaddirSync = fs.readdirSync;
+  fs.readdirSync = (dir, ...rest) => {
+    const real = originalReaddirSync(dir, ...rest);
+    if (dir === opDir || dir === path.dirname(base)) {
+      return [laterName, earlierName, ...real.filter((n) => n !== laterName && n !== earlierName)];
+    }
+    return real;
+  };
+  let result;
+  try {
+    result = drainCursorBridgeHandoverUpdatesDurable(opDir);
+  } finally {
+    fs.readdirSync = originalReaddirSync;
+  }
+  assert.deepEqual(
+    result.updates.map((u) => u.update_id),
+    [1, 2],
+    'recovery must follow the sorted (chronological) name order, not the order readdirSync happened to return'
+  );
+  result.commit();
+});
+
+test('handover queue (durable drain): a leftover file that vanishes/becomes unreadable between listing and reading is skipped, not thrown - its siblings still recover', () => {
+  // leftoverDrainingFiles lists a name, then readAndParseDrainingFile reads
+  // it separately - a TOCTOU window (another process's own commit() racing
+  // in, a permission change) can make the read fail even though the listing
+  // just saw the file. No fixture reaches this via real disk races
+  // reliably, so mock fs.readFileSync to fail for exactly one of two
+  // leftover files and confirm the other still recovers and nothing throws.
+  const opDir = tmpOpDir();
+  const base = cursorBridgeHandoverQueuePath(opDir);
+  const unreadableName = `${base}.draining-1700000000000-99999-aaa`;
+  const readableName = `${base}.draining-1700000000500-5-bbb`;
+  fs.writeFileSync(unreadableName, `${JSON.stringify({ update_id: 1 })}\n`);
+  fs.writeFileSync(readableName, `${JSON.stringify({ update_id: 2 })}\n`);
+  const originalReadFileSync = fs.readFileSync;
+  fs.readFileSync = (p, ...rest) => {
+    if (p === unreadableName) {
+      throw new Error('simulated: vanished or unreadable between listing and reading');
+    }
+    return originalReadFileSync(p, ...rest);
+  };
+  let result;
+  try {
+    result = drainCursorBridgeHandoverUpdatesDurable(opDir);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+  assert.deepEqual(
+    result.updates.map((u) => u.update_id),
+    [2],
+    'the unreadable leftover contributes no entries, but its readable sibling must still recover'
+  );
+  assert.doesNotThrow(() => result.commit(), 'commit() must still best-effort-unlink every pending path, including the one that never read');
+});
+
 test('handover queue (durable drain): leftover files from different process incarnations (pids) recover in chronological order, not pid order', () => {
   // Two prior crashed incarnations left draining files behind - a lower
   // pid that crashed SECOND (later timestamp) and a higher pid that
@@ -146,6 +226,19 @@ test('handover queue (durable drain): a committed drain leaves nothing for the n
 test('handover queue (durable drain): drain on an empty/missing queue returns an empty array and a no-op commit', () => {
   const opDir = tmpOpDir();
   const { updates, commit } = drainCursorBridgeHandoverUpdatesDurable(opDir);
+  assert.deepEqual(updates, []);
+  assert.doesNotThrow(() => commit());
+});
+
+test('handover queue (durable drain): a wholly missing operator directory (never created, not merely empty) is the same no-op, not a throw', () => {
+  // tmpOpDir() above pre-creates its directory via mkTmpDir, so every prior
+  // "missing queue" test only ever exercises a missing FILE inside an
+  // existing directory. leftoverDrainingFiles's own readdirSync(dir) call
+  // needs the directory itself absent to reach its catch branch (a fresh
+  // operator root before anything has ever appended to it).
+  const missingDir = path.join(tmpOpDir(), 'never-created');
+  assert.equal(fs.existsSync(missingDir), false);
+  const { updates, commit } = drainCursorBridgeHandoverUpdatesDurable(missingDir);
   assert.deepEqual(updates, []);
   assert.doesNotThrow(() => commit());
 });
