@@ -88,8 +88,17 @@
    :bounce-threshold 6
    :halt-threshold 10})
 
+;; target-root is pinned to the scratch checkout for EVERY mode, not only
+;; "live": unpinned, it resolved the LIVE repository through this process's
+;; git-common-dir, and the sweep's BL-1004 deferral and BL-2039 tier reads
+;; took the live roles.tsv/pack conf - a two-seat coder stage with tiers
+;; declared left the parcel unchased in the "none"/"false" rows
+;; (2026-10-09). Pinned, the scratch checkout's own pause is active and the
+;; sweep still ignores it without an adapter, which is what those rows
+;; prove.
 (let [[mode] *command-line-args*
       root (build-fixture!)
+      _ (handoff-lib/set-project-root! root)
       now-ms (System/currentTimeMillis)
       base-adapters {:get-liveness (fn [_role] "alive")
                      :get-last-activity-ms (fn [_role] (- now-ms 200000))

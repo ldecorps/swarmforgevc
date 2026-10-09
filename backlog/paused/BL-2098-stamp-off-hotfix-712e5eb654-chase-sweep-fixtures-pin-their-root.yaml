@@ -1,0 +1,125 @@
+id: BL-2098
+title: "Stamp-off for hotfix 712e5eb654: three chase-sweep fixtures read the live roles.tsv - the bl1505 property file, the BL-1505 feature's handler and the BL-1740 feature's CLI ran the sweep with no set-project-root!, so target-root resolved the live repository and the sweep's deferral and tier reads took the live two-seat coder stage, leaving the fixture's parcel unchased; each now pins the root to its fixture"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of a standing-red hotfix (a red is high at first
+# sighting, 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review one test-side commit (three set-project-root! lines and
+# comments) and run one property file and two features once.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "three one-line pins and their comments; nothing to refactor"
+  architect: "test files only; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "no living doc describes these fixtures"
+
+# Not a claim of ownership over BL-1505's contract (BL-1251): its
+# scenario 03 is one of the reds this hotfix turned green, and its
+# handler is one of the three changed files.
+acceptance: specs/features/BL-1505-a-dedup-suppressed-chase-still-counts-toward-escalation.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's property row:
+     bl1505DedupSuppressedChaseCountInvariants 3 of 3.
+  2. `node specs/pipeline/cli.js specs/features/BL-1505-a-dedup-suppressed-chase-still-counts-toward-escalation.feature`:
+     3 of 3 ok (measured on main at mint with the change; 2 of 3 before).
+  3. `node specs/pipeline/cli.js specs/features/BL-1740-the-chase-sweep-reads-the-pause-from-its-caller.feature`:
+     4 of 4 ok (measured on main at mint with the change; 2 of 4 before).
+  4. Read the coder's committed review evidence.
+
+source: |
+  QA note 003956 (2026-10-09T15:07:17Z), verbatim: "BL-2091 held:
+  unowned-red bl1505 prop reads live roles.tsv (ev 22b238572e)".
+  QA evidence backlog/evidence/BL-2091-QA-20261009.md (22b238572e),
+  verbatim: "Mechanism read: `handoff-lib/target-root` falls back to `git
+  rev-parse --git-common-dir` from the process cwd, so the fixture sweep
+  run from any worktree of this repository resolves the LIVE master
+  checkout, and `stage-deferral-context` reads the live `roles.tsv`/conf".
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-09 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  No standing-reds.tsv row was added: the red was fixed the same pass it
+  was reported. QA held BL-2091 on it and was sent the retake note.
+  QA's evidence names the BL-1004 deferral read. The BL-2039 tier read
+  (chase-tier-context) takes the same live root and the same roles.tsv
+  and conf; the pin closes both. The fixture's parcel is a note with no
+  task, so it needs no ticket for either read to answer "leave it". It
+  went red when the live pack declared tiers for a two-seat coder stage
+  (full-forge, 2026-10-09), consistent with QA's green at about 10:40Z
+  and red at 15:06Z. Same leak class as BL-1740 (control pause).
+  Census at mint (grep -l 'chase-sweep-lib/\(run-sweep!\|sweep-role-inbox!\)'
+  over extension/test, specs/pipeline/steps, specs/pipeline/steps/lib and
+  swarmforge/scripts/test): 6 direct callers, every one now calling
+  set-project-root!. The other chase features drive the sweep through
+  chase_sweep_test_runner.bb, which already pinned it: BL-1652 4/4,
+  BL-2039 4/4, BL-499 5/5, BL-232 7/7 at mint.
+  BL-1743 (paused, the non-vacuity probe writing its scratch copy inside
+  the checkout) is a different mechanism and is unchanged.
+
+description: |
+  ## Status: hotfix 712e5eb654 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong, and what the hotfix changed
+
+  chase_sweep_lib.bb's sweep reads two things from
+  `handoff-lib/target-root` for each role it sweeps: the BL-1004
+  deferral context (`stage-deferral-context`) and the BL-2039 tier
+  context (`chase-tier-context`), both from roles.tsv and the pack conf.
+  `target-root` uses an explicit root set by `set-project-root!`
+  (handoffd sets its argv root at startup) and otherwise falls back to
+  `git rev-parse --git-common-dir` from the process cwd. Three fixtures
+  drove the sweep with no explicit root from inside this repository, so
+  they read the LIVE roles.tsv and conf. On 2026-10-09 the live
+  full-forge pack had a two-seat coder stage with tiers declared, and the
+  sweep left each fixture's "coder" parcel unchased (chaseCount 0):
+  - extension/test/bl1505DedupSuppressedChaseCountInvariants.property.test.js:
+    3 of 3 red (QA, BL-2091's gather).
+  - specs/pipeline/steps/bl1505DedupSuppressedChaseStillCountsSteps.js:
+    BL-1505 scenario 03 red.
+  - specs/pipeline/steps/lib/bl1740ChaseSweepPauseFromCallerCli.bb:
+    BL-1740's "no pause adapter" and "a pause adapter reading false" rows
+    red (it pinned the root only for its "live" row).
+
+  Each now calls `(handoff-lib/set-project-root! <fixture root>)` before
+  the sweep, with a comment. A fixture root has no roles.tsv or conf, so
+  both reads degrade to no seats and no tiers, the plain ladder these
+  tests assert. That is the same pin
+  bl2039_tier_aware_chase_sweep_property_runner.bb and
+  chase_sweep_test_runner.bb already make. BL-1740's CLI pins the
+  scratch checkout, whose own pause is active, for every row, so its
+  no-adapter rows still prove the sweep ignores that pause. No assertion
+  changed.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show 712e5eb654` against the section above. Confirm only
+     the three set-project-root! lines and their comments changed.
+  2. Run bl1505DedupSuppressedChaseCountInvariants once, alone, with
+     `--config vitest.properties.config.mjs` and output under tmp/, and
+     the BL-1505 and BL-1740 features once each.
+  3. Write backlog/evidence/BL-2098-coder-<date>.md with the review result
+     and the run results, and commit it.

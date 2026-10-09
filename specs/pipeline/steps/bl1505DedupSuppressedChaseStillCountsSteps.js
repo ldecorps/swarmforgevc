@@ -303,6 +303,11 @@ function mkPureFixture() {
 // Drives run-sweep! MAX_CHASES times against a fresh fixture, with every
 // :send-wake-up! call returning the same {:attempted true :landed <landed>}
 // shape, and returns the resulting chaseCount.
+//
+// set-project-root! pins target-root to the fixture, so the sweep's
+// BL-1004 deferral and BL-2039 tier reads never take the live roles.tsv or
+// pack conf through git-common-dir (2026-10-09: the live two-seat coder
+// stage left this fixture's parcel unchased, scenario 03 red).
 function reachMaxChasesCount(landed) {
   const { root, handoffPath } = mkPureFixture();
   try {
@@ -310,6 +315,7 @@ function reachMaxChasesCount(landed) {
       const nowMs = BASE_MS + (i + 1) * SWEEP_STEP_MS;
       const script = `
 (load-file "${CHASE}")
+(handoff-lib/set-project-root! "${root}")
 (def adapters
   {:get-liveness (fn [_role] "alive")
    :send-wake-up! (fn [_role] {:attempted true :landed ${landed}})

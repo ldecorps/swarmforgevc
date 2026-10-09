@@ -54,6 +54,78 @@ healthy.
   mode explicitly, overriding both the token-based default and the
   per-poll liveness check — an operator's explicit setting always wins.
 
+## A front-desk update the bridge reads is never dropped (BL-2061)
+
+While the bridge holds `getUpdates` itself under [BL-1253's dead-feeder
+fallback](BL-1253-swarm-stamp-dead-feeder-owns-getupdates.md) (the front
+desk's own poll heartbeat reads stale, absent or unparseable), it still
+reads every update on the shared token — including ones that are not its
+own, such as an Approve/Reject tap or a typed approval verb meant for the
+front desk's Approvals topic. Before BL-2061, the bridge answered the
+callback (so the Telegram UI did not hang) and then dropped the update:
+the human's tap looked taken, and nothing was recorded.
+
+The bridge now hands over anything outside its own scope instead of
+dropping it — the reverse of this doc's forward queue:
+
+1. **The bridge appends, keyed by `update_id`.**
+   `handOverToFrontDeskIfNotOwn` (`extension/src/tools/telegramCursorBridgeLive.ts`)
+   fires only in dead-feeder fallback mode, only for an update
+   `isScopedToCursorTopic` says is not the bridge's own. It still answers
+   a handed-over callback query, then appends the raw update to
+   `.swarmforge/operator/cursor-bridge-handover.jsonl`
+   (`appendCursorBridgeHandoverUpdate`,
+   `extension/src/tools/cursorBridgeHandoverQueue.ts`) — an at-most-once
+   hand-over, since the update_id this file carries is also the dedup key
+   the front desk checks before applying it.
+   - A `poll_answer` carries no topic, so it never reaches
+     `isScopedToCursorTopic` at all: it is handed over unless it matches
+     one of the three shapes the bridge tracks as its own poll
+     (`isBridgeOwnPollAnswer` — a live queued-prompt poll, a poll it
+     superseded, or a pending choice poll).
+   - An update `inboundEventOf` cannot parse into any known shape is
+     unconditionally handed over too, rather than silently dropped.
+2. **The front desk drains and applies at the top of every poll cycle.**
+   `applyHandoverUpdates` (`extension/src/tools/telegramFrontDeskBotCore.ts`)
+   runs before the front desk's own `getUpdates` call in `pollAndForward`,
+   draining `cursorBridgeHandoverQueue.ts`'s queue and running each
+   not-yet-applied update through the SAME `processUpdate` a normal poll
+   update goes through — never a second decision path. An update already
+   recorded in `cursor-bridge-handover-applied.json`
+   (`isHandoverUpdateApplied`/`recordAppliedHandoverId`) is skipped, so a
+   hand-over re-appended after a crash is applied at most once however
+   many times it is read.
+   - A delivery that fails or throws is never recorded as applied —
+     `requeueHandoverUpdate` puts it back on the queue for the next poll
+     cycle instead, since (unlike the regular `getUpdates` offset) nothing
+     here holds Telegram back to redeliver it on failure. A permanently-
+     failing hand-over folds its `posted`/`dropped`/`failed` counts into
+     the same `PollResult` a regular delivery does, driving the same
+     BL-369 stuck-delivery escalation.
+   - **The drain itself is durable.** The front desk's own process can be
+     stall-killed (dozens of times a day, not a rare event) between
+     reading the queue and finishing each entry's apply. A plain drain
+     unlinks the file it renamed aside the instant it is read, so every
+     entry still sitting only in that killed process's memory would be
+     lost. `drainCursorBridgeHandoverUpdatesDurable`
+     (`cursorBridgeHandoverQueue.ts`, over `drainJsonlUpdatesDurable` in
+     `jsonlUpdateQueueLib.ts`) instead leaves its renamed-aside draining
+     file on disk and hands back a `commit()`; `applyHandoverUpdates`
+     calls it exactly once, only after every drained entry has been
+     applied or re-queued above. The next durable drain recovers any
+     leftover draining file from a prior kill (oldest first, by the
+     timestamp in its own filename) ahead of whatever it freshly drains,
+     so nothing read is ever lost to a kill between drain and apply. The
+     forward queue (front desk → bridge,
+     `cursorBridgeInboundQueue.ts`) is unchanged: its own drain still
+     unlinks immediately, since nothing on that side ever calls `commit`.
+3. **The bridge's own updates are unaffected.** A message in the cursor
+   topic is still answered and routed by the bridge itself; nothing is
+   handed over for it.
+
+Both queue files share their atomic-rename append/drain primitives with
+this doc's forward queue, factored into `jsonlUpdateQueueLib.ts`.
+
 ## Liveness cue
 
 The Host topic carries a standing, edit-in-place status line —
@@ -80,15 +152,20 @@ process that could steal updates from the real bridge.
 
 ## Where it lives
 
-- Queue: `extension/src/tools/cursorBridgeInboundQueue.ts`
+- Forward queue (front desk → bridge): `extension/src/tools/cursorBridgeInboundQueue.ts`
+- Hand-over queue (bridge → front desk, BL-2061):
+  `extension/src/tools/cursorBridgeHandoverQueue.ts`
+- Shared JSONL append/drain primitives both queues call:
+  `extension/src/tools/jsonlUpdateQueueLib.ts`
 - Front desk forwarding: `extension/src/tools/telegramFrontDeskBotCore.ts` →
-  `forwardCursorBridgeUpdate`
-- Bridge draining / shared-token decision:
-  `extension/src/tools/telegramCursorBridgeLive.ts`,
+  `forwardCursorBridgeUpdate` (forward), `applyHandoverUpdates` (hand-over)
+- Bridge draining / shared-token decision / hand-over:
+  `extension/src/tools/telegramCursorBridgeLive.ts` (`handOverToFrontDeskIfNotOwn`),
   `extension/src/tools/telegramCursorBridgeCore.ts`
 - Liveness line: `extension/src/tools/telegramCursorBridgeLiveness.ts`
 - Launch default: `swarmforge/scripts/start_cursor_bridge.sh`
-- Acceptance: `specs/features/BL-764-front-desk-eats-host-bridge-updates.feature`
+- Acceptance: `specs/features/BL-764-front-desk-eats-host-bridge-updates.feature`,
+  `specs/features/BL-2061-an-update-the-bridge-reads-for-the-front-desk-is-never-dropped.feature`
 
 ## Out of scope
 

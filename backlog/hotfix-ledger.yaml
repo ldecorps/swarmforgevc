@@ -1637,3 +1637,10 @@
   stamp_ticket: BL-2093
   human_decision: null
   decided_at: null
+- commit: 712e5eb654
+  subject: "hotfix: three chase-sweep fixtures read the live roles.tsv - pin target-root to the fixture"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2098
+  human_decision: null
+  decided_at: null

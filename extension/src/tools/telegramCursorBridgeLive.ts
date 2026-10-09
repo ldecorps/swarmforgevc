@@ -20,6 +20,7 @@ import {
 } from '../notify/telegramClient';
 import { nextUpdateOffset } from './telegramTopicDecisions';
 import { drainCursorBridgeInboundUpdates, readFrontDeskPollHeartbeatMs } from './cursorBridgeInboundQueue';
+import { appendCursorBridgeHandoverUpdate } from './cursorBridgeHandoverQueue';
 import {
   CURSOR_BRIDGE_TOPIC_NAME,
   BUBBLE_SUBJECT_ID,
@@ -28,6 +29,7 @@ import {
   decideEnsureCursorTopicAction,
   decideEnsureBubbleTopicAction,
   decideInboundAction,
+  isScopedToCursorTopic,
   decidePollBackoffMs,
   decideQueuedPollAnswerAction,
   formatEnqueueNextAckMessage,
@@ -2052,20 +2054,95 @@ export async function tryDispatchToBubbleSeat(
   return true;
 }
 
+// BL-2061 D1 (QA bounce 2026-10-08): a poll_answer carries no topic, so it
+// never reaches handOverToFrontDeskIfNotOwn's isScopedToCursorTopic check at
+// all - processInboundUpdates `continue`s straight past the hand-over for
+// every poll_answer, own or not. "Own" here means one of the three shapes
+// the bridge itself tracks a pollId for: a live queued-prompt poll, a poll
+// it superseded (and still answers with "no longer live"), or a pending
+// choice poll - matching the same own/foreign partition the topic-scoped
+// check gives text/callback updates.
+function isBridgeOwnPollAnswer(
+  state: CursorBridgePersistedState,
+  pollAnswer: TelegramPollAnswer
+): boolean {
+  if (state.pendingPromptPoll?.pollId === pollAnswer.poll_id) {
+    return true;
+  }
+  if ((state.supersededPromptPollIds ?? []).includes(pollAnswer.poll_id)) {
+    return true;
+  }
+  return (state.pendingChoicePolls ?? []).some((poll) => poll.pollId === pollAnswer.poll_id);
+}
+
+// BL-2061 D1: shared by the poll_answer and the unparseable-update hand-over
+// paths below, neither of which has an inbound event to run
+// isScopedToCursorTopic against - both are unconditionally foreign once
+// handOverIfNotOwn is true and the update did not match the bridge's own
+// poll-answer shapes.
+function handOverRawUpdate(deps: CursorBridgeLoopDeps, update: TelegramUpdate): void {
+  appendCursorBridgeHandoverUpdate(deps.opDir, update as unknown as { update_id?: number } & Record<string, unknown>);
+}
+
+// BL-2061: an update that is not the bridge's own is only ever dropped on a
+// route the forward queue (front-desk -> bridge) already filtered for us, so
+// this only ever fires in the dead-feeder fallback - the bridge calling
+// getUpdates itself while the front desk is dead. The front desk still owns
+// applying it (invariant 1); the bridge keeps answering the callback query
+// so the Telegram UI does not hang. Extracted out of processInboundUpdates so
+// its own routing logic keeps its pre-BL-2061 complexity, mirroring the
+// tryDispatchToBubbleSeat extraction just above it (differential CRAP gate,
+// hardener pass). Returns whether this update was handed over (and thus
+// already appended to the hand-over queue).
+async function handOverToFrontDeskIfNotOwn(
+  deps: CursorBridgeLoopDeps,
+  inbound: CursorBridgeInboundEvent & { messageId?: number },
+  update: TelegramUpdate,
+  holder: { state: CursorBridgePersistedState; busy: boolean },
+  handOverIfNotOwn: boolean
+): Promise<boolean> {
+  if (
+    !handOverIfNotOwn ||
+    isScopedToCursorTopic(inbound, deps.chatId, {
+      cursorTopicId: holder.state.cursorTopicId,
+      bubbleTopicId: holder.state.bubbleTopicId,
+    })
+  ) {
+    return false;
+  }
+  if (inbound.kind === 'callback' && inbound.callbackQueryId) {
+    await answerCallbackQuery(deps.botToken, inbound.callbackQueryId, deps.telegramPostFn);
+  }
+  handOverRawUpdate(deps, update);
+  return true;
+}
+
 async function processInboundUpdates(
   deps: CursorBridgeLoopDeps,
   updates: TelegramUpdate[],
   holder: { state: CursorBridgePersistedState; busy: boolean },
-  handlerCtx: ReturnType<typeof makePollHandlerContext>
+  handlerCtx: ReturnType<typeof makePollHandlerContext>,
+  // BL-2061: true only when these updates were read by the bridge's OWN
+  // getUpdates call (the BL-1253 dead-feeder fallback) - the forward queue
+  // (front-desk -> bridge) path already filters to the bridge's own domain,
+  // so a not-owned update never legitimately reaches this function there.
+  handOverIfNotOwn: boolean = false
 ): Promise<void> {
   for (const update of updates) {
     if (update.poll_answer) {
+      if (handOverIfNotOwn && !isBridgeOwnPollAnswer(holder.state, update.poll_answer)) {
+        handOverRawUpdate(deps, update);
+        continue;
+      }
       await processQueuedPollAnswer(deps, holder, update.poll_answer, handlerCtx);
       await processChoicePollAnswer(deps, holder, update.poll_answer, handlerCtx);
       continue;
     }
     const inbound = inboundEventOf(update);
     if (!inbound) {
+      if (handOverIfNotOwn) {
+        handOverRawUpdate(deps, update);
+      }
       continue;
     }
     // BL-1235: the local seat's topic is handled BEFORE cursor's decision is
@@ -2098,6 +2175,9 @@ async function processInboundUpdates(
     if (await tryDispatchToBubbleSeat(deps, inbound, holder, handlerCtx)) {
       continue;
     }
+    if (await handOverToFrontDeskIfNotOwn(deps, inbound, update, holder, handOverIfNotOwn)) {
+      continue;
+    }
     const pending = readPendingOperatorConfirm(deps.repoRoot);
     const pendingPlan = readPendingPlanConfirm(deps.repoRoot);
     const rawDecision = decideInboundAction(
@@ -2112,7 +2192,7 @@ async function processInboundUpdates(
       pendingPlan
     );
     if (inbound.kind === 'callback' && inbound.callbackQueryId) {
-      await answerCallbackQuery(deps.botToken, inbound.callbackQueryId);
+      await answerCallbackQuery(deps.botToken, inbound.callbackQueryId, deps.telegramPostFn);
     }
     const bridgeBusy = holder.busy || isActiveRunInFlight();
     if (bridgeBusy && hasQueueablePromptDecision(rawDecision)) {
@@ -2242,7 +2322,7 @@ export async function runCursorBridgePollOnce(
   writeJsonFile(deps.statePath, holder.state);
   writePollHeartbeat(deps.opDir);
 
-  await processInboundUpdates(deps, updates, holder, makePollHandlerContext(deps, holder));
+  await processInboundUpdates(deps, updates, holder, makePollHandlerContext(deps, holder), !useInboundQueue);
 
   return { state: holder.state, busy: holder.busy, pollFailures: 0 };
 }
