@@ -1665,3 +1665,10 @@
   stamp_ticket: BL-2104
   human_decision: null
   decided_at: null
+- commit: 597801eadd
+  subject: "Hotfix: BL-1700 scenario 03's leak check counts only probe processes that appeared during the scenario - a live steward probe on the host failed it"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2107
+  human_decision: null
+  decided_at: null
