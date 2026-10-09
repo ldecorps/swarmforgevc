@@ -1,0 +1,153 @@
+id: BL-2099
+title: "A git_handoff to the specifier is never stamped terminal: reverse_hop_lib's terminal-forward? stamps non-forwarding: true on the LAST code-worktree role's git_handoff to any non-pipeline recipient, and since BL-1565 refuses a git_handoff to the coordinator the only send it still reaches is one to the specifier - an Article 5.1 amendment proposal - which ready_for_next.sh then tells the specifier to complete unread; packs that list the art-director after QA make it the last role, and its human-directed proposal of 2026-10-09 was dropped that way"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real fault in the delivery machinery, contained to one kind of
+# send (the last role's git_handoff to the specifier). One known loss, on
+# 2026-10-09, recovered the same hour when the human asked; nothing is lost
+# for good (the proposal commits stay on the sender's branch) and the
+# swarm keeps moving. Not high: no broken health signal, no repeat seen.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka only (reverse_hop_lib.bb), one predicate and one fixture
+# step handler on the BL-1536 handler's shape. No Stryker lane (BL-472).
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one predicate in one bb lib; nothing to refactor"
+  architect: "no boundary moves; the decision stays in reverse_hop_lib terminal-forward?, which swarm_handoff.bb already calls"
+  hardender: "Babashka production code with no durable write; the coder's bb runner case and the acceptance run are the coverage (dynamic routing, 2026-10-01)"
+  documenter: "no living doc describes the terminal stamp; Article 2.3's sentence is the specifier's to amend when this lands (Until marker in specifier.prompt)"
+
+acceptance: specs/features/BL-2099-a-git-handoff-to-the-specifier-is-never-stamped-terminal.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2099GitHandoffToSpecifierNeverStampedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the live consumer,
+# swarm_handoff.bb's with-non-forwarding, already calls
+# reverse-hop-lib/terminal-forward?, so any pattern on it matches before and
+# after the fix. The fix stays in or below terminal-forward? (FIRM below), so
+# that existing call reaches it; QA step 3 checks it on the live roles table.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the decision stays in
+  reverse_hop_lib.bb terminal-forward?, the single decision point BL-1536
+  made and swarm_handoff.bb calls; the fix goes there or below it, never
+  in a second copy in swarm_handoff.bb. FIRM: reverse copies (back-one,
+  back-all) keep their marker and bounces stay unmarked (BL-1302, BL-1313,
+  BL-1536 unchanged). FIRM: the receive side (Article 2.4,
+  ready_for_next.sh's reverse-copy instruction) is correct and is not where
+  the fix goes. FIRM: roles.tsv order and the pack window order are not
+  changed; the art-director stays where full-forge.conf puts it.
+
+invariants:
+  - "A git_handoff whose recipients include the specifier never carries non-forwarding: true, whatever the sender's row and its position in roles.tsv."
+  - "Every back-one/back-all reverse copy still carries its marker and a bounce to an earlier role still carries none: the BL-1299, BL-1302, BL-1536 and BL-1605 features stay green unchanged."
+
+description: |
+  ## What is wrong
+
+  `swarm_handoff.bb` `with-non-forwarding` stamps `non-forwarding: true`
+  on a git_handoff when `reverse-hop-lib/terminal-forward?` says so: the
+  sender is the last row of `pipeline-roles` (every roles.tsv row that is
+  neither the coordinator nor master-resident) and no recipient sits
+  earlier in that order (BL-1536). The stamp was for QA's approved forward
+  to the coordinator. BL-1565 (2026-09-14) retired that hop: a
+  git_handoff naming the coordinator is refused at send, before this
+  decision runs. The one send the stamp can still reach is the last
+  role's git_handoff to the specifier, which is how Article 5.1 routes an
+  amendment proposal. `ready_for_next.sh` then tells the specifier: "This
+  is a reverse copy (non-forwarding: true). It carries no work for you:
+  do not read or implement its ticket ... Run now: done_with_current.sh".
+
+  full-forge.conf and mixed-local-coder.conf declare the art-director
+  window after QA's, so the live roles.tsv lists the art-director last.
+  Measured at mint on the live table: `last-pipeline-role` is
+  `art-director`; `terminal-forward?` for art-director -> specifier is
+  `true`. On 2026-10-09 the art-director sent the human's amendment to its
+  own card (3cb1fcf73b, addendum 47a740d281) as two priority-00
+  git_handoffs to the specifier, both stamped; the specifier was told to
+  complete them unread and did, and the amendment was only incorporated
+  (eaed2e6892) when the human asked about it the same hour. In a pack
+  whose last row is QA, QA's own Article 5.1 proposal would be dropped the
+  same way.
+
+  ## What is wanted
+
+  - A git_handoff addressed to the specifier never carries
+    `non-forwarding: true` as a terminal stamp, from the art-director when
+    its row follows QA's, and from QA when QA is last (scenario 01).
+  - Nothing else about the marker changes (invariant 2).
+
+  ## How (direction, not mandate)
+
+  - In `terminal-forward?`: a recipient that is master-resident (the
+    specifier) is never a terminal forward's target. Since BL-1565 that
+    leaves the terminal stamp with no live target at all; retiring the
+    terminal half of `with-non-forwarding` outright is equally acceptable
+    if the coder prefers it, as long as `terminal-forward?` stays the one
+    function the decision is read from (BL-1299 scenario 03 still computes
+    `last-pipeline-role`).
+  - The handler (`bl2099GitHandoffToSpecifierNeverStampedSteps.js`) drives
+    `reverse-hop-lib/terminal-forward?` over a mkdtemp fixture roles.tsv,
+    the way `bl1536BounceIsNeverStampedMergeOnlySteps.js` does, scoped to
+    this feature's name, with `art-director` among its known roles. A bb
+    runner case beside BL-1536's covers the same two rows.
+
+constraints: >
+  Fixture roles tables under mkdtemp only, removed in a finally; never the
+  live .swarmforge/roles.tsv in a test. The step handler lands with the
+  feature (BL-233).
+
+out_of_scope: |
+  - Excluding the art-director from pipeline-roles for reverse copies: it
+    is forward-only in every pack today, so no copy is ever made from it.
+  - Re-tensing BL-1536's Feature narrative ("a terminal forward to a
+    non-pipeline recipient still does"): after this fix it holds vacuously
+    rather than falsely, and editing it voids that feature's mutation
+    stamp.
+  - Article 2.3's terminal-stamp sentence: the specifier's prose, amended
+    when this lands (the Until marker in specifier.prompt).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2099-a-git-handoff-to-the-specifier-is-never-stamped-terminal.feature`:
+     2 of 2 ok (rows art-director, QA). Both rows are red on main at mint.
+  2. `node specs/pipeline/cli.js` on the BL-1536, BL-1299, BL-1302 and
+     BL-1605 features: 5/5, 9/9, 3/3 and 5/5 ok, as measured on main at
+     mint (BL-1605 takes about 60 s).
+  3. On the parcel tree, against the LIVE roles table:
+     `bb -e '(load-file "swarmforge/scripts/reverse_hop_lib.bb") (println (reverse-hop-lib/terminal-forward? (reverse-hop-lib/roles-lines "<project-root>") "art-director" ["specifier"]))'`
+     prints `false` (it prints `true` on main at mint). And
+     `grep -n "reverse-hop-lib/terminal-forward?" swarmforge/scripts/swarm_handoff.bb`
+     still finds the call in `with-non-forwarding`, or the coder's notes
+     say the terminal half was retired and `with-non-forwarding` keeps the
+     reverse-copy stamp only.
+
+source: |
+  The specifier's session, 2026-10-09 ~16:30Z-17:00Z. ready_for_next.sh
+  served the art-director's two git_handoffs (task
+  amend-art-director-linkedin-series, 3cb1fcf73b and 47a740d281) as
+  reverse copies to complete unread; the specifier completed them. The
+  human then asked: "Have you updated Art D's card?" The specifier
+  incorporated the amendment (eaed2e6892) and traced the stamp to
+  reverse_hop_lib.bb terminal-forward? with the art-director's row last in
+  roles.tsv.
+
+notes: |
+  Minted 2026-10-09 by the specifier.
+  Until this lands, specifier.prompt carries an interim: a non-forwarding
+  git_handoff from the last role to the specifier is read before it is
+  completed.
+  INVEST: Independent (no unbuilt sibling), Negotiable (exempt the
+  specifier, or retire the terminal half), Valuable (Article 5.1 proposals
+  reach the specifier as work), Estimable (one predicate, one handler),
+  Small (one outline, two rows), Testable (fixture roles table, pure
+  decision function).
