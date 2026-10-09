@@ -132,6 +132,25 @@ for reset in reset_edit reset_write reset_compaction reset_commit reset_handoff;
 done
 pass "an edit, a write, a compaction, a commit or a handoff starts a fresh window"
 
+RFN='{"command":"swarmforge/scripts/ready_for_next.sh"}'
+{ call run_shell_command "$RFN"; call run_shell_command "$RFN"; call run_shell_command "$RFN"; } > "$T"
+out="$(decide "$T" run_shell_command "$RFN")"
+[[ "$out" == *"3 times"* ]] || fail "a third ready_for_next.sh with no edit between was not warned about: $out"
+pass "a third ready_for_next.sh since the last edit is warned about (STOP-banner loop; not a window reset)"
+
+decide_resp() { # tool_input tool_response_text
+  python3 -c 'import json,sys; print(json.dumps({"tool_name":"run_shell_command","tool_input":json.loads(sys.argv[1]),"tool_response":{"llmContent":sys.argv[2],"returnDisplay":""},"transcript_path":sys.argv[3],"hook_event_name":"PostToolUse"}))' "$1" "$2" "$ROOT/missing.jsonl" | bb "$GUARD"
+}
+STOP_OUT='STOP. You already have in_process handoff work. Do NOT run ready_for_next.sh again.
+Open the TASK already shown.'
+out="$(decide_resp "$RFN" "$STOP_OUT")"
+[[ "$out" == *"STOP means continue the parcel"* && "$out" == *"inbox/in_process"* ]] || fail "STOP banner output got no ready_for_next hint: $out"
+out="$(decide_resp "$RFN" "TASK: .swarmforge/handoffs/inbox/in_process/00_x.handoff")"
+[[ -z "$out" ]] || fail "ready_for_next without STOP text got a stop hint: $out"
+out="$(decide_resp '{"command":"ls"}' "$STOP_OUT")"
+[[ -z "$out" ]] || fail "a non-ready_for_next command got a stop hint: $out"
+pass "ready_for_next that reprints the STOP banner is told to Read in_process next"
+
 { call edit '{"file_path":"/x","old_string":"a","new_string":"b"}'; call edit '{"file_path":"/x","old_string":"a","new_string":"b"}'; call edit '{"file_path":"/x","old_string":"a","new_string":"b"}'; } > "$T"
 out="$(decide "$T" edit '{"file_path":"/x","old_string":"a","new_string":"b"}')"
 [[ -z "$out" ]] || fail "an edit was warned about: $out"

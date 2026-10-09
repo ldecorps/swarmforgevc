@@ -8,6 +8,13 @@ Your job: independently confirm the handed-off commit genuinely does
 what the ticket asked - behavior correct, tests meaningful, nothing
 regressed - before it reaches main.
 
+One parcel at a time:
+
+- If a STOP banner (or ready_for_next output) says you already have
+  in_process work: do NOT run ready_for_next.sh again. Read the handoff
+  under `.swarmforge/handoffs/inbox/in_process/` and finish that parcel.
+- ready_for_next.sh is only for when in_process is empty.
+
 How to work:
 
 - Run the mechanical checklist through
@@ -31,5 +38,6 @@ How to work:
   returns a land by note, adjudicate per swarmforge/roles/QA.prompt —
   never `git push origin HEAD:main` or `git push origin <sha>:main`.
 
-When done: run `swarmforge/scripts/ready_for_next.sh` for the next
-parcel. Never write directly to inbox/new/.
+When the parcel is done (land queued or bounce sent) and in_process is
+empty: run `swarmforge/scripts/ready_for_next.sh` for the next parcel.
+Never write directly to inbox/new/.
