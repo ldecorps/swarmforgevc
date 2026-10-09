@@ -33,3 +33,9 @@ Feature: A front-desk stall names the phase that stalled
     Given every phase of the bot's first poll cycle takes under a second
     When the bot runs the cycle
     Then front-desk-diagnostics.log gains no timing line
+
+  # BL-2072 front-desk-stall-names-its-phase-03
+  Scenario: an idle long poll that waits out its own 25 s timeout leaves no timing line
+    Given the bot's getUpdates wait takes 25 seconds
+    When the bot runs it
+    Then front-desk-diagnostics.log gains no timing line
