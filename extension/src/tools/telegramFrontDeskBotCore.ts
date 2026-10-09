@@ -705,6 +705,13 @@ export interface PollAdapters {
   // point: a diagnostic lost with the process explains nothing. Optional,
   // like every other adapter here - absent means an unwired fixture.
   logDiagnostic?: (line: string) => void;
+  // BL-2072: the injected clock timePhase below measures against - paired
+  // with logDiagnostic (both optional together; timePhaseIfWired runs the
+  // phase untimed when either is absent, same "unwired fixture" posture as
+  // every other adapter pair here). Production wires Date.now; a fixture
+  // wires a fake clock so a scenario can assert a phase duration without a
+  // real sleep.
+  now?: () => number;
   // BL-582: why a record changed nothing, for the toast and the diagnostic
   // (recordApprovalReply itself returns a bare boolean and cannot say).
   // Absent, or returning undefined, degrades to the 'unexplained' marker -
@@ -3130,12 +3137,55 @@ export interface PollResult {
   error?: string;
 }
 
+// BL-2072: the front-desk supervisor kills the bot on a stale poll
+// heartbeat (90s) with no sign of WHICH phase held it - a slow startup
+// step, a slow getUpdates long poll and a slow update batch all look
+// identical from outside (37 kills on 2026-10-07, none with a 409).
+//
+// D2 (QA bounce 2026-10-09): the getUpdates phase's own requested long
+// poll (telegram-front-desk-bot.ts's POLL_TIMEOUT_SECONDS = 25s) is a
+// routine, HEALTHY idle wait, not a stall - the original 10s threshold
+// called every one of those ~3456-a-day cycles "slow", so the line
+// before every real stall-kill named getUpdates regardless of what
+// actually stalled. 27s sits above 25s plus latency (never firing on a
+// healthy idle poll) and at or under the 30s this ticket's acceptance
+// scenario uses for "a phase that runs long" across all three phases, so
+// a single shared threshold still covers the startup and batch phases
+// too. The coder's own choice (ticket's "direction, not mandate"); the
+// specifier may retune it once the fix ticket is minted from what these
+// lines show.
+export const FRONT_DESK_SLOW_PHASE_THRESHOLD_MS = 27000;
+
+// Exported so telegram-front-desk-bot.ts's main() can time the startup
+// topic-check sequence with the SAME helper pollAndForward uses below for
+// the other two phases - one notion of "what counts as slow and how it is
+// reported", never three.
+export async function timePhase<T>(now: () => number, logDiagnostic: (line: string) => void, phaseName: string, fn: () => Promise<T>): Promise<T> {
+  const start = now();
+  try {
+    return await fn();
+  } finally {
+    const elapsedMs = now() - start;
+    if (elapsedMs >= FRONT_DESK_SLOW_PHASE_THRESHOLD_MS) {
+      logDiagnostic(`front-desk-phase-slow: ${phaseName} took ${elapsedMs}ms`);
+    }
+  }
+}
+
+// timePhase requires both deps; pollAndForward's own now/logDiagnostic are
+// each optional (every pre-BL-2072 fixture omits them) - this is the one
+// place that reads "both present or run untimed", so a future third call
+// site never has to restate the check.
+function timePhaseIfWired<T>(adapters: PollAdapters, phaseName: string, fn: () => Promise<T>): Promise<T> {
+  return adapters.now && adapters.logDiagnostic ? timePhase(adapters.now, adapters.logDiagnostic, phaseName, fn) : fn();
+}
+
 // Adapter-injected: one poll-and-forward cycle. Every update decision goes
 // through decideUpdateAction (pure) above - this function's own job is
 // just sequencing the adapters and counting outcomes, never a second
 // decision path.
 export async function pollAndForward(offset: number, principalUserId: string, adapters: PollAdapters): Promise<PollResult> {
-  const result = await adapters.getUpdates(offset);
+  const result = await timePhaseIfWired(adapters, 'getUpdates wait', () => adapters.getUpdates(offset));
   if (!result.success) {
     return { nextOffset: offset, posted: 0, dropped: 0, failed: 0, ok: false, error: result.error };
   }
@@ -3143,17 +3193,19 @@ export async function pollAndForward(offset: number, principalUserId: string, ad
   let dropped = 0;
   let failed = 0;
   const outcomes: UpdateDeliveryOutcome[] = [];
-  for (const update of result.updates) {
-    const outcome = await processUpdate(update, principalUserId, adapters);
-    outcomes.push(outcome);
-    if (outcome === 'posted') {
-      posted += 1;
-    } else if (outcome === 'dropped') {
-      dropped += 1;
-    } else {
-      failed += 1;
+  await timePhaseIfWired(adapters, 'handling of one update batch', async () => {
+    for (const update of result.updates) {
+      const outcome = await processUpdate(update, principalUserId, adapters);
+      outcomes.push(outcome);
+      if (outcome === 'posted') {
+        posted += 1;
+      } else if (outcome === 'dropped') {
+        dropped += 1;
+      } else {
+        failed += 1;
+      }
     }
-  }
+  });
   return { nextOffset: offsetAfterDelivery(result.updates, offset, outcomes), posted, dropped, failed, ok: true };
 }
 

@@ -309,3 +309,8 @@
   role: coordinator
   description: "All 4 active tickets DISPATCHED but zero physical parcels: QA has no handoff directory (inbox/new/in_process/completed dirs don't exist). Dispatch trail reports DISPATCHED, pipeline board stage=QA. Babysitter seat-stuck fires every ~30m as a known false-positive."
   detected_at: 2026-10-09
+- category: unlaned-property-runner-run-by-hand
+  ticket: BL-2087
+  role: QA
+  description: "qa-gather's property_runners row passes --changed-from <the gathered tip> (qaGather.ts:98), so it reaches nothing on every pass; ran the parcel's new bl2087_first_send_reach_floor_property_runner.bb and the changed lib's test runner by hand"
+  detected_at: 2026-10-09

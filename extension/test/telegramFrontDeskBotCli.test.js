@@ -97,8 +97,10 @@ const {
   composeRoleAnswerNoteMessage,
   enqueueRoleAnswerNote,
   readBubbleTopicId,
+  runStartupTopicChecks,
   main,
 } = require('../out/tools/telegram-front-desk-bot');
+const { ALL_SWARM_ROLES } = require('../out/concierge/roleTopicMapStore');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
 const { readRoleTopicMap, writeRoleTopicMap } = require('../out/concierge/roleTopicMapStore');
 const { approvalRequestedEventKey } = require('../out/events/swarmEventStream');
@@ -1347,6 +1349,47 @@ test('BL-1732: resolveLiveIntakeFormUrl is undefined, never throws, on a malform
   fs.mkdirSync(path.dirname(tunnelNotifyStatePath(root)), { recursive: true });
   fs.writeFileSync(tunnelNotifyStatePath(root), '{not json');
   assert.equal(resolveLiveIntakeFormUrl(root), undefined);
+});
+
+// BL-2072: runStartupTopicChecks is the verbatim extraction of main()'s own
+// standing-topic-bind sequence (timed as one phase by main()'s own
+// timePhase call) - this is the one test that drives the REAL function
+// end-to-end over a fake Telegram, rather than main()'s source text (which
+// topicThreadKind.test.js's BL-695 inv2 slices for ordering only). Without
+// this, every one of the nine ensure*Topic calls in its body - and the
+// whole function body itself - has zero behavioral coverage.
+function fakeCreateOkSequence(startId) {
+  let next = startId;
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    const threadId = next;
+    next += 1;
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: threadId, name: 'fake-topic' } } };
+  };
+  return { postFn, calls };
+}
+
+test('BL-2072: runStartupTopicChecks binds every standing topic and every swarm-role topic in one pass', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOkSequence(1000);
+  await runStartupTopicChecks(root, 'fake-token', 'fake-chat', postFn);
+  // Standing topics (Operator, Approvals, Recert, Agent Questions, Control,
+  // Resident Spy, Backlog, Onboarding, Intake) all share telegram-topic-map.json;
+  // role topics are keyed separately in role-topic-map.json (roleTopicMapStore).
+  const standingMap = readTopicMapFixture(root);
+  const expectedStandingTopics = 9;
+  assert.equal(Object.keys(standingMap).length, expectedStandingTopics, 'expected one bound standing topic per ensure*Topic call');
+  const roleMap = readRoleTopicMap(root);
+  assert.deepEqual(
+    Object.keys(roleMap).sort(),
+    [...ALL_SWARM_ROLES].sort(),
+    'expected every swarm role to get its own bound topic'
+  );
+  assert.ok(
+    calls.length >= expectedStandingTopics + ALL_SWARM_ROLES.length,
+    'expected at least one create call per topic bound'
+  );
 });
 
 // ── ensureControlTopic (BL-423, mirrors ensureAgentQuestionsTopic above) ──
