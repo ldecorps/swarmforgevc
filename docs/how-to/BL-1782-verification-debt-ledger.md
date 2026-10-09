@@ -84,11 +84,37 @@ Landed seeded with four `land-path-ownership` rows (all role QA, detected
 threshold on arrival. BL-1787 owns the category now (its
 `verification_category: land-path-ownership` line).
 
-## What is not here yet
+## Settling a category: discharge or waive (BL-1783/BL-2015/BL-2017)
 
-Discharge and waive verbs, and the reader's exclusion of settled rows, are
-BL-1783. The intake throttle that drops `active_backlog_max_depth` to 1
-while a category sits unowned is BL-1784.
+A category leaves the unowned state one of two ways. Both are refused
+(ledger unchanged, nothing committed) rather than a silent no-op when the
+required argument is missing or there is no outstanding row in the
+category — each refusal names the offending field or reason on stderr.
+
+```bash
+# A tool now covers the hand-check; link its evidence.
+bb swarmforge/scripts/verification_debt_ledger_update.bb <project-root> \
+  --discharge <category> --by <role> --evidence <path-under-project-root>
+
+# No tool is coming; the ticket owner says why it's acceptable as-is.
+bb swarmforge/scripts/verification_debt_ledger_update.bb <project-root> \
+  --waive <category> --by <role> --reason "<text>"
+```
+
+- `--discharge` requires `--by` and `--evidence`; the evidence path must be
+  a real file under the project root, or the CLI refuses (`--evidence`).
+- `--waive` requires `--by` and a non-blank `--reason`.
+- Either verb adds its settle fields (`discharged_at`/`discharged_by`/
+  `discharged_evidence`, or `waived_at`/`waived_by`/`waive_reason`) to
+  every currently outstanding row of the named category — it never
+  removes a row or rewrites what was recorded, so what was hand-checked
+  stays readable next to how it was settled.
+- A settled category's outstanding count reads 0 (never unowned) until a
+  new row is recorded for it; a row recorded after a settle is outstanding
+  and counts again from one — settling is not a standing exemption.
+
+The intake throttle that drops `active_backlog_max_depth` to 1 while a
+category sits unowned is BL-1784.
 
 ## Verify
 
