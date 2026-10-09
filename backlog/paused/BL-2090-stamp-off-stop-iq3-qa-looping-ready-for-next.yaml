@@ -1,0 +1,25 @@
+id: BL-2090
+title: "Stamp-off for hotfix aa7d603d66: stop iq3 QA from looping ready_for_next after a STOP banner."
+milestone: M8
+type: defect
+severity: high
+status: paused
+# high: stamp-off of a production hotfix for a live fault — iq3 QA seat was
+# stuck in a ready_for_next loop after its qwen chat returned a STOP banner;
+# the coordinator hotfixed with aa7d603d66 which updates ready_for_next.sh
+# to emit a proper STOP banner and exit rather than re-enter the loop.
+priority: 5
+direction: normal
+epic: local-llm-swarm
+depends_on: []
+
+mutation_cost: medium
+# medium: Babashka shell script plus doc update — four files touched, ~100
+# lines added; no Stryker lane (hand-mutant pass is the hardener's job) —
+# the hook is a thin shell wrapper beside its siblings.
+slice_size_envelope: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons:
+  cleaner: "shell patch to a small helper; follows existing style"
+  architect: "no boundary moves; the change is within ready_for_next.sh"
+  hardender: null
