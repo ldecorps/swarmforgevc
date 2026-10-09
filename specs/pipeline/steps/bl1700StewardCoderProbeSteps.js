@@ -74,6 +74,22 @@ function parseScorecard(result) {
   return parsed.scorecards[0];
 }
 
+// Hotfix 2026-10-09: this host also runs REAL steward probes
+// (model_steward_cli.bb probe --prepare), each in a tmux server on its own
+// .probe.tmux.sock, so a host-wide scan failed scenario 03 whenever one
+// was live (two were, at 18:58Z and 18:46Z). Only a probe process that
+// appeared after the scenario began counts as this run's leak.
+function probeProcessLines() {
+  return execFileSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8' })
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes('stand-in.sh') || line.includes('.probe.tmux.sock'));
+}
+
+function pidOfPsLine(line) {
+  return Number(line.split(/\s+/)[0]);
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -134,6 +150,7 @@ function registerSteps(registry) {
   // ── Scenario 03: a run that exceeds its wall-clock cap ──────────────────
   scoped(/^the stand-in aider never returns to its prompt$/, (ctx) => {
     ctx.standInMode = 'hang';
+    ctx.preexistingProbePids = new Set(probeProcessLines().map(pidOfPsLine));
   });
 
   scoped(/^the probe's wall-clock cap is (\d+) seconds$/, (ctx, seconds) => {
@@ -154,11 +171,9 @@ function registerSteps(registry) {
     assert.equal(ctx.scorecard.outcome, outcome, JSON.stringify(ctx.scorecard));
   });
 
-  scoped(/^no aider or tmux process from the run is left alive$/, () => {
-    const ps = execFileSync('ps', ['aux'], { encoding: 'utf8' });
-    const leaked = ps
-      .split('\n')
-      .filter((line) => line.includes('stand-in.sh') || line.includes('.probe.tmux.sock'));
+  scoped(/^no aider or tmux process from the run is left alive$/, (ctx) => {
+    const before = ctx.preexistingProbePids || new Set();
+    const leaked = probeProcessLines().filter((line) => !before.has(pidOfPsLine(line)));
     assert.equal(leaked.length, 0, `leaked process(es): ${JSON.stringify(leaked)}`);
   });
 
