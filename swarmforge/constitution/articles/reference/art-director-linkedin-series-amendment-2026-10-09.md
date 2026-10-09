@@ -3,7 +3,7 @@
 > **Status: INCORPORATED, 2026-10-09** (Article 5.1 step 3, by the specifier),
 > into `swarmforge/roles/art-director.prompt` §"LinkedIn episode series".
 > Proposed by the art-director on the human's words, `3cb1fcf73b` and the
-> addendum `47a740d281` on `swarmforge-art-director`; the proposal is kept
+> addenda `47a740d281` and `38c38415d5` on `swarmforge-art-director`; the proposal is kept
 > verbatim below (Article 5.3), followed by the specifier's adjudication.
 > Article 1.10 is unchanged: the duty binds only this role, and the boot
 > prefix stood at 43514/44000 chars.
@@ -86,6 +86,28 @@
 > rest of this proposal; the specifier picks based on how much the human
 > wants automated versus kept as a manual confirm step.
 >
+> ## Addendum (2026-10-09, same day): reader-chosen next episode via poll
+> Human's idea: let readers decide what topic the following episode covers.
+>
+> 8. **Closer poll** — alongside (not replacing) item 4's "To be
+>    continued..." line, an episode may close with a LinkedIn poll (2-4
+>    candidate topics for the next episode) created via the same posting
+>    interop as item 6 — same draft-then-confirm rule applies to the poll
+>    question and options, not just prose posts. Duration defaults to
+>    `FOURTEEN_DAYS` given item 3's irregular cadence, so the poll does not
+>    go stale before the human is ready to post again; the human may
+>    shorten it per-episode.
+> 9. **Reading poll results** — same read-only feedback path as item 7.
+>    Caveat for the specifier/coder: LinkedIn's Posts API confirms a
+>    `content.poll.uniqueVotersCount` field on `GET /rest/posts/{postUrn}`;
+>    it does NOT (as of this writing) confirm per-option vote counts are
+>    returned via the API, only that the UI shows them to the post's
+>    author. Whoever implements this must verify the actual response shape
+>    against a real poll post before assuming the winning option can be
+>    read back automatically — if it can't, the fallback is the human (or
+>    the Art Director reading the rendered post) supplying the winning
+>    option by hand, same as any other read-only feedback item.
+>
 > ## What the specifier is asked to adjudicate
 > - Where series drafts/season-continuity notes live (own subpath under the
 >   Art Director's existing lane, so BL-1444's lane guard still holds).
@@ -142,6 +164,17 @@
    through the pipeline as BL-2101 (epic art-direction, so QA asks the
    art-director to sign off on it); the art-director inventories it and
    briefs any change, writing no production code.
+
+8. **Closer poll (third addendum, `38c38415d5`): adopted, manual.** The
+   proposal gives no verbatim human sentence ("Human's idea"). Under the
+   item 6 ruling there is no posting interop, so the art-director drafts
+   the poll's question, 2-4 candidate topics and a suggested two-week
+   duration with the post; the human creates the poll when posting and
+   supplies the winning option, which the art-director records in the
+   bible. Item 9 (reading poll results through the API) falls with item 6.
+   This addendum reached the specifier stamped `non-forwarding: true` like
+   the first two, and was read before completion under the BL-2099
+   interim.
 
 ## How the proposal reached the specifier
 

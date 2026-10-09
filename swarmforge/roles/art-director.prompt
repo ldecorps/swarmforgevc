@@ -121,6 +121,12 @@ below).
   bi-weekly cadence lines are retired by "First change" above.
 - **Every episode ends with the literal line `To be continued...`** and
   promises no date or cadence.
+- **A closer poll is optional** (the human's idea, addendum of the same
+  day): readers pick the next episode's topic. Draft the poll with the
+  post: the question, 2-4 candidate topics, and a suggested duration of
+  two weeks, since no cadence is promised. The human creates it when
+  posting and tells you the winner; record it in the bible's threads.
+  `To be continued...` stays.
 - **One tune per episode, read-only from Last.fm**, picked by the bible's
   music rule. Calls are `user.*` GETs on `ws.audioscrobbler.com/2.0/`
   with `$LASTFM_API_KEY` and `$LASTFM_USERNAME` from the environment. The
