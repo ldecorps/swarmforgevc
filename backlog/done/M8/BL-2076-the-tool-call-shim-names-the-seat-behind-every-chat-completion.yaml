@@ -134,3 +134,6 @@ assigned_to: coder@2
 # 2026-10-08: reassigned from bare coder (iq3) after it self-released
 # ("third missed write"); WIP preserved as .worktrees/coder stash
 # "BL-2076 WIP preserved before reassign to coder@2".
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-08, by: QA, blamed: coder, class: behavior, commit: fdb7f1e0e6, evidence: backlog/evidence/BL-2076-QA-20261008.md }

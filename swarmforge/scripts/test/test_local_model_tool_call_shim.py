@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -487,9 +488,143 @@ class LiveShimTests(unittest.TestCase):
 
     def test_health_names_the_shim_and_ensure_refuses_a_foreign_port(self) -> None:
         port = self.shim.server_address[1]
-        self.assertEqual(shim.probe(port), {"shim": shim.NAME, "upstream": self.upstream_url})
+        self.assertEqual(shim.probe(port), {"shim": shim.NAME, "upstream": self.upstream_url, "last_seat": "-"})
         self.assertEqual(shim.ensure(port, self.upstream_url, "/dev/null"), 0)
         self.assertEqual(shim.ensure(self.upstream.server_address[1], self.upstream_url, "/dev/null"), 1)
+
+
+class SeatOfPathTests(unittest.TestCase):
+    def test_a_seat_path_strips_to_the_v1_path(self) -> None:
+        self.assertEqual(shim.seat_of_path("/seat/coder/v1/chat/completions"), ("coder", "/v1/chat/completions"))
+        self.assertEqual(shim.seat_of_path("/seat/coder@2/v1/chat/completions"), ("coder@2", "/v1/chat/completions"))
+
+    def test_a_plain_path_is_served_as_is_with_no_seat(self) -> None:
+        self.assertEqual(shim.seat_of_path("/v1/chat/completions"), ("-", "/v1/chat/completions"))
+        self.assertEqual(shim.seat_of_path("/v1/models"), ("-", "/v1/models"))
+
+    def test_a_path_with_no_v1_segment_is_not_a_seat_path(self) -> None:
+        self.assertEqual(shim.seat_of_path("/seat/coder/api/show"), ("-", "/seat/coder/api/show"))
+
+
+class SeatNamedLiveTests(unittest.TestCase):
+    """BL-2076: a completion sent at a seat's URL reaches Ollama unchanged
+    and is logged with that seat; a switch of seat is logged as switch=1;
+    the plain /v1 path is still served and logged with seat '-'."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.upstream = ThreadingHTTPServer(("127.0.0.1", 0), FakeOllama)
+        serve(cls.upstream)
+        cls.upstream_url = f"http://127.0.0.1:{cls.upstream.server_address[1]}/v1"
+        cls.shim = shim.make_server(0, cls.upstream_url)
+        cls.shim_handler = cls.shim.RequestHandlerClass
+        cls.shim_handler.last_seat = "-"
+        serve(cls.shim)
+        cls.base = f"http://127.0.0.1:{cls.shim.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.shim.shutdown()
+        cls.upstream.shutdown()
+
+    def post(self, path: str, body: dict) -> bytes:
+        req = urllib.request.Request(self.base + path, data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.read()
+
+    def get(self, path: str) -> bytes:
+        with urllib.request.urlopen(self.base + path, timeout=10) as resp:
+            return resp.read()
+
+    def test_a_seat_url_reaches_ollama_unchanged_and_is_logged_with_the_seat(self) -> None:
+        for seat in ("coder", "coder@2"):
+            before = len(FakeOllama.seen)
+            raw = self.post(f"/seat/{seat}/v1/chat/completions",
+                            {"model": "m", "messages": [{"role": "user", "content": "read it"}]})
+            path, sent = FakeOllama.seen[-1]
+            self.assertEqual(path, "/v1/chat/completions")
+            self.assertEqual(sent, {"model": "m", "messages": [{"role": "user", "content": "read it"}]})
+            self.assertEqual(len(FakeOllama.seen) - before, 1)
+            self.assertIn(f"chat seat={seat} duration_ms=", shim._log_lines[-1])
+            self.assertIn("prompt_tokens=9", shim._log_lines[-1])
+            self.assertIn("switch=", shim._log_lines[-1])
+            self.assertEqual(json.loads(raw)["usage"]["prompt_tokens"], 9)
+
+    def test_a_seat_switch_is_logged_as_a_switch(self) -> None:
+        self.post("/seat/coder/v1/chat/completions",
+                  {"model": "m", "messages": [{"role": "user", "content": "one"}]})
+        self.post("/seat/coder/v1/chat/completions",
+                  {"model": "m", "messages": [{"role": "user", "content": "two"}]})
+        self.assertIn("switch=0", shim._log_lines[-1])
+        self.post("/seat/QA/v1/chat/completions",
+                  {"model": "m", "messages": [{"role": "user", "content": "three"}]})
+        self.assertIn("switch=1", shim._log_lines[-1])
+        self.assertIn("seat=QA", shim._log_lines[-1])
+
+    def test_the_plain_v1_path_is_served_and_logged_with_no_seat(self) -> None:
+        before = len(FakeOllama.seen)
+        raw = self.post("/v1/chat/completions",
+                        {"model": "m", "messages": [{"role": "user", "content": "read it"}]})
+        path, sent = FakeOllama.seen[-1]
+        self.assertEqual(path, "/v1/chat/completions")
+        self.assertEqual(len(FakeOllama.seen) - before, 1)
+        self.assertIn("chat seat=- duration_ms=", shim._log_lines[-1])
+        self.assertIn("prompt_tokens=9", shim._log_lines[-1])
+        self.assertEqual(json.loads(raw)["usage"]["prompt_tokens"], 9)
+
+    def test_health_names_the_last_seat_served(self) -> None:
+        self.post("/seat/coder/v1/chat/completions",
+                  {"model": "m", "messages": [{"role": "user", "content": "read it"}]})
+        health = shim.probe(self.shim.server_address[1])
+        self.assertEqual(health["last_seat"], "coder")
+
+    def test_a_seat_get_reaches_ollama_with_the_prefix_stripped(self) -> None:
+        raw = self.get("/seat/coder/v1/models")
+        self.assertEqual(json.loads(raw)["path"], "/v1/models")
+
+    def _capture_chat_seat_lines(self) -> list:
+        # _log_chat_completion runs just after the response is already
+        # sent, so the client can resume before the server thread appends;
+        # a dedicated, unbounded capture list (restored after the test)
+        # sidesteps both that race and the eviction a bounded _log_lines
+        # (D3, BL-2076) could cause under shared, whole-suite state.
+        captured: list = []
+        original_log = shim._log
+
+        def wrapper(message: str) -> None:
+            if message.startswith("chat seat="):
+                captured.append(message)
+            original_log(message)
+
+        shim._log = wrapper
+        self.addCleanup(setattr, shim, "_log", original_log)
+        return captured
+
+    def _post_and_wait(self, captured: list, path: str, body: dict) -> str:
+        start = len(captured)
+        self.post(path, body)
+        deadline = time.monotonic() + 2.0
+        while len(captured) <= start and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertGreater(len(captured), start, "no chat seat= line logged in time")
+        return captured[-1]
+
+    def test_a_compaction_is_logged_with_its_seat_and_no_false_switch(self) -> None:
+        captured = self._capture_chat_seat_lines()
+        self._post_and_wait(captured, "/seat/coder/v1/chat/completions",
+                            {"model": "m", "messages": [{"role": "user", "content": "one"}]})
+        line = self._post_and_wait(captured, "/seat/coder/v1/chat/completions",
+                                   {"model": "m", "messages": [
+                                       {"role": "system", "content": "You are the component that summarizes a conversation"},
+                                       {"role": "user", "content": "go"},
+                                   ]})
+        self.assertTrue(line.startswith("chat seat=coder duration_ms="))
+        self.assertIn("switch=0", line)
+        line = self._post_and_wait(captured, "/seat/coder/v1/chat/completions",
+                                   {"model": "m", "messages": [{"role": "user", "content": "two"}]})
+        self.assertTrue(line.startswith("chat seat=coder duration_ms="))
+        self.assertIn("switch=0", line)
 
 
 class BadToolCallTests(unittest.TestCase):

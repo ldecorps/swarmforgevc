@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=bdadac20c329e37754350dc8f51b9d1e20ff9885f565ff85ced3e9f91e19fce6
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-08T18:06:22.315969588Z","feature_name":"BL-1884 A new standing-red row declares why its red was not hotfixed","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1884-a-new-standing-red-row-declares-why-it-was-not-hotfixed.feature","background_hash":"0dcbf5dba70649acdf8ea42fa1763cd0b1d3a04953ef8580a3ad2cdaa9891b01","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a row whose owner does not declare a valid fallback is refused","scenario_hash":"93613fb6b76573c7044471c4740f1628550328c9da2ecd8ccf86ba7a16f96a26","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-10-08T18:06:22.315969588Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1884 A new standing-red row declares why its red was not hotfixed
 
   The human's 2026-10-01 directive: a red on main is hotfixed in the same

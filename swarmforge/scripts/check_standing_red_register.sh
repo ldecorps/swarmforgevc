@@ -74,6 +74,52 @@ ticket_open() {
 " 2>/dev/null
 }
 
+# BL-1884: does the owner ticket (staged first, then on disk) declare a
+# valid hotfix_fallback? needs-ruling requires a non-empty ruling_options;
+# multi-sitting requires a non-empty hotfix_fallback_reason.
+owner_declares_fallback() {
+  local ticket="$1"
+  local yaml=""
+  # Staged first (the commit's own version of the ticket), then on disk.
+  # `git show :path` with a glob resolves to the commit's diff when the
+  # path is new in this commit - only a bare path (no glob) returns the
+  # staged blob. Resolve the glob to a single path first.
+  local path
+  for path in backlog/active/"${ticket}"*.yaml backlog/paused/"${ticket}"*.yaml; do
+    [[ -e "$path" ]] || continue
+    yaml="$(git show ":$path" 2>/dev/null || true)"
+    if [[ -n "$yaml" ]]; then
+      break
+    fi
+    yaml="$(cat "$path")"
+    break
+  done
+  [[ -n "$yaml" ]] || return 1
+  local fallback
+  fallback="$(printf '%s\n' "$yaml" | grep -E '^hotfix_fallback:' | head -1 | sed -E 's/^hotfix_fallback:[[:space:]]*//')"
+  case "$fallback" in
+    needs-ruling)
+      # A non-empty ruling_options: either inline (ruling_options: a, b)
+      # or a list item inside the ruling_options block itself - from the
+      # `ruling_options:` line to the next top-level (non-indented) key.
+      # Any other bulleted field (invariants:, required_wiring:, ...) must
+      # never satisfy this (architect bounce 2026-10-08).
+      printf '%s\n' "$yaml" | grep -E '^ruling_options:' | grep -qE ':.+' || \
+        printf '%s\n' "$yaml" | awk '
+          /^ruling_options:/ { inblock = 1; next }
+          inblock && /^[^[:space:]]/ { inblock = 0 }
+          inblock && /^[[:space:]]*-[[:space:]]*[^[:space:]]/ { found = 1; exit }
+          END { exit found ? 0 : 1 }'
+      ;;
+    multi-sitting)
+      printf '%s\n' "$yaml" | grep -E '^hotfix_fallback_reason:' | grep -qE ':.+'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 # BL-1646 invariant 2: every line HEAD or (mid-merge) MERGE_HEAD already
 # carries for path - a line present in either is inherited, never a line
 # this commit itself authors. Empty when neither ref resolves the path
@@ -125,7 +171,17 @@ while IFS=$'\x01' read -r lane file ticket _rest; do
   fi
   if ! ticket_open "$ticket"; then
     violations+=("backlog/standing-reds.tsv row for $file names $ticket, which is not open (closed or absent)")
+    continue
   fi
+  # BL-1884: a new test-lane row must name an owner that declares a valid
+  # hotfix_fallback. Hardening-lane rows are not judged (scenario 04).
+  case "$lane" in
+    property|unit|bb|acceptance|shell)
+      if ! owner_declares_fallback "$ticket"; then
+        violations+=("backlog/standing-reds.tsv row for $file names $ticket, which does not declare a valid hotfix_fallback (needs-ruling with ruling_options, or multi-sitting with hotfix_fallback_reason)")
+      fi
+      ;;
+  esac
 done < <(added_or_changed_lines "$REGISTER_PATH" | tsv_fields_01)
 
 # ── the ledger: a new/changed debt row's own `- parcel: X` line, its

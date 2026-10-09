@@ -11658,7 +11658,14 @@ second host, or a pull no longer sees a stale local-only marker and
 re-mails the whole archive; a commit failure logs
 `briefing-marker-commit-failed` but degrades to the pre-fix
 working-tree-only behavior for that host rather than losing the local
-send record. Leg B — the send path is now bounded: `briefing-in-window?`
+send record. (BL-2069, 2026-10-08: the raw add/commit pair is now
+`commit-integrity-lib/commit-with-integrity!` — the same lock+pathspec+
+verify+retry helper every other shared-checkout writer routes through
+(BL-419) — and a failed marker commit is retried on the next sweep:
+`send-unsent-briefings!` runs one heal commit per sweep whenever the
+`:commit-marker!` adapter is present, so a marker an earlier failure
+left uncommitted is committed by the next sweep even when that sweep
+has nothing new to send.) Leg B — the send path is now bounded: `briefing-in-window?`
 mails a briefing only when its `YYYY-MM-DD.md` date label is today or
 yesterday (UTC, the specifier's picked window — the intake's other
 option, today-only, could silently lose a briefing generated late in the

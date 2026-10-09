@@ -33,6 +33,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_draft_root_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "git_handoff_recipient_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "in_process_ticket_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "local_seat_acceptance_gate_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -575,6 +576,29 @@
         sampled-reach-floor-block
         (when (sampled-reach-floor-guard-lib/blocked? sampled-reach-floor-result)
           sampled-reach-floor-result)
+        ;; BL-2071 local-seat-acceptance gate: a LOCAL-MODEL seat's
+        ;; git_handoff is queued only when the ticket's own acceptance:
+        ;; feature passes at the forwarded commit (see
+        ;; local_seat_acceptance_gate_lib.bb). Keyed off the raw
+        ;; SWARMFORGE_ROLE seat id, never `sender` (the canonicalized stage,
+        ;; which collapses coder@2 and coder together) - a cloud seat's send
+        ;; runs no acceptance check at all (scenario 03). FAIL CLOSED on the
+        ;; feature's own outcome (a failing scenario, an unresolved step, or
+        ;; a timeout all refuse, the opposite posture of every gate above,
+        ;; by this ticket's own invariant 1) but fail OPEN on cli.js itself
+        ;; being unreachable at root - infrastructure trouble, same line
+        ;; BL-761's acceptance-contract gate already draws (see
+        ;; run-acceptance-feature!'s header).
+        local-seat-acceptance-result
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+          (local-seat-acceptance-gate-lib/findings-for-git-handoff
+           {:root (project-root) :seat (System/getenv "SWARMFORGE_ROLE") :task-name task-name :commit canonical}))
+        _ (doseq [warning (:warnings local-seat-acceptance-result)]
+            (binding [*out* *err*]
+              (println (str "LOCAL_SEAT_ACCEPTANCE WARNING: " warning))))
+        local-seat-acceptance-block
+        (when (local-seat-acceptance-gate-lib/blocked? local-seat-acceptance-result)
+          local-seat-acceptance-result)
         ;; Hotfix 2026-10-03: refuses a git_handoff naming a ticket other
         ;; than the sender's in-process parcel - a draft left from another
         ;; ticket (see in_process_ticket_guard_lib.bb). Skipped for the
@@ -643,6 +667,10 @@
                              (conj (sampled-reach-floor-guard-lib/refusal-message
                                     {:task-name task-name
                                      :findings (:findings sampled-reach-floor-block)}))
+                             local-seat-acceptance-block
+                             (conj (local-seat-acceptance-gate-lib/refusal-message
+                                    {:task-name task-name
+                                     :findings (:findings local-seat-acceptance-block)}))
                              task-scope-block
                              (conj (task-scope-gate-lib/refusal-message
                                     {:task-name task-name
