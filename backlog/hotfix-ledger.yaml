@@ -1658,3 +1658,10 @@
   stamp_ticket: BL-2102
   human_decision: null
   decided_at: null
+- commit: 304e4a8816
+  subject: "Hotfix: seat-affinity rework deferral reads one type set (git_handoff, note) in both the claim decision and the stall-sweep hold - bl1004 property runner red since BL-1843"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2104
+  human_decision: null
+  decided_at: null
