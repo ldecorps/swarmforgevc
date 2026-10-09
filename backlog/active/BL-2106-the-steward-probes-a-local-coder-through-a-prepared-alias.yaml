@@ -25,7 +25,7 @@ required_wiring:
 # (1e64496d93); the handler drives that CLI, so any pattern there matches
 # before and after the review.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the code is already on main
