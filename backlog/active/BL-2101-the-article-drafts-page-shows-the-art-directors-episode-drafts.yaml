@@ -28,7 +28,7 @@ required_wiring:
 # bridgeServer.ts and consoleMenuUiHtml.ts already serve every other Mini
 # App page, so a match there is a call the running bridge makes.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: this lands the Cursor
