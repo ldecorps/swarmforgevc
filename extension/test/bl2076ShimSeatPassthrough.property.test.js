@@ -121,7 +121,17 @@ beforeAll(async () => {
 
   const shimPort = await freePort();
   shimBase = `http://127.0.0.1:${shimPort}`;
-  shimProc = spawn('python3', [SHIM_PY, 'serve', '--port', String(shimPort), '--upstream', `${fakeUrl}/v1`], {
+  // BL-2077: this property's generator draws a DIFFERENT seat nearly every
+  // run - with the shim's default decode-slot durations (idle_grace_s=30,
+  // hold_quantum_s=300) each seat change would genuinely wait out a real
+  // 30s idle grace, which this file's own 30s test timeout cannot survive
+  // even once. This property cares only about the forwarded body/path,
+  // never the slot's own timing, so a negligible grace/quantum keeps every
+  // seat change effectively instant.
+  shimProc = spawn('python3', [
+    SHIM_PY, 'serve', '--port', String(shimPort), '--upstream', `${fakeUrl}/v1`,
+    '--idle-grace-s', '0.01', '--hold-quantum-s', '0.01',
+  ], {
     stdio: ['ignore', 'ignore', 'ignore'],
   });
   await waitForHealth(shimBase, 10000);

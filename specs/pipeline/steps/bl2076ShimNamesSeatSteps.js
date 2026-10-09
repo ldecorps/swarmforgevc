@@ -104,7 +104,19 @@ async function boot(ctx) {
 
   // The real shim, spawned as a subprocess (Python, not requireable),
   // stderr piped so the chat log lines land in state.shimLog.
-  const shimProc = spawn('python3', [SHIM_PY, 'serve', '--port', String(shimPort), '--upstream', `${state.fakeUrl}/v1`], {
+  //
+  // BL-2077: this feature's own seat-switch scenario sends from one seat
+  // then another - with the shim's DEFAULT decode-slot durations
+  // (idle_grace_s=30, hold_quantum_s=300), the second seat's completion
+  // would genuinely wait out a real 30s idle grace before reaching the
+  // fake Ollama. This feature cares only about seat naming and logging,
+  // never the slot's own timing, so a negligible grace/quantum keeps any
+  // inter-seat wait effectively instant - the same fix the shim's own
+  // unittest file's LiveShimTests/SeatNamedLiveTests needed.
+  const shimProc = spawn('python3', [
+    SHIM_PY, 'serve', '--port', String(shimPort), '--upstream', `${state.fakeUrl}/v1`,
+    '--idle-grace-s', '0.01', '--hold-quantum-s', '0.01',
+  ], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   state.shimProc = shimProc;
