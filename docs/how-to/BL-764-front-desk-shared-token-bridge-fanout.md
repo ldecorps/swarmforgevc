@@ -102,6 +102,23 @@ dropping it — the reverse of this doc's forward queue:
      failing hand-over folds its `posted`/`dropped`/`failed` counts into
      the same `PollResult` a regular delivery does, driving the same
      BL-369 stuck-delivery escalation.
+   - **The drain itself is durable.** The front desk's own process can be
+     stall-killed (dozens of times a day, not a rare event) between
+     reading the queue and finishing each entry's apply. A plain drain
+     unlinks the file it renamed aside the instant it is read, so every
+     entry still sitting only in that killed process's memory would be
+     lost. `drainCursorBridgeHandoverUpdatesDurable`
+     (`cursorBridgeHandoverQueue.ts`, over `drainJsonlUpdatesDurable` in
+     `jsonlUpdateQueueLib.ts`) instead leaves its renamed-aside draining
+     file on disk and hands back a `commit()`; `applyHandoverUpdates`
+     calls it exactly once, only after every drained entry has been
+     applied or re-queued above. The next durable drain recovers any
+     leftover draining file from a prior kill (oldest first, by the
+     timestamp in its own filename) ahead of whatever it freshly drains,
+     so nothing read is ever lost to a kill between drain and apply. The
+     forward queue (front desk → bridge,
+     `cursorBridgeInboundQueue.ts`) is unchanged: its own drain still
+     unlinks immediately, since nothing on that side ever calls `commit`.
 3. **The bridge's own updates are unaffected.** A message in the cursor
    topic is still answered and routed by the bridge itself; nothing is
    handed over for it.
