@@ -1,0 +1,99 @@
+id: BL-2105
+title: "A scoped Stryker dry run is budgeted for the suite it runs: extension/stryker.config.json sets no dryRunTimeoutMinutes, so every scoped run copied from it starts at Stryker's 5-minute default while the perTest dry run executes the whole unit suite (about 10 minutes on this host) - twice the dry run hit that ceiling and the hardener fell back to hand mutation; the base config carries the 15-minute budget six per-ticket configs already set by hand"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, recurring fault in the mutation gate's tooling with a
+# working fallback (hand mutation); nothing ships unchecked. Not high: no
+# red, no broken health signal.
+status: todo
+epic: code-quality-gates
+priority: 30
+direction: swarm-reported
+depends_on: []
+verification_category: stryker-dry-run-timeout-fallback
+mutation_cost: low
+# low: one config key and one small step handler reading JSON.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one config key; nothing to refactor"
+  architect: "no boundary moves"
+  hardender: "no production code changed; the next hardener passes on TypeScript tickets are the live evidence (QA step 3)"
+  documenter: "no living doc describes the dry-run budget"
+
+acceptance: specs/features/BL-2105-a-scoped-stryker-dry-run-is-budgeted-for-the-suite-it-runs.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2105ScopedStrykerDryRunBudgetSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: only the dry-run budget
+  changes; timeoutMS, timeoutFactor, concurrency and coverageAnalysis stay
+  as they are. FIRM: the per-ticket configs are not edited.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  `extension/stryker.config.json` sets `timeoutMS` (60000) and
+  `timeoutFactor` (3) for each mutant but no `dryRunTimeoutMinutes`, so
+  Stryker's default of 5 minutes bounds the initial dry run. With
+  `coverageAnalysis: perTest` the dry run executes the whole vitest unit
+  suite under instrumentation; the suite alone takes about 10 minutes on
+  this host (BL-1599's work ratchet, 605 s). Of the 16
+  `extension/stryker.bl*.config.json` files the hardener has written, 6
+  raise the budget to 15 by hand and 10 do not.
+
+  Verification-debt category `stryker-dry-run-timeout-fallback` (owned by
+  this ticket):
+  - BL-1836 (2026-10-02): the dry run timed out at the 5-minute ceiling
+    twice; hand mutation stood in.
+  - BL-1858 (2026-10-04): timed out at 5 minutes once, then a retry with
+    `--dryRunTimeoutMinutes 12` was reaped mid-run; hand mutation stood in.
+  - BL-1784 (2026-10-09, on the hardener's branch as 5d494b1093): the run
+    was terminated (exit 143) at about 7 minutes on 4 attempts under
+    another seat's 10-worker vitest load.
+
+  ## What is wanted
+
+  - `extension/stryker.config.json` carries `dryRunTimeoutMinutes: 15`,
+    the value the hand configs settled on (scenario 01).
+
+constraints: >
+  The step handler reads the real extension/stryker.config.json, never a
+  copy. The handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - The exit-143 kills at about 7 minutes (BL-1784's row) and the mid-run
+    reap of BL-1858's retry: the 15-minute budget does not explain them,
+    and what sent the signal is not recorded. If the next row in this
+    category is a kill rather than a timeout, mint from that row.
+  - Editing the existing per-ticket configs.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2105-a-scoped-stryker-dry-run-is-budgeted-for-the-suite-it-runs.feature`:
+     1 of 1 ok.
+  2. `python3 -c "import json; print(json.load(open('extension/stryker.config.json'))['dryRunTimeoutMinutes'])"`
+     prints 15.
+  3. After the land: the next hardener pass that runs Stryker records its
+     dry-run time in its evidence, and no new
+     stryker-dry-run-timeout-fallback row names a 5-minute ceiling.
+
+source: |
+  Hardener note 001742 (2026-10-09T18:35:28Z), verbatim:
+  "VERIFICATION_DEBT_UNOWNED stryker-dry-run-timeout-fallback".
+  Rows read with verification_debt_ledger_read.bb at 18:45Z, plus the
+  hardener's branch commit 5d494b1093.
+
+notes: |
+  Minted 2026-10-09 by the specifier, the owner of verification-debt
+  category stryker-dry-run-timeout-fallback (one-line declaration above).
+  INVEST: Independent, Negotiable (the value, if a measured suite time
+  argues for another), Valuable (scoped runs stop falling back to hand
+  mutation on the ceiling), Estimable, Small (one key), Testable (one
+  scenario reading the real config).
