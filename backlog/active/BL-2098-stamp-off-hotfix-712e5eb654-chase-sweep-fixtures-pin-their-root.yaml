@@ -123,3 +123,5 @@ description: |
      the BL-1505 and BL-1740 features once each.
   3. Write backlog/evidence/BL-2098-coder-<date>.md with the review result
      and the run results, and commit it.
+
+assigned_to: coder
