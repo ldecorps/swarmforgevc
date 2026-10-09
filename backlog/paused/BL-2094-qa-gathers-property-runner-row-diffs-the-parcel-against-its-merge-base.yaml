@@ -1,0 +1,153 @@
+id: BL-2094
+title: "QA's gather property_runners row has run no property runner on any parcel since it landed: it passes the gathered commit itself as --changed-from, and QA gathers with that commit checked out, so the front-end diffs an empty range (15 of 15 gathers since 2026-10-08 printed \"no property runner reached since\" their own tip); the row now diffs the parcel against its merge-base with main, as BL-2073 specified"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal - the human's BL-2049 ruling A gate ("QA's
+# gather runs, on every parcel, the property runners its change reaches")
+# has been silently running nothing on every parcel, and its acceptance
+# pinned the defect, so nothing went red.
+status: todo
+epic: unit-suite-speed
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript (qaGather.ts, one CHECKLIST row and wherever the ref
+# is resolved) under Stryker on the changed lines, plus one step handler
+# that builds a real git fixture. Routes to a hard-tier seat (BL-1001).
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one argument and its resolution in one row; nothing to refactor"
+  architect: "no boundary moves; BL-2073 already decided the ref and the blocked shape, and this delivers them"
+  documenter: "docs/reference/Specification.MD already says the row uses the parcel's merge-base with main; the fix makes it true"
+
+acceptance: specs/features/BL-2094-qa-gathers-property-runner-row-diffs-the-parcel-against-its-merge-base.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2094PropertyRunnerRowMergeBaseSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): "merge-base" already appears
+# in qaGather.ts's blocked reason, so an anchor on it would match before
+# the fix. The scenarios run the REAL property_runners row in a REAL git
+# repository whose HEAD is the parcel commit, which is the wiring proof.
+
+human_approval: approved
+approval_context: >
+  A defect against BL-2073's own spec, which already chose the ref (the
+  parcel's merge-base with main) and the blocked shape. No choice is posed.
+
+invariants:
+  - "The property_runners row diffs the parcel's own change, from its merge-base with main to the gathered commit, and never an empty or a wider range."
+
+description: |
+  ## What is wrong
+
+  extension/src/quality/qaGather.ts's property_runners row (BL-2073)
+  runs `run_property_runners.sh --changed-from <ctx.commit>`. The
+  front-end diffs `git diff --name-only <ref>...HEAD`
+  (run_property_runners.sh, BL-2049). QA gathers in its own worktree with
+  the parcel commit checked out, so ctx.commit is HEAD and the range is
+  empty. Every gather since BL-2073 landed (3a65a6e5ab, 2026-10-08) read
+  "no property runner reached since <its own tip>": 15 of 15 in
+  .worktrees/QA/tmp/*-gather.json, among them BL-2064's, which changed
+  local_model_repeat_guard.bb. BL-2073's description said the ref is
+  "`git merge-base main <commit>`", and the blocked reason still names
+  the merge-base. The code never computes one.
+
+  BL-2073's step handler drove a fake runner rooted at `/r` that never ran
+  git, and asserted the front-end's args equal
+  `['--changed-from', <commit>]`, which is the defect. Its scenarios
+  passed, its mutation stamp passed, and no lane could see it.
+
+  ## What is wanted
+
+  - The row passes the parcel's merge-base with main (`git merge-base
+    main <commit>` in the gather's root), so the front-end runs exactly
+    the runners the parcel's own change reaches (scenario 01). A change
+    main gained after the parcel branched does not count (scenario 02).
+  - When the merge-base cannot be resolved, the row is blocked with a
+    reason naming the failed merge-base, and the front-end is never
+    started. It never falls back to a wider ref (scenario 03, BL-2073's
+    rule).
+  - The scenarios run the REAL CHECKLIST row with a runFn that really
+    spawns, in a real `git init` fixture under mkdtemp whose checked-out
+    HEAD is the parcel commit. The fixture holds copies of
+    run_property_runners.sh and property_runner_reach.bb and two fixture
+    runners. BL-2049's handler (bl2049PropertyRunnerReachSteps.js) already
+    builds that shape.
+  - Retire BL-2073's feature: `git rm`
+    specs/features/BL-2073-qa-gather-runs-the-property-runners-its-change-reaches.feature
+    and its handler specs/pipeline/steps/bl2073QaGatherPropertyRunnerReachSteps.js
+    in the same commit as BL-2094's handler. Its scenarios assert the
+    defect and go red on the fix. Retire, never reword: this feature's
+    scenarios are the coverage. Warning: removing the old handler without
+    the new one landing in the same commit, or the reverse, turns the
+    acceptance suite red for every other parcel (BL-233).
+
+  ## How (direction, not mandate)
+
+  - CheckSpec.build is synchronous and takes only ctx. Resolve the ref
+    before the checklist runs (for example in qa-gather.ts beside
+    resolveHeadCommit, carried on ctx), or teach the row to resolve it
+    through runFn. Either way, the row keeps its place in CHECKLIST's
+    order (BL-1554's fixed-order step, stamped by BL-2079).
+
+constraints: >
+  Fixture repositories are `git init` under mkdtemp, proven by `rev-parse
+  --git-common-dir` before any mutating git command, and never the live
+  checkout (engineering Guardrails, BL-1390). The handler runs the real
+  front-end and reach selector from the fixture, never a fake runFn for
+  the property_runners row.
+
+out_of_scope: |
+  - BL-2080's re-gather narrowing of the properties lane and BL-2024's
+    lane skip for backlog-only parcels; both touch qaGather.ts, so the
+    coordinator keeps them out of flight together (orthogonality).
+  - Which runners fail once they finally run. Those are reds in their own
+    right, owned when they first show.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2094-qa-gathers-property-runner-row-diffs-the-parcel-against-its-merge-base.feature`:
+     4 of 4 ok (01 x2, 02, 03).
+  2. `ls specs/features/BL-2073-* specs/pipeline/steps/bl2073*` finds
+     nothing at the parcel commit.
+  3. Read this parcel's own gather: the property_runners row's command
+     ends `--changed-from <sha>` where `<sha>` equals `git merge-base main
+     <gathered commit>`, never the gathered commit itself.
+  4. After the land: the next gather on a parcel that changes a file under
+     swarmforge/scripts/ names at least one runner, or prints the no-reach
+     line with the merge-base sha, not the parcel's own tip. Record which
+     in the QA evidence.
+
+source: |
+  QA note 003952 (2026-10-09T11:35:07Z), verbatim: "qa-gather
+  property_runners passes --changed-from <tip>: reaches nothing, ever".
+  The human's ruling A, carried by BL-2049 and quoted in BL-2073's
+  feature, verbatim: "QA's gather runs, on every parcel, the property
+  runners its change reaches, and nothing runs the others."
+
+notes: |
+  Minted 2026-10-09 by the specifier on QA note 003952.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Not hotfixed: this is a production TypeScript gate that has been
+  vacuous, not a red, and its acceptance needs a real-repository handler
+  built from scratch, which is more than one sitting for a hotfix.
+  Census at mint (2026-10-09): `.worktrees/QA/tmp/*-gather.json` files
+  holding a property_runners row: 15. Rows whose excerpt contains "no
+  property runner reached since": 15. Counted with a python3 loop over
+  those files reading checks[].id == property_runners.
+  Dynamic routing: TypeScript production code, so [coder, hardender, qa].
+  No documenter, because the living doc already describes the fixed
+  behaviour.
+  IR-DRY at mint: 3 medium findings. Two are an outline placeholder
+  against the literal of the same step pattern (01 vs 02). One pairs the
+  orphan-branch Given with the parcel Given, which mean different things.
+  All kept.
+  INVEST: Independent (no unbuilt sibling), Negotiable (where the ref is
+  resolved), Valuable (ruling A's gate finally runs), Estimable (one row,
+  one handler, one retirement), Small (three scenarios), Testable (a real
+  git fixture with the real front-end).
+
+assigned_to: null

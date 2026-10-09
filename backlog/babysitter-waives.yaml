@@ -145,6 +145,11 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-3d5e5064c5b293873cc1341de02c29773b1ac0dc
+  waived_by: coordinator
+  reason: "declared hotfix by the human (2026-10-01 rule) fixing two property-lane reds: bl857's module-load sweep killing bl1287's dead-creator fixtures mid-draw (QA note 003951, already adjudicated) and bl1346 invariant 1's bare 120000 timeout. Stamp ticket BL-2093 already minted+promoted+routed to coder."
+  waived_at: 2026-10-09
+
 - key: pipeline-code-on-main-4453766c28d82b7ebc51265d1068845de1d287a7
   waived_by: coordinator
   reason: "Human-directed emergency hotfix (approval taps still broken after c416adc5fb, 2026-10-07): QA-authored on main, second root cause - stale CURSOR_BRIDGE_INBOUND_QUEUE=0 baked in during the 2026-10-06 swarm-death restart caused a dual-poller 409 storm. Hotfix-Certification: pending trailer; verified 141/141 + property/shell/BL-1253/BL-764 all green; operator already applied the runtime mitigation (bridge supervisor restarted with explicit =1 at 09:47:46Z)."
