@@ -32,7 +32,7 @@ The babysitter still owns deterministic health checks ([BL-611 runbook](BL-611-b
 | --- | --- | --- |
 | **CRIT** | Nudge (existing) | **Escalation** — `BABYSITTER_ESCALATION` enqueued |
 | **WARN** `stuck-*` | Nudge (existing) | No wake — below escalation bar |
-| **CRIT** `seat-stuck-<role>` | Nudge (existing) | **Escalation** — a ticket held 60 minutes with no commit, including while the pane spinner still looks busy. The 30-minute `stuck-*` WARN does not cover that dwell and does not wake the operator |
+| **CRIT** `seat-stuck-<role>` | Nudge (existing) | **Escalation** — a ticket held with no commit past the stage-aware dwell clock, including while the pane spinner still looks busy: 60 minutes for every seat except the hardener, 150 minutes for a hardener whose own mutation progress file proves a Stryker/CRAP/jscpd run is under way (BL-2091, human ruling 2026-10-08 — an idle or looping hardener stays at 60). The 30-minute `stuck-*` WARN does not cover that dwell and does not wake the operator |
 | Other WARN / OK | Log only | No wake |
 
 CRIT findings enqueue via `operator_enqueue_event.bb`:
