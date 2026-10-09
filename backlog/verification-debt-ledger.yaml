@@ -304,3 +304,8 @@
   role: QA
   description: "unit row exit 1 joined unidentified; read .vitest-report.json (11323/11323 passed, 0 failed files) and .test-durations.jsonl (work ratchet over-tolerance = exit 0) by hand: cause is vitest onTaskUpdate unhandled timeouts at load 17.68/20, owned by BL-1889"
   detected_at: 2026-10-08
+- category: qa-mailbox-gap
+  ticket: BL-2074
+  role: coordinator
+  description: "All 4 active tickets DISPATCHED but zero physical parcels: QA has no handoff directory (inbox/new/in_process/completed dirs don't exist). Dispatch trail reports DISPATCHED, pipeline board stage=QA. Babysitter seat-stuck fires every ~30m as a known false-positive."
+  detected_at: 2026-10-09

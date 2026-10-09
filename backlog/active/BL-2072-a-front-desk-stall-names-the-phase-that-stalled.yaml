@@ -61,11 +61,17 @@ description: |
   ## What is wanted
 
   - When the startup topic checks, a getUpdates wait, or the handling of
-    one update batch runs longer than a threshold (10 s is a reasonable
-    start; the coder records the choice), the bot appends one line to
-    .swarmforge/operator/front-desk-diagnostics.log naming the phase and
-    its duration (scenario 01). A phase under the threshold writes
-    nothing (scenario 02).
+    one update batch runs longer than a threshold, the bot appends one
+    line to .swarmforge/operator/front-desk-diagnostics.log naming the
+    phase and its duration (scenario 01). A phase under the threshold
+    writes nothing (scenario 02).
+  - The threshold sits above the bot's own getUpdates long-poll timeout
+    (POLL_TIMEOUT_SECONDS, 25 s) plus latency, so a healthy idle poll
+    that waits out its timeout and returns empty writes nothing
+    (scenario 03). The coder chose 27 s (c1a3a784ea). Amended 2026-10-09
+    on QA's spec-gap note 003946; the spec first said "10 s is a
+    reasonable start", which would have written a line on every idle
+    cycle, about 3456 a day, and named getUpdates before every kill.
   - Nothing else changes: the heartbeat is written where it is today, and
     the supervisor's 90 s rule stands (invariant).
   - After the land, the hardener's or QA's evidence records the phase
@@ -112,6 +118,22 @@ source: |
 
 notes: |
   Minted 2026-10-07 by the specifier at the human's choice.
+  Spec gap, QA note 003946 (2026-10-09): no scenario pinned the idle
+  long poll as silent. Amended the description on main while the parcel
+  was at QA. Nothing in the parcel is rebuilt: the coder's D2 unit test
+  in telegramFrontDeskBotCore.test.js ("a healthy 25s idle getUpdates
+  wait ... writes no diagnostic line") already pins it in the unit lane,
+  and the parcel's feature carries the hardener's mutation stamp, so the
+  feature is not edited on main under it (BL-1385). Until scenario 03 is
+  in the feature, the specifier adds it on main after BL-2072 lands. It
+  uses only the existing step patterns, so no handler change:
+    # BL-2072 front-desk-stall-names-its-phase-03
+    Scenario: an idle long poll that waits out its own 25 s timeout leaves no timing line
+      Given the bot's getUpdates wait takes 25 seconds
+      When the bot runs it
+      Then front-desk-diagnostics.log gains no timing line
+  If QA bounces the parcel for another reason, the coder adds those
+  lines to the feature verbatim in the same rework.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
   This is the diagnosis slice. Once its lines name the stalling phase,
   the specifier mints the fix (startup heartbeat, a startup grace, or a
@@ -123,3 +145,6 @@ notes: |
   Small (two scenarios), Testable (fake Telegram and clock).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-09, by: QA, blamed: coder, class: behavior, commit: ae15374ae5, evidence: backlog/evidence/BL-2072-QA-20261009.md }

@@ -7,6 +7,7 @@ severity: high
 # reported in real time on the running swarm (qwen coder stalled on
 # File-not-found for .swarmforge/phase/BL-2074.md at fresh arrange).
 status: todo
+assigned_to: coder
 epic: local-llm-swarm
 priority: 5
 direction: normal

@@ -450,6 +450,11 @@
   reason: "Specifier hotfix (Hotfix-Certification: pending) fixing bl1905RealDispatcherScan.property red (QA note 003843 held BL-1964); stamp-off BL-2029 already mints coder+QA review (backlog/paused, approved). Sanctioned hotfix-then-stampoff pattern (2026-10-01 directive); SUP-17."
   waived_at: 2026-10-06
 
+- key: pipeline-code-on-main-b8611eff861e2c0c0d181516ea8e55660bab1696
+  waived_by: coordinator
+  reason: "declared hotfix by the human (2026-10-01 rule: hotfix the defect, mint a stampoff) - raises the property-lane default timeout budget for bl1071SweepSurvivesAnyProbeFailure and bl2071ForwardAndPassAgree, fixing the exact two unowned-red notes I was tracking (coder note 000185, QA note 003949); no body-logic change, verified full property lane exit 0 (537 files/1473 tests/1105s). Specifier to mint the stamp-off ticket + ledger row."
+  waived_at: 2026-10-09
+
 - key: pipeline-code-on-main-b89dc06cd635ecf9cc85340dfcdd5af476cd3e9f
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"

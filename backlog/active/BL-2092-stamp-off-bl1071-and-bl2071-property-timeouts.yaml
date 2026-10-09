@@ -1,0 +1,106 @@
+id: BL-2092
+title: "Stamp-off for hotfix b8611eff86: two subprocess-heavy property files ran on the property lane's default budget (20 s quiet, never above its 60 s cap) and timed out in loaded lanes - BL-1071's sweep file (eight real sweeps) and BL-2071's forward-and-pass file (eight CLI runs); each test now takes propertyLaneTimeoutMs(60000)"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of standing-red hotfixes (a red is high at first
+# sighting, 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review one test-side commit and run two property files once.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "three timeout arguments, two requires and three comments; nothing to refactor"
+  architect: "test files only; no production boundary moves"
+  hardender: "no production code changed"
+  documenter: "no living doc describes these two test files"
+
+# Not a claim of ownership over BL-1071's contract (BL-1251): no feature
+# reads either property file; BL-1071's feature is the sweep contract the
+# first file extends to all eight probe combinations.
+acceptance: specs/features/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants: []
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. Read from the gather's property row:
+     bl1071SweepSurvivesAnyProbeFailure 2 of 2 and
+     bl2071ForwardAndPassAgree 1 of 1.
+     Measured at b8611eff86: a full property lane exit 0 (537 files,
+     1473 tests, 1105 s wall, load 13-18), bl1071's sweep file 22.3 s and
+     bl2071 48.9 s; both files together at load 18, 3 of 3.
+  2. `node specs/pipeline/cli.js specs/features/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix.feature`:
+     10 of 10 ok (measured on main at mint, 31 s).
+  3. Read the coder's committed review evidence.
+
+source: |
+  coder@2 note 000185 (2026-10-09T08:59:54Z), verbatim: "unowned-red
+  bl1071SweepSurvivesAnyProbeFailure timeout under load".
+  QA note 003949 (2026-10-09T10:21:55Z), verbatim: "BL-2072 held:
+  unowned-red bl2071ForwardAndPassAgree.property.test.js (lane)".
+  Evidence: QA's BL-2072 review pass (67b92b19b3).
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-09 by the specifier.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  No standing-reds.tsv row was added: both reds were fixed the same pass
+  they were reported. QA held BL-2072 on the bl2071 red and was sent the
+  retake note the same pass.
+  Same class as BL-2066 (hotfix 662b7933c3, bl1445's scaled 20000 base
+  moved to 60000). bl2071's per-cell execFileSync is the synchronous shape
+  BL-1889 names for the unit lane's heartbeat starvation; this file is in
+  the property lane, so BL-1889's scope is unchanged.
+
+description: |
+  ## Status: hotfix b8611eff86 landed the fix
+
+  This parcel is its stamp-off: review it, do not re-apply it.
+
+  ## What was wrong, and what the hotfix changed
+
+  Two property files spawn real subprocesses in sequence and declared no
+  budget of their own, so they ran on the property lane's default
+  (vitest.properties.config.mjs, BL-1817): 20000 ms on a quiet host and
+  never above its 60000 ms cap.
+
+  1. extension/test/bl1071SweepSurvivesAnyProbeFailure.property.test.js
+     runs the REAL babysitter sweep over a fixture repo: invariant 1
+     eight times (every subset of three broken probes), invariant 3 four
+     times. Alone at load 20 on 2026-10-09 they took 22.4 s and 12.9 s;
+     coder@2's lane timed one out.
+  2. extension/test/bl2071ForwardAndPassAgree.property.test.js runs the
+     BL-2071 CLI eight times (two callers over four cells). Alone at load
+     12 it took 28.3 s against a scaled 39950 ms; QA's BL-2072 lane timed
+     it out.
+
+  The hotfix requires `propertyLaneTimeoutMs` in each file and passes
+  `propertyLaneTimeoutMs(60000)` to all three tests: 60 s on a quiet
+  host, up to 180 s under load (bl1529's, bl1389's and bl1445's class).
+  A comment at each says why. No property body changed.
+
+  ## What the coder does (all of it)
+
+  1. Read `git show b8611eff86` against the section above. Confirm only
+     the timeout arguments, the requires and the comments changed.
+  2. Run the two property files once each, alone, with
+     `--config vitest.properties.config.mjs` and output under tmp/.
+  3. Write backlog/evidence/BL-2092-coder-<date>.md with the review
+     result and the run results, and commit it.
+
+assigned_to: coder

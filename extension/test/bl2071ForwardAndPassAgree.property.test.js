@@ -17,6 +17,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const CLI = path.join(__dirname, '..', '..', 'specs', 'pipeline', 'steps', 'lib', 'bl2071LocalSeatAcceptanceGateCli.sh');
 
@@ -43,4 +44,9 @@ test('property (BL-2071 invariant 2): the git_handoff send and the phase-pass ch
       `${label}: send delivered=${sendResult.delivered} but phase-pass left phase=${passResult.phase} - the two callers disagree: ${JSON.stringify({ sendResult, passResult })}`
     );
   }
-});
+// 2026-10-09 (QA note 003949, BL-2072's lane): eight synchronous CLI runs in
+// sequence ran on the lane's default budget (20000 ms quiet, never above
+// 60000 ms); 28.3 s alone at load 12 against a scaled 39950 ms, and a full
+// lane timed it out. base 60000 is bl1529's and bl1445's class (60 s quiet,
+// up to 180 s under load).
+}, propertyLaneTimeoutMs(60000));
