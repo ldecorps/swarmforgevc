@@ -1,0 +1,147 @@
+id: BL-2095
+title: "A seat that leaves a parcel above its tier says so: the claim path prints a DEFERRED line for a parcel it leaves to the seat that worked it (BL-1004) but nothing for one it leaves above its tier (BL-1001), so an easy seat beside a queue of medium parcels answers a bare NO_TASK; on 2026-10-09 the coordinator read that as a queue wedged behind a deferred note, moved the note by hand and reported a dispatcher defect that is not there"
+milestone: M8
+type: defect
+severity: medium
+# medium: claim behaviour is correct; the silence cost a hand mailbox move
+# and a false defect report on 2026-10-09 (and BL-1843's 2026-09-30
+# incident was also cleared by hand). Real but contained.
+status: todo
+epic: multi-seat-stages
+priority: 20
+direction: normal
+depends_on: []
+mutation_cost: medium
+# medium: a small Babashka change (one line function beside
+# seat-affinity-lib/deferral-line, one print in ready_for_next_task.bb's
+# claim path) plus a step handler on BL-1843's fixture shape. Costed
+# medium so BL-1001 routes it to a hard seat: iq3 livelocks on Clojure
+# paren balance (BL-2084, 2026-10-08).
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "one line function and one print; nothing to refactor"
+  architect: "no boundary moves; the line sits where the DEFERRED line already sits and follows its seat-identity rule"
+  hardender: "Babashka only (no Stryker lane, BL-472) and no durable state written"
+  documenter: "the BL-1001 how-to describes which seat claims what, which does not change; no living doc lists the claim path's output lines"
+
+acceptance: specs/features/BL-2095-a-seat-that-leaves-a-parcel-above-its-tier-says-so.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2095TierSkipSaidOutLoudSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the line's function name is
+# the coder's, and the one live consumer, ready_for_next_task.bb's claim
+# path, already exists. The scenarios run the REAL dispatcher as a seat of
+# a fixture stage (BL-1843's posture), which is the wiring proof.
+
+human_approval: pending
+approval_context: >
+  A new feature file needs the human's look. No choice is posed. What
+  needs sign-off: a seat prints one line for each parcel it leaves above
+  its tier, the way it already prints one for a parcel it defers. FIRM:
+  nothing about what a seat claims or leaves changes. Not built: the
+  coordinator's proposed babysitter finding "seat idle while its queue is
+  not empty" - with tier routing that is the normal state of an easy seat
+  whenever only medium work is queued, so it would fire on every such
+  hour (notes).
+
+invariants:
+  - "What a seat claims, defers or leaves is unchanged: the line is printed for exactly the parcels the tier filter already leaves, and for no other."
+  - "The line names no seat of the stage (BL-983 invariant 2, as BL-1004's deferral line)."
+
+description: |
+  ## What is wrong
+
+  `ready_for_next_task.bb`'s claim path builds the candidate list, drops
+  the parcels it defers to a sibling (BL-1004), printing a DEFERRED line
+  for each, drops the parcels above this seat's tier (BL-1001,
+  `difficulty-allows-claim?`), printing nothing, then claims the first
+  parcel left or reports NO_TASK. Every drop is a filter over the whole
+  queue, so a dropped head never holds up the parcel behind it.
+
+  On 2026-10-09 the full-forge pack ran the coder stage as `coder`
+  (local iq3, `--seat-tier easy`) and `coder@2` (Claude, hard). Work notes
+  for BL-2091, BL-2094, BL-2024 and BL-1784 (all medium) sat in the stage
+  queue while coder@2 rebuilt BL-2077; a Work BL-2077 note sat at the
+  head. coder's polls printed the DEFERRED line for BL-2077 and then a
+  bare NO_TASK. The coordinator read that as "the dispatcher stops
+  scanning on a deferred head", moved the BL-2077 note to coder@2 by hand
+  and reported a defect (backlog/evidence/coordinator-queue-wedge-20261009.md,
+  4e4996730a). coder's next poll was NO_TASK again, because the four
+  medium notes were never coder's to take.
+
+  ## What is wanted
+
+  - For each parcel the tier filter leaves, the seat prints one line
+    naming the parcel's file, its ticket and its cost as above this
+    seat's tier, left in the stage queue for a seat that accepts it
+    (scenario 01). The seat still ends NO_TASK when nothing else is
+    claimable, and the parcel stays where it is.
+  - The line names no seat of the stage, the same rule the DEFERRED line
+    keeps (invariant 2).
+  - Scenario 02 pins what the coordinator feared had broken: a parcel the
+    seat leaves at the head of the queue, by tier or by deferral, never
+    keeps it from a claimable parcel behind. Expected green on today's
+    code; it is the regression guard for that property.
+
+  ## How (direction, not mandate)
+
+  - A line function beside `seat-affinity-lib/deferral-line` (or in
+    `seat_difficulty_lib.bb`), printed where `deferred` is printed, for
+    the decided parcels `difficulty-allows-claim?` removes.
+  - The step handler can follow `bl1843NoteSeatRulesSteps.js`: a fixture
+    roles.tsv with the two seats and their tiers, a fixture ticket per id,
+    notes in the stage queue, and the real dispatcher run as the asking
+    seat. BL-1843's fixture names the easy seat `coder@iq3`; this one
+    makes the easy seat the bare `coder` row, whose mailbox IS the stage
+    queue, as on the live pack.
+  - A fixture never touches the live repository or a live mailbox
+    (engineering Guardrails, BL-1390; BL-1904's foreign-checkout guard).
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2095-a-seat-that-leaves-a-parcel-above-its-tier-says-so.feature`:
+     3 of 3 ok (01, 02 x2).
+  2. `node specs/pipeline/cli.js specs/features/BL-1843-a-note-about-a-ticket-is-claimed-under-the-same-seat-rules-as-its-parcels.feature`:
+     7 of 7 ok (measured on main at mint, 17 s; the live mailboxes were
+     unchanged after the run).
+  3. After the land, the first time the live easy seat polls while only
+     parcels above its tier are queued for its stage, its pane shows the
+     new line before NO_TASK; record it in the QA evidence (or record that
+     no such poll happened during the pass, step 1 being the gate).
+
+source: |
+  coordinator note 017590 (2026-10-09T13:47:25Z), verbatim: "defect:
+  sibling-rework defer blocks whole queue, not just head".
+  Evidence: backlog/evidence/coordinator-queue-wedge-20261009.md
+  (4e4996730a), the coordinator's write-up, whose root cause this ticket
+  corrects (description).
+
+notes: |
+  Minted 2026-10-09 by the specifier from coordinator note 017590.
+  The reported defect is not there. Read at mint: in
+  ready_for_next_task.bb's claim path, `claimable` is `decided` with every
+  :defer removed, then filtered by `difficulty-allows-claim?`, then by the
+  given-up set; the claim loop walks that whole list. Measured at mint:
+  seat-difficulty-lib/difficulty-claim-decision with full-forge.conf's
+  tiers (coder easy, coder@2 hard) answers :skip-ineligible for coder at
+  medium and high and :claim at low. All four queued tickets are medium.
+  The coder pane shows NO_TASK on the poll after the coordinator's move
+  too. The coordinator's hand move did no harm: coder@2, the seat that
+  worked BL-2077, is rebuilding it.
+  Not minted, the coordinator's detection proposal ("seat reads NO_TASK
+  while its stage inbox holds items", a babysitter finding): with tier
+  routing an easy seat idles beside a queue of medium work by design, so
+  that finding would fire whenever only medium work is queued. A
+  stage-level stall (no seat of the stage CAN claim a queued parcel) is
+  a different finding and is not proposed here.
+  IR-DRY at mint: the two "holds the note" steps and the two
+  "mutation_cost is" steps are one pattern each with different values,
+  kept; "is at the head of the stage queue" against "stays in the stage
+  queue" are two states, kept.
+  INVEST: Independent (no dependency), Negotiable (where the line function
+  lives, its wording), Valuable (a NO_TASK beside a full queue explains
+  itself, so nobody moves parcels by hand or reports a false defect), Estimable (one
+  function, one print, one handler on an existing fixture shape), Small
+  (two scenarios, three examples), Testable (the real dispatcher in a
+  fixture stage).
