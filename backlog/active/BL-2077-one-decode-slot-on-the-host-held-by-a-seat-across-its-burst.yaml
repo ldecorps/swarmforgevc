@@ -217,3 +217,6 @@ notes: |
   waiting" against scenario 01's "names coder as holding the slot and QA
   as waiting" are two states, kept; the Given and the When are two
   different sends, kept.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-09, by: QA, blamed: coder, class: behavior, commit: e35916f43a, evidence: backlog/evidence/BL-2077-QA-20261009.md }
