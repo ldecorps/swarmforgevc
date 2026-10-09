@@ -117,3 +117,6 @@ notes: |
   started.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-10-09, by: QA, blamed: coder, class: behavior, commit: d25988b3e2, evidence: backlog/evidence/BL-2024-QA-20261009.md }
