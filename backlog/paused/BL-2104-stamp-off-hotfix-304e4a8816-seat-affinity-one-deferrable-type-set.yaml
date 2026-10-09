@@ -35,8 +35,16 @@ approval_context: >
 invariants: []
 
 description: |
-  Status: hotfix 304e4a8816 landed the fix. The coder reviews it and never
-  re-applies it.
+  Status: hotfixes 304e4a8816 (the two test runners) and c045fbbfc3 (the
+  seat_affinity_lib.bb half) landed the fix. The coder reviews both and
+  never re-applies them.
+
+  304e4a8816 was meant to carry the lib change too, but the working-tree
+  edit of seat_affinity_lib.bb was rewritten to HEAD content at 18:38:09Z,
+  7 s before that commit, and the commit went through without it; main's
+  runners then referenced an undefined `rework-deferrable-types` until
+  c045fbbfc3 (QA note 003960). What rewrote the file is not known; the
+  specifier's notes record what was checked.
 
   The coder reported the red while verifying BL-2095 (note 000199,
   evidence b703c0cba3 on its branch:
@@ -53,7 +61,7 @@ description: |
   git_handoff is ever deferred". The unit runner asserted "a note is
   never held".
 
-  304e4a8816:
+  The two commits together:
   - `rework-deferrable-types #{"git_handoff" "note"}` in
     seat_affinity_lib.bb, read by both rework-claim-decision and
     deferral-hold?, matching rework-claim-decision's own docstring
@@ -74,8 +82,8 @@ description: |
 qa_e2e_procedure: |
   On the parcel commit, ONE run each (2026-09-17 rule).
   1. `bb swarmforge/scripts/test/bl1004_seat_affinity_property_runner.bb`:
-     ALL PROPERTIES HOLD (measured on main at mint with the change; red
-     before).
+     ALL PROPERTIES HOLD (measured on main after c045fbbfc3; red before,
+     and red with 304e4a8816 alone).
   2. `bb swarmforge/scripts/test/seat_affinity_lib_test_runner.bb`: all
      assertions passed. `bash swarmforge/scripts/test/test_chase_sweep.sh`:
      ALL PASS. `bb swarmforge/scripts/test/flow_watchdog_test_runner.bb`:
@@ -92,7 +100,12 @@ source: |
   > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
 
 notes: |
-  Minted 2026-10-09 by the specifier, the stamp-off for hotfix 304e4a8816.
+  Minted 2026-10-09 by the specifier, the stamp-off for hotfixes
+  304e4a8816 and c045fbbfc3 (amended 2026-10-09 ~19:15Z, before promotion,
+  to add the second). Checked for the 18:38:09Z rewrite and not found: no
+  stash holds the edit, no test the specifier ran resets tracked files, no
+  git hook is installed; the specifier's tests passed with the edit in
+  place minutes earlier.
   AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
   Observed, not in scope: both sweeps pass the raw `task:` header to
   deferral-hold?, and a note carries none, so a note the claim path defers

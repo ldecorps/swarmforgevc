@@ -1672,3 +1672,10 @@
   stamp_ticket: BL-2107
   human_decision: null
   decided_at: null
+- commit: c045fbbfc3
+  subject: "Hotfix: seat_affinity_lib.bb half of 304e4a8816 - rework-deferrable-types defined and read by rework-claim-decision and deferral-hold? (QA note 003960: the lib half never landed)"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2104
+  human_decision: null
+  decided_at: null
