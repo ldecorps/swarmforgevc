@@ -68,10 +68,14 @@ constraints: >
   copy. The handler lands with the feature (BL-233).
 
 out_of_scope: |
-  - The exit-143 kills at about 7 minutes (BL-1784's row) and the mid-run
-    reap of BL-1858's retry: the 15-minute budget does not explain them,
-    and what sent the signal is not recorded. If the next row in this
-    category is a kill rather than a timeout, mint from that row.
+  - The exit-143 kills (BL-1784's row, BL-2097's row of 2026-10-09, the
+    mid-run reap of BL-1858's retry): identified 2026-10-09 as
+    handoffd_supervisor's orphan reaper (`reap-job-orphan`) killing a
+    Stryker run launched with a bare `npx stryker run` that outlived the
+    Bash tool's 120 s cap. hardender.prompt already required
+    `detach_job.sh` for such runs; the specifier moved that rule next to
+    the mutation step and into the hardener's local-model card the same
+    day. Not this ticket's budget.
   - Editing the existing per-ticket configs.
 
 qa_e2e_procedure: |

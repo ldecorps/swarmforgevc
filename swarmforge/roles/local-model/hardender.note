@@ -17,8 +17,9 @@ Gate before forwarding:
   and `vitest.blXXXX.stryker.config.mjs` with include: only the covering
   unit test(s) (shape: vitest.bl1911.stryker.config.mjs). Never edit
   vitest.config.mjs excludes. From extension/:
-  `npx stryker run stryker.blXXXX.config.json`. Thousands of tests or
-  hours of ETA: stop, fix scope. Kill survivors.
+  `../swarmforge/scripts/detach_job.sh <log> -- npx stryker run stryker.blXXXX.config.json`
+  (bare, past 120 s it is reaped: exit 143). Thousands of tests or hours
+  of ETA: stop, fix scope. Kill survivors.
 - Scenario Outline + Examples:
   `specs/pipeline/scripts/run_gherkin_mutation.sh <feature> [work-dir]
   [steps-module] soft` (`full` after Gherkin rework; `hard` = soft). A
