@@ -105,3 +105,25 @@ test('front-desk feeder heartbeat: malformed JSON reads as null', () => {
   fs.writeFileSync(file, 'not-json');
   assert.equal(readFrontDeskPollHeartbeatMs(opDir), null);
 });
+
+test('front-desk feeder heartbeat: a non-number lastHeartbeatMs reads as null, not the raw value', () => {
+  const opDir = tmpOpDir();
+  const file = frontDeskPollHeartbeatPath(opDir);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ lastHeartbeatMs: 'not-a-number' }));
+  assert.equal(readFrontDeskPollHeartbeatMs(opDir), null);
+});
+
+test('front-desk feeder heartbeat: a non-finite but typeof-number lastHeartbeatMs reads as null', () => {
+  const opDir = tmpOpDir();
+  const file = frontDeskPollHeartbeatPath(opDir);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // JSON.stringify(Infinity) serializes to the string "null" (JSON has no
+  // Infinity/NaN literal), which would skip the typeof check entirely and
+  // prove nothing about Number.isFinite. Writing the raw text directly:
+  // JSON.parse("1e999") overflows to a genuine JS Infinity whose typeof is
+  // still 'number', so typeof === 'number' is true and Number.isFinite is
+  // the only thing standing between this value and being returned.
+  fs.writeFileSync(file, '{"lastHeartbeatMs":1e999}');
+  assert.equal(readFrontDeskPollHeartbeatMs(opDir), null);
+});

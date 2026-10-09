@@ -824,6 +824,286 @@ test('pollAndForward leaves the offset unchanged when the poll itself fails', as
   assert.equal(result.posted, 0);
 });
 
+// ── pollAndForward — BL-2061 hand-over drain ──────────────────────────────
+
+test('BL-2061: pollAndForward applies a drained hand-over update through the same processUpdate path, BEFORE its own getUpdates', async () => {
+  const order = [];
+  const posted = [];
+  const recorded = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'handed over' })],
+    isHandoverApplied: () => false,
+    recordHandoverApplied: (updateId) => recorded.push(updateId),
+    getUpdates: async () => {
+      order.push('getUpdates');
+      return { success: true, updates: [] };
+    },
+    postToBridge: async (subjectId, text) => {
+      order.push('postToBridge');
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: 'handed over' }]);
+  assert.deepEqual(order, ['postToBridge', 'getUpdates'], 'the hand-over must be applied BEFORE this cycle\'s own getUpdates call');
+  assert.deepEqual(recorded, [1]);
+  assert.equal(result.ok, true);
+});
+
+test('BL-2061: pollAndForward never re-applies a hand-over update isHandoverApplied already reports as applied', async () => {
+  const posted = [];
+  const recorded = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'already applied' })],
+    isHandoverApplied: (updateId) => updateId === 1,
+    recordHandoverApplied: (updateId) => recorded.push(updateId),
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(posted, [], 'an update already marked applied must not be processed a second time');
+  assert.deepEqual(recorded, [], 'recordHandoverApplied must not fire again for an already-applied id');
+});
+
+test('BL-2061: pollAndForward applies a drained hand-over update without throwing when isHandoverApplied/recordHandoverApplied are not wired', async () => {
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'handed over, no dedup adapters' })],
+    // isHandoverApplied and recordHandoverApplied deliberately omitted -
+    // both call sites use `?.()`, so this must not throw even though the
+    // adapter object has no such methods.
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: 'handed over, no dedup adapters' }]);
+  assert.equal(result.ok, true);
+});
+
+test('BL-2061: pollAndForward skips the hand-over drain entirely when no drainHandoverUpdates adapter is wired (pre-BL-2061 fixtures)', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.equal(result.ok, true);
+});
+
+// ── pollAndForward — BL-2061 D2: a failed/thrown hand-over delivery is kept ──
+
+test('BL-2061 D2: a hand-over update whose delivery FAILS is re-queued, never recorded applied, and counts toward PollResult.failed', async () => {
+  const recorded = [];
+  const requeued = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'will fail' })],
+    isHandoverApplied: () => false,
+    recordHandoverApplied: (updateId) => recorded.push(updateId),
+    requeueHandoverUpdate: (update) => requeued.push(update.update_id),
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async () => false,
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(recorded, [], 'a failed delivery must never be recorded applied - it would never be retried again');
+  assert.deepEqual(requeued, [1], 'a failed delivery must be re-queued so the next drain picks it up fresh');
+  assert.equal(result.failed, 1, 'a failed hand-over delivery must count toward PollResult.failed, same as a regular poll failure');
+});
+
+test('BL-2061 D2: a hand-over update whose delivery THROWS is re-queued (never lost) without aborting the rest of the batch', async () => {
+  const recorded = [];
+  const requeued = [];
+  const posted = [];
+  let calls = 0;
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [
+      mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'throws' }),
+      { update_id: 2, message: { message_id: 2, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, message_thread_id: 7, text: 'after the throw' } },
+    ],
+    isHandoverApplied: () => false,
+    recordHandoverApplied: (updateId) => recorded.push(updateId),
+    requeueHandoverUpdate: (update) => requeued.push(update.update_id),
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async (subjectId, text) => {
+      calls += 1;
+      if (calls === 1) {
+        throw new Error('transient write error');
+      }
+      posted.push({ subjectId, text });
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(requeued, [1], 'only the throwing entry is re-queued');
+  assert.deepEqual(recorded, [2], 'an entry after the throwing one is still attempted and applied in the same cycle');
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: 'after the throw' }]);
+  assert.equal(result.failed, 1);
+  assert.equal(result.posted, 1);
+  assert.doesNotThrow(() => result, 'pollAndForward itself must never throw because a hand-over delivery threw');
+});
+
+test('BL-2061 D2: a dropped hand-over outcome (not-principal) is recorded applied and counts toward PollResult.dropped, never re-queued', async () => {
+  const recorded = [];
+  const requeued = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [mkUpdate({ fromId: 999, topicId: 7, text: 'not the principal' })],
+    isHandoverApplied: () => false,
+    recordHandoverApplied: (updateId) => recorded.push(updateId),
+    requeueHandoverUpdate: (update) => requeued.push(update.update_id),
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a dropped update');
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(recorded, [1], 'a dropped (terminal, never-retryable) outcome must still be recorded applied');
+  assert.deepEqual(requeued, [], 'a dropped outcome must never be re-queued');
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-2061 D2: a failed hand-over delivery does not throw when requeueHandoverUpdate is not wired (pre-D2-fix fixtures)', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'will fail, no requeue adapter' })],
+    isHandoverApplied: () => false,
+    // requeueHandoverUpdate deliberately omitted - the call site uses `?.()`.
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async () => false,
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.equal(result.failed, 1);
+  assert.equal(result.ok, true);
+});
+
+// ── pollAndForward — BL-2061 D3: commitHandoverDrain ordering (QA bounce 2026-10-09) ──
+
+test('BL-2061 D3: commitHandoverDrain fires exactly once, after every drained entry has been applied or re-queued, never before', async () => {
+  const order = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [
+      mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'posted' }),
+      { update_id: 2, message: { message_id: 2, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, message_thread_id: 7, text: 'fails' } },
+    ],
+    isHandoverApplied: () => false,
+    recordHandoverApplied: (updateId) => order.push(`applied:${updateId}`),
+    requeueHandoverUpdate: (update) => order.push(`requeued:${update.update_id}`),
+    commitHandoverDrain: () => order.push('commit'),
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async (_subjectId, _text, updateId) => updateId !== 2,
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(order, ['applied:1', 'requeued:2', 'commit'], 'commitHandoverDrain must run only after every entry has been applied/re-queued');
+  assert.equal(result.ok, true);
+});
+
+test('BL-2061 D3: commitHandoverDrain is never called when drainHandoverUpdates is not wired (pre-D3 fixtures)', async () => {
+  let committed = false;
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    commitHandoverDrain: () => {
+      committed = true;
+    },
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.equal(committed, false, 'commitHandoverDrain must not fire when there was no drain to commit');
+});
+
+test('BL-2061 D3: a process killed between a durable drain and apply leaves both hand-overs for the next drain - neither is lost', async () => {
+  const {
+    appendCursorBridgeHandoverUpdate,
+    drainCursorBridgeHandoverUpdatesDurable,
+    isHandoverUpdateApplied,
+    recordAppliedHandoverId,
+  } = require('../out/tools/cursorBridgeHandoverQueue');
+  const { mkTmpDir } = require('./helpers/tmpDir');
+
+  const opDir = mkTmpDir('bl2061-kill-sim-');
+  appendCursorBridgeHandoverUpdate(opDir, {
+    update_id: 7101,
+    message: { message_id: 7101, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, message_thread_id: 7, text: 'first' },
+  });
+  appendCursorBridgeHandoverUpdate(opDir, {
+    update_id: 7102,
+    message: { message_id: 7102, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, message_thread_id: 7, text: 'second' },
+  });
+
+  // The killed process: drains durably (both entries leave the live queue
+  // file) but dies before applying anything at all - never calls the
+  // commit it got back, and never calls postToBridge. This is the exact
+  // gap D1 found: drainCursorBridgeHandoverUpdates (non-durable) would have
+  // unlinked its draining file right here, losing both entries for good.
+  const killedDrain = drainCursorBridgeHandoverUpdatesDurable(opDir);
+  assert.equal(killedDrain.updates.length, 2, 'the killed process must have drained both entries');
+
+  // A fresh front-desk process starts and polls, wired exactly as
+  // buildPollAdapters wires production: drain durably, apply/requeue
+  // through pollAndForward, commit only after.
+  let pendingCommit;
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: () => {
+      const { updates, commit } = drainCursorBridgeHandoverUpdatesDurable(opDir);
+      pendingCommit = commit;
+      return Promise.resolve(updates);
+    },
+    commitHandoverDrain: () => pendingCommit?.(),
+    isHandoverApplied: (updateId) => isHandoverUpdateApplied(opDir, updateId),
+    recordHandoverApplied: (updateId) => recordAppliedHandoverId(opDir, updateId),
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async (_subjectId, _text, updateId) => {
+      posted.push(updateId);
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(posted, [7101, 7102], 'both entries drained by the killed process must still be delivered by the next poll, never lost');
+  assert.equal(result.posted, 2);
+
+  // The fix's own cleanup: once a real drain commits, no leftover draining
+  // file or recoverable entry remains for a third poll to re-deliver.
+  const thirdDrain = drainCursorBridgeHandoverUpdatesDurable(opDir);
+  assert.deepEqual(thirdDrain.updates, [], 'nothing should be left to recover once the real drain committed');
+  thirdDrain.commit();
+});
+
 // BL-2072: the two pollAndForward phase names are the exact strings the
 // diagnostic line carries - a StringLiteral mutant that empties either
 // name (Stryker survivors on timePhaseIfWired's call sites) must fail

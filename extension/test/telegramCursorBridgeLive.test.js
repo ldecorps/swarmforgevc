@@ -516,6 +516,190 @@ test('runCursorBridgePollOnce processes authorized prompt updates', async () => 
   assert.ok(next.state.updateOffset >= 10);
 });
 
+test('BL-2061: dead-feeder fallback hands a foreign callback to the front desk AND still answers it', async () => {
+  const { drainCursorBridgeHandoverUpdates } = require('../out/tools/cursorBridgeHandoverQueue');
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 55 });
+  const session = createMockCursorBridgeAgentSession(root);
+  const telegramCalls = [];
+  const update = {
+    update_id: 9001,
+    callback_query: {
+      id: 'cbq-9001',
+      data: 'approve:BL-9001',
+      from: { id: 42 },
+      message: { message_id: 1, chat: { id: -100 }, message_thread_id: 777 },
+    },
+  };
+  await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      // Dead-feeder fallback: the bridge calls getUpdates itself (not the
+      // forward queue), which is the only mode handOverIfNotOwn is true in.
+      useInboundQueue: false,
+      post: async () => {},
+      telegramPostFn: async (url) => {
+        telegramCalls.push(url);
+        return { ok: true, status: 200, json: { ok: true, result: {} } };
+      },
+      getUpdates: async () => ({ success: true, updates: [update] }),
+    },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  const handedOver = drainCursorBridgeHandoverUpdates(opDir);
+  assert.equal(handedOver.length, 1, 'the foreign callback update was not handed over to the front desk');
+  assert.equal(handedOver[0].update_id, 9001);
+  const answerCalls = telegramCalls.filter((url) => url.includes('answerCallbackQuery'));
+  // Exactly once, not merely "at least once": a hand-over that failed to
+  // report itself as handled would fall through to the normal dispatch
+  // path too, which answers every callback query UNCONDITIONALLY on its
+  // own - a double-answer this count catches that a bare `.some()` cannot.
+  assert.equal(
+    answerCalls.length,
+    1,
+    'the bridge must answer a handed-over callback query exactly once, never zero or twice'
+  );
+});
+
+test('BL-2061: a handed-over TEXT update (no callback) is never answered as a callback query', async () => {
+  const { drainCursorBridgeHandoverUpdates } = require('../out/tools/cursorBridgeHandoverQueue');
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 55 });
+  const session = createMockCursorBridgeAgentSession(root);
+  const telegramCalls = [];
+  const update = {
+    update_id: 9002,
+    message: {
+      message_id: 2,
+      text: 'approve BL-9002',
+      from: { id: 42 },
+      chat: { id: -100 },
+      message_thread_id: 777,
+    },
+  };
+  await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      useInboundQueue: false,
+      post: async () => {},
+      telegramPostFn: async (url) => {
+        telegramCalls.push(url);
+        return { ok: true, status: 200, json: { ok: true, result: {} } };
+      },
+      getUpdates: async () => ({ success: true, updates: [update] }),
+    },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  const handedOver = drainCursorBridgeHandoverUpdates(opDir);
+  assert.equal(handedOver.length, 1, 'the foreign text update was not handed over to the front desk');
+  assert.equal(handedOver[0].update_id, 9002);
+  assert.equal(
+    telegramCalls.some((url) => url.includes('answerCallbackQuery')),
+    false,
+    'a handed-over text message has no callback query to answer'
+  );
+});
+
+test('BL-2061: a poll_answer for a FOREIGN poll is handed over even when the bridge has its OWN pending choice polls', async () => {
+  // isBridgeOwnPollAnswer's pendingChoicePolls check must match on poll_id,
+  // never on "the list is non-empty" - a non-matching entry present (own
+  // poll A live) alongside a foreign poll_answer (poll B) must still hand
+  // poll B over, not swallow it as the bridge's own.
+  const { drainCursorBridgeHandoverUpdates } = require('../out/tools/cursorBridgeHandoverQueue');
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, {
+    updateOffset: 0,
+    cursorTopicId: 55,
+    pendingChoicePolls: [
+      { pollId: 'poll-own-A', question: 'Own?', options: ['a', 'b'], createdAtMs: Date.now(), originTopicId: 55 },
+    ],
+  });
+  const session = createMockCursorBridgeAgentSession(root);
+  const update = {
+    update_id: 9003,
+    poll_answer: { poll_id: 'poll-foreign-B', option_ids: [0], user: { id: 42 } },
+  };
+  await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      useInboundQueue: false,
+      post: async () => {},
+      telegramPostFn: async () => ({ ok: true, status: 200, json: { ok: true, result: {} } }),
+      getUpdates: async () => ({ success: true, updates: [update] }),
+    },
+    { updateOffset: 0, cursorTopicId: 55, pendingChoicePolls: [{ pollId: 'poll-own-A', question: 'Own?', options: ['a', 'b'], createdAtMs: Date.now(), originTopicId: 55 }] },
+    false,
+    0
+  );
+  const handedOver = drainCursorBridgeHandoverUpdates(opDir);
+  assert.equal(handedOver.length, 1, 'the foreign poll_answer was not handed over despite a non-matching own poll being pending');
+  assert.equal(handedOver[0].update_id, 9003);
+  const persisted = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(
+    (persisted.pendingChoicePolls ?? []).length,
+    1,
+    'the bridge\'s own pending poll must be untouched by a foreign poll_answer it never owned'
+  );
+});
+
+test('BL-2061: in forward-queue mode (useInboundQueue: true), an unparseable update is never handed over - it already arrived via the queue', async () => {
+  // handOverIfNotOwn is !useInboundQueue - true only in the dead-feeder
+  // fallback (the bridge's OWN getUpdates call). In queue mode updates come
+  // from drainCursorBridgeInboundUpdates (a FILE the front desk itself
+  // wrote), never from the getUpdates adapter - so an unparseable update
+  // here must be silently skipped, never re-appended to the hand-over queue
+  // (that would be a route BACK to the front desk for something it handed
+  // TO the bridge in the first place).
+  const { appendCursorBridgeInboundUpdate } = require('../out/tools/cursorBridgeInboundQueue');
+  const { drainCursorBridgeHandoverUpdates } = require('../out/tools/cursorBridgeHandoverQueue');
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const deps = mkPollDeps(root, { deps: { useInboundQueue: true } });
+  appendCursorBridgeInboundUpdate(opDir, { update_id: 9004 });
+  await runCursorBridgePollOnce(
+    { ...deps, post: async () => {} },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  const handedOver = drainCursorBridgeHandoverUpdates(opDir);
+  assert.equal(handedOver.length, 0, 'forward-queue mode must never hand an update back to the front desk');
+});
+
 test('runCursorBridgePollOnce in inbound-queue mode drains forwarded Host updates without getUpdates', async () => {
   const { appendCursorBridgeInboundUpdate } = require('../out/tools/cursorBridgeInboundQueue');
   const root = mkRoot();

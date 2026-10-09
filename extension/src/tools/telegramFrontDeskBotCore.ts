@@ -1193,6 +1193,56 @@ export interface PollAdapters {
    * (the caption still routes, it just never gains a saved-path line).
    */
   persistRoutedPhoto?: (update: TelegramUpdate) => Promise<PhotoPersistOutcome>;
+  /**
+   * BL-2061: the reverse of forwardCursorBridgeUpdate above - updates the
+   * bridge read itself (its BL-1253 dead-feeder fallback) while they are
+   * not its own, appended to a hand-over queue the bridge drains nothing
+   * from and the front desk alone reads. Drained at the TOP of every poll
+   * cycle, before this cycle's own getUpdates call, so a hand-over is
+   * applied no later than a real poll would have applied it. Optional so
+   * every pre-BL-2061 fixture keeps working unchanged (no hand-over queue
+   * wired means nothing is ever drained from one).
+   */
+  drainHandoverUpdates?: () => Promise<TelegramUpdate[]>;
+  /**
+   * BL-2061 invariant 2: a hand-over queue entry is drained (and thus gone
+   * from the queue) exactly once, but the SAME update_id can legitimately
+   * reach drainHandoverUpdates twice - the bridge appending it again after
+   * a crash before persisting its own advanced offset (Telegram
+   * redelivers), or applyHandoverUpdates itself re-queuing a drained entry
+   * whose delivery failed or threw (D2, requeueHandoverUpdate below) -
+   * these two must be checked/recorded around the SAME processUpdate call
+   * pollAndForward already makes for every other update, never a second
+   * dispatch path.
+   */
+  isHandoverApplied?: (updateId: number) => boolean;
+  recordHandoverApplied?: (updateId: number) => void;
+  /**
+   * BL-2061 D2 (QA bounce 2026-10-08): a drained hand-over entry whose
+   * delivery FAILED (processUpdate returned 'failed') or THREW must be kept
+   * for the next cycle - the handover queue has no offset to hold back the
+   * way the poll path does (offsetAfterDelivery), so applyHandoverUpdates
+   * re-appends it here instead. Never called for a 'posted' or 'dropped'
+   * outcome (recordHandoverApplied covers those). Optional so every
+   * pre-D2-fix fixture keeps working unchanged (no requeue wired means a
+   * failed hand-over is simply not retried - the exact pre-fix behavior).
+   */
+  requeueHandoverUpdate?: (update: TelegramUpdate) => void;
+  /**
+   * BL-2061 D3 (QA bounce 2026-10-09, "kill mid-apply loses drained
+   * hand-overs"): called once, after every entry drainHandoverUpdates
+   * returned has been applied (recordHandoverApplied) or re-queued
+   * (requeueHandoverUpdate) - never before, and never when
+   * drainHandoverUpdates itself was not wired. A durable-drain-backed
+   * production wiring stashes its commit() behind this and releases its
+   * draining file(s) only here; a process killed before this point leaves
+   * them on disk for the next drain to recover instead of losing them.
+   * Optional so every pre-D3 fixture (a plain array, no durability) keeps
+   * working unchanged - applying without ever committing is exactly the
+   * old, lossy-on-kill behavior, which is fine for a fixture that is not
+   * testing kill-safety.
+   */
+  commitHandoverDrain?: () => void;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -3137,6 +3187,70 @@ export interface PollResult {
   error?: string;
 }
 
+// BL-2061 D2 (QA bounce 2026-10-08): applyHandoverUpdates's own posted/
+// dropped/failed, folded into PollResult by its caller exactly like the
+// regular getUpdates batch's counts - a permanently-failing hand-over must
+// drive the same stuckAttempts escalation (BL-369) a permanently-failing
+// regular delivery does.
+interface HandoverApplyCounts {
+  posted: number;
+  dropped: number;
+  failed: number;
+}
+
+// BL-2061 (invariant 1, 2): apply hand-over updates BEFORE this cycle's own
+// getUpdates call, through the same processUpdate every real poll update
+// goes through - never a second decision path. Deduped on update_id so a
+// hand-over re-appended after a crash (invariant 2) is applied at most once.
+// Extracted out of pollAndForward so its own routing/counting logic keeps
+// its pre-BL-2061 complexity (differential CRAP gate).
+//
+// D2 (QA bounce 2026-10-08): nothing here holds an offset back to force
+// Telegram to redeliver on failure the way the poll path does, so a
+// 'failed' outcome (or a throw - postToBridge is a live network call) must
+// be re-queued explicitly, and recordHandoverApplied must never fire for
+// one: that is what let D2's failed/thrown deliveries vanish instead of
+// retrying.
+//
+// D3 (QA bounce 2026-10-09): drainHandoverUpdates may be backed by a
+// durable drain whose draining file(s) are still on disk when this
+// function returns - commitHandoverDrain releases them, called exactly
+// once, only after every entry below has itself been applied or
+// re-queued. Calling it any earlier (or a drain that never calls it, the
+// pre-D3 shape) is what let a kill between drain and apply lose every
+// entry still sitting in this process's memory and nowhere else.
+async function applyHandoverUpdates(principalUserId: string, adapters: PollAdapters): Promise<HandoverApplyCounts> {
+  const counts: HandoverApplyCounts = { posted: 0, dropped: 0, failed: 0 };
+  if (!adapters.drainHandoverUpdates) {
+    return counts;
+  }
+  const handedOver = await adapters.drainHandoverUpdates();
+  for (const update of handedOver) {
+    if (adapters.isHandoverApplied?.(update.update_id)) {
+      continue;
+    }
+    let outcome: UpdateDeliveryOutcome;
+    try {
+      outcome = await processUpdate(update, principalUserId, adapters);
+    } catch {
+      outcome = 'failed';
+    }
+    if (outcome === 'failed') {
+      counts.failed += 1;
+      adapters.requeueHandoverUpdate?.(update);
+      continue;
+    }
+    if (outcome === 'posted') {
+      counts.posted += 1;
+    } else {
+      counts.dropped += 1;
+    }
+    adapters.recordHandoverApplied?.(update.update_id);
+  }
+  adapters.commitHandoverDrain?.();
+  return counts;
+}
+
 // BL-2072: the front-desk supervisor kills the bot on a stale poll
 // heartbeat (90s) with no sign of WHICH phase held it - a slow startup
 // step, a slow getUpdates long poll and a slow update batch all look
@@ -3185,13 +3299,21 @@ function timePhaseIfWired<T>(adapters: PollAdapters, phaseName: string, fn: () =
 // just sequencing the adapters and counting outcomes, never a second
 // decision path.
 export async function pollAndForward(offset: number, principalUserId: string, adapters: PollAdapters): Promise<PollResult> {
+  const handoverCounts = await applyHandoverUpdates(principalUserId, adapters);
   const result = await timePhaseIfWired(adapters, 'getUpdates wait', () => adapters.getUpdates(offset));
   if (!result.success) {
-    return { nextOffset: offset, posted: 0, dropped: 0, failed: 0, ok: false, error: result.error };
+    return {
+      nextOffset: offset,
+      posted: handoverCounts.posted,
+      dropped: handoverCounts.dropped,
+      failed: handoverCounts.failed,
+      ok: false,
+      error: result.error,
+    };
   }
-  let posted = 0;
-  let dropped = 0;
-  let failed = 0;
+  let posted = handoverCounts.posted;
+  let dropped = handoverCounts.dropped;
+  let failed = handoverCounts.failed;
   const outcomes: UpdateDeliveryOutcome[] = [];
   await timePhaseIfWired(adapters, 'handling of one update batch', async () => {
     for (const update of result.updates) {
