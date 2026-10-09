@@ -248,12 +248,16 @@ function registerSteps(registry) {
       if (outcome === 'stays in the stage queue') {
         assert.equal(stageQueue(ctx).length, 1, `the note must still sit in the stage queue:\n${out}`);
         assert.deepEqual(inProcess(ctx, ctx.asking), [], `the asking seat must claim nothing:\n${out}`);
-        // The property's out-loud half: a declined claim says so.
-        // An affinity deferral says so out loud; a tier refusal prints only
-        // NO_TASK (BL-1001), so the line is asserted only when a sibling
-        // seat worked the ticket.
+        // The property's out-loud half: a declined claim says so. An
+        // affinity deferral prints a DEFERRED line; since BL-2095 a tier
+        // refusal (BL-1001) prints a TIER_SKIP line too - only one of the
+        // two ever applies to a given note (deferral removes a candidate
+        // before the tier filter ever sees it), so exactly one assertion
+        // below fires per scenario.
         if (ctx.workedBy && ctx.workedBy !== ctx.asking) {
           assert.match(out, /DEFERRED sibling-rework/, `the deferral must be said out loud:\n${out}`);
+        } else {
+          assert.match(out, /TIER_SKIP/, `the tier skip must be said out loud:\n${out}`);
         }
         // Invariant 2 at the wiring level: the diagnostic names no seat.
         assert.ok(!out.includes('coder@iq3'), `no seat id may appear in the claim output:\n${out}`);
