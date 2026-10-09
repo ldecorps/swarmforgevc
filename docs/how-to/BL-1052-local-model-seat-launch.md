@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-06 (BL-1992: a third missed write releases the parcel to another coder seat)
+Last Updated: 2026-10-09 (BL-2090: ready_for_next.sh's STOP reprint no longer resets the repeat guard's window — it is told the next step instead)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -431,17 +431,32 @@ in it:
   last edit, `write_file`, compaction, or state-changing shell command
   (`git commit`/`merge`/`checkout`/`switch`/`restore`/`reset`/`rebase`/
   `cherry-pick`/`revert`/`stash`, or `swarm_handoff.sh`/
-  `done_with_current.sh`/`ready_for_next.sh`), its `additionalContext`
-  carries a `REPEAT:` note with the count and the latest compaction
-  summary's `<next_step>`. The call still runs and its real result is
-  still returned — the guard never refuses a call. An edit, a write, or
-  a state-changing command is never warned about. The first version
-  (hotfix 66bd85171f) refused the call outright as a `PreToolUse` deny;
-  the iq3 coder re-sent the identical call every five seconds, which
-  tripped qwen's own always-on consecutive-identical-call check
-  (`skipLoopDetection` does not turn that one off) and halted the
-  one-shot seat's turn. Hotfix d19171aeb6 made it this warning instead:
-  a result the model already has gives it nothing to retry.
+  `done_with_current.sh` — `ready_for_next.sh` is deliberately **not**
+  one of these, see below), its `additionalContext` carries a `REPEAT:`
+  note with the count and the latest compaction summary's `<next_step>`.
+  The call still runs and its real result is still returned — the guard
+  never refuses a call. An edit, a write, or a state-changing command is
+  never warned about. The first version (hotfix 66bd85171f) refused the
+  call outright as a `PreToolUse` deny; the iq3 coder re-sent the
+  identical call every five seconds, which tripped qwen's own always-on
+  consecutive-identical-call check (`skipLoopDetection` does not turn
+  that one off) and halted the one-shot seat's turn. Hotfix d19171aeb6
+  made it this warning instead: a result the model already has gives it
+  nothing to retry.
+- **BL-2090's STOP-reprint hint** — `ready_for_next.sh` is excluded from
+  the reset list above on purpose: when a seat already holds `in_process`
+  work, the script only reprints the same STOP banner and TASK text and
+  changes nothing, so counting it as a window reset let the iq3 QA seat
+  re-run it forever after a STOP banner without ever crossing the
+  `REPEAT:` threshold (live 2026-09-30 compliance battery:
+  `coder-stop_banner_compliance`). Instead, the same hook's
+  `ready-for-next-stop-hint` matches a `ready_for_next.sh` call whose own
+  tool response contains `Do NOT run ready_for_next.sh again` and adds an
+  explicit next step: "Next tool: Read
+  `.swarmforge/handoffs/inbox/in_process/` (or the TASK path just
+  printed) and execute that parcel." `swarmforge/roles/local-model/QA.note`
+  carries the same instruction under a "One parcel at a time" section —
+  `ready_for_next.sh` is only for when `in_process` is empty.
 
 ### A seat that skips its named write is restarted on it (BL-1991)
 
