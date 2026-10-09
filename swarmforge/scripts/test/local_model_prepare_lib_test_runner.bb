@@ -63,21 +63,25 @@
                    [{:fixtureId "01-one-line-fix" :outcome "no model commit" :wallSeconds 200}])))
 
 ;; ── prepare! dry-run writes artifacts ───────────────────────────────────
-(let [tmpdir (str (fs/create-temp-dir {:prefix "prepare-lib-test-"}))
-      profile (local-model-prepare-lib/prepare!
-               {:base "hf.co/example/Model:Q4_K_M"
-                :alias "prepared-test-alias"
-                :dry-run? true
-                :state-dir tmpdir
-                :root (local-model-prepare-lib/repo-root)})]
-  (assert= "dry-run alias" "prepared-test-alias" (:alias profile))
-  (assert-true "dry-run writes Modelfile" (fs/exists? (:modelfilePath profile)))
-  (assert-true "dry-run writes aider settings" (fs/exists? (:aiderSettingsPath profile)))
-  (assert-true "dry-run writes profile json" (fs/exists? (:profilePath profile)))
-  (assert-true "dry-run Modelfile has FROM" (str/includes? (slurp (:modelfilePath profile)) "FROM hf.co/example/Model:Q4_K_M"))
-  (assert-true "dry-run aider settings think false"
-               (str/includes? (slurp (:aiderSettingsPath profile)) "think: false"))
-  (fs/delete-tree tmpdir))
+;; Hotfix 2026-10-09 (QA note 003965, tempDirTrapGuard): the temp root is
+;; removed in a finally, so a throwing prepare! or assertion never leaks it.
+(let [tmpdir (str (fs/create-temp-dir {:prefix "prepare-lib-test-"}))]
+  (try
+    (let [profile (local-model-prepare-lib/prepare!
+                   {:base "hf.co/example/Model:Q4_K_M"
+                    :alias "prepared-test-alias"
+                    :dry-run? true
+                    :state-dir tmpdir
+                    :root (local-model-prepare-lib/repo-root)})]
+      (assert= "dry-run alias" "prepared-test-alias" (:alias profile))
+      (assert-true "dry-run writes Modelfile" (fs/exists? (:modelfilePath profile)))
+      (assert-true "dry-run writes aider settings" (fs/exists? (:aiderSettingsPath profile)))
+      (assert-true "dry-run writes profile json" (fs/exists? (:profilePath profile)))
+      (assert-true "dry-run Modelfile has FROM" (str/includes? (slurp (:modelfilePath profile)) "FROM hf.co/example/Model:Q4_K_M"))
+      (assert-true "dry-run aider settings think false"
+                   (str/includes? (slurp (:aiderSettingsPath profile)) "think: false")))
+    (finally
+      (fs/delete-tree tmpdir))))
 
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
