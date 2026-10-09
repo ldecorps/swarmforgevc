@@ -11,7 +11,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { appendJsonlUpdate, drainJsonlUpdates } from './jsonlUpdateQueueLib';
+import { appendJsonlUpdate, drainJsonlUpdates, drainJsonlUpdatesDurable, type DurableDrain } from './jsonlUpdateQueueLib';
 
 export function cursorBridgeHandoverQueuePath(opDir: string): string {
   return path.join(opDir, 'cursor-bridge-handover.jsonl');
@@ -35,6 +35,19 @@ export function appendCursorBridgeHandoverUpdate(opDir: string, update: { update
  */
 export function drainCursorBridgeHandoverUpdates(opDir: string): Array<{ update_id: number } & Record<string, unknown>> {
   return drainJsonlUpdates(cursorBridgeHandoverQueuePath(opDir));
+}
+
+/**
+ * BL-2061 D3 (QA bounce 2026-10-09, "kill mid-apply loses drained
+ * hand-overs"): the front desk's own applyHandoverUpdates is the ONLY
+ * production caller of this - drainCursorBridgeHandoverUpdates above
+ * stays wired for tests that do not need kill-safety. See
+ * drainJsonlUpdatesDurable's own doc for why an immediate, unconditional
+ * unlink (what the non-durable drain above does) loses every entry still
+ * sitting in a killed process's memory, and how recovery makes that safe.
+ */
+export function drainCursorBridgeHandoverUpdatesDurable(opDir: string): DurableDrain {
+  return drainJsonlUpdatesDurable(cursorBridgeHandoverQueuePath(opDir));
 }
 
 function appliedHandoverIdsPath(opDir: string): string {

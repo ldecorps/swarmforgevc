@@ -1003,6 +1003,107 @@ test('BL-2061 D2: a failed hand-over delivery does not throw when requeueHandove
   assert.equal(result.ok, true);
 });
 
+// ── pollAndForward — BL-2061 D3: commitHandoverDrain ordering (QA bounce 2026-10-09) ──
+
+test('BL-2061 D3: commitHandoverDrain fires exactly once, after every drained entry has been applied or re-queued, never before', async () => {
+  const order = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: async () => [
+      mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'posted' }),
+      { update_id: 2, message: { message_id: 2, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, message_thread_id: 7, text: 'fails' } },
+    ],
+    isHandoverApplied: () => false,
+    recordHandoverApplied: (updateId) => order.push(`applied:${updateId}`),
+    requeueHandoverUpdate: (update) => order.push(`requeued:${update.update_id}`),
+    commitHandoverDrain: () => order.push('commit'),
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async (_subjectId, _text, updateId) => updateId !== 2,
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(order, ['applied:1', 'requeued:2', 'commit'], 'commitHandoverDrain must run only after every entry has been applied/re-queued');
+  assert.equal(result.ok, true);
+});
+
+test('BL-2061 D3: commitHandoverDrain is never called when drainHandoverUpdates is not wired (pre-D3 fixtures)', async () => {
+  let committed = false;
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    commitHandoverDrain: () => {
+      committed = true;
+    },
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.equal(committed, false, 'commitHandoverDrain must not fire when there was no drain to commit');
+});
+
+test('BL-2061 D3: a process killed between a durable drain and apply leaves both hand-overs for the next drain - neither is lost', async () => {
+  const {
+    appendCursorBridgeHandoverUpdate,
+    drainCursorBridgeHandoverUpdatesDurable,
+    isHandoverUpdateApplied,
+    recordAppliedHandoverId,
+  } = require('../out/tools/cursorBridgeHandoverQueue');
+  const { mkTmpDir } = require('./helpers/tmpDir');
+
+  const opDir = mkTmpDir('bl2061-kill-sim-');
+  appendCursorBridgeHandoverUpdate(opDir, {
+    update_id: 7101,
+    message: { message_id: 7101, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, message_thread_id: 7, text: 'first' },
+  });
+  appendCursorBridgeHandoverUpdate(opDir, {
+    update_id: 7102,
+    message: { message_id: 7102, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, message_thread_id: 7, text: 'second' },
+  });
+
+  // The killed process: drains durably (both entries leave the live queue
+  // file) but dies before applying anything at all - never calls the
+  // commit it got back, and never calls postToBridge. This is the exact
+  // gap D1 found: drainCursorBridgeHandoverUpdates (non-durable) would have
+  // unlinked its draining file right here, losing both entries for good.
+  const killedDrain = drainCursorBridgeHandoverUpdatesDurable(opDir);
+  assert.equal(killedDrain.updates.length, 2, 'the killed process must have drained both entries');
+
+  // A fresh front-desk process starts and polls, wired exactly as
+  // buildPollAdapters wires production: drain durably, apply/requeue
+  // through pollAndForward, commit only after.
+  let pendingCommit;
+  const posted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    drainHandoverUpdates: () => {
+      const { updates, commit } = drainCursorBridgeHandoverUpdatesDurable(opDir);
+      pendingCommit = commit;
+      return Promise.resolve(updates);
+    },
+    commitHandoverDrain: () => pendingCommit?.(),
+    isHandoverApplied: (updateId) => isHandoverUpdateApplied(opDir, updateId),
+    recordHandoverApplied: (updateId) => recordAppliedHandoverId(opDir, updateId),
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async (_subjectId, _text, updateId) => {
+      posted.push(updateId);
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.deepEqual(posted, [7101, 7102], 'both entries drained by the killed process must still be delivered by the next poll, never lost');
+  assert.equal(result.posted, 2);
+
+  // The fix's own cleanup: once a real drain commits, no leftover draining
+  // file or recoverable entry remains for a third poll to re-deliver.
+  const thirdDrain = drainCursorBridgeHandoverUpdatesDurable(opDir);
+  assert.deepEqual(thirdDrain.updates, [], 'nothing should be left to recover once the real drain committed');
+  thirdDrain.commit();
+});
+
 // ── pollAndForward wiring — BL-425 slice 1 role steering ─────────────────
 
 function stubRedirectToRole() {

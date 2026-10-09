@@ -1221,6 +1221,21 @@ export interface PollAdapters {
    * failed hand-over is simply not retried - the exact pre-fix behavior).
    */
   requeueHandoverUpdate?: (update: TelegramUpdate) => void;
+  /**
+   * BL-2061 D3 (QA bounce 2026-10-09, "kill mid-apply loses drained
+   * hand-overs"): called once, after every entry drainHandoverUpdates
+   * returned has been applied (recordHandoverApplied) or re-queued
+   * (requeueHandoverUpdate) - never before, and never when
+   * drainHandoverUpdates itself was not wired. A durable-drain-backed
+   * production wiring stashes its commit() behind this and releases its
+   * draining file(s) only here; a process killed before this point leaves
+   * them on disk for the next drain to recover instead of losing them.
+   * Optional so every pre-D3 fixture (a plain array, no durability) keeps
+   * working unchanged - applying without ever committing is exactly the
+   * old, lossy-on-kill behavior, which is fine for a fixture that is not
+   * testing kill-safety.
+   */
+  commitHandoverDrain?: () => void;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -3183,14 +3198,20 @@ interface HandoverApplyCounts {
 // Extracted out of pollAndForward so its own routing/counting logic keeps
 // its pre-BL-2061 complexity (differential CRAP gate).
 //
-// D2 (QA bounce): a drained entry is gone from the queue the instant
-// drainHandoverUpdates returns (same atomic-rename drain the front-desk ->
-// bridge queue uses, unconditionally consuming) - unlike the poll path,
-// nothing here holds an offset back to force Telegram to redeliver on
-// failure. So a 'failed' outcome (or a throw - postToBridge is a live
-// network call) must be re-queued explicitly, and recordHandoverApplied
-// must never fire for one: that is what let D2's failed/thrown deliveries
-// vanish instead of retrying.
+// D2 (QA bounce 2026-10-08): nothing here holds an offset back to force
+// Telegram to redeliver on failure the way the poll path does, so a
+// 'failed' outcome (or a throw - postToBridge is a live network call) must
+// be re-queued explicitly, and recordHandoverApplied must never fire for
+// one: that is what let D2's failed/thrown deliveries vanish instead of
+// retrying.
+//
+// D3 (QA bounce 2026-10-09): drainHandoverUpdates may be backed by a
+// durable drain whose draining file(s) are still on disk when this
+// function returns - commitHandoverDrain releases them, called exactly
+// once, only after every entry below has itself been applied or
+// re-queued. Calling it any earlier (or a drain that never calls it, the
+// pre-D3 shape) is what let a kill between drain and apply lose every
+// entry still sitting in this process's memory and nowhere else.
 async function applyHandoverUpdates(principalUserId: string, adapters: PollAdapters): Promise<HandoverApplyCounts> {
   const counts: HandoverApplyCounts = { posted: 0, dropped: 0, failed: 0 };
   if (!adapters.drainHandoverUpdates) {
@@ -3219,6 +3240,7 @@ async function applyHandoverUpdates(principalUserId: string, adapters: PollAdapt
     }
     adapters.recordHandoverApplied?.(update.update_id);
   }
+  adapters.commitHandoverDrain?.();
   return counts;
 }
 

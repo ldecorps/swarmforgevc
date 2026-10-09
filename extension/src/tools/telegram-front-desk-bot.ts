@@ -146,7 +146,7 @@ import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWith
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
 import {
   appendCursorBridgeHandoverUpdate,
-  drainCursorBridgeHandoverUpdates,
+  drainCursorBridgeHandoverUpdatesDurable,
   isHandoverUpdateApplied,
   recordAppliedHandoverId,
 } from './cursorBridgeHandoverQueue';
@@ -2658,6 +2658,13 @@ function buildPollAdapters(
     ''
   ).toLowerCase();
   const cursorBridgeRoutingEnabled = letsTalkProvider === '' || letsTalkProvider === 'cursor';
+  // BL-2061 D3: the durable drain's commit() must run AFTER
+  // applyHandoverUpdates has applied/requeued everything drainHandoverUpdates
+  // below returned - there is no earlier point in this single adapter
+  // object to hand it over, so it is stashed here for commitHandoverDrain
+  // to call. One poll cycle at a time (pollAndForward is always awaited to
+  // completion before the next), so a single slot never races itself.
+  let pendingHandoverCommit: (() => void) | undefined;
   return {
     chatId,
     // BL-595: human-loop reliability ledger root (async append-only).
@@ -2702,10 +2709,19 @@ function buildPollAdapters(
     // bridge read itself while not its own, drained at the top of every
     // poll cycle and applied through the SAME processUpdate every real
     // poll update goes through.
-    drainHandoverUpdates: () =>
-      Promise.resolve(
-        drainCursorBridgeHandoverUpdates(path.join(targetPath, '.swarmforge', 'operator')) as unknown as TelegramUpdate[]
-      ),
+    drainHandoverUpdates: () => {
+      const { updates, commit } = drainCursorBridgeHandoverUpdatesDurable(path.join(targetPath, '.swarmforge', 'operator'));
+      pendingHandoverCommit = commit;
+      return Promise.resolve(updates as unknown as TelegramUpdate[]);
+    },
+    // BL-2061 D3: released only once every entry drainHandoverUpdates just
+    // returned has been applied or re-queued (applyHandoverUpdates's own
+    // call site) - never earlier, or a kill in between loses them exactly
+    // as before this fix.
+    commitHandoverDrain: () => {
+      pendingHandoverCommit?.();
+      pendingHandoverCommit = undefined;
+    },
     isHandoverApplied: (updateId) => isHandoverUpdateApplied(path.join(targetPath, '.swarmforge', 'operator'), updateId),
     recordHandoverApplied: (updateId) => recordAppliedHandoverId(path.join(targetPath, '.swarmforge', 'operator'), updateId),
     // BL-2061 D2: a failed or thrown hand-over delivery is re-queued here
