@@ -1563,7 +1563,7 @@
 - commit: 9b89a6e5db
   subject: "Hotfix the BL-2064 read-budget invariant: a compaction must never reset the local-seat read count"
   detected_at: 2026-10-07
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-2074
   human_decision: null
   decided_at: null
@@ -1619,7 +1619,7 @@
 - commit: aa7d603d66
   subject: "Hotfix: stop iq3 QA from looping ready_for_next after a STOP banner."
   detected_at: 2026-10-09
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-2090
   human_decision: null
   decided_at: null
