@@ -319,3 +319,8 @@
   role: documenter
   description: "BL-433 feature showed 1-2 failures (operator-restart-race setup: operator_runtime did not publish its first status within its 10s wait_for budget) while run back-to-back with other heavy feature runs; re-ran in isolation and got 5/5 ok, confirming transient resource contention from concurrent background test runs rather than a BL-2082 regression. No tool distinguishes a load-induced flake from a real regression on this suite."
   detected_at: 2026-10-09
+- category: unlaned-property-runner-run-by-hand
+  ticket: BL-2095
+  role: QA
+  description: "qa-gather's property_runners row reached nothing (BL-2094's gap); ran the parcel's new bl2095_tier_skip_said_out_loud_property_runner.bb, seat_difficulty_lib_test_runner.bb, ready_for_next_claim_task_name_runner.bb and the adjacent bl1004/seat_affinity runners by hand"
+  detected_at: 2026-10-09
