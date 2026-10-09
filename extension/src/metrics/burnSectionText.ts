@@ -37,7 +37,8 @@ export function formatBurnSectionText(result: BurnSectionResult, anchorScope: st
         `Projected rate: ~${formatRate(result.ratePctPerDay)}, from the last recorded usage anchor.`,
         'Choose one: the human pauses usage, or the swarm throttles - via a control pause ' +
           '(.swarmforge/operator/control-pause.json), the nightly cooldown window, a lowered ' +
-          'active_backlog_max_depth, or the standing-red register recommending a cap of 1 (BL-1429).',
+          'active_backlog_max_depth, the standing-red register recommending a cap of 1 (BL-1429), ' +
+          'or an unowned verification-debt category doing the same (BL-1784).',
       ].join('\n');
       return { kind: 'warn', leadingText, appendedText: null, subjectMarker: true };
     }
