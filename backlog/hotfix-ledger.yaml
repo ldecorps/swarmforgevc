@@ -1644,3 +1644,10 @@
   stamp_ticket: BL-2098
   human_decision: null
   decided_at: null
+- commit: be2a0f917a
+  subject: "Hotfix: local-model QA card back under 8192 characters (prompt_engine_test_runner red since aa7d603d66)"
+  detected_at: 2026-10-09
+  state: pending
+  stamp_ticket: BL-2100
+  human_decision: null
+  decided_at: null
