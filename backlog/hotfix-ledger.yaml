@@ -1612,7 +1612,7 @@
 - commit: d47df679b8
   subject: "Hotfix: ready_for_next must not tell a local seat to read a missing phase record on fresh arrange"
   detected_at: 2026-10-08
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-2089
   human_decision: null
   decided_at: null
