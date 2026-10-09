@@ -712,12 +712,24 @@ export interface PollAdapters {
   // wires a fake clock so a scenario can assert a phase duration without a
   // real sleep.
   now?: () => number;
+  // BL-2097: the deadline timer getUpdates is abandoned against, paired
+  // the way now/logDiagnostic above are (both optional together) - unlike
+  // that pair, absent here still gets a real deadline: pollAndForward
+  // defaults each to the real setTimeout/clearTimeout, since every
+  // production poll must have SOME deadline. A fixture wires both to
+  // simulate one firing with no real wait.
+  scheduleGetUpdatesDeadline?: (onDeadline: () => void, ms: number) => unknown;
+  clearGetUpdatesDeadline?: (handle: unknown) => void;
   // BL-582: why a record changed nothing, for the toast and the diagnostic
   // (recordApprovalReply itself returns a bare boolean and cannot say).
   // Absent, or returning undefined, degrades to the 'unexplained' marker -
   // never back to silence.
   explainApprovalRecordNoOp?: (backlogId: string) => Promise<string | undefined>;
-  getUpdates: (offset: number) => Promise<GetUpdatesResult>;
+  // BL-2097: signal is the deadline's own abort signal (composed with
+  // BL-1036's per-cycle shutdown-abort controller at the live call site,
+  // never replacing it) - optional so every pre-BL-2097 fixture that
+  // ignores its second argument is unaffected.
+  getUpdates: (offset: number, signal?: AbortSignal) => Promise<GetUpdatesResult>;
   // BL-369: updateId (the Telegram update's own update_id) rides every call
   // so the bridge can dedupe a redelivered message by its natural
   // idempotency key (scenario 03) - mirrors BL-320's id-based reply-outbox
@@ -3298,9 +3310,70 @@ function timePhaseIfWired<T>(adapters: PollAdapters, phaseName: string, fn: () =
 // through decideUpdateAction (pure) above - this function's own job is
 // just sequencing the adapters and counting outcomes, never a second
 // decision path.
+// BL-2097: a getUpdates call Telegram never answers is held open until
+// something kills the bot (2026-10-09: 84 waits of 27-93s, several past
+// the supervisor's own 90s heartbeat threshold). 40s sits above the long
+// poll's own 25s plus latency and above FRONT_DESK_SLOW_PHASE_THRESHOLD_MS
+// (27000, so a healthy slow-but-answered poll is never abandoned), and
+// leaves the cycle's remaining work (the abort, this diagnostic line, the
+// heartbeat write) comfortable room inside the supervisor's 90s.
+export const DEFAULT_GET_UPDATES_DEADLINE_MS = 40_000;
+
+type DeadlineHandle = unknown;
+
+// Extracted from getUpdatesWithDeadline below (hardener extraction, BL-2097
+// CRAP gate) - "which schedule/clear functions does this call actually
+// use" is one self-contained question (the two `??` defaults), no
+// different in meaning, just out of the caller's count.
+function resolveDeadlineTimer(adapters: PollAdapters): {
+  schedule: (fn: () => void, ms: number) => DeadlineHandle;
+  clear: (handle: DeadlineHandle) => void;
+} {
+  return {
+    schedule: adapters.scheduleGetUpdatesDeadline ?? ((fn, ms) => setTimeout(fn, ms)),
+    clear: adapters.clearGetUpdatesDeadline ?? ((handle) => clearTimeout(handle as NodeJS.Timeout)),
+  };
+}
+
+// Extracted from getUpdatesWithDeadline below (hardener extraction, BL-2097
+// CRAP gate) - "is this diagnosable, and if so, log it" is one
+// self-contained question, no different in meaning, just out of the
+// caller's count. A no-op whenever now/logDiagnostic are not BOTH wired
+// (mirrors timePhaseIfWired's own all-or-nothing posture for the same
+// adapter pair).
+function logAbandonedGetUpdates(adapters: PollAdapters, deadlineStartedAt: number | undefined): void {
+  if (!adapters.now || !adapters.logDiagnostic) {
+    return;
+  }
+  const waitedMs = adapters.now() - (deadlineStartedAt ?? 0);
+  adapters.logDiagnostic(`front-desk-getUpdates-abandoned: waited ${waitedMs}ms before the deadline`);
+}
+
+// Extracted from pollAndForward below (hardener extraction, BL-2097 CRAP
+// gate: complexity rose 2->8 on the un-extracted version) - "race
+// getUpdates against its own deadline, abandoning and diagnosing it if it
+// fires" is one self-contained question, no different in meaning, just
+// out of the caller's count.
+async function getUpdatesWithDeadline(adapters: PollAdapters, offset: number): Promise<GetUpdatesResult> {
+  const { schedule, clear } = resolveDeadlineTimer(adapters);
+  const deadlineStartedAt = adapters.now?.();
+  let abandoned = false;
+  const controller = new AbortController();
+  const deadlineHandle = schedule(() => {
+    abandoned = true;
+    controller.abort();
+  }, DEFAULT_GET_UPDATES_DEADLINE_MS);
+  const result = await timePhaseIfWired(adapters, 'getUpdates wait', () => adapters.getUpdates(offset, controller.signal));
+  clear(deadlineHandle);
+  if (abandoned) {
+    logAbandonedGetUpdates(adapters, deadlineStartedAt);
+  }
+  return result;
+}
+
 export async function pollAndForward(offset: number, principalUserId: string, adapters: PollAdapters): Promise<PollResult> {
   const handoverCounts = await applyHandoverUpdates(principalUserId, adapters);
-  const result = await timePhaseIfWired(adapters, 'getUpdates wait', () => adapters.getUpdates(offset));
+  const result = await getUpdatesWithDeadline(adapters, offset);
   if (!result.success) {
     return {
       nextOffset: offset,

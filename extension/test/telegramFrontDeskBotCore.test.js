@@ -15,6 +15,7 @@ const {
   formatPhotoPersistFailureAuditLine,
   formatDropAuditLine,
   pollAndForward,
+  DEFAULT_GET_UPDATES_DEADLINE_MS,
   decideCursorBridgeExclusion,
   parseNextSseRecord,
   relaySseReplies,
@@ -822,6 +823,110 @@ test('pollAndForward leaves the offset unchanged when the poll itself fails', as
   });
   assert.equal(result.nextOffset, 5);
   assert.equal(result.posted, 0);
+});
+
+// ── pollAndForward — BL-2097 getUpdates deadline ──────────────────────────
+
+// A fake deadline timer: schedule remembers the callback and ms (never
+// invokes it - the test decides when, exactly like the real feature's own
+// step handler), clear forgets it. Mirrors
+// bl2097UnansweredLongPollAbandonedSteps.js's own fixture shape.
+function makeFakeDeadlineTimer() {
+  const st = { fn: null, ms: null, cleared: false };
+  return {
+    st,
+    scheduleGetUpdatesDeadline: (fn, ms) => {
+      st.fn = fn;
+      st.ms = ms;
+      return { fn, ms };
+    },
+    clearGetUpdatesDeadline: (handle) => {
+      if (st.fn === handle?.fn) {
+        st.fn = null;
+        st.cleared = true;
+      }
+    },
+  };
+}
+
+test('BL-2097: pollAndForward schedules the deadline at DEFAULT_GET_UPDATES_DEADLINE_MS and clears it on an answered call, logging nothing', async () => {
+  const timer = makeFakeDeadlineTimer();
+  const diagnostics = [];
+  const result = await pollAndForward(5, PRINCIPAL_ID, {
+    chatId: '1',
+    now: () => 0,
+    logDiagnostic: (line) => diagnostics.push(line),
+    scheduleGetUpdatesDeadline: timer.scheduleGetUpdatesDeadline,
+    clearGetUpdatesDeadline: timer.clearGetUpdatesDeadline,
+    getUpdates: async () => ({ success: true, updates: [] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current,
+  });
+  assert.equal(timer.st.ms, DEFAULT_GET_UPDATES_DEADLINE_MS);
+  assert.equal(timer.st.cleared, true, 'expected the deadline to have been cleared on an answered call');
+  assert.deepEqual(diagnostics, [], 'an answered call must never log an abandonment line');
+  assert.equal(result.nextOffset, 5);
+});
+
+test('BL-2097: pollAndForward aborts getUpdates and keeps the offset when the deadline fires before an answer', async () => {
+  const timer = makeFakeDeadlineTimer();
+  const diagnostics = [];
+  let sawAbort = false;
+  const result = await pollAndForward(7, PRINCIPAL_ID, {
+    chatId: '1',
+    now: () => 12345,
+    logDiagnostic: (line) => diagnostics.push(line),
+    scheduleGetUpdatesDeadline: timer.scheduleGetUpdatesDeadline,
+    clearGetUpdatesDeadline: timer.clearGetUpdatesDeadline,
+    getUpdates: (_offset, signal) =>
+      new Promise((resolve) => {
+        signal.addEventListener('abort', () => {
+          sawAbort = signal.aborted;
+          resolve({ success: false, updates: [], error: 'aborted' });
+        });
+        // Fire the remembered deadline callback ourselves - the real
+        // setTimeout this simulates never actually elapses in this test.
+        timer.st.fn();
+      }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    nextOffset: (_updates, current) => current + 1,
+  });
+  assert.equal(sawAbort, true, 'expected getUpdates to observe the abort signal');
+  assert.equal(result.nextOffset, 7, 'an abandoned call must never advance the offset');
+  assert.equal(result.ok, false);
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0], /front-desk-getUpdates-abandoned: waited 0ms before the deadline/);
+});
+
+test('BL-2097: an abandoned call logs nothing when only one of now/logDiagnostic is wired', async () => {
+  const diagnostics = [];
+
+  async function abandonedPoll(overrides) {
+    const freshTimer = makeFakeDeadlineTimer();
+    return pollAndForward(1, PRINCIPAL_ID, {
+      chatId: '1',
+      scheduleGetUpdatesDeadline: freshTimer.scheduleGetUpdatesDeadline,
+      clearGetUpdatesDeadline: freshTimer.clearGetUpdatesDeadline,
+      getUpdates: (_offset, signal) =>
+        new Promise((resolve) => {
+          signal.addEventListener('abort', () => resolve({ success: false, updates: [], error: 'aborted' }));
+          freshTimer.st.fn();
+        }),
+      postToBridge: async () => true,
+      subjectForTopic: () => undefined,
+      openSubjectAndRecord: stubOpenSubjectAndRecord(),
+      nextOffset: (_updates, current) => current + 1,
+      ...overrides,
+    });
+  }
+
+  await abandonedPoll({ now: () => 0 }); // logDiagnostic missing
+  await abandonedPoll({ logDiagnostic: (line) => diagnostics.push(line) }); // now missing
+  assert.deepEqual(diagnostics, [], 'neither case has both adapters wired, so neither may log');
 });
 
 // ── pollAndForward — BL-2061 hand-over drain ──────────────────────────────
