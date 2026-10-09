@@ -743,17 +743,19 @@ class DecodeSlotTests(unittest.TestCase):
     def test_the_holder_re_asking_within_its_quantum_keeps_it_at_once_even_with_a_waiter(self) -> None:
         slot, clock = self._slot(hold_quantum_s=10.0)
         slot.acquire("coder")
+        slot.release("coder")
         clock[0] = 1.0
         # QA's own acquire would block for real (another test covers that);
         # here only coder's own re-entry decision is at stake, so QA's
-        # presence is simulated directly on the waiters dict coder's
-        # acquire() reads.
-        slot._waiters["QA"] = (1.0, "QA")  # noqa: SLF001 - exercising the pure decision only
+        # presence is simulated directly on the per-request waiters list
+        # coder's acquire() reads.
+        slot._waiters.append({"arrival": 1.0, "group": "QA", "seat": "QA", "token": object()})  # noqa: SLF001
         self.assertEqual(slot.acquire("coder"), (None, 0))
 
     def test_a_lone_holder_past_its_quantum_with_no_waiter_is_never_forced_to_queue(self) -> None:
         slot, clock = self._slot(hold_quantum_s=1.0)
         slot.acquire("coder")
+        slot.release("coder")
         clock[0] = 1000.0
         self.assertEqual(slot.acquire("coder"), (None, 0))
 
@@ -784,17 +786,19 @@ class DecodeSlotTests(unittest.TestCase):
     # ── BL-2077 D1 (QA note 003953, 2026-10-09): group is the contention
     # identity, seat is only the display name ──
 
-    def test_a_different_seat_in_the_same_group_is_granted_at_once_and_becomes_the_display_name(self) -> None:
+    def test_a_different_seat_in_the_same_group_is_granted_at_once_once_its_sibling_releases(self) -> None:
         slot, _ = self._slot()
         self.assertEqual(slot.acquire("coder", group="resident"), (None, 0))
-        self.assertEqual(slot.acquire("cleaner", group="resident"), (None, 0), "the same group re-asking under a different seat name must never wait")
+        slot.release("coder", group="resident")
+        self.assertEqual(slot.acquire("cleaner", group="resident"), (None, 0), "the same group re-asking under a different seat name, once its sibling released, must never wait")
         self.assertEqual(slot.snapshot()["holder"], "cleaner", "the display name must follow the latest request in the group")
 
     def test_a_different_seat_in_a_different_group_still_waits_like_today(self) -> None:
         slot, clock = self._slot(hold_quantum_s=10.0)
         slot.acquire("coder", group="coder")
+        slot.release("coder", group="coder")
         clock[0] = 1.0
-        slot._waiters["QA"] = (1.0, "QA")  # noqa: SLF001 - exercising the pure decision only
+        slot._waiters.append({"arrival": 1.0, "group": "QA", "seat": "QA", "token": object()})  # noqa: SLF001
         # coder's own group re-asking is unaffected by an unrelated group's
         # waiter entry - this is the ordinary pre-D1 shape, confirming group
         # defaulting to seat changes nothing when every seat is its own group.
@@ -807,7 +811,7 @@ class DecodeSlotTests(unittest.TestCase):
         # No group passed: a DIFFERENT seat is a DIFFERENT group by default,
         # so it must wait rather than being treated as a rotation-in - the
         # exact pre-D1 behavior, never broken by D1's new optional parameter.
-        slot._waiters["QA"] = (0.0, "QA")  # noqa: SLF001 - exercising the pure decision only
+        slot._waiters.append({"arrival": 0.0, "group": "QA", "seat": "QA", "token": object()})  # noqa: SLF001
         self.assertTrue(bool(slot._waiters))  # noqa: SLF001
 
     def test_the_hold_quantum_is_tracked_per_group_not_per_display_name(self) -> None:
@@ -817,6 +821,7 @@ class DecodeSlotTests(unittest.TestCase):
         # currently asking.
         slot, clock = self._slot(hold_quantum_s=5.0)
         slot.acquire("coder", group="resident")
+        slot.release("coder", group="resident")
         clock[0] = 3.0
         slot.acquire("cleaner", group="resident")  # rotation-in, same group
         self.assertEqual(slot.snapshot()["held_ms"], 3000, "the group's held-since must not reset on a display-name-only change")
@@ -899,12 +904,15 @@ class DecodeSlotConcurrencyTests(unittest.TestCase):
     # ── BL-2077 D1: a rotating pack's one group vs. a genuinely different one ──
 
     def test_a_role_rotated_into_the_holding_group_is_granted_at_once_under_real_contention(self) -> None:
-        # coder holds group "resident"; a background waiter on a DIFFERENT
-        # group ("QA") is genuinely blocked (same as any other seat today).
-        # cleaner then asks under the SAME group as coder ("resident") -
-        # this must cut straight through, never joining QA's wait.
+        # coder holds group "resident", then releases (its completion has
+        # finished - a rotation-in is a NEW request, never concurrent with
+        # it); a background waiter on a DIFFERENT group ("QA") is
+        # genuinely blocked (same as any other seat today). cleaner then
+        # asks under the SAME group as coder ("resident") - this must cut
+        # straight through, never joining QA's wait.
         slot = shim.DecodeSlot(idle_grace_s=5.0, hold_quantum_s=5.0)
         slot.acquire("coder", group="resident")
+        slot.release("coder", group="resident")
         done_qa, result_qa = self._acquire_in_background(slot, "QA", group="QA")
         self.assertFalse(done_qa.wait(timeout=0.1), "QA (a different group) must still be waiting")
         self.assertEqual(slot.acquire("cleaner", group="resident"), (None, 0), "a rotation-in sharing the holder's group must never wait, even with another group queued")
@@ -920,6 +928,45 @@ class DecodeSlotConcurrencyTests(unittest.TestCase):
         slot.release("coder", group="coder")
         self.assertTrue(done.wait(timeout=1.0), "a different group must be granted once the holder has been idle past the grace")
         self.assertEqual(result["prev"], "coder")
+
+    # ── BL-2077 D1 bounce (QA evidence BL-2077-QA-20261009.md): track
+    # requests, not groups - two CONCURRENT requests of one group must
+    # still serialize, and two concurrent waiters of one group must both
+    # eventually be granted, visibly, never silently lost ──
+
+    def test_a_second_request_of_the_same_group_concurrent_with_the_first_must_wait_for_its_release(self) -> None:
+        # QA's same_group_inflight.py repro: coder's first completion is
+        # still in flight (never released) when a second, concurrent
+        # request of the SAME group arrives - it must wait, never be
+        # granted alongside the first (invariant 1: at most one completion
+        # in flight at any moment).
+        slot = shim.DecodeSlot(idle_grace_s=5.0, hold_quantum_s=5.0)
+        slot.acquire("coder", group="resident")
+        done, result = self._acquire_in_background(slot, "cleaner", group="resident")
+        self.assertFalse(done.wait(timeout=0.1), "a second, concurrent request of the same group must wait for its in-flight sibling")
+        slot.release("coder", group="resident")
+        self.assertTrue(done.wait(timeout=1.0), "the waiting sibling must be granted once the in-flight one releases")
+        self.assertEqual(result["prev"], None, "a same-group continuation is never logged as a hand-over")
+        self.assertEqual(slot.snapshot()["holder"], "cleaner")
+
+    def test_two_concurrent_waiters_of_the_same_group_are_both_tracked_and_both_eventually_granted(self) -> None:
+        # QA's same_group_waiters.py repro: two requests of a WAITING
+        # group (not the holder's) arrive close together - a dict keyed by
+        # group lost the second one (never granted, invisible on
+        # /shim/health); a per-request list must track and eventually
+        # grant both.
+        slot = shim.DecodeSlot(idle_grace_s=0.3, hold_quantum_s=5.0)
+        slot.acquire("A", group="A")
+        done_b1, result_b1 = self._acquire_in_background(slot, "B", group="B")
+        time.sleep(0.05)
+        done_b2, result_b2 = self._acquire_in_background(slot, "B", group="B")
+        time.sleep(0.05)
+        self.assertEqual(len(slot.snapshot()["waiters"]), 2, "both concurrent B requests must be visible, never collapsed into one")
+        slot.release("A", group="A")
+        self.assertTrue(done_b1.wait(timeout=1.0), "the first B request must be granted once A releases")
+        self.assertFalse(done_b2.is_set(), "the second B request must still wait for its own sibling")
+        slot.release("B", group="B")
+        self.assertTrue(done_b2.wait(timeout=1.0), "the second B request must eventually be granted too, never lost")
 
 
 class DecodeSlotInvariantPropertyTests(unittest.TestCase):
@@ -938,42 +985,58 @@ class DecodeSlotInvariantPropertyTests(unittest.TestCase):
     # ── invariant 1: mutual exclusion, any number of seats ──────────────
 
     def test_invariant1_at_most_one_seat_holds_the_slot_at_any_moment(self) -> None:
+        # BL-2077 D1 bounce (QA evidence BL-2077-QA-20261009.md): as
+        # minted, rng.sample draws only DISTINCT seats, so this property
+        # never constructed a population with two CONCURRENT requests of
+        # the SAME seat/group - exactly the shape that broke DecodeSlot
+        # (two in flight at once). rng.choices draws WITH replacement, so
+        # a repeated seat is reached on nearly every run; each worker gets
+        # its own index-qualified "slot" label so a genuine double-entry
+        # violation is still unambiguous in the failure message even when
+        # two workers share a seat name.
         rng = random.Random(20261009)
         seats = ["coder", "QA", "coder@2", "architect", "hardener"]
         runs = 40
         reached_contention = 0
+        reached_repeated_seat = 0
         for _ in range(runs):
             slot = shim.DecodeSlot(idle_grace_s=0.02, hold_quantum_s=10.0)
             in_section: set = set()
             violations: list = []
             lock = threading.Lock()
             n_seats = rng.randint(2, 5)
-            chosen = rng.sample(seats, n_seats)
+            chosen = rng.choices(seats, k=n_seats)
             hold_s = [rng.uniform(0.001, 0.02) for _ in chosen]
             barrier = threading.Barrier(n_seats)
 
-            def worker(seat: str, hold: float) -> None:
+            def worker(label: str, seat: str, hold: float) -> None:
                 barrier.wait()
                 slot.acquire(seat)
                 with lock:
                     if in_section:
-                        violations.append((seat, set(in_section)))
-                    in_section.add(seat)
+                        violations.append((label, set(in_section)))
+                    in_section.add(label)
                 time.sleep(hold)
                 with lock:
-                    in_section.discard(seat)
+                    in_section.discard(label)
                 slot.release(seat)
 
-            threads = [threading.Thread(target=worker, args=(s, h)) for s, h in zip(chosen, hold_s)]
+            threads = [
+                threading.Thread(target=worker, args=(f"{s}#{i}", s, h))
+                for i, (s, h) in enumerate(zip(chosen, hold_s))
+            ]
             for t in threads:
                 t.start()
             for t in threads:
                 t.join(timeout=5.0)
             self.assertFalse(any(t.is_alive() for t in threads), "a worker never finished - acquire()/release() deadlocked")
-            self.assertEqual(violations, [], f"two seats were in the critical section at once: {violations}")
+            self.assertEqual(violations, [], f"two requests were in the critical section at once: {violations}")
             if n_seats > 1:
                 reached_contention += 1
+            if len(set(chosen)) < len(chosen):
+                reached_repeated_seat += 1
         self.assertGreaterEqual(reached_contention, runs - 1, "the generator must draw contention (>=2 seats) on nearly every run")
+        self.assertGreaterEqual(reached_repeated_seat, 1, "the generator must draw at least one run with a repeated (concurrent) seat/group")
 
     # ── invariant 2: non-chat-completion calls never wait ────────────────
 

@@ -555,6 +555,19 @@ class DecodeSlot:
     there is treated exactly like the current holder re-asking - granted at
     once, never gated on the idle grace, while the display name still
     follows whichever role actually sent the request.
+
+    BL-2077 D1 bounce (QA evidence BL-2077-QA-20261009.md): every waiter is
+    tracked PER REQUEST (arrival, group, seat, a unique token), never one
+    dict entry per group - a group can have several requests in flight of
+    it at once (one actually running, the rest genuinely waiting their
+    turn), and this predates the pane/group work: the first build's
+    per-seat dict had the identical flaw for two concurrent requests from
+    ONE seat. A request sharing the holder's group while a sibling of that
+    SAME group is still in flight waits for its release rather than being
+    granted alongside it - the slot's one invariant now reads: acquire()
+    for two different REQUESTS of different groups, or two requests of the
+    SAME group where one is already in flight, never both return before a
+    release() separates them.
     """
 
     def __init__(
@@ -571,14 +584,20 @@ class DecodeSlot:
         self._holder_group: str | None = None
         self._holder_since = 0.0
         self._last_activity = 0.0
-        # True from the holder's own grant until its release() - the idle
-        # grace must never fire while a completion is genuinely in flight,
-        # however long it runs (a real re-prefill can take tens of
-        # seconds): "idle" means a GAP between completions, measured from
-        # the last release(), never from how long the current one has
-        # been running.
+        # True while some request of _holder_group is actually running
+        # (between a grant and its release()) - the idle grace must never
+        # fire while a completion is genuinely in flight, however long it
+        # runs (a real re-prefill can take tens of seconds): "idle" means a
+        # GAP between completions, measured from the last release(), never
+        # from how long the current one has been running. Also what makes
+        # a SECOND request of the SAME group wait for its sibling instead
+        # of being granted alongside it (BL-2077 D1 bounce).
         self._in_flight = False
-        self._waiters: dict[str, tuple[float, str]] = {}  # group -> (arrival time, seat display name)
+        # One entry per WAITING REQUEST, never per group - {arrival, group,
+        # seat, token}. token is an object() identity sentinel so two
+        # requests of the same group/seat never collide in this list
+        # (BL-2077 D1 bounce: a dict keyed by group lost the second one).
+        self._waiters: list[dict[str, Any]] = []
         # The seat that last gave the slot up via the hold-quantum queue
         # (never via idle-grace, which reads self._holder directly while
         # it is still set) - self._holder is nulled the INSTANT a holder
@@ -589,78 +608,118 @@ class DecodeSlot:
         # back to None, never a stale seat name.
         self._vacated_by: str | None = None
 
-    def _grant_locked(self, seat: str, group: str, now: float) -> None:
+    def _grant_locked(self, seat: str, group: str, now: float, reset_since: bool) -> None:
         self._holder = seat
         self._holder_group = group
-        self._holder_since = now
+        if reset_since:
+            self._holder_since = now
         self._last_activity = now
         self._in_flight = True
+
+    def _other_group_waiting_locked(self, group: str) -> bool:
+        return any(w["group"] != group for w in self._waiters)
+
+    def _winning_token_locked(self, now: float) -> object | None:
+        """The ONE waiting request (by token) that may be granted right
+        now, given current state, or None if nobody may proceed yet. A
+        pure read of self._waiters/_holder_group/_in_flight/_last_activity/
+        _holder_since - never mutates, and never itself decides to vacate
+        a hold-quantum-spent holder (acquire()'s own loop does that,
+        exactly once per discovery, since this function runs on every
+        waiting thread's every poll tick)."""
+        if not self._waiters:
+            return None
+        if self._holder_group is None:
+            # A free slot: pure FIFO across every waiting request, any
+            # group - "queues behind the longest-waiting seat" (the
+            # original docstring's own words), never "the other group
+            # always wins regardless of arrival order".
+            return min(self._waiters, key=lambda w: w["arrival"])["token"]
+        if self._in_flight:
+            return None
+        same_group = [w for w in self._waiters if w["group"] == self._holder_group]
+        if same_group and not (
+            self._other_group_waiting_locked(self._holder_group)
+            and now - self._holder_since > self.hold_quantum_s
+        ):
+            # A continuation: the earliest-arrived request of the holder's
+            # OWN group, waiting only because a sibling request of that
+            # same group is (or was) ahead of it - never gated on the idle
+            # grace, which is for a genuinely DIFFERENT group only.
+            return min(same_group, key=lambda w: w["arrival"])["token"]
+        if now - self._last_activity > self.idle_grace_s:
+            # Idle takeover: among every OTHER group waiting (the holder's
+            # own group is never a candidate here - a vacated holder's own
+            # queued requests are handled above, or via the free-slot
+            # branch once vacated), only the single longest-waiting group
+            # may act, and only its own earliest-arrived request.
+            others = [w for w in self._waiters if w["group"] != self._holder_group]
+            if others:
+                longest_group = min(others, key=lambda w: w["arrival"])["group"]
+                candidates = [w for w in others if w["group"] == longest_group]
+                return min(candidates, key=lambda w: w["arrival"])["token"]
+        return None
 
     def acquire(self, seat: str, group: str | None = None) -> tuple[str | None, int]:
         """Blocks until `seat` (contending as `group`, default `seat`
         itself) may proceed. Returns (previous_holder, wait_ms) -
         previous_holder is None (wait_ms 0) for a grant that handed over
-        nothing: the slot was free, or `group` already held it and kept it
-        without having to wait."""
+        nothing: the slot was free, or `group` already held it (with no
+        sibling request of that group in flight) and kept it without
+        having to wait."""
         group = seat if group is None else group
         with self._cv:
-            now = self._now()
-            must_queue = self._holder_group == group and (
-                now - self._holder_since > self.hold_quantum_s and bool(self._waiters)
-            )
-            if self._holder_group is None:
-                previous = self._vacated_by
-                self._vacated_by = None
-                self._grant_locked(seat, group, now)
-                return previous, 0
-            if self._holder_group == group and not must_queue:
-                # BL-2077 D1: the display name follows the latest request
-                # in this group - a role rotated into the pane shows
-                # itself, never whoever asked before it.
-                self._holder = seat
-                self._last_activity = now
-                self._in_flight = True
-                return None, 0
-            arrival = now
-            self._waiters[group] = (arrival, seat)
-            if must_queue:
-                self._vacated_by = self._holder
-                self._holder = None
-                self._holder_group = None
-                self._in_flight = False
-                self._cv.notify_all()
+            token = object()
+            arrival = self._now()
+            self._waiters.append({"arrival": arrival, "group": group, "seat": seat, "token": token})
             try:
                 while True:
-                    idle_takeover = (
-                        self._holder_group is not None and self._holder_group != group
-                        and not self._in_flight
-                        and now - self._last_activity > self.idle_grace_s
-                    )
-                    if self._holder_group is None or idle_takeover:
-                        # Among several waiters, only the LONGEST-waiting
-                        # one may take over - racing threads that each
-                        # independently notice the slot is free or idle
-                        # must not grant themselves out of arrival order.
-                        longest_group = min(self._waiters, key=lambda g: self._waiters[g][0])
-                        if longest_group == group:
-                            if idle_takeover:
-                                previous = self._holder
-                            else:
-                                previous = self._vacated_by
-                                self._vacated_by = None
-                            self._grant_locked(seat, group, now)
-                            return previous, int((now - arrival) * 1000)
-                    self._cv.wait(timeout=_SLOT_POLL_S)
                     now = self._now()
+                    # The hold-quantum check runs only inside a request of
+                    # the HOLDER's own group discovering it (never a
+                    # timer) - now checked on every poll tick of such a
+                    # request rather than only a brand-new call's entry,
+                    # so a holder idle between completions with another
+                    # group waiting is preempted as soon as ITS OWN
+                    # queued continuation (if any) notices, not only when
+                    # a fresh request happens to arrive.
+                    if (
+                        self._holder_group == group
+                        and not self._in_flight
+                        and self._other_group_waiting_locked(group)
+                        and now - self._holder_since > self.hold_quantum_s
+                    ):
+                        self._vacated_by = self._holder
+                        self._holder = None
+                        self._holder_group = None
+                        self._cv.notify_all()
+                    winner = self._winning_token_locked(now)
+                    if winner is token:
+                        if self._holder_group is None:
+                            previous = self._vacated_by
+                            self._vacated_by = None
+                            reset_since = True
+                        elif self._holder_group == group:
+                            previous = None
+                            reset_since = False
+                        else:
+                            previous = self._holder
+                            reset_since = True
+                        self._grant_locked(seat, group, now, reset_since)
+                        return previous, int((now - arrival) * 1000)
+                    self._cv.wait(timeout=_SLOT_POLL_S)
             finally:
-                self._waiters.pop(group, None)
+                self._waiters[:] = [w for w in self._waiters if w["token"] is not token]
 
     def release(self, seat: str, group: str | None = None) -> None:
         """Marks `group`'s activity and clears in-flight (so a waiter's
         idle-grace check starts counting from THIS moment, never from
         when the just-finished completion started) without giving up the
-        slot - only a later acquire() (the holder's own, past its hold
-        quantum, or a waiter's, past the idle grace) ever hands it over."""
+        slot - only a later acquire() (the holder's own group's, past its
+        hold quantum, or a different group's, past the idle grace) ever
+        hands it over. A sibling request of the SAME group already
+        waiting (BL-2077 D1 bounce) is woken to take the slot next,
+        exactly like any other waiter."""
         group = seat if group is None else group
         with self._cv:
             if self._holder_group == group:
@@ -670,15 +729,16 @@ class DecodeSlot:
 
     def snapshot(self) -> dict[str, Any]:
         """GET /shim/health's own view: the holder, how long it has held
-        the slot, every waiting seat with its own wait so far (longest
-        first), and the two configured durations."""
+        the slot, every waiting REQUEST with its own wait so far (longest
+        first, one entry per request even when several share a seat or
+        group - BL-2077 D1 bounce), and the two configured durations."""
         with self._cv:
             now = self._now()
-            waiters = sorted(self._waiters.values(), key=lambda v: v[0])
+            waiters = sorted(self._waiters, key=lambda w: w["arrival"])
             return {
                 "holder": self._holder,
                 "held_ms": int((now - self._holder_since) * 1000) if self._holder is not None else None,
-                "waiters": [{"seat": s, "wait_ms": int((now - t) * 1000)} for t, s in waiters],
+                "waiters": [{"seat": w["seat"], "wait_ms": int((now - w["arrival"]) * 1000)} for w in waiters],
                 "idle_grace_ms": int(self.idle_grace_s * 1000),
                 "hold_quantum_ms": int(self.hold_quantum_s * 1000),
             }
