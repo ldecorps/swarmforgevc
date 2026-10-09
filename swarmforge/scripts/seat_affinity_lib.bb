@@ -57,6 +57,14 @@
     (some-> s str str/trim not-empty java.time.Instant/parse .toEpochMilli)
     (catch Exception _ nil)))
 
+;; The types a rework deferral applies to: a git_handoff, and since BL-1843
+;; a note naming a ticket (`Work BL-...` / `BL-... still todo`), deferred
+;; exactly as a git_handoff for that ticket would be. One definition for
+;; both the claim decision and the stall sweeps' hold (hotfix 2026-10-09,
+;; coder note 000199), which disagreed until then. BL-1655's reclaim branch
+;; stays type-agnostic in both.
+(def rework-deferrable-types #{"git_handoff" "note"})
+
 (defn rework-claim-decision
   "Pure: may THIS seat claim this stage-queue candidate now?
      {:action :claim}                          - not subject to deferral
@@ -88,7 +96,8 @@
            held-by-seat my-seat]}]
   (let [reclaimed-elsewhere? (and (not (str/blank? (str held-by-seat)))
                                    (not= (str held-by-seat) (str my-seat)))
-        rework-candidate? (and (not (str/blank? (str task)))
+        rework-candidate? (and (contains? rework-deferrable-types type)
+                                (not (str/blank? (str task)))
                                 (not (contains? (set my-tasks) task))
                                 (contains? (set sibling-tasks) task))]
     (if (or reclaimed-elsewhere? rework-candidate?)
@@ -124,12 +133,20 @@
    seat-worked-task-sets has exactly one entry so this branch is
    structurally false there too, no extra check needed.
 
+   Hotfix 2026-10-09 (coder note 000199): the rework branch reads
+   rework-deferrable-types, the same set rework-claim-decision reads. BL-1843
+   widened the claim decision to notes naming a ticket while this branch
+   still required `git_handoff`, so a note the claim path was deferring
+   stayed unheld here and the stall sweeps could alarm on it
+   (bl1004_seat_affinity_property_runner.bb's hold <=> some-seat-defers
+   sweep went red).
+
    Returns a bare boolean - no seat identity escapes (invariant 2)."
   [{:keys [type task seat-worked-task-sets enqueued-at created-at now-ms deadline-ms held-by-seat]}]
   (boolean
    (and (or (and (not (str/blank? (str held-by-seat)))
                  (> (count seat-worked-task-sets) 1))
-            (and (= type "git_handoff")
+            (and (contains? rework-deferrable-types type)
                  (not (str/blank? (str task)))
                  (some #(contains? % task) seat-worked-task-sets)
                  (some #(not (contains? % task)) seat-worked-task-sets)))
