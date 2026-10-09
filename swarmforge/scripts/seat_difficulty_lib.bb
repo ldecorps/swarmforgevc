@@ -363,3 +363,24 @@
 
     :else
     :claim))
+
+;; ── diagnostic line ───────────────────────────────────────────────────────
+;; BL-2095: a candidate difficulty-claim-decision answers :skip-ineligible
+;; or :defer-better-fit (without the BL-1843 own-task override) is dropped
+;; from the claimable set printing nothing, the same silent shape BL-1004's
+;; sibling-rework defer had before deferral-line (seat_affinity_lib.bb) gave
+;; it a voice. A seat idle beside a full queue of parcels none of them fit
+;; must say so, or a NO_TASK reads as a stalled dispatcher. Receives no
+;; seat identity at all - never a sibling id, never its own - the
+;; strongest form of BL-983 invariant 3 (this file's own header already
+;; states it): not merely a discipline over a value received, but a
+;; function with no seat field to leak in the first place.
+(defn tier-skip-line
+  "The out-loud diagnostic for a parcel this seat leaves because the tier
+   filter (difficulty-allows-claim?, ready_for_next_task.bb's claim path)
+   does not allow the claim. Printed beside the DEFERRED lines; the
+   parcel stays untouched in the stage queue for a seat that accepts it."
+  [{:keys [basename ticket cost]}]
+  (str "TIER_SKIP: " basename " (ticket " ticket ", cost " cost
+       ") is above this seat's tier; leaving it in the stage queue for a"
+       " seat that accepts it."))
