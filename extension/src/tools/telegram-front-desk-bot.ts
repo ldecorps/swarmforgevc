@@ -144,7 +144,12 @@ import {
 } from './telegramFrontDeskBotCore';
 import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
-import { drainCursorBridgeHandoverUpdates, isHandoverUpdateApplied, recordAppliedHandoverId } from './cursorBridgeHandoverQueue';
+import {
+  appendCursorBridgeHandoverUpdate,
+  drainCursorBridgeHandoverUpdates,
+  isHandoverUpdateApplied,
+  recordAppliedHandoverId,
+} from './cursorBridgeHandoverQueue';
 import { runProviderChatSeatTurn } from './providerChatSeatLive';
 import { readQwenLocalTopicId } from './localQwenSeatLive';
 import { largestTelegramPhotoFileId, mimeTypeFromTelegramFilePath, MAX_TELEGRAM_PHOTO_BYTES } from '../bridge/cursorBridgeTelegramMedia';
@@ -2703,6 +2708,15 @@ function buildPollAdapters(
       ),
     isHandoverApplied: (updateId) => isHandoverUpdateApplied(path.join(targetPath, '.swarmforge', 'operator'), updateId),
     recordHandoverApplied: (updateId) => recordAppliedHandoverId(path.join(targetPath, '.swarmforge', 'operator'), updateId),
+    // BL-2061 D2: a failed or thrown hand-over delivery is re-queued here
+    // instead of being recorded applied - the next cycle's drain picks it
+    // up fresh, exactly as a regular poll failure's held-back offset lets
+    // Telegram redeliver.
+    requeueHandoverUpdate: (update) =>
+      appendCursorBridgeHandoverUpdate(
+        path.join(targetPath, '.swarmforge', 'operator'),
+        update as unknown as { update_id?: number } & Record<string, unknown>
+      ),
     openSubjectAndRecord: (topicId, text, updateId) => openSubjectAndRecord(targetPath, topicId, text, updateId),
     // BL-1235-style seat, generalized (providerChatSeat.ts): a topic bound
     // in provider-chat-topic-map.json answers here, never as a generic

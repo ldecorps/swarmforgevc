@@ -2054,6 +2054,36 @@ export async function tryDispatchToBubbleSeat(
   return true;
 }
 
+// BL-2061 D1 (QA bounce 2026-10-08): a poll_answer carries no topic, so it
+// never reaches handOverToFrontDeskIfNotOwn's isScopedToCursorTopic check at
+// all - processInboundUpdates `continue`s straight past the hand-over for
+// every poll_answer, own or not. "Own" here means one of the three shapes
+// the bridge itself tracks a pollId for: a live queued-prompt poll, a poll
+// it superseded (and still answers with "no longer live"), or a pending
+// choice poll - matching the same own/foreign partition the topic-scoped
+// check gives text/callback updates.
+function isBridgeOwnPollAnswer(
+  state: CursorBridgePersistedState,
+  pollAnswer: TelegramPollAnswer
+): boolean {
+  if (state.pendingPromptPoll?.pollId === pollAnswer.poll_id) {
+    return true;
+  }
+  if ((state.supersededPromptPollIds ?? []).includes(pollAnswer.poll_id)) {
+    return true;
+  }
+  return (state.pendingChoicePolls ?? []).some((poll) => poll.pollId === pollAnswer.poll_id);
+}
+
+// BL-2061 D1: shared by the poll_answer and the unparseable-update hand-over
+// paths below, neither of which has an inbound event to run
+// isScopedToCursorTopic against - both are unconditionally foreign once
+// handOverIfNotOwn is true and the update did not match the bridge's own
+// poll-answer shapes.
+function handOverRawUpdate(deps: CursorBridgeLoopDeps, update: TelegramUpdate): void {
+  appendCursorBridgeHandoverUpdate(deps.opDir, update as unknown as { update_id?: number } & Record<string, unknown>);
+}
+
 // BL-2061: an update that is not the bridge's own is only ever dropped on a
 // route the forward queue (front-desk -> bridge) already filtered for us, so
 // this only ever fires in the dead-feeder fallback - the bridge calling
@@ -2083,7 +2113,7 @@ async function handOverToFrontDeskIfNotOwn(
   if (inbound.kind === 'callback' && inbound.callbackQueryId) {
     await answerCallbackQuery(deps.botToken, inbound.callbackQueryId, deps.telegramPostFn);
   }
-  appendCursorBridgeHandoverUpdate(deps.opDir, update as unknown as { update_id?: number } & Record<string, unknown>);
+  handOverRawUpdate(deps, update);
   return true;
 }
 
@@ -2100,12 +2130,19 @@ async function processInboundUpdates(
 ): Promise<void> {
   for (const update of updates) {
     if (update.poll_answer) {
+      if (handOverIfNotOwn && !isBridgeOwnPollAnswer(holder.state, update.poll_answer)) {
+        handOverRawUpdate(deps, update);
+        continue;
+      }
       await processQueuedPollAnswer(deps, holder, update.poll_answer, handlerCtx);
       await processChoicePollAnswer(deps, holder, update.poll_answer, handlerCtx);
       continue;
     }
     const inbound = inboundEventOf(update);
     if (!inbound) {
+      if (handOverIfNotOwn) {
+        handOverRawUpdate(deps, update);
+      }
       continue;
     }
     // BL-1235: the local seat's topic is handled BEFORE cursor's decision is

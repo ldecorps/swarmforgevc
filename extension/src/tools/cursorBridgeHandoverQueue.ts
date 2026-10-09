@@ -23,10 +23,15 @@ export function appendCursorBridgeHandoverUpdate(opDir: string, update: { update
 
 /**
  * Same atomic-rename drain as cursorBridgeInboundQueue.ts, via
- * jsonlUpdateQueueLib - never lost, never double-counted by this function
- * alone (callers still need readAppliedHandoverIds/recordAppliedHandoverId
- * for invariant 2, since a crash between drain and apply can hand the same
- * update_id back twice).
+ * jsonlUpdateQueueLib - a drained entry is gone from THIS file the instant
+ * the call returns, never double-returned by this function alone. Callers
+ * still need readAppliedHandoverIds/recordAppliedHandoverId for invariant 2:
+ * the SAME update_id can legitimately reach this function twice, from two
+ * different retries - the bridge itself re-appending it after a crash
+ * before persisting its own advanced offset (Telegram redelivers), and
+ * applyHandoverUpdates (telegramFrontDeskBotCore.ts) explicitly re-appending
+ * a drained entry whose delivery failed or threw (BL-2061 D2) - either way
+ * the dedupe is what makes handing the same id back safe.
  */
 export function drainCursorBridgeHandoverUpdates(opDir: string): Array<{ update_id: number } & Record<string, unknown>> {
   return drainJsonlUpdates(cursorBridgeHandoverQueuePath(opDir));
