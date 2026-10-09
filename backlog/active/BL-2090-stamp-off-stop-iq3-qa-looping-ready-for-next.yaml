@@ -23,3 +23,5 @@ stage_skip_reasons:
   cleaner: "shell patch to a small helper; follows existing style"
   architect: "no boundary moves; the change is within ready_for_next.sh"
   hardender: null
+
+assigned_to: coder
