@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./tmpDir');
+const { SHELL_DASH_C_RE } = require('./fixtureTunnelName');
 
 function killPid(pid) {
   if (!pid) return;
@@ -39,7 +40,32 @@ function spawnFakeCloudflared(name, dir) {
     binDir,
     name,
   ]);
-  return Number(child.stdout.toString().trim());
+  const pid = Number(child.stdout.toString().trim());
+  waitForOwnArgv(pid);
+  return pid;
+}
+
+// Hotfix 2026-10-09 (QA note 003958, BL-2082 held): `& echo $!` hands back
+// the background child's pid before that child has exec'd the fake
+// cloudflared. Until it does, ps shows the spawning shell's own `bash -c`
+// line, which leakedFixtureTunnelPids drops on purpose (BL-1974,
+// SHELL_DASH_C_RE), so a sweep sampled in that window missed a fixture it
+// had to select - bl1287 invariant 1 failed that way under load, with a
+// hardener Stryker run live. Return only once ps shows the child's own
+// argv, bounded so a child that never gets there still returns.
+const OWN_ARGV_DEADLINE_MS = 10000;
+
+function waitForOwnArgv(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  const start = Date.now();
+  while (Date.now() - start < OWN_ARGV_DEADLINE_MS) {
+    const ps = spawnSync('ps', ['-ww', '-o', 'pid=,args=', '-p', String(pid)], { encoding: 'utf8' });
+    const line = (ps.stdout || '').trim();
+    if (ps.status !== 0 || !line) return;
+    if (!SHELL_DASH_C_RE.test(line)) return;
+    Atomics.wait(sleeper, 0, 0, 10);
+  }
 }
 
 // A tunnel name in fixtureTunnelName()'s own shape, but with an EXPLICIT

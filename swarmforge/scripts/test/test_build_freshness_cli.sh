@@ -61,10 +61,25 @@ mk_git_root() {
   printf '%s' "$root"
 }
 
+# Hotfix 2026-10-09 (QA note 003958, BL-2082 held): every budget below is
+# a deadline on a real process (a bb daemon booting, a status file
+# appearing), and on a loaded host one was missed - operator_runtime.bb did
+# not publish its first status within 10 s at load 19.6 on 20 cores with a
+# hardener Stryker run live, then passed on the same commit once it ended.
+# Scale each budget by the host's load per core, read fresh on every call
+# (1x idle, up to 6x); a condition that holds still returns at once.
+wait_for_scale() {
+  local load cpus
+  load="$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')"
+  cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+  awk -v l="${load:-0}" -v c="${cpus:-1}" 'BEGIN { if (c < 1) c = 1; s = 1 + int(3 * l / c); if (s > 6) s = 6; print s }'
+}
+
 wait_for() {
   local timeout_s="$1"; shift
+  local limit=$(( timeout_s * 10 * $(wait_for_scale) ))
   local i=0
-  while (( i < timeout_s * 10 )); do
+  while (( i < limit )); do
     if "$@" 2>/dev/null; then return 0; fi
     sleep 0.1
     ((i++)) || true
