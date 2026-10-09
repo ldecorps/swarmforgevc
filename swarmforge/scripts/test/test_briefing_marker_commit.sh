@@ -87,9 +87,18 @@ echo "$STAT1" | grep "docs/briefings/.sent.json" >/dev/null || fail "01: expecte
 pass "01: the commit touches exactly the marker path, nothing else"
 
 # ── 02: re-committing byte-identical content is a no-op, not an error ──────
+# BL-2069: the raw add/commit pair is now commit-integrity-lib/commit-with-integrity!,
+# whose success shape for a scoped no-op commit is {:ok true, :reason
+# :landed-elsewhere} - the helper's landed-sha-if-matching check sees the
+# byte-identical content already on HEAD and reports it as "another writer
+# landed it" (here, this checkout's own earlier commit). The pre-BL-2069
+# :nothing-to-commit reason was the raw git "nothing to commit" stderr
+# classification, which the integrity helper no longer performs. The
+# contract under test is unchanged: a byte-identical re-commit is a success,
+# never a failure.
 RESULT2="$(commit_marker "$BRIEFINGS1")"
-[[ "$RESULT2" == '{:ok true, :reason :nothing-to-commit}' ]] || fail "02: expected nothing-to-commit, got: $RESULT2"
-pass "02: an idempotent re-commit of identical marker content reports :nothing-to-commit, not a failure"
+[[ "$RESULT2" == '{:ok true, :reason :landed-elsewhere}' ]] || fail "02: expected landed-elsewhere, got: $RESULT2"
+pass "02: an idempotent re-commit of identical marker content reports success, not a failure"
 
 # ── 03: an unrelated dirty file never rides the marker's commit (BL-506) ───
 REPO2="$(git_repo)"

@@ -23,6 +23,13 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "markdown_to_html_lib.bb")))
 
+;; BL-2069: the sent-marker commit now routes through commit_integrity_lib.bb's
+;; shared lock+pathspec+verify helper instead of its own raw add/commit pair -
+;; the shared-index race that helper exists to close (BL-419) applies to this
+;; machine-authored commit exactly as it does to every other master-resident
+;; writer.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "commit_integrity_lib.bb")))
+
 (defn sent-state-path [briefings-dir]
   (str (fs/path briefings-dir ".sent.json")))
 
@@ -136,6 +143,48 @@
   (let [{:keys [exit out err]} (apply daemon-cycle-guard-lib/sh! {:continue true :dir dir} args)]
     {:exit exit :out out :err err}))
 
+;; BL-2069 D2 / heal-check (D1): the one way either call site learns the
+;; work tree's root and the marker's path relative to it - factored out so
+;; commit-sent-marker! and the heal pre-check below can never resolve this
+;; two different ways. See commit-sent-marker!'s own comment for why this
+;; runs rev-parse directly inside briefings-abs rather than deriving it
+;; from the git DIRECTORY.
+(defn- resolve-briefings-project-root [briefings-abs]
+  (let [rev-parse (daemon-cycle-guard-lib/sh!
+                   {:continue true :dir (str briefings-abs)}
+                   "git" "rev-parse" "--show-toplevel")
+        out (str/trim (:out rev-parse))]
+    (when (and (zero? (:exit rev-parse)) (not (str/blank? out))) out)))
+
+;; String-prefix subtraction instead of fs/relativize: both sides are
+;; already canonical absolute strings, and relativize's Path-type check is
+;; brittle across babashka versions.
+(defn- marker-rel-path [project-root briefings-abs]
+  (let [marker-abs (str (fs/canonicalize (sent-state-path briefings-abs)))]
+    (str (subs marker-abs (inc (count (str project-root)))))))
+
+(defn marker-uncommitted?
+  "BL-2069 D1: true when briefings-dir's .sent.json differs from (or is
+   absent from) HEAD's committed copy - a real pending write a heal commit
+   should attempt. False when it is byte-identical to HEAD (nothing to
+   commit) OR the working tree has no marker file at all (nothing written
+   yet, so nothing to heal either). On any resolution trouble (no git dir,
+   no HEAD yet) this fails TRUE - the conservative side: an unnecessary
+   commit attempt costs a few seconds, a skipped necessary one loses a
+   sweep's healing entirely, and commit-with-integrity! already reports a
+   byte-identical attempt as a cheap :nothing-to-commit no-op rather than
+   writing a hollow commit."
+  [briefings-dir]
+  (let [briefings-abs (fs/canonicalize briefings-dir)
+        project-root (resolve-briefings-project-root briefings-abs)]
+    (if-not project-root
+      true
+      (let [marker-rel (marker-rel-path project-root briefings-abs)
+            on-disk (commit-integrity-lib/default-read project-root marker-rel)
+            head-sha (commit-integrity-lib/default-rev-parse-head project-root)
+            at-head (when head-sha (commit-integrity-lib/default-show project-root head-sha marker-rel))]
+        (not= on-disk at-head)))))
+
 (defn commit-sent-marker!
   "Commits EXACTLY briefings-dir's .sent.json - a scoped `git add` + `git
    commit` of that one path, never sweeping unrelated working-tree changes
@@ -154,54 +203,71 @@
    own 60s subprocess bound killing `git commit` mid pre-commit-hook -
    BL-1525) leaves `path` staged in the SHARED master checkout, which then
    blocks BL-891's reconcile sweep on every later tick until a human
-   unstages it by hand (measured 2026-09-19, 06:13-06:17Z). This call now
-   runs `git restore --staged -- path` before returning on that branch:
+   unstages it by hand (measured 2026-09-19, 06:13-06:17Z). commit-with-integrity!
+   restores the index for the marker path on every post-staging failure and
+   reports it the same way this function always has:
    `{:ok false :reason ... :index-restored [path]}` when the restore
    itself succeeds, or `{:ok false :reason ... :index-left-dirty true}`
    when it too fails - never silently leaving the path staged unreported.
-   The failed add branch above restores nothing: a failed `git add` never
-   staged anything for this call to have to undo."
-  ([briefings-dir] (commit-sent-marker! briefings-dir real-sh))
-  ([briefings-dir sh-fn]
-   (try
-     (let [path (sent-state-path briefings-dir)
-           ;; git resolves its own repo root by walking UP from :dir - so
-           ;; briefings-dir itself (any depth inside the working tree) is
-           ;; always a valid cwd for both calls, no matter how deep the
-           ;; briefings directory sits, without this function having to know
-           ;; or guess that depth itself.
-           add-result (sh-fn briefings-dir "git" "add" "--" path)]
-       (if-not (zero? (:exit add-result))
-         {:ok false :reason (str "git add failed: " (str/trim (str (:err add-result))))}
-         (let [commit-result (sh-fn briefings-dir "git" "commit"
-                                     "-m" "briefing: record sent marker\n\nAutomated by the briefing-email sweep (BL-821)."
-                                     "--" path)]
-           (cond
-             (zero? (:exit commit-result))
-             {:ok true}
+   The failed add branch restores nothing: a failed `git add` never
+   staged anything for this call to have to undo.
 
-             ;; git reports a scoped no-op commit two different ways
-             ;; depending on whether ANY untracked file exists anywhere
-             ;; else in the repo (unrelated to briefings-dir entirely) -
-             ;; "nothing to commit, working tree clean" when none do, or
-             ;; "nothing added to commit but untracked files present" when
-             ;; one does. This checkout is chronically not pristine, so
-             ;; the second phrasing is the common case in practice, not an
-             ;; edge case - missing it here would misclassify the exact
-             ;; race this return value exists to make safe (a second host
-             ;; already committed byte-identical content) as a hard
-             ;; failure nearly every real time it happens.
-             (re-find #"nothing (?:to commit|added to commit)" (str (:out commit-result) (:err commit-result)))
-             {:ok true :reason :nothing-to-commit}
+   BL-2069: the raw add/commit pair is now commit-integrity-lib/commit-with-integrity!
+   - the same lock+pathspec+verify+retry helper every other shared-checkout
+   writer routes through (BL-419), so this machine-authored commit can no
+   longer interleave its stage->commit window with a concurrent writer on
+   the same physical git directory. briefings-dir is canonicalized first,
+   so a RELATIVE briefings-dir (resolved against the process cwd) still
+   finds the checkout - the 2026-10-02..10-07 failures were exactly this:
+   a relative root made `git -C <relative>` run outside the work tree.
+   The working-tree root commit-with-integrity! needs is resolved by
+   resolve-briefings-project-root, which runs `git rev-parse --show-toplevel`
+   with :dir briefings-abs itself (never derived from the git DIRECTORY -
+   BL-2069 D2, a linked worktree's shape made that derivation land outside
+   any work tree; see that function's own comment). The 2-arity form keeps
+   its sh-fn parameter for existing unit tests (ignored - the helper owns
+   its own injectable seams) and delegates to the 1-arity form."
+  ([briefings-dir]
+   (try
+     (let [briefings-abs (fs/canonicalize briefings-dir)
+           project-root (resolve-briefings-project-root briefings-abs)]
+       (if-not project-root
+         {:ok false :reason "no-git-dir"}
+         (let [marker-rel (marker-rel-path project-root briefings-abs)
+               r (commit-integrity-lib/commit-with-integrity!
+                  {:project-root project-root
+                   :paths [marker-rel]
+                   :message "briefing: record sent marker\n\nAutomated by the briefing-email sweep (BL-821)."})]
+           (cond
+             (:success r)
+             (cond-> {:ok true}
+               (= (:reason r) :landed-elsewhere) (assoc :reason :landed-elsewhere))
+
+             (= (:reason r) :lock-timeout)
+             {:ok false :reason "lock-timeout" :index-left-dirty true}
+
+             (= (:reason r) :add-failed)
+             {:ok false :reason (str "git add failed: " (str (:stderr r)))}
+
+             (= (:reason r) :commit-failed)
+             (cond-> {:ok false :reason (str "git commit failed: " (str (:stderr r)))}
+               (:index-left-dirty r) (assoc :index-left-dirty true)
+               (:index-restored r) (assoc :index-restored (vec (:index-restored r))))
+
+             (= (:reason r) :verify-mismatch)
+             {:ok false :reason "verify-mismatch" :index-restored [marker-rel]}
 
              :else
-             (let [restore-result (sh-fn briefings-dir "git" "restore" "--staged" "--" path)
-                   restored? (zero? (:exit restore-result))]
-               (cond-> {:ok false :reason (str "git commit failed: " (str/trim (str (:err commit-result))))}
-                 restored? (assoc :index-restored [path])
-                 (not restored?) (assoc :index-left-dirty true)))))))
+             {:ok false :reason (str "commit-integrity-failure: " (str (:reason r)))}))))
+     ;; BL-2069 D2: commit-sent-marker!'s own docstring promises it never
+     ;; throws - every failure is {:ok false :reason ...}, so the sweep that
+     ;; calls it can move on to the next mailable file (send-unsent-briefings!
+     ;; skips briefing-sent and the rest of the batch on an uncaught
+     ;; exception here, per QA's D2 finding). Restored after an earlier pass
+     ;; removed it.
      (catch Exception e
-       {:ok false :reason (str "commit-sent-marker-exception: " (.getMessage e))}))))
+       {:ok false :reason (str "commit-sent-marker-exception: " (.getMessage e))})))
+  ([briefings-dir _sh-fn] (commit-sent-marker! briefings-dir)))
 
 ;; BL-392: the headline's positional contract ("first non-empty line") is
 ;; unchanged, but a briefing's first line can be a whole markdown-laden lede
@@ -704,6 +770,15 @@
    adapter (every caller/test predating BL-821) skips Leg A entirely,
    same contract as every other optional adapter here.
 
+   BL-2069 D1: an optional :marker-uncommitted? adapter (1-arg fn, called
+   with briefings-dir exactly like :commit-marker!, returning
+   marker-uncommitted?'s boolean) gates the HEAL commit below - :commit-marker!
+   is attempted only when it returns true, so a sweep with nothing pending
+   costs a cheap comparison, never a real `git add`/`git commit` through
+   the checkout's pre-commit hook. Omitting the adapter (every caller/test
+   predating this fix) falls back to the original unconditional attempt,
+   same contract as every other optional adapter here.
+
    BL-1880: an optional :now-iso! adapter (zero-arg fn returning a real
    ISO instant) is read right when a send actually succeeds and passed to
    record-briefing-sent! as that file's sent-at - the true IO edge for
@@ -741,4 +816,27 @@
 
               :else
               ((:log! adapters) "briefing-send-failed" file-name (str (:error result))))))))
+    ;; BL-2069: heal - a marker commit that failed on an earlier sweep (or a
+    ;; marker written by a process that died before committing) is still
+    ;; uncommitted here; the per-file commit above only runs for files THIS
+    ;; sweep sent, so without this a failed marker would ride no commit at
+    ;; all until some unrelated writer happened to stage it.
+    ;;
+    ;; BL-2069 D1: an unconditional attempt is NOT cheap - commit-with-integrity!
+    ;; still runs a real `git add` + `git commit` through this checkout's
+    ;; core.hooksPath pre-commit hook even when the result is
+    ;; :nothing-to-commit, and that hook alone measured ~7.5s per no-op
+    ;; attempt (QA bounce 26cd3a6165, D1) against handoffd's own ~2.4-minute
+    ;; sweep cadence - stalling the poll loop for it on every sweep that has
+    ;; nothing to heal. The optional :marker-uncommitted? adapter (1-arg fn,
+    ;; called with briefings-dir exactly like :commit-marker! - the
+    ;; boolean a bare call to marker-uncommitted? returns) is consulted
+    ;; FIRST so the commit is attempted only when there is a real pending
+    ;; write; omitting the adapter (every caller/test predating this fix)
+    ;; falls back to the original unconditional-attempt behavior unchanged.
+    (when-let [commit! (:commit-marker! adapters)]
+      (when (if-let [uncommitted? (:marker-uncommitted? adapters)] (uncommitted? briefings-dir) true)
+        (let [r (commit! briefings-dir)]
+          (when-not (:ok r)
+            ((:log! adapters) "briefing-marker-commit-failed" "heal" (str (:reason r)))))))
     @sent-now))

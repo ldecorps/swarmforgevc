@@ -143,3 +143,7 @@ notes: |
   (fixture repository through the real sweep).
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-10-08, by: hardender, blamed: coder, class: acceptance, commit: 7d0ccc8a19, evidence: backlog/evidence/BL-2069-hardender-20261008.md }
+  - { at: 2026-10-08, by: QA, blamed: coder, class: behavior, commit: 26cd3a6165, evidence: backlog/evidence/BL-2069-QA-20261008.md }
