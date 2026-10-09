@@ -12,6 +12,7 @@ epic: unit-suite-speed
 priority: 5
 direction: normal
 depends_on: []
+verification_category: unlaned-property-runner-run-by-hand
 mutation_cost: medium
 # medium: TypeScript (qaGather.ts, one CHECKLIST row and wherever the ref
 # is resolved) under Stryker on the changed lines, plus one step handler
@@ -149,5 +150,10 @@ notes: |
   resolved), Valuable (ruling A's gate finally runs), Estimable (one row,
   one handler, one retirement), Small (three scenarios), Testable (a real
   git fixture with the real front-end).
+  2026-10-09 ~19:20Z, specifier: `verification_category:
+  unlaned-property-runner-run-by-hand` added (QA note 003961). Two of the
+  category's three rows (BL-2087, BL-2095) are this ticket's gap; its
+  earlier owners BL-2048 and BL-2049 are done. Bookkeeping only: nothing
+  the parcel builds changes.
 
 assigned_to: coder@2
