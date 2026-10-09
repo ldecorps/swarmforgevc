@@ -324,3 +324,8 @@
   role: QA
   description: "qa-gather's property_runners row reached nothing (BL-2094's gap); ran the parcel's new bl2095_tier_skip_said_out_loud_property_runner.bb, seat_difficulty_lib_test_runner.bb, ready_for_next_claim_task_name_runner.bb and the adjacent bl1004/seat_affinity runners by hand"
   detected_at: 2026-10-09
+- category: stryker-dry-run-timeout-fallback
+  ticket: BL-1784
+  role: hardender
+  description: "Stryker dry run on verificationDebtSignal.js/emit-throttle-recommendation.js terminated (exit 143) at ~7min on 4 consecutive attempts under coder2's own concurrent 10-worker vitest load; fell back to hand-mutation verification (2 mutants, 1 killed real gap, 1 found via a missing test now added) plus full unit/property/acceptance suites."
+  detected_at: 2026-10-09

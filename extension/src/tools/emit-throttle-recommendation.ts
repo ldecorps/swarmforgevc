@@ -27,6 +27,7 @@ import * as path from 'path';
 import { readReworkSignal } from '../metrics/reworkObservatoryStore';
 import { diagnoseReworkSignal, classifyThrottleSeverity, recommendedCapForSeverity, ThrottleSeverity } from '../metrics/reworkDiagnosis';
 import { computeStandingRedRecommendation, describeStandingRedSignal, StandingRedRecommendation } from '../metrics/standingRedSignal';
+import { computeVerificationDebtRecommendation, describeVerificationDebtSignal, VerificationDebtRecommendation } from '../metrics/verificationDebtSignal';
 import { atomicWrite, atomicAppend } from '../util/atomicWrite';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 import { refreshReworkSignal } from './rework-observatory';
@@ -64,6 +65,11 @@ export interface ThrottleRecommendation {
   // right now, independent of the change log (which only records
   // TRANSITIONS, not the standing state).
   standingRed: StandingRedRecommendation | null;
+  // BL-1784: the verification-debt ledger's own recommendation, folded in
+  // via the SAME never-raise min() recommendedCap already uses alongside
+  // standingRed - kept here for the same reason: a reader needs to see
+  // WHICH signal is active right now, independent of the change log.
+  verificationDebt: VerificationDebtRecommendation | null;
   updated_at: string;
   // BL-1981: the EFFECTIVE floor a throttle hold imposes on top of the
   // raw recommendedCap above - null when no episode is open, or once a
@@ -143,6 +149,16 @@ function minRecommendedCap(a: number | null, b: number | null): number | null {
   return Math.min(a, b);
 }
 
+// Extracted from computeThrottleRecommendation below (hardener extraction,
+// BL-1784 CRAP gate: adding a second inline `?.recommendedCap ?? null`
+// pushed that function's own complexity past its main baseline) - any
+// signal's own recommendation (or its absence) reduced to the one number
+// minRecommendedCap folds, no different in meaning, just out of the
+// caller's count.
+function recommendedCapOf(signal: { recommendedCap: number } | null): number | null {
+  return signal?.recommendedCap ?? null;
+}
+
 // Pure given the signal - the SAME diagnose -> classify -> map pipeline
 // reworkDiagnosis.ts's own exports already establish, composed here once
 // rather than re-derived at each call site (this CLI's main() and its own
@@ -162,12 +178,15 @@ export function computeThrottleRecommendation(
   const severity = classifyThrottleSeverity(verdict);
   const reworkCap = recommendedCapForSeverity(severity);
   const standingRed = computeStandingRedRecommendation(targetRepoPath);
+  const verificationDebt = computeVerificationDebtRecommendation(targetRepoPath);
+  const foldedCap = minRecommendedCap(minRecommendedCap(reworkCap, recommendedCapOf(standingRed)), recommendedCapOf(verificationDebt));
   return {
-    recommendedCap: minRecommendedCap(reworkCap, standingRed?.recommendedCap ?? null),
+    recommendedCap: foldedCap,
     severity,
     reworkRate: verdict?.reworkRate ?? null,
     baselineRate: verdict?.baselineRate ?? null,
     standingRed,
+    verificationDebt,
     updated_at: new Date(nowMs).toISOString(),
     heldCap: null,
     episode: null,
@@ -189,6 +208,40 @@ function readConfiguredCap(targetRepoPath: string): number {
   return Number.isFinite(parsed) ? parsed : DEFAULT_CONFIGURED_CAP;
 }
 
+// BL-1784: which of the two non-rework signals (standing-red, verification-
+// debt) is actually binding against reworkCap - checked in this fixed
+// priority (standingRed, then verificationDebt) purely to pick ONE
+// deterministic name on a tie, same rationale as standingRedSignal.ts's own
+// internal (unowned, count, age) ordering: every signal this fold ever
+// recommends is the same cap 1, so the ordering never changes the OUTCOME,
+// only which cause gets named. Shared by bindingSignalName and
+// describeChangeReason's both branches so the "which was actually binding"
+// comparison the BL-1429 architect bounce established is never duplicated
+// with the chance of drifting into two different answers.
+type NonReworkSignalTag = 'standingRed' | 'verificationDebt';
+
+// Extracted from bindingNonReworkSignal below (hardener extraction, BL-1784
+// CRAP gate: complexity 7 on the inlined version) - "does this signal's own
+// cap actually bind against reworkCap" is one self-contained question, no
+// different in meaning, just out of the caller's count.
+function signalBindsAtOrBelow(signalCap: number | null, reworkCap: number | null): boolean {
+  return signalCap !== null && (reworkCap === null || signalCap <= reworkCap);
+}
+
+function bindingNonReworkSignal(
+  reworkCap: number | null,
+  standingCap: number | null,
+  verificationDebtCap: number | null
+): NonReworkSignalTag | null {
+  if (signalBindsAtOrBelow(standingCap, reworkCap)) {
+    return 'standingRed';
+  }
+  if (signalBindsAtOrBelow(verificationDebtCap, reworkCap)) {
+    return 'verificationDebt';
+  }
+  return null;
+}
+
 // Human-readable phrase naming what is CURRENTLY binding rec's own
 // recommendedCap - used only to label a freshly OPENED episode; never the
 // same comparison describeChangeReason's clearing branch makes against the
@@ -196,8 +249,13 @@ function readConfiguredCap(targetRepoPath: string): number {
 function bindingSignalName(rec: ThrottleRecommendation): string {
   const reworkCap = recommendedCapForSeverity(rec.severity);
   const standingCap = rec.standingRed?.recommendedCap ?? null;
-  if (standingCap !== null && (reworkCap === null || standingCap <= reworkCap)) {
+  const verificationDebtCap = rec.verificationDebt?.recommendedCap ?? null;
+  const binding = bindingNonReworkSignal(reworkCap, standingCap, verificationDebtCap);
+  if (binding === 'standingRed') {
     return describeStandingRedSignal(rec.standingRed!.signal);
+  }
+  if (binding === 'verificationDebt') {
+    return describeVerificationDebtSignal(rec.verificationDebt!.categories);
   }
   return rec.severity === 'severe' ? 'a severe rework diagnosis' : 'a degraded rework diagnosis';
 }
@@ -330,8 +388,13 @@ function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecomm
   if (rec.recommendedCap !== null) {
     const reworkCap = recommendedCapForSeverity(rec.severity);
     const standingCap = rec.standingRed?.recommendedCap ?? null;
-    if (standingCap !== null && (reworkCap === null || standingCap <= reworkCap)) {
+    const verificationDebtCap = rec.verificationDebt?.recommendedCap ?? null;
+    const binding = bindingNonReworkSignal(reworkCap, standingCap, verificationDebtCap);
+    if (binding === 'standingRed') {
       return `standing-red register signal (${describeStandingRedSignal(rec.standingRed!.signal)}) - stabilizing to one`;
+    }
+    if (binding === 'verificationDebt') {
+      return `${describeVerificationDebtSignal(rec.verificationDebt!.categories)} - stabilizing to one`;
     }
     if (rec.severity === 'severe') {
       return `severe rework diagnosis (rate ${rec.reworkRate} vs baseline ${rec.baselineRate}) - freezing intake`;
@@ -345,8 +408,13 @@ function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecomm
     if (prior) {
       const priorReworkCap = recommendedCapForSeverity(prior.severity);
       const priorStandingCap = prior.standingRed?.recommendedCap ?? null;
-      if (priorStandingCap !== null && (priorReworkCap === null || priorStandingCap <= priorReworkCap)) {
+      const priorVerificationDebtCap = prior.verificationDebt?.recommendedCap ?? null;
+      const priorBinding = bindingNonReworkSignal(priorReworkCap, priorStandingCap, priorVerificationDebtCap);
+      if (priorBinding === 'standingRed') {
         return `${describeStandingRedSignal(prior.standingRed!.signal)} cleared`;
+      }
+      if (priorBinding === 'verificationDebt') {
+        return `${describeVerificationDebtSignal(prior.verificationDebt!.categories)} cleared`;
       }
     }
     return 'rework diagnosis cleared';
