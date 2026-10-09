@@ -220,10 +220,18 @@ test('property (BL-1769 invariant): a red unit/properties row always contributes
 //     non-empty reason, never 'ran' (so never mistaken for a pass or a
 //     failure) - and the underlying npm command never actually started.
 //
-// Generates a random mix of backlog/ and non-backlog/ paths (so the
-// "every path starts with backlog/" clause is reached both ways) and
-// random merge-base/diff failure injection, so the generator constructs
-// BOTH the skip and the fail-closed-run population, never only one.
+// GENERATOR REACH (BL-1062/BL-1584): the interesting population here is a
+// conjunction (merge-base resolves AND diff resolves AND every path is
+// backlog/) that independent uniform draws would reach only rarely - a
+// sampled-high reach floor over such a conjunction is a real, not a
+// cosmetic, risk (BL-2087's own incident class). Each of the five
+// decision branches below is therefore its own CELL, run with a
+// guaranteed share of the budget (runsPerCell) - reached by construction,
+// never hoped for - with randomness kept only to the parts that do not
+// decide which branch is under test (how many backlog/ paths, their
+// names, which specific failure flavor within a cell).
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+
 const BACKLOG_PATH_ARB = fc.string({ minLength: 1, maxLength: 12 }).map((s) => `backlog/evidence/${encodeURIComponent(s) || 'x'}.md`);
 const OTHER_PATH_ARB = fc.constantFrom(
   'extension/src/tools/bl9001.ts',
@@ -231,15 +239,9 @@ const OTHER_PATH_ARB = fc.constantFrom(
   'swarmforge/scripts/bl9001.bb',
   'docs/how-to/BL-9001-fixture.md'
 );
-const PATH_ARB = fc.oneof({ weight: 2, arbitrary: BACKLOG_PATH_ARB }, { weight: 1, arbitrary: OTHER_PATH_ARB });
-const PATHS_ARB = fc.array(PATH_ARB, { minLength: 0, maxLength: 5 });
+const BACKLOG_PATHS_ARB = fc.array(BACKLOG_PATH_ARB, { minLength: 1, maxLength: 5 });
 
-const RESOLUTION_ARB = fc.record({
-  mergeBaseStarted: fc.boolean(),
-  mergeBaseExit: fc.integer({ min: 0, max: 2 }),
-  diffStarted: fc.boolean(),
-  diffExit: fc.integer({ min: 0, max: 2 }),
-});
+const RESOLVED = { mergeBaseStarted: true, mergeBaseExit: 0, diffStarted: true, diffExit: 0 };
 
 function backlogOnlySkipRunFn(paths, resolution, npmCalls) {
   return (command, args) => {
@@ -263,40 +265,90 @@ function backlogOnlySkipRunFn(paths, resolution, npmCalls) {
   };
 }
 
+function assertSkipped(unitRow, propsRow, npmCalls, label) {
+  assert.equal(unitRow.status, 'skipped', `${label}: expected unit skipped`);
+  assert.equal(propsRow.status, 'skipped', `${label}: expected properties skipped`);
+  assert.ok(typeof unitRow.reason === 'string' && unitRow.reason.length > 0, `${label}: a skipped row must carry a non-empty reason`);
+  assert.ok(typeof propsRow.reason === 'string' && propsRow.reason.length > 0, `${label}: a skipped row must carry a non-empty reason`);
+  assert.equal(npmCalls.length, 0, `${label}: a skipped lane must never actually start its command`);
+}
+
+function assertRan(unitRow, propsRow, npmCalls, label) {
+  assert.equal(unitRow.status, 'ran', `${label}: expected unit to run (fail closed)`);
+  assert.equal(propsRow.status, 'ran', `${label}: expected properties to run (fail closed)`);
+  assert.equal(npmCalls.length, 2, `${label}: both lanes must have actually started when not skipping`);
+}
+
+const CELLS = ['skip', 'mergeBaseFailed', 'diffFailed', 'emptyDiff', 'mixedPaths'];
+const CELL_RUNS = runsPerCell(200, CELLS.length);
+
 test('property (BL-2024 invariants 1/2): a backlog-only diff skips both lanes with a reason; any doubt runs both, never started', () => {
-  let reachedSkip = false;
-  let reachedRun = false;
-  fc.assert(
-    fc.property(PATHS_ARB, RESOLUTION_ARB, (paths, resolution) => {
-      const npmCalls = [];
-      const runFn = backlogOnlySkipRunFn(paths, resolution, npmCalls);
-      const report = composeQaGatherReport('/r', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
-      const unitRow = report.checks.find((c) => c.id === 'unit');
-      const propsRow = report.checks.find((c) => c.id === 'properties');
+  const reach = { skip: 0, mergeBaseFailed: 0, diffFailed: 0, emptyDiff: 0, mixedPaths: 0 };
 
-      const diffResolved = resolution.mergeBaseStarted && resolution.mergeBaseExit === 0 && resolution.diffStarted && resolution.diffExit === 0;
-      const expectSkip = diffResolved && paths.length > 0 && paths.every((p) => p.startsWith('backlog/'));
+  function run(cell, arb, buildCase) {
+    fc.assert(
+      fc.property(arb, (drawn) => {
+        reach[cell] += 1;
+        const { paths, resolution, expectSkip } = buildCase(drawn);
+        const npmCalls = [];
+        const runFn = backlogOnlySkipRunFn(paths, resolution, npmCalls);
+        const report = composeQaGatherReport('/r', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
+        const unitRow = report.checks.find((c) => c.id === 'unit');
+        const propsRow = report.checks.find((c) => c.id === 'properties');
+        if (expectSkip) {
+          assertSkipped(unitRow, propsRow, npmCalls, cell);
+        } else {
+          assertRan(unitRow, propsRow, npmCalls, cell);
+        }
+        // invariant 2, restated: a row is never anything but one of these three.
+        assert.ok(['ran', 'blocked', 'skipped'].includes(unitRow.status));
+        assert.ok(['ran', 'blocked', 'skipped'].includes(propsRow.status));
+      }),
+      { numRuns: CELL_RUNS }
+    );
+  }
 
-      if (expectSkip) {
-        reachedSkip = true;
-        assert.equal(unitRow.status, 'skipped', `expected unit skipped for paths ${JSON.stringify(paths)}`);
-        assert.equal(propsRow.status, 'skipped', `expected properties skipped for paths ${JSON.stringify(paths)}`);
-        assert.ok(typeof unitRow.reason === 'string' && unitRow.reason.length > 0, 'a skipped row must carry a non-empty reason');
-        assert.ok(typeof propsRow.reason === 'string' && propsRow.reason.length > 0, 'a skipped row must carry a non-empty reason');
-        assert.equal(npmCalls.length, 0, 'a skipped lane must never actually start its command');
-      } else {
-        reachedRun = true;
-        assert.equal(unitRow.status, 'ran', `expected unit to run (fail closed) for paths=${JSON.stringify(paths)} resolution=${JSON.stringify(resolution)}`);
-        assert.equal(propsRow.status, 'ran', `expected properties to run (fail closed) for paths=${JSON.stringify(paths)} resolution=${JSON.stringify(resolution)}`);
-        assert.equal(npmCalls.length, 2, 'both lanes must have actually started when not skipping');
-      }
-      // invariant 2, restated: a row is never both 'skipped' and 'ran' - and
-      // never anything else.
-      assert.ok(['ran', 'blocked', 'skipped'].includes(unitRow.status));
-      assert.ok(['ran', 'blocked', 'skipped'].includes(propsRow.status));
-    }),
-    { numRuns: 200 },
+  // Cell 'skip': the rare conjunction, constructed directly - resolved AND
+  // every path backlog/.
+  run('skip', BACKLOG_PATHS_ARB, (paths) => ({ paths, resolution: RESOLVED, expectSkip: true }));
+
+  // Cell 'mergeBaseFailed': resolved otherwise, but the merge-base call
+  // itself fails (either never started, or a non-zero exit) - paths are
+  // irrelevant to the outcome, so still drawn randomly (never fixed).
+  run(
+    'mergeBaseFailed',
+    fc.tuple(BACKLOG_PATHS_ARB, fc.boolean(), fc.integer({ min: 1, max: 2 })),
+    ([paths, neverStarted, exit]) => ({
+      paths,
+      resolution: { ...RESOLVED, mergeBaseStarted: !neverStarted, mergeBaseExit: neverStarted ? 0 : exit },
+      expectSkip: false,
+    })
   );
-  assert.ok(reachedSkip, 'the generator must reach at least one backlog-only-diff case that skips');
-  assert.ok(reachedRun, 'the generator must reach at least one case that runs both lanes (fail-closed)');
+
+  // Cell 'diffFailed': merge-base resolves, but the diff call fails.
+  run(
+    'diffFailed',
+    fc.tuple(BACKLOG_PATHS_ARB, fc.boolean(), fc.integer({ min: 1, max: 2 })),
+    ([paths, neverStarted, exit]) => ({
+      paths,
+      resolution: { ...RESOLVED, diffStarted: !neverStarted, diffExit: neverStarted ? 0 : exit },
+      expectSkip: false,
+    })
+  );
+
+  // Cell 'emptyDiff': both resolve, but the diff itself is empty (no
+  // changed paths at all).
+  run('emptyDiff', fc.constant(undefined), () => ({ paths: [], resolution: RESOLVED, expectSkip: false }));
+
+  // Cell 'mixedPaths': both resolve, the diff is non-empty, but at least
+  // one path is NOT under backlog/ - constructed directly (one backlog/
+  // path and one other, in a random order), never hoped for from an
+  // independent per-path coin flip.
+  run('mixedPaths', fc.tuple(BACKLOG_PATH_ARB, OTHER_PATH_ARB, fc.boolean()), ([backlogPath, otherPath, backlogFirst]) => ({
+    paths: backlogFirst ? [backlogPath, otherPath] : [otherPath, backlogPath],
+    resolution: RESOLVED,
+    expectSkip: false,
+  }));
+
+  assertReachFloor(reach, CELLS, 1, 'backlog-only-skip decision branch');
 }, propertyLaneTimeoutMs(20000));
