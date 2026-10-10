@@ -21,6 +21,21 @@ const CASES = [
   ['some output\n❯ type a message…', 'bare empty prompt'],
   ['some output\n❯ ', 'bare prompt with trailing space'],
   ['some output\n> message', 'angle-bracket prompt'],
+  ['some output\n➜ swarmforgevc · git:(main) ·', 'qwen status/prompt row'],
+  [
+    [
+      '  ✓ Shell ready_for_next.sh',
+      '    NO_TASK',
+      '',
+      '  .. Working... (5m · ↑ 3k tokens · esc to cancel)',
+      '────────────────────────────────────────────────────────────────────────────────',
+      '*   Type your message or @path/to/file',
+      '────────────────────────────────────────────────────────────────────────────────',
+      '  ➜ swarmforgevc · git:(main) · 80.5k Context',
+      '  Enter to steer · Ctrl+Q to queue · YOLO mode',
+    ].join('\n'),
+    'qwen full chrome stack above ➜',
+  ],
   ['some output\n[auto] permission mode\n❯ ', 'permission line above prompt'],
   ['some output\nesc to break\n❯ ', 'interrupt-hint line above prompt'],
   [
