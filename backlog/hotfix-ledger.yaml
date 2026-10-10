@@ -1714,3 +1714,10 @@
   stamp_ticket: BL-2120
   human_decision: null
   decided_at: null
+- commit: b24cc182e5
+  subject: "Hotfix: standing all-Slevin forge with Slevin on the coordinator too"
+  detected_at: 2026-10-10
+  state: pending
+  stamp_ticket: BL-2121
+  human_decision: null
+  decided_at: null
