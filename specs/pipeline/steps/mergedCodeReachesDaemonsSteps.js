@@ -78,6 +78,14 @@ function copyRealCompiledExtension(root) {
   fs.mkdirSync(extDir, { recursive: true });
   fs.cpSync(path.join(REPO_ROOT, 'extension', 'out'), path.join(extDir, 'out'), { recursive: true });
   fs.symlinkSync(path.join(REPO_ROOT, 'extension', 'node_modules'), path.join(extDir, 'node_modules'));
+  // BL-2065: sync recompiles from `git archive <main> -- extension`, so the
+  // compiled tree must be COMMITTED or the archive finds no extension/ and
+  // the swap would replace out/ with an empty one. node_modules stays out of
+  // the commit - safe_recompile_lib.bb links it in itself.
+  execFileSync('git', ['add', '-f', 'extension/out'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'compiled extension'], { cwd: root });
+  execFileSync('git', ['branch', '-f', 'main'], { cwd: root });
+  execFileSync('git', ['branch', '-f', 'swarmforge-QA', 'main'], { cwd: root });
 }
 
 function outboxFile(root) {
@@ -145,6 +153,24 @@ async function realAck(port, id) {
   }
 }
 
+// A bridge the restart has just respawned may not be listening yet, so a
+// refused connection is retried for a bounded time; a bridge that never
+// comes back still fails here, after the deadline.
+async function fetchEventsWhenListening(port, signal, deadlineMs = 15000) {
+  const start = Date.now();
+  for (;;) {
+    try {
+      return await fetch(`http://127.0.0.1:${port}/events`, {
+        headers: { authorization: `Bearer ${TOKEN}` },
+        signal,
+      });
+    } catch (err) {
+      if (Date.now() - start > deadlineMs) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+}
+
 // The SAME real client-side relay BL-320 proved correct (relayReplyAtLeastOnceSteps.js's
 // own connectBotOnce) - reused directly here rather than re-implemented,
 // since this scenario's own job is to prove the RESTART preserves the
@@ -152,10 +178,7 @@ async function realAck(port, id) {
 async function connectAndCollect(port, maxAttempts = 80) {
   const { relaySseReplies } = require(path.join(REPO_ROOT, 'extension', 'out', 'tools', 'telegramFrontDeskBotCore'));
   const controller = new AbortController();
-  const res = await fetch(`http://127.0.0.1:${port}/events`, {
-    headers: { authorization: `Bearer ${TOKEN}` },
-    signal: controller.signal,
-  });
+  const res = await fetchEventsWhenListening(port, controller.signal);
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   const sent = [];

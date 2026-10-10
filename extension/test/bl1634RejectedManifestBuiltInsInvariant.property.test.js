@@ -6,10 +6,12 @@ const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { getLetsTalkUiBundleManifest } = require('../out/bridge/letsTalkUiBundle');
 const {
   operatorDocs,
+  articleDrafts,
   bubbleHealth,
   bubbleHostPage,
   bubbleLivePage,
   mergeOperatorDocsIntoUiBundleManifest,
+  mergeArticleDraftsIntoUiBundleManifest,
   mergeBubbleHealthIntoUiBundleManifest,
   mergeBubbleHostIntoUiBundleManifest,
   mergeBubbleLiveIntoUiBundleManifest,
@@ -33,7 +35,7 @@ const {
 //
 // Runs ONLY via `npm run test:properties` (vitest.properties.config.mjs).
 
-const BUILT_IN_PAGES = [operatorDocs, bubbleHealth, bubbleHostPage, bubbleLivePage];
+const BUILT_IN_PAGES = [operatorDocs, articleDrafts, bubbleHealth, bubbleHostPage, bubbleLivePage];
 const BUILT_IN_IDS = BUILT_IN_PAGES.map((p) => p.id);
 const MISSING_FIELDS = ['title', 'entryPath', 'order'];
 const CELLS = ['colliding', 'nonColliding'];
@@ -68,7 +70,11 @@ function manifestPath(root) {
 // /lets-talk/ui-bundle.json route builds it.
 function applyBuiltInMergeChain(manifest) {
   return mergeBubbleLiveIntoUiBundleManifest(
-    mergeBubbleHostIntoUiBundleManifest(mergeBubbleHealthIntoUiBundleManifest(mergeOperatorDocsIntoUiBundleManifest(manifest)))
+    mergeBubbleHostIntoUiBundleManifest(
+      mergeBubbleHealthIntoUiBundleManifest(
+        mergeArticleDraftsIntoUiBundleManifest(mergeOperatorDocsIntoUiBundleManifest(manifest))
+      )
+    )
   );
 }
 

@@ -781,10 +781,48 @@ export function renderLiveScreenBody(): string {
     return html;
   }
 
+  // Ticket titles run to several hundred characters, which buried the
+  // fullscreen pane under its own header on a phone. The header shows a
+  // summary - parenthetical asides dropped, cut at the first " - ", ": " or
+  // "; " past 20 characters, at most 90 characters - and a tap on the title
+  // shows the full one (fsTitleExpanded survives the repaints).
+  var fsTitleExpanded = false;
+  var fsFullTitle = '';
+  function summarizeTicketTitle(full) {
+    var text = String(full || '');
+    var out = '';
+    var depth = 0;
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charAt(i);
+      if (c === '(') { depth++; continue; }
+      if (c === ')' && depth > 0) { depth--; continue; }
+      if (depth === 0) out += c;
+    }
+    while (out.indexOf('  ') >= 0) out = out.split('  ').join(' ');
+    out = out.split(' ,').join(',');
+    var end = out.length;
+    [' - ', ': ', '; '].forEach(function (sep) {
+      var at = out.indexOf(sep, 20);
+      if (at >= 0 && at < end) end = at;
+    });
+    var cutShort = end < out.length;
+    out = out.slice(0, end).trim();
+    if (out.length > 90) {
+      var space = out.lastIndexOf(' ', 90);
+      out = out.slice(0, space > 40 ? space : 90);
+      cutShort = true;
+    }
+    if (!out) return text;
+    return cutShort ? out + '…' : out;
+  }
+
   function buildTicketBlockHtml(pane) {
     if (!pane || !pane.ticketId) return '';
+    var fullTitle = pane.ticketTitle || '(untitled)';
+    fsFullTitle = fullTitle;
+    var shownTitle = fsTitleExpanded ? fullTitle : summarizeTicketTitle(fullTitle);
     var html = '<div class="ticket-strip-line"><span class="ticket-strip-id">' + escapeHtml(pane.ticketId) + '</span> - ';
-    html += '<span class="ticket-strip-title">' + escapeHtml(pane.ticketTitle || '(untitled)') + '</span></div>';
+    html += '<span class="ticket-strip-title" data-fs-title-toggle="1">' + escapeHtml(shownTitle) + '</span></div>';
     var meta = pane.roleLabel || '';
     if (pane.modelLabel) {
       meta += (meta ? ' · ' : '') + pane.modelLabel;
@@ -874,6 +912,17 @@ export function renderLiveScreenBody(): string {
     var pane = col.getAttribute('data-pane-id');
     if (!pane) return;
     enterFullscreen(pane);
+  });
+
+  // A tap on the fullscreen ticket title toggles summary and full title;
+  // stopPropagation so it never triggers the fullscreen tap-to-exit.
+  fsHeadEl.addEventListener('click', function (e) {
+    var titleEl = e.target.closest('[data-fs-title-toggle]');
+    if (!titleEl) return;
+    e.stopPropagation();
+    e.preventDefault();
+    fsTitleExpanded = !fsTitleExpanded;
+    titleEl.textContent = fsTitleExpanded ? fsFullTitle : summarizeTicketTitle(fsFullTitle);
   });
 
   paneFullscreenEl.addEventListener('click', function (e) {

@@ -1,0 +1,115 @@
+id: BL-2110
+title: "A Markdown link in a rendered doc is a link: markdownToOperatorDocsHtml renders [text](url) as literal bracket-and-paren text, the first line of every Article draft (the episode's music pick) among them; an absolute http/https link now renders as a link and any other target as its text alone"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, contained rendering defect - the most visible line on
+# every draft page is broken syntax, but nothing is lost or unsafe.
+status: todo
+epic: art-direction
+priority: 30
+direction: normal
+depends_on: [BL-2101]
+# BL-2101 lands the Article drafts page; the code change here does not
+# need it, but QA's check on the real drafts page does.
+mutation_cost: low
+# low: one inline-pass function in one file, plus its unit cases.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one small regex-pass change; nothing to refactor"
+  architect: "no boundary moves; a shared renderer gains one inline rule"
+  documenter: "no living doc describes the inline Markdown pass"
+
+acceptance: specs/features/BL-2110-a-markdown-link-in-a-rendered-doc-is-a-link.feature
+required_wiring:
+  - specs/pipeline/steps/index.js::bl2110MarkdownLinkSteps::the acceptance handler is registered
+
+human_approval: approved
+approval_context: >
+  Firm: absolute http and https links become links; every other target
+  (relative docs links like ../how-to/x.md, javascript:, mailto:) renders
+  as its text alone, with no brackets and no href. This also changes the
+  BL-1166 operator docs pages, which share the renderer: their relative
+  links stop showing as raw Markdown and show as plain text, still not
+  tappable. Making docs-relative links navigate inside the docs page is
+  not in this ticket.
+
+invariants:
+  - "No rendered href ever starts with anything but http:// or https://."
+  - "Every character of link text and address reaches the output HTML-escaped, the same as plain text."
+
+description: |
+  What: renderInlineMarkdown in extension/src/bridge/operatorDocsCore.ts
+  (the inline pass of markdownToOperatorDocsHtml) handles only `code` and
+  **bold**. A Markdown inline link [text](url) is emitted as literal text
+  inside a <p> or <li>. The Art Director's brief of 2026-10-10 rendered
+  every real draft under .swarmforge/operator/DRAFT-linkedin-*.md through
+  BL-2101's page and found the broken link on the first body line of all
+  four (ep2 and ep7 carry two links back to back). The drafts page's CSS
+  already styles `.doc-body a`.
+
+  Wanted: an inline link whose target is an absolute http or https URL
+  renders as <a href="url">text</a>; two links on one line both render.
+  Any other target renders as the link text alone. Text and URL are
+  escaped like the surrounding plain text (escapeHtml), so an & in an
+  artist name or a query string comes out as &amp;. Bold, code, headings
+  and lists render exactly as before.
+
+  Why the http/https rule: the renderer is shared with the BL-1166
+  operator docs pages, whose links are mostly relative (docs/index.md
+  alone carries 366 Markdown links). A relative href would resolve
+  against the bridge page URL and lead nowhere, and a javascript: target
+  must never reach an href.
+
+  How (direction, not mandate): match the link after escapeHtml has run,
+  so the captured text and URL are already escaped, and decide the scheme
+  on the captured URL.
+
+  Out of scope (brief constraints): stripDraftMetaHeader, title
+  derivation, and the speech-synthesis path (speechTextForArticleDraft),
+  which already reads link text aloud without brackets.
+
+  Step handler: specs/pipeline/steps/bl2110MarkdownLinkSteps.js, driving
+  markdownToOperatorDocsHtml from extension/out, registered in
+  specs/pipeline/steps/index.js in the same commit as this feature.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2110-a-markdown-link-in-a-rendered-doc-is-a-link.feature`:
+     every scenario ok.
+  2. `node specs/pipeline/cli.js specs/features/BL-1166-bubble-authored-docs-index-and-first-pages.feature`:
+     7 of 7 ok (measured on main at mint after hotfix 009daacae7;
+     scenario 02 was red before it, owned by BL-2111).
+  3. Read from the gather's unit row: operatorDocsCore.test.js green, with
+     the hardener's link cases in it.
+  4. With BL-2101 landed, build the drafts page for
+     DRAFT-linkedin-ep2-handoff-ring-of-life-20261009.md and
+     DRAFT-linkedin-ep7-bird-of-a-thousand-voices-20261009.md
+     (buildArticleDraftPageState, in-process, from extension/out): each
+     page's first body line holds two <a href="https://..."> elements,
+     the music pick then Last.fm, and no "](" anywhere in the page.
+  5. Send the Art Director the sign-off note for the drafts page.
+
+source: |
+  Art Director note 000033 (2026-10-10T01:45Z), verbatim: "brief: BL-2101
+  drafts page md links render literal".
+  Brief docs/design/briefs/2026-10-10-bl2101-article-drafts-markdown-links-render-literal.md
+  (art-director commit 6ce16ee2e6), verbatim: "A Markdown inline link
+  `[text](url)` in draft body renders as a real `<a href="url">text</a>`
+  inside `.doc-body`, picking up the existing `.doc-body a` link color,
+  verified on the real rendered page for at least two drafts that carry
+  back-to-back links (ep2, ep7) - the second link must not swallow or
+  mangle the first."
+
+notes: |
+  Minted 2026-10-10 by the specifier from the Art Director's BL-2101
+  sign-off brief. Not folded into BL-2101: that ticket is active and lands
+  a page built outside the pipeline, and this fix is in the shared
+  renderer it calls, operatorDocsCore.ts, which BL-2101 does not touch.
+  The brief asked for <a href="url">; the http/https-only rule and the
+  text-only fallback are the specifier's, set out in approval_context.
+  INVEST: Independent (separate file from BL-2101; depends_on only for
+  QA's real-page check), Negotiable, Valuable (every draft's first line
+  reads right), Estimable, Small (one function), Testable (five
+  scenarios, one real-page check).

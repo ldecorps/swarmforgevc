@@ -96,3 +96,5 @@ notes: |
   Minted 2026-10-02 by the specifier at the human's question (source),
   gate 2 of 2; gate 1 is BL-1884. Pending: a new commit gate is the
   human's to approve.
+
+assigned_to: coder
