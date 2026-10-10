@@ -88,11 +88,18 @@ bl1142_classify_pack_shape() {
   bl1142_classify_standing_shape "$depth" "$windows"
 }
 
-# Exit 0 if shape is allowed under the durable mono decision.
+# Exit 0 if shape is allowed under the durable local decision.
 # Args: shape
+#
+# BL-2078: a capped standing forge (positive depth, <=8 windows) is allowed
+# ONLY while its seats reach Ollama through the tool-call shim's decode slot
+# (BL-2077) - SWARMFORGE_LOCAL_MODEL_SHIM=off means no decode slot, so a
+# capped-forge pack refuses the same as before BL-2077 existed. Router packs
+# are untouched: mono-router stays allowed unconditionally.
 bl1142_shape_allowed_for_local_decision() {
   case "${1:-}" in
     mono-router) return 0 ;;
+    capped-forge) [[ "${SWARMFORGE_LOCAL_MODEL_SHIM:-on}" != "off" ]] ;;
     *) return 1 ;;
   esac
 }

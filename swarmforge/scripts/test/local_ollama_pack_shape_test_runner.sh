@@ -31,11 +31,16 @@ CAPPED_ROUTER=$'config active_backlog_max_depth 2\nconfig rotation router\nwindo
   || fail "02b: expected capped-forge for router depth 2"
 pass "02b: router depth>mono max is capped-forge"
 
-# ── 03: mono decision allows only mono-router ─────────────────────────────
+# ── 03: mono decision allows mono-router unconditionally; capped-forge
+#    only behind the shim's decode slot (BL-2077/BL-2078) ────────────────
 bl1142_shape_allowed_for_local_decision mono-router || fail "03: mono allowed"
-bl1142_shape_allowed_for_local_decision capped-forge && fail "03: capped must refuse"
+unset SWARMFORGE_LOCAL_MODEL_SHIM
+bl1142_shape_allowed_for_local_decision capped-forge \
+  || fail "03: capped-forge must be allowed with the shim on (default)"
+SWARMFORGE_LOCAL_MODEL_SHIM=off bl1142_shape_allowed_for_local_decision capped-forge \
+  && fail "03: capped-forge must refuse with the shim off"
 bl1142_shape_allowed_for_local_decision uncapped-forge && fail "03: uncapped must refuse"
-pass "03: decision allows mono-router only"
+pass "03: decision allows mono-router unconditionally, capped-forge behind the decode slot"
 
 # ── 04: forbidden substitute packs ────────────────────────────────────────
 bl1142_is_forbidden_substitute_pack qwen-forge || fail "04: qwen-forge forbidden"
@@ -55,10 +60,16 @@ if bash "$GATE" "$ROOT" local-fake-forge >/dev/null 2>&1; then
   fail "05: gate must refuse uncapped local-fake-forge"
 fi
 printf '%s\n' "$CAPPED_ROUTER" > "$ROOT/swarmforge/packs/local-capped-router.conf"
-if bash "$GATE" "$ROOT" local-capped-router >/dev/null 2>&1; then
-  fail "05: gate must refuse capped-forge router depth>mono"
+# BL-2078: capped-forge (this router-with-higher-depth fixture is the
+# same classifier label the new standing forge pack gets) is allowed with
+# the shim on, refused with it off - never unconditional either way.
+if ! SWARMFORGE_LOCAL_MODEL_SHIM=on bash "$GATE" "$ROOT" local-capped-router >/dev/null 2>&1; then
+  fail "05: gate must allow capped-forge router depth>mono with the shim on"
 fi
-pass "05: gate accepts mono; refuses uncapped and capped-router"
+if SWARMFORGE_LOCAL_MODEL_SHIM=off bash "$GATE" "$ROOT" local-capped-router >/dev/null 2>&1; then
+  fail "05: gate must refuse capped-forge router depth>mono with the shim off"
+fi
+pass "05: gate accepts mono; refuses uncapped; capped-router follows the shim"
 
 # ── 06: gate refuses qwen-forge by name even if conf exists ───────────────
 printf '%s\n' "$MONO" > "$ROOT/swarmforge/packs/qwen-forge.conf"
