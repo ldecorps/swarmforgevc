@@ -1,19 +1,18 @@
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, mkSharedTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { renderBriefingBurndown, main } = require('../out/tools/render-briefing-burndown');
 const { NOT_DONE_BURNDOWN_DIAGRAM_NAME } = require('../out/metrics/notDoneBurndownChart');
 const { serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
 
-// BL-1038-EXEMPT: the two tests below are labelled "smoke test against the real
-// repo" in their own titles and assert only that the no-snapshot FALLBACK path
-// still derives a diagram from real history. The derivation logic itself is
-// covered by the two fixture-snapshot tests in this same file, which stay fast
-// and are unaffected; pinning these two as well would leave nothing exercising
-// the real-repo fallback at all. This is the file's own recorded design
-// (BL-914/BL-969), not an accident, and both carry per-test timeout overrides
-// for exactly this reason.
+// BL-2031: none of the tests below reads THIS checkout's live repository.
+// They used to point at this repo's own checkout and deriveTicketLifecycles
+// (runGitLog(...)) walked its whole backlog/ history (12.6s, 14.1s, 7.0s).
+// A small real git fixture, built once in beforeAll (BL-1770's pattern),
+// gives the CLI a non-trivial merged ticket and a non-trivial blocked ticket,
+// independent of this repo's own size or history.
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const NOW_MS = Date.parse('2026-08-15T15:00:00Z');
@@ -27,6 +26,51 @@ const FAKE_RECORDS = [
   { ticketId: 'ZZ-90001', specDateIso: '2026-08-10T10:00:00Z', closeDateIso: null },
   { ticketId: 'ZZ-90002', specDateIso: '2026-08-11T10:00:00Z', closeDateIso: null },
 ];
+
+function git(dir, ...args) {
+  return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+}
+
+function mkFixtureCheckout() {
+  const dir = mkSharedTmpDir('sfvc-render-burndown-fixture-');
+  git(dir, 'init', '-q', '-b', 'main');
+  const commonDir = git(dir, 'rev-parse', '--git-common-dir').trim();
+  assert.ok(
+    path.resolve(dir, commonDir).startsWith(dir),
+    `fixture git-common-dir must resolve inside the fixture root, got "${commonDir}"`
+  );
+  git(dir, 'config', 'user.email', 't@t');
+  git(dir, 'config', 'user.name', 't');
+  git(dir, 'config', 'commit.gpgsign', 'false');
+
+  // resolveProjectRoot requires .swarmforge/roles.tsv at the git root.
+  fs.mkdirSync(path.join(dir, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.swarmforge', 'roles.tsv'), `coder\tcoder\t${dir}\tswarmforge-coder\tCoder\tclaude\n`);
+
+  // Merged: BL-9001 arrives active, then closes into done - both real
+  // commits, so their timestamps are "now", safely inside any multi-day
+  // "since last briefing" cutoff.
+  fs.mkdirSync(path.join(dir, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'backlog', 'active', 'BL-9001-fixture.yaml'), 'id: BL-9001\nstatus: todo\n');
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-q', '-m', 'BL-9001: seed');
+
+  fs.mkdirSync(path.join(dir, 'backlog', 'done'), { recursive: true });
+  fs.renameSync(
+    path.join(dir, 'backlog', 'active', 'BL-9001-fixture.yaml'),
+    path.join(dir, 'backlog', 'done', 'BL-9001-fixture.yaml')
+  );
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-q', '-m', 'BL-9001: close');
+
+  return dir;
+}
+
+let FIXTURE_ROOT;
+
+beforeAll(() => {
+  FIXTURE_ROOT = mkFixtureCheckout();
+});
 
 function writeFixtureSnapshot(dir, records, nowMs) {
   const filePath = path.join(dir, 'snapshot.json');
@@ -46,39 +90,26 @@ test('renderBriefingBurndown uses the shared snapshot records when a fresh one i
   assert.ok(png.subarray(0, 8).equals(PNG_MAGIC));
 });
 
-// BL-914: derives burndown history from the REAL repo's git log, then
-// renders a PNG through the same real mermaidRender.ts (beautiful-mermaid +
-// native resvg) path as renderBriefingDiagramsCli.test.js - measures
-// consistently within a few percent of the 20000ms suite default even in
-// isolation (BL-815 evidence, adopted into this ticket 2026-08-18 on a QA
-// report). A per-test override buys headroom without touching the
-// suite-wide default every other test still relies on. BL-969: of the
-// file's other three tests, only the TWO fixture-snapshot ones stay fast -
-// the no-flags CLI test below does this same real-repo derive+render and
-// carries its own override (BL-914's "other three are fast" inventory
-// miscounted it, which is how it sat on the suite default until it
-// hard-failed under live-swarm load).
-// BL-999: both fallback siblings share the same measured 90000ms budget as
-// the no-flags CLI (worst sibling fail 48926ms @ load 77; margin ~1.6x).
+// BL-2031: these two tests now run against the fixture checkout (a small
+// real git repo with a merged ticket), not this checkout's live history.
+// They still assert the same code path (the fallback derivation), but the
+// fixture's two-commit backlog history makes them fast and independent of
+// this repo's size.
 test(
-  'renderBriefingBurndown falls back to deriving its own history when no snapshot path is given (smoke test against the real repo)',
+  'renderBriefingBurndown falls back to deriving its own history when no snapshot path is given',
   () => {
-    const repoRoot = path.join(__dirname, '..', '..');
-    const diagrams = renderBriefingBurndown(repoRoot);
+    const diagrams = renderBriefingBurndown(FIXTURE_ROOT);
     assert.equal(diagrams.length, 1);
     assert.equal(diagrams[0].name, NOT_DONE_BURNDOWN_DIAGRAM_NAME);
-  },
-  90000
+  }
 );
 
 test(
   'renderBriefingBurndown falls back to deriving its own history when the given snapshot path does not exist',
   () => {
-    const repoRoot = path.join(__dirname, '..', '..');
-    const diagrams = renderBriefingBurndown(repoRoot, Date.now(), '/no/such/snapshot.json');
+    const diagrams = renderBriefingBurndown(FIXTURE_ROOT, Date.now(), '/no/such/snapshot.json');
     assert.equal(diagrams.length, 1);
-  },
-  90000
+  }
 );
 
 // ── main(): argv parsing + stdout plumbing ───────────────────────────────
@@ -108,32 +139,24 @@ test('the compiled CLI reads --snapshot from argv and reflects the shared snapsh
   // cwd must resolve to a real project root (.swarmforge/roles.tsv) for
   // resolveProjectRoot to succeed - the snapshot path itself is unrelated
   // to that root, so it can still point at an arbitrary fixture file.
-  const repoRoot = path.join(__dirname, '..', '..');
   const dir = mkTmpDir('sfvc-render-burndown-');
   const snapshotPath = writeFixtureSnapshot(dir, FAKE_RECORDS, Date.now());
 
-  const diagrams = await runCli(repoRoot, ['--snapshot', snapshotPath]);
+  const diagrams = await runCli(FIXTURE_ROOT, ['--snapshot', snapshotPath]);
 
   assert.equal(diagrams.length, 1);
   assert.equal(diagrams[0].name, NOT_DONE_BURNDOWN_DIAGRAM_NAME);
 });
 
-// BL-969: no --snapshot flag means the FULL real-repo derive
-// (runGitLog/deriveTicketLifecycles) plus a real PNG render - the same
-// heavy path as the two 90000ms-override tests above, not a fixture test.
-// Budget basis (measured 2026-08-20): 50808ms under live-swarm load
-// (load average 148 on 4 cores; the hardener measured ~23s at lower
-// load), and this parcel's own qa_e2e double-run then measured 54991ms
-// at load ~40-58 - so 45000ms sibling parity and even the 60000ms floor
-// itself are too tight under live-swarm load. 90000ms = ~1.6x the worst
-// measurement, satisfies the feature's >=60000ms floor, and stays within
-// BL-914's one-order-of-magnitude ceiling over the 20000ms suite default.
+// BL-2031: no --snapshot flag means the FULL derive (runGitLog/
+// deriveTicketLifecycles) plus a real PNG render - same path as the two
+// fallback tests above, now against the fixture repo instead of the live
+// checkout. The fixture's two-commit backlog history makes this fast.
 test(
-  'the compiled CLI runs with no flags at all against the real repo (unchanged pre-BL-897 behavior)',
+  'the compiled CLI runs with no flags at all',
   async () => {
-    const diagrams = await runCli(path.join(__dirname, '..', '..'), []);
+    const diagrams = await runCli(FIXTURE_ROOT, []);
     assert.equal(diagrams.length, 1);
     assert.equal(diagrams[0].name, NOT_DONE_BURNDOWN_DIAGRAM_NAME);
-  },
-  90000
+  }
 );
