@@ -25,9 +25,9 @@
   reason: "sanctioned hotfix (SUP-17 ruling), already in hotfix-ledger.yaml with stamp_ticket BL-2007 pending"
   waived_at: 2026-10-05
 
-- key: pipeline-code-on-main-07c4d372d8
+- key: pipeline-code-on-main-07c4d372d83043aecf01eb1a244f5fa3958a8efa
   waived_by: coordinator
-  reason: "sanctioned hotfix (SUP-17 ruling), already in hotfix-ledger.yaml with stamp_ticket BL-2122 pending"
+  reason: "sanctioned hotfix (SUP-17 ruling), hotfix-ledger.yaml stamp_ticket BL-2122 pending"
   waived_at: 2026-10-10
 
 - key: pipeline-code-on-main-08ae1cd0efa5bcb302753e279823970c99477e99
@@ -460,9 +460,9 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
-- key: pipeline-code-on-main-b24cc182e5
+- key: pipeline-code-on-main-b24cc182e5d94a1879193b45030e91240e5ac546
   waived_by: coordinator
-  reason: "sanctioned hotfix (SUP-17 ruling), already in hotfix-ledger.yaml with stamp_ticket BL-2121 pending"
+  reason: "sanctioned hotfix (SUP-17 ruling), hotfix-ledger.yaml stamp_ticket BL-2121 pending"
   waived_at: 2026-10-10
 
 - key: pipeline-code-on-main-b7db6f9ed1e3b14cb8218d8386b0a942a1bd1ab5
