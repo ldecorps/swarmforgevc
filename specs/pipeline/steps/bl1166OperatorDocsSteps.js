@@ -121,8 +121,10 @@ function registerSteps(registry) {
     for (const section of ctx.bl1166IndexBody.sections) {
       assert.ok(Array.isArray(section.links));
       assert.ok(section.links.length > 0, `expected links for ${section.mode}`);
+      // Article 1.7: retired pages move to docs/deprecated/ and are linked
+      // from docs/index.md, so a section may list one.
       for (const link of section.links) {
-        assert.match(link.path, /^(tutorials|how-to|reference|explanation)\//);
+        assert.match(link.path, /^(tutorials|how-to|reference|explanation|deprecated)\//);
       }
     }
   });

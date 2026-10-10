@@ -1,0 +1,131 @@
+id: BL-2119
+title: "A prepared local-coder alias never carries a vision projector: prepare! (local_model_prepare_lib.bb) renders FROM <base tag>, so a multimodal base's CLIP projector rides into the alias - 902,822,240 bytes, about 861 MiB of VRAM, on the slevinw Qwen3.6-35B-A3B coder alias on 2026-10-10; prepare! now reads the base's ollama manifest and builds FROM the model layer's blob, for every base"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 15
+direction: human-directed
+depends_on: [BL-2106]
+# BL-2106 (active) reviews and gates local_model_prepare_lib.bb as the
+# Cursor agent landed it; this changes prepare! in the same file. Landed or
+# in flight, it goes first (INVEST I).
+mutation_cost: low
+# low: Babashka only (no Stryker lane, BL-472); one resolver function and
+# prepare! calling it, plus runner cases and one step handler.
+slice_size_envelope: low
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one new function in one lib; nothing large enough to leave duplication"
+
+acceptance: specs/features/BL-2119-a-prepared-alias-never-carries-a-vision-projector.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2119PrepareStripsProjectorSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor (BL-1235): the consumer is prepare! itself, in the
+# same file the parcel changes, so any anchor would match by construction.
+# Scenario 01 drives prepare! through its real entry and gates the call.
+
+human_approval: approved
+approval_context: >
+  You asked for this ("bake that in the prepare lib so that next time the
+  projector/vision are stripped off straight away"). What needs sign-off is
+  the specifier's three calls: (1) FROM is ALWAYS the model blob, for
+  text-only bases too, so there is one path; (2) a real prepare of a base
+  with no manifest FAILS before ollama create (the recruiter then stops at
+  prepare-failed) rather than falling back to the tag and silently
+  carrying a projector; a dry run with no manifest keeps the tag so
+  existing dry-run tests and BL-2106's scenario 01 stay green; (3)
+  num_ctx keeps its 32768 default - the coordinator's live 65536 was a
+  hand measurement, and deriving a context size from freed VRAM is not
+  in this ticket.
+
+invariants:
+  - "A prepared alias's Modelfile names no blob whose manifest layer mediaType is application/vnd.ollama.image.projector, for any base."
+
+description: |
+  ## What is wrong
+  prepare! (swarmforge/scripts/local_model_prepare_lib.bb, ~line 123)
+  renders the frozen template swarmforge/packs/local-coder-prepare.Modelfile.tmpl
+  with FROM <base tag>. ollama create from a tag inherits every layer of
+  that tag, the projector included. The coordinator's evidence
+  (backlog/evidence/coordinator-vision-strip-local-coder-20261010.md):
+  the slevinw tag's manifest has an application/vnd.ollama.image.model
+  layer (13,014,656,416 bytes) and an application/vnd.ollama.image.projector
+  layer (902,822,240 bytes); the prepared alias showed Capabilities
+  vision and a Projector section (clip, 446.57M params). Built by hand
+  FROM the model blob file instead, the alias showed tools, thinking,
+  completion only, and the GPU sat at 13549 MiB at ctx 65536 against
+  14259 MiB at ctx 32768 with the projector.
+
+  ## What is wanted
+  - prepare! resolves the base's manifest in the ollama models directory
+    and renders FROM <models dir>/blobs/sha256-<model layer digest>. No
+    projector layer is ever named, whatever the base (scenario 01).
+  - The profile JSON records the blob it was built from and whether a
+    projector layer was present and left out (scenario 02).
+  - A base with no manifest fails before ollama create, naming the base
+    and the models directory it looked in (scenario 03). A dry run with
+    no manifest keeps FROM <base tag> and records that FROM was not
+    resolved (scenario 04).
+  - The steward overview how-to (docs/how-to/BL-547-model-steward-overview.md)
+    says a prepared alias is built from the model blob and carries no
+    projector.
+
+  ## How (direction, not mandate)
+  - Models directory: $OLLAMA_MODELS, else ~/.ollama/models; an opts key
+    for tests (never a real ollama, never the real home).
+  - Manifest path from the tag: hf.co/<org>/<repo>:<tag> ->
+    manifests/hf.co/<org>/<repo>/<tag>; <name>:<tag> ->
+    manifests/registry.ollama.ai/library/<name>/<tag>; <ns>/<name>:<tag>
+    -> manifests/registry.ollama.ai/<ns>/<name>/<tag>; no tag means
+    latest. Pick the layer by mediaType, never by position or size.
+  - The template's FROM placeholder is unchanged; only the value
+    substituted into it changes.
+  - Where to read: prepare! (~line 123), render-modelfile (~line 50); the
+    runner swarmforge/scripts/test/local_model_prepare_lib_test_runner.bb
+    (its dry-run case ~line 65 keeps its tag FROM by scenario 04's rule).
+
+out_of_scope: |
+  - Raising num_ctx from freed headroom (the coordinator's live 65536 is a
+    one-off hand change; a derived context size is a separate, measured
+    ticket).
+  - The hand-built novision alias on full-forge.conf's coder window and
+    re-preparing any existing alias; a future prepare! of that base
+    reproduces it.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2119-a-prepared-alias-never-carries-a-vision-projector.feature`:
+     all ok (6 scenarios, the outline counting 3).
+  2. `bb swarmforge/scripts/test/local_model_prepare_lib_test_runner.bb`: all pass.
+  3. `node specs/pipeline/cli.js specs/features/BL-2106-the-steward-probes-a-local-coder-through-a-prepared-alias.feature`:
+     all 7 ok. Measured on main at mint: 0 of 7, because BL-2106's step
+     handler is still in flight; this ticket promotes only after BL-2106
+     lands (depends_on), so the bar is BL-2106's own landed result.
+  4. Live, on the host: `bb swarmforge/scripts/local_model_prepare_cli.bb hf.co/slevinw/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-IQ3_S-3.00bpw --alias prepared-bl2119-check`,
+     then `ollama show prepared-bl2119-check`: Capabilities lists no
+     vision and there is no Projector section; then
+     `ollama rm prepared-bl2119-check`. (ollama create from an existing
+     blob copies nothing and loads nothing.)
+
+source: |
+  Coordinator note 017785 (2026-10-10T02:38Z), verbatim: "mint: prepare!
+  strips vision/projector by default; evidence below". The evidence was
+  uncommitted in the master checkout and the coordinator named it on
+  request (peer_question, 2026-10-10):
+  backlog/evidence/coordinator-vision-strip-local-coder-20261010.md,
+  which carries the operator directive, verbatim:
+  "Yes and bake that in the prepare lib so that next time the projector/vision are stripped off straight away"
+
+notes: |
+  Minted 2026-10-10 by the specifier from coordinator note 017785.
+  The coordinator committed its evidence file in a6299b4139.
+  Stages: a feature keeps architect and documenter (dynamic routing,
+  2026-10-01); hardender kept because prepare! writes durable files
+  (Modelfile, profile) and Babashka has no Stryker lane, so its hand
+  mutants are the only gate (BL-959). Cleaner skipped.
+  INVEST: Independent once BL-2106 lands, Negotiable (manifest lookup is
+  direction), Valuable (about 861 MiB of VRAM back per multimodal base),
+  Estimable, Small (one resolver, one call site, one handler), Testable
+  (four scenarios over a fake models dir and a fake ollama, one live check).

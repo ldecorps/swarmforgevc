@@ -8,7 +8,8 @@ severity: medium
 # property workers) litters the checkout, the launch sync spreads it to
 # every seat, and a stray broken copy of a live lib sits one glob away
 # from being loaded.
-status: todo
+status: done
+closed_as: split-into-BL-2116,BL-2117,BL-2118
 epic: code-quality-gates
 priority: 4
 direction: swarm-reported
@@ -179,5 +180,10 @@ notes: |
   approval are unchanged. Scope also drops the stale index.js
   registration (BL-1371) and step 2 reads the gather instead of re-running
   property files (lean pass 2026-10-03).
-
-assigned_to: coder
+  2026-10-10 (specifier): split into BL-2116 (the scratch-root helper and
+  bl1652, scenario 02), BL-2117 (bl1458, bl1459, bl1505, bl1835) and
+  BL-2118 (bl1630, bl1671, bl938, bl943, scenario 01's census of 9) after
+  the coder seat (iq3) held it 39m with no commit (coordinator note
+  017778, "hard-tier trial end"). Scenarios moved verbatim; this feature
+  file removed. The seat's WIP is stash "BL-1743 WIP salvage before
+  respawn (coder loop-halt 01:56Z)", named in BL-2116 and BL-2117.

@@ -1693,3 +1693,17 @@
   stamp_ticket: BL-2109
   human_decision: null
   decided_at: null
+- commit: 009daacae7
+  subject: "Hotfix BL-1166 scenario 02 red: a section may list a deprecated/ page"
+  detected_at: 2026-10-10
+  state: pending
+  stamp_ticket: BL-2111
+  human_decision: null
+  decided_at: null
+- commit: 1a0d8963a4
+  subject: "Hotfix: the fullscreen live-screen pane shows a ticket title summary"
+  detected_at: 2026-10-10
+  state: pending
+  stamp_ticket: BL-2115
+  human_decision: null
+  decided_at: null

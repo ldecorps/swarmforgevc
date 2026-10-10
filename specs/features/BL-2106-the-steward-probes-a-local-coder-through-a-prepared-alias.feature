@@ -40,10 +40,11 @@ Feature: BL-2106 The steward probes a local coder through a prepared alias
     Then the steward <decision>
 
     Examples:
-      | summary                                                         | decision                       |
-      | 0 of 5 handed off, every coder fixture no model commit in 12 s  | re-probes once through prepare |
-      | 0 of 5 handed off, one coder fixture no model commit in 90 s    | does not re-probe              |
-      | 2 of 5 handed off                                               | does not re-probe              |
+      | summary                                                            | decision                       |
+      | 0 of 5 handed off, every coder fixture no model commit in 12 s     | re-probes once through prepare |
+      | 0 of 5 handed off, one coder fixture no model commit in 90 s       | does not re-probe              |
+      | 2 of 5 handed off                                                  | does not re-probe              |
+      | 0 of 5 handed off, two coder fixtures fast and three slow no-commit | does not re-probe              |
 
   # BL-2106 steward-prepared-alias-04
   Scenario: preparing never touches a pack, a launch script or a day-shift default

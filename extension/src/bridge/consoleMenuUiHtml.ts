@@ -74,6 +74,7 @@ export function getConsoleMenuUiHtml(): string {
   <a class="btn secondary" id="spec-tree" data-testid="spec-tree" href="#">Spec tree</a>
   <a class="btn secondary" id="context-budget" data-testid="context-budget" href="#">Context budget</a>
   <a class="btn secondary" id="lets-talk" data-testid="lets-talk" href="#">Let's Talk</a>
+  <a class="btn secondary" id="article-drafts" data-testid="article-drafts" href="#">Article drafts</a>
 </main>
 <script>
 (function () {
@@ -89,6 +90,7 @@ export function getConsoleMenuUiHtml(): string {
   document.getElementById('spec-tree').href = '/spec-tree' + q;
   document.getElementById('context-budget').href = '/context-budget' + q;
   document.getElementById('lets-talk').href = '/lets-talk' + q;
+  document.getElementById('article-drafts').href = '/article-drafts' + q;
 })();
 </script>
 </body>

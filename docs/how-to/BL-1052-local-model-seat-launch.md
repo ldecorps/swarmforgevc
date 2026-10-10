@@ -1,6 +1,6 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-10-09 (BL-2077: one decode slot on the host, held by a seat across its burst)
+Last Updated: 2026-10-10 (BL-2103: ensure reuses only a shim running the code on disk)
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
@@ -277,6 +277,32 @@ exactly as between two different seats. With one pane on the host — the
 live mono-router pack today — every chat completion is forwarded as soon
 as it arrives, whichever role the pane is running: a lone seat never waits
 on itself.
+
+**`ensure` reuses only a shim running the code on disk (BL-2103).** The
+shim's launch calls `ensure(port, upstream, log_path)` before every seat
+starts; until this it reused any process whose `/shim/health` named the
+shim and the upstream, whatever code that process actually ran — a shim
+started before a code change (BL-2076's `/seat/<seat>/v1` route, say)
+kept serving across every later relaunch, until something killed it by
+hand.
+
+- `/shim/health` now also reports `fingerprint` (a sha256 prefix of the
+  shim's own source file, computed once at process start) and `pid`.
+- `ensure` computes that same fingerprint fresh from the file on disk and
+  compares it to the running shim's health: a match is reused untouched.
+- A mismatch — including every shim that reports no fingerprint at all,
+  which is every shim started before this ticket — is replaced: SIGTERM
+  by the pid its health reports, or, when health carries no pid, located
+  by its own serve command line for that exact port (`pgrep -f`, never by
+  port alone); `ensure` waits for the port to free, then starts the shim
+  fresh from disk. The shim log carries one line naming the old and new
+  fingerprint.
+- A process on the port that never named the shim at all is still left
+  running untouched and `ensure` exits 1, exactly as before.
+- No in-flight request is handed over: a request on the replaced shim is
+  cut and the seat retries. Nothing but `ensure` manages the shim's
+  lifetime — babysitterd, the Ollama ancillary, and BL-1711's crash
+  restart still don't.
 
 ### The shim caps a compaction summary, drops the ask for `<analysis>`, and runs it with thinking off (BL-1952)
 
