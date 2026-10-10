@@ -1686,3 +1686,10 @@
   stamp_ticket: BL-2106
   human_decision: null
   decided_at: null
+- commit: 14698a6122
+  subject: "Hotfix BL-328 scenario 05 red (QA held BL-2102, note 003967)"
+  detected_at: 2026-10-10
+  state: pending
+  stamp_ticket: BL-2109
+  human_decision: null
+  decided_at: null

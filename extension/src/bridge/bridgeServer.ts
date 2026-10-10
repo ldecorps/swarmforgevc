@@ -2642,7 +2642,11 @@ export function startBridge(
         return;
       }
       lastSnapshot = broadcastSnapshotIfChanged(lastSnapshot);
-      emittedIndex = relayEntriesFrom(emittedIndex, sseClients);
+      // emittedIndex is seeded from the cursor once, at start; an ack that
+      // lands after that (the bot of a restart racing the new bridge) would
+      // otherwise re-send an already-acked entry on the next tick to every
+      // client, and a freshly started bot has no dedup memory of it.
+      emittedIndex = relayEntriesFrom(Math.max(emittedIndex, readPersistedCursor(targetPath).ackedIndex), sseClients);
     }, pollIntervalMs);
     poll.unref();
 
