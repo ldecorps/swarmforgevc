@@ -1721,3 +1721,10 @@
   stamp_ticket: BL-2121
   human_decision: null
   decided_at: null
+- commit: 07c4d372d8
+  subject: "Hotfix: BL-2108 step handlers gate the weekly recruiter's prepared-alias path"
+  detected_at: 2026-10-10
+  state: pending
+  stamp_ticket: BL-2122
+  human_decision: null
+  decided_at: null
