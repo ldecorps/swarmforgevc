@@ -36,4 +36,8 @@ the stage after `coder` in the ticket's `required_stages:` list
     commit: 1a2b3c4d5e
 
 `commit` is the first 10 characters of `git rev-parse HEAD`, run after
-your commit. Never merge, push, or land anything yourself.
+your work commit. Write `tmp/handoff.txt` only after that commit; set
+`commit:` once from that HEAD. Never `git commit --amend` (or a follow-up
+commit) just to refresh `commit:` — amending changes the hash and livelocks
+the seat. Do not put the draft under a tracked path such as
+`backlog/handoff-draft-*.txt`. Never merge, push, or land anything yourself.

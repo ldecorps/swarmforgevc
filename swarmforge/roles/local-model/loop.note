@@ -29,9 +29,14 @@ Your loop:
 3. Send work forward, when the parcel's work produced a commit: write a
    draft (plain `field: value` lines, no JSON) to `tmp/handoff.txt` in
    your assigned worktree, then run
-   `swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt`. `to:` is the next
-   stage in any case (`qa` or `QA`): never open roles.tsv for it, and never
-   write into inbox/new/ (no wake-up). A `git_handoff`
+   `swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt`. Write the draft
+   only after the work commit; set `commit:` once from
+   `git rev-parse --short=10 HEAD`. Never `git commit --amend` (or a
+   follow-up commit) just to refresh `commit:` — amending changes the hash
+   and livelocks the seat. Do not put the draft under a tracked path such
+   as `backlog/handoff-draft-*.txt`. `to:` is the next stage in any case
+   (`qa` or `QA`): never open roles.tsv for it, and never write into
+   inbox/new/ (no wake-up). A `git_handoff`
    draft may print `AUDIT_REQUIRED` on its first send: re-check your work
    against the task, then run the exact same command again to queue it.
    If swarm_handoff refuses because a live parcel for the ticket already

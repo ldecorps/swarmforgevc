@@ -2182,7 +2182,10 @@ EOF
 # fell through to "The request has been halted" and the seat idled. A seat
 # works a whole parcel in one turn, so the default 100-call cap halts big
 # tickets too; 300 keeps a backstop. qwen's always-on guards (identical
-# consecutive calls, repeated shell inspection) stay on.
+# consecutive calls, repeated shell inspection) stay on — this flag does
+# not cover amend-hash / identical-shell livelocks; seats must follow the
+# local-model card rule (tmp/handoff.txt after the work commit, never amend
+# just to refresh commit:).
 # 2026-10-04: tools.toolOutputBatchBudget 24000 chars (qwen's default is
 # 200000). Behind the shim a seat declares a larger window than Ollama
 # serves (local_model_window_gate_lib.bb declared-window), and one tool
