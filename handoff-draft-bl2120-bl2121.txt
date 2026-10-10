@@ -1,0 +1,21 @@
+# Hardener Handoff — BL-2120 / BL-2121
+# Priority: 00 (documenter)
+# Date: 2026-10-10
+
+## Status
+- Working tree: clean (no uncommitted changes)
+- All tests pass: 359 pass, 1 fail (expected — "red" fixture from BL-2041 QA bounce D1)
+
+## BL-2120: Hotfix 93a21154d6 — pane history accumulation for alternate-screen TUIs
+- Files changed: residentPaneHistory.ts (new), residentPaneLive.ts, residentSpyUiHtml.ts, paneHistory.ts
+- Tests verified: residentPaneHistory.test.js (5 pass), footerDetectionParity.test.js (13 pass), residentPaneLive.test.js (23 pass), residentSpyUiHtml.test.js (23 pass), paneHistory.test.js (18 pass)
+- Total: 82 tests, all passing
+- No test gaps found. All changes are behavior-preserving.
+
+## BL-2121: Pack config + launcher for ollama-slevin-local-model-forge
+- Files: ollama-slevin-local-model-forge.conf (new), start-swarm-ollama-slevin-local-model-forge.sh (new)
+- No code changes needed — config/launcher files only
+- Coder's assessment confirmed: no test gaps
+
+## Next step
+- Documenter: record handoff, update ledger, proceed with any downstream work.
