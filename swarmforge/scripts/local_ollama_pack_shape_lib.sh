@@ -50,10 +50,11 @@ bl1142_classify_router_shape() {
     echo mono-router
     return 0
   fi
-  # Router without a tight depth is still rotation-disciplined but not our
-  # durable local default — treat as capped-forge only when depth is set.
+  # Router depth above mono max is a capped-router (not capped-forge):
+  # router packs must never be allowed behind the shim — only standing
+  # capped-forges use that label.
   if [[ -n "$depth" && "$depth" -gt 0 ]]; then
-    echo capped-forge
+    echo capped-router
     return 0
   fi
   echo uncapped-forge
@@ -88,11 +89,19 @@ bl1142_classify_pack_shape() {
   bl1142_classify_standing_shape "$depth" "$windows"
 }
 
-# Exit 0 if shape is allowed under the durable mono decision.
+# Exit 0 if shape is allowed under the durable local decision.
 # Args: shape
+#
+# BL-2078: a capped standing forge (positive depth, <=8 windows) is allowed
+# ONLY while its seats reach Ollama through the tool-call shim's decode slot
+# (BL-2077) - SWARMFORGE_LOCAL_MODEL_SHIM=off means no decode slot, so a
+# capped-forge pack refuses the same as before BL-2077 existed. Router packs
+# are untouched: mono-router stays allowed unconditionally.
 bl1142_shape_allowed_for_local_decision() {
   case "${1:-}" in
     mono-router) return 0 ;;
+    capped-forge) [[ "${SWARMFORGE_LOCAL_MODEL_SHIM:-on}" != "off" ]] ;;
+    capped-router) return 1 ;;
     *) return 1 ;;
   esac
 }
