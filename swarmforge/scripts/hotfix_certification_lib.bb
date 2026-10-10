@@ -19,7 +19,10 @@
 ;; writes — resolves the last transition (invariant 3, scenario 06).
 
 (ns hotfix-certification-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 
 ;; ── ledger parse/render ──────────────────────────────────────────────────────
 ;; Committed schema (backlog/hotfix-ledger.yaml), one block per entry:
@@ -143,6 +146,30 @@
         (str/split-lines (or message ""))))
 
 (defn hotfix-declared? [message] (boolean (hotfix-trailer-value message)))
+
+;; BL-1885: the two trailers the duplicate-build guard reads, same
+;; any-indentation/trimmed convention as hotfix-trailer-value above.
+
+(defn stamp-off-ticket-id
+  "The `Stamp-off: BL-nnnn` line's ticket id, or nil when absent/unreadable.
+   Normalized through extract-ticket-id so case and a missing hyphen never
+   matter."
+  [message]
+  (some (fn [line]
+          (let [t (str/trim line)]
+            (when (str/starts-with? t "Stamp-off:")
+              (pipeline-stage-lib/extract-ticket-id (subs t (count "Stamp-off:"))))))
+        (str/split-lines (or message ""))))
+
+(defn superseded-build-shas
+  "Every `Supersedes-Build: <sha>` line's value, one build per line,
+   trimmed; [] when none."
+  [message]
+  (vec (keep (fn [line]
+               (let [t (str/trim line)]
+                 (when (str/starts-with? t "Supersedes-Build:")
+                   (not-empty (str/trim (subs t (count "Supersedes-Build:")))))))
+             (str/split-lines (or message "")))))
 
 (defn cited-ticket-ids
   "Every BL-nnn/GH-n id named anywhere in a commit message — the same

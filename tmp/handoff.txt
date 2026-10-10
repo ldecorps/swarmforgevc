@@ -1,0 +1,5 @@
+type: git_handoff
+to: QA
+priority: 00
+task: BL-1885
+commit: c452fff615
