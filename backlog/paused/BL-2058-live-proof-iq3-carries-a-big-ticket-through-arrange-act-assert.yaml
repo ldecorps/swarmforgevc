@@ -23,7 +23,7 @@ stage_skip_reasons:
 
 # Not a claim of ownership over BL-1743's contract (BL-1251): it is the
 # feature the vehicle satisfies.
-acceptance: specs/features/BL-1743-a-non-vacuity-probe-never-writes-inside-the-checkout.feature
+acceptance: specs/features/BL-2116-a-killed-probe-leaves-nothing-in-the-checkout.feature
 
 human_approval: approved
 human_ruling: |
@@ -152,3 +152,12 @@ notes: |
   The specifier relayed it with relay-ruling.js (human_ruling, provenance
   relayed). human_approval stays pending for the human's own Approvals
   tap: no agent flips it (backlog-schema human_approval).
+  2026-10-10 (specifier): BL-1743 was split (coordinator note 017778, iq3
+  held it 39m with no commit, "hard-tier trial end") into BL-2116,
+  BL-2117 and BL-2118 and retired to backlog/done/ as
+  split-into-BL-2116,BL-2117,BL-2118, so depends_on [BL-1743] is now
+  satisfied and the readout's trail ends at that split. Its feature file
+  was removed with the split, so acceptance: now points at BL-2116's
+  feature, which carries BL-1743's scenario 02 verbatim (BL-1251: not a
+  claim of ownership).
+

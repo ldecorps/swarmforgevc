@@ -1,0 +1,82 @@
+id: BL-2117
+title: "Non-vacuity probe slice 2 of 3 (split from BL-1743): the probes in bl1458, bl1459, bl1505 and bl1835 (ten sites) build their broken copy through BL-2116's scratch-root helper instead of beside the real script in swarmforge/scripts/"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+priority: 4
+direction: swarm-reported
+depends_on: [BL-2116]
+mutation_cost: low
+# low: ten one-line call-site swaps onto a helper that already exists.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "mechanical call-site swaps; nothing to refactor"
+  architect: "no production code or design surface"
+  hardender: "no production code changes, so nothing to mutate"
+  documenter: "no documented behaviour changes"
+
+# No scenario of its own: BL-1743's two scenarios went to BL-2116 and
+# BL-2118. The contract this slice keeps green is BL-2116's (BL-1251: not a
+# claim of ownership); BL-2118's census checks these four files.
+acceptance: specs/features/BL-2116-a-killed-probe-leaves-nothing-in-the-checkout.feature
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1743 (approved) with no new scope. FIRM: every probe
+  still proves its test red against the broken copy - no probe is deleted
+  or weakened.
+
+invariants: []
+
+description: |
+  ## What is wanted
+  Each site below builds its broken copy with BL-2116's
+  createScratchRoot(prefix) and writeBrokenCopy(root, realPath, transform)
+  (extension/test/helpers/nonVacuityProbe.js) and calls cleanup() in its
+  finally. Pass the probe's own mutation as the transform, so no second
+  write of the broken text is needed. Where the test also used a separate
+  mkTmpDir fixture root, keep it as a separate root: do not reuse the
+  scratch root as the fixture.
+  Every probe still fails its assertion against the broken copy.
+
+  ## Sites (read with offset and limit around each line, never the whole file)
+  - extension/test/bl1458BriefingTriggerInvariants.property.test.js:107, :164
+  - extension/test/bl1459DocumenterBriefingTipGuardInvariants.property.test.js:165, :331, :372, :400, :483
+  - extension/test/bl1505DedupSuppressedChaseCountInvariants.property.test.js:176
+  - extension/test/bl1835PauseExemptsBriefingInstructionInvariant.property.test.js:197
+
+  ## Salvage
+  The coder seat's stash on swarmforge-coder, "BL-1743 WIP salvage before
+  respawn (coder loop-halt 01:56Z)", already swaps bl1458, bl1459 and
+  bl1505 onto this API (plus bl1630, which is BL-2118's). Use it as a
+  reference, not a patch: it writes the copy twice and leaves the old
+  fs.rmSync(brokenPath) beside cleanup().
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run.
+  1. Read from the gather's property row: bl1458, bl1459, bl1505 and
+     bl1835 green (bl1505 only outside a control pause until BL-1740
+     lands, as BL-1743 noted).
+  2. `grep -nE '(scratch|broken)[A-Za-z]*\s*=\s*path\.join\((path\.dirname\(|__dirname|[A-Z_]*DIR\b)'` over the four files: no match.
+  3. `git status --short -- swarmforge/` in the QA worktree: no new
+     *non-vacuity* path.
+
+source: |
+  Split from BL-1743 on 2026-10-10 after the coder seat (iq3) held it
+  39m with no commit; coordinator note 017778, verbatim: "split BL-1743:
+  coder held it ~39m, no commit (hard-tier trial end)".
+  BL-1743 came from QA note 003163 (2026-09-25, QA tree dirty with a
+  bl1652 scratch .bb from a killed run).
+  Human sentences carried from BL-1743 (Article 5.3), verbatim:
+  "Makr sure you observe dynamic routing going forward"
+  "fine: ask Specifier to mint an live proving of IQ3 to deal with a big ticket utilizing the new Arrange Act Assert functionality"
+  The human, 2026-10-04, verbatim: "We should make the \"splitting of ticket if coder cant manage\" BAU."
+
+notes: |
+  split from BL-1743 on 2026-10-10 after coder (iq3) held it 39m. Slice 2
+  of 3. INVEST: Independent once BL-2116 lands, Negotiable, Valuable,
+  Estimable, Small (ten near-identical swaps in four files), Testable
+  (the property row and one grep).
