@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-10-10T04:29:08.349641571Z","feature_name":"BL-1885 A hotfix never duplicates a build already in flight","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1885-a-hotfix-never-duplicates-a-build-already-in-flight.feature","background_hash":"7c000c3b0aa0f925ba47f46a4f362d95ff38b339c5ec3507bc1bfc639e79ea29","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1885 A hotfix never duplicates a build already in flight
 
   A hotfix commit carries "Hotfix-Certification: pending" and names the
