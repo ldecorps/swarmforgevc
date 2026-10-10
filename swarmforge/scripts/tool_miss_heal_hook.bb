@@ -31,12 +31,18 @@
   (println "{}")
   (System/exit 0))
 
+;; Hotfix 2026-10-10: qwen local seats name the shell tool
+;; run_shell_command (Claude names it Bash). Same tool_input.command shape;
+;; accept both so write_local_model_qwen_settings can register this heal.
+(def ^:private shell-tool-names #{"Bash" "run_shell_command"})
+
 (defn -main [& _args]
   (let [raw (slurp *in*)
         payload (try (json/parse-string raw true) (catch Exception _ nil))]
-    (when (or (nil? payload) (not= (:tool_name payload) "Bash"))
+    (when (or (nil? payload) (not (contains? shell-tool-names (:tool_name payload))))
       (pass-through!))
-    (let [command (get-in payload [:tool_input :command])
+    (let [tool-input (or (:tool_input payload) {})
+          command (:command tool-input)
           pinned-worktree (System/getenv "SWARMFORGE_ROLE_WORKTREE")]
       (when (or (nil? command) (str/blank? pinned-worktree))
         (pass-through!))
@@ -46,10 +52,13 @@
       ;; pass-through case uses, with no narration on any stream.
       (let [wrapper (tool-miss-heal-lib/safe-wrapper-command command pinned-worktree)]
         (if wrapper
+          ;; Merge command into the existing tool_input so qwen's
+          ;; run_shell_command keeps description/other fields (qwen replaces
+          ;; tool_input wholesale with updatedInput).
           (println (json/generate-string
                     {:hookSpecificOutput
                      {:hookEventName "PreToolUse"
-                      :updatedInput {:command wrapper}}}))
+                      :updatedInput (assoc tool-input :command wrapper)}}))
           (pass-through!))))))
 
 (apply -main *command-line-args*)

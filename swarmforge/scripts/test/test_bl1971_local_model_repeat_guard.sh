@@ -60,13 +60,15 @@ assert len(groups) == 1, d["hooks"]["PostToolUse"]
 hooks = groups[0]["hooks"]
 assert len(hooks) == 1 and hooks[0]["type"] == "command", hooks
 assert hooks[0]["command"] == sys.argv[2], hooks
-assert "PreToolUse" not in d["hooks"], d["hooks"]
+pre = [g for g in d["hooks"].get("PreToolUse", []) if g["matcher"] == "run_shell_command"]
+assert len(pre) == 1, d["hooks"].get("PreToolUse")
+assert "tool_miss_heal_hook.bb" in pre[0]["hooks"][0]["command"], pre
 assert "PreCompact" in d["hooks"], d["hooks"]
 ' "$SETTINGS" "bb '$GUARD'"
 }
 
-guard_registered || fail "settings.json carries no single PostToolUse command hook for every tool naming $GUARD, or still registers a PreToolUse hook"
-pass "the settings register the master checkout's repeat guard after every tool, beside the other hooks, and no PreToolUse hook"
+guard_registered || fail "settings.json carries no single PostToolUse command hook for every tool naming $GUARD, or lacks the run_shell_command PreToolUse heal"
+pass "the settings register the master checkout's repeat guard after every tool, beside PreCompact and the run_shell_command miss-heal PreToolUse"
 
 ! grep -q '__SWARMFORGE_REPEAT_GUARD__' "$SETTINGS" || fail "the repeat guard placeholder was left in the written settings"
 pass "no repeat guard placeholder is left in the written settings"
@@ -294,3 +296,21 @@ out="$(decide "$ROOT/missing.jsonl" run_shell_command "$LOG")"
 out="$(echo 'not json' | bb "$GUARD")"
 [[ -z "$out" ]] || fail "an unreadable event added something: $out"
 pass "an unreadable event or transcript adds nothing"
+
+# Hotfix 2026-10-10: hunting for ready_for_next / expedite while holding
+# in_process must name the real helper and forbid declaring idle.
+HOLD_WT="$(mktemp -d)"
+register_tmp_dir "$HOLD_WT"
+mkdir -p "$HOLD_WT/.swarmforge/handoffs/inbox/in_process"
+printf 'task: BL-2120\n' > "$HOLD_WT/.swarmforge/handoffs/inbox/in_process/00_test_from_coordinator_to_coder_for_coder.handoff"
+MISS=$'Command: ls ready_for_next*\nDirectory: (root)\nOutput: ls: cannot access \'ready_for_next*\': No such file or directory\nError: (none)\nExit Code: 2'
+decide_path() { # tool_input llm_content cwd
+  python3 -c 'import json,sys; print(json.dumps({"tool_name":"run_shell_command","tool_input":json.loads(sys.argv[1]),"tool_response":{"llmContent":sys.argv[2],"returnDisplay":""},"cwd":sys.argv[3],"transcript_path":sys.argv[4],"hook_event_name":"PostToolUse"}))' "$1" "$2" "$3" "$ROOT/missing.jsonl" | bb "$GUARD"
+}
+out="$(decide_path '{"command":"ls ready_for_next*"}' "$MISS" "$HOLD_WT")"
+[[ "$out" == *"still hold in_process parcel"*"./swarmforge/scripts/ready_for_next.sh"* ]] || fail "a ready_for_next hunt miss while holding a parcel got no path hint: $out"
+out="$(decide_path '{"command":"ls ../.swarmforge/expedite/BL-999/"}' $'Output: prompt.md\nExit Code: 0' "$HOLD_WT")"
+[[ "$out" == *"ignore"*".swarmforge/expedite/"* || "$out" == *"expedite"* ]] || fail "an expedite listing while holding a parcel got no hint: $out"
+out="$(decide_path '{"command":"git status"}' $'Output: clean\nExit Code: 0' "$HOLD_WT")"
+[[ "$out" != *"ready_for_next.sh lives"* ]] || fail "an unrelated shell call got the path hint: $out"
+pass "a ready_for_next hunt miss or expedite listing while holding in_process names the real helper and forbids declaring idle (2026-10-10)"

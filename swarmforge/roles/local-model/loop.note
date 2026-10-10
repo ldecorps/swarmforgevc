@@ -80,7 +80,12 @@ Rules that apply the whole time:
   specs/pipeline/scripts/scaffold_step_handler.js <feature-file> <Name>Steps`:
   fill its stubs, never write one from scratch.
 - Find a file before you read it: `git ls-files | grep <name>`. Never
-  guess a path.
+  guess a path. `ready_for_next.sh` is always
+  `./swarmforge/scripts/ready_for_next.sh` from the worktree root - never
+  `ls`/`find` for it, and never read `.swarmforge/expedite/` (stale
+  fixtures, not your parcel). If `in_process` holds a handoff, you are
+  not idle: Read that parcel or run the helper above; do not declare
+  awaiting assignment.
 - A function, key or env var your ticket says to ADD does not exist yet:
   one grep that finds nothing confirms it. Then write it; never search
   other files for it, and never read files the ticket does not name.
