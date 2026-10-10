@@ -26,6 +26,12 @@ import {
 import { readRoleModelId } from '../swarm/backendSwitch';
 import { formatModelDisplayName } from '../swarm/modelDisplayName';
 import { resolveSwarmConfigPath, configHasRotationRouter } from '../swarm/swarmLauncher';
+import {
+  ensureResidentPaneHistoryPoller,
+  ingestResidentPaneCapture,
+  getResidentPaneHistoryText,
+  clearResidentPaneHistory,
+} from './residentPaneHistory';
 
 /**
  * BL-1160's palette, unextended: the whole set a tile's dot may paint.
@@ -183,12 +189,16 @@ function tryCaptureRolePane(
   if (captured.exitCode !== 0) {
     return { ok: false, reason: paneCaptureFailedReason(captured.stderr, roleEntry.role) };
   }
-  const paneText = stripAnsi(captured.stdout ?? '');
-  if (!paneText.trim()) {
+  const rawPaneText = stripAnsi(captured.stdout ?? '');
+  if (!rawPaneText.trim()) {
     return { ok: false, reason: `pane ${roleEntry.role} produced no output` };
   }
+  // Alternate-screen TUIs leave tmux history_size at 0; accumulate the
+  // painted frames host-side (BL-070 algorithm) so the Mini App / spy can
+  // scroll past the live ~24-row band. Activity still keys off THIS frame.
+  const paneText = ingestResidentPaneCapture(targetPath, roleEntry.role, rawPaneText);
   const roleSearchCaptured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_ROLE_SEARCH_LINES);
-  const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? paneText);
+  const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? rawPaneText);
   const identity = resolveResidentRoleIdentity(roleSearchText, roleEntry, roles, monoRouterActiveRole);
   const modelId = readRoleModelId(targetPath, identity.modelRole);
   const rawHeldTicket = resolveResidentHeldTicketMetaForRoles(targetPath, [
@@ -206,9 +216,10 @@ function tryCaptureRolePane(
       available: true,
       roleLabel: identity.roleLabel,
       paneText,
-      // Derived from `paneText` above - the capture this function already made,
-      // never a second one (BL-1243 invariant 2).
-      activitySignal: derivePaneActivitySignal(paneText),
+      // Derived from the current painted frame, not the accumulated
+      // transcript — a busy marker from earlier history must not keep the
+      // tile green (same posture as paneTailer's needsHuman / activity).
+      activitySignal: derivePaneActivitySignal(rawPaneText),
       sessionTarget: target,
       modelLabel: modelId ? formatModelDisplayName(modelId) : undefined,
       ...heldTicket,
@@ -401,13 +412,36 @@ interface CachedLiveScreen {
 
 const liveScreenCacheByTargetPath = new Map<string, CachedLiveScreen>();
 
+function refreshSnapshotPaneTexts(
+  targetPath: string,
+  snapshot: MonoRouterLiveScreenSnapshot
+): MonoRouterLiveScreenSnapshot {
+  const refresh = (pane: PaneLiveSnapshot, roleHint: string): PaneLiveSnapshot => {
+    const text = getResidentPaneHistoryText(targetPath, roleHint);
+    return text !== undefined && pane.available ? { ...pane, paneText: text } : pane;
+  };
+  const panes = snapshot.panes.map((entry) => {
+    // Mono resident tile is the coder session; history is keyed by roster role.
+    const roleKey = entry.id === 'resident' ? 'coder' : entry.id;
+    return { ...entry, pane: refresh(entry.pane, roleKey) };
+  });
+  const resident =
+    panes.find((entry) => entry.id === 'resident')?.pane ?? snapshot.resident;
+  const coordinator =
+    panes.find((entry) => entry.id === 'coordinator')?.pane ?? snapshot.coordinator;
+  return { ...snapshot, panes, resident, coordinator };
+}
+
 export function captureMonoRouterLiveScreen(
   targetPath: string,
   nowMs: number = Date.now()
 ): MonoRouterLiveScreenSnapshot {
+  // Keep ingesting frames while the spy is open — the 5s snapshot cache
+  // alone would miss fast-scrolling alternate-screen content.
+  ensureResidentPaneHistoryPoller(targetPath);
   const cached = liveScreenCacheByTargetPath.get(targetPath);
   if (cached && nowMs - cached.capturedAtMs < RESIDENT_PANE_CACHE_TTL_MS) {
-    return cached.snapshot;
+    return refreshSnapshotPaneTexts(targetPath, cached.snapshot);
   }
   const snapshot = captureMonoRouterLiveScreenUncached(targetPath);
   liveScreenCacheByTargetPath.set(targetPath, { snapshot, capturedAtMs: nowMs });
@@ -417,4 +451,5 @@ export function captureMonoRouterLiveScreen(
 /** Test hook: forces the next captureMonoRouterLiveScreen call to re-walk. */
 export function clearResidentPaneLiveCache(): void {
   liveScreenCacheByTargetPath.clear();
+  clearResidentPaneHistory();
 }

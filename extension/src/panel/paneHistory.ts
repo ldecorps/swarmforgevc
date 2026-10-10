@@ -31,7 +31,8 @@ function isTrailingEmptyLine(index: number, lineCount: number, trimmed: string):
 }
 
 function isPromptLine(trimmed: string): boolean {
-  return /^[❯>](\s|$)/.test(trimmed);
+  // ❯ / > — Claude Code; ➜ — qwen CLI status/prompt row (local-model seats).
+  return /^[❯>➜](\s|$)/.test(trimmed);
 }
 
 function findPromptLineIndex(lines: string[]): number {
@@ -55,12 +56,29 @@ function isInterruptLine(trimmed: string): boolean {
   return /^esc\s+to|^.*interrupt|^.*break/i.test(trimmed);
 }
 
+/** qwen CLI chrome above the ➜ status row — must not accumulate as content. */
+function isQwenChromeLine(trimmed: string): boolean {
+  if (/^[─━═╌╍|│\s]+$/.test(trimmed) && /[─━═╌╍|│]/.test(trimmed)) {
+    return true;
+  }
+  if (/^\*\s+Type your message/i.test(trimmed)) {
+    return true;
+  }
+  if (/^\.{2,}\s*Working\./i.test(trimmed)) {
+    return true;
+  }
+  if (/^Enter to steer/i.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
 function isFooterContentBoundary(trimmed: string): boolean {
   return trimmed.length > 40 || !/^[[\-*@]/.test(trimmed);
 }
 
 function shouldExtendFooter(trimmed: string): boolean {
-  return isBracketStatusLine(trimmed) || isInterruptLine(trimmed);
+  return isBracketStatusLine(trimmed) || isInterruptLine(trimmed) || isQwenChromeLine(trimmed);
 }
 
 function tryExtendFooterLine(
@@ -82,7 +100,9 @@ function tryExtendFooterLine(
 
 function extendFooterEnd(lines: string[], footerStart: number): number {
   let footerEnd = footerStart;
-  const minIndex = Math.max(0, footerStart - 5);
+  // qwen's chrome stack (Working… / rules / Type your message / ➜) is taller
+  // than Claude's 2–3 line footer; scan a few more rows upward.
+  const minIndex = Math.max(0, footerStart - 8);
   for (let i = footerStart - 1; i >= minIndex; i--) {
     const next = tryExtendFooterLine((lines[i] || '').trim(), i, footerEnd);
     footerEnd = next.footerEnd;
