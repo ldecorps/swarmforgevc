@@ -25,7 +25,7 @@ acceptance: specs/features/BL-2110-a-markdown-link-in-a-rendered-doc-is-a-link.f
 required_wiring:
   - specs/pipeline/steps/index.js::bl2110MarkdownLinkSteps::the acceptance handler is registered
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: absolute http and https links become links; every other target
   (relative docs links like ../how-to/x.md, javascript:, mailto:) renders
