@@ -1,0 +1,120 @@
+id: BL-2109
+title: "Stamp-off for the BL-328 scenario 05 hotfix: the fixture git root now commits its compiled extension/out (BL-2065's safe recompile reads `git archive <main> -- extension`), and a restarted bridge no longer re-sends an already-acked reply on its first poll tick (bridgeServer.ts relays from max(emittedIndex, persisted ackedIndex))"
+milestone: M8
+type: defect
+severity: high
+# high: stamp-off of a standing-red hotfix (a red is high at first
+# sighting, 2026-09-05).
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+# low: review one commit (a fixture commit step, a bounded connect retry,
+# one production line in bridgeServer.ts) and run one feature once.
+slice_size_envelope: low
+not_before: 2026-10-11
+# mutation_cooldown_days refuses a file changed on main today; the
+# hardener's Stryker pass on bridgeServer.ts can run from tomorrow.
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one production line and a test-side change; nothing to refactor"
+  architect: "the relay cursor contract is unchanged; no boundary moves"
+  documenter: "no living doc describes the poll relay or this fixture"
+
+# Not a claim of ownership over BL-328's contract (BL-1251): its handler
+# is the file this hotfix changed.
+acceptance: specs/features/BL-328-merged-code-reaches-running-daemons.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed under the human's 2026-10-01
+  rule ("instead of minting a red, hotfix the defect and mint a
+  stampoff"). No choice is posed. FIRM: the coder reviews it and never
+  re-applies it.
+
+invariants: []
+
+description: |
+  Status: hotfix 14698a6122 landed the fix. The coder reviews it and never
+  re-applies it.
+
+  QA held BL-2102 on 2026-10-10 (note 003967, evidence b8e913c304) on a
+  red no open ticket owned: BL-328 scenario 05 ("A restart loses no
+  messages in either direction") failed at "When the affected processes
+  are restarted to pick up new code" with "sync failed: error: git archive
+  failed: fatal: pathspec 'extension' did not match any files".
+
+  Cause: BL-2065 (1b86f77b89, 2026-10-08) made safe_recompile_lib.bb build
+  from `git archive <main-sha> -- extension`. The scenario's fixture
+  (specs/pipeline/steps/mergedCodeReachesDaemonsSteps.js, mkGitRoot +
+  copyRealCompiledExtension) copied a compiled extension/out into the
+  fixture root but never committed it, so the archive found nothing.
+
+  The hotfix, in that step file only:
+  1. copyRealCompiledExtension now commits extension/out (`git add -f`,
+     node_modules left out since the lib links it in itself) and moves
+     main and swarmforge-QA to that commit. The archive then carries the
+     compiled tree, and the swap puts a whole out/ back, not an empty one.
+  2. With the archive fixed, the scenario reached its last step and failed
+     "fetch failed": the second /events connect ran before the bridge the
+     restart respawned was listening. connectAndCollect now goes through
+     fetchEventsWhenListening, which retries a refused connection every
+     200 ms for up to 15 s and then rethrows.
+  3. With that, a full run failed "expected no further delivery of an
+     already-acked entry" (one isolated run passed). Cause, production:
+     extension/src/bridge/bridgeServer.ts seeds its in-memory emittedIndex
+     from the persisted cursor ONCE, at start. An ack that lands after the
+     new bridge started (the restart's bot racing it) leaves emittedIndex
+     behind, so the next poll tick re-sends the acked entry to every
+     client, and a freshly started bot has no dedup memory of it: a
+     duplicate Telegram reply. The poll now relays from
+     Math.max(emittedIndex, readPersistedCursor(targetPath).ackedIndex).
+     Connect-time redelivery (BL-320) still starts at the persisted
+     ackedIndex, so nothing unacked is skipped.
+
+  The review asks: can the 15 s retry hide a real failure, a restart that
+  never brings the bridge back? It cannot pass one: past the deadline the
+  original fetch error is thrown and the step stays red. And is the max()
+  ever above an entry that is not yet acked? It is not: the cursor only
+  advances on an ack of the entry at its position.
+
+  The hardener adds a unit case for the poll relay (an ack written after
+  the bridge started is not re-sent on the next tick) and runs Stryker on
+  bridgeServer.ts scoped to the poll relay.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-328-merged-code-reaches-running-daemons.feature`:
+     9 of 9 ok, about 5 min (measured at mint in a scratch tree of HEAD plus
+     the change: 9 of 9, 271 s).
+  2. Read from the gather's unit row: bridgeServer.test.js green, with the
+     hardener's poll-relay case in it.
+  3. Read the coder's and the hardener's committed evidence.
+
+source: |
+  QA note 003967 (2026-10-10T00:45Z), verbatim: "BL-2102 held: unowned
+  red BL-328 s8 git archive extension; ev b8e913c304".
+  QA evidence backlog/evidence/BL-2102-QA-20261010.md (b8e913c304),
+  verbatim: "the BL-328 fixture git root
+  (specs/pipeline/steps/mergedCodeReachesDaemonsSteps.js mkGitRoot)
+  commits no extension/, and safe_recompile_lib.bb (BL-2065, 1b86f77b89)
+  now runs `git archive <sha> -- extension`."
+  The human, 2026-10-01, verbatim (standing-red-register-amendment §6):
+
+  > Also, update your prompt / c9 stitution: instead of minting a red, hotfix the defect and mint a stampoff.
+
+notes: |
+  Minted 2026-10-10 by the specifier, the stamp-off for hotfix 14698a6122.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Pre-change: QA's run on 3cb630d7b0 (origin/main 7225405326 + one empty
+  commit) was 8 of 9 with this error; the coder's run was red the same
+  way. No register row was added. QA was told to retake BL-2102 and re-run.
+  QA's "s8" is the eighth test in the generated TAP; the feature names it
+  merged-code-reaches-daemons-05.
+  The fix was tested in a scratch tree (git archive HEAD, compiled there)
+  so the live extension/out stayed main-built (BL-2065).
+  INVEST: Independent, Negotiable (review only), Valuable (a red green, a
+  duplicate-reply window closed), Estimable, Small (one step file, one
+  production line), Testable (one feature, one unit file).
