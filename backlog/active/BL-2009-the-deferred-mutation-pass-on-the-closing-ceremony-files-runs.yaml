@@ -87,3 +87,5 @@ notes: |
   BL-1874's ownership of BL-1869's deferred pass. Severity medium (owed
   hardening, not a red), so it mints human_approval pending; a paused owner
   already counts as open for the register.
+
+assigned_to: coder
