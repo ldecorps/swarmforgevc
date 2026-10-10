@@ -19,7 +19,6 @@
 # out) is owned, exactly as before BL-1629. 'accepted' names a pole that
 # will not be cut - ticket holds the rationale ticket (may be closed),
 # note carries "re-measure: YYYY-MM-DD".
-extension/test/renderBriefingBurndownCli.test.js	BL-2031	2026-10-06	34200	BL-791 slice I: three tests walk the live backlog/ history; BL-2031 moves them onto a fixture checkout
 extension/test/bl1277UnscopedStepCollisionGuard.test.js	BL-791	2026-09-16	23600	BL-791 slice D pole census; its own 20s unit-lane timeout is separately owned by BL-1600, unrelated to this 7s per-file duration budget
 extension/test/renderBriefingDiagramsCli.test.js	BL-2032	2026-10-06	12300	BL-791 slice I: the real diagrams render twice per run; BL-2032 renders them once
 extension/test/epicReorderBridge.test.js	BL-791	2026-09-16	10600	BL-791 slice D pole census; cut work not yet minted
