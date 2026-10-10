@@ -52,5 +52,9 @@ if ! bl1142_shape_allowed_for_local_decision "$SHAPE"; then
   exit 1
 fi
 
-echo "BL-1142 pack-shape gate: $PACK_NAME is $SHAPE (mono decision)"
+if [[ "$SHAPE" == "capped-forge" ]]; then
+  echo "BL-1142 pack-shape gate: $PACK_NAME is $SHAPE (standing forge)"
+else
+  echo "BL-1142 pack-shape gate: $PACK_NAME is $SHAPE (mono decision)"
+fi
 exit 0

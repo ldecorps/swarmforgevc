@@ -73,6 +73,22 @@ if SWARMFORGE_LOCAL_MODEL_SHIM=off bash "$GATE" "$ROOT" local-capped-router >/de
 fi
 pass "05: gate accepts mono; refuses uncapped; capped-router always refused"
 
+# ── 05b: standing capped-forge allowed with shim on, refused with shim off ──
+CAPPED_STANDING=$'config active_backlog_max_depth 2\nwindow coder a\nwindow coder b\nwindow coder c\nwindow coder d\nwindow coder e\nwindow coder f\nwindow coder g\nwindow coder h\n'
+ROOT2="$(cd "$(mktemp -d)" && pwd -P)"
+mkdir -p "$ROOT2/swarmforge/packs"
+printf '%s\n' "$CAPPED_STANDING" > "$ROOT2/swarmforge/packs/local-capped-standing.conf"
+# With shim on (default), capped-forge must be allowed through the gate.
+if ! bash "$GATE" "$ROOT2" local-capped-standing >/dev/null 2>&1; then
+  fail "05b: gate must allow capped-forge with shim on"
+fi
+# With shim off, capped-forge must be refused.
+if SWARMFORGE_LOCAL_MODEL_SHIM=off bash "$GATE" "$ROOT2" local-capped-standing >/dev/null 2>&1; then
+  fail "05b: gate must refuse capped-forge with shim off"
+fi
+rm -rf "$ROOT2"
+pass "05b: standing capped-forge allowed with shim on, refused with shim off"
+
 # ── 06: gate refuses qwen-forge by name even if conf exists ───────────────
 printf '%s\n' "$MONO" > "$ROOT/swarmforge/packs/qwen-forge.conf"
 if bash "$GATE" "$ROOT" qwen-forge >/dev/null 2>&1; then
