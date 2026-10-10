@@ -1577,7 +1577,7 @@
 - commit: 94d434ae2a
   subject: "hotfix: BL-1554 scenario 01 names qa-gather's property_runners row"
   detected_at: 2026-10-08
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-2079
   human_decision: null
   decided_at: null
@@ -1605,7 +1605,7 @@
 - commit: 01e77eaef2
   subject: "hotfix: soft shift close freezes new jobs at T−15 and drains in_process before finish-shift"
   detected_at: 2026-10-08
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-2088
   human_decision: null
   decided_at: null
@@ -1619,91 +1619,112 @@
 - commit: aa7d603d66
   subject: "Hotfix: stop iq3 QA from looping ready_for_next after a STOP banner."
   detected_at: 2026-10-09
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-2090
   human_decision: null
   decided_at: null
 - commit: b8611eff86
   subject: "Hotfix two property timeouts reported unowned: bl1071 sweep file and bl2071 forward-and-pass file ran on the lane default budget"
   detected_at: 2026-10-09
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2092
   human_decision: null
   decided_at: null
 - commit: 3d5e5064c5
   subject: "Hotfix two property-lane reds: bl857 module-load sweep killed bl1287 dead-creator fixtures mid-draw, and bl1346 invariant 1 timed out on a bare 120000"
   detected_at: 2026-10-09
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2093
   human_decision: null
   decided_at: null
 - commit: 712e5eb654
   subject: "hotfix: three chase-sweep fixtures read the live roles.tsv - pin target-root to the fixture"
   detected_at: 2026-10-09
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2098
   human_decision: null
   decided_at: null
 - commit: be2a0f917a
   subject: "Hotfix: local-model QA card back under 8192 characters (prompt_engine_test_runner red since aa7d603d66)"
   detected_at: 2026-10-09
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2100
   human_decision: null
   decided_at: null
 - commit: 6f0e120836
   subject: "Hotfix: two load-sensitive reds QA reported unowned on BL-2082 - spawnFakeCloudflared waits for the child's own argv; test_build_freshness_cli.sh scales wait_for budgets by load"
   detected_at: 2026-10-09
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2102
   human_decision: null
   decided_at: null
 - commit: 304e4a8816
   subject: "Hotfix: seat-affinity rework deferral reads one type set (git_handoff, note) in both the claim decision and the stall-sweep hold - bl1004 property runner red since BL-1843"
   detected_at: 2026-10-09
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2104
   human_decision: null
   decided_at: null
 - commit: 597801eadd
   subject: "Hotfix: BL-1700 scenario 03's leak check counts only probe processes that appeared during the scenario - a live steward probe on the host failed it"
   detected_at: 2026-10-09
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2107
   human_decision: null
   decided_at: null
 - commit: c045fbbfc3
   subject: "Hotfix: seat_affinity_lib.bb half of 304e4a8816 - rework-deferrable-types defined and read by rework-claim-decision and deferral-hold? (QA note 003960: the lib half never landed)"
   detected_at: 2026-10-09
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2104
   human_decision: null
   decided_at: null
 - commit: fbc184ed19
   subject: "Hotfix: local_model_prepare_lib_test_runner.bb removes its temp root in a finally - tempDirTrapGuard red since 1e64496d93 (QA note 003965)"
   detected_at: 2026-10-09
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2106
   human_decision: null
   decided_at: null
 - commit: 14698a6122
   subject: "Hotfix BL-328 scenario 05 red (QA held BL-2102, note 003967)"
   detected_at: 2026-10-10
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-2109
   human_decision: null
   decided_at: null
 - commit: 009daacae7
   subject: "Hotfix BL-1166 scenario 02 red: a section may list a deprecated/ page"
   detected_at: 2026-10-10
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2111
   human_decision: null
   decided_at: null
 - commit: 1a0d8963a4
   subject: "Hotfix: the fullscreen live-screen pane shows a ticket title summary"
   detected_at: 2026-10-10
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-2115
+  human_decision: null
+  decided_at: null
+- commit: 93a21154d6
+  subject: "Hotfix: Mini App retains pane history past the alt-screen frame and Expand opens on the live tail"
+  detected_at: 2026-10-10
+  state: stamp-open
+  stamp_ticket: BL-2120
+  human_decision: null
+  decided_at: null
+- commit: b24cc182e5
+  subject: "Hotfix: standing all-Slevin forge with Slevin on the coordinator too"
+  detected_at: 2026-10-10
+  state: stamp-open
+  stamp_ticket: BL-2121
+  human_decision: null
+  decided_at: null
+- commit: 07c4d372d8
+  subject: "Hotfix: BL-2108 step handlers gate the weekly recruiter's prepared-alias path"
+  detected_at: 2026-10-10
+  state: stamp-open
+  stamp_ticket: BL-2122
   human_decision: null
   decided_at: null

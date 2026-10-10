@@ -150,3 +150,7 @@ notes: |
   Small (two scenarios), Testable (gate and conf read, never launched).
 
 assigned_to: coder@2
+bounce_count: 2
+bounce_history:
+  - { at: 2026-10-10, by: QA, blamed: coder, class: behavior, commit: f897aeddf6, evidence: backlog/evidence/BL-2078-QA-20261010.md }
+  - { at: 2026-10-10, by: QA, blamed: coder, class: unit, commit: 537393d693, evidence: backlog/evidence/BL-2078-QA-20261010-2.md }

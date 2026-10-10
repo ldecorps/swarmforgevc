@@ -2182,7 +2182,10 @@ EOF
 # fell through to "The request has been halted" and the seat idled. A seat
 # works a whole parcel in one turn, so the default 100-call cap halts big
 # tickets too; 300 keeps a backstop. qwen's always-on guards (identical
-# consecutive calls, repeated shell inspection) stay on.
+# consecutive calls, repeated shell inspection) stay on — this flag does
+# not cover amend-hash / identical-shell livelocks; seats must follow the
+# local-model card rule (tmp/handoff.txt after the work commit, never amend
+# just to refresh commit:).
 # 2026-10-04: tools.toolOutputBatchBudget 24000 chars (qwen's default is
 # 200000). Behind the shim a seat declares a larger window than Ollama
 # serves (local_model_window_gate_lib.bb declared-window), and one tool
@@ -2211,6 +2214,7 @@ write_local_model_qwen_settings() {
   },
   "hooks": {
     "PreCompact": [{"matcher": "", "hooks": [{"type": "command", "command": "bash '__SWARMFORGE_PRECOMPACT_HOOK__'", "name": "swarmforge-bounded-compaction", "timeout": 10000}]}],
+    "PreToolUse": [{"matcher": "run_shell_command", "hooks": [{"type": "command", "command": "bb '__SWARMFORGE_MISS_HEAL__'", "name": "swarmforge-tool-miss-heal", "timeout": 10000}]}],
     "PostToolUse": [{"matcher": "edit|write_file", "hooks": [{"type": "command", "command": "bb '__SWARMFORGE_EDIT_HOOK__'", "name": "swarmforge-edit-reads", "timeout": 10000}]},
                     {"matcher": "", "hooks": [{"type": "command", "command": "bb '__SWARMFORGE_REPEAT_GUARD__'", "name": "swarmforge-repeat-guard", "timeout": 10000}]}]
   },
@@ -2232,10 +2236,15 @@ JSON
   # the repeat guard warns, with the call's result, about a third identical
   # tool call with nothing that could change its output in between
   # (local_model_repeat_guard.bb says why it warns rather than refuses).
+  # 2026-10-10 hotfix: PreToolUse run_shell_command -> tool_miss_heal_hook.bb
+  # (same BL-913/BL-960 heal Claude seats already get). Rewrites ./ready_for_next.sh
+  # misses onto ./swarmforge/scripts/; qwen previously had no PreToolUse heal
+  # and hunted with ls/find into .swarmforge/expedite instead.
   local settings_text
   settings_text="$(sed -e "s|__SWARMFORGE_PRECOMPACT_HOOK__|$SCRIPT_DIR/local_model_precompact_hook.sh|" \
     -e "s|__SWARMFORGE_EDIT_HOOK__|$SCRIPT_DIR/local_model_edit_hook.bb|" \
-    -e "s|__SWARMFORGE_REPEAT_GUARD__|$SCRIPT_DIR/local_model_repeat_guard.bb|" "$worktree/.qwen/settings.json")"
+    -e "s|__SWARMFORGE_REPEAT_GUARD__|$SCRIPT_DIR/local_model_repeat_guard.bb|" \
+    -e "s|__SWARMFORGE_MISS_HEAL__|$SCRIPT_DIR/tool_miss_heal_hook.bb|" "$worktree/.qwen/settings.json")"
   printf '%s\n' "$settings_text" > "$worktree/.qwen/settings.json"
   if [[ -n "$model" && -n "$endpoint_url" ]]; then
     # zsh does not word-split an unquoted ${var:+...} substitution the way

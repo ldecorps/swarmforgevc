@@ -3,6 +3,7 @@ title: "The weekly recruiter benchmarks the prepared alias: review and gate recr
 milestone: M8
 type: feature
 status: todo
+assigned_to: coder
 epic: local-llm-swarm
 priority: 20
 direction: normal
@@ -24,6 +25,9 @@ required_wiring:
 # No production anchor on purpose (BL-1235): recruiter_weekly.sh already
 # calls local_model_prepare_cli.bb on main (1e64496d93), and the handler
 # runs that script.
+
+# The feature file was minted in cafe4570b4, not 1e64496d93.
+base_commit: cafe4570b4
 
 human_approval: approved
 approval_context: >

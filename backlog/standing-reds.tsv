@@ -32,4 +32,3 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-hardening	extension/src/metrics/closingCeremonyRun.ts,extension/src/metrics/closingCeremonyStore.ts,extension/src/quality/closingCeremony.ts	BL-2009	2026-10-05	BL-1968's deferred mutation pass (cooldown: files committed 2026-10-05); BL-1968 closed so the ledger row read unowned and throttled intake to 1; owner BL-2009, not before 2026-10-06

@@ -128,3 +128,5 @@ notes: |
   Valuable (each ticket starts with an empty window), Estimable (one
   decision and one launcher change), Small (two scenarios), Testable
   (fixture transcripts through the real answer).
+
+assigned_to: coder

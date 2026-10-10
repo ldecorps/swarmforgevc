@@ -1,0 +1,78 @@
+id: BL-2122
+title: "Stamp-off for hotfix 07c4d372d8: BL-2108 step handlers gate the weekly recruiter's prepared-alias path"
+milestone: M8
+type: defect
+severity: medium
+# medium: test/handler addition for a feature already on main; wrong fakes or
+# PATH shadowing would leave the recruiter gate unproven or flaky.
+status: todo
+epic: local-llm-swarm
+priority: 5
+direction: normal
+depends_on: []
+not_before: 2026-10-11
+# mutation_cooldown_days refuses files changed on main today.
+mutation_cost: low
+# low: review handler fixture shape against BL-2108 feature; no production rewrite.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one new step-handler file; nothing to refactor"
+  architect: "fixture/fake boundary already set by BL-2108; no production moves"
+  documenter: "BL-2108 feature + recruiter how-to already describe the prepare path"
+
+# Pins the same feature the hotfix lands the handler for (BL-1251: cite, do
+# not claim ownership).
+acceptance: specs/features/BL-2108-the-weekly-recruiter-benchmarks-the-prepared-alias.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a Cursor hotfix the human asked for: stampoff + commit +
+  push (session 2026-10-10). No choice is posed. FIRM: the coder reviews
+  it and never re-applies it. FIRM: BL-2108 remains the owning review
+  ticket for the prepare path on main; this stamp-off only certifies the
+  handler land.
+
+invariants: []
+
+description: |
+  Status: hotfix 07c4d372d8 landed
+  `specs/pipeline/steps/bl2108RecruiterPreparedAliasSteps.js`. The coder
+  reviews it and never re-applies it.
+
+  BL-2108's feature (cafe4570b4) already requires the handler in the same
+  parcel. Cursor landed the handler on main so the three scenarios drive
+  real `recruiter_weekly.sh` over a disposable fixture: discovery/ollama/
+  batteries/steward CLI faked, `$HOME/.local/bin` shadowed ahead of the
+  script's PATH prepend, real `bb` symlinked, prepare→register→battery→
+  certify / prepare-failed / certify-refuse paths asserted via calls.log
+  and the weekly report outcome.
+
+  Sibling ticket BL-2108 stays the owning review of the prepare path
+  Cursor landed in 1e64496d93; this stamp-off only covers the handler
+  hotfix.
+
+  The review asks: do the fakes record every call the scenarios assert?
+  Does PATH shadowing still win over the host's real ollama? Does a
+  prepare failure stop before register? Does a certify refuse remove
+  exactly the prepared alias, copied alias, and pulled tag?
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run.
+  1. `node specs/pipeline/cli.js specs/features/BL-2108-the-weekly-recruiter-benchmarks-the-prepared-alias.feature`:
+     3 of 3 ok (or the scenario count the feature declares).
+  2. Read the coder's committed review: handler uses trackedTmpRoot /
+     bb_closure_copy, shadows ollama at `$HOME/.local/bin`, symlinks real
+     bb, and asserts calls.log + report outcome for all three paths.
+  3. Confirm no scenario pulls, creates, or removes a real Ollama model.
+
+source: |
+  Human, 2026-10-10, via Cursor: "Stampoff + commit + push".
+
+notes: |
+  Minted 2026-10-10 by Cursor for hotfix 07c4d372d8.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options). BL-2108 is the parallel owning ticket for the prepare
+  path; do not re-land the handler under that ticket.
+
+assigned_to: coder

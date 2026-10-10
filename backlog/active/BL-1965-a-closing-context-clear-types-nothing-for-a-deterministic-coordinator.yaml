@@ -87,3 +87,5 @@ description: |
 
   The scenario; closing_context_clear_test_runner.bb passes, including a
   case where the coordinator's wake session is nil.
+
+assigned_to: coder

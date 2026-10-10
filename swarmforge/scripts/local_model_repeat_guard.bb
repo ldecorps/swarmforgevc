@@ -687,6 +687,31 @@
            "Next tool: Read `.swarmforge/handoffs/inbox/in_process/` (or the TASK path just printed) "
            "and execute that parcel. ready_for_next.sh is only for when in_process is empty."))))
 
+(defn ready-for-next-path-hint
+  "When a seat hunts for ready_for_next.sh at the worktree root (ls/find)
+   and misses, or wanders into .swarmforge/expedite while holding a parcel,
+   name the real helper and the held parcel. Live 2026-10-10: coder claimed
+   the script missing, listed expedite/BL-999, then declared idle while
+   still holding BL-2120 in_process."
+  [name args response cwd]
+  (let [cmd (when (map? args) (get args "command"))
+        text (->> (tree-seq coll? seq response) (filter string?) (str/join "\n"))
+        held (when (string? cwd) (in-process-handoff-name cwd))
+        hunting? (and (string? cmd)
+                      (re-find #"ready_for_next" cmd)
+                      (re-find #"(^|[\s|;])(ls|find|locate|which|type)\b" cmd))
+        miss? (and (string? text)
+                   (re-find #"(?i)(cannot access|no such file).*ready_for_next" text))
+        expedite? (and (string? cmd)
+                       (re-find #"\.swarmforge/expedite\b|/expedite/BL-" cmd))]
+    (when (and (= name "run_shell_command")
+               (or hunting? miss? (and expedite? held)))
+      (str (when held
+             (str "You still hold in_process parcel `" held "` - do not declare idle. "))
+           "ready_for_next.sh lives at `./swarmforge/scripts/ready_for_next.sh` "
+           "(run it from the worktree root). Never hunt for it with ls/find, and "
+           "ignore `.swarmforge/expedite/` fixtures - they are not your parcel."))))
+
 (defn empty-grep-hint
   "A grep that prints nothing gives a model nothing to stop on: the cycle
    above was four greps whose output was (empty) every time."
@@ -800,6 +825,7 @@
         read-budget (when entries (read-budget-note entries name args))
         notes (remove nil? [repeat-note loop-note undo rerun read-budget
                             (ready-for-next-stop-hint name args (get event "tool_response"))
+                            (ready-for-next-path-hint name args (get event "tool_response") cwd)
                             (empty-grep-hint name args (get event "tool_response"))
                             (offset-hint name args) (sleep-hint name args)
                             (read-hint name args) (npm-hint name args)

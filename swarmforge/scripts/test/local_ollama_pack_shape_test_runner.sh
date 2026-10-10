@@ -24,18 +24,27 @@ UNCAPPED=$'window coder a\nwindow specifier b\nwindow cleaner c\n'
   || fail "02: expected uncapped-forge"
 pass "02: uncapped standing multi-seat"
 
-# ── 02b: router depth above mono max is capped-forge (not uncapped) ───────
+# ── 02b: router depth above mono max is capped-router (not capped-forge) ──
 # Hardener BL-1142: kills flipping the router capped branch to uncapped.
+# BL-2078: router capped packs get a distinct label so they're never allowed.
 CAPPED_ROUTER=$'config active_backlog_max_depth 2\nconfig rotation router\nwindow coder a\n'
-[[ "$(bl1142_classify_pack_shape "$CAPPED_ROUTER")" == "capped-forge" ]] \
-  || fail "02b: expected capped-forge for router depth 2"
-pass "02b: router depth>mono max is capped-forge"
+[[ "$(bl1142_classify_pack_shape "$CAPPED_ROUTER")" == "capped-router" ]] \
+  || fail "02b: expected capped-router for router depth 2"
+pass "02b: router depth>mono max is capped-router"
 
-# ── 03: mono decision allows only mono-router ─────────────────────────────
+# ── 03: mono decision allows mono-router unconditionally; capped-forge
+#    only behind the shim's decode slot (BL-2077/BL-2078) ────────────────
 bl1142_shape_allowed_for_local_decision mono-router || fail "03: mono allowed"
-bl1142_shape_allowed_for_local_decision capped-forge && fail "03: capped must refuse"
+unset SWARMFORGE_LOCAL_MODEL_SHIM
+bl1142_shape_allowed_for_local_decision capped-forge \
+  || fail "03: capped-forge must be allowed with the shim on (default)"
+SWARMFORGE_LOCAL_MODEL_SHIM=off bl1142_shape_allowed_for_local_decision capped-forge \
+  && fail "03: capped-forge must refuse with the shim off"
 bl1142_shape_allowed_for_local_decision uncapped-forge && fail "03: uncapped must refuse"
-pass "03: decision allows mono-router only"
+# BL-2078: capped-router is never allowed, regardless of shim state.
+bl1142_shape_allowed_for_local_decision capped-router && fail "03: capped-router must refuse with shim on"
+SWARMFORGE_LOCAL_MODEL_SHIM=off bl1142_shape_allowed_for_local_decision capped-router && fail "03: capped-router must refuse with shim off"
+pass "03: decision allows mono-router unconditionally, capped-forge behind the decode slot"
 
 # ── 04: forbidden substitute packs ────────────────────────────────────────
 bl1142_is_forbidden_substitute_pack qwen-forge || fail "04: qwen-forge forbidden"
@@ -55,10 +64,30 @@ if bash "$GATE" "$ROOT" local-fake-forge >/dev/null 2>&1; then
   fail "05: gate must refuse uncapped local-fake-forge"
 fi
 printf '%s\n' "$CAPPED_ROUTER" > "$ROOT/swarmforge/packs/local-capped-router.conf"
+# BL-2078: capped-router (router depth>mono) is never allowed, regardless of shim.
 if bash "$GATE" "$ROOT" local-capped-router >/dev/null 2>&1; then
-  fail "05: gate must refuse capped-forge router depth>mono"
+  fail "05: gate must refuse capped-router with shim on"
 fi
-pass "05: gate accepts mono; refuses uncapped and capped-router"
+if SWARMFORGE_LOCAL_MODEL_SHIM=off bash "$GATE" "$ROOT" local-capped-router >/dev/null 2>&1; then
+  fail "05: gate must refuse capped-router with shim off"
+fi
+pass "05: gate accepts mono; refuses uncapped; capped-router always refused"
+
+# ── 05b: standing capped-forge allowed with shim on, refused with shim off ──
+CAPPED_STANDING=$'config active_backlog_max_depth 2\nwindow coder a\nwindow coder b\nwindow coder c\nwindow coder d\nwindow coder e\nwindow coder f\nwindow coder g\nwindow coder h\n'
+ROOT2="$(cd "$(mktemp -d)" && pwd -P)"
+mkdir -p "$ROOT2/swarmforge/packs"
+printf '%s\n' "$CAPPED_STANDING" > "$ROOT2/swarmforge/packs/local-capped-standing.conf"
+# With shim on (default), capped-forge must be allowed through the gate.
+if ! bash "$GATE" "$ROOT2" local-capped-standing >/dev/null 2>&1; then
+  fail "05b: gate must allow capped-forge with shim on"
+fi
+# With shim off, capped-forge must be refused.
+if SWARMFORGE_LOCAL_MODEL_SHIM=off bash "$GATE" "$ROOT2" local-capped-standing >/dev/null 2>&1; then
+  fail "05b: gate must refuse capped-forge with shim off"
+fi
+rm -rf "$ROOT2"
+pass "05b: standing capped-forge allowed with shim on, refused with shim off"
 
 # ── 06: gate refuses qwen-forge by name even if conf exists ───────────────
 printf '%s\n' "$MONO" > "$ROOT/swarmforge/packs/qwen-forge.conf"

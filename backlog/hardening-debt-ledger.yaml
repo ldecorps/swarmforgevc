@@ -106,3 +106,5 @@
   reason: "BL-149 cooldown gate: skip-cooldown, file_age_days 0.20 < mutation_cooldown_days 1 (freshly committed by coder this pass)"
   load: "13.63"
   detected_at: 2026-10-05
+  discharged_at: 2026-10-10
+  discharged_evidence: backlog/evidence/BL-2009-mutation-20261010.md

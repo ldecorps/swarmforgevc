@@ -29,6 +29,23 @@ else
   fail "a non-Bash tool call passes through untouched (got: $out)"
 fi
 
+# ── Hotfix 2026-10-10: qwen's run_shell_command is healed like Bash ─────
+WORKTREE_Q="$(mktemp -d)"
+mkdir -p "$WORKTREE_Q/repo" "$WORKTREE_Q/repo/swarmforge/scripts"
+(cd "$WORKTREE_Q/repo" && git init -q)
+printf '#!/usr/bin/env bash\necho healed\n' > "$WORKTREE_Q/repo/swarmforge/scripts/ready_for_next.sh"
+chmod +x "$WORKTREE_Q/repo/swarmforge/scripts/ready_for_next.sh"
+QJSON="$(printf '{"tool_name":"run_shell_command","tool_input":{"command":"./ready_for_next.sh","description":"claim next"}}')"
+QRESP="$(echo "$QJSON" | SWARMFORGE_ROLE_WORKTREE="$WORKTREE_Q/repo" bb "$HOOK")"
+QCMD="$(echo "$QRESP" | bb -e '(println (get-in (cheshire.core/parse-string (slurp *in*) true) [:hookSpecificOutput :updatedInput :command]))')"
+QDESC="$(echo "$QRESP" | bb -e '(println (get-in (cheshire.core/parse-string (slurp *in*) true) [:hookSpecificOutput :updatedInput :description]))')"
+if [[ -n "$QCMD" && "$QCMD" != "null" && "$QDESC" == "claim next" ]]; then
+  pass "a run_shell_command call with a known pin rewrites command and keeps description"
+else
+  fail "expected run_shell_command heal preserving description, got: $QRESP"
+fi
+rm -rf "$WORKTREE_Q"
+
 # ── a Bash call with no pinned worktree known passes through untouched ────
 out="$(echo '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | env -u SWARMFORGE_ROLE_WORKTREE bb "$HOOK")"
 if [[ "$out" == "{}" ]]; then

@@ -50,14 +50,14 @@ describe('BL-1142 local Ollama pack shape', () => {
     );
   });
 
-  it('router depth above mono max is always capped-forge', () => {
+  it('router depth above mono max is always capped-router', () => {
     fc.assert(
       fc.property(fc.integer({ min: 2, max: 8 }), (depth) => {
         const body =
           `config active_backlog_max_depth ${depth}\n` +
           'config rotation router\n' +
           'window coder a\n';
-        assert.equal(classify(body), 'capped-forge');
+        assert.equal(classify(body), 'capped-router');
       }),
       { numRuns: 8 }
     );

@@ -474,6 +474,9 @@ export function renderLiveScreenBody(): string {
   var PANE_FONT_MAX = ${PANE_FONT_MAX_PX};
   var PANE_FONT_STEP = ${PANE_FONT_STEP_PX};
   var focusPane = null;
+  // Fullscreen transcript: open (and stay) pinned to the live tail; clear
+  // when the human scrolls up so they can read history without being yanked.
+  var fsStickToBottom = true;
   var lastOk = 0;
   var claimEnteredByPaneId = {};
   var ticketStripClaimEnteredAtMs = null;
@@ -863,6 +866,14 @@ export function renderLiveScreenBody(): string {
     }
   }
 
+  function fsIsNearBottom() {
+    return fsPreEl.scrollHeight - fsPreEl.scrollTop - fsPreEl.clientHeight < 24;
+  }
+
+  function fsScrollToBottom() {
+    fsPreEl.scrollTop = fsPreEl.scrollHeight;
+  }
+
   function syncFullscreenContent() {
     if (!focusPane) return;
     var entry = paneEntryById(focusPane);
@@ -881,14 +892,29 @@ export function renderLiveScreenBody(): string {
       ? (pane.paneText || '(empty)')
       : ((pane && pane.reason) || '(pane not reachable)');
     if (fsPreEl.textContent !== text) {
-      var atBottom = fsPreEl.scrollHeight - fsPreEl.scrollTop - fsPreEl.clientHeight < 24;
+      var pin = fsStickToBottom || fsIsNearBottom();
       fsPreEl.textContent = text;
-      if (atBottom) fsPreEl.scrollTop = fsPreEl.scrollHeight;
+      if (pin) {
+        fsStickToBottom = true;
+        fsScrollToBottom();
+        // Layout can lag textContent; re-pin after paint so a long history
+        // still opens on the live tail, not the welcome screen.
+        requestAnimationFrame(function () {
+          if (fsStickToBottom) fsScrollToBottom();
+        });
+      }
+    } else if (fsStickToBottom) {
+      fsScrollToBottom();
     }
   }
 
+  fsPreEl.addEventListener('scroll', function () {
+    fsStickToBottom = fsIsNearBottom();
+  }, { passive: true });
+
   function enterFullscreen(paneId) {
     focusPane = paneId;
+    fsStickToBottom = true;
     applyFullscreenMode();
   }
 
