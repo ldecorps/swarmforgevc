@@ -120,8 +120,8 @@ test('property (BL-1652 invariant 1) non-vacuity: a broken guard that ignores bu
   const broken = original.replace(`${marker}\n    `, '');
   assert.notEqual(broken, original, 'expected the textual removal to actually change the file');
 
-  const brokenPath = path.join(path.dirname(CHASE), `bl1652-non-vacuity-scratch-${process.pid}-${Date.now()}.bb`);
-  fs.writeFileSync(brokenPath, broken);
+  const { root, cleanup } = require('./helpers/nonVacuityProbe.js').createScratchRoot('bl1652-non-vacuity-');
+  const brokenPath = require('./helpers/nonVacuityProbe.js').writeBrokenCopy(root, 'swarmforge/scripts/chase_sweep_lib.bb', (text) => text.replace(`${marker}\n    `, ''));
   try {
     const script = `
 (load-file "${brokenPath}")
@@ -134,7 +134,7 @@ test('property (BL-1652 invariant 1) non-vacuity: a broken guard that ignores bu
       'expected the broken (guard-removed) decision to respawn a busy+lane-running role at the ceiling, proving the real guard is load-bearing'
     );
   } finally {
-    fs.rmSync(brokenPath, { force: true });
+    cleanup();
   }
 });
 
@@ -237,14 +237,16 @@ test(
     const broken = original.replace(marker, ':else (do (reset! respawned-this-sweep? true) "respawned"))]');
     assert.notEqual(broken, original, 'expected the textual removal to actually change the file');
 
-    const brokenPath = path.join(path.dirname(CHASE), `bl1652-non-vacuity-scratch2-${process.pid}-${Date.now()}.bb`);
-    fs.writeFileSync(brokenPath, broken);
+    const { root, cleanup } = require('./helpers/nonVacuityProbe.js').createScratchRoot('bl1652-non-vacuity-');
+    const brokenPath = require('./helpers/nonVacuityProbe.js').writeBrokenCopy(root, 'swarmforge/scripts/chase_sweep_lib.bb', (text) => text.replace(marker, ':else (do (reset! respawned-this-sweep? true) "respawned"))]'));
     const brokenRunner = path.join(path.dirname(CHASE_SWEEP_RUNNER), `bl1652-non-vacuity-runner-${process.pid}-${Date.now()}.bb`);
     const runnerOriginal = fs.readFileSync(CHASE_SWEEP_RUNNER, 'utf8');
-    fs.writeFileSync(brokenRunner, runnerOriginal.replace('".." "chase_sweep_lib.bb"', `".." "${path.basename(brokenPath)}"`));
-    const root = buildFixture(5);
+    // Use the full path to the broken copy so Babashka's load-file resolves
+    // correctly when the broken runner lives outside the checkout's directory tree.
+    fs.writeFileSync(brokenRunner, runnerOriginal.replace('(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "chase_sweep_lib.bb")))', `(load-file "${brokenPath}")`));
+    const fixtureRoot = buildFixture(5);
     try {
-      const result = spawnSync('bb', [brokenRunner, root, String(NOW_MS), 'dead', String(LAST_ACTIVITY_MS), 'QA'], {
+      const result = spawnSync('bb', [brokenRunner, fixtureRoot, String(NOW_MS), 'dead', String(LAST_ACTIVITY_MS), 'QA'], {
         encoding: 'utf8',
         env: {
           ...process.env,
@@ -254,7 +256,7 @@ test(
         },
       });
       assert.equal(result.status, 0, `expected the scratch runner to succeed: ${result.stderr}`);
-      const callsLog = fs.readFileSync(path.join(root, 'calls.log'), 'utf8');
+      const callsLog = fs.readFileSync(path.join(fixtureRoot, 'calls.log'), 'utf8');
       const respawnLines = callsLog.split('\n').filter((l) => /^respawn QA$/.test(l));
       assert.equal(
         respawnLines.length,
@@ -262,9 +264,9 @@ test(
         `expected the cap-removed sweep to fire one respawn per stuck item (5), got ${respawnLines.length} - proving the real per-sweep cap is load-bearing:\n${callsLog}`
       );
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-      fs.rmSync(brokenPath, { force: true });
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
       fs.rmSync(brokenRunner, { force: true });
+      cleanup();
     }
   },
   SUBPROCESS_HEAVY_TIMEOUT_MS
