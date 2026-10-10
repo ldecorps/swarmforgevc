@@ -142,7 +142,7 @@ function fixtureScorecards(count, outcome, wallSeconds) {
   }));
 }
 
-// The three Examples rows, translated from prose into the exact
+// The four Examples rows, translated from prose into the exact
 // {handedOff, of, verdict} summary and coder scorecards
 // empty-response-fail-shape? reads.
 const SUMMARY_CASES = {
@@ -157,6 +157,18 @@ const SUMMARY_CASES = {
   '2 of 5 handed off': {
     summary: { handedOff: 2, of: 5, verdict: 'fail' },
     scorecards: [],
+  },
+  // Scorecards whose members DISAGREE (2 fast no-commit, 3 slow) - the
+  // only shape that can tell empty-response-fail-shape?'s real `every?`
+  // apart from a weakened `some?`. Every row above either has a single
+  // coder scorecard, an empty list, or every member agreeing, so none of
+  // them can distinguish the two (hardener constitution: "A predicate
+  // the caller FOLDS over a collection needs a fixture whose members
+  // DISAGREE"). Confirmed by hand-mutating every?->some? in
+  // local_model_prepare_lib.bb: every other row here still passed.
+  '0 of 5 handed off, two coder fixtures fast and three slow no-commit': {
+    summary: { handedOff: 0, of: 5, verdict: 'fail' },
+    scorecards: [...fixtureScorecards(2, 'no model commit', 12), ...fixtureScorecards(3, 'no model commit', 90)],
   },
 };
 
