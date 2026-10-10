@@ -26,7 +26,7 @@ required_wiring:
 # same file the parcel changes, so any anchor would match by construction.
 # Scenario 01 drives prepare! through its real entry and gates the call.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   You asked for this ("bake that in the prepare lib so that next time the
   projector/vision are stripped off straight away"). What needs sign-off is
