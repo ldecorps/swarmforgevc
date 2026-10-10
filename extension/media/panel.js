@@ -356,7 +356,8 @@ function detectFooterLineCount(text) {
   }
 
   function isPromptLine(trimmed) {
-    return /^[❯>](\s|$)/.test(trimmed);
+    // ❯ / > — Claude Code; ➜ — qwen CLI status/prompt row (local-model seats).
+    return /^[❯>➜](\s|$)/.test(trimmed);
   }
 
   function findPromptLineIndex(lines) {
@@ -383,12 +384,29 @@ function detectFooterLineCount(text) {
     return /^esc\s+to|^.*interrupt|^.*break/i.test(trimmed);
   }
 
+  // qwen CLI chrome above the ➜ status row — must not accumulate as content.
+  function isQwenChromeLine(trimmed) {
+    if (/^[─━═╌╍|│\s]+$/.test(trimmed) && /[─━═╌╍|│]/.test(trimmed)) {
+      return true;
+    }
+    if (/^\*\s+Type your message/i.test(trimmed)) {
+      return true;
+    }
+    if (/^\.{2,}\s*Working\./i.test(trimmed)) {
+      return true;
+    }
+    if (/^Enter to steer/i.test(trimmed)) {
+      return true;
+    }
+    return false;
+  }
+
   function isFooterContentBoundary(trimmed) {
     return trimmed.length > 40 || !/^[[\-*@]/.test(trimmed);
   }
 
   function shouldExtendFooter(trimmed) {
-    return isBracketStatusLine(trimmed) || isInterruptLine(trimmed);
+    return isBracketStatusLine(trimmed) || isInterruptLine(trimmed) || isQwenChromeLine(trimmed);
   }
 
   function tryExtendFooterLine(trimmed, index, footerEnd) {
@@ -406,7 +424,8 @@ function detectFooterLineCount(text) {
 
   function extendFooterEnd(lines, footerStart) {
     let footerEnd = footerStart;
-    const minIndex = Math.max(0, footerStart - 5);
+    // qwen's chrome stack is taller than Claude's 2–3 line footer.
+    const minIndex = Math.max(0, footerStart - 8);
     for (let i = footerStart - 1; i >= minIndex; i--) {
       const next = tryExtendFooterLine((lines[i] || '').trim(), i, footerEnd);
       footerEnd = next.footerEnd;
