@@ -101,11 +101,12 @@ mutate "uncapped-forge standing label flipped to capped-forge" \
 }'
 
 # ── decision allow-list / forbidden substitute ─────────────────────────────
-mutate "shape allow-list accepts capped-forge" \
-  '    mono-router) return 0 ;;
-    *) return 1 ;;' \
-  '    mono-router|capped-forge) return 0 ;;
-    *) return 1 ;;'
+# BL-2078: capped-forge is now allowed, but only behind the shim's decode
+# slot - the mutant worth killing is the shim check itself being dropped,
+# not capped-forge's presence in the allow-list (that is now intended).
+mutate "shape allow-list accepts capped-forge unconditionally (shim check dropped)" \
+  '    capped-forge) [[ "${SWARMFORGE_LOCAL_MODEL_SHIM:-on}" != "off" ]] ;;' \
+  '    capped-forge) return 0 ;;'
 
 mutate "qwen-forge dropped from forbidden case" \
   '    qwen-forge|*-qwen-forge|token-plan-forge|*-token-plan-forge) return 0 ;;' \
