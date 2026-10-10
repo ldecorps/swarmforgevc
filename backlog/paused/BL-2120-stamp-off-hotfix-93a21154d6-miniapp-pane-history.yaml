@@ -1,0 +1,78 @@
+id: BL-2120
+title: "Stamp-off for hotfix 93a21154d6: Mini App Resident Spy retains pane history past the alt-screen frame and Expand opens on the live tail"
+milestone: M8
+type: defect
+severity: high
+# high: live phone/Mini App fault — only the painted ~24 rows were visible
+# while the agent UI could scroll further; humans could not audit a turn.
+status: todo
+epic: art-direction
+priority: 5
+direction: normal
+depends_on: []
+not_before: 2026-10-11
+# mutation_cooldown_days refuses files changed on main today; hardener
+# Stryker on paneHistory / residentPaneHistory can run from tomorrow.
+mutation_cost: low
+# low: review host-side accumulation + footer detection; add/confirm unit cases.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "accumulation and footer helpers; nothing to refactor"
+  architect: "bridge presentation path only; no production boundary moves"
+  documenter: "no living doc yet describes Mini App pane history retention"
+
+# Pins the same live-screen surface BL-1542 / BL-609 cover; not a claim of
+# ownership over those contracts (BL-1251).
+acceptance: specs/features/BL-1542-live-screen-ticket-strip-collapse-control.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a Cursor hotfix the human asked to commit, push, and mint
+  stampoffs for (session 2026-10-10). No choice is posed. FIRM: the coder
+  reviews it and never re-applies it.
+
+invariants: []
+
+description: |
+  Status: hotfix 93a21154d6 landed the fix. The coder reviews it and never
+  re-applies it.
+
+  Local-model (qwen) and Claude TUIs run in tmux's alternate screen, so
+  `history_size` stays 0 and `capture-pane` only returns the painted frame
+  (~24 rows). Humans can scroll inside the agent UI to the welcome screen;
+  the Mini App / Resident Spy could not.
+
+  The hotfix: host-side accumulation (BL-070 `accumulatePaneHistory`) in
+  `extension/src/bridge/residentPaneHistory.ts`, wired through
+  `residentPaneLive.ts` with a 500ms poller while the spy is open; qwen
+  footer chrome (`➜`, box rules, Type your message, Working…) detected in
+  `paneHistory.ts` / `media/panel.js` so status rows are not duplicated;
+  Expand in `residentSpyUiHtml.ts` opens pinned to the live tail and
+  unpins when the human scrolls up.
+
+  The review asks: does accumulation ever drop mid-turn content between
+  polls? Does qwen chrome ever leak into retained history? Does Expand
+  ever open at the top of a long transcript or yank the user while they
+  are reading history?
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run.
+  1. `cd extension && npx vitest run test/residentPaneHistory.test.js test/footerDetectionParity.test.js test/paneHistory.test.js test/residentSpyUiHtml.test.js test/residentPaneLive.test.js`:
+     all green (measured at mint).
+  2. Read the coder's committed review evidence.
+  3. On the phone Mini App, Expand a busy Slevin seat after it has been
+     working: the view starts at the live tail; scroll up shows earlier
+     tool output, not only ~24 rows.
+
+source: |
+  Human, 2026-10-10, via Telegram/Cursor: retain the whole pane history;
+  open at the bottom; commit and push; mint stampoffs.
+
+notes: |
+  Minted 2026-10-10 by Cursor for hotfix 93a21154d6.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options). Packs for Slevin/XXS forge landed separately without
+  Hotfix-Certification (a3cc85ca29, be8a07d950) and need no stamp-off.
+
+assigned_to: coder

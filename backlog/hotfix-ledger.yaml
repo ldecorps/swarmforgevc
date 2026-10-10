@@ -1707,3 +1707,10 @@
   stamp_ticket: BL-2115
   human_decision: null
   decided_at: null
+- commit: 93a21154d6
+  subject: "Hotfix: Mini App retains pane history past the alt-screen frame and Expand opens on the live tail"
+  detected_at: 2026-10-10
+  state: pending
+  stamp_ticket: BL-2120
+  human_decision: null
+  decided_at: null
