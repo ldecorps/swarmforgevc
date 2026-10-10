@@ -20,15 +20,16 @@ const FEATURE = 'BL-2116 A killed non-vacuity probe leaves nothing in the checko
 // A child-process script that creates a scratch root, writes a broken copy,
 // writes its PID to a file, then sleeps forever (so the parent can SIGKILL
 // it before cleanup runs).
-function childScript(prefix, pidFile) {
+function childScript(prefix, pidFile, rootFile) {
   const helperPath = path.join(__dirname, '..', '..', '..', 'extension', 'test', 'helpers', 'nonVacuityProbe.js');
   return [
     `const { createScratchRoot, writeBrokenCopy } = require('${helperPath}');`,
     'const fs = require("fs");',
     'const path = require("path");',
     `const { root } = createScratchRoot('${prefix}');`,
-    `writeBrokenCopy(root, 'swarmforge/scripts/chase_sweep.bb', (text) => text + "\\n;; BROKEN");`,
+    `writeBrokenCopy(root, 'swarmforge/scripts/chase_sweep_lib.bb', (text) => text + "\\n;; BROKEN");`,
     `fs.writeFileSync('${pidFile}', String(process.pid));`,
+    `fs.writeFileSync('${rootFile}', root);`,
     '// Sleep forever so the parent can SIGKILL us before cleanup runs.',
     'require("child_process").execSync("sleep infinity", { stdio: "inherit" });',
   ].join('\n');
@@ -41,8 +42,9 @@ function registerSteps(registry) {
   scoped(/^a probe that has written its broken copy in a child process$/, (ctx) => {
     const prefix = 'bl2116-probe-';
     const pidFile = path.join('/tmp', `bl2116-pid-${process.pid}-${Date.now()}.txt`);
+    const rootFile = path.join('/tmp', `bl2116-root-${process.pid}-${Date.now()}.txt`);
     const childFile = path.join('/tmp', `bl2116-child-${process.pid}-${Date.now()}.js`);
-    const script = childScript(prefix, pidFile);
+    const script = childScript(prefix, pidFile, rootFile);
     fs.writeFileSync(childFile, script);
 
     // Spawn the child process, detached so it outlives this spawnSync call
@@ -54,6 +56,7 @@ function registerSteps(registry) {
 
     ctx._child = child;
     ctx._childPidFile = pidFile;
+    ctx._childRootFile = rootFile;
     ctx._childPrefix = prefix;
     ctx._childScript = childFile;
 
@@ -111,32 +114,28 @@ function registerSteps(registry) {
     const prefix = ctx._childPrefix;
     const childPid = ctx._childPid;
 
-    // Find the child's scratch root directory. mkProcessTmpDir creates
-    // directories like /tmp/bl2116-probe-<pid>-...
-    const tmpDir = '/tmp';
-    const entries = fs.readdirSync(tmpDir).filter((name) => name.startsWith(prefix));
-    const childRoots = [];
-    for (const name of entries) {
-      const pidMatch = name.match(/^bl2116-probe-(\d+)-/);
-      if (pidMatch) {
-        const dirPid = Number(pidMatch[1]);
-        try {
-          process.kill(dirPid, 0); // Check if process is alive
-        } catch {
-          // Process is dead - this is the child's root
-          childRoots.push(path.join(tmpDir, name));
-        }
-      }
+    // Read the child's scratch root path from the file the child wrote
+    const rootFile = ctx._childRootFile;
+    assert.ok(fs.existsSync(rootFile), `root file ${rootFile} does not exist`);
+    const childRootPath = fs.readFileSync(rootFile, 'utf8').trim();
+
+    // Verify the child process is dead
+    try {
+      process.kill(childPid, 0);
+      assert.fail(`child process ${childPid} is still alive`);
+    } catch {
+      // Process is dead - expected
     }
+
+    // Verify the child's scratch root still exists (wasn't cleaned up)
+    assert.ok(fs.existsSync(childRootPath), `child's root ${childRootPath} should still exist before next probe run`);
 
     // Now call createScratchRoot with the same prefix - this should reap
     // the dead child's root via sweepStaleTmpDirs
     const { root: newRoot, cleanup } = nonVacuityProbe.createScratchRoot(prefix);
 
     // Verify the dead child's root is gone
-    for (const rootPath of childRoots) {
-      assert.ok(!fs.existsSync(rootPath), `dead child's root ${rootPath} still exists after next probe run`);
-    }
+    assert.ok(!fs.existsSync(childRootPath), `dead child's root ${childRootPath} still exists after next probe run`);
 
     // Clean up the new root
     cleanup();
