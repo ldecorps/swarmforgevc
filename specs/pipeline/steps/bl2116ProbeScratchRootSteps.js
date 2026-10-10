@@ -87,7 +87,9 @@ function registerSteps(registry) {
     const childPid = ctx._childPid;
     const pidStr = String(childPid);
 
-    // Walk the checkout looking for files containing the child PID
+    // Walk the checkout looking for files containing the child PID.
+    // Skip node_modules, .stryker-tmp, .git, venv, and other large non-checkout dirs.
+    const SKIP_DIRS = new Set(['node_modules', '.stryker-tmp', '.git', 'venv', 'swarmforge/vendor', 'swarmforge/vendor/aps']);
     function walk(dir) {
       const entries = fs.readdirSync(dir);
       for (const entry of entries) {
@@ -95,6 +97,7 @@ function registerSteps(registry) {
         const fullPath = path.join(dir, entry);
         const stat = fs.statSync(fullPath);
         if (stat.isDirectory()) {
+          if (SKIP_DIRS.has(entry)) continue;
           walk(fullPath);
         } else if (stat.isFile()) {
           try {
