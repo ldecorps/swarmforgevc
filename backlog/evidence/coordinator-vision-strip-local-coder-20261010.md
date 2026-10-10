@@ -107,3 +107,24 @@ Not swapped into any live seat (`ista-iq3s-coder:latest`, the seat's prior
 model, already carried no vision and stays as-is; this new alias is a
 steward-prepared bakeoff candidate per BL-2106's "alias and evidence
 only, no cold-swap" scope) — available for whenever it's picked.
+
+## Same treatment applied to the ISTA-DASLab IQ3_S alias too
+
+Base: `hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S`. Manifest shows
+model blob `sha256:64b53b64c7aa39f20a7e54bd80582fe595b1d745624ee8a72e92508c0326d810`
+(11,771,546,784 bytes) + the SAME projector blob as the IQ3_XXS tag
+(`sha256:13cb7bebccbd...`, 931,146,528 bytes — both ISTA quants share one
+projector).
+
+Created `prepared-ista-daslab-qwen3.8-27b-gsq-rco-gguf-iq3_s-novision:latest`
+(`FROM` the bare model blob, `num_ctx` -> 65536). `ollama show` confirms no
+`vision`/`Projector`. Live-tested with a direct `/api/generate` call —
+succeeded cleanly.
+
+Not swapped into any live seat — same steward-prepared-candidate status as
+the IQ3_XXS alias above.
+
+Three no-vision aliases now exist total:
+- `prepared-slevinw-qwen3.6-35b-a3b-gguf-qwen3.6-35b-a3b-iq3-novision:latest` (LIVE on the coder seat)
+- `prepared-ista-daslab-qwen3.8-27b-gsq-rco-gguf-iq3_xxs-novision:latest` (candidate)
+- `prepared-ista-daslab-qwen3.8-27b-gsq-rco-gguf-iq3_s-novision:latest` (candidate)
