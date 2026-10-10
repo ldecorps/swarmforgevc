@@ -3,6 +3,7 @@ title: "The weekly recruiter benchmarks the prepared alias: review and gate recr
 milestone: M8
 type: feature
 status: todo
+assigned_to: coder
 epic: local-llm-swarm
 priority: 20
 direction: normal
