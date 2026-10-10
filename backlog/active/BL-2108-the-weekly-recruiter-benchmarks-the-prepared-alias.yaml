@@ -26,6 +26,9 @@ required_wiring:
 # calls local_model_prepare_cli.bb on main (1e64496d93), and the handler
 # runs that script.
 
+# The feature file was minted in cafe4570b4, not 1e64496d93.
+base_commit: cafe4570b4
+
 human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
