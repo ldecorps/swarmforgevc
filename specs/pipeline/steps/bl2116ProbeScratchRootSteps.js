@@ -26,7 +26,7 @@ function childScript(prefix, pidFile, rootFile) {
     `const { createScratchRoot, writeBrokenCopy } = require('${helperPath}');`,
     'const fs = require("fs");',
     'const path = require("path");',
-    `const { root } = createScratchRoot('${prefix}');`,
+    `const { root } = createScratchRoot('${prefix}${process.pid}-');`,
     `writeBrokenCopy(root, 'swarmforge/scripts/chase_sweep_lib.bb', (text) => text + "\\n;; BROKEN");`,
     `fs.writeFileSync('${pidFile}', String(process.pid));`,
     `fs.writeFileSync('${rootFile}', root);`,
@@ -39,7 +39,7 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   // ── Given: a probe that has written its broken copy in a child process ──
-  scoped(/^a probe that has written its broken copy in a child process$/, (ctx) => {
+  scoped(/^a probe that has written its broken copy in a child process$/, async (ctx) => {
     const prefix = 'bl2116-probe-';
     const pidFile = path.join('/tmp', `bl2116-pid-${process.pid}-${Date.now()}.txt`);
     const rootFile = path.join('/tmp', `bl2116-root-${process.pid}-${Date.now()}.txt`);
@@ -61,11 +61,9 @@ function registerSteps(registry) {
     ctx._childScript = childFile;
 
     // Wait for the child to write its PID file (up to 2 seconds)
-    let waited = 0;
-    while (!fs.existsSync(pidFile) && waited < 2000) {
-      require('node:timers').setTimeout(() => {}, 100);
-      waited += 100;
-      if (waited >= 2000) break;
+    for (let waited = 0; waited < 2000; waited += 100) {
+      if (fs.existsSync(pidFile)) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
   });
 
@@ -89,15 +87,29 @@ function registerSteps(registry) {
 
     // Walk the checkout looking for files containing the child PID.
     // Skip node_modules, .stryker-tmp, .git, venv, and other large non-checkout dirs.
-    const SKIP_DIRS = new Set(['node_modules', '.stryker-tmp', '.git', 'venv', 'swarmforge/vendor', 'swarmforge/vendor/aps']);
+    // Use path-based matching so nested dirs like extension/node_modules are also skipped.
+    const SKIP_PREFIXES = [
+      'node_modules',
+      '.stryker-tmp',
+      '.git',
+      'venv',
+      'swarmforge/vendor',
+      'swarmforge/vendor/aps',
+    ];
+    function shouldSkip(fullPath) {
+      for (const prefix of SKIP_PREFIXES) {
+        if (fullPath.includes(`/${prefix}/`) || fullPath.endsWith(`/${prefix}`)) return true;
+      }
+      return false;
+    }
     function walk(dir) {
       const entries = fs.readdirSync(dir);
       for (const entry of entries) {
         if (entry === '.git') continue;
         const fullPath = path.join(dir, entry);
+        if (shouldSkip(fullPath)) continue;
         const stat = fs.statSync(fullPath);
         if (stat.isDirectory()) {
-          if (SKIP_DIRS.has(entry)) continue;
           walk(fullPath);
         } else if (stat.isFile()) {
           try {
