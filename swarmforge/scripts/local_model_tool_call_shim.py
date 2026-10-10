@@ -64,8 +64,11 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
+import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -78,6 +81,19 @@ from typing import Any, Callable
 
 NAME = "local-model-tool-call-shim"
 HEALTH_PATH = "/shim/health"
+# BL-2103: a fingerprint of this file's own bytes, read once at process
+# start. ensure() computes the same fingerprint fresh (reading the file on
+# disk at that moment) and compares it against a running shim's health, so
+# a shim started under older code is replaced rather than reused forever.
+def _compute_code_fingerprint() -> str:
+    try:
+        with open(__file__, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()[:16]
+    except OSError:
+        return "unknown"
+
+
+CODE_FINGERPRINT = _compute_code_fingerprint()
 HOP_BY_HOP = {"host", "content-length", "connection", "transfer-encoding", "accept-encoding", "keep-alive"}
 OUTPUT_BUDGET_KEYS = ("max_tokens", "max_completion_tokens")
 OUTPUT_CAP_TTL_S = 300.0
@@ -773,6 +789,7 @@ class ShimHandler(BaseHTTPRequestHandler):
             self._send_json(200, {
                 "shim": NAME, "upstream": self.upstream, "last_seat": self.last_seat,
                 "slot": self.slot.snapshot(),
+                "fingerprint": CODE_FINGERPRINT, "pid": os.getpid(),
             })
             return
         seat, _group, upstream_path = seat_of_path(self.path)
@@ -1108,24 +1125,81 @@ def probe(port: int, timeout_s: float = 1.0) -> dict[str, Any] | None:
         return None
 
 
-def ensure(port: int, upstream: str, log_path: str, wait_s: float = 10.0) -> int:
-    found = probe(port)
-    if found is not None:
-        if found.get("shim") == NAME and found.get("upstream") == upstream:
-            return 0
-        _log(f"{NAME}: port {port} is held by something else ({found or 'not the shim'}); not starting")
-        return 1
+def _find_shim_pid_by_cmdline(port: int) -> int | None:
+    """BL-2103: a shim that reports no pid in its health (every shim
+    started before this ticket) is located by its own serve command line
+    for this exact port - never by port alone, so nothing but a process
+    whose health already named the shim reaches here."""
+    pattern = f"{__file__} serve --port {port} --upstream"
+    try:
+        result = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    pids = [int(token) for token in result.stdout.split() if token.strip().isdigit()]
+    return pids[0] if pids else None
+
+
+def _start_shim(port: int, upstream: str, log_path: str) -> None:
     with open(log_path, "ab") as log:
         subprocess.Popen(
             [sys.executable, __file__, "serve", "--port", str(port), "--upstream", upstream],
             stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True,
         )
+
+
+def _wait_for_shim_health(port: int, wait_s: float) -> int:
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline:
         found = probe(port)
         if found and found.get("shim") == NAME:
             return 0
         time.sleep(0.2)
+    return 1
+
+
+def ensure(port: int, upstream: str, log_path: str, wait_s: float = 10.0) -> int:
+    found = probe(port)
+    if found is not None and found.get("shim") == NAME and found.get("upstream") == upstream:
+        if found.get("fingerprint") == CODE_FINGERPRINT:
+            return 0
+        # BL-2103: a shim running code other than what is on disk right
+        # now (or one with no fingerprint at all - every pre-ticket shim)
+        # is replaced, never reused. Only a process whose health already
+        # named the shim is ever signalled (invariant 1).
+        pid = found.get("pid")
+        if pid is None:
+            pid = _find_shim_pid_by_cmdline(port)
+        if pid is None:
+            _log(f"{NAME}: port {port} is held by a shim with stale code and no locatable pid; not signalling it")
+            return 1
+        old_fingerprint = found.get("fingerprint") or "pre-fingerprint"
+        _log(f"{NAME}: replacing stale shim pid={pid} fingerprint={old_fingerprint} "
+             f"with fingerprint={CODE_FINGERPRINT} on port {port}")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        deadline = time.monotonic() + wait_s
+        port_freed = False
+        while time.monotonic() < deadline:
+            if probe(port) is None:
+                port_freed = True
+                break
+            time.sleep(0.2)
+        if not port_freed:
+            _log(f"{NAME}: stale shim pid={pid} did not free port {port} within {wait_s}s")
+            return 1
+        _start_shim(port, upstream, log_path)
+        if _wait_for_shim_health(port, wait_s) == 0:
+            return 0
+        _log(f"{NAME}: started but never answered on port {port} within {wait_s}s (log: {log_path})")
+        return 1
+    if found is not None:
+        _log(f"{NAME}: port {port} is held by something else ({found or 'not the shim'}); not starting")
+        return 1
+    _start_shim(port, upstream, log_path)
+    if _wait_for_shim_health(port, wait_s) == 0:
+        return 0
     _log(f"{NAME}: started but never answered on port {port} within {wait_s}s (log: {log_path})")
     return 1
 
