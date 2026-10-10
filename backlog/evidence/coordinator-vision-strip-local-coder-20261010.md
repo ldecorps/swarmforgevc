@@ -79,3 +79,31 @@ In `swarmforge/scripts/local_model_prepare_lib.bb`'s `prepare!`:
    — once the lib does this by default, a future `prepare!` call for the
    same base tag should naturally reproduce (and could replace) this
    hand-built alias.
+
+## Same treatment applied to the ISTA-DASLab IQ3_XXS alias
+
+Base: `hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_XXS`. Manifest
+(`~/.ollama/models/manifests/hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF/IQ3_XXS`)
+shows the same two-layer shape: model blob
+`sha256:fdfcb6a29b11188956dfbfd904223588a6c1b77eb250c3e8a36e1bd269df91f7`
+(10,094,357,632 bytes) + projector blob
+`sha256:13cb7bebccbd04afc8f4090cb949ecf8937cdf7377c5799b1a0c594e7c0d3e16`
+(931,146,528 bytes, `application/vnd.ollama.image.projector`).
+
+Created `prepared-ista-daslab-qwen3.8-27b-gsq-rco-gguf-iq3_xxs-novision:latest`
+the same way (`FROM` the bare model blob, `num_ctx` 32768 -> 65536).
+`ollama show` confirms no `vision`/`Projector`. Live-tested with a direct
+`/api/generate` call — succeeded cleanly.
+
+Note for whoever picks up the lib ticket: this architecture (`qwen35`, not
+`qwen35moe`) is a HYBRID SSM/attention model — `full_attention_interval: 4`
+means only 16 of 64 layers carry a growing KV cache, the rest use
+fixed-size SSM state. A pure-transformer KV-cost formula understates its
+real headroom; verify any larger `num_ctx` choice for this family by a
+live load test, not the formula used for the slevinw (pure MoE-attention)
+alias above.
+
+Not swapped into any live seat (`ista-iq3s-coder:latest`, the seat's prior
+model, already carried no vision and stays as-is; this new alias is a
+steward-prepared bakeoff candidate per BL-2106's "alias and evidence
+only, no cold-swap" scope) — available for whenever it's picked.
