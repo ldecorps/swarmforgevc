@@ -39,6 +39,12 @@ if ! bl1142_shape_allowed_for_local_decision "$SHAPE"; then
     echo "See docs/how-to/BL-1142-local-ollama-mono-vs-forge-cpu.md" >&2
     exit 1
   fi
+  if [[ "$SHAPE" == "capped-router" ]]; then
+    echo "ERROR: BL-2078 — pack '$PACK_NAME' is a capped router (depth > ${LOCAL_OLLAMA_MONO_MAX_DEPTH}), which is never allowed." >&2
+    echo "Router packs with depth above the mono max must stay refused regardless of shim state." >&2
+    echo "See docs/how-to/BL-1142-local-ollama-mono-vs-forge-cpu.md" >&2
+    exit 1
+  fi
   echo "ERROR: BL-1142 — pack shape '$SHAPE' is not the durable local decision." >&2
   echo "Decision: mono-router with active_backlog_max_depth ≤ ${LOCAL_OLLAMA_MONO_MAX_DEPTH}, or a capped standing forge (≤8 windows) behind the decode slot (BL-2077/BL-2078)." >&2
   echo "See docs/how-to/BL-1142-local-ollama-mono-vs-forge-cpu.md" >&2

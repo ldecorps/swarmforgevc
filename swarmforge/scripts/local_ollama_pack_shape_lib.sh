@@ -50,10 +50,11 @@ bl1142_classify_router_shape() {
     echo mono-router
     return 0
   fi
-  # Router without a tight depth is still rotation-disciplined but not our
-  # durable local default — treat as capped-forge only when depth is set.
+  # Router depth above mono max is a capped-router (not capped-forge):
+  # router packs must never be allowed behind the shim — only standing
+  # capped-forges use that label.
   if [[ -n "$depth" && "$depth" -gt 0 ]]; then
-    echo capped-forge
+    echo capped-router
     return 0
   fi
   echo uncapped-forge
@@ -100,6 +101,7 @@ bl1142_shape_allowed_for_local_decision() {
   case "${1:-}" in
     mono-router) return 0 ;;
     capped-forge) [[ "${SWARMFORGE_LOCAL_MODEL_SHIM:-on}" != "off" ]] ;;
+    capped-router) return 1 ;;
     *) return 1 ;;
   esac
 }

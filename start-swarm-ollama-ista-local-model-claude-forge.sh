@@ -11,6 +11,7 @@ export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local
 
 ISTA_MODEL='ista-iq3s-coder:latest'
 ISTA_BASE_TAG='hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S'
+ISTA_BATTERY="$SCRIPT_DIR/backlog/evidence/BL-1127-coder-battery-ollama-hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ3_S-20260923T063726Z.md"
 ISTA_MODELFILE="$SCRIPT_DIR/swarmforge/packs/ista-iq3s-coder.Modelfile"
 
 unset SWARMFORGE_USE_CEREBRAS SWARMFORGE_USE_PERPLEXITY SWARMFORGE_USE_QWEN || true
@@ -50,6 +51,11 @@ bash "$SCRIPT_DIR/swarmforge/scripts/local_coder_battery_staffing_gate.sh" "$SCR
 # run before the pack ever launches.
 bash "$SCRIPT_DIR/swarmforge/scripts/local_ollama_pack_shape_gate.sh" \
   "$SCRIPT_DIR" ollama-ista-local-model-claude-coord-forge
+
+# Prefer the ISTA-specific BL-1127 pass over whatever is newest in evidence/.
+if [[ -f "$ISTA_BATTERY" ]]; then
+  export LOCAL_CODER_BATTERY_EVIDENCE_PATH="$ISTA_BATTERY"
+fi
 
 # Same canary escape hatch as the mono-router local-model packs: steward
 # resolve-seat has no mapping for local-model + hf.co ISTA, and IQ3_S is
