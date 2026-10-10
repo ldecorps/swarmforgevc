@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import random
+import signal
 import sys
 import threading
 import time
@@ -17,6 +18,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -1152,6 +1154,95 @@ class DecodeSlotInvariantPropertyTests(unittest.TestCase):
                 previous_role = role
         self.assertTrue(saw_long_gap, "the generator must draw at least one gap past both durations")
         self.assertTrue(saw_role_change, "the generator must draw at least one actual role change between consecutive calls")
+
+
+class EnsureReplacesStaleShimTests(unittest.TestCase):
+    """BL-2103: ensure()'s branching, isolated from real subprocesses -
+    probe()/_find_shim_pid_by_cmdline()/_start_shim()/_wait_for_shim_health()
+    and os.kill are all mocked, so these are pure control-flow checks. The
+    acceptance feature (real shim subprocesses, a fake upstream, ephemeral
+    ports) is the end-to-end coverage for the same behavior."""
+
+    UPSTREAM = "http://127.0.0.1:1/v1"
+    CURRENT = {"shim": shim.NAME, "upstream": UPSTREAM, "fingerprint": shim.CODE_FINGERPRINT, "pid": 111}
+
+    def test_a_shim_running_current_code_is_reused_untouched(self) -> None:
+        with mock.patch.object(shim, "probe", return_value=dict(self.CURRENT)) as probe, \
+             mock.patch("local_model_tool_call_shim.os.kill") as kill, \
+             mock.patch.object(shim, "_start_shim") as start:
+            self.assertEqual(shim.ensure(9, self.UPSTREAM, "/dev/null"), 0)
+        self.assertEqual(probe.call_count, 1)
+        kill.assert_not_called()
+        start.assert_not_called()
+
+    def test_a_stale_shim_reporting_its_own_pid_is_killed_and_replaced(self) -> None:
+        stale = {"shim": shim.NAME, "upstream": self.UPSTREAM, "fingerprint": "old-code", "pid": 4321}
+        with mock.patch.object(shim, "probe", side_effect=[stale, None]) as probe, \
+             mock.patch("local_model_tool_call_shim.os.kill") as kill, \
+             mock.patch.object(shim, "_find_shim_pid_by_cmdline") as lookup, \
+             mock.patch.object(shim, "_start_shim") as start, \
+             mock.patch.object(shim, "_wait_for_shim_health", return_value=0):
+            self.assertEqual(shim.ensure(9, self.UPSTREAM, "/path/to/log"), 0)
+        kill.assert_called_once_with(4321, signal.SIGTERM)
+        lookup.assert_not_called()  # the pid came from health; no cmdline lookup needed
+        start.assert_called_once_with(9, self.UPSTREAM, "/path/to/log")
+        self.assertGreaterEqual(probe.call_count, 2)
+
+    def test_a_stale_shim_with_no_pid_is_located_by_its_serve_cmdline(self) -> None:
+        # Every shim started before this ticket: health names the shim but
+        # carries no fingerprint and no pid at all.
+        stale = {"shim": shim.NAME, "upstream": self.UPSTREAM}
+        with mock.patch.object(shim, "probe", side_effect=[stale, None]), \
+             mock.patch("local_model_tool_call_shim.os.kill") as kill, \
+             mock.patch.object(shim, "_find_shim_pid_by_cmdline", return_value=777) as lookup, \
+             mock.patch.object(shim, "_start_shim") as start, \
+             mock.patch.object(shim, "_wait_for_shim_health", return_value=0):
+            self.assertEqual(shim.ensure(9, self.UPSTREAM, "/dev/null"), 0)
+        lookup.assert_called_once_with(9)
+        kill.assert_called_once_with(777, signal.SIGTERM)
+        start.assert_called_once()
+
+    def test_a_stale_shim_whose_pid_cannot_be_found_is_never_signalled(self) -> None:
+        stale = {"shim": shim.NAME, "upstream": self.UPSTREAM}
+        with mock.patch.object(shim, "probe", return_value=stale), \
+             mock.patch("local_model_tool_call_shim.os.kill") as kill, \
+             mock.patch.object(shim, "_find_shim_pid_by_cmdline", return_value=None), \
+             mock.patch.object(shim, "_start_shim") as start:
+            self.assertEqual(shim.ensure(9, self.UPSTREAM, "/dev/null"), 1)
+        kill.assert_not_called()
+        start.assert_not_called()
+
+    def test_a_stale_shim_that_never_frees_the_port_is_refused(self) -> None:
+        stale = {"shim": shim.NAME, "upstream": self.UPSTREAM, "fingerprint": "old-code", "pid": 4321}
+        with mock.patch.object(shim, "probe", return_value=stale), \
+             mock.patch("local_model_tool_call_shim.os.kill") as kill, \
+             mock.patch.object(shim, "_start_shim") as start:
+            self.assertEqual(shim.ensure(9, self.UPSTREAM, "/dev/null", wait_s=0.3), 1)
+        kill.assert_called_once_with(4321, signal.SIGTERM)
+        start.assert_not_called()
+
+    def test_a_foreign_process_is_never_signalled(self) -> None:
+        with mock.patch.object(shim, "probe", return_value={}), \
+             mock.patch("local_model_tool_call_shim.os.kill") as kill, \
+             mock.patch.object(shim, "_find_shim_pid_by_cmdline") as lookup, \
+             mock.patch.object(shim, "_start_shim") as start:
+            self.assertEqual(shim.ensure(9, self.UPSTREAM, "/dev/null"), 1)
+        kill.assert_not_called()
+        lookup.assert_not_called()
+        start.assert_not_called()
+
+    def test_health_reports_the_running_code_fingerprint_and_pid(self) -> None:
+        upstream = ThreadingHTTPServer(("127.0.0.1", 0), FakeOllama)
+        serve(upstream)
+        server = shim.make_server(0, f"http://127.0.0.1:{upstream.server_address[1]}/v1")
+        serve(server)
+        try:
+            health = shim.probe(server.server_address[1])
+            self.assertEqual(health["fingerprint"], shim.CODE_FINGERPRINT)
+            self.assertIsInstance(health["pid"], int)
+        finally:
+            server.shutdown()
+            upstream.shutdown()
 
 
 if __name__ == "__main__":
