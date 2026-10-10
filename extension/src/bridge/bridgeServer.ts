@@ -72,6 +72,14 @@ import {
   isOperatorDocsPath,
 } from './operatorDocsHtml';
 import {
+  buildArticleDraftsIndexState,
+  buildArticleDraftPageState,
+  getArticleDraftsUiHtml,
+  isArticleDraftsIndexPath,
+  isArticleDraftsPagePath,
+  isArticleDraftsPath,
+} from './articleDraftsHtml';
+import {
   getBubbleHealthUiHtml,
   isBubbleHealthPath,
   isBubbleHealthTrendsPath,
@@ -104,6 +112,7 @@ import {
   isLetsTalkPath,
   mergeBubbleHostIntoUiBundleManifest,
   mergeOperatorDocsIntoUiBundleManifest,
+  mergeArticleDraftsIntoUiBundleManifest,
   mergeBubbleHealthIntoUiBundleManifest,
   mergeBubbleLiveIntoUiBundleManifest,
   mergeBubblePipelinePageIntoUiBundleManifest,
@@ -508,6 +517,14 @@ function isOperatorDocsIndexFeedPath(url: string): boolean {
 
 function isOperatorDocsPageFeedPath(url: string): boolean {
   return isOperatorDocsPagePath(url);
+}
+
+function isArticleDraftsIndexFeedPath(url: string): boolean {
+  return isArticleDraftsIndexPath(url);
+}
+
+function isArticleDraftsPageFeedPath(url: string): boolean {
+  return isArticleDraftsPagePath(url);
 }
 
 // BL-551 (bridge-08): JSON top-expensive-invocations/rollup feed over the
@@ -2014,6 +2031,8 @@ const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
   isWebUiTicketStripCollapsedPath,
   isOperatorDocsIndexFeedPath,
   isOperatorDocsPageFeedPath,
+  isArticleDraftsIndexFeedPath,
+  isArticleDraftsPageFeedPath,
   isIntakeFormStatePath,
 ];
 
@@ -2251,7 +2270,9 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
           mergeBubbleHostIntoUiBundleManifest(
             mergeBubbleHealthIntoUiBundleManifest(
               mergeBubblePipelinePageIntoUiBundleManifest(
-                mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+                mergeArticleDraftsIntoUiBundleManifest(
+                  mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+                )
               )
             )
           )
@@ -2281,6 +2302,14 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // BL-1166: one authored markdown page rendered as HTML JSON.
       matches: isOperatorDocsPageFeedPath,
       compute: (url) => buildOperatorDocsPageState(targetPath, url),
+    },
+    {
+      matches: isArticleDraftsIndexFeedPath,
+      compute: () => buildArticleDraftsIndexState(targetPath),
+    },
+    {
+      matches: isArticleDraftsPageFeedPath,
+      compute: (url) => buildArticleDraftPageState(targetPath, url),
     },
     {
       // BL-833: host-agent activity feed (catch-up read of the same buffer SSE pushes).
@@ -2447,6 +2476,10 @@ export function startBridge(
       }
       if (isOperatorDocsPath(url)) {
         serveMiniAppHtml(res, getOperatorDocsUiHtml());
+        return;
+      }
+      if (isArticleDraftsPath(url)) {
+        serveMiniAppHtml(res, getArticleDraftsUiHtml());
         return;
       }
       if (isBubbleHealthPath(url)) {
@@ -2642,7 +2675,11 @@ export function startBridge(
         return;
       }
       lastSnapshot = broadcastSnapshotIfChanged(lastSnapshot);
-      emittedIndex = relayEntriesFrom(emittedIndex, sseClients);
+      // emittedIndex is seeded from the cursor once, at start; an ack that
+      // lands after that (the bot of a restart racing the new bridge) would
+      // otherwise re-send an already-acked entry on the next tick to every
+      // client, and a freshly started bot has no dedup memory of it.
+      emittedIndex = relayEntriesFrom(Math.max(emittedIndex, readPersistedCursor(targetPath).ackedIndex), sseClients);
     }, pollIntervalMs);
     poll.unref();
 

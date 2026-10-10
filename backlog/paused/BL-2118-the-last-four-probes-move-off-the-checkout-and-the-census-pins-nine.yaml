@@ -1,0 +1,88 @@
+id: BL-2118
+title: "Non-vacuity probe slice 3 of 3 (split from BL-1743): bl1630 (a JS helper copy in extension/test/helpers/), bl1671 and the step handlers bl938 and bl943 (a runner copy in swarmforge/scripts/test/) build their broken copy through BL-2116's scratch-root helper, and a census scenario pins all nine probe files off the checkout"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+priority: 4
+direction: swarm-reported
+depends_on: [BL-2116, BL-2117]
+mutation_cost: low
+# low: four call-site swaps onto an existing helper plus a census handler.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "mechanical call-site swaps; nothing to refactor"
+  architect: "no production code or design surface"
+  hardender: "no production code changes, so nothing to mutate"
+  documenter: "no documented behaviour changes"
+
+acceptance: specs/features/BL-2118-no-probe-writes-beside-a-live-script.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2118ProbeCensusSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1743 (approved) with no new scope. FIRM: every probe
+  still proves its test red against the broken copy - no probe is deleted
+  or weakened.
+
+invariants:
+  - "No test or step handler writes a file under the checkout it runs from to build a broken copy of a script; every broken copy lives under a temporary root that its run removes, and a root whose recorded owner pid is dead is reaped by the next probe run."
+
+description: |
+  ## What is wanted
+  - Each site below builds its broken copy with BL-2116's
+    createScratchRoot(prefix) and writeBrokenCopy(root, realPath,
+    transform) and calls cleanup() in its finally. The copy sits at its
+    repo-relative path inside the root, so bl1630's require of the copied
+    helper and bl943's runner's relative loads resolve to the real tree.
+    Every probe still fails its assertion against the broken copy.
+  - The feature's handler, bl2118ProbeCensusSteps.js, derives the census
+    as "every file under extension/test and specs/pipeline/steps that
+    builds a broken copy of a script, whichever way" (a non-vacuity probe
+    writing a mutated copy of a file it read: the old path.join pattern
+    or a writeBrokenCopy call), checks no derived broken-copy path is
+    under the checkout, and pins the population at the 9 files of the
+    2026-10-07 re-census: bl1458, bl1459, bl1505, bl1630, bl1652, bl1671,
+    bl1835, bl938, bl943 (BL-1445: a derivation that finds fewer is red).
+
+  ## Sites (read with offset and limit around each line, never the whole file)
+  - extension/test/bl1630NoStepHandlerModuleLoadWorkInvariants.property.test.js:124 (writes into extension/test/helpers/)
+  - extension/test/bl1671MergeDeletionGuardInvariants.property.test.js:117
+  - specs/pipeline/steps/bl938AgedNoteRotateFixtureRotationRouterSteps.js:212
+  - specs/pipeline/steps/bl943FixtureCleanupVerdictSteps.js:223 (writes into swarmforge/scripts/test/)
+  The salvage stash (see BL-2117) also swaps bl1630; reference only.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each.
+  1. `node specs/pipeline/cli.js specs/features/BL-2118-no-probe-writes-beside-a-live-script.feature`: 1 of 1 ok.
+  2. Read from the gather's property row: bl1630 and bl1671 green.
+  3. The features whose handlers changed, once each, all ok: the BL-938
+     and BL-943 features (`ls specs/features | grep -E '^BL-(938|943)-'`).
+  4. BL-1743's census grep over extension/test and specs/pipeline/steps:
+     no match.
+  5. `git diff main...HEAD --name-only` names only the four files, the
+     feature, its handler, and evidence.
+
+source: |
+  Split from BL-1743 on 2026-10-10 after the coder seat (iq3) held it
+  39m with no commit; coordinator note 017778, verbatim: "split BL-1743:
+  coder held it ~39m, no commit (hard-tier trial end)".
+  BL-1743 came from QA note 003163 (2026-09-25, QA tree dirty with a
+  bl1652 scratch .bb from a killed run).
+  Human sentences carried from BL-1743 (Article 5.3), verbatim:
+  "Makr sure you observe dynamic routing going forward"
+  "fine: ask Specifier to mint an live proving of IQ3 to deal with a big ticket utilizing the new Arrange Act Assert functionality"
+  The human, 2026-10-04, verbatim: "We should make the \"splitting of ticket if coder cant manage\" BAU."
+
+notes: |
+  split from BL-1743 on 2026-10-10 after coder (iq3) held it 39m. Slice 3
+  of 3; carries BL-1743's scenario 01 verbatim (its census of 9), which
+  can only go green once all nine files are converted, so it comes last.
+  INVEST: Independent once BL-2116 and BL-2117 land, Negotiable, Valuable
+  (the class is closed and pinned), Estimable, Small (four swaps and one
+  census handler), Testable (one scenario, two property files, two
+  features).

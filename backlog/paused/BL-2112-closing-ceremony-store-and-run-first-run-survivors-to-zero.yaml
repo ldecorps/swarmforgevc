@@ -1,0 +1,130 @@
+id: BL-2112
+title: "closingCeremonyStore and closingCeremonyRun's first-ever Stryker run (BL-2009's hardener, 2026-10-10, full unit suite) left 48 first-run mutants owned by nobody - 48 survived, 0 never covered: the store's record-shape guards, outcome and adjustment recorders and run listing, and the run's pack-conf reader; every survivor is killed by a behaviour test or recorded as an accepted equivalent with its code-level proof"
+milestone: M8
+type: chore
+severity: medium
+# medium: hardening debt, not a red and not a safety signal; BL-2009's run
+# completed and its debt is owned here (rule of 2026-09-10).
+status: todo
+epic: first-run-mutation-debt
+priority: 35
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript under Stryker; one sitting by BL-1519's ~60 mutants
+# per sitting (48 here).
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "tests only; nothing to refactor"
+  architect: "tests only, no design surface"
+  documenter: "nothing beyond the evidence file"
+
+acceptance: specs/features/BL-2112-closing-ceremony-store-and-run-first-run-survivors-to-zero.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2112ClosingCeremonyStoreRunSurvivorsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+  - 'specs/pipeline/steps/index.js::bl2112ClosingCeremonyStoreRunSurvivorsSteps::the handler is registered'
+# No production anchor on purpose (BL-1235): the module and its consumers
+# already exist, so any pattern on them matches before and after.
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed. FIRM: no production behaviour changes - every contract the
+  closing-ceremony features pin (BL-1119, BL-1365, BL-1393, BL-1968) stays
+  green; only tests are added, and a refactor for CRAP keeps the same
+  outputs. FIRM: "accepted equivalent" needs the code-level reason in the
+  evidence (BL-1520's rule), never "first-run debt" - this ticket IS the
+  owner that reason names.
+
+invariants:
+  - "Every mutant Stryker reports in the slice's declarations at the parcel commit is either killed by a test in the unit suite or recorded in the evidence as an accepted equivalent with the code-level reason; none is silent."
+
+description: |
+  ## What is wrong
+
+  BL-2009's hardener ran the deferred BL-1968 mutation pass over
+  closingCeremonyRun.ts, closingCeremonyStore.ts and closingCeremony.ts
+  on 2026-10-10 (evidence backlog/evidence/BL-2009-mutation-20261010.md,
+  hardender branch, per-mutant list in it): 742 tested, 579 killed, 145
+  survived, 18 never covered, all first-run debt on code BL-1968 landed.
+  This slice owns 48 (48 survived, 0 never
+  covered). Census by enclosing declaration (survived/no-coverage),
+  counted by the specifier from that list against main's
+  extension/out with BL-1519's census method:
+  closingCeremonyStore: isCeremonyRunShape 9/0, recordCeremonyOutcome 9/0, listCeremonyRuns 6/0, isValidFoldedLineCounts 5/0, recordCeremonyAdjustment 5/0, ceremonyDir 3/0, readCeremonyRun 2/0, writeCeremonyRun 1/0; closingCeremonyRun: readPackConfText 6/0, runClosingCeremony 2/0.
+
+  The survivors sit in the store's shape guards (isCeremonyRunShape, isValidFoldedLineCounts: each field's type and bound), the outcome and adjustment recorders' refusal messages and branches, the run-list filter and sort, and readPackConfText's fallback text.
+
+  ## What is wanted
+
+  - The run over the full unit suite, `--mutate out/metrics/closingCeremonyStore.js,out/metrics/closingCeremonyRun.js`, is
+    repeated at the parcel commit; the evidence records the summary
+    block, load and duration, and per declaration above either zero
+    survived and zero no-coverage or one accepted-equivalent record per
+    remaining mutant with the code-level reason (BL-234).
+  - Behaviour tests kill the rest, grouped by the census's declarations.
+  - The evidence lists, per declaration, the test file and case that now
+    rejects its mutants (scenario 02).
+  - Any function `npm run crap` flags above 6 in these declarations comes
+    under 6 (coverage first; a small refactor only where coverage cannot
+    reach).
+  - Evidence path: backlog/evidence/BL-2112-mutation.md.
+
+  ## How (direction, not mandate)
+
+  - perTest, sibling links per the Verification rules; check
+    mutation_cooldown_gate.bb first and record its decision.
+  - Extend the fixtures test/closingCeremonyStore.test.js test/closingCeremonyRun.test.js already build; never a wall clock,
+    never process.chdir().
+  - The step handler bl2112ClosingCeremonyStoreRunSurvivorsSteps.js reads the parcel's evidence file
+    and lands with the feature, registered in specs/pipeline/steps/index.js
+    (BL-233).
+
+constraints: >
+  Tests only unless a seam is missing, in which case the smallest
+  extraction that exposes the behaviour to an in-process test; never a
+  hand-edited manifest. The census is re-derived at the parcel's start if
+  the file changed since 2026-10-10.
+
+out_of_scope: |
+  - Mutants in the other closing-ceremony declarations (BL-2112, BL-2113,
+    BL-2114 split the 163 between them).
+  - Any change to what the ceremony decides.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2112-closing-ceremony-store-and-run-first-run-survivors-to-zero.feature`: 2 of 2 ok.
+  2. Read from the gather's unit row: test/closingCeremonyStore.test.js test/closingCeremonyRun.test.js green with the new
+     cases.
+  3. Read the parcel's evidence: Stryker totals over the full unit suite
+     with at least 240 mutants, and per census declaration
+     survived 0 and no-coverage 0, or each remainder with its reason.
+     QA starts no mutation run.
+
+source: |
+  Hardender note to the specifier, priority 00, 2026-10-10T02:04Z
+  (inbound 00_20261010T020406Z_001751_from_hardender), verbatim:
+  "unowned-survivors BL-2009 145/18 backlog/evidence/BL-2009-mutation-20261010.md".
+  Hardener evidence, verbatim: "163 is well over the ~50 default
+  in-pass-chase threshold for a single file set (2026-08-19/2026-09-10
+  rule), and the great majority sit in `closingCeremony.js` (115 of 163)
+  with real control-flow investigation needed per survivor". Parents:
+  BL-1968, BL-2009, BL-1519 (the epic and its per-function sizing).
+
+notes: |
+  Minted 2026-10-10 by the specifier while completing the hardener's
+  unowned-survivors note, the same pass (rule of 2026-09-10), with its
+  siblings BL-2112, BL-2113 and BL-2114 (48 + 49 + 66 = 163). Added to
+  BL-1519's decomposes_into in the mint commit. Not auto-approved: chore,
+  medium, new feature file.
+  Census: the "at least 240 mutants" pin is the tested count of the
+  slice's file set in BL-2009's run (closingCeremonyStore 149 +
+  closingCeremonyRun 98 = 247; closingCeremony 495), less a margin.
+  IR-DRY at mint: the two scenarios share "When the evidence is read" by
+  design, as BL-1674's do. INVEST: Independent (depends_on only where two
+  slices share a test file), Negotiable (test shapes are direction),
+  Valuable (the file's gate goes to a full account), Estimable (48
+  mutants), Small (two scenarios, one invariant), Testable (the parcel's
+  evidence; the mutant-count pin is BL-1445's discipline).

@@ -1,0 +1,116 @@
+id: BL-2116
+title: "Non-vacuity probe slice 1 of 3 (split from BL-1743): a shared test helper builds a probe's broken copy of a script under a temporary root of its own, at its repo-relative path with the real tree's other entries symlinked around it so relative loads resolve, and the next probe reaps any root a dead run left; bl1652, the file whose killed run littered seven worktrees, uses it"
+milestone: M8
+type: defect
+severity: medium
+# medium: inherited from BL-1743 - contained, nothing red, but a killed
+# run litters the checkout and the launch sync spreads it to every seat.
+status: todo
+epic: code-quality-gates
+priority: 4
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: the helper's sparse-mirror and reap logic is the one non-mechanical
+# part of BL-1743; a tier-gated seat (not the easy-tier iq3) takes it.
+slice_size_envelope: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a test-side helper and one test file; nothing to refactor"
+  architect: "no production code or design surface; the spec fixes the change"
+  hardender: "no production code changes, so nothing to mutate"
+  documenter: "no documented behaviour changes"
+
+acceptance: specs/features/BL-2116-a-killed-probe-leaves-nothing-in-the-checkout.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl2116ProbeScratchRootSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  Inherited from BL-1743 (approved) with no new scope: the helper is
+  BL-1743's own "one shared helper" direction. FIRM (from BL-1743): every
+  probe still proves its test red against the broken copy - no probe is
+  deleted or weakened. FIRM: the launch script sync is not changed here.
+
+invariants:
+  - "No test or step handler writes a file under the checkout it runs from to build a broken copy of a script; every broken copy lives under a temporary root that its run removes, and a root whose recorded owner pid is dead is reaped by the next probe run."
+
+description: |
+  ## What is wrong
+  A non-vacuity probe writes its deliberately broken copy of a script
+  inside the checkout (beside the real script, so the copy's relative
+  loads resolve) and removes it only in a finally. A killed run skips the
+  finally. On 2026-09-25 a killed bl1652 run left two broken copies in
+  swarmforge/scripts/, and the launch's sync_worktree_scripts copied them
+  into seven worktrees (full history: BL-1743, backlog/done).
+
+  ## What is wanted
+  - A helper, extension/test/helpers/nonVacuityProbe.js, exporting
+    exactly the API the BL-1743 salvage (stash "BL-1743 WIP salvage
+    before respawn (coder loop-halt 01:56Z)") already calls, so BL-2117
+    can apply that salvage:
+    - createScratchRoot(prefix) -> { root, cleanup }: a temporary root
+      named so its owner pid is recorded, made through tmpDir.js's
+      mkProcessTmpDir; before making it, sweepStaleTmpDirs({ prefix })
+      reaps roots whose owner pid is dead (never a blind prefix sweep -
+      BL-971, BL-1385). cleanup() removes the root.
+    - writeBrokenCopy(root, realPath, transform) -> brokenPath: writes
+      transform(original text) at root/<realPath relative to the repo
+      root>, and symlinks every other entry of each real ancestor
+      directory, from the copy's directory up to the repo root, into the
+      mirror, so a sibling load-file (fs/parent (fs/canonicalize *file*)),
+      a relative ".." load, or a Node relative require from the copy
+      resolves to the real tree. Nothing is written under the checkout.
+  - extension/test/bl1652ChaseRespawnBusyGuardInvariants.property.test.js
+    uses it at its three sites (lines ~123, ~240, ~242). The runner copy
+    at ~242 then loads ".." "chase_sweep_lib.bb" from the mirror and gets
+    the broken lib under its real name, so the basename rewrite there can
+    go. Read with offset and limit around those lines, never the whole
+    file.
+  - Both bl1652 probes still fail their assertion against the broken
+    copy, as today.
+  - The feature's step handler, bl2116ProbeScratchRootSteps.js, drives
+    the helper in a child node process, SIGKILLs it after the broken copy
+    is written, checks the checkout (git status --porcelain and a find for
+    the child's pid), then calls createScratchRoot with the same prefix
+    and checks the dead child's root is gone.
+
+  ## Where to read (local seats: never read a whole large file)
+  - extension/test/helpers/tmpDir.js: sweepStaleTmpDirs (~line 64),
+    mkProcessTmpDir (~line 135), module.exports (~line 206).
+  - bl1652 sites above.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each (2026-09-17 rule).
+  1. `node specs/pipeline/cli.js specs/features/BL-2116-a-killed-probe-leaves-nothing-in-the-checkout.feature`:
+     1 of 1 ok.
+  2. Read from the gather's property row:
+     bl1652ChaseRespawnBusyGuardInvariants green.
+  3. `git status --short -- swarmforge/ extension/test/helpers/` in the QA
+     worktree: no new *non-vacuity* path.
+
+source: |
+  Split from BL-1743 on 2026-10-10 after the coder seat (iq3) held it
+  39m with no commit; coordinator note 017778, verbatim: "split BL-1743:
+  coder held it ~39m, no commit (hard-tier trial end)".
+  BL-1743 came from QA note 003163 (2026-09-25, QA tree dirty with a
+  bl1652 scratch .bb from a killed run).
+  Human sentences carried from BL-1743 (Article 5.3), verbatim:
+  "Makr sure you observe dynamic routing going forward"
+  "fine: ask Specifier to mint an live proving of IQ3 to deal with a big ticket utilizing the new Arrange Act Assert functionality"
+  The human, 2026-10-04, verbatim: "We should make the \"splitting of ticket if coder cant manage\" BAU."
+
+notes: |
+  split from BL-1743 on 2026-10-10 after coder (iq3) held it 39m. Slice 1
+  of 3; BL-2117 and BL-2118 depend on it. No salvage commit: the seat's
+  WIP is stash@{0} on swarmforge-coder ("BL-1743 WIP salvage before
+  respawn (coder loop-halt 01:56Z)"), edits to bl1458, bl1459, bl1505 and
+  bl1630 that call this helper's API before it existed; this slice fixes
+  the API to match it.
+  BL-1743 was BL-2058's live-proof vehicle on the iq3 seat; the split is
+  that outcome for BL-2058 to record.
+  INVEST: Independent, Negotiable (helper shape is direction past the
+  two signatures), Valuable (the incident file can no longer litter),
+  Estimable, Small (one helper, one test file, one handler), Testable (one
+  scenario, one property file).

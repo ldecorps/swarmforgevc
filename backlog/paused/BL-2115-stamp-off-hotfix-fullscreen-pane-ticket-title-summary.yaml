@@ -1,0 +1,87 @@
+id: BL-2115
+title: "Stamp-off for hotfix 1a0d8963a4: the fullscreen live-screen pane's header shows a ticket title summary (asides dropped, cut at the first separator, at most 90 characters) and a tap on the title toggles the full title, after a several-hundred-character title buried the expanded pane on the phone"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the human could not see the
+# expanded pane at all under its header.
+status: todo
+epic: art-direction
+priority: 5
+direction: normal
+depends_on: []
+not_before: 2026-10-11
+# mutation_cooldown_days refuses a file changed on main today; the
+# hardener's Stryker pass on residentSpyUiHtml.ts can run from tomorrow.
+mutation_cost: low
+# low: review one webview function and one click handler, add unit cases.
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one function and one handler; nothing to refactor"
+  architect: "webview presentation only; no boundary moves"
+  documenter: "no living doc describes the fullscreen header text"
+
+# Not a claim of ownership over BL-1542's contract (BL-1251): it pins the
+# same live-screen ticket strip this hotfix changes in fullscreen.
+acceptance: specs/features/BL-1542-live-screen-ticket-strip-collapse-control.feature
+
+human_approval: approved
+approval_context: >
+  Stamp-off of a hotfix the specifier landed at the human's request in the
+  session ("Can you hot fix something to summarise the headzr"). No choice
+  is posed. FIRM: the coder reviews it and never re-applies it.
+
+invariants: []
+
+description: |
+  Status: hotfix 1a0d8963a4 landed the fix. The coder reviews it and never
+  re-applies it.
+
+  The human, on 2026-10-10, sent a phone screenshot of the expanded
+  (fullscreen) live-screen pane for BL-1743: the ticket title filled the
+  whole screen and the pane output was below the fold.
+
+  The hotfix, in extension/src/bridge/residentSpyUiHtml.ts's webview
+  script: buildTicketBlockHtml (used only by buildFullscreenHeadHtml) shows
+  summarizeTicketTitle(title) - parenthetical asides dropped, cut at the
+  first " - ", ": " or "; " past 20 characters, at most 90 characters at a
+  word boundary, an ellipsis when cut. A click on the title (fsHeadEl
+  listener, stopPropagation so the fullscreen tap-to-exit does not fire)
+  toggles the full title; fsTitleExpanded survives header repaints. The
+  full title is kept in a script variable, not an attribute, because the
+  page's escapeHtml does not escape quotes.
+
+  The review asks: does the summary ever come out empty or misleading
+  (a title that is all parentheses falls back to the full title)? Does
+  the toggle ever exit fullscreen?
+
+  The hardener adds unit cases for summarizeTicketTitle (separator cut,
+  the 90-character cap, parentheses, unbalanced parentheses, short title
+  unchanged) and the toggle, and runs Stryker scoped to those functions.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run.
+  1. `node specs/pipeline/cli.js specs/features/BL-1542-live-screen-ticket-strip-collapse-control.feature`:
+     6 of 6 ok (measured at mint in a scratch tree with the change).
+  2. Read from the gather's unit row: residentSpyUiHtml.test.js green,
+     with the hardener's summary and toggle cases in it.
+  3. On the phone, open a pane holding a long-titled ticket fullscreen:
+     the header is at most two short lines; a tap on the title shows the
+     whole title and the pane stays fullscreen; a second tap summarises it.
+  4. Read the coder's and the hardener's committed evidence.
+
+source: |
+  The human, 2026-10-10, verbatim: "Can you hot fix something to
+  summarise the headzr (cant see the pane, the title os way too long)",
+  then "That's the expanded live screen pane".
+
+notes: |
+  Minted 2026-10-10 by the specifier, the stamp-off for hotfix 1a0d8963a4.
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no ruling_options) - see auto-approve-high-severity-defects-amendment-20260917.md.
+  Verified at mint in a scratch tree (git archive HEAD plus the change):
+  unit 35/35, properties 2/2, features BL-609 7/7, BL-929 4/4, BL-775
+  11/11, BL-1542 6/6, BL-1046 11/11, BL-994 8/8.
+  INVEST: Independent, Negotiable (review only), Valuable (the expanded
+  pane is readable), Estimable, Small (one function, one handler),
+  Testable (one feature, one unit file, one phone check).
