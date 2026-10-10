@@ -1,0 +1,1 @@
+{"id":"BL-2111","messages":[{"seq":0,"ts":1791597487890,"author":"swarm","type":"outbound","text":"BL-2111 🎵 in progress — Stamp-off for hotfix 009daacae7: BL-1166 scenario 02 accepted only the four Divio folders in a docs/index.md section link, but Article 1.7 links retired pages from docs/index.md under docs/deprecated/ - the step now accepts deprecated/ too"}]}
