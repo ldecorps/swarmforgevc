@@ -47,7 +47,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { assertReachFloor } = require('./helpers/reachFloors');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const {
   buildArticleDraftPageState,
 } = require('../out/bridge/articleDraftsHtml');
@@ -93,7 +93,7 @@ describe('BL-2101 invariant 1: never reads outside .swarmforge/operator/, never 
         emptyFile: { file: '', expect: 'invalid draft file' },
         backslashTraversal: { file: '..\\canary.txt', expect: 'invalid draft file' },
       };
-      const FLOOR = 15;
+      const FLOOR = runsPerCell(135, Object.keys(CANDIDATES).length);
       const coverage = {};
 
       for (const [name, candidate] of Object.entries(CANDIDATES)) {
