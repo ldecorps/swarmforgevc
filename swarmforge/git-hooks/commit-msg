@@ -51,5 +51,9 @@ status=0
 # unknown, or ambiguous ticket - at commit time, not an hour later on
 # someone else's parcel.
 "$REPO_ROOT/swarmforge/scripts/check_closed_ticket_subject.sh" "$1" || status=$?
+# BL-1885: refuses a hotfix commit whose stamp-off ticket already has a
+# build in flight (a live mailbox parcel or an unlanded role-branch
+# commit), unless the message names it superseded.
+"$REPO_ROOT/swarmforge/scripts/check_hotfix_duplicate_build.sh" "$1" || status=$?
 
 exit "$status"
